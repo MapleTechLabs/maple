@@ -1,6 +1,7 @@
 import { CURRENT_DASHBOARD_SCHEMA_VERSION, type DashboardSchemaVersion } from "../version"
 import type { DashboardMigration } from "./types"
 import { v1ToV2 } from "./v1-to-v2"
+import { Array as Arr } from "effect"
 
 export type { DashboardMigration } from "./types"
 
@@ -12,7 +13,7 @@ export type { DashboardMigration } from "./types"
 export const DASHBOARD_MIGRATIONS: ReadonlyArray<DashboardMigration> = [v1ToV2]
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 // Includes 3 even though no chain step produces it: `detectSchemaVersion` reads
 // an unrecognised version as 1, so leaving 3 out would make a backfilled document

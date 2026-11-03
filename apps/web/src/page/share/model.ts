@@ -1,11 +1,11 @@
 import { TimeRangeSchema } from "@maple/domain/http"
 import { DashboardSectionSchema, WidgetDisplayConfigV3, WidgetLayoutSchema } from "@maple/widgets/dashboard"
 import { Schema } from "effect"
-import * as Chart from "../../charts/chart"
-import { ChartRuntime } from "../../charts/chart-runtime"
-import { ThemeColors } from "../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { ShareSearch } from "../../route/search"
-import * as Menu from "../../ui/menu"
+import * as Menu from "@maple/views/ui/menu"
 import { TableSort } from "../dashboards/kit/tiles"
 
 // `/share/$token`.
@@ -114,6 +114,8 @@ export const Model = Schema.Struct({
 	isFlushScheduled: Schema.Boolean,
 	/** Batches after the one in flight; each is awaited before the next is sent. */
 	queuedBatches: Schema.Array(QueuedBatch),
+	/** The id of the batch sent last; an older batch's answer settles its tiles but sends nothing. */
+	sentBatchId: Schema.Number,
 	states: Schema.Record(Schema.String, WidgetState),
 	gridWidth: Schema.Number,
 	charts: Schema.Record(Schema.String, Chart.Model),

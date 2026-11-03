@@ -1,0 +1,28 @@
+{
+	"maple-1944": {
+		"missed": [
+			{
+				"head": "5560597",
+				"note": "Read 10. `applyJson` sent the newest read's version, not the draft's base; the function was unchanged between 5560597 and 3229639, whose review filed it (F4)."
+			}
+		]
+	},
+	"maple-1959": {
+		"missed": [
+			{
+				"head": "026c578",
+				"note": "Read 10. `replaceIdentifier` renamed an AS-less table alias (F3) and a qualified fix kept an unchecked qualifier (F2); both were in the code since 9cea5f8 and filed at 5175934 and 10791f4."
+			},
+			{ "head": "92a6440", "note": "Read 10; same F2 and F3 as at 026c578." },
+			{ "head": "b06b31b", "note": "Read 10; same F2 and F3 as at 026c578." }
+		]
+	},
+	"maple-1960": {
+		"missed": [
+			{
+				"head": "6d4931f",
+				"note": "Read 10. `limitedWithinCap` read the offset of `LIMIT offset, count` as the row count; present at 6d4931f, filed by the next review at 33c8ed1 (F4)."
+			}
+		]
+	}
+}

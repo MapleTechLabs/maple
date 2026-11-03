@@ -1,9 +1,9 @@
 import { bucketSecondsForRange } from "../../../../components/infra/constants"
 import { Command } from "foldkit"
-import * as Chart from "../../../../charts/chart"
-import { LoadChartRuntime } from "../../../../charts/chart-runtime"
-import * as Keyed from "../../../../data/keyed"
-import { requestKey } from "../../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import * as Frame from "../../kit/frame"
@@ -14,6 +14,7 @@ import { updateCopy } from "../../kit/resource-attributes"
 import { FetchSeries, FetchSummary, type SeriesInput } from "./command"
 import { type HostMetric, Message } from "./message"
 import type { Model } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -36,7 +37,7 @@ const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode)
 	const bucketSeconds = bucketSecondsForRange(window.startTime, window.endTime)
 	const series = seriesSteps(
 		model.series,
-		HOST_METRICS.map((metric) => {
+		Arr.map(HOST_METRICS, (metric) => {
 			const input: SeriesInput = { hostName: model.hostName, metric, ...window, bucketSeconds }
 			return {
 				id: metric,
@@ -73,7 +74,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		frame: Frame.init("infra-host-time-range"),
 		summary: Keyed.idle(),
 		series: {},
-		charts: Object.fromEntries(HOST_METRICS.map((metric) => [metric, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(HOST_METRICS, (metric) => [metric, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		copies: {},
@@ -95,7 +96,9 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 	const href = (search: Search) => hrefOf(AppRoute.InfraHost({ hostName: model.hostName, search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
+		requestAll(moved, context, mode),
+	)
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>

@@ -6,9 +6,9 @@ import { type HexbinDatum, hexbin } from "@tanstack/charts/spatial/hexbin"
 import { tooltip } from "@tanstack/charts/tooltip"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scaleLog } from "d3-scale"
-import { Option } from "effect"
-import { ChartTooltip } from "../../charts/chart-spec"
-import type { BuiltChart } from "../../charts/definitions/built-chart"
+import { Option, Array as Arr } from "effect"
+import { ChartTooltip } from "@maple/views/charts/chart-spec"
+import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import type { SpikeSpec } from "./spike-spec"
 import { RAMP_TOKENS } from "./spike-timeseries-tokens"
 
@@ -82,7 +82,10 @@ const padTimeDomain = (min: number, max: number): readonly [number, number] => {
 }
 
 const timeDomainOf = (rows: ReadonlyArray<ScatterRow>): readonly [number, number] => {
-	const starts = rows.map((row) => row.startMs).filter((value) => Number.isFinite(value))
+	const starts = Arr.filter(
+		Arr.map(rows, (row) => row.startMs),
+		(value) => Number.isFinite(value),
+	)
 	const min = Math.min(...starts)
 	const max = Math.max(...starts)
 	return !Number.isFinite(min) || !Number.isFinite(max) || min === max
@@ -100,7 +103,7 @@ const clockOf = (ms: number, withSeconds: boolean): string =>
 export const buildTraceScatterSpike = (spec: SpikeSpec) => {
 	const rows = makeSpans()
 	const colorScale = createSequentialColorScale({
-		stops: RAMP_TOKENS.blues.map(([token]) => spec.colors[token] ?? ""),
+		stops: Arr.map(RAMP_TOKENS.blues, ([token]) => spec.colors[token] ?? ""),
 		domain: DENSITY_DOMAIN,
 		scaleType: "log",
 	})

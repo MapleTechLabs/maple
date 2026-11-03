@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/domain/http"
 import { SourceId } from "@maple/domain/primitives"
@@ -41,8 +41,37 @@ const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
 const user = Schema.decodeUnknownSync(UserId)("user_a")
 const missingId = Schema.decodeUnknownSync(SourceId)("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b")
 
+/**
+ * An integration source as its service creates it, with what its poller last reported. Fixture
+ * rows reuse their own id as their source's.
+ */
+const insertSource = (
+	testDb: TestDb,
+	id: string,
+	platform: string,
+	name: string,
+	poll: { readonly okAt?: number; readonly error?: string; readonly disconnected?: boolean } = {},
+) =>
+	Effect.promise(() =>
+		executeSql(
+			testDb,
+			`INSERT INTO sources (id, org_id, name, platform, kind, last_poll_ok_at, last_poll_error,
+				disconnected_at, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, 'integration', $5, $6, $7, now(), now())`,
+			[
+				id,
+				orgA,
+				name,
+				platform,
+				poll.okAt === undefined ? null : new Date(poll.okAt).toISOString(),
+				poll.error ?? null,
+				poll.disconnected === true ? new Date().toISOString() : null,
+			],
+		),
+	)
+
 const ownSources = (keys: SourcesService["Service"], orgId: OrgId) =>
-	keys.list(orgId).pipe(Effect.map((sources) => sources.filter((source) => !source.isDefault)))
+	keys.list(orgId).pipe(Effect.map((sources) => Arr.filter(sources, (source) => source.kind !== "default")))
 
 describe("SourcesService", () => {
 	it.effect("creates a source whose token is stored only as its lookup hash", () => {
@@ -62,8 +91,8 @@ describe("SourcesService", () => {
 				}),
 			)
 
-			assert.isTrue(created.secret.startsWith("maple_src_"))
-			assert.isTrue(created.secret.startsWith(created.source.keyPrefix ?? "-"))
+			assert.isTrue(Str.startsWith("maple_src_")(created.secret))
+			assert.isTrue(Str.startsWith(created.source.keyPrefix ?? "-")(created.secret))
 			assert.strictEqual(created.source.name, "Checkout staging")
 			assert.deepStrictEqual(created.source.allowedSignals, ["traces", "logs"])
 			assert.deepStrictEqual(created.source.resourceAttributes, [
@@ -79,8 +108,8 @@ describe("SourcesService", () => {
 
 			const listed = yield* keys.list(orgA)
 			assert.deepStrictEqual(
-				listed.map((source) => source.isDefault),
-				[true, false],
+				Arr.map(listed, (source) => source.kind),
+				["default", "token"],
 			)
 			assert.deepStrictEqual(listed[1], created.source)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -139,7 +168,7 @@ describe("SourcesService", () => {
 				}),
 			)
 			const description = yield* attempt(
-				new CreateSourceRequest({ platform: "nodejs", name: "a", description: "x".repeat(501) }),
+				new CreateSourceRequest({ platform: "nodejs", name: "a", description: Str.repeat(501)("x") }),
 			)
 
 			assert.deepStrictEqual(
@@ -227,7 +256,7 @@ describe("SourcesService", () => {
 			])
 
 			assert.deepStrictEqual(
-				errors.map((error) => error._tag),
+				Arr.map(errors, (error) => error._tag),
 				Array(6).fill("@maple/http/errors/SourceNotFoundError"),
 			)
 			assert.deepStrictEqual(yield* ownSources(keys, orgB), [])
@@ -359,7 +388,11 @@ describe("SourcesService", () => {
 
 		return Effect.gen(function* () {
 			const keys = yield* SourcesService
-			const created = yield* keys.create(orgA, user, new CreateSourceRequest({ platform: "nodejs", name: "k" }))
+			const created = yield* keys.create(
+				orgA,
+				user,
+				new CreateSourceRequest({ platform: "nodejs", name: "k" }),
+			)
 			yield* TestClock.adjust("1 hour")
 			const stamp = (column: string, ms: number) =>
 				Effect.promise(() =>
@@ -408,7 +441,7 @@ describe("SourcesService", () => {
 			const [first] = yield* keys.list(orgA)
 			const [again] = yield* keys.list(orgA)
 			assert.strictEqual(first?.id, again?.id)
-			assert.isTrue(first?.isDefault)
+			assert.strictEqual(first?.kind, "default")
 			assert.isNull(first?.keyPrefix)
 			if (first === undefined) return
 
@@ -429,21 +462,52 @@ describe("SourcesService", () => {
 				keys.delete(orgA, first.id).pipe(Effect.flip),
 			])
 			assert.deepStrictEqual(
-				refused.map((error) => error._tag),
+				Arr.map(refused, (error) => error._tag),
 				Array(4).fill("@maple/http/errors/SourceValidationError"),
 			)
 			assert.strictEqual((yield* keys.list(orgA)).length, 1)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("gives each scrape target a source with its scrape health and drops it with the target", () => {
+	it.effect("keeps a scrape target that PlanetScale adopted while listing sources", () => {
+		const testDb = createTestDb(trackedDbs)
+		const target = "9d1e2f3a-0000-4000-8000-000000000003"
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			yield* Effect.promise(async () => {
+				await executeSql(
+					testDb,
+					`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+					 VALUES ('0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a50', $1, 'branches', 'prometheus', 'integration', now(), now())`,
+					[orgA],
+				)
+				// Adopted by a PlanetScale connection: managed, still pointing at its Prometheus source.
+				await executeSql(
+					testDb,
+					`INSERT INTO scrape_targets (id, org_id, name, url, managed_by, source_id, created_at, updated_at)
+					 VALUES ($1, $2, 'branches', 'http://ps/metrics', 'planetscale:conn_1', '0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a50', now(), now())`,
+					[target, orgA],
+				)
+			})
+			yield* keys.list(orgA)
+			const rows = yield* Effect.promise(() =>
+				testDb.pglite.query<{ id: string }>("SELECT id FROM scrape_targets"),
+			)
+			assert.deepStrictEqual(
+				Arr.map(rows.rows, (row) => row.id),
+				[target],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reads an integration source's health from what its poller reported, and pauses it", () => {
 		const testDb = createTestDb(trackedDbs)
 		const insertTarget = (id: string, name: string, lastScrapeAt: number | null, error: string | null) =>
 			Effect.promise(() =>
 				executeSql(
 					testDb,
-					`INSERT INTO scrape_targets (id, org_id, name, url, scrape_interval_seconds, last_scrape_at, last_scrape_error, created_at, updated_at)
-					 VALUES ($1, $2, $3, 'http://node:9100/metrics', 15, $4, $5, now(), now())`,
+					`INSERT INTO scrape_targets (id, org_id, source_id, name, url, scrape_interval_seconds, last_scrape_at, last_scrape_error, created_at, updated_at)
+					 VALUES ($1, $2, $1, $3, 'http://node:9100/metrics', 15, $4, $5, now(), now())`,
 					[
 						id,
 						orgA,
@@ -457,14 +521,23 @@ describe("SourcesService", () => {
 		return Effect.gen(function* () {
 			const keys = yield* SourcesService
 			yield* TestClock.adjust("1 hour")
+			yield* insertSource(testDb, "9d1e2f3a-0000-4000-8000-000000000001", "prometheus", "node", {
+				okAt: 3_600_000 - 30_000,
+			})
+			yield* insertSource(testDb, "9d1e2f3a-0000-4000-8000-000000000002", "prometheus", "broken", {
+				error: "connection refused",
+			})
 			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000001", "node", 3_600_000 - 30_000, null)
 			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000002", "broken", null, "connection refused")
 
 			const first = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
-				first
-					.map((source) => [source.name, source.platform, source.health.status, source.keyPrefix])
-					.sort(),
+				Arr.map(first, (source) => [
+					source.name,
+					source.platform,
+					source.health.status,
+					source.keyPrefix,
+				]).sort(),
 				[
 					["broken", "prometheus", "failing", null],
 					["node", "prometheus", "healthy", null],
@@ -473,12 +546,6 @@ describe("SourcesService", () => {
 			assert.strictEqual(
 				first.find((source) => source.name === "broken")?.health.problem,
 				"connection refused",
-			)
-			// Listing again keeps the same ids instead of minting new sources.
-			const again = yield* ownSources(keys, orgA)
-			assert.deepStrictEqual(
-				again.map((source) => source.id).sort(),
-				first.map((source) => source.id).sort(),
 			)
 
 			const broken = first.find((source) => source.name === "broken")
@@ -491,16 +558,27 @@ describe("SourcesService", () => {
 				new UpdateSourceRequest({ name: "scraper" }),
 			)
 			assert.deepStrictEqual([renamed.name, renamed.health.status], ["scraper", "failing"])
+			// Integration sources pause like token sources; the pause wins over the integration's health.
+			const paused = yield* keys.pause(orgA, user, broken.id, null)
+			assert.deepStrictEqual([paused.status, paused.health.status], ["paused", "paused"])
+			assert.strictEqual(
+				(yield* ownSources(keys, orgA)).find((source) => source.id === broken.id)?.health.status,
+				"paused",
+			)
+			const resumed = yield* keys.resume(orgA, user, broken.id)
+			assert.deepStrictEqual([resumed.status, resumed.health.status], ["active", "failing"])
 			const refused = yield* keys.delete(orgA, broken.id).pipe(Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/http/errors/SourceValidationError")
 
-			yield* Effect.promise(() =>
-				executeSql(testDb, "DELETE FROM scrape_targets WHERE id = $1", [
-					"9d1e2f3a-0000-4000-8000-000000000002",
-				]),
+			// Deleting the source deletes the target that sends as it.
+			yield* Effect.promise(() => executeSql(testDb, "DELETE FROM sources WHERE id = $1", [broken.id]))
+			const targets = yield* Effect.promise(() =>
+				testDb.pglite.query<{ id: string }>("SELECT id FROM scrape_targets"),
 			)
-			// Removed but not yet reconciled: the source reads as disconnected.
-			assert.strictEqual((yield* keys.get(orgA, broken.id)).health.status, "disconnected")
+			assert.deepStrictEqual(
+				Arr.map(targets.rows, (row) => row.id),
+				["9d1e2f3a-0000-4000-8000-000000000001"],
+			)
 			assert.deepStrictEqual(
 				(yield* ownSources(keys, orgA)).map((source) => source.name),
 				["node"],
@@ -513,26 +591,167 @@ describe("SourcesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("gives each GitHub installation its own source and health", () => {
+	it.effect("reads a scrape target that is switched off as paused", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			yield* insertSource(testDb, "9d1e2f3a-0000-4000-8000-000000000009", "prometheus", "off")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO scrape_targets (id, org_id, source_id, name, url, enabled, created_at, updated_at)
+					 VALUES ($2, $1, $2, 'off', 'http://off/metrics', false, now(), now())`,
+					[orgA, "9d1e2f3a-0000-4000-8000-000000000009"],
+				),
+			)
+			const [off] = yield* ownSources(keys, orgA)
+			assert.deepStrictEqual(
+				[off?.health.status, off?.health.problem],
+				["paused", "Scraping is turned off"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reads an AWS source's health from its metric stream, not from the role check", () => {
+		const testDb = createTestDb(trackedDbs)
+		const now = 2 * 3_600_000
+		const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString())
+		const insertAws = (
+			id: string,
+			name: string,
+			connection: {
+				readonly verifiedAt: number
+				readonly stream: boolean
+				readonly streamChangedAt?: number
+				readonly receivedAt?: number
+				readonly error?: string
+			},
+		) =>
+			Effect.gen(function* () {
+				// Every one of them passed its last role check a minute ago.
+				yield* insertSource(testDb, id, "aws", name, { okAt: now - 60_000 })
+				yield* Effect.promise(() =>
+					executeSql(testDb, `UPDATE sources SET last_used_at = $2 WHERE id = $1;`, [
+						id,
+						iso(connection.receivedAt ?? null),
+					]),
+				)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO aws_connections (id, org_id, source_id, account_id, modules, verified_at,
+							metric_stream, metric_stream_changed_at, stream_last_received_at, stream_last_error, created_by,
+							created_at, updated_at)
+						 VALUES ($1, $2, $1, $3, '[]', $4, $5, $6, $7, $8, 'user_a', now(), now())`,
+						[
+							id,
+							orgA,
+							Str.slice(-12)(id),
+							iso(connection.verifiedAt),
+							connection.stream
+								? JSON.stringify({ regions: ["us-east-1"], namespaces: ["AWS/ECS"] })
+								: null,
+							iso(connection.streamChangedAt ?? null),
+							iso(connection.receivedAt ?? null),
+							connection.error ?? null,
+						],
+					),
+				)
+			})
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			yield* TestClock.adjust("2 hours")
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000001", "off", {
+				verifiedAt: now - 3_600_000,
+				stream: false,
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000002", "just deployed", {
+				verifiedAt: now - 5 * 60_000,
+				stream: true,
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000003", "never delivered", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+			})
+			// A stream turned on long after the role is due its first delivery from then, not from the role.
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000007", "stream just added", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				streamChangedAt: now - 5 * 60_000,
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000004", "refused", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				receivedAt: now - 2 * 60_000,
+				error: "This Maple organization is over its plan limit",
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000005", "streaming", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				receivedAt: now - 2 * 60_000,
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000006", "stopped", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				receivedAt: now - 3_600_000,
+			})
+
+			const sources = yield* ownSources(keys, orgA)
+			assert.deepStrictEqual(
+				Arr.map(sources, (source) => [
+					source.name,
+					source.health.status,
+					source.health.problem,
+				]).sort(),
+				[
+					["just deployed", "pending", null],
+					[
+						"never delivered",
+						"failing",
+						"No metrics have arrived. Run the setup script again to deploy the metric stream",
+					],
+					["off", "paused", "No metric stream: Maple receives nothing from this account"],
+					["refused", "failing", "This Maple organization is over its plan limit"],
+					["stopped", "stale", "No data in the last 30 minutes"],
+					["stream just added", "pending", null],
+					["streaming", "healthy", null],
+				],
+			)
+			// Last data is the last delivery: a passing role check is not data.
+			assert.strictEqual(
+				sources.find((source) => source.name === "streaming")?.health.lastDataAt,
+				new Date(now - 2 * 60_000).toISOString(),
+			)
+			assert.isNull(sources.find((source) => source.name === "never delivered")?.health.lastDataAt)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reads a revoked GitHub installation as disconnected", () => {
 		const testDb = createTestDb(trackedDbs)
 		const insertInstallation = (id: string, login: string, status: string) =>
 			Effect.promise(() =>
 				executeSql(
 					testDb,
-					`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login, account_type, external_account_id, status, installed_by_user_id, created_at, updated_at)
-					 VALUES ($1, $2, 'github', $3, $4, 'Organization', $3, $5, 'user_a', now(), now())`,
+					`INSERT INTO vcs_installations (id, org_id, source_id, provider, external_installation_id, account_login, account_type, external_account_id, status, installed_by_user_id, created_at, updated_at)
+					 VALUES ($1, $2, $1, 'github', $3, $4, 'Organization', $3, $5, 'user_a', now(), now())`,
 					[id, orgA, `ext-${login}`, login, status],
 				),
 			)
 
 		return Effect.gen(function* () {
 			const keys = yield* SourcesService
+			yield* insertSource(testDb, "7a1e2f3a-0000-4000-8000-000000000001", "github", "GitHub acme")
+			yield* insertSource(testDb, "7a1e2f3a-0000-4000-8000-000000000002", "github", "GitHub globex", {
+				error: "The GitHub installation is suspended",
+				disconnected: true,
+			})
 			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000001", "acme", "active")
 			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000002", "globex", "suspended")
 
 			const sources = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
-				sources.map((source) => [source.name, source.platform, source.health.status]).sort(),
+				Arr.map(sources, (source) => [source.name, source.platform, source.health.status]).sort(),
 				[
 					["GitHub acme", "github", "pending"],
 					["GitHub globex", "github", "disconnected"],

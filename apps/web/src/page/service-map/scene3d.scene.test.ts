@@ -1,11 +1,11 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
-import { Message as ResizableMessage, MountResizeGroup } from "../../ui/resizable"
-import * as Tabs from "../../ui/tabs"
-import * as ToggleGroup from "../../ui/toggle-group"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { Message as ResizableMessage, MountResizeGroup } from "@maple/views/ui/resizable"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../contract"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
@@ -56,16 +56,19 @@ const BUNDLE: Bundle = {
 		},
 	],
 	dbEdges: [],
+	dbEdgesTimedOut: false,
 	overview: [overview("checkout"), overview("payments")],
 	platforms: [],
 	workloads: [],
+	runtimes: [],
 }
 
 /** `/service-map?view=3d` entered, windowed, with the prefs and the bundle in. */
 const loaded = (): Model => {
 	const entered = init({ search: { view: "3d" } }, context).model
 	const steps: ReadonlyArray<(model: Model) => Message> = [
-		() => Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
+		() =>
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
 		() => Message.CompletedReadStored({ stored: STORED }),
 		(model) =>
 			Message.CompletedFetchBundle({
@@ -73,7 +76,7 @@ const loaded = (): Model => {
 				result: Result.succeed(new MapBundle(BUNDLE)),
 			}),
 	]
-	return steps.reduce((model, step) => pageUpdate(model, step(model)).model, entered)
+	return Arr.reduce(steps, entered, (model, step) => pageUpdate(model, step(model)).model)
 }
 
 const scene3d = (message: Scene3d.Message) => Message.GotScene3dMessage({ message })
@@ -92,7 +95,7 @@ const measureTabs = Mount.resolve(
 )
 
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 describe("service map 3D: viewport state", () => {
 	test("Cascade switches the perspective; pressing it again keeps it, as legacy ignores a release", () => {
@@ -106,12 +109,17 @@ describe("service map 3D: viewport state", () => {
 
 	test("the traffic button toggles, and every camera click is a new command", () => {
 		const model = run(loaded(), [
-			scene3d(Scene3d.Message.ClickedTraffic()),
+			scene3d(Scene3d.Message.ClickedTraffic({ isFlowing: true })),
 			scene3d(Scene3d.Message.ClickedCamera({ action: "in" })),
 			scene3d(Scene3d.Message.ClickedCamera({ action: "in" })),
 		])
 		expect(model.scene3d.traffic).toBe(false)
 		expect(model.scene3d.command).toEqual({ action: "in", serial: 2 })
+	})
+
+	test("under reduced motion the paused traffic can still be turned on", () => {
+		const model = run(loaded(), [scene3d(Scene3d.Message.ClickedTraffic({ isFlowing: false }))])
+		expect(model.scene3d.traffic).toBe(true)
 	})
 
 	test("WebGL failing shows the fallback; the theme resolves the palette", () => {

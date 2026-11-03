@@ -2,34 +2,35 @@
 title: "Authentication"
 description: "The credentials Maple accepts: public and private ingest keys for sending telemetry, API keys for the REST API and MCP server, OAuth for MCP clients, and which endpoint takes which."
 group: "Reference"
-order: 4
+order: 1
 ---
 
 Maple uses two kinds of credential. **Ingest keys** send telemetry. **API keys** read and change your organization through the REST API and the MCP server. An ingest key cannot read anything, and an API key cannot send telemetry.
 
-| Credential         | Prefix      | Where you get it                         | What it can do                                 | Safe to ship in client code? |
-| ------------------ | ----------- | ---------------------------------------- | ---------------------------------------------- | ---------------------------- |
-| Public ingest key  | `maple_pk_` | **Settings → Ingestion**                 | Send telemetry                                 | Yes                          |
-| Private ingest key | `maple_sk_` | **Settings → Ingestion**                 | Send telemetry                                 | No                           |
-| API key            | `maple_ak_` | **Settings → Keys**                  | REST API and MCP server, limited by its scopes | No                           |
-| MCP key            | `maple_ak_` | **Settings → MCP**                       | MCP server only                                | No                           |
-| OAuth token        |             | Issued to an MCP client when you sign in | MCP server only                                | No                           |
+| Credential         | Prefix       | Where you get it                                  | What it can do                                 | Safe to ship in client code? |
+| ------------------ | ------------ | ------------------------------------------------- | ---------------------------------------------- | ---------------------------- |
+| Public ingest key  | `maple_pk_`  | **Settings → Ingestion**                          | Send telemetry                                 | Yes                          |
+| Private ingest key | `maple_sk_`  | **Settings → Ingestion**                          | Send telemetry                                 | No                           |
+| Source token       | `maple_src_` | **Sources**, shown once when you connect a source | Send the signals that source allows            | No                           |
+| API key            | `maple_ak_`  | **Settings → Keys**                               | REST API and MCP server, limited by its scopes | No                           |
+| MCP key            | `maple_ak_`  | **Settings → MCP**                                | MCP server only                                | No                           |
+| OAuth token        |              | Issued to an MCP client when you sign in          | MCP server only                                | No                           |
 
 Every credential belongs to one organization in one [region](/docs/reference/regions). A credential from the US region is rejected by the EU region, and the other way round.
 
 ## Which endpoint accepts what
 
-| Endpoint                                | Accepts                                                                               |
-| --------------------------------------- | ------------------------------------------------------------------------------------- |
-| Ingest, `https://ingest.maple.dev/v1/*` | Public or private ingest key, as `Authorization: Bearer …` or `x-maple-ingest-key: …` |
-| REST API, `https://api.maple.dev/v2/*`  | API key, or a dashboard session token, as `Authorization: Bearer …`                   |
-| MCP server, `https://api.maple.dev/mcp` | API key, MCP key or OAuth token, as `Authorization: Bearer …`                         |
+| Endpoint                                | Accepts                                                                                                  |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Ingest, `https://ingest.maple.dev/v1/*` | Public or private ingest key, or a source token, as `Authorization: Bearer …` or `x-maple-ingest-key: …` |
+| REST API, `https://api.maple.dev/v2/*`  | API key, or a dashboard session token, as `Authorization: Bearer …`                                      |
+| MCP server, `https://api.maple.dev/mcp` | API key, MCP key or OAuth token, as `Authorization: Bearer …`                                            |
 
 Use the EU hosts (`ingest.eu.maple.dev`, `api.eu.maple.dev`) for an EU organization.
 
 ## Ingest keys
 
-Each organization has exactly one public key and one private key. Both are shown under **Settings → Ingestion**, and both have the same permission: they can send traces, logs, metrics, product events and session replays to your organization. Neither can read data.
+Each organization has one public key and one private key. Both are shown under **Settings → Ingestion**, and both have the same permission: they can send traces, logs, metrics, product events and session replays to your organization. Neither can read data. Sources you connect can also get their own token; see [Source tokens](#source-tokens).
 
 - Use the **public key** (`maple_pk_…`, labeled **Client**) in browsers, mobile apps and anything else you ship to end users. It will be visible to anyone who inspects your app, which is expected. The worst someone can do with it is send data to your organization.
 - Use the **private key** (`maple_sk_…`, labeled **Server**) on servers, in the OpenTelemetry Collector and in CI. Keep it out of client bundles, so you can rotate the public key without touching your backend.
@@ -41,6 +42,17 @@ Send the key on every request, either as `Authorization: Bearer maple_pk_…` or
 To rotate a key, click **Regenerate** next to it in **Settings → Ingestion**, or call `POST /v2/ingest_keys/public/roll` or `POST /v2/ingest_keys/private/roll`. The old key stops working immediately, so deploy the new one first where you can.
 
 The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is discarded. Use it in CI or example code.
+
+## Source tokens
+
+A source you connect under **Sources** can get its own ingest token, prefixed `maple_src_`. It is shown once, when the source is created, and is sent the same way as an ingest key. Telemetry sent with it is attributed to that source. A source token can also:
+
+- **Allow only some signals**: `traces`, `logs`, `metrics`, `sessions` or `events`. Other signals are rejected with `403` `ingest_signal_not_allowed`.
+- **Expire**: after its expiry it is rejected with `401` `ingest_key_expired`.
+- **Be paused**: requests still get `200`, but the data is dropped, not stored or billed.
+- **Carry a rate limit** in requests per second: over it, `429` `ingest_key_rate_limited`.
+
+Manage them on the source's page or through `/v2/sources`.
 
 ## API keys
 

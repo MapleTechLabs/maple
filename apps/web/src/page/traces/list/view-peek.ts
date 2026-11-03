@@ -1,13 +1,14 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../../ui/button"
-import * as DialogView from "../../../ui/dialog-view"
-import { kbd } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
+import { linkButton } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { kbd } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
 import * as PeekBody from "../detail/view-peek"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { peekPosition, traceHrefFrom } from "./peek"
+import { hstack } from "@maple/views/ui/stack"
 
 // The trace peek sheet's frame: the sheet, the trace page's
 // peek body, and the footer that walks the list and opens the page.
@@ -43,33 +44,24 @@ const footer = (h: H, model: Model): Html => {
 		h,
 		"sheet",
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					stepButton(
-						h,
-						"Previous trace",
-						"ArrowUpIcon",
-						position !== null && position.index > 0,
-						-1,
-					),
-					stepButton(
-						h,
-						"Next trace",
-						"ArrowDownIcon",
-						position !== null && position.index < position.count - 1,
-						1,
-					),
-					...(position === null
-						? []
-						: [
-								h.span(
-									[h.Class("ml-1 font-mono text-2xs tabular-nums text-muted-foreground")],
-									[String(position.index + 1), " of ", String(position.count)],
-								),
-							]),
-				],
-			),
+			hstack(h, { gap: "1.5" }, [
+				stepButton(h, "Previous trace", "ArrowUpIcon", position !== null && position.index > 0, -1),
+				stepButton(
+					h,
+					"Next trace",
+					"ArrowDownIcon",
+					position !== null && position.index < position.count - 1,
+					1,
+				),
+				...(position === null
+					? []
+					: [
+							h.span(
+								[h.Class("ml-1 font-mono text-2xs tabular-nums text-muted-foreground")],
+								[String(position.index + 1), " of ", String(position.count)],
+							),
+						]),
+			]),
 			linkButton(h, { size: "sm", href: openHref(model) }, [
 				"Open trace",
 				kbd(h, "ml-1 hidden bg-black/15 text-current sm:inline-flex", ["↵"]),

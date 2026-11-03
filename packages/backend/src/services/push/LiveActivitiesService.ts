@@ -74,7 +74,7 @@ const toLiveActivity = (row: LiveActivityRow): LiveActivity => ({
 })
 
 export class LiveActivitiesService extends Context.Service<LiveActivitiesService, LiveActivitiesServiceApi>()(
-	"@maple/api/services/push/LiveActivitiesService",
+	"@maple/backend/services/push/LiveActivitiesService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

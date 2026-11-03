@@ -49,6 +49,7 @@ import {
 	Ref,
 	Schedule,
 	Schema,
+	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
@@ -62,7 +63,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
-import { validateExternalUrl } from "@maple/safe-fetch"
+import { readTextWithin, validateExternalUrl } from "@maple/safe-fetch"
 
 /**
  * Resolved per-org backend config, returned to the runtime SQL layer.
@@ -569,14 +570,15 @@ const renderCollectorYaml = (input: {
 		"    logs:",
 		"      level: info",
 	]
-	return lines.join("\n") + "\n"
+	return Arr.join(lines, "\n") + "\n"
 }
 
 /**
  * Quote a YAML scalar so any `:` / `#` / leading-whitespace doesn't break
  * the serialiser. We always wrap in double quotes for predictability.
  */
-const quoteYaml = (value: string): string => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+const quoteYaml = (value: string): string =>
+	`"${Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))}"`
 
 const normalizeHttpUrl = (raw: string): Effect.Effect<string, OrgClickHouseSettingsValidationError> =>
 	validateExternalUrl(raw).pipe(
@@ -588,7 +590,7 @@ const normalizeHttpUrl = (raw: string): Effect.Effect<string, OrgClickHouseSetti
 								"ClickHouse credentials must use the user/password fields, not URL userinfo",
 						}),
 					)
-				: Effect.succeed(raw.trim().replace(/\/+$/, "")),
+				: Effect.succeed(Str.replace(/\/+$/, "")(Str.trim(raw))),
 		),
 		Effect.mapError(
 			(error) =>
@@ -662,7 +664,8 @@ const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 			kind: parsed.kind,
 			columns:
 				parsed.kind === "table"
-					? parsed.columns.filter(
+					? Arr.filter(
+							parsed.columns,
 							(column) => !performanceOnlySearchColumns.has(`${parsed.name}.${column.name}`),
 						)
 					: [],
@@ -696,7 +699,7 @@ const buildClickHouseUrl = (config: ClickHouseExecConfig): string =>
 	// analyzer (24.x+) sometimes fails to resolve unqualified table identifiers
 	// in materialized view bodies even when the X-ClickHouse-Database header is
 	// set, surfacing as `Code: 60. UNKNOWN_TABLE`.
-	`${config.url.replace(/\/$/, "")}/?database=${encodeURIComponent(config.database)}`
+	`${Str.replace(/\/$/, "")(config.url)}/?database=${encodeURIComponent(config.database)}`
 
 // Per-request timeout for ClickHouse HTTP calls. Maple's API runs on Cloudflare
 // Workers, whose *outbound* fetch is capped at ~100s — a hung request to an
@@ -716,7 +719,7 @@ const CLICKHOUSE_RETRY_SCHEDULE = Schedule.max([Schedule.exponential("100 millis
 export const isRetryableUpstream = (
 	error: OrgClickHouseSettingsUpstreamRejectedError | OrgClickHouseSettingsUpstreamUnavailableError,
 ): boolean => {
-	if (!(error instanceof OrgClickHouseSettingsUpstreamUnavailableError)) return false
+	if (!Schema.is(OrgClickHouseSettingsUpstreamUnavailableError)(error)) return false
 	const status = error.statusCode
 	if (status === null) return true // network-level failure (reset/refused) — cheap to retry
 	// Gateway/proxy codes that are typically transient. 500/501 are excluded:
@@ -745,7 +748,7 @@ export const shouldHealSchemaVersion = (
 ): boolean =>
 	storedSchemaVersion !== currentSchemaVersion &&
 	entries.length > 0 &&
-	entries.every((entry) => entry.status === "up_to_date")
+	Arr.every(entries, (entry) => entry.status === "up_to_date")
 
 const describeUpstream5xx = (status: number, message: string): string => {
 	// A 52x with the literal `error code: 5xx` body is Cloudflare's synthetic
@@ -769,7 +772,7 @@ const mapStatusToError = (
 	never,
 	OrgClickHouseSettingsUpstreamRejectedError | OrgClickHouseSettingsUpstreamUnavailableError
 > => {
-	const message = text.split("\n")[0]?.slice(0, 500) ?? ""
+	const message = Str.split("\n")(text)[0]?.slice(0, 500) ?? ""
 	if (status === 401 || status === 403) {
 		return Effect.fail(
 			new OrgClickHouseSettingsUpstreamRejectedError({
@@ -802,6 +805,9 @@ const mapStatusToError = (
 	)
 }
 
+/** Schema reads and DDL answers are small; a body past this is not ClickHouse's. */
+const CLICKHOUSE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
 const execClickHouseWithClient = (client: HttpClient.HttpClient, config: ClickHouseExecConfig, sql: string) =>
 	Effect.gen(function* () {
 		const request = HttpClientRequest.post(buildClickHouseUrl(config), {
@@ -810,18 +816,28 @@ const execClickHouseWithClient = (client: HttpClient.HttpClient, config: ClickHo
 		const response = yield* client
 			.execute(request)
 			.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }))
-		const text = yield* response.text
+		const text = yield* readTextWithin(response, CLICKHOUSE_MAX_RESPONSE_BYTES)
 		return { status: response.status, text }
 	}).pipe(
 		// Transport-level failures (DNS, connection reset/refused, body read) →
-		// retryable "unreachable" with no status.
-		Effect.mapError(
-			(error) =>
-				new OrgClickHouseSettingsUpstreamUnavailableError({
-					message: `Could not reach ClickHouse: ${error.message}`,
-					statusCode: null,
-				}),
-		),
+		// retryable "unreachable" with no status. An oversized body is rejected:
+		// retrying would read the same answer again.
+		Effect.catchTags({
+			"@maple/safe-fetch/ResponseTooLargeError": (error) =>
+				Effect.fail(
+					new OrgClickHouseSettingsUpstreamRejectedError({
+						message: `ClickHouse ${error.message}`,
+						statusCode: null,
+					}),
+				),
+			HttpClientError: (error) =>
+				Effect.fail(
+					new OrgClickHouseSettingsUpstreamUnavailableError({
+						message: `Could not reach ClickHouse: ${error.message}`,
+						statusCode: null,
+					}),
+				),
+		}),
 		Effect.flatMap(
 			({
 				status,
@@ -867,11 +883,11 @@ const decodeColumnRow = Schema.decodeUnknownOption(
 const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExecConfig) =>
 	Effect.gen(function* () {
 		// Tables: name + engine. Engine="MaterializedView" → MV; everything else → table.
-		const tablesSql = `SELECT name, engine FROM system.tables WHERE database = '${config.database.replace(/'/g, "''")}' FORMAT JSONEachRow`
+		const tablesSql = `SELECT name, engine FROM system.tables WHERE database = '${Str.replace(/'/g, "''")(config.database)}' FORMAT JSONEachRow`
 		const tablesText = yield* execClickHouseWithClient(client, config, tablesSql)
 		const tableRows = parseJsonEachRow(tablesText, decodeTableRow)
 
-		const columnsSql = `SELECT table, name, type FROM system.columns WHERE database = '${config.database.replace(/'/g, "''")}' FORMAT JSONEachRow`
+		const columnsSql = `SELECT table, name, type FROM system.columns WHERE database = '${Str.replace(/'/g, "''")(config.database)}' FORMAT JSONEachRow`
 		const columnsText = yield* execClickHouseWithClient(client, config, columnsSql)
 		const columnRows = parseJsonEachRow(columnsText, decodeColumnRow)
 
@@ -895,11 +911,10 @@ const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExec
 
 // Malformed rows are skipped: the response comes from our own queries against system.* tables.
 const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> =>
-	text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.flatMap((line) => Option.toArray(decode(line)))
+	Arr.filter(
+		Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+		(line) => line.length > 0,
+	).flatMap((line) => Option.toArray(decode(line)))
 
 // The migration runner + backfill chunking now live in the background
 // schema-apply Workflow (apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.ts),
@@ -909,7 +924,7 @@ const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Opti
 export class OrgClickHouseSettingsService extends Context.Service<
 	OrgClickHouseSettingsService,
 	OrgClickHouseSettingsServiceApi
->()("@maple/api/services/OrgClickHouseSettingsService", {
+>()("@maple/backend/services/OrgClickHouseSettingsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "OrgClickHouseSettingsService", toPersistenceError)
@@ -938,11 +953,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			roles: ReadonlyArray<RoleName>,
 		) {
 			if (isOrgAdmin(roles)) return
-			return yield* Effect.fail(
-				new OrgClickHouseSettingsForbiddenError({
-					message: "Only org admins can manage ClickHouse settings",
-				}),
-			)
+			return yield* new OrgClickHouseSettingsForbiddenError({
+				message: "Only org admins can manage ClickHouse settings",
+			})
 		})
 
 		const selectActiveRow = Effect.fn("OrgClickHouseSettingsService.selectActiveRow")(function* (
@@ -1035,11 +1048,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		) {
 			const row = yield* selectActiveRow(orgId)
 			if (Option.isSome(row)) return row.value
-			return yield* Effect.fail(
-				new OrgClickHouseSettingsValidationError({
-					message: "BYO ClickHouse is not configured for this org",
-				}),
-			)
+			return yield* new OrgClickHouseSettingsValidationError({
+				message: "BYO ClickHouse is not configured for this org",
+			})
 		})
 
 		const decryptStoredPassword = (
@@ -1282,11 +1293,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// Resolve the binding BEFORE claiming: a missing binding must not leave
 			// a queued row behind that every later attempt reads as already_running.
 			if (Option.isNone(schemaApplyWorkflow)) {
-				return yield* Effect.fail(
-					new OrgClickHouseSettingsPersistenceError({
-						message: "Schema-apply workflow binding unavailable",
-					}),
-				)
+				return yield* new OrgClickHouseSettingsPersistenceError({
+					message: "Schema-apply workflow binding unavailable",
+				})
 			}
 			const workflow = schemaApplyWorkflow.value
 
@@ -1674,7 +1683,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 						"maple.clickhouse.config.source": "postgres_failed",
 						"maple.clickhouse.config.failure_reused": true,
 					})
-					return yield* Effect.fail(failed.error)
+					return yield* failed.error
 				}
 
 				// Overwritten by `readSharedOrPostgres` on success; setting it first

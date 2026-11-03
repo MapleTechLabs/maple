@@ -1,9 +1,11 @@
-import { Duration, Effect } from "effect"
+import { Duration, Effect, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { AlertSeverity } from "@maple/domain/http"
-import { displayGroupKey, truncate } from "../../alert-formatting"
+import { displayGroupKey, formatAlertHeadline, truncate, uptimeSummaryLine } from "../../alert-formatting"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Config = SecretConfigOf<"pagerduty">
 
@@ -44,7 +46,7 @@ const resolveRequest = (integrationKey: string, dedupKey: string): HttpRequestSp
 	headers: { "content-type": "application/json" },
 	guarded: false,
 	sensitivePath: false,
-	body: JSON.stringify({ routing_key: integrationKey, event_action: "resolve", dedup_key: dedupKey }),
+	body: encodeJson({ routing_key: integrationKey, event_action: "resolve", dedup_key: dedupKey }),
 })
 
 /**
@@ -67,7 +69,7 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 			headers: { "content-type": "application/json" },
 			guarded: false,
 			sensitivePath: false,
-			body: JSON.stringify({
+			body: encodeJson({
 				routing_key: input.config.integrationKey,
 				event_action: context.eventType === "resolve" ? "resolve" : "trigger",
 				// A resolve closes the warning-keyed alert here and the critical one
@@ -77,7 +79,13 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 					context.eventType === "resolve" ? "warning" : keySeverity(context),
 				),
 				payload: {
-					summary: truncate(templated?.title ?? `${context.ruleName} ${context.eventType}`, 1024),
+					summary: truncate(
+						templated?.title ??
+							(context.signalType === "uptime"
+								? `${formatAlertHeadline(context)}: ${uptimeSummaryLine(context)}`
+								: `${context.ruleName} ${context.eventType}`),
+						1024,
+					),
 					source: displayGroupKey(context.groupKey) ?? "maple-alerts",
 					// The tier the key was chosen for, so a stale critical event cannot raise the warning alert.
 					severity: keySeverity(context) === "critical" ? "critical" : "warning",
@@ -86,6 +94,7 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 						ruleName: context.ruleName,
 						signalType: context.signalType,
 						value: context.value,
+						...(context.detail == null ? undefined : { detail: context.detail }),
 						threshold: context.threshold,
 						thresholdUpper: context.thresholdUpper,
 						comparator: context.comparator,
@@ -94,10 +103,7 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 						chatUrl,
 					},
 				},
-				links: [
-					{ href: linkUrl, text: "Open in Maple" },
-					{ href: chatUrl, text: "Ask Maple AI" },
-				],
+				links: [{ href: linkUrl, text: "Open in Maple" }],
 			}),
 		}
 	},
@@ -155,7 +161,7 @@ export const verifyPagerDutyRoutingKey = (
 	HttpClient.execute(
 		HttpClientRequest.post("https://events.pagerduty.com/v2/enqueue").pipe(
 			HttpClientRequest.bodyText(
-				JSON.stringify({
+				encodeJson({
 					routing_key: integrationKey,
 					event_action: "resolve",
 					dedup_key: dedupKey,
@@ -171,7 +177,7 @@ export const verifyPagerDutyRoutingKey = (
 			if (response.status === 400) {
 				return Effect.orElseSucceed(response.text, () => "").pipe(
 					Effect.map((body): PagerDutyKeyVerification => {
-						const reason = truncate(body.trim().replace(/\s+/g, " "), 500)
+						const reason = truncate(Str.replace(/\s+/g, " ")(Str.trim(body)), 500)
 						return { status: "invalid", reason: reason || "Invalid routing key" }
 					}),
 				)

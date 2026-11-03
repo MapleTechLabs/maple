@@ -1,9 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, Mount, role, scene } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Popover from "../../../ui/popover"
-import { onScreenOr } from "../../../ui/overlay/position"
+import * as Popover from "@maple/views/ui/popover"
+import { onScreenOr } from "@maple/views/ui/overlay/position"
 import * as QuickPick from "./quick-pick"
+import { Array as Arr } from "effect"
 
 const items = [
 	{ value: "none", label: "No severity", shortcut: "0", keywords: "none unset clear" },
@@ -26,7 +27,7 @@ describe("quick pick", () => {
 			QuickPick.init("picker"),
 			QuickPick.Message.ChangedQuery({ value: "unset" }),
 		)
-		expect(QuickPick.visibleOf(items, typed.model.query).map((item) => item.value)).toEqual(["none"])
+		expect(Arr.map(QuickPick.visibleOf(items, typed.model.query), (item) => item.value)).toEqual(["none"])
 		expect(press(typed.model, "Enter").outMessage).toEqual(QuickPick.OutMessage.Picked({ value: "none" }))
 	})
 

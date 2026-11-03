@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
-import * as Dialog from "../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { Message } from "../message"
 import { init, type Model } from "../model"
 import { update } from "../update"
@@ -57,7 +57,10 @@ describe("global shortcuts", () => {
 
 	test("Enter on the highlighted page is the shell's navigation request", () => {
 		const opened = step(signedIn(), Message.ClickedSearch()).model
-		const entered = step(opened, toPalette(Palette.Message.PressedEnter({ isReleasesVisible: true })))
+		const entered = step(
+			opened,
+			toPalette(Palette.Message.PressedEnter({ visibleFlagged: ["/releases", "/security"] })),
+		)
 		expect(entered.outMessage).toEqual({ _tag: "RequestedNavigation", url: "/" })
 	})
 

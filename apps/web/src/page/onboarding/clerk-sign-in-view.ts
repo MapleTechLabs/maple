@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { accountLayout } from "../../layout/account-layout"
-import { button } from "../../ui/button"
-import { field, fieldError, fieldLabel, type FieldIds, type FieldState, input } from "../../ui/field"
+import { button } from "@maple/views/ui/button"
+import { field, fieldError, fieldLabel, type FieldIds, type FieldState, input } from "@maple/views/ui/field"
 import { clerkCard } from "./clerk-card"
 import { Message as ClerkSignInMessage, type Model } from "./clerk-sign-in"
 import type { Message } from "./index"
@@ -26,7 +26,7 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 			h.div(
 				[h.Class("space-y-1")],
 				[
-					h.p([h.Class("font-mono text-xs tracking-[0.02em]")], ["PR preview"]),
+					h.p([h.Class("font-mono text-xs tracking-wide")], ["PR preview"]),
 					h.p(
 						[h.Class("font-display text-muted-foreground text-sm leading-relaxed")],
 						["Sign in as the shared preview reviewer with the preview access key."],
@@ -34,7 +34,7 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 				],
 			),
 			field(h, { className: "items-stretch", state }, [
-				fieldLabel(h, { ids: KEY_FIELD, className: "font-mono text-xs sm:text-xs tracking-[0.02em]", state }, "Access key"),
+				fieldLabel(h, { ids: KEY_FIELD, className: "font-mono text-xs sm:text-xs tracking-wide", state }, "Access key"),
 				input(h, {
 					ids: KEY_FIELD,
 					state,

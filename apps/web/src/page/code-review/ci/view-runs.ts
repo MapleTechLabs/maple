@@ -3,21 +3,24 @@ import { externalUrl, pullRequestUrl } from "../../../components/code-review/ci/
 import { formatDuration } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../../ui/button"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
-import { panel } from "../../../ui/panel"
-import { skeletonList } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { truncatedId } from "../../../ui/truncated-id"
-import { nothingInWindow } from "../kit/layout"
+import { linkButton } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { listFooter, loadingMoreRow } from "@maple/views/ui/list-footer"
+import { panel } from "@maple/views/ui/panel"
+import { runsTableSkeleton } from "../kit/skeletons"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { truncatedId } from "@maple/views/ui/truncated-id"
 import { ciResultBadge, traceLink } from "../kit/parts"
-import { relativeTime } from "../../kit/relative-time"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { emptyFrameClass } from "@maple/views/ui/empty"
 
 // `CiRunsList`, `RunRows` and the paging footers.
 
@@ -37,15 +40,15 @@ const runMeta = (h: H, run: CodeReviewCiRun, prUrl: string | null): Html =>
 			...(run.branch
 				? [
 						dot(h),
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(Message.ClickedBranch({ branch: run.branch })),
-								h.Title(`Show runs on ${run.branch}`),
-								h.Class(
-									"max-w-48 truncate font-mono hover:text-foreground hover:underline focus-visible:underline",
-								),
-							],
+						textLink(
+							h,
+							{
+								tone: "muted",
+								isMono: true,
+								className: "block max-w-48 truncate",
+								onClick: Message.ClickedBranch({ branch: run.branch }),
+								attributes: [h.Title(`Show runs on ${run.branch}`)],
+							},
 							[run.branch],
 						),
 					]
@@ -57,13 +60,16 @@ const runMeta = (h: H, run: CodeReviewCiRun, prUrl: string | null): Html =>
 						dot(h),
 						prUrl === null
 							? h.span([], ["#", String(run.pullRequest)])
-							: h.a(
-									[
-										h.Href(prUrl),
-										h.Attribute("target", "_blank"),
-										h.Attribute("rel", "noreferrer"),
-										h.Class("hover:text-foreground hover:underline"),
-									],
+							: textLink(
+									h,
+									{
+										tone: "muted",
+										href: prUrl,
+										attributes: [
+											h.Attribute("target", "_blank"),
+											h.Attribute("rel", "noreferrer"),
+										],
+									},
 									["#", String(run.pullRequest)],
 								),
 					]),
@@ -80,7 +86,7 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 		h.ul(
 			[h.Class("mt-1 flex flex-col gap-0.5 text-xs")],
 			[
-				...failed.map((job) => {
+				...Arr.map(failed, (job) => {
 					const jobUrl = externalUrl(job.url)
 					return h.li(
 						[h.Key(job.job), h.Class("flex min-w-0 gap-1.5")],
@@ -93,15 +99,23 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 											h.Attribute("target", "_blank"),
 											h.Attribute("rel", "noreferrer"),
 											h.Class(
-												cn("shrink-0 font-medium hover:underline", TONE_TEXT.crit),
+												cn(
+													"shrink-0 font-medium hover:underline active:underline",
+													TONE_TEXT.crit,
+												),
 											),
 										],
 										[job.job],
 									),
 							...(job.reason
 								? [
-										h.span(
-											[h.Class("truncate text-muted-foreground"), h.Title(job.reason)],
+										typography(
+											h,
+											{
+												tone: "muted",
+												truncate: true,
+												attributes: [h.Title(job.reason)],
+											},
 											[job.reason],
 										),
 									]
@@ -131,10 +145,14 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			tableCell(
 				h,
 				[
-					h.div([h.Class("truncate font-medium"), h.Title(run.pipeline)], [run.pipeline]),
+					typography(
+						h,
+						{ weight: "medium", truncate: true, as: "div", attributes: [h.Title(run.pipeline)] },
+						[run.pipeline],
+					),
 					runMeta(h, run, prUrl),
 					...failedJobs(h, run),
-					traceLink(h, run, "mt-1 -ml-2 sm:hidden"),
+					...traceLink(h, run, time.nowMs, "mt-1 -ml-2 sm:hidden"),
 				],
 				"px-3 py-2.5 leading-normal",
 			),
@@ -145,7 +163,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			),
 			tableCell(
 				h,
-				[relativeTime(h, { tooltip: "title", value: run.startedAt, variant: "short", ...time })],
+				[listRelativeTime(h, { value: run.startedAt, variant: "short", ...time })],
 				"hidden px-3 text-right align-top text-muted-foreground tabular-nums md:table-cell",
 			),
 			tableCell(
@@ -154,7 +172,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 					h.span(
 						[h.Class("inline-flex items-center justify-end gap-1")],
 						[
-							traceLink(h, run),
+							...traceLink(h, run, time.nowMs),
 							...(runUrl === null
 								? []
 								: [
@@ -213,21 +231,22 @@ const footer = (h: H, model: Model, firstNext: string | null): Html | null => {
 
 export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolean): Html =>
 	AsyncData.matchData(model.runs.data, {
-		onEmpty: () => skeletonList(h, { rows: 6, rowClassName: "h-14", gap: "2" }),
+		onEmpty: () => runsTableSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load CI runs",
+				title: "Couldn't load CI runs",
 				onRetry: Message.ClickedRetryRuns(),
 			}),
 		onData: (response) => {
 			if (response.runs.length === 0)
-				return nothingInWindow(h, {
-					title: "No runs match",
+				return filteredEmpty(h, {
+					noun: "runs",
 					description: "No run in this window has this result or branch.",
+					className: emptyFrameClass("dashed"),
 					onClear: canClear ? Message.ClickedClearRunFilters() : undefined,
 				})
-			const rows = [...response.runs, ...model.cursors.flatMap((cursor) => runsOf(model, cursor))]
+			const rows = [...response.runs, ...Arr.flatMap(model.cursors, (cursor) => runsOf(model, cursor))]
 			const more = footer(h, model, response.nextCursor)
 			return panel(h, {}, [
 				table(h, { size: "sm", className: "table-fixed" }, [
@@ -254,11 +273,11 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 								),
 							]),
 						],
-						{ className: "bg-muted/30" },
+						{ className: "bg-surface-sunken" },
 					),
 					tableBody(
 						h,
-						rows.map((run) => runRow(h, run, time)),
+						Arr.map(rows, (run) => runRow(h, run, time)),
 					),
 				]),
 				...(more === null ? [] : [more]),

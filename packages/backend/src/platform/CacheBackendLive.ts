@@ -1,5 +1,5 @@
 // BOUNDARY: The Workers cache returns unparsed JSON; `EdgeCacheService` decodes it before domain use.
-import { Effect, Layer, Metric } from "effect"
+import { Effect, Layer, Metric, Schema } from "effect"
 import { WorkersCache } from "@maple/infra/workers-cache"
 import {
 	CacheBackend,
@@ -23,6 +23,8 @@ const SYNTHETIC_HOST = "https://maple-api.internal"
 
 const buildCacheUrl = (bucket: string, hash: string): string => `${SYNTHETIC_HOST}/cache/${bucket}/${hash}`
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 const backendError = (op: EdgeCacheBackendError["op"]) => (cause: unknown) =>
 	new EdgeCacheBackendError({
 		op,
@@ -40,26 +42,32 @@ const makeWorkersBackend = (cache: Cache): EdgeCacheBackend => ({
 			Effect.flatMap((response) =>
 				response
 					? // An unreadable body is an entry we cannot use: a miss, not a failure.
-						Effect.tryPromise((): Promise<unknown> => response.json()).pipe(
-							Effect.orElseSucceed(() => undefined),
-						)
-					: Effect.succeed(undefined),
+						Effect.tryPromise({
+							try: (): Promise<unknown> => response.json(),
+							catch: backendError("get"),
+						}).pipe(Effect.orElseSucceed(() => undefined))
+					: Effect.undefined,
 			),
 		),
 	put: (bucket, hash, value, ttlSeconds) =>
-		Effect.tryPromise({
-			try: () =>
-				cache.put(
-					buildCacheUrl(bucket, hash),
-					new Response(JSON.stringify(value), {
-						headers: {
-							"Content-Type": "application/json",
-							"Cache-Control": `max-age=${ttlSeconds}`,
-						},
-					}),
-				),
-			catch: backendError("put"),
-		}),
+		encodeJson(value).pipe(
+			Effect.mapError(backendError("put")),
+			Effect.flatMap((body) =>
+				Effect.tryPromise({
+					try: () =>
+						cache.put(
+							buildCacheUrl(bucket, hash),
+							new Response(body, {
+								headers: {
+									"Content-Type": "application/json",
+									"Cache-Control": `max-age=${ttlSeconds}`,
+								},
+							}),
+						),
+					catch: backendError("put"),
+				}),
+			),
+		),
 	delete: (bucket, hash) =>
 		Effect.tryPromise({
 			try: () => cache.delete(buildCacheUrl(bucket, hash)),

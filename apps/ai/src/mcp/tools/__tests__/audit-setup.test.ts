@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { AuditCheckResult } from "@maple/domain/setup-audit"
 import { byUrgency, formatAffected } from "../audit-setup"
+import { Array as Arr, String as Str } from "effect"
 
 const check = (overrides: Partial<AuditCheckResult> = {}): AuditCheckResult => ({
 	id: "CFG-ALERT-01",
@@ -17,29 +18,31 @@ const check = (overrides: Partial<AuditCheckResult> = {}): AuditCheckResult => (
 
 describe("byUrgency", () => {
 	it("puts findings first, then skipped, then passing", () => {
-		const ordered = [
-			check({ id: "a", status: "pass" }),
-			check({ id: "b", status: "skip" }),
-			check({ id: "c", status: "fail" }),
-		]
-			.sort(byUrgency)
-			.map((row) => row.id)
+		const ordered = Arr.map(
+			[
+				check({ id: "a", status: "pass" }),
+				check({ id: "b", status: "skip" }),
+				check({ id: "c", status: "fail" }),
+			].sort(byUrgency),
+			(row) => row.id,
+		)
 		expect(ordered).toEqual(["c", "b", "a"])
 	})
 
 	it("orders findings critical before warn before info", () => {
-		const ordered = [
-			check({ id: "info", severity: "info" }),
-			check({ id: "critical", severity: "critical" }),
-			check({ id: "warn", severity: "warn" }),
-		]
-			.sort(byUrgency)
-			.map((row) => row.id)
+		const ordered = Arr.map(
+			[
+				check({ id: "info", severity: "info" }),
+				check({ id: "critical", severity: "critical" }),
+				check({ id: "warn", severity: "warn" }),
+			].sort(byUrgency),
+			(row) => row.id,
+		)
 		expect(ordered).toEqual(["critical", "warn", "info"])
 	})
 
 	it("falls back to the check id so the table is stable across runs", () => {
-		const ordered = [check({ id: "CFG-B" }), check({ id: "CFG-A" })].sort(byUrgency).map((r) => r.id)
+		const ordered = Arr.map([check({ id: "CFG-B" }), check({ id: "CFG-A" })].sort(byUrgency), (r) => r.id)
 		expect(ordered).toEqual(["CFG-A", "CFG-B"])
 	})
 })
@@ -73,7 +76,7 @@ describe("formatAffected", () => {
 		const affected = Array.from({ length: 3 }, (_, index) => ({
 			kind: "service" as const,
 			name: `service-${index}`,
-			note: "x".repeat(200),
+			note: Str.repeat(200)("x"),
 		}))
 		expect(formatAffected(check({ affected, affectedCount: 3 }))).toHaveLength(160)
 	})

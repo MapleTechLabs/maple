@@ -1,7 +1,8 @@
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { filterSection } from "../../../ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -9,7 +10,7 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../ui/filters/filter-sidebar"
+} from "@maple/views/ui/filters/filter-sidebar"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
 import { HEALTH_LEVELS, hasActiveServiceFilters, type HealthSummary } from "./derive"
 import { type Facet, Message } from "./message"
@@ -65,7 +66,7 @@ const loadedRail = (
 				: [
 						filterSection(h, {
 							title: "Health",
-							options: HEALTH_LEVELS.map((level) => ({
+							options: Arr.map(HEALTH_LEVELS, (level) => ({
 								name: level,
 								count: summary.counts[level],
 							})),
@@ -109,6 +110,12 @@ export const filtersRail = (
 ): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 3),
-		onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetryFacets()),
+		onFailure: (failure) =>
+			filterSidebarError(
+				h,
+				failure,
+				Message.ClickedRetryFacets(),
+				Option.getOrUndefined(AsyncData.getError(model.overview.data)),
+			),
 		onData: (facets) => loadedRail(h, model, facets, summary, pinnedNamespace),
 	})

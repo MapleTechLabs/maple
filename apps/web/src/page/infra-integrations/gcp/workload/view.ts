@@ -13,128 +13,140 @@ import type { GcpTraceGap } from "../../../../components/infra/gcp/workload-sign
 import type { ErrorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
+import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { chartLoading } from "../../../../ui/chart-state"
-import { emptyMessage } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
+import { linkButton } from "@maple/views/ui/button"
+import { chartLoading } from "@maple/views/ui/chart-state"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { CHART_HEIGHT } from "../../kit/chart-card"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
+import type { PresetValue } from "../../../kit/time-controls"
 import { sectionHeading } from "../../../kit/section-heading"
 import { gcpServiceIcon } from "../service-icon"
 import { type PageData, pageOf } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { type ChartsContext, correlationStrips, workloadCharts } from "./view-charts"
+import { resolveQueryPeek } from "./peek"
 import { workloadRail } from "./view-rail"
 import { appWaitCallout, figure, topQueries } from "./view-sql"
+import { queryPeekSheet } from "./view-sql-peek"
+import { hstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpWorkloadPage`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
+// Product display names, cased as the breadcrumb, rail and list tables write them.
 const SERVICE_KIND = {
-	cloudRun: "cloud run",
-	cloudFunctions: "function 1st gen",
-	gke: "gke container",
-	computeEngine: "vm instance",
-	cloudSql: "cloud sql",
-	pubsub: "pub/sub subscription",
-	loadBalancing: "load balancer",
+	cloudRun: "Cloud Run",
+	cloudFunctions: "Function 1st gen",
+	gke: "GKE container",
+	computeEngine: "VM instance",
+	cloudSql: "Cloud SQL",
+	pubsub: "Pub/Sub subscription",
+	loadBalancing: "Load balancer",
 } as const satisfies Record<GcpInfraServiceId, string>
 
-const HEALTH_DOT = {
-	crit: "bg-severity-error",
-	warn: "bg-severity-warn",
-	neutral: "bg-severity-info",
-} as const satisfies Record<ErrorRateLevel, string>
+const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } as const satisfies Record<
+	ErrorRateLevel,
+	Tone
+>
 
 const BARE_IDENTITY = ["Region", "Zone", "Location"]
 const RAIL_IDENTITY = ["Project"]
 
 /** `GcpWorkloadHeader`, with `GcpCloudSqlChips` as a Cloud SQL instance's meta. */
-const header = (h: H, model: Model, data: PageData): Html => {
+const header = (h: H, model: Model, data: PageData) => {
 	const service = model.service
 	const keys = data.keys
 	const engine = gcpSqlEngine(data.databaseVersion ?? null)
 	const services = data.traceSide?.services
-	const machine = [
-		keys[2] || undefined,
-		data.instance === undefined ? undefined : gcpSqlSize(data.instance),
-		data.instance?.availabilityType === "REGIONAL" ? "HA" : undefined,
-	].filter((part): part is string => part !== undefined)
+	const machine = Arr.filter(
+		[
+			keys[2] || undefined,
+			data.instance === undefined ? undefined : gcpSqlSize(data.instance),
+			data.instance?.availabilityType === "REGIONAL" ? "HA" : undefined,
+		],
+		(part): part is string => part !== undefined,
+	)
 	const meta = data.isCloudSql
 		? [
-				heroChip(h, engine?.toLowerCase() ?? SERVICE_KIND.cloudSql),
+				heroChip(h, engine ?? SERVICE_KIND.cloudSql),
 				...(services === undefined || services === 0
 					? []
 					: [heroChip(h, `queried by ${services} ${services === 1 ? "service" : "services"}`)]),
-				...(machine.length === 0 ? [] : [heroChip(h, machine.join(" · "))]),
+				...(machine.length === 0 ? [] : [heroChip(h, Arr.join(machine, " · "))]),
 			]
 		: [
 				heroChip(h, SERVICE_KIND[service]),
-				...GCP_INFRA_SERVICES[service].identity.slice(1).flatMap(([label], index) => {
+				...Arr.flatMap(GCP_INFRA_SERVICES[service].identity.slice(1), ([label], index) => {
 					const value = keys[index + 1]
 					if (!value || RAIL_IDENTITY.includes(label)) return []
 					return [
 						heroChip(
 							h,
-							BARE_IDENTITY.includes(label) ? value : `${label.toLowerCase()} ${value}`,
+							BARE_IDENTITY.includes(label) ? value : `${Str.toLowerCase(label)} ${value}`,
 						),
 					]
 				}),
 			]
-	return pageHero(h, {
-		title: h.span(
-			[h.Class("flex items-center gap-3")],
-			[
-				h.span(
-					[h.Class("relative")],
-					[
-						gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
-						...(data.health === null
-							? []
-							: [
-									h.span([
-										h.AriaHidden(true),
-										h.Class(
-											cn(
-												"absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-background",
-												HEALTH_DOT[data.health],
-											),
-										),
-									]),
-								]),
-					],
-				),
-				h.span([h.Class("font-mono")], [gcpWorkloadName(service, keys)]),
-			],
-		),
+	return pageHeroParts(h, {
+		title: hstack(h, { gap: "3", as: "span" }, [
+			h.span(
+				[h.Class("relative")],
+				[
+					gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
+					...(data.health === null
+						? []
+						: [
+								statusDot(h, {
+									tone: HEALTH_TONE[data.health],
+									className:
+										"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
+								}),
+							]),
+				],
+			),
+			h.span([], [gcpWorkloadName(service, keys)]),
+		]),
 		meta,
 	})
 }
 
 const GAP_COPY = {
 	cloudRun: {
-		counted: "5xx Cloud Run returned",
+		counted: (count: string) => `Cloud Run returned ${count} 5xx`,
 		platform: "Cloud Run",
-		why: (name: string) =>
-			`Cloud Run answered them before ${name}'s code ran: its own 503 when no instance was free, or a request timeout.`,
+		why: (name: Html) => [
+			"Cloud Run answered them before ",
+			name,
+			"'s code ran: its own 503 when no instance was free, or a request timeout.",
+		],
 	},
 	cloudFunctions: {
-		counted: "failed executions Cloud Functions counted",
+		counted: (count: string) => `Cloud Functions counted ${count} failed executions`,
 		platform: "Cloud Functions",
-		why: (name: string) =>
-			`They most likely failed before ${name} exported a span: a timeout, a crash, or memory running out.`,
+		why: (name: Html) => [
+			"They most likely failed before ",
+			name,
+			" exported a span: a timeout, a crash, or memory running out.",
+		],
 	},
 } as const
 
@@ -151,7 +163,7 @@ const traceGapCallout = (
 	const time = (ms: number) =>
 		new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit" }).format(ms)
 	return h.div(
-		[h.Class("@container rounded-lg border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error-a4")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],
@@ -160,19 +172,16 @@ const traceGapCallout = (
 						[h.Class("flex-1 space-y-1 px-4 py-3")],
 						[
 							h.p(
-								[h.Class("text-sm font-medium text-foreground")],
+								[h.Class("font-prose text-sm font-medium text-foreground")],
 								[
-									formatNumber(gap.platformErrors),
-									" ",
-									copy.counted,
-									",",
-									" ",
+									copy.counted(formatNumber(gap.platformErrors)),
+									"; ",
 									gap.tracedErrors === 0 ? "none" : formatNumber(gap.tracedErrors),
-									" in your traces",
+									" reached your traces",
 								],
 							),
 							h.p(
-								[h.Class("max-w-prose text-xs text-muted-foreground")],
+								[h.Class("max-w-prose font-prose text-xs text-muted-foreground")],
 								[
 									"The other ",
 									formatNumber(gap.platformErrors - gap.tracedErrors),
@@ -185,7 +194,10 @@ const traceGapCallout = (
 										? ""
 										: ` while instances were at their peak of ${gap.peakInstances}`,
 									". ",
-									copy.why(tracedService),
+									// An identifier wraps whole, never at its hyphens.
+									...copy.why(
+										h.span([h.Class("whitespace-nowrap font-mono")], [tracedService]),
+									),
 								],
 							),
 						],
@@ -199,24 +211,23 @@ const traceGapCallout = (
 						[
 							figure(h, formatNumber(gap.platformErrors), copy.platform, "text-severity-error"),
 							figure(h, formatNumber(gap.tracedErrors), "traces"),
-							h.a(
-								[
-									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0",
+							linkButton(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									className: "ml-auto @2xl:ml-0",
+									href: hrefOf(
+										AppRoute.Logs({
+											search: {
+												services: [logsService],
+												startTime: formatWarehouseDateTime(gap.fromMs),
+												endTime: formatWarehouseDateTime(gap.untilMs),
+											},
+										}),
 									),
-									h.Href(
-										hrefOf(
-											AppRoute.Logs({
-												search: {
-													services: [logsService],
-													startTime: formatWarehouseDateTime(gap.fromMs),
-													endTime: formatWarehouseDateTime(gap.untilMs),
-												},
-											}),
-										),
-									),
-								],
-								["Logs at those times"],
+								},
+								["Logs at those times", icon(h, "ArrowRightIcon")],
 							),
 						],
 					),
@@ -227,10 +238,15 @@ const traceGapCallout = (
 }
 
 const loadingGrid = (h: H, service: GcpInfraServiceId): Html =>
-	h.div(
-		[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
-		GCP_INFRA_CHARTS[service].map(() => chartLoading(h, { variant: "line", height: CHART_HEIGHT })),
+	grid(
+		h,
+		{ cols: 1, lg: 2, gap: "4" },
+		Arr.map(GCP_INFRA_CHARTS[service], () => chartLoading(h, { variant: "line", height: CHART_HEIGHT })),
 	)
+
+/** The metrics read failed with nothing to show: the body's Try again is the page's one retry. */
+const isMetricsFailed = (model: Model, data: PageData): boolean =>
+	AsyncData.getError(model.timeseries.data)._tag === "Some" && data.points.length === 0
 
 const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: ChartsContext): Html => {
 	const window = model.window
@@ -241,13 +257,13 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 	if (failure._tag === "Some" && data.points.length === 0) {
 		return errorState(h, {
 			failure: failure.value,
-			title: "Failed to load workload metrics",
+			title: "Couldn't load workload metrics",
 			onRetry: Message.ClickedRetryTimeseries(),
 		})
 	}
 	if (data.points.length === 0) {
 		return emptyMessage(h, { dashed: true, className: "py-12" }, [
-			`No metrics arrived for this ${gcpWorkloadNoun(model.service)} in the selected window.`,
+			`No metrics arrived for this ${gcpWorkloadNoun(model.service)} in this window`,
 		])
 	}
 	const isWaiting = AsyncData.isRefreshing(slot)
@@ -295,6 +311,7 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 									unavailableReason: data.unavailableReason,
 									traced: sql.traced,
 									showAll: model.showAllQueries,
+									peekHash: model.search.peek,
 								}),
 							]),
 					h.section(
@@ -376,7 +393,7 @@ export const workloadPageView = (
 	h: H,
 	model: Model,
 	data: PageData,
-	options: Readonly<{ timeZone: string; defaultPreset: string }>,
+	options: Readonly<{ timeZone: string; defaultPreset: PresetValue }>,
 ): Html => {
 	const timeSearch = {
 		startTime: model.search.startTime,
@@ -387,14 +404,38 @@ export const workloadPageView = (
 	const isReady = theme !== null && model.chartRuntime._tag !== "Loading"
 	const ctx = theme === null ? null : { theme, timeZone: options.timeZone }
 	const service = model.service
+	const databases = data.traceSide?.databases ?? []
+	const peek =
+		data.sql === undefined
+			? null
+			: resolveQueryPeek(data.statements, data.sql.traced, databases, model.search.peek)
+	const instanceName = gcpWorkloadName(service, data.keys)
+	const hero = header(h, model, data)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
+			...(data.sql === undefined
+				? []
+				: [
+						queryPeekSheet(h, model, {
+							peek,
+							where:
+								databases.length === 1 ? `${instanceName} / ${databases[0]}` : instanceName,
+							spans: model.statementSpans.data,
+							// The lab hands the trace side over in `data`, not in its slot.
+							traceSide:
+								data.traceSide === undefined
+									? model.traceSide.data
+									: AsyncData.Success({ data: data.traceSide }),
+							timeSearch,
+							timeZone: options.timeZone,
+						}),
+					]),
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-6",
-					titleContent: header(h, model, data),
+					gap: "lg",
+					titleContent: hero.title,
 					actions: pageTime(h, {
 						search: model.search,
 						defaultPreset: options.defaultPreset,
@@ -404,6 +445,7 @@ export const workloadPageView = (
 						onReset: Message.ClickedResetTimeRange(),
 						onReload: Message.ClickedReload(),
 						isReloading: model.isReloading,
+						isReloadHidden: isMetricsFailed(model, data),
 					}),
 					rightPanel: workloadRail(h, {
 						service,
@@ -424,8 +466,9 @@ export const workloadPageView = (
 					}),
 				},
 				!isReady || ctx === null
-					? [loadingGrid(h, service)]
+					? [hero.body, loadingGrid(h, service)]
 					: [
+							hero.body,
 							body(h, model, data, timeSearch, ctx),
 							...nodesSection(h, model, data, timeSearch, ctx),
 						],

@@ -1,10 +1,10 @@
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { ReplaySearch } from "../../../route/search"
-import * as CopyButton from "../../../ui/copy-button"
-import { ReplayMeta } from "../kit/replay-meta"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { RangeMeta, ReplayMeta } from "../kit/replay-meta"
 
 // The replay detail page.
 
@@ -142,6 +142,20 @@ export const Loader = Schema.Struct({
 	rangeCache: Schema.Record(Schema.String, RangeRows),
 	/** Seeds so far: the engine element is keyed by it, so a new seed mounts a new engine. */
 	seedVersion: Schema.Number,
+	/** Epoch ms of the recording's first loaded event: time zero for every seed, including later ones. */
+	originMs: Schema.NullOr(Schema.Number),
+	/** Markers and idle gaps of every range loaded so far, kept across seeks. */
+	rangeMetas: Schema.Array(RangeMeta),
+	/** Planned ranges fetched so far (by first chunk), for their markers and gaps even when not playable. */
+	fetchedRanges: Schema.Array(Schema.Number),
+	/** Background ranges whose fetch failed (by first chunk), skipped until a retry. */
+	failedRanges: Schema.Array(Schema.Number),
+	/** The last background failure, shown once the playhead needs a failed range. */
+	backgroundFailure: Schema.NullOr(LoadFailure),
+	/** The engine ran out of loaded events, until the window grows or is rebuilt. */
+	isStarved: Schema.Boolean,
+	/** Play as soon as the next seed's engine is ready: a seek or slide that interrupted playback. */
+	resumeOnReady: Schema.Boolean,
 })
 export type Loader = typeof Loader.Type
 

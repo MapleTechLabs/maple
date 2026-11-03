@@ -8,11 +8,11 @@ export const ROW_LANE =
 
 /** Lane + tint for a selected row, transparent lane otherwise. */
 export function rowSelectedClass(selected: boolean | undefined): string {
-	return cn(ROW_LANE, selected ? "bg-muted/40 before:bg-primary" : "before:bg-transparent")
+	return cn(ROW_LANE, selected ? "bg-surface-strong before:bg-primary" : "before:bg-transparent")
 }
 
 export const listRowVariants = cva(
-	"flex w-full min-w-0 items-center gap-3 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+	"flex w-full min-w-0 items-center gap-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 	{
 		defaultVariants: { density: "default", divided: false },
 		variants: {
@@ -22,7 +22,7 @@ export const listRowVariants = cva(
 			},
 			divided: {
 				false: "",
-				true: "border-b border-border/60 last:border-b-0",
+				true: "border-b border-border-subtle last:border-b-0",
 			},
 		},
 	},

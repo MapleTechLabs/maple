@@ -1,4 +1,5 @@
 import { gcpWorkloadSearch } from "../../../components/infra/gcp/tabs"
+import { resourceSearch } from "../../infra-integrations/aws/derive"
 import { AppRoute, hrefOf } from "../../../route"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { FindingTarget, SourceId } from "./model"
@@ -26,6 +27,8 @@ export const findingHref = (target: FindingTarget, time: TimeSearch): string => 
 			)
 		case "vercel":
 			return hrefOf(AppRoute.InfraVercelProject({ projectId: target.projectId, search: time }))
+		case "supabase":
+			return hrefOf(AppRoute.InfraSupabaseProject({ projectRef: target.projectRef, search: time }))
 		case "planetscale":
 			return hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: target.database, search: time }))
 		case "gcpService":
@@ -36,6 +39,14 @@ export const findingHref = (target: FindingTarget, time: TimeSearch): string => 
 					service: target.service,
 					name: target.keys[0] ?? "",
 					search: { ...time, ...gcpWorkloadSearch(target.service, target.keys) },
+				}),
+			)
+		case "aws":
+			return hrefOf(
+				AppRoute.InfraAwsResource({
+					kind: target.resourceKind,
+					name: target.name,
+					search: { ...time, ...resourceSearch({ ...target, kind: target.resourceKind }) },
 				}),
 			)
 	}
@@ -55,9 +66,13 @@ export const sourceHref = (id: SourceId, time: TimeSearch): string => {
 			return hrefOf(AppRoute.InfraRailway({ search: time }))
 		case "vercel":
 			return hrefOf(AppRoute.InfraVercel({ search: time }))
+		case "supabase":
+			return hrefOf(AppRoute.InfraSupabase({ search: time }))
 		case "planetscale":
 			return hrefOf(AppRoute.InfraPlanetscale({ search: time }))
 		case "gcp":
 			return hrefOf(AppRoute.InfraGcp({ search: time }))
+		case "aws":
+			return hrefOf(AppRoute.InfraAws({ search: time }))
 	}
 }

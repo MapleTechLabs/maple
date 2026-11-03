@@ -6,7 +6,7 @@ import {
 	QueryEngineExecuteResponse,
 } from "@maple/query-engine"
 import { EXECUTE_BATCH_WINDOW_MS } from "@maple/web-data/warehouse/execute-batcher"
-import { Deferred, Duration, Effect, Ref, Schema, type Scope } from "effect"
+import { Cause, Deferred, Duration, Effect, Option, Ref, Schema, type Scope, Array as Arr } from "effect"
 
 /**
  * `@maple/web-data`'s promise `makeExecuteBatcher` as an Effect: queries enqueued from separate
@@ -69,13 +69,27 @@ export const makeExecuteBatcher = <E>(
 		const state = yield* Ref.make<State<E>>({ pending: [], timer: null, nextTimer: 0 })
 
 		const dispatch = (batch: ReadonlyArray<Pending<E>>) =>
-			send(batch.map((entry) => entry.payload)).pipe(
-				Effect.matchEffect({
-					// Whole-request failure: every query in this batch failed for the same reason.
-					onFailure: (error) =>
-						Effect.forEach(batch, (entry) => Deferred.fail(entry.settled, error), {
-							discard: true,
-						}),
+			send(Arr.map(batch, (entry) => entry.payload)).pipe(
+				Effect.matchCauseEffect({
+					// Whole-request failure: every query in this batch failed for the same reason. A defect or
+					// interrupt fails them as unanswered, so each tile shows its error instead of awaiting forever.
+					onFailure: (cause) =>
+						Option.match(Cause.findErrorOption(cause), {
+							onSome: (error): Effect.Effect<ExecuteFailure<E>> => Effect.succeed(error),
+							onNone: (): Effect.Effect<ExecuteFailure<E>> =>
+								Effect.as(
+									Effect.logError("Execute batch send ended without an answer", cause),
+									new MissingBatchResultError({
+										message: "The batch request ended without an answer.",
+									}),
+								),
+						}).pipe(
+							Effect.flatMap((error) =>
+								Effect.forEach(batch, (entry) => Deferred.fail(entry.settled, error), {
+									discard: true,
+								}),
+							),
+						),
 					onSuccess: (outcomes) =>
 						Effect.forEach(batch, (entry, index) => settle(entry, outcomes[index]), {
 							discard: true,

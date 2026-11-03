@@ -2,7 +2,9 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, chartWindow, type ChartWindow, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { keyOf, request } from "../../data/slot"
+import { type Keyed, requestKeepingFailure } from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { keyOf } from "../../data/local-query"
 import { type PageContext, rangeOf } from "../contract"
 import { FetchGoldenSignals, FetchOperations, FetchOverview, FetchTimeseries } from "./command"
 import type { Message } from "./message"
@@ -18,7 +20,9 @@ export const boundsOf = (model: Model, context: PageContext): Option.Option<Time
 /** `chartWindow(bounds, firstSeenMs)`: clipped to when the service first showed up, ending now. */
 export const chartOf = (model: Model, bounds: TimeBounds): ChartWindow => {
 	const firstSeenMs = Option.getOrNull(
-		Option.flatMap(AsyncData.getData(model.overview.data), (overview) => Option.fromNullishOr(overview?.firstSeenMs)),
+		Option.flatMap(AsyncData.getData(model.overview.data), (overview) =>
+			Option.fromNullishOr(overview?.firstSeenMs),
+		),
 	)
 	return chartWindow(bounds, firstSeenMs, model.nowMs)
 }
@@ -27,17 +31,20 @@ export const chartOf = (model: Model, bounds: TimeBounds): ChartWindow => {
 export const topSpanNames = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.operations.data), {
 		onNone: () => [],
-		onSome: (operations) => operations.slice(0, CHART_SERIES_LIMIT).map((operation) => operation.spanName),
+		onSome: (operations) =>
+			Array.map(operations.slice(0, CHART_SERIES_LIMIT), (operation) => operation.spanName),
 	})
 
 /**
  * Requests every query whose key the window, the overview's first-seen time or the top operations
- * changed. `forced` refetches those slots in place, as `invalidateQueries` or a Retry does.
+ * changed. `forced` refetches those slots in place, as `invalidateQueries` or a Retry does;
+ * `revalidated` fetches slots showing a stale cached answer, whose fetch has not started.
  */
 export const load = (
 	model: Model,
 	context: PageContext,
 	forced: ReadonlyArray<SlotName> = [],
+	revalidated: ReadonlyArray<SlotName> = [],
 ): Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }> =>
 	Option.match(boundsOf(model, context), {
 		onNone: () => ({ model }),
@@ -50,17 +57,26 @@ export const load = (
 			const keys = {
 				overview: keyOf("service-overview", { serviceName, boundsKey }),
 				operations: keyOf("service-operations", { serviceName, boundsKey }),
-				timeseries: keyOf("service-operations-ts", { serviceName, spanNames, bucketSeconds, boundsKey }),
+				timeseries: keyOf("service-operations-ts", {
+					serviceName,
+					spanNames,
+					bucketSeconds,
+					boundsKey,
+				}),
 				golden: keyOf("service-golden-signals", { serviceName, bucketSeconds, boundsKey }),
 			}
 			// A key the slot has no rows for opens on its cached result; a forced refetch does not.
 			const readsCache = (slot: SlotName) => !forced.includes(slot) && model[slot].key !== keys[slot]
-			const overview = request(model.overview, keys.overview, forced.includes("overview"))
-			const operations = request(model.operations, keys.operations, forced.includes("operations"))
+			const requested = <A>(slot: Keyed<A, LoadFailure>, name: SlotName) =>
+				revalidated.includes(name) && slot.key === keys[name]
+					? Option.some(slot)
+					: requestKeepingFailure(slot, keys[name], forced.includes(name) ? "Refresh" : "Load")
+			const overview = requested(model.overview, "overview")
+			const operations = requested(model.operations, "operations")
 			// `skipToken` while no operation is known: nothing to chart.
 			const timeseries =
-				spanNames.length === 0 ? Option.none() : request(model.timeseries, keys.timeseries, forced.includes("timeseries"))
-			const golden = request(model.golden, keys.golden, forced.includes("golden"))
+				spanNames.length === 0 ? Option.none() : requested(model.timeseries, "timeseries")
+			const golden = requested(model.golden, "golden")
 			return {
 				model: {
 					...model,
@@ -70,12 +86,33 @@ export const load = (
 					golden: Option.getOrElse(golden, () => model.golden),
 				},
 				commands: Array.getSomes([
-					Option.map(overview, () => FetchOverview({ key: keys.overview, ...window, readsCache: readsCache("overview") })),
-					Option.map(operations, () => FetchOperations({ key: keys.operations, ...window, readsCache: readsCache("operations") })),
-					Option.map(timeseries, () =>
-						FetchTimeseries({ key: keys.timeseries, ...window, spanNames, bucketSeconds, readsCache: readsCache("timeseries") }),
+					Option.map(overview, () =>
+						FetchOverview({ key: keys.overview, ...window, readsCache: readsCache("overview") }),
 					),
-					Option.map(golden, () => FetchGoldenSignals({ key: keys.golden, ...window, bucketSeconds, readsCache: readsCache("golden") })),
+					Option.map(operations, () =>
+						FetchOperations({
+							key: keys.operations,
+							...window,
+							readsCache: readsCache("operations"),
+						}),
+					),
+					Option.map(timeseries, () =>
+						FetchTimeseries({
+							key: keys.timeseries,
+							...window,
+							spanNames,
+							bucketSeconds,
+							readsCache: readsCache("timeseries"),
+						}),
+					),
+					Option.map(golden, () =>
+						FetchGoldenSignals({
+							key: keys.golden,
+							...window,
+							bucketSeconds,
+							readsCache: readsCache("golden"),
+						}),
+					),
 				]),
 			}
 		},

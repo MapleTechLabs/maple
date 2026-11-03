@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
+import { Option, Array as Arr } from "effect"
 
 import {
 	type AlertDestinationRow,
@@ -9,6 +10,7 @@ import {
 	rowToAlertDestinationDocument,
 	rowToAlertIncidentDocument,
 	rowToAlertRuleDocument,
+	rowsToAlertDestinationDocuments,
 } from "./alerts"
 
 const RULE_ID = "99999999-8888-4777-8666-555544443333"
@@ -109,7 +111,7 @@ describe("rowToAlertRuleDocument", () => {
 		assert.deepStrictEqual(doc.serviceNames, ["checkout", "api"])
 		assert.deepStrictEqual(doc.excludeServiceNames, [])
 		assert.deepStrictEqual(doc.tags, ["prod"])
-		assert.deepStrictEqual(doc.destinationIds.map(String), [DEST_ID])
+		assert.deepStrictEqual(Arr.map(doc.destinationIds, String), [DEST_ID])
 		assert.strictEqual(doc.groupBy, null)
 		assert.strictEqual(doc.rawQueryReducer, null) // signal_type !== "raw_query"
 		assert.strictEqual(doc.notificationTemplate, null)
@@ -168,7 +170,7 @@ describe("rowToAlertRuleDocument", () => {
 			new Map(),
 		)
 		assert.deepStrictEqual(
-			doc.thresholds.map((tier) => [tier.severity, tier.value, tier.recoveryValue]),
+			Arr.map(doc.thresholds, (tier) => [tier.severity, tier.value, tier.recoveryValue]),
 			[
 				["warning", 0.05, null],
 				["critical", 0.2, 0.1],
@@ -255,8 +257,10 @@ describe("rowToAlertDestinationDocument", () => {
 		updated_at: "2026-07-04T00:00:00.000Z",
 	}
 
+	const toDocument = (row: AlertDestinationRow) => Option.getOrThrow(rowToAlertDestinationDocument(row))
+
 	it("maps a raw alert_destinations row and derives the public config", () => {
-		const doc = rowToAlertDestinationDocument(base)
+		const doc = toDocument(base)
 		assert.strictEqual(doc.id, DEST_ID)
 		assert.strictEqual(doc.name, "Ops Telegram")
 		assert.strictEqual(doc.type, "telegram")
@@ -269,7 +273,7 @@ describe("rowToAlertDestinationDocument", () => {
 	})
 
 	it("carries why Maple auto-disabled a destination", () => {
-		const doc = rowToAlertDestinationDocument({
+		const doc = toDocument({
 			...base,
 			enabled: false,
 			disabled_at: "2026-07-05T00:00:00.000Z",
@@ -280,13 +284,23 @@ describe("rowToAlertDestinationDocument", () => {
 	})
 
 	it("falls back to the server's invalid-config summary when config_json is unusable", () => {
-		const doc = rowToAlertDestinationDocument({ ...base, config_json: { nope: true } })
+		const doc = toDocument({ ...base, config_json: { nope: true } })
 		assert.strictEqual(doc.summary, "Invalid destination config")
 		assert.strictEqual(doc.channelLabel, null)
 	})
 
 	it("leaves lastTestedAt null when the destination was never tested", () => {
-		const doc = rowToAlertDestinationDocument({ ...base, last_tested_at: null })
+		const doc = toDocument({ ...base, last_tested_at: null })
 		assert.strictEqual(doc.lastTestedAt, null)
+	})
+
+	it("drops a row whose type this build no longer knows instead of throwing", () => {
+		const retired = { ...base, id: PAGER_ID, type: "hazel-oauth" }
+		assert.isTrue(Option.isNone(rowToAlertDestinationDocument(retired)))
+		const docs = rowsToAlertDestinationDocuments([retired, base])
+		assert.deepStrictEqual(
+			Arr.map(docs, (doc) => doc.id),
+			[DEST_ID],
+		)
 	})
 })

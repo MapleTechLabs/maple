@@ -25,7 +25,7 @@ export const avgPeak = <M>(
 		],
 		[
 			h.span([h.Class("text-muted-foreground")], [options.format(options.avg)]),
-			h.span([h.Class("mx-1 text-foreground/30")], ["→"]),
+			h.span([h.Class("mx-1 text-foreground-faint")], ["→"]),
 			options.format(options.peak),
 		],
 	)

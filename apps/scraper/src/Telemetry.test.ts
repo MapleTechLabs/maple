@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, it } from "vitest"
 import { ScraperEnv, type ScraperEnvConfig } from "./Env"
@@ -12,6 +12,8 @@ const testEnv: ScraperEnvConfig = {
 	SCRAPER_CONCURRENCY: 10,
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: 60,
 	SCRAPER_OTLP_MAX_DATA_POINTS: 10_000,
+	SCRAPER_OTLP_MAX_BODY_BYTES: 4 * 1024 * 1024,
+	UPTIME_CONCURRENCY: 20,
 	PORT: 0,
 }
 
@@ -39,7 +41,10 @@ const captureCollector = () => {
 	const original = globalThis.fetch
 	globalThis.fetch = Object.assign(
 		async (input: string | URL | Request, init?: RequestInit) => {
-			if (String(input).endsWith("/v1/traces") && typeof init?.body === "string") {
+			if (
+				Str.endsWith("/v1/traces")(input instanceof Request ? input.url : input.toString()) &&
+				typeof init?.body === "string"
+			) {
 				bodies.push(JSON.parse(init.body))
 			}
 			return new Response(null, { status: 200 })
@@ -83,7 +88,7 @@ describe("scraper telemetry", () => {
 	let restore: (() => void) | undefined
 	afterEach(() => restore?.())
 
-	it("exports a 402 from ingest as an Error client span without an exception event", async () => {
+	it("exports a 402 from ingest as a non-error client span carrying the status", async () => {
 		const collector = captureCollector()
 		restore = collector.restore
 		const ingest = OtlpIngest.layer.pipe(
@@ -115,16 +120,21 @@ describe("scraper telemetry", () => {
 			),
 		)
 
-		const spans = collector.bodies.flatMap((body) =>
-			body.resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans)),
+		const spans = Arr.flatMap(collector.bodies, (body) =>
+			Arr.flatMap(body.resourceSpans, (resource) =>
+				Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+			),
 		)
 		const client = spans.find((span) => span.kind === 3 /* client */)
 		expect(client?.attributes.find((a) => a.key === "http.response.status_code")?.value.intValue).toBe(
 			402,
 		)
-		expect(client?.status.code).toBe(2 /* Error */)
-		expect(spans.flatMap((span) => span.events.map((event) => event.name))).not.toContain("exception")
-		expect(collector.bodies[0]?.resourceSpans[0]?.resource.attributes.map((a) => a.key)).toContain(
+		// A 402 is a billing block, not a fault: no Error span, so no error issue.
+		expect(Arr.map(spans, (span) => span.status.code)).not.toContain(2 /* Error */)
+		expect(Arr.flatMap(spans, (span) => Arr.map(span.events, (event) => event.name))).not.toContain(
+			"exception",
+		)
+		expect(Arr.map(collector.bodies[0]?.resourceSpans[0]?.resource.attributes, (a) => a.key)).toContain(
 			"vcs.repository.url.full",
 		)
 	})

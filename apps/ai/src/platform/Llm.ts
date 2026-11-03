@@ -15,8 +15,21 @@ import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { EU_DEFAULT_OPENROUTER_MODEL } from "@maple/domain/organization-regions"
+import { securityAuditModelOption } from "@maple/domain/security-audit"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
-import { Config, Duration, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import {
+	Config,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Predicate,
+	Redacted,
+	Schema,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import type * as DecisionModel from "effect/ai/DecisionModel"
 import * as LanguageModel from "effect/ai/LanguageModel"
 import * as AiModel from "effect/ai/Model"
@@ -152,6 +165,10 @@ export interface LlmSettings {
 	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string | undefined
 	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
 	readonly MAPLE_REVIEW_MODEL_OPENROUTER?: string | undefined
+	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
+	readonly MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER?: string | undefined
+	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
+	readonly MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER?: string | undefined
 	/** Context window in tokens, overriding {@link MODEL_LIMITS} for the configured model. */
 	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string | undefined
 	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
@@ -173,7 +190,7 @@ const optionalTrimmed = (key: string): Config.Config<string | undefined> =>
 		Config.map((value) =>
 			Option.getOrUndefined(
 				Option.filter(
-					Option.map(value, (raw) => raw.trim()),
+					Option.map(value, (raw) => Str.trim(raw)),
 					(trimmed) => trimmed !== "",
 				),
 			),
@@ -193,6 +210,8 @@ export const llmSettingsConfig: Config.Config<LlmSettings> = Config.all({
 	MAPLE_TRIAGE_MODEL_OPENROUTER: optionalTrimmed("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 	MAPLE_TRIAGE_MODEL_WORKERS_AI: optionalTrimmed("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 	MAPLE_REVIEW_MODEL_OPENROUTER: optionalTrimmed("MAPLE_REVIEW_MODEL_OPENROUTER"),
+	MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"),
+	MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER"),
 	MAPLE_TRIAGE_MODEL_CONTEXT: optionalTrimmed("MAPLE_TRIAGE_MODEL_CONTEXT"),
 	MAPLE_TRIAGE_MODEL_OUTPUT: optionalTrimmed("MAPLE_TRIAGE_MODEL_OUTPUT"),
 	MAPLE_TRIAGE_REASONING_EFFORT: optionalTrimmed("MAPLE_TRIAGE_REASONING_EFFORT"),
@@ -254,6 +273,8 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"anthropic/claude-sonnet-5.5": { context: 950_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
 	"anthropic/claude-haiku-5.5": { context: 950_000, output: 128_000 },
+	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
+	"anthropic/claude-opus-5.5": { context: 950_000, output: 128_000 },
 	// Moonshot's own kimi-k2.6 is 262_144, but Cloudflare does not publish the window its Workers AI
 	// deployment actually serves. Held at the conservative default until someone measures it.
 	"@cf/moonshotai/kimi-k2.6": { context: 128_000, output: 8_000 },
@@ -276,7 +297,7 @@ type StringKey = {
 
 const readString = (settings: LlmSettings, key: StringKey): string | undefined => {
 	const value = settings[key]
-	return value !== undefined && value.trim() !== "" ? value.trim() : undefined
+	return value !== undefined && Str.trim(value) !== "" ? Str.trim(value) : undefined
 }
 
 const readSecret = (
@@ -284,7 +305,7 @@ const readSecret = (
 	key: "OPENROUTER_API_KEY" | "CLOUDFLARE_API_KEY",
 ): Redacted.Redacted<string> | undefined => {
 	const value = settings[key]
-	return value !== undefined && Redacted.value(value).trim() !== "" ? value : undefined
+	return value !== undefined && Str.trim(Redacted.value(value)) !== "" ? value : undefined
 }
 
 /** The client services a resolved model needs. `layerLlm` provides both, so either branch runs. */
@@ -577,6 +598,88 @@ export const resolveReviewModel = (
 			)
 
 /**
+ * Security-audit defaults per region. Discovery hunts on a cheap model so whole-repository audits
+ * stay affordable; validation runs on a different model, so a verifier does not share the hunter's
+ * blind spots. The EU instance has no DeepSeek provider, so it hunts on Claude Haiku there.
+ */
+export const DEFAULT_AUDIT_MODELS = {
+	us: { discovery: "deepseek/deepseek-v4.1-flash-1017:nitro", validation: "anthropic/claude-sonnet-5.5" },
+	eu: { discovery: "anthropic/claude-haiku-5.5", validation: "anthropic/claude-sonnet-5.5" },
+} as const satisfies Record<OpenRouterRegion, Record<"discovery" | "validation", string>>
+
+export type SecurityAuditStage = "discovery" | "validation"
+
+/**
+ * The OpenRouter id a security-audit stage runs on: the org's or target's pick when the catalogue
+ * lists it, this region serves it and (for validation) it verifies; then the deployment's override;
+ * then the region default.
+ */
+export const securityAuditModelId = (
+	settings: LlmSettings,
+	stage: SecurityAuditStage,
+	chosen: string | null = null,
+): string => {
+	const region = openRouterRegion(settings)
+	const option = chosen === null ? undefined : securityAuditModelOption(chosen)
+	if (
+		option !== undefined &&
+		(region !== "eu" || option.eu) &&
+		(stage === "discovery" || option.verifies)
+	) {
+		return option.id
+	}
+	return (
+		readString(
+			settings,
+			stage === "discovery"
+				? "MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"
+				: "MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER",
+		) ?? DEFAULT_AUDIT_MODELS[region][stage]
+	)
+}
+
+/**
+ * Both stages' models for a run. A region fallback can land both picks on one model (an EU org that
+ * hunts on DeepSeek and verifies on Claude Haiku hunts on Haiku there); then the hunter falls back
+ * to the region's other default, so verification never shares the hunter's blind spots.
+ */
+export const securityAuditModelIds = (
+	settings: LlmSettings,
+	chosen: Readonly<{ discovery: string | null; validation: string | null }>,
+): Readonly<{ discovery: string; validation: string }> => {
+	const validation = securityAuditModelId(settings, "validation", chosen.validation)
+	const discovery = securityAuditModelId(settings, "discovery", chosen.discovery)
+	if (discovery !== validation) return { discovery, validation }
+	const region = DEFAULT_AUDIT_MODELS[openRouterRegion(settings)]
+	return {
+		discovery: region.discovery !== validation ? region.discovery : region.validation,
+		validation,
+	}
+}
+
+/**
+ * A security-audit stage's model. Unattended like a review: deltas coalesce and long calls retry.
+ * On the Workers AI provider both stages fall back to the triage model.
+ */
+export const resolveSecurityAuditModel = (
+	settings: LlmSettings,
+	stage: SecurityAuditStage,
+	tags?: LlmCallTags,
+	chosen: string | null = null,
+): ResolvedModel =>
+	resolveLlmProvider(settings) === "workers-ai"
+		? resolveTriageModel(settings, tags)
+		: openRouterModel(
+				settings,
+				securityAuditModelId(settings, stage, chosen),
+				"MAPLE_TRIAGE_REASONING_EFFORT",
+				"high",
+				tags,
+				false,
+				true,
+			)
+
+/**
  * Splice the per-call fields into every outgoing OpenRouter chat request.
  *
  * `usage: { include: true }` is the one field Maple needs that OpenRouter's generated request
@@ -589,6 +692,9 @@ export const resolveReviewModel = (
  * router latency) nests under the span that made the call instead of arriving as a twin trace that
  * only shares a session id. The model config cannot carry them — it is built once per layer, and the
  * ids are per call — which is why they ride here with `usage`.
+ *
+ * Each tool's `strict: null` is dropped too: the provider sends it for every tool without a strict
+ * annotation, and some upstreams reject a null `strict`, failing the whole turn. Absent means the same.
  */
 const withPerCallFields = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
 	HttpClient.mapRequestEffect(client, (request) =>
@@ -604,7 +710,7 @@ const splicePerCallFields = (
 		const body = request.body
 		if (body._tag !== "Uint8Array") return request
 		const decoded = yield* decodeJsonBody(new TextDecoder().decode(body.body))
-		if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) return request
+		if (typeof decoded !== "object" || decoded === null || Arr.isArray(decoded)) return request
 		const span = yield* Effect.option(Effect.currentParentSpan)
 		const trace = {
 			...("trace" in decoded && typeof decoded.trace === "object" ? decoded.trace : undefined),
@@ -614,10 +720,24 @@ const splicePerCallFields = (
 		}
 		return yield* HttpClientRequest.bodyJson(request, {
 			...decoded,
+			...("tools" in decoded && Arr.isArray(decoded.tools)
+				? {
+						tools: Arr.map(decoded.tools, (tool) =>
+							Predicate.isObject(tool) ? dropNullStrict(tool) : tool,
+						),
+					}
+				: undefined),
 			usage: { include: true },
 			...(Object.keys(trace).length === 0 ? undefined : { trace }),
 		})
 	})
+
+const dropNullStrict = (tool: Record<PropertyKey, unknown>): Record<PropertyKey, unknown> => {
+	const fn = tool.function
+	if (!Predicate.isObject(fn) || fn.strict !== null) return tool
+	const { strict: _strict, ...rest } = fn
+	return { ...tool, function: rest }
+}
 
 /** The HTTP client every OpenRouter call goes out on, with the app-attribution headers. */
 const openRouterHttp = Layer.effect(HttpClient.HttpClient)(
@@ -728,11 +848,12 @@ export const layerFindingEmbedder = (
 			model,
 			embed: (inputs: ReadonlyArray<string>) =>
 				embeddings.embedMany(inputs).pipe(
-					Effect.map((response) => response.embeddings.map((embedding) => embedding.vector)),
-					Effect.mapError(
-						(error) =>
+					Effect.mapBoth({
+						onSuccess: (response) =>
+							Arr.map(response.embeddings, (embedding) => embedding.vector),
+						onFailure: (error) =>
 							new PrReviewEmbeddingError({ message: error.message, model, cause: error }),
-					),
+					}),
 				),
 		})),
 	).pipe(

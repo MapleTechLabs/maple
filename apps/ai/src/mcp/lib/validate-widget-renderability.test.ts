@@ -8,6 +8,7 @@ import {
 import { makeQueryDraft } from "@maple/backend/dashboard-templates/helpers"
 import type { PanelType } from "@maple/domain/http"
 import { collectDocumentRenderWarnings, validateWidgetRenderability } from "./validate-widget-renderability"
+import { Array as Arr } from "effect"
 
 const querySource = (
 	overrides: Parameters<typeof makeQueryDraft>[0] extends never
@@ -42,23 +43,23 @@ const widget = (panelType: PanelType, dataSource: unknown, display: Record<strin
 describe("fatal — combinations that always render wrong", () => {
 	it("a markdown note backed by a query", () => {
 		const { fatal } = validateWidgetRenderability(widget("markdown", querySource()))
-		expect(fatal.join(" ")).toContain('{"kind":"static"}')
+		expect(Arr.join(fatal, " ")).toContain('{"kind":"static"}')
 	})
 
 	it("a non-markdown panel backed by a static source", () => {
 		const { fatal } = validateWidgetRenderability(widget("line", makeStaticDataSource()))
-		expect(fatal.join(" ")).toContain("static")
+		expect(Arr.join(fatal, " ")).toContain("static")
 	})
 
 	it("a list backed by raw SQL — silently rendered as a line chart before this check", () => {
 		const source = makeRawSqlDataSource({ sql: "SELECT 1", displayType: "table" })
 		const { fatal } = validateWidgetRenderability(widget("list", source))
-		expect(fatal.join(" ")).toContain('panel_type: "table"')
+		expect(Arr.join(fatal, " ")).toContain('panel_type: "table"')
 	})
 
 	it("a stat with no reduceToValue — renders [object Object]", () => {
 		const { fatal } = validateWidgetRenderability(widget("stat", querySource()))
-		expect(fatal.join(" ")).toContain("reduceToValue")
+		expect(Arr.join(fatal, " ")).toContain("reduceToValue")
 	})
 
 	it("a gauge with a reduceToValue is accepted", () => {
@@ -82,7 +83,7 @@ describe("fatal — combinations that always render wrong", () => {
 
 		it("more than ten steps", () => {
 			const steps = Array.from({ length: 11 }, (_, i) => step(`e${i}`))
-			expect(validateWidgetRenderability(funnelWidget({ steps })).fatal.join(" ")).toContain(
+			expect(Arr.join(validateWidgetRenderability(funnelWidget({ steps })).fatal, " ")).toContain(
 				"at most 10 steps",
 			)
 		})
@@ -92,7 +93,7 @@ describe("fatal — combinations that always render wrong", () => {
 				step("signup_completed"),
 				{ kind: "session", dimension: "utmSource", value: "twitter" },
 			]
-			expect(validateWidgetRenderability(funnelWidget({ steps })).fatal.join(" ")).toContain(
+			expect(Arr.join(validateWidgetRenderability(funnelWidget({ steps })).fatal, " ")).toContain(
 				"only valid as step 1",
 			)
 		})
@@ -100,7 +101,7 @@ describe("fatal — combinations that always render wrong", () => {
 		it("a non-positive conversion window", () => {
 			const steps = [step("a"), step("b")]
 			expect(
-				validateWidgetRenderability(funnelWidget({ steps, windowSeconds: 0 })).fatal.join(" "),
+				Arr.join(validateWidgetRenderability(funnelWidget({ steps, windowSeconds: 0 })).fatal, " "),
 			).toContain("windowSeconds")
 		})
 
@@ -120,7 +121,7 @@ describe("warnings — heuristics that must not block a restore", () => {
 	it("a breakdown panel with no group-by", () => {
 		const { warnings, fatal } = validateWidgetRenderability(widget("pie", querySource()))
 		expect(fatal).toEqual([])
-		expect(warnings.join(" ")).toContain("group-by")
+		expect(Arr.join(warnings, " ")).toContain("group-by")
 	})
 
 	it("a breakdown panel with a real group-by is clean", () => {
@@ -137,17 +138,17 @@ describe("warnings — heuristics that must not block a restore", () => {
 		}
 		const source = makeQueryDataSource({ resultShape: "timeseries", queries: [draft] })
 		const { warnings } = validateWidgetRenderability(widget("line", source))
-		expect(warnings.join(" ")).toContain("addOns.groupBy")
+		expect(Arr.join(warnings, " ")).toContain("addOns.groupBy")
 	})
 
 	it("an uncatalogued unit, with a suggestion", () => {
 		const { warnings } = validateWidgetRenderability(widget("line", querySource(), { unit: "GB" }))
-		expect(warnings.join(" ")).toContain('"bytes"')
+		expect(Arr.join(warnings, " ")).toContain('"bytes"')
 	})
 
 	it("suggests duration_ms for a bare ms unit", () => {
 		const { warnings } = validateWidgetRenderability(widget("line", querySource(), { unit: "ms" }))
-		expect(warnings.join(" ")).toContain('"duration_ms"')
+		expect(Arr.join(warnings, " ")).toContain('"duration_ms"')
 	})
 
 	it("flags a column unit too", () => {
@@ -156,13 +157,13 @@ describe("warnings — heuristics that must not block a restore", () => {
 				columns: [{ field: "latency", header: "Latency", unit: "seconds" }],
 			}),
 		)
-		expect(warnings.join(" ")).toContain('"duration_s"')
+		expect(Arr.join(warnings, " ")).toContain('"duration_s"')
 	})
 
 	it("a percent gauge left on the default 0-100 arc pins the needle at zero", () => {
 		const source = { ...querySource(), transform: { reduceToValue: { field: "value" } } }
 		const { warnings } = validateWidgetRenderability(widget("gauge", source, { unit: "percent" }))
-		expect(warnings.join(" ")).toContain('"max": 1')
+		expect(Arr.join(warnings, " ")).toContain('"max": 1')
 	})
 
 	it("a percent gauge with a 0-1 arc is clean", () => {
@@ -175,7 +176,7 @@ describe("warnings — heuristics that must not block a restore", () => {
 
 	it("a bare p95 on traces without valueField", () => {
 		const { warnings } = validateWidgetRenderability(widget("line", querySource({ aggregation: "p95" })))
-		expect(warnings.join(" ")).toContain("p95_duration")
+		expect(Arr.join(warnings, " ")).toContain("p95_duration")
 	})
 })
 
@@ -198,9 +199,9 @@ describe("document paths never block", () => {
 				display: {} as never,
 			},
 		])
-		expect(warnings.join(" ")).toContain("[w1]")
-		expect(warnings.join(" ")).toContain("reduceToValue")
-		expect(warnings.join(" ")).toContain("[w2]")
+		expect(Arr.join(warnings, " ")).toContain("[w1]")
+		expect(Arr.join(warnings, " ")).toContain("reduceToValue")
+		expect(Arr.join(warnings, " ")).toContain("[w2]")
 	})
 
 	it("returns nothing for a clean document", () => {

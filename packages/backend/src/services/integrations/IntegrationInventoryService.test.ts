@@ -7,11 +7,16 @@ import {
 	VercelConnections,
 	VercelProjects,
 } from "@maple/db/tables"
-import { OrgId, ScrapeTargetId } from "@maple/domain/primitives"
-import { Effect, Layer, Schema } from "effect"
+import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	insertTestSource,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { IntegrationInventoryService } from "./IntegrationInventoryService"
 
 const createdDbs: TestDb[] = []
@@ -21,11 +26,13 @@ afterEach(async () => {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asTargetId = Schema.decodeUnknownSync(ScrapeTargetId)
+const asSourceId = Schema.decodeUnknownSync(SourceId)
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0)
 
-const railwayConnection = (orgId: string) => ({
+const railwayConnection = (orgId: string, sourceId: SourceId) => ({
 	id: `rw_${orgId}`,
 	orgId: asOrgId(orgId),
+	sourceId,
 	tokenCiphertext: "c",
 	tokenIv: "i",
 	tokenTag: "t",
@@ -42,9 +49,28 @@ describe("IntegrationInventoryService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(NOW)
 			const database = yield* Database
+			const [railwayA, railwayB, exporterB] = yield* Effect.promise(() =>
+				Promise.all([
+					// Its poller last succeeded a minute ago.
+					insertTestSource(testDb, { orgId: "org_a", platform: "railway" }).then(async (id) => {
+						await testDb.pglite.query("UPDATE sources SET last_poll_ok_at = $1 WHERE id = $2", [
+							new Date(NOW - 60_000).toISOString(),
+							id,
+						])
+						return asSourceId(id)
+					}),
+					insertTestSource(testDb, { orgId: "org_b", platform: "railway" }).then(asSourceId),
+					insertTestSource(testDb, { orgId: "org_b", platform: "prometheus" }).then(asSourceId),
+				]),
+			)
 			yield* database.execute((db) =>
 				Effect.all([
-					db.run(PG.insertInto(RailwayConnections).values([railwayConnection("org_a"), railwayConnection("org_b")])),
+					db.run(
+						PG.insertInto(RailwayConnections).values([
+							railwayConnection("org_a", railwayA),
+							railwayConnection("org_b", railwayB),
+						]),
+					),
 					db.run(
 						PG.insertInto(RailwayEnvironments).values({
 							id: "env_1",
@@ -64,6 +90,7 @@ describe("IntegrationInventoryService", () => {
 						PG.insertInto(ScrapeTargets).values({
 							id: asTargetId("6f1c2a52-6b0e-4d7e-9a7e-0c1d2e3f4a5b"),
 							orgId: asOrgId("org_b"),
+							sourceId: exporterB,
 							name: "other org exporter",
 							url: "https://b.example/metrics",
 							createdAt: NOW,
@@ -76,16 +103,14 @@ describe("IntegrationInventoryService", () => {
 			const inventory = yield* (yield* IntegrationInventoryService).list(asOrgId("org_a"))
 
 			assert.deepStrictEqual(
-				inventory.integrations.map((i) => i.provider),
+				Arr.map(inventory.integrations, (i) => i.provider),
 				["railway"],
 			)
 			const railway = inventory.integrations[0]
 			assert.strictEqual(railway?.account, "org_a-workspace")
 			assert.strictEqual(railway?.status, "healthy")
 			assert.strictEqual(railway?.resources[0]?.note, "2 services")
-		}).pipe(
-			Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))),
-		)
+		}).pipe(Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))))
 	})
 
 	it.effect("reports a Vercel drain the poller found missing and counts only the connection's projects", () => {
@@ -93,6 +118,9 @@ describe("IntegrationInventoryService", () => {
 		const orgId = asOrgId("org_v")
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(NOW)
+			const sourceId = asSourceId(
+				yield* Effect.promise(() => insertTestSource(testDb, { orgId: "org_v", platform: "vercel" })),
+			)
 			const database = yield* Database
 			yield* database.execute((db) =>
 				Effect.all([
@@ -100,6 +128,7 @@ describe("IntegrationInventoryService", () => {
 						PG.insertInto(VercelConnections).values({
 							id: "vc_1",
 							orgId,
+							sourceId,
 							teamId: "team_1",
 							teamSlug: "acme",
 							teamName: "Acme",

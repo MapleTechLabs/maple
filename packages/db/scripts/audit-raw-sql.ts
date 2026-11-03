@@ -12,10 +12,15 @@
  *
  * Exits non-zero when anything would be rejected, so CI can gate on it.
  */
-import postgres from "postgres"
 import { rawSqlIssue, type RawSqlIssue } from "@maple/domain/raw-sql"
+import * as PgClient from "@effect/sql-pg/PgClient"
+import { Effect, ManagedRuntime, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import type * as Statement from "effect/sql/Statement"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { withBranchConnection } from "./planetscale-connection"
+
+const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 export interface Finding {
 	readonly source: "alert_rule" | "dashboard_widget"
@@ -52,7 +57,7 @@ export interface FoundRawSql {
 export const rawSqlWidgets = (payload: unknown): Array<FoundRawSql> => {
 	const found: Array<FoundRawSql> = []
 	const walk = (node: unknown, widgetId: string): void => {
-		if (Array.isArray(node)) {
+		if (Arr.isArray(node)) {
 			for (const child of node) walk(child, widgetId)
 			return
 		}
@@ -68,22 +73,34 @@ export const rawSqlWidgets = (payload: unknown): Array<FoundRawSql> => {
 			})
 			return
 		}
-		for (const value of Object.values(record)) walk(value, id)
+		for (const value of Rec.values(record)) walk(value, id)
 	}
 	walk(payload, "<unknown>")
 	return found
 }
 
 const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
-	const sql = postgres(databaseUrl, { max: 1, connect_timeout: 15, prepare: false })
+	// The script owns its one connection; a failed connect rejects every query.
+	const db = ManagedRuntime.make(
+		PgClient.layer({
+			url: Redacted.make(databaseUrl),
+			maxConnections: 1,
+			prepare: false,
+			connectTimeout: "15 seconds",
+		}),
+	)
+	const query = <A extends object>(statement: (sql: SqlClient.SqlClient) => Statement.Statement<A>) =>
+		db.runPromise(Effect.flatMap(SqlClient.SqlClient, statement))
 	const findings: Array<Finding> = []
 
 	try {
-		const rules = await sql<Array<{ org_id: string; id: string; name: string; raw_query_sql: string }>>`
+		const rules = await query(
+			(sql) => sql<{ org_id: string; id: string; name: string; raw_query_sql: string }>`
 			SELECT org_id, id, name, raw_query_sql
 			FROM alert_rules
 			WHERE raw_query_sql IS NOT NULL AND raw_query_sql <> ''
-		`
+		`,
+		)
 		for (const rule of rules) {
 			// Alert rules are the workload with the extra $__timeFilter requirement.
 			const issue = rawSqlIssue(rule.raw_query_sql, { workload: "alert" })
@@ -99,11 +116,11 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
 			}
 		}
 
-		const dashboards = await sql<
-			Array<{ org_id: string; id: string; name: string; payload_json: unknown }>
-		>`
+		const dashboards = await query(
+			(sql) => sql<{ org_id: string; id: string; name: string; payload_json: unknown }>`
 			SELECT org_id, id, name, payload_json FROM dashboards
-		`
+		`,
+		)
 		const sourceFormCounts = { kind: 0, route: 0 }
 		for (const dashboard of dashboards) {
 			for (const widget of rawSqlWidgets(dashboard.payload_json)) {
@@ -128,9 +145,7 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
 		const sourceFormLine = `raw-SQL widgets by source form: ${sourceFormCounts.kind} kind:"raw_sql", ${sourceFormCounts.route} route:"raw_sql_chart"`
 
 		if (asJson) {
-			console.log(
-				JSON.stringify({ findings, total: findings.length, sourceForms: sourceFormCounts }, null, 2),
-			)
+			console.log(encodeJsonPretty({ findings, total: findings.length, sourceForms: sourceFormCounts }))
 		} else if (findings.length === 0) {
 			console.log(
 				`No stored raw SQL would be rejected (${rules.length} alert rules, ${dashboards.length} dashboards scanned).`,
@@ -146,7 +161,7 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
 				console.log(`    org:   ${finding.orgId}`)
 				console.log(`    name:  ${finding.label}`)
 				console.log(`    why:   ${finding.issue.message}`)
-				console.log(`    sql:   ${finding.sql.replace(/\s+/g, " ").slice(0, 160)}`)
+				console.log(`    sql:   ${Str.slice(0, 160)(Str.replace(/\s+/g, " ")(finding.sql))}`)
 				console.log("")
 			}
 			const byCode = new Map<string, number>()
@@ -158,7 +173,7 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
 			}
 		}
 	} finally {
-		await sql.end()
+		await db.dispose()
 	}
 
 	return findings.length
@@ -171,14 +186,14 @@ const audit = async (databaseUrl: string, asJson: boolean): Promise<number> => {
  */
 const main = async (): Promise<void> => {
 	const asJson = process.argv.includes("--json")
-	const branch = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "main"
+	const branch = process.argv.slice(2).find((arg) => !Str.startsWith("--")(arg)) ?? "main"
 	const databaseUrl = process.env.DATABASE_URL
 
 	let rejected = 0
 	if (databaseUrl !== undefined && databaseUrl !== "") {
 		rejected = await audit(databaseUrl, asJson)
 	} else {
-		await withBranchConnection(branch, async (connectionUrl) => {
+		await withBranchConnection(branch, "read", async (connectionUrl) => {
 			rejected = await audit(connectionUrl, asJson)
 		})
 	}

@@ -1,6 +1,18 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { Cause, Clock, ConfigProvider, Effect, Exit, Latch, Layer, Ref, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Latch,
+	Layer,
+	Ref,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import {
 	ErrorPersistenceError,
@@ -38,9 +50,8 @@ import {
 } from "@maple/db/tables"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
-import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { isRetryablePostgresContention } from "@maple/backend/platform/postgres-errors"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import type {
@@ -48,6 +59,8 @@ import type {
 	WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
+import { configResolvingWarehouse, makeOrgConfigProbe } from "@maple/backend/testing/org-config-probe"
 import { quarantineOrgWarehouse } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
@@ -98,40 +111,6 @@ describe("describeCause", () => {
 
 	it("returns the string itself for string causes", () => {
 		expect(describeCause("oops")).toBe("oops")
-	})
-})
-
-describe("isRetryablePostgresContention", () => {
-	const makeError = (message: string, cause: unknown = null) => new DatabaseError({ message, cause })
-
-	it("matches Postgres serialization_failure (SQLSTATE 40001) via the cause code", () => {
-		const cause = Object.assign(new Error("could not serialize access due to concurrent update"), {
-			code: "40001",
-		})
-		expect(isRetryablePostgresContention(makeError("query failed", cause))).toBe(true)
-	})
-
-	it("matches Postgres deadlock_detected (SQLSTATE 40P01) via the cause code", () => {
-		const cause = Object.assign(new Error("deadlock detected"), {
-			code: "40P01",
-		})
-		expect(isRetryablePostgresContention(makeError("query failed", cause))).toBe(true)
-	})
-
-	it("matches Postgres contention codes appearing in either message", () => {
-		expect(isRetryablePostgresContention(makeError("SQLSTATE 40001: could not serialize access"))).toBe(
-			true,
-		)
-		expect(isRetryablePostgresContention(makeError("wrapper", "SQLSTATE 40P01: deadlock"))).toBe(true)
-	})
-
-	it("rejects unrelated database errors", () => {
-		expect(isRetryablePostgresContention(makeError("UNIQUE constraint failed"))).toBe(false)
-		expect(isRetryablePostgresContention(makeError("no such table"))).toBe(false)
-		const uniqueViolation = Object.assign(new Error("duplicate key value"), {
-			code: "23505",
-		})
-		expect(isRetryablePostgresContention(makeError("query failed", uniqueViolation))).toBe(false)
 	})
 })
 
@@ -249,6 +228,7 @@ const makeErrorsLayer = (
 		},
 	)
 	const errorsLive = Layer.effect(ErrorsService, ErrorsService.make).pipe(
+		Layer.provide(OrgClickHouseSettingsService.layer),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(warehouseLive),
@@ -279,7 +259,9 @@ const makeErrorsLayer = (
  *  backend and the notification dispatcher) supplied by the test. */
 const makeTickLayerOver = (
 	testDb: TestDb,
-	warehouse: WarehouseQueryServiceApi,
+	warehouse:
+		| WarehouseQueryServiceApi
+		| Layer.Layer<WarehouseQueryService, never, OrgClickHouseSettingsService>,
 	extras: {
 		readonly edgeBackend?: ReturnType<typeof makeMemoryBackend>
 		readonly dispatcher?: (typeof NotificationDispatcher)["Service"]
@@ -308,9 +290,12 @@ const makeTickLayerOver = (
 		extras.dispatcher ?? { dispatch: () => Effect.succeed({ delivered: 0, failed: 0 }) },
 	)
 	return Layer.effect(ErrorsService, ErrorsService.make).pipe(
+		Layer.provide(
+			"compiledQuery" in warehouse ? Layer.succeed(WarehouseQueryService, warehouse) : warehouse,
+		),
+		Layer.provide(OrgClickHouseSettingsService.layer),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
-		Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
 		Layer.provide(
 			Layer.succeed(EdgeCacheService, makeEdgeCacheService(extras.edgeBackend ?? makeMemoryBackend())),
 		),
@@ -428,7 +413,7 @@ const seedIngestKeys = (orgIds: ReadonlyArray<string>) =>
 		yield* database.execute((db) =>
 			db.run(
 				PG.insertInto(OrgIngestKeys).values(
-					orgIds.map((orgId) => ({
+					Arr.map(orgIds, (orgId) => ({
 						orgId: asOrgId(orgId),
 						publicKey: `pk_${orgId}`,
 						publicKeyHash: `pkh_${orgId}`,
@@ -484,7 +469,7 @@ describe("ErrorIssueReadModelsService.countOpenIssuesByService", () => {
 			yield* seedIssue(asIssueId(randomUUID()), { serviceName: "" })
 
 			const counts = yield* readModels.countOpenIssuesByService(ORG)
-			const byService = new Map(counts.map((row) => [row.serviceName, row.openCount]))
+			const byService = new Map(Arr.map(counts, (row) => [row.serviceName, row.openCount]))
 			assert.strictEqual(byService.get("checkout-api"), 2)
 			assert.strictEqual(byService.get("ingest"), 1)
 			assert.isFalse(byService.has("alerting"))
@@ -518,7 +503,7 @@ describe("Error issue severity, policies, and read models", () => {
 						.where(($) => [$.issueId.eq(issueId)]),
 				),
 			)
-			const severityEvents = events.filter((e) => e.type === "severity_change")
+			const severityEvents = Arr.filter(events, (e) => e.type === "severity_change")
 			assert.lengthOf(severityEvents, 1)
 			assert.deepInclude(asJsonRecord(severityEvents[0]?.payloadJson), {
 				to: "critical",
@@ -681,19 +666,19 @@ describe("Error issue severity, policies, and read models", () => {
 
 			const high = yield* readModels.listIssues(ORG, { severity: "high" })
 			assert.deepStrictEqual(
-				high.issues.map((i) => i.id),
+				Arr.map(high.issues, (i) => i.id),
 				[issueId],
 			)
 
 			const unset = yield* readModels.listIssues(ORG, { severity: "unset" })
 			assert.deepStrictEqual(
-				unset.issues.map((i) => i.id),
+				Arr.map(unset.issues, (i) => i.id),
 				[alertIssueId],
 			)
 
 			const alerts = yield* readModels.listIssues(ORG, { kind: "alert" })
 			assert.deepStrictEqual(
-				alerts.issues.map((i) => i.id),
+				Arr.map(alerts.issues, (i) => i.id),
 				[alertIssueId],
 			)
 			assert.strictEqual(alerts.issues[0]?.kind, "alert")
@@ -712,7 +697,7 @@ describe("Error issue severity, policies, and read models", () => {
 				deploymentEnv: "production",
 			})
 			assert.deepStrictEqual(
-				filtered.issues.map((i) => i.id),
+				Arr.map(filtered.issues, (i) => i.id),
 				[prodIssueId],
 			)
 
@@ -757,7 +742,7 @@ describe("Error issue severity, policies, and read models", () => {
 
 			const page1 = yield* readModels.listIssues(ORG, { limit: 2 })
 			assert.deepStrictEqual(
-				page1.issues.map((i) => i.id),
+				Arr.map(page1.issues, (i) => i.id),
 				[ids[0], ids[1]],
 			)
 			assert.isString(page1.nextCursor)
@@ -768,7 +753,7 @@ describe("Error issue severity, policies, and read models", () => {
 				cursor: cursor1,
 			})
 			assert.deepStrictEqual(
-				page2.issues.map((i) => i.id),
+				Arr.map(page2.issues, (i) => i.id),
 				[ids[2], ids[3]],
 			)
 			assert.isString(page2.nextCursor)
@@ -779,7 +764,7 @@ describe("Error issue severity, policies, and read models", () => {
 				cursor: cursor2,
 			})
 			assert.deepStrictEqual(
-				page3.issues.map((i) => i.id),
+				Arr.map(page3.issues, (i) => i.id),
 				[ids[4]],
 			)
 			assert.isUndefined(page3.nextCursor)
@@ -795,8 +780,8 @@ describe("Error issue severity, policies, and read models", () => {
 			const readModels = yield* ErrorIssueReadModelsService
 			const now = yield* Clock.currentTimeMillis
 			const sameInstant = now
-			const ids = ["cccc", "bbbb", "aaaa"].map((prefix) =>
-				asIssueId(`${prefix}${randomUUID().slice(4)}`),
+			const ids = Arr.map(["cccc", "bbbb", "aaaa"], (prefix) =>
+				asIssueId(`${prefix}${Str.slice(4)(randomUUID())}`),
 			)
 			for (const id of ids) {
 				yield* seedIssue(id, { lastSeenAt: sameInstant })
@@ -807,7 +792,7 @@ describe("Error issue severity, policies, and read models", () => {
 				limit: 2,
 				cursor: Schema.decodeUnknownSync(IssueListCursor)(page1.nextCursor),
 			})
-			const seen = [...page1.issues, ...page2.issues].map((i) => i.id)
+			const seen = Arr.map([...page1.issues, ...page2.issues], (i) => i.id)
 			// Every issue appears exactly once across pages — no skips, no repeats.
 			assert.deepStrictEqual([...seen].sort(), [...ids].sort())
 			assert.strictEqual(new Set(seen).size, ids.length)
@@ -852,7 +837,7 @@ describe("Error issue severity, policies, and read models", () => {
 				limit: 2,
 			})
 			assert.deepStrictEqual(
-				first.issues.map((issue) => issue.id),
+				Arr.map(first.issues, (issue) => issue.id),
 				[critical, high],
 			)
 			assert.match(first.nextCursor ?? "", /^sev_/)
@@ -866,7 +851,7 @@ describe("Error issue severity, policies, and read models", () => {
 				cursor,
 			})
 			assert.deepStrictEqual(
-				second.issues.map((issue) => issue.id),
+				Arr.map(second.issues, (issue) => issue.id),
 				[medium],
 			)
 			assert.isUndefined(second.nextCursor)
@@ -1011,7 +996,7 @@ const runTicksUntilCaughtUp = Effect.fn("test.runTicksUntilCaughtUp")(function* 
 		const nowMs = yield* Clock.currentTimeMillis
 		const cutoffMs = Math.floor(nowMs / 60_000) * 60_000 - 60_000
 		const cursor = yield* database.execute((db) => db.run(PG.from(ErrorTickStates).select()))
-		const behind = cursor.length === 0 || cursor.some((row) => row.processedThrough < cutoffMs)
+		const behind = cursor.length === 0 || Arr.some(cursor, (row) => row.processedThrough < cutoffMs)
 		if (!behind) break
 		const result = yield* errors.runTick()
 		totals.issuesTouched += result.issuesTouched
@@ -1321,7 +1306,7 @@ describe("ErrorsService.runTick", () => {
 
 				const events = yield* loadEventsForIssue(issue.id)
 				assert.deepStrictEqual(
-					events.map((e) => e.type),
+					Arr.map(events, (e) => e.type),
 					["created"],
 				)
 				assert.strictEqual(events[0]?.toState, "triage")
@@ -1409,7 +1394,7 @@ describe("ErrorsService.runTick", () => {
 
 			const events = yield* loadEventsForIssue(issues[0]!.id)
 			assert.lengthOf(
-				events.filter((e) => e.type === "created"),
+				Arr.filter(events, (e) => e.type === "created"),
 				1,
 			)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
@@ -1566,7 +1551,7 @@ describe("ErrorsService.runTick", () => {
 
 				assert.lengthOf(leaseHeadroomMs, 6)
 				assert.isTrue(
-					leaseHeadroomMs.every((headroom) => headroom > 0),
+					Arr.every(leaseHeadroomMs, (headroom) => headroom > 0),
 					`a row was delivered under an expired lease: ${leaseHeadroomMs.join(", ")}`,
 				)
 			}).pipe(Effect.provide(makeErrorsLayer(() => [], undefined, undefined, undefined, dispatcher)))
@@ -1605,7 +1590,7 @@ describe("ErrorsService.runTick", () => {
 
 			yield* errors.runTick()
 			assert.lengthOf(
-				dispatched.filter((key) => key.endsWith(":open")),
+				Arr.filter(dispatched, (key) => Str.endsWith(":open")(key)),
 				1,
 			)
 
@@ -1619,11 +1604,11 @@ describe("ErrorsService.runTick", () => {
 				concurrency: 2,
 			})
 			assert.strictEqual(
-				caughtUp.incidentsResolved + resolveResults.reduce((s, r) => s + r.incidentsResolved, 0),
+				caughtUp.incidentsResolved + Arr.reduce(resolveResults, 0, (s, r) => s + r.incidentsResolved),
 				1,
 			)
 			assert.lengthOf(
-				dispatched.filter((key) => key.endsWith(":resolve")),
+				Arr.filter(dispatched, (key) => Str.endsWith(":resolve")(key)),
 				1,
 			)
 
@@ -1641,11 +1626,11 @@ describe("ErrorsService.runTick", () => {
 				concurrency: 2,
 			})
 			assert.strictEqual(
-				reopenResults.reduce((s, r) => s + r.incidentsOpened, 0),
+				Arr.reduce(reopenResults, 0, (s, r) => s + r.incidentsOpened),
 				1,
 			)
 			assert.lengthOf(
-				dispatched.filter((key) => key.endsWith(":open")),
+				Arr.filter(dispatched, (key) => Str.endsWith(":open")(key)),
 				2,
 			)
 
@@ -1710,12 +1695,12 @@ describe("ErrorsService.runTick", () => {
 
 				const events = yield* loadEventsForIssue(issue.id)
 				assert.lengthOf(
-					events.filter((e) => e.type === "regression"),
+					Arr.filter(events, (e) => e.type === "regression"),
 					1,
 				)
 
 				const incidents = yield* loadIncidentsForIssue(issue.id)
-				const open = incidents.filter((i) => i.status === "open")
+				const open = Arr.filter(incidents, (i) => i.status === "open")
 				assert.lengthOf(open, 1)
 				assert.strictEqual(open[0]?.reason, "regression")
 			}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
@@ -1751,7 +1736,7 @@ describe("ErrorsService.runTick", () => {
 				// regardless of which state it came from.
 				const incidents = yield* loadIncidentsForIssue(issue.id)
 				assert.lengthOf(
-					incidents.filter((i) => i.status === "open"),
+					Arr.filter(incidents, (i) => i.status === "open"),
 					0,
 				)
 			}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
@@ -1815,7 +1800,8 @@ describe("ErrorsService.runTick", () => {
 			assert.isNull(rows[0]?.snoozeUntil)
 
 			const events = yield* loadEventsForIssue(issueId)
-			const wakeups = events.filter(
+			const wakeups = Arr.filter(
+				events,
 				(e) => e.type === "state_change" && asJsonRecord(e.payloadJson).viaSnoozeWakeup === true,
 			)
 			assert.lengthOf(wakeups, 1)
@@ -2160,7 +2146,7 @@ describe("ErrorsService.runTick", () => {
 				yield* setResolvedVersions(issue.id, ["1.2.3"])
 				yield* backdateResolution(issue.id, TICK_MS - 3 * 60 * 60 * 1000)
 				const incidentsBefore = yield* loadIncidentsForIssue(issue.id)
-				const openBefore = incidentsBefore.filter((i) => i.status === "open").length
+				const openBefore = Arr.filter(incidentsBefore, (i) => i.status === "open").length
 
 				rows[0] = scanRow({ serviceVersions: ["1.2.3"] })
 				yield* TestClock.setTime(TICK_MS + 120_000)
@@ -2177,7 +2163,7 @@ describe("ErrorsService.runTick", () => {
 
 				const incidentsAfter = yield* loadIncidentsForIssue(issue.id)
 				assert.lengthOf(incidentsAfter, incidentsBefore.length)
-				assert.strictEqual(incidentsAfter.filter((i) => i.status === "open").length, openBefore)
+				assert.strictEqual(Arr.filter(incidentsAfter, (i) => i.status === "open").length, openBefore)
 
 				// The occurrence still happened, so the counters stay truthful.
 				assert.isAbove(after.occurrenceCount, issue.occurrenceCount)
@@ -2263,11 +2249,11 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(regressedAfter.occurrenceCount, 12)
 			const regressedEvents = yield* loadEventsForIssue(regressedId)
 			assert.lengthOf(
-				regressedEvents.filter((e) => e.type === "regression"),
+				Arr.filter(regressedEvents, (e) => e.type === "regression"),
 				1,
 			)
 			assert.lengthOf(
-				regressedEvents.filter((e) => e.type === "state_change" && e.fromState === "done"),
+				Arr.filter(regressedEvents, (e) => e.type === "state_change" && e.fromState === "done"),
 				1,
 			)
 			const regressedIncidents = yield* loadIncidentsForIssue(regressedId)
@@ -2285,7 +2271,7 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(freshAfter.workflowState, "triage")
 			const freshEvents = yield* loadEventsForIssue(freshAfter.id)
 			assert.lengthOf(
-				freshEvents.filter((e) => e.type === "created"),
+				Arr.filter(freshEvents, (e) => e.type === "created"),
 				1,
 			)
 			const freshIncidents = yield* loadIncidentsForIssue(freshAfter.id)
@@ -2327,7 +2313,7 @@ describe("ErrorsService.runTick", () => {
 
 			const events = yield* loadEventsForIssue(issueId)
 			assert.lengthOf(
-				events.filter((e) => e.type === "lease_expired"),
+				Arr.filter(events, (e) => e.type === "lease_expired"),
 				1,
 			)
 		}).pipe(Effect.provide(makeErrorsLayer())),
@@ -2372,6 +2358,7 @@ describe("ErrorsService.runTick", () => {
 				workflowState: "done",
 				resolvedAt: RETENTION_TICK_MS - 120 * DAY_MS,
 				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				lastSeenAt: RETENTION_TICK_MS - 120 * DAY_MS,
 			})
 			const seededAt = RETENTION_TICK_MS - 120 * DAY_MS
 			yield* database.execute((db) =>
@@ -2452,6 +2439,121 @@ describe("ErrorsService.runTick", () => {
 			assert.lengthOf(purgedStates, 0)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
+
+	it.effect("an archived fixed issue that old clients still hit is kept, not re-minted as new", () => {
+		let rows: Array<Record<string, unknown>> = []
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			// Fixed long ago and archived past the purge age, but a pre-fix build in the
+			// wild still reports it: deleting it forgets the fix and the next old-client
+			// occurrence would open a brand-new triage issue for a bug already fixed.
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				workflowState: "done",
+				resolvedAt: RETENTION_TICK_MS - 120 * DAY_MS,
+				resolvedVersionsJson: ["1.4.0"],
+				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				lastSeenAt: RETENTION_TICK_MS - DAY_MS,
+				occurrenceCount: 40,
+			})
+
+			const retention = yield* errors.runTick()
+			assert.isTrue(retention.retentionRan)
+			assert.strictEqual(retention.issuesDeleted, 0)
+
+			rows = [scanRow({ serviceVersions: ["1.4.0"] })]
+			yield* TestClock.setTime(TICK_MS)
+			yield* errors.runTick()
+
+			const issues = yield* loadIssuesByFingerprint(SCAN_FINGERPRINT)
+			assert.lengthOf(issues, 1)
+			assert.strictEqual(issues[0]?.id, issueId)
+			assert.strictEqual(issues[0]?.workflowState, "done")
+			assert.strictEqual(issues[0]?.occurrenceCount, 43)
+			const candidates = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select()
+						.where(($) => [$.fingerprintHash.eq(SCAN_FINGERPRINT)]),
+				),
+			)
+			assert.lengthOf(candidates, 0)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("the retention phase forgets a candidate quiet for a day and keeps a recent one", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			yield* seedIssue(asIssueId(randomUUID()))
+			const candidate = (fingerprintHash: string, lastSeenAt: number) => ({
+				orgId: ORG,
+				fingerprintHash,
+				serviceName: "checkout-api",
+				exceptionType: "TimeoutError",
+				exceptionMessage: "upstream timed out",
+				errorLabel: "TimeoutError",
+				topFrame: "",
+				serviceVersionsJson: [],
+				occurrenceCount: 2,
+				firstSeenAt: lastSeenAt,
+				lastSeenAt,
+				updatedAt: lastSeenAt,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorFingerprintCandidates).values([
+						candidate("11111111111111111111", RETENTION_TICK_MS - DAY_MS - 60_000),
+						candidate("22222222222222222222", RETENTION_TICK_MS - DAY_MS + 60_000),
+					]),
+				),
+			)
+
+			assert.isTrue((yield* errors.runTick()).retentionRan)
+
+			const left = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select("fingerprintHash")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(
+				Arr.map(left, (row) => row.fingerprintHash),
+				["22222222222222222222"],
+			)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("a duplicated scan row keeps every build it carried for the regression check", () => {
+		// Duplicates are merged before the batched write; the merge must union the
+		// build sets, or a new build in one copy is hidden behind an old one.
+		const rows = [
+			scanRow({ count: 1, serviceVersions: ["2.0.0"] }),
+			scanRow({ count: 1, serviceVersions: ["1.4.0"] }),
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				workflowState: "done",
+				resolvedAt: TICK_MS - 20 * DAY_MS,
+				resolvedVersionsJson: ["1.4.0"],
+			})
+
+			yield* errors.runTick()
+
+			const issue = yield* loadIssueById(issueId)
+			assert.strictEqual(issue.workflowState, "regressed")
+			assert.sameMembers([...issue.seenVersionsJson], ["2.0.0", "1.4.0"])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
 
 	it.effect("the retention phase archives an issue left on an older fingerprint version", () =>
 		Effect.gen(function* () {
@@ -2626,10 +2728,14 @@ const makeIdleTickHarness = (
 		if (call.context === DISCOVERY) {
 			const active =
 				opts.activeOrgs?.() ??
-				errors.filter((error) => error.atMs >= call.startMs).map((error) => error.orgId)
-			return [...new Set(active)].map((orgId) => ({ orgId }))
+				Arr.map(
+					Arr.filter(errors, (error) => error.atMs >= call.startMs),
+					(error) => error.orgId,
+				)
+			return Arr.map([...new Set(active)], (orgId) => ({ orgId }))
 		}
-		const stored = errors.filter(
+		const stored = Arr.filter(
+			errors,
 			(error) =>
 				error.orgId === call.orgId &&
 				minuteOf(error.atMs) >= call.startMs &&
@@ -2641,7 +2747,7 @@ const makeIdleTickHarness = (
 				: [
 						{
 							minute: formatWarehouseDateTime(
-								Math.min(...stored.map((error) => minuteOf(error.atMs))),
+								Math.min(...Arr.map(stored, (error) => minuteOf(error.atMs))),
 							),
 						},
 					]
@@ -2652,12 +2758,12 @@ const makeIdleTickHarness = (
 			const fingerprint = error.fingerprint ?? SCAN_FINGERPRINT
 			byFingerprint.set(fingerprint, [...(byFingerprint.get(fingerprint) ?? []), error])
 		}
-		return [...byFingerprint].map(([fingerprintHash, group]) =>
+		return Arr.map([...byFingerprint], ([fingerprintHash, group]) =>
 			scanRow({
 				fingerprintHash,
-				count: group.reduce((total, error) => total + (error.count ?? 1), 0),
-				firstSeen: formatWarehouseDateTime(Math.min(...group.map((error) => error.atMs))),
-				lastSeen: formatWarehouseDateTime(Math.max(...group.map((error) => error.atMs))),
+				count: Arr.reduce(group, 0, (total, error) => total + (error.count ?? 1)),
+				firstSeen: formatWarehouseDateTime(Math.min(...Arr.map(group, (error) => error.atMs))),
+				lastSeen: formatWarehouseDateTime(Math.max(...Arr.map(group, (error) => error.atMs))),
 			}),
 		)
 	}
@@ -2708,7 +2814,10 @@ const makeIdleTickHarness = (
 				discard: true,
 			}),
 		callsTo: (context: string, orgId?: string) =>
-			calls.filter((call) => call.context === context && (orgId === undefined || call.orgId === orgId)),
+			Arr.filter(
+				calls,
+				(call) => call.context === context && (orgId === undefined || call.orgId === orgId),
+			),
 	}
 }
 
@@ -2721,11 +2830,11 @@ type TickStateSeed = Partial<PG.InsertRowOf<typeof ErrorTickStates>> & {
 const seedIdleOrgs = (seeds: ReadonlyArray<TickStateSeed>) =>
 	Effect.gen(function* () {
 		const database = yield* Database
-		yield* seedIngestKeys(seeds.map((seed) => seed.orgId))
+		yield* seedIngestKeys(Arr.map(seeds, (seed) => seed.orgId))
 		yield* database.execute((db) =>
 			db.run(
 				PG.insertInto(ErrorTickStates).values(
-					seeds.map(({ cursorMs, ...row }) => ({
+					Arr.map(seeds, ({ cursorMs, ...row }) => ({
 						processedThrough: cursorMs,
 						bootstrapCompleted: true,
 						updatedAt: cursorMs,
@@ -2739,7 +2848,7 @@ const seedIdleOrgs = (seeds: ReadonlyArray<TickStateSeed>) =>
 const tickStates = Effect.gen(function* () {
 	const database = yield* Database
 	const rows = yield* database.execute((db) => db.run(PG.from(ErrorTickStates).select()))
-	return new Map(rows.map((row) => [row.orgId, row]))
+	return new Map(Arr.map(rows, (row) => [row.orgId, row]))
 })
 
 const cursorOf = (orgId: OrgId) => Effect.map(tickStates, (states) => states.get(orgId)?.processedThrough)
@@ -2783,11 +2892,12 @@ describe("ErrorsService.runTick idle cursors", () => {
 	const fingerprint = (n: number) => `100000000000000000${n}`
 
 	const isTrailingCursorRead = (sql: string) =>
-		sql.startsWith("SELECT") &&
-		sql.includes('"processed_through" AS "processedThrough"') &&
-		sql.includes('"processed_through" <=')
+		Str.startsWith("SELECT")(sql) &&
+		Str.includes('"processed_through" AS "processedThrough"')(sql) &&
+		Str.includes('"processed_through" <=')(sql)
 	const isIdleCursorMove = (sql: string) =>
-		sql.startsWith('UPDATE "error_tick_states" SET "processed_through"') && sql.includes("SKIP LOCKED")
+		Str.startsWith('UPDATE "error_tick_states" SET "processed_through"')(sql) &&
+		Str.includes("SKIP LOCKED")(sql)
 
 	// Boundaries
 
@@ -2858,7 +2968,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 
 				assert.strictEqual(h.callsTo(DISCOVERY)[0]?.startMs, now - 15 * MINUTE_MS)
 				assert.deepStrictEqual(
-					h.callsTo(SCAN, IDLE).map((call) => [call.startMs, call.endMs]),
+					Arr.map(h.callsTo(SCAN, IDLE), (call) => [call.startMs, call.endMs]),
 					[[T - 15 * MINUTE_MS, T - 10 * MINUTE_MS]],
 				)
 				assert.lengthOf(yield* candidatesOf(IDLE), 1)
@@ -2901,7 +3011,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			assert.strictEqual(yield* cursorOf(OLDER_QUIET), parkedAt(T))
 
 			assert.deepStrictEqual(
-				h.callsTo(SCAN, OLDER_ERRORING).map((call) => call.startMs),
+				Arr.map(h.callsTo(SCAN, OLDER_ERRORING), (call) => call.startMs),
 				[horizon + 10 * MINUTE_MS],
 			)
 			assert.lengthOf(yield* candidatesOf(OLDER_ERRORING), 1)
@@ -2920,7 +3030,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 
 			assert.strictEqual(result.orgsProcessed, 1)
 			assert.deepStrictEqual(
-				h.callsTo(SCAN, IDLE).map((call) => [call.startMs, call.endMs]),
+				Arr.map(h.callsTo(SCAN, IDLE), (call) => [call.startMs, call.endMs]),
 				[[cursorMs, cursorMs + 5 * MINUTE_MS]],
 			)
 			assert.lengthOf(yield* candidatesOf(IDLE), 1)
@@ -2943,7 +3053,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 				yield* tickAt(T)
 
 				assert.deepStrictEqual(
-					h.callsTo(SCAN, IDLE).map((call) => [call.startMs, call.endMs]),
+					Arr.map(h.callsTo(SCAN, IDLE), (call) => [call.startMs, call.endMs]),
 					[[T - 3 * MINUTE_MS, cutoffAt(T)]],
 				)
 				assert.lengthOf(yield* candidatesOf(IDLE), 1)
@@ -2982,11 +3092,11 @@ describe("ErrorsService.runTick idle cursors", () => {
 			assert.strictEqual(yield* cursorOf(IDLE), parkedAt(T + 2 * MINUTE_MS))
 
 			assert.deepStrictEqual(
-				h.callsTo(LOOKUP).map((call) => call.startMs),
+				Arr.map(h.callsTo(LOOKUP), (call) => call.startMs),
 				[T - 4 * HOUR_MS, first + 5 * MINUTE_MS, second + 5 * MINUTE_MS],
 			)
 			assert.deepStrictEqual(
-				h.callsTo(SCAN).map((call) => call.startMs),
+				Arr.map(h.callsTo(SCAN), (call) => call.startMs),
 				[first, second],
 			)
 			assert.lengthOf(yield* issuesOf(IDLE), 0)
@@ -3055,11 +3165,11 @@ describe("ErrorsService.runTick idle cursors", () => {
 			yield* tickAt(T + 3 * MINUTE_MS)
 
 			assert.deepStrictEqual(
-				h.callsTo(SCAN).map((call) => call.startMs),
+				Arr.map(h.callsTo(SCAN), (call) => call.startMs),
 				[first, first + 5 * MINUTE_MS, last],
 			)
 			assert.deepStrictEqual(
-				h.callsTo(LOOKUP).map((call) => call.startMs),
+				Arr.map(h.callsTo(LOOKUP), (call) => call.startMs),
 				[T - 4 * HOUR_MS, first + 10 * MINUTE_MS, last + 5 * MINUTE_MS],
 			)
 			assert.sameMembers(
@@ -3155,7 +3265,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 				yield* tickAt(T + 101 * MINUTE_MS)
 
 				assert.deepStrictEqual(
-					h.callsTo(LOOKUP).map((call) => call.startMs),
+					Arr.map(h.callsTo(LOOKUP), (call) => call.startMs),
 					[parkedBefore],
 				)
 				assert.lengthOf(yield* issuesOf(IDLE), 1)
@@ -3256,7 +3366,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 	it.effect("nothing is moved or looked up when the BYO-ClickHouse org list cannot be read", () => {
 		const h = makeIdleTickHarness({
 			errors: [{ orgId: OTHER, atMs: T - 2 * HOUR_MS }],
-			rejectSql: (sql) => sql.includes('FROM "org_clickhouse_settings"'),
+			rejectSql: (sql) => Str.includes('FROM "org_clickhouse_settings"')(sql),
 		})
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T)
@@ -3433,7 +3543,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			const results = yield* Effect.all([errors.runTick(), errors.runTick()], { concurrency: 2 })
 
 			assert.strictEqual(
-				results.reduce((total, result) => total + result.issuesTouched, 0),
+				Arr.reduce(results, 0, (total, result) => total + result.issuesTouched),
 				1,
 			)
 			assert.deepStrictEqual(
@@ -3520,7 +3630,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 						: Effect.void,
 			})
 			const orgs = Array.from({ length: 45 }, (_, index) => ({
-				orgId: asOrgId(`org_stale_${String(index).padStart(2, "0")}`),
+				orgId: asOrgId(`org_stale_${Str.padStart(2, "0")(String(index))}`),
 				cursorMs: T - (20 + index) * MINUTE_MS,
 			}))
 			return Effect.gen(function* () {
@@ -3531,8 +3641,8 @@ describe("ErrorsService.runTick idle cursors", () => {
 				yield* tickAt(T)
 
 				assert.sameMembers(
-					h.callsTo(LOOKUP).map((call) => call.orgId),
-					orgs.slice(0, 40).map((org) => org.orgId),
+					Arr.map(h.callsTo(LOOKUP), (call) => call.orgId),
+					Arr.map(orgs.slice(0, 40), (org) => org.orgId),
 				)
 				assert.strictEqual(peak, 4)
 				const afterFirst = yield* tickStates
@@ -3546,8 +3656,8 @@ describe("ErrorsService.runTick idle cursors", () => {
 				yield* tickAt(T + MINUTE_MS)
 
 				assert.sameMembers(
-					h.callsTo(LOOKUP).map((call) => call.orgId),
-					orgs.map((org) => org.orgId),
+					Arr.map(h.callsTo(LOOKUP), (call) => call.orgId),
+					Arr.map(orgs, (org) => org.orgId),
 				)
 				const afterSecond = yield* tickStates
 				for (const org of orgs.slice(40)) {
@@ -3573,7 +3683,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			yield* tickAt(T)
 
 			assert.deepStrictEqual(
-				h.callsTo(LOOKUP).map((call) => call.orgId),
+				Arr.map(h.callsTo(LOOKUP), (call) => call.orgId),
 				[IDLE],
 			)
 			assert.lengthOf(yield* issuesOf(IDLE), 1)
@@ -3586,13 +3696,13 @@ describe("ErrorsService.runTick idle cursors", () => {
 		const orgs = Array.from({ length: 520 }, (_, index) => asOrgId(`org_parkable_${index}`))
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T)
-			yield* seedIdleOrgs(orgs.map((orgId) => ({ orgId, cursorMs: T - 12 * MINUTE_MS })))
+			yield* seedIdleOrgs(Arr.map(orgs, (orgId) => ({ orgId, cursorMs: T - 12 * MINUTE_MS })))
 
 			yield* tickAt(T)
 
 			const states = yield* tickStates
 			assert.lengthOf(
-				orgs.filter((orgId) => states.get(orgId)?.processedThrough === parkedAt(T)),
+				Arr.filter(orgs, (orgId) => states.get(orgId)?.processedThrough === parkedAt(T)),
 				520,
 			)
 			assert.lengthOf(h.callsTo(LOOKUP), 0)
@@ -3759,7 +3869,10 @@ describe("ErrorsService.claimIssue audit events", () => {
 
 				const events = yield* loadEventsForIssue(issueId)
 				expect(
-					events.filter((event) => event.type === "claim").map((event) => event.payloadJson),
+					Arr.map(
+						Arr.filter(events, (event) => event.type === "claim"),
+						(event) => event.payloadJson,
+					),
 				).toEqual([
 					{
 						leaseExpiresAt: TICK_MS + leaseDurationMs,
@@ -3811,14 +3924,16 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 						.where(($) => [$.issueId.eq(issueId)]),
 				),
 			)
-			const types = events.map((event) => event.type)
+			const types = Arr.map(events, (event) => event.type)
 			expect(types).toContain("claim")
 			expect(types).toContain("fix_proposed")
 			// It walked triage → in_progress → in_review, not a single illegal hop.
-			expect(events.filter((e) => e.type === "state_change").map((e) => e.toState)).toEqual([
-				"in_progress",
-				"in_review",
-			])
+			expect(
+				Arr.map(
+					Arr.filter(events, (e) => e.type === "state_change"),
+					(e) => e.toState,
+				),
+			).toEqual(["in_progress", "in_review"])
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
@@ -3861,7 +3976,7 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 						.where(($) => [$.issueId.eq(issueId)]),
 				),
 			)
-			expect(events.map((event) => event.type)).not.toContain("fix_proposed")
+			expect(Arr.map(events, (event) => event.type)).not.toContain("fix_proposed")
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
@@ -3893,7 +4008,7 @@ describe("ErrorsService.proposeFix claims the issue", () => {
 						.where(($) => [$.issueId.eq(issueId)]),
 				),
 			)
-			expect(events.map((event) => event.type)).not.toContain("fix_proposed")
+			expect(Arr.map(events, (event) => event.type)).not.toContain("fix_proposed")
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
@@ -4031,5 +4146,54 @@ describe("ErrorsService.transitionIssue lease renewal", () => {
 			assert.strictEqual(done.workflowState, "done")
 			assert.isNull(done.leaseExpiresAt)
 		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+})
+
+describe("ErrorsService.runTick org config priming", () => {
+	// Fresh org ids per run: the runtime-config memo is module-scoped.
+	const runId = Str.slice(2, 10)(Math.random().toString(36))
+	it.effect("resolves every scanned org's warehouse config in one batched read", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			// More orgs than the tick's per-org concurrency (4).
+			const orgs = Array.from({ length: 6 }, (_, i) => asOrgId(`org_errors_prime_${runId}_${i}`))
+			const probe = yield* makeOrgConfigProbe
+			const warehouse = configResolvingWarehouse((resolveConfig) => ({
+				query: () => Effect.die(new Error("unexpected warehouse query")),
+				rawSqlQuery: () => Effect.succeed([]),
+				// Discovery reports every org active, so the tick scans all of them.
+				crossOrgQuery: <T>(tenant: { readonly orgId: OrgId }, compiled: CompiledQuery<T>) =>
+					Effect.andThen(
+						resolveConfig(tenant.orgId),
+						Effect.orDie(
+							compiledQueryOf(compiled).decodeRows(Arr.map(orgs, (orgId) => ({ orgId }))),
+						),
+					),
+				compiledQuery: <T>(tenant: { readonly orgId: OrgId }, compiled: CompiledQuery<T>) =>
+					Effect.andThen(
+						resolveConfig(tenant.orgId),
+						Effect.orDie(compiledQueryOf(compiled).decodeRows([])),
+					),
+				compiledQueryFirst: () => Effect.die(new Error("unexpected warehouse query")),
+				ingest: () => Effect.void,
+				asExecutor: () => {
+					throw new Error("asExecutor is not supported by this test stub")
+				},
+			}))
+			const result = yield* Effect.gen(function* () {
+				yield* seedIngestKeys(orgs)
+				const errors = yield* ErrorsService
+				return yield* errors.runTick()
+			}).pipe(
+				Effect.provide(
+					makeTickLayerOver(createTestDb(createdDbs), warehouse, { edgeBackend: probe.backend }),
+				),
+			)
+
+			assert.strictEqual(result.orgsProcessed, orgs.length)
+			// Only the active-org discovery route resolves cold, before the org set is
+			// known. Without the prime, every scanned org does its own cold read.
+			assert.strictEqual(yield* probe.coldReads, 1)
+		}),
 	)
 })

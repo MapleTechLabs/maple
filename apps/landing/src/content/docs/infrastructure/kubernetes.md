@@ -24,13 +24,21 @@ All signals are exported over OTLP HTTP to Maple's ingest gateway, which authent
 
 ## Install
 
-The install script creates the namespace and the ingest-key Secret and runs Helm for you. It prints your active `kubectl` context and asks for confirmation first (set `MAPLE_INSTALL_YES=1` to skip):
+The install script creates the namespace and the ingest-key Secret and runs Helm for you. It prints your active `kubectl` context before it installs. Piped from `curl`, the script cannot read an answer to its confirmation prompt, so the command sets `MAPLE_INSTALL_YES=1`. Check that `kubectl config current-context` points at the right cluster first:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MapleTechLabs/maple/main/deploy/k8s-infra/install.sh | \
   MAPLE_INGEST_KEY=YOUR_INGEST_KEY \
   MAPLE_CLUSTER_NAME=production \
+  MAPLE_INSTALL_YES=1 \
   bash
+```
+
+To answer the prompt yourself, download the script and run it as a file:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/MapleTechLabs/maple/main/deploy/k8s-infra/install.sh
+MAPLE_INGEST_KEY=YOUR_INGEST_KEY MAPLE_CLUSTER_NAME=production bash install.sh
 ```
 
 Prefer Helm directly? Install the published OCI chart:
@@ -74,6 +82,7 @@ curl -fsSL https://raw.githubusercontent.com/MapleTechLabs/maple/main/deploy/k8s
   MAPLE_INGEST_KEY=YOUR_INGEST_KEY \
   MAPLE_CLUSTER_NAME=production \
   MAPLE_INGEST_ENDPOINT=https://ingest.eu.maple.dev \
+  MAPLE_INSTALL_YES=1 \
   bash
 ```
 
@@ -120,7 +129,7 @@ Within about a minute of a healthy rollout:
 1. Open **Infrastructure → Hosts**. Your nodes appear with CPU, memory and disk. The **Kubernetes** pages list pods, nodes and workloads.
 2. If a view stays empty, check the agent logs: `kubectl -n maple logs -l app.kubernetes.io/component=agent --tail=200`.
 
-## Wire the service map's Infrastructure tab
+## Service map Infrastructure tab
 
 To get a pod-count badge and an Infrastructure tab on each **service** node (correlating your app traces to the workload running them), opt a namespace into env-var injection:
 

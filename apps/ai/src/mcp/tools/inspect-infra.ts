@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
 import { InspectInfraOutput, type InfraSeriesStats } from "@maple/domain/mcp-outputs"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
@@ -154,12 +154,10 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Inspect Infrastructure",
 		description:
-			"One host, Kubernetes pod/node/workload, or Docker container in depth: identity (OS, node, owner workload, image, QoS class; restart count for containers; per-mount disk use for hosts), " +
-			"CPU and memory over the window as min/avg/max/last with the time of the peak, and its busiest children (a node's or workload's pods, a host's containers). " +
-			"Also one Cloudflare zone (section=traffic: requests, 5xx, latency, status and cache mix; breakdown: top values of `dimension`; security: firewall events and top rules; dns: queries and top names), " +
-			"Cloudflare Worker (invocations by outcome, duration and CPU time), Railway service (CPU, memory, network, disk, replicas), PlanetScale database (CPU, memory, connections, replica lag, storage) or Vercel project (requests, 5xx and error logs over the window, busiest paths, top error messages, production and latest deployment) over the window. " +
-			"Use after list_infra, or to check whether a slow or failing service was starved of CPU or memory: compare the peak time with the incident. " +
-			"Same default window as list_infra (1 hour), so the numbers match; pass start_time to look further back.",
+			"One infrastructure entity in depth (host, Kubernetes pod/node/workload, container, Cloudflare zone or Worker, Railway service, PlanetScale database, Vercel project): " +
+			"identity, then CPU and memory (or the provider's traffic and resources) as min/avg/max/last with the peak time, and its busiest children. " +
+			"Use after list_infra, or to check whether a slow service was starved: compare the peak time with the incident. " +
+			"Same default window as list_infra (1 hour); pass start_time to look further back.",
 		parameters: Schema.Struct({
 			kind: entityKind("What `name` refers to"),
 			name: P.text(
@@ -176,7 +174,10 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 			environment: P.optionalText(
 				"Railway environment name, when the same service runs in several environments",
 			),
-			section: P.optionalOneOf(ZONE_SECTIONS, "Cloudflare zones only: which view (default traffic)"),
+			section: P.optionalOneOf(
+				ZONE_SECTIONS,
+				"Cloudflare zones only (default traffic): traffic is requests, 5xx, latency, status and cache mix; breakdown ranks by `dimension`; security is firewall events and top rules; dns is queries and top names",
+			),
 			dimension: P.optionalOneOf(
 				ZONE_DIMENSIONS,
 				"Cloudflare zones with section=breakdown: what to rank requests by (default path)",
@@ -289,7 +290,7 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 				["Environment", entity.environment],
 				["Replicas", entity.replicas === undefined ? undefined : String(entity.replicas)],
 				["Last seen", entity.lastSeen],
-				...Object.entries(output.details ?? {}),
+				...Rec.toEntries(output.details ?? {}),
 			]
 			const both = (a: number | undefined, b: number | undefined, f: (v: number) => string) =>
 				a === undefined ? undefined : b === undefined ? f(a) : `${f(a)} → ${f(b)}`
@@ -325,9 +326,17 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 					isZone
 						? entity.latencyP50Ms === undefined
 							? undefined
-							: [entity.latencyP50Ms, entity.latencyP95Ms ?? 0, entity.latencyP99Ms ?? 0]
-									.map(formatDurationFromMs)
-									.join(" → ")
+							: Arr.join(
+									Arr.map(
+										[
+											entity.latencyP50Ms,
+											entity.latencyP95Ms ?? 0,
+											entity.latencyP99Ms ?? 0,
+										],
+										formatDurationFromMs,
+									),
+									" → ",
+								)
 						: both(entity.latencyP50Ms, entity.latencyP99Ms, formatDurationFromMs),
 				],
 				[
@@ -378,12 +387,10 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 			]
 			const blocks: Array<DocBlock> = [
 				doc.fields(
-					[
-						...identity,
-						...totals,
-						...always,
-						...(output.series.length === 0 ? averages : []),
-					].filter(([, v]) => v !== undefined && v !== ""),
+					Arr.filter(
+						[...identity, ...totals, ...always, ...(output.series.length === 0 ? averages : [])],
+						([, v]) => v !== undefined && v !== "",
+					),
 				),
 			]
 			// A per-pod series names its pod; the entity's own series is the entity.
@@ -391,23 +398,27 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 				pod === undefined
 					? entity.restarts
 					: output.children?.rows.find((row) => row.name === pod)?.restarts
-			const drops = output.series.filter(
+			const drops = Arr.filter(
+				output.series,
 				(s) => s.unit === "fraction" && s.max >= 0.9 && s.last <= s.max * 0.6,
 			)
 			// The workload average mirrors its hottest pod's drop; say it once, about the pod.
-			const notices = (
-				drops.some((s) => s.group !== undefined) ? drops.filter((s) => s.group !== undefined) : drops
-			).map((s) => {
-				const restarts = restartsOf(s.group)
-				const who = s.group === undefined ? s.label : `${s.group}'s ${s.label}`
-				const cause =
-					restarts === undefined
-						? "most likely a restart (OOM kill or eviction); no restart count is collected for it"
-						: restarts > 0
-							? `with ${plural(restarts, "container restart")} recorded in the window: consistent with an OOM kill (the termination reason is not collected)`
-							: "with no restart recorded, so usage fell on its own"
-				return `${who} reached ${formatPercent(s.max)} at ${s.maxAt}, then fell to ${formatPercent(s.last)} by the end of the window, ${cause}.`
-			})
+			const notices = Arr.map(
+				Arr.some(drops, (s) => s.group !== undefined)
+					? Arr.filter(drops, (s) => s.group !== undefined)
+					: drops,
+				(s) => {
+					const restarts = restartsOf(s.group)
+					const who = s.group === undefined ? s.label : `${s.group}'s ${s.label}`
+					const cause =
+						restarts === undefined
+							? "most likely a restart (OOM kill or eviction); no restart count is collected for it"
+							: restarts > 0
+								? `with ${plural(restarts, "container restart")} recorded in the window: consistent with an OOM kill (the termination reason is not collected)`
+								: "with no restart recorded, so usage fell on its own"
+					return `${who} reached ${formatPercent(s.max)} at ${s.maxAt}, then fell to ${formatPercent(s.last)} by the end of the window, ${cause}.`
+				},
+			)
 			if (output.series.length > 0) {
 				blocks.push(
 					doc.heading(
@@ -415,7 +426,7 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 					),
 					doc.table(
 						["Metric", "Min", "Avg", "Max", "Peak at", "Last", "Trend"],
-						output.series.map((s) => [
+						Arr.map(output.series, (s) => [
 							s.group === undefined ? s.label : `${s.label} (${s.group})`,
 							value(s, s.min),
 							value(s, s.avg),
@@ -436,9 +447,9 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 						? doc.text("Nothing recorded in this window.")
 						: doc.table(
 								[breakdown.keyLabel, ...breakdown.valueLabels],
-								breakdown.rows.map((row) => [
+								Arr.map(breakdown.rows, (row) => [
 									row.key,
-									...row.values.map((v, i) =>
+									...Arr.map(row.values, (v, i) =>
 										breakdown.valueLabels[i] === "Share"
 											? formatPercent(v)
 											: breakdown.valueLabels[i] === "Bytes"
@@ -476,7 +487,8 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
 			const otherSections: Array<NextCall> =
 				output.kind === "cloudflare_zone"
-					? ZONE_SECTIONS.filter((section) => section !== (output.section ?? "traffic")).map(
+					? Arr.map(
+							Arr.filter(ZONE_SECTIONS, (section) => section !== (output.section ?? "traffic")),
 							(section) =>
 								doc.next(
 									TOOL,

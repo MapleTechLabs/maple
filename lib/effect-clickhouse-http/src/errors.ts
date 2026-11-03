@@ -1,4 +1,4 @@
-import { Schema, type Types } from "effect"
+import { Schema, type Types, String as Str } from "effect"
 
 const metadata = { status: Schema.Number, queryId: Schema.String }
 
@@ -55,7 +55,8 @@ export type ClickHouseError =
 export const serverError = (text: string, status: number, queryId: string, headerCode?: string) => {
 	const code = text.match(/\b(?:Code|Error):\s*(\d+)/)?.[1] ?? headerCode
 	const lastException = text.lastIndexOf("Exception:")
-	const detail = lastException >= 0 ? text.slice(lastException + "Exception:".length).trim() : text.trim()
+	const detail =
+		lastException >= 0 ? Str.trim(Str.slice(lastException + "Exception:".length)(text)) : Str.trim(text)
 	const type = detail.match(/\(([A-Z][A-Z0-9_]{2,})\)/)?.[1]
 	const identity: Types.Mutable<Pick<ClickHouseServerError, "code" | "type">> = {}
 	if (code !== undefined) identity.code = code

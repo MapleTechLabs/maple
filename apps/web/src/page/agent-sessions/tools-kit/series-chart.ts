@@ -3,25 +3,27 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { metricValue, toolChartTitle, toolMetricLabel } from "@maple/web-data/lib/tool-analytics"
 import { makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import { ChartSpec } from "../../../charts/chart-spec"
-import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
-import { plotFrame } from "../../../charts/plot-frame"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import type { LoadFailure } from "../../../data/load-failure"
-import { chartEmpty, chartLoading } from "../../../ui/chart-state"
-import { errorState } from "../../../ui/error-state"
-import { panelHeader } from "../../../ui/panel"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartSpec } from "@maple/views/charts/chart-spec"
+import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { chartEmpty, chartLoading } from "@maple/views/ui/chart-state"
+import { errorState } from "@maple/views/ui/error-state"
+import { panelHeader } from "@maple/views/ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
 import type { ToolMetric, ToolPercentile, ToolSeriesPoint } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // A tool series chart in a bare `ChartCard`.
 
 const PLOT_HEIGHT = 220
-const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 /** The tokens the chart reads off the theme. */
 export const TOOL_CHART_TOKENS = [
@@ -34,9 +36,9 @@ export const TOOL_CHART_TOKENS = [
 
 const seriesFor = (metric: ToolMetric, percentile: ToolPercentile) =>
 	metric === "duration"
-		? (["p50", "p90", "p95"] as const).map((key) => ({
+		? Arr.map(["p50", "p90", "p95"] as const, (key) => ({
 				key,
-				label: key.toUpperCase(),
+				label: Str.toUpperCase(key),
 				token:
 					key === percentile
 						? "--primary"
@@ -65,15 +67,16 @@ export type SeriesChartInputs = Readonly<{
 }>
 
 const rowsOf = (inputs: SeriesChartInputs) =>
-	inputs.series
-		.toSorted((a, b) => a.bucket - b.bucket)
-		.map((point) => ({
+	Arr.map(
+		inputs.series.toSorted((a, b) => a.bucket - b.bucket),
+		(point) => ({
 			bucket: formatWarehouseDateTime(point.bucket),
 			[inputs.metric]: metricValue(point, inputs.metric, inputs.percentile),
 			p50: point.p50,
 			p90: point.p90,
 			p95: point.p95,
-		}))
+		}),
+	)
 
 type ToolSeriesSpec = Extract<ChartSpec, { readonly _tag: "ToolSeries" }>
 
@@ -102,7 +105,7 @@ export const toolPlotView = Submodel.defineView<Chart.Model, Chart.Message, Tool
 					ariaLabel: inputs.ariaLabel,
 					spec: ChartSpec.ToolSeries({
 						rows: inputs.rows,
-						series: inputs.series.map((entry) => ({
+						series: Arr.map(inputs.series, (entry) => ({
 							key: entry.key,
 							label: entry.label,
 							color: resolveColor(inputs.theme, entry.token),
@@ -136,10 +139,10 @@ export const seriesChart = <M>(
 ): Html => {
 	const rows = rowsOf(inputs)
 	const axis = makeBucketAxis(
-		rows.map((row) => row.bucket),
+		Arr.map(rows, (row) => row.bucket),
 		inputs.timeZone,
 	)
-	const scopeParts = [inputs.tool, inputs.model].filter((part): part is string => part !== undefined)
+	const scopeParts = Arr.filter([inputs.tool, inputs.model], (part): part is string => part !== undefined)
 	const plotted = seriesFor(inputs.metric, inputs.percentile)
 	const title = toolChartTitle({
 		metric: inputs.metric,
@@ -153,8 +156,8 @@ export const seriesChart = <M>(
 			...(inputs.isWaiting ? [h.AriaBusy(true)] : []),
 			h.Class(
 				cn(
-					"flex min-w-0 flex-col",
-					"gap-4 border-b border-border px-6 pt-[22px] pb-5",
+					vstackClass({ shrink: true }),
+					"gap-4 border-b border-border px-6 py-5",
 					refreshingClass(inputs.isWaiting),
 				),
 			),
@@ -167,15 +170,17 @@ export const seriesChart = <M>(
 						? undefined
 						: h.span(
 								[h.Class("contents")],
-								scopeParts.map((part) =>
+								Arr.map(scopeParts, (part) =>
 									h.span(
 										[h.Key(part), h.Class("contents font-mono text-xs")],
 										[
-											h.span(
-												[
-													h.AriaHidden(true),
-													h.Class("text-xs text-muted-foreground/60"),
-												],
+											typography(
+												h,
+												{
+													size: "xs",
+													tone: "subtle",
+													attributes: [h.AriaHidden(true)],
+												},
 												["·"],
 											),
 											h.span([h.Class("text-primary")], [part]),
@@ -189,17 +194,17 @@ export const seriesChart = <M>(
 						...(plotted.length > 1
 							? [
 									seriesLegend(h, {
-										items: plotted.map((entry) => ({
+										items: Arr.map(plotted, (entry) => ({
 											key: entry.key,
 											label: entry.label,
 											color: `var(${entry.token})`,
 										})),
-										swatch: "square",
 									}),
 								]
 							: []),
-						h.span(
-							[h.Class("font-mono text-2xs text-muted-foreground/60")],
+						typography(
+							h,
+							{ size: "2xs", tone: "subtle", mono: true },
 							bucketMs === null ? [] : [`${bucketLabel(bucketMs)} buckets`],
 						),
 					],
@@ -208,7 +213,7 @@ export const seriesChart = <M>(
 				className: cn("px-3 pt-2.5", "px-0 pt-0"),
 			}),
 			inputs.failure !== undefined
-				? errorState(h, { failure: inputs.failure, title: `Failed to load ${title}` })
+				? errorState(h, { failure: inputs.failure, title: `Couldn't load ${title}` })
 				: inputs.isLoading && rows.length === 0
 					? chartLoading(h, { variant: "line", height: PLOT_HEIGHT })
 					: rows.length === 0

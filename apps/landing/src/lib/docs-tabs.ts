@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // Client side of every docs tab group: `<LanguageTabs>` and the package-manager
 // switchers `remark-install-tabs.mjs` renders. A group's `data-lang-tabs` value
 // is the storage key its pick is remembered under; picking a tab switches every
@@ -31,7 +32,7 @@ const groupOf = (trigger: HTMLElement) => trigger.closest<HTMLElement>("[data-la
 // A group without the requested id keeps its current tab.
 const activate = (root: HTMLElement, id: string) => {
 	const triggers = triggersOf(root)
-	if (!triggers.some((t) => t.dataset.langTrigger === id)) return false
+	if (!Arr.some(triggers, (t) => t.dataset.langTrigger === id)) return false
 	for (const t of triggers) {
 		const on = t.dataset.langTrigger === id
 		t.setAttribute("aria-selected", on ? "true" : "false")
@@ -40,7 +41,21 @@ const activate = (root: HTMLElement, id: string) => {
 	for (const panel of root.querySelectorAll<HTMLElement>(":scope > .lt__panels > [data-lang-panel]")) {
 		panel.hidden = panel.dataset.langPanel !== id
 	}
+	const picked = triggers.find((t) => t.dataset.langTrigger === id)
+	if (picked) revealInRail(picked)
 	return true
+}
+
+// The rail scrolls sideways when its tabs overflow; keep the picked one in view
+// without moving the page (scrollIntoView would also scroll vertically).
+const revealInRail = (tab: HTMLElement) => {
+	const rail = tab.parentElement
+	if (!rail || rail.scrollWidth <= rail.clientWidth) return
+	const tabBox = tab.getBoundingClientRect()
+	const railBox = rail.getBoundingClientRect()
+	const fade = 40
+	if (tabBox.left < railBox.left + fade) rail.scrollLeft -= railBox.left + fade - tabBox.left
+	else if (tabBox.right > railBox.right - fade) rail.scrollLeft += tabBox.right - (railBox.right - fade)
 }
 
 const select = (key: string, id: string) => {
@@ -54,9 +69,11 @@ const select = (key: string, id: string) => {
 const LANGUAGE_KEY = "maple-docs-language"
 const url = new URL(location.href)
 const requested = url.searchParams.get("lang")
-const linked = roots.some(
+const linked = Arr.some(
+	roots,
 	(root) =>
-		root.dataset.langTabs === LANGUAGE_KEY && triggersOf(root).some((t) => t.dataset.langTrigger === requested),
+		root.dataset.langTabs === LANGUAGE_KEY &&
+		Arr.some(triggersOf(root), (t) => t.dataset.langTrigger === requested),
 )
 	? requested
 	: null

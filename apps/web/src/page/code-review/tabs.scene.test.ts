@@ -1,8 +1,11 @@
-import { Result } from "effect"
+import { Result, Array as Arr } from "effect"
+import type { HtmlBuilder } from "foldkit/html"
+import { all, expect as expectView, expectAll, given, role, scene } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { AppRoute } from "../../route"
 import * as AnalyticsMessage from "./analytics/message"
 import { FrameMessage } from "./kit/frame"
+import { type CodeReviewTab, codeReviewLayout } from "./kit/layout"
 import { analyticsOf, context, githubStatusOf, names, NOW, window } from "./kit/test-fixtures"
 import * as PullRequests from "./pull-requests/model"
 import { Message, type Model } from "./tabs"
@@ -22,18 +25,22 @@ const analyticsLoaded = (): Model => {
 	).model
 	if (windowed.tab._tag !== "Analytics") return windowed
 	const { analytics, frame } = windowed.tab.model
-	return [
-		AnalyticsMessage.Message.CompletedFetchAnalytics({
-			key: analytics.key ?? "",
-			result: Result.succeed(analyticsOf(3, ["ada-l"])),
-		}),
-		AnalyticsMessage.Message.GotFrameMessage({
-			message: FrameMessage.CompletedFetchGithubStatus({
-				key: frame.githubStatus.key ?? "",
-				result: Result.succeed(githubStatusOf([{ name: "shop", reviewed: true }])),
+	return Arr.reduce(
+		[
+			AnalyticsMessage.Message.CompletedFetchAnalytics({
+				key: analytics.key ?? "",
+				result: Result.succeed(analyticsOf(3, ["ada-l"])),
 			}),
-		}),
-	].reduce((model, message) => pageUpdate(model, Message.GotAnalyticsMessage({ message })).model, windowed)
+			AnalyticsMessage.Message.GotFrameMessage({
+				message: FrameMessage.CompletedFetchGithubStatus({
+					key: frame.githubStatus.key ?? "",
+					result: Result.succeed(githubStatusOf([{ name: "shop", reviewed: true }])),
+				}),
+			}),
+		],
+		windowed,
+		(model, message) => pageUpdate(model, Message.GotAnalyticsMessage({ message })).model,
+	)
 }
 
 describe("code review tabs", () => {
@@ -74,5 +81,28 @@ describe("code review tabs", () => {
 			}),
 		)
 		expect(late.model).toBe(moved)
+	})
+})
+
+describe("code review tab strip", () => {
+	const config = {
+		update: (active: CodeReviewTab, _message: never) => ({ model: active }),
+		view: (active: CodeReviewTab, h: HtmlBuilder<never>) =>
+			codeReviewLayout({ h, active, search: {} }, []),
+	}
+
+	test("exactly one tab link is the current page", () => {
+		scene(
+			config,
+			given<CodeReviewTab>("pull-requests"),
+			expectAll(all.role("link", { current: "page" })).toHaveCount(1),
+			expectView(role("link", { name: "Pull requests", current: "page" })).toExist(),
+		)
+		scene(
+			config,
+			given<CodeReviewTab>("analytics"),
+			expectAll(all.role("link", { current: "page" })).toHaveCount(1),
+			expectView(role("link", { name: "Analytics", current: "page" })).toExist(),
+		)
 	})
 })

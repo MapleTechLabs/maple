@@ -4,9 +4,13 @@ import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { investigationKindKey, type InvestigationKindKey } from "@maple/web-data/investigations/display"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon, type IconName } from "../../ui/icon"
+import { bareInput } from "@maple/views/ui/bare-input"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The investigation status badge and confidence meter.
 
@@ -14,7 +18,7 @@ type InvestigationStatus = V2Investigation["status"]
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
 export const STATUS = {
-	investigating: { label: "In progress", tone: "bg-primary/10 text-primary" },
+	investigating: { label: "In progress", tone: TONE_SOFT.live },
 	diagnosed: { label: "Diagnosed", tone: TONE_SOFT.ok },
 	inconclusive: { label: "Inconclusive", tone: TONE_SOFT.warn },
 	resolved: { label: "Resolved", tone: TONE_SOFT.done },
@@ -25,7 +29,10 @@ export const STATUS = {
 export const statusBadge = <M>(h: HtmlBuilder<M>, status: InvestigationStatus, className?: string): Html =>
 	badge(h, { variant: "outline", className: cn(STATUS[status].tone, className) }, [STATUS[status].label])
 
-export const ORIGIN = { user: "Manual", system: "Automatic" } as const satisfies Record<V2Investigation["seeded_by"], string>
+export const ORIGIN = { user: "Manual", system: "Automatic" } as const satisfies Record<
+	V2Investigation["seeded_by"],
+	string
+>
 
 export const KIND_LABEL = {
 	alert: "Alert",
@@ -65,7 +72,10 @@ export const kindMarker = <M>(
 	)
 }
 
-const CONFIDENCE_TONE_OF = { high: "ok", medium: "warn", low: "neutral" } as const satisfies Record<Confidence, Tone>
+const CONFIDENCE_TONE_OF = { high: "ok", medium: "warn", low: "neutral" } as const satisfies Record<
+	Confidence,
+	Tone
+>
 
 export const CONFIDENCE_TONE = {
 	high: TONE_TEXT.info,
@@ -77,19 +87,38 @@ const FILLED = { high: 3, medium: 2, low: 1 } as const satisfies Record<Confiden
 const BAR_HEIGHT = ["h-1.5", "h-2", "h-2.5"] as const
 
 /** `ConfidenceMeter`: ascending bars and the word. */
-export const confidenceMeter = <M>(h: HtmlBuilder<M>, confidence: Confidence | null, className?: string): Html => {
+export const confidenceMeter = <M>(
+	h: HtmlBuilder<M>,
+	confidence: Confidence | null,
+	className?: string,
+): Html => {
 	if (confidence === null)
-		return h.span([h.Class(cn("text-xs text-muted-foreground/60", className)), h.Title("No diagnosis yet")], [EMPTY_VALUE])
+		return h.span(
+			[
+				h.Class(cn(typographyClass({ size: "xs", tone: "subtle" }), className)),
+				h.Title("No diagnosis yet"),
+			],
+			[EMPTY_VALUE],
+		)
 	const filled = FILLED[confidence]
 	return h.span(
-		[h.Class(cn("inline-flex items-center gap-1.5", className)), h.Title(`Diagnosis confidence: ${confidence}`)],
+		[
+			h.Class(cn(hstackClass({ gap: "1.5", inline: true }), className)),
+			h.Title(`Diagnosis confidence: ${confidence}`),
+		],
 		[
 			h.span(
 				[h.Class("flex items-end gap-px"), h.AriaHidden(true)],
-				BAR_HEIGHT.map((height, index) =>
+				Arr.map(BAR_HEIGHT, (height, index) =>
 					h.span([
 						h.Key(height),
-						h.Class(cn("w-[3px] rounded-[1px]", height, index < filled ? TONE_FILL[CONFIDENCE_TONE_OF[confidence]] : "bg-border")),
+						h.Class(
+							cn(
+								"w-[3px] rounded-2xs",
+								height,
+								index < filled ? TONE_FILL[CONFIDENCE_TONE_OF[confidence]] : "bg-border",
+							),
+						),
 					]),
 				),
 			),
@@ -115,29 +144,35 @@ export const investigateBar = <M>(
 			h.Class(
 				cn(
 					"flex h-10 items-center gap-3 rounded-lg border bg-card px-3.5 transition-colors focus-within:border-ring",
-					options.isAccent === true ? "border-primary/60" : "border-input",
+					options.isAccent === true ? "border-primary-a4" : "border-input",
 				),
 			),
 			h.OnSubmit(options.onSubmit),
 		],
 		[
 			icon(h, "ChatBubbleSparkleIcon", { size: 14, className: "shrink-0 text-primary" }),
-			h.input([
-				h.Value(options.value),
-				h.OnInput(options.onInput),
-				h.Placeholder(options.placeholder ?? "Ask Maple to investigate — a service, a symptom, a question"),
-				h.AriaLabel("What should Maple investigate?"),
-				h.Class("min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"),
-			]),
+			bareInput(h, {
+				className: "flex-1 font-prose text-sm text-foreground placeholder:text-muted-foreground",
+				attributes: [
+					h.Value(options.value),
+					h.OnInput(options.onInput),
+					h.Placeholder(
+						options.placeholder ?? "Ask Maple to investigate a service, a symptom or a question",
+					),
+					h.AriaLabel("What should Maple investigate?"),
+				],
+			}),
 			button(
 				h,
 				{
 					type: "submit",
 					size: "sm",
-					variant: options.isAccent === true ? "default" : "secondary",
+					// Primary once there is something to send, so an actionable button never reads as disabled.
+					variant:
+						options.isAccent === true || Str.trim(options.value) !== "" ? "default" : "secondary",
 					className: "h-6.5 shrink-0 px-3 text-xs",
 					isLoading: options.isBusy,
-					isDisabled: options.value.trim() === "",
+					isDisabled: Str.trim(options.value) === "",
 				},
 				["Investigate"],
 			),

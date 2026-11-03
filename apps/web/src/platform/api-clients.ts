@@ -1,17 +1,18 @@
 import { MapleAiApi, MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { transformMapleApiClient } from "../lib/services/common/api-client-transform"
+import { isBillingRequest, transformMapleApiClient } from "../lib/services/common/api-client-transform"
 import { apiBaseUrl } from "../lib/services/common/api-base-url"
 import { withRequestTimeout } from "../lib/services/common/http-client"
-import { Context, Effect, Layer, Option } from "effect"
+import { withUnauthorizedResign } from "../lib/services/common/retry-policy"
+import { Context, Effect, Layer, Option, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { MapleAuthApi } from "./auth-api"
 import { SessionBearer } from "./session-bearer"
 
 /**
- * The API HTTP client: requests to the API carry the session
- * bearer, and every request has the same 45 s deadline.
+ * The API HTTP client: requests to the API carry the session bearer, every request has
+ * the same 45 s deadline, and billing reads that 401 are resent with a fresh bearer.
  */
 const MapleHttpClientLive = Layer.effect(
 	HttpClient.HttpClient,
@@ -19,7 +20,7 @@ const MapleHttpClientLive = Layer.effect(
 		const client = yield* HttpClient.HttpClient
 		const bearer = yield* SessionBearer
 		const authorize = (request: HttpClientRequest.HttpClientRequest) =>
-			request.url.startsWith(apiBaseUrl) && request.headers.authorization === undefined
+			Str.startsWith(apiBaseUrl)(request.url) && request.headers.authorization === undefined
 				? Effect.map(
 						bearer.token,
 						Option.match({
@@ -31,7 +32,10 @@ const MapleHttpClientLive = Layer.effect(
 		// The base URL is prepended here, not by HttpApiClient: its `baseUrl` is applied after this
 		// client's request mapping, so `authorize` would only ever see relative URLs.
 		const absolute = HttpClient.mapRequest(client, HttpClientRequest.prependUrl(apiBaseUrl))
-		return withRequestTimeout(HttpClient.mapRequestEffect(absolute, authorize))
+		return withUnauthorizedResign(withRequestTimeout(HttpClient.mapRequestEffect(absolute, authorize)), {
+			shouldRetry: (request) => Str.startsWith(apiBaseUrl)(request.url) && isBillingRequest(request),
+			freshToken: bearer.freshToken,
+		})
 	}),
 ).pipe(Layer.provide([FetchHttpClient.layer, SessionBearer.layer]))
 

@@ -1,8 +1,8 @@
 import { makeOnboardingTeamActions } from "../../components/onboarding/team-actions"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { clerkTeamOrganization } from "../../platform/clerk"
+import { clerkTeamOrganization, clerkTry } from "../../platform/clerk"
 
 // `StepTeamConnected` / `StepTeam` (apps/web/src/components/onboarding): rename the workspace and
 // invite teammates through the Clerk organization, or the self-hosted notice.
@@ -23,7 +23,12 @@ export const Team = Schema.Struct({
 })
 export type Team = typeof Team.Type
 
-export const ready = (name: string, invited: ReadonlyArray<string>, canManage: boolean, reason: string | null): Team => ({
+export const ready = (
+	name: string,
+	invited: ReadonlyArray<string>,
+	canManage: boolean,
+	reason: string | null,
+): Team => ({
 	isLoaded: true,
 	name,
 	savedName: name,
@@ -63,9 +68,15 @@ export const LoadTeam = Command.define("LoadOnboardingTeam", {
 			return TeamMessage.LoadedTeam({ name: "My workspace", canManage: false, invitations: [] })
 		const organization = maybeOrganization.value
 		const invitations = organization.isAdmin
-			? yield* Effect.promise(organization.pendingInvitations).pipe(Effect.orElseSucceed(() => []))
+			? yield* clerkTry("Couldn't load invitations", organization.pendingInvitations).pipe(
+					Effect.orElseSucceed(() => []),
+				)
 			: []
-		return TeamMessage.LoadedTeam({ name: organization.name, canManage: organization.isAdmin, invitations })
+		return TeamMessage.LoadedTeam({
+			name: organization.name,
+			canManage: organization.isAdmin,
+			invitations,
+		})
 	}),
 })
 
@@ -77,7 +88,12 @@ export const RunTeamOperation = Command.define("RunOnboardingTeamOperation", {
 		Effect.gen(function* () {
 			const maybeOrganization = yield* clerkTeamOrganization
 			if (Option.isNone(maybeOrganization))
-				return TeamMessage.FailedTeamOperation({ message: "Something went wrong. Please try again." })
+				return TeamMessage.FailedTeamOperation({
+					message:
+						operation === "rename"
+							? "Couldn't rename the organization"
+							: "Couldn't send the invitation",
+				})
 			const actions = makeOnboardingTeamActions(maybeOrganization.value)
 			yield* operation === "rename" ? actions.rename(value) : actions.invite(value)
 			return TeamMessage.SucceededTeamOperation({ operation, value })
@@ -88,10 +104,10 @@ export const RunTeamOperation = Command.define("RunOnboardingTeamOperation", {
 		),
 })
 
-export const isNameDirty = (team: Team): boolean => team.name.trim() !== team.savedName
+export const isNameDirty = (team: Team): boolean => Str.trim(team.name) !== team.savedName
 
 export const isAlreadyInvited = (team: Team): boolean =>
-	team.invited.some((address) => address.toLowerCase() === team.email.trim().toLowerCase())
+	Arr.some(team.invited, (address) => Str.toLowerCase(address) === Str.toLowerCase(Str.trim(team.email)))
 
 type TeamStep = Readonly<{ team: Team; commands: ReadonlyArray<Command.Command<TeamMessage>> }>
 
@@ -110,13 +126,13 @@ export const updateTeam = (team: Team, message: TeamMessage): TeamStep =>
 		ChangedWorkspaceName: ({ value }) => ({ team: { ...team, name: value }, commands: [] }),
 		ChangedTeammateEmail: ({ value }) => ({ team: { ...team, email: value }, commands: [] }),
 		SubmittedRename: () =>
-			!team.canManage || team.pending !== null || team.name.trim() === "" || !isNameDirty(team)
+			!team.canManage || team.pending !== null || Str.trim(team.name) === "" || !isNameDirty(team)
 				? { team, commands: [] }
-				: run(team, "rename", team.name.trim()),
+				: run(team, "rename", Str.trim(team.name)),
 		SubmittedInvite: () =>
-			!team.canManage || team.pending !== null || team.email.trim() === "" || isAlreadyInvited(team)
+			!team.canManage || team.pending !== null || Str.trim(team.email) === "" || isAlreadyInvited(team)
 				? { team, commands: [] }
-				: run(team, "invite", team.email.trim()),
+				: run(team, "invite", Str.trim(team.email)),
 		SucceededTeamOperation: ({ operation, value }) => ({
 			team:
 				operation === "rename"
@@ -125,7 +141,10 @@ export const updateTeam = (team: Team, message: TeamMessage): TeamStep =>
 							pending: null,
 							name: value,
 							savedName: value,
-							feedback: { message: "Workspace name saved. Make yourself at home.", isError: false },
+							feedback: {
+								message: "Workspace name saved. Make yourself at home.",
+								isError: false,
+							},
 						}
 					: {
 							...team,

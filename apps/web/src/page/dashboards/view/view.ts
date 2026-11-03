@@ -1,22 +1,32 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { alert, alertDescription } from "../../../ui/alert"
-import { button, linkButton } from "../../../ui/button"
-import { chartSkeleton } from "../../../ui/chart-skeleton"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { inlineCode } from "../../../ui/inline-code"
-import { skeleton } from "../../../ui/skeleton"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { button, linkButton } from "@maple/views/ui/button"
+import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { inlineRenameInput } from "@maple/views/ui/inline-rename-input"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageContext, PageViewInputs } from "../../contract"
 import { variablesOf } from "./plan"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { resourceNotFound } from "../../kit/resource-not-found"
 import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -29,7 +39,10 @@ import { sectionDialogs } from "./view-sections"
 import { historyPanel, previewBanner } from "./view-history"
 import { shareDialog } from "./view-share"
 import { embedDialog } from "./view-embed"
-import { errorState } from "../../../ui/error-state"
+import { errorState } from "@maple/views/ui/error-state"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // The dashboard view page.
 
@@ -42,39 +55,42 @@ const title = (h: H, model: Model, name: string): Html => {
 		return h.form(
 			[h.OnSubmit(Message.SubmittedTitle())],
 			[
-				h.input([
-					h.Value(model.titleDraft),
-					h.OnInput((value) => Message.ChangedTitleDraft({ value })),
-					h.OnBlur(Message.SubmittedTitle()),
-					h.OnKeyDownPreventDefault((key) =>
-						key === "Escape" ? Option.some(Message.CancelledTitle()) : Option.none(),
-					),
-					h.Autofocus(true),
-					h.Class(
-						"font-display text-2xl font-semibold tracking-tight leading-[1.1] bg-transparent border-b border-foreground/20 outline-none focus:border-foreground/50 w-full",
-					),
-				]),
+				inlineRenameInput(h, {
+					isPageTitle: true,
+					className: "w-full",
+					attributes: [
+						h.Value(model.titleDraft),
+						h.OnInput((value) => Message.ChangedTitleDraft({ value })),
+						h.OnBlur(Message.SubmittedTitle()),
+						h.OnKeyDownPreventDefault((key) =>
+							key === "Escape" ? Option.some(Message.CancelledTitle()) : Option.none(),
+						),
+						h.Autofocus(true),
+					],
+				}),
 			],
 		)
-	const isBlank = name.trim() === ""
-	return h.h1(
-		[
-			h.Role("button"),
-			h.Tabindex(0),
-			h.OnClick(Message.ClickedTitle()),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " " ? Option.some(Message.ClickedTitle()) : Option.none(),
+	const isBlank = Str.trim(name) === ""
+	const shown = isBlank ? "Untitled dashboard" : name
+	return pageTitle(
+		h,
+		{
+			title: shown,
+			className: cn(
+				!isReadOnly && "cursor-pointer hover:text-foreground-soft active:text-foreground-soft",
+				isBlank && "text-muted-foreground",
 			),
-			h.AriaDisabled(isReadOnly),
-			h.Class(
-				cn(
-					"font-display text-2xl font-semibold tracking-tight truncate leading-[1.1]",
-					!isReadOnly && "cursor-pointer hover:text-foreground/80",
-					isBlank && "text-muted-foreground",
+			attributes: [
+				h.Role("button"),
+				h.Tabindex(0),
+				h.OnClick(Message.ClickedTitle()),
+				h.OnKeyDownPreventDefault((key) =>
+					key === "Enter" || key === " " ? Option.some(Message.ClickedTitle()) : Option.none(),
 				),
-			),
-		],
-		[isBlank ? "Untitled dashboard" : name],
+				h.AriaDisabled(isReadOnly),
+			],
+		},
+		[shown],
 	)
 }
 
@@ -97,45 +113,29 @@ const viewSkeleton = (h: H): Html => {
 		[h.Role("status"), h.AriaLabel("Loading dashboard")],
 		[
 			h.span([h.Class("sr-only")], ["Loading dashboard"]),
-			h.div(
-				[h.Class("flex flex-col gap-4"), h.AriaHidden(true)],
-				[
-					h.div(
-						[h.Class("grid grid-cols-2 gap-4 lg:grid-cols-4")],
-						[0, 1, 2, 3].map((index) => ghost(index, "h-28")),
-					),
-					h.div(
-						[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
-						[ghost(4, "h-64"), ghost(5, "h-64")],
-					),
-					ghost(6, "h-64"),
-				],
-			),
+			vstack(h, { gap: "4", attributes: [h.AriaHidden(true)] }, [
+				h.div(
+					[h.Class("grid grid-cols-2 gap-4 lg:grid-cols-4")],
+					Arr.map([0, 1, 2, 3], (index) => ghost(index, "h-28")),
+				),
+				grid(h, { cols: 1, lg: 2, gap: "4" }, [ghost(4, "h-64"), ghost(5, "h-64")]),
+				ghost(6, "h-64"),
+			]),
 		],
 	)
 }
 
 /** `ResourceNotFound`: the id resolved to nothing. */
 const notFound = (h: H, dashboardId: string): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { size: 18 })]),
-				emptyTitle(h, ["Dashboard not found"]),
-				emptyDescription(h, [
-					"No dashboard with id ",
-					inlineCode(h, { className: "break-all px-1.5 py-0.5" }, [dashboardId]),
-				]),
-			]),
-			linkButton(
-				h,
-				{ variant: "outline", size: "sm", href: hrefOf(AppRoute.Dashboards({ search: {} })) },
-				["Back to all dashboards"],
-			),
+	resourceNotFound(h, {
+		title: "Dashboard not found",
+		description: [
+			"No dashboard with id ",
+			inlineCode(h, { className: "break-all px-1.5 py-0.5" }, [dashboardId]),
 		],
-		cn("md:py-12", "py-24"),
-	)
+		back: { href: hrefOf(AppRoute.Dashboards({ search: {} })), label: "Back to all dashboards" },
+		className: "py-24",
+	})
 
 const GRID_PREVIEW = [
 	{ glyph: "ChartBarTrendUpIcon", className: "h-16 grow" },
@@ -151,14 +151,14 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 			emptyMedia(h, {}, [
 				h.div(
 					[h.AriaHidden(true), h.Class("flex w-64 gap-2")],
-					GRID_PREVIEW.map(({ glyph, className }) =>
+					Arr.map(GRID_PREVIEW, ({ glyph, className }) =>
 						h.div(
 							[
 								h.Class(
 									`${className} flex items-center justify-center rounded-md border border-dashed border-border bg-card/40`,
 								),
 							],
-							[icon(h, glyph, { size: 16, className: "text-muted-foreground/50" })],
+							[icon(h, glyph, { size: 16, className: "text-foreground-faint" })],
 						),
 					),
 				),
@@ -172,38 +172,32 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 			emptyContent(
 				h,
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-center gap-2")],
-						[
-							button(
-								h,
-								{
-									size: "sm",
-									isDisabled: isReadOnly,
-									attributes: [h.OnClick(Message.ClickedAddWidget())],
-								},
-								[icon(h, "PlusIcon"), "Add your first widget"],
-							),
-							linkButton(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })),
-								},
-								["Start from a template"],
-							),
-							docsLink(h, "dashboards"),
-						],
-					),
-					h.p(
-						[h.Class("text-muted-foreground font-mono text-2xs")],
-						[
-							isReadOnly
-								? "Read-only. You can’t add widgets to this dashboard."
-								: "Templates create a new dashboard from this org’s data.",
-						],
-					),
+					hstack(h, { gap: "2", justify: "center", wrap: true }, [
+						button(
+							h,
+							{
+								size: "sm",
+								isDisabled: isReadOnly,
+								attributes: [h.OnClick(Message.ClickedAddWidget())],
+							},
+							[icon(h, "PlusIcon"), "Add your first widget"],
+						),
+						linkButton(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								href: hrefOf(AppRoute.DashboardsTemplates({ search: {} })),
+							},
+							["Start from a template"],
+						),
+						docsLink(h, "dashboards"),
+					]),
+					typography(h, { size: "2xs", tone: "muted", mono: true, as: "p" }, [
+						isReadOnly
+							? "Read-only. You can’t add widgets to this dashboard."
+							: "Templates create a new dashboard from this org’s data.",
+					]),
 				],
 				"max-w-none",
 			),
@@ -278,6 +272,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 											nowMs: model.nowMs ?? 0,
 											timeZone: inputs.context.timeZone,
 										}),
+										rightPanelWidth: "w-80",
 									}
 								: undefined),
 						},

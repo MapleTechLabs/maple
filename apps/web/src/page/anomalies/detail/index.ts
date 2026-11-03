@@ -6,8 +6,9 @@ import { Message } from "./message"
 import { Model } from "./model"
 import { init, update } from "./update"
 import { breadcrumbsOf, view } from "./view"
+import { pollTicks } from "../../../data/poll"
 
-/** `useIntervalRefresh`: an open incident and its series re-read every 15 s (ticks skip a hidden tab). */
+/** `useIntervalRefresh`: an open incident and its series re-read every 15 s (paused while hidden or offline). */
 const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()((entry) => ({
 	live: entry(
 		{ isOpen: Schema.Boolean },
@@ -17,9 +18,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()
 			}),
 			dependenciesToStream: ({ isOpen }) =>
 				isOpen
-					? Stream.tick(Duration.seconds(15)).pipe(
-							Stream.drop(1),
-							Stream.filter(() => typeof document === "undefined" || !document.hidden),
+					? pollTicks(Duration.seconds(15)).pipe(
 							Stream.mapEffect(() =>
 								Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveRefresh({ nowMs })),
 							),

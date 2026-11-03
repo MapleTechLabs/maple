@@ -1,6 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { PIXEL_GLYPHS } from "../../ui/icons.generated"
+import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
+import { PIXEL_GLYPHS } from "@maple/views/ui/icons.generated"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
 // its end state.
@@ -10,11 +13,7 @@ export type PixelGlyphName = keyof typeof PIXEL_GLYPHS
 /** `rasterOrder`: segments top row first, left to right, so the reveal scans. */
 const rasterOrder = (segments: ReadonlyArray<string>): ReadonlyArray<string> => {
 	const origin = (d: string) => {
-		const [x = 0, y = 0] = d
-			.slice(1)
-			.trim()
-			.split(/[\s,]+/)
-			.map(Number)
+		const [x, y = 0] = Arr.map(Str.split(/[\s,]+/)(Str.trim(Str.slice(1)(d))), Number)
 		return { x, y }
 	}
 	return [...segments].sort((a, b) => {
@@ -36,18 +35,7 @@ const segmentPath = <M>(h: HtmlBuilder<M>, d: string, extra: ReadonlyArray<Attri
 /** `DrawnCheck`: the tick at its drawn (`pathLength` 1) or undrawn end state. */
 const drawnCheck = <M>(h: HtmlBuilder<M>, isChecked: boolean, className: string | false | undefined): Html =>
 	h.span(
-		[
-			h.AriaHidden(true),
-			h.Class(
-				cn(
-					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
-					isChecked
-						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-foreground/40",
-					className,
-				),
-			),
-		],
+		[h.AriaHidden(true), h.Class(choiceCheckClass(isChecked, true, className))],
 		[
 			h.svg(
 				[h.Attribute("viewBox", "0 0 24 24"), h.Class("size-3"), h.Attribute("fill", "none")],
@@ -82,10 +70,6 @@ export type OptionCardOptions<M> = Readonly<{
 	layout?: "row" | "stacked"
 	/** Content pinned to the bottom of a `stacked` card. */
 	footer?: Html
-	/** Hex colour that replaces primary for the selected border and tint. */
-	accent?: string
-	/** Classes for the selected check, paired with `accent`. */
-	checkClassName?: string
 }>
 
 /** `OptionCard`: a hidden native input behind a bordered card. */
@@ -94,7 +78,7 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 	const check = drawnCheck(
 		h,
 		options.isChecked,
-		cn(layout === "row" && "mt-0.5", options.isChecked ? options.checkClassName : options.type === "radio" && "opacity-0"),
+		cn(layout === "row" && "mt-0.5", !options.isChecked && options.type === "radio" && "opacity-0"),
 	)
 	const body: ReadonlyArray<Html> =
 		layout === "row"
@@ -103,8 +87,13 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("min-w-0 flex-1 pt-px")],
 						[
-							h.span([h.Class("block text-sm font-semibold")], [options.title]),
-							h.span([h.Class("mt-1 block text-xs leading-relaxed text-muted-foreground")], [options.description]),
+							typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+								options.title,
+							]),
+							h.span(
+								[h.Class("mt-1 block text-xs leading-relaxed text-muted-foreground")],
+								[options.description],
+							),
 						],
 					),
 					check,
@@ -114,41 +103,30 @@ export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>):
 					h.div(
 						[h.Class("space-y-1")],
 						[
-							h.span([h.Class("block text-base font-semibold tracking-tight")], [options.title]),
+							h.span(
+								[h.Class("block text-base font-semibold tracking-tight")],
+								[options.title],
+							),
 							h.span([h.Class("block text-sm text-muted-foreground")], [options.description]),
 						],
 					),
-					...(options.footer === undefined ? [] : [h.div([h.Class("mt-auto flex")], [options.footer])]),
+					...(options.footer === undefined
+						? []
+						: [h.div([h.Class("mt-auto flex")], [options.footer])]),
 				]
-	const isAccented = options.isChecked && options.accent !== undefined
-	return h.label(
-		[h.Class("group relative cursor-pointer")],
-		[
-			h.input([
-				h.Type(options.type),
-				...(options.name === undefined ? [] : [h.Name(options.name)]),
-				h.Class("peer sr-only"),
-				h.Checked(options.isChecked),
-				...(options.isDisabled === true ? [h.Disabled(true)] : []),
-				h.AriaLabel(options.label),
-				h.OnChange(() => options.onChange),
-			]),
-			h.div(
-				[
-					...(isAccented ? [h.Style({ "border-color": options.accent ?? "", "background-color": `${options.accent ?? ""}0F` })] : []),
-					h.Class(
-						cn(
-							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-							layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
-							!options.isChecked
-								? "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]"
-								: options.accent === undefined && "border-primary bg-primary/5",
-						),
-					),
-				],
-				body,
-			),
-		],
+
+	return choiceCard(
+		h,
+		{
+			type: options.type,
+			name: options.name,
+			isChecked: options.isChecked,
+			isDisabled: options.isDisabled,
+			label: options.label,
+			onChange: options.onChange,
+			className: layout === "row" ? "items-start gap-3 p-4" : "flex-col gap-5 p-5",
+		},
+		body,
 	)
 }
 
@@ -159,7 +137,7 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 			h.Class(
 				cn(
 					"flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 motion-reduce:transition-none",
-					isSelected ? "bg-primary/10" : "bg-muted/60 group-hover:bg-muted",
+					isSelected ? "bg-primary-a2" : "bg-surface-strong group-hover:bg-muted",
 				),
 			),
 		],
@@ -179,15 +157,19 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 							h.Class(
 								cn(
 									"transition-colors duration-200 motion-reduce:transition-none",
-									isSelected ? "text-primary/40" : "text-muted-foreground group-hover:text-foreground",
+									isSelected
+										? "text-primary/40"
+										: "text-muted-foreground group-hover:text-foreground",
 								),
 							),
 						],
-						segments.map((d) => segmentPath(h, d, [])),
+						Arr.map(segments, (d) => segmentPath(h, d, [])),
 					),
 					h.g(
 						[h.Class("text-primary")],
-						segments.map((d) => segmentPath(h, d, [h.Style({ opacity: isSelected ? "1" : "0" })])),
+						Arr.map(segments, (d) =>
+							segmentPath(h, d, [h.Style({ opacity: isSelected ? "1" : "0" })]),
+						),
 					),
 				],
 			),

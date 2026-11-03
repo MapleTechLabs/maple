@@ -1,12 +1,17 @@
 import { CATEGORY_LABELS } from "../../../components/code-review/code-review-format"
 import type { Html, HtmlBuilder, TextareaAttribute } from "foldkit/html"
-import * as Checkbox from "../../../ui/checkbox"
-import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "../../../ui/field"
-import { input } from "../../../ui/input"
-import * as Switch from "../../../ui/switch"
-import { textarea } from "../../../ui/textarea"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "@maple/views/ui/field"
+import { input } from "@maple/views/ui/input"
+import { label } from "@maple/views/ui/label"
+import * as Switch from "@maple/views/ui/switch"
+import { textarea } from "@maple/views/ui/textarea"
 import { Message, type Model, parentCategories, type TextField } from "./form"
 import { ALL_CATEGORIES } from "./state"
+import { RULES_COPY } from "./copy"
+import { typography } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The form's text fields and lenses (`ReviewRulesForm`).
 
@@ -130,7 +135,7 @@ export const lenses = (h: H, model: Model): Html => {
 	const current = model.state.categories ?? parentCategories(model)
 	const isRepository = model.mode === "repository"
 	return h.fieldset(
-		[h.Class("flex flex-col gap-2")],
+		[h.Class(vstackClass({ gap: "2" }))],
 		[
 			h.legend(
 				[h.Class("mb-2 flex w-full items-center justify-between gap-3 text-sm font-medium")],
@@ -138,13 +143,13 @@ export const lenses = (h: H, model: Model): Html => {
 					"Lenses",
 					...(isRepository
 						? [
-								h.label(
-									[
-										h.Class(
-											"flex items-center gap-2 text-xs font-normal text-muted-foreground",
-										),
-										h.Id(`${model.id}-inherit-lenses-label`),
-									],
+								label(
+									h,
+									{
+										className:
+											"flex text-xs font-normal text-muted-foreground sm:text-xs",
+										attributes: [h.Id(`${model.id}-inherit-lenses-label`)],
+									},
 									[
 										"Use the organization's",
 										...Switch.switchControl(h, {
@@ -163,14 +168,15 @@ export const lenses = (h: H, model: Model): Html => {
 			),
 			h.div(
 				[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
-				ALL_CATEGORIES.map((category) => {
+				Arr.map(ALL_CATEGORIES, (category) => {
 					const inputId = `${model.id}-lens-${category}`
-					return h.label(
-						[
-							h.Key(category),
-							h.Class("flex items-center gap-2 text-sm has-disabled:text-muted-foreground"),
-							h.Id(Checkbox.labelId(inputId)),
-						],
+					return label(
+						h,
+						{
+							className:
+								"flex text-sm font-normal has-disabled:text-muted-foreground sm:text-sm",
+							attributes: [h.Key(category), h.Id(Checkbox.labelId(inputId))],
+						},
 						[
 							...Checkbox.view(h, {
 								model: { isChecked: current.includes(category) },
@@ -184,7 +190,7 @@ export const lenses = (h: H, model: Model): Html => {
 					)
 				}),
 			),
-			h.p([h.Class("text-xs text-muted-foreground")], ["Issues are only filed under checked lenses."]),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [RULES_COPY.lensesHint]),
 		],
 	)
 }

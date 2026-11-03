@@ -1,11 +1,11 @@
 import type { SourceId } from "@maple/domain/primitives"
-import { V2Source, V2SourceUsage } from "@maple/domain/http/v2"
+import { V2Source, V2SourceUsage, V2SourceUsageSummary } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Effect, Schema } from "effect"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { type RequestKey, requestKey } from "../../../data/request-key"
+import { type RequestKey, requestKey } from "@maple/views/data/request-key"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
 // The sources list and the detail page's `retainedQueryV2("sources", "usage" | "retrieve")` reads, through
@@ -46,6 +46,15 @@ export const loadSourceUsage = (key: RequestKey, id: SourceId) =>
 	readThrough(
 		{ key, idleTtlMs: IdleTtl.retainedQuery, schema: V2SourceUsage },
 		Effect.flatMap(MapleApiV2Client, (client) => client.sources.usage({ params: { id } })),
+	).pipe(Effect.mapError(toLoadFailure))
+
+export const sourcesUsageKey = (orgId: string): RequestKey => requestKey(orgId, "sources.usageSummary", {})
+
+/** Every source's volume over the last 24 hours, for the list's Last 24h column. */
+export const loadSourcesUsage = (key: RequestKey, refresh: boolean) =>
+	readThrough(
+		{ key, idleTtlMs: IdleTtl.retainedQuery, schema: V2SourceUsageSummary, refresh },
+		Effect.flatMap(MapleApiV2Client, (client) => client.sources.usageSummary({})),
 	).pipe(Effect.mapError(toLoadFailure))
 
 export const sourceRetrieveKey = (orgId: string, id: SourceId): RequestKey =>

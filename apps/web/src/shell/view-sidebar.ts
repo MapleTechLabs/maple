@@ -1,14 +1,14 @@
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { MAPLE_REGION_LABELS } from "@maple/domain/organization-regions"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { hasMultipleRegions } from "../lib/region"
-import { Option, Record } from "effect"
+import { Option, Record, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { avatarFallback, badge, kbd } from "../ui/display"
-import { menuTriggerAttributes } from "../ui/dropdown-menu"
-import { icon } from "../ui/icon"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { avatarFallback, badge, kbd } from "@maple/views/ui/display"
+import { menuTriggerAttributes } from "@maple/views/ui/dropdown-menu"
+import { icon } from "@maple/views/ui/icon"
 import {
 	sidebarFooter,
 	sidebarHeader,
@@ -16,15 +16,14 @@ import {
 	sidebarMenuBadge,
 	sidebarMenuButton,
 	sidebarMenuItem,
-} from "../ui/sidebar"
+} from "@maple/views/ui/sidebar"
 import { isSameMenu, triggerIdOf } from "./menus"
 import { Menu, Message } from "./message"
 import type { Model, ShellClerk } from "./model"
 import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
-
-/** The selected row's rail: a 2px lane every row reserves, painted only when active. */
-export const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
+import { typography } from "@maple/views/ui/typography"
+import { identityLabel } from "@maple/views/ui/identity-label"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -73,21 +72,15 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 						],
 						[icon(h, "ServerIcon", { size: 16 })],
 					),
-					h.div(
-						[h.Class("grid flex-1 text-left text-sm leading-tight")],
-						[
-							h.span([h.Class("truncate font-medium")], ["Self Hosted"]),
-							...Option.match(pinnedNamespaceOf(model), {
-								onNone: () => [],
-								onSome: (namespace) => [
-									h.span(
-										[h.Class("truncate text-xs font-medium text-primary")],
-										[namespace],
-									),
-								],
-							}),
-						],
-					),
+					identityLabel(h, [
+						typography(h, { weight: "medium", truncate: true }, ["Self Hosted"]),
+						...Option.match(pinnedNamespaceOf(model), {
+							onNone: () => [],
+							onSome: (namespace) => [
+								h.span([h.Class("truncate text-xs font-medium text-primary")], [namespace]),
+							],
+						}),
+					]),
 					icon(h, "ChevronExpandYIcon", { size: 16, className: "ml-auto" }),
 				],
 			),
@@ -102,7 +95,7 @@ const searchRow = (h: HtmlBuilder<Message>, tip: RailTip): Html =>
 				h,
 				{
 					className:
-						"border border-sidebar-border bg-background text-muted-foreground hover:bg-background hover:text-foreground",
+						"border border-sidebar-border bg-background text-muted-foreground hover:bg-background active:bg-background hover:text-foreground active:text-foreground",
 					hasTooltip: true,
 					attributes: [...tip("Search"), h.OnClick(Message.ClickedSearch())],
 				},
@@ -150,27 +143,54 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 						withTrigger(
 							sidebarMenuButton(
 								h,
-								{ size: "lg", className: OPEN_STATE, slot: "dropdown-menu-trigger", attributes: trigger },
+								{
+									size: "lg",
+									className: OPEN_STATE,
+									slot: "dropdown-menu-trigger",
+									attributes: trigger,
+								},
 								[
-									orgAvatar(h, orgName, undefined, Option.match(clerk.maybeOrganization, { onNone: () => "", onSome: (org) => org.imageUrl })),
-									h.div(
-										[h.Class("grid flex-1 text-left text-sm leading-tight")],
-										[
-											h.span([h.Class("truncate font-medium"), h.Title(orgName)], [orgName]),
-											Option.match(pinned, {
-												onNone: () =>
-													h.span([h.Class("truncate text-xs text-muted-foreground")], regionSuffix === "" ? ["Organization"] : ["Organization", regionSuffix]),
-												onSome: (namespace) =>
-													h.span(
-														[h.Class("truncate text-xs")],
-														[
-															h.span([h.Class("font-medium text-primary")], [namespace]),
-															h.span([h.Class("text-muted-foreground")], [regionSuffix]),
-														],
-													),
-											}),
-										],
+									orgAvatar(
+										h,
+										orgName,
+										undefined,
+										Option.match(clerk.maybeOrganization, {
+											onNone: () => "",
+											onSome: (org) => org.imageUrl,
+										}),
 									),
+									identityLabel(h, [
+										typography(
+											h,
+											{
+												weight: "medium",
+												truncate: true,
+												attributes: [h.Title(orgName)],
+											},
+											[orgName],
+										),
+										Option.match(pinned, {
+											onNone: () =>
+												typography(
+													h,
+													{ size: "xs", tone: "muted", truncate: true },
+													regionSuffix === ""
+														? ["Organization"]
+														: ["Organization", regionSuffix],
+												),
+											onSome: (namespace) =>
+												typography(h, { size: "xs", truncate: true }, [
+													h.span(
+														[h.Class("font-medium text-primary")],
+														[namespace],
+													),
+													h.span(
+														[h.Class("text-muted-foreground")],
+														[regionSuffix],
+													),
+												]),
+										}),
+									]),
 									icon(h, "ChevronExpandYIcon", { size: 16, className: "ml-auto" }),
 								],
 							),
@@ -188,22 +208,31 @@ export const shellSidebarHeader = (
 	clerk: ShellClerk | null,
 	tip: RailTip = NO_TIP,
 ): Html =>
-	sidebarHeader(h, [clerk === null ? orgSwitcher(h, model) : clerkOrgSwitcher(h, model, clerk), searchRow(h, tip)])
+	sidebarHeader(h, [
+		clerk === null ? orgSwitcher(h, model) : clerkOrgSwitcher(h, model, clerk),
+		searchRow(h, tip),
+	])
 // FOOTER
 
 const footerNavRow = (
 	h: HtmlBuilder<Message>,
 	currentPath: string,
-	options: Readonly<{ href: string; title: string; icon: "ConnectionIcon" | "GearIcon"; alsoActive?: string }>,
+	options: Readonly<{
+		href: string
+		title: string
+		icon: "ConnectionIcon" | "GearIcon"
+		alsoActive?: string
+	}>,
 	tip: RailTip,
 ): Html =>
 	sidebarMenuItem(h, undefined, [
 		sidebarMenuButton(
 			h,
 			{
-				className: ACTIVE_RAIL,
-				isActive: [options.href, ...(options.alsoActive === undefined ? [] : [options.alsoActive])].some(
-					(path) => currentPath === path || currentPath.startsWith(`${path}/`),
+				rail: "active",
+				isActive: Arr.some(
+					[options.href, ...(options.alsoActive === undefined ? [] : [options.alsoActive])],
+					(path) => currentPath === path || Str.startsWith(`${path}/`)(currentPath),
 				),
 				link: { href: options.href, currentPath },
 				hasTooltip: true,
@@ -213,7 +242,7 @@ const footerNavRow = (
 		),
 	])
 
-/** The user avatar: the Clerk image over the initials. */
+/** The user avatar: the Clerk image over the initials on a warm tile keyed by the name. */
 export const userAvatar = (
 	h: HtmlBuilder<Message>,
 	initials: string,
@@ -224,7 +253,7 @@ export const userAvatar = (
 		h,
 		{
 			className: cn("bg-muted", className ?? "size-6 rounded-md text-3xs"),
-			fallbackClassName: "rounded-[inherit] font-medium text-muted-foreground",
+			fallbackClassName: cn("rounded-[inherit] font-medium", warmAvatarTone(image?.label ?? initials)),
 			imageUrl: image?.url,
 			imageLabel: image?.label,
 		},
@@ -241,7 +270,8 @@ export const userNameOf = (clerk: ShellClerk | null): string =>
 				onSome: (user) => user.fullName ?? user.email ?? "User",
 			})
 
-const initialsOf = (clerk: ShellClerk | null): string => (clerk === null ? "RT" : initialsFrom(userNameOf(clerk)))
+const initialsOf = (clerk: ShellClerk | null): string =>
+	clerk === null ? "RT" : initialsFrom(userNameOf(clerk))
 
 /** `user.imageUrl`, empty without a Clerk user. */
 export const userImageOf = (clerk: ShellClerk | null): string =>
@@ -296,23 +326,51 @@ export const shellSidebarFooter = (
 	tip: RailTip = NO_TIP,
 ): Html =>
 	sidebarFooter(h, [
+		// The pinned footer's edge: a hairline and shadow while nav rows sit hidden below it.
+		h.div(
+			[
+				h.AriaHidden(true),
+				h.Class(
+					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-[background-color,box-shadow] [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
+				),
+			],
+			[],
+		),
 		sidebarMenu(h, undefined, [
+			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
+			// `/integrations` renders inside the settings rail, so Settings owns it.
 			footerNavRow(
 				h,
 				currentPath,
-				// Sources stands for Integrations too: they open from its picker.
-				{ href: "/sources", title: "Sources", icon: "ConnectionIcon", alsoActive: "/integrations" },
+				{ href: "/settings", title: "Settings", icon: "GearIcon", alsoActive: "/integrations" },
 				tip,
 			),
-			footerNavRow(h, currentPath, { href: "/settings", title: "Settings", icon: "GearIcon" }, tip),
 		]),
-		h.div([h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")], [footerCluster(h, model, userAvatar(h, initialsOf(clerk), undefined, { url: userImageOf(clerk), label: userNameOf(clerk) }), userNameOf(clerk))]),
+		h.div(
+			[h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")],
+			[
+				footerCluster(
+					h,
+					model,
+					userAvatar(h, initialsOf(clerk), undefined, {
+						url: userImageOf(clerk),
+						label: userNameOf(clerk),
+					}),
+					userNameOf(clerk),
+				),
+			],
+		),
 	])
 
 /** `Code Review`'s "Beta" tag. */
 export const navBadge = (h: HtmlBuilder<Message>, label: string): Html =>
 	sidebarMenuBadge(h, [
-		badge(h, { className: "gap-0.5 bg-primary font-semibold text-primary-foreground", variant: "tag" }, [
-			h.span([h.Class("badge-shiny")], [label]),
-		]),
+		badge(
+			h,
+			{
+				className: "border border-border bg-transparent font-medium text-muted-foreground",
+				variant: "tag",
+			},
+			[label],
+		),
 	])

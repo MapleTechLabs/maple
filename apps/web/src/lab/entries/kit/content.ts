@@ -3,9 +3,9 @@ import { Command, type Update } from "foldkit"
 import * as CalendarDates from "foldkit/calendar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import * as Calendar from "../../../ui/calendar"
-import * as CalendarView from "../../../ui/calendar-view"
-import * as CopyButton from "../../../ui/copy-button"
+import * as Calendar from "@maple/views/ui/calendar"
+import * as CalendarView from "@maple/views/ui/calendar-view"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { defineLab } from "../../define"
 import { contentSections } from "../../kit/content-sections"
 import { kitPage } from "../../kit/kit-layout"
@@ -76,6 +76,8 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				copyStatus: model.traceIdCopy.status,
 				onCopy: (value) =>
 					Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: value }) }),
+				codeCopy: model.traceIdCopy,
+				toCodeCopy: (message) => Message.GotCopyMessage({ message }),
 				calendar: h.submodel({
 					slotId: "kit-content-calendar",
 					model: model.calendar,

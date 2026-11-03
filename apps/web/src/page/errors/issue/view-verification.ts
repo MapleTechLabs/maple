@@ -6,15 +6,17 @@ import { cn } from "@maple/ui/lib/utils"
 import { DateTime, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { textLinkClass } from "@maple/views/ui/text-link"
 import { sectionHeading } from "../../kit/section-heading"
+import { hstack } from "@maple/views/ui/stack"
 
 // The issue verification card: the post-merge fix check.
 
 type Status = ErrorIssueVerificationDocument["status"]
-const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 
 const STATUS_TONE = {
 	waiting: IN_FLIGHT_SOFT,
@@ -53,7 +55,7 @@ const headline = (verification: ErrorIssueVerificationDocument, nowMs: number): 
 		case "verified":
 			return "No occurrences from builds that postdate the merge. The fix holds."
 		case "not_fixed":
-			return `This error fired ${verification.postMergeOccurrenceCount} more time(s) from builds that postdate the merge — the fix did not resolve it.`
+			return `This error fired ${verification.postMergeOccurrenceCount} more time(s) from builds that postdate the merge, so the fix did not resolve it.`
 		case "inconclusive":
 			return "There was not enough traffic after the merge to say either way."
 		case "abandoned":
@@ -77,30 +79,22 @@ export const verificationCard = <M>(
 		verification.status === "not_fixed" ||
 		verification.status === "inconclusive"
 	return panel(h, { className: "px-4 py-3" }, [
-		h.div(
-			[h.Class("flex items-center justify-between gap-2")],
-			[
-				h.div(
-					[h.Class("flex items-center gap-2")],
-					[
-						icon(h, "MagnifierCheckIcon", { className: "size-4 text-muted-foreground" }),
-						sectionHeading(h, { title: "Fix verification" }),
-					],
-				),
-				badge(
-					h,
-					{ variant: "outline", className: cn("shrink-0", STATUS_TONE[verification.status]) },
-					[STATUS_LABEL[verification.status]],
-				),
-			],
-		),
+		hstack(h, { gap: "2", justify: "between" }, [
+			hstack(h, { gap: "2" }, [
+				icon(h, "MagnifierCheckIcon", { className: "size-4 text-muted-foreground" }),
+				sectionHeading(h, { title: "Fix verification" }),
+			]),
+			badge(h, { variant: "outline", className: cn("shrink-0", STATUS_TONE[verification.status]) }, [
+				STATUS_LABEL[verification.status],
+			]),
+		]),
 		note(h, "mt-2 text-xs leading-relaxed text-muted-foreground", headline(verification, nowMs)),
 		...(isAwaitingClose
 			? [
 					note(
 						h,
 						"mt-2 text-xs leading-relaxed text-foreground",
-						"Maple leaves high and critical issues for a human to close — this one stays open until you do.",
+						"Maple leaves high and critical issues for a human to close. This one stays open until you do.",
 					),
 				]
 			: []),
@@ -117,8 +111,8 @@ export const verificationCard = <M>(
 			? [
 					note(
 						h,
-						"mt-2 text-xs text-muted-foreground/80",
-						"Occurrences from builds that predate the merge were ignored — those are older clients still running the broken version.",
+						"mt-2 text-xs text-foreground-subtle",
+						"Occurrences from builds that predate the merge were ignored. Those are older clients still running the broken version.",
 					),
 				]
 			: []),
@@ -131,7 +125,7 @@ export const verificationCard = <M>(
 									AppRoute.Investigation({ id: verification.investigationId, search: {} }),
 								),
 							),
-							h.Class("mt-2 inline-block text-xs text-primary hover:underline"),
+							h.Class(textLinkClass("primary", false, "mt-2 text-xs")),
 						],
 						["View the verification run"],
 					),
@@ -141,7 +135,7 @@ export const verificationCard = <M>(
 			? [
 					note(
 						h,
-						"mt-2 text-xs text-muted-foreground/80",
+						"mt-2 text-xs text-foreground-subtle",
 						"First check was inconclusive; watching for longer.",
 					),
 				]

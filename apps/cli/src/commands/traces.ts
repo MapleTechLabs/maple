@@ -1,7 +1,7 @@
 import * as Command from "effect/cli/Command"
 import * as Argument from "effect/cli/Argument"
 import * as Flag from "effect/cli/Flag"
-import { Effect, Option } from "effect"
+import { Effect, Option, String as Str } from "effect"
 import * as f from "../lib/flags"
 import { CliNotFoundError, CliUsageError } from "../lib/errors"
 import { traceLink, withTraceLinks } from "../lib/local-links"
@@ -70,7 +70,8 @@ export const traces = Command.make("traces", {
 			if (result.spans.length === 0 && service !== undefined && a.offset === 0) {
 				yield* assertKnownService(service, range, window)
 			}
-			const output = Option.match(yield* Ops.localUiBase, {
+			const localUiBase = yield* Ops.localUiBase
+			const output = Option.match(localUiBase, {
 				onNone: () => result,
 				onSome: (base) => ({ ...result, spans: withTraceLinks(base, result.spans) }),
 			})
@@ -106,7 +107,7 @@ export const trace = Command.make("trace", {
 	]),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
-			const traceId = a.traceId.trim().toLowerCase()
+			const traceId = Str.toLowerCase(Str.trim(a.traceId))
 			if (!TRACE_ID_RE.test(traceId)) {
 				return yield* new CliUsageError({
 					message: `"${a.traceId}" is not a trace id`,
@@ -133,7 +134,8 @@ export const trace = Command.make("trace", {
 							: "try a wider window, e.g. --since 7d",
 				})
 			}
-			const output = Option.match(yield* Ops.localUiBase, {
+			const localUiBase = yield* Ops.localUiBase
+			const output = Option.match(localUiBase, {
 				onNone: () => result,
 				onSome: (base) => ({ url: traceLink(base, traceId), ...result }),
 			})
@@ -164,7 +166,8 @@ export const slowTraces = Command.make("slow-traces", {
 				environment: Option.getOrUndefined(a.environment),
 				limit: a.limit,
 			})
-			const output = Option.match(yield* Ops.localUiBase, {
+			const localUiBase = yield* Ops.localUiBase
+			const output = Option.match(localUiBase, {
 				onNone: () => result,
 				onSome: (base) => ({ ...result, traces: withTraceLinks(base, result.traces) }),
 			})

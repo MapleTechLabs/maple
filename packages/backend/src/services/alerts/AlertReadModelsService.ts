@@ -190,7 +190,7 @@ const isoOf = (value: DateTime.Utc) => decodeIsoDateTimeStringSync(DateTime.form
 export class AlertReadModelsService extends Context.Service<
 	AlertReadModelsService,
 	AlertReadModelsServiceApi
->()("@maple/api/services/alerts/AlertReadModelsService", {
+>()("@maple/backend/services/alerts/AlertReadModelsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
@@ -401,8 +401,8 @@ export class AlertReadModelsService extends Context.Service<
 					? Duration.toMillis(DateTime.distance(since, until))
 					: Number.NaN
 			if (!(rangeMs > 0 && rangeMs <= maxRangeMs) || since == null || until == null) {
-				return yield* Effect.fail(
-					makeValidationError("Alert check summaries require a valid range of at most 365 days"),
+				return yield* makeValidationError(
+					"Alert check summaries require a valid range of at most 365 days",
 				)
 			}
 

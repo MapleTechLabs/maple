@@ -4,7 +4,8 @@ import { CH } from "@maple/query-engine"
 import type { LogsListOutput } from "@maple/query-engine/ch"
 import { clusterLogPatterns } from "@maple/query-engine/observability"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
-import { Effect } from "effect"
+import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
+import { Effect, Array as Arr } from "effect"
 import { localParams, queryRows } from "../../data/local-query"
 import type { LogFilters } from "./filters"
 import type { FacetOption, LocalLog, LogPatterns } from "./model"
@@ -17,6 +18,9 @@ export const PATTERN_SAMPLE_SIZE = 5_000
 const PATTERN_LIMIT = 100
 
 export type LogCursor = NonNullable<CH.LogsListOpts["cursorIdentity"]>
+
+/** The `attrs` entries as the query's log and resource attribute predicates. */
+const attributeOpts = (filters: LogFilters) => logAttributeQueryFilters(filters.attrs)
 
 /** `normalizeLog`: attribute maps parsed once, the exact timestamp kept as the cursor field. */
 const normalizeLog = (row: LogsListOutput): LocalLog => ({
@@ -33,7 +37,12 @@ const normalizeLog = (row: LogsListOutput): LocalLog => ({
 })
 
 /** One page, newest first, keyset-paged on the full row identity. */
-export const fetchLogsPage = (filters: LogFilters, bounds: TimeBounds, cursor: LogCursor | undefined, apiBase: string) =>
+export const fetchLogsPage = (
+	filters: LogFilters,
+	bounds: TimeBounds,
+	cursor: LogCursor | undefined,
+	apiBase: string,
+) =>
 	Effect.map(
 		queryRows(
 			CH.compile(
@@ -43,23 +52,35 @@ export const fetchLogsPage = (filters: LogFilters, bounds: TimeBounds, cursor: L
 					serviceName: filters.service,
 					severity: filters.severity,
 					search: filters.search,
+					...attributeOpts(filters),
 				}),
 				localParams(bounds),
 			),
 			apiBase,
 		),
-		(rows) => rows.map(normalizeLog),
+		(rows) => Arr.map(rows, normalizeLog),
 	)
 
-const toOptions = (rows: ReadonlyArray<{ readonly name: string; readonly count: number }>): Array<FacetOption> =>
-	rows.filter((row) => row.name).map((row) => ({ name: row.name, count: row.count }))
+const toOptions = (
+	rows: ReadonlyArray<{ readonly name: string; readonly count: number }>,
+): Array<FacetOption> =>
+	Arr.map(
+		rows.filter((row) => row.name),
+		(row) => ({ name: row.name, count: row.count }),
+	)
 
 /** Severity facet: every filter except severity itself, ordered by level, not count. */
 export const fetchSeverities = (filters: LogFilters, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
 		queryRows(
 			CH.compile(
-				CH.logsBreakdownQuery({ groupBy: "severity", limit: 20, serviceName: filters.service, search: filters.search }),
+				CH.logsBreakdownQuery({
+					groupBy: "severity",
+					limit: 20,
+					serviceName: filters.service,
+					search: filters.search,
+					...attributeOpts(filters),
+				}),
 				localParams(bounds),
 			),
 			apiBase,
@@ -78,6 +99,7 @@ export const fetchServices = (filters: LogFilters, bounds: TimeBounds, apiBase: 
 					source: "raw",
 					severity: filters.severity,
 					search: filters.search,
+					...attributeOpts(filters),
 				}),
 				localParams({ startTime: bounds.startTime, endTime: bounds.endTime }),
 			),
@@ -96,6 +118,7 @@ export const fetchPatterns = (filters: LogFilters, bounds: TimeBounds, apiBase: 
 					serviceName: filters.service,
 					severity: filters.severity,
 					search: filters.search,
+					...attributeOpts(filters),
 				}),
 				localParams(bounds),
 			),
@@ -104,7 +127,7 @@ export const fetchPatterns = (filters: LogFilters, bounds: TimeBounds, apiBase: 
 		(rows): LogPatterns => ({
 			patterns: clusterLogPatterns(rows, PATTERN_LIMIT).patterns,
 			// clusterLogPatterns skips empty bodies, so they stay out of the share denominator.
-			totalSampled: rows.filter((row) => String(row.body ?? "") !== "").length,
+			totalSampled: Arr.filter(rows, (row) => String(row.body ?? "") !== "").length,
 			isTruncated: rows.length >= PATTERN_SAMPLE_SIZE,
 		}),
 	)

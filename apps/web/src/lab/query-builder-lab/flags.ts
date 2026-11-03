@@ -1,5 +1,5 @@
 import { createFormulaDraft, createQueryDraft } from "@maple/query-engine/query-builder"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { readEffectiveTimeZone } from "../../platform/time-zone"
 import { type Flags, TimeSearch } from "./model"
 
@@ -8,10 +8,11 @@ const SEARCH_KEYS = new Set(["startTime", "endTime", "timePreset"])
 const decodeSearch = Schema.decodeUnknownOption(TimeSearch)
 
 export const searchOf = (query: string): TimeSearch => {
-	const present = [...new URLSearchParams(query)].filter(
+	const present = Arr.filter(
+		[...new URLSearchParams(query)],
 		([key, value]) => SEARCH_KEYS.has(key) && value !== "",
 	)
-	return Option.getOrElse(decodeSearch(Object.fromEntries(present)), () => ({}))
+	return Option.getOrElse(decodeSearch(Rec.fromEntries(present)), () => ({}))
 }
 
 /** The clock, zone, URL window and the first drafts (`createQueryDraft` draws random ids). */

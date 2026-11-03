@@ -1,9 +1,9 @@
 import { AiToolErrorSampleCursor } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 
 // The tool error modal's state:
 // one error group of the tool in full, open while `?error=` names a row the Errors table holds.

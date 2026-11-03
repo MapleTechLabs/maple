@@ -12,7 +12,7 @@
 // `apps/ingest/src/ai_session.rs`). Attributes arrive as `Map(String, String)`,
 // so a missing key reads back as `''` and an undecodable value yields no field.
 
-import { Effect, Option } from "effect"
+import { Option, Schema } from "effect"
 
 import {
 	AI_CORE_FIELDS,
@@ -78,8 +78,9 @@ const readAttribute = (attributes: Record<string, string>, key: string): string 
 	return value === undefined || value.trim() === "" ? undefined : value
 }
 
-const parseJson = (raw: string): unknown =>
-	Option.getOrUndefined(Effect.runSync(Effect.option(Effect.try((): unknown => JSON.parse(raw)))))
+const decodeJsonOption = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+
+const parseJson = (raw: string): unknown => Option.getOrUndefined(decodeJsonOption(raw))
 
 const decodeStringArray = (raw: string): readonly string[] | undefined => {
 	// Real data carries both shapes for the same attribute: `'["stop"]'` from
@@ -280,6 +281,9 @@ const resolvedIntegrations = new Map<string, ResolvedAiIntegration>(
  * this list never reaches `mapAiSpan` — in production the map's bulk is
  * `db.query.text` and friends, which the mapper never looked at.
  */
+/** Marks one side of an MCP exchange (OTel MCP conventions). */
+const MCP_METHOD_ATTR = "mcp.method.name"
+
 export const aiSpanAttributeKeys: readonly string[] = [
 	...new Set([
 		MAPLE_AI_SESSION_ID_ATTR,
@@ -290,6 +294,7 @@ export const aiSpanAttributeKeys: readonly string[] = [
 			Object.values(integration.sources).flat(),
 		),
 		...Object.values(AI_VENDOR_INTEGRATIONS).flatMap((vendor) => vendor.refineKeys ?? []),
+		MCP_METHOD_ATTR,
 	]),
 ]
 
@@ -404,7 +409,14 @@ export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 	// every span in the service as an AI span.
 	const attributes = row.spanAttributes
 	const vendorId = readAttribute(attributes, MAPLE_AI_VENDOR_ID_ATTR)
-	const genAi = decodeGenAi(attributes, vendorId)
+	// An MCP server's `tools/call` carries `execute_tool` by the conventions, but
+	// it is the tool, not the agent: ingest leaves it unstamped and so does this,
+	// or a trace the agent propagated into the server counts the call twice.
+	const isMcpServer =
+		vendorId === undefined &&
+		row.spanKind === "Server" &&
+		readAttribute(attributes, MCP_METHOD_ATTR) !== undefined
+	const genAi = decodeGenAi(isMcpServer ? {} : attributes, vendorId)
 
 	const promptVariables = collectPromptVariables(attributes)
 	const sessionId = readAttribute(attributes, MAPLE_AI_SESSION_ID_ATTR)
@@ -426,7 +438,8 @@ export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 		...(sessionId !== undefined && { sessionId }),
 		...(vendorId !== undefined && { vendorId }),
 		...(vendorVersion !== undefined && { vendorVersion }),
-		isAiSpan: vendorId !== undefined || promptVariables !== undefined || hasAiSignal(genAi),
+		isAiSpan:
+			!isMcpServer && (vendorId !== undefined || promptVariables !== undefined || hasAiSignal(genAi)),
 		genAi,
 	}
 }

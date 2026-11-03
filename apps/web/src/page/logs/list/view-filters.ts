@@ -1,27 +1,29 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { kbd } from "../../../ui/display"
-import { eyebrow } from "../../../ui/eyebrow"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import { type FilterOption, filterSection } from "../../../ui/filters/filter-section"
+import { isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
+import { kbd } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { type FilterOption, filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
-	filterSidebarError,
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../ui/filters/filter-sidebar"
-import type * as Popover from "../../../ui/popover"
+	filterSidebarGroupLabel,
+} from "@maple/views/ui/filters/filter-sidebar"
+import type * as Popover from "@maple/views/ui/popover"
 import { MountFilterRail } from "./command"
 import { searchHelp } from "./view-search-help"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
 import type { Search } from "./derive"
 import { type Facet, Message } from "./message"
 import type { LogsFacets, Model } from "./model"
-import { searchInput } from "../../../ui/search-input"
+import { searchInput } from "@maple/views/ui/search-input"
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
@@ -55,17 +57,20 @@ const facetSection = (
 
 /** Any filter narrowing the stream, the search and trace scope included. */
 export const hasActiveFilters = (search: Search): boolean =>
-	[
-		search.services,
-		search.severities,
-		search.deploymentEnvs,
-		search.namespaces,
-		search.excludedServices,
-		search.excludedSeverities,
-		search.excludedDeploymentEnvs,
-		search.excludedNamespaces,
-		search.attrs,
-	].some((values) => (values?.length ?? 0) > 0) ||
+	Arr.some(
+		[
+			search.services,
+			search.severities,
+			search.deploymentEnvs,
+			search.namespaces,
+			search.excludedServices,
+			search.excludedSeverities,
+			search.excludedDeploymentEnvs,
+			search.excludedNamespaces,
+			search.attrs,
+		],
+		(values) => (values?.length ?? 0) > 0,
+	) ||
 	!!search.search ||
 	!!search.traceId
 
@@ -74,15 +79,11 @@ const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Mo
 	h.div(
 		[h.Class("pb-3")],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1")],
-				[eyebrow(h, { variant: "label" }, ["Search"]), searchHelp(h, help)],
-			),
+			filterSidebarGroupLabel(h, "Search", [searchHelp(h, help)]),
 			searchInput(h, {
 				id: "logs-search-input",
 				size: "sm",
-				className: "mt-2",
-				placeholder: "Text or trace id",
+				placeholder: "Text or trace ID…",
 				value,
 				onInput: (text) => Message.ChangedSearchText({ text }),
 				onClear: Message.ChangedSearchText({ text: "" }),
@@ -91,6 +92,30 @@ const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Mo
 			}),
 		],
 	)
+
+/**
+ * The facets failed: the search stays, so the page keeps its shape and a query can still be typed.
+ * The main panel explains a shared failure, so the rail only notes it.
+ */
+const failedRail = (h: HtmlBuilder<Message>, model: Model, failure: LoadFailure): Html => {
+	const main = Option.getOrUndefined(AsyncData.getError(model.firstPage.data))
+	const isEchoed = main !== undefined && isSameFailure(main, failure)
+	return filterSidebarFrame(h, {}, [
+		filterSidebarHeader(h),
+		...filterSidebarBody(h, "logs-filters", [
+			logSearchInput(h, model.searchText, model.searchHelp),
+			isEchoed
+				? errorState(h, {
+						failure,
+						onRetry: Message.ClickedRetryFacets(),
+						variant: "quiet",
+						title: "Filters unavailable",
+						hidesRetryButton: true,
+					})
+				: errorState(h, { failure, onRetry: Message.ClickedRetryFacets(), variant: "inline" }),
+		]),
+	])
+}
 
 const loadedRail = (
 	h: HtmlBuilder<Message>,
@@ -122,7 +147,7 @@ const loadedRail = (
 				isSearchable: true,
 				// `serviceColorMap` covers the facet's services only: a selected unknown one has no swatch.
 				colorOf: (name) =>
-					facets.services.some((option) => option.name === name)
+					Arr.some(facets.services, (option) => option.name === name)
 						? getServiceColor(name)
 						: undefined,
 			}),
@@ -137,7 +162,7 @@ export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespa
 		[
 			AsyncData.matchData(model.facets.data, {
 				onEmpty: () => filterSidebarLoading(h, 3),
-				onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetryFacets()),
+				onFailure: (failure) => failedRail(h, model, failure),
 				onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
 			}),
 		],

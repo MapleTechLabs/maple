@@ -1,13 +1,15 @@
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { confirmDialog } from "../../../../ui/confirm-dialog"
-import { avatarFallback } from "../../../../ui/display"
-import { field, fieldLabel } from "../../../../ui/field"
-import { panel } from "../../../../ui/panel"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
+import { avatarFallback } from "@maple/views/ui/display"
+import { field, fieldLabel } from "@maple/views/ui/field"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
+import { dangerRow, dangerZone } from "../../kit/danger-zone"
 import { imageDropzone, typeToConfirmField } from "../../kit/image-dropzone"
+import { saveBar } from "../../kit/save-bar"
 import { settingsSection, settingsSections } from "../../kit/section"
 import { fieldIds, stateFor, textField } from "../fields"
 import type { AccountUser } from "../user"
@@ -25,7 +27,7 @@ const userAvatar = (h: H, name: string): Html =>
 		h,
 		{
 			className: "bg-muted size-full rounded-md text-sm",
-			fallbackClassName: "rounded-[inherit] font-medium text-muted-foreground",
+			fallbackClassName: `rounded-[inherit] font-medium ${warmAvatarTone(name)}`,
 		},
 		initialsFrom(name),
 	)
@@ -46,7 +48,11 @@ const profileSection = (h: H, model: Model, user: AccountUser): Html => {
 				[h.Class("space-y-4 max-w-md")],
 				[
 					field(h, { state: pictureState }, [
-						fieldLabel(h, { ids: fieldIds("account-picture"), state: pictureState }, "Profile picture"),
+						fieldLabel(
+							h,
+							{ ids: fieldIds("account-picture"), state: pictureState },
+							"Profile picture",
+						),
 						imageDropzone(h, {
 							inputId: AVATAR_INPUT_ID,
 							preview: userAvatar(h, displayName),
@@ -84,42 +90,25 @@ const profileSection = (h: H, model: Model, user: AccountUser): Html => {
 							}),
 						],
 					),
-					h.div(
-						[h.Class("flex justify-end")],
-						[
-							button(
-								h,
-								{
-									size: "sm",
-									isLoading: model.isSavingName,
-									isDisabled: !isNameDirty(model, user),
-									attributes: [h.OnClick(Message.ClickedSaveName())],
-								},
-								["Save"],
-							),
-						],
-					),
 				],
 			),
 		],
 	)
 }
 
-const dangerZone = (h: H, user: AccountUser): ReadonlyArray<Html> =>
+const deleteSection = (h: H, user: AccountUser): ReadonlyArray<Html> =>
 	user.deleteSelfEnabled
 		? [
-				settingsSection(h, { id: "account-danger", title: "Danger zone", description: [DANGER_DESCRIPTION], framed: false }, [
-					panel(h, { padded: true, className: "flex-row items-center justify-between gap-4 border-destructive/40" }, [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							["Delete ", user.primaryEmail ?? "your account", " and sign out everywhere."],
-						),
-						button(
+				dangerZone(h, { id: "account-danger", description: [DANGER_DESCRIPTION] }, [
+					dangerRow(h, {
+						title: "Delete account",
+						description: ["Delete ", user.primaryEmail ?? "your account", " and sign out everywhere."],
+						action: button(
 							h,
 							{ variant: "destructive", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
 							["Delete account"],
 						),
-					]),
+					}),
 				]),
 			]
 		: []
@@ -146,12 +135,20 @@ const deleteDialog = (h: H, model: Model, user: AccountUser): Html =>
 		],
 	})
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) => {
-	const user = model.user
-	if (!model.isLoaded || user === null) return accountSectionSkeleton(h)
-	return settingsSections(h, "standard", [
-		profileSection(h, model, user),
-		...dangerZone(h, user),
-		deleteDialog(h, model, user),
-	])
-})
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
+	(model, _inputs, h) => {
+		const user = model.user
+		if (!model.isLoaded || user === null) return accountSectionSkeleton(h)
+		return settingsSections(h, [
+			profileSection(h, model, user),
+			...deleteSection(h, user),
+			...saveBar(h, {
+				isDirty: isNameDirty(model, user),
+				isPending: model.isSavingName,
+				onDiscard: Message.ClickedDiscardName(),
+				onSave: Message.ClickedSaveName(),
+			}),
+			deleteDialog(h, model, user),
+		])
+	},
+)

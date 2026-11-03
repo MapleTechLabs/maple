@@ -1,11 +1,11 @@
 import type { CodeReviewCiRunsResponse, CodeReviewDetail, PrReviewId } from "@maple/domain/http"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import type { LoadFailure } from "../../../data/load-failure"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import { cachedStep, remember } from "./page-steps"
 import {
@@ -82,14 +82,20 @@ export const syncSheet = (
 	}
 	// A new `ReviewDetailBody` reads its own atom: the previous review is never shown while it loads.
 	const opened = liftDialog(
-		{ ...sheet, reviewId, detail: Keyed.idle(), ciRuns: Keyed.idle(), nowMs: Math.max(sheet.nowMs, nowMs) },
+		{
+			...sheet,
+			reviewId,
+			detail: Keyed.idle(),
+			ciRuns: Keyed.idle(),
+			nowMs: Math.max(sheet.nowMs, nowMs),
+		},
 		Dialog.open(sheet.dialog),
 	)
 	const read = readDetail(opened.sheet, reviewId, context, "Load")
 	return { sheet: read.sheet, commands: [...opened.commands, ...read.commands], out: null }
 }
 
-const LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000
+const LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000
 const MINUTE_MS = 60_000
 /** `SHOWN`: the latest runs the sheet lists. */
 export const CI_RUNS_SHOWN = 20

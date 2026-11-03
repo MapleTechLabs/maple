@@ -1,13 +1,15 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { linkButton } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { typography } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
-
-export const RAILWAY_ACCENT = "#0B0D0E"
 
 export type IntegrationBrand = Readonly<{
 	icon: IconName
@@ -32,7 +34,7 @@ export const integrationIconPlate = <M>(
 			h.AriaHidden(true),
 			h.Class(
 				cn(
-					"relative inline-flex shrink-0 items-center justify-center border border-border/60 bg-card",
+					"relative inline-flex shrink-0 items-center justify-center border border-border-subtle bg-card",
 					options.plateClassName ?? "size-12 rounded-lg",
 				),
 			),
@@ -72,7 +74,7 @@ export const integrationEmptyFeatures = <M>(
 ): Html =>
 	h.ul(
 		[h.Class("grid grid-cols-1 gap-3 text-left @2xl/page:grid-cols-3")],
-		features.map((feature, index) =>
+		Arr.map(features, (feature, index) =>
 			h.li(
 				[
 					h.Class(
@@ -84,7 +86,7 @@ export const integrationEmptyFeatures = <M>(
 					}),
 				],
 				[
-					panel(h, { className: "flex-1 gap-2 border-border/60 px-4 py-3.5" }, [
+					panel(h, { className: "flex-1 gap-2 border-border-subtle px-4 py-3.5" }, [
 						eyebrow(h, { variant: "label" }, [feature.label]),
 						h.span([h.Class("text-base/5 font-semibold tracking-tight")], [feature.title]),
 						h.p([h.Class("text-xs/4 text-muted-foreground")], [feature.description]),
@@ -95,7 +97,7 @@ export const integrationEmptyFeatures = <M>(
 	)
 
 const BACKER =
-	"absolute bottom-0.5 flex size-11 items-center justify-center rounded-[10px] border border-border/60 bg-muted text-muted-foreground/70 opacity-80"
+	"absolute bottom-0.5 flex size-11 items-center justify-center rounded-xl-inset border border-border-subtle bg-muted text-foreground-subtle opacity-80"
 
 /** `IntegrationEmptyMedia`: two dim backer plates fanned behind the brand plate. */
 export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBrand): Html => {
@@ -113,7 +115,7 @@ export const integrationEmptyMedia = <M>(h: HtmlBuilder<M>, brand: IntegrationBr
 			),
 			integrationIconPlate(h, brand, {
 				size: 28,
-				plateClassName: "relative size-14 rounded-xl shadow-lg shadow-black/10",
+				plateClassName: "relative size-14 rounded-xl shadow-popup shadow-black/10",
 			}),
 		],
 	)
@@ -141,11 +143,32 @@ export const integrationEmptyHint = <M>(h: HtmlBuilder<M>, children: ReadonlyArr
 	h.p([h.Class("max-w-xl text-balance text-sm text-muted-foreground")], children)
 
 export const integrationEmptyFooter = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
-	h.p([h.Class("text-xs text-muted-foreground")], children)
+	typography(h, { size: "xs", tone: "muted", as: "p" }, children)
 
 /** `IntegrationEmpty`: the feature row, then the card. */
 export const integrationEmpty = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
 	className?: string,
-): Html => h.div([h.Class(cn("flex flex-col gap-4", className))], children)
+): Html => h.div([h.Class(cn(vstackClass({ gap: "4" }), className))], children)
+
+export type IntegrationConnectCtaOptions = Readonly<{
+	brand: IntegrationBrand
+	features: ReadonlyArray<IntegrationFeature>
+	hint: string
+	/** "Connect Railway". */
+	label: string
+	/** The connect flow, opened at the source's Connect step (`/sources/new?integration=`). */
+	href: string
+}>
+
+/** An infra page with nothing connected: what it will show, and one way to the connect flow. */
+export const integrationConnectCta = <M>(h: HtmlBuilder<M>, options: IntegrationConnectCtaOptions): Html =>
+	integrationEmpty(h, [
+		integrationEmptyFeatures(h, options.features),
+		integrationEmptyCard(h, [
+			integrationEmptyMedia(h, options.brand),
+			integrationEmptyHint(h, [options.hint]),
+			linkButton(h, { href: options.href }, [options.label, icon(h, "ArrowRightIcon", { size: 14 })]),
+		]),
+	])

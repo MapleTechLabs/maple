@@ -3,8 +3,10 @@ import type {
 	CloudflareServiceUsage,
 	CloudflareUsageResponse,
 } from "@maple/domain/http"
+import type { ZoneChoice } from "./cloudflare"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
+import { Array as Arr, String as Str } from "effect"
 
 // The pure halves of `CloudflareZoneBoard` and `CloudflareAccountCard`: row usage, error descriptions, the
 // zone status rules, and the entries the board renders.
@@ -30,8 +32,8 @@ export const toRowUsage = (
 	services: ReadonlyArray<CloudflareServiceUsage>,
 ): RowUsage => {
 	const summed = new Map<number, number>()
-	services.forEach((service) =>
-		service.buckets.forEach((bucket) =>
+	Arr.forEach(services, (service) =>
+		Arr.forEach(service.buckets, (bucket) =>
 			summed.set(bucket.bucketStart, (summed.get(bucket.bucketStart) ?? 0) + bucket.requests),
 		),
 	)
@@ -45,7 +47,7 @@ export const toRowUsage = (
 		null,
 	)
 	return {
-		totalRequests: services.reduce((sum, service) => sum + service.totalRequests, 0),
+		totalRequests: Arr.reduce(services, 0, (sum, service) => sum + service.totalRequests),
 		lastDataAt,
 		points: fillHourlyPoints(usage, summed),
 	}
@@ -61,11 +63,11 @@ export interface CloudflareErrorInfo {
 
 /** `describeCloudflareError`: a friendly readout of the poller's free-form `lastError`. */
 export const describeCloudflareError = (raw: string): CloudflareErrorInfo => {
-	const s = raw.toLowerCase()
-	const has = (...needles: ReadonlyArray<string>) => needles.some((needle) => s.includes(needle))
+	const s = Str.toLowerCase(raw)
+	const has = (...needles: ReadonlyArray<string>) => Arr.some(needles, (needle) => Str.includes(needle)(s))
 	if (has("revoked", "no longer valid"))
 		return {
-			summary: "Cloudflare access was revoked — reconnect to resume.",
+			summary: "Cloudflare access was revoked. Reconnect to resume.",
 			tone: "crit",
 			scope: "account",
 		}
@@ -73,13 +75,13 @@ export const describeCloudflareError = (raw: string): CloudflareErrorInfo => {
 		return { summary: "Reconnect to grant Maple analytics access.", tone: "warn", scope: "account" }
 	if (has("cloudflare_oauth_client_id", "is required", "ingest key unavailable"))
 		return {
-			summary: "Traffic collection is temporarily unavailable — try again shortly.",
+			summary: "Traffic collection is temporarily unavailable. Try again shortly.",
 			tone: "crit",
 			scope: "account",
 		}
 	if (has("not authenticated", "not authorized", "unauthorized", "access denied"))
 		return {
-			summary: "Cloudflare denied the request — reconnect to refresh access.",
+			summary: "Cloudflare denied the request. Reconnect to refresh access.",
 			tone: "crit",
 			scope: "account",
 		}
@@ -107,10 +109,15 @@ export const describeCloudflareError = (raw: string): CloudflareErrorInfo => {
 export const isAccountScoped = (raw: string | null): boolean =>
 	raw !== null && describeCloudflareError(raw).scope === "account"
 
+/** `watched` is optional on the wire for deploy-window compat; absent means collected. */
+const isWatched = (zone: { readonly watched?: boolean }): boolean => zone.watched ?? true
+
 export interface ZoneEntry {
 	readonly key: string
 	readonly name: string
 	readonly enabled: boolean
+	/** False when the customer paused collection for this zone. */
+	readonly watched: boolean
 	readonly lastSyncedAt: number | null
 	readonly lastError: string | null
 	readonly usage: RowUsage | null
@@ -151,6 +158,8 @@ export const zoneStatus = (entry: ZoneEntry, usageLoaded: boolean, nowMs: number
 	const { enabled, lastError, usage, lastSyncedAt } = entry
 	const err = lastError !== null && lastError !== "" ? describeCloudflareError(lastError) : null
 	const relative = (ms: number) => formatRelativeTime(ms, nowMs)
+	if (!entry.watched)
+		return { kind: "paused", tone: "neutral", detail: text("Paused by you"), detailClass: muted }
 	if (!enabled) return { kind: "disabled", tone: "neutral", detail: text("Disabled"), detailClass: muted }
 	if (err !== null && err.scope === "account")
 		return { kind: "paused", tone: "neutral", detail: text("Paused"), detailClass: muted }
@@ -200,7 +209,7 @@ const EMPTY_USAGE: RowUsage = { totalRequests: 0, lastDataAt: null, points: [] }
 export const workerServicesOf = (
 	usage: CloudflareUsageResponse | null,
 ): ReadonlyArray<CloudflareServiceUsage> =>
-	usage === null ? [] : usage.services.filter((service) => service.kind === "worker")
+	usage === null ? [] : Arr.filter(usage.services, (service) => service.kind === "worker")
 
 /** One entry per zone (poller state joined with usage), plus zones only the warehouse knows. */
 export const zoneEntriesOf = (
@@ -212,24 +221,29 @@ export const zoneEntriesOf = (
 		const service = usage.services.find((s) => s.kind === "zone" && s.displayName === name)
 		return service === undefined ? EMPTY_USAGE : toRowUsage(usage, [service])
 	}
-	const known = new Set(status.zones.map((zone) => zone.name))
+	const known = new Set(Arr.map(status.zones, (zone) => zone.name))
 	const unmatched =
 		usage === null
 			? []
-			: usage.services.filter((service) => service.kind === "zone" && !known.has(service.displayName))
+			: Arr.filter(
+					usage.services,
+					(service) => service.kind === "zone" && !known.has(service.displayName),
+				)
 	return [
-		...status.zones.map((zone) => ({
+		...Arr.map(status.zones, (zone) => ({
 			key: zone.id,
 			name: zone.name,
 			enabled: zone.enabled,
+			watched: isWatched(zone),
 			lastSyncedAt: zone.lastSyncedAt ?? null,
 			lastError: zone.lastError ?? null,
 			usage: zoneUsage(zone.name),
 		})),
-		...unmatched.map((service) => ({
+		...Arr.map(unmatched, (service) => ({
 			key: service.serviceName,
 			name: service.displayName,
 			enabled: true,
+			watched: true,
 			lastSyncedAt: null,
 			lastError: null,
 			usage: usage === null ? null : toRowUsage(usage, [service]),
@@ -247,6 +261,7 @@ export const workerEntryOf = (
 		key: "workers",
 		name: "Workers",
 		enabled: status.workers?.enabled ?? true,
+		watched: true,
 		lastSyncedAt: status.workers?.lastSyncedAt ?? null,
 		lastError: status.workers?.lastError ?? null,
 		usage: usage === null ? null : services.length > 0 ? toRowUsage(usage, services) : EMPTY_USAGE,
@@ -259,7 +274,7 @@ export const accountErrorOf = (
 ): (CloudflareErrorInfo & { readonly raw: string }) | null => {
 	const raw = [
 		status.workers?.lastError ?? null,
-		...status.zones.map((zone) => zone.lastError ?? null),
+		...Arr.map(status.zones, (zone) => zone.lastError ?? null),
 	].find((value): value is string => value !== null && value !== "" && isAccountScoped(value))
 	return raw === undefined ? null : { ...describeCloudflareError(raw), raw }
 }
@@ -278,7 +293,7 @@ export const connectedAccountsOf = (
 	if (!status.connected) return []
 	const list = status.accounts ?? []
 	if (list.length > 0)
-		return list.map((account) => ({
+		return Arr.map(list, (account) => ({
 			accountId: account.accountId,
 			accountName: account.accountName,
 			analyticsCapable: account.analyticsCapable,
@@ -297,3 +312,44 @@ export const connectedAccountsOf = (
 				},
 			]
 }
+
+/** The stored zone choice per account; a pre-`accounts` status reads as its single account. */
+export const zoneChoicesOf = (status: CloudflareIntegrationStatus): ReadonlyArray<ZoneChoice> => {
+	const toZones = (zones: CloudflareIntegrationStatus["zones"]) =>
+		Arr.map(zones, (zone) => ({ id: zone.id, name: zone.name, watched: isWatched(zone) })).toSorted(
+			(a, b) => Str.localeCompare(b.name)(a.name),
+		)
+	const accounts = status.accounts ?? []
+	if (accounts.length > 0)
+		return Arr.map(accounts, (account) => ({
+			accountId: account.accountId,
+			accountName: account.accountName,
+			watchNewZones: account.watchNewZones ?? true,
+			zones: toZones(account.zones),
+		}))
+	return status.accountId === null || status.accountId === undefined
+		? []
+		: [
+				{
+					accountId: status.accountId,
+					accountName: status.accountName,
+					watchNewZones: true,
+					zones: toZones(status.zones),
+				},
+			]
+}
+
+/** The accounts whose draft differs from what is stored: only those are saved. */
+export const changedZoneChoices = (
+	stored: ReadonlyArray<ZoneChoice>,
+	draft: ReadonlyArray<ZoneChoice>,
+): ReadonlyArray<ZoneChoice> =>
+	Arr.filter(draft, (account) => {
+		const before = stored.find((entry) => entry.accountId === account.accountId)
+		if (before === undefined) return true
+		const watchedBefore = new Map(Arr.map(before.zones, (zone) => [zone.id, zone.watched]))
+		return (
+			before.watchNewZones !== account.watchNewZones ||
+			Arr.some(account.zones, (zone) => watchedBefore.get(zone.id) !== zone.watched)
+		)
+	})

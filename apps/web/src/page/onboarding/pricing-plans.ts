@@ -1,7 +1,9 @@
 import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
+import { isPricingCardFeature } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import { formatCount, formatQuoteUnits, quoteUnits } from "../../lib/billing/usage"
-import type { IconName } from "../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
+import { Array as Arr, String as Str } from "effect"
 
 // The data side of `PricingCards`: which plans show, their prices, metered rows and buttons.
 
@@ -36,13 +38,11 @@ export const PLATFORM_FEATURE_ICONS = new Map<string, IconName>([
 	["shield", "ShieldIcon"],
 ])
 
-const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
-
 export const getPlanSlug = (plan: CatalogPlan): string => {
 	if (plan.autoEnable) return "starter"
-	const id = plan.id.toLowerCase()
+	const id = Str.toLowerCase(plan.id)
 	if (id === "starter" || id === "startup") return id
-	const name = plan.name.toLowerCase()
+	const name = Str.toLowerCase(plan.name)
 	if (name === "starter" || name === "startup") return name
 	return "startup"
 }
@@ -61,12 +61,17 @@ const formatIncludedUsage = (item: CatalogPlanItem): string => {
 	if (item.unlimited) return "Unlimited"
 	if (item.featureId === "ai_credits" && item.included != null)
 		return `${formatCurrency(item.included, "usd")} included`
-	if (item.included != null) return `${formatCount(item.included)} ${COUNT_UNITS.get(item.featureId) ?? "GB"}`
+	if (item.included != null)
+		return `${formatCount(item.included)} ${COUNT_UNITS.get(item.featureId) ?? "GB"}`
 	return ""
 }
 
+// A one-decimal dollar amount reads as cents: "$0.3" becomes "$0.30"; "$5" and "$0.002" stay.
+const padCents = (text: string): string =>
+	text.replace(/\$(\d+)\.(\d)(?!\d)/g, (_, dollars: string, tenths: string) => `$${dollars}.${tenths}0`)
+
 const normalizeDetailText = (text: string): string =>
-	text.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")
+	padCents(Str.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")(text))
 
 /** Autumn words the rate per billing block; events are quoted per million, in its style. */
 const formatDetail = (item: CatalogPlanItem): string | undefined => {
@@ -76,7 +81,7 @@ const formatDetail = (item: CatalogPlanItem): string | undefined => {
 	const quote = quoteUnits(item.featureId, billingUnits)
 	if (amount != null && unit !== undefined && quote !== billingUnits && billingUnits > 0) {
 		const perQuote = (amount / billingUnits) * quote
-		return `then $${Number(perQuote.toPrecision(6))} per ${formatQuoteUnits(quote)} ${unit}`
+		return padCents(`then $${Number(perQuote.toPrecision(6))} per ${formatQuoteUnits(quote)} ${unit}`)
 	}
 	return item.display?.secondaryText ? normalizeDetailText(item.display.secondaryText) : undefined
 }
@@ -127,9 +132,9 @@ export const getButtonConfig = (plan: CatalogPlan): ButtonConfig => {
 export type FeatureRow = Readonly<{ featureId: string; label: string; value: string; detail: string | null }>
 
 export const getFeatureRows = (plan: CatalogPlan): ReadonlyArray<FeatureRow> =>
-	plan.items
-		.filter((item) => item.featureId !== "" && !HIDDEN_FEATURE_IDS.has(item.featureId))
-		.map((item) => {
+	Arr.map(
+		Arr.filter(plan.items, (item) => isPricingCardFeature(item.featureId)),
+		(item) => {
 			const detail = formatDetail(item)
 			return {
 				featureId: item.featureId,
@@ -137,4 +142,5 @@ export const getFeatureRows = (plan: CatalogPlan): ReadonlyArray<FeatureRow> =>
 				value: formatIncludedUsage(item),
 				detail: detail ?? null,
 			}
-		})
+		},
+	)

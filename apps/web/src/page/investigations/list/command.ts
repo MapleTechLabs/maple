@@ -1,7 +1,7 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { readIsAdmin } from "../../alerts/shared/commands"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { clickStream, factsOf, rowClickId } from "../clicks"
@@ -96,18 +96,10 @@ export const WaitInvestigationsSearch = Command.define("WaitInvestigationsSearch
 })
 
 export const LoadInvestigationsPresence = Command.define("LoadInvestigationsPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
-})
-
-/** The first-run hero is on screen: `useSignalPresence` mounts with it. */
-export const MountHero = Mount.define("MountInvestigationsHero", {
-	messages: [Message.PaintedHero],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedHero>>((resume) => {
-			const handle = requestAnimationFrame(() => requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedHero()))))
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `InvestigationRow`'s `openRow`, for every row of the list at once. */

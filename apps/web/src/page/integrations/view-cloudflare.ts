@@ -1,84 +1,46 @@
 import type { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
-import {
-	integrationEmpty,
-	integrationEmptyCard,
-	integrationEmptyFeatures,
-	integrationEmptyFooter,
-	integrationEmptyHint,
-	integrationEmptyMedia,
-} from "../infra-integrations/kit/integration-empty"
-import { CLOUDFLARE_ACCENT } from "./catalog"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { skeletonBlock } from "@maple/views/ui/skeleton"
+import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { cloudflareConnected } from "./view-cloudflare-connected"
+import { disconnectDialog } from "./view-disconnect"
+import { hstack } from "@maple/views/ui/stack"
 
 // `CloudflareAccountCard` and `CloudflareHeaderActions`.
 
 type H = HtmlBuilder<Message>
 
-const BRAND = {
-	icon: "CloudflareBrandIcon",
-	backerIcon: "CloudflareMonoIcon",
-	accent: CLOUDFLARE_ACCENT,
-} as const
-
-const notConnected = (h: H, model: Model): Html =>
-	integrationEmpty(h, [
-		integrationEmptyFeatures(h, [
-			{
-				label: "Zone analytics",
-				title: "Requests & cache per zone",
-				description: "Traffic, cache hit rate, and errors for every zone under Infrastructure.",
-			},
-			{
-				label: "Workers",
-				title: "Scripts on the service map",
-				description:
-					"Every Worker appears as a node with request volume and errors wired into traces.",
-			},
-			{
-				label: "DNS & security",
-				title: "Firewall events with context",
-				description: "DNS records, hosts, and WAF activity land alongside your traces and logs.",
-			},
-		]),
-		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, BRAND),
-			integrationEmptyHint(h, ["Your zones and Workers will appear here after connecting."]),
-			button(
-				h,
-				{
-					isDisabled: model.connect.isStarting,
-					isLoading: model.connect.isStarting,
-					attributes: [h.OnClick(Message.ClickedConnect())],
-				},
-				[icon(h, "CloudflareBrandIcon"), "Connect Cloudflare"],
-			),
-			integrationEmptyFooter(h, ["Read-only OAuth · takes about a minute · disconnect anytime"]),
-		]),
-	])
+/** A source page whose grant was removed: the way back is the connect flow. */
+const cloudflareReconnect = (h: H): Html =>
+	integrationNotice(h, {
+		message: "Cloudflare is not connected.",
+		action: linkButton(
+			h,
+			{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "cloudflare" } })) },
+			["Reconnect"],
+		),
+	})
 
 export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.statuses.cloudflare.data, {
-		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
+		onIdle: () => skeletonBlock(h, { height: "40" }),
+		onLoading: () => skeletonBlock(h, { height: "40" }),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Cloudflare integration",
+				title: "Couldn't load the Cloudflare integration",
 				onRetry: Message.ClickedRetryStatus({ name: "cloudflare" }),
 			}),
 		onStale: ({ error }) =>
 			errorState(h, {
 				failure: error,
-				title: "Failed to load the Cloudflare integration",
+				title: "Couldn't load the Cloudflare integration",
 				onRetry: Message.ClickedRetryStatus({ name: "cloudflare" }),
 			}),
 		onRefreshing: (status) => byStatus(h, model, status, timeZone),
@@ -86,7 +48,7 @@ export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 	})
 
 const byStatus = (h: H, model: Model, status: CloudflareIntegrationStatus, timeZone: string): Html =>
-	status.connected ? cloudflareConnected(h, model, status, timeZone) : notConnected(h, model)
+	status.connected ? cloudflareConnected(h, model, status, timeZone) : cloudflareReconnect(h)
 
 const accountCountOf = (model: Model): number =>
 	AsyncData.match(model.statuses.cloudflare.data, {
@@ -101,48 +63,41 @@ const accountCountOf = (model: Model): number =>
 /** Whether the grant covers several accounts (labels the header actions and the confirmation). */
 export const isMultiAccount = (model: Model): boolean => accountCountOf(model) > 1
 
+const isBusy = (model: Model): boolean => model.connect.isStarting || model.disconnect.isPending
+
+/** Reconnect: the consent screen again, where accounts are added or removed. */
+export const cloudflareReconnectButton = (h: H, model: Model): Html =>
+	button(
+		h,
+		{
+			size: "sm",
+			variant: "outline",
+			isDisabled: isBusy(model),
+			isLoading: model.connect.isStarting,
+			attributes: [h.OnClick(Message.ClickedConnect())],
+		},
+		["Reconnect"],
+	)
+
 /** `CloudflareHeaderActions`: reconnect (or edit accounts) and disconnect, while connected. */
 export const cloudflareHeaderActions = (h: H, model: Model): ReadonlyArray<Html> => {
 	const multi = isMultiAccount(model)
-	const busy = model.connect.isStarting || model.disconnect.isPending
+	const busy = isBusy(model)
 	return [
-		h.div(
-			[h.Class("flex items-center gap-2")],
-			[
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "outline",
-						isDisabled: busy,
-						isLoading: model.connect.isStarting,
-						attributes: [h.OnClick(Message.ClickedConnect())],
-					},
-					[multi ? "Edit accounts" : "Reconnect"],
-				),
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "destructive-outline",
-						isDisabled: busy,
-						isLoading: model.disconnect.isPending,
-						attributes: [h.OnClick(Message.ClickedDisconnect())],
-					},
-					[multi ? "Disconnect all" : "Disconnect"],
-				),
-				confirmDialog(h, {
-					slotId: "integration-disconnect",
-					model: model.disconnect.dialog,
-					toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
-					title: "Disconnect Cloudflare",
-					description: multi
-						? "Maple stops collecting data from all connected Cloudflare accounts. You can reconnect later."
-						: "Maple stops collecting data from this Cloudflare account. You can reconnect later.",
-					confirmLabel: "Disconnect",
-					onConfirm: Message.ConfirmedDisconnect(),
-				}),
-			],
-		),
+		hstack(h, { gap: "2" }, [
+			cloudflareReconnectButton(h, model),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isDisabled: busy,
+					isLoading: model.disconnect.isPending,
+					attributes: [h.OnClick(Message.ClickedDisconnect())],
+				},
+				[multi ? "Disconnect all" : "Disconnect"],
+			),
+			disconnectDialog(h, model, multi ? "cloudflare-multi" : "cloudflare"),
+		]),
 	]
 }

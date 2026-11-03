@@ -67,7 +67,13 @@ const navSections: ReadonlyArray<NavShellSection<SettingsTab>> = [
 		id: "access",
 		title: "Access",
 		items: [
-			{ kind: "link", id: "integrations", label: "Integrations", icon: "GridIcon", href: "/integrations" },
+			{
+				kind: "link",
+				id: "integrations",
+				label: "Integrations",
+				icon: "GridIcon",
+				href: "/integrations",
+			},
 			tab("keys", "KeyIcon"),
 			tab("mcp", "SquareTerminalIcon"),
 			tab("ai", "ChatBubbleSparkleIcon"),
@@ -76,39 +82,57 @@ const navSections: ReadonlyArray<NavShellSection<SettingsTab>> = [
 	{
 		id: "data",
 		title: "Data",
-		items: [tab("ingestion", "ServerIcon"), tab("data-platform", "DatabaseIcon"), tab("setup-health", "CircleCheckIcon")],
+		items: [
+			tab("ingestion", "ServerIcon"),
+			tab("data-platform", "DatabaseIcon"),
+			tab("setup-health", "CircleCheckIcon"),
+		],
 	},
-	{ id: "alerting", title: "Alerting", items: [tab("automation", "ShieldIcon")] },
+	{ id: "alerting", title: "Alerting", items: [tab("automation", "BoltIcon")] },
 ]
 
 export type Visibility = Readonly<{
 	isClerk: boolean
 	isAdmin: boolean
 	canAccessDataPlatform: boolean
+	/** An admin without the add-on: the row shows and opens a locked page naming the add-on. */
+	isDataPlatformLocked?: boolean
 }>
 
 const isVisible = (id: string, visibility: Visibility): boolean => {
 	if (id === "general" || id === "members" || id === "billing") return visibility.isClerk
 	if (!visibility.isClerk) return true
-	if (id === "data-platform") return visibility.canAccessDataPlatform
+	if (id === "data-platform")
+		return visibility.canAccessDataPlatform || visibility.isDataPlatformLocked === true
 	if (id === "audit-log" || id === "ai") return visibility.isAdmin
 	return true
 }
 
 /** `useVisibleSettingsSections().visibleSections`. */
 export const visibleSections = (visibility: Visibility): ReadonlyArray<NavShellSection<SettingsTab>> =>
-	navSections
-		.map((section) => ({ ...section, items: section.items.filter((row) => isVisible(row.id, visibility)) }))
-		.filter((section) => section.items.length > 0)
+	Array.filter(
+		Array.map(navSections, (section) => ({
+			...section,
+			items: Array.filter(section.items, (row) => isVisible(row.id, visibility)),
+		})),
+		(section) => section.items.length > 0,
+	)
 
 /** The tab rows only: `/integrations` is a route and never a fallback tab. */
-export const visibleTabs = (sections: ReadonlyArray<NavShellSection<SettingsTab>>): ReadonlyArray<SettingsTab> =>
-	sections.flatMap((section) => section.items.flatMap((row) => (row.kind === "tab" ? [row.id] : [])))
+export const visibleTabs = (
+	sections: ReadonlyArray<NavShellSection<SettingsTab>>,
+): ReadonlyArray<SettingsTab> =>
+	Array.flatMap(sections, (section) =>
+		Array.flatMap(section.items, (row) => (row.kind === "tab" ? [row.id] : [])),
+	)
 
 const DEFAULT_SETTINGS_TAB_ORDER: ReadonlyArray<SettingsTab> = ["general", "ingestion"]
 
 /** `resolveActiveSettingsTab`. */
-export const resolveActiveSettingsTab = (requested: string | undefined, tabs: ReadonlyArray<SettingsTab>): SettingsTab =>
+export const resolveActiveSettingsTab = (
+	requested: string | undefined,
+	tabs: ReadonlyArray<SettingsTab>,
+): SettingsTab =>
 	Option.getOrElse(
 		Option.orElse(
 			Array.findFirst(tabs, (id) => id === requested),

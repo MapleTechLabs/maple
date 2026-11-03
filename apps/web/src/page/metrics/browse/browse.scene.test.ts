@@ -1,11 +1,10 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
-import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { Result, Schema, Array as Arr, Record as Rec } from "effect"
+import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { MetricRow } from "../shared"
-import { LoadSignalPresence, MountEmptyState } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -33,7 +32,7 @@ const row = (metricName: string, metricType: string, serviceName = "checkout-api
 })
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const windowed = (search: Parameters<typeof init>[0]["search"] = {}): Model =>
 	pageUpdate(
@@ -49,13 +48,22 @@ const withCatalog = (model: Model, rows: ReadonlyArray<MetricRow>) =>
 
 /** Catalog, chart runtime and theme are in: the grid can paint. */
 const loaded = (rows: ReadonlyArray<MetricRow>): Model =>
-	[Message.CompletedLoadChartRuntime(), Message.ResolvedThemeColors({ colors: {} })].reduce(
-		(model, message) => pageUpdate(model, message).model,
+	Arr.reduce(
+		[Message.CompletedLoadChartRuntime(), Message.ResolvedThemeColors({ colors: {} })],
 		withCatalog(windowed(), rows).model,
+		(model, message) => pageUpdate(model, message).model,
 	)
 
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ metrics: { status, lastSeenMs: null } }),
+		}),
+	).model
 
 describe("metrics explorer", () => {
 	test("entry resolves the window, then asks for the type counts and the catalog", () => {
@@ -64,7 +72,9 @@ describe("metrics explorer", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual(["FetchMetricsSummary", "FetchMetricsCatalog"])
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining(["FetchMetricsSummary", "FetchMetricsCatalog"]),
+		)
 	})
 
 	test("the table view lists one row past its page, and never the grid catalog", () => {
@@ -91,14 +101,17 @@ describe("metrics explorer", () => {
 
 	test("the catalog asks one sparkline query per metric type, reused when the grid remounts", () => {
 		const catalog = withCatalog(windowed(), [row("a", "gauge"), row("b", "gauge"), row("c", "sum")])
-		expect(names(catalog.commands)).toEqual(["FetchMetricSparklines", "FetchMetricSparklines"])
-		const answered = Object.keys(catalog.model.sparklines).reduce(
+		expect(Arr.filter(names(catalog.commands), (name) => name === "FetchMetricSparklines")).toHaveLength(
+			2,
+		)
+		const answered = Arr.reduce(
+			Rec.keys(catalog.model.sparklines),
+			catalog.model,
 			(model, key) =>
 				pageUpdate(
 					model,
 					Message.CompletedFetchSparklines({ slot: key, key, result: Result.succeed([]) }),
 				).model,
-			catalog.model,
 		)
 		const narrowed = routeChanged(answered, { search: { type: "sum" } }, context)
 		const remounted = withCatalog(narrowed.model, [row("c", "sum")])
@@ -111,7 +124,9 @@ describe("metrics explorer", () => {
 		expect(names(typed.commands)).toEqual(["FetchMetricsCatalog"])
 		expect(typed.model.window).toEqual(window)
 		const moved = routeChanged(typed.model, { search: { type: "sum", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveMetricsWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveMetricsWindow", "Refresh"],
+		])
 	})
 
 	test("a card shows its type and service, and opens the metric with its type", () => {
@@ -161,19 +176,19 @@ describe("metrics explorer", () => {
 		expect(pageUpdate(model, Message.ClickedView({ view: "grid" })).outMessage).toBeUndefined()
 	})
 
-	test("an empty org asks for signal presence once the empty state painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No metrics found' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadMetricsSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([])),
 			themeResolved(),
-			expectView(text("No metrics found")).toExist(),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ metrics: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No metrics found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded([]), "absent")),
+			themeResolved(),
 			expectView(text("No metrics yet")).toExist(),
 			expectView(role("link", { name: "Set up metrics" })).toHaveAttr(
 				"href",

@@ -1,16 +1,27 @@
 import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custom-charts"
+import { isMapleService, MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import {
 	getServiceHealthBaseline,
 	getServiceOverview,
 	type GetServiceOverviewInput,
 } from "@maple/web-data/warehouse/services"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Queue,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
-import { writeClipboard } from "../../../ui/copy-button"
+import { writeClipboard } from "@maple/views/ui/copy-button"
 import { ARM_DELAY_MS, loadCommitDetail, readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { loadAnomalyServiceCounts } from "../../../data/anomaly-service-counts"
@@ -73,7 +84,10 @@ export const FetchOverview = Command.define("FetchServiceOverview", {
 	execute: ({ key, refresh, input }) =>
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.serviceOverview, schema: Schema.Array(ServiceRow) },
-			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) => response.data),
+			// Maple's own services (uptime checks) stay off the list.
+			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) =>
+				Arr.filter(response.data, (row) => !isMapleService(row)),
+			),
 		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -88,12 +102,12 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.serviceSparklines, schema: Sparklines },
 			Effect.map(getCustomChartServiceSparklines({ data: toWarehouseInput(input) }), (response) =>
-				Object.fromEntries(
-					Object.entries(response.data).map(([service, points]) => [
+				Rec.fromEntries(
+					Arr.map(Rec.toEntries(response.data), ([service, points]) => [
 						service,
 						{
-							throughput: points.map((point) => point.throughput),
-							errorRate: points.map((point) => point.errorRate),
+							throughput: Arr.map(points, (point) => point.throughput),
+							errorRate: Arr.map(points, (point) => point.errorRate),
 						},
 					]),
 				),
@@ -111,12 +125,17 @@ export const FetchFacets = Command.define("FetchServicesFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { refresh, key }).pipe(
-			Effect.map(({ data }) => ({
-				environments: data.environments,
-				namespaces: data.namespaces,
-				commitShas: data.commitShas,
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: ({ data }) => ({
+					environments: data.environments,
+					namespaces: Arr.filter(
+						data.namespaces,
+						(facet) => facet.name !== MAPLE_SERVICES_NAMESPACE,
+					),
+					commitShas: data.commitShas,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -141,8 +160,7 @@ export const FetchBaseline = Command.define("FetchServiceHealthBaseline", {
 				namespaces: mutable(input.namespaces),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchBaseline({ key, result })),
 		),
@@ -167,8 +185,8 @@ export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 	execute: ({ key, shas }) =>
 		Effect.gen(function* () {
 			const response = yield* readCommitDetails(key, shas)
-			return Object.fromEntries(
-				response.commits.map((commit) => [commit.sha, firstLine(commit.message)]),
+			return Rec.fromEntries(
+				Arr.map(response.commits, (commit) => [commit.sha, firstLine(commit.message)]),
 			)
 		}).pipe(
 			Effect.mapError(toLoadFailure),
@@ -198,20 +216,8 @@ export const FetchCommitDetail = Command.define("FetchServicesCommitDetail", {
 // The first line of a commit message.
 const firstLine = (message: string): string => {
 	const index = message.indexOf("\n")
-	return (index === -1 ? message : message.slice(0, index)).trim()
+	return Str.trim(index === -1 ? message : Str.slice(0, index)(message))
 }
-
-/** The empty state is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountServicesEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
 
 /** Where a click in the table goes: a service link is the link's alone (the row ignores it). */
 export const tableLinkClick = (
@@ -219,7 +225,8 @@ export const tableLinkClick = (
 ): "Row" | "Browser" | "Navigate" =>
 	click.href === null ? "Row" : click.button !== 0 || click.hasModifier ? "Browser" : "Navigate"
 
-type TableMessage = typeof Message.PaintedTable.Type | typeof Message.ClickedServiceLink.Type
+const TableMessage = Schema.Union([Message.PaintedTable, Message.ClickedServiceLink])
+type TableMessage = typeof TableMessage.Type
 
 /** The loaded table is on screen; its service links navigate once, never through the row too. */
 export const MountTable = Mount.defineStream("MountServicesTable", {
@@ -255,8 +262,10 @@ export const MountTable = Mount.defineStream("MountServicesTable", {
 })
 
 export const LoadSignalPresence = Command.define("LoadSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `CopyableBadge`'s write for the commit SHA; the row navigation waits on it. */

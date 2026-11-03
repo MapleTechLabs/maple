@@ -17,10 +17,14 @@ public enum WidgetTimelineRefresh {
 		/// The App Group has newer data — re-read the snapshot before building
 		/// entries.
 		public let didFetch: Bool
+		/// The credential needs the app. Re-read the entry so this timeline,
+		/// not the next one, carries the hint.
+		public let needsApp: Bool
 
-		public init(refreshDate: Date, didFetch: Bool) {
+		public init(refreshDate: Date, didFetch: Bool, needsApp: Bool = false) {
 			self.refreshDate = refreshDate
 			self.didFetch = didFetch
+			self.needsApp = needsApp
 		}
 	}
 
@@ -91,7 +95,8 @@ public enum WidgetTimelineRefresh {
 			didFetch: {
 				if case .fetched = attempt { return true }
 				return false
-			}()
+			}(),
+			needsApp: attempt == .needsApp
 		)
 	}
 }

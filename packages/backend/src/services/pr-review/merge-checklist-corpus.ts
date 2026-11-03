@@ -6,7 +6,7 @@
  * `merge-checklist.corpus.test.ts` scores every case in `bun run test`; a case is added with `bun run --cwd apps/ai review:checklist <owner/repo> <n> --snapshot`.
  */
 import { mergeStepKey, PullRequestFile } from "@maple/domain/http"
-import { Array as Arr, HashSet, Number as Num, Record as Rec, Schema } from "effect"
+import { Array as Arr, HashSet, Number as Num, Record as Rec, Schema, String as Str } from "effect"
 import {
 	buildChecklist,
 	detectMergeSteps,
@@ -54,13 +54,16 @@ const capsTokens = (text: string): ReadonlyArray<string> =>
  * would continue a run at.
  */
 const renderPatch = (lines: ReadonlyArray<PatchLine>): string =>
-	Arr.flatten(
-		Arr.mapAccum(lines, -1, (next, { kind, text, line }): readonly [number, ReadonlyArray<string>] =>
-			kind === "removed"
-				? [next, [`-${text}`]]
-				: [line + 1, line === next ? [`+${text}`] : [`@@ -0,0 +${line} @@`, `+${text}`]],
-		)[1],
-	).join("\n")
+	Arr.join(
+		Arr.flatten(
+			Arr.mapAccum(lines, -1, (next, { kind, text, line }): readonly [number, ReadonlyArray<string>] =>
+				kind === "removed"
+					? [next, [`-${text}`]]
+					: [line + 1, line === next ? [`+${text}`] : [`@@ -0,0 +${line} @@`, `+${text}`]],
+			)[1],
+		),
+		"\n",
+	)
 
 /**
  * The pull request's files cut to what detection could read. Added lines are kept only in files
@@ -147,7 +150,7 @@ export const scoreCase = (item: MergeChecklistCase, labels: MergeChecklistLabels
 }
 
 /** The kind a step key starts with: `secret` of `secret:STRIPE_KEY`. */
-const kindOf = (key: string) => key.slice(0, key.indexOf(":"))
+const kindOf = (key: string) => Str.slice(0, key.indexOf(":"))(key)
 
 export interface CorpusScore {
 	/** Expected steps found, by kind. */
@@ -190,19 +193,27 @@ const ratio = (share: Fraction) => {
 
 /** The score as a short report: the totals, then each case that missed or over-listed. */
 export const renderCorpusScore = (score: CorpusScore): string =>
-	[
-		`recall: ${
-			Arr.map(Rec.toEntries(score.recall), ([kind, share]) => `${kind} ${ratio(share)}`).join(", ") ||
-			"n/a"
-		}`,
-		`precision: ${ratio(score.precision)}`,
-		`noise: ${score.noise.part} steps on ${score.noise.whole} negative cases`,
-		...Arr.map(
-			Arr.filter(score.cases, (item) => item.missed.length > 0 || item.falsePositives.length > 0),
-			(item) =>
-				`  ${item.id}: ${[
-					...Arr.map(item.missed, (key) => `missed ${key}`),
-					...Arr.map(item.falsePositives, (key) => `listed ${key}`),
-				].join(", ")}`,
-		),
-	].join("\n")
+	Arr.join(
+		[
+			`recall: ${
+				Arr.join(
+					Arr.map(Rec.toEntries(score.recall), ([kind, share]) => `${kind} ${ratio(share)}`),
+					", ",
+				) || "n/a"
+			}`,
+			`precision: ${ratio(score.precision)}`,
+			`noise: ${score.noise.part} steps on ${score.noise.whole} negative cases`,
+			...Arr.map(
+				Arr.filter(score.cases, (item) => item.missed.length > 0 || item.falsePositives.length > 0),
+				(item) =>
+					`  ${item.id}: ${Arr.join(
+						[
+							...Arr.map(item.missed, (key) => `missed ${key}`),
+							...Arr.map(item.falsePositives, (key) => `listed ${key}`),
+						],
+						", ",
+					)}`,
+			),
+		],
+		"\n",
+	)

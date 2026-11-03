@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 // The registry the shortcuts dialog renders, with the display tokens
 // of `@tanstack/hotkeys` (`parseHotkey`, `MODIFIER_ORDER`, the symbol tables) for its few combos.
@@ -8,11 +8,10 @@ export type Platform = typeof Platform.Type
 
 export const SHORTCUT_GROUPS = [
 	"Global",
-	"Search & Time",
-	"Lists & Tables",
-	"Agent Sessions",
-	"Session Replay",
-	"Chat",
+	"Search & time",
+	"Lists & tables",
+	"Agent sessions",
+	"Session replay",
 ] as const
 
 type Group = (typeof SHORTCUT_GROUPS)[number]
@@ -33,25 +32,23 @@ export const SHORTCUTS: ReadonlyArray<ShortcutDef> = [
 	{ label: "Open command palette", group: "Global", combo: { modifiers: ["Mod"], key: "K" } },
 	{ label: "Show keyboard shortcuts", group: "Global", combo: key("?"), display: ["?"] },
 	{ label: "Toggle dark / light mode", group: "Global", combo: key("T") },
-	{ label: "Focus search", group: "Search & Time", combo: key("/") },
-	{ label: "Open time range picker", group: "Search & Time", combo: key("D") },
-	{ label: "Open advanced filter (traces)", group: "Search & Time", combo: key("F") },
-	{ label: "Next row", group: "Lists & Tables", combo: key("J"), aliases: [key("ArrowDown")] },
-	{ label: "Previous row", group: "Lists & Tables", combo: key("K"), aliases: [key("ArrowUp")] },
-	{ label: "Open focused row", group: "Lists & Tables", combo: key("Enter") },
-	{ label: "Toggle selection (issues)", group: "Lists & Tables", combo: key("X") },
-	{ label: "Change status of focused issue", group: "Lists & Tables", combo: key("S") },
-	{ label: "Change severity of focused issue", group: "Lists & Tables", combo: key("P") },
-	{ label: "Clear focus / selection", group: "Lists & Tables", combo: key("Escape") },
-	{ label: "Overview view", group: "Agent Sessions", combo: key("1") },
-	{ label: "Traces view", group: "Agent Sessions", combo: key("2") },
-	{ label: "Flow view", group: "Agent Sessions", combo: key("3") },
-	{ label: "Transcript view", group: "Agent Sessions", combo: key("4") },
-	{ label: "Play / pause replay", group: "Session Replay", combo: key("Space") },
-	{ label: "Seek back 5s", group: "Session Replay", combo: key("ArrowLeft") },
-	{ label: "Seek forward 5s", group: "Session Replay", combo: key("ArrowRight") },
-	{ label: "Open AI chat", group: "Chat", combo: key("C") },
-	{ label: "New chat tab", group: "Chat", combo: { modifiers: ["Mod", "Shift"], key: "O" } },
+	{ label: "Focus search", group: "Search & time", combo: key("/") },
+	{ label: "Open time range picker", group: "Search & time", combo: key("D") },
+	{ label: "Open advanced filter (traces)", group: "Search & time", combo: key("F") },
+	{ label: "Next row", group: "Lists & tables", combo: key("J"), aliases: [key("ArrowDown")] },
+	{ label: "Previous row", group: "Lists & tables", combo: key("K"), aliases: [key("ArrowUp")] },
+	{ label: "Open focused row", group: "Lists & tables", combo: key("Enter") },
+	{ label: "Toggle selection (issues)", group: "Lists & tables", combo: key("X") },
+	{ label: "Change status of focused issue", group: "Lists & tables", combo: key("S") },
+	{ label: "Change severity of focused issue", group: "Lists & tables", combo: key("P") },
+	{ label: "Clear focus / selection", group: "Lists & tables", combo: key("Escape") },
+	{ label: "Overview view", group: "Agent sessions", combo: key("1") },
+	{ label: "Traces view", group: "Agent sessions", combo: key("2") },
+	{ label: "Flow view", group: "Agent sessions", combo: key("3") },
+	{ label: "Transcript view", group: "Agent sessions", combo: key("4") },
+	{ label: "Play / pause replay", group: "Session replay", combo: key("Space") },
+	{ label: "Seek back 5s", group: "Session replay", combo: key("ArrowLeft") },
+	{ label: "Seek forward 5s", group: "Session replay", combo: key("ArrowRight") },
 ]
 
 /** `KEY_DISPLAY_SYMBOLS` for the keys the registry binds. */
@@ -85,13 +82,13 @@ export const displayAlternates = (
 ): ReadonlyArray<ReadonlyArray<string>> =>
 	def.display !== undefined
 		? [def.display]
-		: [def.combo, ...(def.aliases ?? [])].map((combo) => comboTokens(combo, platform))
+		: Arr.map([def.combo, ...(def.aliases ?? [])], (combo) => comboTokens(combo, platform))
 
 /** `detectPlatform` (`@tanstack/hotkeys`), read once at boot. */
 export const detectPlatform = (): Platform => {
-	const platform = navigator.platform.toLowerCase()
-	const userAgent = navigator.userAgent.toLowerCase()
-	if (platform.includes("mac") || userAgent.includes("mac")) return "mac"
-	if (platform.includes("win") || userAgent.includes("win")) return "windows"
+	const platform = Str.toLowerCase(navigator.platform)
+	const userAgent = Str.toLowerCase(navigator.userAgent)
+	if (Str.includes("mac")(platform) || Str.includes("mac")(userAgent)) return "mac"
+	if (Str.includes("win")(platform) || Str.includes("win")(userAgent)) return "windows"
 	return "linux"
 }

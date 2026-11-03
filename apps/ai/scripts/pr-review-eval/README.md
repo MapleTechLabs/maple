@@ -8,6 +8,9 @@ production prompt stays unchanged until evidence supports promotion. Results so 
 From the repository root:
 
 ```sh
+# Some cases pin commits that only live on a PR's head (rebased or squash-merged); fetch them first.
+git fetch origin pull/1259/head pull/1950/head pull/1972/head pull/2015/head
+
 # Find candidate cases: blames each fix: commit back to the PR that wrote the lines.
 bun run --cwd apps/ai review:eval mine --ref origin/main --since 2026-08-01 --limit 40
 
@@ -123,6 +126,13 @@ before comparing variants.
   positive.
 - **Holdout:** PR #972 (Postgres URL parsing) and #685 (empty S3 PUT). Keep them out of prompt
   iteration.
+- **Interface code (development):** PR #2015 (an `aria-label` hiding a card's finding, a preview
+  clipped at `lg`, a long org name overflowing a row, plus a post-fix control) and PR #1950
+  (Escape closing a panel without saving, a draft labelled live, a client listing rule diverging
+  from the publisher's). All were another reviewer's findings the production review missed; the prompt's
+  "Interface code" section was written from them.
+- **Interface code (holdout):** PR #1972 (a flag-gated page still fetching during its redirect,
+  connector origin missing from new audit entries). Not used to write the prompt.
 - **Disabled:** three mined cases, pending attribution review. Mining finds candidates, not
   ground truth: blame may point at refactors or unrelated later edits.
 

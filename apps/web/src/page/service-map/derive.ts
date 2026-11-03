@@ -1,9 +1,10 @@
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { TimeWindow } from "../../data/time-range"
-import { buildSourceGraph, type SourceGraph } from "../../service-map/map/graph"
-import type { Focus } from "../../service-map/map/state"
+import { buildSourceGraph, type SourceGraph } from "@maple/views/service-map/map/graph"
+import type { Focus } from "@maple/views/service-map/map/state"
+import { SERVICE_RUNTIME_KINDS } from "@maple/domain/service-runtimes"
 import type { Model } from "./model"
 
 // The pure halves of the service map page and its view.
@@ -21,8 +22,8 @@ const environmentsOf = (model: Model): ReadonlyArray<string> =>
 
 /** Default to production; before facets resolve assume it exists, only a confirmed no-production org shows all. */
 export const selectedEnvironment = (model: Model): string => {
-	// Ready stays true while a refetch is waiting.
-	const isReady = AsyncData.isSuccess(model.facets.data) || AsyncData.isRefreshing(model.facets.data)
+	// Ready while any facets answer is held: a refetch waiting, or a failed one over it (`Stale`).
+	const isReady = Option.isSome(AsyncData.getData(model.facets.data))
 	const hasProduction = environmentsOf(model).includes("production")
 	return model.search.environment ?? (isReady && !hasProduction ? ALL_ENVIRONMENTS : "production")
 }
@@ -34,7 +35,7 @@ export const deploymentEnvOf = (model: Model): string | undefined => {
 
 export const environmentItems = (model: Model): ReadonlyArray<{ value: string; label: string }> => [
 	{ value: ALL_ENVIRONMENTS, label: "All environments" },
-	...environmentsOf(model).map((name) => ({ value: name, label: name })),
+	...Arr.map(environmentsOf(model), (name) => ({ value: name, label: name })),
 ]
 
 /** The URL's focus (`focusService`, `focusHops`, `focusMode`). */
@@ -79,21 +80,27 @@ export const scopedRows = (model: Model, pinnedNamespace: string | null) => {
 		pinnedNamespace === null
 			? null
 			: new Set(
-					bundle.overview
-						.filter((row) => row.serviceNamespace === pinnedNamespace)
-						.map((row) => row.serviceName),
+					Arr.map(
+						Arr.filter(bundle.overview, (row) => row.serviceNamespace === pinnedNamespace),
+						(row) => row.serviceName,
+					),
 				)
 	const isMember = (service: string) => members === null || members.has(service)
 	return {
-		edges: bundle.edges.filter((edge) => isMember(edge.sourceService) && isMember(edge.targetService)),
-		dbEdges: bundle.dbEdges.filter((edge) => isMember(edge.sourceService)),
+		edges: Arr.filter(
+			bundle.edges,
+			(edge) => isMember(edge.sourceService) && isMember(edge.targetService),
+		),
+		dbEdges: Arr.filter(bundle.dbEdges, (edge) => isMember(edge.sourceService)),
 		overviews:
 			members === null
 				? bundle.overview
-				: bundle.overview
-						.filter((row) => isMember(row.serviceName))
-						.map((row) => ({ ...row, serviceNamespace: "" })),
-		workloads: bundle.workloads.filter((workload) => isMember(workload.serviceName)),
+				: Arr.map(
+						Arr.filter(bundle.overview, (row) => isMember(row.serviceName)),
+						(row) => ({ ...row, serviceNamespace: "" }),
+					),
+		workloads: Arr.filter(bundle.workloads, (workload) => isMember(workload.serviceName)),
+		runtimes: Arr.filter(bundle.runtimes, (runtime) => isMember(runtime.serviceName)),
 		platforms: bundle.platforms,
 	}
 }
@@ -101,12 +108,14 @@ export type ScopedRows = NonNullable<ReturnType<typeof scopedRows>>
 
 /** `buildFlowElements` over the scoped rows and whichever overlays have landed. */
 export const sourceGraphOf = (model: Model, rows: ScopedRows, window: TimeWindow): SourceGraph => {
-	const platforms = new Map(rows.platforms.map((row) => [row.serviceName, row.platform]))
+	const platforms = new Map(Arr.map(rows.platforms, (row) => [row.serviceName, row.platform]))
 	const runtimes = new Map(
-		rows.platforms.flatMap((row) => (row.runtime ? [[row.serviceName, row.runtime] as const] : [])),
+		Arr.flatMap(rows.platforms, (row) => (row.runtime ? [[row.serviceName, row.runtime] as const] : [])),
 	)
 	const faasNames = new Map(
-		rows.platforms.flatMap((row) => (row.faasName ? [[row.serviceName, row.faasName] as const] : [])),
+		Arr.flatMap(rows.platforms, (row) =>
+			row.faasName ? [[row.serviceName, row.faasName] as const] : [],
+		),
 	)
 	const inventory = dataOr(model.planetscaleInventory.data, [])
 	return buildSourceGraph({
@@ -115,6 +124,12 @@ export const sourceGraphOf = (model: Model, rows: ScopedRows, window: TimeWindow
 		serviceOverviews: [...rows.overviews],
 		durationSeconds: durationSecondsOf(window),
 		serviceWorkloads: [...rows.workloads],
+		serviceRunsOn: new Map(
+			Arr.map(
+				rows.runtimes,
+				(runtime) => [runtime.serviceName, SERVICE_RUNTIME_KINDS[runtime.kind].short] as const,
+			),
+		),
 		platforms,
 		runtimes,
 		cloudflareServices: Option.match(AsyncData.getData(model.cloudflare.data), {
@@ -122,7 +137,7 @@ export const sourceGraphOf = (model: Model, rows: ScopedRows, window: TimeWindow
 			onSome: (stats) => stats.value.services,
 		}),
 		faasNames,
-		planetscaleDatabases: new Map(inventory.map((db) => [db.name.toLowerCase(), db])),
+		planetscaleDatabases: new Map(Arr.map(inventory, (db) => [Str.toLowerCase(db.name), db])),
 		planetscaleStats: Option.match(AsyncData.getData(model.planetscaleStats.data), {
 			onNone: () => [],
 			onSome: (stats) => stats.value.databases,

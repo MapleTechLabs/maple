@@ -6,18 +6,18 @@ import {
 	scopeSummary,
 	toolSeriesColors,
 } from "@maple/web-data/lib/tool-analytics"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors, resolveColor } from "../../../charts/theme-colors"
-import type { LoadFailure } from "../../../data/load-failure"
-import { errorState } from "../../../ui/error-state"
-import { skeleton } from "../../../ui/skeleton"
+import { ResolveThemeColors, resolveColor } from "@maple/views/charts/theme-colors"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { signalEmptyState } from "../../kit/signal-empty-state"
-import { presenceOf } from "../../kit/signal-presence"
-import { timeControls } from "../../kit/time-controls"
+import { presenceOf } from "@maple/views/data/signal-presence"
+import { presetSpanLabel, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { agentSessionsTabs } from "../kit/tabs"
 import { metricStrip, metricStripLoading } from "../tools-kit/metric-strip"
@@ -30,7 +30,6 @@ import {
 import { scopeRow } from "../tools-kit/scope-row"
 import { seriesChart, TOOL_CHART_TOKENS } from "../tools-kit/series-chart"
 import { facetSelect, toolFilterToolbar } from "../tools-kit/toolbar"
-import { MountEmptyState } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { bucketSecondsOf } from "./update"
@@ -57,16 +56,17 @@ const toolLanes = (
 	isModels: boolean,
 	percentile: Parameters<typeof metricSpark>[2],
 ) => {
-	const keys = [...new Set(series.map((point) => point.seriesKey))]
+	const keys = [...new Set(Arr.map(series, (point) => point.seriesKey))]
 	const sparks = new Map(
 		isModels
 			? []
-			: keys.map(
+			: Arr.map(
+					keys,
 					(key) =>
 						[
 							key,
 							metricSpark(
-								series.filter((point) => point.seriesKey === key),
+								Arr.filter(series, (point) => point.seriesKey === key),
 								"calls",
 								percentile,
 							),
@@ -77,7 +77,7 @@ const toolLanes = (
 	return { sparks, colors }
 }
 
-const toolbar = (h: H, model: Model, actions: Html): Html => {
+const toolbar = (h: H, model: Model): Html => {
 	const facets = Option.getOrUndefined(AsyncData.getData(model.facets.data))
 	const select = (
 		facet: "service" | "model" | "env",
@@ -110,14 +110,13 @@ const toolbar = (h: H, model: Model, actions: Html): Html => {
 		isFailingOnly: model.search.failing === true,
 		onToggleFailingOnly: Message.ToggledFailingOnly(),
 		isWaiting: AsyncData.isRefreshing(model.totals.data),
-		actions,
 	})
 }
 
 /** `isFilled`: the route zero-fills the scope series over the window; the lab's fixture is already bucketed. */
 type BodyOptions = Readonly<{ timeZone: string; isFilled: boolean }>
 
-const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Html => {
+const loadedView = (h: H, model: Model, options: BodyOptions): Html => {
 	const { timeZone } = options
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
 	const { window, themeColors } = model
@@ -144,11 +143,11 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 	return h.div(
 		[h.Class("flex flex-col")],
 		[
-			toolbar(h, model, actions),
+			toolbar(h, model),
 			...(tabs.tools === 0
 				? [
 						h.div(
-							[h.Class("contents"), h.OnMount(MountEmptyState())],
+							[h.Class("contents")],
 							[
 								signalEmptyState(h, {
 									signal: "traces",
@@ -175,7 +174,7 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 							],
 							summary: scopeSummary(
 								totals.current,
-								rows.reduce((sum, row) => sum + row.calls, 0),
+								Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
 							),
 							onRemove: (chip) => Message.RemovedScopeChip({ kind: chip.kind }),
 							onClearAll: Message.ClickedClearScope(),
@@ -187,7 +186,10 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 							metric,
 							percentile,
 							allSessions: totals.allSessions,
-							windowLabel: model.search.timePreset ?? DEFAULT_TOOL_PRESET,
+							windowLabel:
+								model.search.startTime !== undefined
+									? "period"
+									: presetSpanLabel(model.search.timePreset ?? DEFAULT_TOOL_PRESET),
 							onSelectMetric: (next) => Message.ClickedMetric({ metric: next }),
 							percentileToggle: model.percentileToggle,
 							toPercentileMessage: (message) => Message.GotPercentileMessage({ message }),
@@ -274,16 +276,22 @@ const timeActions = (h: H, model: Model): Html =>
 export const toolsBody = (h: H, model: Model, options: BodyOptions): Html =>
 	AsyncData.matchData(model.totals.data, {
 		onEmpty: () => loadingView(h),
+		// The loaded view runs edge to edge; the error sits in the page gutter like the Sessions tab.
 		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Failed to load agent tool analytics",
-				onRetry: Message.ClickedReload(),
-			}),
+			h.div(
+				[h.Class("p-4")],
+				[
+					errorState(h, {
+						failure,
+						title: "Couldn't load agent tool analytics",
+						onRetry: Message.ClickedReload(),
+					}),
+				],
+			),
 		onData: () =>
 			model.themeColors === null || model.chartRuntime._tag === "Loading"
 				? loadingView(h)
-				: loadedView(h, model, options, timeActions(h, model)),
+				: loadedView(h, model, options),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
@@ -293,11 +301,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					title: "Agent sessions",
+					actions: timeActions(h, model),
 					tabs: agentSessionsTabs(h, {
 						active: "tools",
 						search: model.search,
 						counts: tabCounts(model),
-						className: "border-b border-border",
 					}),
 					scrollClassName: "p-0",
 				},

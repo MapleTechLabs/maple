@@ -44,10 +44,11 @@ export interface MapleBrowserApi {
 	 */
 	track: (name: string, props?: TrackProps) => void
 	/**
-	 * Report an error your app already caught — the case the global handlers
+	 * Report an error your app already caught: the case the global handlers
 	 * cannot see, because catching it is what stops it reaching them. A
 	 * framework error boundary is the canonical caller. The same error object
-	 * is recorded once, even if it is rethrown afterwards.
+	 * is recorded once, even if it is rethrown afterwards. Safe before `init`:
+	 * calls are held (capped) and recorded when it runs.
 	 *
 	 * BOUNDARY: a thrown value is unparsed by definition — JavaScript can throw
 	 * anything. `captureException` narrows it before it reaches a span.
@@ -63,7 +64,7 @@ export interface MapleBrowserApi {
 	 * Run data loading, like a route loader, in a span under the current navigation.
 	 * Errors are recorded once and rethrown. Only requests started before `fn`'s first `await` nest under the span.
 	 */
-	traced: <T>(name: string, fn: () => Promise<T>, options?: TracedOptions) => Promise<T>
+	traced: <T>(name: string, fn: () => T | Promise<T>, options?: TracedOptions) => Promise<T>
 	/**
 	 * Structured logs, exported as OpenTelemetry log records linked to the active
 	 * span and the session. Safe before `init`: records queue until it runs.

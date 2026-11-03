@@ -1,6 +1,6 @@
-import * as Select from "../../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { Schema } from "effect"
-import { SpanEvents, SpanNodeData } from "../trace-data"
+import { SpanEvents, SpanNodeData } from "@maple/views/traces/trace-data"
 
 // The Timeline tab (packages/ui/src/components/traces/trace-timeline.tsx). The viewport lives in
 // the Model and reaches the DOM as the rows container's `--vp0`/`--vpk`.

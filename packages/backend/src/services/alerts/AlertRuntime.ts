@@ -19,7 +19,7 @@ export interface AlertRuntimeApi {
 	readonly schedulerSpreadMs: () => number
 }
 
-export class AlertRuntime extends Context.Reference<AlertRuntimeApi>("@maple/api/services/AlertRuntime", {
+export class AlertRuntime extends Context.Reference<AlertRuntimeApi>("@maple/backend/services/AlertRuntime", {
 	defaultValue: (): AlertRuntimeApi => ({
 		now: Clock.currentTimeMillis,
 		makeUuid: () => randomUUID(),

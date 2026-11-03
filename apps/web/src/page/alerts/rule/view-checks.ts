@@ -2,25 +2,28 @@ import type { AlertCheckDocument, AlertRuleDocument } from "@maple/domain/http"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { formatTimeInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { skeleton } from "../../../ui/skeleton"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { truncatedText } from "../../../ui/truncated-text"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { docsLink } from "../../kit/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { alertStatusBadge } from "../shared/badges"
 import { Message } from "./message"
 import type { CheckStatusFilter, ChecksResponse, Model } from "./model"
 import { sectionHeading } from "../../kit/section-heading"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ChecksPanel` and `CheckDelta`: the rule's recent checks.
 
@@ -33,7 +36,13 @@ const formatBucketRange = (bucket: Readonly<{ start: number; end: number }>, tim
 	return `${time(bucket.start)}–${time(bucket.end)}`
 }
 
-const checkDelta = (h: H, rule: AlertRuleDocument, observed: number, threshold: number, isBreached: boolean): ReadonlyArray<Html> => {
+const checkDelta = (
+	h: H,
+	rule: AlertRuleDocument,
+	observed: number,
+	threshold: number,
+	isBreached: boolean,
+): ReadonlyArray<Html> => {
 	const delta = observed - threshold
 	if (!Number.isFinite(delta) || delta === 0) return []
 	return [
@@ -59,7 +68,10 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 			[skeleton(h, "h-24 w-full"), skeleton(h, "h-48 w-full"), skeleton(h, "h-64 w-full")],
 		)
 	const loaded = new Map(
-		[...(inputs.page?.checks ?? []), ...model.extraChecks].map((check) => [checkKey(check), check] as const),
+		Arr.map(
+			[...(inputs.page?.checks ?? []), ...model.extraChecks],
+			(check) => [checkKey(check), check] as const,
+		),
 	)
 	const loadedChecks = [...loaded.values()]
 	if (loadedChecks.length === 0)
@@ -70,14 +82,16 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CheckIcon", { size: 18 })]),
 					emptyTitle(h, ["No checks in this window"]),
 					emptyDescription(h, [
-						"No evaluations were recorded for the selected time range. Try widening the range, or wait for the scheduler to record the next check.",
+						"No evaluations were recorded in this window. Try widening the range, or wait for the scheduler to record the next check.",
 					]),
 				]),
 				docsLink(h, "alertRules"),
 			],
 			"py-12",
 		)
-	const counted = loadedChecks.reduce(
+	const counted = Arr.reduce(
+		loadedChecks,
+		{ breached: 0, healthy: 0, errored: 0, skipped: 0, transitions: 0 },
 		(acc, check) => ({
 			breached: acc.breached + (check.status === "breached" ? 1 : 0),
 			healthy: acc.healthy + (check.status === "healthy" ? 1 : 0),
@@ -85,7 +99,6 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 			skipped: acc.skipped + (check.status === "skipped" ? 1 : 0),
 			transitions: acc.transitions + (check.incidentTransition !== "none" ? 1 : 0),
 		}),
-		{ breached: 0, healthy: 0, errored: 0, skipped: 0, transitions: 0 },
 	)
 	const summary = inputs.page?.summary.totals
 	const totals =
@@ -102,12 +115,14 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 	const bucket = model.selectedBucket
 	const rowSource = bucket != null ? model.bucketChecks : loadedChecks
 	const filtered =
-		model.checkStatusFilter === "all" ? rowSource : rowSource.filter((c) => c.status === model.checkStatusFilter)
-	const times = rowSource
-		.map((c) => new Date(c.timestamp).getTime())
-		.filter((t) => Number.isFinite(t))
-		.sort((a, b) => b - a)
-	const gaps = times.slice(1).map((t, i) => (times[i] ?? t) - t).sort((a, b) => a - b)
+		model.checkStatusFilter === "all"
+			? rowSource
+			: Arr.filter(rowSource, (c) => c.status === model.checkStatusFilter)
+	const times = Arr.filter(
+		Arr.map(rowSource, (c) => new Date(c.timestamp).getTime()),
+		(t) => Number.isFinite(t),
+	).sort((a, b) => b - a)
+	const gaps = Arr.map(times.slice(1), (t, i) => (times[i] ?? t) - t).sort((a, b) => a - b)
 	const medianGapMs = gaps.length === 0 ? null : (gaps[Math.floor(gaps.length / 2)] ?? null)
 	const gapBefore = (index: number): number | null => {
 		if (index === 0 || medianGapMs == null || medianGapMs <= 0) return null
@@ -117,7 +132,8 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 		const missing = Math.round((prev - current) / medianGapMs) - 1
 		return missing >= 1 ? missing : null
 	}
-	const nextCursor = model.nextCursorOverride === undefined ? (inputs.page?.nextCursor ?? null) : model.nextCursorOverride
+	const nextCursor =
+		model.nextCursorOverride === undefined ? (inputs.page?.nextCursor ?? null) : model.nextCursorOverride
 	const isGrouped = (rule.groupBy?.length ?? 0) > 0
 	const filterOptions: ReadonlyArray<{ value: CheckStatusFilter; label: string }> = [
 		{ value: "all", label: "All" },
@@ -131,24 +147,32 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 		[h.Class("space-y-4")],
 		[
 			sectionHeading(h, { title: "Checks" }),
-			statRail(
-				h,
-				{ columns: totals.errored > 0 ? 5 : 4 },
-				[
-					statRailItem(h, { size: "sm", eyebrow: "Total checks", value: String(totals.total) }),
-					statRailItem(h, {
-						size: "sm",
-						eyebrow: "Breached",
-						value: String(totals.breached),
-						tone: totals.breached > 0 ? "crit" : "neutral",
-					}),
-					statRailItem(h, { size: "sm", eyebrow: "Healthy", value: String(totals.healthy), tone: "ok" }),
-					...(totals.errored > 0
-						? [statRailItem(h, { size: "sm", eyebrow: "Failed", value: String(totals.errored), tone: "crit" })]
-						: []),
-					statRailItem(h, { size: "sm", eyebrow: "Transitions", value: String(totals.transitions) }),
-				],
-			),
+			statRail(h, { columns: totals.errored > 0 ? 5 : 4 }, [
+				statRailItem(h, { size: "sm", eyebrow: "Total checks", value: String(totals.total) }),
+				statRailItem(h, {
+					size: "sm",
+					eyebrow: "Breached",
+					value: String(totals.breached),
+					tone: totals.breached > 0 ? "crit" : "neutral",
+				}),
+				statRailItem(h, {
+					size: "sm",
+					eyebrow: "Healthy",
+					value: String(totals.healthy),
+					tone: "ok",
+				}),
+				...(totals.errored > 0
+					? [
+							statRailItem(h, {
+								size: "sm",
+								eyebrow: "Failed",
+								value: String(totals.errored),
+								tone: "crit",
+							}),
+						]
+					: []),
+				statRailItem(h, { size: "sm", eyebrow: "Transitions", value: String(totals.transitions) }),
+			]),
 			h.div(
 				[h.Class("space-y-3")],
 				[
@@ -158,13 +182,17 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 							h.div(
 								[h.Class("space-y-1")],
 								[
-									h.div(
-										[h.Class("flex flex-wrap items-center gap-2")],
-										[
-											h.h3([h.Class("text-sm font-semibold")], ["All checks"]),
-											...(bucket != null
-												? [
-														badge(h, { variant: "secondary", className: "gap-1.5 font-mono text-xs" }, [
+									hstack(h, { gap: "2", wrap: true }, [
+										heading(h, { level: 3, variant: "section" }, ["All checks"]),
+										...(bucket != null
+											? [
+													badge(
+														h,
+														{
+															variant: "secondary",
+															className: "gap-1.5 font-mono text-xs",
+														},
+														[
 															formatBucketRange(bucket, timeZone),
 															iconButton(
 																h,
@@ -172,28 +200,32 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 																	size: "icon-2xs",
 																	label: "Clear bucket filter",
 																	hasTooltip: false,
-																	className: "text-muted-foreground hover:text-foreground",
-																	attributes: [h.OnClick(Message.ClickedClearBucket())],
+																	className: typographyClass({
+																		tone: "muted",
+																		hoverTone: "foreground",
+																	}),
+																	attributes: [
+																		h.OnClick(
+																			Message.ClickedClearBucket(),
+																		),
+																	],
 																},
 																[icon(h, "XmarkIcon")],
 															),
-														]),
-													]
-												: []),
-										],
-									),
-									h.p(
-										[h.Class("text-muted-foreground text-xs")],
-										[
-											bucket != null
-												? model.isBucketLoading
-													? "Loading this bucket's evaluations…"
-													: `${countLabel(model.bucketChecks.length, "evaluation")} in this bucket, nothing hidden.`
-												: totals.total > loadedChecks.length
-													? `Showing the latest ${loadedChecks.length} of ${totals.total} in this window; the rail above covers all of them.`
-													: `All ${countLabel(totals.total, "evaluation")} in this window.`,
-										],
-									),
+														],
+													),
+												]
+											: []),
+									]),
+									typography(h, { size: "xs", tone: "muted", as: "p" }, [
+										bucket != null
+											? model.isBucketLoading
+												? "Loading this bucket's evaluations…"
+												: `${countLabel(model.bucketChecks.length, "evaluation")} in this bucket, nothing hidden.`
+											: totals.total > loadedChecks.length
+												? `Showing the latest ${loadedChecks.length} of ${totals.total} in this window; the rail above covers all of them.`
+												: `All ${countLabel(totals.total, "evaluation")} in this window.`,
+									]),
 								],
 							),
 							segmentedSelect(h, {
@@ -208,17 +240,17 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 					table(h, {}, [
 						tableHeader(h, [
 							tableRow(h, [
-								tableHead(h, ["Time"], "w-[170px]"),
-								tableHead(h, ["Status"], "w-[110px]"),
+								tableHead(h, ["Time"], "w-44"),
+								tableHead(h, ["Status"], "w-28"),
 								tableHead(h, ["Value / threshold"]),
-								tableHead(h, ["Samples"], "w-[90px]"),
-								...(isGrouped ? [tableHead(h, ["Group"], "w-[160px]")] : []),
-								tableHead(h, ["Incident"], "w-[140px]"),
+								tableHead(h, ["Samples"], "w-24"),
+								...(isGrouped ? [tableHead(h, ["Group"], "w-40")] : []),
+								tableHead(h, ["Incident"], "w-36"),
 							]),
 						]),
 						tableBody(
 							h,
-							filtered.flatMap((check, rowIndex) => {
+							Arr.flatMap(filtered, (check, rowIndex) => {
 								const skipped = gapBefore(rowIndex)
 								return [
 									...(skipped != null
@@ -226,19 +258,17 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 												tableRow(
 													h,
 													[
-														h.td(
+														tableCell(
+															h,
 															[
-																h.Attribute("colspan", isGrouped ? "6" : "5"),
-																h.Attribute(
-																	"class",
-																	cn(tableCellStyles, "bg-muted/40 py-1.5 text-2xs text-muted-foreground"),
-																),
-																h.DataAttribute("slot", "table-cell"),
+																countLabel(skipped, "evaluation"),
+																" hidden by the status filter",
 															],
-															[countLabel(skipped, "evaluation"), " hidden by the status filter"],
+															"bg-surface-sunken py-1.5 text-2xs text-muted-foreground",
+															[h.Attribute("colspan", isGrouped ? "6" : "5")],
 														),
 													],
-													"hover:bg-transparent",
+													"hover:bg-transparent active:bg-transparent",
 												),
 											]
 										: []),
@@ -249,25 +279,24 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 					]),
 					...(bucket == null && nextCursor !== null
 						? [
-								h.div(
-									[h.Class("flex items-center justify-between gap-4")],
-									[
-										h.span(
-											[h.Class("text-2xs text-muted-foreground")],
-											[String(loadedChecks.length), " of ", String(totals.total), " loaded"],
-										),
-										button(
-											h,
-											{
-												variant: "outline",
-												size: "sm",
-												isLoading: model.isLoadingMoreChecks,
-												attributes: [h.OnClick(Message.ClickedLoadMoreChecks())],
-											},
-											["Load 100 more"],
-										),
-									],
-								),
+								hstack(h, { gap: "4", justify: "between" }, [
+									typography(h, { size: "2xs", tone: "muted" }, [
+										String(loadedChecks.length),
+										" of ",
+										String(totals.total),
+										" loaded",
+									]),
+									button(
+										h,
+										{
+											variant: "outline",
+											size: "sm",
+											isLoading: model.isLoadingMoreChecks,
+											attributes: [h.OnClick(Message.ClickedLoadMoreChecks())],
+										},
+										["Load 100 more"],
+									),
+								]),
 							]
 						: []),
 				],
@@ -276,8 +305,19 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 	)
 }
 
-const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGrouped: boolean, timeZone: string): Html => {
-	const state = check.status === "breached" || check.status === "error" ? "firing" : check.status === "healthy" ? "ok" : "pending"
+const checkRow = (
+	h: H,
+	rule: AlertRuleDocument,
+	check: AlertCheckDocument,
+	isGrouped: boolean,
+	timeZone: string,
+): Html => {
+	const state =
+		check.status === "breached" || check.status === "error"
+			? "firing"
+			: check.status === "healthy"
+				? "ok"
+				: "pending"
 	const transitionTone =
 		check.incidentTransition === "opened"
 			? "text-severity-error"
@@ -287,54 +327,66 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 					? "text-muted-foreground"
 					: ""
 	const label =
-		check.status === "breached" ? "Breached" : check.status === "healthy" ? "Healthy" : check.status === "error" ? "Failed" : "Skipped"
+		check.status === "breached"
+			? "Breached"
+			: check.status === "healthy"
+				? "Healthy"
+				: check.status === "error"
+					? "Failed"
+					: "Skipped"
 	return tableRow(
 		h,
 		[
-			h.td(
-				[
-					h.Attribute("class", cn(tableCellStyles, "font-mono text-xs")),
-					h.Title(`Evaluated in ${check.evaluationDurationMs}ms`),
-					h.DataAttribute("slot", "table-cell"),
-				],
+			tableCell(
+				h,
 				[formatTimestampInTimezone(check.timestamp, { timeZone, withYear: true })],
+				typographyClass({ size: "xs", mono: true }),
+				[h.Title(`Evaluated in ${check.evaluationDurationMs}ms`)],
 			),
 			tableCell(h, [alertStatusBadge(h, state, { label })]),
 			tableCell(h, [
 				check.status === "error"
-					? truncatedText(h, {
-							text: check.errorMessage ?? "",
-							tooltip: "title",
-							className: cn("max-w-[320px] text-xs", TONE_TEXT.crit),
-						}, [check.errorMessage ?? "Evaluation failed"])
+					? truncatedText(
+							h,
+							{
+								text: check.errorMessage ?? "",
+								tooltip: "title",
+								className: cn("max-w-[320px] text-xs", TONE_TEXT.crit),
+							},
+							[check.errorMessage ?? "Evaluation failed"],
+						)
 					: check.observedValue == null
 						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
-						: h.div(
-								[h.Class("flex items-baseline gap-2")],
-								[
-									h.span(
-										[
-											h.Class(
-												cn("font-mono font-medium tabular-nums", check.status === "breached" && "text-severity-error"),
+						: hstack(h, { gap: "2", align: "baseline" }, [
+								h.span(
+									[
+										h.Class(
+											cn(
+												"font-mono font-medium tabular-nums",
+												check.status === "breached" && "text-severity-error",
 											),
-										],
-										[formatSignalValue(rule.signalType, check.observedValue)],
-									),
-									h.span(
-										[h.Class("font-mono text-xs text-muted-foreground/60 tabular-nums")],
-										["/", " ", formatSignalValue(rule.signalType, check.threshold)],
-									),
-									...checkDelta(h, rule, check.observedValue, check.threshold, check.status === "breached"),
-								],
-							),
+										),
+									],
+									[formatSignalValue(rule.signalType, check.observedValue)],
+								),
+								h.span(
+									[h.Class("font-mono text-xs text-foreground-subtle tabular-nums")],
+									["/", " ", formatSignalValue(rule.signalType, check.threshold)],
+								),
+								...checkDelta(
+									h,
+									rule,
+									check.observedValue,
+									check.threshold,
+									check.status === "breached",
+								),
+							]),
 			]),
-			h.td(
-				[
-					h.Attribute("class", cn(tableCellStyles, "tabular-nums text-muted-foreground")),
-					h.Title(check.sampleCount.toLocaleString("en-US")),
-					h.DataAttribute("slot", "table-cell"),
-				],
+			tableCell(
+				h,
 				[formatNumber(check.sampleCount)],
+				typographyClass({ tone: "muted", numeric: true }),
+				[h.Title(check.sampleCount.toLocaleString("en-US"))],
 			),
 			...(isGrouped
 				? [
@@ -342,11 +394,14 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 							h,
 							[
 								h.span(
-									[h.Class("block max-w-[180px] truncate"), h.Title(check.groupKey || "all")],
+									[
+										h.Class("block max-w-[180px] truncate"),
+										h.Title(check.groupKey || "all"),
+									],
 									[check.groupKey || "all"],
 								),
 							],
-							"font-mono text-muted-foreground",
+							typographyClass({ tone: "muted", mono: true }),
 						),
 					]
 				: []),
@@ -358,6 +413,9 @@ const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGr
 						]),
 			]),
 		],
-		cn(check.status === "breached" && "bg-severity-error/[0.04]", check.status === "error" && "bg-severity-warn/[0.05]"),
+		cn(
+			check.status === "breached" && "bg-severity-error/[0.04]",
+			check.status === "error" && "bg-severity-warn/[0.05]",
+		),
 	)
 }

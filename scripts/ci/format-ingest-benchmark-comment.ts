@@ -1,6 +1,6 @@
-// Renders the ingest load benchmark comment posted on PRs (ingest-rust-tests.yml).
+// Renders the ingest load benchmark comment posted on PRs (ingest-bench.yml).
 // Env: HEAD_LOAD_JSON / BASE_LOAD_JSON (comma-separated LoadSummary JSON paths; several
-// mean median + min/max), TEST_OUTPUT, CRITERION_OUTPUT, COMMENT_OUTPUT, GITHUB_SHA.
+// mean median + min/max), CRITERION_OUTPUT, COMMENT_OUTPUT, GITHUB_SHA.
 // The first line is a stable marker so the workflow updates its comment in place.
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 
@@ -122,7 +122,10 @@ const out = process.env.COMMENT_OUTPUT
 if (!out) throw new Error("COMMENT_OUTPUT is required")
 const headRuns = await loadRuns(process.env.HEAD_LOAD_JSON)
 const baseRuns = await loadRuns(process.env.BASE_LOAD_JSON)
-const modeOf = (runs: ReadonlyArray<Run>): string => String(runs[0]?.ingest_mode ?? "tinybird")
+const modeOf = (runs: ReadonlyArray<Run>): string => {
+	const mode = runs[0]?.ingest_mode
+	return typeof mode === "string" ? mode : "tinybird"
+}
 const headMode = modeOf(headRuns)
 const baseMode = modeOf(baseRuns)
 const sameMode = baseRuns.length > 0 && baseMode === headMode
@@ -173,6 +176,5 @@ if (criterion && existsSync(criterion)) {
 		"",
 	)
 }
-body.push("### cargo test", "", "```text", tail(process.env.TEST_OUTPUT, 80), "```")
 
 writeFileSync(out, `${body.join("\n")}\n`)

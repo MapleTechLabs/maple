@@ -1,10 +1,10 @@
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
-import * as Chart from "../../../../charts/chart"
-import { LoadChartRuntime } from "../../../../charts/chart-runtime"
-import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
-import * as Keyed from "../../../../data/keyed"
-import { requestKey } from "../../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
@@ -14,6 +14,7 @@ import {
 	CompleteReloadSpin,
 	FetchServices,
 	FetchTimeseries,
+	FetchTraced,
 	ResolveWindow,
 	type TimeseriesInput,
 } from "./command"
@@ -49,16 +50,20 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	const seriesKey = requestKey(context.orgId, "getRailwayServiceTimeseries", { data: input })
 	const services = Keyed.request(model.services, servicesKey, mode)
 	const timeseries = Keyed.request(model.timeseries, seriesKey, mode)
+	const tracedKey = requestKey(context.orgId, "getServiceOverview", { data: window })
+	const traced = Keyed.request(model.traced, tracedKey, mode)
 	return {
 		model: {
 			...model,
 			window,
 			services: Option.getOrElse(services, () => model.services),
 			timeseries: Option.getOrElse(timeseries, () => model.timeseries),
+			traced: Option.getOrElse(traced, () => model.traced),
 		},
 		commands: [
 			...(Option.isSome(services) ? [FetchServices({ key: servicesKey, window })] : []),
 			...(Option.isSome(timeseries) ? [FetchTimeseries({ key: seriesKey, input })] : []),
+			...(Option.isSome(traced) ? [FetchTraced({ key: tracedKey, window })] : []),
 		],
 	}
 }
@@ -80,8 +85,9 @@ export const init = (route: Route, context: PageContext): Return => {
 		window: null,
 		nowMs: 0,
 		services: Keyed.idle(),
+		traced: Keyed.idle(),
 		timeseries: Keyed.idle(),
-		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(CHART_IDS, (id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		timePicker: TimeRangePicker.init("railway-service-time-range"),
@@ -107,10 +113,14 @@ const searchHref = (model: Model, search: Search) =>
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (searchHref(model, model.search) === searchHref(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
@@ -122,6 +132,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchServices: ({ key, result }) => ({
 			model: { ...model, services: Keyed.accept(model.services, key, result) },
+		}),
+		CompletedFetchTraced: ({ key, result }) => ({
+			model: { ...model, traced: Keyed.accept(model.traced, key, result) },
 		}),
 		CompletedFetchTimeseries: ({ key, result }) => ({
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },

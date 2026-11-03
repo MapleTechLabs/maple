@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId } from "@maple/domain/http"
 import { AlertIncidentId, AlertRuleId } from "@maple/domain/primitives"
@@ -252,7 +252,7 @@ describe("upsertAlertIssue", () => {
 						.where(($) => [$.issueId.eq(first.issueId!)]),
 				),
 			)
-			const types = events.map((e) => e.type)
+			const types = Arr.map(events, (e) => e.type)
 			assert.include(types, "state_change")
 			assert.include(types, "regression")
 		}).pipe(Effect.provide(makeLayer())),

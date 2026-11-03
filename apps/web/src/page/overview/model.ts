@@ -1,16 +1,17 @@
+import { AlertSignalType } from "@maple/domain/http"
 import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
-import * as Chart from "../../charts/chart"
-import { FixedMetricRow } from "../../charts/chart-spec"
-import { ChartRuntime } from "../../charts/chart-runtime"
-import { ThemeColors } from "../../charts/theme-colors"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure } from "../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { FixedMetricRow } from "@maple/views/charts/chart-spec"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import { HomeSearch } from "../../route/search"
-import * as Select from "../../ui/select"
-import { SignalPresenceData } from "../kit/signal-presence"
+import * as Select from "@maple/views/ui/select"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
 
@@ -45,7 +46,6 @@ const UsageTotals = Schema.Struct({
 	logs: Schema.Number,
 	traces: Schema.Number,
 	metrics: Schema.Number,
-	dataSize: Schema.Number,
 })
 export type UsageTotals = typeof UsageTotals.Type
 
@@ -58,12 +58,15 @@ export const Incident = Schema.Struct({
 	status: Schema.String,
 	groupKey: Schema.NullOr(Schema.String),
 	severity: Schema.Literals(["warning", "critical"]),
+	signalType: AlertSignalType,
 })
 export type Incident = typeof Incident.Type
 
-export const IncidentsData = AsyncData.Schema(Schema.Array(Incident), Schema.Never)
+/** `Failure`: the live alert sync failed or stalled; the page reads it as no incidents. */
+export const IncidentsData = AsyncData.Schema(Schema.Array(Incident), Schema.Literal("Unavailable"))
 /** `useAlertRulesList()`, reduced to each rule's `enabled`. */
-export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Never)
+/** `Failure`: the live rules sync failed or stalled; the banner stays out. */
+export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Literal("Unavailable"))
 
 /** `ServiceDetailTimeSeriesPoint` (@maple/web-data/warehouse/services): one overview bucket. */
 export const OverviewPoint = Schema.Struct({

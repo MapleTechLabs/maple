@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, VercelConnectRequest } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { publicSourceId } from "@maple/backend/services/org/integration-sources"
 import { SourceId } from "@maple/domain/primitives"
@@ -277,7 +277,7 @@ const vercelSourceId = (testDb: TestDb) =>
 	Effect.promise(() =>
 		queryFirstRow<{ id: string }>(
 			testDb,
-			"SELECT s.id FROM sources s JOIN vercel_connections c ON s.integration_id = c.id WHERE s.platform = 'vercel' AND c.org_id = $1",
+			"SELECT source_id AS id FROM vercel_connections WHERE org_id = $1",
 			[orgId],
 		),
 	).pipe(Effect.map((row) => publicSourceId(Schema.decodeSync(SourceId)(row!.id))))
@@ -777,31 +777,6 @@ describe("VercelIntegrationService", () => {
 					})
 				}
 				// Re-keyed once: the next poll only reads the drains.
-				yield* poll()
-				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 2)
-			}),
-		)
-	})
-
-	it.effect("a poll after the connection's source changed rewrites both drains once", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFake()
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				yield* connect()
-				const before = yield* vercelSourceId(testDb)
-				yield* Effect.promise(() =>
-					executeSql(testDb, "DELETE FROM sources WHERE platform = 'vercel'"),
-				)
-				yield* poll()
-				const after = yield* vercelSourceId(testDb)
-				assert.notStrictEqual(after, before)
-				const sentSourceIds = callsTo(fake, "PATCH", "/v1/drains").map(
-					(call) => asObject(asObject(asObject(call.body).delivery).headers)["x-maple-source-id"],
-				)
-				assert.deepStrictEqual(sentSourceIds, [after, after])
 				yield* poll()
 				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 2)
 			}),

@@ -2,7 +2,8 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option, Record } from "effect"
 import type { Command } from "foldkit"
-import { idle, keyOf, request } from "../../data/slot"
+import { idle, requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { queryOf } from "../../route"
 import { type PageContext, rangeOf } from "../contract"
 import { errorsFiltersOf, FetchByType, FetchFacets, FetchSummary, FetchTraces } from "./command"
@@ -21,7 +22,12 @@ export const cardOf = (model: Model, fingerprintHash: string): Card =>
 	Option.getOrElse(Record.get(model.cards, fingerprintHash), () => ({ isExpanded: false, traces: idle() }))
 
 /** `useLocalErrorTraces` for one open card, under the view's filters and window. */
-export const loadCard = (model: Model, context: PageContext, fingerprintHash: string, force = false): Step => {
+export const loadCard = (
+	model: Model,
+	context: PageContext,
+	fingerprintHash: string,
+	force = false,
+): Step => {
 	const card = cardOf(model, fingerprintHash)
 	const maybeBounds = boundsOf(model, context)
 	if (!card.isExpanded || Option.isNone(maybeBounds)) return { model }
@@ -34,12 +40,19 @@ export const loadCard = (model: Model, context: PageContext, fingerprintHash: st
 		env: env ?? null,
 		bounds: boundsKey(bounds),
 	})
-	return Option.match(request(card.traces, key, force), {
+	return Option.match(requestKeepingFailure(card.traces, key, force ? "Refresh" : "Load"), {
 		onNone: () => ({ model }),
 		onSome: (traces) => ({
 			model: { ...model, cards: Record.set(model.cards, fingerprintHash, { ...card, traces }) },
 			commands: [
-				FetchTraces({ key, fingerprintHash, search: context.location.search, ...bounds, apiBase: context.env.apiBase, readsCache: card.traces.key !== key }),
+				FetchTraces({
+					key,
+					fingerprintHash,
+					search: context.location.search,
+					...bounds,
+					apiBase: context.env.apiBase,
+					readsCache: card.traces.key !== key,
+				}),
 			],
 		}),
 	})
@@ -56,9 +69,9 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 			const summaryKey = keyOf("errors-summary", identity)
 			const byTypeKey = keyOf("errors-by-type", identity)
 			const facetsKey = keyOf("errors-facets", identity)
-			const summary = request(model.summary, summaryKey, force)
-			const byType = request(model.byType, byTypeKey, force)
-			const facets = request(model.facets, facetsKey, force)
+			const summary = requestKeepingFailure(model.summary, summaryKey, force ? "Refresh" : "Load")
+			const byType = requestKeepingFailure(model.byType, byTypeKey, force ? "Refresh" : "Load")
+			const facets = requestKeepingFailure(model.facets, facetsKey, force ? "Refresh" : "Load")
 			const base: Step = {
 				model: {
 					...model,
@@ -67,12 +80,22 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 					facets: Option.getOrElse(facets, () => model.facets),
 				},
 				commands: Array.getSomes([
-					Option.map(summary, () => FetchSummary({ key: summaryKey, ...args, readsCache: model.summary.key !== summaryKey })),
-					Option.map(byType, () => FetchByType({ key: byTypeKey, ...args, readsCache: model.byType.key !== byTypeKey })),
-					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey })),
+					Option.map(summary, () =>
+						FetchSummary({
+							key: summaryKey,
+							...args,
+							readsCache: model.summary.key !== summaryKey,
+						}),
+					),
+					Option.map(byType, () =>
+						FetchByType({ key: byTypeKey, ...args, readsCache: model.byType.key !== byTypeKey }),
+					),
+					Option.map(facets, () =>
+						FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey }),
+					),
 				]),
 			}
-			return Object.keys(model.cards).reduce<Step>((step, fingerprintHash) => {
+			return Record.keys(model.cards).reduce<Step>((step, fingerprintHash) => {
 				const card = loadCard(step.model, context, fingerprintHash, force)
 				return { model: card.model, commands: [...(step.commands ?? []), ...(card.commands ?? [])] }
 			}, base)

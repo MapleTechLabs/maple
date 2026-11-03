@@ -4,18 +4,21 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../../data/load-failure"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import * as Tooltip from "../../../../ui/tooltip"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { timeControls } from "../../../kit/time-controls"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { RAILWAY_ACCENT } from "../../../integrations/catalog"
+import { integrationConnectCta } from "../../kit/integration-empty"
+import { AppRoute, hrefOf } from "../../../../route"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { avgPeakContent } from "../../../infra/kit/avg-peak"
-import { pageHero, countLabel, searchToolbar } from "../../../infra/kit/page-parts"
+import { countLabel, searchToolbar } from "../../../infra/kit/page-parts"
 import { formatAbsolute } from "../../../kit/relative-time"
 import type { RailwayServiceRow, RailwayStatus } from "../model"
 import { filterServices, formatVcpu, hasConfiguredLimits, unsyncedEnvironments } from "./derive"
@@ -23,8 +26,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { railwayFleetBand, railwayFleetBandLoading } from "./view-band"
-import { LIST_TOKEN_FORM, railwayConnectCard } from "./view-connect"
 import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./view-table"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `RailwayPage`.
 
@@ -39,7 +42,7 @@ const tooltipContent = (
 	clock: Clock,
 	triggerId: string,
 ): ReadonlyArray<Html | string> =>
-	services.flatMap((row): ReadonlyArray<Html | string> => {
+	Arr.flatMap(services, (row): ReadonlyArray<Html | string> => {
 		const ids = triggerIds(row)
 		if (triggerId === ids.memory)
 			return [
@@ -72,7 +75,7 @@ const servicesView = (h: H, model: Model, status: RailwayStatus, clock: Clock): 
 const servicesError = (h: H, failure: LoadFailure): Html =>
 	errorState(h, {
 		failure,
-		title: "Failed to load Railway services",
+		title: "Couldn't load Railway services",
 		onRetry: Message.ClickedRetryServices(),
 	})
 
@@ -91,7 +94,7 @@ export const servicesList = (
 	if (services.length === 0) {
 		return integrationNotConnected(h, {
 			icon: icon(h, "RailwayIcon", { size: 16 }),
-			title: syncing ? "Pulling your Railway metrics" : "No Railway metrics in this time range",
+			title: syncing ? "Pulling your Railway metrics" : "No Railway metrics in this window",
 			description: syncing
 				? "Some environments haven't finished their first sync. This page updates on its own as they land."
 				: "Services that ran in this window show up here. Try a wider time range, or check the connection for errors.",
@@ -108,7 +111,7 @@ export const servicesList = (
 		view: Tooltip.view,
 		toParentMessage: (message) => Message.GotRowTooltipMessage({ message }),
 		viewInputs: {
-			triggerIds: filtered.flatMap((row) => Object.values(triggerIds(row))),
+			triggerIds: Arr.flatMap(filtered, (row) => Rec.values(triggerIds(row))),
 			toContent: (triggerId) => tooltipContent(h, filtered, clock, triggerId),
 			toView: ({ trigger, portal }) =>
 				h.div(
@@ -155,11 +158,37 @@ export const servicesList = (
 	})
 }
 
+const FEATURES = [
+	{
+		label: "Resources",
+		title: "CPU and memory per replica",
+		description: "Usage against limits for every service, sampled each minute.",
+	},
+	{
+		label: "Network & disk",
+		title: "Traffic and volumes",
+		description: "Network in and out, volume and ephemeral disk usage.",
+	},
+	{
+		label: "Correlation",
+		title: "Next to your traces",
+		description: "Metrics carry the Railway service name, so they line up with your telemetry.",
+	},
+]
+
+/** Nothing connected: what this page will show, and the way to the connect flow. */
+const railwayConnectCta = (h: H): Html =>
+	integrationConnectCta(h, {
+		brand: { icon: "RailwayIcon", accent: RAILWAY_ACCENT, iconClassName: "text-foreground" },
+		features: FEATURES,
+		hint: "Connecting pulls the last hour of metrics right away, then Maple keeps it fresh every 5 minutes.",
+		label: "Connect Railway",
+		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "railway" } })),
+	})
+
 /** `RailwayIntegrationCard` keeps the last loaded status when a refetch fails. */
 const connectedView = (h: H, model: Model, status: RailwayStatus, clock: Clock): Html =>
-	status.connected
-		? servicesView(h, model, status, clock)
-		: railwayConnectCard(h, model.connect, LIST_TOKEN_FORM)
+	status.connected ? servicesView(h, model, status, clock) : railwayConnectCta(h)
 
 const statusView = (h: H, model: Model, clock: Clock): Html =>
 	AsyncData.match(model.status.data, {
@@ -178,7 +207,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
-			scrollClassName: "gap-6",
+			gap: "lg",
+			title: "Railway",
+			description:
+				"CPU, memory, network and disk for every Railway service, polled from Railway's metrics API.",
 			actions: timeControls(h, {
 				search: model.search,
 				defaultPreset: DEFAULT_PRESET,
@@ -202,13 +234,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					}),
 			}),
 		},
-		[
-			pageHero(h, {
-				title: "Railway",
-				description:
-					"CPU, memory, network and disk for every Railway service, polled from Railway's metrics API.",
-			}),
-			statusView(h, model, clock),
-		],
+		[statusView(h, model, clock)],
 	)
 })

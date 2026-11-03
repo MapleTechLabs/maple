@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { signalPresenceQuery } from "./signal-presence"
 import { OrgId } from "@maple/domain"
@@ -25,7 +25,7 @@ describe("signalPresenceQuery", () => {
 
 	it("scopes every branch to the org", () => {
 		const { sql } = compileUnionUnsafe(signalPresenceQuery(), params)
-		const branches = sql.split("UNION ALL")
+		const branches = Str.split("UNION ALL")(sql)
 
 		expect(branches).toHaveLength(5)
 		for (const branch of branches) {

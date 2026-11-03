@@ -1,7 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql } from "@maple/widgets/dashboard"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 
 export type DashboardDomain = "Traces" | "Logs" | "Errors" | "Metrics" | "Raw SQL"
 
@@ -16,7 +16,7 @@ export const DASHBOARD_SORT_OPTIONS = [
 ] as const satisfies ReadonlyArray<DashboardSortOption>
 
 export const isDashboardSortOption = (value: string): value is DashboardSortOption =>
-	DASHBOARD_SORT_OPTIONS.some((option) => option === value)
+	Arr.some(DASHBOARD_SORT_OPTIONS, (option) => option === value)
 
 const ENDPOINT_DOMAIN = new Map<string, DashboardDomain>([
 	["list_traces", "Traces"],
@@ -55,7 +55,7 @@ const widgetDomains = (dataSource: unknown): ReadonlyArray<DashboardDomain> => {
 	if (dataSourceRawSql(dataSource) !== null) return ["Raw SQL"]
 	const querySet = dataSourceQuerySet(dataSource)
 	if (querySet !== null && querySet.queries.length > 0) {
-		return querySet.queries.flatMap((query) => {
+		return Arr.flatMap(querySet.queries, (query) => {
 			const domain = DRAFT_SOURCE_DOMAIN.get(query?.dataSource ?? "")
 			return domain === undefined ? [] : [domain]
 		})
@@ -69,17 +69,17 @@ const widgetDomains = (dataSource: unknown): ReadonlyArray<DashboardDomain> => {
 }
 
 export const dashboardDomains = (dashboard: DashboardDocument): ReadonlyArray<DashboardDomain> => {
-	const found = new Set(dashboard.widgets.flatMap((widget) => widgetDomains(widget.dataSource)))
-	return DOMAIN_ORDER.filter((domain) => found.has(domain))
+	const found = new Set(Arr.flatMap(dashboard.widgets, (widget) => widgetDomains(widget.dataSource)))
+	return Arr.filter(DOMAIN_ORDER, (domain) => found.has(domain))
 }
 
 export const readsFromLabel = (dashboard: DashboardDocument): { short: string; full: string } => {
 	if (dashboard.widgets.length === 0) return { short: EMPTY_VALUE, full: "No widgets" }
 	const domains = dashboardDomains(dashboard)
 	if (domains.length === 0) return { short: "static only", full: "Static content only" }
-	const full = domains.join(" · ")
+	const full = Arr.join(domains, " · ")
 	if (domains.length <= MAX_DOMAIN_TERMS) return { short: full, full }
-	const shown = domains.slice(0, MAX_DOMAIN_TERMS).join(" · ")
+	const shown = Arr.join(domains.slice(0, MAX_DOMAIN_TERMS), " · ")
 	return { short: `${shown} +${domains.length - MAX_DOMAIN_TERMS}`, full }
 }
 

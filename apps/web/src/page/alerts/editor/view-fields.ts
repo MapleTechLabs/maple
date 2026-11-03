@@ -1,9 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { field, fieldDescription, fieldLabel, type FieldIds } from "../../../ui/field"
-import type { FieldState } from "../../../ui/input"
-import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
+import { field, fieldDescription, fieldLabel, type FieldIds } from "@maple/views/ui/field"
+import type { FieldState } from "@maple/views/ui/input"
+import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
 import type { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `NumberField` and `NoiseRow`: a Base UI field
 // holding an input group with the unit as its trailing addon.
@@ -48,10 +50,13 @@ export type NumberFieldOptions = Readonly<{
 
 /** `WasNote`: what a changed field was before the edit. */
 export const wasNote = (h: H, children: ReadonlyArray<string>): Html =>
-	h.p(
-		[h.Class("text-xs text-severity-warn")],
-		["Was ", h.span([h.Class("font-mono")], children.filter((child) => child !== ""))],
-	)
+	typography(h, { size: "xs", tone: "warning", as: "p" }, [
+		"Was ",
+		h.span(
+			[h.Class("font-mono")],
+			Arr.filter(children, (child) => child !== ""),
+		),
+	])
 
 export const numberField = (h: H, options: NumberFieldOptions): Html => {
 	const previous = options.previous ?? null

@@ -1,4 +1,4 @@
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr } from "effect"
 import { GetSessionTracesOutput } from "@maple/domain/mcp-outputs"
 import { getSessionTraces } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
@@ -64,7 +64,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					idleTimeMs: session.idleTimeMs != null ? session.idleTimeMs : null,
 				},
 				totalTraceCount: totalTraceCount,
-				traces: traces.map((t) => ({
+				traces: Arr.map(traces, (t) => ({
 					traceId: t.traceId,
 					startTime: DateTime.formatIso(t.startTime),
 					durationMs: t.durationMs,
@@ -76,17 +76,23 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 			}
 		}),
 		render: ({ session, traces, totalTraceCount }) => {
-			const device = [session.browserName, session.osName, session.deviceType]
-				.filter(Boolean)
-				.join(" / ")
-			const summary = [
-				device || "unknown client",
-				session.country || undefined,
-				session.errorCount > 0 ? `${session.errorCount} errors` : "no errors",
-				session.durationMs !== null ? `${Math.round(session.durationMs)}ms total` : undefined,
-				session.activeTimeMs !== null ? `${Math.round(session.activeTimeMs)}ms active` : undefined,
-				session.idleTimeMs !== null ? `${Math.round(session.idleTimeMs)}ms idle` : undefined,
-			].filter((part): part is string => part !== undefined)
+			const device = Arr.join(
+				Arr.filter([session.browserName, session.osName, session.deviceType], Boolean),
+				" / ",
+			)
+			const summary = Arr.filter(
+				[
+					device || "unknown client",
+					session.country || undefined,
+					session.errorCount > 0 ? `${session.errorCount} errors` : "no errors",
+					session.durationMs !== null ? `${Math.round(session.durationMs)}ms total` : undefined,
+					session.activeTimeMs !== null
+						? `${Math.round(session.activeTimeMs)}ms active`
+						: undefined,
+					session.idleTimeMs !== null ? `${Math.round(session.idleTimeMs)}ms idle` : undefined,
+				],
+				(part): part is string => part !== undefined,
+			)
 			// Drill-down hints: errored traces first, then the rest.
 			const ranked = [...traces].sort((a, b) => Number(b.hasError) - Number(a.hasError))
 			return {
@@ -99,14 +105,14 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					? { empty: { message: "This session observed no backend traces." } }
 					: undefined),
 				blocks: [
-					doc.text(summary.join(" · ")),
+					doc.text(Arr.join(summary, " · ")),
 					...(traces.length === 0
 						? []
 						: [
 								doc.heading("Backend traces"),
 								doc.table(
 									["Trace ID", "Root span", "Service", "Duration", "Error", "Spans"],
-									traces.map((t) => [
+									Arr.map(traces, (t) => [
 										t.traceId,
 										truncate(t.rootSpanName || "—", 40),
 										truncate(t.rootServiceName || "—", 30),
@@ -120,15 +126,13 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 				...(totalTraceCount > traces.length
 					? { truncation: { shown: traces.length, total: totalTraceCount, noun: "traces" } }
 					: undefined),
-				next: ranked
-					.slice(0, 3)
-					.map((t) =>
-						doc.next(
-							"inspect_trace",
-							{ trace_id: t.traceId, timestamp: t.startTime },
-							`${t.hasError ? "errored " : ""}${t.rootSpanName || "trace"} in ${t.rootServiceName || "?"}`,
-						),
+				next: Arr.map(ranked.slice(0, 3), (t) =>
+					doc.next(
+						"inspect_trace",
+						{ trace_id: t.traceId, timestamp: t.startTime },
+						`${t.hasError ? "errored " : ""}${t.rootSpanName || "trace"} in ${t.rootServiceName || "?"}`,
 					),
+				),
 			}
 		},
 	})

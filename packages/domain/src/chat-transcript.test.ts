@@ -11,6 +11,7 @@ import {
 	type ChatEventInput,
 } from "./chat-session"
 import { makeChatTranscript } from "./chat-transcript"
+import { Array as Arr } from "effect"
 
 /** Through the real codec, so the fold sees exactly what a stored or streamed event decodes to. */
 const event = (seq: number, input: ChatEventInput): ChatEvent =>
@@ -93,5 +94,40 @@ describe("makeChatTranscript", () => {
 			output: "Declined by Ada.",
 			isError: true,
 		})
+	})
+	it("settles what a stopped turn left running, but keeps a proposal open", () => {
+		const transcript = makeChatTranscript()
+		const ref = { id: "t1", agent: "pr-review-worker", parentMessageId: "a1" }
+		const calls: ReadonlyArray<ChatEventInput> = [
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "tool-call", messageId: "a1", callId: "c1", name: "run_sql", input: {} },
+			{
+				type: "tool-call",
+				messageId: "a1",
+				callId: "c2",
+				name: "create_dashboard",
+				input: {},
+				proposed: true,
+			},
+			{ type: "tool-call", messageId: "a1", callId: "t1", name: "review_files", input: {} },
+			{ type: "turn-start", messageId: "s1", task: ref },
+			{
+				type: "tool-call",
+				messageId: "s1",
+				callId: "s1c1",
+				name: "pr_file_diff",
+				input: {},
+				task: ref,
+			},
+			{ type: "turn-end", messageId: "a1", reason: "aborted" },
+		]
+		Arr.forEach(calls, (input, index) => transcript.add(event(index + 1, input), 10))
+
+		const [running, proposal, delegated] = transcript.messages[0]?.toolCalls ?? []
+		assert.isTrue(running?.stopped)
+		assert.notProperty(proposal, "stopped")
+		assert.isTrue(delegated?.stopped)
+		assert.equal(delegated?.task?.status, "aborted")
+		assert.isTrue(delegated?.task?.messages[0]?.toolCalls[0]?.stopped)
 	})
 })

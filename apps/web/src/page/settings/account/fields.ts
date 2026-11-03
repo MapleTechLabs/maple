@@ -1,5 +1,5 @@
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { field, type FieldIds, fieldLabel, input, type FieldState } from "../../../ui/field"
+import { field, type FieldIds, fieldLabel, input, type FieldState } from "@maple/views/ui/field"
 
 // `<Field><FieldLabel htmlFor><Input id /></Field>` with the value in the Model: Base UI marks the
 // field filled while it has text.

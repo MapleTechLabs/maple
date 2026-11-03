@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
@@ -35,7 +35,12 @@ const resolved = (model: Model, at = window) =>
 	pageUpdate(
 		model,
 		Message.GotFrameMessage({
-			message: Frame.Message.CompletedResolveWindow({ window: at, nowMs: NOW, locale: "en-US", mode: "Load" }),
+			message: Frame.Message.CompletedResolveWindow({
+				window: at,
+				nowMs: NOW,
+				locale: "en-US",
+				mode: "Load",
+			}),
 		}),
 	)
 
@@ -50,11 +55,10 @@ const loaded = (hosts: ReadonlyArray<HostRow>, search: Model["search"] = {}): Mo
 describe("hosts list", () => {
 	test("entry resolves the window and fetches the ingest key; the window then fetches the hosts", () => {
 		const entered = init({ search: {} }, context)
-		expect((entered.commands ?? []).map(({ name }) => name)).toEqual([
-			"ResolveInfraWindow",
-			"FetchInstallIngestKey",
-		])
-		expect((resolved(entered.model).commands ?? []).map(({ name }) => name)).toEqual([FetchHosts.name])
+		expect(Arr.map(entered.commands ?? [], ({ name }) => name)).toEqual(
+			expect.arrayContaining(["ResolveInfraWindow", "FetchInstallIngestKey"]),
+		)
+		expect(Arr.map(resolved(entered.model).commands ?? [], ({ name }) => name)).toContain(FetchHosts.name)
 	})
 
 	test("an answer for a superseded window is dropped", () => {

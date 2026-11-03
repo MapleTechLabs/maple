@@ -1,6 +1,6 @@
 import { SIDEBAR_WIDTH_STORAGE_KEY } from "@maple/ui/components/traces/trace-timeline-types"
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { ROW_PITCH } from "./layout"
 import { Message } from "./message"
@@ -77,7 +77,7 @@ const measure = (scroller: HTMLElement): Stream.Stream<MeasureMessage> =>
 				const rect = scroller.getBoundingClientRect()
 				apply(rect.width, rect.height)
 				const observer = new ResizeObserver((entries) =>
-					entries.forEach((entry) => apply(entry.contentRect.width, entry.contentRect.height)),
+					Arr.forEach(entries, (entry) => apply(entry.contentRect.width, entry.contentRect.height)),
 				)
 				observer.observe(scroller)
 				const onScrollRequest = (event: Event) => {

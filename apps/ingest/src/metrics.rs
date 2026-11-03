@@ -146,6 +146,34 @@ static SOURCE_PAUSED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static INGEST_RULES_FETCH_FAILED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_rules_fetch_failed_total")
+        .with_description("Ingest rule lookups that failed; the last-known rules were served")
+        .build()
+});
+
+static INGEST_RULES_INVALID_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_rules_invalid_total")
+        .with_description("Stored ingest rules that failed to parse or compile and were skipped")
+        .build()
+});
+
+static INGEST_RULES_DROPPED_BYTES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_rules_dropped_bytes_total")
+        .with_description("Encoded bytes of records an ingest drop rule removed before storage")
+        .build()
+});
+
+static INGEST_RULE_STATS_DROPPED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_rule_stats_dropped_total")
+        .with_description("Ingest rule stat rows discarded after repeated failed flushes")
+        .build()
+});
+
 static SENTINEL_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_sentinel_total")
@@ -592,6 +620,32 @@ pub fn source_paused_drop(org_id: &str, signal: &str) {
             KeyValue::new("signal", signal.to_owned()),
         ],
     );
+}
+
+/// An org's ingest rules could not be loaded.
+pub fn ingest_rules_fetch_failed(org_id: &str) {
+    INGEST_RULES_FETCH_FAILED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
+}
+
+/// Stored rules of an org that were skipped as invalid.
+pub fn ingest_rules_invalid(org_id: &str, count: u64) {
+    INGEST_RULES_INVALID_TOTAL.add(count, &[KeyValue::new("org_id", org_id.to_owned())]);
+}
+
+/// Bytes an org's drop rules removed from one payload.
+pub fn ingest_rules_dropped_bytes(org_id: &str, signal: &str, bytes: u64) {
+    INGEST_RULES_DROPPED_BYTES_TOTAL.add(
+        bytes,
+        &[
+            KeyValue::new("org_id", org_id.to_owned()),
+            KeyValue::new("signal", signal.to_owned()),
+        ],
+    );
+}
+
+/// Rule stat rows given up on after repeated failed flushes.
+pub fn ingest_rule_stats_dropped(rows: u64) {
+    INGEST_RULE_STATS_DROPPED_TOTAL.add(rows, &[]);
 }
 
 /// A request used the sentinel test token.

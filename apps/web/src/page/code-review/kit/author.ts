@@ -1,13 +1,18 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { avatarFallback } from "../../../ui/display"
+import { avatarFallback } from "@maple/views/ui/display"
+import { String as Str } from "effect"
 
-// `AuthorAvatar` and `AuthorLabel`.
-// TODO(avatar-image): the GitHub `<login>.png` image is not loaded yet; Base UI shows the initial
-// until it loads, which is what every capture sees (other origins are blocked).
-
+/** A GitHub login's avatar, from GitHub's public `<login>.png` redirect; the initial while it loads. */
 export const authorAvatar = <M>(h: HtmlBuilder<M>, login: string, className?: string): Html =>
-	avatarFallback(h, { className: cn("size-[18px] text-4xs", className) }, login.slice(0, 1).toUpperCase())
+	avatarFallback(
+		h,
+		{
+			className: cn("size-[18px] text-4xs", className),
+			imageUrl: `https://github.com/${encodeURIComponent(login)}.png?size=64`,
+		},
+		Str.toUpperCase(Str.slice(0, 1)(login)),
+	)
 
 /** Avatar and login on one line, the way an author is shown everywhere in Code Review. */
 export const authorLabel = <M>(h: HtmlBuilder<M>, login: string, className?: string): Html =>

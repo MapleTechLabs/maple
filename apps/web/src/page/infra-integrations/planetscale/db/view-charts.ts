@@ -2,18 +2,20 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import type { ChartEventMarker } from "../../../../charts/event-marker-spec"
-import { CHART_EMPTY_MESSAGE } from "../../../../charts/infra-metric-chart"
-import * as PlotBoxChart from "../../../../charts/plot-box-chart"
-import { METRIC_LABELS, type PlanetScaleMetric } from "../../../../charts/planetscale-metric-series"
-import { resolveColor, type ThemeColors } from "../../../../charts/theme-colors"
-import { chartLoading } from "../../../../ui/chart-state"
-import { errorState } from "../../../../ui/error-state"
+import * as Chart from "@maple/views/charts/chart"
+import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
+import { CHART_EMPTY_MESSAGE } from "@maple/views/charts/infra-metric-chart"
+import * as PlotBoxChart from "@maple/views/charts/plot-box-chart"
+import { METRIC_LABELS, type PlanetScaleMetric } from "@maple/views/charts/planetscale-metric-series"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartLoading } from "@maple/views/ui/chart-state"
+import { errorState } from "@maple/views/ui/error-state"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
 import { scopeChip } from "../../kit/scope-chip"
 import type { TimeseriesRow } from "../data"
 import { Message, type Model } from "./model"
+import { grid as gridLayout } from "@maple/views/ui/grid"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `PlanetScaleChart` cards and the chart section of `PlanetScaleDatabaseData`.
 
@@ -34,7 +36,7 @@ export const CHART_TOKENS = [
 	"--muted-foreground",
 	"--severity-warn",
 	"--severity-error",
-	...Object.values(METRIC_COLORS),
+	...Rec.values(METRIC_COLORS),
 ]
 
 const LEAD: PlanetScaleMetric = "storageUsedPercent"
@@ -47,7 +49,7 @@ const GRID: ReadonlyArray<PlanetScaleMetric> = [
 
 export const CHART_SCOPE_EXPLANATION = "Every branch in this database, combined."
 export const FALLBACK_EXPLANATION = {
-	chart: "PlanetScale reports these gauges per branch, but the history endpoint answers one branch or the whole database — so this shows every branch combined.",
+	chart: "PlanetScale reports these gauges per branch, but the history endpoint answers one branch or the whole database, so this shows every branch combined.",
 	insights:
 		"PlanetScale's Query Insights API answers one branch at a time, so this shows the resolved branch only.",
 } as const
@@ -73,7 +75,10 @@ export const branchScope = (
 	return h.span(
 		[h.Class("flex flex-wrap items-center gap-1")],
 		[
-			scopeChip(h, {}, [options.selected.slice(0, 2).join(", "), ...(extra > 0 ? [` +${extra}`] : [])]),
+			scopeChip(h, {}, [
+				Arr.join(options.selected.slice(0, 2), ", "),
+				...(extra > 0 ? [` +${extra}`] : []),
+			]),
 			scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-fallback`) }, [
 				options.surface === "chart"
 					? "showing all branches"
@@ -105,8 +110,8 @@ const metricCard = (
 	isWaiting: boolean,
 	context: ChartsContext,
 ): Html => {
-	const points = buckets.map((row) => ({ bucket: row.bucket, value: row[metric] }))
-	const hasValues = points.some((point) => point.value !== null)
+	const points = Arr.map(buckets, (row) => ({ bucket: row.bucket, value: row[metric] }))
+	const hasValues = Arr.some(points, (point) => point.value !== null)
 	return chartCard(
 		h,
 		{
@@ -159,16 +164,13 @@ const metricCard = (
 const grid = (h: H, children: ReadonlyArray<Html>): Html =>
 	h.div(
 		[h.Class("space-y-4")],
-		[
-			children[0] ?? h.empty,
-			h.div([h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")], children.slice(1)),
-		],
+		[children[0] ?? h.empty, gridLayout(h, { cols: 1, lg: 2, gap: "4" }, children.slice(1))],
 	)
 
 const loadingCharts = (h: H): Html =>
 	grid(
 		h,
-		[LEAD, ...GRID].map((metric) => loadingCard(h, metric)),
+		Arr.map([LEAD, ...GRID], (metric) => loadingCard(h, metric)),
 	)
 
 /** The chart section: skeletons until the series and the chart runtime are in, then the five cards. */
@@ -184,14 +186,14 @@ export const chartsSection = (
 			? loadingCharts(h)
 			: grid(
 					h,
-					[LEAD, ...GRID].map((metric) =>
+					Arr.map([LEAD, ...GRID], (metric) =>
 						metricCard(h, model, metric, buckets, isWaiting, { ...context, theme }),
 					),
 				)
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
 		errorState(h, {
 			failure,
-			title: "Failed to load database metrics",
+			title: "Couldn't load database metrics",
 			onRetry: Message.ClickedRetryTimeseries(),
 		})
 	return AsyncData.match(model.timeseries.data, {

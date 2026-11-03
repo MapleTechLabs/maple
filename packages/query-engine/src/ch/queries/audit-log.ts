@@ -1,7 +1,8 @@
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { from, param, paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
+import { defineCondFn, from, param, paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
 import { AuditLog, orgIdParam } from "../tables"
+import { Array as Arr } from "effect"
 
 /**
  * Which optional filters a listing applies. Every set flag binds a parameter of
@@ -21,9 +22,16 @@ export interface AuditLogEntriesOpts {
 	readonly requestId?: boolean
 	readonly since?: boolean
 	readonly until?: boolean
+	/**
+	 * Leave out actions ending in any of these (`.read`, `.called`), before the
+	 * limit. Fixed by the caller's code, never request input: they are inlined.
+	 */
+	readonly excludeActionSuffixes?: ReadonlyArray<string>
 	readonly limit: number
 	readonly offset: number
 }
+
+const endsWith = defineCondFn<[CH.Expr<string>, string]>("endsWith")
 
 /**
  * One org's audit log, newest first, offset-paginated. Pinned to the managed
@@ -75,6 +83,11 @@ export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
 			CH.whenTrue(!!opts.requestId, () => $.RequestId.eq(param.string("requestId"))),
 			CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTime("since"))),
 			CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTime("until"))),
+			opts.excludeActionSuffixes?.length
+				? CH.not(
+						CH.or(...Arr.map(opts.excludeActionSuffixes, (suffix) => endsWith($.Action, suffix))),
+					)
+				: undefined,
 		])
 		.orderBy(["occurredAt", "desc"], ["id", "desc"])
 		.limit(opts.limit)

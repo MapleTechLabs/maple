@@ -1,7 +1,7 @@
 import * as Orm from "@maple-dev/effect-orm/database"
 import { OrgId, type OrgId as OrgIdType } from "@maple/domain"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 
 /** An effect-orm table with an `orgId` column, the only shape this walks. */
 export interface OrgScopedTable {
@@ -59,6 +59,6 @@ export const selectDistinctOrgIds = (
 	`,
 			OrgIdRow,
 		),
-		(rows) => rows.map((row) => row.org_id),
+		(rows) => Arr.map(rows, (row) => row.org_id),
 	)
 }

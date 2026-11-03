@@ -8,7 +8,7 @@ import {
 	type PodRestartsInput,
 } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 
 // The pod list and its restarts as every Kubernetes page reads them (`listPodsResultAtom`,
 // `podRestartsResultAtom`). Pages wrap these Effects in their own Commands.
@@ -62,8 +62,10 @@ export type PodsInput = typeof PodsInput.Type
 
 export const fetchPods = (input: PodsInput) =>
 	listPods({ data: input satisfies ListPodsInput }).pipe(
-		Effect.map(({ data, totalCount }) => ({ data, totalCount })),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: ({ data, totalCount }) => ({ data, totalCount }),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -78,8 +80,7 @@ export type RestartsInput = typeof RestartsInput.Type
 
 export const fetchRestarts = (input: RestartsInput) =>
 	podRestarts({ data: input satisfies PodRestartsInput }).pipe(
-		Effect.map((response) => response.data),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
@@ -96,8 +97,7 @@ export type PodSummaryInput = typeof PodSummaryInput.Type
 
 export const fetchPodSummary = (input: PodSummaryInput) =>
 	podDetailSummary({ data: input }).pipe(
-		Effect.map((response) => response.data),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 		Effect.result,
 	)
 
@@ -122,8 +122,10 @@ export type PodSeriesInput = typeof PodSeriesInput.Type
 
 export const fetchPodSeries = (input: PodSeriesInput) =>
 	podInfraTimeseries({ data: input }).pipe(
-		Effect.map((response) => ({ rows: response.data, unit: response.unit })),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response) => ({ rows: response.data, unit: response.unit }),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 

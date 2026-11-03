@@ -4,6 +4,7 @@ description: "Send traces and logs from any Cloudflare Worker to Maple with Work
 group: "Instrumentation"
 order: 4.5
 navLabel: "Cloudflare Workers (native)"
+icon: "cloudflare"
 ---
 
 Cloudflare Workers Observability can export a Worker's traces and logs over OTLP to any endpoint. This guide points that export at Maple. The Workers runtime records the spans itself, so there is no SDK to install, no exporter to flush in `ctx.waitUntil`, and no code to change. It works for any Worker, whatever language or framework it is written in.

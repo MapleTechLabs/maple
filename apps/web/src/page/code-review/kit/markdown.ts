@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr, String as Str } from "effect"
 
 // Static lightweight markdown for the review report's text: Streamdown's root classes, one `<p>`
 // per paragraph.
@@ -15,13 +16,15 @@ const MESSAGE_RESPONSE_CLASSES = cn(
 
 /** Paragraphs are separated by a blank line; single newlines fold into the paragraph. */
 const paragraphs = (text: string): ReadonlyArray<string> =>
-	text
-		.split(/\n\s*\n/u)
-		.map((paragraph) => paragraph.replace(/\s*\n\s*/gu, " ").trim())
-		.filter((paragraph) => paragraph.length > 0)
+	Arr.filter(
+		Arr.map(Str.split(/\n\s*\n/u)(text), (paragraph) =>
+			Str.trim(Str.replace(/\s*\n\s*/gu, " ")(paragraph)),
+		),
+		(paragraph) => paragraph.length > 0,
+	)
 
 export const messageResponse = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
 	h.div(
 		[h.Class(cn("space-y-4 whitespace-normal", MESSAGE_RESPONSE_CLASSES, className))],
-		paragraphs(text).map((paragraph) => h.p([], [paragraph])),
+		Arr.map(paragraphs(text), (paragraph) => h.p([], [paragraph])),
 	)

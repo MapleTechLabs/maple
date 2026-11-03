@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LogFilterDraft } from "../../page/integrations/gcp-configure-schema"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
-import * as Select from "../../ui/select"
+import * as Select from "@maple/views/ui/select"
 
 // `/lab/gcp`: the Google Cloud configuration's Log filter over plain
 // state, in each place it shows up. Each card prints what the setup script would be asked for.
@@ -23,7 +23,7 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
 	},
 	{
 		title: "New connection, OpenTelemetry ruled out",
-		description: "After “Can't forward via OpenTelemetry”, with Cloud Run ticked.",
+		description: "After “Forward application output instead”, with Cloud Run ticked.",
 		sinkExists: false,
 		initial: { keep: null, runtimes: ["cloud_run"] },
 	},

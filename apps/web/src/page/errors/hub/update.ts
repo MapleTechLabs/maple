@@ -1,20 +1,20 @@
 import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "../../../lib/errors/hub-params"
 import type { IssueKind } from "@maple/domain/http"
 import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
-import { Option } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as ContextMenu from "../../../ui/context-menu"
-import * as Menu from "../../../ui/menu"
-import * as Select from "../../../ui/select"
-import * as Tabs from "../../../ui/tabs"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as ContextMenu from "@maple/views/ui/context-menu"
+import * as Menu from "@maple/views/ui/menu"
+import * as Select from "@maple/views/ui/select"
+import * as Tabs from "@maple/views/ui/tabs"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import {
 	FetchEnvironments,
 	FetchInvestigations,
@@ -34,6 +34,7 @@ import {
 	INVESTIGATIONS_LIMIT,
 	issuesOf,
 	listQueryOf,
+	rankingFailed,
 	type Search,
 	severityOf,
 	signalsOf,
@@ -56,7 +57,9 @@ import {
 } from "./selection"
 import { SOURCES } from "../kit/source"
 import type { IssuePage, Model, PageSlot } from "./model"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 export type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -81,7 +84,7 @@ const keyed = <A, E>(
 ): Step =>
 	Option.match(Keyed.request(slot, key, mode), {
 		onNone: () => NO_STEP,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
+		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key)] }),
 	})
 
 /** Applies steps in order, each seeing the Model the previous one left. */
@@ -158,15 +161,18 @@ const rankingStep =
 		)
 	}
 
+/** The ranking's filters without its window: a new window alone keeps the ranked rows usable. */
+const rankingFiltersOf = (search: Model["search"]): string =>
+	encodeJson([search.service ? search.service : null, search.env ? search.env : null])
+
 /** The ranked hashes the list waits for: `Some(null)` when not ranking, `None` until ready. */
 const rankedHashes = (model: Model): Option.Option<ReadonlyArray<string> | null> => {
 	if (sortOf(model.search) !== "volume") return Option.some(null)
-	const ranking = model.ranking.data
-	// Still refreshing with no rows: the previous mode's answer, not a ranking.
-	return Option.filter(
-		AsyncData.getData(ranking),
-		(rows) => !(AsyncData.isRefreshing(ranking) && rows.length === 0),
-	)
+	// A ranking retained from other filters ranks the wrong issues: wait for the current one.
+	if (model.ranking.retained === true && model.rankedFilters !== rankingFiltersOf(model.search)) {
+		return Option.none()
+	}
+	return AsyncData.getData(model.ranking.data)
 }
 
 /** Page one of the current list query; a new query drops the pages loaded for the old one. */
@@ -179,7 +185,7 @@ const listStep =
 				model.listKey === null ? NO_STEP : { patch: { listKey: null, pages: [] }, commands: [] },
 			onSome: (hashes) => {
 				const query = listQueryOf(model.search, hashes)
-				const listKey = JSON.stringify(query)
+				const listKey = encodeJson(query)
 				if (listKey === model.listKey) return NO_STEP
 				// A new query is a new page atom: Initial, so the rows give way to the skeleton.
 				const first = Keyed.idle<IssuePage, LoadFailure>()
@@ -241,7 +247,9 @@ export const requestAll = (
 ): Return =>
 	applySteps({ ...model, window }, [
 		summaryStep(context, window, mode),
-		...(model.isFilterRailMounted ? [serviceCountsStep(context), environmentsStep(context, window, mode)] : []),
+		...(model.isFilterRailMounted
+			? [serviceCountsStep(context), environmentsStep(context, window, mode)]
+			: []),
 		investigationsStep(context),
 		rankingStep(context, window, mode),
 		listStep(context),
@@ -271,7 +279,7 @@ export const loadMore = (model: Model, context: PageContext): Return => {
 		onNone: () => ({ model }),
 		onSome: ({ hasMore, nextCursor }) => {
 			if (!hasMore || nextCursor === null) return { model }
-			if (model.pages.some((slot) => slot.cursor === nextCursor)) return { model }
+			if (Arr.some(model.pages, (slot) => slot.cursor === nextCursor)) return { model }
 			const query = pageQuery(model, nextCursor)
 			const key = requestKey(context.orgId, "errorIssues.list", query)
 			const slot: PageSlot = { cursor: nextCursor, page: { key, data: AsyncData.Loading() } }
@@ -329,7 +337,7 @@ const sortIndex = (search: Search) => HUB_SORTS.indexOf(sortOf(search))
 const severityIndex = (search: Search) => SEVERITY_FILTERS.indexOf(severityOf(search))
 
 /** The search the toolbar search would send for its draft (trimmed, empty leaves the URL). */
-const draftQuery = (draft: string): string | undefined => draft.trim() || undefined
+const draftQuery = (draft: string): string | undefined => Str.trim(draft) || undefined
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const search = route.search
@@ -342,12 +350,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		environments: Keyed.idle(),
 		isFilterRailMounted: false,
 		ranking: Keyed.idle(),
+		rankedFilters: null,
 		listKey: null,
 		pages: [],
 		volume: Keyed.idle(),
 		spark: Keyed.idle(),
 		investigations: Keyed.idle(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		selectedIds: [],
 		selectionAnchor: null,
 		focusedId: null,
@@ -372,6 +381,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -411,7 +421,7 @@ export const contextChanged = (model: Model, context: PageContext): Return =>
 
 // EVENTS
 
-const isIssueKind = (value: string): value is IssueKind => SOURCES.some((kind) => kind === value)
+const isIssueKind = (value: string): value is IssueKind => Arr.some(SOURCES, (kind) => kind === value)
 
 /** Checkbox lists are single-select: the newest tick replaces the current one, re-ticking clears. */
 const toggledFilter = (model: Model, param: FilterParam, name: string): Partial<Search> => {
@@ -436,8 +446,8 @@ export const CLEARED_ERROR_FILTERS = {
 
 /** The header checkbox: every visible row, or none once they all are. */
 const toggledAllRows = (model: Model): Partial<Model> => {
-	const ids = signalsOf(model).map((signal) => signal.id)
-	const isAll = ids.length > 0 && ids.every((id) => model.selectedIds.includes(id))
+	const ids = Arr.map(signalsOf(model), (signal) => signal.id)
+	const isAll = ids.length > 0 && Arr.every(ids, (id) => model.selectedIds.includes(id))
 	return isAll
 		? { selectedIds: [], selectionAnchor: null }
 		: { selectedIds: [...new Set([...model.selectedIds, ...ids])], selectionAnchor: null }
@@ -488,6 +498,10 @@ const retryFirstPage = (model: Model): Return => {
 	})
 }
 
+/** The failed volume ranking, asked again; its answer requests the list (`follow`). */
+const retryRanking = (model: Model, context: PageContext): Return =>
+	model.window === null ? { model } : applySteps(model, [rankingStep(context, model.window, "Refresh")])
+
 const settled = <
 	K extends "summary" | "serviceCounts" | "environments" | "volume" | "spark" | "investigations",
 >(
@@ -510,12 +524,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: settled(model, "environments", Keyed.accept(model.environments, key, result)),
 		}),
 		CompletedFetchRanking: ({ key, result }) =>
-			follow({ ...model, ranking: Keyed.accept(model.ranking, key, result) }, context),
+			follow(
+				{
+					...model,
+					ranking: Keyed.accept(model.ranking, key, result),
+					rankedFilters:
+						key === model.ranking.key ? rankingFiltersOf(model.search) : model.rankedFilters,
+				},
+				context,
+			),
 		CompletedFetchPage: ({ key, result }) =>
 			follow(
 				{
 					...model,
-					pages: model.pages.map((slot) =>
+					pages: Arr.map(model.pages, (slot) =>
 						slot.page.key === key
 							? { ...slot, page: Keyed.accept(slot.page, key, result) }
 							: slot,
@@ -535,15 +557,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		MountedFilterRail: () => {
 			if (model.isFilterRailMounted) return { model }
 			const mounted = { ...model, isFilterRailMounted: true }
-			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
+			return mounted.window === null
+				? { model: mounted }
+				: requestAll(mounted, context, mounted.window, "Load")
 		},
-		PaintedEmptyList: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
@@ -560,7 +577,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		// TODO(retry): this should reload the whole window; it refetches page one instead.
-		ClickedRetry: () => retryFirstPage(model),
+		ClickedRetry: () => (rankingFailed(model) ? retryRanking(model, context) : retryFirstPage(model)),
 		ClickedLoadMore: () => loadMore(model, context),
 		ToggledFilterOption: ({ param, name }) => navigate(model, toggledFilter(model, param, name)),
 		ClickedClearFilters: () => navigate(model, CLEARED_ERROR_FILTERS),
@@ -595,7 +612,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			outMessage: copyToast(
 				label,
 				isOk,
-				label === "Agent prompt" ? "Agent prompt copied — paste it into your MCP agent" : undefined,
+				label === "Agent prompt" ? "Agent prompt copied. Paste it into your MCP agent" : undefined,
 			),
 		}),
 		CompletedOpenInNewTab: () => ({ model }),

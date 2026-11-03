@@ -1,4 +1,4 @@
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr } from "effect"
 import { DbQueryVolumeOutput } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -66,7 +66,7 @@ export function registerDbQueryVolumeTool(server: McpToolRegistrar) {
 				...(params.db_system === undefined ? undefined : { dbSystem: params.db_system }),
 				...(params.environment === undefined ? undefined : { environment: params.environment }),
 				truncated: rows.length >= params.limit,
-				queries: rows.map((row) => ({
+				queries: Arr.map(rows, (row) => ({
 					service: row.serviceName,
 					dbSystem: row.dbSystem,
 					dbNamespace: row.dbNamespace,
@@ -117,7 +117,7 @@ export function registerDbQueryVolumeTool(server: McpToolRegistrar) {
 										"P95",
 										"Last seen",
 									],
-									queries.map((s) => [
+									Arr.map(queries, (s) => [
 										s.service,
 										s.dbNamespace === "" ? s.dbSystem : `${s.dbSystem} ${s.dbNamespace}`,
 										truncate(s.query, 90),

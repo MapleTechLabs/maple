@@ -16,6 +16,7 @@ import type {
 	ServiceMapOverviewRow,
 	ServicePlatform,
 } from "./service-map-types"
+import { Array as Arr, String as Str } from "effect"
 
 const baseEdge = (overrides: Partial<ServiceMapEdgeRow> = {}): ServiceMapEdgeRow => ({
 	sourceService: "api",
@@ -96,7 +97,7 @@ describe("buildFlowElements", () => {
 			]),
 			hyperdriveConfigs: [
 				{
-					id: "a".repeat(32),
+					id: Str.repeat(32)("a"),
 					name: "maple-db",
 					originHost: "aws.connect.psdb.cloud",
 					originPort: 3306,
@@ -135,7 +136,7 @@ describe("buildFlowElements", () => {
 			]),
 			hyperdriveConfigs: [
 				{
-					id: "a".repeat(32),
+					id: Str.repeat(32)("a"),
 					name: "maple-db",
 					originHost: "aws.connect.psdb.cloud",
 					originPort: 3306,
@@ -150,7 +151,7 @@ describe("buildFlowElements", () => {
 		const hyperdriveNode = result.nodes.find((n) => n.id === dbNodeId("postgresql", "hyperdrive"))
 		expect((hyperdriveNode!.data as ServiceNodeData).hyperdrive).toHaveLength(1)
 		// …but no synthetic edge points at a node that doesn't exist.
-		expect(result.edges.some((e) => e.data?.relation === "hyperdrive-origin")).toBe(false)
+		expect(Arr.some(result.edges, (e) => e.data?.relation === "hyperdrive-origin")).toBe(false)
 	})
 
 	it("attaches platform info to service nodes", () => {
@@ -183,12 +184,12 @@ describe("buildFlowElements", () => {
 			durationSeconds: 60,
 		})
 
-		const dbNodes = result.nodes.filter((n) => n.id.startsWith("db:"))
+		const dbNodes = Arr.filter(result.nodes, (n) => Str.startsWith("db:")(n.id))
 		expect(dbNodes).toHaveLength(1)
 		const data = dbNodes[0].data as ServiceNodeData
 		expect(data.errorRate).toBeCloseTo(3 / 80)
 
-		const dbEdges = result.edges.filter((e) => e.target === dbNodeId("clickhouse", ""))
+		const dbEdges = Arr.filter(result.edges, (e) => e.target === dbNodeId("clickhouse", ""))
 		expect(dbEdges).toHaveLength(2)
 	})
 
@@ -204,8 +205,8 @@ describe("buildFlowElements", () => {
 			durationSeconds: 60,
 		})
 
-		const dbNodes = result.nodes.filter((n) => n.id.startsWith("db:"))
-		expect(dbNodes.map((n) => n.id).sort()).toEqual([
+		const dbNodes = Arr.filter(result.nodes, (n) => Str.startsWith("db:")(n.id))
+		expect(Arr.map(dbNodes, (n) => n.id).sort()).toEqual([
 			dbNodeId("postgresql", "billing"),
 			dbNodeId("postgresql", "orders"),
 		])
@@ -216,8 +217,8 @@ describe("buildFlowElements", () => {
 		expect(data.dbSystem).toBe("postgresql")
 		expect(data.dbNamespace).toBe("orders")
 		// …and both callers of "orders" target the same node.
-		const orderEdges = result.edges.filter((e) => e.target === dbNodeId("postgresql", "orders"))
-		expect(orderEdges.map((e) => e.source).sort()).toEqual(["api", "worker"])
+		const orderEdges = Arr.filter(result.edges, (e) => e.target === dbNodeId("postgresql", "orders"))
+		expect(Arr.map(orderEdges, (e) => e.source).sort()).toEqual(["api", "worker"])
 	})
 
 	it("round-trips db node ids through parseDbNodeId, including ':' in components", () => {
@@ -412,7 +413,7 @@ describe("computeNodePositions namespace clustering", () => {
 		})
 		const pos = computeNodePositions(nodes, edges)
 		const bandOf = (ids: string[]) => {
-			const ys = ids.map((id) => pos.get(id)!.y)
+			const ys = Arr.map(ids, (id) => pos.get(id)!.y)
 			return { min: Math.min(...ys), max: Math.max(...ys) }
 		}
 		const backend = bandOf(["api", "auth"])
@@ -533,7 +534,7 @@ describe("layout anchoring on the synchronous fallback", () => {
 			edges: [
 				baseEdge({ sourceService: "api", targetService: "auth" }),
 				baseEdge({ sourceService: "web", targetService: "cart" }),
-				...extra.map((name) => baseEdge({ sourceService: name, targetService: `${name}-db` })),
+				...Arr.map(extra, (name) => baseEdge({ sourceService: name, targetService: `${name}-db` })),
 			],
 			serviceOverviews: [],
 			durationSeconds: 3600,
@@ -552,19 +553,20 @@ describe("layout anchoring on the synchronous fallback", () => {
 
 		// Previous layout with the two components swapped top-to-bottom.
 		const flipped = new Map(
-			[...natural].map(([id, at]) => [
+			Arr.map([...natural], ([id, at]) => [
 				id,
 				{ x: at.x, y: ["api", "auth"].includes(id) ? at.y + 10_000 : at.y - 10_000 },
 			]),
 		)
 		const anchored = computeFlatPositions(nodes, edges, undefined, flipped)
 
-		const midY = (ids: string[]) => ids.reduce((sum, id) => sum + anchored.get(id)!.y, 0) / ids.length
+		const midY = (ids: string[]) =>
+			Arr.reduce(ids, 0, (sum, id) => sum + anchored.get(id)!.y) / ids.length
 		// The anchored layout follows the previous order: web/cart above api/auth.
 		expect(midY(["web", "cart"])).toBeLessThan(midY(["api", "auth"]))
 		// ...which is the opposite of what it produces unanchored.
 		const naturalMid = (ids: string[]) =>
-			ids.reduce((sum, id) => sum + natural.get(id)!.y, 0) / ids.length
+			Arr.reduce(ids, 0, (sum, id) => sum + natural.get(id)!.y) / ids.length
 		expect(naturalMid(["api", "auth"])).toBeLessThan(naturalMid(["web", "cart"]))
 	})
 
@@ -574,13 +576,13 @@ describe("layout anchoring on the synchronous fallback", () => {
 
 		// A third component appears — the kind of delta a sliding time window makes.
 		const after = twoComponents(["billing"])
-		const survivors = [...previous.keys()].filter((id) => after.nodes.some((n) => n.id === id))
+		const survivors = Arr.filter([...previous.keys()], (id) => Arr.some(after.nodes, (n) => n.id === id))
 		const drift = (positions: Map<string, { x: number; y: number }>) =>
-			survivors.reduce((sum, id) => {
+			Arr.reduce(survivors, 0, (sum, id) => {
 				const from = previous.get(id)!
 				const to = positions.get(id)!
 				return sum + Math.hypot(to.x - from.x, to.y - from.y)
-			}, 0) / survivors.length
+			}) / survivors.length
 
 		const unanchored = drift(computeFlatPositions(after.nodes, after.edges))
 		const anchored = drift(computeFlatPositions(after.nodes, after.edges, undefined, previous))

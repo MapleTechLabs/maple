@@ -18,10 +18,19 @@ import type { ScrapeTargetsService } from "@maple/backend/services/integrations/
 import type { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import type { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import type { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import type { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import type { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import type { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import type { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import type { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import type { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import type { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import type { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import type { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import type { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import type { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
+import type { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
+import type { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import type { CurrentMcpTenant } from "../lib/query-warehouse"
 
 /**
@@ -33,6 +42,7 @@ export type McpToolRuntimeRequirements =
 	| AgentFeedbackService
 	| AlertsService
 	| AuditLogService
+	| DependencyScanReader
 	| AlertReadModelsService
 	| AlertRulesService
 	| DashboardPersistenceService
@@ -48,8 +58,16 @@ export type McpToolRuntimeRequirements =
 	| RailwayMetricsService
 	| RecommendationIssueService
 	| RepoSandboxService
+	| RuntimeAdvisoryCatalog
+	| RuntimeReleaseCatalog
 	| ScrapeTargetsService
+	| SecurityAuditStore
 	| SetupAuditService
+	| StatusPageSnapshotBuilder
+	| StatusPagesService
+	| OrganizationFeatureFlagsService
+	| UptimeMonitorsService
+	| IngestRuleService
 	| VcsCommitService
 	| VcsSourceService
 	| VercelIntegrationService

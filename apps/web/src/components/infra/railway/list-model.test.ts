@@ -4,6 +4,7 @@ import { RailwayEnvironmentStatus } from "@maple/domain/http"
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 
 import { fleetSync, groupRailwayServices, hasConfiguredLimits } from "./list-model"
+import { Array as Arr } from "effect"
 
 const GIB = 1024 ** 3
 
@@ -56,7 +57,10 @@ describe("groupRailwayServices", () => {
 			false,
 		)
 		expect(
-			groups.map((group) => [group.projectName, group.services.map((row) => row.serviceName)]),
+			Arr.map(groups, (group) => [
+				group.projectName,
+				Arr.map(group.services, (row) => row.serviceName),
+			]),
 		).toEqual([
 			["hazel", ["api", "electric"]],
 			["maple", ["prometheus-scraper"]],
@@ -77,7 +81,7 @@ describe("groupRailwayServices", () => {
 			],
 			false,
 		)
-		expect(groups.map((group) => group.sync)).toEqual([
+		expect(Arr.map(groups, (group) => group.sync)).toEqual([
 			{ kind: "failing", error: "429 Too Many Requests", lastSyncedAt: 500 },
 			{ kind: "synced", at: 1_000 },
 			{ kind: "unknown" },

@@ -11,7 +11,7 @@ import TableOfContents from "../../components/TableOfContents.astro";
 import { formatDate, isoDate, readingTime } from "../../lib/blog";
 import { getSortedStories, getStoryCustomer } from "../../lib/customers";
 import { LOGOS } from "../../lib/customer-logos";
-import { MapleMark } from "@maple/ui/components/icons/maple-mark";
+import Icon from "../../components/Icon.astro";
 
 export async function getStaticPaths() {
     const stories = await getCollection("customers", ({ data }) => !data.draft || import.meta.env.DEV);
@@ -101,7 +101,7 @@ const backLink =
                         <p class="mt-5 font-display text-[17px] leading-[1.65] text-pretty text-fg-muted">{description}</p>
 
                         <div class="mt-6 flex items-center gap-2.5 font-mono text-xs text-fg/80">
-                            <MapleMark size={22} className="text-primary" aria-hidden="true" />
+                            <Icon name="MapleMark" size={22} class="text-primary" aria-hidden="true" />
                             <span>{author}</span>
                             {authorRole && <span class="text-fg-muted">{authorRole}</span>}
                         </div>

@@ -12,10 +12,10 @@ import {
 	getSpanAttributeValues,
 	getTracesFacetValues,
 } from "@maple/web-data/warehouse/traces"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { WidgetFailure } from "./widget-data"
 
 // The dashboard variables: the
@@ -31,12 +31,14 @@ export type OptionsSource =
 
 type Window = Readonly<{ startTime: string; endTime: string }>
 
-const names = (rows: ReadonlyArray<{ readonly name: string }>) => rows.map((row) => row.name)
-const values = (rows: ReadonlyArray<{ readonly attributeValue: string }>) => rows.map((row) => row.attributeValue)
+const names = (rows: ReadonlyArray<{ readonly name: string }>) => Arr.map(rows, (row) => row.name)
+const values = (rows: ReadonlyArray<{ readonly attributeValue: string }>) =>
+	Arr.map(rows, (row) => row.attributeValue)
 
 /** `readVariableOptions`'s request for one variable, keyed so a window change refetches. */
 export const optionsSourceOf = (orgId: string, variable: Variable, window: Window | null): OptionsSource => {
-	if (variable.type === "custom") return { _tag: "Inline", options: variable.options.map((option) => option.value) }
+	if (variable.type === "custom")
+		return { _tag: "Inline", options: Arr.map(variable.options, (option) => option.value) }
 	const query = dashboardVariableOptionsQuery(variable)
 	if (query === null || window === null) return { _tag: "None" }
 	return { _tag: "Query", key: requestKey(orgId, "dashboardVariableOptions", { query, window }) }
@@ -48,33 +50,31 @@ export const fetchVariableOptions = (variable: Variable, window: Window) => {
 	if (query === null) return Effect.succeed<ReadonlyArray<string>>([])
 	if (query.kind === "attributeValues") {
 		const data = { ...window, attributeKey: query.attributeKey }
-		return (
-				query.source === "metrics"
-					? Effect.map(
-							getMetricAttributeValues({
-								data: {
-									...data,
-									metricNames: query.metricNames,
-									metricType: query.metricType,
-									scope: query.scope === "resource" ? "resource" : "metric",
-								},
-							}),
-							(response) => values(response.data),
-						)
-					: query.scope === "resource"
-						? Effect.map(getResourceAttributeValues({ data }), (response) => values(response.data))
-						: Effect.map(getSpanAttributeValues({ data }), (response) => values(response.data))
-		)
+		return query.source === "metrics"
+			? Effect.map(
+					getMetricAttributeValues({
+						data: {
+							...data,
+							metricNames: query.metricNames,
+							metricType: query.metricType,
+							scope: query.scope === "resource" ? "resource" : "metric",
+						},
+					}),
+					(response) => values(response.data),
+				)
+			: query.scope === "resource"
+				? Effect.map(getResourceAttributeValues({ data }), (response) => values(response.data))
+				: Effect.map(getSpanAttributeValues({ data }), (response) => values(response.data))
 	}
-	return (
-		query.source === "logs"
-				? Effect.map(getLogsFacetValues({ data: { ...window, facet: query.facet ?? "severity" } }), (response) =>
-						names(response.data),
-					)
-				: Effect.map(getTracesFacetValues({ data: { ...window, facet: query.facet ?? "service" } }), (response) =>
-						names(response.data),
-					)
-	)
+	return query.source === "logs"
+		? Effect.map(
+				getLogsFacetValues({ data: { ...window, facet: query.facet ?? "severity" } }),
+				(response) => names(response.data),
+			)
+		: Effect.map(
+				getTracesFacetValues({ data: { ...window, facet: query.facet ?? "service" } }),
+				(response) => names(response.data),
+			)
 }
 
 export type OptionsState = Readonly<{ options: ReadonlyArray<string>; loading: boolean }>
@@ -85,8 +85,8 @@ export const resolveVariableValues = (
 	urlValues: Readonly<Record<string, string>>,
 	optionsByName: Readonly<Record<string, OptionsState>>,
 ): VariableValues =>
-	Object.fromEntries(
-		variables.flatMap((variable) => {
+	Rec.fromEntries(
+		Arr.flatMap(variables, (variable) => {
 			const options = optionsByName[variable.name] ?? { options: [], loading: false }
 			const value = resolveDashboardVariableValue(variable, urlValues[variable.name], options)
 			return value === undefined
@@ -111,7 +111,7 @@ export const planOptionRequests = (
 	mode: Keyed.RequestMode,
 ): OptionsPlan => {
 	const initial: OptionsPlan = { slots, requests: [] }
-	return variables.reduce((state, variable) => {
+	return Arr.reduce(variables, initial, (state, variable) => {
 		const source = optionsSourceOf(orgId, variable, window)
 		if (source._tag !== "Query" || window === null) return state
 		return Option.match(Keyed.request(state.slots[variable.name] ?? Keyed.idle(), source.key, mode), {
@@ -121,7 +121,7 @@ export const planOptionRequests = (
 				requests: [...state.requests, { name: variable.name, key: source.key, variable, window }],
 			}),
 		})
-	}, initial)
+	})
 }
 
 /** `optionsByName`: inline lists, fetched lists, and the loading state of the rest. */
@@ -131,11 +131,12 @@ export const optionsByNameOf = (
 	slots: OptionsSlots,
 	window: Window | null,
 ): Record<string, OptionsState> =>
-	Object.fromEntries(
-		variables.map((variable) => {
+	Rec.fromEntries(
+		Arr.map(variables, (variable) => {
 			const source = optionsSourceOf(orgId, variable, window)
 			if (source._tag === "Inline") return [variable.name, { options: source.options, loading: false }]
-			if (source._tag === "None") return [variable.name, { options: [], loading: variable.type === "query" }]
+			if (source._tag === "None")
+				return [variable.name, { options: [], loading: variable.type === "query" }]
 			const slot = slots[variable.name]
 			const data = slot === undefined || slot.key !== source.key ? AsyncData.Idle() : slot.data
 			return [
@@ -160,6 +161,6 @@ export const planVariablesOf = (
 	slots: OptionsSlots,
 	window: Window | null,
 ) => ({
-	names: variables.map((variable) => variable.name),
+	names: Arr.map(variables, (variable) => variable.name),
 	values: resolveVariableValues(variables, urlValues, optionsByNameOf(orgId, variables, slots, window)),
 })

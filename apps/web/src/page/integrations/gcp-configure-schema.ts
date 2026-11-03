@@ -1,12 +1,12 @@
 import { V2GcpConnector, V2GcpSetupScripts } from "@maple/domain/http/v2"
 import { GcpLogRuntime, GcpScopeType } from "@maple/domain/primitives"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure } from "../../data/load-failure"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
-import * as Select from "../../ui/select"
-import * as ToggleGroup from "../../ui/toggle-group"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { ConfigureTarget } from "./gcp-schema"
 
 // `GcpConfigure`: the wizard's state.
@@ -40,16 +40,13 @@ export type Capability = typeof Capability.Type
 export const ConfigureModel = Schema.Struct({
 	target: ConfigureTarget,
 	dialog: Dialog.Model,
-	/** The new-connection title, fixed when the wizard opened. */
-	newTitle: Schema.String,
 	/** Not saved: the script is asked for with it. Reopening starts over. */
 	filter: LogFilterDraft,
 	isFilterOpen: Schema.Boolean,
 	filterMode: Select.Model,
 	/** The connector this wizard created, until the status read lists it. */
 	created: Schema.NullOr(V2GcpConnector),
-	/** `NewConnection`: its step, the scope fields and what to collect. */
-	step: Schema.Literals(["scope", "data"]),
+	/** The connect flow's new connection: the scope fields and what to collect. */
 	scopeType: GcpScopeType,
 	scopeGroup: ToggleGroup.Model,
 	scopeId: Field.Model,

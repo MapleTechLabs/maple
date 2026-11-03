@@ -1,21 +1,35 @@
-import type { ErrorIncidentDocument, ErrorIssueSampleTrace } from "@maple/domain/http"
+import {
+	ERROR_INCIDENT_AUTO_RESOLVE_MINUTES,
+	type ErrorIncidentDocument,
+	type ErrorIssueSampleTrace,
+} from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
-import { truncatedCellStyles } from "@maple/ui/styles/ui/table"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { statusDot } from "../../../ui/status-dot"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { truncatedId } from "../../../ui/truncated-id"
-import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "@maple/views/ui/table"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { Array as Arr } from "effect"
 
 // The issue incidents and occurrences tables.
-// TODO(tooltip): the incident status's explanation popup; its trigger is ported.
 
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -25,6 +39,12 @@ const REASON_LABEL = {
 	manual: "Manual",
 } satisfies Record<ErrorIncidentDocument["reason"], string>
 
+// Nothing asks you to close an incident, so `resolved` is spelled out.
+const STATUS_EXPLANATION = {
+	open: "Open until the error goes quiet, or you mark the issue Done.",
+	resolved: `Incidents resolve on their own when the error goes quiet: no new occurrences for ${ERROR_INCIDENT_AUTO_RESOLVE_MINUTES} minutes after the last one. Marking the issue Done resolves its open incidents too.`,
+} satisfies Record<ErrorIncidentDocument["status"], string>
+
 const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, clock: Clock): Html => {
 	const isOpen = incident.status === "open"
 	return tableRow(h, [
@@ -33,7 +53,7 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 			[
 				h.span([
 					h.AriaHidden(true),
-					h.Class(cn("block h-full w-[3px]", isOpen ? "bg-severity-error" : "bg-border/60")),
+					h.Class(cn("block h-full w-[3px]", isOpen ? "bg-severity-error" : "bg-border-subtle")),
 				]),
 			],
 			"w-8 p-0",
@@ -43,6 +63,8 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 				[
 					h.Class("inline-flex cursor-default items-center gap-2"),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
+					h.Tabindex(0),
+					...tooltipTrigger(h, STATUS_EXPLANATION[incident.status]),
 				],
 				[
 					statusDot(h, { tone: isOpen ? "crit" : "neutral" }),
@@ -56,14 +78,18 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 		tableCell(
 			h,
 			[relativeTime(h, { value: incident.firstTriggeredAt, ...clock, tooltip: "title" })],
-			"tabular-nums text-muted-foreground",
+			typographyClass({ tone: "muted", numeric: true }),
 		),
 		tableCell(
 			h,
 			[relativeTime(h, { value: incident.lastTriggeredAt, ...clock, tooltip: "title" })],
 			"tabular-nums",
 		),
-		tableCell(h, [formatNumber(incident.occurrenceCount)], "text-right font-mono tabular-nums"),
+		tableCell(
+			h,
+			[formatNumber(incident.occurrenceCount)],
+			typographyClass({ mono: true, numeric: true, className: "text-right" }),
+		),
 	])
 }
 
@@ -93,7 +119,7 @@ export const incidentsTable = <M>(
 				]),
 				tableBody(
 					h,
-					incidents.map((incident) => incidentRow(h, incident, clock)),
+					Arr.map(incidents, (incident) => incidentRow(h, incident, clock)),
 				),
 			])
 
@@ -102,26 +128,19 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 		tableCell(
 			h,
 			[relativeTime(h, { value: trace.timestamp, ...clock, tooltip: "title" })],
-			"tabular-nums text-muted-foreground",
+			typographyClass({ tone: "muted", numeric: true }),
 		),
 		tableCell(h, [
-			h.span(
-				[h.Class("inline-flex items-center gap-1.5")],
-				[
-					serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
-					h.span([], [trace.serviceName]),
-				],
-			),
+			hstack(h, { gap: "1.5", inline: true, as: "span" }, [
+				serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
+				h.span([], [trace.serviceName]),
+			]),
 		]),
-		tableCell(
-			h,
-			[
-				truncatedText(h, { text: trace.exceptionMessage }, [
-					trace.exceptionMessage.split("\n", 1)[0] ?? "",
-				]),
-			],
-			truncatedCellStyles,
-		),
+		truncatedTableCell(h, [
+			truncatedText(h, { text: trace.exceptionMessage }, [
+				trace.exceptionMessage.split("\n", 1)[0] ?? "",
+			]),
+		]),
 		tableCell(h, [
 			h.a(
 				[
@@ -130,9 +149,9 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 					),
 					h.Class(
 						cn(
-							"inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5",
-							"font-mono text-2xs text-muted-foreground tabular-nums",
-							"transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary",
+							"inline-flex items-center gap-1 rounded-full border border-border-subtle bg-surface-sunken px-2 py-0.5",
+							typographyClass({ size: "2xs", tone: "muted", mono: true, numeric: true }),
+							"hover:border-primary-a4 active:border-primary-a4 hover:bg-primary-a2 active:bg-primary-a2 hover:text-primary active:text-primary",
 						),
 					),
 				],
@@ -151,7 +170,7 @@ export const occurrencesTable = <M>(
 				emptyHeader(h, [
 					emptyTitle(h, ["No samples in this window"]),
 					emptyDescription(h, [
-						"This fingerprint was not seen in the selected range. Widen the time range to find traces to open.",
+						"This fingerprint was not seen in this window. Widen the time range to find traces to open.",
 					]),
 				]),
 			])
@@ -166,6 +185,6 @@ export const occurrencesTable = <M>(
 				]),
 				tableBody(
 					h,
-					traces.map((trace) => occurrenceRow(h, trace, clock)),
+					Arr.map(traces, (trace) => occurrenceRow(h, trace, clock)),
 				),
 			])

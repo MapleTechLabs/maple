@@ -1,12 +1,11 @@
 import { PANEL_TYPES, WIDGET_UNITS } from "@maple/domain/http"
-import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Checkbox from "../../../ui/checkbox"
-import { field, fieldLabel, type FieldState, input } from "../../../ui/field"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import { textarea } from "../../../ui/textarea"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { separator } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { field, fieldLabel, type FieldState, input } from "@maple/views/ui/field"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { textarea } from "@maple/views/ui/textarea"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { toPanelType } from "../kit/chart-registry"
 import { widgetTimeRangeLabel } from "../kit/time-range-label"
@@ -16,13 +15,12 @@ import type { Model } from "./model"
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
 import { typeSettings } from "./view-rail-types"
+import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `WidgetSettingsBar` and the `WidgetSettings` fields the timeseries panels compose.
 
 type H = HtmlBuilder<Message>
-
-/** The eyebrow caption, restated at `sm:` because FieldLabel sets its own size there. */
-const RAIL_LABEL_CLASS = cn(eyebrowVariants({ variant: "label" }), "sm:text-2xs sm:leading-normal")
 
 const stateOf = (isFilled: boolean): FieldState => ({
 	isDirty: false,
@@ -47,11 +45,11 @@ export const railSetting = (
 	children: ReadonlyArray<Html>,
 ): Html =>
 	field(h, { className: "items-stretch gap-1.5", state: stateOf(isFilled) }, [
-		fieldLabel(h, { ids: idsOf(name), className: RAIL_LABEL_CLASS, state: stateOf(isFilled) }, label),
+		fieldLabel(h, { ids: idsOf(name), isEyebrow: true, state: stateOf(isFilled) }, label),
 		...children,
 	])
 
-export const divider = (h: H): Html => h.div([h.Class("h-px bg-border")], [])
+export const divider = (h: H): Html => separator(h, "horizontal", undefined)
 
 /** `Segments`: the rail's full-width segmented control. */
 export const segments = <T extends string>(
@@ -71,33 +69,25 @@ export const checkboxRow = (
 	onToggle: Message,
 	isDisabled = false,
 ): Html =>
-	h.div(
-		[
-			h.Class(cn(fieldStyles, "flex-row items-center gap-2")),
-			h.DataAttribute("slot", "field"),
-			...(isChecked ? [h.DataAttribute("filled", "")] : []),
-		],
-		[
-			...Checkbox.view(h, {
-				model: { isChecked },
-				toParentMessage: () => onToggle,
-				id: `${id}-root`,
-				inputId: id,
-				isDisabled,
-				className: "shrink-0",
-			}),
-			h.label(
-				[
-					h.Id(Checkbox.labelId(id)),
-					h.For(id),
-					h.Class(cn(fieldLabelStyles, "font-normal text-xs text-muted-foreground sm:text-xs")),
-					h.DataAttribute("slot", "field-label"),
-					...(isChecked ? [h.DataAttribute("filled", "")] : []),
-				],
-				[label],
-			),
-		],
-	)
+	field(h, { className: "flex-row items-center gap-2", state: stateOf(isChecked) }, [
+		...Checkbox.view(h, {
+			model: { isChecked },
+			toParentMessage: () => onToggle,
+			id: `${id}-root`,
+			inputId: id,
+			isDisabled,
+			className: "shrink-0",
+		}),
+		fieldLabel(
+			h,
+			{
+				ids: { control: id, label: Checkbox.labelId(id), error: `${id}-error` },
+				className: "font-normal text-xs text-muted-foreground sm:text-xs",
+				state: stateOf(isChecked),
+			},
+			label,
+		),
+	])
 
 const nameField = (h: H, state: EditorState): Html =>
 	railSetting(h, "name", "Name", state.title !== "", [
@@ -119,7 +109,7 @@ const descriptionField = (h: H, state: EditorState): Html =>
 			defaultValue: state.description,
 			attributes: [
 				h.AriaLabelledBy(idsOf("description").label),
-				h.Placeholder("Add a description..."),
+				h.Placeholder("Add a description…"),
 				h.Rows(2),
 				h.OnInput((value) => Message.ChangedDescription({ value })),
 			],
@@ -153,7 +143,10 @@ const timeRangeField = (h: H, model: Model, state: EditorState, timeZone: string
 								view: TimeRangePicker.view,
 								viewInputs: {
 									label: widgetTimeRangeLabel(state.timeRange, timeZone, model.nowMs ?? 0),
-									selectedPreset: state.timeRange.type === "relative" ? state.timeRange.value : undefined,
+									selectedPreset:
+										state.timeRange.type === "relative"
+											? state.timeRange.value
+											: undefined,
 									presets: TimeRangePicker.PRESET_VALUES,
 									timeZone,
 									hasHotkey: false,
@@ -168,7 +161,7 @@ const timeRangeField = (h: H, model: Model, state: EditorState, timeZone: string
 const typePicker = (h: H, state: EditorState): Html =>
 	railSetting(h, "type", "Type", false, [
 		segmentedSelect(h, {
-			options: PANEL_TYPES.map((meta) => ({ value: meta.panelType, label: meta.label })),
+			options: Arr.map(PANEL_TYPES, (meta) => ({ value: meta.panelType, label: meta.label })),
 			value: toPanelType(state.visualization, state.chartId),
 			onChange: (panel) => Message.ClickedPanelType({ panel }),
 			size: "sm",
@@ -178,10 +171,13 @@ const typePicker = (h: H, state: EditorState): Html =>
 	])
 
 const UNIT_OPTIONS = [
-	...WIDGET_UNITS.filter((unit) => !unit.token.startsWith("duration_")).map((unit) => ({
-		value: unit.token,
-		label: unit.label,
-	})),
+	...Arr.map(
+		Arr.filter(WIDGET_UNITS, (unit) => !Str.startsWith("duration_")(unit.token)),
+		(unit) => ({
+			value: unit.token,
+			label: unit.label,
+		}),
+	),
 	{ value: "duration", label: "Duration" },
 ]
 
@@ -194,7 +190,7 @@ const DURATION_SCALES = [
 
 /** `Unit`: the duration tokens collapse into one entry with a scale under it. */
 export const unitField = (h: H, model: Model, state: EditorState, label = "Y-Axis Unit"): Html => {
-	const isDuration = state.unit.startsWith("duration_")
+	const isDuration = Str.startsWith("duration_")(state.unit)
 	return pageSelect(h, model, "unit", isDuration ? "duration" : state.unit, UNIT_OPTIONS, {
 		className: "w-full",
 		ariaLabel: label,
@@ -225,18 +221,18 @@ export const legendField = (h: H, state: EditorState, hasSeriesStats = true): Ht
 	])
 
 const seriesStats = (h: H, state: EditorState): Html =>
-		h.div(
-			[h.Class("pt-0.5")],
-			[
-				checkboxRow(
-					h,
-					"qb-series-stats",
-					"Show Min/Max/Mean/Last stats",
-					state.seriesStatsEnabled,
-					Message.ToggledSeriesStats(),
-				),
-			],
-		)
+	h.div(
+		[h.Class("pt-0.5")],
+		[
+			checkboxRow(
+				h,
+				"qb-series-stats",
+				"Show Min/Max/Mean/Last stats",
+				state.seriesStatsEnabled,
+				Message.ToggledSeriesStats(),
+			),
+		],
+	)
 
 /** `QueryOptions`: comparison and its % change. */
 export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [
@@ -257,19 +253,16 @@ export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyAr
 		},
 	),
 	divider(h),
-	h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			checkboxRow(
-				h,
-				"qb-percent-change",
-				"% change",
-				state.includePercentChange,
-				Message.ToggledPercentChange(),
-				state.comparisonMode === "none",
-			),
-		],
-	),
+	vstack(h, { gap: "3" }, [
+		checkboxRow(
+			h,
+			"qb-percent-change",
+			"% change",
+			state.includePercentChange,
+			Message.ToggledPercentChange(),
+			state.comparisonMode === "none",
+		),
+	]),
 ]
 
 /** `TimeSeriesSettings`: stacking on bar and area, curve and points on line and area. */
@@ -328,27 +321,21 @@ const timeseriesSettings = (h: H, model: Model, state: EditorState): ReadonlyArr
 	]
 }
 
-/** The "Panel Options" rail: the shared fields, then the panel type's own (`ConfigPanel`). */
+/** The "Panel options" rail: the shared fields, then the panel type's own (`ConfigPanel`). */
 export const settingsRail = (h: H, model: Model, timeZone: string): Html => {
 	const state = model.state
 	if (state === null) return h.empty
 	const panel = toPanelType(state.visualization, state.chartId)
-	return h.div(
-		[h.Class("flex flex-col gap-5")],
-		[
-			h.p(
-				[h.Class(eyebrowVariants({ variant: "label" })), h.DataAttribute("slot", "eyebrow")],
-				["Panel Options"],
-			),
-			nameField(h, state),
-			descriptionField(h, state),
-			// A note never queries, so it has no window of its own.
-			...(panel === "markdown" ? [] : [timeRangeField(h, model, state, timeZone)]),
-			divider(h),
-			typePicker(h, state),
-			...(panel === "line" || panel === "bar" || panel === "area"
-				? timeseriesSettings(h, model, state)
-				: typeSettings(h, model, state, panel)),
-		],
-	)
+	return vstack(h, { gap: "5" }, [
+		eyebrow(h, { variant: "label", as: "p" }, ["Panel options"]),
+		nameField(h, state),
+		descriptionField(h, state),
+		// A note never queries, so it has no window of its own.
+		...(panel === "markdown" ? [] : [timeRangeField(h, model, state, timeZone)]),
+		divider(h),
+		typePicker(h, state),
+		...(panel === "line" || panel === "bar" || panel === "area"
+			? timeseriesSettings(h, model, state)
+			: typeSettings(h, model, state, panel)),
+	])
 }

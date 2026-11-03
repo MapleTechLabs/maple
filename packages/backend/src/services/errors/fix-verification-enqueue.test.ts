@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { InvestigationFreeformSubject, OrgId } from "@maple/domain/http"
 import {
 	ErrorIssueId,
@@ -95,7 +95,7 @@ const seedVerification = (options: { readonly withIssue?: boolean } = {}) =>
 						id: issueId,
 						orgId: ORG,
 						kind: "error",
-						fingerprintHash: `fp-${issueId.slice(0, 8)}`,
+						fingerprintHash: `fp-${Str.slice(0, 8)(issueId)}`,
 						serviceName: "checkout",
 						exceptionType: "TypeError",
 						exceptionMessage: "undefined is not a function",

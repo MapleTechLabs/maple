@@ -22,7 +22,7 @@ import {
 	PlanetscaleEvents,
 	type ErrorIssueRow,
 } from "@maple/db/tables"
-import { Clock, Effect, Result, Schema } from "effect"
+import { Clock, Effect, Result, Schema, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 
@@ -43,7 +43,7 @@ export const verifyPlanetScaleSignature = (
 ): boolean => {
 	if (!signatureHeader) return false
 	const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex")
-	const provided = signatureHeader.trim().toLowerCase()
+	const provided = Str.toLowerCase(Str.trim(signatureHeader))
 	if (provided.length !== expected.length) return false
 	return timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(provided, "utf8"))
 }
@@ -368,8 +368,29 @@ export const deployRequestNumber = (payload: PlanetScaleWebhookPayload): string 
 /** The lifecycle state a `deploy_request.*` / `branch.*` event represents. */
 const stateFromEvent = (event: string): string | null => {
 	const dot = event.indexOf(".")
-	return dot === -1 ? null : event.slice(dot + 1)
+	return dot === -1 ? null : Str.slice(dot + 1)(event)
 }
+
+/** The events Maple subscribes its registered webhooks to: every one the map below acts on. */
+export const PLANETSCALE_WEBHOOK_EVENTS = [
+	"branch.out_of_memory",
+	"branch.anomaly",
+	"cluster.storage",
+	"keyspace.storage",
+	"deploy_request.opened",
+	"deploy_request.queued",
+	"deploy_request.in_progress",
+	"deploy_request.pending_cutover",
+	"deploy_request.schema_applied",
+	"deploy_request.errored",
+	"deploy_request.reverted",
+	"deploy_request.closed",
+	"branch.ready",
+	"branch.sleeping",
+	"branch.primary_promoted",
+	"branch.start_maintenance",
+	"database.access_request",
+] as const
 
 /**
  * Exhaustive event map.
@@ -690,12 +711,10 @@ export const upsertPlanetScaleIssue: (
 						// The queue consumer retries on `DatabaseError`, so this unreachable
 						// state keeps the failure class it always surfaced as.
 						if (!row) {
-							return yield* Effect.fail(
-								new DatabaseError({
-									message: "Failed to ensure system-integrations actor row",
-									cause: undefined,
-								}),
-							)
+							return yield* new DatabaseError({
+								message: "Failed to ensure system-integrations actor row",
+								cause: undefined,
+							})
 						}
 						return row.id
 					})
@@ -836,14 +855,11 @@ export const upsertPlanetScaleIssue: (
 					// this distinct occurrence instead of committing a receipt-only skip.
 					const winner = (yield* db.run(lockIssue))[0]
 					if (winner === undefined) {
-						return yield* Effect.fail(
-							new PlanetScaleIssueConflictUnresolved({
-								message:
-									"PlanetScale issue conflict winner was not visible in the transaction",
-								orgId: input.orgId,
-								fingerprintHash,
-							}),
-						)
+						return yield* new PlanetScaleIssueConflictUnresolved({
+							message: "PlanetScale issue conflict winner was not visible in the transaction",
+							orgId: input.orgId,
+							fingerprintHash,
+						})
 					}
 					return yield* applyExistingIssue(winner)
 				}),

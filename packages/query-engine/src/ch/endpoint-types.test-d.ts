@@ -13,7 +13,7 @@
 // typecheck error here.
 
 import type { DateTime } from "effect"
-import { expectTypeOf } from "expect-type"
+import { expectTypeOf } from "vitest"
 import type {
 	ErrorDetailTracesOutput,
 	ErrorsFacetsOutput,

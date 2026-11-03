@@ -2,8 +2,8 @@ import { Array, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import type { ClerkPasskeyResource } from "../../../../platform/clerk"
 import { ClerkActionError } from "../../../../platform/clerk"
-import * as Dialog from "../../../../ui/dialog"
-import * as Menu from "../../../../ui/menu"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import { settled, withUser, withUserReverified } from "../clerk-write"
 import { readAccountUser } from "../user"
@@ -37,7 +37,7 @@ const withPasskey = <A>(
 /** `createPasskey()` takes no name: Clerk derives one from the authenticator. */
 const CreatePasskey = Command.define("CreateClerkPasskey", {
 	messages: [Message.CompletedCreate],
-	execute: withUserReverified("Failed to add a passkey", (user) => user.createPasskey()).pipe(
+	execute: withUserReverified("Couldn't add a passkey", (user) => user.createPasskey()).pipe(
 		settled((result) => Message.CompletedCreate({ result })),
 	),
 })
@@ -46,7 +46,7 @@ const RenamePasskey = Command.define("RenameClerkPasskey", {
 	args: { id: Schema.String, name: Schema.String },
 	messages: [Message.CompletedRename],
 	execute: ({ id, name }) =>
-		withPasskey(id, "Failed to rename passkey", (passkey) => passkey.update({ name })).pipe(
+		withPasskey(id, "Couldn't rename passkey", (passkey) => passkey.update({ name })).pipe(
 			settled((result) => Message.CompletedRename({ result })),
 		),
 })
@@ -55,7 +55,7 @@ const RemovePasskey = Command.define("RemoveClerkPasskey", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedRemove],
 	execute: ({ id }) =>
-		withPasskey(id, "Failed to remove passkey", (passkey) => passkey.delete(), withUserReverified).pipe(
+		withPasskey(id, "Couldn't remove passkey", (passkey) => passkey.delete(), withUserReverified).pipe(
 			settled((result) => Message.CompletedRemove({ result })),
 		),
 })

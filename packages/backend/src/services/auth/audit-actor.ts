@@ -32,6 +32,6 @@ export interface AuditActorInfo {
  * never assume a dashboard session.
  */
 export class CurrentAuditActor extends Context.Reference<AuditActorInfo | undefined>(
-	"@maple/api/services/auth/CurrentAuditActor",
+	"@maple/backend/services/auth/CurrentAuditActor",
 	{ defaultValue: () => undefined },
 ) {}

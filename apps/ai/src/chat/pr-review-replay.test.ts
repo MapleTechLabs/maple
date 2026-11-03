@@ -2,14 +2,14 @@ import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/domain"
 import { expect, it } from "vitest"
 import { makeExecutor } from "../../scripts/pr-review-local"
 
 it("historical replay reads its head but cannot read a future fix or execute git", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "review-replay-"))
-	const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim()
+	const git = (...args: string[]) => Str.trim(execFileSync("git", args, { cwd: dir, encoding: "utf8" }))
 	try {
 		git("init", "--quiet")
 		git("config", "user.email", "eval@example.test")
@@ -38,16 +38,17 @@ it("historical replay reads its head but cannot read a future fix or execute git
 			authMode: "self_hosted" as const,
 		}
 		const call = (name: string, args: Record<string, unknown>) =>
-			Effect.runPromise(executor.execute(tenant, name, args))
+			Effect.runPromise(executor.execute(tenant, name, args, "chat"))
 		expect(JSON.stringify(await call("sandbox_read_file", { path: "code.ts" }))).toContain(
 			"historical bug",
 		)
 		expect((await call("sandbox_grep", { pattern: "historical", glob: "**/*.{ts,tsx}" })).isError).toBe(
 			true,
 		)
-		expect(JSON.stringify(await call("sandbox_read_file", { path: "code.ts", endLine: 3 }))).toContain(
-			"endLine",
-		)
+		// A camelCase spelling is read as the declared `end_line`, not dropped with a warning.
+		const camel = JSON.stringify(await call("sandbox_read_file", { path: "code.ts", endLine: 3 }))
+		expect(camel).toContain("historical bug")
+		expect(camel).not.toContain("is not a parameter")
 		const blocked = await call("sandbox_read_file", { path: "code.ts", ref: future })
 		expect(blocked.isError).toBe(true)
 		expect(JSON.stringify(blocked)).not.toContain("future fix")

@@ -3,18 +3,24 @@ import { countLabel, EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
-import { emptyMessage } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { segmentedSelect } from "../../../../ui/segmented-select"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { label } from "@maple/views/ui/label"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { switchControl } from "@maple/views/ui/switch"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import * as Frame from "../../kit/frame"
 import { heroChip } from "../../kit/hero-chip"
 import { k8sChart } from "../../kit/k8s-chart"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { noMetricsMessage, pageHero } from "../../kit/page-parts"
-import { metaRow, resourceAttributesCard, resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { noMetricsMessage, pageHeroParts } from "../../kit/page-parts"
+import {
+	metaRow,
+	resourceAttributesCard,
+	resourceAttributesCardSkeleton,
+} from "../../kit/resource-attributes"
 import { sectionHeading } from "../../../kit/section-heading"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
@@ -22,6 +28,7 @@ import { podTable, podTableLoading } from "../pod-table"
 import { Message } from "./message"
 import { type Model, seriesId, type WorkloadKind, type WorkloadMetric, type WorkloadSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { hstack } from "@maple/views/ui/stack"
 
 // `WorkloadDetailPage` and `WorkloadDetailChart`.
 
@@ -50,14 +57,14 @@ export const KIND_LABEL = new Map<WorkloadKind, string>([
 const rightPanel = (h: H, model: Model): Html | undefined => {
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	if (summary !== null)
-		return resourceAttributesCard(h, "GridIcon", [
+		return resourceAttributesCard(h, [
 			metaRow(h, { label: "kind", value: KIND_LABEL.get(model.kind) }),
 			metaRow(h, { label: `k8s.${model.kind}.name`, value: summary.workloadName }),
 			metaRow(h, { label: "k8s.namespace.name", value: summary.namespace }),
 			metaRow(h, { label: "pods", value: String(summary.podCount) }),
 		])
 	return AsyncData.isLoading(model.summary.data) || AsyncData.isIdle(model.summary.data)
-		? resourceAttributesCardSkeleton(h, "GridIcon")
+		? resourceAttributesCardSkeleton(h)
 		: undefined
 }
 
@@ -87,7 +94,11 @@ const summaryArea = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => statRailLoading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load workload metrics", onRetry: Message.ClickedRetrySummary() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load workload metrics",
+				onRetry: Message.ClickedRetrySummary(),
+			}),
 		onData: (summary) => (summary === null ? noMetricsMessage(h, "workload") : stats(h, summary)),
 	})
 
@@ -95,11 +106,15 @@ const podsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.pods.data, {
 		onEmpty: () => podTableLoading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load workload pods", onRetry: Message.ClickedRetryPods() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load workload pods",
+				onRetry: Message.ClickedRetryPods(),
+			}),
 		onData: (page) =>
 			page.data.length === 0
 				? emptyMessage(h, { dashed: true, className: "py-12" }, [
-						"No pods reporting for this workload in the selected window.",
+						"No pods reporting for this workload in this window",
 					])
 				: podTable(h, page.data, {
 						sortBy: "saturation",
@@ -120,8 +135,7 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return h.div(
 		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center justify-between gap-3")],
+			hstack(h, { gap: "3", justify: "between", wrap: true },
 				[
 					segmentedSelect(h, {
 						size: "xs",
@@ -130,15 +144,21 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						onChange: (value) => Message.ClickedMetric({ metric: value }),
 						ariaLabel: "Metric",
 					}),
-					h.label(
-						[h.Class("inline-flex items-center gap-2 text-2xs text-muted-foreground")],
+					// The label wraps the switch's hidden input, so a click on the text toggles too.
+					label(
+						h,
+						{
+							className: "cursor-pointer font-normal text-2xs text-muted-foreground sm:text-2xs",
+							attributes: [h.Id("workload-group-by-pod-label")],
+						},
 						[
-							h.input([
-								h.Type("checkbox"),
-								h.Checked(model.groupByPod),
-								h.Class("size-3 accent-primary"),
-								h.OnClick(Message.ToggledGroupByPod({ isChecked: !model.groupByPod })),
-							]),
+							...switchControl(h, {
+								id: "workload-group-by-pod",
+								inputId: "workload-group-by-pod-input",
+								isChecked: model.groupByPod,
+								labelledBy: "workload-group-by-pod-label",
+								onToggle: Message.ToggledGroupByPod({ isChecked: !model.groupByPod }),
+							}),
 							"Per-pod breakdown",
 						],
 					),
@@ -163,13 +183,28 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	const namespace = model.search.namespace
 	const kindLabel = KIND_LABEL.get(model.kind) ?? model.kind
+	const hero = pageHeroParts(h, {
+		title: h.span([h.Class("font-mono")], [model.workloadName]),
+		description: `${kindLabel}${namespace ? ` in namespace ${namespace}` : ""}, aggregated from pod metrics.`,
+		meta: [
+			...(namespace ? [heroChip(h, ["ns ", namespace])] : []),
+			heroChip(h, ["kind ", model.kind]),
+			...(summary === null ? [] : [heroChip(h, [countLabel(summary.podCount, "pod")])]),
+		],
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					titleContent: hero.title,
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					tabs: kubernetesViewTabs(h, "workloads", model.search),
 					rightPanel: rightPanel(h, model),
 				},
@@ -177,18 +212,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h.div(
 						[h.Class("space-y-6")],
 						[
-							pageHero(h, {
-								title: h.span([h.Class("font-mono")], [model.workloadName]),
-								description: `${kindLabel}${namespace ? ` in namespace ${namespace}` : ""}, aggregated from pod metrics.`,
-								meta: [
-									...(namespace ? [heroChip(h, ["ns ", namespace])] : []),
-									heroChip(h, ["kind ", model.kind]),
-									...(summary === null ? [] : [heroChip(h, [countLabel(summary.podCount, "pod")])]),
-								],
-							}),
+							hero.body,
 							summaryArea(h, model),
 							chartArea(h, model, inputs),
-							h.div([h.Class("space-y-3")], [sectionHeading(h, { as: "h3", title: "Pods" }), podsArea(h, model, inputs)]),
+							h.div(
+								[h.Class("space-y-3")],
+								[sectionHeading(h, { as: "h3", title: "Pods" }), podsArea(h, model, inputs)],
+							),
 						],
 					),
 				],

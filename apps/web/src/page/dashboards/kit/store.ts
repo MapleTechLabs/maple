@@ -1,5 +1,5 @@
 import { type DashboardDocument, IsoDateTimeString } from "@maple/domain/http"
-import { Clock, Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema, String as Str } from "effect"
 import { OrgCollections } from "../../../data/collections/org-collections"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { PageOutMessage } from "../../contract"
@@ -25,9 +25,12 @@ export class DashboardWriteError extends Schema.TaggedError<DashboardWriteError>
 	{ message: Schema.String, cause: Schema.Defect() },
 ) {}
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
+const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
+
 const messageField = (value: unknown): Option.Option<string> =>
 	typeof value === "object" && value !== null && "message" in value && typeof value.message === "string"
-		? Option.some(value.message).pipe(Option.filter((message) => message.trim().length > 0))
+		? Option.some(value.message).pipe(Option.filter((message) => Str.trim(message).length > 0))
 		: Option.none()
 
 /** The wrapped failure an error carries, if any. */
@@ -60,23 +63,21 @@ export const dashboardsOf = (orgId: string) =>
 /** `readDashboard`: the decoded document the collection holds (optimistic state included). */
 export const readDocument = (orgId: string, id: string) =>
 	Effect.flatMap(dashboardsOf(orgId), (collection) =>
-		Option.match(Option.flatMap(Option.fromNullishOr(collection.get(id)), rowToDocument), {
-			onNone: () =>
-				Effect.fail(
-					new DashboardUnreadableError({
-						message: "This dashboard hasn’t finished loading — try again in a moment",
-						rawId: id,
-					}),
-				),
-			onSome: Effect.succeed,
-		}),
+		Effect.fromOption(
+			Option.flatMap(Option.fromNullishOr(collection.get(id)), rowToDocument),
+			() =>
+				new DashboardUnreadableError({
+					message: "This dashboard hasn’t finished loading. Try again in a moment",
+					rawId: id,
+				}),
+		),
 	)
 
 /** `isTxidAwaitTimeout`: the write reached the server, only this tab's sync-back timed out. */
 const isTxidAwaitTimeout = (error: unknown, depth = 0): boolean => {
 	if (depth > 5 || typeof error !== "object" || error === null) return false
 	if ("name" in error && error.name === "TimeoutWaitingForTxIdError") return true
-	if (Option.exists(messageField(error), (message) => message.includes("Timeout waiting for txId")))
+	if (Option.exists(messageField(error), (message) => Str.includes("Timeout waiting for txId")(message)))
 		return true
 	return Option.exists(causeOf(error), (inner) => isTxidAwaitTimeout(inner, depth + 1))
 }
@@ -101,7 +102,7 @@ export const behindToast = () =>
 	})
 
 /** A transaction's settlement as an Effect; a rejection keeps its cause for the message. */
-const settled = <A>(promise: () => Promise<A>): Effect.Effect<WriteSync, DashboardWriteError> =>
+export const settled = <A>(promise: () => Promise<A>): Effect.Effect<WriteSync, DashboardWriteError> =>
 	Effect.tryPromise({
 		try: promise,
 		catch: (cause) => new DashboardWriteError({ message: errorMessageOf(cause), cause }),
@@ -126,16 +127,22 @@ export const mutateDashboard = (
 		const collection = yield* dashboardsOf(orgId)
 		const current = yield* readDocument(orgId, id)
 		// The updaters' `updatedAt` timestamp.
-		const nowIso = IsoDateTimeString.make(new Date(yield* Clock.currentTimeMillis).toISOString())
+		const now = yield* DateTime.now
+		const nowIso = IsoDateTimeString.make(DateTime.formatIso(now))
 		const updated = updater(current, nowIso)
 		if (updated === current) return "Synced" satisfies WriteSync
-		const plain: unknown = JSON.parse(JSON.stringify(updated))
+		const plain = yield* encodeJson(updated).pipe(
+			Effect.flatMap(decodeJson),
+			Effect.mapError(
+				(cause) => new DashboardWriteError({ message: "Dashboard is not JSON-serializable", cause }),
+			),
+		)
 		const transaction = collection.update(id, (draft) => {
 			draft.payload_json = plain
 			draft.name = updated.name
 			draft.updated_at = updated.updatedAt
 		})
-		return yield* settled(() => transaction.isPersisted.promise)
+		return yield* settled(() => transaction.when("settled"))
 	})
 
 /** `deleteDashboard`: the collection's optimistic delete. */
@@ -144,7 +151,7 @@ export const deleteDashboard = (orgId: string, id: string) =>
 		const collection = yield* dashboardsOf(orgId)
 		if (collection.get(id) === undefined) return "Synced" satisfies WriteSync
 		const transaction = collection.delete(id)
-		return yield* settled(() => transaction.isPersisted.promise)
+		return yield* settled(() => transaction.when("settled"))
 	})
 
 /** `collection.utils.awaitTxId(txid).catch(() => undefined)` after a create. */
@@ -152,5 +159,11 @@ export const awaitTxid = (orgId: string, txid: string | undefined) =>
 	txid === undefined
 		? Effect.void
 		: Effect.flatMap(dashboardsOf(orgId), (collection) =>
-				Effect.ignore(Effect.tryPromise(() => collection.utils.awaitTxId(Number(txid)))),
+				Effect.ignore(
+					Effect.tryPromise({
+						try: () => collection.utils.awaitTxId(Number(txid)),
+						catch: (cause) =>
+							new DashboardWriteError({ message: "Dashboard sync was not confirmed", cause }),
+					}),
+				),
 			)

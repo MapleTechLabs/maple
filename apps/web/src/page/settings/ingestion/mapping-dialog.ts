@@ -1,16 +1,16 @@
 import { IngestMappingOperation, IngestMappingSourceContext } from "@maple/domain/http"
 import { V2AttributeMapping } from "@maple/domain/http/v2"
 import { getResourceAttributeKeys, getSpanAttributeKeys } from "@maple/web-data/warehouse/traces"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
-import * as Combobox from "../../../ui/combobox"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Select from "../../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 
 // The add / edit dialog of `AttributeMappingsSection`, with `AttributeKeyAutocomplete`'s two key lists (read
 // once, when the dialog first opens).
@@ -57,7 +57,10 @@ export const Message = defineMessageUnion({
 	GotNameMessage: { message: Field.Message },
 	GotSelectMessage: { field: SelectField, message: Select.Message },
 	GotKeyMessage: { field: KeyField, message: Combobox.Message },
-	CompletedFetchKeys: { scope: IngestMappingSourceContext, result: Schema.Result(Schema.Array(Schema.String), LoadFailure) },
+	CompletedFetchKeys: {
+		scope: IngestMappingSourceContext,
+		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+	},
 	ClickedSave: {},
 	CompletedSave: { isCreate: Schema.Boolean, result: Schema.Result(Schema.Void, LoadFailure) },
 })
@@ -76,8 +79,10 @@ const FetchAttributeKeys = Command.define("FetchMappingAttributeKeys", {
 	messages: [Message.CompletedFetchKeys],
 	execute: ({ scope }) =>
 		(scope === "span" ? getSpanAttributeKeys({ data: {} }) : getResourceAttributeKeys({ data: {} })).pipe(
-			Effect.map((response) => response.data.map((row) => row.attributeKey)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => Arr.map(response.data, (row) => row.attributeKey),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchKeys({ scope, result })),
 		),
@@ -110,12 +115,13 @@ const SaveMapping = Command.define("SaveAttributeMapping", {
 
 export const sourceContextOf = (model: Model): IngestMappingSourceContext =>
 	model.sourceContext.value === "resource" ? "resource" : "span"
-export const operationOf = (model: Model): IngestMappingOperation => (model.operation.value === "move" ? "move" : "copy")
+export const operationOf = (model: Model): IngestMappingOperation =>
+	model.operation.value === "move" ? "move" : "copy"
 
 export const isFormValid = (model: Model): boolean =>
-	model.name.value.trim().length > 0 &&
-	model.sourceKey.inputValue.trim().length > 0 &&
-	model.targetKey.inputValue.trim().length > 0
+	Str.trim(model.name.value).length > 0 &&
+	Str.trim(model.sourceKey.inputValue).length > 0 &&
+	Str.trim(model.targetKey.inputValue).length > 0
 
 // UPDATE
 
@@ -124,7 +130,10 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
-const withKey = (current: Combobox.Model, value: string): Combobox.Model => ({ ...current, inputValue: value })
+const withKey = (current: Combobox.Model, value: string): Combobox.Model => ({
+	...current,
+	inputValue: value,
+})
 
 /** `openAddDialog` / `openEditDialog`: the form filled from the mapping, or empty. */
 export const open = (model: Model, editing: V2AttributeMapping | null): Return => {
@@ -144,14 +153,18 @@ export const open = (model: Model, editing: V2AttributeMapping | null): Return =
 	// Both key lists are subscribed on mount, as `AttributeKeyAutocomplete` does.
 	const isFirstOpen = AsyncData.isIdle(model.spanKeys)
 	const opened = liftDialog(
-		isFirstOpen ? { ...filled, spanKeys: AsyncData.Loading(), resourceKeys: AsyncData.Loading() } : filled,
+		isFirstOpen
+			? { ...filled, spanKeys: AsyncData.Loading(), resourceKeys: AsyncData.Loading() }
+			: filled,
 		Dialog.open(model.dialog),
 	)
 	return {
 		...opened,
 		commands: [
 			...(opened.commands ?? []),
-			...(isFirstOpen ? [FetchAttributeKeys({ scope: "span" }), FetchAttributeKeys({ scope: "resource" })] : []),
+			...(isFirstOpen
+				? [FetchAttributeKeys({ scope: "span" }), FetchAttributeKeys({ scope: "resource" })]
+				: []),
 		],
 	}
 }
@@ -159,13 +172,16 @@ export const open = (model: Model, editing: V2AttributeMapping | null): Return =
 const save = (model: Model): Return => {
 	if (model.isSaving || !isFormValid(model)) return { model }
 	const payload = {
-		name: model.name.value.trim(),
+		name: Str.trim(model.name.value),
 		source_context: sourceContextOf(model),
-		source_key: model.sourceKey.inputValue.trim(),
-		target_key: model.targetKey.inputValue.trim(),
+		source_key: Str.trim(model.sourceKey.inputValue),
+		target_key: Str.trim(model.targetKey.inputValue),
 		operation: operationOf(model),
 	}
-	return { model: { ...model, isSaving: true }, commands: [SaveMapping({ editingId: model.editing?.id ?? null, payload })] }
+	return {
+		model: { ...model, isSaving: true },
+		commands: [SaveMapping({ editingId: model.editing?.id ?? null, payload })],
+	}
 }
 
 export const update = (model: Model, message: Message): Return =>
@@ -175,22 +191,29 @@ export const update = (model: Model, message: Message): Return =>
 				return { model: { ...model, isEscapeConsumed: false } }
 			return model.isSaving ? { model } : liftDialog(model, Dialog.update(model.dialog, child))
 		},
-		GotNameMessage: ({ message: child }) => ({ model: { ...model, name: Field.update(model.name, child).model } }),
+		GotNameMessage: ({ message: child }) => ({
+			model: { ...model, name: Field.update(model.name, child).model },
+		}),
 		GotSelectMessage: ({ field, message: child }) => {
 			const step = Select.update(model[field], child)
 			const value = step.outMessage?.value
 			return {
 				model: { ...model, [field]: value === undefined ? step.model : { ...step.model, value } },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotSelectMessage({ field, message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotSelectMessage({ field, message: inner }),
+				),
 			}
 		},
 		GotKeyMessage: ({ field, message: child }) => {
 			const step = Combobox.update(model[field], child)
 			// Base UI's floating tree: Escape in an open popup closes only the popup, not the dialog.
-			const isEscapeConsumed = child._tag === "PressedInputKey" && child.key === "Escape" && model[field].isOpen
+			const isEscapeConsumed =
+				child._tag === "PressedInputKey" && child.key === "Escape" && model[field].isOpen
 			return {
 				model: { ...model, [field]: step.model, isEscapeConsumed },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotKeyMessage({ field, message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotKeyMessage({ field, message: inner }),
+				),
 			}
 		},
 		CompletedFetchKeys: ({ scope, result }) =>

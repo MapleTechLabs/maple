@@ -1,12 +1,15 @@
+import { spawnSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { assert, describe, it } from "@effect/vitest"
 import {
 	SANDBOX_CHECKOUT_GRACE_MINUTES,
+	SANDBOX_COMMAND_ENV_NAMES,
 	SANDBOX_TRAILER,
 	SandboxExecRequest,
 	shellCommand,
 	shellQuote,
 } from "@maple/domain/sandbox"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	CLONE_TOKEN_ENV,
 	SandboxCallError,
@@ -25,7 +28,7 @@ import {
 	type SandboxContainer,
 } from "./checkout"
 
-const SHA = "a".repeat(40)
+const SHA = Str.repeat(40)("a")
 const TOKEN = "ghs_secret_token"
 
 const checkout = {
@@ -86,8 +89,8 @@ const fakeContainer = (options: FakeOptions, seen: string[] = []): SandboxContai
 			}),
 		spawn: (command, env) =>
 			Effect.suspend(() => {
-				seen.push(`spawn:${Object.keys(env).join(",")}`)
-				if (command.includes(TOKEN)) seen.push("TOKEN-IN-COMMAND")
+				seen.push(`spawn:${Arr.join(Rec.keys(env), ",")}`)
+				if (Str.includes(TOKEN)(command)) seen.push("TOKEN-IN-COMMAND")
 				return options.failSpawn
 					? Effect.fail(new SandboxCallError({ message: options.failSpawn }))
 					: Effect.void
@@ -126,6 +129,48 @@ describe("wrapCommand", () => {
 		assert.include(wrapped, "head -c 2048")
 		assert.include(wrapped, `${SANDBOX_TRAILER} %s %s %s %s`)
 		assert.include(wrapped, '"$rc" "$ob" "$eb" "$ns"')
+	})
+})
+
+describe("wrapCommand's environment", () => {
+	// Stand-ins for the container's privilege and namespace tools, so the program's own
+	// environment handling runs as written on any host.
+	const stubs = Arr.join(
+		[
+			'unshare() { if [ "$1" = -n ]; then shift; fi; "$@"; }',
+			'runuser() { shift 3; "$@"; }',
+			"chown() { :; }",
+		],
+		"\n",
+	)
+	const run = (command: string, args: ReadonlyArray<string> = []) => {
+		const wrapped = wrapCommand(request({ command, args }))
+		const result = spawnSync("bash", ["-c", `${stubs}\n${wrapped}`], { encoding: "utf8" })
+		return Option.getOrThrow(parseTrailer(result.stdout)).body
+	}
+	const envOf = (body: string) =>
+		new Map(
+			Arr.map(
+				Arr.filter(Str.split("\n")(body), (line) => Str.includes("=")(line)),
+				(line) => [Str.slice(0, line.indexOf("="))(line), Str.slice(line.indexOf("=") + 1)(line)],
+			),
+		)
+
+	it("gives each command its own empty HOME, removed afterwards, and no global git config", () => {
+		const first = envOf(run("env"))
+		const second = envOf(run("env"))
+		const firstHome = first.get("HOME")
+		assert.isDefined(firstHome)
+		assert.notStrictEqual(firstHome, second.get("HOME"))
+		assert.isFalse(existsSync(firstHome!))
+		assert.strictEqual(first.get("GIT_CONFIG_GLOBAL"), "/dev/null")
+		assert.strictEqual(first.get("GIT_CONFIG_NOSYSTEM"), undefined)
+		assert.deepStrictEqual([...first.keys()].sort(), SANDBOX_COMMAND_ENV_NAMES)
+	})
+
+	it("starts each HOME empty, whatever the previous command left in its own", () => {
+		run("sh", ["-c", 'echo "[user] name = left" > "$HOME/.gitconfig"'])
+		assert.strictEqual(Str.trim(run("sh", ["-c", 'ls -A "$HOME" | wc -l | tr -d " "'])), "0")
 	})
 })
 
@@ -332,7 +377,7 @@ describe("ensureCheckout", () => {
 			)
 			assert.isTrue(Option.isSome(result))
 			if (Option.isSome(result)) assert.strictEqual(result.value._tag, "SandboxRunCheckoutPending")
-			assert.notInclude(seen.join(" "), "spawn:")
+			assert.notInclude(Arr.join(seen, " "), "spawn:")
 		}),
 	)
 

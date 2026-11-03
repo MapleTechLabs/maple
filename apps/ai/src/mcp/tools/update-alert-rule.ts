@@ -7,13 +7,16 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { recoveryValueFits } from "@maple/backend/services/alerts/alert-thresholds"
 import {
+	ALERT_EVALUATION_INTERVALS,
 	AlertRuleUpsertRequest,
 	isRangeComparator,
+	MAX_ALERT_WINDOW_MINUTES,
 	QueryBuilderQueryDraftSchema,
 	type AlertComparator,
 	type AlertRuleDocument,
 	type AlertThreshold,
 } from "@maple/domain/http"
+import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import {
 	ALERT_COMPARATORS,
 	ALERT_REDUCERS,
@@ -33,24 +36,36 @@ import * as P from "../lib/params"
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
 
 export const UpdateAlertRuleParameters = Schema.Struct({
-	rule_id: P.optionalText("Alert rule ID to update (use list_alert_rules to find IDs)"),
-	rule_ids: P.optionalList(
-		'Apply the same change to several rules in one call instead of rule_id; ["*"] means every rule. name cannot be set in bulk.',
+	rule_id: P.optionalResourceId("alertRule", "Alert rule ID to update (use list_alert_rules to find IDs)"),
+	rule_ids: P.optionalResourceIdList(
+		"alertRule",
+		'Apply the same change to several rules in one call instead of rule_id; ["*"] means every rule. name cannot be set in bulk',
 	),
 	name: P.optionalText("New rule name"),
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
 	threshold: P.optionalNumber("Threshold value. E.g. 0.05 for 5% error rate, 1000 for 1s latency"),
-	window_minutes: P.optionalNumber("Evaluation window in minutes"),
+	window_minutes: P.optionalNumber(`Evaluation window in minutes, at most ${MAX_ALERT_WINDOW_MINUTES}`),
+	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
+		ALERT_EVALUATION_INTERVALS,
+		'Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit to keep the current one; pass "auto" to derive it from the window (a fifth, 1 to 5). Any edit also clears a slowdown the scheduler applied.',
+	),
 	services: P.optionalList("Service scope (replaces the current one; an empty list means all services)"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (replaces the current scope; pass an empty list for all environments). Ignored for builder_query / raw_query.",
 	),
 	enabled: P.optionalFlag("Whether the rule is enabled"),
-	destination_ids: P.optionalList(
-		"Destination IDs to notify (replaces the current destinations; use list_alert_destinations to find IDs)",
+	destination_ids: P.optionalResourceIdList(
+		"alertDestination",
+		"Destination IDs to notify, from list_alert_destinations; replaces the current ones. A rule needs at least one",
 	),
-	add_destination_ids: P.optionalList("Destination IDs to add, keeping the current ones"),
-	remove_destination_ids: P.optionalList("Destination IDs to remove, keeping the rest"),
+	add_destination_ids: P.optionalResourceIdList(
+		"alertDestination",
+		"Destination IDs to add, keeping the current ones",
+	),
+	remove_destination_ids: P.optionalResourceIdList(
+		"alertDestination",
+		"Destination IDs to remove, keeping the rest",
+	),
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
 		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql.",
@@ -75,7 +90,7 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 		"Query-builder draft, same shape as create_alert_rule (for signal_type=builder_query)",
 	),
 	raw_query_sql: P.optionalText(
-		"ClickHouse SQL returning a numeric `value` column (for signal_type=raw_query). Must reference $__orgFilter and $__timeFilter(col).",
+		`ClickHouse SQL returning a numeric \`value\` column (for signal_type=raw_query), at most ${MAX_RAW_SQL_ALERT_GROUPS} groups. Must reference $__orgFilter and $__timeFilter(col).`,
 	),
 	raw_query_reducer: P.optionalOneOf(
 		ALERT_REDUCERS,
@@ -138,6 +153,14 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 		thresholds,
 		breachesOutOf: current.breachesOutOf,
 		windowMinutes: params.window_minutes ?? current.windowMinutes,
+		// Omitted keeps the picked interval, unless the window shrinks below it: then the window's own.
+		evaluationIntervalMinutes:
+			params.evaluation_interval_minutes !== undefined
+				? params.evaluation_interval_minutes
+				: current.evaluationIntervalMinutes !== null &&
+					  current.evaluationIntervalMinutes > (params.window_minutes ?? current.windowMinutes)
+					? null
+					: current.evaluationIntervalMinutes,
 		minimumSampleCount: params.minimum_sample_count ?? current.minimumSampleCount,
 		consecutiveBreachesRequired: params.consecutive_breaches ?? current.consecutiveBreachesRequired,
 		consecutiveHealthyRequired: params.consecutive_healthy ?? current.consecutiveHealthyRequired,
@@ -212,7 +235,10 @@ const mergeDestinations = (
 ): Array<string> => {
 	const base = params.destination_ids ?? current
 	const removed = new Set(params.remove_destination_ids ?? [])
-	return [...new Set([...base, ...(params.add_destination_ids ?? [])])].filter((id) => !removed.has(id))
+	return Arr.filter(
+		[...new Set([...base, ...(params.add_destination_ids ?? [])])],
+		(id) => !removed.has(id),
+	)
 }
 
 const noTargets = new McpInvalidInputError({
@@ -229,9 +255,9 @@ const resolveTargets = (
 	if (ids.length === 0) return Effect.fail(noTargets)
 	if (ids.includes("*")) return rules.length > 0 ? Effect.succeed(rules) : Effect.fail(noTargets)
 	const unique = [...new Set(ids)]
-	const missing = unique.find((id) => !rules.some((r) => r.id === id))
+	const missing = unique.find((id) => !Arr.some(rules, (r) => r.id === id))
 	if (missing !== undefined) return Effect.fail(ruleNotFound(missing))
-	return Effect.succeed(rules.filter((r) => unique.includes(r.id)))
+	return Effect.succeed(Arr.filter(rules, (r) => unique.includes(r.id)))
 }
 
 export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
@@ -300,15 +326,15 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			const head = saved[0]
 			if (head === undefined) return yield* noTargets
 			const bulk = saved.length > 1
-			const configWarnings = saved.flatMap(({ rule }) =>
-				ruleConfigWarnings(rule).map((w) => (bulk ? `${rule.name}: ${w}` : w)),
+			const configWarnings = Arr.flatMap(saved, ({ rule }) =>
+				Arr.map(ruleConfigWarnings(rule), (w) => (bulk ? `${rule.name}: ${w}` : w)),
 			)
 			// One rule gets a first-evaluation preview; a bulk change would run one per rule.
 			const evaluated = bulk ? undefined : yield* firstEvaluation(head.request, head.rule.enabled)
 			const warnings = [...configWarnings, ...(evaluated?.warnings ?? [])]
 			return {
 				rule: toAlertRuleRow(head.rule),
-				...(bulk ? { rules: saved.map(({ rule }) => toAlertRuleRow(rule)) } : undefined),
+				...(bulk ? { rules: Arr.map(saved, ({ rule }) => toAlertRuleRow(rule)) } : undefined),
 				...(warnings.length > 0 ? { warnings } : undefined),
 				...(evaluated === undefined ? undefined : { evaluation: evaluated.evaluation }),
 			}

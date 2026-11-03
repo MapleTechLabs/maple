@@ -22,26 +22,38 @@ function parse(ua: string): ParsedUserAgent {
 		? "Edge"
 		: /opr|opera/i.test(ua)
 			? "Opera"
-			: /chrome|crios/i.test(ua)
-				? "Chrome"
-				: /firefox|fxios/i.test(ua)
-					? "Firefox"
-					: /safari/i.test(ua)
-						? "Safari"
-						: "Unknown"
-	// iOS UAs contain "like Mac OS X", so test iOS before macOS
+			: /samsungbrowser/i.test(ua)
+				? "Samsung Internet"
+				: /chrome|crios/i.test(ua)
+					? "Chrome"
+					: /firefox|fxios/i.test(ua)
+						? "Firefox"
+						: /safari/i.test(ua)
+							? "Safari"
+							: "Unknown"
+	// iOS UAs contain "like Mac OS X", so test iOS before macOS. Word-bounded:
+	// a bare `ios` matches "BIOS". iPadOS 13+ reports as a Mac and stays macOS.
 	const osName = /windows/i.test(ua)
 		? "Windows"
-		: /iphone|ipad|ios/i.test(ua)
+		: /iphone|ipad|ipod|\bios\b/i.test(ua)
 			? "iOS"
 			: /mac os|macintosh/i.test(ua)
 				? "macOS"
 				: /android/i.test(ua)
 					? "Android"
-					: /linux/i.test(ua)
-						? "Linux"
-						: "Unknown"
-	const deviceType = /mobile|iphone/i.test(ua) ? "mobile" : /ipad|tablet/i.test(ua) ? "tablet" : "desktop"
+					: /\bcros\b/i.test(ua)
+						? "ChromeOS"
+						: /linux/i.test(ua)
+							? "Linux"
+							: "Unknown"
+	// Android tablets drop the "Mobile" token their phones carry.
+	const deviceType = /ipad|tablet/i.test(ua)
+		? "tablet"
+		: /mobile|iphone|ipod/i.test(ua)
+			? "mobile"
+			: osName === "Android"
+				? "tablet"
+				: "desktop"
 	return { browserName, osName, deviceType }
 }
 

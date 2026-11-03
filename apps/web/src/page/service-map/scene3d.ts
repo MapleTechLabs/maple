@@ -1,12 +1,18 @@
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { SceneHandle, SceneInput } from "./three/scene"
 
 // The 3D viewport's own state: the Atlas or
 // Cascade perspective, the traffic toggle and the camera command. The scene itself runs in a
 // Mount that `import()`s `./three/scene`, so three never reaches the startup bundle.
+
+/** The scene chunk failed to load, or WebGL failed to start. */
+export class SceneStartError extends Schema.TaggedError<SceneStartError>()(
+	"@maple/web/service-map/SceneStartError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
 
 export const Perspective = Schema.Literals(["atlas", "cascade"])
 export type Perspective = typeof Perspective.Type
@@ -20,7 +26,8 @@ export type CameraCommand = typeof CameraCommand.Type
 export const Model = Schema.Struct({
 	perspective: Perspective,
 	perspectiveGroup: ToggleGroup.Model,
-	traffic: Schema.Boolean,
+	/** The traffic toggle; `null` until clicked, so it follows the system's reduced-motion setting. */
+	traffic: Schema.NullOr(Schema.Boolean),
 	command: CameraCommand,
 	/** `useTheme()`: read from `<html>` by a Mount, `null` until it ran. */
 	isDark: Schema.NullOr(Schema.Boolean),
@@ -31,7 +38,8 @@ export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	GotPerspectiveMessage: { message: ToggleGroup.Message },
-	ClickedTraffic: {},
+	/** `isFlowing`: what the button showed, since the default depends on reduced motion. */
+	ClickedTraffic: { isFlowing: Schema.Boolean },
 	ClickedCamera: { action: Schema.Literals(["reset", "in", "out"]) },
 	/** A machine, sign or belt tag picked (already toggled), or `null` for empty paper. */
 	PickedNode: { nodeId: Schema.NullOr(Schema.String) },
@@ -99,7 +107,7 @@ const readInput = (element: Element): Option.Option<SceneInput> =>
 export const init = (): Model => ({
 	perspective: "atlas",
 	perspectiveGroup: ToggleGroup.init({ label: "Map perspective", values: ["atlas"] }),
-	traffic: true,
+	traffic: null,
 	command: { action: "reset", serial: 0 },
 	isDark: null,
 	isFailed: false,
@@ -132,7 +140,7 @@ export const update = (
 				),
 			}
 		},
-		ClickedTraffic: () => ({ model: { ...model, traffic: !model.traffic } }),
+		ClickedTraffic: ({ isFlowing }) => ({ model: { ...model, traffic: !isFlowing } }),
 		ClickedCamera: ({ action }) => ({
 			model: { ...model, command: { action, serial: model.command.serial + 1 } },
 		}),
@@ -187,13 +195,20 @@ export const MountScene = Mount.defineStream("MountServiceMapScene", {
 			? Stream.empty
 			: Stream.callback<SceneMessage>((queue) =>
 					Effect.acquireRelease(
-						Effect.tryPromise(() => import("./three/scene")).pipe(
+						Effect.tryPromise({
+							try: () => import("./three/scene"),
+							catch: (cause) =>
+								new SceneStartError({ message: "The 3D scene chunk did not load", cause }),
+						}).pipe(
 							Effect.flatMap(({ startScene }) =>
-								Effect.try(() =>
-									attach(element, startScene, (message) => {
-										Queue.offerUnsafe(queue, message)
-									}),
-								),
+								Effect.try({
+									try: () =>
+										attach(element, startScene, (message) => {
+											Queue.offerUnsafe(queue, message)
+										}),
+									catch: (cause) =>
+										new SceneStartError({ message: "The 3D scene did not start", cause }),
+								}),
 							),
 							Effect.catch(() =>
 								Effect.sync(() => {

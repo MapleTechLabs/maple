@@ -1,20 +1,31 @@
 import { humanizeUnit, isCounter } from "../../lib/units"
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import * as Chart from "@maple/web/charts/chart"
-import * as Sparkline from "@maple/web/charts/sparkline"
-import { resolveColor, type ThemeColors } from "@maple/web/charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { METRIC_TYPE_COLORS, metricTypeBadge } from "@maple/web/page/metrics/shared"
-import { badge } from "@maple/web/ui/display"
-import { truncatedText } from "@maple/web/ui/truncated-text"
-import { serviceDot } from "@maple/web/ui/values"
+import { badge } from "@maple/views/ui/display"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../route"
 import type { MetricEntry } from "./catalog"
-import { CARD_ROW_HEIGHT, columnsFor, type GridViewport, previewValues, sparklineValues, visibleRows } from "./derive"
+import {
+	CARD_ROW_HEIGHT,
+	columnsFor,
+	type GridViewport,
+	previewValues,
+	sparklineValues,
+	visibleRows,
+} from "./derive"
 import type { SparklinePoint } from "./fetch"
 import { MeasureGrid } from "./command"
 import { Message } from "./message"
+import { hstack } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The Metrics page's grid of metric preview cards.
 
@@ -36,7 +47,8 @@ export type GridInputs = Readonly<{
 }>
 
 const sparkline = (h: H, theme: ThemeColors, entry: MetricEntry, values: ReadonlyArray<number>): Html => {
-	const token = validateCssColor(METRIC_TYPE_COLORS.get(entry.metricType) ?? "var(--chart-1)") ?? "var(--chart-1)"
+	const token =
+		validateCssColor(METRIC_TYPE_COLORS.get(entry.metricType) ?? "var(--chart-1)") ?? "var(--chart-1)"
 	const slotId = `local-metric-spark-${entry.metricName} ${entry.metricType}`
 	return h.div(
 		[h.Class("h-full w-full")],
@@ -63,20 +75,32 @@ const sparkline = (h: H, theme: ThemeColors, entry: MetricEntry, values: Readonl
 const footer = (h: H, entry: MetricEntry, services: string): Html => {
 	const unit = humanizeUnit(entry.metricUnit, entry.metricName)
 	const [only] = entry.serviceNames
-	return h.div(
-		[h.Class("flex w-full items-center justify-between gap-2 text-3xs text-muted-foreground")],
+	return hstack(
+		h,
+		{
+			gap: "2",
+			justify: "between",
+			className: cn("w-full", typographyClass({ size: "3xs", tone: "muted" })),
+		},
 		[
-			h.span(
-				[h.Class("flex min-w-0 items-center gap-1.5")],
-				[
-					...(entry.serviceNames.length === 1 && only !== undefined ? [serviceDot(h, { serviceName: only, size: "sm" })] : []),
-					h.span([h.Class("truncate")], [services]),
-				],
-			),
+			hstack(h, { as: "span", gap: "1.5", shrink: true }, [
+				...(entry.serviceNames.length === 1 && only !== undefined
+					? [serviceDot(h, { serviceName: only, size: "sm" })]
+					: []),
+				typography(h, { truncate: true }, [services]),
+			]),
 			h.span(
 				[h.Class("flex shrink-0 items-center gap-1.5")],
 				[
-					...(unit ? [badge(h, { variant: "outline", size: "xs", mono: true, className: "text-4xs" }, [unit])] : []),
+					...(unit
+						? [
+								badge(
+									h,
+									{ variant: "outline", size: "xs", mono: true, className: "text-4xs" },
+									[unit],
+								),
+							]
+						: []),
 					isCounter(entry) ? "rate" : "avg",
 				],
 			),
@@ -86,27 +110,45 @@ const footer = (h: H, entry: MetricEntry, services: string): Html => {
 
 const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 	const values = previewValues(entry, inputs.points?.get(entry.metricName) ?? [])
-	const services = entry.serviceNames.length === 1 ? (entry.serviceNames[0] ?? "") : `${entry.serviceNames.length} services`
-	const status = inputs.isLoading ? "Loading…" : inputs.isFailed ? "Preview unavailable" : "One datapoint so far"
+	const services =
+		entry.serviceNames.length === 1
+			? (entry.serviceNames[0] ?? "")
+			: `${entry.serviceNames.length} services`
+	const status = inputs.isLoading
+		? "Loading…"
+		: inputs.isFailed
+			? "Preview unavailable"
+			: "One datapoint so far"
 	return h.a(
 		[
 			h.Href(hrefFor(`/metrics/${encodeURIComponent(entry.metricName)}`, inputs.query)),
 			h.AriaLabel(`${entry.metricName}, ${entry.metricType} metric from ${services}`),
 			h.Class(
-				"group flex h-[124px] flex-col gap-2 rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring",
+				"group flex h-[124px] flex-col gap-2 rounded-md border bg-card p-3 text-left hover:border-primary-a4 hover:bg-accent/40 active:border-primary-a4 active:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring",
 			),
 		],
 		[
 			h.div(
 				[h.Class("flex w-full items-start justify-between gap-2")],
-				[truncatedText(h, { text: entry.metricName, mono: true, className: "text-xs font-medium" }), metricTypeBadge(h, entry.metricType)],
+				[
+					truncatedText(h, {
+						text: entry.metricName,
+						mono: true,
+						className: "text-xs font-medium",
+					}),
+					metricTypeBadge(h, entry.metricType),
+				],
 			),
 			h.div(
 				[h.AriaHidden(true), h.Class("h-12 w-full")],
 				[
 					values.length >= 2
 						? sparkline(h, inputs.theme, entry, sparklineValues(values))
-						: h.div([h.Class("flex h-full items-center text-3xs text-muted-foreground")], [status]),
+						: hstack(
+								h,
+								{ className: cn("h-full", typographyClass({ size: "3xs", tone: "muted" })) },
+								[status],
+							),
 				],
 			),
 			footer(h, entry, services),
@@ -119,11 +161,11 @@ export const metricGrid = (h: H, inputs: GridInputs): Html => {
 	const columns = columnsFor(inputs.viewport.width)
 	const rowCount = Math.ceil(inputs.entries.length / columns)
 	return h.div(
-		[h.Class(cn("h-full overflow-auto", inputs.isDimmed && "opacity-60 transition-opacity")), h.OnMount(MeasureGrid())],
+		[h.Class(cn("h-full overflow-auto", refreshingClass(inputs.isDimmed))), h.OnMount(MeasureGrid())],
 		[
 			h.div(
 				[h.Class("relative m-4"), h.Style({ height: `${rowCount * CARD_ROW_HEIGHT}px` })],
-				visibleRows(rowCount, inputs.viewport).map((index) =>
+				Arr.map(visibleRows(rowCount, inputs.viewport), (index) =>
 					h.div(
 						[
 							h.Key(`row-${index}`),
@@ -133,9 +175,9 @@ export const metricGrid = (h: H, inputs: GridInputs): Html => {
 								"grid-template-columns": `repeat(${columns}, minmax(0, 1fr))`,
 							}),
 						],
-						inputs.entries
-							.slice(index * columns, index * columns + columns)
-							.map((entry) => previewCard(h, inputs, entry)),
+						Arr.map(inputs.entries.slice(index * columns, index * columns + columns), (entry) =>
+							previewCard(h, inputs, entry),
+						),
 					),
 				),
 			),

@@ -1,11 +1,7 @@
 import { Option } from "effect"
-import {
-	type ChartHost,
-	type ChartHostOptions,
-	createChartHost as createProductionHost,
-	hostFor,
-} from "../../charts/chart-host"
-import type { ChartSpec } from "../../charts/chart-spec"
+import { createChartHost as createProductionHost } from "@maple/views/charts/chart-host"
+import { type ChartHost, type ChartHostOptions, type CreateChartHost, hostFor } from "@maple/views/charts/chart-host-base"
+import type { ChartSpec } from "@maple/views/charts/chart-spec"
 import type { SpikeSpec } from "./spike-spec"
 import { buildAreaSpike, buildLineSpike } from "./spike-timeseries"
 import { buildStackedBarSceneSpike, buildStackedBarSpike } from "./spike-stacked-bar"
@@ -74,12 +70,7 @@ const spikeHost = (
 	}
 }
 
-export const createChartHost = (
-	container: HTMLElement,
-	spec: ChartSpec,
-	height: number,
-	options: ChartHostOptions,
-): ChartHost =>
+export const createChartHost: CreateChartHost = (container, spec, height, options) =>
 	isSpike(spec)
-		? spikeHost(container, spec, height, options)
+		? Option.some(spikeHost(container, spec, height, options))
 		: createProductionHost(container, spec, height, options)

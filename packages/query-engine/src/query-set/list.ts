@@ -6,7 +6,7 @@
  * reflects that by only ever offering one query for a list panel.
  */
 
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import type { QuerySet } from "@maple/query-model"
 import { buildListQuerySpec } from "../query-builder/model"
 import { QuerySetInputError } from "./errors"
@@ -30,7 +30,7 @@ export const runListQuerySet = Effect.fnUntraced(function* <E>(
 	executor: QuerySetExecutor<E>,
 	input: RunListQuerySetInput,
 ) {
-	const enabledQueries = input.querySet.queries.filter((query) => query.enabled !== false)
+	const enabledQueries = Arr.filter(input.querySet.queries, (query) => query.enabled !== false)
 	const query = enabledQueries[0]
 	if (query === undefined) {
 		return yield* new QuerySetInputError({

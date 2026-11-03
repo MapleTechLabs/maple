@@ -62,6 +62,13 @@ final class ClerkTokenProvider: MapleTokenProvider {
 		await coalescing.invalidate()
 	}
 
+	/// Refresh Clerk's cached token if it is near expiry. Untraced: a cache hit
+	/// every 20 seconds is not worth a trace, and a real mint shows up as the
+	/// next request's missing `auth.token` span.
+	func warm() async {
+		_ = try? await Clerk.shared.auth.getToken(Session.GetTokenOptions(skipCache: false))
+	}
+
 	func token(forceRefresh: Bool = false) async throws -> String? {
 		try await coalescing.token(forceRefresh: forceRefresh)
 	}

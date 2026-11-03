@@ -12,7 +12,7 @@
  * sparkline is deterministic so a visual change is the only thing that ever
  * moves between two runs.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 import {
 	ErrorIssueDocument,
@@ -33,7 +33,7 @@ export const LAB_WINDOW_MS = 12 * 60 * 60 * 1000
  *  the real page draws at 12h. */
 const SPARK_BUCKETS = 32
 
-const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
+const uuid = (n: number): string => `00000000-0000-4000-8000-${Str.padStart(12, "0")(String(n))}`
 
 /** An actor as it arrives on the wire — decoded as part of the issue below. */
 interface ActorSeed {
@@ -89,8 +89,8 @@ function spark(
 ): ReadonlyArray<{ bucket: string; count: number }> {
 	if (pattern === "silent" || total === 0) return []
 	const weights = Array.from({ length: SPARK_BUCKETS }, (_, i) => patternWeight(pattern, i, SPARK_BUCKETS))
-	const sum = weights.reduce((a, b) => a + b, 0)
-	return weights.flatMap((weight, index) => {
+	const sum = Arr.reduce(weights, 0, (a, b) => a + b)
+	return Arr.flatMap(weights, (weight, index) => {
 		const count = Math.round((weight / sum) * total)
 		// The warehouse emits no row for a quiet bucket, and `densifySpark` is what
 		// puts the gap back — a fixture that filled them would never exercise it.
@@ -244,7 +244,7 @@ const SEEDS: ReadonlyArray<SignalSeed> = [
 	{
 		n: 9,
 		title: "RateLimitExceeded",
-		detail: "429 from api.stripe.com — retry after 4s",
+		detail: "429 from api.stripe.com: retry after 4s",
 		service: "billing",
 		severity: null,
 		state: "wontfix",
@@ -359,7 +359,7 @@ export function buildErrorsLabFixture(nowMs: number): ErrorsLabFixture {
 	const bucketMs = LAB_WINDOW_MS / SPARK_BUCKETS
 	const window = { startMs, endMs, bucketMs }
 
-	const signals = SEEDS.map((seed): ErrorSignal => {
+	const signals = Arr.map(SEEDS, (seed): ErrorSignal => {
 		const issue = issueOf(seed, nowMs)
 		return {
 			id: issue.id,
@@ -383,14 +383,14 @@ export function buildErrorsLabFixture(nowMs: number): ErrorsLabFixture {
 		}
 	})
 
-	const totalErrors = signals.reduce((sum, signal) => sum + (signal.windowCount ?? 0), 0)
+	const totalErrors = Arr.reduce(signals, 0, (sum, signal) => sum + (signal.windowCount ?? 0))
 	return {
 		signals,
 		sparkWindow: window,
 		summary: {
 			totalErrors,
 			errorRate: 0.0214,
-			affectedServicesCount: new Set(signals.map((signal) => signal.serviceName)).size,
+			affectedServicesCount: new Set(Arr.map(signals, (signal) => signal.serviceName)).size,
 			affectedTracesCount: Math.round(totalErrors * 0.72),
 		},
 	}

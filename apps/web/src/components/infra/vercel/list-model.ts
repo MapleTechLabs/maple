@@ -12,7 +12,7 @@ import { quoteWhereValue } from "@maple/domain/where-clause"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { percentOf } from "@/components/integrations/vercel-model"
-import { encodeLogAttributeFilter } from "@/lib/logs/log-attribute-filters"
+import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 
 export interface VercelProjectRow {
 	readonly projectId: string

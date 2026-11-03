@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import type { ChatActionToken } from "../../action-token"
 import { EMPTY_CONTENT, MAX_ACTION_ROWS, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
+import { Array as Arr, String as Str } from "effect"
 
 const token = (value: string) => value as ChatActionToken
 
@@ -18,7 +19,7 @@ const alert = (overrides: Partial<ChatAlertBlock> = {}): ChatAlertBlock => ({
 	imageAlt: "High error rate over the alert window",
 	links: [
 		{ label: "Open in Maple", url: "https://app.maple.dev/alerts/1", primary: true },
-		{ label: "✨ Ask Maple AI", url: "https://app.maple.dev/chat", primary: false },
+		{ label: "View rule", url: "https://app.maple.dev/alerts/rule_1", primary: false },
 	],
 	footer: ["\u{1F341} Maple Alerts", "`▁▁▇`", "Incident `inc_1`"],
 	sentAtMs: 1_700_000_000_000,
@@ -49,11 +50,14 @@ describe("renderDiscordMessage", () => {
 		])
 
 		expect(payload.content).toBe(
-			[
-				"Checkout is slow.",
-				"> **Service** [checkout](https://app.maple.dev/services/checkout)\n> p95 1.20s",
-				"Looking for errors…",
-			].join("\n\n"),
+			Arr.join(
+				[
+					"Checkout is slow.",
+					"> **Service** [checkout](https://app.maple.dev/services/checkout)\n> p95 1.20s",
+					"Looking for errors…",
+				],
+				"\n\n",
+			),
 		)
 		// Nothing the model writes may notify a server.
 		expect(payload.allowed_mentions).toEqual({ parse: [] })
@@ -132,7 +136,7 @@ describe("renderDiscordMessage", () => {
 				kind: "approval",
 				toolName: "create_alert_rule",
 				summary: "",
-				token: token("c".repeat(120)),
+				token: token(Str.repeat(120)("c")),
 				outcome: null,
 			},
 		])
@@ -159,7 +163,7 @@ describe("renderDiscordMessage", () => {
 		const payload = renderDiscordMessage([
 			{
 				...(chart("https://img.maple.dev/a.png") as Extract<ChatBlock, { kind: "chart" }>),
-				title: "t".repeat(400),
+				title: Str.repeat(400)("t"),
 			},
 		])
 
@@ -171,14 +175,15 @@ describe("renderDiscordMessage", () => {
 		// rejects the whole message over it.
 		const wide = (index: number): ChatBlock => ({
 			...(chart(`https://img.maple.dev/${index}.png`) as Extract<ChatBlock, { kind: "chart" }>),
-			summary: "s".repeat(3000),
+			summary: Str.repeat(3000)("s"),
 		})
 		const payload = renderDiscordMessage([wide(0), wide(1), wide(2)])
 
 		expect(payload.embeds.length).toBeLessThan(3)
-		const spent = payload.embeds.reduce(
-			(total, embed) => total + (embed.title?.length ?? 0) + (embed.description?.length ?? 0),
+		const spent = Arr.reduce(
+			payload.embeds,
 			0,
+			(total, embed) => total + (embed.title?.length ?? 0) + (embed.description?.length ?? 0),
 		)
 		expect(spent).toBeLessThanOrEqual(6000)
 		// The chart a budget pushed out is still reported, as the line it would have had anyway.
@@ -191,10 +196,10 @@ describe("renderDiscordMessage", () => {
 
 	it("clamps a body the neutral cut underestimated", () => {
 		const payload = renderDiscordMessage([
-			{ kind: "prose", markdown: "x".repeat(MAX_CONTENT_CHARS + 50) },
+			{ kind: "prose", markdown: Str.repeat(MAX_CONTENT_CHARS + 50)("x") },
 		])
 		expect(payload.content).toHaveLength(MAX_CONTENT_CHARS)
-		expect(payload.content.endsWith("…")).toBe(true)
+		expect(Str.endsWith("…")(payload.content)).toBe(true)
 	})
 
 	it("renders an alert as a coloured embed, with the links as a field", () => {
@@ -212,7 +217,7 @@ describe("renderDiscordMessage", () => {
 					{ name: "Group", value: "`electric-sync`", inline: true },
 					{
 						name: "Links",
-						value: "[Open in Maple](https://app.maple.dev/alerts/1) · [✨ Ask Maple AI](https://app.maple.dev/chat)",
+						value: "[Open in Maple](https://app.maple.dev/alerts/1) · [View rule](https://app.maple.dev/alerts/rule_1)",
 						inline: false,
 					},
 				],

@@ -20,7 +20,7 @@ import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { SpanId, TraceId } from "@maple/domain"
-import { Schema, type DateTime } from "effect"
+import { Schema, type DateTime, Array as Arr } from "effect"
 import {
 	ErrorEvents,
 	ErrorEventsByTime,
@@ -78,12 +78,12 @@ const fingerprintHashEq = (expr: CH.Expr<number>, hash: string) => expr.eq(finge
 const isWarehouseFingerprint = (hash: string) => /^[0-9]+$/.test(hash)
 
 const fingerprintHashIn = (expr: CH.Expr<number>, hashes: readonly string[]) => {
-	const usable = hashes.filter(isWarehouseFingerprint)
+	const usable = Arr.filter(hashes, isWarehouseFingerprint)
 	// Dropping every hash is a real answer, not an error: the caller asked about
 	// fingerprints that cannot exist here, and the answer is no rows. Emitted as
 	// a false literal because `IN ()` is a ClickHouse syntax error.
 	if (usable.length === 0) return CH.rawCond("1 = 0")
-	return CH.inExprList(expr, usable.map(fingerprintHashLiteral))
+	return CH.inExprList(expr, Arr.map(usable, fingerprintHashLiteral))
 }
 
 /**
@@ -351,13 +351,26 @@ const TREE_SPAN_ATTR_KEYS = [
 	"cloudflare.colo",
 	"faas.invoked_region",
 	"cloudflare.outcome",
+	// The waterfall's technology icon: what the span called, beyond `db.system`.
+	"messaging.system",
+	"rpc.system",
+	"gen_ai.provider.name",
+	"gen_ai.system",
 ] as const
 
 /**
- * Resource attribute keys the trace-detail header reads (deployment env + commit).
- * Everything else in `ResourceAttributes` is loaded lazily by `spanDetailQuery`.
+ * Resource attribute keys the trace detail reads: the header's env and commit, and the
+ * runtime, SDK and platform behind each service's mark in the waterfall. Everything else in
+ * `ResourceAttributes` is loaded lazily by `spanDetailQuery`.
  */
-const TREE_RESOURCE_ATTR_KEYS = ["deployment.environment", "vcs.ref.head.revision"] as const
+const TREE_RESOURCE_ATTR_KEYS = [
+	"deployment.environment",
+	"vcs.ref.head.revision",
+	"process.runtime.name",
+	"telemetry.sdk.language",
+	"telemetry.sdk.name",
+	"cloud.platform",
+] as const
 
 /**
  * Hard cap on spans returned for one trace. A waterfall with more than a few
@@ -612,27 +625,35 @@ export function spanEventsByTraceQuery(opts: { traceId: string; limit?: number }
 // Trace timestamp probe — resolve any one span timestamp for a trace
 
 export interface TraceTimeProbeOutput {
+	readonly traceId: string
+	/** The trace's first span start. */
 	readonly timestamp: DateTime.Utc
+	/** The trace's last span start, so a window can cover a trace longer than its padding. */
+	readonly endTimestamp: DateTime.Utc
 }
 
 /**
- * Earliest span start of a trace, from `trace_index` (sorted `(OrgId, TraceId, ...)`:
- * one granule per daily partition). Callers with no timestamp (direct URL, shared
- * link, AI surface) derive a window from it so the real query prunes partitions.
- * No row when the trace is unknown.
+ * First and last span start of a trace, aggregated over its `trace_index` rows (one per
+ * service and 5-minute bucket; sorted `(OrgId, TraceId, ...)`, one granule per daily
+ * partition). No row when the trace is unknown.
  */
 export function traceTimeProbeQuery(opts: { traceId: string }) {
 	return from(TraceIndex)
-		.select(($) => ({ timestamp: $.MinTimestamp }))
+		.select(($) => ({
+			traceId: $.TraceId,
+			timestamp: CH.min_($.MinTimestamp),
+			endTimestamp: CH.max_($.MaxTimestamp),
+		}))
 		.where(($) => [$.TraceId.eq(opts.traceId), $.OrgId.eq(orgIdParam)])
-		.orderBy(["timestamp", "asc"])
+		.groupBy("traceId")
 		.limit(1)
 		.format("JSON")
 }
 
 /**
- * {@link traceTimeProbeQuery} bounded below by the `startTime` param, and with
- * `endBounded` also below the `endTime` param, so tiered probes never overlap.
+ * {@link traceTimeProbeQuery} over the rows whose last span is at or after the `startTime`
+ * param (with `endBounded`, whose first is before `endTime`), so tiered probes never overlap.
+ * Rows before the bound are not seen, so `timestamp` is a lower bound only past it.
  */
 export function recentTraceTimeProbeQuery(opts: { traceId: string; endBounded?: boolean }) {
 	return traceTimeProbeQuery(opts).where(($) => [

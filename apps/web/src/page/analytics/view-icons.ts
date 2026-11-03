@@ -1,7 +1,7 @@
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { Message, type FilterKey } from "./message"
 import type { Model } from "./model"
@@ -29,7 +29,7 @@ export const favicon = (h: H, model: Model, host: string, className?: string): H
 				h.Decoding("async"),
 				h.Referrerpolicy("no-referrer"),
 				h.OnError(Message.FailedFavicon({ host })),
-				h.Class(cn(ICON_BOX, "rounded-[3px] object-contain", className)),
+				h.Class(cn(ICON_BOX, "rounded-xs object-contain", className)),
 			])
 
 const ICON_KEYS: ReadonlyArray<FilterKey> = ["referrerHost", "host", "utmSource", "browserName", "deviceType"]

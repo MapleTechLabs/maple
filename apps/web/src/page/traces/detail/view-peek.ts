@@ -2,22 +2,23 @@ import { countLabel } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as DialogView from "../../../ui/dialog-view"
-import { errorState } from "../../../ui/error-state"
-import { httpSpanLabel } from "../../../ui/http-span-label"
-import * as Resizable from "../../../ui/resizable"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
-import { traceIdBadge } from "../../../ui/trace-badges"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { errorState } from "@maple/views/ui/error-state"
+import { httpSpanLabel } from "@maple/views/ui/http-span-label"
+import * as Resizable from "@maple/views/ui/resizable"
+import { skeleton, skeletonList, skeletonMeter } from "@maple/views/ui/skeleton"
+import { traceIdBadge } from "@maple/views/ui/trace-badges"
 import { sheetDetailHeader } from "../../kit/sheet-detail-header"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { loadedTrace, selectedSpanOf } from "./select"
-import * as SpanPanel from "./span-panel"
 import { anatomy, callout, traceViewTabs } from "./view"
 import { logsLink, replayLink } from "./view-header"
+import { spanPanelSubmodel } from "./view-span-panel"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // The trace page in the list's peek sheet. The sheet, its footer and the keys are the list's.
 
@@ -41,7 +42,7 @@ const loading = (h: H, model: Model, inputs: PeekViewInputs): ReadonlyArray<Html
 	h.div(
 		[h.Class("flex-1 space-y-3 overflow-hidden p-4")],
 		[
-			skeleton(h, "h-1.5 w-full rounded-full"),
+			skeletonMeter(h),
 			skeletonList(h, {
 				rows: 6,
 				className: "gap-0 rounded-md border",
@@ -91,11 +92,17 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 					dialogId: inputs.dialogId,
 					kind: "Trace",
 					title: [shortId(model.traceId, "trace")],
-					description: "Failed to load trace",
+					description: "Couldn't load trace",
 				}),
 				h.div(
 					[h.Class("flex-1 overflow-auto p-4")],
-					[errorState(h, { failure, title: "Failed to load trace details" })],
+					[
+						errorState(h, {
+							failure,
+							title: "Couldn't load trace details",
+							onRetry: Message.ClickedRetryHierarchy(),
+						}),
+					],
 				),
 			],
 			onData: (data) =>
@@ -110,7 +117,12 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 						return [
 							h.div(
 								[
-									h.Class(cn("flex min-h-0 flex-1 flex-col", refreshingClass(isWaiting))),
+									h.Class(
+										cn(
+											vstackClass({ grow: true, className: "min-h-0" }),
+											refreshingClass(isWaiting),
+										),
+									),
 									...(isWaiting ? [h.AriaBusy(true)] : []),
 								],
 								[
@@ -133,7 +145,8 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 												className: "max-w-[260px]",
 												onCopy: Message.ClickedCopyTraceId(),
 											}),
-											...[logsLink(h, model, trace), replayLink(h, model)].flatMap(
+											...Arr.flatMap(
+												[logsLink(h, model, trace), replayLink(h, model)],
 												(link) => (link === null ? [] : [link]),
 											),
 										],
@@ -157,20 +170,12 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 															? []
 															: [
 																	[
-																		h.submodel({
-																			slotId: `peek-span-panel:${selected.spanId}`,
-																			model: panel,
-																			view: SpanPanel.view,
-																			viewInputs: {
-																				timeZone: inputs.timeZone,
-																			},
-																			toParentMessage: (
-																				message: SpanPanel.Message,
-																			) =>
-																				Message.GotSpanPanelMessage({
-																					message,
-																				}),
-																		}),
+																		spanPanelSubmodel(
+																			h,
+																			model,
+																			`peek-span-panel:${selected.spanId}`,
+																			inputs.timeZone,
+																		),
 																	],
 																]),
 													],

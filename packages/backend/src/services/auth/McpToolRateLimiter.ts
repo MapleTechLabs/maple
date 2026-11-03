@@ -12,7 +12,7 @@ export const MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS = 10
  * arrive pre-scoped by the resolver (`key:<keyId>` / `user:<userId>`).
  */
 export class McpToolRateLimiter extends Context.Service<McpToolRateLimiter, RateLimiterApi>()(
-	"@maple/api/services/McpToolRateLimiter",
+	"@maple/backend/services/McpToolRateLimiter",
 	{
 		make: Effect.gen(function* () {
 			const limiter = yield* Effect.serviceOption(McpToolsRateLimit)

@@ -84,105 +84,100 @@ struct SkeletonList: View {
 
 // MARK: - Home
 
-/// Home's shape before Home's data: the status headline, two alert cards, the
-/// attention rows, and the two count rows — at the same paddings as
-/// `HomeContent`, so arriving data replaces rather than rearranges.
+/// Home's shape before Home's data: the four stat tiles, two alert cards and
+/// the attention table, at the same paddings as `HomeContent`, so arriving
+/// data replaces rather than rearranges.
 struct HomeSkeleton: View {
 	var body: some View {
 		VStack(alignment: .leading, spacing: 28) {
-			// StatusHeadline
-			VStack(alignment: .leading, spacing: 10) {
-				HStack(spacing: 10) {
-					Circle().fill(Token.muted).frame(width: 8, height: 8)
-					SkeletonBlock(width: 220, height: 22)
+			StatGrid(columns: 2) {
+				ForEach(0..<4, id: \.self) { index in
+					VStack(alignment: .leading, spacing: 10) {
+						SkeletonBlock(width: 64, height: 8, emphasis: 0.6)
+						SkeletonBlock(width: 72 + CGFloat(index % 2) * 16, height: 20)
+						SkeletonBlock(width: 110, height: 8, emphasis: 0.5)
+					}
+					.padding(12)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+					.overlay(
+						RoundedRectangle(cornerRadius: Token.Radius.lg)
+							.stroke(Token.border, lineWidth: Token.hairline)
+					)
 				}
-				SkeletonBlock(width: 168, height: 10, emphasis: 0.6)
-					.padding(.leading, 18)
 			}
-			.padding(.top, 12)
-			.padding(.horizontal, 16)
 
-			section(labelWidth: 72) {
+			section(labelWidth: 96) {
 				VStack(spacing: 8) {
 					ForEach(0..<2, id: \.self) { index in
 						card(index: index)
 					}
 				}
-				.padding(.horizontal, 16)
 			}
 
-			section(labelWidth: 96) {
+			section(labelWidth: 120) {
 				VStack(spacing: 0) {
 					ForEach(0..<3, id: \.self) { index in
-						HStack(spacing: 12) {
-							Rectangle().fill(.clear).frame(width: 2)
-							Circle().fill(Token.muted).frame(width: 8, height: 8)
+						if index > 0 { Hairline() }
+						HStack(spacing: 8) {
+							RoundedRectangle(cornerRadius: 3).fill(Token.muted).frame(width: 8, height: 8)
 							SkeletonBlock(width: 96 + CGFloat((index * 41) % 60), height: 12)
 							Spacer(minLength: 8)
-							SkeletonBlock(width: 52, height: 12)
+							SkeletonBlock(width: 44, height: 12)
 							SkeletonBlock(width: 52, height: 12)
 						}
-						.padding(.trailing, 16)
-						.frame(minHeight: 48)
-						Hairline()
+						.padding(.horizontal, 12)
+						.frame(minHeight: 44)
 					}
 				}
-			}
-
-			section(labelWidth: 84) {
-				VStack(spacing: 0) {
-					ForEach(0..<2, id: \.self) { index in
-						HStack(spacing: 8) {
-							SkeletonBlock(width: 28, height: 20)
-							SkeletonBlock(width: 128 + CGFloat(index * 24), height: 12)
-							Spacer(minLength: 0)
-						}
-						.padding(.horizontal, 16)
-						.frame(minHeight: 52)
-						Hairline()
-					}
-				}
+				.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+				.overlay(
+					RoundedRectangle(cornerRadius: Token.Radius.lg)
+						.stroke(Token.border, lineWidth: Token.hairline)
+				)
 			}
 		}
-		.padding(.top, 8)
+		.padding(.horizontal, 16)
+		.padding(.top, 20)
 		.padding(.bottom, 24)
 		.shimmering()
 		.accessibilityLabel("Loading")
 	}
 
 	private func section<Content: View>(labelWidth: CGFloat, @ViewBuilder content: () -> Content) -> some View {
-		VStack(alignment: .leading, spacing: 10) {
+		VStack(alignment: .leading, spacing: 12) {
 			SkeletonBlock(width: labelWidth, height: 10, emphasis: 0.6)
-				.padding(.horizontal, 16)
 			content()
 		}
 	}
 
-	/// The `IncidentCardView` outline: lane, title + age, service line, breach
+	/// The `IncidentCardView` outline: rail, title + age, service line, breach
 	/// beside a sparkline-sized block.
 	private func card(index: Int) -> some View {
-		HStack(alignment: .top, spacing: 0) {
-			Rectangle().fill(Token.muted).frame(width: 2)
-			VStack(alignment: .leading, spacing: 8) {
-				HStack {
-					SkeletonBlock(width: 140 + CGFloat(index * 30), height: 12)
-					Spacer(minLength: 4)
-					SkeletonBlock(width: 36, height: 10, emphasis: 0.6)
-				}
-				SkeletonBlock(width: 110, height: 10, emphasis: 0.6)
-				HStack(alignment: .bottom, spacing: 12) {
-					VStack(alignment: .leading, spacing: 4) {
-						SkeletonBlock(width: 56, height: 8, emphasis: 0.6)
-						SkeletonBlock(width: 96, height: 12)
-					}
-					Spacer(minLength: 0)
-					SkeletonBlock(width: 96, height: 28, emphasis: 0.5)
-				}
+		VStack(alignment: .leading, spacing: 10) {
+			HStack {
+				SkeletonBlock(width: 140 + CGFloat(index * 30), height: 12)
+				Spacer(minLength: 4)
+				SkeletonBlock(width: 28, height: 10, emphasis: 0.6)
 			}
-			.padding(.horizontal, 12)
-			.padding(.vertical, 12)
+			SkeletonBlock(width: 150, height: 14, emphasis: 0.6)
+			HStack(alignment: .bottom, spacing: 12) {
+				VStack(alignment: .leading, spacing: 4) {
+					SkeletonBlock(width: 56, height: 8, emphasis: 0.6)
+					SkeletonBlock(width: 96, height: 12)
+				}
+				Spacer(minLength: 0)
+				SkeletonBlock(width: 96, height: 28, emphasis: 0.5)
+			}
 		}
-		.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+		.padding(.leading, 16)
+		.padding(.trailing, 14)
+		.padding(.vertical, 14)
+		.background(Token.card)
+		.overlay(alignment: .leading) {
+			Rectangle().fill(Token.muted).frame(width: 2)
+		}
+		.clipShape(.rect(cornerRadius: Token.Radius.lg))
 		.overlay(
 			RoundedRectangle(cornerRadius: Token.Radius.lg)
 				.stroke(Token.border, lineWidth: Token.hairline)

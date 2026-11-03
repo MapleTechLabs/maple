@@ -12,6 +12,7 @@ import {
 	tablePresets,
 	type WidgetPresetDefinition,
 } from "@maple/web-data/dashboards/widget-presets"
+import { Array as Arr, String as Str } from "effect"
 
 // The widget picker's catalog: the three chart styles,
 // then one section per widget type that ships presets, in Type-picker order.
@@ -28,7 +29,7 @@ export type PickerSection = Readonly<{
 }>
 
 /** "Pie" is "Pies", "Note" is "Notes"; a label already plural ("Paths") stays. */
-const plural = (label: string) => (label.endsWith("s") ? label : `${label}s`)
+const plural = (label: string) => (Str.endsWith("s")(label) ? label : `${label}s`)
 
 const section = (
 	panel: keyof typeof WIDGET_TYPES,
@@ -64,8 +65,8 @@ export const CHART_STYLES = [
 export const PICKER_TABS: ReadonlyArray<Readonly<{ id: string; label: string }>> = [
 	{ id: "all", label: "All" },
 	{ id: "charts", label: "Charts" },
-	...PICKER_SECTIONS.map(({ id, label }) => ({ id, label })),
+	...Arr.map(PICKER_SECTIONS, ({ id, label }) => ({ id, label })),
 ]
 
 export const presetById = (presetId: string): WidgetPresetDefinition | undefined =>
-	PICKER_SECTIONS.flatMap((entry) => entry.presets).find((preset) => preset.id === presetId)
+	Arr.flatMap(PICKER_SECTIONS, (entry) => entry.presets).find((preset) => preset.id === presetId)

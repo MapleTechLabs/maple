@@ -4,7 +4,16 @@ import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import {
@@ -12,6 +21,7 @@ import {
 	IntegrationsRevokedError,
 	OrgId,
 	UserId,
+	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -29,10 +39,15 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { HazelOAuthService, type HazelOAuthServiceApi } from "@maple/backend/services/auth/HazelOAuthService"
+import {
+	LinearOAuthService,
+	type LinearOAuthServiceApi,
+} from "@maple/backend/services/auth/LinearOAuthService"
+import { LinearIssueTracker } from "@maple/backend/services/alerts/LinearIssueTracker"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService, type OrgMembersServiceApi } from "@maple/backend/services/org/OrgMembersService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -79,7 +94,7 @@ const warehouseStub = makeWarehouseServiceStub({
 
 const makeHarness = (
 	warehouseService: WarehouseQueryServiceApi = warehouseStub,
-	hazelOAuthService?: HazelOAuthServiceApi,
+	linearOAuthService?: LinearOAuthServiceApi,
 	orgMembersService?: OrgMembersServiceApi,
 ) => {
 	const testDb = createTestDb(createdDbs)
@@ -102,10 +117,14 @@ const makeHarness = (
 		schedulerEvalTimeoutMs: () => 15_000,
 		schedulerSpreadMs: () => 0,
 	})
-	const hazelOAuthLive =
-		hazelOAuthService === undefined
-			? HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
-			: Layer.succeed(HazelOAuthService, hazelOAuthService)
+	const linearOAuthLive =
+		linearOAuthService === undefined
+			? LinearOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
+			: Layer.succeed(LinearOAuthService, linearOAuthService)
+	const linearIssuesLive = Layer.effect(LinearIssueTracker, LinearIssueTracker.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(Layer.mergeAll(linearOAuthLive, testDb.layer)),
+	)
 	const emailLive = Layer.succeed(EmailService, {
 		isConfigured: false,
 		send: () => Effect.void,
@@ -126,7 +145,15 @@ const makeHarness = (
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
-			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
+			Layer.mergeAll(
+				envLive,
+				testDb.layer,
+				runtimeLive,
+				linearOAuthLive,
+				linearIssuesLive,
+				emailLive,
+				orgMembersLive,
+			),
 		),
 	)
 	const alertReadModelsLive = Layer.effect(AlertReadModelsService, AlertReadModelsService.make).pipe(
@@ -152,7 +179,8 @@ const makeHarness = (
 				queryEngineLive,
 				warehouseLive,
 				runtimeLive,
-				hazelOAuthLive,
+				linearOAuthLive,
+				linearIssuesLive,
 				emailLive,
 				orgMembersLive,
 				orgChSettingsLive,
@@ -160,6 +188,7 @@ const makeHarness = (
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 			),
 		),
 	)
@@ -417,9 +446,10 @@ describe("v2 alerts over HTTP", () => {
 		expect(second.body.data).toHaveLength(45)
 		expect(second.body.has_more).toBe(false)
 		expect(second.body.next_cursor).toBeNull()
-		expect(new Set([...first.body.data, ...second.body.data].map((item) => item.id)).size).toBe(105)
+		expect(new Set(Arr.map([...first.body.data, ...second.body.data], (item) => item.id)).size).toBe(105)
 		expect(
-			[...first.body.data, ...second.body.data].some(
+			Arr.some(
+				[...first.body.data, ...second.body.data],
 				(item) => item.delivery_key === "foreign-delivery",
 			),
 		).toBe(false)
@@ -548,6 +578,48 @@ describe("v2 alerts over HTTP", () => {
 			code: "alert_rule_destination_not_found",
 			param: "destination_ids",
 		})
+
+		await harness.dispose()
+	})
+
+	it("keeps a rule's check interval through PATCH until it is set or cleared", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Ops hook",
+			url: "https://example.com/hooks/maple",
+		})
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Hourly error rate",
+			signal_type: "error_rate",
+			severity: "warning",
+			comparator: "gt",
+			threshold: 0.05,
+			window_minutes: 60,
+			evaluation_interval_minutes: 30,
+			destination_ids: [destination.body.id],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body.evaluation_interval_minutes).toBe(30)
+
+		const renamed = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			name: "Renamed",
+		})
+		expect(renamed.body.evaluation_interval_minutes).toBe(30)
+
+		const tooShort = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			window_minutes: 15,
+		})
+		expect(tooShort.status).toBe(400)
+		expect(JSON.stringify(tooShort.body)).toContain("evaluationIntervalMinutes")
+
+		const cleared = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			window_minutes: 15,
+			evaluation_interval_minutes: null,
+		})
+		expect(cleared.status, JSON.stringify(cleared.body)).toBe(200)
+		expect(cleared.body.evaluation_interval_minutes).toBeNull()
 
 		await harness.dispose()
 	})
@@ -794,7 +866,7 @@ describe("v2 alerts over HTTP", () => {
 	it("previews a raw SQL alert for alerts:write keys", async () => {
 		const harness = makeHarness({
 			...warehouseStub,
-			rawSqlQuery: () => Effect.succeed([{ value: 42, samples: 20 }]),
+			rawSqlQuery: () => Effect.succeed([{ bucket: "2026-01-01 00:10:00", value: 42, samples: 20 }]),
 		})
 		const key = await harness.bootstrapKey(["alerts:write"])
 		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
@@ -803,7 +875,7 @@ describe("v2 alerts over HTTP", () => {
 				severity: "warning",
 				signal_type: "raw_query",
 				raw_query_sql:
-					"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					"SELECT $__timeGroup(Timestamp) AS bucket, count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY bucket",
 				raw_query_reducer: "max",
 				comparator: "gt",
 				threshold: 10,
@@ -816,6 +888,52 @@ describe("v2 alerts over HTTP", () => {
 		expect(response.status).toBe(200)
 		expect(response.body.object).toBe("alert_rule.preview")
 		expect(response.body.series.length).toBeGreaterThan(0)
+		// A 5-minute window is checked every minute, whose limit is 5s.
+		expect(response.body.query_timing).toMatchObject({
+			failure: null,
+			interval_minutes: 1,
+			limit_ms: 5000,
+			probe_limit_ms: 25000,
+		})
+		expect(response.body.query_timing.fits_interval_minutes).toContain(1)
+		await harness.dispose()
+	})
+
+	it("previews a raw SQL alert too heavy to chart with its one-check timing and series_failure", async () => {
+		// The chart reads the requested 2026 range; the timing probe reads the latest window.
+		const harness = makeHarness({
+			...warehouseStub,
+			rawSqlQuery: (_tenant, sql) =>
+				Str.includes("2026-01-01")(sql)
+					? Effect.fail(
+							new WarehouseQuotaExceededError({
+								message: "Memory limit exceeded",
+								pipeName: "rawSqlQuery",
+								setting: "max_memory_usage",
+							}),
+						)
+					: Effect.succeed([{ value: 1, samples: 1 }]),
+		})
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
+			rule: {
+				name: "Heavy raw preview",
+				severity: "warning",
+				signal_type: "raw_query",
+				raw_query_sql:
+					"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				comparator: "gt",
+				threshold: 10,
+				window_minutes: 5,
+				destination_ids: [],
+			},
+			start_time: "2026-01-01T00:00:00.000Z",
+			end_time: "2026-01-01T00:30:00.000Z",
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.series_failure).toBe("query_too_much_memory")
+		expect(response.body.series).toEqual([])
+		expect(response.body.query_timing).toMatchObject({ failure: null })
 		await harness.dispose()
 	})
 
@@ -824,7 +942,7 @@ describe("v2 alerts over HTTP", () => {
 			const timestamp = new Date(Date.UTC(2026, 0, 1) + (2_005 - index) * 1_000).toISOString()
 			return {
 				timestamp,
-				groupKey: `service=api-${String(index).padStart(4, "0")}`,
+				groupKey: `service=api-${Str.padStart(4, "0")(String(index))}`,
 				status: "healthy",
 				signalType: "error_rate",
 				comparator: "gt",
@@ -853,8 +971,10 @@ describe("v2 alerts over HTTP", () => {
 				const limit = Number(/LIMIT\s+(\d+)/i.exec(compiledQueryOf(compiled).sql)?.[1] ?? 100)
 				const before = /Timestamp < '([^']+)'/i.exec(compiledQueryOf(compiled).sql)?.[1]
 				const status = /Status = '([^']+)'/i.exec(compiledQueryOf(compiled).sql)?.[1]
-				const beforeMs = before === undefined ? undefined : Date.parse(`${before.replace(" ", "T")}Z`)
-				const rows = checkRows.filter(
+				const beforeMs =
+					before === undefined ? undefined : Date.parse(`${Str.replace(" ", "T")(before)}Z`)
+				const rows = Arr.filter(
+					checkRows,
 					(row) =>
 						(beforeMs === undefined || Date.parse(row.timestamp) < beforeMs) &&
 						(status === undefined || row.status === status),
@@ -908,33 +1028,29 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("preserves the exact Hazel integration failure on destination create", async () => {
-		const unavailable = () => Effect.die("unexpected Hazel OAuth method")
-		const hazelOAuth: HazelOAuthServiceApi = {
+	it("preserves the exact Linear integration failure on destination create", async () => {
+		const unavailable = () => Effect.die("unexpected Linear OAuth method")
+		const linearOAuth: LinearOAuthServiceApi = {
 			startConnect: unavailable,
 			completeConnect: unavailable,
 			getStatus: unavailable,
-			getValidAccessToken: unavailable,
-			listOrganizations: unavailable,
-			listChannels: unavailable,
-			createChannelWebhook: () =>
+			withAccessToken: unavailable,
+			listTeams: unavailable,
+			getTeam: () =>
 				Effect.fail(
 					new IntegrationsRevokedError({
-						message: "Hazel rejected the access token — reconnect required",
+						message: "Linear rejected the access token, reconnect required",
 					}),
 				),
 			disconnect: unavailable,
 		}
-		const harness = makeHarness(warehouseStub, hazelOAuth)
+		const harness = makeHarness(warehouseStub, linearOAuth)
 		const key = await harness.bootstrapKey(["alerts:write"])
 
 		const response = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
-			type: "hazel-oauth",
-			name: "Hazel incidents",
-			hazel_organization_id: "hazel-org",
-			hazel_organization_name: "Maple",
-			hazel_channel_id: "hazel-channel",
-			hazel_channel_name: "incidents",
+			type: "linear",
+			name: "Linear incidents",
+			team_id: "9cfb482a-81e3-4154-b5b9-2c805e70a02d",
 		})
 
 		expect(response.status).toBe(401)

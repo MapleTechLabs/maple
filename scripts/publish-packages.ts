@@ -13,19 +13,35 @@ import { appendFileSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { Glob } from "bun"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
-interface Manifest {
-	readonly name: string
+// Private apps carry no `version`; only publishable manifests must.
+const WorkspaceManifest = Schema.Struct({
+	name: Schema.String,
+	version: Schema.optionalKey(Schema.String),
+	private: Schema.optionalKey(Schema.Boolean),
+	publishConfig: Schema.optionalKey(Schema.Struct({ access: Schema.optionalKey(Schema.String) })),
+	dependencies: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+	peerDependencies: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+})
+type WorkspaceManifest = typeof WorkspaceManifest.Type
+
+interface Manifest extends WorkspaceManifest {
 	readonly version: string
-	readonly private?: boolean
-	readonly publishConfig?: { readonly access?: string }
-	readonly dependencies?: Readonly<Record<string, string>>
-	readonly peerDependencies?: Readonly<Record<string, string>>
 }
 
-interface Candidate {
+const decodeWorkspaceManifest = Schema.decodeUnknownSync(Schema.fromJsonString(WorkspaceManifest))
+const decodeChangesetConfig = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ ignore: Schema.optionalKey(Schema.Array(Schema.String)) })),
+)
+const decodeRootManifest = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Struct({ workspaces: Schema.Array(Schema.String) })),
+)
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+interface Candidate<M extends WorkspaceManifest = Manifest> {
 	readonly dir: string
-	readonly manifest: Manifest
+	readonly manifest: M
 }
 
 const root = resolve(import.meta.dir, "..")
@@ -49,26 +65,24 @@ const fail = (message: string): never => {
 	process.exit(1)
 }
 
-const changesetConfig: { readonly ignore?: ReadonlyArray<string> } = JSON.parse(
-	readFileSync(join(root, ".changeset/config.json"), "utf8"),
-)
+const changesetConfig = decodeChangesetConfig(readFileSync(join(root, ".changeset/config.json"), "utf8"))
 const ignored = new Set(changesetConfig.ignore ?? [])
-const rootManifest: { readonly workspaces: ReadonlyArray<string> } = JSON.parse(
-	readFileSync(join(root, "package.json"), "utf8"),
-)
+const rootManifest = decodeRootManifest(readFileSync(join(root, "package.json"), "utf8"))
 
-const workspaces: ReadonlyArray<Candidate> = rootManifest.workspaces.flatMap((pattern) =>
-	Array.from(new Glob(`${pattern}/package.json`).scanSync({ cwd: root })).map((file) => ({
-		dir: join(root, file, ".."),
-		manifest: JSON.parse(readFileSync(join(root, file), "utf8")),
-	})),
+const workspaces: ReadonlyArray<Candidate<WorkspaceManifest>> = Arr.flatMap(
+	rootManifest.workspaces,
+	(pattern) =>
+		Arr.map(Array.from(new Glob(`${pattern}/package.json`).scanSync({ cwd: root })), (file) => ({
+			dir: join(root, file, ".."),
+			manifest: decodeWorkspaceManifest(readFileSync(join(root, file), "utf8")),
+		})),
 )
 
 const isOnNpm = ({ name, version }: Manifest) =>
-	run(["npm", "view", `${name}@${version}`, "version"], root, true).stdout.trim() === version
+	Str.trim(run(["npm", "view", `${name}@${version}`, "version"], root, true).stdout) === version
 
 const isTagged = (tag: string) =>
-	run(["git", "ls-remote", "--tags", "origin", `refs/tags/${tag}`], root, true).stdout.trim() !== ""
+	Str.trim(run(["git", "ls-remote", "--tags", "origin", `refs/tags/${tag}`], root, true).stdout) !== ""
 
 const outputFile = process.env.CHANGESETS_OUTPUT
 
@@ -78,16 +92,22 @@ const reportRelease = ({ name, version }: Manifest) => {
 	if (!run(["git", "tag", "-a", tag, "-m", tag]).ok) fail(`git tag failed for ${tag}`)
 	console.log(`New tag: ${tag}`)
 	if (outputFile) {
-		appendFileSync(outputFile, `${JSON.stringify({ type: "git-tag", tag, packageName: name })}\n`)
+		appendFileSync(outputFile, `${encodeJson({ type: "git-tag", tag, packageName: name })}\n`)
 	}
 }
 
-const publishable = workspaces.filter(
-	({ manifest }) =>
-		manifest.private !== true &&
-		manifest.publishConfig?.access === "public" &&
-		!ignored.has(manifest.name),
-)
+const publishable: ReadonlyArray<Candidate> = Arr.flatMap(workspaces, ({ dir, manifest }) => {
+	if (
+		manifest.private === true ||
+		manifest.publishConfig?.access !== "public" ||
+		ignored.has(manifest.name)
+	)
+		return []
+	const { version } = manifest
+	return version === undefined
+		? fail(`${manifest.name} is public but has no version`)
+		: [{ dir, manifest: { ...manifest, version } }]
+})
 const [published, pending] = publishable.reduce<[Array<Candidate>, Array<Candidate>]>(
 	([onNpm, notOnNpm], candidate) =>
 		isOnNpm(candidate.manifest) ? [[...onNpm, candidate], notOnNpm] : [onNpm, [...notOnNpm, candidate]],
@@ -109,17 +129,28 @@ if (pending.length === 0) {
 
 // A package goes after any pending package it depends on, so `workspace:*` resolves to a
 // version that already exists on npm by the time its dependent is published.
-const pendingNames = new Set(pending.map(({ manifest }) => manifest.name))
+const pendingNames = new Set(Arr.map(pending, ({ manifest }) => manifest.name))
 const internalDeps = ({ manifest }: Candidate) =>
-	Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies }).filter((dep) =>
+	Arr.filter(Rec.keys({ ...manifest.dependencies, ...manifest.peerDependencies }), (dep) =>
 		pendingNames.has(dep),
 	).length
 const ordered = pending.toSorted((a, b) => internalDeps(a) - internalDeps(b))
 
-console.log(`Publishing: ${ordered.map(({ manifest }) => `${manifest.name}@${manifest.version}`).join(", ")}`)
+console.log(
+	`Publishing: ${Arr.join(
+		Arr.map(ordered, ({ manifest }) => `${manifest.name}@${manifest.version}`),
+		", ",
+	)}`,
+)
 
 if (
-	!run(["bunx", "turbo", "run", "build", ...ordered.map(({ manifest }) => `--filter=${manifest.name}`)]).ok
+	!run([
+		"bunx",
+		"turbo",
+		"run",
+		"build",
+		...Arr.map(ordered, ({ manifest }) => `--filter=${manifest.name}`),
+	]).ok
 ) {
 	fail("build failed")
 }
@@ -130,7 +161,7 @@ for (const { dir, manifest } of ordered) {
 	const tag = `${manifest.name}@${manifest.version}`
 	const tarball = join(
 		packDir,
-		`${manifest.name.replace("@", "").replace("/", "-")}-${manifest.version}.tgz`,
+		`${Str.replace("/", "-")(Str.replace("@", "")(manifest.name))}-${manifest.version}.tgz`,
 	)
 	if (!run(["bun", "pm", "pack", "--filename", tarball], dir).ok) fail(`bun pm pack failed for ${tag}`)
 	const publishArgs = ["npm", "publish", tarball, "--access", "public"]
@@ -139,7 +170,10 @@ for (const { dir, manifest } of ordered) {
 	process.stderr.write(publish.stderr)
 	// `npm view` can serve a stale miss for a package created minutes ago, so a version published
 	// out of band still lands here; npm rejecting it as a duplicate means it only needs its tag.
-	if (!publish.ok && !publish.stderr.includes("cannot publish over the previously published versions")) {
+	if (
+		!publish.ok &&
+		!Str.includes("cannot publish over the previously published versions")(publish.stderr)
+	) {
 		fail(`npm publish failed for ${tag}`)
 	}
 	if (!publish.ok) console.log(`${tag} is already on npm, tagging only.`)

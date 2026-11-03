@@ -3,7 +3,7 @@ import {
 	PLANETSCALE_STORAGE_RUNWAY_SQL,
 	PLANETSCALE_STORAGE_USED_SQL,
 } from "@maple/query-engine-integrations"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { AlertTemplateDefinition } from "./types"
 import { templateTag } from "./types"
 
@@ -40,7 +40,7 @@ const DATABASE_PARAM = {
 const whereFor = (database: string | undefined) =>
 	database === undefined || database === ""
 		? ""
-		: `attr.planetscale_database_name = '${database.replace(/'/g, "''")}'`
+		: `attr.planetscale_database_name = '${Str.replace(/'/g, "''")(database)}'`
 
 const metricsDraft = (input: {
 	readonly name: string
@@ -90,6 +90,8 @@ const REPLICA_LAG_METRICS = [
 const CONNECTION_METRICS = [
 	{ metric: "planetscale_edge_active_connections", label: "MySQL" },
 	{ metric: "planetscale_edge_postgres_active_connections", label: "Postgres" },
+	// Connections without a service token are polled from the metrics API under this name.
+	{ metric: "planetscale_api_connections", label: "API" },
 ] as const
 
 const suffix = (database: string | undefined) =>
@@ -115,7 +117,8 @@ export const PLANETSCALE_ALERT_TEMPLATES: ReadonlyArray<AlertTemplateDefinition>
 			},
 		],
 		build: ({ values, destinationIds, enabled }) =>
-			REPLICA_LAG_METRICS.map(
+			Arr.map(
+				REPLICA_LAG_METRICS,
 				({ metric, label }) =>
 					new AlertRuleUpsertRequest({
 						name: `PlanetScale replica lag (${label})${suffix(values.database)}`,
@@ -146,7 +149,7 @@ export const PLANETSCALE_ALERT_TEMPLATES: ReadonlyArray<AlertTemplateDefinition>
 		category: "infrastructure",
 		tags: ["planetscale", "database", "connections"],
 		requirement: REQUIREMENT,
-		requiredMetricPrefixes: ["planetscale_edge_active_connections"],
+		requiredMetricPrefixes: ["planetscale_"],
 		parameters: [
 			DATABASE_PARAM,
 			{
@@ -162,7 +165,8 @@ export const PLANETSCALE_ALERT_TEMPLATES: ReadonlyArray<AlertTemplateDefinition>
 			},
 		],
 		build: ({ values, destinationIds, enabled }) =>
-			CONNECTION_METRICS.map(
+			Arr.map(
+				CONNECTION_METRICS,
 				({ metric, label }) =>
 					new AlertRuleUpsertRequest({
 						name: `PlanetScale connections (${label})${suffix(values.database)}`,
@@ -276,12 +280,11 @@ export const PLANETSCALE_ALERT_TEMPLATES: ReadonlyArray<AlertTemplateDefinition>
 			},
 		],
 		build: ({ values, destinationIds, enabled }) =>
-			(
+			Arr.map(
 				[
 					{ metric: "planetscale_pods_cpu_util_percentages", label: "CPU" },
 					{ metric: "planetscale_pods_mem_util_percentages", label: "memory" },
-				] as const
-			).map(
+				] as const,
 				({ metric, label }) =>
 					new AlertRuleUpsertRequest({
 						name: `PlanetScale pod ${label}${suffix(values.database)}`,

@@ -1,5 +1,8 @@
-import { Schema } from "effect"
-import { maskLiteralsAndComments, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
+import { Schema, Array as Arr, String as Str } from "effect"
+import { maskLiteralsAndComments } from "@maple-dev/effect-orm/sql"
+
+/** Blanks literals and comments, keeping positions, so text searches only see SQL. */
+export { maskLiteralsAndComments }
 
 // The static half of raw-SQL validation: everything that can be decided from the
 // query text alone, without an org, a time window, or a granularity.
@@ -51,11 +54,10 @@ const DENY_LIST = [
 	"GRANT",
 	"REVOKE",
 	"OPTIMIZE",
-	"SYSTEM",
 	"KILL",
 ] as const
 
-const DENY_LIST_RE = new RegExp(`\\b(${DENY_LIST.join("|")})\\b`, "i")
+const DENY_LIST_RE = new RegExp(`\\b(${Arr.join(DENY_LIST, "|")})\\b`, "i")
 
 /**
  * `INTO OUTFILE` is a SELECT terminal clause, so it slips past the deny list's
@@ -64,30 +66,38 @@ const DENY_LIST_RE = new RegExp(`\\b(${DENY_LIST.join("|")})\\b`, "i")
 const INTO_OUTFILE_RE = /\bINTO\s+OUTFILE\b/i
 
 /**
- * ClickHouse table functions that read from somewhere other than this warehouse.
+ * Table functions that read only generated, in-memory data and reach nothing
+ * outside the query, so they are the one call form allowed in a table position.
  *
- * Everything above this line polices what *kind of statement* a query is; none
- * of it constrains where a SELECT reads from. `SELECT * FROM url('http://…')`
- * is a perfectly well-formed single SELECT, and it makes the ClickHouse server —
- * not the API — issue the request, so per-org credentials and the row cap do not
- * touch it. On BYO and self-hosted clusters that is a working SSRF primitive
- * with the response handed back as rows.
+ * Everything else written as `name(...)` after FROM/JOIN reaches outside this
+ * warehouse: `url`, `s3`, `remote`, `file`, `mysql`, `loop`, `view`, and the
+ * many lake-format and object-store readers ClickHouse keeps adding. On BYO and
+ * self-hosted clusters that is a working SSRF/file-read primitive with the
+ * response handed back as rows, untouched by per-org credentials or the row cap.
  *
- * A deny list is the wrong shape long-term — only an allow list of Maple's own
- * tables closes the class, which needs a parser. Until then the shape that
- * matters is *prefix* matching, below: ClickHouse suffixes these families freely
- * (`iceberg`, `icebergS3`, `icebergAzure`, `icebergS3Cluster`, `deltaLakeAzure`,
- * `s3Cluster`), so an exact-name list goes stale the moment a variant lands —
- * and goes stale silently, because the check keeps passing. No ClickHouse scalar
- * function begins with any of these, which is what makes the prefix safe.
+ * An allow list is the only shape that cannot go stale: a new reader family is
+ * refused the day it lands, with no regex to keep in step. The check runs over a
+ * token stream (comments stripped, strings and quoted identifiers lexed as the
+ * server lexes them), so a quoted, commented, cased or Unicode-quoted spelling
+ * of a blocked name resolves to the same token and is refused all the same.
  */
-const DISALLOWED_FUNCTION_PREFIXES = [
+const ALLOWED_TABLE_FUNCTIONS = new Set(["numbers", "generateseries"])
+
+// Defense in depth: known readers are refused as a call in ANY position, so a
+// table position the walker misses still cannot reach them. Families are
+// prefixes (ClickHouse suffixes them: `icebergS3Cluster`); the rest are exact
+// because they prefix real scalars (`URLHash`, `hiveHash`, `generateRandomStructure`).
+// `file` is also a scalar, and it reads the server's files, so it stays here.
+const READER_PREFIXES = [
 	"iceberg",
-	"deltaLake",
+	"deltalake",
 	"hudi",
+	"paimon",
 	"s3",
+	"cosn",
+	"oss",
 	"gcs",
-	"azureBlobStorage",
+	"azureblobstorage",
 	"hdfs",
 	"remote",
 	"cluster",
@@ -99,34 +109,335 @@ const DISALLOWED_FUNCTION_PREFIXES = [
 	"odbc",
 	"jdbc",
 	"executable",
-	"arrowFlight",
+	"arrowflight",
 	"ytsaurus",
-] as const
-
-/**
- * Names that must match *exactly*, because each is a prefix of a legitimate
- * scalar function: `url` would take `URLHash` and `URLPathHierarchy`, `file`
- * would take `filesystemAvailable`, `hive` would take `hiveHash`, `dictionary`
- * would take nothing today but sits beside the whole `dict*` family.
- */
-const DISALLOWED_FUNCTION_NAMES = [
+	"mergetree",
+]
+const READER_NAMES = new Set([
 	"url",
-	"urlCluster",
+	"urlcluster",
 	"file",
-	"fileCluster",
+	"filecluster",
 	"input",
 	"dictionary",
 	"hive",
-] as const
+	"merge",
+	"loop",
+	"view",
+	"generaterandom",
+	"timeseriesdata",
+	"timeseriesmetrics",
+	"timeseriestags",
+	"primes",
+])
+const isReaderName = (name: string): boolean =>
+	READER_NAMES.has(name) || Arr.some(READER_PREFIXES, (prefix) => Str.startsWith(prefix)(name))
 
-// Anchored on the opening paren so a *column* named `file`, or a scalar function
-// like `urlHash`, is untouched — only the call form is a table function. The
-// leading `\b` is what keeps the exact names exact: there is no word boundary
-// inside `urlHash`, so its `url` prefix is never a match start.
-const DISALLOWED_FUNCTION_RE = new RegExp(
-	`\\b(${DISALLOWED_FUNCTION_PREFIXES.join("|")})[A-Za-z0-9_]*\\s*\\(|\\b(${DISALLOWED_FUNCTION_NAMES.join("|")})\\s*\\(`,
-	"i",
-)
+interface SqlToken {
+	readonly v: string
+	readonly ident: boolean
+}
+
+const IDENT_START_RE = /[A-Za-z_]/
+const IDENT_PART_RE = /[A-Za-z0-9_]/
+// Identifier quotes, including the Unicode double quotes ClickHouse accepts.
+const QUOTE_CLOSE = new Map([
+	["`", "`"],
+	['"', '"'],
+	["“", "”"],
+])
+const SPACE_RE = /\s/
+const HEX2_RE = /^[0-9A-Fa-f]{2}$/
+// ClickHouse decodes these escapes in a quoted identifier; any other `\c` keeps its backslash.
+const IDENT_ESCAPES = new Map([
+	["\\", "\\"],
+	["'", "'"],
+	['"', '"'],
+	["`", "`"],
+	["/", "/"],
+	["=", "="],
+	["b", "\b"],
+	["f", "\f"],
+	["n", "\n"],
+	["r", "\r"],
+	["t", "\t"],
+	["0", "\0"],
+	["a", "\x07"],
+	["v", "\v"],
+	["e", "\x1b"],
+])
+
+/**
+ * ClickHouse SQL as significant tokens: whitespace, `--`/`#`/`/* *\/` comments and
+ * string literals dropped; identifiers (quoted or bare) lowercased; every other
+ * character its own single-char token so a `(`'s left neighbour is always known.
+ * A pure lexer, so it uses local indices rather than Effect primitives.
+ */
+const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
+	const tokens: Array<SqlToken> = []
+	const n = sql.length
+	let i = 0
+	while (i < n) {
+		const c = sql.charAt(i)
+		if (SPACE_RE.test(c)) {
+			i++
+		} else if ((c === "-" && sql.charAt(i + 1) === "-") || c === "#") {
+			const nl = sql.indexOf("\n", i)
+			i = nl === -1 ? n : nl
+		} else if (c === "/" && sql.charAt(i + 1) === "*") {
+			const end = sql.indexOf("*/", i + 2)
+			i = end === -1 ? n : end + 2
+		} else if (c === "'") {
+			i++
+			while (i < n) {
+				const d = sql.charAt(i)
+				if (d === "\\") {
+					i += 2
+				} else if (d === "'" && sql.charAt(i + 1) === "'") {
+					// A doubled quote escapes itself.
+					i += 2
+				} else if (d === "'") {
+					i++
+					break
+				} else {
+					i++
+				}
+			}
+		} else if (QUOTE_CLOSE.has(c)) {
+			const close = QUOTE_CLOSE.get(c) ?? c
+			i++
+			let body = ""
+			while (i < n) {
+				const d = sql.charAt(i)
+				if (d === "\\") {
+					// Decoded as the server does, so `\x73ystem` and `sys\Ntem` both read as `system`.
+					const e = sql.charAt(i + 1)
+					const hex = Str.slice(i + 2, i + 4)(sql)
+					if ((e === "x" || e === "X") && HEX2_RE.test(hex)) {
+						body += String.fromCharCode(Number.parseInt(hex, 16))
+						i += 4
+					} else {
+						body += e === "N" ? "" : (IDENT_ESCAPES.get(e) ?? `\\${e}`)
+						i += 2
+					}
+				} else if (d === close) {
+					if (close !== "”" && sql.charAt(i + 1) === close) {
+						body += d
+						i += 2
+					} else {
+						i++
+						break
+					}
+				} else {
+					body += d
+					i++
+				}
+			}
+			tokens.push({ v: Str.toLowerCase(body), ident: true })
+		} else if (IDENT_START_RE.test(c)) {
+			let j = i + 1
+			while (j < n && IDENT_PART_RE.test(sql.charAt(j))) j++
+			tokens.push({ v: Str.toLowerCase(Str.slice(i, j)(sql)), ident: true })
+			i = j
+		} else {
+			tokens.push({ v: c, ident: false })
+			i++
+		}
+	}
+	return tokens
+}
+
+// Keywords that end the FROM list, so a later comma no longer introduces a table.
+// FINAL, SAMPLE, ON and USING qualify one item; a comma after them is a new table.
+const CLAUSE_BOUNDARY = new Set([
+	"where",
+	"prewhere",
+	"group",
+	"order",
+	"having",
+	"limit",
+	"offset",
+	"settings",
+	"union",
+	"except",
+	"intersect",
+	"window",
+	"qualify",
+	"format",
+	"into",
+	"select",
+	"with",
+])
+
+/**
+ * The first disallowed table function, or null. Any known reader called anywhere
+ * is refused. Beyond that, a table source is a token right after FROM/JOIN, a
+ * comma in the FROM list, or a `(` in either position; when it is
+ * an identifier immediately followed by `(` it is a table function, and only the
+ * in-memory generators are allowed. `FROM (SELECT ...)` is a subquery, a bare
+ * `FROM traces` a table, and `urlHash(...)` or `EXTRACT(x FROM y)` sit in an
+ * expression (inside a call paren), never in a table position.
+ */
+const disallowedTableFunction = (sql: string): string | null => {
+	const tokens = tokenizeSql(sql)
+	const parenKind: Array<"call" | "sub" | "group"> = []
+	// The enclosing FROM list survives a paren: a subquery closing must not end it.
+	const outerFromList: Array<number> = []
+	let depth = 0
+	let armed = false
+	let fromListDepth = -1
+	for (let i = 0; i < tokens.length; i++) {
+		const t = tokens[i]
+		if (!t.ident) {
+			if (t.v === "(") {
+				const prev = tokens[i - 1]
+				const next = tokens[i + 1]
+				// FROM-first queries (`(FROM t SELECT ...)`) are subqueries too.
+				const sub =
+					next?.ident === true && (next.v === "select" || next.v === "with" || next.v === "from")
+				const call = prev?.ident === true && prev.v !== "in" && !armed
+				parenKind.push(sub ? "sub" : call ? "call" : "group")
+				depth++
+				outerFromList.push(fromListDepth)
+				// A subquery opens its own FROM list; `FROM (x(...))` keeps the table position.
+				if (sub) armed = false
+			} else if (t.v === ")") {
+				parenKind.pop()
+				depth--
+				fromListDepth = outerFromList.pop() ?? -1
+				armed = false
+			} else if (t.v === "," && depth === fromListDepth) {
+				armed = true
+			} else {
+				armed = false
+			}
+			continue
+		}
+		const after = tokens[i + 1]
+		if (after !== undefined && !after.ident && after.v === "(" && isReaderName(t.v)) return t.v
+		if (t.v === "from" || (t.v === "join" && (tokens[i - 1]?.v ?? "") !== "array")) {
+			if (parenKind[parenKind.length - 1] !== "call") {
+				armed = true
+				fromListDepth = depth
+			}
+			continue
+		}
+		if (armed) {
+			let j = i
+			let dotted = false
+			while (tokens[j + 1]?.v === "." && tokens[j + 2]?.ident === true) {
+				j += 2
+				dotted = true
+			}
+			const next = tokens[j + 1]
+			if (
+				next !== undefined &&
+				!next.ident &&
+				next.v === "(" &&
+				(dotted || !ALLOWED_TABLE_FUNCTIONS.has(t.v))
+			) {
+				return dotted
+					? Arr.join(
+							Arr.map(tokens.slice(i, j + 1), (x) => x.v),
+							"",
+						)
+					: t.v
+			}
+			armed = false
+			i = j
+			continue
+		}
+		if (CLAUSE_BOUNDARY.has(t.v) && depth === fromListDepth) fromListDepth = -1
+	}
+	return null
+}
+
+// Scalars that read dictionaries, other tables, server settings, accounts or the binary.
+// Prefixes cover families (`dictGetString`, `getSettingOrDefault`, `joinGetOrNull`).
+const SERVER_READER_PREFIXES = [
+	"dictget",
+	"dicthas",
+	"dictis",
+	"joinget",
+	"getsetting",
+	"getserversetting",
+	"getmergetreesetting",
+	"getmaxtablenamelength",
+	"addressto",
+]
+const SERVER_READER_NAMES = new Set([
+	"hascolumnintable",
+	"getmacro",
+	"getclienthttpheader",
+	"getserverport",
+	"getoskernelversion",
+	"showcertificate",
+	"catboostevaluate",
+	"naivebayesclassifier",
+	"demangle",
+	"logtrace",
+	"currentuser",
+	"user",
+	"session_user",
+	"currentroles",
+	"enabledroles",
+	"defaultroles",
+	"currentprofiles",
+	"enabledprofiles",
+	"defaultprofiles",
+])
+
+/** The first server-reading scalar called anywhere, or null; quoting and comments do not hide it. */
+const disallowedServerFunction = (sql: string): string | null => {
+	const tokens = tokenizeSql(sql)
+	const hit = tokens.find((t, i) => {
+		const next = tokens[i + 1]
+		return (
+			t.ident &&
+			next !== undefined &&
+			!next.ident &&
+			next.v === "(" &&
+			(SERVER_READER_NAMES.has(t.v) ||
+				Arr.some(SERVER_READER_PREFIXES, (prefix) => Str.startsWith(prefix)(t.v)))
+		)
+	})
+	return hit?.v ?? null
+}
+
+// Databases whose tables describe the whole server rather than this org's data.
+const SYSTEM_DATABASES = new Set(["system", "information_schema"])
+
+/**
+ * The first system database used as a `db.` qualifier, or null. Runs on the token
+ * stream, so quoted, Unicode-quoted, escaped, cased and commented spellings all match,
+ * while a bare `system` column or alias (no qualifier dot) and string literals pass.
+ */
+const systemDatabaseReference = (sql: string): string | null => {
+	const tokens = tokenizeSql(sql)
+	const isDot = (t: SqlToken | undefined) => t !== undefined && !t.ident && t.v === "."
+	const hit = tokens.find(
+		(t, i) => t.ident && SYSTEM_DATABASES.has(t.v) && isDot(tokens[i + 1]) && !isDot(tokens[i - 1]),
+	)
+	return hit?.v ?? null
+}
+
+/**
+ * ClickHouse syntax the masker does not lex: `#` / `#!` line comments, `$$` and
+ * `$tag$` heredoc strings, and nested block comments (the masker ends a comment at
+ * the first close, leaving the outer one's `*\/` behind). Where these appear the
+ * masked text and the server disagree on what is code, so every check is moot.
+ */
+const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
+	[/#/, "'#' comments are not supported in raw SQL. Use -- or /* */ comments."],
+	[
+		/\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/,
+		"Heredoc strings ($$...$$ or $tag$...$tag$) are not supported in raw SQL. Use single-quoted strings.",
+	],
+	[
+		/\*\//,
+		"Nested /* */ comments are not supported in raw SQL. Close each comment before opening another.",
+	],
+]
 
 /** Macros the engine expands. Anything else `$__`-shaped is a typo. */
 export const RAW_SQL_MACROS = [
@@ -205,13 +516,14 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 		const { open, close } = enclosingGroup(masked, atomStart, atomEnd)
 		const lo = open + 1
 		const flat = flattenGroups(masked, lo, close)
-		const left = flat.slice(0, atomStart - lo)
-		const right = flat.slice(atomEnd - lo)
+		const left = Str.slice(0, atomStart - lo)(flat)
+		const right = Str.slice(atomEnd - lo)(flat)
 		const starts = [...left.matchAll(CLAUSE_START_RE)]
 		const lastStart = starts.at(-1)
-		const leftClause = lastStart === undefined ? left : left.slice(lastStart.index + lastStart[0].length)
+		const leftClause =
+			lastStart === undefined ? left : Str.slice(lastStart.index + lastStart[0].length)(left)
 		const endMatch = right.match(CLAUSE_END_RE)
-		const rightClause = endMatch?.index === undefined ? right : right.slice(0, endMatch.index)
+		const rightClause = endMatch?.index === undefined ? right : Str.slice(0, endMatch.index)(right)
 		if (/\bOR\b/i.test(leftClause) || /\bOR\b/i.test(rightClause) || /\bNOT\s*$/i.test(leftClause)) {
 			return true
 		}
@@ -220,7 +532,7 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 		// arguments; a clause keyword means a subquery, which is its own scope.
 		const keywordBound =
 			(lastStart !== undefined && lastStart[0] !== ",") || (endMatch !== null && endMatch[0] !== ",")
-		const before = masked.slice(0, Math.max(open, 0))
+		const before = Str.slice(0, Math.max(open, 0))(masked)
 		const isCall = open >= 0 && /[A-Za-z0-9_]\s*$/.test(before) && !BOOLEAN_KEYWORD_RE.test(before)
 		if (!keywordBound && isCall) return true
 		if (lastStart !== undefined || endMatch !== null || open < 0) return false
@@ -230,7 +542,10 @@ const orgFilterEscapes = (masked: string, start: number, end: number): boolean =
 }
 
 const IDENT = "[A-Za-z_][A-Za-z0-9_]*"
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+// A clause word after a table is never its alias: `FROM traces JOIN logs l` must still bind `l`.
+const NOT_ALIAS =
+	"(?!(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|OUTER|SEMI|ANTI|ASOF|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)\\b)"
+const escapeRe = (s: string) => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(s)
 
 /**
  * Whether `alias` names a real table read in a FROM/JOIN (`FROM traces t`, `JOIN db.logs AS l`,
@@ -239,21 +554,21 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
  */
 const aliasBindsTable = (masked: string, alias: string): boolean => {
 	const ctes = new Set(
-		[...masked.matchAll(new RegExp(`(?:\\bWITH|,)\\s*(${IDENT})\\s+AS\\s*\\(`, "gi"))].map((m) =>
-			(m[1] ?? "").toLowerCase(),
+		Arr.map([...masked.matchAll(new RegExp(`(?:\\bWITH|,)\\s*(${IDENT})\\s+AS\\s*\\(`, "gi"))], (m) =>
+			Str.toLowerCase(m[1] ?? ""),
 		),
 	)
 	const a = escapeRe(alias)
 	const binding = new RegExp(
-		`\\b(?:FROM|JOIN)\\s+(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
+		`\\b(?:FROM|JOIN)\\s+(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?${NOT_ALIAS}(${IDENT}))?(?=[\\s,)]|$)`,
 		"gi",
 	)
 	// `FROM a x, b y` binds every comma-separated table; a subquery or table function item ends the run.
 	const commaItem = new RegExp(
-		`\\s*,\\s*(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?(${IDENT}))?(?=[\\s,)]|$)`,
+		`\\s*,\\s*(?:${IDENT}\\.)?(${IDENT})(?:\\s+(?:AS\\s+)?${NOT_ALIAS}(${IDENT}))?(?=[\\s,)]|$)`,
 		"iy",
 	)
-	const bindings = [...masked.matchAll(binding)].flatMap((m) => {
+	const bindings = Arr.flatMap([...masked.matchAll(binding)], (m) => {
 		const items: Array<readonly [string, string | undefined]> = [[m[1] ?? "", m[2]]]
 		if (!/^FROM/i.test(m[0])) return items
 		commaItem.lastIndex = (m.index ?? 0) + m[0].length
@@ -263,14 +578,8 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 		return items
 	})
 	for (const [table, bound] of bindings) {
-		const names =
-			bound === undefined ||
-			/^(?:WHERE|PREWHERE|FINAL|SAMPLE|ARRAY|GLOBAL|ANY|ALL|INNER|LEFT|RIGHT|FULL|CROSS|JOIN|ON|USING|GROUP|ORDER|LIMIT|UNION|SETTINGS|FORMAT)$/i.test(
-				bound,
-			)
-				? [table]
-				: [table, bound]
-		if (names.some((n) => new RegExp(`^${a}$`, "i").test(n)) && !ctes.has(table.toLowerCase())) {
+		const names = bound === undefined ? [table] : [table, bound]
+		if (Arr.some(names, (n) => new RegExp(`^${a}$`, "i").test(n)) && !ctes.has(Str.toLowerCase(table))) {
 			return true
 		}
 	}
@@ -288,7 +597,7 @@ const orgFilterIssue = (sql: string, masked: string): RawSqlIssue | null => {
 			)
 		}
 		// Offsets are shared with the masked text; a macro inside a literal or comment is inert.
-		if (masked.startsWith("$__orgFilter", match.index)) {
+		if (Str.startsWith("$__orgFilter", match.index)(masked)) {
 			if (alias !== undefined && !aliasBindsTable(masked, alias)) {
 				return issue(
 					"InvalidMacro",
@@ -335,10 +644,12 @@ export const rawSqlIssue = (
 	// input: `prepareRawSql` expands macros wherever they appear, literals
 	// included, so a macro hidden in a string still has to be a legal one.
 	const maskedSql = maskLiteralsAndComments(sql)
-	if (!maskedSql.includes("$__orgFilter")) {
+	const unmasked = UNMASKED_SYNTAX.find(([pattern]) => pattern.test(maskedSql))
+	if (unmasked !== undefined) return issue("DisallowedStatement", unmasked[1])
+	if (!Str.includes("$__orgFilter")(maskedSql)) {
 		return issue(
 			"MissingOrgFilter",
-			sql.includes("$__orgFilter")
+			Str.includes("$__orgFilter")(sql)
 				? "$__orgFilter must appear in the query itself, not inside a comment or string literal."
 				: "SQL must reference $__orgFilter so the query is scoped to your org.",
 		)
@@ -347,10 +658,10 @@ export const rawSqlIssue = (
 	// `$__timeFilter(` sits in a comment expands to nothing and then rescans all
 	// of history on every evaluation, which is the cost the requirement exists to
 	// prevent.
-	if (options.workload === "alert" && !maskedSql.includes("$__timeFilter(")) {
+	if (options.workload === "alert" && !Str.includes("$__timeFilter(")(maskedSql)) {
 		return issue(
 			"InvalidMacro",
-			sql.includes("$__timeFilter(")
+			Str.includes("$__timeFilter(")(sql)
 				? "$__timeFilter(...) must appear in the query itself, not inside a comment or string literal."
 				: "Raw SQL alerts must reference $__timeFilter(...) to bound alert reads.",
 		)
@@ -362,7 +673,7 @@ export const rawSqlIssue = (
 	for (const macro of ["$__timeFilter", "$__timeGroup"] as const) {
 		const pattern = new RegExp(`\\${macro}\\(([^)]*)\\)`, "g")
 		for (const match of sql.matchAll(pattern)) {
-			const column = match[1].trim()
+			const column = Str.trim(match[1])
 			if (!COLUMN_IDENT_RE.test(column)) {
 				return issue(
 					"InvalidMacro",
@@ -372,9 +683,9 @@ export const rawSqlIssue = (
 		}
 	}
 
-	const unknownMacro = [...sql.matchAll(/\$__\w+/g)]
-		.map((match) => match[0])
-		.find((name) => !RAW_SQL_MACROS.includes(name as (typeof RAW_SQL_MACROS)[number]))
+	const unknownMacro = Arr.map([...sql.matchAll(/\$__\w+/g)], (match) => match[0]).find(
+		(name) => !RAW_SQL_MACROS.includes(name as (typeof RAW_SQL_MACROS)[number]),
+	)
 	if (unknownMacro !== undefined) {
 		return issue("UnresolvedMacro", `Unknown macro ${unknownMacro}. ${SUPPORTED_MACROS_HELP}`)
 	}
@@ -383,22 +694,24 @@ export const rawSqlIssue = (
 	// "multiple statements" is a false error on the most common way to end a query.
 	let masked = maskedSql
 	const terminatorMatch = masked.match(/;\s*$/)
-	if (terminatorMatch?.index !== undefined) masked = masked.slice(0, terminatorMatch.index)
-	if (masked.includes(";")) {
+	if (terminatorMatch?.index !== undefined) masked = Str.slice(0, terminatorMatch.index)(masked)
+	if (Str.includes(";")(masked)) {
 		return issue("MultipleStatements", "Multiple SQL statements are not allowed. Remove ';' separators.")
 	}
 
-	const denyMatch = masked.match(DENY_LIST_RE)
-	if (denyMatch?.[1].toUpperCase() === "SYSTEM") {
+	// SYSTEM statements fail the SELECT check below; within a SELECT the keyword only
+	// matters as a database name, which the token stream resolves however it is quoted.
+	if (systemDatabaseReference(sql) !== null) {
 		return issue(
 			"DisallowedStatement",
 			"System tables and SYSTEM statements are not available in raw SQL. For table and column names use describe_warehouse_tables (the warehouse table catalog).",
 		)
 	}
+	const denyMatch = masked.match(DENY_LIST_RE)
 	if (denyMatch) {
 		return issue(
 			"DisallowedStatement",
-			`Statement keyword '${denyMatch[1].toUpperCase()}' is not allowed in raw SQL.`,
+			`Statement keyword '${Str.toUpperCase(denyMatch[1])}' is not allowed in raw SQL.`,
 		)
 	}
 	if (INTO_OUTFILE_RE.test(masked)) {
@@ -413,19 +726,28 @@ export const rawSqlIssue = (
 			"Raw SQL must be a SELECT query (WITH common table expressions are supported).",
 		)
 	}
-	const functionMatch = masked.match(DISALLOWED_FUNCTION_RE)
-	if (functionMatch) {
+	// Runs over the source text (not the masked copy): the tokenizer does its own
+	// comment and literal handling, and it recognises the Unicode and quoted
+	// identifier spellings the masker leaves as-is.
+	const tableFunction = disallowedTableFunction(sql)
+	if (tableFunction !== null) {
 		return issue(
 			"DisallowedFunction",
-			`Table function '${functionMatch[1]}' is not allowed in raw SQL — queries may only read Maple's own tables.`,
+			`Table function '${tableFunction}' is not allowed in raw SQL. Queries may only read Maple's own tables.`,
 		)
 	}
-	// The row cap nests the query, and `SETTINGS` is a statement terminator, so an
-	// author-supplied one would end up inside the subquery — where ClickHouse
-	// propagates it to the whole query context and it silently outranks the cost
-	// profile's time and memory budget. A trailing FORMAT is dropped rather than
-	// rejected (the driver owns the wire format); see `prepareRawSql`.
-	if (splitTerminalClauses(sql).settings !== undefined) {
+	const serverFunction = disallowedServerFunction(sql)
+	if (serverFunction !== null) {
+		return issue(
+			"DisallowedFunction",
+			`Function '${serverFunction}' is not allowed in raw SQL. It reads server configuration or data outside Maple's tables.`,
+		)
+	}
+	// The row cap nests the query, and a `SETTINGS` clause at any depth (a
+	// subquery's included) applies to the whole query context, where it would
+	// outrank the cost profile's time and memory budget. A trailing FORMAT is
+	// dropped rather than rejected (the driver owns the wire format); see `prepareRawSql`.
+	if (/\bSETTINGS\b/i.test(masked)) {
 		return issue(
 			"DisallowedStatement",
 			"SETTINGS is managed by Maple — raw queries run under a fixed time and memory budget. Remove the SETTINGS clause.",
@@ -465,7 +787,7 @@ export const RawSqlText = Schema.String.check(
 export const rawAlertSqlSelectsSamples = (sql: string): boolean => {
 	// Masking keeps offsets (a quoted alias becomes spaces), so read the alias from the original text.
 	for (const match of maskLiteralsAndComments(sql).matchAll(/\bAS\s/gi)) {
-		const alias = sql.slice(match.index + match[0].length).trimStart()
+		const alias = Str.trimStart(Str.slice(match.index + match[0].length)(sql))
 		if (/^(?:samples|`samples`|"samples")(?![A-Za-z0-9_])/.test(alias)) return true
 	}
 	return false
@@ -476,3 +798,49 @@ export const rawAlertSampleCountWarning = (sql: string, minimumSampleCount: numb
 	minimumSampleCount > 1 && !rawAlertSqlSelectsSamples(sql)
 		? `Minimum sample count ${minimumSampleCount} counts returned rows (one per bucket) because the query has no \`samples\` column. Select an event count as \`samples\` (e.g. \`count() AS samples\`) to gate on volume.`
 		: null
+
+export type RawAlertPerformanceHintCode = "no_service_filter" | "body_wildcard_match"
+
+/** A change likely to make an alert query cheaper, pointing at the line it is about. */
+export interface RawAlertPerformanceHint {
+	readonly code: RawAlertPerformanceHintCode
+	readonly message: string
+	/** 1-based line of the SQL the hint is about. */
+	readonly line: number
+}
+
+const lineAt = (sql: string, index: number): number => Str.split("\n")(Str.slice(0, index)(sql)).length
+
+/**
+ * Cheap, text-only guesses at what makes an alert query slow. Logs and traces are
+ * sorted by service after org and time, so a service filter skips most of the data,
+ * and a `Body` wildcard match has to read every log body in the window.
+ */
+export const rawAlertPerformanceHints = (sql: string): ReadonlyArray<RawAlertPerformanceHint> => {
+	const masked = maskLiteralsAndComments(sql)
+	const table = /\bFROM\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)?(logs|traces)\b/i.exec(masked)
+	const tableName = table?.[1]?.toLowerCase()
+	const serviceHint: ReadonlyArray<RawAlertPerformanceHint> =
+		table !== null && tableName !== undefined && !/\bServiceName\b/.test(masked)
+			? [
+					{
+						code: "no_service_filter",
+						message: `Filter ${tableName} on a service, e.g. \`AND ServiceName = 'checkout'\`. Rows are stored by service, so the query skips every other service's data.`,
+						line: lineAt(sql, table.index),
+					},
+				]
+			: []
+	// Masking keeps offsets, so the pattern's literal is read from the original text.
+	const bodyHints = Arr.map(
+		Arr.filter(Array.from(masked.matchAll(/\bBody\s+(?:NOT\s+)?I?LIKE\b/gi)), (match) =>
+			Str.startsWith("'%")(Str.trimStart(Str.slice(match.index + match[0].length)(sql))),
+		).slice(0, 1),
+		(match): RawAlertPerformanceHint => ({
+			code: "body_wildcard_match",
+			message:
+				"A `Body` match starting with `%` reads every log body in the window. Match a structured attribute instead, e.g. `LogAttributes['event'] = 'webhook.failed'`, or filter on a service first.",
+			line: lineAt(sql, match.index),
+		}),
+	)
+	return [...serviceHint, ...bodyHints]
+}

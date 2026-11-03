@@ -1,9 +1,11 @@
 import { OrgId } from "@maple/domain"
 import { ErrorIssueId } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartTooltip } from "@maple/views/charts/chart-spec"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { Message } from "./message"
@@ -19,7 +21,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const entered = () => init({ issueId, search: {} }, context)
 const windowed = (): Model =>
@@ -78,7 +80,9 @@ describe("error issue", () => {
 		const reloaded = pageUpdate(windowed(), Message.ClickedReload()).model
 		expect(routeChanged(reloaded, { search: { tab: "activity" } }, context).commands).toBeUndefined()
 		const moved = routeChanged(reloaded, { search: { timePreset: "1d" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveIssueWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveIssueWindow", "Refresh"],
+		])
 	})
 
 	test("a tab change keeps the window; a preset change navigates and re-resolves", () => {
@@ -93,5 +97,19 @@ describe("error issue", () => {
 				isReplace: false,
 			}),
 		)
+	})
+
+	test("hovering the occurrence chart puts the bucket's tooltip on the page's chart", () => {
+		const tooltip = ChartTooltip.Bucket({
+			heading: "Nov 1, 11:30 AM",
+			rows: [{ label: "Occurrences", color: "#e5484d", dashed: false, value: "162" }],
+		})
+		const hovered = pageUpdate(
+			windowed(),
+			Message.GotChartMessage({
+				message: Chart.Message.ChangedChartTooltip({ maybeTooltip: Option.some(tooltip) }),
+			}),
+		).model
+		expect(hovered.chart.tooltip).toEqual(Option.some(tooltip))
 	})
 })

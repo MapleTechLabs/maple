@@ -1,7 +1,7 @@
 import { BillingCustomer } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { settingsTabValues } from "../../route/search"
 import { ApiKeyRowSchema } from "@maple/web-data/collections/api-keys"
 import { Message as AiMessage } from "./ai/model"
@@ -35,5 +35,7 @@ export const Message = defineMessageUnion({
 	GotAutomationMessage: { message: AutomationMessage },
 	/** The `api_keys` shape (Keys and the audit log's actor names), for the org it was read for. */
 	UpdatedApiKeys: { orgId: Schema.String, rows: Schema.Array(ApiKeyRowSchema) },
+	/** The `api_keys` shape gave up (or timed out) before its first answer. */
+	FailedLoadApiKeys: { orgId: Schema.String },
 })
 export type Message = typeof Message.Type

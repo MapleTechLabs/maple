@@ -1,4 +1,4 @@
-import { Effect, Queue, Stream } from "effect"
+import { Effect, Queue, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./message"
 
@@ -16,9 +16,9 @@ export const splitLayout = (panelCount: number, groupWidth: number | null): Read
 	if (panelCount < 2) return [100]
 	if (groupWidth === null) return [60, 40]
 	const available = groupWidth - HANDLE_PX
-	const defaults = DEFAULT_PX.map((px) => round3((px / available) * 100))
-	const sum = defaults.reduce((total, size) => total + size, 0)
-	return defaults.map((size) => round3((100 / sum) * size))
+	const defaults = Arr.map(DEFAULT_PX, (px) => round3((px / available) * 100))
+	const sum = Arr.reduce(defaults, 0, (total, size) => total + size)
+	return Arr.map(defaults, (size) => round3((100 / sum) * size))
 }
 
 const groupOf = (element: Element): HTMLElement | null =>

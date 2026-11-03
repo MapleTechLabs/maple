@@ -1,11 +1,14 @@
 // The search schema of every route. Shapes match the URLs already in use, so existing links decode.
-import { Schema } from "effect"
+import { Schema, SchemaGetter } from "effect"
+import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import {
 	AiSessionSortDir,
 	AiSessionSortKey,
 	CiBranchName,
 	CiPipelineName,
 	CiRunResult,
+	CodeReviewSortDir,
+	CodeReviewSortKey,
 	IssueKind,
 	PrReviewCategory,
 	PrReviewFindingStatus,
@@ -26,6 +29,14 @@ export const NumberFromStringParam = Schema.fromJsonString(Schema.Number)
 
 export const OptionalStringArrayParam = Schema.optional(
 	Schema.Union([StringArray, StringArrayFromJsonString]),
+)
+
+/** A string of digits a URL wrote unquoted, which the search format parses as a number. */
+const DigitsParam = Schema.Number.pipe(
+	Schema.decodeTo(Schema.String, {
+		decode: SchemaGetter.transform((value: number) => String(value)),
+		encode: SchemaGetter.transform((value: string) => Number(value)),
+	}),
 )
 
 const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam]))
@@ -103,13 +114,40 @@ const CodeReviewIssuesSearchFields = {
 	severity: Schema.optional(PrReviewSeverity),
 	category: Schema.optional(PrReviewCategory),
 	state: Schema.optional(PrReviewFindingStatus),
+	q: Schema.optional(Schema.String),
 	review: Schema.optional(PrReviewId),
 }
 
 const CodeReviewListSearchFields = {
 	...CodeReviewSearchFields,
 	status: Schema.optional(Schema.Literals(["completed", "failed", "skipped", "running", "queued"])),
+	q: Schema.optional(Schema.String),
+	sortBy: Schema.optional(CodeReviewSortKey),
+	sortDir: Schema.optional(CodeReviewSortDir),
 	review: Schema.optional(PrReviewId),
+}
+
+/** The Team scorecard's sort column; `person` is by login. */
+export const CodeReviewTeamSort = Schema.Literals([
+	"person",
+	"score",
+	"merged",
+	"mergeTime",
+	"fixRate",
+	"criticalPerPr",
+	"firstTryGreen",
+	"rerunRate",
+	"shippedClean",
+	"ciTime",
+])
+export type CodeReviewTeamSort = typeof CodeReviewTeamSort.Type
+
+const CodeReviewTeamSearchFields = {
+	repo: Schema.optional(VcsRepositoryId),
+	...TimeRangeSearchFields,
+	sort: Schema.optional(CodeReviewTeamSort),
+	/** Ranked: people with enough pull requests, numbered by the sort column. */
+	ranked: BooleanParam,
 }
 
 const CodeReviewCiSearchFields = {
@@ -213,16 +251,6 @@ export const AccountSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals(accountTabValues)),
 })
 
-export const ChatSearch = Schema.Struct({
-	tab: Schema.optional(Schema.String),
-	mode: Schema.optional(Schema.Literals(["alert", "widget-fix"])),
-	alert: Schema.optional(Schema.String),
-	widget: Schema.optional(Schema.String),
-	shared: Schema.optional(Schema.String),
-	title: Schema.optional(Schema.String),
-	m: Schema.optional(Schema.String),
-})
-
 export const CliLoginSearch = Schema.Struct({
 	user_code: Schema.optional(Schema.String),
 })
@@ -323,7 +351,33 @@ export const AlertsCreateSearch = Schema.Struct({
 	chart: Schema.optional(Schema.String),
 })
 
+/** `/alerts/uptime/new`: `monitorId` edits that monitor; `serviceName` and `kind` prefill a new one. */
+export const AlertsUptimeNewSearch = Schema.Struct({
+	monitorId: Schema.optional(Schema.String),
+	serviceName: Schema.optional(Schema.String),
+	kind: Schema.optional(Schema.String),
+})
+
+export const AlertsUptimeMonitorSearch = Schema.Struct({})
+
+/** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
+export const IngestRuleNewSearch = Schema.Struct({
+	template: Schema.optional(Schema.String),
+})
+
+/** The retired `/alerts/status-pages/$pageId`: `tab` picks the view its redirect opens. */
+export const AlertsStatusPageSearch = Schema.Struct({
+	tab: Schema.optional(Schema.String),
+})
+
+/** `/status-pages/$pageId`: `view` is `appearance`, `settings`, `json` or `live`; none is the page itself. */
+export const StatusPageSearch = Schema.Struct({
+	view: Schema.optional(Schema.String),
+})
+
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
+
+export const CodeReviewTeamSearch = Schema.Struct(CodeReviewTeamSearchFields)
 
 export const CodeReviewIssuesSearch = Schema.Struct(CodeReviewIssuesSearchFields)
 
@@ -386,6 +440,8 @@ export const ReplaySearch = Schema.Struct({
 // sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ServiceSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
+	/** The API tab's open endpoint drawer, by normalized span name ("GET /users/{id}"). */
+	endpoint: Schema.optional(Schema.String),
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
@@ -548,6 +604,7 @@ export const ReplaysSearch = Schema.Struct({
 	userId: Schema.optional(Schema.String),
 	user: Schema.optional(Schema.String),
 	group: Schema.optional(Schema.String),
+	groupId: Schema.optional(Schema.String),
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 	durationMin: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
@@ -629,9 +686,7 @@ export const AgentSessionToolSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const AlertIncidentSearch = Schema.Struct({
-	alert: Schema.optional(Schema.String),
-})
+export const AlertIncidentSearch = Schema.Struct({})
 
 // sessionTimeRangeSearchMiddleware()
 export const ErrorIssueSearch = Schema.Struct({
@@ -675,7 +730,26 @@ export const InfraVercelProjectSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
+// sessionTimeRangeSearchMiddleware()
+export const InfraSupabaseProjectSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+})
+
 // Nested list routes
+
+// sessionTimeRangeSearchMiddleware()
+/** `/mcp-servers`, a server, its tool page and its sessions share one search: the time range and the toolbar. */
+export const McpServersSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+	client: Schema.optional(Schema.String),
+	kind: Schema.optional(Schema.Literals(MCP_CLIENT_KINDS)),
+	q: Schema.optional(Schema.String),
+	failing: Schema.optional(Schema.Boolean),
+	metric: Schema.optional(Schema.Literals(["calls", "error_rate", "duration", "clients"])),
+	percentile: Schema.optional(Schema.Literals(["p50", "p90", "p95"])),
+	identity: Schema.optional(Schema.Literals(["ua", "info"])),
+	calls: Schema.optional(Schema.Literals(["slowest", "failed", "recent"])),
+})
 
 // sessionTimeRangeSearchMiddleware()
 export const AgentSessionToolsSearch = Schema.Struct({
@@ -713,6 +787,15 @@ export const InfraContainersSearch = Schema.Struct({
 	excludedComposeProjects: OptionalStringArrayParam,
 	excludedComposeServices: OptionalStringArrayParam,
 	excludedEnvironments: OptionalStringArrayParam,
+	...TimeRangeSearchFields,
+})
+
+// sessionTimeRangeSearchMiddleware()
+export const InfraAwsSearch = Schema.Struct({
+	tab: Schema.optional(Schema.String),
+	scope: Schema.optional(Schema.String),
+	region: Schema.optional(Schema.String),
+	q: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
 
@@ -759,6 +842,11 @@ export const InfraVercelSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
+// sessionTimeRangeSearchMiddleware()
+export const InfraSupabaseSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+})
+
 // Deeper routes
 
 export const DashboardWidgetSearch = Schema.StructWithRest(Schema.Struct(dashboardViewParamsSchema), [
@@ -772,6 +860,15 @@ export const InfraCloudflareWorkerSearch = Schema.Struct({
 })
 
 // sessionTimeRangeSearchMiddleware()
+/** The resource's keys after its name, as `AWS_INFRA_KINDS[kind].identity` orders them. */
+export const InfraAwsResourceSearch = Schema.Struct({
+	cluster: Schema.optional(Schema.String),
+	region: Schema.optional(Schema.String),
+	account: Schema.optional(Schema.String),
+	...TimeRangeSearchFields,
+})
+
+// sessionTimeRangeSearchMiddleware()
 export const InfraGcpResourceSearch = Schema.Struct({
 	project: Schema.optional(Schema.String),
 	region: Schema.optional(Schema.String),
@@ -780,6 +877,11 @@ export const InfraGcpResourceSearch = Schema.Struct({
 	location: Schema.optional(Schema.String),
 	zone: Schema.optional(Schema.String),
 	backend: Schema.optional(Schema.String),
+	/**
+	 * A Cloud SQL instance's statement open in the side panel, by its Query Insights hash. The hash
+	 * is digits, which a hand-written `peek=123` parses as a number.
+	 */
+	peek: Schema.optional(Schema.Union([Schema.String, DigitsParam])),
 	...TimeRangeSearchFields,
 })
 
@@ -864,3 +966,29 @@ export const InfraKubernetesWorkloadParams = Schema.Struct({
 	kind: WorkloadKindLiteral,
 	workloadName: Schema.String,
 })
+
+// Security Center
+export const SecurityFindingsSearch = Schema.Struct({
+	status: Schema.optional(Schema.Literals(["open", "fixed", "dismissed", "accepted_risk", "all"])),
+	/** A severity, or the unscored leads: the tiles' one filter. */
+	severity: Schema.optional(
+		Schema.Literals(["critical", "high", "medium", "low", "informational", "needs_validation"]),
+	),
+	target: Schema.optional(Schema.String),
+	q: Schema.optional(Schema.String),
+	rejected: Schema.optional(Schema.Boolean),
+})
+
+export const SecurityRunsSearch = Schema.Struct({
+	target: Schema.optional(Schema.String),
+})
+/** One repository's breakdown on the Dependencies tab; absent shows them all. */
+export const SecurityDependenciesSearch = Schema.Struct({
+	repo: Schema.optional(Schema.String),
+	/** The repositories or advisories table; absent shows the matrix, or a repository's upgrade plan. */
+	view: Schema.optional(Schema.Literals(["repositories", "advisories"])),
+})
+
+export type SecurityFindingsSearch = typeof SecurityFindingsSearch.Type
+export type SecurityRunsSearch = typeof SecurityRunsSearch.Type
+export type SecurityDependenciesSearch = typeof SecurityDependenciesSearch.Type

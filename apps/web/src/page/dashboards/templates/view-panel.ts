@@ -1,18 +1,22 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import type { V2DashboardTemplate } from "@maple/domain/http/v2"
 import type { VariableValues } from "@maple/query-engine"
+import { pluralize } from "@maple/ui/lib/format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { fieldDescriptionStyles, fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
-import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
 import { CANONICAL_COLS, colsForWidth } from "../../../components/dashboard-builder/canvas/grid-breakpoints"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import { button, linkButton } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { input } from "../../../ui/input"
+import * as Chart from "@maple/views/charts/chart"
+import { button, linkButton } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { field, fieldDescription, type FieldIds, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { input } from "@maple/views/ui/input"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { relativeTime } from "../../kit/relative-time"
 import { dataStateOf } from "../kit/data-state"
 import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
@@ -21,7 +25,6 @@ import {
 	CATEGORY_LABELS,
 	compositionLabel,
 	READINESS_WINDOW_LABEL,
-	relativeAge,
 	setupHref,
 	type TemplateReadiness,
 	templateIcon,
@@ -30,10 +33,27 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { MAX_PREVIEW_WIDGETS } from "./update"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
 
 type H = HtmlBuilder<Message>
+
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
+
+const paramIds = (key: string): FieldIds => ({
+	control: `template-param-${key}`,
+	label: `template-param-${key}-label`,
+	error: `template-param-${key}-error`,
+})
 
 /** `PanelRestState`: nothing selected yet. */
 export const panelRestState = (h: H): Html =>
@@ -71,19 +91,9 @@ const previewSkeleton = (h: H): Html => {
 	return h.div(
 		[h.Class("grid gap-2"), h.Style({ "grid-template-columns": `repeat(${CANONICAL_COLS}, 1fr)` })],
 		[
-			...[0, 1, 2].map(() =>
-				h.div([
-					h.Class(cn(skeletonStyles, "col-span-4 rounded-md")),
-					h.DataAttribute("slot", "skeleton"),
-					h.Style({ height: statHeight }),
-				]),
-			),
-			...[0, 1].map(() =>
-				h.div([
-					h.Class(cn(skeletonStyles, "col-span-6 rounded-md")),
-					h.DataAttribute("slot", "skeleton"),
-					h.Style({ height: `${MIN_HEIGHT_DEFAULT}px` }),
-				]),
+			...Arr.map([0, 1, 2], () => skeleton(h, "col-span-4 rounded-md", { height: statHeight })),
+			...Arr.map([0, 1], () =>
+				skeleton(h, "col-span-6 rounded-md", { height: `${MIN_HEIGHT_DEFAULT}px` }),
 			),
 		],
 	)
@@ -114,75 +124,66 @@ const livePreview = (h: H, model: Model, timeZone: string): Html =>
 const previewBody = (h: H, model: Model, timeZone: string, variables: VariableValues): Html => {
 	const preview = { widgets: model.previewWidgets }
 	if (preview.widgets.length === 0)
-		return h.p(
-			[h.Class("text-muted-foreground text-xs")],
-			["This template starts you with an empty dashboard."],
-		)
+		return typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"This template starts you with an empty dashboard.",
+		])
 	const shown = preview.widgets.slice(0, MAX_PREVIEW_WIDGETS)
 	const hidden = preview.widgets.length - shown.length
 	const cols = model.previewWidth > 0 ? colsForWidth(model.previewWidth) : CANONICAL_COLS
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
-		[
-			h.div(
-				[
-					h.Class("grid gap-2"),
-					h.Style({ "grid-template-columns": `repeat(${cols}, 1fr)` }),
-					h.OnMount(MeasurePreview()),
-				],
-				shown.map((widget) =>
-					h.keyed("div")(
-						widget.id,
-						[
-							h.Class("min-w-0"),
-							h.Style({
-								"grid-column": `span ${Math.min(widget.layout.w, cols)}`,
-								height: `${heightFor(widget)}px`,
-							}),
-						],
-						[
-							widgetTile(
+	return vstack(h, { gap: "2" }, [
+		h.div(
+			[
+				h.Class("grid gap-2"),
+				h.Style({ "grid-template-columns": `repeat(${cols}, 1fr)` }),
+				h.OnMount(MeasurePreview()),
+			],
+			Arr.map(shown, (widget) =>
+				h.keyed("div")(
+					widget.id,
+					[
+						h.Class("min-w-0"),
+						h.Style({
+							"grid-column": `span ${Math.min(widget.layout.w, cols)}`,
+							height: `${heightFor(widget)}px`,
+						}),
+					],
+					[
+						widgetTile(
+							h,
+							{
 								h,
-								{
-									h,
-									state: dataStateOf(
-										model.requests,
-										widget,
-										model.gates[widget.id] ?? null,
-									),
-									isEdit: false,
-									menu: null,
-									isMenuOpen: false,
-									hasGrip: false,
-									configure: null,
-									chart: model.charts[widget.id] ?? Chart.init(),
-									themeColors: model.themeColors,
-									chartRuntime: model.chartRuntime,
-									nowMs: model.nowMs,
-									timeZone,
-									tableSort: model.tableSorts[widget.id] ?? { key: null, dir: "desc" },
-									variables,
-									onChart: (message) =>
-										Message.GotChartMessage({ widgetId: widget.id, message }),
-									onSort: (field, isText) =>
-										Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
-								},
-								widget,
-							),
-						],
-					),
+								state: dataStateOf(model.requests, widget, model.gates[widget.id] ?? null),
+								isEdit: false,
+								menu: null,
+								isMenuOpen: false,
+								hasGrip: false,
+								configure: null,
+								chart: model.charts[widget.id] ?? Chart.init(),
+								themeColors: model.themeColors,
+								chartRuntime: model.chartRuntime,
+								nowMs: model.nowMs,
+								timeZone,
+								tableSort: model.tableSorts[widget.id] ?? { key: null, dir: "desc" },
+								variables,
+								onChart: (message) =>
+									Message.GotChartMessage({ widgetId: widget.id, message }),
+								onSort: (field, isText) =>
+									Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
+							},
+							widget,
+						),
+					],
 				),
 			),
-			...(hidden > 0
-				? [
-						h.p(
-							[h.Class("text-muted-foreground text-xs")],
-							[`${hidden} more ${hidden === 1 ? "widget" : "widgets"} below the fold.`],
-						),
-					]
-				: []),
-		],
-	)
+		),
+		...(hidden > 0
+			? [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`${hidden} more ${pluralize(hidden, "widget")} below the fold.`,
+					]),
+				]
+			: []),
+	])
 }
 
 /** `RequirementBlock`: what the org needs before the widgets fill in. */
@@ -191,115 +192,117 @@ const requirementBlock = (
 	template: V2DashboardTemplate,
 	readiness: TemplateReadiness | undefined,
 	nowMs: number,
+	timeZone: string,
 ): ReadonlyArray<Html> => {
 	const requirement = template.requirement
 	if (requirement === null) return []
 	const isReady = readiness?.ready !== false
-	const age = relativeAge(readiness?.lastSeen ?? null, nowMs)
+	const lastSeen = readiness?.lastSeen ?? null
 	return [
-		h.div(
-			[h.Class("flex flex-col gap-2.5")],
-			[
-				eyebrow(h, { variant: "label" }, ["What it needs"]),
-				h.div(
-					[h.Class("flex items-start gap-2.5")],
-					[
-						isReady
-							? h.span(
-									[
-										h.Class(
-											"bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-[3px]",
-										),
-									],
-									[icon(h, "CheckIcon", { size: 10, className: "text-background" })],
-								)
-							: h.span(
-									[h.Class("border-input size-4 shrink-0 rounded-full border-[1.5px]")],
-									[],
-								),
-						h.div(
-							[h.Class("flex min-w-0 grow flex-col gap-1")],
-							[
-								h.div(
-									[h.Class("flex flex-wrap items-baseline gap-2.5")],
-									[
-										...(readiness?.prefixLabel === null ||
-										readiness?.prefixLabel === undefined
-											? []
-											: [
-													h.span(
-														[
-															h.Class(
-																cn(
-																	"font-mono text-sm",
-																	isReady
-																		? "text-foreground"
-																		: "text-muted-foreground",
-																),
+		vstack(h, { gap: "2.5" }, [
+			eyebrow(h, { variant: "label" }, ["What it needs"]),
+			h.div(
+				[h.Class("flex items-start gap-2.5")],
+				[
+					isReady
+						? h.span(
+								[
+									h.Class(
+										"bg-severity-info flex size-4 shrink-0 items-center justify-center rounded-xs",
+									),
+								],
+								[icon(h, "CheckIcon", { size: 10, className: "text-background" })],
+							)
+						: h.span([h.Class("border-input size-4 shrink-0 rounded-full border-[1.5px]")], []),
+					h.div(
+						[h.Class("flex min-w-0 grow flex-col gap-1")],
+						[
+							h.div(
+								[h.Class("flex flex-wrap items-baseline gap-2.5")],
+								[
+									...(readiness?.prefixLabel === null ||
+									readiness?.prefixLabel === undefined
+										? []
+										: [
+												h.span(
+													[
+														h.Class(
+															cn(
+																typographyClass({ size: "sm", mono: true }),
+																isReady
+																	? "text-foreground"
+																	: "text-muted-foreground",
 															),
-														],
-														[readiness.prefixLabel],
-													),
-												]),
-										h.span(
-											[
-												h.Class(
-													cn(
-														"text-sm",
-														isReady ? "text-foreground" : "text-muted-foreground",
-													),
+														),
+													],
+													[readiness.prefixLabel],
 												),
-											],
-											[
-												isReady
-													? requirement.kind === "telemetry"
-														? "trace data is arriving"
-														: "metrics are arriving"
-													: `no matching metrics in ${READINESS_WINDOW_LABEL}`,
-											],
-										),
-										...(requirement.kind !== "telemetry" && readiness !== undefined
-											? [
-													h.span(
-														[
-															h.Class(
-																"text-muted-foreground ml-auto shrink-0 font-mono text-2xs",
-															),
-														],
-														[
-															String(readiness.metricCount),
-															" ",
-															readiness.metricCount === 1
-																? "metric"
-																: "metrics",
-															...(age === null ? [] : [` · last seen ${age}`]),
-														],
-													),
-												]
-											: []),
-									],
-								),
-								h.p(
-									[h.Class("text-muted-foreground text-2xs")],
-									[
-										isReady ? "Collected by" : "Emitted by",
-										" ",
-										requirement.collector,
-										".",
-										...(!isReady &&
-										requirement.hint !== undefined &&
-										requirement.hint !== null &&
-										requirement.hint !== ""
-											? [` ${requirement.hint}`]
-											: []),
-									],
-								),
-							],
-						),
-					],
-				),
-			],
-		),
+											]),
+									h.span(
+										[
+											h.Class(
+												cn(
+													"text-sm",
+													isReady ? "text-foreground" : "text-muted-foreground",
+												),
+											),
+										],
+										[
+											isReady
+												? requirement.kind === "telemetry"
+													? "trace data is arriving"
+													: "metrics are arriving"
+												: `no matching metrics in ${READINESS_WINDOW_LABEL}`,
+										],
+									),
+									...(requirement.kind !== "telemetry" && readiness !== undefined
+										? [
+												h.span(
+													[
+														h.Class(
+															"text-muted-foreground ml-auto shrink-0 font-mono text-2xs",
+														),
+													],
+													[
+														String(readiness.metricCount),
+														" ",
+														pluralize(readiness.metricCount, "metric"),
+														...(lastSeen === null ||
+														!Number.isFinite(toEpochMs(lastSeen))
+															? []
+															: [
+																	" · ",
+																	relativeTime(h, {
+																		value: lastSeen,
+																		nowMs,
+																		timeZone,
+																		prefix: "last seen",
+																		tooltip: "title",
+																	}),
+																]),
+													],
+												),
+											]
+										: []),
+								],
+							),
+							typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+								isReady ? "Collected by" : "Emitted by",
+								" ",
+								requirement.collector,
+								".",
+								...(!isReady &&
+								requirement.hint !== undefined &&
+								requirement.hint !== null &&
+								requirement.hint !== ""
+									? [` ${requirement.hint}`]
+									: []),
+							]),
+						],
+					),
+				],
+			),
+		]),
 	]
 }
 
@@ -308,76 +311,73 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 	template.parameters.length === 0
 		? []
 		: [
-				h.div(
-					[h.Class("flex flex-col gap-2.5")],
-					[
-						eyebrow(h, { variant: "label" }, ["Parameters"]),
-						h.div(
-							[h.Class("flex max-w-95 flex-col gap-4")],
-							template.parameters.map((parameter) =>
-								h.keyed("div")(
-									parameter.key,
-									[
-										h.Class(cn(fieldStyles, "items-stretch gap-1.75")),
-										h.DataAttribute("slot", "field"),
-									],
-									[
-										h.div(
-											[h.Class("flex items-baseline gap-2")],
-											[
-												h.label(
-													[
-														h.Class(cn(fieldLabelStyles)),
-														h.DataAttribute("slot", "field-label"),
-														h.For(`template-param-${parameter.key}`),
-													],
-													[parameter.label],
-												),
-												h.span(
-													[h.Class("text-muted-foreground text-2xs")],
-													[parameter.required ? "required" : "optional"],
-												),
-											],
+				vstack(h, { gap: "2.5" }, [
+					eyebrow(h, { variant: "label" }, ["Parameters"]),
+					h.div(
+						[h.Class("flex max-w-95 flex-col gap-4")],
+						Arr.map(template.parameters, (parameter) =>
+							field(
+								h,
+								{
+									className: "items-stretch gap-1.75",
+									state: IDLE,
+									attributes: [h.Key(parameter.key)],
+								},
+								[
+									hstack(h, { gap: "2", align: "baseline" }, [
+										fieldLabel(
+											h,
+											{ ids: paramIds(parameter.key), state: IDLE },
+											parameter.label,
 										),
-										input(h, {
-											id: `template-param-${parameter.key}`,
-											attributes: [
-												h.Value(model.parameters[parameter.key] ?? ""),
-												...(parameter.placeholder === undefined ||
-												parameter.placeholder === null
-													? []
-													: [h.Placeholder(parameter.placeholder)]),
-												h.OnInput((value) =>
-													Message.ChangedParameter({ key: parameter.key, value }),
+										typography(h, { size: "2xs", tone: "muted" }, [
+											parameter.required ? "required" : "optional",
+										]),
+									]),
+									input(h, {
+										id: `template-param-${parameter.key}`,
+										attributes: [
+											h.Value(model.parameters[parameter.key] ?? ""),
+											...(parameter.placeholder === undefined ||
+											parameter.placeholder === null
+												? []
+												: [h.Placeholder(parameter.placeholder)]),
+											h.OnInput((value) =>
+												Message.ChangedParameter({ key: parameter.key, value }),
+											),
+										],
+									}),
+									...(parameter.description === undefined ||
+									parameter.description === null ||
+									parameter.description === ""
+										? []
+										: [
+												fieldDescription(
+													h,
+													{
+														ids: paramIds(parameter.key),
+														className: "text-2xs",
+														state: IDLE,
+													},
+													parameter.description,
 												),
-											],
-										}),
-										...(parameter.description === undefined ||
-										parameter.description === null ||
-										parameter.description === ""
-											? []
-											: [
-													h.p(
-														[
-															h.Class(cn(fieldDescriptionStyles, "text-2xs")),
-															h.DataAttribute("slot", "field-description"),
-														],
-														[parameter.description],
-													),
-												]),
-									],
-								),
+											]),
+								],
 							),
 						),
-					],
-				),
+					),
+				]),
 			]
 
 /** The sticky create row: Create, or Set up + Create it anyway for a gated template. */
 const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: boolean): Html => {
-	const missing = template.parameters
-		.filter((parameter) => parameter.required && (model.parameters[parameter.key] ?? "").trim() === "")
-		.map((parameter) => parameter.label)
+	const missing = Arr.map(
+		Arr.filter(
+			template.parameters,
+			(parameter) => parameter.required && Str.trim(model.parameters[parameter.key] ?? "") === "",
+		),
+		(parameter) => parameter.label,
+	)
 	const create = Message.ClickedCreate({ templateId: template.id })
 	return h.div(
 		[h.Class("sticky bottom-0 z-10 -mx-8 -mb-8 bg-[var(--panel-surface)] px-8 pt-3 pb-6")],
@@ -430,10 +430,10 @@ const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: b
 						[h.Class("text-muted-foreground min-w-0 text-2xs")],
 						[
 							missing.length > 0
-								? `Fill in ${missing.join(" and ")} first.`
+								? `Fill in ${Arr.join(missing, " and ")} first.`
 								: isReady
-									? "Creates a copy you own — edit or delete it freely."
-									: "Creating it now is fine — the widgets stay empty until the data shows up, then fill in on their own.",
+									? "Creates a copy you own. Edit or delete it freely."
+									: "Creating it now is fine. The widgets stay empty until the data shows up, then fill in on their own.",
 						],
 					),
 				],
@@ -456,62 +456,46 @@ export const detailPanel = (
 		template.id,
 		[h.Class("flex flex-col gap-6 bg-inherit p-8")],
 		[
-			h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					h.div(
-						[h.Class("flex items-center gap-3")],
+			vstack(h, { gap: "3" }, [
+				hstack(h, { gap: "3" }, [
+					h.span(
 						[
-							h.span(
-								[
-									h.Class(
-										"border-border bg-card flex size-8.5 shrink-0 items-center justify-center rounded-lg border",
-									),
-								],
-								[icon(h, templateIcon(template.id, template.category), { size: 17 })],
-							),
-							h.div(
-								[h.Class("flex min-w-0 flex-col gap-1")],
-								[
-									h.h2([h.Class("text-lg font-semibold tracking-tight")], [template.name]),
-									h.div(
-										[h.Class("text-muted-foreground flex items-center gap-2 text-2xs")],
-										[
-											h.span(
-												[],
-												[CATEGORY_LABELS.get(template.category) ?? template.category],
-											),
-											h.span([h.Class("text-border")], ["/"]),
-											h.span(
-												[h.Class("font-mono")],
-												[
-													widgetCountLabel(template),
-													...(composition === "" ? [] : [` · ${composition}`]),
-												],
-											),
-										],
-									),
-								],
+							h.Class(
+								"border-border bg-card flex size-8.5 shrink-0 items-center justify-center rounded-md border",
 							),
 						],
+						[icon(h, templateIcon(template.id, template.category), { size: 16 })],
 					),
-					h.p(
-						[h.Class("text-muted-foreground max-w-140 text-sm leading-relaxed")],
-						[template.description],
-					),
-				],
-			),
-			h.div(
-				[h.Class("flex flex-col gap-2")],
-				[
-					livePreview(h, model, timeZone),
-					h.p(
-						[h.Class("text-muted-foreground/80 text-2xs")],
-						["That's the dashboard you'd get right now."],
-					),
-				],
-			),
-			...requirementBlock(h, template, readiness, model.nowMs ?? 0),
+					vstack(h, { gap: "1", shrink: true }, [
+						heading(h, { level: 2, variant: "title" }, [template.name]),
+						h.div(
+							[h.Class("text-muted-foreground flex items-center gap-2 text-2xs")],
+							[
+								h.span([], [CATEGORY_LABELS.get(template.category) ?? template.category]),
+								h.span([h.Class("text-border")], ["/"]),
+								h.span(
+									[h.Class("font-mono")],
+									[
+										widgetCountLabel(template),
+										...(composition === "" ? [] : [` · ${composition}`]),
+									],
+								),
+							],
+						),
+					]),
+				]),
+				h.p(
+					[h.Class("text-muted-foreground max-w-140 text-sm leading-relaxed")],
+					[template.description],
+				),
+			]),
+			vstack(h, { gap: "2" }, [
+				livePreview(h, model, timeZone),
+				typography(h, { size: "2xs", tone: "subtle", as: "p" }, [
+					"That's the dashboard you'd get right now.",
+				]),
+			]),
+			...requirementBlock(h, template, readiness, model.nowMs ?? 0, timeZone),
 			...parameterFields(h, model, template),
 			createRow(h, model, template, isReady),
 		],

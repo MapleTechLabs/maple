@@ -2,6 +2,7 @@ import Foundation
 
 enum FixtureSession {
 	static let organizationId = "org_fixture"
+	static let organizationName = "acme-prod"
 
 	/// A syntactically valid Clerk publishable key whose frontend API host does
 	/// not exist. `Clerk.configure` decodes the host from the base64 tail, so

@@ -4,7 +4,7 @@ import { Message, type Model } from "./model"
 import { errorsSection } from "./view-errors"
 import { miscSection, tablesSection } from "./view-misc"
 import { formattersSection, infraSection, modeToggle } from "./view-parts"
-import { legendSection, toolTableSection, traceSection, verdictSection } from "./view-sections"
+import { legendSection, traceSection, verdictSection } from "./view-sections"
 
 /** `WorstCaseLab`: existing components over worst-case fixtures, with a demo twin. */
 const page = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -15,7 +15,6 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 			infraSection(h, model),
 			traceSection(h, model),
 			legendSection(h, model),
-			toolTableSection(h, model),
 			verdictSection(h, model),
 			errorsSection(h, model),
 			tablesSection(h, model),

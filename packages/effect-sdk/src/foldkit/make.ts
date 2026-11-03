@@ -1,5 +1,5 @@
 import { scrubUrl } from "@maple/browser-session"
-import { Effect, Layer, Predicate, Tracer } from "effect"
+import { Effect, Layer, Predicate, Tracer, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	type FlushableTelemetry,
 	type MapleClientFlushableConfig,
@@ -105,9 +105,9 @@ const parseAppConfig = <Config extends object>(app: Config): FoldkitAppConfig =>
 
 export interface MapleFoldkitConfig extends MapleClientFlushableConfig {
 	/**
-	 * Which Command args become span attributes. Default `"ids"`: args whose key
-	 * ends in `Id`/`Ids`, booleans and nulls export, every other value exports as
-	 * `[redacted]`. `{ allow: ["channelId", "provider"] }` adds keys by name.
+	 * Which Command args become span attributes, as `maple.foldkit.arg.<key>`. Default
+	 * `"ids"`: args whose key ends in `Id`/`Ids`, booleans and nulls export, every
+	 * other value exports as `[redacted]`. `{ allow: ["channelId", "provider"] }` adds keys by name.
 	 */
 	readonly commandArgs?: CommandArgsPolicy | undefined
 	/**
@@ -142,7 +142,12 @@ export interface MapleFoldkit extends FlushableTelemetry {
 	readonly instrument: <Config extends object>(config: Config) => Config
 }
 
+/** Command args export as `maple.foldkit.arg.<key>`. */
+const ARG_PREFIX = "maple.foldkit.arg."
+
 const DEFAULT_SLOW = { Update: 16, View: 50, Patch: 50 } satisfies SlowThresholds
+
+const isTabHidden = (): boolean => typeof document !== "undefined" && document.visibilityState === "hidden"
 
 /** A Command's result Message remembers the navigation that caused it, so its follow-ups join it. */
 const makeNavigationMarks = () => {
@@ -154,6 +159,27 @@ const makeNavigationMarks = () => {
 			if (Predicate.isObject(message)) marks.set(message, id)
 		},
 	}
+}
+
+// Not `instanceof`: test DOMs and older engines have no `PerformanceNavigationTiming` global.
+const isNavigationTiming = (entry: PerformanceEntry | undefined): entry is PerformanceNavigationTiming =>
+	entry?.entryType === "navigation"
+
+/**
+ * Where the page load's time went before `init`, in ms since navigation start: the document's
+ * first and last byte, then `init` itself (the app's scripts downloaded and evaluated).
+ */
+const bootTiming = (): Record<string, number> => {
+	if (typeof performance === "undefined" || typeof performance.getEntriesByType !== "function") return {}
+	const entry = performance.getEntriesByType("navigation")[0]
+	const document =
+		isNavigationTiming(entry) && entry.responseEnd > 0
+			? {
+					"maple.pageload.response_start_ms": Math.round(entry.responseStart),
+					"maple.pageload.response_end_ms": Math.round(entry.responseEnd),
+				}
+			: undefined
+	return { ...document, "maple.pageload.init_ms": Math.round(performance.now()) }
 }
 
 const isUpdateReturn = (value: unknown): value is FoldkitUpdateReturn => Predicate.hasProperty(value, "model")
@@ -201,7 +227,16 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 		navigationId: number | undefined,
 	): FoldkitCommand => {
 		tracing.registerCommand(command.name)
-		const args = { ...scrubArgs(command.args), "maple.foldkit.message": tag }
+		// Namespaced, so an app's `orgId` or `limit` arg never collides with a semconv or backend key.
+		const args = {
+			...Rec.fromEntries(
+				Arr.map(Rec.toEntries(scrubArgs(command.args)), ([key, value]) => [
+					`${ARG_PREFIX}${key}`,
+					value,
+				]),
+			),
+			"maple.foldkit.message": tag,
+		}
 		if (navigationId === undefined) return { ...command, args }
 		return {
 			...command,
@@ -217,7 +252,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 			return result
 		return {
 			...result,
-			commands: result.commands.map((command) => instrumentCommand(command, tag, navigationId)),
+			commands: Arr.map(result.commands, (command) => instrumentCommand(command, tag, navigationId)),
 		}
 	}
 
@@ -241,6 +276,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 							path: scrubUrl(url.pathname),
 							// The page load began at navigation start, not when the app's JS got here.
 							startTime: BigInt(Math.round(performance.timeOrigin * 1_000_000)),
+							attributes: bootTiming(),
 						})
 			return withCommands(init(flags, url), "init", navigationId)
 		}
@@ -278,6 +314,8 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 
 	const recordSlow = (context: FoldkitSlowContext): void => {
 		if (context._tag === "SubscriptionDependencies") return
+		// A hidden tab is throttled or frozen by the browser, so its wall-clock phases measure that, not the app.
+		if (isTabHidden()) return
 		const endTime = nowNanos()
 		const startTime = endTime - BigInt(Math.round(context.durationMs * 1_000_000))
 		const message =
@@ -286,7 +324,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 				: Predicate.hasProperty(context.message, "value")
 					? context.message.value
 					: undefined
-		tracing.recordPhase(`foldkit.${context._tag.toLowerCase()}`, startTime, endTime, {
+		tracing.recordPhase(`foldkit.${Str.toLowerCase(context._tag)}`, startTime, endTime, {
 			"maple.foldkit.phase": context._tag,
 			"maple.foldkit.duration_ms": context.durationMs,
 			"maple.foldkit.threshold_ms": context.thresholdMs,

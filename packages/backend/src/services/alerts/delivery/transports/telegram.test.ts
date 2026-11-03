@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 import type { DispatchContext } from "../context"
 import type { RenderInput, SecretConfigOf } from "../Transport"
@@ -18,7 +18,7 @@ const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-38
 const BOT_TOKEN = "123456789:AAHqwertyuiopasdfghjklzxcvbnm123456"
 const CHAT_ID = "-1001234567890"
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 /** Runs a Bot API call on the fetch client with `fetchFn` as the wire. */
 const withFetch = <A>(effect: Effect.Effect<A, never, HttpClient.HttpClient>, fetchFn: typeof fetch) =>
@@ -113,15 +113,15 @@ describe("telegramTransport.render", () => {
 		assert.strictEqual(body.parse_mode, "HTML")
 		// The token must never reach the body or a header — only the path, which
 		// `sensitivePath` keeps off the span.
-		assert.isFalse(spec.body.includes(BOT_TOKEN))
-		assert.isFalse(JSON.stringify(spec.headers).includes(BOT_TOKEN))
+		assert.isFalse(Str.includes(BOT_TOKEN)(spec.body))
+		assert.isFalse(Str.includes(BOT_TOKEN)(JSON.stringify(spec.headers)))
 	})
 
-	it("carries both links as inline keyboard buttons", () => {
+	it("carries the Open in Maple link as the only inline keyboard button", () => {
 		const [row] = render().body.reply_markup.inline_keyboard
 		assert.deepStrictEqual(
 			row?.map((button) => button.url),
-			[LINK, CHAT],
+			[LINK],
 		)
 	})
 
@@ -140,7 +140,7 @@ describe("telegramTransport.render", () => {
 		const input = inputFor({ context: makeContext({ ruleName: "<b>Pwn</b> & co" }) })
 		const { text } = render(input).body
 		assert.include(text, "&lt;b&gt;Pwn&lt;/b&gt; &amp; co")
-		assert.isFalse(text.includes("<b>Pwn"))
+		assert.isFalse(Str.includes("<b>Pwn")(text))
 	})
 
 	it("previews the chart when there is one, and nothing otherwise", () => {
@@ -170,12 +170,12 @@ describe("telegramTransport.render", () => {
 			const { text } = render(
 				inputFor({ templated: { title: "T", body: "[Tap](tg://user?id=1)" } }),
 			).body
-			assert.isFalse(text.includes("<a href"))
+			assert.isFalse(Str.includes("<a href")(text))
 			assert.include(text, "[Tap](tg://user?id=1)")
 		})
 
 		it("caps the text at Telegram's 4096-character limit", () => {
-			const { text } = render(inputFor({ templated: { title: "T", body: "x".repeat(9000) } })).body
+			const { text } = render(inputFor({ templated: { title: "T", body: Str.repeat(9000)("x") } })).body
 			assert.isAtMost(text.length, 4096)
 		})
 	})
@@ -230,7 +230,7 @@ describe("verifyTelegramCredentials", () => {
 		const calls: string[] = []
 		let index = 0
 		const fetchFn: typeof fetch = async (input) => {
-			calls.push(String(input))
+			calls.push(String(input instanceof Request ? input.url : input))
 			const next = responses[Math.min(index++, responses.length - 1)]!
 			return new Response(JSON.stringify(next.body), {
 				status: next.status,
@@ -298,7 +298,7 @@ describe("fetchTelegramChats", () => {
 	const respondWith = (status: number, body: unknown) => {
 		const calls: string[] = []
 		const fetchFn: typeof fetch = async (input) => {
-			calls.push(String(input))
+			calls.push(String(input instanceof Request ? input.url : input))
 			return new Response(JSON.stringify(body), {
 				status,
 				headers: { "content-type": "application/json" },
@@ -358,7 +358,7 @@ describe("fetchTelegramChats", () => {
 			assert.strictEqual(result.status, "ok")
 			if (result.status === "ok") {
 				assert.deepStrictEqual(
-					result.chats.map((chat) => chat.id),
+					Arr.map(result.chats, (chat) => chat.id),
 					["-100222", "-100111"],
 				)
 			}

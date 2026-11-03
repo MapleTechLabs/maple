@@ -1,22 +1,37 @@
-import { formatWholePercent } from "../../../components/infra/format"
-import { formatRestarts, podKey, type PodRestartSummary, restartTone } from "../../../components/infra/pod-restarts"
+import { formatCores, formatWholePercent } from "../../../components/infra/format"
+import {
+	formatRestarts,
+	podKey,
+	type PodRestartSummary,
+	restartTone,
+} from "../../../components/infra/pod-restarts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { middleTruncate } from "../../../ui/middle-truncate"
-import { skeleton } from "../../../ui/skeleton"
+import { laneLink } from "@maple/views/ui/lane-link"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { skeleton, skeletonLine } from "@maple/views/ui/skeleton"
 import { avgPeak } from "../kit/avg-peak"
-import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skeletonRows } from "../kit/data-table"
+import {
+	columnHead,
+	dataTable,
+	dataTableEmpty,
+	headSort,
+	ROW_LINK_CLASS,
+	skeletonRows,
+} from "../kit/data-table"
 import type { SortDir } from "../../kit/table-sort"
 import { meterRows } from "../kit/meter-rows"
 import { metaLine } from "../kit/meta-line"
-import { relativeTime } from "../../kit/relative-time"
+import { listRelativeTime } from "../../kit/relative-time"
 import { hostStatusBadge } from "../kit/status"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { PodRow } from "./pod-data"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { column, columnClass } from "@maple/views/ui/column"
 
 // `PodTable` / `PodTableLoading`.
 
@@ -42,31 +57,38 @@ const metaTitle = (pod: PodRow, workload: Readonly<{ kind: string; name: string 
 		.filter(Boolean)
 		.join(" · ")
 
-/** `formatCores`: comparable cores across a fleet's magnitudes. */
-const formatCores = (cores: number): string => {
-	if (!Number.isFinite(cores) || cores === 0) return "0"
-	if (cores >= 10) return cores.toFixed(0)
-	if (cores >= 1) return cores.toFixed(2)
-	return cores.toFixed(3)
-}
-
-const columns = <M>(h: HtmlBuilder<M>, sort: Sort, onSort: ((key: PodSortKey) => M) | undefined): ReadonlyArray<Html> => {
+const columns = <M>(
+	h: HtmlBuilder<M>,
+	sort: Sort,
+	onSort: ((key: PodSortKey) => M) | undefined,
+): ReadonlyArray<Html> => {
 	const head = (key: PodSortKey) =>
 		onSort === undefined || sort === null
 			? { isActive: sort !== null && sort.key === key, dir: sort?.dir ?? "desc" }
 			: headSort(sort, key, onSort)
 	return [
-		columnHead(h, { label: "Pod", sort: head("podName"), width: "w-0 flex-1 min-w-[260px]" }),
-		columnHead(h, { label: "Peak saturation", sort: head("saturation"), width: "w-[176px]", hidden: "hidden md:flex" }),
-		columnHead(h, { label: "CPU cores", sort: head("cpuUsage"), align: "right", width: "w-[132px]", hidden: "hidden lg:flex" }),
+		columnHead(h, { label: "Pod", sort: head("podName"), width: columnClass({ min: "64" }) }),
+		columnHead(h, {
+			label: "Peak saturation",
+			sort: head("saturation"),
+			width: "w-44",
+			hidden: "hidden md:flex",
+		}),
+		columnHead(h, {
+			label: "CPU cores",
+			sort: head("cpuUsage"),
+			align: "right",
+			width: "w-32",
+			hidden: "hidden lg:flex",
+		}),
 		columnHead(h, {
 			label: "Mem of limit",
 			sort: head("memoryLimitPct"),
 			align: "right",
-			width: "w-[120px]",
+			width: "w-32",
 			hidden: "hidden lg:flex",
 		}),
-		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-[100px]" }),
+		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-24" }),
 	]
 }
 
@@ -76,24 +98,32 @@ export const podTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 		{ ariaLabel: "Pods" },
 		columns(h, null, undefined),
 		skeletonRows(h, 6, () => [
-			h.div([h.Class("w-0 min-w-[260px] flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-40")]),
+			column(h, { min: "64" }, [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-40")]),
 			h.div(
-				[h.Class("hidden w-[176px] space-y-1.5 md:block")],
-				[skeleton(h, "h-2.5 w-[176px]"), skeleton(h, "h-2.5 w-[176px]")],
+				[h.Class("hidden w-44 space-y-1.5 md:block")],
+				[skeleton(h, "h-2.5 w-44"), skeleton(h, "h-2.5 w-44")],
 			),
-			skeleton(h, "hidden h-3 w-[132px] lg:block"),
-			skeleton(h, "hidden h-3 w-[120px] lg:block"),
-			skeleton(h, "h-3 w-[100px]"),
+			skeletonLine(h, { width: "32", visibleFrom: "lg" }),
+			skeletonLine(h, { width: "32", visibleFrom: "lg" }),
+			skeleton(h, "h-3 w-24"),
 		]),
 	)
 
 /** `RestartMarker`: beside the name, only when the pod restarted in the window. */
 const restartMarker = <M>(h: HtmlBuilder<M>, summary: PodRestartSummary | undefined): Html => {
 	if (summary === undefined || summary.restarts <= 0) return null
-	const label = [formatRestarts(summary.restarts), summary.lastTerminatedReason].filter(Boolean).join(" · ")
+	const label = Arr.join(
+		Arr.filter([formatRestarts(summary.restarts), summary.lastTerminatedReason], Boolean),
+		" · ",
+	)
 	return h.span(
 		[
-			h.Class(cn("shrink-0 text-2xs font-medium", TONE_TEXT[restartTone(summary.restarts, summary.lastTerminatedReason)])),
+			h.Class(
+				cn(
+					"shrink-0 text-2xs font-medium",
+					TONE_TEXT[restartTone(summary.restarts, summary.lastTerminatedReason)],
+				),
+			),
 			h.Title(`${label} in this window, ${summary.totalRestarts} in total`),
 		],
 		[label],
@@ -121,74 +151,92 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 	const workload = workloadOf(pod)
 	const key = podKey(pod)
 	const isActive = inputs.activeKey === key
-	return h.a(
+	return laneLink(
+		h,
+		{
+			href: hrefOf(
+				AppRoute.InfraKubernetesPod({
+					podName: pod.podName,
+					search: { ...inputs.timeSearch, namespace: pod.namespace || undefined },
+				}),
+			),
+			isSelected: isActive,
+			className: ROW_LINK_CLASS,
+			attributes: [
+				h.Key(key),
+				...(isActive ? [h.DataAttribute("active", "true")] : []),
+				...(inputs.canPeek === true ? [h.DataAttribute("peek-key", key)] : []),
+			],
+		},
 		[
-			h.Key(key),
-			h.Href(
-				hrefOf(
-					AppRoute.InfraKubernetesPod({
-						podName: pod.podName,
-						search: { ...inputs.timeSearch, namespace: pod.namespace || undefined },
+			column(h, { min: "64" }, [
+				hstack(h, { gap: "2" }, [
+					middleTruncate(h, {
+						text: pod.podName,
+						tail: 12,
+						mono: true,
+						className: typographyClass({
+							size: "xs",
+							tone: "foreground",
+							weight: "medium",
+							className: "transition-colors group-hover:text-primary",
+						}),
 					}),
-				),
-			),
-			h.Class(cn(ROW_LINK_CLASS, rowSelectedClass(isActive))),
-			...(isActive ? [h.DataAttribute("active", "true")] : []),
-			...(inputs.canPeek === true ? [h.DataAttribute("peek-key", key)] : []),
-		],
-		[
-			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
-				[
-					h.div(
-						[h.Class("flex items-center gap-2")],
-						[
-							middleTruncate(h, {
-								text: pod.podName,
-								tail: 12,
-								mono: true,
-								className: "text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-							}),
-							hostStatusBadge(h, { quiet: true, lastSeen: pod.lastSeen, referenceMs: inputs.referenceTime }),
-							restartMarker(h, Option.getOrUndefined(Option.map(inputs.restarts, (map) => map.get(key)))),
-						],
-					),
-					metaLine(
+					hostStatusBadge(h, {
+						quiet: true,
+						lastSeen: pod.lastSeen,
+						referenceMs: inputs.referenceTime,
+					}),
+					restartMarker(
 						h,
-						[
-							pod.namespace && `ns ${pod.namespace}`,
-							workload && `${workload.kind} ${workload.name}`,
-							pod.nodeName && `node ${pod.nodeName}`,
-							pod.qosClass && `qos ${pod.qosClass}`,
-							pod.computeType === "fargate" && h.span([h.Class(TONE_TEXT.warn)], ["fargate"]),
-						],
-						{ title: metaTitle(pod, workload) },
+						Option.getOrUndefined(Option.map(inputs.restarts, (map) => map.get(key))),
 					),
+				]),
+				metaLine(
+					h,
+					[
+						pod.namespace && `ns ${pod.namespace}`,
+						workload && `${workload.kind} ${workload.name}`,
+						pod.nodeName && `node ${pod.nodeName}`,
+						pod.qosClass && `qos ${pod.qosClass}`,
+						pod.computeType === "fargate" && h.span([h.Class(TONE_TEXT.warn)], ["fargate"]),
+					],
+					{ title: metaTitle(pod, workload) },
+				),
+			]),
+			column(h, { width: "44", from: "md" }, [
+				meterRows(h, [
+					{ label: "CPU", fraction: pod.cpuLimitPctPeak },
+					{ label: "MEM", fraction: pod.memoryLimitPctPeak },
+				]),
+			]),
+			h.div(
+				[h.Class("hidden w-32 text-right lg:block")],
+				[avgPeak(h, { avg: pod.cpuUsage, peak: pod.cpuUsagePeak, format: formatCores })],
+			),
+			h.div(
+				[h.Class("hidden w-32 text-right lg:block")],
+				[
+					avgPeak(h, {
+						avg: pod.memoryLimitPct,
+						peak: pod.memoryLimitPctPeak,
+						format: formatWholePercent,
+					}),
 				],
 			),
 			h.div(
-				[h.Class("hidden w-[176px] md:block")],
+				[h.Class("w-24 text-right")],
 				[
-					meterRows(h, [
-						{ label: "CPU", fraction: pod.cpuLimitPctPeak },
-						{ label: "MEM", fraction: pod.memoryLimitPctPeak },
-					]),
-				],
-			),
-			h.div([h.Class("hidden w-[132px] text-right lg:block")], [avgPeak(h, { avg: pod.cpuUsage, peak: pod.cpuUsagePeak, format: formatCores })]),
-			h.div(
-				[h.Class("hidden w-[120px] text-right lg:block")],
-				[avgPeak(h, { avg: pod.memoryLimitPct, peak: pod.memoryLimitPctPeak, format: formatWholePercent })],
-			),
-			h.div(
-				[h.Class("w-[100px] text-right")],
-				[
-					relativeTime(h, {
+					listRelativeTime(h, {
 						value: pod.lastSeen,
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
 						mono: true,
-						className: "cursor-default text-2xs text-muted-foreground",
+						className: typographyClass({
+							size: "2xs",
+							tone: "muted",
+							className: "cursor-default",
+						}),
 					}),
 				],
 			),
@@ -196,10 +244,16 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 	)
 }
 
-export const podTable = <M>(h: HtmlBuilder<M>, pods: ReadonlyArray<PodRow>, inputs: PodTableInputs<M>): Html =>
+export const podTable = <M>(
+	h: HtmlBuilder<M>,
+	pods: ReadonlyArray<PodRow>,
+	inputs: PodTableInputs<M>,
+): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Pods", isWaiting: inputs.isWaiting },
 		columns(h, { key: inputs.sortBy, dir: inputs.sortDir }, inputs.onSort),
-		pods.length === 0 ? [dataTableEmpty(h, ["No pods match your filter."])] : pods.map((pod) => podRow(h, pod, inputs)),
+		pods.length === 0
+			? [dataTableEmpty(h, ["No pods match these filters"])]
+			: Arr.map(pods, (pod) => podRow(h, pod, inputs)),
 	)

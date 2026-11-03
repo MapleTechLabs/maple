@@ -3,10 +3,11 @@ import { getAiSessionSpans, getAiSessionSummary } from "@maple/web-data/warehous
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { detectModels } from "../kit/detected-models"
-import { readLocale } from "../../kit/locale"
+import { writeClipboard } from "../../kit/clipboard"
+import { readLocale } from "@maple/views/lib/locale"
 import { Message, SpanScope } from "./message"
 import { parseMarkdownTexts } from "../../kit/message-response"
 
@@ -39,8 +40,10 @@ export const FetchFirstPage = Command.define("FetchAgentSessionFirstPage", {
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, sessionId, window }) =>
 		getAiSessionSpans({ data: sessionInput(sessionId, window) }).pipe(
-			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (page) => ({ data: page.data, nextCursor: page.nextCursor ?? null }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
 		),
@@ -60,8 +63,10 @@ export const FetchMorePage = Command.define("FetchAgentSessionMorePage", {
 	messages: [Message.CompletedFetchMorePage],
 	execute: ({ key, sessionId, window, scope, after, limit, index }) =>
 		getAiSessionSpans({ data: { ...sessionInput(sessionId, window), scope, after, limit } }).pipe(
-			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (page) => ({ data: page.data, nextCursor: page.nextCursor ?? null }),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) =>
 				Message.CompletedFetchMorePage({
@@ -116,10 +121,7 @@ export const RunCodeAction = Command.define("RunAgentSessionCodeAction", {
 	messages: [Message.CompletedCodeAction],
 	execute: ({ action, code, language }) =>
 		(action === "copy"
-			? Effect.tryPromise(() => navigator.clipboard.writeText(code)).pipe(
-					Effect.as(true),
-					Effect.orElseSucceed(() => false),
-				)
+			? writeClipboard(code)
 			: Effect.sync(() => {
 					const url = URL.createObjectURL(new Blob([code], { type: "text/plain" }))
 					const anchor = document.createElement("a")

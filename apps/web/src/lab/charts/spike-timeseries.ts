@@ -12,15 +12,19 @@ import {
 import { areaY, type ChartPoint, type ChartValue, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scaleTime } from "d3-scale"
-import { Option } from "effect"
-import { ChartTooltip } from "../../charts/chart-spec"
-import type { BuiltChart } from "../../charts/definitions/built-chart"
-import { roundCapDasharray, verticalGradient } from "../../charts/definitions/fixed-metric-axes"
+import { Option, Array as Arr, String as Str } from "effect"
+import { ChartTooltip } from "@maple/views/charts/chart-spec"
+import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
+import {
+	AREA_FILL_END,
+	roundCapDasharray,
+	verticalGradient,
+} from "@maple/views/charts/definitions/fixed-metric-axes"
 import {
 	cursorTooltip,
 	MUTED_COLOR_AMOUNT,
 	tooltipFocusCapture,
-} from "../../charts/definitions/plot-constants"
+} from "@maple/views/charts/definitions/plot-constants"
 import { type SpikeSpec, mutedOf, MUTED_OPACITY } from "./spike-spec"
 
 // `LineSpike` / `LineLegendSpike` and `AreaSpike` / `AreaLegendSpike`, definition half.
@@ -30,7 +34,7 @@ type Point = ChartPoint<TimeseriesSpikeRow, ChartValue, number>
 const STROKE_WIDTH = 2.5
 const INCOMPLETE_DASHARRAY = roundCapDasharray(4.5, 7, STROKE_WIDTH)
 const FADED_START_OPACITY = 0.15
-const FADED_END_OPACITY = 0
+const FADED_END_OPACITY = AREA_FILL_END
 
 interface Series {
 	readonly id: string
@@ -85,11 +89,13 @@ const tooltipOf =
 	) =>
 	(points: ReadonlyArray<Point>): Option.Option<ChartTooltip> =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
-			const highlighted = highlight(series.map((entry) => [entry.label, entry.value(datum)] as const))
+			const highlighted = highlight(
+				Arr.map(series, (entry) => [entry.label, entry.value(datum)] as const),
+			)
 			return ChartTooltip.Bucket({
 				heading: `${formatBucketLabel(datum.bucket, axisContext, "tooltip")}${datum.partial ? " · partial" : ""}`,
 				...(highlighted === undefined ? undefined : { highlighted }),
-				rows: series.map((entry) => ({
+				rows: Arr.map(series, (entry) => ({
 					label: entry.label,
 					color: entry.color,
 					dashed: false,
@@ -99,16 +105,15 @@ const tooltipOf =
 		})
 
 const rowsOf = (spec: SpikeSpec): ReadonlyArray<TimeseriesSpikeRow> =>
-	spec.arm.includes("incomplete") ? TIMESERIES_PARTIAL_ROWS : TIMESERIES_SPIKE_ROWS
+	Str.includes("incomplete")(spec.arm) ? TIMESERIES_PARTIAL_ROWS : TIMESERIES_SPIKE_ROWS
 
 const splitOf = (spec: SpikeSpec, rows: ReadonlyArray<TimeseriesSpikeRow>) =>
-	spec.arm.includes("incomplete") ? splitAtFirstPartial(rows) : { solid: rows, dashed: [] }
+	Str.includes("incomplete")(spec.arm) ? splitAtFirstPartial(rows) : { solid: rows, dashed: [] }
 
 /** The y domain over every series, muted ones included: emphasis never moves the axis. */
 const dataMaxOf = (rows: ReadonlyArray<TimeseriesSpikeRow>, series: ReadonlyArray<Series>): number =>
-	rows.reduce(
-		(max, row) => series.reduce((seriesMax, entry) => Math.max(seriesMax, entry.value(row)), max),
-		0,
+	Arr.reduce(rows, 0, (max, row) =>
+		Arr.reduce(series, max, (seriesMax, entry) => Math.max(seriesMax, entry.value(row))),
 	)
 
 /** `LineFigure`. */
@@ -117,7 +122,7 @@ export const buildLineSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 	const series = latencySeries(spec)
 	const muted = mutedOf(
 		spec,
-		series.map((entry) => entry.id),
+		Arr.map(series, (entry) => entry.id),
 	)
 	const chrome = chromeOf(spec)
 	const axisContext = timeseriesAxisContext(rows)
@@ -136,9 +141,9 @@ export const buildLineSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 		})
 	const definition = defineChart({
 		marks: [
-			...series.map((entry) => line(solid, entry, false)),
-			...series.map((entry) => line(dashed, entry, true)),
-			...series.map((entry) =>
+			...Arr.map(series, (entry) => line(solid, entry, false)),
+			...Arr.map(series, (entry) => line(dashed, entry, true)),
+			...Arr.map(series, (entry) =>
 				focusDot(
 					rows,
 					(d: TimeseriesSpikeRow) => d.date,
@@ -180,7 +185,7 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 	const series = throughputSeries(spec)
 	const muted = mutedOf(
 		spec,
-		series.map((entry) => entry.id),
+		Arr.map(series, (entry) => entry.id),
 	)
 	const chrome = chromeOf(spec)
 	const axisContext = timeseriesAxisContext(rows)
@@ -190,7 +195,7 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 	const opacityFor = (id: string) => (muted.has(id) ? MUTED_OPACITY : 1)
 	const x = (d: TimeseriesSpikeRow) => d.date
 	const definition = defineChart({
-		gradients: series.flatMap((entry) => [
+		gradients: Arr.flatMap(series, (entry) => [
 			verticalGradient(`${idPrefix}${entry.id}`, entry.color),
 			verticalGradient(
 				`${idPrefix}${entry.id}Faded`,
@@ -200,7 +205,7 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 			),
 		]),
 		marks: [
-			...series.flatMap((entry) => [
+			...Arr.flatMap(series, (entry) => [
 				areaY(solid, {
 					id: `${entry.id}Area`,
 					x,
@@ -235,7 +240,7 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 					strokeDasharray: INCOMPLETE_DASHARRAY,
 				}),
 			]),
-			...series.map((entry) =>
+			...Arr.map(series, (entry) =>
 				focusDot(
 					rows,
 					x,

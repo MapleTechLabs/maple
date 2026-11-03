@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { rawSqlWidgets } from "./audit-raw-sql"
+import { Array as Arr } from "effect"
 
 // The walker returning nothing reads as "all clear", which is the one wrong
 // answer an audit must not give — so pin the document shapes it has to find.
@@ -53,7 +54,7 @@ describe("rawSqlWidgets", () => {
 				{ id: "v2", dataSource: { endpoint: "raw_sql_chart", params: { sql: "SELECT 2" } } },
 			],
 		}
-		expect(rawSqlWidgets(payload).map((w) => [w.widgetId, w.sourceForm])).toEqual([
+		expect(Arr.map(rawSqlWidgets(payload), (w) => [w.widgetId, w.sourceForm])).toEqual([
 			["v3", "kind"],
 			["v2", "route"],
 		])

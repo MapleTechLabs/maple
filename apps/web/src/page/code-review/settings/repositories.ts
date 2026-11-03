@@ -5,16 +5,19 @@ import {
 	visibleRepositories,
 } from "../../../components/code-review/repository-filter"
 import { pluralize } from "@maple/ui/lib/format"
-import { Schema } from "effect"
+import { cn } from "@maple/ui/lib/utils"
+import { Schema, Array as Arr, String as Str } from "effect"
+import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel, panelHeader } from "../../../ui/panel"
-import { segmentedSelect } from "../../../ui/segmented-select"
-import * as Switch from "../../../ui/switch"
-import { searchInput } from "../../../ui/search-input"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import * as Switch from "@maple/views/ui/switch"
+import { searchInput } from "@maple/views/ui/search-input"
+import { typography } from "@maple/views/ui/typography"
 
 // `RepositoryList`, `RepositoryRow` and `RepositoryName`, shared with
 // `/lab/code-review-repos`.
@@ -38,7 +41,13 @@ export const pinOnce = (
 	repositories: ReadonlyArray<GithubRepoSummary>,
 ): RepoListState =>
 	state.pinned === null
-		? { ...state, pinned: repositories.filter((repo) => repo.prReviewEnabled).map((repo) => repo.id) }
+		? {
+				...state,
+				pinned: Arr.map(
+					Arr.filter(repositories, (repo) => repo.prReviewEnabled),
+					(repo) => repo.id,
+				),
+			}
 		: state
 
 const FILTER_LABELS = {
@@ -61,14 +70,26 @@ export type RepoListOptions<M> = Readonly<{
 	onConfigure: (repo: GithubRepoSummary) => M
 }>
 
+/** The list header's way to the GitHub App's repository access. */
+export const manageAccessLink = <M>(h: HtmlBuilder<M>): Html =>
+	h.a(
+		[
+			h.Class(
+				"inline-flex items-center gap-1 text-foreground underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground active:decoration-foreground",
+			),
+			h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
+		],
+		["Manage GitHub access", icon(h, "ArrowRightIcon", { size: 12, className: "shrink-0" })],
+	)
+
 /** The owner recedes so the part that differs between rows, the repository name, carries it. */
 const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
 	const slash = fullName.indexOf("/")
 	return h.span(
 		[h.Class("truncate")],
 		[
-			h.span([h.Class("font-normal text-muted-foreground")], [fullName.slice(0, slash + 1)]),
-			fullName.slice(slash + 1),
+			typography(h, { tone: "muted", weight: "normal" }, [Str.slice(0, slash + 1)(fullName)]),
+			Str.slice(slash + 1)(fullName),
 		],
 	)
 }
@@ -86,20 +107,13 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 					h.a(
 						[
 							h.Class(
-								"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline",
+								"group inline-flex min-w-0 items-center gap-1 text-sm font-medium hover:underline active:underline",
 							),
 							h.Href(repo.htmlUrl),
 							h.Attribute("rel", "noreferrer"),
 							h.Attribute("target", "_blank"),
 						],
-						[
-							repositoryName(h, repo.fullName),
-							icon(h, "ExternalLinkIcon", {
-								size: 12,
-								className:
-									"shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
-							}),
-						],
+						[repositoryName(h, repo.fullName), revealIcon(h, "ExternalLinkIcon", { size: 12 })],
 					),
 					...(repo.isPrivate
 						? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Private"])]
@@ -142,16 +156,19 @@ const searchBox = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html =>
 		id: "code-review-repo-search",
 		size: "sm",
 		className: "min-w-48 flex-1",
-		placeholder: "Search repositories",
+		placeholder: "Search repositories…",
 		value: options.state.search,
 		onInput: options.onSearch,
 		onClear: options.onSearch(""),
 		attributes: [h.AriaLabel("Search repositories")],
 	})
 
+/** About as many rows as the list's max height shows before it scrolls. */
+const FOLD_ROWS = 11
+
 export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html => {
 	const { repositories, state } = options
-	const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
+	const enabled = Arr.filter(repositories, (repo) => repo.prReviewEnabled).length
 	const counts = { all: repositories.length, reviewed: enabled, off: repositories.length - enabled }
 	const showToolbar = repositories.length > SEARCH_THRESHOLD
 	const visible = visibleRepositories(repositories, {
@@ -159,17 +176,11 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 		filter: state.filter,
 		pinned: new Set(state.pinned ?? []),
 	})
-	const isSearching = showToolbar && state.search.trim().length > 0
+	const isSearching = showToolbar && Str.trim(state.search).length > 0
 	return panel(h, {}, [
 		panelHeader(h, {
 			className: "px-5 py-3 text-xs text-muted-foreground",
-			action: h.a(
-				[
-					h.Class("hover:text-foreground hover:underline"),
-					h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
-				],
-				["Manage GitHub access"],
-			),
+			action: manageAccessLink(h),
 			children: [
 				h.span(
 					[],
@@ -195,7 +206,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 								ariaLabel: "Review status",
 								value: state.filter,
 								onChange: options.onFilter,
-								options: (["all", "reviewed", "off"] as const).map((value) => ({
+								options: Arr.map(["all", "reviewed", "off"] as const, (value) => ({
 									value,
 									label: `${FILTER_LABELS[value]} · ${counts[value]}`,
 								})),
@@ -216,7 +227,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 							[],
 							[
 								isSearching
-									? `No repositories match “${state.search.trim()}”`
+									? `No repositories match “${Str.trim(state.search)}”`
 									: state.filter === "reviewed"
 										? "No repositories are reviewed yet"
 										: "Every repository is reviewed",
@@ -230,8 +241,17 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 					],
 				)
 			: h.ul(
-					[h.Class("max-h-[min(36rem,65vh)] divide-y overflow-y-auto")],
-					visible.map((repo) => repositoryRow(h, repo, options)),
+					[
+						h.Class(
+							cn(
+								"max-h-[min(36rem,65vh)] divide-y overflow-y-auto",
+								// A long list fades at the fold; the padding clears the last row once scrolled to it.
+								visible.length > FOLD_ROWS &&
+									"pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)]",
+							),
+						),
+					],
+					Arr.map(visible, (repo) => repositoryRow(h, repo, options)),
 				),
 		...(visible.length > 0 && visible.length < repositories.length
 			? [

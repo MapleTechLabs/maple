@@ -1,0 +1,90 @@
+import type { Html, HtmlBuilder } from "foldkit/html"
+import * as Chart from "@maple/views/charts/chart"
+import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
+import type { ChartUnit, LongRow } from "@maple/views/charts/infra-metric-series"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartLoading } from "@maple/views/ui/chart-state"
+import { chartCard } from "./chart-card"
+import { gridClass } from "@maple/views/ui/grid"
+import { Array as Arr } from "effect"
+
+// A detail page's grid of bucketed metric charts, one card per chart, two columns from `lg`.
+
+type Bucketed = { readonly bucket: string }
+
+/** A picked `null` is a gap: that bucket draws nothing for the series. */
+export type MetricSeries<Row> = readonly [label: string, pick: (row: Row) => number | null]
+
+export interface MetricChart<Row> {
+	/** The card title, and the key of the chart's model. */
+	readonly id: string
+	readonly unit: ChartUnit
+	readonly series: ReadonlyArray<MetricSeries<Row>>
+}
+
+const GRID = gridClass({ cols: 1, lg: 2, gap: "4" })
+
+/** One long row per (bucket, series), leaving out the gaps. */
+export const metricChartRows = <Row extends Bucketed>(
+	chart: MetricChart<Row>,
+	buckets: ReadonlyArray<Row>,
+): ReadonlyArray<LongRow> =>
+	Arr.flatMap(buckets, (row) =>
+		Arr.flatMap(chart.series, ([label, pick]) => {
+			const value = pick(row)
+			return value === null ? [] : [{ bucket: row.bucket, attributeValue: label, value }]
+		}),
+	)
+
+export const metricChartsLoading = <M>(h: HtmlBuilder<M>, count: number): Html =>
+	h.div(
+		[h.Class(GRID)],
+		Array.from({ length: count }, () => chartLoading(h, { variant: "line", height: 256 })),
+	)
+
+export type MetricChartCardsOptions<Row, M> = Readonly<{
+	/** Prefixes the slot, chart and gradient ids. */
+	idPrefix: string
+	/** Charts sharing it move their hover crosshair together. */
+	linkedChartId: string
+	charts: ReadonlyArray<MetricChart<Row>>
+	buckets: ReadonlyArray<Row>
+	models: Readonly<Record<string, Chart.Model>>
+	toMessage: (chartId: string, message: Chart.Message) => M
+	theme: ThemeColors
+	timeZone: string
+	isWaiting: boolean
+}>
+
+export const metricChartCards = <Row extends Bucketed, M>(
+	h: HtmlBuilder<M>,
+	options: MetricChartCardsOptions<Row, M>,
+): Html => {
+	const xDomain = Arr.map(options.buckets, (row) => row.bucket)
+	return h.div(
+		[h.Class(GRID)],
+		Arr.map(options.charts, (chart, index) =>
+			chartCard(h, { title: chart.id }, [
+				h.submodel({
+					slotId: `${options.idPrefix}-chart-${index}`,
+					model: options.models[chart.id] ?? Chart.init(),
+					view: InfraMetricChart.view,
+					toParentMessage: (message: Chart.Message) => options.toMessage(chart.id, message),
+					viewInputs: {
+						chartId: `${options.idPrefix}-${index}`,
+						spec: InfraMetricChart.infraMetricSpec({
+							rows: metricChartRows(chart, options.buckets),
+							unit: chart.unit,
+							xDomain,
+							theme: options.theme,
+							timeZone: options.timeZone,
+							gradientPrefix: `${options.idPrefix}-${index}`,
+						}),
+						linkedChartId: options.linkedChartId,
+						isWaiting: options.isWaiting,
+					},
+				}),
+			]),
+		),
+	)
+}

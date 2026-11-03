@@ -7,9 +7,9 @@ import {
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 import { getReview, listCiRuns } from "./api"
 import { ResponseCache } from "./page-steps"
 
@@ -22,7 +22,7 @@ export const ReviewSheet = Schema.Struct({
 	reviewId: Schema.NullOr(PrReviewId),
 	detail: KeyedSchema(CodeReviewDetail, LoadFailure),
 	detailCache: ResponseCache(CodeReviewDetail),
-	/** The pull request's runs over two weeks up to `ciNowMs` (read once the detail is in). */
+	/** The pull request's runs over 90 days up to `ciNowMs` (read once the detail is in). */
 	ciRuns: KeyedSchema(CodeReviewCiRunsResponse, LoadFailure),
 	ciCache: ResponseCache(CodeReviewCiRunsResponse),
 	nowMs: Schema.Number,
@@ -74,4 +74,3 @@ export const FetchPullRequestRuns = Command.define("FetchCodeReviewPullRequestRu
 			Effect.map((result) => SheetMessage.CompletedFetchCiRuns({ key, result })),
 		),
 })
-

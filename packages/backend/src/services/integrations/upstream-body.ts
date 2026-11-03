@@ -1,20 +1,27 @@
+import { String as Str } from "effect"
 const MAX_SNIPPET = 160
 
 // Any body opening with a tag, comment, doctype or processing instruction is markup.
-const looksLikeHtml = (body: string) => /^<[a-zA-Z!/?]/.test(body.trimStart())
+const looksLikeHtml = (body: string) => /^<[a-zA-Z!/?]/.test(Str.trimStart(body))
 
-const collapse = (text: string) => text.replace(/\s+/g, " ").trim()
+const collapse = (text: string) => Str.trim(Str.replace(/\s+/g, " ")(text))
 
 // Visible text only: script/style bodies go first so their code never reaches a message.
 const stripTags = (markup: string) =>
 	collapse(
-		markup
-			.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
-			.replace(/<!--[\s\S]*?-->/g, " ")
-			.replace(/<[^>]*>?/g, " "),
+		Str.replace(
+			/<[^>]*>?/g,
+			" ",
+		)(
+			Str.replace(
+				/<!--[\s\S]*?-->/g,
+				" ",
+			)(Str.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")(markup)),
+		),
 	)
 
-const truncate = (text: string) => (text.length > MAX_SNIPPET ? `${text.slice(0, MAX_SNIPPET)}...` : text)
+const truncate = (text: string) =>
+	text.length > MAX_SNIPPET ? `${Str.slice(0, MAX_SNIPPET)(text)}...` : text
 
 /**
  * A short, log-safe summary of an upstream error body. HTML (an edge block or challenge page) is

@@ -3,7 +3,7 @@ import type { RecommendationIssue, RecommendationIssueId } from "@maple/domain/h
 import { CurrentTenant, RecommendationIssueNotFoundError } from "@maple/domain/http"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
 import type { V2Recommendation } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 
 const toV2Recommendation = (issue: RecommendationIssue): V2Recommendation => ({
@@ -51,7 +51,7 @@ export const HttpV2InstrumentationRecommendationsLive = HttpApiBuilder.group(
 						const tenant = yield* CurrentTenant.Context
 						const response = yield* service.listReconciled(tenant)
 
-						const page = yield* paginateArray(response.issues.map(toV2Recommendation), query)
+						const page = yield* paginateArray(Arr.map(response.issues, toV2Recommendation), query)
 						return { object: "list" as const, ...page }
 					}),
 				)

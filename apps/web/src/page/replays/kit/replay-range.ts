@@ -1,4 +1,4 @@
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 import type { ReplayPartitionWindow } from "./replay-window"
 
 /**
@@ -103,13 +103,6 @@ export const planRanges = (
 	if (start !== undefined) ranges.push({ fromChunkSeq: start, toChunkSeq: end })
 	return ranges
 }
-
-/** The planned range containing `chunkSeq`, or undefined if it is past the end. */
-export const rangeContaining = (
-	plan: ReadonlyArray<ReplayRange>,
-	chunkSeq: number,
-): ReplayRange | undefined =>
-	plan.find((range) => chunkSeq >= range.fromChunkSeq && chunkSeq <= range.toChunkSeq)
 
 /** Stable key for a range; must match `replayRangeInput`'s identity exactly. */
 export const rangeKey = (range: ReplayRange) => `${range.fromChunkSeq}:${range.toChunkSeq}`
@@ -252,12 +245,10 @@ export const rangesCovering = (
 	)
 	if (startIndex < 0) return []
 	const bytesIn = (range: ReplayRange) =>
-		chunks.reduce(
-			(sum, chunk) =>
-				chunk.chunk_seq >= range.fromChunkSeq && chunk.chunk_seq <= range.toChunkSeq
-					? sum + chunk.byte_size
-					: sum,
-			0,
+		Arr.reduce(chunks, 0, (sum, chunk) =>
+			chunk.chunk_seq >= range.fromChunkSeq && chunk.chunk_seq <= range.toChunkSeq
+				? sum + chunk.byte_size
+				: sum,
 		)
 	const ranges: Array<ReplayRange> = []
 	let bytes = 0

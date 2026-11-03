@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { derivePlatformAttributes, type PlatformInputs } from "./platform.js"
+import { Schema } from "effect"
+import { runtime } from "std-env"
+import {
+	derivePlatformAttributes,
+	getAutoPlatformAttributes,
+	readRuntimeVersion,
+	type PlatformInputs,
+} from "./platform.js"
 
 const baseInputs = (overrides: Partial<PlatformInputs> = {}): PlatformInputs => ({
 	runtime: "",
@@ -154,5 +161,52 @@ describe("derivePlatformAttributes", () => {
 		)
 		expect(JSON.stringify(attrs)).not.toContain("leak-me")
 		expect(JSON.stringify(attrs)).not.toContain("postgres")
+	})
+})
+
+const TestProcess = Schema.Struct({
+	process: Schema.Struct({
+		versions: Schema.Struct({ node: Schema.String, bun: Schema.optionalKey(Schema.String) }),
+	}),
+})
+
+describe("process.runtime.version", () => {
+	it("reports the running runtime's version", () => {
+		const attrs = getAutoPlatformAttributes()
+		// The package has no node types, so parse `process.versions` to read it.
+		const { versions } = Schema.decodeUnknownSync(TestProcess)(globalThis).process
+		const expected = runtime === "bun" ? versions.bun : versions.node
+		expect(attrs["process.runtime.version"]).toBe(expected)
+		expect(attrs["process.runtime.version"]).not.toMatch(/^v/)
+	})
+
+	it("reads node, bun and deno versions from their own globals", () => {
+		const fake = {
+			process: { versions: { node: "22.11.0", bun: "1.3.2" } },
+			Deno: { version: { deno: "2.1.4" } },
+		}
+		expect(readRuntimeVersion("node", fake)).toBe("22.11.0")
+		expect(readRuntimeVersion("bun", fake)).toBe("1.3.2")
+		expect(readRuntimeVersion("deno", fake)).toBe("2.1.4")
+	})
+
+	it("reports no version for workerd and edge runtimes even with a node compat shim", () => {
+		const fake = { process: { versions: { node: "22.11.0" } } }
+		expect(readRuntimeVersion("workerd", fake)).toBeUndefined()
+		expect(readRuntimeVersion("edge-light", fake)).toBeUndefined()
+		expect(readRuntimeVersion("fastly", fake)).toBeUndefined()
+	})
+
+	it("tolerates missing globals", () => {
+		expect(readRuntimeVersion("node", {})).toBeUndefined()
+		expect(readRuntimeVersion("deno", { Deno: {} })).toBeUndefined()
+		expect(
+			derivePlatformAttributes(baseInputs({ runtime: "node" }))["process.runtime.version"],
+		).toBeUndefined()
+	})
+
+	it("emits the version passed in", () => {
+		const attrs = derivePlatformAttributes(baseInputs({ runtime: "node", runtimeVersion: "22.11.0" }))
+		expect(attrs["process.runtime.version"]).toBe("22.11.0")
 	})
 })

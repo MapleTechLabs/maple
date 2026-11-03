@@ -3,7 +3,8 @@ import { boundsForRange, type ChartWindow, chartWindow, parseClickHouseDateTime,
 import { isMetricType } from "../../lib/units"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { keyOf, request } from "../../data/slot"
+import { requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { type PageContext, rangeOf } from "../contract"
 import type { MetricEntry } from "../metrics/catalog"
 import { FetchBreakdown, FetchEntry, FetchTimeseries } from "./command"
@@ -36,8 +37,8 @@ export const loadDependents = (model: Model, context: PageContext, force = false
 	const identity = { metricName: entry.metricName, metricType: entry.metricType, bounds: boundsKey(bounds) }
 	const timeseriesKey = keyOf("metric-timeseries", { ...identity, isMonotonic: entry.isMonotonic, bucketSeconds })
 	const breakdownKey = keyOf("metric-breakdown", identity)
-	const timeseries = request(model.timeseries, timeseriesKey, force)
-	const breakdown = isMetricType(entry.metricType) ? request(model.breakdown, breakdownKey, force) : Option.none()
+	const timeseries = requestKeepingFailure(model.timeseries, timeseriesKey, force ? "Refresh" : "Load")
+	const breakdown = isMetricType(entry.metricType) ? requestKeepingFailure(model.breakdown, breakdownKey, force ? "Refresh" : "Load") : Option.none()
 	return {
 		model: {
 			...model,
@@ -58,7 +59,7 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 		onNone: () => ({ model }),
 		onSome: (bounds) => {
 			const key = keyOf("metric-entry", { metricName: model.metricName, bounds: boundsKey(bounds) })
-			const entry = request(model.entry, key, force)
+			const entry = requestKeepingFailure(model.entry, key, force ? "Refresh" : "Load")
 			const next = { ...model, entry: Option.getOrElse(entry, () => model.entry) }
 			const dependents = loadDependents(next, context, force)
 			return {

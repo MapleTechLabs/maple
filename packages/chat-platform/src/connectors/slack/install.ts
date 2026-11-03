@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
@@ -26,7 +26,7 @@ export const slackAuthorizeUrl = (
 ): string => {
 	const params = new URLSearchParams({
 		client_id: clientId,
-		scope: BOT_SCOPES.join(","),
+		scope: Arr.join(BOT_SCOPES, ","),
 		redirect_uri: input.redirectUri,
 		state: input.state,
 	})
@@ -82,7 +82,7 @@ const exchangeCode = Effect.fn("Slack.request", { kind: "client" })(function* (i
 		.pipe(Effect.mapError((error) => installFailed(`Slack token exchange failed: ${error.message}`)))
 	yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
 	if (response.status < 200 || response.status >= 300) {
-		return yield* Effect.fail(installFailed(`Slack token exchange failed with HTTP ${response.status}`))
+		return yield* installFailed(`Slack token exchange failed with HTTP ${response.status}`)
 	}
 	const json = yield* response.json.pipe(
 		Effect.mapError(() => installFailed("Slack returned a non-JSON token response")),
@@ -94,7 +94,7 @@ const exchangeCode = Effect.fn("Slack.request", { kind: "client" })(function* (i
 	if (!decoded.ok) {
 		const error = decoded.error ?? "unknown"
 		yield* Effect.annotateCurrentSpan({ "error.type": error })
-		return yield* Effect.fail(installFailed(`Slack refused the token exchange: ${error}`))
+		return yield* installFailed(`Slack refused the token exchange: ${error}`)
 	}
 	return decoded
 })
@@ -102,27 +102,25 @@ const exchangeCode = Effect.fn("Slack.request", { kind: "client" })(function* (i
 const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const denied = input.params.get("error")
 	if (denied !== null) {
-		return yield* Effect.fail(installFailed(`Slack rejected the authorization: ${denied}`))
+		return yield* installFailed(`Slack rejected the authorization: ${denied}`)
 	}
 	const code = input.params.get("code")
 	if (code === null) {
-		return yield* Effect.fail(installFailed("Slack's callback carried no authorization code"))
+		return yield* installFailed("Slack's callback carried no authorization code")
 	}
 	const clientId = yield* requireConfig(input.config, SLACK_CONNECTOR_ID, CLIENT_ID_CONFIG)
 	const clientSecret = yield* requireConfig(input.config, SLACK_CONNECTOR_ID, CLIENT_SECRET_CONFIG)
 
 	const decoded = yield* exchangeCode({ clientId, clientSecret, code, redirectUri: input.redirectUri })
 	if (decoded.is_enterprise_install === true) {
-		return yield* Effect.fail(
-			installFailed(
-				"This is an enterprise-wide Slack install, which Maple cannot link yet — install the app into a single workspace instead",
-			),
+		return yield* installFailed(
+			"This is an enterprise-wide Slack install, which Maple cannot link yet — install the app into a single workspace instead",
 		)
 	}
 	const teamId = decoded.team?.id
 	const botToken = decoded.access_token
 	if (teamId === undefined || botToken === undefined) {
-		return yield* Effect.fail(installFailed("Slack's token response named no workspace and bot token"))
+		return yield* installFailed("Slack's token response named no workspace and bot token")
 	}
 	return {
 		externalWorkspaceId: teamId,

@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 const DEFAULT_TIMEZONE = "UTC"
 
 // Whether a zone name is one the runtime knows never changes, and asking is
@@ -8,7 +9,7 @@ const DEFAULT_TIMEZONE = "UTC"
 const knownZones = new Map<string, boolean>()
 
 export function isValidIanaTimeZone(value: string): boolean {
-	if (value.trim().length === 0) return false
+	if (Str.trim(value).length === 0) return false
 
 	const known = knownZones.get(value)
 	if (known !== undefined) return known

@@ -1,7 +1,8 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "@maple/domain/gcp-infra"
 import {
 	GcpCloudSqlInstanceRequest,
+	GcpCloudSqlStatementSpansRequest,
 	GcpInfraMetricsRequest,
 	GcpInfraPresenceRequest,
 	GcpInfraSparklinesRequest,
@@ -168,6 +169,32 @@ export const getGcpCloudSqlTopQueries = Effect.fn("QueryEngine.getGcpCloudSqlTop
 	return { statements: result.data }
 })
 
+const StatementSpansInputSchema = Schema.Struct({
+	...WindowInputSchema.fields,
+	/** The instance's databases, as `db.namespace`; at least one. */
+	databases: GcpCloudSqlStatementSpansRequest.fields.databases,
+	/** The traced query keys a statement matched (`tracedQueries[].queryKey`); at least one. */
+	queryKeys: GcpCloudSqlStatementSpansRequest.fields.queryKeys,
+})
+
+/** The slowest client spans of a statement's traced query keys, each linking to its trace. */
+export const getGcpCloudSqlStatementSpans = Effect.fn("QueryEngine.getGcpCloudSqlStatementSpans")(function* ({
+	data,
+}: {
+	data: (typeof StatementSpansInputSchema)["Encoded"]
+}) {
+	const input = yield* decodeInput(StatementSpansInputSchema, data, "getGcpCloudSqlStatementSpans")
+	const result = yield* runWarehouseQuery("gcpCloudSqlStatementSpans", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.gcpCloudSqlStatementSpans({
+				payload: new GcpCloudSqlStatementSpansRequest(input),
+			})
+		}),
+	)
+	return { spans: result.data }
+})
+
 const DatabaseInstancesInputSchema = Schema.Struct({
 	...WindowInputSchema.fields,
 	/** A `db.namespace` the traces query. */
@@ -229,7 +256,7 @@ export const getGcpCloudSqlTraceSide = Effect.fn("QueryEngine.getGcpCloudSqlTrac
 			})
 		}),
 	)
-	const databases = result.databases.filter((database) => !SYSTEM_DATABASES.has(database))
+	const databases = Arr.filter(result.databases, (database) => !SYSTEM_DATABASES.has(database))
 	// A database whose read fails is left out; the others still show.
 	const summaries = (yield* Effect.forEach(
 		databases,
@@ -247,7 +274,7 @@ export const getGcpCloudSqlTraceSide = Effect.fn("QueryEngine.getGcpCloudSqlTrac
 	)).filter((summary) => summary !== null)
 	return {
 		databases,
-		tracedQueries: summaries.flatMap((summary) => summary.topQueries),
-		services: Math.max(0, ...summaries.map((summary) => summary.summary?.activeServiceCount ?? 0)),
+		tracedQueries: Arr.flatMap(summaries, (summary) => summary.topQueries),
+		services: Math.max(0, ...Arr.map(summaries, (summary) => summary.summary?.activeServiceCount ?? 0)),
 	}
 })

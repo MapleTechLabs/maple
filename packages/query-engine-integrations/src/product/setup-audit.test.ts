@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
 import { describe, expect, it } from "vitest"
-import { Schema, Effect } from "effect"
+import { Schema, Effect, Array as Arr, Record as Rec } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	auditAttributeKeyInventoryQuery,
@@ -166,6 +166,7 @@ describe("trace-completeness joins", () => {
 	it("auditOrphanSpansSQL left-joins children to parents over a lagged window", () => {
 		const { sql } = Effect.runSync(auditOrphanSpansSQL(window))
 		expect(sql).toContain("FROM service_map_children")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- an inner join would count no orphans
 		expect(sql).toContain("LEFT JOIN")
 		expect(sql).toContain("FROM service_map_spans")
 		expect(sql).toContain("ON (c.TraceId = p.TraceId AND c.ParentSpanId = p.SpanId)")
@@ -260,7 +261,9 @@ describe("row schemas decode both ClickHouse and Tinybird numeric encodings", ()
 		strings: Record<string, unknown>,
 		numbers: Record<string, number>,
 	): readonly [unknown, unknown] => {
-		const quoted = Object.fromEntries(Object.entries(numbers).map(([key, value]) => [key, String(value)]))
+		const quoted = Rec.fromEntries(
+			Arr.map(Rec.toEntries(numbers), ([key, value]) => [key, String(value)]),
+		)
 		return [decode({ ...strings, ...quoted }), decode({ ...strings, ...numbers })]
 	}
 

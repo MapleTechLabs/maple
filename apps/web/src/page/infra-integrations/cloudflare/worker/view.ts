@@ -1,4 +1,4 @@
-import { type WorkerHealth, workerHealth } from "../../../../components/infra/cloudflare/list-model"
+import { WORKER_HEALTH_TONE, workerHealth } from "../../../../components/infra/cloudflare/list-model"
 import {
 	DURABLE_OBJECT_COLORS,
 	durableObjectRows,
@@ -17,24 +17,27 @@ import {
 	formatNumber,
 	formatPercent,
 } from "@maple/ui/lib/format"
+import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
+import * as Chart from "@maple/views/charts/chart"
+import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { ResolveThemeColors, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { detailRailGroup, detailRailMetaRow } from "../../../../ui/detail-rail"
-import { errorState } from "../../../../ui/error-state"
-import { segmentedBar } from "../../../../ui/meter"
-import { panel, panelHeader } from "../../../../ui/panel"
-import { skeleton } from "../../../../ui/skeleton"
+import { detailRailGroup, detailRailMetaRow } from "@maple/views/ui/detail-rail"
+import { errorState } from "@maple/views/ui/error-state"
+import { segmentedBar } from "@maple/views/ui/meter"
+import { panel, panelHeader } from "@maple/views/ui/panel"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { textLinkClass } from "@maple/views/ui/text-link"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { WorkerDetail } from "../data"
@@ -42,6 +45,9 @@ import { MountLinkedCursor } from "./command"
 import { type PageData, pageOf, type Traced } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `WorkerDetailPage` and its parts.
 
@@ -50,31 +56,17 @@ type H = HtmlBuilder<Message>
 /** The failure and Durable Object strips name `--severity-fatal` and `--chart-2` too. */
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--severity-fatal", "--chart-2"]
 
-const HEALTH_DOT = {
-	erroring: "bg-severity-error",
-	slow: "bg-severity-warn",
-	ok: "bg-severity-info",
-} as const satisfies Record<WorkerHealth, string>
-
 /** `CloudflareWorkerHeader`. */
-const header = (h: H, model: Model, data: PageData): Html => {
+const header = (h: H, model: Model, data: PageData) => {
 	const { row, accountName, traced, currentVersion } = data
 	const tracedService = traced?.service ?? null
-	return pageHero(h, {
-		title: h.span(
-			[h.Class("flex items-center gap-3")],
-			[
-				...(row === null
-					? []
-					: [
-							h.span([
-								h.AriaHidden(true),
-								h.Class(cn("size-2 shrink-0 rounded-full", HEALTH_DOT[workerHealth(row)])),
-							]),
-						]),
-				model.scriptName,
-			],
-		),
+	return pageHeroParts(h, {
+		title: hstack(h, { gap: "3", as: "span" }, [
+			...(row === null
+				? []
+				: [statusDot(h, { tone: WORKER_HEALTH_TONE[workerHealth(row)], size: "lg" })]),
+			model.scriptName,
+		]),
 		meta: [
 			heroChip(h, "worker"),
 			...(accountName === null ? [] : [heroChip(h, ["account ", accountName])]),
@@ -84,7 +76,7 @@ const header = (h: H, model: Model, data: PageData): Html => {
 						[h.Href(hrefOf(AppRoute.Service({ serviceName: tracedService, search: {} })))],
 						[heroChip(h, ["traced as ", tracedService])],
 					),
-			...(currentVersion === null ? [] : [heroChip(h, ["version ", currentVersion.slice(0, 7)])]),
+			...(currentVersion === null ? [] : [heroChip(h, ["version ", shortId(currentVersion, "sha")])]),
 		],
 	})
 }
@@ -94,17 +86,30 @@ const figure = (h: H, value: string, caption: string, className?: string): Html 
 		[h.Class("flex flex-col items-start @2xl:items-end")],
 		[
 			h.span(
-				[h.Class(cn("font-mono text-sm font-semibold tabular-nums text-foreground", className))],
+				[
+					h.Class(
+						cn(
+							typographyClass({
+								size: "sm",
+								tone: "foreground",
+								weight: "semibold",
+								mono: true,
+								numeric: true,
+							}),
+							className,
+						),
+					),
+				],
 				[value],
 			),
-			h.span([h.Class("font-mono text-3xs text-muted-foreground")], [caption]),
+			typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
 		],
 	)
 
 /** `CloudflareTraceGapCallout`: failures Cloudflare saw that the Worker's spans never recorded. */
 const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedService: string): Html =>
 	h.div(
-		[h.Class("@container rounded-lg border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error-a4")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],
@@ -112,16 +117,13 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 					h.div(
 						[h.Class("flex-1 space-y-1 px-4 py-3")],
 						[
-							h.p(
-								[h.Class("text-sm font-medium text-foreground")],
-								[
-									formatNumber(exceptions),
-									" exceptions in Cloudflare,",
-									" ",
-									tracedErrors === 0 ? "none" : formatNumber(tracedErrors),
-									" in traces",
-								],
-							),
+							typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [
+								formatNumber(exceptions),
+								" exceptions in Cloudflare,",
+								" ",
+								tracedErrors === 0 ? "none" : formatNumber(tracedErrors),
+								" in traces",
+							]),
 							h.p(
 								[h.Class("max-w-prose text-xs text-muted-foreground")],
 								[
@@ -143,9 +145,7 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 							figure(h, formatNumber(tracedErrors), "traces"),
 							h.a(
 								[
-									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0",
-									),
+									h.Class(textLinkClass("primary", true, "ml-auto text-xs @2xl:ml-0")),
 									h.Href(hrefOf(AppRoute.Logs({ search: { services: [tracedService] } }))),
 								],
 								["Logs in this window"],
@@ -165,12 +165,34 @@ const summary = (
 	captionClassName?: string,
 ): ReadonlyArray<Html> => [
 	h.span(
-		[h.Class(cn("font-mono text-sm font-semibold tabular-nums text-foreground", valueClassName))],
+		[
+			h.Class(
+				cn(
+					typographyClass({
+						size: "sm",
+						tone: "foreground",
+						weight: "semibold",
+						mono: true,
+						numeric: true,
+					}),
+					valueClassName,
+				),
+			),
+		],
 		[value],
 	),
 	...(caption === undefined
 		? []
-		: [h.span([h.Class(cn("font-mono text-3xs text-muted-foreground", captionClassName))], [caption])]),
+		: [
+				h.span(
+					[
+						h.Class(
+							cn(typographyClass({ size: "3xs", tone: "muted", mono: true }), captionClassName),
+						),
+					],
+					[caption],
+				),
+			]),
 ]
 
 /** `buildStrips`: invocations, failures, CPU and duration, then Durable Objects when bound. */
@@ -230,9 +252,9 @@ const buildStrips = (h: H, detail: WorkerDetail, data: PageData): ReadonlyArray<
 			),
 		},
 	]
-	if (!detail.durableObjectBuckets.some((b) => b.requests > 0)) return strips
-	const calls = detail.durableObjectBuckets.reduce((acc, b) => acc + b.requests, 0)
-	const errors = detail.durableObjectBuckets.reduce((acc, b) => acc + b.errors, 0)
+	if (!Arr.some(detail.durableObjectBuckets, (b) => b.requests > 0)) return strips
+	const calls = Arr.reduce(detail.durableObjectBuckets, 0, (acc, b) => acc + b.requests)
+	const errors = Arr.reduce(detail.durableObjectBuckets, 0, (acc, b) => acc + b.errors)
 	return [
 		...strips,
 		{
@@ -272,7 +294,8 @@ const signals = (
 		strips: buildStrips(h, detail, data),
 		xDomain: [
 			...new Set(
-				[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets].map(
+				Arr.map(
+					[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets],
 					(b) => b.bucket,
 				),
 			),
@@ -298,8 +321,8 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 	return panel(h, {}, [
 		panelHeader(h, { title: "Outcomes" }),
 		h.div(
-			[h.Class("divide-y divide-border/40")],
-			totals.byStatus.map(({ status, count }) => {
+			[h.Class("divide-y divide-border-subtle")],
+			Arr.map(totals.byStatus, ({ status, count }) => {
 				const success = status === "success"
 				const share = totals.invocations > 0 ? count / totals.invocations : 0
 				const label = outcomeLabel(status)
@@ -319,15 +342,12 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 							[h.Class("flex min-w-0 flex-1 items-baseline gap-2")],
 							[
 								h.span([h.Class("truncate text-xs text-foreground")], [label]),
-								...(label.toLowerCase() === status.toLowerCase()
+								...(Str.toLowerCase(label) === Str.toLowerCase(status)
 									? []
 									: [
-											h.span(
-												[
-													h.Class(
-														"truncate font-mono text-3xs text-muted-foreground",
-													),
-												],
+											typography(
+												h,
+												{ size: "3xs", tone: "muted", mono: true, truncate: true },
 												[status],
 											),
 										]),
@@ -341,12 +361,12 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 								{
 									key: status,
 									value: count,
-									className: success ? "bg-muted-foreground/60" : "bg-severity-error",
+									className: success ? "bg-foreground-subtle" : "bg-severity-error",
 								},
 							],
 						}),
 						h.span(
-							[h.Class("w-20 text-right font-mono text-xs tabular-nums text-foreground/80")],
+							[h.Class("w-20 text-right font-mono text-xs tabular-nums text-foreground-soft")],
 							[formatNumber(count)],
 						),
 						h.span(
@@ -370,8 +390,9 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 /** `CloudflareWorkerRail`. */
 const rail = (h: H, data: PageData, timeZone: string): Html => {
 	const { row, traced } = data
-	const deploys = data.markers.map((marker) => ({ commitSha: marker.id, firstSeen: marker.at }))
-	const present = (nodes: ReadonlyArray<Html | null>) => nodes.filter((node): node is Html => node !== null)
+	const deploys = Arr.map(data.markers, (marker) => ({ commitSha: marker.id, firstSeen: marker.at }))
+	const present = (nodes: ReadonlyArray<Html | null>) =>
+		Arr.filter(nodes, (node): node is Html => node !== null)
 	return h.div(
 		[h.Class("flex flex-col")],
 		[
@@ -401,12 +422,16 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 				h,
 				"Deploys in window",
 				deploys.length === 0
-					? [h.p([h.Class("text-2xs text-muted-foreground")], ["No new version in this window."])]
+					? [
+							typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+								"No new version in this window.",
+							]),
+						]
 					: present(
-							deploys.map((deploy) =>
+							Arr.map(deploys, (deploy) =>
 								detailRailMetaRow(h, {
 									icon: "CodeIcon",
-									label: deploy.commitSha.slice(0, 7),
+									label: shortId(deploy.commitSha, "sha"),
 									value: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
 								}),
 							),
@@ -420,27 +445,29 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 	traced === null
 		? [
-				h.p(
-					[h.Class("text-2xs leading-relaxed text-muted-foreground")],
-					["No service with this name sends spans, so Cloudflare's counts are all there is."],
-				),
+				typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+					"No service with this name sends spans, so Cloudflare's counts are all there is.",
+				]),
 			]
 		: [
-				...[
-					detailRailMetaRow(h, {
-						icon: "PulseIcon",
-						label: "spans",
-						value: formatNumber(traced.spans),
-					}),
-					detailRailMetaRow(h, {
-						icon: "PulseIcon",
-						label: "error spans",
-						value: formatNumber(traced.errors),
-					}),
-				].filter((node): node is Html => node !== null),
+				...Arr.filter(
+					[
+						detailRailMetaRow(h, {
+							icon: "PulseIcon",
+							label: "spans",
+							value: formatNumber(traced.spans),
+						}),
+						detailRailMetaRow(h, {
+							icon: "PulseIcon",
+							label: "error spans",
+							value: formatNumber(traced.errors),
+						}),
+					],
+					(node): node is Html => node !== null,
+				),
 				h.a(
 					[
-						h.Class("pt-1 font-mono text-xs text-primary hover:text-primary/80"),
+						h.Class(textLinkClass("primary", true, "pt-1 text-xs")),
 						h.Href(hrefOf(AppRoute.Service({ serviceName: traced.service, search: {} }))),
 					],
 					["Open ", traced.service],
@@ -484,13 +511,15 @@ export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true)
 	const data = pageOf(model)
 	const theme = model.themeColors
 	const ctx = theme === null || model.chartRuntime._tag === "Loading" ? null : { theme, timeZone }
+	const hero = header(h, model, data)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-6",
+					gap: "lg",
+					titleContent: hero.title,
 					actions: !isTimed
 						? undefined
 						: pageTime(h, {
@@ -505,7 +534,7 @@ export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true)
 							}),
 					rightPanel: rail(h, data, timeZone),
 				},
-				[header(h, model, data), body(h, model, data, ctx)],
+				[hero.body, body(h, model, data, ctx)],
 			),
 		],
 	)

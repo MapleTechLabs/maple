@@ -11,16 +11,22 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../../route"
-import { emptyMessage } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { meter } from "../../../../ui/meter"
-import { skeletonList } from "../../../../ui/skeleton"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { errorState } from "@maple/views/ui/error-state"
+import { meter } from "@maple/views/ui/meter"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { pressable } from "@maple/views/ui/pressable"
+import { textLink, textLinkClass } from "@maple/views/ui/text-link"
 import { columnHead, dataTable } from "../../../infra/kit/data-table"
 import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
 import { Message } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `GcpCloudSqlTopQueries` and the workload page's `GcpAppWaitCallout`.
 
@@ -28,13 +34,26 @@ type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 const SHOWN = 5
-const STATEMENT = "w-0 min-w-[260px] flex-1"
-const NUMBER = "text-right font-mono text-xs tabular-nums"
-const SUB = "truncate font-mono text-3xs text-muted-foreground"
+const STATEMENT = columnClass({ min: "64" })
+const NUMBER = typographyClass({ size: "xs", mono: true, numeric: true, className: "text-right" })
+const SUB = typographyClass({ size: "3xs", tone: "muted", mono: true, truncate: true })
 const MANY_ROWS = 10_000
 const LOCK_WARN = 0.2
 const LOCK_CRIT = 0.5
 const APP_GAP = 5
+const CHEVRON = "flex w-4 shrink-0 justify-center"
+
+/** The app side's p95, red once it is `APP_GAP` times the database's. */
+export const appP95Tone = (db: number | null, app: number | undefined): string =>
+	app === undefined
+		? "text-muted-foreground"
+		: db !== null && app >= APP_GAP * db
+			? TONE_TEXT.crit
+			: latencyToneClass(app)
+
+/** A statement's share of time waiting on locks. */
+export const lockTone = (share: number): string =>
+	share >= LOCK_CRIT ? TONE_TEXT.crit : share >= LOCK_WARN ? TONE_TEXT.warn : "text-muted-foreground"
 
 const head = (h: H, label: string, width: string, align?: "right", hidden?: string) =>
 	columnHead(h, { label, width, align, hidden })
@@ -44,96 +63,93 @@ const callers = (h: H, traced: GcpTracedStatement | undefined): Html => {
 	const more = traced.serviceCount - traced.services.length
 	return h.div(
 		[h.Class(SUB)],
-		["called by ", traced.services.join(" · "), ...(more > 0 ? [` +${more}`] : [])],
+		["called by ", Arr.join(traced.services, " · "), ...(more > 0 ? [` +${more}`] : [])],
 	)
 }
 
-const statementRow = (h: H, row: GcpStatement, traced: GcpTracedStatement | undefined): Html => {
+const statementRow = (
+	h: H,
+	row: GcpStatement,
+	traced: GcpTracedStatement | undefined,
+	isPeeked: boolean,
+): Html => {
 	const rowsPerCall = row.calls > 0 ? row.rows / row.calls : undefined
 	const db = row.p95LatencyMillis
 	const app = traced?.appP95Ms
-	return h.div(
-		[h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-2.5 last:border-0")],
+	return pressable(
+		h,
+		{
+			onClick: Message.ClickedStatement({ queryHash: row.queryHash }),
+			label: `Open statement: ${row.querystring}`,
+			selectedLane: isPeeked,
+			className:
+				"flex w-full items-center gap-4 border-b border-border-subtle px-4 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+			attributes: isPeeked ? [h.AriaCurrent("true")] : [],
+		},
 		[
 			h.div(
 				[h.Class(cn(STATEMENT, "space-y-0.5"))],
 				[
-					h.div(
-						[h.Class("truncate font-mono text-xs text-foreground"), h.Title(row.querystring)],
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							mono: true,
+							truncate: true,
+							as: "div",
+							attributes: [h.Title(row.querystring)],
+						},
 						[row.querystring],
 					),
 					callers(h, traced),
 				],
 			),
-			h.div([h.Class(cn("w-[64px] text-foreground/80", NUMBER))], [formatNumber(row.calls)]),
+			h.div([h.Class(cn("w-16 text-foreground-soft", NUMBER))], [formatNumber(row.calls)]),
 			h.div(
-				[
-					h.Class(
-						cn("w-[72px]", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)),
-					),
-				],
+				[h.Class(cn("w-20", NUMBER, db === null ? "text-muted-foreground" : latencyToneClass(db)))],
 				[db === null ? EMPTY_VALUE : formatLatency(db)],
 			),
 			h.div(
-				[
-					h.Class(
-						cn(
-							"w-[72px]",
-							NUMBER,
-							app === undefined
-								? "text-muted-foreground"
-								: db !== null && app >= APP_GAP * db
-									? TONE_TEXT.crit
-									: latencyToneClass(app),
-						),
-					),
-				],
+				[h.Class(cn("w-20", NUMBER, appP95Tone(db, app)))],
 				[app === undefined ? EMPTY_VALUE : formatLatency(app)],
 			),
 			h.div(
 				[
 					h.Class(
 						cn(
-							"hidden w-[64px] md:block",
+							"hidden w-16 md:block",
 							NUMBER,
-							(rowsPerCall ?? 0) >= MANY_ROWS ? TONE_TEXT.warn : "text-foreground/80",
+							(rowsPerCall ?? 0) >= MANY_ROWS ? TONE_TEXT.warn : "text-foreground-soft",
 						),
 					),
 				],
 				[rowsPerCall === undefined ? EMPTY_VALUE : formatNumber(Math.round(rowsPerCall))],
 			),
+			h.div([h.Class(cn("w-[56px]", NUMBER, lockTone(row.lockShare)))], [formatPercent(row.lockShare)]),
 			h.div(
-				[
-					h.Class(
-						cn(
-							"w-[56px]",
-							NUMBER,
-							row.lockShare >= LOCK_CRIT
-								? TONE_TEXT.crit
-								: row.lockShare >= LOCK_WARN
-									? TONE_TEXT.warn
-									: "text-muted-foreground",
-						),
-					),
-				],
-				[formatPercent(row.lockShare)],
-			),
-			h.div(
-				[h.Class("hidden w-[112px] items-center gap-2 md:flex")],
+				[h.Class("hidden w-28 items-center gap-2 md:flex")],
 				[
 					meter(h, { value: row.executionShare, tone: "neutral", className: "w-14" }),
 					h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-foreground/80")],
+						[h.Class("font-mono text-2xs tabular-nums text-foreground-soft")],
 						[formatPercent(row.executionShare)],
 					),
 				],
+			),
+			h.span(
+				[
+					h.AriaHidden(true),
+					h.Class(cn(CHEVRON, isPeeked ? "text-foreground" : "text-muted-foreground")),
+				],
+				[icon(h, "ChevronRightIcon", { size: 14 })],
 			),
 		],
 	)
 }
 
 const notice = (h: H, text: string): Html =>
-	emptyMessage(h, { dashed: true, className: "bg-card/50 px-3 py-4 text-xs" }, [text])
+	emptyMessage(h, { dashed: true, className: "bg-surface-faint px-3 py-4 text-xs" }, [text])
 
 export type TopQueriesInputs = Readonly<{
 	slot: AsyncData.AsyncData<ReadonlyArray<Statement>, LoadFailure>
@@ -141,6 +157,8 @@ export type TopQueriesInputs = Readonly<{
 	unavailableReason: string | null
 	traced: ReadonlyMap<string, GcpTracedStatement>
 	showAll: boolean
+	/** The statement open in the side panel. */
+	peekHash: string | undefined
 }>
 
 export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
@@ -154,15 +172,18 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 			{ ariaLabel: "Top queries", isWaiting },
 			[
 				head(h, "Statement", STATEMENT),
-				head(h, "Calls", "w-[64px]", "right"),
-				head(h, "DB p95", "w-[72px]", "right"),
-				head(h, "App p95", "w-[72px]", "right"),
-				head(h, "Rows", "w-[64px]", "right", "hidden md:flex"),
+				head(h, "Calls", "w-16", "right"),
+				head(h, "DB p95", "w-20", "right"),
+				head(h, "App p95", "w-20", "right"),
+				head(h, "Rows", "w-16", "right", "hidden md:flex"),
 				head(h, "Lock", "w-[56px]", "right"),
-				head(h, "Total time", "w-[112px]", undefined, "hidden md:flex"),
+				head(h, "Total time", "w-28", undefined, "hidden md:flex"),
+				h.span([h.Class(CHEVRON)], []),
 			],
 			[
-				...shown.map((row) => statementRow(h, row, inputs.traced.get(row.queryHash))),
+				...Arr.map(shown, (row) =>
+					statementRow(h, row, inputs.traced.get(row.queryHash), row.queryHash === inputs.peekHash),
+				),
 				h.div(
 					[
 						h.Class(
@@ -179,12 +200,9 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 						),
 						...(rows.length > SHOWN
 							? [
-									h.button(
-										[
-											h.Type("button"),
-											h.OnClick(Message.ClickedShowAllQueries()),
-											h.Class("shrink-0 text-primary hover:text-primary/80"),
-										],
+									textLink(
+										h,
+										{ onClick: Message.ClickedShowAllQueries(), className: "shrink-0" },
 										[inputs.showAll ? "Show fewer" : `Show all ${rows.length}`],
 									),
 								]
@@ -219,10 +237,23 @@ export const figure = (h: H, value: string, caption: string, className?: string)
 		[h.Class("flex flex-col items-start @2xl:items-end")],
 		[
 			h.span(
-				[h.Class(cn("font-mono text-sm font-semibold tabular-nums text-foreground", className))],
+				[
+					h.Class(
+						cn(
+							typographyClass({
+								size: "sm",
+								tone: "foreground",
+								weight: "semibold",
+								mono: true,
+								numeric: true,
+							}),
+							className,
+						),
+					),
+				],
 				[value],
 			),
-			h.span([h.Class("font-mono text-3xs text-muted-foreground")], [caption]),
+			typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
 		],
 	)
 
@@ -240,7 +271,7 @@ export const appWaitCallout = (
 			? `The gap is waiting for a connection: ${instanceName} sat at ${Math.round(peak.open)} of ${peak.max}${idle > 0 ? `, and ${idle} of them were idle in transaction` : ""}. Fix the pool, not the query.`
 			: "The time is spent outside the database: the network, or waiting on the connection pool."
 	return h.div(
-		[h.Class("@container rounded-lg border border-severity-error/40")],
+		[h.Class("@container rounded-md border border-severity-error-a4")],
 		[
 			h.div(
 				[h.Class("flex flex-col @2xl:flex-row @2xl:items-center")],
@@ -248,22 +279,24 @@ export const appWaitCallout = (
 					h.div(
 						[h.Class("min-w-0 flex-1 space-y-1 px-4 py-3")],
 						[
-							h.p(
-								[h.Class("text-sm font-medium text-foreground")],
-								[
-									wait.service,
-									" waits ",
-									formatLatency(wait.appP95Ms),
-									" for a query the database runs in",
-									" ",
-									formatLatency(wait.dbP95Ms),
-								],
-							),
-							h.p(
-								[
-									h.Class("truncate font-mono text-2xs text-muted-foreground"),
-									h.Title(wait.statement),
-								],
+							typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [
+								wait.service,
+								" waits ",
+								formatLatency(wait.appP95Ms),
+								" for a query the database runs in",
+								" ",
+								formatLatency(wait.dbP95Ms),
+							]),
+							typography(
+								h,
+								{
+									size: "2xs",
+									tone: "muted",
+									mono: true,
+									truncate: true,
+									as: "p",
+									attributes: [h.Title(wait.statement)],
+								},
 								[wait.statement],
 							),
 							h.p(
@@ -283,9 +316,7 @@ export const appWaitCallout = (
 							figure(h, formatLatency(wait.dbP95Ms), "database"),
 							h.a(
 								[
-									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0",
-									),
+									h.Class(textLinkClass("primary", true, "ml-auto text-xs @2xl:ml-0")),
 									h.Href(
 										hrefOf(
 											AppRoute.Traces({

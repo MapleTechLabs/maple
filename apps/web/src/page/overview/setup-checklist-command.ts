@@ -1,17 +1,18 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { TimeWindow } from "../../data/time-range"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import { currentWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { QuickStartState, readQuickStartState, writeQuickStartState } from "../onboarding/quick-start-state"
-import { sendIngestTestEvent } from "../settings/ingestion/command"
 import { Message } from "./setup-checklist"
 
 /** `quickStartAtomFamily(orgId)`: the stored progress, read once on entry. */
 export const ReadSetupState = Command.define("ReadSetupChecklistState", {
 	args: { storageKey: Schema.String },
 	messages: [Message.ReadState],
-	execute: ({ storageKey }) => Effect.map(readQuickStartState(storageKey), (state) => Message.ReadState({ state })),
+	execute: ({ storageKey }) =>
+		Effect.map(readQuickStartState(storageKey), (state) => Message.ReadState({ state })),
 })
 
 export const SaveSetupState = Command.define("SaveSetupChecklistState", {
@@ -25,7 +26,9 @@ export const SaveSetupState = Command.define("SaveSetupChecklistState", {
 export const FetchSetupKeys = Command.define("FetchSetupChecklistKeys", {
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
 	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
-		Effect.map((keys) => Message.SucceededLoadKeys({ publicKey: keys.public_key, privateKey: keys.private_key })),
+		Effect.map((keys) =>
+			Message.SucceededLoadKeys({ publicKey: keys.public_key, privateKey: keys.private_key }),
+		),
 		Effect.orElseSucceed(() => Message.FailedLoadKeys()),
 	),
 })
@@ -41,19 +44,24 @@ export const FetchSetupOverview = Command.define("FetchSetupChecklistOverview", 
 			Effect.map((response) =>
 				Message.SucceededLoadOverview({
 					window,
-					services: response.data.map((row) => ({
+					services: Arr.map(response.data, (row) => ({
 						serviceName: String(row.serviceName),
 						spanCount: row.spanCount ?? 0,
 					})),
 				}),
 			),
-			Effect.orElseSucceed(() => Message.FailedLoadOverview({ window })),
+			Effect.catch((error) =>
+				Effect.succeed(Message.FailedLoadOverview({ window, failure: toLoadFailure(error) })),
+			),
 		),
 })
 
-export const SendSetupTestEvent = Command.define("SendSetupChecklistTestEvent", {
-	args: { publicKey: Schema.String },
-	messages: [Message.CompletedSendTestEvent],
-	execute: ({ publicKey }) =>
-		Effect.map(sendIngestTestEvent(publicKey), (isSent) => Message.CompletedSendTestEvent({ isSent })),
+/** Re-resolves the last hour against the clock, so each poll sees what landed since entry. */
+export const ResolveSetupPollWindow = Command.define("ResolveSetupChecklistPollWindow", {
+	args: { timeZone: Schema.String },
+	messages: [Message.ResolvedPollWindow],
+	execute: ({ timeZone }) =>
+		Effect.map(currentWindow({ preset: "1h", snap: false, timeZone }), (window) =>
+			Message.ResolvedPollWindow({ window }),
+		),
 })

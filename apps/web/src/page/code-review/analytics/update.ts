@@ -1,12 +1,12 @@
 import { Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import type { CodeReviewSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { type FrameMessage, type FrameOut, type FrameReturn, type RequestMode } from "../kit/frame"
@@ -23,12 +23,13 @@ import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
 import { FetchAnalytics } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import type { PresetValue } from "../../kit/time-controls"
 
 type Return = PageReturn<Model, Message>
 type Search = typeof CodeReviewSearch.Type
 
 /** `CODE_REVIEW_DEFAULT_PRESET`: reviews are slow-moving, a month has something in it. */
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 const FRAME_ID = "code-review-analytics"
 
 

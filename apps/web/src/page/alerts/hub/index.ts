@@ -16,6 +16,6 @@ export const page = definePage(
 		routeChanged,
 		view,
 		subscriptions,
-		breadcrumbs: () => [{ label: "Alerts" }],
+		breadcrumbs: () => [{ label: "Alerts", isPageHeading: true }],
 	},
 )

@@ -11,21 +11,27 @@ import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../ui/empty"
-import { icon, type IconName } from "../../ui/icon"
-import { miniBars } from "../../ui/mini-bars"
-import { panel, panelHeader, panelTitle } from "../../ui/panel"
-import { statFigure } from "../../ui/stat-figure"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { miniBars } from "@maple/views/ui/mini-bars"
+import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
+import { pressable } from "@maple/views/ui/pressable"
+import { statFigure } from "@maple/views/ui/stat-figure"
 import { columnHead, dataTable } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { AiCrawlers } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // The AI tab's building blocks: its sections and product icons.
 
 type H = HtmlBuilder<Message>
 
-export const plural = (count: number, one: string, many: string) => `${formatNumber(count)} ${pluralize(count, one, many)}`
+export const plural = (count: number, one: string, many: string) =>
+	`${formatNumber(count)} ${pluralize(count, one, many)}`
 
 const PRODUCT_ICONS = new Map<string, IconName>([
 	["chatgpt", "OpenAiIcon"],
@@ -95,14 +101,21 @@ export const aiPanel = (
 			divided: false,
 			className: "items-start pt-3 pb-2.5",
 			action:
-				options.aside === undefined ? undefined : h.div([h.Class("shrink-0 text-2xs text-muted-foreground")], [options.aside]),
+				options.aside === undefined
+					? undefined
+					: typography(h, { size: "2xs", tone: "muted", as: "div", className: "shrink-0" }, [
+							options.aside,
+						]),
 			children: [
-				h.div([h.Class("min-w-0")], [
-					panelTitle(h, [options.title]),
-					...(options.hint === undefined
-						? []
-						: [h.div([h.Class("mt-0.5 text-2xs text-muted-foreground/70")], [options.hint])]),
-				]),
+				h.div(
+					[h.Class("min-w-0")],
+					[
+						panelTitle(h, [options.title]),
+						...(options.hint === undefined
+							? []
+							: [h.div([h.Class("mt-0.5 text-2xs text-foreground-subtle")], [options.hint])]),
+					],
+				),
 			],
 		}),
 		...children,
@@ -110,17 +123,19 @@ export const aiPanel = (
 			? []
 			: [
 					options.expand.table,
-					h.button(
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedExpandPanel({ panel: options.expand.id }),
+							className:
+								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border-subtle px-4 py-2 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
+						},
 						[
-							h.Type("button"),
-							h.OnClick(Message.ClickedExpandPanel({ panel: options.expand.id })),
-							h.Class(
-								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border/40 px-4 py-2 text-2xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:bg-muted/40 focus-visible:outline-none",
-							),
-						],
-						[
-							h.span([h.Class("flex items-center gap-1.5")], [icon(h, "MaximizeIcon", { size: 12 }), "Expand table"]),
-							h.span([h.Class("font-mono tabular-nums")], [options.expand.count]),
+							hstack(h, { gap: "1.5", as: "span" }, [
+								icon(h, "MaximizeIcon", { size: 12 }),
+								"Expand table",
+							]),
+							typography(h, { mono: true, numeric: true }, [options.expand.count]),
 						],
 					),
 				]),
@@ -129,12 +144,22 @@ export const aiPanel = (
 export const aiEmpty = (h: H, children: ReadonlyArray<Html | string>): Html =>
 	emptyMessage(h, { className: "px-6 leading-relaxed" }, children)
 
-const crawlLine = (product: AiProduct, crawl: AiCrawlSummary | undefined, nowMs: number): { text: string; title?: string } => {
+const crawlLine = (
+	product: AiProduct,
+	crawl: AiCrawlSummary | undefined,
+	nowMs: number,
+): { text: string; title?: string } => {
 	const top = crawl?.purposes[0]
 	if (crawl !== undefined && top !== undefined)
 		return {
 			text: `Read ${plural(top.pages, "page", "pages")} for ${top.purpose}, ${formatRelativeTime(toEpochMs(top.lastSeen), nowMs)}`,
-			title: crawl.purposes.map((activity) => `${plural(activity.pages, "page", "pages")} for ${activity.purpose}`).join(" · "),
+			title: Arr.join(
+				Arr.map(
+					crawl.purposes,
+					(activity) => `${plural(activity.pages, "page", "pages")} for ${activity.purpose}`,
+				),
+				" · ",
+			),
 		}
 	if (crawl !== undefined && crawl.requests > 0)
 		return {
@@ -170,16 +195,18 @@ export const aiProductCard = (
 			attributes: [h.Style({ "animation-delay": `${delay}ms`, "animation-fill-mode": "backwards" })],
 		},
 		[
-			h.div([h.Class("flex items-center justify-between gap-3")], [
-				h.div([h.Class("flex min-w-0 items-center gap-2")], [
+			hstack(h, { gap: "3", justify: "between" }, [
+				hstack(h, { gap: "2", shrink: true }, [
 					aiProductIcon(h, product.id),
-					h.span([h.Class("truncate text-sm font-medium")], [product.label]),
+					typography(h, { size: "sm", weight: "medium", truncate: true }, [product.label]),
 				]),
 				...(visits > 0 && served > 0
 					? [
 							h.span(
 								[
-									h.Class("shrink-0 font-mono text-3xs tabular-nums text-muted-foreground/80"),
+									h.Class(
+										"shrink-0 font-mono text-3xs tabular-nums text-foreground-subtle",
+									),
 									h.Title("Crawler fetches the site served, per visit this product sent"),
 								],
 								[formatRatio(served / visits), " fetches / visit"],
@@ -187,7 +214,12 @@ export const aiProductCard = (
 						]
 					: []),
 			]),
-			statFigure(h, { value: formatNumber(visits), unit: visits === 1 ? "visit sent" : "visits sent", size: "sm", className: "mt-3" }),
+			statFigure(h, {
+				value: formatNumber(visits),
+				unit: pluralize(visits, "visit sent", "visits sent"),
+				size: "sm",
+				className: "mt-3",
+			}),
 			miniBars(h, {
 				values: referrals?.spark ?? [],
 				color: SPARK_COLOR.neutral,
@@ -195,7 +227,10 @@ export const aiProductCard = (
 				className: cn("mt-3 h-8 w-full", visits === 0 && "opacity-40"),
 			}),
 			h.div(
-				[h.Class("mt-3 truncate text-2xs text-muted-foreground"), ...(line.title === undefined ? [] : [h.Title(line.title)])],
+				[
+					h.Class("mt-3 truncate text-2xs text-muted-foreground"),
+					...(line.title === undefined ? [] : [h.Title(line.title)]),
+				],
 				[line.text],
 			),
 		],
@@ -211,17 +246,24 @@ const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return {}
 	const fill = "color-mix(in oklab, var(--primary) 14%, transparent)"
-	return { "background-image": `linear-gradient(to right, ${fill} 0%, ${fill} ${pct}%, transparent ${pct}%)` }
+	return {
+		"background-image": `linear-gradient(to right, ${fill} 0%, ${fill} ${pct}%, transparent ${pct}%)`,
+	}
 }
 
 const shareChange = (h: H, share: number, points: number | null): Html => {
 	if (points === null)
-		return h.span([h.Class("text-muted-foreground/70"), h.Title("No visits from it in the previous period")], ["New"])
+		return h.span(
+			[h.Class("text-foreground-subtle"), h.Title("No visits from it in the previous period")],
+			["New"],
+		)
 	const before = share - points / 100
-	if (Math.abs(points) < 0.05) return h.span([h.Class("text-muted-foreground/70")], ["No change"])
+	if (Math.abs(points) < 0.05) return h.span([h.Class("text-foreground-subtle")], ["No change"])
 	return h.span(
 		[
-			h.Title(`${formatPercent(before)} of AI visits in the previous period, ${formatPercent(share)} now`),
+			h.Title(
+				`${formatPercent(before)} of AI visits in the previous period, ${formatPercent(share)} now`,
+			),
 			h.Class(points > 0 ? "text-severity-info" : "text-severity-error"),
 		],
 		[h.span([h.AriaHidden(true)], [points > 0 ? "↑" : "↓"]), " from ", formatPercent(before)],
@@ -235,29 +277,48 @@ export const rankingTable = (h: H, ranks: ReadonlyArray<AiReferralRank>, surface
 		{ ariaLabel: "AI referrers", maxHeight: surface.maxHeight, stickySurfaceClass: surface.surfaceClass },
 		[
 			columnHead(h, { label: "#", width: "w-5", align: "right" }),
-			columnHead(h, { label: "Assistant", width: "w-0 flex-1 min-w-0" }),
+			columnHead(h, { label: "Assistant", width: columnClass({ min: "0" }) }),
 			columnHead(h, { label: "Visits", width: "w-14", align: "right" }),
 			columnHead(h, { label: "Share", width: "w-14", align: "right" }),
-			columnHead(h, { label: "Change", width: "w-20", align: "right", hidden: "hidden @min-[360px]/panel:flex" }),
+			columnHead(h, {
+				label: "Change",
+				width: "w-20",
+				align: "right",
+				hidden: "hidden @min-[360px]/panel:flex",
+			}),
 		],
-		ranks.map((rank, index) =>
+		Arr.map(ranks, (rank, index) =>
 			h.div(
 				[
 					h.Key(rank.product.id),
 					h.Style(shareBarStyle(rank.share)),
-					h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"),
+					h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-2 last:border-0"),
 				],
 				[
-					h.span([h.Class("w-5 text-right font-mono text-2xs tabular-nums text-muted-foreground/60")], [String(index + 1)]),
-					h.span([h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")], [
+					h.span(
+						[h.Class("w-5 text-right font-mono text-2xs tabular-nums text-foreground-subtle")],
+						[String(index + 1)],
+					),
+					hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
 						aiProductIcon(h, rank.product.id),
-						h.span([h.Class("truncate text-xs text-foreground/90")], [rank.product.label]),
+						h.span([h.Class("truncate text-xs text-foreground-soft")], [rank.product.label]),
 					]),
-					h.span([h.Class("w-14 text-right font-mono text-2xs tabular-nums text-muted-foreground")], [formatNumber(rank.visits)]),
-					h.span([h.Class("w-14 text-right font-mono text-2xs tabular-nums")], [formatPercent(rank.share)]),
-					h.span([h.Class("hidden w-20 justify-end font-mono text-3xs tabular-nums @min-[360px]/panel:flex")], [
-						shareChange(h, rank.share, rank.shareDeltaPoints),
-					]),
+					h.span(
+						[h.Class("w-14 text-right font-mono text-2xs tabular-nums text-muted-foreground")],
+						[formatNumber(rank.visits)],
+					),
+					h.span(
+						[h.Class("w-14 text-right font-mono text-2xs tabular-nums")],
+						[formatPercent(rank.share)],
+					),
+					h.span(
+						[
+							h.Class(
+								"hidden w-20 justify-end font-mono text-3xs tabular-nums @min-[360px]/panel:flex",
+							),
+						],
+						[shareChange(h, rank.share, rank.shareDeltaPoints)],
+					),
 				],
 			),
 		),
@@ -292,106 +353,189 @@ export const crawlerTable = (
 		h,
 		{ ariaLabel: "AI crawlers", maxHeight: surface.maxHeight, stickySurfaceClass: surface.surfaceClass },
 		[
-			columnHead(h, { label: "Crawler", width: "w-0 flex-1 min-w-0" }),
-			columnHead(h, { label: "Purpose", width: "w-[72px]" }),
+			columnHead(h, { label: "Crawler", width: columnClass({ min: "0" }) }),
+			columnHead(h, { label: "Purpose", width: "w-20" }),
 			columnHead(h, { label: "Pages", width: "w-12", align: "right" }),
-			columnHead(h, { label: "Fetches", width: "w-14", align: "right", hidden: "hidden @min-[380px]/panel:flex" }),
-			columnHead(h, { label: "Last seen", width: "w-20", align: "right", hidden: "hidden @min-[460px]/panel:flex" }),
+			columnHead(h, {
+				label: "Fetches",
+				width: "w-14",
+				align: "right",
+				hidden: "hidden @min-[380px]/panel:flex",
+			}),
+			columnHead(h, {
+				label: "Last seen",
+				width: "w-20",
+				align: "right",
+				hidden: "hidden @min-[460px]/panel:flex",
+			}),
 		],
-		crawlers.map((row) => {
+		Arr.map(crawlers, (row) => {
 			const product = productForCrawler(row.crawler)
 			const purpose = purposeForCrawler(row.crawler)
-			return h.div([h.Key(row.crawler), h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0")], [
-				h.span([h.Class("flex w-0 min-w-0 flex-1 items-center gap-2")], [
-					aiProductIcon(h, product?.id ?? ""),
-					h.span([h.Class("truncate text-xs text-foreground/90")], [row.crawler]),
-				]),
-				h.span([h.Class("flex w-[72px] shrink-0")], purpose === undefined ? [] : [purposeBadge(h, purpose)]),
-				h.span([h.Class(cn("w-12 text-right font-mono text-2xs tabular-nums", row.pages === 0 && "text-muted-foreground/60"))], [
-					formatNumber(row.pages),
-				]),
-				h.span(
-					[
-						h.Class("hidden w-14 text-right font-mono text-2xs tabular-nums text-muted-foreground @min-[380px]/panel:inline-block"),
-						...(row.failedRequests > 0
-							? [h.Title(`${plural(row.failedRequests, "fetch", "fetches")} got an error response`)]
-							: []),
-					],
-					[formatNumber(row.requests)],
-				),
-				relativeTime(h, {
-					value: row.lastSeen,
-					nowMs: clock.nowMs,
-					timeZone: clock.timeZone,
-					tooltip: "title",
-					className: "hidden w-20 text-right text-2xs text-muted-foreground @min-[460px]/panel:inline-block",
-				}),
-			])
+			return h.div(
+				[
+					h.Key(row.crawler),
+					h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-2 last:border-0"),
+				],
+				[
+					hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
+						aiProductIcon(h, product?.id ?? ""),
+						h.span([h.Class("truncate text-xs text-foreground-soft")], [row.crawler]),
+					]),
+					h.span(
+						[h.Class("flex w-20 shrink-0")],
+						purpose === undefined ? [] : [purposeBadge(h, purpose)],
+					),
+					h.span(
+						[
+							h.Class(
+								cn(
+									"w-12 text-right font-mono text-2xs tabular-nums",
+									row.pages === 0 && "text-foreground-subtle",
+								),
+							),
+						],
+						[formatNumber(row.pages)],
+					),
+					h.span(
+						[
+							h.Class(
+								"hidden w-14 text-right font-mono text-2xs tabular-nums text-muted-foreground @min-[380px]/panel:inline-block",
+							),
+							...(row.failedRequests > 0
+								? [
+										h.Title(
+											`${plural(row.failedRequests, "fetch", "fetches")} got an error response`,
+										),
+									]
+								: []),
+						],
+						[formatNumber(row.requests)],
+					),
+					relativeTime(h, {
+						value: row.lastSeen,
+						nowMs: clock.nowMs,
+						timeZone: clock.timeZone,
+						tooltip: "title",
+						className:
+							"hidden w-20 text-right text-2xs text-muted-foreground @min-[460px]/panel:inline-block",
+					}),
+				],
+			)
 		}),
 	)
 
-const FORMATS: ReadonlyArray<{ format: "markdown" | "llms" | "html"; label: string; description: string; icon: IconName }> = [
+const FORMATS: ReadonlyArray<{
+	format: "markdown" | "llms" | "html"
+	label: string
+	description: string
+	icon: IconName
+}> = [
 	{ format: "markdown", label: "Markdown", description: ".md pages", icon: "MarkdownIcon" },
-	{ format: "llms", label: "llms.txt", description: "llms.txt and llms-full.txt", icon: "UnorderedListIcon" },
+	{
+		format: "llms",
+		label: "llms.txt",
+		description: "llms.txt and llms-full.txt",
+		icon: "UnorderedListIcon",
+	},
 	{ format: "html", label: "HTML", description: "Regular web pages", icon: "FileCodeIcon" },
 ]
 
 const crawlerMarks = (h: H, crawlers: ReadonlyArray<string>): Html => {
 	const products = [
 		...new Map(
-			crawlers.flatMap((name) => {
+			Arr.flatMap(crawlers, (name) => {
 				const product = productForCrawler(name)
 				return product === undefined ? [] : [[product.id, product] as const]
 			}),
 		).values(),
 	]
-	return h.span([h.Class("flex items-center gap-1")], [
-		...products.slice(0, 6).map((product) => h.span([h.Key(product.id), h.Title(product.label)], [aiProductIcon(h, product.id, 12)])),
+	return hstack(h, { gap: "1", as: "span" }, [
+		...Arr.map(products.slice(0, 6), (product) =>
+			h.span([h.Key(product.id), h.Title(product.label)], [aiProductIcon(h, product.id, 12)]),
+		),
 		...(products.length > 6 ? [h.span([], ["+", String(products.length - 6)])] : []),
 	])
 }
 
 /** `AiContentFormats`: one card per format, then the other files. */
 export const contentFormats = (h: H, formats: AiCrawlers["formats"]): Html => {
-	const byFormat = new Map(formats.map((row) => [row.format, row]))
+	const byFormat = new Map(Arr.map(formats, (row) => [row.format, row]))
 	const other = byFormat.get("other")
-	return h.div([h.Class("space-y-2")], [
-		h.div(
-			[h.Class("grid gap-3 @min-[720px]/page:grid-cols-3")],
-			FORMATS.map((entry) => {
-				const row = byFormat.get(entry.format)
-				const requests = row?.requests ?? 0
-				const pages = row?.pages ?? 0
-				return panel(h, { className: "px-4 py-3.5" }, [
-					h.div([h.Class("flex items-center gap-2.5")], [
-						h.span([h.Class("flex size-7 shrink-0 items-center justify-center rounded-sm border bg-muted/40 text-muted-foreground")], [
-							icon(h, entry.icon, { size: 14 }),
+	return h.div(
+		[h.Class("space-y-2")],
+		[
+			h.div(
+				[h.Class("grid gap-3 @min-[720px]/page:grid-cols-3")],
+				Arr.map(FORMATS, (entry) => {
+					const row = byFormat.get(entry.format)
+					const requests = row?.requests ?? 0
+					const pages = row?.pages ?? 0
+					return panel(h, { className: "px-4 py-3.5" }, [
+						hstack(h, { gap: "2.5" }, [
+							h.span(
+								[
+									h.Class(
+										"flex size-7 shrink-0 items-center justify-center rounded-sm border bg-surface-sunken text-muted-foreground",
+									),
+								],
+								[icon(h, entry.icon, { size: 14 })],
+							),
+							h.div(
+								[h.Class("min-w-0")],
+								[
+									h.div([h.Class("text-sm font-medium leading-tight")], [entry.label]),
+									typography(h, { size: "2xs", tone: "muted", truncate: true, as: "div" }, [
+										entry.description,
+									]),
+								],
+							),
 						]),
-						h.div([h.Class("min-w-0")], [
-							h.div([h.Class("text-sm font-medium leading-tight")], [entry.label]),
-							h.div([h.Class("truncate text-2xs text-muted-foreground")], [entry.description]),
-						]),
-					]),
-					statFigure(h, { value: formatNumber(requests), unit: requests === 1 ? "fetch" : "fetches", size: "sm", className: "mt-3" }),
-					h.div(
-						[h.Class("mt-3 flex min-h-4 items-center gap-1.5 text-2xs text-muted-foreground")],
-						requests === 0
-							? ["Not fetched yet"]
-							: pages === 0
-								? [h.span([h.Title("Every fetch got an error response. Check that the file exists.")], ["Requested, none served"])]
-								: [h.span([], [plural(pages, "page", "pages"), ", read by"]), crawlerMarks(h, row?.crawlers ?? [])],
-					),
-				])
-			}),
-		),
-		...(other !== undefined && other.requests > 0
-			? [
-					h.div([h.Class("flex items-center gap-1.5 px-1 text-2xs text-muted-foreground/70")], [
-						icon(h, "FileIcon", { size: 12 }),
-						plural(other.requests, "other fetch", "other fetches"),
-						" (images, scripts, feeds and other files)",
-					]),
-				]
-			: []),
-	])
+						statFigure(h, {
+							value: formatNumber(requests),
+							unit: pluralize(requests, "fetch", "fetches"),
+							size: "sm",
+							className: "mt-3",
+						}),
+						h.div(
+							[
+								h.Class(
+									"mt-3 flex min-h-4 items-center gap-1.5 text-2xs text-muted-foreground",
+								),
+							],
+							requests === 0
+								? ["Not fetched yet"]
+								: pages === 0
+									? [
+											h.span(
+												[
+													h.Title(
+														"Every fetch got an error response. Check that the file exists.",
+													),
+												],
+												["Requested, none served"],
+											),
+										]
+									: [
+											h.span([], [plural(pages, "page", "pages"), ", read by"]),
+											crawlerMarks(h, row?.crawlers ?? []),
+										],
+						),
+					])
+				}),
+			),
+			...(other !== undefined && other.requests > 0
+				? [
+						h.div(
+							[h.Class("flex items-center gap-1.5 px-1 text-2xs text-foreground-subtle")],
+							[
+								icon(h, "FileIcon", { size: 12 }),
+								plural(other.requests, "other fetch", "other fetches"),
+								" (images, scripts, feeds and other files)",
+							],
+						),
+					]
+				: []),
+		],
+	)
 }

@@ -1,9 +1,19 @@
 import { DashboardTemplateId } from "@maple/domain/http"
 import { LIST_LIMIT_MAX } from "@maple/domain/http/v2"
 import { listMetrics } from "@maple/web-data/warehouse/metrics"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Queue,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { awaitTxid } from "../kit/store"
@@ -36,10 +46,14 @@ export const FetchMetrics = Command.define("FetchTemplateReadinessMetrics", {
 	messages: [Message.CompletedFetchMetrics],
 	execute: ({ key }) =>
 		listMetrics({ data: { limit: 1000 } }).pipe(
-			Effect.map((response) =>
-				response.data.map((metric) => ({ metricName: metric.metricName, lastSeen: metric.lastSeen })),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					Arr.map(response.data, (metric) => ({
+						metricName: metric.metricName,
+						lastSeen: metric.lastSeen,
+					})),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMetrics({ key, result })),
 		),
@@ -64,8 +78,8 @@ export const WaitSearchDebounce = Command.define("WaitTemplatesSearchDebounce", 
 const decodeTemplateId = Schema.decodeUnknownEffect(DashboardTemplateId)
 
 const parametersPayload = (parameters: Readonly<Record<string, string>>) => {
-	const entries = Object.entries(parameters).filter(([, value]) => value.trim().length > 0)
-	return entries.length > 0 ? { parameters: Object.fromEntries(entries) } : {}
+	const entries = Arr.filter(Rec.toEntries(parameters), ([, value]) => Str.trim(value).length > 0)
+	return entries.length > 0 ? { parameters: Rec.fromEntries(entries) } : {}
 }
 
 /** `previewTemplate`: the template's own build for these parameters, nothing persisted. */
@@ -116,7 +130,7 @@ export const CreateFromTemplate = Command.define("CreateDashboardFromTemplate", 
 			const template_id = yield* decodeTemplateId(templateId)
 			const created = yield* client.dashboards.instantiateTemplate({
 				params: { template_id },
-				payload: Object.keys(parameters).length > 0 ? { parameters } : {},
+				payload: Rec.keys(parameters).length > 0 ? { parameters } : {},
 			})
 			return { id: created.id, name: created.name, txid: created.txid ?? null }
 		}).pipe(

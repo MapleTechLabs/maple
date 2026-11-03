@@ -8,7 +8,6 @@ import {
 	pullRequestUrl,
 	rateChange,
 	successRate,
-	windowWasCut,
 } from "./ci-format"
 
 describe("successRate", () => {
@@ -59,14 +58,6 @@ describe("ciResultLabel / ciResultTone", () => {
 	it("shows an unknown result as it came, muted", () => {
 		expect(ciResultLabel("stale")).toBe("stale")
 		expect(ciResultTone("stale")).toBe("neutral")
-	})
-})
-
-describe("windowWasCut", () => {
-	it("ignores the snap jitter and flags a later start", () => {
-		const asked = Date.UTC(2026, 9, 1)
-		expect(windowWasCut(asked, asked + 30_000)).toBe(false)
-		expect(windowWasCut(asked, asked + 16 * 86_400_000)).toBe(true)
 	})
 })
 

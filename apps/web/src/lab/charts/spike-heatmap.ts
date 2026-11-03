@@ -4,9 +4,9 @@ import { cell, type ChartPoint, type ChartValue, defineChart } from "@tanstack/c
 import { colorGradientLegend } from "@tanstack/charts/legend"
 import { tooltip } from "@tanstack/charts/tooltip"
 import { scaleBand } from "@tanstack/charts-scales/band"
-import { Option } from "effect"
-import { ChartTooltip } from "../../charts/chart-spec"
-import type { BuiltChart } from "../../charts/definitions/built-chart"
+import { Option, Array as Arr } from "effect"
+import { ChartTooltip } from "@maple/views/charts/chart-spec"
+import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import {
 	HEATMAP_SPIKE_ROWS,
 	type HeatmapHole,
@@ -27,7 +27,7 @@ export const buildHeatmapSpike = (spec: SpikeSpec): BuiltChart<Slot, ChartValue,
 	const grout = spec.colors["--heatmap-grout"] ?? ""
 	const foreground = spec.colors["--foreground"] ?? ""
 	const colorScale = createSequentialColorScale({
-		stops: RAMP_TOKENS.amber.map(([token]) => spec.colors[token] ?? ""),
+		stops: Arr.map(RAMP_TOKENS.amber, ([token]) => spec.colors[token] ?? ""),
 		domain: model.domain,
 		scaleType: "linear",
 	})

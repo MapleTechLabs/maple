@@ -1,10 +1,11 @@
-import { AlertIncidentId } from "@maple/domain/http"
+import { AlertIncidentId, AlertRuleId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries } from "../shared/commands"
+import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
 
@@ -20,6 +21,17 @@ export const FetchIncidentPreview = Command.define("FetchAlertIncidentPreview", 
 		fetchPreview(payload).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchPreview({ key, result })),
+		),
+})
+
+export const FetchIncidentChecks = Command.define("FetchAlertIncidentChecks", {
+	args: { key: Schema.String, ruleId: AlertRuleId, since: IsoDateTimeString, until: IsoDateTimeString },
+	messages: [Message.CompletedFetchChecks],
+	execute: ({ key, ruleId, since, until }) =>
+		fetchCheckSummary(ruleId, since, until).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchChecks({ key, result })),
 		),
 })
 

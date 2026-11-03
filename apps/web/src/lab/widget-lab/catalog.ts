@@ -21,6 +21,7 @@ import {
 	type WidgetDataState,
 	type WidgetScenario,
 } from "./scenarios"
+import { Array as Arr } from "effect"
 
 // The widget lab's sections, each cell a widget built
 // from its scenario: the lab renders the dashboard tiles outside a dashboard.
@@ -55,12 +56,24 @@ export const toTileState = (state: WidgetDataState): TileState => {
 		case "loading":
 			return { _tag: "Loading" }
 		case "error":
-			return { _tag: "Error", title: state.title ?? null, message: state.message ?? null, kind: state.kind ?? null }
+			return {
+				_tag: "Error",
+				title: state.title ?? null,
+				message: state.message ?? null,
+				kind: state.kind ?? null,
+			}
 		case "ready":
 			return {
 				_tag: "Ready",
-				data: Array.isArray(state.data)
-					? { _tag: "Rows", rows: state.data.filter((row): row is Record<string, unknown> => typeof row === "object" && row !== null) }
+				data: Arr.isArray(state.data)
+					? {
+							_tag: "Rows",
+							rows: Arr.filter(
+								state.data,
+								(row): row is Record<string, unknown> =>
+									typeof row === "object" && row !== null,
+							),
+						}
 					: { _tag: "Value", value: state.data },
 			}
 	}
@@ -89,7 +102,7 @@ const cellsOf = <S extends WidgetScenario>(
 	height: number,
 	label: (scenario: S) => string = (scenario) => scenario.label,
 ): ReadonlyArray<Cell> =>
-	scenarios.map((scenario, index) => ({
+	Arr.map(scenarios, (scenario, index) => ({
 		id: `${prefix}-${index}`,
 		label: label(scenario),
 		height,
@@ -99,7 +112,7 @@ const cellsOf = <S extends WidgetScenario>(
 		rowLimit: scenario.rowLimit,
 	}))
 
-const statSparklineCells: ReadonlyArray<Cell> = statSparklineScenarios.map((scenario, index) => ({
+const statSparklineCells: ReadonlyArray<Cell> = Arr.map(statSparklineScenarios, (scenario, index) => ({
 	id: `stat-spark-${index}`,
 	label: scenario.label,
 	height: 220,
@@ -112,7 +125,7 @@ const statSparklineCells: ReadonlyArray<Cell> = statSparklineScenarios.map((scen
 }))
 
 /** The standalone trend lines: a card with just the sparkline in it. */
-export const SPARKLINE_SAMPLES = sparklineSamples.map((sample, index) => ({
+export const SPARKLINE_SAMPLES = Arr.map(sparklineSamples, (sample, index) => ({
 	id: `spark-${index}`,
 	label: sample.label,
 	color: sample.color,
@@ -123,9 +136,11 @@ export const SECTIONS: ReadonlyArray<Section> = [
 	{
 		id: "stat",
 		title: "Stat",
-		description: "Single aggregated value. Polish: threshold colors, prefix/suffix, long titles, edge values.",
+		description:
+			"Single aggregated value. Polish: threshold colors, prefix/suffix, long titles, edge values.",
 		minColWidth: 240,
-		cells: [...cellsOf("stat", "stat", statScenarios, 200), ...statSparklineCells],
+		// Sized to a stat's content (label and one number), not to the chart tiles around it.
+		cells: [...cellsOf("stat", "stat", statScenarios, 140), ...statSparklineCells],
 	},
 	{
 		id: "gauge",
@@ -145,8 +160,7 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 		description:
 			"Every entry from the chart registry rendered with its bundled sample data, plus threshold overlays, the stats legend, and loading/error/empty states.",
 		minColWidth: 320,
-		cells: cellsOf("chart", "chart", chartScenarios, 320, (s) => `${s.label} (${s.category})`,
-		),
+		cells: cellsOf("chart", "chart", chartScenarios, 320, (s) => `${s.label} (${s.category})`),
 	},
 	{
 		id: "stress",
@@ -154,8 +168,7 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 		description:
 			"High-cardinality (10–50 series/slices), long series names, and null/zero data. Confirms distinct colors past series 5, scrollable legends that don't crush the plot, and pie/bar 'Other' bucketing.",
 		minColWidth: 320,
-		cells: cellsOf("stress", "chart", stressScenarios, 320, (s) => `${s.label} (${s.category})`,
-		),
+		cells: cellsOf("stress", "chart", stressScenarios, 320, (s) => `${s.label} (${s.category})`),
 	},
 	{
 		id: "table",
@@ -213,7 +226,8 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 	{
 		id: "histogram",
 		title: "Histogram",
-		description: "Bucketed value distribution. Polish: log Y scale, narrow buckets, bell vs long-tail shapes.",
+		description:
+			"Bucketed value distribution. Polish: log Y scale, narrow buckets, bell vs long-tail shapes.",
 		minColWidth: 320,
 		cells: cellsOf("histogram", "histogram", histogramScenarios, 320),
 	},
@@ -233,4 +247,7 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 	},
 ]
 
-export const ALL_CELLS: ReadonlyArray<Cell> = [...SECTIONS, ...LATER_SECTIONS].flatMap((section) => section.cells)
+export const ALL_CELLS: ReadonlyArray<Cell> = Arr.flatMap(
+	[...SECTIONS, ...LATER_SECTIONS],
+	(section) => section.cells,
+)

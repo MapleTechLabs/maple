@@ -1,10 +1,11 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../ui/alert"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { middleTruncate } from "../../ui/middle-truncate"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import { type AuthorizationInfo, Message, type Model } from "./mcp-authorize"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -19,8 +20,7 @@ const failure = (h: H, message: string): Html =>
 				icon(h, "CircleWarningIcon", { size: 16 }),
 				alertDescription(h, [message], "text-destructive"),
 			]),
-			h.p(
-				[h.Class("text-sm text-muted-foreground")],
+			typography(h, { size: "sm", tone: "muted", as: "p" },
 				["Return to your MCP client and start the connection again."],
 			),
 		],
@@ -34,7 +34,7 @@ const ready = (h: H, info: AuthorizationInfo, workspace: Html): Html =>
 		[h.Class("space-y-4")],
 		[
 			h.div(
-				[h.Class("space-y-1 border border-border bg-muted/30 p-3")],
+				[h.Class("space-y-1 border border-border bg-surface-sunken p-3")],
 				[
 					muted(h, "text-xs", ["Requesting client"]),
 					h.p(

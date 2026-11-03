@@ -1,9 +1,9 @@
 import { CachedOf } from "../../data/cached"
-import * as CopyButton from "@maple/web/ui/copy-button"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { ErrorsFacets, ErrorsSummary, ErrorTrace, ErrorTypeRow } from "./fetch"
 
 export const FacetParam = Schema.Literals(["service", "env"])

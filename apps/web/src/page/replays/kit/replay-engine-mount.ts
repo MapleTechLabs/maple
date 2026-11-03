@@ -1,6 +1,6 @@
 import type { ReplayEngine, ReplayEngineFactory } from "../../../components/replays/engine/replay-engine"
-import { Effect, Queue, Stream } from "effect"
-import { deriveMeta } from "./replay-meta"
+import { Effect, Option, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { deriveMeta, InactiveInterval } from "./replay-meta"
 import type { ReplayFormat } from "./replay-window"
 
 // `ReplayPlayerProvider`'s engine half as a Mount stream: the engine mounts into the element, the
@@ -9,10 +9,16 @@ import type { ReplayFormat } from "./replay-window"
 
 export const CONTROL_ATTRIBUTE = "replay-control"
 export const SPEED_ATTRIBUTE = "replay-speed"
-export const SKIP_ATTRIBUTE = "replay-skip"
+/** The idle gaps to jump, as JSON in recording time; empty while skip-idle is off. */
+export const IDLE_ATTRIBUTE = "replay-idle"
 export const HOLD_ATTRIBUTE = "replay-hold"
 export const TOTAL_ATTRIBUTE = "replay-total"
-/** Dispatched on the surface by a feed Mount, `detail` the range's events. */
+/**
+ * Once every chunk is loaded, how many trailing ranges the engine is fed in all; empty until then.
+ * Until the engine has taken that many, running out of events is a stall, not the end.
+ */
+export const COMPLETE_ATTRIBUTE = "replay-complete"
+/** Dispatched on the surface by a feed Mount, `detail` the range's events; the engine acknowledges with `preventDefault`. */
 export const REPLAY_EVENTS = "maple:replay-events"
 
 export type TransportAction = "play" | "pause" | "resume" | "replay"
@@ -26,18 +32,29 @@ export type EngineArgs = Readonly<{
 	format: ReplayFormat
 	/** Resume here after a seek-driven rebuild (`seekTargetMs`). */
 	startAtMs: number | null
+	/**
+	 * Where the seed starts in the recording. The engine's clock starts at the seed's first event,
+	 * so a seed rebuilt from a later checkpoint runs `shiftMs` behind the recording's clock.
+	 * Every time in and out of the engine is converted here.
+	 */
+	shiftMs: number
 }>
 
 export type EngineHandlers<A> = Readonly<{
 	ready: (totalMs: number) => A
 	ticked: (currentMs: number) => A
 	finished: () => A
+	starved: (currentMs: number) => A
 }>
 
 const readNumber = (element: Element, attribute: string, fallback: number): number => {
 	const value = Number(element.getAttribute(`data-${attribute}`))
 	return Number.isFinite(value) ? value : fallback
 }
+
+const decodeIdle = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(InactiveInterval)))
+const readIdle = (element: Element): ReadonlyArray<InactiveInterval> =>
+	Option.getOrElse(decodeIdle(element.getAttribute(`data-${IDLE_ATTRIBUTE}`) ?? "[]"), () => [])
 
 /** Runs one engine for the element's lifetime; the element is keyed by its seed. */
 export const runReplayEngine = <A>(
@@ -53,9 +70,17 @@ export const runReplayEngine = <A>(
 					({ ENGINE_FACTORIES }) =>
 						Stream.callback<A>((queue) =>
 							Effect.acquireRelease(
-								Effect.sync(() => startEngine(element, args, handlers, ENGINE_FACTORIES[args.format], (message) => {
-									Queue.offerUnsafe(queue, message)
-								})),
+								Effect.sync(() =>
+									startEngine(
+										element,
+										args,
+										handlers,
+										ENGINE_FACTORIES[args.format],
+										(message) => {
+											Queue.offerUnsafe(queue, message)
+										},
+									),
+								),
 								(stop) => Effect.sync(stop),
 							).pipe(Effect.flatMap(() => Effect.never)),
 						),
@@ -71,7 +96,25 @@ const startEngine = <A>(
 ): (() => void) => {
 	const surface = mount.parentElement ?? mount
 	const meta = deriveMeta(args.events)
-	const state = { isPlaying: false, raf: 0, lastJumpedEnd: -1, lastControl: mount.getAttribute(`data-${CONTROL_ATTRIBUTE}`) }
+	const shift = args.shiftMs
+	/** Recording time ⇄ engine time. */
+	const toEngine = (ms: number) => Math.max(0, ms - shift)
+	const now = () => engine.getCurrentTimeMs() + shift
+	const state = {
+		isPlaying: false,
+		raf: 0,
+		lastJumpedEnd: -1,
+		lastControl: mount.getAttribute(`data-${CONTROL_ATTRIBUTE}`),
+		idle: readIdle(mount),
+		/** Ran out of loaded events while playing, with more of the recording still to come. */
+		isStarved: false,
+		/** Trailing ranges taken so far. */
+		fed: 0,
+	}
+	const isComplete = () => {
+		const expected = mount.getAttribute(`data-${COMPLETE_ATTRIBUTE}`)
+		return expected !== null && expected !== "" && state.fed >= Number(expected)
+	}
 	mount.innerHTML = ""
 	// rrweb can report a resize while it is still being constructed, before `engine` is bound.
 	const built: Array<ReplayEngine> = []
@@ -81,8 +124,16 @@ const startEngine = <A>(
 		events: args.events,
 		fallbackViewport: { width: meta.recordedWidth || 1280, height: meta.recordedHeight || 720 },
 		onFinish: () => {
-			state.isPlaying = false
+			// rrweb finishes at its last loaded event. Mid-recording that is a buffer underrun: stay
+			// "playing" and pick up again when the next range is fed. The tick loop keeps running, since
+			// its ticks are what ask the loader for that range.
+			if (!isComplete() && state.isPlaying) {
+				state.isStarved = true
+				emit(handlers.starved(now()))
+				return
+			}
 			cancelAnimationFrame(state.raf)
+			state.isPlaying = false
 			emit(handlers.finished())
 		},
 		onResize: () => fit(),
@@ -94,21 +145,18 @@ const startEngine = <A>(
 	resizes.observe(surface)
 	fit()
 	if (args.startAtMs !== null) {
-		engine.pause(args.startAtMs)
+		engine.pause(toEngine(args.startAtMs))
 		emit(handlers.ticked(args.startAtMs))
 	}
 
 	const tick = () => {
-		const total = readNumber(mount, TOTAL_ATTRIBUTE, engine.totalTimeMs)
-		const current = engine.getCurrentTimeMs()
-		const gap =
-			mount.getAttribute(`data-${SKIP_ATTRIBUTE}`) === "true"
-				? meta.inactiveIntervals.find((interval) => current >= interval.start && current < interval.end)
-				: undefined
+		const total = readNumber(mount, TOTAL_ATTRIBUTE, engine.totalTimeMs + shift)
+		const current = now()
+		const gap = state.idle.find((interval) => current >= interval.start && current < interval.end)
 		if (gap !== undefined && gap.end !== state.lastJumpedEnd) {
 			state.lastJumpedEnd = gap.end
-			engine.pause(gap.end)
-			engine.play(gap.end)
+			engine.pause(toEngine(gap.end))
+			engine.play(toEngine(gap.end))
 			emit(handlers.ticked(gap.end))
 		} else if (gap === undefined) {
 			state.lastJumpedEnd = -1
@@ -118,6 +166,7 @@ const startEngine = <A>(
 	}
 	const setPlaying = (isPlaying: boolean) => {
 		state.isPlaying = isPlaying
+		state.isStarved = false
 		cancelAnimationFrame(state.raf)
 		if (isPlaying) state.raf = requestAnimationFrame(tick)
 	}
@@ -126,21 +175,20 @@ const startEngine = <A>(
 		const value = mount.getAttribute(`data-${CONTROL_ATTRIBUTE}`)
 		if (value === null || value === state.lastControl) return
 		state.lastControl = value
-		const [, action, offset] = value.split("|")
+		const [, action, offset] = Str.split("|")(value)
 		const offsetMs = offset === undefined || offset === "" ? undefined : Number(offset)
-		const total = readNumber(mount, TOTAL_ATTRIBUTE, engine.totalTimeMs)
+		const total = readNumber(mount, TOTAL_ATTRIBUTE, engine.totalTimeMs + shift)
 		if (action === "pause") {
-			engine.pause(offsetMs)
+			engine.pause(offsetMs === undefined ? undefined : toEngine(offsetMs))
 			setPlaying(false)
 		} else if (action === "play") {
-			engine.play(offsetMs ?? 0)
+			engine.play(toEngine(offsetMs ?? 0))
 			setPlaying(true)
 		} else if (action === "replay") {
 			engine.play(0)
 			setPlaying(true)
 		} else if (action === "resume") {
-			const current = engine.getCurrentTimeMs()
-			engine.play(current >= total ? 0 : current)
+			engine.play(now() >= total ? 0 : engine.getCurrentTimeMs())
 			setPlaying(true)
 		}
 	}
@@ -148,19 +196,34 @@ const startEngine = <A>(
 		engine.setSpeed(readNumber(mount, SPEED_ATTRIBUTE, 1))
 		const isHeld = mount.getAttribute(`data-${HOLD_ATTRIBUTE}`) === "true"
 		if (isHeld && state.isPlaying) engine.pause()
-		if (!isHeld && state.isPlaying) engine.play(engine.getCurrentTimeMs())
+		if (!isHeld && state.isPlaying && !state.isStarved) engine.play(engine.getCurrentTimeMs())
 	}
 	const attributes = new MutationObserver((records) => {
-		if (records.some((record) => record.attributeName === `data-${CONTROL_ATTRIBUTE}`)) applyControl()
-		if (records.some((record) => record.attributeName !== `data-${CONTROL_ATTRIBUTE}`)) applyOptions()
+		const changed = (attribute: string) =>
+			Arr.some(records, (record) => record.attributeName === `data-${attribute}`)
+		if (changed(IDLE_ATTRIBUTE)) state.idle = readIdle(mount)
+		if (changed(CONTROL_ATTRIBUTE)) applyControl()
+		if (changed(SPEED_ATTRIBUTE) || changed(HOLD_ATTRIBUTE)) applyOptions()
 	})
 	attributes.observe(mount, {
 		attributes: true,
-		attributeFilter: [CONTROL_ATTRIBUTE, SPEED_ATTRIBUTE, HOLD_ATTRIBUTE].map((name) => `data-${name}`),
+		attributeFilter: Arr.map(
+			[CONTROL_ATTRIBUTE, SPEED_ATTRIBUTE, HOLD_ATTRIBUTE, IDLE_ATTRIBUTE],
+			(name) => `data-${name}`,
+		),
 	})
 	const onEvents = (event: Event) => {
-		if (!(event instanceof CustomEvent) || !Array.isArray(event.detail)) return
-		event.detail.forEach((item: unknown) => engine.addEvent(item))
+		if (!(event instanceof CustomEvent) || !Arr.isArray(event.detail)) return
+		event.preventDefault()
+		state.fed += 1
+		Arr.forEach(event.detail, (item: unknown) => engine.addEvent(item))
+		if (!state.isStarved) return
+		// rrweb commits added events on a microtask; resume after they land.
+		setTimeout(() => {
+			if (!state.isStarved) return
+			engine.play(engine.getCurrentTimeMs())
+			setPlaying(true)
+		}, 0)
 	}
 	surface.addEventListener(REPLAY_EVENTS, onEvents)
 

@@ -1,24 +1,22 @@
 import type { AccountTone, CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatPercentColumn } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../../ui/icon"
-import type * as Menu from "../../../../ui/menu"
-import * as MenuView from "../../../../ui/menu-view"
+import { pressable } from "@maple/views/ui/pressable"
+import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
+import type * as Menu from "@maple/views/ui/menu"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // Multi-account Cloudflare: these only render with two or more accounts; a single-account org keeps
 // a plain chip.
 
 type H = HtmlBuilder<Message>
 
-const TONE_DOT = {
-	ok: "bg-severity-info",
-	warn: "bg-severity-warn",
-	crit: "bg-severity-error",
-} as const satisfies Record<AccountTone, string>
 const TONE_TEXT = {
 	ok: "text-muted-foreground",
 	warn: "text-severity-warn",
@@ -50,7 +48,7 @@ export const accountMenu = (
 				{ _tag: "Separator" },
 				{
 					_tag: "RadioGroup",
-					items: accounts.map((account) => ({
+					items: Arr.map(accounts, (account) => ({
 						value: account.accountId,
 						label: `${account.name} · ${account.zones.length} zones · ${account.health.message}`,
 						isChecked: account.accountId === value,
@@ -65,31 +63,17 @@ export const accountMenu = (
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.Class(
-									cn(
-										badgeVariants({
-											variant: "meta",
-											size: "xs",
-											mono: true,
-											className:
-												"cursor-pointer gap-1 font-normal text-muted-foreground transition-colors hover:text-foreground",
-										}),
-									),
-								),
-								h.DataAttribute("slot", "badge"),
-								...trigger,
-							],
-							[
-								selected === undefined ? "accounts" : "account",
-								h.span(
-									[h.Class("text-foreground")],
-									[selected === undefined ? `All ${accounts.length}` : selected.name],
-								),
-								icon(h, "ChevronDownIcon", { className: "size-3 opacity-60" }),
-							],
+						pressable(
+							h,
+							{
+								className: heroFieldChipClass(true),
+								attributes: [h.DataAttribute("slot", "badge"), ...trigger],
+							},
+							heroFieldChipParts(h, {
+								label: selected === undefined ? "accounts" : "account",
+								value: selected === undefined ? `All ${accounts.length}` : selected.name,
+								isPicker: true,
+							}),
 						),
 					),
 				),
@@ -106,38 +90,31 @@ export const accountsStrip = (
 ): Html =>
 	h.div(
 		[h.Class("flex flex-col overflow-hidden rounded-md border md:flex-row")],
-		accounts.map((account) => {
+		Arr.map(accounts, (account) => {
 			const fraction = share.get(account.accountId) ?? 0
 			const count = counts.get(account.accountId)
-			return h.button(
+			return pressable(
+				h,
+				{
+					onClick: Message.ClickedAccount({ accountId: account.accountId }),
+					className:
+						"flex flex-1 flex-col gap-2 border-b px-4 py-3 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken md:border-b-0 md:border-l md:first:border-l-0",
+					attributes: [h.Key(account.accountId)],
+				},
 				[
-					h.Key(account.accountId),
-					h.Type("button"),
-					h.OnClick(Message.ClickedAccount({ accountId: account.accountId })),
-					h.Class(
-						"flex flex-1 flex-col gap-2 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/40 md:border-b-0 md:border-l md:first:border-l-0",
-					),
-				],
-				[
-					h.span(
-						[h.Class("flex items-center gap-2")],
-						[
-							h.span([
-								h.AriaHidden(true),
-								h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_DOT[account.health.tone])),
-							]),
-							h.span([h.Class("truncate text-xs font-medium text-foreground")], [account.name]),
-							h.span(
-								[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
-								[formatPercent(fraction)],
-							),
-						],
-					),
+					hstack(h, { gap: "2", as: "span" }, [
+						statusDot(h, { tone: account.health.tone }),
+						h.span([h.Class("truncate text-xs font-medium text-foreground")], [account.name]),
+						h.span(
+							[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
+							[formatPercentColumn(fraction)],
+						),
+					]),
 					h.span(
 						[h.Class("block h-1 w-full overflow-hidden rounded-full bg-muted")],
 						[
 							h.span([
-								h.Class("block h-full rounded-full bg-muted-foreground/60"),
+								h.Class("block h-full rounded-full bg-foreground-subtle"),
 								h.Style({ width: `${Math.max(fraction * 100, fraction > 0 ? 1.5 : 0)}%` }),
 							]),
 						],
@@ -164,15 +141,12 @@ export const accountHealthLine = (h: H, account: CloudflareAccount): Html | null
 					h.Class(
 						cn(
 							"flex items-center gap-2 rounded-md px-3 py-2 text-xs",
-							account.health.tone === "crit" ? "bg-severity-error/10" : "bg-severity-warn/10",
+							account.health.tone === "crit" ? "bg-severity-error-a2" : "bg-severity-warn-a2",
 						),
 					),
 				],
 				[
-					h.span([
-						h.AriaHidden(true),
-						h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_DOT[account.health.tone])),
-					]),
+					statusDot(h, { tone: account.health.tone }),
 					h.span(
 						[h.Class("text-foreground")],
 						[

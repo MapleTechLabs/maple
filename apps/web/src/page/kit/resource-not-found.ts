@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
-import { icon } from "../../ui/icon"
+import { linkButton } from "@maple/views/ui/button"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
 
 export const resourceNotFound = <M>(
 	h: HtmlBuilder<M>,
@@ -20,10 +20,17 @@ export const resourceNotFound = <M>(
 		h,
 		[
 			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [
-					options.icon ?? icon(h, "CircleWarningIcon", { size: 18 }),
-				]),
-				emptyTitle(h, [options.title]),
+				// One plain tile; a page-level title, between the error card's and the page H1.
+				h.div(
+					[
+						h.AriaHidden(true),
+						h.Class(
+							"mb-4 flex size-9 items-center justify-center rounded-md border bg-surface-faint text-muted-foreground",
+						),
+					],
+					[options.icon ?? icon(h, "CircleWarningIcon", { size: 18 })],
+				),
+				emptyTitle(h, [options.title], "font-display text-lg font-semibold tracking-tight"),
 				...(options.description === undefined
 					? []
 					: [
@@ -32,6 +39,7 @@ export const resourceNotFound = <M>(
 								typeof options.description === "string"
 									? [options.description]
 									: options.description,
+								"text-ui",
 							),
 						]),
 			]),

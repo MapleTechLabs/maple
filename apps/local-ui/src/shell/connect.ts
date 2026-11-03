@@ -1,6 +1,8 @@
-import { button } from "@maple/web/ui/button"
-import { icon } from "@maple/web/ui/icon"
-import * as Popover from "@maple/web/ui/popover"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import * as Popover from "@maple/views/ui/popover"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { typography } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "../message"
 import type { Model } from "../model"
@@ -12,12 +14,13 @@ import { connectGuide } from "../page/kit/connect-guide"
 export const CONNECT_POPOVER_ID = "connect"
 
 const note = (h: HtmlBuilder<Message>): Html =>
-	h.p(
-		[h.Class("text-xs text-muted-foreground")],
+	typography(
+		h,
+		{ as: "p", size: "xs", tone: "muted" },
 		[
 			"Recording browser sessions? Point",
 			" ",
-			h.code([h.Class("rounded bg-muted px-1")], ["@maple-dev/browser"]),
+			inlineCode(h, {}, ["@maple-dev/browser"]),
 			" at the same endpoint.",
 		],
 	)

@@ -1,10 +1,11 @@
-import { Array, Option, Schema } from "effect"
+import { Array, Option, Predicate, Schema, Record as Rec } from "effect"
 import { Subscription } from "foldkit"
 import type { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Resources } from "../platform/resources"
 import type { AppRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import type { PageSourceRef } from "../shell/source-link"
 import type {
 	PageContext,
 	PageHost,
@@ -18,18 +19,26 @@ import * as AgentSessionsList from "./agent-sessions/list"
 import * as AgentSession from "./agent-sessions/session"
 import * as AgentSessionTool from "./agent-sessions/tool"
 import * as AgentSessionTools from "./agent-sessions/tools"
+import * as McpServers from "./mcp/hub"
 import * as AlertEditor from "./alerts/editor"
 import * as AlertsHub from "./alerts/hub"
 import * as AnomaliesList from "./anomalies/list"
 import * as AnomalyDetail from "./anomalies/detail"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
+import * as AlertsUptimeMonitor from "./alerts/uptime-monitor"
+import * as AlertsUptimeNew from "./alerts/uptime-form"
+import * as IngestRuleEditor from "./settings/ingest-rule"
 import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
 import * as DashboardWidget from "./dashboards/widget"
-import * as Chat from "./chat/page"
 import * as CodeReview from "./code-review"
+import * as SecurityDependencies from "./security/dependencies"
+import * as SecurityFinding from "./security/finding"
+import * as SecurityRun from "./security/run"
+import * as SecurityTabs from "./security/tabs"
+import * as SecurityTelemetry from "./security/telemetry"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as InfraContainer from "./infra/containers/detail"
@@ -47,6 +56,8 @@ import * as InfraOverview from "./infra/overview"
 import * as InfraCloudflare from "./infra-integrations/cloudflare/list"
 import * as InfraCloudflareWorker from "./infra-integrations/cloudflare/worker"
 import * as InfraCloudflareZone from "./infra-integrations/cloudflare/zone"
+import * as InfraAws from "./infra-integrations/aws/list"
+import * as InfraAwsResource from "./infra-integrations/aws/resource"
 import * as InfraGcp from "./infra-integrations/gcp/list"
 import * as InfraGcpWorkload from "./infra-integrations/gcp/workload"
 import * as InfraPlanetscaleDatabase from "./infra-integrations/planetscale/db"
@@ -55,6 +66,8 @@ import * as InfraRailway from "./infra-integrations/railway/list"
 import * as InfraRailwayService from "./infra-integrations/railway/service"
 import * as InfraVercel from "./infra-integrations/vercel/list"
 import * as InfraVercelProject from "./infra-integrations/vercel/project"
+import * as InfraSupabase from "./infra-integrations/supabase/list"
+import * as InfraSupabaseProject from "./infra-integrations/supabase/project"
 import * as Integrations from "./integrations"
 import * as InvestigationDetail from "./investigations/detail"
 import * as InvestigationsList from "./investigations/list"
@@ -79,6 +92,9 @@ import * as Share from "./share"
 import * as SourcesList from "./sources/list"
 import * as SourcesNew from "./sources/new"
 import * as SourceDetail from "./sources/detail"
+import * as StatusPageBuilder from "./status-pages/builder"
+import * as StatusPageEditor from "./status-pages/editor"
+import * as StatusPagesList from "./status-pages/list"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
 
@@ -101,6 +117,11 @@ export const pages = [
 	AlertsHub.page,
 	AlertIncident.page,
 	AlertRule.page,
+	AlertsUptimeMonitor.page,
+	AlertsUptimeNew.page,
+	StatusPagesList.page,
+	StatusPageBuilder.page,
+	StatusPageEditor.page,
 	AlertEditor.page,
 	ServiceMap.page,
 	InfraHosts.page,
@@ -119,8 +140,12 @@ export const pages = [
 	InfraRailwayService.page,
 	InfraVercel.page,
 	InfraVercelProject.page,
+	InfraSupabase.page,
+	InfraSupabaseProject.page,
 	InfraPlanetscale.page,
 	InfraPlanetscaleDatabase.page,
+	InfraAws.page,
+	InfraAwsResource.page,
 	InfraGcp.page,
 	InfraGcpWorkload.page,
 	InfraCloudflare.page,
@@ -131,8 +156,14 @@ export const pages = [
 	DashboardTemplates.page,
 	DashboardWidget.page,
 	CodeReview.page,
+	SecurityTabs.page,
+	SecurityTelemetry.page,
+	SecurityDependencies.page,
+	SecurityRun.page,
+	SecurityFinding.page,
 	AgentSessionsList.page,
 	AgentSessionTools.page,
+	McpServers.page,
 	AgentSessionTool.page,
 	AgentSession.page,
 	Integrations.page,
@@ -144,6 +175,7 @@ export const pages = [
 	InvestigationsList.page,
 	InvestigationDetail.page,
 	Settings.page,
+	IngestRuleEditor.page,
 	McpPage.page,
 	SourcesList.page,
 	SourcesNew.page,
@@ -153,7 +185,6 @@ export const pages = [
 	ReplayDetail.page,
 	Share.page,
 	Analytics.page,
-	Chat.page,
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */
@@ -161,10 +192,10 @@ const BARE_PAGE_ROUTES: ReadonlyArray<AppRoute["_tag"]> = ["Share"]
 
 export const isBarePageRoute = (route: AppRoute): boolean => BARE_PAGE_ROUTES.includes(route._tag)
 
-export const PageSlot = Schema.Union(pages.map((page) => page.Slot))
+export const PageSlot = Schema.Union(Array.map(pages, (page) => page.Slot))
 export type PageSlot = typeof PageSlot.Type
 
-export const PageMessage = Schema.Union(pages.map((page) => page.Wrapped))
+export const PageMessage = Schema.Union(Array.map(pages, (page) => page.Wrapped))
 export type PageMessage = typeof PageMessage.Type
 
 /** The page slot after a transition, with the Commands and OutMessage that came with it. */
@@ -187,13 +218,14 @@ const pageById = (id: string) => Array.findFirst(pages, (page) => page.id === id
 
 /**
  * Route entry: keep the instance when its key and org are unchanged (it gets `routeChanged`),
- * otherwise build the route's page as instance `nextInstance` and drop the previous one.
+ * otherwise revive a parked instance of the route's page or build it, as instance `nextInstance`.
  */
 export const enterRoute = (
 	current: PageSlot | null,
 	route: AppRoute,
 	context: PageContext,
 	nextInstance: number,
+	parked: ReadonlyArray<PageSlot> = [],
 ): PageTransition =>
 	Option.match(
 		Array.findFirst(pages, (page) => Option.isSome(page.keyOf(route))),
@@ -205,12 +237,68 @@ export const enterRoute = (
 					current._tag === page.id &&
 					current.orgId === context.orgId &&
 					Option.contains(page.keyOf(route), current.key)
-				return isSameInstance
-					? toTransition(page.routeChanged(current, route, context), current)
+				if (isSameInstance) return toTransition(page.routeChanged(current, route, context), current)
+				const revived = Option.flatMap(
+					Array.findFirst(
+						parked,
+						(slot) => slot._tag === page.id && Option.contains(page.keyOf(route), slot.key),
+					),
+					(slot): Option.Option<PageStep<PageSlot, PageMessage>> =>
+						page.revive(slot, route, context, nextInstance),
+				)
+				return Option.isSome(revived)
+					? toTransition(revived, null)
 					: toTransition(page.init(route, context, nextInstance), null)
 			},
 		},
 	)
+
+const ASYNC_DATA_TAGS: ReadonlyArray<string> = [
+	"Idle",
+	"Loading",
+	"Refreshing",
+	"Failure",
+	"Stale",
+	"Success",
+]
+
+/** Some `AsyncData` in the Model is in flight; its answer would be dropped while parked. */
+const hasLoadInFlight = (value: unknown): boolean => {
+	if (Array.isArray(value)) return Array.some(value, hasLoadInFlight)
+	if (!Predicate.isReadonlyObject(value)) return false
+	const tag = value["_tag"]
+	// An `AsyncData`'s own data holds no requests: rows are not walked.
+	if (Predicate.isString(tag) && ASYNC_DATA_TAGS.includes(tag))
+		return tag === "Loading" || tag === "Refreshing"
+	return Array.some(Rec.values(value), hasLoadInFlight)
+}
+
+/** How many left pages are kept to revive; each holds its last data. */
+const PARKED_PAGES_MAX = 4
+
+/** The parked pages after leaving `left` for `entered`: newest first, the entered one taken out. */
+export const parkPages = (
+	parked: ReadonlyArray<PageSlot>,
+	left: PageSlot | null,
+	entered: PageSlot | null,
+): ReadonlyArray<PageSlot> => {
+	const isLeft =
+		left !== null &&
+		pageIdentity(left) !== pageIdentity(entered) &&
+		Array.some(pages, (page) => page.id === left._tag && page.isRevivable) &&
+		!hasLoadInFlight(left.model)
+	const sameSlot = (a: PageSlotBase, b: PageSlotBase) => a._tag === b._tag && a.key === b.key
+	const next = Array.filter(
+		[...(isLeft ? [left] : []), ...parked],
+		(slot) => entered === null || (slot.orgId === entered.orgId && !sameSlot(slot, entered)),
+	)
+		.filter((slot, index, all) => all.findIndex((other) => sameSlot(other, slot)) === index)
+		.slice(0, PARKED_PAGES_MAX)
+	// Nothing parked or taken out: the same array, so the root Model can stay the same reference.
+	return next.length === parked.length && Array.every(next, (slot, index) => slot === parked[index])
+		? parked
+		: next
+}
 
 /** Link intent (`page/preload.ts`): the route's page's preload Commands, or none. */
 export const preloadRoute = (
@@ -262,7 +350,9 @@ export const blockNavigation = (
 		(page) => page.id === current._tag && Option.contains(page.keyOf(route), current.key),
 	)
 	if (isSameInstance) return Option.none()
-	return Option.flatMap(pageById(current._tag), (page) => toHeld(page.blockedNavigation(current, url, context)))
+	return Option.flatMap(pageById(current._tag), (page) =>
+		toHeld(page.blockedNavigation(current, url, context)),
+	)
 }
 
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>
@@ -273,11 +363,27 @@ export const changeContext = (current: PageSlot | null, context: PageContext): P
 				onSome: (page) => toTransition(page.contextChanged(current, context), current),
 			})
 
+export const settleInfraSurfaces = (current: PageSlot | null, context: PageContext): PageTransition =>
+	current === null
+		? unchanged(current)
+		: Option.match(pageById(current._tag), {
+				onNone: () => unchanged(current),
+				onSome: (page) => toTransition(page.infraSurfacesSettled(current, context), current),
+			})
+
 export const pageBreadcrumbs = (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 	Option.match(pageById(slot._tag), { onNone: () => [], onSome: (page) => page.breadcrumbs(slot) })
 
+/** The source the page's data comes from, for the top bar's link. */
+export const pageSource = (slot: PageSlotBase): PageSourceRef | null =>
+	Option.match(pageById(slot._tag), { onNone: () => null, onSome: (page) => page.source(slot) })
+
+/** The page links to its source, so entering it reads the org's sources. */
+export const pageHasSource = (slot: PageSlotBase): boolean =>
+	Option.match(pageById(slot._tag), { onNone: () => false, onSome: (page) => page.hasSource })
+
 export const pageSubscriptions = Subscription.aggregate<PageHost, PageMessage, Resources>()(
-	...pages.map((page) => page.subscriptions),
+	...Array.map(pages, (page) => page.subscriptions),
 )
 
 /** The page's view boundary: a new instance (another org on the same route, too) mounts afresh. */

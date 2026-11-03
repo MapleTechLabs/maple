@@ -57,7 +57,7 @@ const make = Effect.gen(function* () {
 		(tenant: TenantContext, sessionId: string, window: SessionWindow, offset: number) =>
 		<Row>(rows: ReadonlyArray<Row>) =>
 			rows.length > 0 || offset > 0
-				? Effect.succeed(Option.some(rows))
+				? Effect.succeedSome(rows)
 				: Effect.map(exists(tenant, sessionId, window), (found) =>
 						found ? Option.some(rows) : Option.none(),
 					)
@@ -92,7 +92,11 @@ const make = Effect.gen(function* () {
 	) {
 		// `TraceId IN ()` is invalid SQL; no correlated traces never touches the warehouse.
 		if (opts.traceIds.length === 0) return []
-		const compiled = CH.compile(CH.sessionTraceSummariesQuery(opts), { orgId: tenant.orgId })
+		// The query returns at most this many rows, so a longer id list only widens the lookup.
+		const traceIds = opts.traceIds.slice(0, CH.MAX_SESSION_TRACE_SUMMARIES)
+		const compiled = CH.compile(CH.sessionTraceSummariesQuery({ ...opts, traceIds }), {
+			orgId: tenant.orgId,
+		})
 		return yield* warehouse.compiledQuery(tenant, compiled, {
 			profile: "list",
 			context: "sessionTraceSummaries",
@@ -233,7 +237,7 @@ const make = Effect.gen(function* () {
 })
 
 export class SessionReplayReadService extends Context.Service<SessionReplayReadService>()(
-	"@maple/api/services/SessionReplayReadService",
+	"@maple/backend/services/SessionReplayReadService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

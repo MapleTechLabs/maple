@@ -1,3 +1,5 @@
+import { Schema, Array as Arr } from "effect"
+import { formatBytes, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	type PayloadLine,
@@ -7,11 +9,15 @@ import {
 	unwrapToolErrorText,
 	whatsWrong,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../../ui/eyebrow"
-import { statusDot } from "../../../ui/status-dot"
+import { button } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model, type ToolErrorOccurrenceRow } from "./error-modal-model"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+
+const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 // `SampleBody` of `ToolErrorModal`: what the call was handed and what it gave back, and where the
 // arguments confirm a schema failure, what is wrong with them.
@@ -27,8 +33,8 @@ const payloadHead = (
 		[
 			eyebrow(h, { variant: "mono" }, [options.label]),
 			h.span(
-				[h.Class("truncate text-2xs text-muted-foreground/50")],
-				[options.attribute, ...(options.bytes > 0 ? [` · ${formatToolCount(options.bytes)} B`] : [])],
+				[h.Class("truncate text-2xs text-foreground-faint")],
+				[options.attribute, ...(options.bytes > 0 ? [` · ${formatBytes(options.bytes)}`] : [])],
 			),
 			h.span([h.Class("grow")], []),
 			...(options.action === undefined ? [] : [options.action]),
@@ -39,15 +45,20 @@ const notRecorded = (h: H, what: "arguments" | "result"): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-1 rounded-md border border-dashed border-input p-3.5 font-mono")],
 		[
-			h.span([h.Class("text-xs text-muted-foreground")], ["Not recorded"]),
-			h.span([h.Class("text-2xs leading-[15px] text-muted-foreground/70")], ["The span has no ", what, " attribute."]),
+			typography(h, { size: "xs", tone: "muted" }, ["Not recorded"]),
+			h.span(
+				[h.Class("text-2xs leading-[15px] text-foreground-subtle")],
+				["The span has no ", what, " attribute."],
+			),
 		],
 	)
 
 const payloadLineView = (h: H, line: PayloadLine): Html =>
 	h.div(
 		[
-			h.Class(cn("pr-3.5", line.highlight && "border-l-2 border-l-severity-error bg-severity-error/10")),
+			h.Class(
+				cn("pr-3.5", line.highlight && "border-l-2 border-l-severity-error bg-severity-error-a2"),
+			),
 			h.Style({ "padding-left": `${14 + line.depth * 16 - (line.highlight ? 2 : 0)}px` }),
 		],
 		[
@@ -55,7 +66,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 				? h.span(
 						[
 							h.Class(
-								"my-0.5 inline-flex items-center gap-2 rounded-[3px] border border-dashed border-severity-error/60 px-1.5 text-2xs leading-4 text-severity-error",
+								"my-0.5 inline-flex items-center gap-2 rounded-xs border border-dashed border-severity-error-a4 px-1.5 text-2xs leading-4 text-severity-error",
 							),
 						],
 						['"', line.missingKey, '"', h.span([h.Class("opacity-80")], ["missing, required"])],
@@ -69,7 +80,7 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 										? "text-foreground"
 										: line.folded !== undefined
 											? "text-muted-foreground"
-											: "text-foreground/85",
+											: "text-foreground-soft",
 								),
 							),
 						],
@@ -77,7 +88,12 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 					),
 			...(line.folded === undefined
 				? []
-				: [h.span([h.Class("ml-2 rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground")], [line.folded])]),
+				: [
+						h.span(
+							[h.Class("ml-2 rounded-xs bg-muted px-1 text-2xs text-muted-foreground")],
+							[line.folded],
+						),
+					]),
 			...(line.note === undefined
 				? []
 				: [
@@ -88,8 +104,12 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 								...(line.note.hiddenBytes > 0
 									? [
 											h.span(
-												[h.Class("rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground")],
-												["+", formatToolCount(line.note.hiddenBytes), " B not shown"],
+												[
+													h.Class(
+														"rounded-xs bg-muted px-1 text-2xs text-muted-foreground",
+													),
+												],
+												["+", formatBytes(line.note.hiddenBytes), " not shown"],
 											),
 										]
 									: []),
@@ -102,7 +122,13 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 const utf8Length = (text: string) => new TextEncoder().encode(text).length
 
 /** The arguments shortened around the error path; "Show full payload" is everything the read carries. */
-const argumentsBlock = (h: H, model: Model, row: ToolErrorOccurrenceRow, message: string, args: unknown): Html => {
+const argumentsBlock = (
+	h: H,
+	model: Model,
+	row: ToolErrorOccurrenceRow,
+	message: string,
+	args: unknown,
+): Html => {
 	if (row.arguments === "")
 		return h.div(
 			[h.Class("flex w-0 min-w-0 grow flex-col gap-2 max-lg:w-full")],
@@ -115,11 +141,15 @@ const argumentsBlock = (h: H, model: Model, row: ToolErrorOccurrenceRow, message
 	const isFull = model.isFullArguments
 	const isTruncatedByRead = row.argumentsBytes > utf8Length(row.arguments)
 	const copyLabel =
-		model.argumentsCopy === "failed" ? "Copy failed" : model.argumentsCopy === "copied" ? "Copied" : "Copy"
+		model.argumentsCopy === "failed"
+			? "Copy failed"
+			: model.argumentsCopy === "copied"
+				? "Copied"
+				: "Copy"
 	const note = isTruncatedByRead
-		? `The first ${formatToolCount(row.arguments.length)} characters of ${formatToolCount(row.argumentsBytes)} B`
+		? `The first ${formatNumber(row.arguments.length)} characters of ${formatBytes(row.argumentsBytes)}`
 		: lines !== undefined && !isFull
-			? `Showing ${formatToolCount(Math.min(payloadLinesBytes(lines), row.argumentsBytes))} of ${formatToolCount(row.argumentsBytes)} B · long strings shortened around the error path`
+			? `Showing ${formatBytes(Math.min(payloadLinesBytes(lines), row.argumentsBytes))} of ${formatBytes(row.argumentsBytes)} · long strings shortened around the error path`
 			: undefined
 	return h.div(
 		[h.Class("flex w-0 min-w-0 grow flex-col gap-2 max-lg:w-full")],
@@ -128,12 +158,15 @@ const argumentsBlock = (h: H, model: Model, row: ToolErrorOccurrenceRow, message
 				label: "Arguments",
 				attribute: "gen_ai.tool.call.arguments",
 				bytes: row.argumentsBytes,
-				action: h.button(
-					[
-						h.Class("font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"),
-						h.Type("button"),
-						h.OnClick(Message.ClickedCopyArguments({ text: row.arguments })),
-					],
+				action: button(
+					h,
+					{
+						variant: "ghost",
+						size: "xs",
+						className:
+							"font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
+						attributes: [h.OnClick(Message.ClickedCopyArguments({ text: row.arguments }))],
+					},
 					[copyLabel],
 				),
 			}),
@@ -141,31 +174,35 @@ const argumentsBlock = (h: H, model: Model, row: ToolErrorOccurrenceRow, message
 				? h.pre(
 						[
 							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/85",
+								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
 							),
 						],
-						[args === undefined ? row.arguments : JSON.stringify(args, null, 2)],
+						[args === undefined ? row.arguments : encodePrettyJson(args)],
 					)
 				: h.div(
-						[h.Class("flex flex-col overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-[18px]")],
-						lines.map((line) => payloadLineView(h, line)),
+						[
+							h.Class(
+								"flex flex-col overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-[18px]",
+							),
+						],
+						Arr.map(lines, (line) => payloadLineView(h, line)),
 					),
 			h.div(
-				[h.Class("flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/70")],
+				[h.Class("flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle")],
 				[
 					h.span([], note === undefined ? [] : [note]),
 					h.span([h.Class("grow")], []),
 					...(lines === undefined
 						? []
 						: [
-								h.button(
-									[
-										h.Class(
-											"flex h-6 shrink-0 items-center rounded-md border border-border bg-card px-2 text-foreground transition-colors hover:bg-muted/50",
-										),
-										h.Type("button"),
-										h.OnClick(Message.ToggledFullArguments()),
-									],
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "xs",
+										className: "text-2xs sm:text-2xs",
+										attributes: [h.OnClick(Message.ToggledFullArguments())],
+									},
 									[isFull ? "Shorten" : "Show full payload"],
 								),
 							]),
@@ -187,14 +224,19 @@ const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 				: h.pre(
 						[
 							h.Class(
-								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error/25 bg-sidebar px-3.5 py-3 font-mono text-xs leading-[18px] text-foreground/85",
+								"max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-severity-error-a3 bg-sidebar p-3 font-mono text-xs leading-[18px] text-foreground-soft",
 							),
 						],
-						[parsed === undefined ? row.result : JSON.stringify(parsed, null, 2)],
+						[parsed === undefined ? row.result : encodePrettyJson(parsed)],
 					),
 			...(source === undefined
 				? []
-				: [h.span([h.Class("font-mono text-2xs leading-3.5 text-muted-foreground/70")], ["Error message read from ", source])]),
+				: [
+						h.span(
+							[h.Class("font-mono text-2xs leading-3.5 text-foreground-subtle")],
+							["Error message read from ", source],
+						),
+					]),
 		],
 	)
 }
@@ -213,14 +255,24 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 						h.div(
 							[
 								h.Class(
-									"flex items-baseline gap-3 rounded-md border border-severity-error/20 bg-severity-error/[0.07] px-3 py-[9px] font-mono",
+									"flex items-baseline gap-3 rounded-md border border-severity-error-a3 bg-severity-error/[0.07] px-3 py-2 font-mono",
 								),
 							],
 							[
-								eyebrow(h, { variant: "label", className: "shrink-0 leading-4 text-severity-error" }, ["What's wrong"]),
+								eyebrow(
+									h,
+									{ variant: "label", className: "shrink-0 leading-4 text-severity-error" },
+									["What's wrong"],
+								),
 								h.span(
-									[h.Class("text-xs leading-4 text-foreground/85")],
-									[h.span([h.Class("font-medium text-foreground")], [hint.subject]), " ", hint.text],
+									[h.Class("text-xs leading-4 text-foreground-soft")],
+									[
+										typography(h, { tone: "foreground", weight: "medium" }, [
+											hint.subject,
+										]),
+										" ",
+										hint.text,
+									],
 								),
 							],
 						),
@@ -228,21 +280,25 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 			...(row.arguments === "" && row.result === ""
 				? [
 						h.div(
-							[h.Class("flex items-start gap-3 rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono")],
+							[
+								h.Class(
+									"flex items-start gap-3 rounded-md border border-border bg-sidebar p-3 font-mono",
+								),
+							],
 							[
 								statusDot(h, { tone: "custom", className: "mt-[5px] bg-muted-foreground" }),
-								h.span(
-									[h.Class("flex flex-col gap-1")],
-									[
-										h.span([h.Class("text-xs leading-4 text-foreground")], ["The tool reported no error detail"]),
-										h.span(
-											[h.Class("text-xs leading-[17px] text-muted-foreground")],
-											[
-												"This call recorded no arguments and no result, so the cause of the failure isn't in the telemetry — the message above is all the span carries.",
-											],
-										),
-									],
-								),
+								vstack(h, { gap: "1", as: "span" }, [
+									h.span(
+										[h.Class("text-xs leading-4 text-foreground")],
+										["The tool reported no error detail"],
+									),
+									h.span(
+										[h.Class("text-xs leading-[17px] text-muted-foreground")],
+										[
+											"This call recorded no arguments and no result, so the cause of the failure isn't in the telemetry. The message above is all the span carries.",
+										],
+									),
+								]),
 							],
 						),
 					]

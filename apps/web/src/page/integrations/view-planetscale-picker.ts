@@ -2,33 +2,27 @@ import { cn } from "@maple/ui/lib/utils"
 import { isExcluded } from "../../components/infra/planetscale/branch-selection"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import * as DialogView from "../../ui/dialog-view"
-import * as Field from "../../ui/field"
-import { inlineCode } from "../../ui/inline-code"
-import { skeleton } from "../../ui/skeleton"
+import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
+import { button } from "@maple/views/ui/button"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import * as Field from "@maple/views/ui/field"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { parsePatternList } from "./planetscale"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
-// `PlanetScaleOrgPicker` and `OptionCard` / `DrawnCheck`. The check is drawn at its end state.
+// `PlanetScaleOrgPicker` and `OptionCard` / `DrawnCheck`, shared by Choose data and the Edit data dialog.
+// The check is drawn at its end state.
 
 type H = HtmlBuilder<Message>
 
 const drawnCheck = (h: H, isChecked: boolean, className: string): Html =>
 	h.span(
-		[
-			h.AriaHidden(true),
-			h.Class(
-				cn(
-					"flex size-4 shrink-0 items-center justify-center rounded-sm border transition-[color,background-color,border-color,opacity] duration-150 motion-reduce:transition-none",
-					isChecked
-						? "border-primary bg-primary text-primary-foreground"
-						: "border-input bg-background group-hover:border-foreground/40",
-					className,
-				),
-			),
-		],
+		[h.AriaHidden(true), h.Class(choiceCheckClass(isChecked, true, className))],
 		[
 			h.svg(
 				[h.Attribute("viewBox", "0 0 24 24"), h.Class("size-3"), h.Attribute("fill", "none")],
@@ -51,42 +45,26 @@ const drawnCheck = (h: H, isChecked: boolean, className: string): Html =>
 
 /** `OptionCard type="radio" layout="row"`. */
 const optionCard = (h: H, name: string, isChecked: boolean): Html =>
-	h.label(
-		[h.Class("group relative cursor-pointer")],
+	choiceCard(
+		h,
+		{
+			type: "radio",
+			name: "planetscale-organization",
+			isChecked,
+			label: name,
+			onChange: Message.SelectedOrganization({ name }),
+			className: "items-start gap-3 p-4",
+		},
 		[
-			h.input([
-				h.Type("radio"),
-				h.Name("planetscale-organization"),
-				h.Class("peer sr-only"),
-				h.Checked(isChecked),
-				h.AriaLabel(name),
-				h.OnChange(() => Message.SelectedOrganization({ name })),
-			]),
 			h.div(
+				[h.Class("min-w-0 flex-1 pt-px")],
 				[
-					h.Class(
-						cn(
-							"flex h-full rounded-md border transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-							"items-start gap-3 p-4",
-							!isChecked
-								? "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]"
-								: "border-primary bg-primary/5",
-						),
-					),
-				],
-				[
-					h.div(
-						[h.Class("min-w-0 flex-1 pt-px")],
-						[
-							h.span(
-								[h.Class("block text-sm font-semibold")],
-								[h.span([h.Class("truncate")], [name])],
-							),
-						],
-					),
-					drawnCheck(h, isChecked, cn("mt-0.5", !isChecked && "opacity-0")),
+					typography(h, { size: "sm", weight: "semibold", className: "block" }, [
+						h.span([h.Class("truncate")], [name]),
+					]),
 				],
 			),
+			drawnCheck(h, isChecked, cn("mt-0.5", !isChecked && "opacity-0")),
 		],
 	)
 
@@ -128,123 +106,129 @@ const branchField = (
 }
 
 /** The live filter preview over the inventory's branch names. */
-const previewOf = (model: Model) => {
+export const branchPreviewOf = (model: Model) => {
 	const inventory = model.statuses.planetscaleDatabases.data
 	const names =
 		AsyncData.isSuccess(inventory) || AsyncData.isRefreshing(inventory)
-			? [...new Set(inventory.data.databases.flatMap((db) => db.branches.map((branch) => branch.name)))]
+			? [
+					...new Set(
+						Arr.flatMap(inventory.data.databases, (db) =>
+							Arr.map(db.branches, (branch) => branch.name),
+						),
+					),
+				]
 			: []
 	const include = parsePatternList(model.planetscaleCard.includeBranches.value)
 	const exclude = parsePatternList(model.planetscaleCard.excludeBranches.value)
-	if (names.length === 0 || (include.length === 0 && exclude.length === 0)) return null
-	const dropped = names.filter((name) => isExcluded(name, include, exclude))
+	if (names.length === 0) return null
+	const dropped = Arr.filter(names, (name) => isExcluded(name, include, exclude))
 	return { total: names.length, kept: names.length - dropped.length, dropped }
 }
 
-export const orgPicker = (h: H, model: Model, cancelLabel: string): Html => {
+/** The organizations the grant covers, one to pick. */
+export const orgChoices = (h: H, model: Model): Html => {
 	const card = model.planetscaleCard
 	const organizations = card.organizations.data
 	if (AsyncData.isIdle(organizations) || AsyncData.isLoading(organizations))
 		return skeleton(h, "h-24 w-full")
 	if (AsyncData.isFailure(organizations) || AsyncData.isStale(organizations))
-		return h.p(
-			[h.Class("text-xs text-muted-foreground")],
-			[
-				"Couldn't list the authorized PlanetScale organizations — the authorization may have been revoked. Disconnect and connect again.",
-			],
-		)
-	const preview = previewOf(model)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			h.div(
-				[
-					h.Class("flex flex-col gap-1.5"),
-					h.Role("radiogroup"),
-					h.AriaLabel("PlanetScale organization"),
-				],
-				organizations.data.organizations.map((org) =>
-					optionCard(h, org.name, card.selectedOrg === org.name),
-				),
-			),
-			h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					branchField(h, model, "include", {
-						id: "ps-include-branches",
-						label: "Only these branches (optional)",
-						placeholder: "main, staging",
-						description: [
-							"Leave blank to collect every branch. When set, only matching branches are collected — exclusions still apply on top.",
-						],
-					}),
-					branchField(h, model, "exclude", {
-						id: "ps-exclude-branches",
-						label: "Exclude branches (optional)",
-						placeholder: "pr-*, preview-*",
-						description: [
-							"Glob patterns — ",
-							inlineCode(h, {}, ["*"]),
-							" matches any run, ",
-							inlineCode(h, {}, ["?"]),
-							" ",
-							"exactly one character.",
-						],
-					}),
-					...(preview === null
-						? []
-						: [
-								h.p(
-									[h.Class("text-xs text-muted-foreground")],
-									[
-										h.span(
-											[h.Class("font-medium text-foreground")],
-											[String(preview.kept), " of ", String(preview.total)],
-										),
-										" ",
-										"branches will be collected",
-										...(preview.dropped.length > 0
-											? [
-													" — skipping ",
-													h.span(
-														[h.Class("font-mono")],
-														[preview.dropped.slice(0, 6).join(", ")],
-													),
-													preview.dropped.length > 6
-														? ` and ${preview.dropped.length - 6} more`
-														: "",
-												]
-											: []),
-									],
-								),
-							]),
-				],
-			),
-			DialogView.dialogFooter(h, "dialog", [
-				button(
-					h,
-					{
-						variant: "outline",
-						isDisabled: card.isSelecting,
-						attributes: [h.OnClick(Message.ClickedPickerCancel())],
-					},
-					[cancelLabel],
-				),
-				button(
-					h,
-					{
-						isDisabled: card.selectedOrg === null,
-						isLoading: card.isSelecting,
-						attributes: [h.OnClick(Message.SubmittedOrganization())],
-					},
-					["Connect organization"],
-				),
-			]),
-		],
+		return typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"Couldn't list the authorized PlanetScale organizations. The authorization may have been revoked; reconnect to try again.",
+		])
+	return vstack(
+		h,
+		{ gap: "1.5", attributes: [h.Role("radiogroup"), h.AriaLabel("PlanetScale organization")] },
+		Arr.map(organizations.data.organizations, (org) =>
+			optionCard(h, org.name, card.selectedOrg === org.name),
+		),
 	)
 }
 
-/** The "Change PlanetScale organization" dialog around the picker. */
+/** Include and exclude globs, with how many of the inventory's branches they keep. */
+export const branchFields = (h: H, model: Model): Html => {
+	const preview = branchPreviewOf(model)
+	const hasPatterns =
+		parsePatternList(model.planetscaleCard.includeBranches.value).length > 0 ||
+		parsePatternList(model.planetscaleCard.excludeBranches.value).length > 0
+	return vstack(h, { gap: "3" }, [
+		branchField(h, model, "include", {
+			id: "ps-include-branches",
+			label: "Only these branches (optional)",
+			placeholder: "main, staging",
+			description: [
+				"Leave blank to collect every branch. When set, only matching branches are collected, and exclusions still apply on top.",
+			],
+		}),
+		branchField(h, model, "exclude", {
+			id: "ps-exclude-branches",
+			label: "Exclude branches (optional)",
+			placeholder: "pr-*, preview-*",
+			description: [
+				"Glob patterns: ",
+				inlineCode(h, {}, ["*"]),
+				" matches any run, ",
+				inlineCode(h, {}, ["?"]),
+				" ",
+				"exactly one character.",
+			],
+		}),
+		...(preview === null || !hasPatterns
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						typography(h, { tone: "foreground", weight: "medium" }, [
+							String(preview.kept),
+							" of ",
+							String(preview.total),
+						]),
+						" ",
+						"branches will be collected",
+						...(preview.dropped.length > 0
+							? [
+									", skipping ",
+									h.span(
+										[h.Class("font-mono")],
+										[Arr.join(preview.dropped.slice(0, 6), ", ")],
+									),
+									preview.dropped.length > 6
+										? ` and ${preview.dropped.length - 6} more`
+										: "",
+								]
+							: []),
+					]),
+				]),
+	])
+}
+
+const dialogPicker = (h: H, model: Model): Html => {
+	const card = model.planetscaleCard
+	return vstack(h, { gap: "4" }, [
+		orgChoices(h, model),
+		branchFields(h, model),
+		DialogView.dialogFooter(h, "dialog", [
+			button(
+				h,
+				{
+					variant: "outline",
+					isDisabled: card.isSelecting,
+					attributes: [h.OnClick(Message.ClickedPickerCancel())],
+				},
+				["Cancel"],
+			),
+			button(
+				h,
+				{
+					isDisabled: card.selectedOrg === null,
+					isLoading: card.isSelecting,
+					attributes: [h.OnClick(Message.SubmittedOrganization())],
+				},
+				["Save changes"],
+			),
+		]),
+	])
+}
+
+/** Edit data: the picker in a dialog. */
 export const pickerDialog = (h: H, model: Model): Html => {
 	const id = model.planetscaleCard.pickerDialog.id
 	return h.submodel({
@@ -257,15 +241,15 @@ export const pickerDialog = (h: H, model: Model): Html => {
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: () => [
 				DialogView.dialogHeader(h, "dialog", [
-					DialogView.dialogTitle(h, "dialog", id, "Change PlanetScale organization"),
+					DialogView.dialogTitle(h, "dialog", id, "Edit PlanetScale data"),
 					DialogView.dialogDescription(
 						h,
 						"dialog",
 						id,
-						"Pick another organization the authorization covers. Metrics collection follows automatically.",
+						"Pick the organization and branches Maple collects. Collection follows on the next sync.",
 					),
 				]),
-				DialogView.dialogPanel(h, "dialog", id, [orgPicker(h, model, "Cancel")]),
+				DialogView.dialogPanel(h, "dialog", id, [dialogPicker(h, model)]),
 			],
 		},
 		toParentMessage: (message) => Message.GotPickerDialogMessage({ message }),

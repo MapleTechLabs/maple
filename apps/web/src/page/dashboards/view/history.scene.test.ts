@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
+import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { type PageContext } from "../../contract"
 import { FetchSnapshot, FetchVersions, RestoreVersion } from "./command-history"
@@ -13,7 +14,7 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const document = Schema.decodeUnknownSync(DashboardDocument)({
 	id: "dash_hist",
@@ -42,19 +43,27 @@ const openHistoryMessage = Message.GotMoreMenuMessage({
 const ROUTE = { dashboardId: "dash_hist", search: { mode: "edit" as const } }
 
 const withVersions = (): Model =>
-	[
-		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
-		openHistoryMessage,
-		Message.CompletedFetchVersions({ result: Result.succeed([version]) }),
-	].reduce((model, message) => pageUpdate(model, message).model, init(ROUTE, context).model)
+	Arr.reduce(
+		[
+			Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+			openHistoryMessage,
+			Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
+		],
+		init(ROUTE, context).model,
+		(model, message) => pageUpdate(model, message).model,
+	)
 
 describe("dashboard version history", () => {
 	test("opening the panel reads the versions once", () => {
-		const ready = [
-			Message.CompletedReadClock({ nowMs: 0 }),
-			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
-		].reduce((model, message) => pageUpdate(model, message).model, init(ROUTE, context).model)
+		const ready = Arr.reduce(
+			[
+				Message.CompletedReadClock({ nowMs: 0 }),
+				Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+			],
+			init(ROUTE, context).model,
+			(model, message) => pageUpdate(model, message).model,
+		)
 		const opened = pageUpdate(ready, openHistoryMessage)
 		expect(names(opened.commands)).toEqual([FetchVersions.name])
 		expect(names(pageUpdate(opened.model, openHistoryMessage).commands)).toEqual([])
@@ -78,5 +87,26 @@ describe("dashboard version history", () => {
 		expect(done.model.history.previewed).toBeNull()
 		expect(names(done.commands)).toContain(FetchVersions.name)
 		expect(done.outMessage?._tag).toBe("RequestedToast")
+	})
+
+	test("a version list read before a restore is dropped when it lands after the re-read", () => {
+		const previewed = pageUpdate(withVersions(), Message.ClickedVersion({ versionId: version.id })).model
+		const confirmed = pageUpdate(previewed, Message.ConfirmedRestore()).model
+		const done = pageUpdate(confirmed, Message.CompletedRestore({ versionNumber: 2, error: null })).model
+		const restoredRow = { ...version, id: "ver_restored", versionNumber: 3, isRestore: true }
+		const fresh = pageUpdate(
+			done,
+			Message.CompletedFetchVersions({ generation: 2, result: Result.succeed([restoredRow, version]) }),
+		).model
+		const late = pageUpdate(
+			fresh,
+			Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
+		).model
+		expect(
+			Arr.map(
+				AsyncData.getOrElse(late.history.versions, () => []),
+				(row) => row.id,
+			),
+		).toEqual(["ver_restored", version.id])
 	})
 })

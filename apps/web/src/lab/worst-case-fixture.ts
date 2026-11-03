@@ -14,6 +14,7 @@ import type { ReleaseServiceImpact } from "../components/releases/release-model"
 import type { Log } from "@maple/web-data/warehouse/logs"
 import { domainThresholdToForm, formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { formatUsage } from "../lib/billing/usage"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Relative and domain-typed imports keep this fixture loadable from apps/web.
 type HostRow = ListHostsResponse["data"][number]
@@ -211,8 +212,8 @@ export function legend(mode: WorstCaseMode): LegendFixture {
 		color: COLORS[i % COLORS.length]!,
 	}))
 	// The last series has no stats entry at all: what an all-null column computes to.
-	const stats = Object.fromEntries(
-		series.slice(0, count).map((s, i) => {
+	const stats = Rec.fromEntries(
+		Arr.map(series.slice(0, count), (s, i) => {
 			const scale = mode === "demo" ? 10 : 10 ** (i - 2)
 			return [
 				s.key,
@@ -223,32 +224,19 @@ export function legend(mode: WorstCaseMode): LegendFixture {
 	return { series, stats }
 }
 
-/* AI tool table ---------------------------------------------------------------------------- */
-
-export function toolTable(mode: WorstCaseMode): { headers: string[]; rows: string[][]; title: string } {
-	const headers = ["id", "pr", "year", "count"]
-	if (mode === "demo") return { headers, title: "Rows", rows: [["42", "17", "2026", "12"]] }
-	return {
-		headers,
-		title: "query_traces_by_service_and_time_window",
-		rows: [
-			["17293822569102704640", "128493", "2026", "1284903"],
-			["9007199254740993", "#128494", "2025", "0.30000000000000004"],
-			["", "-0", "1e21", "NaN"],
-		],
-	}
-}
-
 /* Logs + attributes ------------------------------------------------------------------------ */
 
-const DB_STATEMENT = `SELECT o.id, o.org_id, o.status, ${Array.from({ length: 160 }, (_, i) => `li.col_${i}`).join(", ")} FROM orders o JOIN line_items li ON li.order_id = o.id WHERE o.org_id = $1 AND o.created_at > now() - interval '7 days' ORDER BY o.created_at DESC LIMIT 500`
+const DB_STATEMENT = `SELECT o.id, o.org_id, o.status, ${Arr.join(
+	Array.from({ length: 160 }, (_, i) => `li.col_${i}`),
+	", ",
+)} FROM orders o JOIN line_items li ON li.order_id = o.id WHERE o.org_id = $1 AND o.created_at > now() - interval '7 days' ORDER BY o.created_at DESC LIMIT 500`
 
 export function attributes(mode: WorstCaseMode): Record<string, string> {
 	if (mode === "demo")
 		return { "db.system": "postgresql", "db.statement": "SELECT 1", "service.name": "api" }
 	return {
 		"db.system": "postgresql",
-		"db.statement": DB_STATEMENT.padEnd(4096, " /* padding */"),
+		"db.statement": Str.padEnd(4096, " /* padding */")(DB_STATEMENT),
 		"db.user": "",
 		"service.name": LONG_SERVICE,
 		"url.full": LONG_URL,
@@ -273,7 +261,7 @@ export function logs(mode: WorstCaseMode): ReadonlyArray<Log> {
 	return [
 		row("", 0, "", LONG_SERVICE),
 		row("TRACE2", 2, "\x1b[31mERROR\x1b[0m payment failed", LONG_SERVICE),
-		row("ERROR", 17, `upstream failed: ${LONG_URL} ${"x".repeat(600)}`, "unknown_service:node"),
+		row("ERROR", 17, `upstream failed: ${LONG_URL} ${Str.repeat(600)("x")}`, "unknown_service:node"),
 	]
 }
 

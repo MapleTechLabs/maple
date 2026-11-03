@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { SpanNodeData } from "../trace-data"
+import { SpanNodeData } from "@maple/views/traces/trace-data"
 
 // The Waterfall tab (`SpanHierarchy`, packages/ui/src/components/traces/span-hierarchy.tsx).
 

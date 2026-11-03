@@ -1,70 +1,87 @@
 // Source usage
 //
-// Hourly span and log counts for one source, read from the raw tables
-// by the `maple_source_id` resource attribute the gateway stamps. Both tables
-// carry a bloom filter on `mapValues(ResourceAttributes)`, so the `has` candidate
-// skips granules without the source id and the map equality confirms it.
+// Per-source ingestion volume read from `source_usage_hourly`, the rollup its
+// views fill at insert from every signal table by `maple_source_id`. It is a
+// SummingMergeTree, so every read sums: unmerged parts hold partial rows.
 
 import { Schema } from "effect"
-import { SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
 import * as CH from "@maple-dev/effect-orm/expr"
 import {
 	from,
 	param,
-	unionAll,
-	type CHUnionQuery,
+	type ColumnAccessor,
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
-import { Logs, Traces, orgIdParam, utcSecondsParam } from "../tables"
+import { SourceUsageHourly, orgIdParam, utcSecondsParam } from "../tables"
 
-export { SOURCE_ID_ATTRIBUTE }
-
-export interface SourceUsageOutput {
-	readonly signal: string
+export interface SourceUsageHourlyOutput {
 	/** ClickHouse datetime literal of the hour bucket start. */
 	readonly hour: string
-	readonly count: number
+	readonly spans: number
+	readonly logs: number
+	readonly metrics: number
+	readonly bytes: number
 }
 
-export const sourceUsageRowSchema = Schema.Struct({
-	signal: Schema.String,
+export const sourceUsageHourlyRowSchema = Schema.Struct({
 	hour: Schema.String,
-	count: CHNumber,
-}) satisfies CompiledQueryRowSchema<SourceUsageOutput>
+	spans: CHNumber,
+	logs: CHNumber,
+	metrics: CHNumber,
+	bytes: CHNumber,
+}) satisfies CompiledQueryRowSchema<SourceUsageHourlyOutput>
 
-export function sourceUsageQuery(): CHUnionQuery<SourceUsageOutput> {
-	const sourceId = param.string("sourceId")
+export interface SourceUsageTotalsOutput {
+	/** The public `src_` id stamped as `maple_source_id`. */
+	readonly sourceId: string
+	readonly spans: number
+	readonly logs: number
+	readonly metrics: number
+	readonly bytes: number
+}
 
-	const spans = from(Traces)
-		.select(($) => ({
-			signal: CH.lit("spans"),
-			hour: CH.toString_(CH.toStartOfHour($.Timestamp)),
-			count: CH.count(),
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lt(utcSecondsParam("endTime")),
-			CH.has(CH.mapValues($.ResourceAttributes), sourceId),
-			$.ResourceAttributes.get(SOURCE_ID_ATTRIBUTE).eq(sourceId),
-		])
+export const sourceUsageTotalsRowSchema = Schema.Struct({
+	sourceId: Schema.String,
+	spans: CHNumber,
+	logs: CHNumber,
+	metrics: CHNumber,
+	bytes: CHNumber,
+}) satisfies CompiledQueryRowSchema<SourceUsageTotalsOutput>
+
+type Columns = ColumnAccessor<typeof SourceUsageHourly.columns>
+
+/** Bytes are the stored-size estimates of every signal, summed. */
+const volume = ($: Columns) => ({
+	spans: CH.sum($.SpanCount),
+	logs: CH.sum($.LogCount),
+	metrics: CH.sum($.MetricCount),
+	bytes: CH.sum($.SpanSizeBytes).add(CH.sum($.LogSizeBytes)).add(CH.sum($.MetricSizeBytes)),
+})
+
+// `Hour` is the bucket start, so a half-open window on it takes whole hours.
+const inWindow = ($: Columns) => [
+	$.OrgId.eq(orgIdParam),
+	$.Hour.gte(utcSecondsParam("startTime")),
+	$.Hour.lt(utcSecondsParam("endTime")),
+]
+
+/** Hourly volume for one source. Params: orgId, sourceId, startTime, endTime. */
+export function sourceUsageHourlyQuery() {
+	return from(SourceUsageHourly)
+		.select(($) => ({ hour: CH.toString_($.Hour), ...volume($) }))
+		.where(($) => [...inWindow($), $.SourceId.eq(param.string("sourceId"))])
 		.groupBy("hour")
+		.orderBy(["hour", "asc"])
+		.format("JSON")
+}
 
-	const logs = from(Logs)
-		.select(($) => ({
-			signal: CH.lit("logs"),
-			hour: CH.toString_(CH.toStartOfHour($.Timestamp)),
-			count: CH.count(),
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.TimestampTime.gte(utcSecondsParam("startTime")),
-			$.TimestampTime.lt(utcSecondsParam("endTime")),
-			CH.has(CH.mapValues($.ResourceAttributes), sourceId),
-			$.ResourceAttributes.get(SOURCE_ID_ATTRIBUTE).eq(sourceId),
-		])
-		.groupBy("hour")
-
-	return unionAll(spans, logs).format("JSON")
+/** Window totals for every source of an org. Params: orgId, startTime, endTime. */
+export function sourceUsageTotalsQuery() {
+	return from(SourceUsageHourly)
+		.select(($) => ({ sourceId: $.SourceId, ...volume($) }))
+		.where(inWindow)
+		.groupBy("sourceId")
+		.orderBy(["bytes", "desc"])
+		.format("JSON")
 }

@@ -3,8 +3,8 @@ import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
-import { timeControls, type TimeSearch } from "../../kit/time-controls"
-import { INITIAL_LOCALE, readLocale } from "../../kit/locale"
+import { type PresetValue, timeControls, type TimeSearch } from "../../kit/time-controls"
+import { INITIAL_LOCALE, readLocale } from "@maple/views/lib/locale"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The time scope every infra page shares: `useEffectiveTimeRange`, `PageRefreshProvider` (Reload
@@ -35,7 +35,12 @@ export const init = (id: string): Model => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, locale: Schema.String, mode: RequestMode },
+	CompletedResolveWindow: {
+		window: TimeWindow,
+		nowMs: Schema.Number,
+		locale: Schema.String,
+		mode: RequestMode,
+	},
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
@@ -58,7 +63,7 @@ export const OutMessage = defineMessageUnion({
 export type OutMessage = typeof OutMessage.Type
 
 /** What a resolve needs from the page: its URL window, default preset and the viewer's zone. */
-export type Scope = Readonly<{ search: TimeSearch; defaultPreset: string; timeZone: string }>
+export type Scope = Readonly<{ search: TimeSearch; defaultPreset: PresetValue; timeZone: string }>
 
 export const ResolveWindow = Command.define("ResolveInfraWindow", {
 	args: {
@@ -149,8 +154,11 @@ export const controls = <M>(
 	model: Model,
 	scope: Pick<Scope, "search" | "defaultPreset">,
 	toParent: (message: Message) => M,
+	/** True while the page's failure card shows, so its Try again is the only retry. */
+	isFailed = false,
 ): Html =>
 	timeControls(h, {
+		isReloadHidden: isFailed,
 		search: scope.search,
 		defaultPreset: scope.defaultPreset,
 		window: model.window,

@@ -9,7 +9,7 @@ import { ok, strictEqual } from "node:assert"
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { maintenanceOperation, withMaintenanceLock } from "../src/server/checkpoints"
+import { maintenanceOperation, withMaintenanceLock } from "@maple/local-server/checkpoints"
 
 // Deliberately recomputed from the on-disk contract rather than imported: this
 // pins the sibling path a *different* process must find and reconcile.
@@ -84,17 +84,15 @@ describe("maintenance lock Effect boundary", () => {
 			strictEqual(okExit, 7)
 			ok(!existsSync(lockPathOf(dataDir)), "released after success")
 
-			const failed = await Effect.runPromise(
-				Effect.exit(
-					maintenanceOperation({
-						operation: "test.failure",
-						try: () =>
-							withMaintenanceLock(dataDir, crypto.randomUUID(), async () => {
-								throw new Error("boom")
-							}),
-						catch: (error) => (error instanceof Error ? error.message : String(error)),
-					}),
-				),
+			const failed = await Effect.runPromiseExit(
+				maintenanceOperation({
+					operation: "test.failure",
+					try: () =>
+						withMaintenanceLock(dataDir, crypto.randomUUID(), async () => {
+							throw new Error("boom")
+						}),
+					catch: (error) => (error instanceof Error ? error.message : String(error)),
+				}),
 			)
 			strictEqual(Exit.isFailure(failed), true)
 			ok(!existsSync(lockPathOf(dataDir)), "released after failure")

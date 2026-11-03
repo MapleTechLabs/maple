@@ -13,6 +13,8 @@ import {
 	MapleStack,
 	type MapleStage,
 	mapleWorkerProps,
+	StatusSnapshotsBucket,
+	StatusSnapshotsKv,
 } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
@@ -26,6 +28,7 @@ import {
 	optionalSecret,
 	planetScaleOAuthEnv,
 	selfObservabilityEnv,
+	supabaseOAuthEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
@@ -34,12 +37,13 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import { bindChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
-import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { Cause, Config, Effect, Option, Ref, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
-import { lookupColo } from "./worker-colo.ts"
+import { isolateColoCache, lookupColo } from "./worker-colo.ts"
 import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
 
 /**
@@ -47,6 +51,11 @@ import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticip
  * read through the ConfigProvider (`workerEnvLayer`), never off `env`.
  */
 export type AlertingWorkerEnv = Record<string, unknown>
+
+/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
+const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
+	Effect.provide(effect, RuntimeContext.phantom)
 
 /** Config-sourced env; largely shared with api via `@maple/infra/env`. */
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
@@ -64,16 +73,22 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 		optionalSecret("AUTUMN_SECRET_KEY"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
-		// Push for incidents, plus OAuth refresh for the Cloudflare and PlanetScale pollers.
+		// Linear alert destinations refresh the org's Linear token at delivery time.
+		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
+		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
+		// Signs the chart image URL in notifications; unset sends them text-only.
+		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
+		// Push for incidents, plus OAuth refresh for the Cloudflare, PlanetScale and Supabase pollers.
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		supabaseOAuthEnv,
 		// Sign-in for the Google Cloud metrics poller; unset leaves its tick a no-op.
 		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 		// Ticks post pull-request replies through the GitHub App; without it each one fails.
 		githubAppSourceEnv,
 		// Outbound config for `chat` destinations' connectors.
-		...chatConnectorOutboundConfigKeys.map((key) =>
+		...Arr.map(chatConnectorOutboundConfigKeys, (key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
 		),
 	)
@@ -82,7 +97,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
-	const { stage, region, domains, devEnv, db } = stack
+	const { stage, region, domains, devEnv, db, awsOidc } = stack
 	// For `IncidentClassifier`. Yielded, not `Worker.ref`: a ref cannot see a sibling this deploy creates.
 	const ai = yield* AiWorker
 	const env = yield* configuredEnv(stage, region, domains)
@@ -101,6 +116,7 @@ const props = Effect.gen(function* () {
 			// Cron fires hop through it so their ticks run where placement applies.
 			[SELF_BINDING]: Cloudflare.Workers.Self,
 			...env,
+			...awsOidc,
 			...devEnv,
 		},
 	}
@@ -143,23 +159,22 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		const email = yield* bindEmailSender
 		// maple-ai's chat Durable Object, where ticks start investigations; handed to each fire's graph.
 		const chatSessions = yield* bindChatSessions
+		// Where published status pages live; ticks publish snapshots and import break-glass posts.
+		const statusKv = yield* Cloudflare.KV.ReadWriteNamespace(StatusSnapshotsKv)
+		const statusBucket = yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket)
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
-		// Once per isolate too: an isolate never changes data center. A failed lookup stays
-		// "unknown" for the isolate rather than costing every fire another timeout.
+		// Once per isolate too: an isolate never changes data center.
 		const http = yield* HttpClient.HttpClient
-		const isolateColo = yield* Effect.cached(
-			lookupColo().pipe(
-				Effect.provideService(HttpClient.HttpClient, http),
-				Effect.tapError((error) => Effect.logWarning("Alerting colo lookup failed", error)),
-				Effect.orElseSucceed(() => "unknown"),
-			),
+		const isolateColo = yield* isolateColoCache(
+			lookupColo().pipe(Effect.provideService(HttpClient.HttpClient, http)),
 		)
 
 		const runTick = (cron: string, lane: string, env: Record<string, unknown>) =>
 			Effect.gen(function* () {
 				const { runScheduled } = yield* scheduled
-				yield* runScheduled(cron, lane, env, email, chatSessions)
+				const [kv, bucket] = yield* runtime(Effect.all([statusKv.raw, statusBucket.raw]))
+				yield* runScheduled(cron, lane, env, email, chatSessions, Option.some({ kv, bucket }))
 			}).pipe(
 				// Interrupts are isolate teardown, not a failed run.
 				Effect.catchCause((cause) =>
@@ -271,18 +286,17 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		return { fetch }
 	}).pipe(
 		// The init is the entry point: the cron source needs the host Worker.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			Layer.mergeAll(
-				Cloudflare.Hyperdrive.ConnectBinding,
-				Cloudflare.Email.SendBinding,
-				Cloudflare.Workers.CronEventSourceLive,
-				FetchHttpClient.layer,
-				WorkerTelemetry({
-					serviceName: "alerting",
-					anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
-				}),
-			),
-		),
+		Effect.provide([
+			Cloudflare.Hyperdrive.ConnectBinding,
+			Cloudflare.Email.SendBinding,
+			Cloudflare.KV.ReadWriteNamespaceBinding,
+			Cloudflare.R2.ReadWriteBucketBinding,
+			Cloudflare.Workers.CronEventSourceLive,
+			FetchHttpClient.layer,
+			WorkerTelemetry({
+				serviceName: "alerting",
+				anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+			}),
+		]),
 	),
 ) {}

@@ -1,8 +1,8 @@
 import { DashboardDocument, DashboardId, DashboardVersionId } from "@maple/domain/http"
 import type { V2Dashboard } from "@maple/domain/http/v2"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { errorMessageOf } from "../kit/store"
 import { Message } from "./message"
@@ -32,14 +32,14 @@ export const documentOf = (snapshot: V2Dashboard) =>
 	})
 
 export const FetchVersions = Command.define("FetchDashboardVersions", {
-	args: { dashboardId: Schema.String },
+	args: { dashboardId: Schema.String, generation: Schema.Number },
 	messages: [Message.CompletedFetchVersions],
-	execute: ({ dashboardId }) =>
+	execute: ({ dashboardId, generation }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
 			const page = yield* client.dashboards.listVersions({ params: { id }, query: { limit: 100 } })
-			return page.data.map((version) => ({
+			return Arr.map(page.data, (version) => ({
 				id: version.id,
 				versionNumber: version.versionNumber,
 				changeKind: version.changeKind,
@@ -51,7 +51,7 @@ export const FetchVersions = Command.define("FetchDashboardVersions", {
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchVersions({ result })),
+			Effect.map((result) => Message.CompletedFetchVersions({ generation, result })),
 		),
 })
 
@@ -83,7 +83,8 @@ export const RestoreVersion = Command.define("RestoreDashboardVersion", {
 			yield* client.dashboards.restoreVersion({ params: { id, version_id } })
 		}).pipe(
 			Effect.match({
-				onFailure: (error) => Message.CompletedRestore({ versionNumber, error: errorMessageOf(error) }),
+				onFailure: (error) =>
+					Message.CompletedRestore({ versionNumber, error: errorMessageOf(error) }),
 				onSuccess: () => Message.CompletedRestore({ versionNumber, error: null }),
 			}),
 		),

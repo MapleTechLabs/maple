@@ -2,8 +2,9 @@ import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { accountLayout } from "../../layout/account-layout"
-import { button } from "../../ui/button"
-import { field, fieldError, fieldLabel, input, type FieldIds, type FieldState } from "../../ui/field"
+import { button } from "@maple/views/ui/button"
+import { heading } from "@maple/views/ui/heading"
+import { field, fieldError, fieldLabel, input, type FieldIds, type FieldState } from "@maple/views/ui/field"
 import { Message, type Model, SignInFailure, Submission } from "./sign-in"
 
 // NOTE: fixed ids for the password field. Base UI's `dirty` compares with the initial value, which is
@@ -38,7 +39,7 @@ const passwordField = (model: Model, h: HtmlBuilder<Message>): Html => {
 	return field(h, { className: "items-stretch", state }, [
 		fieldLabel(
 			h,
-			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs tracking-[0.02em]", state },
+			{ ids: PASSWORD_FIELD, className: "font-mono text-xs sm:text-xs tracking-wide", state },
 			"Root password",
 		),
 		input(h, {
@@ -77,10 +78,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 				h.div(
 					[h.Class("space-y-2")],
 					[
-						h.h1(
-							[h.Class("font-display font-[650] text-[30px] leading-[1.1] tracking-[-0.03em]")],
-							["Sign in to Maple"],
-						),
+						heading(h, { level: 1, variant: "display" }, ["Sign in to Maple"]),
 						h.p(
 							[h.Class("font-display text-muted-foreground text-sm leading-relaxed")],
 							["This deployment is self-hosted. Enter the root password to continue."],

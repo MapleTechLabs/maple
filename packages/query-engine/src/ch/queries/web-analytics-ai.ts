@@ -5,14 +5,15 @@
 //   run the browser SDK. Only `host` / `pagePath` narrow them.
 
 import * as CH from "@maple-dev/effect-orm/expr"
-import { type DateTime, Schema } from "effect"
+import { type DateTime, Schema, Array as Arr } from "effect"
 import { param, from, compileFnCall, compileTypedFnCall } from "@maple-dev/effect-orm/clickhouse"
-import type { CHQuery, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery, ColumnDefs, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { AI_PRODUCTS } from "@maple/domain/ai-traffic"
 import { AiCrawlerRequests, SessionReplays, orgIdParam } from "../tables"
 import { replaysWhere, type WebAnalyticsFilters } from "./web-analytics"
 
-const stringArray = (values: ReadonlyArray<string>) => CH.arrayOf(...values.map((value) => CH.lit(value)))
+const stringArray = (values: ReadonlyArray<string>) =>
+	CH.arrayOf(...Arr.map(values, (value) => CH.lit(value)))
 
 /** `transform(value, from, to, '')`: an exact-match lookup table. */
 function lookup(value: CH.Expr<string>, pairs: ReadonlyArray<readonly [string, string]>): CH.Expr<string> {
@@ -20,17 +21,17 @@ function lookup(value: CH.Expr<string>, pairs: ReadonlyArray<readonly [string, s
 		"transform",
 		Schema.String,
 		value,
-		stringArray(pairs.map(([key]) => key)),
-		stringArray(pairs.map(([, id]) => id)),
+		stringArray(Arr.map(pairs, ([key]) => key)),
+		stringArray(Arr.map(pairs, ([, id]) => id)),
 		CH.lit(""),
 	)
 }
 
-const REFERRER_PAIRS = AI_PRODUCTS.flatMap((product) =>
-	product.referrerHosts.map((host) => [host, product.id] as const),
+const REFERRER_PAIRS = Arr.flatMap(AI_PRODUCTS, (product) =>
+	Arr.map(product.referrerHosts, (host) => [host, product.id] as const),
 )
-const UTM_PAIRS = AI_PRODUCTS.flatMap((product) =>
-	product.utmSources.map((source) => [source, product.id] as const),
+const UTM_PAIRS = Arr.flatMap(AI_PRODUCTS, (product) =>
+	Arr.map(product.utmSources, (source) => [source, product.id] as const),
 )
 
 const normalizedReferrer = (referrerHost: CH.Expr<string>) =>
@@ -49,11 +50,11 @@ export function aiReferralProductExpr(referrerHost: CH.Expr<string>, utmSource: 
 function isAiReferral(referrerHost: CH.Expr<string>, utmSource: CH.Expr<string>): CH.Condition {
 	return CH.inList(
 		normalizedReferrer(referrerHost),
-		REFERRER_PAIRS.map(([host]) => host),
+		Arr.map(REFERRER_PAIRS, ([host]) => host),
 	).or(
 		CH.inList(
 			CH.lower_(utmSource),
-			UTM_PAIRS.map(([source]) => source),
+			Arr.map(UTM_PAIRS, ([source]) => source),
 		),
 	)
 }
@@ -77,7 +78,7 @@ export interface WebAnalyticsAiReferralsOutput {
  */
 export function webAnalyticsAiReferralsQuery(
 	opts: WebAnalyticsAiReferralsOpts = {},
-): CHQuery<any, WebAnalyticsAiReferralsOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsAiReferralsOutput, {}> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return from(SessionReplays)
 		.select(($) => ({
@@ -127,7 +128,7 @@ export interface WebAnalyticsAiCrawlersOutput {
 /** Requests, failures and pages served per crawler. */
 export function webAnalyticsAiCrawlersQuery(
 	filters: WebAnalyticsAiCrawlerFilters = {},
-): CHQuery<any, WebAnalyticsAiCrawlersOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawlersOutput, {}> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			crawler: $.Crawler,
@@ -169,7 +170,7 @@ export interface WebAnalyticsAiCrawlerFormatsOutput {
 /** Crawler requests by document type, with the crawlers that asked for each. */
 export function webAnalyticsAiCrawlerFormatsQuery(
 	filters: WebAnalyticsAiCrawlerFilters = {},
-): CHQuery<any, WebAnalyticsAiCrawlerFormatsOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawlerFormatsOutput, {}> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			format: aiContentFormatExpr($.Path),
@@ -198,7 +199,7 @@ export interface WebAnalyticsAiCrawledPagesOutput {
 /** The pages AI crawlers read most, served fetches only. */
 export function webAnalyticsAiCrawledPagesQuery(
 	opts: WebAnalyticsAiCrawledPagesOpts = {},
-): CHQuery<any, WebAnalyticsAiCrawledPagesOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawledPagesOutput, {}> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			host: $.Host,

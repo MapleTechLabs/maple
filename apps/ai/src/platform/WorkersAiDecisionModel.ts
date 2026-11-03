@@ -6,8 +6,9 @@
  * The request is a native `.../ai/run/{model}` POST: the Workers AI shim answers it from the `AI`
  * binding when there is one, and otherwise it goes out to the REST endpoint with the API token.
  */
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as AiError from "effect/ai/AiError"
+import type * as Decision from "effect/ai/Decision"
 import * as DecisionModel from "effect/ai/DecisionModel"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
 
@@ -40,12 +41,16 @@ const ClefOutput = Schema.Struct({
 const ClefResponse = Schema.Union([Schema.Struct({ result: ClefOutput }), ClefOutput])
 
 type ClefQuestion =
-	| { readonly type: "noul"; readonly instructions: string; readonly criteria: unknown }
-	| { readonly type: "choice"; readonly instructions: string; readonly criteria: unknown }
-	| { readonly type: "score"; readonly instructions: string; readonly criteria: ReadonlyArray<string> }
+	| { readonly type: "noul"; readonly instructions: Decision.Description; readonly criteria: unknown }
+	| { readonly type: "choice"; readonly instructions: Decision.Description; readonly criteria: unknown }
+	| {
+			readonly type: "score"
+			readonly instructions: Decision.Description
+			readonly criteria: ReadonlyArray<Decision.Description>
+	  }
 
 /** `@cf/cloudflare/clef-flash` → `clef-flash`: the body names the variant, the URL the model. */
-const variantOf = (model: string): string => model.slice(model.lastIndexOf("/") + 1)
+const variantOf = (model: string): string => Str.slice(model.lastIndexOf("/") + 1)(model)
 
 const fail = (reason: AiError.AiErrorReason) => AiError.make({ module: MODULE, method: "decide", reason })
 
@@ -77,7 +82,7 @@ export const make = Effect.fnUntraced(function* (options: {
 		probabilityPrecision: 2,
 		decide: Effect.fnUntraced(function* ({ state, decisions }) {
 			const questions: Record<string, ClefQuestion> = {}
-			for (const [key, decision] of Object.entries(decisions)) {
+			for (const [key, decision] of Rec.toEntries(decisions)) {
 				switch (decision._tag) {
 					case "Classify":
 						questions[key] = {
@@ -90,7 +95,7 @@ export const make = Effect.fnUntraced(function* (options: {
 						questions[key] = {
 							type: "score",
 							instructions: decision.instructions,
-							criteria: decision.criteria,
+							criteria: Arr.map(decision.criteria, (level) => level.description),
 						}
 						break
 					case "Probability":
@@ -113,7 +118,7 @@ export const make = Effect.fnUntraced(function* (options: {
 				return yield* fail(
 					AiError.reasonFromHttpStatus({
 						status: response.status,
-						description: body.slice(0, 500),
+						description: Str.slice(0, 500)(body),
 					}),
 				)
 			}
@@ -125,7 +130,7 @@ export const make = Effect.fnUntraced(function* (options: {
 			const output = "result" in decoded ? decoded.result : decoded
 
 			const answers: Record<string, DecisionModel.ProviderAnswer> = {}
-			for (const [key, answer] of Object.entries(output.answers)) {
+			for (const [key, answer] of Rec.toEntries(output.answers)) {
 				switch (answer.type) {
 					case "noul":
 						answers[key] = { _tag: "Probability", probability: answer.noul }
@@ -143,7 +148,7 @@ export const make = Effect.fnUntraced(function* (options: {
 						const decision = decisions[key]
 						const probabilities: Record<string, number> = {}
 						if (decision?._tag === "Rate") {
-							for (const [index, label] of decision.criteria.entries()) {
+							for (const [index, { label }] of decision.criteria.entries()) {
 								const probability = answer.probabilities[String(index)]
 								if (probability !== undefined) probabilities[label] = probability
 							}

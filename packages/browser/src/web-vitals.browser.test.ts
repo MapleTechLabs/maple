@@ -34,6 +34,9 @@ describe("web vitals", () => {
 			"fetch",
 			vi.fn(async () => new Response("{}")),
 		)
+		// A single-page app that moved on before the metric reported: it still belongs to the loaded page.
+		const loadedPath = location.pathname
+		history.pushState(null, "", "/moved-on")
 		handle = MapleBrowser.init({
 			ingestKey: "k",
 			serviceName: "web",
@@ -48,6 +51,7 @@ describe("web vitals", () => {
 		await new Promise((resolve) => setTimeout(resolve, 50))
 		await handle.shutdown()
 		handle = undefined
+		history.replaceState(null, "", loadedPath)
 
 		const vitals = exportedLogs.filter((log) => log.eventName === "browser.web_vital")
 		const ttfb = vitals.find((log) => log.attributes["browser.web_vital.name"] === "ttfb")
@@ -55,7 +59,7 @@ describe("web vitals", () => {
 		expect(typeof ttfb?.attributes["browser.web_vital.value"]).toBe("number")
 		expect(["good", "needs-improvement", "poor"]).toContain(ttfb?.attributes["browser.web_vital.rating"])
 		expect(ttfb?.attributes["browser.web_vital.id"]).toMatch(/^v\d+-/)
-		expect(ttfb?.attributes["url.path"]).toBe(location.pathname)
+		expect(ttfb?.attributes["url.path"]).toBe(loadedPath)
 		expect(typeof ttfb?.attributes["session.id"]).toBe("string")
 		expect(ttfb?.spanContext?.traceId).toMatch(/^[0-9a-f]{32}$/)
 		vi.unstubAllGlobals()

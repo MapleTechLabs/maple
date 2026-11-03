@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -19,6 +28,7 @@ import { IngestAttributeMappingService } from "@maple/backend/services/org/Inges
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -82,8 +92,8 @@ const warehouseStub = (
 		query: () => Effect.die(new Error("unexpected warehouse pipe query")),
 		rawSqlQuery: () => Effect.succeed([]),
 		compiledQuery: (_tenant, compiled) => {
-			const table = Object.keys(rowsByTable).find((name) =>
-				compiledQueryOf(compiled).sql.includes(`FROM ${name}`),
+			const table = Rec.keys(rowsByTable).find((name) =>
+				Str.includes(`FROM ${name}`)(compiledQueryOf(compiled).sql),
 			)
 			return compiledQueryOf(compiled)
 				.decodeRows(table === undefined ? [] : rowsByTable[table]!)
@@ -116,6 +126,16 @@ const planetScaleStubs = Layer.mergeAll(
 		listOrganizations: die,
 		hasConnection: die,
 		connectedByUserId: die,
+		disconnect: die,
+	}),
+	Layer.succeed(SupabaseOAuthService, {
+		isConfigured: false,
+		apiBaseUrl: "https://api.supabase.com",
+		startConnect: die,
+		completeConnect: die,
+		getValidAccessToken: die,
+		withAccessToken: die,
+		isGrantUsable: die,
 		disconnect: die,
 	}),
 )

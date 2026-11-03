@@ -1,17 +1,18 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { type BubbleVariant, bubble, bubbleContent, bubbleGroup } from "../../ui/bubble"
-import type { CopyStatus } from "../../ui/copy-button"
-import { message, messageAvatar, messageContent, messageGroup, messageHeader } from "../../ui/message"
-import { middleTruncate } from "../../ui/middle-truncate"
-import { settingRow } from "../../ui/setting-row"
-import { icon } from "../../ui/icon"
-import { trace, traceDescription, traceIcon, traceLine, traceTitle } from "../../ui/trace"
-import { truncatedId } from "../../ui/truncated-id"
-import { truncatedText } from "../../ui/truncated-text"
-import { avatarFallback } from "../../ui/display"
-import { scrollArea } from "../../ui/scroll-area"
-import { switchControl } from "../../ui/switch"
+import { type BubbleVariant, bubble, bubbleContent, bubbleGroup } from "@maple/views/ui/bubble"
+import type { CopyStatus } from "@maple/views/ui/copy-button"
+import { message, messageAvatar, messageContent, messageGroup, messageHeader } from "@maple/views/ui/message"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { settingRow } from "@maple/views/ui/setting-row"
+import { icon } from "@maple/views/ui/icon"
+import { trace, traceDescription, traceIcon, traceLine, traceTitle } from "@maple/views/ui/trace"
+import { truncatedId } from "@maple/views/ui/truncated-id"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { avatarFallback } from "@maple/views/ui/display"
+import { scrollArea } from "@maple/views/ui/scroll-area"
+import { switchControl } from "@maple/views/ui/switch"
 import { kitRow, kitSection } from "./kit-layout"
+import { Array as Arr, String as Str } from "effect"
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 const LONG_URL =
@@ -27,8 +28,11 @@ const BUBBLE_VARIANTS: ReadonlyArray<BubbleVariant> = [
 ]
 const SCROLL_ROWS = Array.from(
 	{ length: 12 },
-	(_, index) => `span-${String(index + 1).padStart(2, "0")} GET /api/cart`,
+	(_, index) => `span-${Str.padStart(2, "0")(String(index + 1))} GET /api/cart`,
 )
+
+/** The chat transcript's user bubble shape (page/investigations/conversation/kit/view-transcript.ts). */
+const USER_BUBBLE = "rounded-lg px-3.5 py-2.5 font-prose text-sm"
 
 const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>
 	message(h, {}, [
@@ -36,8 +40,12 @@ const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>
 		messageContent(h, [
 			messageHeader(h, ["Maple"]),
 			bubbleGroup(h, [
-				bubble(h, { variant: "muted" }, [
-					bubbleContent(h, ["payment-svc errors rose to 4.2% after the 11:40 deploy."]),
+				bubble(h, { variant: "ghost" }, [
+					bubbleContent(
+						h,
+						["payment-svc errors rose to 4.2% after the 11:40 deploy."],
+						"font-prose text-sm",
+					),
 				]),
 			]),
 		]),
@@ -45,7 +53,11 @@ const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>
 
 const userMessage = <M>(h: HtmlBuilder<M>): Html =>
 	message(h, { align: "end" }, [
-		messageContent(h, [bubble(h, { align: "end" }, [bubbleContent(h, ["Which route is failing?"])])]),
+		messageContent(h, [
+			bubble(h, { variant: "secondary", align: "end" }, [
+				bubbleContent(h, ["Which route is failing?"], USER_BUBBLE),
+			]),
+		]),
 	])
 
 export const conversationSection = <M>(h: HtmlBuilder<M>): Html =>
@@ -54,7 +66,9 @@ export const conversationSection = <M>(h: HtmlBuilder<M>): Html =>
 		kitRow(
 			h,
 			undefined,
-			BUBBLE_VARIANTS.map((variant) => bubble(h, { variant }, [bubbleContent(h, [variant])])),
+			Arr.map(BUBBLE_VARIANTS, (variant) =>
+				bubble(h, { variant }, [bubbleContent(h, [variant], "rounded-lg")]),
+			),
 		),
 	])
 
@@ -73,7 +87,7 @@ export const traceSection = <M>(h: HtmlBuilder<M>): Html =>
 					traceTitle(h, ["Read logs"]),
 					traceDescription(h, ["query timed out"]),
 				]),
-				traceLine(h, { status: "pending" }, [traceTitle(h, ["Group by route"])]),
+				traceLine(h, { status: "pending" }, [traceIcon(h, []), traceTitle(h, ["Group by route"])]),
 			],
 			"max-w-md",
 		),
@@ -164,7 +178,7 @@ export const scrollAreaSection = <M>(h: HtmlBuilder<M>): Html =>
 			[
 				h.div(
 					[h.Class("flex flex-col p-2 font-mono text-xs")],
-					SCROLL_ROWS.map((row) => h.span([h.Class("py-1")], [row])),
+					Arr.map(SCROLL_ROWS, (row) => h.span([h.Class("py-1")], [row])),
 				),
 			],
 		),

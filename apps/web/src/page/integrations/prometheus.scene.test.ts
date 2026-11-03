@@ -1,10 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { V2ScrapeTarget } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../data/load-failure"
-import * as Field from "../../ui/field"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -16,9 +16,9 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
 	id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
@@ -64,8 +64,8 @@ describe("prometheus scrape targets", () => {
 		expect(late.model.prometheusCard.checks).toEqual(selected.model.prometheusCard.checks)
 	})
 
-	test("the add form validates and saves once, then selects the new target", () => {
-		const opened = pageUpdate(loaded(), Message.ClickedAddTarget()).model
+	test("the form validates and saves once, then selects and probes the new target", () => {
+		const opened = loaded()
 		expect(names(pageUpdate(opened, Message.SubmittedTargetForm()).commands)).toEqual([])
 		const filled = steps(opened, [
 			Message.GotFormFieldMessage({
@@ -85,6 +85,7 @@ describe("prometheus scrape targets", () => {
 			Message.CompletedSave({ isEdit: false, id: target.id, failure: null }),
 		)
 		expect(saved.model.prometheusCard.selectedId).toBe(target.id)
+		expect(names(saved.commands)).toContain("ProbeScrapeTarget")
 		expect(saved.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "success",
@@ -95,7 +96,7 @@ describe("prometheus scrape targets", () => {
 	})
 
 	test("an out-of-range interval keeps the form invalid", () => {
-		const opened = pageUpdate(loaded(), Message.ClickedAddTarget()).model
+		const opened = loaded()
 		const invalid = steps(opened, [
 			Message.GotFormFieldMessage({
 				field: "name",
@@ -129,7 +130,8 @@ describe("prometheus scrape targets", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed.model),
-			expectView(role("button", { name: "Test" })).toExist(),
+			expectView(role("button", { name: "Sync now" })).toBeEnabled(),
+			expectView(role("link", { name: "Add another target" })).toExist(),
 		)
 	})
 })

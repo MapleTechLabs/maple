@@ -8,6 +8,7 @@ import {
 	gcpCloudSqlView,
 	gcpConnectionPeak,
 	gcpMatchStatements,
+	gcpStatementTextPrefix,
 	gcpNormalizeStatement,
 	gcpPoolFull,
 	gcpQueryInsightsUnavailable,
@@ -16,6 +17,7 @@ import {
 	gcpStatements,
 	type GcpTracedQuery,
 } from "./cloud-sql-signals"
+import { Array as Arr, String as Str } from "effect"
 
 const BUCKET_SECONDS = 300
 const START_MS = Date.parse("2026-10-14T12:00:00.000Z")
@@ -31,6 +33,7 @@ const point = (index: number, metric: string, label: string, total: number, samp
 const DB = "gcp.cloud_sql"
 
 const tracedQuery = (statement: string, service: string, p95: number, calls = 1000): GcpTracedQuery => ({
+	queryKey: `key-${service}-${p95}`,
 	sampleStatement: statement,
 	sampleService: service,
 	serviceCount: 1,
@@ -99,6 +102,7 @@ describe("gcpMatchStatements", () => {
 			services: ["checkout-api", "orders-worker"],
 			serviceCount: 2,
 			appP95Ms: 1640,
+			queryKeys: ["key-checkout-api-1640", "key-orders-worker-90"],
 		})
 	})
 
@@ -112,9 +116,34 @@ describe("gcpMatchStatements", () => {
 	})
 })
 
+describe("gcpStatementTextPrefix", () => {
+	it("keeps the first line before the first placeholder, as the span's text has it", () => {
+		expect(gcpStatementTextPrefix("SELECT id, status FROM orders\n  WHERE org_id = $1 AND id = $2")).toBe(
+			"SELECT id, status FROM orders",
+		)
+		expect(gcpStatementTextPrefix("UPDATE orders SET status = $1 WHERE id = $2")).toBe(
+			"UPDATE orders SET status =",
+		)
+	})
+
+	it("caps a long statement so the link stays short", () => {
+		expect(gcpStatementTextPrefix(`SELECT ${Str.repeat(200)("a, ")}b FROM t`)?.length).toBe(200)
+	})
+
+	it("keeps a statement without placeholders whole", () => {
+		expect(gcpStatementTextPrefix("SELECT count(*) FROM order_events")).toBe(
+			"SELECT count(*) FROM order_events",
+		)
+	})
+
+	it("gives none when the text before the placeholder is too short to tell statements apart", () => {
+		expect(gcpStatementTextPrefix("SELECT $1")).toBeNull()
+	})
+})
+
 describe("gcpAppWait", () => {
 	const traced = (appP95Ms: number) =>
-		new Map([["a", { services: ["checkout-api"], serviceCount: 1, appP95Ms }]])
+		new Map([["a", { services: ["checkout-api"], serviceCount: 1, appP95Ms, queryKeys: [] }]])
 
 	it("calls out an app side five times the database's and 200ms more", () => {
 		expect(gcpAppWait([insight("a", "UPDATE orders", 38)], traced(1640))).toEqual({
@@ -136,8 +165,8 @@ describe("gcpAppWait", () => {
 	it("picks the statement the app waits on the most times longer than the database runs it", () => {
 		const statements = [insight("a", "wider gap", 290), insight("b", "most times", 38)]
 		const both = new Map([
-			["a", { services: ["checkout-api"], serviceCount: 1, appP95Ms: 1900 }],
-			["b", { services: ["checkout-api"], serviceCount: 1, appP95Ms: 1640 }],
+			["a", { services: ["checkout-api"], serviceCount: 1, appP95Ms: 1900, queryKeys: [] }],
+			["b", { services: ["checkout-api"], serviceCount: 1, appP95Ms: 1640, queryKeys: [] }],
 		])
 		expect(gcpAppWait(statements, both)?.statement).toBe("most times")
 	})
@@ -283,7 +312,7 @@ describe("gcpStatements", () => {
 
 	it("never shares of less than the statements' own time, and has no latency without calls", () => {
 		const statements = gcpStatements([row("a", 3), row("b", 1, 0)], [])
-		expect(statements.map((statement) => statement.executionShare)).toEqual([0.75, 0.25])
+		expect(Arr.map(statements, (statement) => statement.executionShare)).toEqual([0.75, 0.25])
 		expect(statements[1]).toMatchObject({ p50LatencyMillis: null, p95LatencyMillis: null })
 	})
 })

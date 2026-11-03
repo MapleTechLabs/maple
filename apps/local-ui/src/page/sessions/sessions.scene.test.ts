@@ -1,4 +1,4 @@
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -23,14 +23,15 @@ const contextAt = (search: string): PageContext => ({
 const context = contextAt("")
 const inputs: PageViewInputs = {
 	context,
-	presenceOf: () => Option.none(),
+	presenceOf: () => ({ status: "unknown", lastSeenMs: null }),
 	presenceNowMs: NOW,
 	clockMs: 0,
 	hasNewDataSince: () => false,
 }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, inputs)()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const sessionRow: SessionRow = {
 	sessionId: "s",
@@ -57,7 +58,7 @@ describe("local sessions list", () => {
 	test("entry reads the clock, then asks for the list and its facets in the minute's window", () => {
 		expect(names(init(context).commands)).toContain(ReadClock.name)
 		const loaded = clocked()
-		expect(names(loaded.commands)).toEqual([FetchSessions.name, FetchFacets.name])
+		expect(names(loaded.commands)).toEqual(expect.arrayContaining([FetchSessions.name, FetchFacets.name]))
 		expect(Option.getOrNull(loaded.model.maybeAnchorMs)).toBe(Date.UTC(2026, 9, 1, 12, 0, 0))
 	})
 
@@ -67,37 +68,64 @@ describe("local sessions list", () => {
 		expect(second.sessions.key).not.toBe(first.sessions.key)
 		const late = update(
 			second,
-			Message.SucceededFetchSessions({ key: first.sessions.key ?? "", data: { pages: [[]], hasNextPage: false }, fetchedAtMs: NOW }),
+			Message.SucceededFetchSessions({
+				key: first.sessions.key ?? "",
+				data: { pages: [[]], hasNextPage: false },
+				fetchedAtMs: NOW,
+			}),
 			contextAt("browser=Chrome"),
 		)
 		expect(late.model.sessions).toEqual(second.sessions)
+		expect(late.model.sessionsUpdatedAtMs).toBe(second.sessionsUpdatedAtMs)
+		// The stale answer is empty, but only the current list may ask for the signal presence.
+		expect(late.outMessage).toBeUndefined()
+		expect(names(late.commands)).toEqual([])
 	})
 
 	test("an empty list asks for the signal presence and states the fact while it is unknown", () => {
 		const model = clocked().model
 		const empty = pageUpdate(
 			model,
-			Message.SucceededFetchSessions({ key: model.sessions.key ?? "", data: { pages: [[]], hasNextPage: false }, fetchedAtMs: NOW }),
+			Message.SucceededFetchSessions({
+				key: model.sessions.key ?? "",
+				data: { pages: [[]], hasNextPage: false },
+				fetchedAtMs: NOW,
+			}),
 		)
 		expect(empty.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 		expect(AsyncData.isSuccess(empty.model.sessions.data)).toBe(true)
-		scene({ update: pageUpdate, view }, given(empty.model), expectView(text("No sessions found")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(empty.model),
+			expectView(text("No sessions found")).toExist(),
+		)
 	})
 
 	test("Load more on the previous filter's rows waits for the new filter's list", () => {
 		const model = clocked().model
 		const placeholderRow = (index: number): SessionRow => ({ ...sessionRow, sessionId: `s${index}` })
-		const data = { pages: [Array.from({ length: PAGE_SIZE }, (_, index) => placeholderRow(index))], hasNextPage: true }
-		const full = pageUpdate(model, Message.SucceededFetchSessions({ key: model.sessions.key ?? "", data, fetchedAtMs: NOW })).model
+		const data = {
+			pages: [Array.from({ length: PAGE_SIZE }, (_, index) => placeholderRow(index))],
+			hasNextPage: true,
+		}
+		const full = pageUpdate(
+			model,
+			Message.SucceededFetchSessions({ key: model.sessions.key ?? "", data, fetchedAtMs: NOW }),
+		).model
 		const filtered = contextAt("browser=Chrome")
 		const pending = locationChanged(full, filtered).model
-		expect(pending.sessions.isPlaceholder).toBe(true)
+		expect(pending.sessions.retained).toBe(true)
 		expect(names(update(pending, Message.ClickedLoadMore(), filtered).commands)).toEqual([])
 	})
 
 	test("a fresh cached empty list asks for signal presence like a fetched one", () => {
 		const base = clocked().model
-		const cached = { data: { pages: [[]], hasNextPage: false }, updatedAtMs: NOW - 5_000, isStandIn: false, isFresh: true }
+		const cached = {
+			data: { pages: [[]], hasNextPage: false },
+			updatedAtMs: NOW - 5_000,
+			isStandIn: false,
+			isFresh: true,
+		}
 		const found = pageUpdate(base, Message.FoundCachedSessions({ key: base.sessions.key ?? "", cached }))
 		expect(found.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 	})

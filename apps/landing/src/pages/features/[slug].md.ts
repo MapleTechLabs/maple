@@ -15,9 +15,10 @@ import { featureBySlug, features } from "../../lib/features"
 import type { Feature } from "../../lib/page-registry"
 import { useCaseBySlug } from "../../lib/use-cases"
 import { absolute, blocks, docHeader, markdown } from "../../lib/page-markdown"
+import { Array as Arr } from "effect"
 
 export const getStaticPaths: GetStaticPaths = () =>
-	features.map((feature) => ({ params: { slug: feature.slug }, props: { feature } }))
+	Arr.map(features, (feature) => ({ params: { slug: feature.slug }, props: { feature } }))
 
 export const GET: APIRoute = ({ props, site }) => {
 	const { feature } = props as { feature: Feature }
@@ -26,22 +27,30 @@ export const GET: APIRoute = ({ props, site }) => {
 		? blocks(
 				`## ${feature.panel.title()}`,
 				feature.panel.lede(),
-				feature.panel.facts.map(({ key, value }) => `- **${key}**: ${value}`).join("\n"),
+				Arr.join(
+					Arr.map(feature.panel.facts, ({ key, value }) => `- **${key}**: ${value}`),
+					"\n",
+				),
 			)
 		: undefined
 
 	const related = blocks(
 		"## Related",
-		[
-			...feature.related.map(
-				(slug) =>
-					`- [${featureBySlug(slug)?.navLabel() ?? slug}](${absolute(site, `/features/${slug}.md`)})`,
-			),
-			...feature.relatedUseCases.map(
-				(slug) =>
-					`- [${useCaseBySlug(slug)?.navLabel() ?? slug}](${absolute(site, `/use-cases/${slug}.md`)})`,
-			),
-		].join("\n"),
+		Arr.join(
+			[
+				...Arr.map(
+					feature.related,
+					(slug) =>
+						`- [${featureBySlug(slug)?.navLabel() ?? slug}](${absolute(site, `/features/${slug}.md`)})`,
+				),
+				...Arr.map(
+					feature.relatedUseCases,
+					(slug) =>
+						`- [${useCaseBySlug(slug)?.navLabel() ?? slug}](${absolute(site, `/use-cases/${slug}.md`)})`,
+				),
+			],
+			"\n",
+		),
 	)
 
 	return markdown(
@@ -49,7 +58,7 @@ export const GET: APIRoute = ({ props, site }) => {
 			docHeader(feature.heroTitle(), feature.heroLede()),
 			facts,
 			`## ${feature.capTitle()}`,
-			...feature.capabilities.map((cap) => `### ${cap.op}: ${cap.title()}\n\n${cap.body()}`),
+			...Arr.map(feature.capabilities, (cap) => `### ${cap.op}: ${cap.title()}\n\n${cap.body()}`),
 			related,
 		),
 	)

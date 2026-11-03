@@ -5,8 +5,8 @@ import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
 import {
 	clampQueueDelaySeconds,
-	MESSAGING_DESTINATION,
 	MESSAGING_SYSTEM,
+	vcsQueueFor,
 	VcsSyncQueue,
 } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { VcsSyncService } from "@maple/backend/services/integrations/vcs/VcsSyncService"
@@ -19,9 +19,11 @@ import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewServi
 import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
 import {
 	PullRequestChecklistSinkLive,
+	PullRequestCiApprovalSinkLive,
 	PullRequestCommentSinkLive,
 } from "@maple/backend/services/pr-review/pull-request-comment-handler"
 import { CiTraceSinkLive } from "@maple/backend/services/integrations/ci-traces/CiTraceService"
+import { DependencyScanSinkLive } from "@maple/backend/services/dependency-scan/DependencyScanner"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import type { Message } from "@cloudflare/workers-types"
@@ -63,10 +65,14 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestEventSinkLive),
 	// `@maple` mentions on pull requests; the review debounce's queue is not needed to answer.
 	Layer.provide(PullRequestCommentSinkLive),
+	// A maintainer approving an outside contributor's CI runs that pull request's review.
+	Layer.provide(PullRequestCiApprovalSinkLive),
 	// Ticked "Before merge" boxes on review comments.
 	Layer.provide(PullRequestChecklistSinkLive.pipe(Layer.provide(PrReviewLive))),
 	// Finished CI runs and jobs, written as spans into the org's traces.
 	Layer.provide(CiTraceSinkLive),
+	// Lockfile scans for known vulnerable dependencies, on pushes and installation syncs.
+	Layer.provide(DependencyScanSinkLive),
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
 
@@ -166,21 +172,22 @@ const settleMessage = (service: VcsSyncService["Service"], message: PlacedMessag
 			kind: "consumer",
 			attributes: {
 				"messaging.system": MESSAGING_SYSTEM,
-				"messaging.destination.name": MESSAGING_DESTINATION,
+				"messaging.destination.name": vcsQueueFor(message.body),
 				"messaging.operation.name": "process",
 				"messaging.message.delivery_attempt": message.attempts,
 			},
 		}),
 	)
 
-const batchSpan = (messageCount: number, dispatch: "inline" | "placed") =>
+// A batch comes from one queue, so its first message names it.
+const batchSpan = (messages: ReadonlyArray<{ readonly body: unknown }>, dispatch: "inline" | "placed") =>
 	Effect.withSpan("VcsSyncQueue.processBatch", {
 		kind: "consumer",
 		attributes: {
 			"messaging.system": MESSAGING_SYSTEM,
-			"messaging.destination.name": MESSAGING_DESTINATION,
+			"messaging.destination.name": vcsQueueFor(messages[0]?.body),
 			"messaging.operation.name": "receive",
-			"messaging.batch.message_count": messageCount,
+			"messaging.batch.message_count": messages.length,
 			"maple.vcs.dispatch": dispatch,
 		},
 	})
@@ -197,7 +204,7 @@ export const processBatch = (batch: QueueBatch) =>
 				),
 			{ discard: true },
 		)
-	}).pipe(batchSpan(batch.messages.length, "inline"))
+	}).pipe(batchSpan(batch.messages, "inline"))
 
 /** The batch in the placed fetch handler: the outcomes go back to the consumer that holds the messages. */
 export const processPlacedBatch = (messages: ReadonlyArray<PlacedMessage>, placement: string) =>
@@ -205,7 +212,7 @@ export const processPlacedBatch = (messages: ReadonlyArray<PlacedMessage>, place
 		const service = yield* VcsSyncService
 		yield* Effect.annotateCurrentSpan("maple.placement", placement)
 		return yield* Effect.forEach(messages, (message) => settleMessage(service, message))
-	}).pipe(batchSpan(messages.length, "placed"))
+	}).pipe(batchSpan(messages, "placed"))
 
 /**
  * Final deliveries whose placed run failed with an unknown outcome: no redelivery is left, so the
@@ -229,7 +236,7 @@ export const recordExhaustedBatch = (messages: ReadonlyArray<Message<unknown>>) 
 			kind: "consumer",
 			attributes: {
 				"messaging.system": MESSAGING_SYSTEM,
-				"messaging.destination.name": MESSAGING_DESTINATION,
+				"messaging.destination.name": vcsQueueFor(messages[0]?.body),
 				"messaging.operation.name": "settle",
 				"messaging.batch.message_count": messages.length,
 			},

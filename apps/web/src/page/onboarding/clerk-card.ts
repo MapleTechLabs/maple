@@ -5,9 +5,10 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./index"
 
 // clerk-react's `<SignIn>` / `<SignUp>`: a `data-clerk-component` node that clerk-js mounts its
-// prebuilt card into (`mountSignIn` / `mountSignUp`), unmounted when the node goes.
+// prebuilt card into (`mountSignIn` / `mountSignUp`), unmounted when the node goes. The task cards
+// (`mountTaskResetPassword` / `mountTaskSetupMFA`) finish a pending session, then go to `redirectUrlComplete`.
 
-export const ClerkComponent = Schema.Literals(["SignIn", "SignUp"])
+export const ClerkComponent = Schema.Literals(["SignIn", "SignUp", "TaskResetPassword", "TaskSetupMFA"])
 export type ClerkComponent = typeof ClerkComponent.Type
 
 export const MountClerkCard = Mount.define("MountClerkCard", {
@@ -21,15 +22,20 @@ export const MountClerkCard = Mount.define("MountClerkCard", {
 				// `<SignIn appearance={clerkAuthCardAppearance}>`: the unboxed card AccountLayout expects.
 				const appearance = clerkAuthCardAppearance
 				const props = forceRedirectUrl === null ? { appearance } : { appearance, forceRedirectUrl }
+				const taskProps = { appearance, redirectUrlComplete: forceRedirectUrl ?? "/" }
 				if (component === "SignIn") clerk.mountSignIn(element, props)
-				else clerk.mountSignUp(element, props)
+				else if (component === "SignUp") clerk.mountSignUp(element, props)
+				else if (component === "TaskResetPassword") clerk.mountTaskResetPassword(element, taskProps)
+				else clerk.mountTaskSetupMFA(element, taskProps)
 			}),
 			() =>
 				Effect.sync(() => {
 					const clerk = window.Clerk
 					if (clerk === undefined || !(element instanceof HTMLDivElement)) return
 					if (component === "SignIn") clerk.unmountSignIn(element)
-					else clerk.unmountSignUp(element)
+					else if (component === "SignUp") clerk.unmountSignUp(element)
+					else if (component === "TaskResetPassword") clerk.unmountTaskResetPassword(element)
+					else clerk.unmountTaskSetupMFA(element)
 				}),
 		).pipe(Effect.as(Message.CompletedMountClerkCard())),
 })

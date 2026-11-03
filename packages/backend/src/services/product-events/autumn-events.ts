@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { ProductEventInput, ProductEventName } from "./ProductEventsService"
 
 /**
@@ -101,7 +101,7 @@ export const planEventsFromBillingUpdated = (
 				...(change.subscription?.trial_ends_at != null ? { trial: "true" } : undefined),
 				...(envelope.id !== undefined ? { webhook_message_id: envelope.id } : undefined),
 				...(data.tags !== undefined && data.tags.length > 0
-					? { tags: data.tags.join(",") }
+					? { tags: Arr.join(data.tags, ",") }
 					: undefined),
 			},
 		})
@@ -132,7 +132,7 @@ export interface PlanCancellation {
 }
 
 /** The legacy free tier is not a plan anyone cancels (`isPlanSubscription`, @maple/domain/billing). */
-const isFreePlan = (planId: string): boolean => planId.toLowerCase() === "free"
+const isFreePlan = (planId: string): boolean => Str.toLowerCase(planId) === "free"
 
 /**
  * `trial_ends_at` stays on a subscription after it converts, so a set value

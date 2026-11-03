@@ -1,9 +1,9 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2GcpIntegration } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../../data/load-failure"
-import * as Menu from "../../../../ui/menu"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import type { FleetRead } from "../data"
 import { Message, type Model } from "./model"
@@ -18,7 +18,7 @@ const iso = (ms: number) => new Date(ms).toISOString()
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const status = (connected: boolean, overrides: Readonly<Record<string, unknown>> = {}) =>
 	Schema.decodeUnknownSync(V2GcpIntegration)({
@@ -91,16 +91,17 @@ describe("google cloud list", () => {
 		expect(names(tabbed.commands)).not.toContain("ResolveGcpWindow")
 		expect(tabbed.model.window).toEqual(window)
 		const moved = routeChanged(tabbed.model, { search: { tab: "resources", timePreset: "6h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual(["ResolveGcpWindow", "Refresh"])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual([
+			"ResolveGcpWindow",
+			"Refresh",
+		])
 	})
 
-	test("a connected status reads the fleet; until it lands the page shows its resources", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"ResolveGcpWindow",
-			"LoadGcpStatus",
-			"LoadChartRuntime",
-		])
-		expect(names(withStatus(true).commands)).toEqual(["FetchGcpFleet", "FetchGcpResources"])
+	test("a connected status reads the fleet and nothing else until it lands", () => {
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ResolveGcpWindow", "LoadGcpStatus", "LoadChartRuntime"]),
+		)
+		expect(names(withStatus(true).commands)).toEqual(["FetchGcpFleet"])
 	})
 
 	test("the window read carries the browser locale the tables format counts with", () => {
@@ -167,8 +168,14 @@ describe("google cloud list", () => {
 			last_metrics_received_at: null,
 			last_metrics_error: "permission denied",
 		})
-		const windowed = pageUpdate(init({ search: {} }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" })).model
-		const model = pageUpdate(windowed, Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(waiting) })).model
+		const windowed = pageUpdate(
+			init({ search: {} }, context).model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }),
+		).model
+		const model = pageUpdate(
+			windowed,
+			Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(waiting) }),
+		).model
 		const deps = (next: Model) => ({
 			clock: subscriptions.liveClock.modelToDependencies({ model: next, context }),
 			cadence: subscriptions.statusRefresh.modelToDependencies({ model: next, context }),

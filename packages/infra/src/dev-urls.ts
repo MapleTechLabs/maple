@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /** Every app `bun dev` can run. */
 export const DEV_APPS = [
 	"api",
@@ -5,6 +6,7 @@ export const DEV_APPS = [
 	"alerting",
 	"chat-bot",
 	"electric-sync",
+	"status",
 	"web",
 	"landing",
 	"ingest",
@@ -32,10 +34,10 @@ export const DEV_APPS_ENV_KEY = "MAPLE_DEV_APPS"
 export const selectedDevApps = (): ReadonlySet<DevApp> => {
 	const raw = process.env[DEV_APPS_ENV_KEY]?.trim()
 	if (!raw) return new Set(DEV_APPS)
-	const selected = raw
-		.split(",")
-		.map((name) => name.trim())
-		.filter(isDevApp)
+	const selected = Arr.filter(
+		Arr.map(Str.split(",")(raw), (name) => Str.trim(name)),
+		isDevApp,
+	)
 	return selected.length > 0 ? new Set(selected) : new Set(DEV_APPS)
 }
 
@@ -44,9 +46,9 @@ export const siblingUrl = (target: string): string | undefined => {
 	const self = process.env.PORTLESS_URL
 	if (!self) return undefined
 	const url = new URL(self)
-	const parts = url.hostname.split(".")
+	const parts = Str.split(".")(url.hostname)
 	const localhostIdx = parts.lastIndexOf("localhost")
 	if (localhostIdx < 1) return undefined
 	parts[localhostIdx - 1] = target
-	return `${url.protocol}//${parts.join(".")}${url.port ? `:${url.port}` : ""}`
+	return `${url.protocol}//${Arr.join(parts, ".")}${url.port ? `:${url.port}` : ""}`
 }

@@ -19,6 +19,7 @@ import {
 } from "../src/samples"
 import { renderWeeklyDigest } from "../src/weekly-digest"
 import { renderWebAnalyticsDigest } from "../src/web-analytics-digest"
+import { String as Str } from "effect"
 
 const OUT_DIR = "/tmp/maple-email-preview"
 
@@ -39,7 +40,7 @@ const LOCAL_ICONS = `file://${new URL("../../../apps/landing/public/email/icons"
 
 for (const { name, html: rendered } of variants) {
 	const path = `${OUT_DIR}/${name}.html`
-	const html = rendered.replaceAll("https://maple.dev/email/icons", LOCAL_ICONS)
+	const html = Str.replaceAll("https://maple.dev/email/icons", LOCAL_ICONS)(rendered)
 	await Bun.write(path, html)
 	console.log(`${path} (${html.length} chars)`)
 }

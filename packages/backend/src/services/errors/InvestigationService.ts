@@ -25,7 +25,7 @@ import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/domain/
 
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AnomalyIncidents, Investigations, type InvestigationRow } from "@maple/db/tables"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { DateTime, Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import {
 	applyDiagnosisWrites,
 	applyInconclusiveWrites,
@@ -170,7 +170,7 @@ export interface InvestigationServiceApi {
 }
 
 export class InvestigationService extends Context.Service<InvestigationService, InvestigationServiceApi>()(
-	"@maple/api/services/InvestigationService",
+	"@maple/backend/services/InvestigationService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -419,20 +419,16 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
 				if (started.started) return
 				if (started.reason === "no_binding") {
-					return yield* Effect.fail(
-						new InvestigationAgentUnavailableError({
-							message: "The investigation agent is temporarily unavailable.",
-						}),
-					)
+					return yield* new InvestigationAgentUnavailableError({
+						message: "The investigation agent is temporarily unavailable.",
+					})
 				}
-				return yield* Effect.fail(
-					new InvestigationStartFailedError({
-						message:
-							started.reason === "busy"
-								? "This investigation already has a turn in flight."
-								: "The investigation agent could not start a turn.",
-					}),
-				)
+				return yield* new InvestigationStartFailedError({
+					message:
+						started.reason === "busy"
+							? "This investigation already has a turn in flight."
+							: "The investigation agent could not start a turn.",
+				})
 			})
 
 			const listInvestigations: InvestigationServiceApi["listInvestigations"] = Effect.fn(
@@ -476,9 +472,9 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
-					return yield* Effect.fail(
-						new InvestigationNotFoundError({ message: `No such investigation: '${id}'` }),
-					)
+					return yield* new InvestigationNotFoundError({
+						message: `No such investigation: '${id}'`,
+					})
 				}
 				const nowMs = yield* Clock.currentTimeMillis
 				if (!isStale(row, nowMs)) return yield* documentFor(orgId, row)
@@ -545,20 +541,16 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						const winner = yield* loadIncidentRow(orgId, subject.incidentKind, subject.incidentId)
 						if (winner) return yield* documentFor(orgId, winner)
 					}
-					return yield* Effect.fail(
-						new InvestigationPersistenceError({
-							message: "Investigation insert conflicted with no resolvable row",
-						}),
-					)
+					return yield* new InvestigationPersistenceError({
+						message: "Investigation insert conflicted with no resolvable row",
+					})
 				}
 
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
-					return yield* Effect.fail(
-						new InvestigationPersistenceError({
-							message: "Investigation row missing after insert",
-						}),
-					)
+					return yield* new InvestigationPersistenceError({
+						message: "Investigation row missing after insert",
+					})
 				}
 				return yield* documentFor(orgId, row)
 			})
@@ -644,7 +636,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					...existing,
 					status: "investigating",
 					error: null,
-					updatedAt: decodeIsoSync(new Date(nowMs).toISOString()),
+					updatedAt: decodeIsoSync(DateTime.formatIso(DateTime.makeUnsafe(nowMs))),
 				})
 				yield* sendAutonomousTurn(orgId, restarting, nowMs)
 				return yield* getInvestigation(orgId, id)
@@ -668,16 +660,16 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					),
 				)
 				if (updated.length === 0) {
-					return yield* Effect.fail(
-						new InvestigationNotFoundError({ message: `No such investigation: '${id}'` }),
-					)
+					return yield* new InvestigationNotFoundError({
+						message: `No such investigation: '${id}'`,
+					})
 				}
 				yield* settleAnomalyTriage(orgId, updated, status, nowMs)
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
-					return yield* Effect.fail(
-						new InvestigationNotFoundError({ message: `No such investigation: '${id}'` }),
-					)
+					return yield* new InvestigationNotFoundError({
+						message: `No such investigation: '${id}'`,
+					})
 				}
 				return yield* documentFor(orgId, row)
 			})
@@ -696,9 +688,9 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				const nowMs = yield* Clock.currentTimeMillis
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
-					return yield* Effect.fail(
-						new InvestigationNotFoundError({ message: `No such investigation: '${id}'` }),
-					)
+					return yield* new InvestigationNotFoundError({
+						message: `No such investigation: '${id}'`,
+					})
 				}
 
 				const result = request.report
@@ -732,6 +724,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								inputTokens,
 								outputTokens,
 								nowMs,
+								...(request.turnId === undefined ? undefined : { turnId: request.turnId }),
 							})
 				yield* write.pipe(
 					Effect.mapError(makePersistenceError),

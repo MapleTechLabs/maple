@@ -1,7 +1,6 @@
-import { legend, releaseImpact, toolTable } from "../worst-case-fixture"
+import { legend, releaseImpact } from "../worst-case-fixture"
 import { verdict } from "../worst-case-docs"
 import type { Html } from "foldkit/html"
-import { dataTable } from "../../page/chat/kit/view-data-table"
 import { verdictCard } from "../../page/investigations/detail/view-verdict"
 import { queryBuilderLegend } from "../../page/kit/query-builder-legend"
 import { releaseComparison } from "../../page/releases/detail/view-comparison"
@@ -10,7 +9,7 @@ import * as TraceBox from "./trace-box"
 import * as TraceBoxView from "./trace-box-view"
 import { type H, narrow, wcSection } from "./view-parts"
 
-// `TraceSection`, `LegendSection`, `ToolTableSection` and `VerdictSection`.
+// `TraceSection`, `LegendSection` and `VerdictSection`.
 
 const traceBox = (
 	h: H,
@@ -59,11 +58,6 @@ export const legendSection = (h: H, model: Model): Html => {
 		narrow(h, [queryBuilderLegend(h, { ...base, unit: "ms" })]),
 	])
 }
-
-export const toolTableSection = (h: H, model: Model): Html =>
-	wcSection(h, "wc-tool-table", "AI renderer DataTable", [
-		narrow(h, [dataTable(h, toolTable(model.mode))], 480),
-	])
 
 export const verdictSection = (h: H, model: Model): Html =>
 	wcSection(h, "wc-verdict", "Investigation VerdictCard", [

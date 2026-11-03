@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Schema } from "effect"
+import { Effect, Exit, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
 import { supportChannelName } from "@maple/domain/support-channel"
 import {
@@ -89,9 +89,11 @@ const stubs = (world: World) =>
 		}),
 		Layer.succeed(OrgMembersService, {
 			listMembers: die,
+			listOrganizationsOf: die,
+			listMemberActivity: die,
 			resolveMembers: (_orgId, userIds) =>
 				Effect.succeed(
-					userIds.map((userId) => ({
+					Arr.map(userIds, (userId) => ({
 						userId,
 						email: `${userId}@acme.com`,
 						name: null,
@@ -119,7 +121,7 @@ const makeLayer = (world: World, testDb: TestDb) =>
 		Layer.provide(Layer.mergeAll(stubs(world), testDb.layer)),
 	)
 
-const methods = (world: World) => world.calls.map((call) => call.method)
+const methods = (world: World) => Arr.map(world.calls, (call) => call.method)
 
 /** What the route does: ensure, then invite. */
 const invite = (tenant: TenantContext) =>
@@ -142,7 +144,7 @@ describe("supportChannelName", () => {
 	})
 
 	it("stays within Slack's 80 characters", () => {
-		assert.isAtMost(supportChannelName("a".repeat(200), "org_1", 3).length, 80)
+		assert.isAtMost(supportChannelName(Str.repeat(200)("a"), "org_1", 3).length, 80)
 	})
 })
 

@@ -9,20 +9,25 @@ import {
 	summarizePods,
 	summarizeRailway,
 	summarizeVercel,
+	summarizeSupabase,
 } from "../../../components/infra/overview/summaries"
 import { getCloudflareZones } from "@maple/web-data/warehouse/cloudflare-infra"
+import { getAwsInfraFleet } from "@maple/web-data/warehouse/aws-infra"
 import { getGcpInfraFleet } from "@maple/web-data/warehouse/gcp-infra"
 import { containersSummary, listHosts, podsSummary } from "@maple/web-data/warehouse/infra"
 import { getRailwayServices } from "@maple/web-data/warehouse/railway-infra"
 import { getVercelProjects } from "@maple/web-data/warehouse/vercel-infra"
+import { getSupabaseProjects } from "@maple/web-data/warehouse/supabase-infra"
 import { getServiceMapPlanetScale } from "@maple/web-data/warehouse/service-map"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
+import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { loadInfraPresence } from "../../../data/infra-surfaces"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { Message } from "./message"
 import { SourceId, type SourceReading } from "./model"
+import { summarizeAws } from "./summarize-aws"
 
 // One read per source.
 
@@ -36,13 +41,9 @@ const read = (source: SourceId, window: TimeWindow) => {
 				reading(summarizeHosts(response.data, window.endTime)),
 			)
 		case "containers":
-			return Effect.map(containersSummary({ data }), (counts) =>
-				reading(summarizeContainers(counts)),
-			)
+			return Effect.map(containersSummary({ data }), (counts) => reading(summarizeContainers(counts)))
 		case "kubernetes":
-			return Effect.map(podsSummary({ data }), (counts) =>
-				reading(summarizePods(counts)),
-			)
+			return Effect.map(podsSummary({ data }), (counts) => reading(summarizePods(counts)))
 		case "cloudflare":
 			return Effect.map(getCloudflareZones({ data }), ({ zones }) =>
 				reading(summarizeCloudflare(zones)),
@@ -55,6 +56,23 @@ const read = (source: SourceId, window: TimeWindow) => {
 			return Effect.map(getVercelProjects({ data }), ({ projects }) =>
 				reading(summarizeVercel(projects)),
 			)
+		// Discovery names the projects; without it the findings fall back to refs.
+		case "supabase":
+			return Effect.gen(function* () {
+				const { projects } = yield* getSupabaseProjects({ data })
+				const status = yield* Effect.option((yield* IntegrationStatuses).supabase())
+				const names = new Map(
+					Option.match(status, {
+						onNone: () => [],
+						onSome: ({ projects: discovered }) =>
+							Arr.map(discovered, (project): readonly [string, string] => [
+								project.ref,
+								project.name,
+							]),
+					}),
+				)
+				return reading(summarizeSupabase(projects, names))
+			})
 		case "planetscale":
 			return Effect.map(getServiceMapPlanetScale({ data }), ({ databases }) =>
 				reading(summarizePlanetScale(databases)),
@@ -63,6 +81,8 @@ const read = (source: SourceId, window: TimeWindow) => {
 			return Effect.map(getGcpInfraFleet({ data }), ({ services }) =>
 				reading(summarizeGcp(gcpFleet(services))),
 			)
+		case "aws":
+			return Effect.map(getAwsInfraFleet({ data }), ({ kinds }) => reading(summarizeAws(kinds)))
 	}
 }
 

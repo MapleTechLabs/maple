@@ -1,5 +1,5 @@
 import { AlertDeliveryEventDocument, AlertIncidentDocument } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { buildIncidentTimeline } from "./incident-timeline"
 
@@ -79,7 +79,7 @@ describe("buildIncidentTimeline", () => {
 			}),
 			makeDelivery(),
 		])
-		expect(entries.map((entry) => entry.title)).toEqual([
+		expect(Arr.map(entries, (entry) => entry.title)).toEqual([
 			"Incident opened",
 			"Notified #alerts",
 			"Reminded #alerts",

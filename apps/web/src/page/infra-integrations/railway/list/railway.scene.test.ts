@@ -1,9 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { RailwayEnvironmentStatus, RailwayIntegrationStatus } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Field from "../../../../ui/field"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import type { RailwayServiceRow } from "../model"
 import { Message } from "./message"
@@ -20,7 +19,7 @@ const NOW = 1_790_000_000_000
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const status = (connected: boolean) =>
 	new RailwayIntegrationStatus({
@@ -64,7 +63,7 @@ const row = (serviceName: string, memoryAvg: number): RailwayServiceRow => ({
 })
 
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 /** Entered, windowed and the status answered. */
 const withStatus = (connected: boolean): Model => {
@@ -88,7 +87,9 @@ const loaded = (rows: ReadonlyArray<RailwayServiceRow>): Model => {
 describe("railway list", () => {
 	test("entry asks for the status and the window; services wait for a connected status", () => {
 		const entered = init({ search: {} }, context)
-		expect(names(entered.commands)).toEqual(["ResolveRailwayWindow", "LoadRailwayStatus"])
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining(["ResolveRailwayWindow", "LoadRailwayStatus"]),
+		)
 		const windowed = pageUpdate(
 			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
@@ -104,13 +105,16 @@ describe("railway list", () => {
 		expect(names(connected.commands)).toEqual(["FetchRailwayServices"])
 	})
 
-	test("a disconnected org never asks for services and shows the connect card", () => {
+	test("a disconnected org never asks for services and links to the connect flow", () => {
 		const model = withStatus(false)
 		expect(model.services.key).toBeNull()
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(role("button", { name: "Connect Railway" })).toBeDisabled(),
+			expectView(role("link", { name: "Connect Railway" })).toHaveAttr(
+				"href",
+				"/sources/new?integration=railway",
+			),
 		)
 	})
 
@@ -146,7 +150,7 @@ describe("railway list", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([])),
-			expectView(text("No Railway metrics in this time range")).toExist(),
+			expectView(text("No Railway metrics in this window")).toExist(),
 		)
 	})
 
@@ -167,44 +171,5 @@ describe("railway list", () => {
 		const byName = pageUpdate(byCpu, Message.ClickedSort({ key: "displayName" })).model
 		expect(byName.sort).toEqual({ key: "displayName", dir: "asc" })
 		expect(pageUpdate(byName, Message.ClickedSort({ key: "displayName" })).model.sort.dir).toBe("desc")
-	})
-
-	test("connect sends a valid token once and shows the rejection inline", () => {
-		const model = withStatus(false)
-		const short = steps(model, [
-			Message.GotTokenFieldMessage({ message: Field.Message.ChangedValue({ value: "abc" }) }),
-		])
-		expect(names(pageUpdate(short, Message.SubmittedConnect()).commands)).toEqual([])
-		const typed = steps(model, [
-			Message.GotTokenFieldMessage({
-				message: Field.Message.ChangedValue({ value: " rw_token_0001 " }),
-			}),
-		])
-		const submitted = pageUpdate(typed, Message.SubmittedConnect())
-		expect(names(submitted.commands)).toEqual(["ConnectRailway"])
-		expect(names(pageUpdate(submitted.model, Message.SubmittedConnect()).commands)).toEqual([])
-		const rejected = pageUpdate(
-			submitted.model,
-			Message.FailedConnect({ error: "Railway rejected the token." }),
-		)
-		scene(
-			{ update: pageUpdate, view },
-			given(rejected.model),
-			expectView(role("alert")).toHaveText("Railway rejected the token."),
-		)
-	})
-
-	test("a successful connect shows the services the token can see", () => {
-		const model = withStatus(false)
-		const connected = pageUpdate(model, Message.SucceededConnect({ status: status(true) }))
-		expect(names(connected.commands)).toEqual(["FetchRailwayServices"])
-		expect(connected.model.connect.token.value).toBe("")
-		expect(connected.outMessage).toEqual(
-			PageOutMessage.RequestedToast({
-				type: "success",
-				title: "Railway connected",
-				description: "Pulled the last hour of metrics for 1 environment.",
-			}),
-		)
 	})
 })

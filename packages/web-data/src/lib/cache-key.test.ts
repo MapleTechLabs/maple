@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { encodeKey, encodeOrgScopedKey, identityFromKey, orgScopedKeyPayload } from "./cache-key"
+import { String as Str } from "effect"
 
 /** Mirrors `ORG_KEY_SEPARATOR` in cache-key.ts — NUL cannot occur in JSON or a Clerk org id. */
 const SEP = "\u0000"
@@ -91,7 +92,7 @@ describe("identityFromKey", () => {
 	it("round-trips the org prefix that orgScopedKeyPayload strips", () => {
 		const identity = identityFromKey(key("org_1", { serviceName: "api" }))
 
-		expect(identity.startsWith(SEPARATED)).toBe(true)
+		expect(Str.startsWith(SEPARATED)(identity)).toBe(true)
 		expect(JSON.parse(orgScopedKeyPayload(identity))).toEqual({ serviceName: "api" })
 	})
 })

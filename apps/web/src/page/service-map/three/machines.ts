@@ -1,9 +1,10 @@
-import { fade, type InkPalette, type MachineKind } from "../../../components/service-map/three/appearance"
 import {
-	health,
-	HEALTH_COLOR,
-	type SpatialView,
-} from "../../../components/service-map/three/spatial-layout"
+	dim,
+	fade,
+	type InkPalette,
+	type MachineKind,
+} from "../../../components/service-map/three/appearance"
+import { health, HEALTH_COLOR, type SpatialView } from "../../../components/service-map/three/spatial-layout"
 import type { Node3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { resolveMachineBadge } from "./badge-art"
@@ -47,6 +48,7 @@ import {
 	woodSled,
 	yard,
 } from "./props"
+import { Array as Arr, String as Str } from "effect"
 
 /** One stacked crate module. Machines are 2×2 modules wide and grow in whole storeys. */
 export const MODULE = 0.8
@@ -75,7 +77,7 @@ const range = (count: number) => Array.from({ length: Math.max(0, count) }, (_, 
 /** Horizontal slats across a rectangle on an x- or z-facing wall. */
 function louvre(center: Vec3, normal: "x" | "z", width: number, height: number, slats: number) {
 	const [x, y, z] = center
-	return range(slats).flatMap((i) => {
+	return Arr.flatMap(range(slats), (i) => {
 		const sy = y - height / 2 + ((i + 1) * height) / (slats + 1)
 		return normal === "x"
 			? [x, sy, z - width / 2, x, sy, z + width / 2]
@@ -93,7 +95,7 @@ function mullion(center: Vec3, normal: "x" | "z", width: number, height: number)
 
 /** Clapboard siding on the two visible walls of a 2×2-module body. */
 function clapboard(height: number) {
-	return range(Math.floor(height / 0.16)).flatMap((i) => {
+	return Arr.flatMap(range(Math.floor(height / 0.16)), (i) => {
 		const y = (i + 1) * 0.16
 		return [
 			-HALF,
@@ -114,7 +116,7 @@ function clapboard(height: number) {
 
 /** A valve handwheel standing upright, facing the camera's front wall. */
 function wheel([x, y, z]: Vec3, radius: number) {
-	return range(10).flatMap((i) => {
+	return Arr.flatMap(range(10), (i) => {
 		const a = (i * Math.PI) / 5,
 			b = ((i + 1) * Math.PI) / 5
 		return [
@@ -144,7 +146,7 @@ function door(scope: Scope, { position, finish }: { position: Vec3; finish: Fini
 	// Lantern panes are gifts[2]; a degraded machine's lamp is out.
 	const lamp =
 		finish.trouble === "degraded"
-			? { ...finish, gifts: finish.gifts.map((c, i) => (i === 2 ? finish.iron : c)) }
+			? { ...finish, gifts: Arr.map(finish.gifts, (c, i) => (i === 2 ? finish.iron : c)) }
 			: finish
 	return group({}, [
 		inkPlate({ size: [0.42, 0.36], position, normal: "x", color: finish.signal, ink: finish.ink }),
@@ -163,15 +165,17 @@ function processor(scope: Scope, { height, finish }: { height: number; finish: F
 	const flip = variant(finish.seed, 3, 2) === 1
 	const sides = variant(finish.seed, 9, 3)
 	// The badge storey skips its left front window; the ground storey's side wall has the door.
-	const panes = range(storeys).flatMap((storey) => {
+	const panes = Arr.flatMap(range(storeys), (storey) => {
 		const y = storey * MODULE + MODULE * 0.55
 		const pane = (center: Vec3, normal: "x" | "z"): Pane => ({ center, normal })
-		return [
-			pane([0.4, y, HALF + 0.002], "z"),
-			...(storey !== badgeStorey ? [pane([-0.4, y, HALF + 0.002], "z")] : []),
-			...(storey > 0 ? [pane([HALF + 0.002, y, 0.4], "x"), pane([HALF + 0.002, y, -0.4], "x")] : []),
-		].filter(
-			// Cabins vary the side wall: both windows, or only the front or back one.
+		return Arr.filter(
+			[
+				pane([0.4, y, HALF + 0.002], "z"),
+				...(storey !== badgeStorey ? [pane([-0.4, y, HALF + 0.002], "z")] : []),
+				...(storey > 0
+					? [pane([HALF + 0.002, y, 0.4], "x"), pane([HALF + 0.002, y, -0.4], "x")]
+					: []),
+			],
 			({ center, normal }) => normal === "z" || sides === 0 || (sides === 1) === center[2] > 0,
 		)
 	})
@@ -184,7 +188,7 @@ function processor(scope: Scope, { height, finish }: { height: number; finish: F
 			ink: finish.ink,
 			cell: MODULE,
 		}),
-		panes.map((pane) => windowPane(scope, { center: pane.center, normal: pane.normal, finish })),
+		Arr.map(panes, (pane) => windowPane(scope, { center: pane.center, normal: pane.normal, finish })),
 		stoneCourse(scope, { half: HALF, height: FOOTING, finish }),
 		windowDressing(scope, { windows: panes, finish }),
 		finish.trouble === "degraded" && front && boardedWindow(scope, { center: front.center, finish }),
@@ -215,19 +219,19 @@ function processor(scope: Scope, { height, finish }: { height: number; finish: F
 
 function storageTank(scope: Scope, { height, finish }: { height: number; finish: Finish }) {
 	const body = new THREE.CylinderGeometry(0.82, 0.82, height, 8)
-	const hoops = range(Math.round(height / MODULE) * 2 - 1).map((i) => (i + 1) * (MODULE / 2))
+	const hoops = Arr.map(range(Math.round(height / MODULE) * 2 - 1), (i) => (i + 1) * (MODULE / 2))
 	// Coopers differ: hoops every half storey, every storey, or doubled bands.
 	const hoopStyle = variant(finish.seed, 10, 3)
 	const vatHoopHeights =
 		hoopStyle === 1
-			? hoops.filter((_, i) => i % 2 === 1)
+			? Arr.filter(hoops, (_, i) => i % 2 === 1)
 			: hoopStyle === 2
-				? hoops.flatMap((y) => [y - 0.045, y + 0.045])
+				? Arr.flatMap(hoops, (y) => [y - 0.045, y + 0.045])
 				: hoops
 	// The ladder climbs the facet that faces the isometric camera.
 	const facing = new THREE.Vector3(1, 0, 1).normalize().multiplyScalar(0.79)
 	const across = new THREE.Vector3(1, 0, -1).normalize().multiplyScalar(0.11)
-	const rails = [-1, 1].flatMap((side) => [
+	const rails = Arr.flatMap([-1, 1], (side) => [
 		facing.x + across.x * side,
 		0.06,
 		facing.z + across.z * side,
@@ -235,7 +239,7 @@ function storageTank(scope: Scope, { height, finish }: { height: number; finish:
 		height + 0.12,
 		facing.z + across.z * side,
 	])
-	const rungs = range(Math.floor(height / 0.16)).flatMap((i) => [
+	const rungs = Arr.flatMap(range(Math.floor(height / 0.16)), (i) => [
 		facing.x - across.x,
 		0.14 + i * 0.16,
 		facing.z - across.z,
@@ -275,7 +279,14 @@ function storageTank(scope: Scope, { height, finish }: { height: number; finish:
 
 function loadingBay(scope: Scope, { height, finish }: { height: number; finish: Finish }) {
 	const gantry = height + 0.3
-	const rollers = range(10).flatMap((i) => [-0.85, 0.302, -0.48 + i * 0.14, 0.85, 0.302, -0.48 + i * 0.14])
+	const rollers = Arr.flatMap(range(10), (i) => [
+		-0.85,
+		0.302,
+		-0.48 + i * 0.14,
+		0.85,
+		0.302,
+		-0.48 + i * 0.14,
+	])
 	return group({}, [
 		inkBox({ size: [1.7, 0.3, 1.7], position: [0, 0.15, 0], color: finish.face, ink: finish.ink }),
 		inkLines(rollers, finish.ink),
@@ -288,7 +299,7 @@ function loadingBay(scope: Scope, { height, finish }: { height: number; finish: 
 		}),
 		choppingStump(scope, { position: [0.68, 0.3, -0.36], finish }),
 		woodSled(scope, { position: [-0.52, 0, 1.02], finish }),
-		[0, 1].map((step) =>
+		Arr.map([0, 1], (step) =>
 			inkBox({
 				size: [0.18, 0.1 * (2 - step), 0.5],
 				position: [0.94 + step * 0.18, 0.05 * (2 - step), 0.4],
@@ -296,7 +307,7 @@ function loadingBay(scope: Scope, { height, finish }: { height: number; finish: 
 				ink: finish.ink,
 			}),
 		),
-		[-0.72, 0.72].map((x) =>
+		Arr.map([-0.72, 0.72], (x) =>
 			inkBox({
 				size: [0.18, gantry, 0.18],
 				position: [x, gantry / 2, -0.7],
@@ -334,7 +345,7 @@ function gateway(scope: Scope, { height, finish }: { height: number; finish: Fin
 	return group({}, [
 		mapleGate(scope, { posts, finish }),
 		inkParts(scope, {
-			parts: range(3).map((i): Part => ({
+			parts: Arr.map(range(3), (i): Part => ({
 				box: [0.26, 0.03, 0.2],
 				at: [i % 2 === 0 ? -0.05 : 0.06, 0.015, -0.6 + i * 0.5],
 			})),
@@ -343,7 +354,7 @@ function gateway(scope: Scope, { height, finish }: { height: number; finish: Fin
 		}),
 		group({ position: [0.5, 0, 1.0] }, [
 			inkBox({ size: [0.18, 0.42, 0.18], position: [0, 0.21, 0], color: finish.face, ink: finish.ink }),
-			range(4).map((i) =>
+			Arr.map(range(4), (i) =>
 				inkBox({
 					size: [0.24, 0.07, 0.07],
 					position: [-0.21 - i * 0.24, 0.36, 0],
@@ -388,7 +399,7 @@ function shed(scope: Scope, { height, finish }: { height: number; finish: Finish
 
 function machineKind(node: Node3D): MachineKind {
 	if (node.kind === "database") return "tank"
-	if (node.kind === "queue" || node.id.endsWith("worker")) return "loader"
+	if (node.kind === "queue" || Str.endsWith("worker")(node.id)) return "loader"
 	if (node.kind === "external") return "shed"
 	if (node.kind === "edge" || node.platform === "cloudflare") return "gateway"
 	return "processor"
@@ -426,6 +437,55 @@ function badgeMount(kind: MachineKind, height: number): { position: Vec3; rotati
 	}
 }
 
+/** A flat shadow cast away from the lit faces (toward +x, -z), longer for taller machines. */
+function blobShadow({ height, palette, dimmed }: { height: number; palette: InkPalette; dimmed: boolean }) {
+	const [dx, dz] = [height * 0.5, -height * 0.3]
+	// The footprint swept along (dx, dz): two corners stay, two move, two do both.
+	const outline: ReadonlyArray<readonly [number, number]> = [
+		[-HALF, HALF],
+		[-HALF, -HALF],
+		[-HALF + dx, -HALF + dz],
+		[HALF + dx, -HALF + dz],
+		[HALF + dx, HALF + dz],
+		[HALF, HALF],
+	]
+	// Shape y becomes world -z once the shape is laid flat.
+	const footprint = new THREE.Shape(Arr.map(outline, ([x, z]) => new THREE.Vector2(x, -z)))
+	const geometry = new THREE.ShapeGeometry(footprint).rotateX(-Math.PI / 2)
+	const material = new THREE.MeshBasicMaterial({
+		color: palette.night ? "#000000" : palette.ink,
+		transparent: true,
+		opacity: (palette.night ? 0.34 : 0.16) * (dimmed ? 0.5 : 1),
+		depthWrite: false,
+		polygonOffset: true,
+		polygonOffsetFactor: -1,
+		polygonOffsetUnits: -1,
+	})
+	const shadow = new THREE.Mesh(geometry, material)
+	// Under the pad's top face, so the pad keeps its health colour and the shadow shows past its edge.
+	shadow.position.y = 0.01
+	// Picking walks every part of a machine; the shadow reaches past the pad, so it must not catch clicks.
+	shadow.raycast = () => {}
+	return shadow
+}
+
+/** A raised rail round the selected machine's pad in the selection colour, inked in a deeper
+ * shade so the outline never swallows the colour. */
+function selectionFrame(palette: InkPalette): Child {
+	const [outer, bar, rise] = [3.0, 0.22, 0.14]
+	const reach = (outer - bar) / 2
+	const color = palette.selected
+	const ink = fade(palette.selected, palette.ink, 0.45)
+	const long: Vec3 = [outer, rise, bar]
+	const short: Vec3 = [bar, rise, outer - bar * 2]
+	return [
+		inkBox({ size: long, position: [0, rise / 2, reach], color, ink }),
+		inkBox({ size: long, position: [0, rise / 2, -reach], color, ink }),
+		inkBox({ size: short, position: [reach, rise / 2, 0], color, ink }),
+		inkBox({ size: short, position: [-reach, rise / 2, 0], color, ink }),
+	]
+}
+
 /** One machine on its pad; the outer group carries `userData.pickId` for the scene's raycast. */
 export function factoryMachine(
 	scope: Scope,
@@ -450,7 +510,7 @@ export function factoryMachine(
 	const kind = machineKind(node)
 	const badge = resolveMachineBadge(node)
 	const height = machineStoreys(node, view) * MODULE
-	const recede = (color: string) => (dimmed ? fade(color, palette.paper, 0.72) : color)
+	const recede = (color: string) => (dimmed ? dim(color, palette.paper, 0.72) : color)
 	const trouble = health(node.errorRate)
 	// Each homestead draws its roof and shutters from earthy sets, stable per node.
 	const seed = seedOf(node.id)
@@ -470,7 +530,7 @@ export function factoryMachine(
 				: fade(palette.glow, palette.face, 0.3),
 		),
 		hazard: recede(palette.selected),
-		gifts: palette.gifts.map(recede),
+		gifts: Arr.map(palette.gifts, recede),
 		running: () => running() && !dimmed,
 		stone: recede(palette.stone),
 		iron: recede(palette.iron),
@@ -487,12 +547,15 @@ export function factoryMachine(
 	}
 	const model = MACHINE_MODELS[kind]
 	const machine = group({ position }, [
+		// The pad carries health, big enough to read with the whole map in view.
 		inkBox({
 			size: [2.5, 0.06, 2.5],
 			position: [0, 0.03, 0],
-			color: selected ? palette.selected : recede(palette.pad),
+			color: recede(trouble === "healthy" ? palette.pad : HEALTH_COLOR[trouble]),
 			ink: finish.ink,
 		}),
+		blobShadow({ height, palette, dimmed }),
+		selected && selectionFrame(palette),
 		group({ position: [0, 0.06, 0] }, [
 			model(scope, { height, finish }),
 			mapleState(scope, { kind, selected, finish }),

@@ -1,9 +1,9 @@
 import type { GithubRepoSummary, VcsRepositoryId } from "@maple/domain/http"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import type { LoadFailure } from "../../data/load-failure"
-import * as Dialog from "../../ui/dialog"
-import * as Popover from "../../ui/popover"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Popover from "@maple/views/ui/popover"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	branchPopoverId,
@@ -12,10 +12,12 @@ import {
 	SetCiTraces,
 	SetTrackedBranch,
 	SpinGithubRefresh,
+	SelectGithubInstallation,
 } from "./github"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
+import { TrackConnected } from "./command"
 
 // `GithubIntegrationCard`'s state changes.
 
@@ -32,10 +34,51 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 })
 
 const refresh = (model: Model, context: PageContext): Return =>
-	requestStatus(model, context, "github", "Refresh")
+	requestStatus(model, context, "github", "Supersede")
 
 export const githubStatusOf = (model: Model) =>
 	Option.getOrNull(AsyncData.getData(model.statuses.github.data))
+
+export const clickedInstallation = (model: Model, installationId: string): Return => {
+	const selection = model.githubCard.selection
+	if (
+		selection === null ||
+		model.githubCard.selectingInstallation !== null ||
+		!Arr.some(selection.installations, (installation) => installation.id === installationId)
+	)
+		return { model }
+	return {
+		model: withCard(model, { selectingInstallation: installationId }),
+		commands: [SelectGithubInstallation({ state: selection.state, installationId })],
+	}
+}
+
+export const completedInstallation = (
+	model: Model,
+	context: PageContext,
+	state: string,
+	installationId: string,
+	failure: LoadFailure | null,
+): Return => {
+	if (
+		model.githubCard.selection?.state !== state ||
+		model.githubCard.selectingInstallation !== installationId
+	)
+		return { model }
+	const settled = withCard(model, { selection: null, selectingInstallation: null })
+	if (failure !== null)
+		return toast(
+			settled,
+			"error",
+			"Couldn't connect GitHub",
+			`${failure.message} Click Connect GitHub to retry.`,
+		)
+	return chain(settled, [
+		(next) => ({ model: next, commands: [TrackConnected({ provider: "github" })] }),
+		(next) => toast(next, "success", "GitHub connected"),
+		(next) => refresh(next, context),
+	])
+}
 
 const repoOf = (model: Model, repoId: VcsRepositoryId): GithubRepoSummary | undefined =>
 	githubStatusOf(model)?.repositories.find((repo) => repo.id === repoId)
@@ -81,7 +124,7 @@ export const completedCiTraces = (
 		return toast(
 			withCard(settled, { ciTraces: !enabled }),
 			"error",
-			"Failed to change CI traces and logs.",
+			"Couldn't change CI traces and logs.",
 			failure.message,
 		)
 	return chain(settled, [
@@ -113,16 +156,15 @@ export const clickedRepoDelete = (model: Model, repoId: VcsRepositoryId): Return
 	deleteDialogStep(withCard(model, { repoToDelete: repoId }), Dialog.open(model.githubCard.deleteDialog))
 
 export const gotRepoDeleteDialog = (model: Model, message: Dialog.Message): Return =>
-	deleteDialogStep(model, Dialog.update(model.githubCard.deleteDialog, message))
+	model.githubCard.deletingRepo !== null
+		? { model }
+		: deleteDialogStep(model, Dialog.update(model.githubCard.deleteDialog, message))
 
+/** The dialog stays open, its confirm pending, until `completedRepoDelete` closes it. */
 export const confirmedRepoDelete = (model: Model): Return => {
 	const repoId = model.githubCard.repoToDelete
 	if (repoId === null || model.githubCard.deletingRepo !== null) return { model }
-	const closed = deleteDialogStep(
-		withCard(model, { repoToDelete: null, deletingRepo: repoId }),
-		Dialog.close(model.githubCard.deleteDialog),
-	)
-	return { ...closed, commands: [...(closed.commands ?? []), DeleteGithubRepo({ repoId })] }
+	return { model: withCard(model, { deletingRepo: repoId }), commands: [DeleteGithubRepo({ repoId })] }
 }
 
 export const completedRepoDelete = (
@@ -132,13 +174,20 @@ export const completedRepoDelete = (
 	failure: LoadFailure | null,
 ): Return => {
 	const fullName = repoOf(model, repoId)?.fullName ?? ""
-	const settled = withCard(model, { deletingRepo: null })
-	return failure === null
-		? chain(settled, [
-				(next) => toast(next, "success", `Deleted ${fullName} from Maple`),
-				(next) => refresh(next, context),
-			])
-		: toast(settled, "error", `Failed to delete ${fullName}`, failure.message)
+	// `repoToDelete` stays: the closing dialog still names the repository.
+	const closed = deleteDialogStep(
+		withCard(model, { deletingRepo: null }),
+		Dialog.close(model.githubCard.deleteDialog),
+	)
+	return chain(closed.model, [
+		() => closed,
+		...(failure === null
+			? [
+					(next: Model) => toast(next, "success", `Deleted ${fullName} from Maple`),
+					(next: Model) => refresh(next, context),
+				]
+			: [(next: Model) => toast(next, "error", `Couldn't delete ${fullName}`, failure.message)]),
+	])
 }
 
 // BRANCH SELECTOR
@@ -192,23 +241,32 @@ export const clickedBranch = (model: Model, repoId: VcsRepositoryId, branch: str
 	)
 }
 
+const isSavingPendingBranch = (model: Model): boolean => {
+	const pending = model.githubCard.pendingBranch
+	return (
+		pending !== null &&
+		Arr.some(model.githubCard.savingBranches, (entry) => entry.repoId === pending.repoId)
+	)
+}
+
 export const gotBranchDialog = (model: Model, message: Dialog.Message): Return => {
+	if (isSavingPendingBranch(model)) return { model }
 	const step = branchDialogStep(model, Dialog.update(model.githubCard.branchDialog, message))
 	return step.model.githubCard.branchDialog.isOpen
 		? step
 		: { ...step, model: withCard(step.model, { pendingBranch: null }) }
 }
 
-/** `commit`: optimistic, popover closed, then the save. */
+/** `commit`: optimistic; the dialog stays open, its confirm pending, until the save answers. */
 export const confirmedBranch = (model: Model): Return => {
 	const pending = model.githubCard.pendingBranch
 	const card = model.githubCard
-	if (pending === null || card.savingBranches.some((entry) => entry.repoId === pending.repoId)) return { model }
-	return chain(withCard(model, { pendingBranch: null, savingBranches: [...card.savingBranches, pending] }), [
-		(next) => branchDialogStep(next, Dialog.close(next.githubCard.branchDialog)),
-		(next) => popoverStep(next, pending.repoId, Popover.close(popoverOf(next, pending.repoId))),
-		(next) => ({ model: next, commands: [SetTrackedBranch(pending)] }),
-	])
+	if (pending === null || Arr.some(card.savingBranches, (entry) => entry.repoId === pending.repoId))
+		return { model }
+	return {
+		model: withCard(model, { savingBranches: [...card.savingBranches, pending] }),
+		commands: [SetTrackedBranch(pending)],
+	}
 }
 
 export const completedTrackedBranch = (
@@ -219,13 +277,25 @@ export const completedTrackedBranch = (
 	backfillQueued: boolean,
 	failure: LoadFailure | null,
 ): Return => {
-	const settled = withCard(model, {
-		savingBranches: model.githubCard.savingBranches.filter((entry) => entry.repoId !== repoId),
+	const saved = withCard(model, {
+		savingBranches: Arr.filter(model.githubCard.savingBranches, (entry) => entry.repoId !== repoId),
 	})
-	if (failure !== null) return toast(settled, "error", "Failed to change tracked branch", failure.message)
-	if (!backfillQueued) return refresh(settled, context)
+	const closing = [
+		(next: Model) =>
+			next.githubCard.pendingBranch?.repoId === repoId
+				? branchDialogStep(next, Dialog.close(next.githubCard.branchDialog))
+				: { model: next },
+		(next: Model) => popoverStep(next, repoId, Popover.close(popoverOf(next, repoId))),
+	]
+	if (failure !== null)
+		return chain(saved, [
+			...closing,
+			(next) => toast(next, "error", "Couldn't change tracked branch", failure.message),
+		])
+	if (!backfillQueued) return chain(saved, [...closing, (next) => refresh(next, context)])
 	const version = model.githubCard.forcePollVersion + 1
-	return chain(withCard(settled, { isForcePolling: true, forcePollVersion: version }), [
+	return chain(withCard(saved, { isForcePolling: true, forcePollVersion: version }), [
+		...closing,
 		(next) => toast(next, "success", `Now tracking ${branch}, re-syncing commits…`),
 		(next) => refresh(next, context),
 	])

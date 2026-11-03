@@ -17,6 +17,7 @@ import {
 	pluralize,
 } from "@maple/ui/lib/format"
 import { OTHER_COLOR } from "@maple/ui/components/charts/_shared/bucket-series"
+import { Array as Arr, String as Str } from "effect"
 
 /** Which measure the strip, the chart and the breakdown columns are reading. */
 export const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
@@ -188,19 +189,6 @@ export function metricValue(measures: ToolMeasures, metric: ToolMetric, percenti
 }
 
 /**
- * A count, grouped rather than compacted.
- *
- * `formatNumber` renders 12,480 as "12.5K", which is right for a headline and
- * wrong for a table of call counts that are read against each other — 12.5K and
- * 12.4K are the same number to a reader. Compaction starts at a million, where
- * the exact digits stop being something anyone holds in their head and the
- * lane starts to matter.
- */
-export function formatToolCount(value: number): string {
-	return Math.abs(value) >= 1_000_000 ? formatNumber(value) : Math.round(value).toLocaleString()
-}
-
-/**
  * A merged (`split: "none"`) series with every bucket of the window present,
  * the ones the warehouse skipped as zeros.
  *
@@ -219,7 +207,7 @@ export function fillSeriesBuckets(
 	const first = points[0]
 	if (first === undefined) return points
 	const stepMs = bucketSeconds * 1000
-	const byBucket = new Map(points.map((point) => [point.bucket, point]))
+	const byBucket = new Map(Arr.map(points, (point) => [point.bucket, point]))
 	const filled: ToolSeriesPoint[] = []
 	for (let bucket = Math.floor(startMs / stepMs) * stepMs; bucket < endMs; bucket += stepMs) {
 		filled.push(byBucket.get(bucket) ?? { ...EMPTY_MEASURES, bucket, seriesKey: first.seriesKey })
@@ -240,12 +228,12 @@ export function formatDurationNs(ns: number): string {
 	return formatLatency(ns / 1_000_000)
 }
 
-/** The metric's value as the tiles, axis and columns print it. */
+/** The metric's value as the tiles, axis and columns print it; chart tooltips keep counts exact. */
 export function formatToolMetric(value: number, metric: ToolMetric): string {
 	switch (metric) {
 		case "calls":
 		case "sessions":
-			return formatToolCount(value)
+			return formatNumber(value)
 		case "error_rate":
 			return formatErrorRate(value)
 		case "duration":
@@ -262,7 +250,7 @@ const METRIC_LABEL = {
 
 /** Tile eyebrow / chart subject. Duration names the percentile driving it. */
 export function toolMetricLabel(metric: ToolMetric, percentile: ToolPercentile): string {
-	return metric === "duration" ? `${percentile.toUpperCase()} duration` : METRIC_LABEL[metric]
+	return metric === "duration" ? `${Str.toUpperCase(percentile)} duration` : METRIC_LABEL[metric]
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -346,7 +334,10 @@ export function rankSeriesKeys(points: ReadonlyArray<ToolSeriesPoint>): Readonly
 	for (const point of points) {
 		calls.set(point.seriesKey, (calls.get(point.seriesKey) ?? 0) + point.calls)
 	}
-	return [...calls.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key]) => key)
+	return Arr.map(
+		[...calls.entries()].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+		([key]) => key,
+	)
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -371,7 +362,7 @@ export function toolChartTitle({
 	const parts: string[] = [toolMetricLabel(metric, percentile)]
 	if (tool !== undefined) parts.push(tool)
 	if (model !== undefined) parts.push(model)
-	return parts.join(" · ")
+	return Arr.join(parts, " · ")
 }
 
 /**
@@ -379,15 +370,15 @@ export function toolChartTitle({
  * accounts for, and across how many sessions.
  */
 export function scopeSummary(totals: ToolTotals, matchedOfCalls: number, subject?: string): string {
-	const sessions = `${formatToolCount(totals.sessions)} ${pluralize(totals.sessions, "session")}`
+	const sessions = `${formatNumber(totals.sessions)} ${pluralize(totals.sessions, "session")}`
 	// The tool detail page names the tool in its denominator ("of 3,908
 	// run_tests calls"), because there the whole page is one tool's and an
 	// unqualified "calls" would read as the org's.
 	const noun = subject === undefined ? "calls" : `${subject} calls`
 	if (matchedOfCalls <= 0 || matchedOfCalls === totals.calls) {
-		return `${formatToolCount(totals.calls)} ${noun} · ${sessions}`
+		return `${formatNumber(totals.calls)} ${noun} · ${sessions}`
 	}
-	return `${formatToolCount(totals.calls)} of ${formatToolCount(matchedOfCalls)} ${noun} match · ${sessions}`
+	return `${formatNumber(totals.calls)} of ${formatNumber(matchedOfCalls)} ${noun} match · ${sessions}`
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -407,9 +398,10 @@ export function metricSpark(
 	metric: ToolMetric,
 	percentile: ToolPercentile,
 ): ReadonlyArray<number> {
-	return points
-		.toSorted((a, b) => a.bucket - b.bucket)
-		.map((point) => metricValue(point, metric, percentile))
+	return Arr.map(
+		points.toSorted((a, b) => a.bucket - b.bucket),
+		(point) => metricValue(point, metric, percentile),
+	)
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -488,13 +480,13 @@ export function toolsTableFooter(
 	readonly subject: string
 	readonly detail: string
 } {
-	const calls = rows.reduce((sum, row) => sum + row.calls, 0)
-	const errors = rows.reduce((sum, row) => sum + row.errors, 0)
+	const calls = Arr.reduce(rows, 0, (sum, row) => sum + row.calls)
+	const errors = Arr.reduce(rows, 0, (sum, row) => sum + row.errors)
 	return {
 		subject:
 			rows.length >= limit
-				? `Showing the ${formatToolCount(limit)} busiest tools`
-				: `Showing all ${formatToolCount(rows.length)} ${pluralize(rows.length, "tool")}`,
-		detail: `· ${formatToolCount(calls)} calls · ${formatErrorRate(calls > 0 ? errors / calls : 0)} errors`,
+				? `Showing the ${formatNumber(limit)} busiest tools`
+				: `Showing all ${formatNumber(rows.length)} ${pluralize(rows.length, "tool")}`,
+		detail: `· ${formatNumber(calls)} calls · ${formatErrorRate(calls > 0 ? errors / calls : 0)} errors`,
 	}
 }

@@ -1,8 +1,8 @@
 import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Command } from "foldkit"
-import * as Keyed from "../../data/keyed"
-import { requestKey } from "../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
 import type { PageContext, PageReturn } from "../contract"
@@ -48,7 +48,7 @@ const keyed = <A, E>(
 
 export const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
 	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-	commands: steps.flatMap((step) => step.commands),
+	commands: Arr.flatMap(steps, (step) => step.commands),
 })
 
 export const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
@@ -144,7 +144,7 @@ const dbSummaryBucketSeconds = (durationSeconds: number): number =>
 export const selectedDatabase = (model: Model) =>
 	Option.flatMap(model.map, (map) =>
 		Option.map(
-			Option.filter(map.selectedId, (id) => id.startsWith(DB_NODE_PREFIX)),
+			Option.filter(map.selectedId, (id) => Str.startsWith(DB_NODE_PREFIX)(id)),
 			(id) => ({
 				id,
 				...parseDbNodeId(id),

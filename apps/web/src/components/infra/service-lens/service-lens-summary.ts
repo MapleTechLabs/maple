@@ -10,6 +10,7 @@
 // Framework-free and relative-imported: the Foldkit app imports it too.
 import type { ListPodsResponse } from "@maple/domain/http"
 import { formatWholePercent } from "../format"
+import { Array as Arr } from "effect"
 
 type PodRow = ListPodsResponse["data"][number]
 
@@ -109,7 +110,7 @@ function firstCrossingMs(points: ReadonlyArray<BucketPoint>, threshold: number):
  * only that no matching rise was found.
  */
 function median(values: ReadonlyArray<number>): number {
-	const sorted = values.filter((v) => Number.isFinite(v)).toSorted((a, b) => a - b)
+	const sorted = Arr.filter(values, (v) => Number.isFinite(v)).toSorted((a, b) => a - b)
 	if (sorted.length === 0) return 0
 	const mid = Math.floor(sorted.length / 2)
 	return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!
@@ -132,19 +133,20 @@ export function deriveLensVerdict({
 	const sampled = pods.length < totalPods
 	const podCount = Math.max(totalPods, pods.length)
 	if (podCount === 0) return { kind: "no-pods" }
-	const saturatedPods = pods.filter((p) => p.saturation >= SATURATED)
-	const worst = pods.reduce((max, p) => Math.max(max, p.saturation), 0)
+	const saturatedPods = Arr.filter(pods, (p) => p.saturation >= SATURATED)
+	const worst = Arr.reduce(pods, 0, (max, p) => Math.max(max, p.saturation))
 	// Same definition as the pod list's "unbounded" scope: reporting usage, with
 	// neither limit set.
-	const unbounded = pods.filter(
+	const unbounded = Arr.filter(
+		pods,
 		(p) => p.cpuLimitPct === 0 && p.memoryLimitPct === 0 && p.cpuUsage > 0,
 	).length
 
 	// Only buckets that served traffic can speak to latency. A service busy for
 	// a third of the window has a zero median otherwise, and every real spike
 	// then measures as "no spike at all".
-	const served = latency.filter((point) => point.hasTraffic)
-	const baseline = median(served.map((point) => point.value))
+	const served = Arr.filter(latency, (point) => point.hasTraffic)
+	const baseline = median(Arr.map(served, (point) => point.value))
 	const spikeMs = baseline > 0 ? firstCrossingMs(served, baseline * SPIKE_RATIO) : null
 	const saturationMs = firstCrossingMs(cpuOfLimit, SATURATED)
 
@@ -199,10 +201,10 @@ export function lensSubhead(verdict: LensVerdict): string {
 		case "no-workload":
 			return "Its spans carry no k8s.deployment.name, so Maple can't tell which pods run it. Install the Helm chart's k8sattributes processor to link the two."
 		case "no-pods":
-			return "Its spans name a workload, but no pod reported CPU or memory in this window — so there is nothing here to correlate. Widen the window, or check the kubelet stats receiver."
+			return "Its spans name a workload, but no pod reported CPU or memory in this window, so there is nothing here to correlate. Widen the window, or check the kubelet stats receiver."
 		case "unbounded":
 			return verdict.spiked
-				? `p99 rose, and none of its ${verdict.podCount} pods has a CPU or memory limit set — so there is no ceiling for Maple to measure this against. Set limits, or read the raw cores below.`
+				? `p99 rose, and none of its ${verdict.podCount} pods has a CPU or memory limit set, so there is no ceiling for Maple to measure this against. Set limits, or read the raw cores below.`
 				: `None of its ${verdict.podCount} pods has a CPU or memory limit set, so saturation can't rank them. The raw usage below is all this page can say.`
 		case "healthy": {
 			// Sound even from a page: the worst pod is on it by construction.
@@ -216,13 +218,13 @@ export function lensSubhead(verdict: LensVerdict): string {
 			return `${verdict.saturated} of its ${verdict.podCount} pods hit a limit before p99 rose, peaking at ${formatWholePercent(verdict.worst)}.`
 		case "throttled":
 			return verdict.spiked
-				? `${verdict.saturated} pods peaked at ${formatWholePercent(verdict.worst)} of a limit. p99 also rose in this window, but not after the saturation — so the lens won't call one the cause of the other.`
+				? `${verdict.saturated} pods peaked at ${formatWholePercent(verdict.worst)} of a limit. p99 also rose in this window, but not after the saturation, so the lens won't call one the cause of the other.`
 				: // NOT "p99 held": the baseline is the window's own median, so a rise
 					// that occupies most of the window is invisible to it. What was
 					// actually established is the absence of a matching rise, which is a
 					// weaker and true thing to say.
-					`${verdict.saturated} pods peaked at or above ${formatWholePercent(SATURATED)} of a limit — ${formatWholePercent(verdict.worst)} at worst — with no matching rise in p99 over this window.`
+					`${verdict.saturated} pods peaked at or above ${formatWholePercent(SATURATED)} of a limit (${formatWholePercent(verdict.worst)} at worst) with no matching rise in p99 over this window.`
 		case "slow-not-throttled":
-			return `p99 rose while no pod among its ${verdict.podCount} came near a limit. Look upstream — a dependency, the database, or a change in the work itself.`
+			return `p99 rose while no pod among its ${verdict.podCount} came near a limit. Look upstream: a dependency, the database, or a change in the work itself.`
 	}
 }

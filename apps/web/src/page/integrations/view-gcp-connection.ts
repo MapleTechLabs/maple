@@ -17,20 +17,24 @@ import {
 	gcpSetupRunning,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon } from "../../ui/icon"
-import * as Menu from "../../ui/menu"
-import type { MenuEntry } from "../../ui/menu-view"
-import { panel } from "../../ui/panel"
-import { rowActionsMenu } from "../../ui/row-actions-menu"
-import { statusDot } from "../../ui/status-dot"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import type { MenuEntry } from "@maple/views/ui/menu-view"
+import { panel } from "@maple/views/ui/panel"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { relativeTime } from "../kit/relative-time"
 import { gcpMessage } from "../infra-integrations/gcp/gcp-message"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { gcpInfraHref, gcpLogsHref } from "./update-gcp"
 import { gcpCommand } from "./view-gcp-parts"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpConnection`, `connectionIssues`, `signalText`, `Signal` and `Fact`.
 
@@ -46,7 +50,7 @@ const RETRIES = "Maple retries every 5 minutes. If this lasts an hour, write to 
 
 interface Issue {
 	readonly key: string
-	readonly tone: "crit" | "warn" | "live"
+	readonly tone: "crit" | "warn" | "info"
 	readonly title: string
 	readonly body?: Children
 	readonly action?: Html
@@ -68,29 +72,30 @@ const runScript = (h: H, connector: V2GcpConnector, label: string): Html =>
 		[label],
 	)
 
-const issueNote = (h: H, issue: Issue): Html =>
+/** Info issues are pending states (setup, first data), so their dot stays neutral, never healthy green. */
+const dotTone = (tone: Issue["tone"] | "ok"): Tone => (tone === "info" ? "neutral" : tone)
+
+/** `hasDot`: only a list of issues dots each one; a single issue's tone is the name row's dot. */
+const issueNote = (h: H, issue: Issue, hasDot: boolean): Html =>
 	h.div(
-		[h.Role(issue.tone === "live" ? "note" : "status"), h.Class("flex gap-2.5")],
+		[h.Role(issue.tone === "info" ? "note" : "status"), h.Class("flex gap-2.5")],
 		[
 			h.span(
 				[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
-				[statusDot(h, { tone: issue.tone, size: "lg" })],
+				hasDot ? [statusDot(h, { tone: dotTone(issue.tone), size: "lg" })] : [],
 			),
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-1.5")],
-				[
-					h.p([h.Class("text-sm font-medium text-pretty")], [issue.title]),
-					...(issue.body === undefined
-						? []
-						: [
-								h.div(
-									[h.Class("max-w-2xl text-xs/[18px] text-pretty text-muted-foreground")],
-									issue.body,
-								),
-							]),
-					...(issue.action === undefined ? [] : [h.div([h.Class("flex pt-1")], [issue.action])]),
-				],
-			),
+			vstack(h, { gap: "1.5", shrink: true }, [
+				h.p([h.Class("text-sm font-medium text-pretty")], [issue.title]),
+				...(issue.body === undefined
+					? []
+					: [
+							h.div(
+								[h.Class("max-w-2xl text-xs/[18px] text-pretty text-muted-foreground")],
+								issue.body,
+							),
+						]),
+				...(issue.action === undefined ? [] : [h.div([h.Class("flex pt-1")], [issue.action])]),
+			]),
 		],
 	)
 
@@ -143,13 +148,13 @@ const connectionIssues = (
 					? h.p([], [lines[0] ?? ""])
 					: h.ul(
 							[h.Class("list-disc pl-4")],
-							lines.map((line) => h.li([], [line])),
+							Arr.map(lines, (line) => h.li([], [line])),
 						),
 				...(IS_ADMIN && needed === "changes-pending" && cleanedUp
 					? [h.p([], ["To remove the connection instead, choose Disconnect in its menu."])]
 					: []),
 			],
-			action: runScript(h, connector, needed === "setup-pending" ? "Finish setup" : "Apply changes"),
+			action: runScript(h, connector, needed === "setup-pending" ? "Reconnect" : "Apply changes"),
 		})
 	}
 	if (metrics.kind === "incomplete")
@@ -201,7 +206,7 @@ const connectionIssues = (
 		return [
 			{
 				key: "running",
-				tone: "live",
+				tone: "info",
 				title: "Setup in progress",
 				body: ["Logs and metrics start once it is complete."],
 			},
@@ -210,7 +215,7 @@ const connectionIssues = (
 		return [
 			{
 				key: "waiting",
-				tone: "live",
+				tone: "info",
 				title: "Waiting for the first data",
 				body: [
 					log.kind === "waiting"
@@ -293,38 +298,45 @@ const signalText = (
 	}
 }
 
-const SIGNAL_LINK = "inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+const SIGNAL_LINK = hstackClass({
+	gap: "1",
+	inline: true,
+	className: typographyClass({ size: "xs", tone: "muted", hoverTone: "foreground" }),
+})
 
 const signalView = (h: H, name: string, signal: Signal, link: Html | undefined): Html =>
 	h.div(
 		[h.Class("flex min-w-0 flex-1 flex-col gap-1 px-4 py-3")],
 		[
-			h.span([h.Class("text-xs font-medium")], [name]),
+			typography(h, { size: "xs", weight: "medium" }, [name]),
 			h.span([h.Class(cn("text-xs/[18px]", TONE_TEXT[signal.tone]))], [signal.text]),
 			...(link === undefined ? [] : [h.div([h.Class("pt-1")], [link])]),
 		],
 	)
 
 const fact = (h: H, label: string, value: Html | string): Html =>
-	h.div(
-		[h.Class("flex w-36 shrink-0 flex-col gap-0.5")],
-		[
-			h.span([h.Class("text-2xs text-muted-foreground")], [label]),
-			h.span([h.Class("truncate text-xs")], [value]),
-		],
-	)
+	vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
+		typography(h, { size: "2xs", tone: "muted" }, [label]),
+		typography(h, { size: "xs", truncate: true }, [value]),
+	])
 
 const signalLink = (h: H, href: string, label: string): Html =>
-	h.a([h.Href(href), h.Class(SIGNAL_LINK)], [label, icon(h, "ArrowRightIcon", { size: 11 })])
+	h.a([h.Href(href), h.Class(SIGNAL_LINK)], [label, icon(h, "ArrowRightIcon", { size: 12 })])
 
 const menuEntries: ReadonlyArray<MenuEntry> = [
-	...(IS_ADMIN ? [{ _tag: "Item", value: "configure", label: "Configure" } as const] : []),
+	...(IS_ADMIN ? [{ _tag: "Item", value: "configure", label: "Edit data" } as const] : []),
 	{ _tag: "Item", value: "logs", label: "View logs" },
 	{ _tag: "Item", value: "infra", label: "View infrastructure" },
 	...(IS_ADMIN
 		? [
 				{ _tag: "Separator" } as const,
-				{ _tag: "Item", value: "disconnect", label: "Disconnect", variant: "destructive" } as const,
+				{
+					_tag: "Item",
+					value: "disconnect",
+					label: "Disconnect",
+					icon: "TrashIcon",
+					variant: "destructive",
+				} as const,
 			]
 		: []),
 ]
@@ -340,23 +352,39 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		metrics.kind === "receiving" && metrics.projectCount !== null
 			? countLabel(metrics.projectCount, "project")
 			: null
-	const collects = [connector.logs_enabled ? "Logs" : null, connector.metrics_enabled ? "metrics" : null]
-		.filter((part) => part !== null)
-		.join(" and ")
-	const name = h.div(
-		[h.Class("flex min-w-0 items-center gap-2.5")],
-		[
-			h.h3([h.Class("truncate font-mono text-sm font-medium"), h.Title(label)], [connector.scope_id]),
-			badge(h, { variant: "meta", size: "xs" }, [GCP_SCOPE_NAMES[connector.scope_type]]),
-		],
+	const collects = Arr.join(
+		Arr.filter(
+			[connector.logs_enabled ? "Logs" : null, connector.metrics_enabled ? "metrics" : null],
+			(part) => part !== null,
+		),
+		" and ",
 	)
-	const subtitle = [
-		collects === "" ? "Collects nothing" : collects.charAt(0).toUpperCase() + collects.slice(1),
-		projects,
-		connector.scope_type === "project" ? null : `host ${connector.project_id}`,
-	]
-		.filter((part) => part !== null)
-		.join(" · ")
+	const name = hstack(h, { gap: "2.5", shrink: true }, [
+		heading(
+			h,
+			{
+				level: 3,
+				variant: "subsection",
+				className: typographyClass({ mono: true, truncate: true }),
+				attributes: [h.Title(label)],
+			},
+			[connector.scope_id],
+		),
+		badge(h, { variant: "meta", size: "xs" }, [GCP_SCOPE_NAMES[connector.scope_type]]),
+	])
+	const subtitle = Arr.join(
+		Arr.filter(
+			[
+				collects === ""
+					? "Collects nothing"
+					: Str.toUpperCase(collects.charAt(0)) + Str.slice(1)(collects),
+				projects,
+				connector.scope_type === "project" ? null : `host ${connector.project_id}`,
+			],
+			(part) => part !== null,
+		),
+		" · ",
+	)
 	const menuId = `gcp-connection-menu-${connector.id}`
 	const menu = rowActionsMenu(h, {
 		slotId: menuId,
@@ -366,24 +394,27 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		toParentMessage: (message) => Message.GotGcpMenuMessage({ id: connector.id, message }),
 	})
 	const ago = (value: string) => relativeTime(h, { value, nowMs: model.nowMs, timeZone })
+	// The same row in every state: dot, name and kind, subtitle. Issues add their notes below it.
+	const nameRow = (tone: Issue["tone"] | "ok") =>
+		h.div(
+			[h.Class("flex min-w-0 flex-1 basis-56 items-start gap-2.5")],
+			[
+				h.span(
+					[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
+					[statusDot(h, { tone: dotTone(tone), size: "lg" })],
+				),
+				vstack(h, { gap: "0.5", shrink: true }, [
+					name,
+					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subtitle]),
+				]),
+			],
+		)
 	if (issues.length === 0)
 		return panel(h, { className: "@container" }, [
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 py-3 pr-2 pl-4")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 flex-1 basis-56 items-start gap-2.5")],
-						[
-							h.span(
-								[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
-								[statusDot(h, { tone: "ok", size: "lg" })],
-							),
-							h.div(
-								[h.Class("flex min-w-0 flex-col gap-0.5")],
-								[name, h.p([h.Class("truncate text-xs text-muted-foreground")], [subtitle])],
-							),
-						],
-					),
+					nameRow("ok"),
 					h.div(
 						[
 							h.Class(
@@ -401,30 +432,22 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		])
 	return panel(h, { className: "@container" }, [
 		h.div(
-			[h.Class("flex flex-col gap-3 px-4 pt-3 pb-4")],
+			[h.Class("flex flex-col gap-3 pt-3 pr-2 pb-4 pl-4")],
 			[
+				hstack(h, { gap: "3", justify: "between" }, [
+					nameRow(issues[0]?.tone ?? "info"),
+					h.div([h.Class("shrink-0")], [menu]),
+				]),
 				h.div(
-					[h.Class("flex items-center justify-between gap-3")],
-					[
-						h.div(
-							[h.Class("flex min-w-0 flex-col gap-0.5")],
-							[
-								name,
-								...(connector.scope_type === "project"
-									? []
-									: [h.p([h.Class("truncate text-xs text-muted-foreground")], [subtitle])]),
-							],
-						),
-						h.div([h.Class("-mr-2 shrink-0")], [menu]),
-					],
+					[h.Class("flex flex-col gap-3 pr-2")],
+					Arr.map(issues, (issue) => issueNote(h, issue, issues.length > 1)),
 				),
-				...issues.map((issue) => issueNote(h, issue)),
 			],
 		),
 		h.div(
 			[
 				h.Class(
-					"flex flex-col divide-y divide-border/60 border-t border-border/60 @md:flex-row @md:divide-x @md:divide-y-0",
+					"flex flex-col divide-y divide-border-subtle border-t border-border-subtle @md:flex-row @md:divide-x @md:divide-y-0",
 				),
 			],
 			[

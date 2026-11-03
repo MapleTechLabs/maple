@@ -1,9 +1,10 @@
 import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-platform/manifests"
 import { ChatConnectorId } from "@maple/domain/primitives"
 import { docsUrl } from "../../lib/docs"
-import { Array, Option, Schema } from "effect"
-import type { IconName } from "../../ui/icon"
+import { Array, Option, Schema, String as Str } from "effect"
+import type { IconName } from "@maple/views/ui/icon"
 import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"
+import { SUPABASE_ACCENT } from "../infra-integrations/supabase/connect"
 
 // The integration catalog's data.
 
@@ -13,19 +14,22 @@ export type IntegrationId =
 	| "prometheus"
 	| "planetscale"
 	| "gcp"
+	| "aws"
 	| "railway"
 	| "vercel"
+	| "supabase"
 	| "warpstream"
-	| "hazel"
+	| "linear"
 	| "github"
 	| ChatIntegrationId
 
 export const GITHUB_ACCENT = "#181717"
-export const HAZEL_ACCENT = "#F46F0F"
+export const LINEAR_ACCENT = "#5E6AD5"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
 export const GCP_ACCENT = "#4285F4"
 export const VERCEL_ACCENT = "#000000"
+export const AWS_ACCENT = "#FF9900"
 
 /** A generated icon, or a chat connector's manifest mark (rendered from its path data). */
 export type EntryIcon =
@@ -63,12 +67,12 @@ const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
 
 /** The connector behind a chat catalog id, or `null` for every other entry. */
 export const chatConnectorOf = (id: IntegrationId): ChatConnectorId | null =>
-	id.startsWith("chat-") ? Option.getOrNull(decodeConnectorId(id.slice("chat-".length))) : null
+	Str.startsWith("chat-")(id) ? Option.getOrNull(decodeConnectorId(Str.slice("chat-".length)(id))) : null
 
 export const chatManifestOf = (connector: string): ChatConnectorManifest | undefined =>
 	chatConnectorManifests.find((manifest) => manifest.id === connector)
 
-const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = chatConnectorManifests.map((manifest) => ({
+const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = Array.map(chatConnectorManifests, (manifest) => ({
 	id: chatIntegrationId(manifest.id),
 	name: manifest.name,
 	description: manifest.description,
@@ -119,6 +123,17 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		docsUrl: docsUrl("gcp"),
 	},
 	{
+		id: "aws",
+		category: "infrastructure",
+		isNew: true,
+		name: "AWS",
+		description: "Connect an AWS account through a read-only role you deploy with CloudFormation.",
+		icon: named("AwsIcon"),
+		accent: AWS_ACCENT,
+		iconClassName: "text-foreground",
+		docsUrl: docsUrl("aws"),
+	},
+	{
 		id: "railway",
 		category: "infrastructure",
 		isNew: true,
@@ -128,6 +143,18 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("RailwayIcon"),
 		accent: RAILWAY_ACCENT,
 		iconClassName: "text-foreground",
+		docsUrl: docsUrl("railway"),
+	},
+	{
+		id: "supabase",
+		category: "infrastructure",
+		isNew: true,
+		name: "Supabase",
+		description:
+			"Authorize your Supabase organization to collect CPU, memory, disk and Postgres metrics for every project.",
+		icon: named("SupabaseIcon"),
+		accent: SUPABASE_ACCENT,
+		docsUrl: docsUrl("supabase"),
 	},
 	{
 		id: "vercel",
@@ -150,14 +177,13 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		docsUrl: docsUrl("warpstream"),
 	},
 	{
-		id: "hazel",
+		id: "linear",
 		category: "notifications",
-		name: "Hazel",
+		name: "Linear",
 		description:
-			"Forward Maple alerts into a Hazel workspace via OAuth. Pick destinations per notification.",
-		icon: named("HazelIcon"),
-		accent: HAZEL_ACCENT,
-		docsUrl: "https://hazel.sh/docs/integrations/maple",
+			"Open one Linear issue per alert rule, then comment as it fires again, changes severity or resolves.",
+		icon: named("LinearIcon"),
+		accent: LINEAR_ACCENT,
 	},
 	{
 		id: "github",
@@ -173,7 +199,8 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 ]
 
 /** What `/integrations` lists: chat and alert connectors. Data integrations live under Sources. */
-export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = CATALOG.filter(
+export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = Array.filter(
+	CATALOG,
 	(entry) => entry.category === "notifications",
 )
 
@@ -185,7 +212,7 @@ export const catalogEntry = (id: IntegrationId): CatalogEntry =>
 
 /** Whether a URL value names a catalog entry (the OAuth callbacks append `?integration=`). */
 export const isIntegrationId = (value: string): value is IntegrationId =>
-	CATALOG.some((entry) => entry.id === value)
+	Array.some(CATALOG, (entry) => entry.id === value)
 
 /** The `?integration=` the page shows: a known id, else the hub. */
 export const integrationOfSearch = (value: string | undefined): IntegrationId | null =>

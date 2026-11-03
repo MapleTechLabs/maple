@@ -1,4 +1,6 @@
 import {
+	alertQueryLimits,
+	alertRuleIntervalMinutes,
 	alertWindowBucketSeconds,
 	CompiledAlertQueryPlan,
 	QueryEngineAlertReducer,
@@ -11,6 +13,8 @@ import { prepareRawSql, type AlertBucketSource } from "@maple/query-engine/runti
 import {
 	AlertComparator as AlertComparatorSchema,
 	AlertDestinationDocument,
+	type AlertEvaluationErrorKind,
+	AlertEvaluationIntervalMinutes,
 	AlertGroupBy as AlertGroupBySchema,
 	AlertNotificationTemplate,
 	AlertRuleDocument,
@@ -38,7 +42,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
-import { Array as Arr, Effect, Match, Result, Schema } from "effect"
+import { DateTime, Array as Arr, Effect, Match, Result, Schema, String as Str } from "effect"
 import type { AlertRuntimeApi } from "./AlertRuntime"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import { validateBreachWindow, validateThresholds } from "./alert-thresholds"
@@ -83,6 +87,7 @@ const decodeAlertComparatorSync = Schema.decodeUnknownSync(AlertComparatorSchema
 const decodeQueryEngineAlertReducerSync = Schema.decodeUnknownSync(QueryEngineAlertReducer)
 const decodeNoDataBehaviorSync = Schema.decodeUnknownSync(QueryEngineNoDataBehavior)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
+const decodeEvaluationIntervalSync = Schema.decodeUnknownSync(Schema.NullOr(AlertEvaluationIntervalMinutes))
 
 export interface NormalizedRule {
 	readonly id: AlertRuleId
@@ -104,6 +109,10 @@ export interface NormalizedRule {
 	readonly threshold: number
 	readonly thresholdUpper: number | null
 	readonly windowMinutes: number
+	/** The author's check interval; null derives it from the window. */
+	readonly evaluationIntervalMinutes: AlertEvaluationIntervalMinutes | null
+	/** The scheduler's slowdown after repeated query timeouts; null until then, cleared by an edit. */
+	readonly slowedIntervalMinutes: AlertEvaluationIntervalMinutes | null
 	readonly minimumSampleCount: number
 	readonly consecutiveBreachesRequired: number
 	/** M in "N of the last M checks"; null is N in a row. */
@@ -123,6 +132,7 @@ export interface NormalizedRule {
 
 export interface RuleEvaluationState {
 	readonly error: string | null
+	readonly errorKind: AlertEvaluationErrorKind | null
 	readonly evaluatedAt: number | null
 }
 
@@ -154,6 +164,7 @@ export const normalizedRuleToDocument = (
 		threshold: rule.threshold,
 		thresholdUpper: rule.thresholdUpper,
 		windowMinutes: rule.windowMinutes,
+		evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
 		minimumSampleCount: rule.minimumSampleCount,
 		consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
 		breachesOutOf: rule.breachesOutOf,
@@ -166,6 +177,9 @@ export const normalizedRuleToDocument = (
 		destinationIds: [...rule.destinationIds],
 		noDataBehavior: rule.compiledPlan.noDataBehavior,
 		lastEvaluationError: null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: rule.slowedIntervalMinutes,
+		slowedAt: null,
 		lastEvaluatedAt: null,
 		lastScheduledAt: null,
 		createdAt: timestamp,
@@ -194,13 +208,13 @@ export const makeAlertValidationError = (
 
 // The details ride in the message too: public HTTP errors expose `message`, not `details`.
 const invalidRuleError = (details: ReadonlyArray<string>) =>
-	makeAlertValidationError(`Invalid alert rule: ${details.join("; ")}`, details)
+	makeAlertValidationError(`Invalid alert rule: ${Arr.join(details, "; ")}`, details)
 
 const normalizeTags = (tags: ReadonlyArray<string> | undefined): ReadonlyArray<string> => {
 	if (!tags || tags.length === 0) return []
 	return Arr.dedupe(
 		Arr.filter(
-			Arr.map(tags, (tag) => tag.trim().toLowerCase()),
+			Arr.map(tags, (tag) => Str.toLowerCase(Str.trim(tag))),
 			(tag) => tag.length > 0,
 		),
 	)
@@ -213,6 +227,75 @@ const planGroupingTokens = (
 	const groupBy = plan.query.groupBy
 	if (groupBy == null || groupBy.length === 0 || groupBy.includes("none")) return null
 	return groupBy
+}
+
+/** Why the generic rule APIs refuse an `uptime` rule. */
+export const UPTIME_RULE_MANAGED_MESSAGE =
+	"uptime rules belong to an uptime monitor; create, edit or delete the monitor instead"
+
+/** The stored plan of every `uptime` rule: no query, the evaluator reads the monitor's state. */
+export const UPTIME_RULE_PLAN = new CompiledAlertQueryPlan({
+	kind: "spec",
+	query: null,
+	rawSql: null,
+	reducer: "identity",
+	sampleCountStrategy: null,
+	noDataBehavior: "skip",
+})
+
+/**
+ * The `alert_rules` columns of a monitor's backing rule: down (1) breaches, one check opens
+ * and one healthy check resolves. Scoped to the monitor's service so links follow it.
+ */
+export const uptimeRuleFields = (monitor: {
+	readonly name: string
+	readonly serviceName: string | null
+	readonly enabled: boolean
+	readonly destinationIds: ReadonlyArray<AlertDestinationId>
+}) => {
+	const thresholds: AlertThresholds = [
+		{
+			severity: "critical",
+			value: 1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: [...monitor.destinationIds],
+		},
+	]
+	return {
+		name: monitor.name,
+		notes: null,
+		notificationTemplateJson: null,
+		enabled: monitor.enabled,
+		severity: "critical",
+		serviceNamesJson: monitor.serviceName === null ? null : [monitor.serviceName],
+		excludeServiceNamesJson: null,
+		environmentsJson: null,
+		tagsJson: null,
+		groupBy: null,
+		signalType: "uptime",
+		comparator: "gte",
+		threshold: 1,
+		thresholdUpper: null,
+		thresholdsJson: thresholds,
+		windowMinutes: 1,
+		evaluationIntervalMinutes: 1,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
+		minimumSampleCount: 0,
+		consecutiveBreachesRequired: 1,
+		breachesOutOf: null,
+		consecutiveHealthyRequired: 1,
+		renotifyIntervalMinutes: 30,
+		apdexThresholdMs: null,
+		queryBuilderDraftJson: null,
+		rawQuerySql: null,
+		destinationIdsJson: [...monitor.destinationIds],
+		querySpecJson: null,
+		reducer: UPTIME_RULE_PLAN.reducer,
+		sampleCountStrategy: null,
+		noDataBehavior: UPTIME_RULE_PLAN.noDataBehavior,
+	} as const
 }
 
 export const isGroupedPlan = (plan: Schema.Schema.Type<typeof CompiledAlertQueryPlan>): boolean =>
@@ -236,15 +319,34 @@ export const toStorageGroupKey = (
 	engineGroupKey: string,
 ): string => (isGroupedPlan(plan) ? engineGroupKey : UNGROUPED_GROUP_KEY)
 
+/** The scheduler lane a rule runs in: `long_query` for raw SQL allowed more than the 1-minute time limit. */
+export type AlertSchedulerLane = "standard" | "long_query"
+
+export const alertSchedulerLaneOf = (
+	row: Pick<
+		StoredAlertRuleRow,
+		"signalType" | "windowMinutes" | "evaluationIntervalMinutes" | "slowedIntervalMinutes"
+	>,
+): AlertSchedulerLane =>
+	row.signalType === "raw_query" &&
+	alertQueryLimits(alertRuleIntervalMinutes(row)).timeSeconds > alertQueryLimits(1).timeSeconds
+		? "long_query"
+		: "standard"
+
 export const planEvaluateSource = (
 	plan: Schema.Schema.Type<typeof CompiledAlertQueryPlan>,
-	windowMinutes: number,
+	rule: Parameters<typeof alertRuleIntervalMinutes>[0],
 ): Effect.Effect<AlertBucketSource, AlertValidationError> => {
 	if (plan.kind === "raw_sql") {
 		if (plan.rawSql == null) {
 			return Effect.fail(makeAlertValidationError("Compiled alert plan is missing its SQL query"))
 		}
-		return Effect.succeed({ kind: "raw_sql", sql: plan.rawSql, windowMinutes })
+		return Effect.succeed({
+			kind: "raw_sql",
+			sql: plan.rawSql,
+			windowMinutes: rule.windowMinutes,
+			intervalMinutes: alertRuleIntervalMinutes(rule),
+		})
 	}
 	if (plan.query == null || plan.sampleCountStrategy == null) {
 		return Effect.fail(makeAlertValidationError("Compiled alert plan is missing its query spec"))
@@ -343,7 +445,8 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			return Effect.fail(
 				makeAlertValidationError(
 					"Metrics alerts support at most one attr.* groupBy dimension",
-					resolved.attributeKeys.map(
+					Arr.map(
+						resolved.attributeKeys,
 						(key) => `Unsupported additional metrics groupBy attribute: ${key}`,
 					),
 				),
@@ -353,7 +456,8 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			return Effect.fail(
 				makeAlertValidationError(
 					"Metrics alerts support at most one resource.* groupBy dimension",
-					resolved.resourceAttributeKeys.map(
+					Arr.map(
+						resolved.resourceAttributeKeys,
 						(key) => `Unsupported additional metrics groupBy resource attribute: ${key}`,
 					),
 				),
@@ -401,17 +505,13 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 		sampleCountStrategy = "trace_count"
 	} else if (rule.signalType === "builder_query") {
 		if (rule.queryBuilderDraft == null) {
-			return yield* Effect.fail(
-				makeAlertValidationError("builder_query alerts require a queryBuilderDraft"),
-			)
+			return yield* makeAlertValidationError("builder_query alerts require a queryBuilderDraft")
 		}
 		const built = buildTimeseriesQuerySpec(rule.queryBuilderDraft)
 		if (built.error != null || built.query == null) {
-			return yield* Effect.fail(
-				makeAlertValidationError(built.error ?? "Failed to build query builder spec", [
-					...built.warnings,
-				]),
-			)
+			return yield* makeAlertValidationError(built.error ?? "Failed to build query builder spec", [
+				...built.warnings,
+			])
 		}
 		query = decodeQuerySpecSync({ ...built.query, bucketSeconds })
 		sampleCountStrategy = Match.value(rule.queryBuilderDraft.dataSource).pipe(
@@ -424,11 +524,11 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 	} else if (rule.signalType === "raw_query") {
 		const sql = rule.rawQuerySql?.trim() ?? ""
 		if (sql.length === 0) {
-			return yield* Effect.fail(makeAlertValidationError("raw_query alerts require rawQuerySql"))
+			return yield* makeAlertValidationError("raw_query alerts require rawQuerySql")
 		}
-		if (!sql.includes("$__orgFilter")) {
-			return yield* Effect.fail(
-				makeAlertValidationError("raw_query SQL must reference $__orgFilter for org scoping"),
+		if (!Str.includes("$__orgFilter")(sql)) {
+			return yield* makeAlertValidationError(
+				"raw_query SQL must reference $__orgFilter for org scoping",
 			)
 		}
 		return new CompiledAlertQueryPlan({
@@ -439,8 +539,10 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			sampleCountStrategy: null,
 			noDataBehavior,
 		})
+	} else if (rule.signalType === "uptime") {
+		return yield* makeAlertValidationError(UPTIME_RULE_MANAGED_MESSAGE)
 	} else {
-		return yield* Effect.fail(makeAlertValidationError(`Unsupported signal type: ${rule.signalType}`))
+		return yield* makeAlertValidationError(`Unsupported signal type: ${rule.signalType}`)
 	}
 
 	return new CompiledAlertQueryPlan({
@@ -472,6 +574,8 @@ const parseCompiledPlan = (
 			component: "compiled_plan",
 			cause,
 		})
+	// An uptime rule reads its monitor's state, not the warehouse: no query to decode.
+	if (row.signalType === "uptime") return Effect.succeed(UPTIME_RULE_PLAN)
 	if (row.signalType === "raw_query") {
 		if (row.rawQuerySql == null) {
 			return Effect.fail(invalid("Stored raw alert is missing its SQL query", "rawQuerySql is null"))
@@ -642,6 +746,7 @@ export const rowToRuleDocument = (
 					threshold: legacy.threshold,
 					thresholdUpper: legacy.thresholdUpper,
 					windowMinutes: row.windowMinutes,
+					evaluationIntervalMinutes: decodeEvaluationIntervalSync(row.evaluationIntervalMinutes),
 					minimumSampleCount: row.minimumSampleCount,
 					consecutiveBreachesRequired: row.consecutiveBreachesRequired,
 					breachesOutOf: row.breachesOutOf,
@@ -657,11 +762,18 @@ export const rowToRuleDocument = (
 					destinationIds: legacy.destinationIds,
 					noDataBehavior: decodeNoDataBehaviorSync(row.noDataBehavior),
 					lastEvaluationError: evaluationState?.error ?? null,
+					lastEvaluationErrorKind: evaluationState?.errorKind ?? null,
+					slowedIntervalMinutes: decodeEvaluationIntervalSync(row.slowedIntervalMinutes),
+					slowedAt: toIso(row.slowedAt),
 					lastEvaluatedAt:
 						evaluationState?.evaluatedAt != null ? toIso(evaluationState.evaluatedAt) : null,
 					lastScheduledAt: toIso(row.lastScheduledAt),
-					createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
-					updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+					createdAt: decodeIsoDateTimeStringSync(
+						DateTime.formatIso(DateTime.makeUnsafe(row.createdAt)),
+					),
+					updatedAt: decodeIsoDateTimeStringSync(
+						DateTime.formatIso(DateTime.makeUnsafe(row.updatedAt)),
+					),
 					createdBy: decodeUserIdSync(row.createdBy),
 					updatedBy: decodeUserIdSync(row.updatedBy),
 				})
@@ -699,6 +811,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 						row.signalType === "raw_query"
 							? decodeQueryEngineAlertReducerSync(row.reducer)
 							: null,
+					evaluationIntervalMinutes: decodeEvaluationIntervalSync(row.evaluationIntervalMinutes),
+					slowedIntervalMinutes: decodeEvaluationIntervalSync(row.slowedIntervalMinutes),
 				}
 			},
 			catch: (cause) =>
@@ -709,10 +823,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 					cause,
 				}),
 		})
-		const thresholds = yield* decodeStoredAlertRuleThresholds(
-			row,
-			yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson),
-		)
+		const destinationIds = yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson)
+		const thresholds = yield* decodeStoredAlertRuleThresholds(row, destinationIds)
 		const legacy = alertThresholdLegacyFields(thresholds)
 		return {
 			id: decoded.id,
@@ -732,6 +844,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			threshold: legacy.threshold,
 			thresholdUpper: legacy.thresholdUpper,
 			windowMinutes: row.windowMinutes,
+			evaluationIntervalMinutes: decoded.evaluationIntervalMinutes,
+			slowedIntervalMinutes: decoded.slowedIntervalMinutes,
 			minimumSampleCount: row.minimumSampleCount,
 			consecutiveBreachesRequired: row.consecutiveBreachesRequired,
 			breachesOutOf: row.breachesOutOf,
@@ -754,29 +868,34 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		request: AlertRuleUpsertRequest,
 		options?: { readonly forPreview?: boolean },
 	): Effect.fn.Return<NormalizedRule, AlertValidationError> {
-		const name = request.name.trim()
+		if (request.signalType === "uptime") {
+			return yield* invalidRuleError([UPTIME_RULE_MANAGED_MESSAGE])
+		}
+		const name = Str.trim(request.name)
 		// A builder query's draft carries its own scope and never reads the
 		// service fields, so keeping them would only fan out identical queries.
 		const draftOwnsScope = request.signalType === "builder_query"
 		const serviceNames =
 			request.serviceNames && request.serviceNames.length > 0 && !draftOwnsScope
-				? request.serviceNames
-						.map((service) => service.trim())
-						.filter((service) => service.length > 0)
+				? Arr.filter(
+						Arr.map(request.serviceNames, (service) => Str.trim(service)),
+						(service) => service.length > 0,
+					)
 				: []
 		const serviceName = serviceNames.length === 1 ? (serviceNames[0] ?? null) : null
 		const excludeServiceNames =
 			request.excludeServiceNames && !draftOwnsScope
-				? request.excludeServiceNames
-						.map((service) => service.trim())
-						.filter((service) => service.length > 0)
+				? Arr.filter(
+						Arr.map(request.excludeServiceNames, (service) => Str.trim(service)),
+						(service) => service.length > 0,
+					)
 				: []
 		const queryOwnsScope = request.signalType === "builder_query" || request.signalType === "raw_query"
 		const environments =
 			request.environments && !queryOwnsScope
 				? Arr.dedupe(
 						Arr.filterMap(request.environments, (environment) => {
-							const trimmed = environment.trim()
+							const trimmed = Str.trim(environment)
 							return trimmed.length > 0 ? Result.succeed(trimmed) : Result.failVoid
 						}),
 					)
@@ -821,6 +940,13 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		const consecutiveBreachesRequired = request.consecutiveBreachesRequired ?? 2
 		const breachesOutOf = request.breachesOutOf ?? null
 		details.push(...validateBreachWindow(consecutiveBreachesRequired, breachesOutOf))
+		const evaluationIntervalMinutes = request.evaluationIntervalMinutes ?? null
+		// A check reads only its window, so a longer gap between checks would leave data unread.
+		if (evaluationIntervalMinutes !== null && evaluationIntervalMinutes > request.windowMinutes) {
+			details.push(
+				`windowMinutes (${request.windowMinutes}) must be at least evaluationIntervalMinutes (${evaluationIntervalMinutes}), or data between checks is never evaluated`,
+			)
+		}
 		if (request.signalType === "builder_query" && !request.queryBuilderDraft) {
 			details.push("queryBuilderDraft is required for builder_query alerts")
 		}
@@ -853,7 +979,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		}
 		// A null tier list always left a detail behind; the check is for the narrowing.
 		if (details.length > 0 || requestedThresholds === null) {
-			return yield* Effect.fail(invalidRuleError(details))
+			return yield* invalidRuleError(details)
 		}
 		const thresholds = sortAlertThresholds(requestedThresholds)
 		if (request.signalType === "raw_query") {
@@ -891,6 +1017,9 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			threshold: legacy.threshold,
 			thresholdUpper: legacy.thresholdUpper,
 			windowMinutes: request.windowMinutes,
+			evaluationIntervalMinutes,
+			// An edit gives a slowed rule a fresh start at the interval it asks for.
+			slowedIntervalMinutes: null,
 			minimumSampleCount: request.minimumSampleCount ?? 0,
 			consecutiveBreachesRequired,
 			breachesOutOf,
@@ -910,11 +1039,9 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		// A grouped rule's missing group is already held open by its incident's
 		// liveness check; an empty result would breach under no real group.
 		if (normalizedBase.alertOnNoData && planGroupingTokens(compiledPlan) != null) {
-			return yield* Effect.fail(
-				invalidRuleError([
-					"alertOnNoData is not supported on grouped rules: a group that stops reporting is already held open by its incident's telemetry check",
-				]),
-			)
+			return yield* invalidRuleError([
+				"alertOnNoData is not supported on grouped rules: a group that stops reporting is already held open by its incident's telemetry check",
+			])
 		}
 		return { ...normalizedBase, compiledPlan }
 	})

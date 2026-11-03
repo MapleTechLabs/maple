@@ -1,9 +1,9 @@
 import { pickDefaultDestination } from "@maple/web-data/alerts/form-utils"
 import { buildRuleStatesByRuleId, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext } from "../../contract"
 import { AUTOCOMPLETE_LOOKUPS } from "../../kit/autocomplete-lookups"
@@ -38,7 +38,7 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 			commands: [FetchTraceFacets({ key: facetsKey, window })],
 		}),
 	})
-	return AUTOCOMPLETE_LOOKUPS.filter((lookup) => lookup !== "tracesFacets").reduce<Planned>(
+	return Arr.filter(AUTOCOMPLETE_LOOKUPS, (lookup) => lookup !== "tracesFacets").reduce<Planned>(
 		(step, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, window)
 			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
@@ -54,7 +54,7 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 }
 
 /** Whether the saved rule evaluates differently from the draft (`evaluationChanged`). */
-export const isEvaluationChanged = (model: Model): boolean =>
+export const isEvaluationChanged = (model: Pick<Model, "savedForm" | "form">): boolean =>
 	model.savedForm !== null &&
 	model.form !== null &&
 	previewIdentityKey(model.savedForm) !== previewIdentityKey(model.form)
@@ -109,7 +109,7 @@ export const applyDefaultDestination = (model: Model): Model => {
 	const states = buildRuleStatesByRuleId(model.states ?? [])
 	const fallback = pickDefaultDestination(
 		destinations,
-		model.rules.map((row) => rowToAlertRuleDocument(row, states)),
+		Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, states)),
 	)
 	const form = model.form
 	return {
@@ -121,4 +121,3 @@ export const applyDefaultDestination = (model: Model): Model => {
 				: form,
 	}
 }
-

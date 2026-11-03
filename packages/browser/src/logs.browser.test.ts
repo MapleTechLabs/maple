@@ -2,7 +2,7 @@
 import { resetConsentForTests, setConsent } from "@maple/browser-session"
 import { context, trace } from "@opentelemetry/api"
 import type { ReadableLogRecord } from "@opentelemetry/sdk-logs"
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan } from "@opentelemetry/sdk-trace"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const exportedSpans: ReadableSpan[] = []
@@ -122,6 +122,19 @@ describe("MapleBrowser.logger", () => {
 		handle = MapleBrowser.init(BASE)
 		await stop()
 		expect(exportedLogs.map((log) => log.body)).toEqual(["early"])
+	})
+
+	it("flushes queued records when the page is left, without waiting for the batch timer", async () => {
+		handle = MapleBrowser.init(BASE)
+		// The pipeline attaches once the deferred chunk lands.
+		await import("./deferred")
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		MapleBrowser.logger.info("leaving")
+		window.dispatchEvent(new Event("pagehide"))
+		// Well inside the processor's 2s batch delay.
+		await vi.waitFor(() => expect(exportedLogs.map((log) => log.body)).toContain("leaving"), {
+			timeout: 1_000,
+		})
 	})
 
 	it("drops records while consent is withheld", async () => {

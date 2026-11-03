@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 import {
 	type AttributeRecommendation,
 	type ExistingIssueLike,
+	canonicalKeysToProbe,
 	detectAttributeRecommendations,
 	planReconcileIssues,
 } from "./recommendations"
+import { Array as Arr } from "effect"
 
 const key = (attributeKey: string, usageCount = 1) => ({ attributeKey, usageCount })
 
@@ -90,10 +92,10 @@ describe("detectAttributeRecommendations", () => {
 	it("caps generic naming advisories at 10, keeping the highest-usage keys", () => {
 		const keys = Array.from({ length: 15 }, (_, i) => key(`customKey${i}`, i))
 		const recs = detectAttributeRecommendations(keys, [])
-		const naming = recs.filter((r) => r.kind === "naming")
+		const naming = Arr.filter(recs, (r) => r.kind === "naming")
 		expect(naming).toHaveLength(10)
-		expect(naming.map((r) => r.key)).toContain("customKey14")
-		expect(naming.map((r) => r.key)).not.toContain("customKey0")
+		expect(Arr.map(naming, (r) => r.key)).toContain("customKey14")
+		expect(Arr.map(naming, (r) => r.key)).not.toContain("customKey0")
 	})
 
 	it("sorts renames first, then by usage desc, then key asc", () => {
@@ -101,7 +103,7 @@ describe("detectAttributeRecommendations", () => {
 			[key("http.method", 5), key("db.statement", 9), key("customId", 100)],
 			[],
 		)
-		expect(recs.map((r) => r.kind)).toEqual(["rename", "rename", "naming"])
+		expect(Arr.map(recs, (r) => r.kind)).toEqual(["rename", "rename", "naming"])
 		expect(recs[0]!.key).toBe("db.statement")
 		expect(recs[1]!.key).toBe("http.method")
 		expect(recs[2]!.key).toBe("customId")
@@ -113,12 +115,39 @@ describe("detectAttributeRecommendations", () => {
 
 	it("collapses multiple deprecated keys onto the same canonical target independently", () => {
 		const recs = detectAttributeRecommendations([key("http.host"), key("net.peer.name")], [])
-		expect(recs.map((r) => r.id).sort()).toEqual(["rename:http.host", "rename:net.peer.name"])
+		expect(Arr.map(recs, (r) => r.id).sort()).toEqual(["rename:http.host", "rename:net.peer.name"])
 		const withTarget = detectAttributeRecommendations(
 			[key("http.host"), key("net.peer.name"), key("server.address")],
 			[],
 		)
-		expect(withTarget.every((r) => r.kind === "double-emission")).toBe(true)
+		expect(Arr.every(withTarget, (r) => r.kind === "double-emission")).toBe(true)
+	})
+
+	it("never asks to rename SampleRate, which Maple reads as the sampling weight", () => {
+		const recs = detectAttributeRecommendations([key("SampleRate", 9_000), key("customerId", 3)], [])
+		expect(Arr.map(recs, (r) => r.id)).toEqual(["naming:customerId"])
+	})
+
+	it("offers no applyable rename when a rare canonical key outside the top list is present", () => {
+		// 250 busy keys push the canonical key out of a 200-key top list.
+		const busy = Array.from({ length: 250 }, (_, i) => key(`app.key_${i}`, 1_000))
+		const topKeys = [...busy.slice(0, 199), key("messaging.destination", 500)]
+		const probe = canonicalKeysToProbe(topKeys, [])
+		expect(probe).toEqual(["messaging.destination.name"])
+		// The service queries exactly the probed keys and appends what it finds.
+		const recs = detectAttributeRecommendations([...topKeys, key("messaging.destination.name", 2)], [])
+		expect(recs).toEqual([
+			expect.objectContaining({
+				id: "dual:messaging.destination",
+				kind: "double-emission",
+				canonical: "messaging.destination.name",
+				applyable: false,
+			}),
+		])
+	})
+
+	it("probes no canonical key for a deprecated key a mapping already covers", () => {
+		expect(canonicalKeysToProbe([key("messaging.destination")], ["messaging.destination"])).toEqual([])
 	})
 })
 

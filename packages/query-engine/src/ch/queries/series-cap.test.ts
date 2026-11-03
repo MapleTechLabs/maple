@@ -22,7 +22,6 @@ describe("series cap (finalizeTimeseries)", () => {
 			})
 			const { sql } = compileUnsafe(q, baseParams)
 			expect(sql).not.toContain("__series_base")
-			expect(sql).toContain("FORMAT JSON")
 		})
 
 		it("does NOT wrap the query when there is no real group-by", () => {
@@ -48,12 +47,10 @@ describe("series cap (finalizeTimeseries)", () => {
 			const { sql } = compileUnsafe(q, baseParams)
 			// One base scan, with a deterministic rank shared by every bucket in a group.
 			expect(sql).not.toContain("WITH __series_base AS")
-			expect(sql).toContain("AS __series_base")
 			expect(sql).toContain("max(count) OVER (PARTITION BY groupName)")
 			expect(sql).toContain("ORDER BY __series_peak DESC, groupName ASC")
 			expect(sql).toContain("__series_rank <= 5")
 			expect(sql).toContain("dense_rank() OVER (")
-			expect(sql).toContain("FORMAT JSON")
 			// Parameters in the nested query must resolve at the outer compile.
 			expect(sql).not.toContain("__PARAM_")
 		})

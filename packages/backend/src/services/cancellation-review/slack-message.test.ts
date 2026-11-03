@@ -1,7 +1,14 @@
+import { CancellationModelRead, CancellationSnapshot } from "@maple/domain/http"
+import type { IntegrationEntry } from "@maple/domain/integration-inventory"
 import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
 import { deriveSignals, ruleReason } from "./signals"
-import { buildCancellationMessage, type CancellationReport } from "./slack-message"
+import {
+	buildCancellationMessage,
+	type CancellationReport,
+	OTHER_ORGS_SHOWN,
+	type OtherOrg,
+} from "./slack-message"
 
 const report = (id: string, overrides: Partial<CancellationReport> = {}): CancellationReport => {
 	const fixture = CANCELLATION_FIXTURES.find((candidate) => candidate.id === id)
@@ -12,48 +19,266 @@ const report = (id: string, overrides: Partial<CancellationReport> = {}): Cancel
 			orgName: "Acme <Labs> & Co",
 			contactEmail: "dev@example.com",
 			expiresAt: Date.parse("2026-10-19T00:00:00Z"),
+			links: {
+				clerk: "https://clerk.test/organizations/org_42",
+				autumn: "https://autumn.test/customers/org_42",
+				stripe: "https://stripe.test/customers/cus_42",
+			},
+			sessionsUrl: "https://app.test/replays?group=Acme&timePreset=30d",
+			integrations: null,
+			otherOrgs: null,
 		},
 		snapshot: fixture.snapshot,
 		reason: ruleReason(fixture.snapshot),
 		signals: deriveSignals(fixture.snapshot),
+		modelRead: null,
+		stripeFeedback: null,
+		unreadEvidence: [],
 		...overrides,
 	}
 }
 
-const text = (message: ReturnType<typeof buildCancellationMessage>) => JSON.stringify(message.blocks)
+type Message = ReturnType<typeof buildCancellationMessage>
+
+const text = (message: Message) => JSON.stringify(message.blocks)
+
+const fieldsOf = (message: Message) =>
+	message.blocks.flatMap((block) =>
+		Array.isArray(block.fields) ? block.fields.map((field: { text: string }) => field.text) : [],
+	)
+
+const withSubject = (base: CancellationReport, subject: Partial<CancellationReport["subject"]>) =>
+	buildCancellationMessage({ ...base, subject: { ...base.subject, ...subject } })
+
+const resource = (kind: string, name: string, note: string | null = null) => ({
+	kind,
+	name,
+	status: "healthy" as const,
+	lastSuccessAt: null,
+	lastError: null,
+	note,
+})
+
+const integration = (overrides: Partial<IntegrationEntry>): IntegrationEntry => ({
+	provider: "github",
+	status: "healthy",
+	account: null,
+	connectedAt: null,
+	problem: null,
+	feeds: [],
+	resources: [],
+	...overrides,
+})
+
+const otherOrg = (overrides: Partial<OtherOrg> = {}): OtherOrg => ({
+	orgId: "org_new",
+	name: "Acme (new)",
+	createdAtMs: Date.parse("2026-10-03T00:00:00Z"),
+	membersCount: 2,
+	sharedMembers: ["a@acme.test", "b@acme.test"],
+	links: {
+		clerk: "https://clerk.test/organizations/org_new",
+		autumn: "https://autumn.test/customers/org_new",
+		stripe: "https://stripe.test/customers/cus_new",
+	},
+	billing: { plan: "pro" },
+	...overrides,
+})
+
+const modelRead = (overrides: Partial<ConstructorParameters<typeof CancellationModelRead>[0]> = {}) =>
+	new CancellationModelRead({
+		company: null,
+		findings: [],
+		verdict: "agree",
+		category: null,
+		reason: null,
+		conclusion: "",
+		model: "test-model",
+		...overrides,
+	})
 
 describe("buildCancellationMessage", () => {
+	it("adds nothing when the model agrees and has nothing to say", () => {
+		const plain = buildCancellationMessage(report("pipeline-off"))
+		expect(buildCancellationMessage(report("pipeline-off", { modelRead: modelRead() }))).toEqual(plain)
+	})
+
+	it("names the likely company under the links, with what it rests on", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead({
+					company: {
+						name: "Acme <Robotics>",
+						oneLiner: "Warehouse robots",
+						location: "Berlin, DE",
+						confidence: "medium",
+						basis: "domain, homepage",
+					},
+				}),
+			}),
+		)
+		expect(message.blocks[3]).toEqual({
+			type: "context",
+			elements: [
+				{
+					type: "mrkdwn",
+					text: ":office: *Acme &lt;Robotics&gt;*, Berlin, DE: Warehouse robots  _(medium confidence: domain, homepage)_",
+					verbatim: true,
+				},
+			],
+		})
+	})
+
+	it("lists the findings as facts and then the model's opinion, after the rules' reason", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead({
+					findings: [
+						"Revoked both ingest keys on <Oct 6>.",
+						"Cloudflare failing since 12 days before.",
+					],
+					conclusion: "Moved off Maple after the integration broke.",
+				}),
+			}),
+		)
+		const all = text(message)
+		expect(all).toContain(
+			JSON.stringify(
+				"*What stands out*\n• Revoked both ingest keys on &lt;Oct 6&gt;.\n• Cloudflare failing since 12 days before.",
+			).slice(1, -1),
+		)
+		expect(all).toContain(":robot_face: *Model's read:* Moved off Maple after the integration broke.")
+		expect(all.indexOf("Likely reason")).toBeLessThan(all.indexOf("What stands out"))
+	})
+
+	it("leads with the model's reason when it overrides the rules, and keeps theirs beside it", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead({
+					verdict: "override",
+					category: "missing_features",
+					reason: "Needed SSO",
+				}),
+			}),
+		)
+		expect(message.text).toBe("Acme &lt;Labs&gt; &amp; Co cancelled the startup plan (Needed SSO)")
+		expect(text(message)).toContain(
+			"*Likely reason:* Needed SSO  _(model's read; rules said: Stopped sending telemetry)_",
+		)
+	})
+
+	it("never turns a URL in the customer's or the model's words into a link", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: null, comment: "see https://evil.test" },
+				modelRead: modelRead({
+					findings: ["Homepage says https://evil.test"],
+					conclusion: "Visit https://evil.test now.",
+				}),
+			}),
+		)
+		const withUrl = message.blocks
+			.flatMap((block) => [block.text, ...(Array.isArray(block.elements) ? block.elements : [])])
+			.filter(
+				(part: { text?: unknown } | undefined) =>
+					typeof part?.text === "string" && part.text.includes("evil.test"),
+			)
+		expect(withUrl).toHaveLength(3)
+		for (const part of withUrl) expect(part).toMatchObject({ verbatim: true })
+	})
+
+	it("names the evidence it could not read", () => {
+		const message = buildCancellationMessage(report("pipeline-off", { unreadEvidence: ["Stripe"] }))
+		expect(text(message)).toContain("Could not read: Stripe")
+	})
+
+	it("quotes what the customer told Stripe, and nothing when they skipped it", () => {
+		const told = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: "too_expensive", comment: "Too much for <us>" },
+			}),
+		)
+		expect(text(told)).toContain("*Told Stripe:* too expensive “Too much for &lt;us&gt;”")
+		const skipped = buildCancellationMessage(
+			report("pipeline-off", { stripeFeedback: { feedback: null, comment: null } }),
+		)
+		expect(text(skipped)).not.toContain("Told Stripe")
+	})
+
+	it("cuts free text short enough that Slack never refuses the report", () => {
+		const long = "x".repeat(5_000)
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: null, comment: long },
+				modelRead: modelRead({
+					verdict: "override",
+					reason: long,
+					findings: [long],
+					conclusion: long,
+					company: { name: long, oneLiner: long, location: long, confidence: "low", basis: long },
+				}),
+			}),
+		)
+		const texts = message.blocks.flatMap((block) =>
+			[block.text, ...(Array.isArray(block.elements) ? block.elements : [])].flatMap(
+				(part: { text?: unknown } | undefined) => (typeof part?.text === "string" ? [part.text] : []),
+			),
+		)
+		expect(Math.max(...texts.map((value) => value.length))).toBeLessThan(3_000)
+	})
+
 	it("leads with the org, the plan's remaining access and the rule's reason", () => {
 		const message = buildCancellationMessage(report("pipeline-off"))
 		// The fallback is mrkdwn, where a raw `<!channel>` in an org name would ping; the header is plain text.
-		expect(message.text).toBe("Plan cancelled: Acme &lt;Labs&gt; &amp; Co (Stopped sending telemetry)")
+		expect(message.text).toBe(
+			"Acme &lt;Labs&gt; &amp; Co cancelled the startup plan (Stopped sending telemetry)",
+		)
 		expect(message.blocks[0]).toEqual({
 			type: "header",
-			text: { type: "plain_text", text: "Plan cancelled: Acme <Labs> & Co", emoji: true },
+			text: { type: "plain_text", text: "Acme <Labs> & Co cancelled the startup plan", emoji: true },
 		})
 		expect(message.blocks[1]).toEqual({
 			type: "context",
 			elements: [
 				{
 					type: "mrkdwn",
-					text: "`startup`  ·  access until Oct 19 (12d left)  ·  subscribed 240d  ·  org `org_42`",
+					text: "Access until Oct 19 (12d left)  ·  subscribed 240 days  ·  contact dev@example.com  ·  `org_42`",
 				},
 			],
 		})
-		expect(text(message)).toContain(":red_circle:  Stopped sending telemetry 24 days ago")
-		expect(text(message)).toContain("*Likely reason*\\nStopped sending telemetry")
-		expect(text(message)).toContain("*Contact*\\ndev@example.com")
+		expect(text(message)).toContain("*Likely reason:* Stopped sending telemetry")
 		expect(text(message)).not.toContain("Could not read")
+	})
+
+	it("puts each stat's number first, its change under it, and marks the worrying ones", () => {
+		expect(fieldsOf(buildCancellationMessage(report("pipeline-off")))).toEqual([
+			":red_circle: Telemetry, 30d\n*3.0 GB*\ndown from 42 GB · last data 24 days ago",
+			":red_circle: In the app, 30d\n*2 days*\ndown from 15 · peak 1 person a day · last visit 20 days ago",
+			"Members\n*5*",
+			"Last invoice\n*$39*\nsame as the month before",
+			"Set up\n*9 dashboards*\n14 alert rules",
+		])
+		expect(fieldsOf(buildCancellationMessage(report("healthy-team")))[0]).toBe(
+			":large_green_circle: Telemetry, 30d\n*38 GB*\nup from 35 GB",
+		)
+	})
+
+	it("lists what no stat covers, such as a past-due payment, under the reason", () => {
+		const message = buildCancellationMessage(report("past-due"))
+		expect(message.text).toBe("Acme &lt;Labs&gt; &amp; Co ended the startup plan (Payment failed)")
+		expect(text(message)).toContain("Access ended Oct 19")
+		expect(message.blocks[4]).toEqual({
+			type: "context",
+			elements: [{ type: "mrkdwn", text: ":red_circle: Payment is past due" }],
+		})
 	})
 
 	it("names the sections it could not read instead of showing zeros", () => {
 		const base = report("healthy-team")
-		const message = buildCancellationMessage({
-			...base,
-			snapshot: { ...base.snapshot, visits: null, billing: null },
-		})
+		const snapshot = new CancellationSnapshot({ ...base.snapshot, visits: null, billing: null })
+		const message = buildCancellationMessage({ ...base, snapshot, signals: deriveSignals(snapshot) })
 		expect(text(message)).toContain("Could not read: app visits, billing")
-		expect(text(message)).not.toContain("Days in the app")
+		expect(text(message)).not.toContain("In the app")
 	})
 
 	it("escapes markup in the sentences and the contact", () => {
@@ -61,15 +286,111 @@ describe("buildCancellationMessage", () => {
 		const message = buildCancellationMessage({
 			...base,
 			subject: { ...base.subject, contactEmail: "a&b@example.com" },
-			signals: [{ tone: "neutral", text: "Past the included allowance on <logs>" }],
+			signals: [{ topic: "plan", tone: "neutral", text: "Past the included allowance on <logs>" }],
 		})
 		expect(text(message)).toContain("a&amp;b@example.com")
 		expect(text(message)).toContain("allowance on &lt;logs&gt;")
 	})
 
-	it("says the plan ended for an immediate cancellation", () => {
-		const message = buildCancellationMessage(report("past-due"))
-		expect(message.text).toBe("Plan ended: Acme &lt;Labs&gt; &amp; Co (Payment failed)")
-		expect(text(message)).toContain("access ended")
+	it("links the org in Clerk, Stripe, Autumn and its sessions as buttons, leaving out what it has no link for", () => {
+		const base = report("healthy-team")
+		const buttons = (message: Message) =>
+			message.blocks
+				.filter((block) => block.type === "actions")
+				.flatMap((block) => block.elements as Array<{ text: { text: string }; url: string }>)
+				.map((button) => [button.text.text, button.url])
+		expect(buttons(buildCancellationMessage(base))).toEqual([
+			["Clerk", "https://clerk.test/organizations/org_42"],
+			["Stripe", "https://stripe.test/customers/cus_42"],
+			["Autumn", "https://autumn.test/customers/org_42"],
+			["Sessions", "https://app.test/replays?group=Acme&timePreset=30d"],
+		])
+		const noStripe = withSubject(base, {
+			links: { ...base.subject.links, stripe: null },
+			sessionsUrl: null,
+		})
+		expect(buttons(noStripe).map(([label]) => label)).toEqual(["Clerk", "Autumn"])
+	})
+
+	it("lists each integration with its icon, and each chat connector as its own row", () => {
+		const base = report("healthy-team")
+		const message = withSubject(base, {
+			integrations: [
+				integration({
+					status: "failing",
+					account: "acme",
+					resources: [resource("repository", "api"), resource("repository", "web")],
+				}),
+				integration({
+					provider: "chat",
+					resources: [
+						resource("workspace", "Acme", "slack"),
+						resource("workspace", "Acme HQ", "discord"),
+					],
+				}),
+			],
+		})
+		const rows = message.blocks.filter(
+			(block) => block.type === "context" && JSON.stringify(block).includes("favicons"),
+		)
+		expect(rows.map((row) => JSON.stringify(row))).toEqual([
+			expect.stringContaining("*GitHub*  acme  ·  2 repositories  ·  :red_circle: failing"),
+			expect.stringContaining("*Slack*  Acme"),
+			expect.stringContaining("*Discord*  Acme HQ"),
+		])
+		expect(JSON.stringify(rows[0])).toContain("domain=github.com")
+
+		expect(text(withSubject(base, { integrations: [] }))).toContain("None connected")
+	})
+
+	it("counts Cloudflare's per-zone datasets instead of listing each one", () => {
+		const message = withSubject(report("healthy-team"), {
+			integrations: [
+				integration({
+					provider: "cloudflare",
+					account: "Kevin",
+					resources: ["a.com", "b.com"].flatMap((zone) => [
+						resource("zone", zone),
+						resource("dns_queries", zone),
+						resource("firewall_events", zone),
+					]),
+				}),
+			],
+		})
+		expect(text(message)).toContain("*Cloudflare*  Kevin  ·  2 zones  ·  2 datasets")
+	})
+
+	it("names the members' other orgs with their plan, who links them and where to look them up", () => {
+		const base = report("healthy-team")
+		const message = withSubject(base, {
+			otherOrgs: [otherOrg(), otherOrg({ orgId: "org_old", name: "Old", billing: null })],
+		})
+		expect(text(message)).toContain("*Acme (new)*  `org_new`")
+		expect(text(message)).toContain(
+			"Created Oct 3  ·  2 members  ·  `pro`  ·  via a@acme.test, b@acme.test  ·  <https://clerk.test/organizations/org_new|Clerk>  ·  <https://stripe.test/customers/cus_new|Stripe>  ·  <https://autumn.test/customers/org_new|Autumn>",
+		)
+		// Autumn unread: no plan claimed either way.
+		expect(text(message)).toContain("*Old*  `org_old`")
+		expect(text(message)).toContain("Created Oct 3  ·  2 members  ·  via a@acme.test")
+
+		const noPlan = withSubject(base, { otherOrgs: [otherOrg({ billing: { plan: null } })] })
+		expect(text(noPlan)).toContain("2 members  ·  no plan  ·  via")
+	})
+
+	it("says so when the members have no other orgs, and when that could not be checked", () => {
+		const base = report("healthy-team")
+		expect(text(withSubject(base, { otherOrgs: [] }))).toContain(
+			"None. Every member belongs only to this org.",
+		)
+		expect(text(withSubject(base, { otherOrgs: null }))).toContain(
+			"Could not check: the Clerk lookup failed",
+		)
+	})
+
+	it("stays under Slack's block limit however many other orgs there are", () => {
+		const many = Array.from({ length: 30 }, (_, index) => otherOrg({ orgId: `org_${index}` }))
+		const message = withSubject(report("healthy-team"), { otherOrgs: many })
+		expect(message.blocks.length).toBeLessThanOrEqual(50)
+		expect(text(message)).toContain(`And ${30 - OTHER_ORGS_SHOWN} older orgs`)
 	})
 })

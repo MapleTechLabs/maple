@@ -1,9 +1,8 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
-import * as Field from "../../../../ui/field"
-import * as Tooltip from "../../../../ui/tooltip"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { RailwayServiceRow, RailwayStatus } from "../model"
 import { SortKey } from "./model"
@@ -30,9 +29,5 @@ export const Message = defineMessageUnion({
 	CompletedReloadSpin: { version: Schema.Number },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRowTooltipMessage: { message: Tooltip.Message },
-	GotTokenFieldMessage: { message: Field.Message },
-	SubmittedConnect: {},
-	SucceededConnect: { status: RailwayStatus },
-	FailedConnect: { error: Schema.String },
 })
 export type Message = typeof Message.Type

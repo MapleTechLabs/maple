@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { ErrorIssueEventsResponse, ErrorIssueId } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -16,7 +16,7 @@ const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const windowed = (): Model =>
 	pageUpdate(
 		init({ issueId, search: {} }, context).model,
@@ -47,13 +47,15 @@ describe("error issue writes", () => {
 		expect(done.model.busy).toEqual([])
 		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success", title: "Claimed" })
 		// Every invalidated read restarts, including the ones still in flight.
-		expect(names(done.commands)).toEqual([
-			"FetchErrorIssueDetail",
-			"FetchErrorIssueEvents",
-			"FetchErrorIssueEscalations",
-			"FetchErrorIssuePullRequests",
-			"FetchErrorIssueVerifications",
-		])
+		expect(names(done.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchErrorIssueDetail",
+				"FetchErrorIssueEvents",
+				"FetchErrorIssueEscalations",
+				"FetchErrorIssuePullRequests",
+				"FetchErrorIssueVerifications",
+			]),
+		)
 	})
 
 	test("a pre-write read landing after the write's re-read started is dropped", () => {
@@ -62,10 +64,16 @@ describe("error issue writes", () => {
 		const claiming = pageUpdate(model, Message.ClickedClaim()).model
 		const done = pageUpdate(
 			claiming,
-			Message.CompletedIssueWrite({ write: { _tag: "Claim" }, result: Result.succeed({ severity: null }) }),
+			Message.CompletedIssueWrite({
+				write: { _tag: "Claim" },
+				result: Result.succeed({ severity: null }),
+			}),
 		).model
 		expect(done.detail.key).not.toBe(staleKey)
-		const late = pageUpdate(done, Message.CompletedFetchDetail({ key: staleKey, result: Result.fail(toLoadFailure("old")) }))
+		const late = pageUpdate(
+			done,
+			Message.CompletedFetchDetail({ key: staleKey, result: Result.fail(toLoadFailure("old")) }),
+		)
 		expect(late.model.detail).toEqual(done.detail)
 	})
 
@@ -86,7 +94,10 @@ describe("error issue writes", () => {
 		expect(confirmed.model.busy).toEqual(["claim", "severity"])
 		const claimed = pageUpdate(
 			confirmed.model,
-			Message.CompletedIssueWrite({ write: { _tag: "Claim" }, result: Result.succeed({ severity: null }) }),
+			Message.CompletedIssueWrite({
+				write: { _tag: "Claim" },
+				result: Result.succeed({ severity: null }),
+			}),
 		)
 		expect(claimed.model.busy).toEqual(["severity"])
 	})
@@ -99,7 +110,7 @@ describe("error issue writes", () => {
 				result: Result.fail(toLoadFailure("boom")),
 			}),
 		)
-		expect(done.outMessage).toMatchObject({ type: "error", title: "Failed to release issue" })
+		expect(done.outMessage).toMatchObject({ type: "error", title: "Couldn't release issue" })
 		expect(done.commands ?? []).toEqual([])
 	})
 

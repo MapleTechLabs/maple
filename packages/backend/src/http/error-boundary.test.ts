@@ -1,5 +1,15 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Layer, Logger, References, Schema, Tracer } from "effect"
+import {
+	Context,
+	Effect,
+	Layer,
+	Logger,
+	References,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { ApiSchemaErrors, ApiUnexpectedErrors } from "@maple/domain/http"
@@ -152,7 +162,9 @@ describe("unversioned HTTP error boundary", () => {
 			const response = await harness.request("GET", "/declared", undefined, { context })
 			expect(response.status).toBe(502)
 
-			const log = logs.find((entry) => entry.message.includes("Route answered with a server error"))
+			const log = logs.find((entry) =>
+				Str.includes("Route answered with a server error")(entry.message),
+			)
 			expect(log).toBeDefined()
 			expect(log?.level).toBe("Error")
 			expect(log?.annotations).toMatchObject({
@@ -180,8 +192,8 @@ describe("unversioned HTTP error boundary", () => {
 				context,
 			})
 			expect(response.status).toBe(409)
-			expect(logs.filter((entry) => entry.level === "Error")).toEqual([])
-			expect(spans.some((s) => s.attributes.has("error.type"))).toBe(false)
+			expect(Arr.filter(logs, (entry) => entry.level === "Error")).toEqual([])
+			expect(Arr.some(spans, (s) => s.attributes.has("error.type"))).toBe(false)
 		} finally {
 			await harness.dispose()
 		}

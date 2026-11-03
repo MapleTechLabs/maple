@@ -1,9 +1,9 @@
-import * as CopyButton from "@maple/web/ui/copy-button"
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
-import { LoadFailure } from "../../data/local-query"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Catalog } from "./model"
 
 /** The two single-select facets: their URL params. */

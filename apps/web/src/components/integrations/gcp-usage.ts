@@ -4,6 +4,7 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 
 import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
+import { Array as Arr, Record as Rec } from "effect"
 
 const HOUR_MS = 3_600_000
 
@@ -33,13 +34,13 @@ export function gcpLogVolume(
 	for (const point of points) {
 		const hour = Math.floor((Date.parse(toIsoBucket(point.bucket)) - first) / HOUR_MS)
 		if (hour < 0 || hour >= hourly.length) continue
-		for (const [severity, entries] of Object.entries(point.series)) {
+		for (const [severity, entries] of Rec.toEntries(point.series)) {
 			hourly[hour] += entries
 			if (ERROR_SEVERITY.test(severity)) errors += entries
 			else if (WARNING_SEVERITY.test(severity)) warnings += entries
 		}
 	}
-	return { total: hourly.reduce((sum, entries) => sum + entries, 0), errors, warnings, hourly }
+	return { total: Arr.reduce(hourly, 0, (sum, entries) => sum + entries), errors, warnings, hourly }
 }
 
 /** The services with a workload that reported in the window, most workloads first. */
@@ -49,7 +50,7 @@ export const gcpWorkloadCounts = (
 		readonly workloads: ReadonlyArray<unknown>
 	}>,
 ): ReadonlyArray<{ readonly service: GcpInfraServiceId; readonly count: number }> =>
-	fleet
-		.map(({ service, workloads }) => ({ service, count: workloads.length }))
-		.filter(({ count }) => count > 0)
-		.sort((a, b) => b.count - a.count)
+	Arr.filter(
+		Arr.map(fleet, ({ service, workloads }) => ({ service, count: workloads.length })),
+		({ count }) => count > 0,
+	).sort((a, b) => b.count - a.count)

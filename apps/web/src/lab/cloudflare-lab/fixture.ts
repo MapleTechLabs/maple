@@ -24,9 +24,9 @@ import {
 	MAPLE_DEV_ROW,
 	MAPLE_DEV_STATUS,
 } from "../cloudflare-fixture"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import type { Keyed } from "../../data/keyed"
+import type { Keyed } from "@maple/views/data/keyed"
 import type { PageContext } from "../../page/contract"
 import type { Resources } from "../../platform/resources"
 import type { ListFrame } from "../../page/infra-integrations/cloudflare/list/view"
@@ -58,13 +58,16 @@ export const listFrame = (multiAccount: boolean): ListFrame => ({
 			? mergeWorkerRows(DEMO_WORKERS, DEMO_DURABLE_OBJECTS)
 			: mergeWorkerRows(MAKI_WORKERS, MAKI_DURABLE_OBJECTS),
 		platform: {
-			queues: multiAccount ? MAKI_QUEUES.map((q) => ({ ...q, accountId: "acct-maple" })) : MAKI_QUEUES,
+			queues: multiAccount
+				? Arr.map(MAKI_QUEUES, (q) => ({ ...q, accountId: "acct-maple" }))
+				: MAKI_QUEUES,
 			durableObjects: [],
 		},
 	},
 	accounts: multiAccount ? cloudflareAccounts(DEMO_ACCOUNT_STATUSES, DEMO_NOW) : [],
 	singleAccountName: ACCOUNT_NAME,
 	banner: null,
+	inPlaceViews: true,
 })
 
 /** One account holding maple.dev: the zone page's plain "account" chip and rail name. */
@@ -115,7 +118,7 @@ const WORKER_STATUS = new CloudflareIntegrationStatus({
 /** The rail's DNS: 4.4M queries, 4 names that only NXDOMAIN. */
 const MAPLE_DEV_DNS = {
 	buckets: [{ bucket: "2026-10-14 00:00:00", responseCode: "NOERROR", queries: 4_400_000 }],
-	names: ["a", "b", "c", "d"].map((name) => ({
+	names: Arr.map(["a", "b", "c", "d"], (name) => ({
 		queryName: `${name}.maple.dev`,
 		queries: 1,
 		nxdomain: 1,
@@ -154,11 +157,16 @@ export const pinWorker = (model: WorkerModel): WorkerModel => ({
 	detail: loaded(MAPLE_API_DETAIL),
 	workers: loaded(MAKI_WORKERS),
 	platform: loaded({ queues: MAKI_QUEUES, durableObjects: MAKI_DURABLE_OBJECTS }),
-	releases: loaded(MAPLE_API_RELEASES.map((release) => ({ ...release, serviceName: "maple-api" }))),
+	releases: loaded(Arr.map(MAPLE_API_RELEASES, (release) => ({ ...release, serviceName: "maple-api" }))),
 })
 
-/** The pages' own UI Commands (charts, popovers, focus), without their warehouse and API reads. */
+/** The pages' own UI Commands (charts, popovers, focus, Reload's spin), without their warehouse and API reads. */
 export const withoutReads = <M>(
 	commands: ReadonlyArray<Command.Command<M, never, Resources>> | undefined,
 ): ReadonlyArray<Command.Command<M, never, Resources>> =>
-	(commands ?? []).filter((command) => !/^(Resolve|Load|Fetch|Complete)Cloudflare/.test(command.name))
+	Arr.filter(
+		commands ?? [],
+		(command) =>
+			Str.endsWith("ReloadSpin")(command.name) ||
+			!/^(Resolve|Load|Fetch|Complete)Cloudflare/.test(command.name),
+	)

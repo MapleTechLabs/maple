@@ -157,28 +157,39 @@ interface ChannelPageCursor {
  * holds a token without it, and only reinstalling the app grants it.
  */
 const FAILURE_REASONS: ReadonlyMap<string, ChatOutboundFailureReason> = new Map([
-	...[
-		"invalid_auth",
-		"not_authed",
-		"account_inactive",
-		"token_revoked",
-		"token_expired",
-		"missing_scope",
-		"no_permission",
-		"not_allowed_token_type",
-		"team_access_not_granted",
-		"ekm_access_denied",
-	].map((code) => [code, "auth"] as const),
-	...["channel_not_found", "not_in_channel", "is_archived"].map((code) => [code, "not_found"] as const),
-	...[
-		"invalid_blocks",
-		"invalid_blocks_format",
-		"msg_too_long",
-		"no_text",
-		"too_many_attachments",
-		"invalid_arguments",
-		"restricted_action",
-	].map((code) => [code, "rejected"] as const),
+	...Arr.map(
+		[
+			"invalid_auth",
+			"not_authed",
+			"account_inactive",
+			"token_revoked",
+			"token_expired",
+			"missing_scope",
+			"no_permission",
+			"not_allowed_token_type",
+			"team_access_not_granted",
+			"ekm_access_denied",
+		],
+		(code) => [code, "auth"] as const,
+	),
+	...Arr.map(
+		["channel_not_found", "not_in_channel", "is_archived"],
+		(code) => [code, "not_found"] as const,
+	),
+	...Arr.map(
+		[
+			"invalid_blocks",
+			"invalid_blocks_format",
+			// Blocks inside an attachment, an alert card's image among them (one Slack could not fetch).
+			"invalid_attachments",
+			"msg_too_long",
+			"no_text",
+			"too_many_attachments",
+			"invalid_arguments",
+			"restricted_action",
+		],
+		(code) => [code, "rejected"] as const,
+	),
 ])
 
 /** Slack's two spellings for the same thing, both of which it documents. */
@@ -230,7 +241,8 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		// Per call, not here: acquiring the transport must not cost the host its credential read.
-		const token = Effect.map(yield* ConnectorCredentials, (config: ConnectorConfig) =>
+		const credentials = yield* ConnectorCredentials
+		const token = Effect.map(credentials, (config: ConnectorConfig) =>
 			Option.map(decodeSlackCredentials(config.get(WORKSPACE_CREDENTIALS)), (value) =>
 				Redacted.make(value.bot_token),
 			),
@@ -469,7 +481,7 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 					"maple.chat.destinations.truncated": lastCursor !== undefined && lastCursor !== "",
 				})
 				return Arr.sort(
-					pages.flatMap((page) => page.channels),
+					Arr.flatMap(pages, (page) => page.channels),
 					byName,
 				)
 			}),

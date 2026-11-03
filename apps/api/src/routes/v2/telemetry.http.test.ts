@@ -2,7 +2,17 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
@@ -92,10 +102,10 @@ const hierarchyRow = {
 }
 
 /** A read of one trace's spans: `traces` seeked through the `trace_index` subquery. */
-const readsTraceSpans = (sql: string) => /\bFROM traces\b/.test(sql) && sql.includes("FROM trace_index")
+const readsTraceSpans = (sql: string) => /\bFROM traces\b/.test(sql) && Str.includes("FROM trace_index")(sql)
 
 const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
-	if (sql.includes("FROM trace_list_mv")) {
+	if (Str.includes("FROM trace_list_mv")(sql)) {
 		const rows = [
 			{
 				traceId: TRACE_ID,
@@ -128,10 +138,10 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 				httpStatusCode: "200",
 			},
 		]
-		return sql.includes("TraceId <") ? rows.slice(1) : rows
+		return Str.includes("TraceId <")(sql) ? rows.slice(1) : rows
 	}
-	if (readsTraceSpans(sql) && sql.includes("AS relationship")) return [hierarchyRow]
-	if (readsTraceSpans(sql) && sql.includes("toJSONString(traces.SpanAttributes)")) {
+	if (readsTraceSpans(sql) && Str.includes("AS relationship")(sql)) return [hierarchyRow]
+	if (readsTraceSpans(sql) && Str.includes("toJSONString(traces.SpanAttributes)")(sql)) {
 		return [
 			{
 				...hierarchyRow,
@@ -140,8 +150,8 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 			},
 		]
 	}
-	if (sql.includes("FROM logs")) return [logRow]
-	if (sql.includes("FROM metric_catalog")) {
+	if (Str.includes("FROM logs")(sql)) return [logRow]
+	if (Str.includes("FROM metric_catalog")(sql)) {
 		return [
 			{
 				metricName: "http.server.duration",
@@ -156,7 +166,7 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 			},
 		]
 	}
-	if (sql.includes("AS baselineP95LatencyMs")) {
+	if (Str.includes("AS baselineP95LatencyMs")(sql)) {
 		return [
 			// Two rows for one service: the catalog aggregates namespaces under a
 			// single name, so the busiest baseline row has to win rather than the
@@ -180,10 +190,14 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 	// Before the catalog branch below: both read `service_overview_spans`, and
 	// the environments listing projects a single column the catalog rows would
 	// not decode against.
-	if (sql.includes("AS environment")) {
+	if (Str.includes("AS environment")(sql)) {
 		return [{ environment: "production" }, { environment: "staging" }]
 	}
-	if (sql.includes("bSpanName") || sql.includes("service_operations_minutely")) {
+	// The per-operation sparkline read the dashboard's Operations list carries.
+	if (Str.includes("service_operations_minutely")(sql) && Str.includes("AS bucket")(sql)) {
+		return [{ bucket: "2026-07-15 12:00:00", spanName: "GET /checkout", count: "8" }]
+	}
+	if (Str.includes("bSpanName")(sql) || Str.includes("service_operations_minutely")(sql)) {
 		return [
 			{
 				spanName: "GET /checkout",
@@ -199,7 +213,7 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 			},
 		]
 	}
-	if (sql.includes("FROM service_overview_spans")) {
+	if (Str.includes("FROM service_overview_spans")(sql)) {
 		return [
 			{
 				serviceName: "api",
@@ -215,7 +229,7 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 			},
 		]
 	}
-	if (sql.includes("service_map_edges_hourly")) {
+	if (Str.includes("service_map_edges_hourly")(sql)) {
 		return [
 			{
 				sourceService: "api",
@@ -630,7 +644,7 @@ describe("v2 telemetry reads over HTTP", () => {
 			end_time: "2026-07-15T12:00:01.100Z",
 		})
 		expect(logs.status).toBe(200)
-		const logSql = observedSql.find((sql) => sql.includes("FROM logs"))
+		const logSql = observedSql.find((sql) => Str.includes("FROM logs")(sql))
 		expect(logSql).toContain("'2026-07-15 12:00:00.900'")
 		expect(logSql).toContain("'2026-07-15 12:00:01.100'")
 
@@ -638,7 +652,7 @@ describe("v2 telemetry reads over HTTP", () => {
 		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
 		expect(trace.status).toBe(200)
 		const hierarchySql = observedSql.find(
-			(sql) => readsTraceSpans(sql) && sql.includes("AS relationship"),
+			(sql) => readsTraceSpans(sql) && Str.includes("AS relationship")(sql),
 		)
 		expect(hierarchySql).toContain(`trace_index.TraceId = '${TRACE_ID}'`)
 		expect(hierarchySql).not.toContain("Timestamp >=")
@@ -679,7 +693,7 @@ describe("v2 telemetry reads over HTTP", () => {
 
 		// The listing compiles two queries against the same rollups — the catalog
 		// and the latency baseline — so pick the catalog out by its own alias.
-		const catalogSql = observedSql.find((sql) => sql.includes("AS p95LatencyMs"))
+		const catalogSql = observedSql.find((sql) => Str.includes("AS p95LatencyMs")(sql))
 		expect(catalogSql).toBeDefined()
 		expect(catalogSql).toContain("'2026-07-15 12:00:00'")
 		expect(catalogSql).toContain("'2026-07-16 12:00:00'")
@@ -689,7 +703,7 @@ describe("v2 telemetry reads over HTTP", () => {
 		// The baseline covers the seven days before the window, hour-floored so
 		// the cache key survives a drifting client window — and second-precision
 		// for the same DateTime reason.
-		const baselineSql = observedSql.find((sql) => sql.includes("AS baselineP95LatencyMs"))
+		const baselineSql = observedSql.find((sql) => Str.includes("AS baselineP95LatencyMs")(sql))
 		expect(baselineSql).toBeDefined()
 		expect(baselineSql).toContain("'2026-07-08 12:00:00'")
 		expect(baselineSql).toContain("'2026-07-15 12:00:00'")
@@ -737,7 +751,7 @@ describe("v2 telemetry reads over HTTP", () => {
 			expect(response.status, path).toBe(200)
 		}
 
-		expect(observedWindows.map((window) => window.path)).toEqual([
+		expect(Arr.map(observedWindows, (window) => window.path)).toEqual([
 			"/v2/traces/timeseries",
 			"/v2/traces/breakdown",
 			"/v2/logs/timeseries",
@@ -999,7 +1013,424 @@ describe("v2 telemetry reads over HTTP", () => {
 	})
 })
 
+interface CachedDirectCall {
+	readonly route: string
+	readonly payload: unknown
+	readonly policy: unknown
+}
+
+/** The query engine stub, recording which dashboard cache entry each read went through. */
+const recordingQueryEngine = (calls: CachedDirectCall[]): QueryEngineServiceApi => ({
+	...queryEngineStub,
+	cachedDirect: (_tenant, route, payload, effect, policy) => {
+		calls.push({ route, payload, policy })
+		return effect
+	},
+})
+
+/** A row the stub cannot decode fails the way the real service reports a bad result. */
+const asWarehouseFailure = (error: { readonly message: string }) =>
+	new WarehouseQueryError({ message: error.message, pipeName: "stub" })
+
+const observingWarehouse = (
+	observedSql: string[],
+	rows: (sql: string) => ReadonlyArray<Record<string, unknown>> = rowsForSql,
+): WarehouseQueryServiceApi => ({
+	...warehouseStub,
+	compiledQuery: (_tenant, compiled) => {
+		const sql = compiledQueryOf(compiled).sql
+		observedSql.push(sql)
+		return compiledQueryOf(compiled).decodeRows(rows(sql)).pipe(Effect.mapError(asWarehouseFailure))
+	},
+	compiledQueryFirst: (_tenant, compiled) => {
+		const sql = compiledQueryOf(compiled).sql
+		observedSql.push(sql)
+		return compiledQueryOf(compiled)
+			.decodeRows(rows(sql))
+			.pipe(
+				Effect.mapBoth({
+					onFailure: asWarehouseFailure,
+					onSuccess: (decoded) => Option.fromNullishOr(decoded[0]),
+				}),
+			)
+	},
+})
+
+const snapshotRows = (sql: string) =>
+	Str.includes("AS requestCount")(sql)
+		? [
+				{
+					serviceName: "api",
+					environment: "production",
+					requestCount: "7200",
+					errorCount: "72",
+					p95LatencyMs: "120",
+				},
+				{
+					serviceName: "worker",
+					environment: "",
+					requestCount: "0",
+					errorCount: "0",
+					p95LatencyMs: "0",
+				},
+			]
+		: rowsForSql(sql)
+
+describe("v2 reads shared with the dashboard", () => {
+	it("returns spans 90 minutes after the root, cached under the dashboard's key", async () => {
+		const observedSql: string[] = []
+		const calls: CachedDirectCall[] = []
+		const lateSpan = {
+			...hierarchyRow,
+			spanId: "1123456789abcdef",
+			parentSpanId: SPAN_ID,
+			startTime: "2026-07-15 13:30:00.000",
+		}
+		const probed = (sql: string) => {
+			if (Str.includes("AS relationship")(sql)) return [hierarchyRow, lateSpan]
+			return Str.includes("FROM trace_index")(sql) && !readsTraceSpans(sql)
+				? [
+						{
+							traceId: TRACE_ID,
+							timestamp: "2026-07-15 12:00:00",
+							endTimestamp: "2026-07-15 13:30:00",
+						},
+					]
+				: rowsForSql(sql)
+		}
+		const harness = makeHarness(observingWarehouse(observedSql, probed), recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["traces:read"])
+
+		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
+		expect(trace.status, JSON.stringify(trace.body)).toBe(200)
+		expect(trace.body.truncated).toBe(false)
+		expect(trace.body.spans.map((span: { id: string }) => span.id)).toEqual([SPAN_ID, "1123456789abcdef"])
+		expect(Arr.map(calls, ({ route, payload }) => ({ route, payload }))).toEqual([
+			{ route: "spanHierarchy", payload: { traceId: TRACE_ID } },
+		])
+		// An hour before the first span and an hour after the last, not an hour around the root.
+		const hierarchySql = observedSql.find(
+			(sql) => readsTraceSpans(sql) && Str.includes("AS relationship")(sql),
+		)
+		expect(hierarchySql).toContain("'2026-07-15 11:00:00'")
+		expect(hierarchySql).toContain("'2026-07-15 14:30:00'")
+		await harness.dispose()
+	})
+
+	it("reports a trace past the span cap as truncated, returning the cap", async () => {
+		const many = (sql: string) =>
+			readsTraceSpans(sql) && Str.includes("AS relationship")(sql)
+				? Array.from({ length: 5001 }, (_, index) => ({
+						...hierarchyRow,
+						spanId: Str.padStart(16, "0")(index.toString(16)),
+					}))
+				: rowsForSql(sql)
+		const harness = makeHarness(observingWarehouse([], many))
+		const key = await harness.bootstrapKey(["traces:read"])
+		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
+		expect(trace.status).toBe(200)
+		expect(trace.body.truncated).toBe(true)
+		expect(trace.body.span_count).toBe(5000)
+		await harness.dispose()
+	})
+
+	it("reads overview operations from the dashboard's 30s Operations entry", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(warehouseStub, recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request(
+			"GET",
+			`/v2/services/api/overview?${windowQuery}&deployment_environment=production`,
+			key.secret,
+		)
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.operations.map((operation: { name: string }) => operation.name)).toEqual([
+			"GET /checkout",
+		])
+		// The payload the dashboard's service page sends for the same window.
+		expect(calls.find((call) => call.route === "serviceOperations")).toEqual({
+			route: "serviceOperations",
+			payload: {
+				serviceName: "api",
+				startTime: "2026-07-15 12:00:00",
+				endTime: "2026-07-15 13:00:00",
+				environments: ["production"],
+				bucketSeconds: 60,
+				limit: 25,
+			},
+			policy: 30,
+		})
+		await harness.dispose()
+	})
+
+	it("keeps overview operations when only their sparkline read fails", async () => {
+		const sparklineFails = (sql: string) => {
+			if (Str.includes("service_operations_minutely")(sql) && Str.includes("AS bucket")(sql)) {
+				return [{ bucket: "not a timestamp", spanName: "GET /checkout", count: "8" }]
+			}
+			return rowsForSql(sql)
+		}
+		const harness = makeHarness(observingWarehouse([], sparklineFails))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("GET", `/v2/services/api/overview?${windowQuery}`, key.secret)
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.operations.map((operation: { name: string }) => operation.name)).toEqual([
+			"GET /checkout",
+		])
+		await harness.dispose()
+	})
+
+	it("reads service baselines through the dashboard's baseline definition", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(warehouseStub, recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("GET", `/v2/services?${windowQuery}`, key.secret)
+		expect(response.status).toBe(200)
+		expect(response.body.data[0].baseline_p95_latency_ms).toBe(35)
+		expect(calls.find((call) => call.route === "serviceHealthBaseline")?.payload).toMatchObject({
+			definition: "serviceHealthBaseline",
+			input: { startTime: "2026-07-08 12:00:00", endTime: "2026-07-15 12:00:00" },
+		})
+		await harness.dispose()
+	})
+
+	it("returns both health windows from the overview's snapshot read", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(observingWarehouse([], snapshotRows), recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+			deployment_environment: "production",
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+			previous_end_time: START,
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		const services = [
+			{
+				object: "service_health.service",
+				service_name: "api",
+				deployment_environment: "production",
+				request_count: 7200,
+				error_count: 72,
+				error_rate: 0.01,
+				p95_latency_ms: 120,
+				throughput: 2,
+			},
+			{
+				object: "service_health.service",
+				service_name: "worker",
+				deployment_environment: null,
+				request_count: 0,
+				error_count: 0,
+				error_rate: 0,
+				p95_latency_ms: 0,
+				throughput: 0,
+			},
+		]
+		// Only the current window carries the baseline: the busiest namespace's for that pair.
+		const [api, worker] = services
+		expect(response.body).toEqual({
+			object: "service_health",
+			start_time: START,
+			end_time: END,
+			services: [
+				{ ...api, baseline_p95_latency_ms: 35, baseline_span_count: 5000 },
+				{ ...worker, baseline_p95_latency_ms: null, baseline_span_count: null },
+			],
+			previous: { start_time: "2026-07-15T11:00:00.000Z", end_time: START, services },
+		})
+		// The dashboard's baseline read: the 7 days before the window's hour.
+		expect(calls.find((call) => call.route === "serviceHealthBaseline")?.payload).toMatchObject({
+			definition: "serviceHealthBaseline",
+			input: {
+				startTime: "2026-07-08 12:00:00",
+				endTime: "2026-07-15 12:00:00",
+				environments: ["production"],
+			},
+		})
+		expect(
+			Arr.map(
+				Arr.filter(calls, (call) => call.route === "serviceHealthSnapshot"),
+				(call) => call.payload,
+			),
+		).toMatchObject([
+			{
+				definition: "serviceHealthSnapshot",
+				input: {
+					startTime: "2026-07-15 12:00:00",
+					endTime: "2026-07-15 13:00:00",
+					environments: ["production"],
+				},
+			},
+			{
+				definition: "serviceHealthSnapshot",
+				input: {
+					startTime: "2026-07-15 11:00:00",
+					endTime: "2026-07-15 12:00:00",
+					environments: ["production"],
+				},
+			},
+		])
+		await harness.dispose()
+	})
+
+	it("widens health windows to whole hours and never reads an hour twice", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(observingWarehouse([], snapshotRows), recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: "2026-07-15T12:30:00.000Z",
+			end_time: "2026-07-15T13:30:00.000Z",
+			previous_start_time: "2026-07-15T11:30:00.000Z",
+			previous_end_time: "2026-07-15T12:30:00.000Z",
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		// Hours 12 and 13 were read, so 7200 requests are one a second.
+		expect(response.body).toMatchObject({
+			start_time: "2026-07-15T12:00:00.000Z",
+			end_time: "2026-07-15T14:00:00.000Z",
+			previous: { start_time: "2026-07-15T11:00:00.000Z", end_time: "2026-07-15T12:00:00.000Z" },
+		})
+		expect(response.body.services[0].throughput).toBe(1)
+		expect(response.body.previous.services[0].throughput).toBe(2)
+		expect(
+			Arr.map(
+				Arr.filter(calls, (call) => call.route === "serviceHealthSnapshot"),
+				(call) => call.payload,
+			),
+		).toMatchObject([
+			{ input: { startTime: "2026-07-15 12:30:00", endTime: "2026-07-15 13:30:00" } },
+			{ input: { startTime: "2026-07-15 11:00:00", endTime: "2026-07-15 12:00:00" } },
+		])
+		await harness.dispose()
+	})
+
+	it("returns an empty comparison when it falls inside the current window's first hour", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(observingWarehouse([], snapshotRows), recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: "2026-07-15T12:40:00.000Z",
+			end_time: "2026-07-15T12:50:00.000Z",
+			previous_start_time: "2026-07-15T12:30:00.000Z",
+			previous_end_time: "2026-07-15T12:40:00.000Z",
+		})
+		expect(response.status).toBe(200)
+		expect(response.body.previous).toEqual({
+			start_time: "2026-07-15T12:00:00.000Z",
+			end_time: "2026-07-15T12:00:00.000Z",
+			services: [],
+		})
+		expect(Arr.filter(calls, (call) => call.route === "serviceHealthSnapshot")).toHaveLength(1)
+		await harness.dispose()
+	})
+
+	it("returns the current window when only the comparison read fails", async () => {
+		// Rows that do not decode fail the read the way a warehouse error would.
+		const previousFails = (sql: string) =>
+			Str.includes("AS requestCount")(sql) && Str.includes("2026-07-15 11:00:00")(sql)
+				? [{ unexpected: true }]
+				: snapshotRows(sql)
+		const harness = makeHarness(observingWarehouse([], previousFails))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+			previous_end_time: START,
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.previous).toBeNull()
+		expect(response.body.services.map((entry: { service_name: string }) => entry.service_name)).toEqual([
+			"api",
+			"worker",
+		])
+		await harness.dispose()
+	})
+
+	it("omits the comparison window unless both of its bounds are sent", async () => {
+		const harness = makeHarness(observingWarehouse([], snapshotRows))
+		const key = await harness.bootstrapKey(["services:read"])
+		const single = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+		})
+		expect(single.status).toBe(200)
+		expect(single.body.previous).toBeNull()
+
+		const halfPair = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+		})
+		expect(halfPair.status).toBe(400)
+
+		const inverted = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+			previous_start_time: START,
+			previous_end_time: "2026-07-15T11:00:00.000Z",
+		})
+		expect(inverted.status).toBe(400)
+		expect(inverted.body.error.param).toBe("previous_end_time")
+
+		const afterCurrent = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: "2026-07-15T06:00:00.000Z",
+			end_time: "2026-07-15T09:00:00.000Z",
+			previous_start_time: "2026-07-15T09:00:00.000Z",
+			previous_end_time: "2026-07-15T12:00:00.000Z",
+		})
+		expect(afterCurrent.status).toBe(400)
+		expect(afterCurrent.body.error.param).toBe("previous_end_time")
+
+		// Within one second, so only the request's own precision can tell them apart.
+		const subSecond = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: "2026-07-15T12:00:00.100Z",
+			end_time: END,
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+			previous_end_time: "2026-07-15T12:00:00.900Z",
+		})
+		expect(subSecond.status).toBe(400)
+		await harness.dispose()
+	})
+
+	it("serves the health read to a services:read key and refuses one without it", async () => {
+		const harness = makeHarness(observingWarehouse([], snapshotRows))
+		const traces = await harness.bootstrapKey(["traces:read"])
+		const refused = await harness.request("POST", "/v2/services/health", traces.secret, {
+			start_time: START,
+			end_time: END,
+		})
+		expect(refused.status).toBe(403)
+		await harness.dispose()
+	})
+})
+
 describe("v2 replay migration parity", () => {
+	it("narrows a session search to one group by its exact id", async () => {
+		const observedSql: string[] = []
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (tenant, compiled, options) => {
+				observedSql.push(compiledQueryOf(compiled).sql)
+				return warehouseStub.compiledQuery(tenant, compiled, options)
+			},
+		})
+		try {
+			const key = await harness.bootstrapKey(["session_replays:read"])
+			const search = await harness.request("POST", "/v2/session_replays/search", key.secret, {
+				...allowedWindow(),
+				group_id: "org_acme_1",
+			})
+			expect(search.status).toBe(200)
+			const replaysSql = observedSql.find((sql) => Str.includes("FROM session_replays")(sql))
+			expect(replaysSql).toContain("GroupId = 'org_acme_1'")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("preserves attribution, recording state, detail traits and custom-event properties over HTTP", async () => {
 		const replay = {
 			sessionId: "session-browser-123",

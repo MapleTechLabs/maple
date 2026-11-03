@@ -1,15 +1,16 @@
-import { pluralize } from "@maple/ui/lib/format"
+import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
-import { fillSeriesBuckets, formatToolCount, scopeSummary } from "@maple/web-data/lib/tool-analytics"
+import { fillSeriesBuckets, scopeSummary } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
-import type { LoadFailure } from "../../../data/load-failure"
-import { errorState } from "../../../ui/error-state"
-import { pageTitle } from "../../../ui/page-layout"
-import { skeleton } from "../../../ui/skeleton"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
@@ -32,8 +33,6 @@ import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalView from "./view-error-modal"
 import { sessionsPanel } from "./view-sessions"
 
-// TODO(tooltip): the description's tooltip is drawn as its trigger.
-
 type H = HtmlBuilder<Message>
 
 const failureOf = <A>(data: AsyncData.AsyncData<A, LoadFailure>): LoadFailure | undefined =>
@@ -42,17 +41,26 @@ const failureOf = <A>(data: AsyncData.AsyncData<A, LoadFailure>): LoadFailure | 
 const isPendingFirst = <A>(data: AsyncData.AsyncData<A, LoadFailure>): boolean =>
 	!AsyncData.hasData(data) && failureOf(data) === undefined
 
-const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, controls: Html | undefined): Html => {
+const header = (
+	h: H,
+	model: Model,
+	totals: TotalsResult,
+	timeZone: string,
+	controls: Html | undefined,
+): Html => {
 	const { current } = totals
-	const subtitle = [
-		`${formatToolCount(current.calls)} ${pluralize(current.calls, "call")} in ${formatToolCount(current.sessions)} ${pluralize(current.sessions, "session")}`,
-		totals.firstSeen > 0
-			? `first seen ${formatTimestampInTimezone(totals.firstSeen, { timeZone })}`
-			: undefined,
-		totals.lastSeen > 0
-			? `last call ${formatRelativeTimeOrDate(totals.lastSeen, model.nowMs, timeZone)}`
-			: undefined,
-	].filter((part) => part !== undefined)
+	const subtitle = Arr.filter(
+		[
+			`${formatNumber(current.calls)} ${pluralize(current.calls, "call")} in ${formatNumber(current.sessions)} ${pluralize(current.sessions, "session")}`,
+			totals.firstSeen > 0
+				? `first seen ${formatTimestampInTimezone(totals.firstSeen, { timeZone })}`
+				: undefined,
+			totals.lastSeen > 0
+				? `last call ${formatRelativeTimeOrDate(totals.lastSeen, model.nowMs, timeZone)}`
+				: undefined,
+		],
+		(part) => part !== undefined,
+	)
 	return h.header(
 		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-5 pb-4")],
 		[
@@ -73,6 +81,9 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 												),
 												h.DataAttribute("base-ui-tooltip-trigger", ""),
 												h.DataAttribute("slot", "tooltip-trigger"),
+												...tooltipTrigger(h, totals.description, {
+													isOverflowOnly: true,
+												}),
 												h.Tabindex(0),
 											],
 											[totals.description],
@@ -80,10 +91,12 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 									]),
 						],
 					),
-					h.p([h.Class("font-mono text-ui text-muted-foreground")], [subtitle.join(" · ")]),
+					h.p([h.Class("font-mono text-ui text-muted-foreground")], [Arr.join(subtitle, " · ")]),
 				],
 			),
-			...(controls === undefined ? [] : [h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls])]),
+			...(controls === undefined
+				? []
+				: [h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls])]),
 		],
 	)
 }
@@ -144,13 +157,7 @@ const timeActions = (h: H, model: Model): Html =>
 			}),
 	})
 
-const loadedView = (
-	h: H,
-	model: Model,
-	totals: TotalsResult,
-	timeZone: string,
-	isRoute: boolean,
-): Html => {
+const loadedView = (h: H, model: Model, totals: TotalsResult, timeZone: string, isRoute: boolean): Html => {
 	const { window, themeColors } = model
 	if (window === null || themeColors === null) return h.empty
 	const isWaiting = AsyncData.isRefreshing(model.totals.data)
@@ -160,7 +167,12 @@ const loadedView = (
 		// The route fills empty buckets; the lab hands the view its fixture's series as they are.
 		onSome: (value) =>
 			isRoute
-				? fillSeriesBuckets(value.data, range.startMs, range.endMs, chartBucketSeconds(range.startMs, range.endMs))
+				? fillSeriesBuckets(
+						value.data,
+						range.startMs,
+						range.endMs,
+						chartBucketSeconds(range.startMs, range.endMs),
+					)
 				: value.data,
 	})
 	const sessions = AsyncData.getOrElse(model.sessions.data, () => ({ data: [] })).data
@@ -230,7 +242,7 @@ const errorModalView = (
 							tool: model.toolName,
 							group,
 							position: { index, total: prepared.length },
-							toolFailures: rows.reduce((sum, row) => sum + row.calls, 0),
+							toolFailures: Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
 							toolCalls: totals.current.calls,
 							range,
 							session: model.search.session,
@@ -256,7 +268,7 @@ export const toolDetailBody = (
 ): Html =>
 	AsyncData.matchData(model.totals.data, {
 		onEmpty: () => loadingView(h),
-		onFailure: (failure) => errorState(h, { failure, title: `Failed to load ${model.toolName}` }),
+		onFailure: (failure) => errorState(h, { failure, title: `Couldn't load ${model.toolName}` }),
 		onData: (totals) =>
 			model.themeColors === null || model.chartRuntime._tag === "Loading"
 				? loadingView(h)

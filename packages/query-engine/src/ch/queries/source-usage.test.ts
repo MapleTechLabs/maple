@@ -1,35 +1,39 @@
 import { describe, expect, it } from "vitest"
-import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import { sourceUsageQuery } from "./source-usage"
+import { sourceUsageHourlyQuery, sourceUsageTotalsQuery } from "./source-usage"
 
-const params = {
+const window = {
 	orgId: OrgId.make("org_1"),
-	sourceId: "src_aXunrkWtzvXSkw9Z2smcft",
 	startTime: "2026-10-16 10:00:00",
-	endTime: "2026-10-17 10:00:00",
+	endTime: "2026-10-17 09:42:00",
 }
 
-describe("sourceUsageQuery", () => {
-	it("scopes both branches to the org and source, with the bloom-indexed value candidate", () => {
-		const { sql } = compileUnionUnsafe(sourceUsageQuery(), params)
-		const branches = sql.split("UNION ALL")
+describe("sourceUsageHourlyQuery", () => {
+	it("sums one source's rollup rows per hour inside the org and a half-open window", () => {
+		const { sql } = compileUnsafe(sourceUsageHourlyQuery(), {
+			...window,
+			sourceId: "src_aXunrkWtzvXSkw9Z2smcft",
+		})
 
-		expect(branches).toHaveLength(2)
-		for (const branch of branches) {
-			expect(branch).toMatch(/OrgId = 'org_1'/)
-			expect(branch).toMatch(
-				/has\(mapValues\(\w+\.ResourceAttributes\), 'src_aXunrkWtzvXSkw9Z2smcft'\)/,
-			)
-			expect(branch).toMatch(/ResourceAttributes\['maple_source_id'\] = 'src_aXunrkWtzvXSkw9Z2smcft'/)
-			expect(branch).toContain("GROUP BY hour")
-		}
-		// Half-open windows: a record at endTime belongs to the next window, not both.
-		expect(branches[0]).toMatch(/Timestamp < /)
-		expect(branches[0]).not.toMatch(/Timestamp <= /)
-		expect(branches[1]).toMatch(/TimestampTime < /)
-		expect(branches[1]).not.toMatch(/TimestampTime <= /)
-		// Logs must bound the partition column or the read spans every partition.
-		expect(branches[1]).toMatch(/logs\.TimestampTime >=/)
+		expect(sql).toMatch(/FROM source_usage_hourly/)
+		expect(sql).toMatch(/OrgId = 'org_1'/)
+		expect(sql).toMatch(/SourceId = 'src_aXunrkWtzvXSkw9Z2smcft'/)
+		expect(sql).toMatch(/Hour >= /)
+		expect(sql).toMatch(/Hour < /)
+		expect(sql).not.toMatch(/Hour <= /)
+		expect(sql).toMatch(/sum\(\w+\.MetricCount\)/)
+		expect(sql).toContain("GROUP BY hour")
+	})
+})
+
+describe("sourceUsageTotalsQuery", () => {
+	it("groups every source of the org, without a source filter", () => {
+		const { sql } = compileUnsafe(sourceUsageTotalsQuery(), window)
+
+		expect(sql).toMatch(/FROM source_usage_hourly/)
+		expect(sql).toMatch(/OrgId = 'org_1'/)
+		expect(sql).not.toMatch(/SourceId = /)
+		expect(sql).toContain("GROUP BY sourceId")
 	})
 })

@@ -1,5 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId, SourceId } from "@maple/domain/primitives"
+import { Sources } from "./sources"
 
 /**
  * One Railway API token per Maple org (workspace or account token, AES-GCM encrypted).
@@ -9,6 +10,8 @@ export const RailwayConnections = PG.table("railway_connections", {
 	columns: {
 		id: PG.text,
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		// The source this integration sends as. Deleting the source deletes the row.
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		tokenCiphertext: PG.column(PG.text, { name: "token_ciphertext" }),
 		tokenIv: PG.column(PG.text, { name: "token_iv" }),
 		tokenTag: PG.column(PG.text, { name: "token_tag" }),
@@ -26,7 +29,18 @@ export const RailwayConnections = PG.table("railway_connections", {
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	primaryKey: ["id"],
-	indexes: [PG.uniqueIndex("railway_connections_org_idx", ["orgId"])],
+	indexes: [
+		PG.index("railway_connections_source_idx", ["sourceId"]),
+		PG.uniqueIndex("railway_connections_org_idx", ["orgId"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["sourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
 	tenantColumn: "orgId",
 })
 

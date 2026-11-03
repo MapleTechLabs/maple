@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { DATA_INTEGRATIONS } from "../../route/data-integrations"
 import { Submodel } from "foldkit"
-import { icon } from "../../ui/icon"
+import { icon } from "@maple/views/ui/icon"
 import type { PageContext, PageReturn } from "../contract"
 import { catalogEntry, type IntegrationId } from "./catalog"
 import { overviewOf } from "./derive"
@@ -9,7 +9,13 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { init } from "./update"
 import { cardView, connectButton } from "./view"
-import { cloudflareHeaderActions } from "./view-cloudflare"
+import { awsDisconnectDialog } from "./view-aws"
+import { cloudflareReconnectButton } from "./view-cloudflare"
+import { gcpDialogs } from "./view-gcp-dialogs"
+import type { FlowStage } from "./flow"
+import { flowView } from "./view-flow"
+import { typographyClass } from "@maple/views/ui/typography"
+import { hstackClass, vstack } from "@maple/views/ui/stack"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
 
@@ -33,18 +39,38 @@ export type EmbedInputs = Readonly<{
 
 /** The integration's card: its connect empty state, or what it collects once connected. */
 export const cardEmbed = Submodel.defineView<Model, Message, EmbedInputs>((model, inputs, h) =>
-	h.div([h.Class("flex flex-col gap-4")], [...cardView(h, model, inputs.integration, inputs.timeZone, inputs.focusId ?? null)]),
+	vstack(h, { gap: "4" }, [
+		...cardView(h, model, inputs.integration, inputs.timeZone, inputs.focusId ?? null),
+	]),
 )
 
-/** The header's Docs link, the Connect button while available, Cloudflare's Reconnect and Disconnect. */
+export type FlowInputs = Readonly<{ integration: DataIntegration; stage: FlowStage; timeZone: string }>
+
+/** `/sources/new`'s current step for a data integration: the step card and the rail beside it. */
+export const flowEmbed = Submodel.defineView<Model, Message, FlowInputs>((model, inputs, h) =>
+	flowView(h, model, inputs.integration, inputs.stage, inputs.timeZone),
+)
+
+/**
+ * A source's header: the Docs link, Connect while available, Cloudflare's Reconnect, and Google
+ * Cloud's and AWS's removal dialogs (the source's Delete opens them, on any tab).
+ */
 export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((model, inputs, h) => {
 	const entry = catalogEntry(inputs.integration)
 	const overview = overviewOf(model.statuses, model.nowMs, inputs.integration)
 	const connect = overview?.kind === "available" ? connectButton(h, model, inputs.integration) : undefined
 	const actions =
 		overview?.kind === "connected" && inputs.integration === "cloudflare"
-			? cloudflareHeaderActions(h, model)
+			? [cloudflareReconnectButton(h, model)]
 			: []
+	const isFocused = (inputs.focusId ?? null) !== null
+	const dialogs = !isFocused
+		? []
+		: inputs.integration === "gcp"
+			? gcpDialogs(h, model, inputs.timeZone)
+			: inputs.integration === "aws"
+				? [awsDisconnectDialog(h, model)]
+				: []
 	return h.div(
 		[h.Class("flex shrink-0 items-center gap-3")],
 		[
@@ -57,7 +83,15 @@ export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((mo
 								h.Target("_blank"),
 								h.Rel("noreferrer"),
 								h.Class(
-									"inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground",
+									hstackClass({
+										gap: "1",
+										inline: true,
+										className: typographyClass({
+											size: "xs",
+											tone: "muted",
+											hoverTone: "foreground",
+										}),
+									}),
 								),
 							],
 							["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],
@@ -65,6 +99,7 @@ export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((mo
 					]),
 			...actions,
 			...(connect === undefined ? [] : [connect]),
+			...dialogs,
 		],
 	)
 })

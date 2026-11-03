@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { Command, expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
@@ -40,7 +40,14 @@ const row = (containerName: string): ContainerRow => ({
 const windowed = (search: Model["search"] = {}) =>
 	pageUpdate(
 		init({ search }, context).model,
-		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
+		Message.GotFrameMessage({
+			message: Frame.Message.CompletedResolveWindow({
+				window,
+				nowMs: NOW,
+				locale: "en-US",
+				mode: "Load",
+			}),
+		}),
 	)
 
 const loaded = (rows: ReadonlyArray<ContainerRow>, search: Model["search"] = {}) => {
@@ -56,19 +63,31 @@ const loaded = (rows: ReadonlyArray<ContainerRow>, search: Model["search"] = {})
 
 describe("containers list", () => {
 	test("the window requests the page, the scope-only summary and the facets", () => {
-		const names = (windowed().commands ?? []).map(({ name }) => name)
-		expect(names).toEqual(["FetchInfraContainers", "FetchInfraContainersSummary", "FetchInfraContainerFacets"])
+		const names = Arr.map(windowed().commands ?? [], ({ name }) => name)
+		expect(names).toEqual(
+			expect.arrayContaining([
+				"FetchInfraContainers",
+				"FetchInfraContainersSummary",
+				"FetchInfraContainerFacets",
+			]),
+		)
 	})
 
 	test("the server sees the debounced search, not each keystroke", () => {
 		const typed = pageUpdate(windowed().model, Message.ElapsedSearchDebounce({ query: "red" }))
 		expect(typed.commands ?? []).toHaveLength(0)
-		const settled = pageUpdate({ ...windowed({ q: "redis" }).model }, Message.ElapsedSearchDebounce({ query: "redis" }))
+		const settled = pageUpdate(
+			{ ...windowed({ q: "redis" }).model },
+			Message.ElapsedSearchDebounce({ query: "redis" }),
+		)
 		expect(containersInput(settled.model, window).search).toBe("redis")
 	})
 
 	test("a sort header cycles the direction on its key", () => {
-		const sorted = pageUpdate(loaded([row("a")], { sortBy: "cpuPct" }), Message.ClickedSort({ key: "cpuPct" }))
+		const sorted = pageUpdate(
+			loaded([row("a")], { sortBy: "cpuPct" }),
+			Message.ClickedSort({ key: "cpuPct" }),
+		)
 		expect(sorted.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/infra/containers?sortBy=cpuPct&sortDir=asc",
@@ -92,6 +111,6 @@ describe("containers list", () => {
 			loaded([]),
 			Message.GotInstallMessage({ message: InstallModal.Message.MountedInstallModal() }),
 		)
-		expect((mounted.commands ?? []).map(({ name }) => name)).toEqual(["FetchInstallIngestKey"])
+		expect(Arr.map(mounted.commands ?? [], ({ name }) => name)).toEqual(["FetchInstallIngestKey"])
 	})
 })

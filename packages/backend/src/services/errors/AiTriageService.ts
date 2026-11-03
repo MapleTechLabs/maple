@@ -39,7 +39,7 @@ export interface AiTriageServiceApi {
 }
 
 export class AiTriageService extends Context.Service<AiTriageService, AiTriageServiceApi>()(
-	"@maple/api/services/AiTriageService",
+	"@maple/backend/services/AiTriageService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -112,7 +112,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					yield* Effect.annotateCurrentSpan({ orgId })
 					const nowMs = yield* Clock.currentTimeMillis
 					const row = yield* loadSettingsRow(orgId)
-					return settingsToDocument(row, yield* loadUsage(orgId, nowMs), nowMs)
+					const usage = yield* loadUsage(orgId, nowMs)
+					return settingsToDocument(row, usage, nowMs)
 				},
 			)
 
@@ -138,11 +139,9 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 							.onConflictDoUpdate({ target: ["orgId"], set: next }),
 					),
 				)
-				return settingsToDocument(
-					yield* loadSettingsRow(orgId),
-					yield* loadUsage(orgId, nowMs),
-					nowMs,
-				)
+				const row = yield* loadSettingsRow(orgId)
+				const usage = yield* loadUsage(orgId, nowMs)
+				return settingsToDocument(row, usage, nowMs)
 			})
 
 			return { getSettings, updateSettings } satisfies AiTriageServiceApi

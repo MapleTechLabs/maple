@@ -9,6 +9,7 @@ import type { RailwayEnvironmentStatus } from "@maple/domain/http"
 import { sortRowsByField, type Sort } from "../../../kit/table-sort"
 import type { RailwayServiceRow } from "../model"
 import type { SortKey } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 // The pure half of `RailwayServiceTable` and `RailwayFleetBand` (components/infra/railway/).
 
@@ -27,7 +28,7 @@ export interface RailwayRowView extends RailwayServiceRow {
 export const toView = (row: RailwayServiceRow): RailwayRowView => {
 	const cpuOfLimit = ofLimit(row.cpuMax, row.cpuLimit)
 	const memoryOfLimit = ofLimit(row.memoryMax, row.memoryLimit)
-	const finite = [cpuOfLimit, memoryOfLimit].filter(Number.isFinite)
+	const finite = Arr.filter([cpuOfLimit, memoryOfLimit], Number.isFinite)
 	return {
 		...row,
 		cpuOfLimit,
@@ -44,25 +45,28 @@ export const groupedRows = (
 	authFailed: boolean,
 	sort: Sort<SortKey>,
 ): ReadonlyArray<RailwayServiceGroup<RailwayRowView>> =>
-	groupRailwayServices(sortRowsByField(services.map(toView), sort), environments, authFailed)
+	groupRailwayServices(sortRowsByField(Arr.map(services, toView), sort), environments, authFailed)
 
 /** The search box: service, project or environment name contains the query. */
 export const filterServices = (
 	services: ReadonlyArray<RailwayServiceRow>,
 	query: string,
 ): ReadonlyArray<RailwayServiceRow> => {
-	const q = query.trim().toLowerCase()
-	return services.filter(
+	const q = Str.toLowerCase(Str.trim(query))
+	return Arr.filter(
+		services,
 		(row) =>
 			q === "" ||
-			`${row.serviceName} ${row.projectName} ${row.environmentName}`.toLowerCase().includes(q),
+			Str.includes(q)(Str.toLowerCase(`${row.serviceName} ${row.projectName} ${row.environmentName}`)),
 	)
 }
 
 /** Environments the poller hasn't finished a first sync for (`unsyncedEnvironments`). */
 export const unsyncedEnvironments = (environments: ReadonlyArray<RailwayEnvironmentStatus>): number =>
-	environments.filter((environment) => environment.lastSyncedAt === null && environment.lastError === null)
-		.length
+	Arr.filter(
+		environments,
+		(environment) => environment.lastSyncedAt === null && environment.lastError === null,
+	).length
 
 /** Railway services idle in the millicore range; three decimals there so they still differ. */
 export const formatVcpu = (cores: number): string => {

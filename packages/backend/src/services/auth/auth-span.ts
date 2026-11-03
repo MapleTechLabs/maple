@@ -8,12 +8,12 @@ import { Effect } from "effect"
  * `http.route`, making "which endpoint, by which auth method" queryable.
  *
  * Emits the canonical Maple TypeScript telemetry keys:
- * - `maple.auth.method` — `"api_key"` | `"session"`, the auth discriminator
+ * - `maple.auth.method`: `"api_key"` | `"session"` | `"dpop"`, the auth discriminator
  * - `maple.api_key.id` — the key's opaque DB id (api_key only; never the token)
  * - `orgId` / `tenant.userId` — for per-customer / per-user breakdowns
  */
 export const annotateAuthSpan = (
-	method: "api_key" | "session",
+	method: "api_key" | "session" | "dpop",
 	attrs: { orgId: string; userId: string; keyId?: string },
 ) =>
 	Effect.annotateCurrentSpan({

@@ -1,5 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { MAPLE_MARK_PATH } from "../ui/icons.generated"
+import { MAPLE_MARK_PATH } from "@maple/views/ui/icons.generated"
+import { Array as Arr } from "effect"
 
 const TRACKS = [1, 2, 3, 4, 5]
 
@@ -37,8 +38,8 @@ export const bootSplash = <Message>(h: HtmlBuilder<Message>): Html =>
 			h.div(
 				[h.Class("boot-trace"), h.AriaHidden(true)],
 				[
-					...TRACKS.map((index) => h.span([h.Class(`boot-track boot-track--${index}`)])),
-					...TRACKS.map((index) => h.span([h.Class(`boot-span boot-span--${index}`)])),
+					...Arr.map(TRACKS, (index) => h.span([h.Class(`boot-track boot-track--${index}`)])),
+					...Arr.map(TRACKS, (index) => h.span([h.Class(`boot-span boot-span--${index}`)])),
 					h.span([h.Class("boot-scan")]),
 				],
 			),

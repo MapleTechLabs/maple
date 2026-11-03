@@ -8,8 +8,9 @@
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { ArchiveProbe, firstRow, readRows } from "../archive-probe-helpers"
-import { archiveSignal } from "../../src/server/archives/signals"
-import { exportSignalShards } from "../../src/server/archives/export"
+import { archiveSignal } from "@maple/local-server/archives/signals"
+import { exportSignalShards } from "@maple/local-server/archives/export"
+import { Array as Arr } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -49,15 +50,16 @@ try {
 		)
 		if (u > BYTE_BOUND) h.fail(`shard ${s.name} uncompressed ${u} > ${BYTE_BOUND}`)
 	}
-	const archived = readRows(db.query(`SELECT TraceId FROM traces ORDER BY TraceId`, "JSONEachRow"))
-		.map((r) => String(r.TraceId))
-		.sort()
+	const archived = Arr.map(
+		readRows(db.query(`SELECT TraceId FROM traces ORDER BY TraceId`, "JSONEachRow")),
+		(r) => String(r.TraceId),
+	).sort()
 	const got: string[] = []
 	for (const s of written)
 		for (const r of readRows(db.query(`SELECT TraceId FROM file('${s.path}', Parquet)`, "JSONEachRow")))
 			got.push(String(r.TraceId))
 	got.sort()
-	if (got.join(",") !== archived.join(",")) h.fail(`source != archived`)
+	if (Arr.join(got, ",") !== Arr.join(archived, ",")) h.fail(`source != archived`)
 	h.ok(`uniform wide rows split into ${written.length} byte-bounded shards, exact set`)
 } catch (e) {
 	h.fail(e instanceof Error ? e.message : String(e))

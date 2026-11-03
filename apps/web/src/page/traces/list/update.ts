@@ -1,13 +1,13 @@
 import { Array as Arr, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as FilterSections from "../../../ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -22,7 +22,7 @@ import {
 } from "./command"
 import type { Search } from "./derive"
 import { sidebarHandlers, tableHandlers } from "./handlers"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { advancedDialogStep, advancedHandlers, openedAdvanced } from "./advanced"
 import { initAdvanced } from "./advanced-model"
 import {
@@ -53,7 +53,7 @@ export const allRows = (model: Model): ReadonlyArray<TraceRow> => {
 	const first = AsyncData.getData(model.firstPage.data)
 	return Option.isNone(first)
 		? []
-		: [...first.value.rows, ...model.pagination.pages.flatMap((page) => page.rows)].slice(
+		: [...first.value.rows, ...Arr.flatMap(model.pagination.pages, (page) => page.rows)].slice(
 				0,
 				MAX_RETAINED_TRACES,
 			)
@@ -63,7 +63,7 @@ export const hiddenCount = (model: Model): number =>
 	Option.match(AsyncData.getData(model.firstPage.data), {
 		onNone: () => 0,
 		onSome: (first) =>
-			first.hiddenCount + model.pagination.pages.reduce((sum, page) => sum + page.hiddenCount, 0),
+			first.hiddenCount + Arr.reduce(model.pagination.pages, 0, (sum, page) => sum + page.hiddenCount),
 	})
 
 /** More pages exist when the last warehouse page came back full before the noise filter. */
@@ -199,7 +199,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		firstPageCache: {},
 		virtualRows: [],
 		totalSize: 0,
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("traces-time-range"),
 		durationDraft: durationDraftOf(route.search),
@@ -215,6 +215,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		...peeked,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -267,10 +268,14 @@ export const routeChanged = (
 		search: route.search,
 		durationDraft: isSameDuration ? model.durationDraft : durationDraftOf(route.search),
 	}
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
@@ -388,13 +393,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ChangedVirtualWindow: ({ rows, totalSize }) =>
 			reachEnd({ ...model, virtualRows: rows, totalSize }, context),
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

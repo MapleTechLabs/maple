@@ -5,7 +5,7 @@ import {
 	isDatasourceDefinition,
 } from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
-import { Array as Arr, Order } from "effect"
+import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 // Live introspection of the `defineDatasource` exports in
 // packages/domain/src/tinybird/datasources.ts. This neutral catalog powers
@@ -23,8 +23,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`SeverityText` casing varies by SDK ('Error' from Effect services, 'ERROR' from OTel SDKs), so filter on the OTel level number instead: `SeverityNumber BETWEEN 17 AND 20` is ERROR, 13-16 WARN, 9-12 INFO, 5-8 DEBUG, 1-4 TRACE, 21-24 FATAL. Where you must use text, use `upper(SeverityText) = 'ERROR'`.",
 		"`SeverityNumber` follows OTel: 1-4 Trace, 5-8 Debug, 9-12 Info, 13-16 Warn, 17-20 Error, 21-24 Fatal.",
 		"`ResourceAttributes` and `LogAttributes` are `Map(LowCardinality(String), String)` — access with `LogAttributes['key']`; missing keys return '' (empty string), not NULL.",
-		"Use `TimestampTime` (DateTime) for `$__timeFilter(TimestampTime)` if you want sort-key-prefix-friendly filtering; `Timestamp` is DateTime64 (nanosecond precision).",
-		"Sorting key: `(OrgId, ServiceName, TimestampTime, Timestamp)` — adding `ServiceName = '…'` to the WHERE clause speeds queries dramatically.",
+		"Sorting key: `(OrgId, toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`: filter on a `Timestamp` window and `ServiceName = '…'`. Partitions are daily on `TimestampTime` (DateTime), so `$__timeFilter(TimestampTime)` also skips whole days. `Timestamp` is DateTime64 (nanosecond precision).",
 	],
 	traces: [
 		"`StatusCode` values are Title Case: 'Ok', 'Error', 'Unset'. Filter with `StatusCode = 'Error'` (NOT `'ERROR'`).",
@@ -34,7 +33,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`SampleRate` defaults to 1.0; multiply counts by `SampleRate` for unbiased throughput estimates.",
 		"Sorting key: `(OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)` — filter on `ServiceName` and a `Timestamp` window first.",
 		"To read whole traces by id, seek them through `trace_index`: `(ServiceName, toStartOfFiveMinutes(Timestamp), TraceId) IN (SELECT ServiceName, Bucket, TraceId FROM trace_index WHERE OrgId = … AND TraceId IN (…))`. A bare `TraceId = …` probes every daily partition.",
-		"For service-level metrics (per-service throughput, latency), prefer `service_overview_spans` — it's pre-filtered to entry-point spans and ~10× smaller.",
+		"Before scanning raw spans, check the rollups: per-service requests, errors and latency are in `service_overview_minutely` / `service_overview_hourly`, per span name in `service_operations_minutely` / `service_operations_hourly`, per HTTP route and status in `service_endpoint_details_hourly`, agent spans in `ai_trace_index`. Raw `traces` reads of the attribute maps run out of time past about a day without a `ServiceName` filter.",
 	],
 	ai_trace_index: [
 		"GenAI agent spans ONLY (every row carries a non-empty `VendorId`), with the `maple_ai.*` identity pre-extracted to plain columns. ALWAYS prefer this over `traces` + `mapContains(SpanAttributes, 'maple_ai.…')` for finding agent traces/sessions — the raw-traces scan reads the full attribute Map per span and times out on day-plus windows.",
@@ -55,6 +54,46 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"One row per SPAN: a proxied request has several Server spans in one trace, so count requests as `uniq(TraceId)`, never `count()`.",
 		"Scanners borrow crawler user agents and mostly get 404s: count pages actually read with `HttpStatus < 400` (0 means the span carried no status).",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0033, never backfilled.",
+	],
+	scanner_requests: [
+		"Server spans that probe for something an application should not serve (`.env`, `.git/`, `/actuator/env`, `phpinfo`, path traversal, `/phpmyadmin`, WordPress paths, known exploit paths) or whose user agent names a scanning tool (ZGrab, Nuclei, Masscan, sqlmap, Censys, ...). ALWAYS prefer this over `traces` + `SpanAttributes['url.path']` for scanner activity.",
+		"`Signature` is the matched path token ('' when only the user agent matched), `Scanner` the tool's name ('' when only the path matched); `Host`, `Path` (no query string), `HttpStatus` (0 = no status), `ClientAddress` and `UserAgent` (cut to 256 characters) are pre-extracted.",
+		"One row per SPAN: count requests as `uniq(TraceId)`. A probe that answered 2xx on a secrets, source-control or debug signature is the one to look at.",
+		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0050, never backfilled.",
+	],
+	service_runtimes_hourly: [
+		"Span counts per (hour, service, environment, `RuntimeName`, `RuntimeVersion`, `ExecutableName`, `SdkLanguage`, `SdkName`, `SdkVersion`), from the resource attributes `process.runtime.*`, `process.executable.name` and `telemetry.sdk.*`. Bun and Deno under the stock OTel JS SDK report `RuntimeName = 'nodejs'` and differ only by `ExecutableName`. '' where the service sets none. Values cut to 64 characters.",
+		"SummingMergeTree: always `sum(SpanCount)`. Sorting key: `(OrgId, Hour, ServiceName, DeploymentEnv, RuntimeName, RuntimeVersion, ExecutableName, SdkLanguage, SdkName, SdkVersion)`; filled forward from migration 0050.",
+	],
+	ci_runs: [
+		"One row per CI workflow run attempt: the root span of a `github-actions` trace, with `Owner`, `Repository`, `Pipeline` (workflow name), `Result` (success, failure, timeout, error, cancellation, skip), `Branch`, `Revision`, `PullRequest` (0 = none) and `Attempt` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['cicd.pipeline.*']`.",
+		"`Duration` is NANOSECONDS. Leave out `Result = 'skip'` for durations and success rates: a skipped run did nothing.",
+		"Keeps 365 days, past the 30-day raw trace its `TraceId` links to. Sorting key: `(OrgId, Timestamp, TraceId)`.",
+	],
+	ci_jobs: [
+		"One row per CI job (a child of a run span; steps and runner waits are not included), with `Job`, `Result`, `QueueMs` (wait for a runner), `RunnerName`, `RunnerLabels` and `FailureReason` pre-extracted. Join to `ci_runs` on `TraceId`.",
+		"`Duration` is NANOSECONDS and includes the queue wait. A skipped job, or one cancelled before a runner took it (`Duration = 0`), never ran.",
+		"Keeps 365 days. Sorting key: `(OrgId, Timestamp, TraceId)`.",
+	],
+	service_endpoint_details_hourly: [
+		"`HttpStatusCode` is a String: compare it as text (`HttpStatusCode = '500'`) or convert it (`toUInt16OrZero(HttpStatusCode) >= 500`).",
+		"HTTP Server spans with a response status, one row per (service, hour, env, normalized `SpanName` = `METHOD /route`, `HttpStatusCode`, `ErrorType` = `error.type`). ALWAYS prefer this over `traces` + `SpanAttributes['http.response.status_code']` for per-endpoint status, error-type, latency, body-size and user-agent breakdowns.",
+		"Aggregate state columns: merge `DurationQuantiles` with `quantilesTDigestMerge(0.5, 0.95, 0.99)` (NANOSECONDS), `BodySizeQuantiles` with `quantilesTDigestIfMerge(0.5, 0.95, 0.99)` (bytes), `UserAgents` with `approx_top_kMerge(10)`, and `SlowestTraceId`/`SlowestTimestamp`/`SlowestBodySize` with `argMaxMerge` (`SlowestBodySize` -1 = no body size). Sum `SpanCount`/`EstimatedSpanCount`/`BodyCount`.",
+		"Keeps 90 days at hour grain. Sorting key: `(OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType)`.",
+	],
+	service_operations_hourly: [
+		"One row per (service, env, hour, `SpanName`). Sum `SpanCount` / `ErrorCount`; p50 / p95 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)[1]` / `[2]`.",
+		"No `CommitSha`, `ServiceNamespace`, `SpanKind` or attributes here: per-commit numbers are in `service_overview_hourly`.",
+	],
+	service_operations_minutely: [
+		"`service_operations_hourly` at minute grain (`Minute`), 90-day TTL. Same columns and the same `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)` merge; no `CommitSha`.",
+	],
+	service_overview_hourly: [
+		"One row per (service, hour, env, namespace, `CommitSha`) of entry-point spans. Sum `SpanCount` / `ErrorCount`; p50 / p95 / p99 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles)[1]` / `[2]` / `[3]`.",
+		"No `SpanName`: per-operation numbers are in `service_operations_hourly`. `CommitSha` is `vcs.ref.head.revision`.",
+	],
+	service_overview_minutely: [
+		"`service_overview_hourly` at minute grain (`Minute`), 90-day TTL, with the same columns and `quantilesTDigestMerge(0.5, 0.95, 0.99)(DurationQuantiles)` merge.",
 	],
 	service_overview_spans: [
 		"Pre-materialized projection of entry-point spans only (Server/Consumer kinds + root spans). Use for per-service request count, error rate, p50/p95/p99 latency.",
@@ -102,6 +141,11 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`TraceCount` counts stored SPANS (not distinct traces) and `LogCount` log records; there is no `SpanCount` column.",
 		"Metric counts are split across four columns by point type (`SumMetricCount`, `GaugeMetricCount`, `HistogramMetricCount`, `ExpHistogramMetricCount`) — add all four for a total metric-point count.",
 		"Has no `DeploymentEnv` dimension, so prod-vs-staging splits are impossible here; use `logs_aggregates_hourly` / `traces_aggregates_hourly` for that.",
+	],
+	source_usage_hourly: [
+		"Hourly per-source rollup of STORED rows, keyed by `SourceId`, the public `src_…` id the ingest gateway stamps as `ResourceAttributes['maple_source_id']`. Rows without a source id are not counted here.",
+		"`SpanCount`, `LogCount` and `MetricCount` (data points across every metric type) with `*SizeBytes` STORAGE ESTIMATES computed like `service_usage`'s; never present them as billed usage.",
+		"Filled forward by its views from migration 0046, never backfilled, 90-day TTL.",
 	],
 } satisfies Record<string, ReadonlyArray<string>>
 
@@ -159,9 +203,9 @@ const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
 
 /** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */
 export function suggestWarehouseTables(name: string): ReadonlyArray<string> {
-	const known = new Set(listWarehouseTables().map((t) => t.name))
-	const bare = name.replace(/[`"]/g, "").split(".").at(-1)?.toLowerCase() ?? ""
-	for (const candidate of [bare, bare.replace(/^otel_/, "")]) {
+	const known = new Set(Arr.map(listWarehouseTables(), (t) => t.name))
+	const bare = Str.split(".")(Str.replace(/[`"]/g, "")(name)).at(-1)?.toLowerCase() ?? ""
+	for (const candidate of [bare, Str.replace(/^otel_/, "")(bare)]) {
 		if (known.has(candidate)) return [candidate]
 		const aliased = TABLE_NAME_ALIASES.get(candidate)?.filter((t) => known.has(t))
 		if (aliased !== undefined && aliased.length > 0) return aliased
@@ -190,23 +234,22 @@ function collectDatasources() {
 	// functions, and constant lookup tables. `isDatasourceDefinition` is the
 	// runtime filter; we cast to `unknown` first because the static union of all
 	// exports is too wide for TS to narrow with the predicate.
-	return (Object.values(Datasources) as ReadonlyArray<unknown>)
-		.filter(isDatasourceDefinition)
-		.filter((ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name))
+	return Arr.filter(
+		Arr.filter(Rec.values(Datasources) as ReadonlyArray<unknown>, isDatasourceDefinition),
+		(ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name),
+	)
 }
 
 export function listWarehouseTables(): ReadonlyArray<TableSummary> {
-	return collectDatasources()
-		.map((ds) => {
-			const timeColumn = timeColumnOf(Object.keys(ds._schema))
-			return {
-				name: ds._name,
-				description: ds.options.description,
-				columnCount: Object.keys(ds._schema).length,
-				...(timeColumn === undefined ? undefined : { timeColumn }),
-			}
-		})
-		.sort((a, b) => a.name.localeCompare(b.name))
+	return Arr.map(collectDatasources(), (ds) => {
+		const timeColumn = timeColumnOf(Rec.keys(ds._schema))
+		return {
+			name: ds._name,
+			description: ds.options.description,
+			columnCount: Rec.keys(ds._schema).length,
+			...(timeColumn === undefined ? undefined : { timeColumn }),
+		}
+	}).sort((a, b) => Str.localeCompare(b.name)(a.name))
 }
 
 /**
@@ -219,9 +262,10 @@ export function listWarehouseTables(): ReadonlyArray<TableSummary> {
 export function listOrgScopedDatasourceNames(): ReadonlyArray<string> {
 	// Code-unit order: `localeCompare` builds an ICU collator on first use, a cold-start cost.
 	return Arr.sort(
-		collectDatasources()
-			.filter((ds) => "OrgId" in ds._schema)
-			.map((ds) => ds._name),
+		Arr.map(
+			Arr.filter(collectDatasources(), (ds) => "OrgId" in ds._schema),
+			(ds) => ds._name,
+		),
 		Order.String,
 	)
 }
@@ -230,7 +274,7 @@ export function describeWarehouseTable(name: string): TableInfo | null {
 	const ds = collectDatasources().find((d) => d._name === name)
 	if (!ds) return null
 
-	const columns: ColumnInfo[] = Object.entries(ds._schema).map(([colName, colDef]) => {
+	const columns: ColumnInfo[] = Arr.map(Rec.toEntries(ds._schema), ([colName, colDef]) => {
 		const validator = getColumnType(colDef)
 		const type = getTinybirdType(validator)
 		const jsonPath = getColumnJsonPath(colDef)
@@ -239,7 +283,7 @@ export function describeWarehouseTable(name: string): TableInfo | null {
 
 	const engine = ds.options.engine
 	const keys = engine === undefined || engine.type === "Null" ? undefined : engine
-	const timeColumn = timeColumnOf(columns.map((c) => c.name))
+	const timeColumn = timeColumnOf(Arr.map(columns, (c) => c.name))
 	const engineNote = engine?.type === undefined ? undefined : ENGINE_NOTES.get(engine.type)
 	const notes = [
 		...(timeColumn === undefined

@@ -1,7 +1,7 @@
 import { ApiKeyId } from "@maple/domain/http"
 import { Effect } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
 

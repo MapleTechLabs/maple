@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { RemoveDashboardWidgetOutput } from "@maple/domain/mcp-outputs"
 import { toDashboardRow, withDashboardMutation } from "../lib/dashboard-mutations"
 import * as P from "../lib/params"
@@ -14,7 +14,7 @@ export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
 		description:
 			"Remove a single widget from a dashboard by id. Other widgets and dashboard metadata are left untouched.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			widget_id: P.text("ID of the widget to remove (get_dashboard lists them)"),
 		}),
 		output: RemoveDashboardWidgetOutput,
@@ -22,8 +22,8 @@ export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
 		phrases: ["Removing a widget"],
 		handler: Effect.fn("McpTool.removeDashboardWidget")(function* ({ dashboard_id, widget_id }) {
 			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) =>
-				existingWidgets.some((w) => w.id === widget_id)
-					? Effect.succeed(existingWidgets.filter((w) => w.id !== widget_id))
+				Arr.some(existingWidgets, (w) => w.id === widget_id)
+					? Effect.succeed(Arr.filter(existingWidgets, (w) => w.id !== widget_id))
 					: Effect.fail(
 							new McpInvalidInputError({
 								message: `Widget not found: ${widget_id}. Use get_dashboard to see existing widget ids.`,
@@ -41,7 +41,7 @@ export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
 					["Dashboard", `${output.dashboard.name} (${output.dashboard.id})`],
 					["Removed Widget ID", output.removedWidgetId],
 					["Remaining widgets", output.dashboard.widgetCount],
-					["Updated", output.dashboard.updatedAt.slice(0, 19)],
+					["Updated", Str.slice(0, 19)(output.dashboard.updatedAt)],
 				]),
 			],
 		}),

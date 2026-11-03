@@ -1,9 +1,10 @@
 import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { AsyncData as FoldkitAsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
-import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
-import { errorState } from "../../../ui/error-state"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
+import { emptyOnFailure } from "../../../data/enrichment"
+import { errorState } from "@maple/views/ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
@@ -14,6 +15,7 @@ import type { Model, ServiceRow } from "./model"
 import { displayedServices } from "./derive"
 import { filtersRail } from "./view-filters"
 import { loadingState, servicesTable, THROUGHPUT_COLOR } from "./view-table"
+import { Array as Arr } from "effect"
 
 /** The colour tokens the sparklines read off the theme. */
 const THEME_TOKENS = [TONE_COLOR.crit, THROUGHPUT_COLOR]
@@ -34,10 +36,11 @@ const filterChips = (model: Model, pinnedNamespace: string | null) => {
 			? []
 			: [{ id: param, label, values, isNegated, onRemove: Message.RemovedFilterChip({ param }) }]
 	}
-	return [
-		...FACETS.flatMap((facet) => chipOf(facet.exclude, facet.label, true)),
-		...FACETS.flatMap((facet) => chipOf(facet.include, facet.label, false)),
-	].filter(
+	return Arr.filter(
+		[
+			...Arr.flatMap(FACETS, (facet) => chipOf(facet.exclude, facet.label, true)),
+			...Arr.flatMap(FACETS, (facet) => chipOf(facet.include, facet.label, false)),
+		],
 		(chip) => pinnedNamespace === null || (chip.id !== "namespaces" && chip.id !== "excludedNamespaces"),
 	)
 }
@@ -46,12 +49,13 @@ const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs
 	const blocking = FoldkitAsyncData.all([
 		model.overview.data,
 		model.sparklines.data,
-		model.anomalies.data,
-		model.incidents,
+		emptyOnFailure(model.anomalies.data),
+		emptyOnFailure(model.incidents),
 	])
 	return FoldkitAsyncData.matchData(blocking, {
 		onEmpty: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load services", onRetry: Message.ClickedReload() }),
 		// The table paints once its sparklines can: they need the chart runtime and theme colours.
 		onData: ([overview]) =>
 			!isPaintReady(model, overview)
@@ -85,6 +89,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					title: "Services",
 					filters: filtersRail(h, model, summaryOf(model), inputs.context.pinnedNamespace),
 					actions: timeControls(h, {
 						search: model.search,

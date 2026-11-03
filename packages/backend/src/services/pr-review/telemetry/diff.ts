@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * The parts of a unified diff the telemetry analysis reads: each line, which side it is on, and
  * the new-side line a finding about it can anchor to.
@@ -22,21 +23,26 @@ export const parsePatch = (patch: string | null): ReadonlyArray<DiffLine> => {
 	const lines: Array<DiffLine> = []
 	let newLine = 0
 	let hunkIndex = -1
-	for (const raw of patch.split("\n")) {
+	for (const raw of Str.split("\n")(patch)) {
 		const hunk = HUNK.exec(raw)
 		if (hunk !== null) {
 			newLine = Number(hunk[1])
 			hunkIndex += 1
 			continue
 		}
-		if (newLine === 0 || raw.startsWith("\\")) continue
-		if (raw.startsWith("+")) {
-			lines.push({ kind: "add", text: raw.slice(1), newLine, hunk: hunkIndex })
+		if (newLine === 0 || Str.startsWith("\\")(raw)) continue
+		if (Str.startsWith("+")(raw)) {
+			lines.push({ kind: "add", text: Str.slice(1)(raw), newLine, hunk: hunkIndex })
 			newLine += 1
-		} else if (raw.startsWith("-")) {
-			lines.push({ kind: "del", text: raw.slice(1), newLine: Math.max(1, newLine), hunk: hunkIndex })
+		} else if (Str.startsWith("-")(raw)) {
+			lines.push({
+				kind: "del",
+				text: Str.slice(1)(raw),
+				newLine: Math.max(1, newLine),
+				hunk: hunkIndex,
+			})
 		} else {
-			lines.push({ kind: "ctx", text: raw.slice(1), newLine, hunk: hunkIndex })
+			lines.push({ kind: "ctx", text: Str.slice(1)(raw), newLine, hunk: hunkIndex })
 			newLine += 1
 		}
 	}
@@ -48,6 +54,11 @@ const NOT_RUNTIME =
 	/(^|\/)(__tests__|__mocks__|__fixtures__|test|tests|fixtures|e2e|docs?|examples?)\/|\.(test|spec|stories|e2e)\.[a-z]+$|\.(md|mdx|txt|snap|lock|json|ya?ml)$/i
 
 export const isRuntimeSource = (path: string): boolean => !NOT_RUNTIME.test(path)
+
+/** Mock, seed and lab data: it runs, so privacy still scans it, but it emits no production telemetry. */
+const MOCK_DATA = /(^|\/)(testdata|fixtures?|mocks?|seeds?|labs?)\/|\.(mocks?|fixtures?|seed)\.[a-z]+$/i
+
+export const isMockData = (path: string): boolean => MOCK_DATA.test(path)
 
 /** A string literal in a line of code, and where it starts. */
 export interface Literal {
@@ -64,7 +75,7 @@ export const literalsOf = (text: string): ReadonlyArray<Literal> => {
 	for (const match of text.matchAll(STRING_LITERAL)) {
 		const value = match[2] ?? ""
 		if (value.length < 3 || value.length > 160) continue
-		out.push({ value, index: match.index ?? 0, templated: match[1] === "`" && value.includes("${") })
+		out.push({ value, index: match.index ?? 0, templated: match[1] === "`" && Str.includes("${")(value) })
 	}
 	return out
 }
@@ -89,6 +100,8 @@ export interface EmittedName {
 }
 
 const ATTRIBUTE_KEY = /^[a-z_][a-z0-9_]*(?:\.[a-z0-9_]+)+$/i
+/** A literal that is the `key` of an OTLP `{ key, value: { stringValue } }` pair: payload data, not an API call. */
+const OTLP_KEY_VALUE = /["']?\bkey["']?\s*:\s*$/
 
 /**
  * Names a line hands to the telemetry API. `nearby` is the few lines above it, so an attribute
@@ -97,8 +110,8 @@ const ATTRIBUTE_KEY = /^[a-z_][a-z0-9_]*(?:\.[a-z0-9_]+)+$/i
 export const emittedNames = (text: string, nearby: string): ReadonlyArray<EmittedName> => {
 	const out: Array<EmittedName> = []
 	for (const literal of literalsOf(text)) {
-		const before = text.slice(0, literal.index)
-		const after = text.slice(literal.index + literal.value.length + 2)
+		const before = Str.slice(0, literal.index)(text)
+		const after = Str.slice(literal.index + literal.value.length + 2)(text)
 		if (SPAN_CALL.test(before)) {
 			out.push({ kind: "span", value: literal.value, templated: literal.templated })
 		} else if (METRIC_CALL.test(before)) {
@@ -106,6 +119,8 @@ export const emittedNames = (text: string, nearby: string): ReadonlyArray<Emitte
 		} else if (
 			!literal.templated &&
 			ATTRIBUTE_KEY.test(literal.value) &&
+			!OTLP_KEY_VALUE.test(before) &&
+			!(Str.trim(before) === "" && OTLP_KEY_VALUE.test(nearby)) &&
 			(ATTRIBUTE_CALL.test(before) || (/^\s*[:,]/.test(after) && ATTRIBUTE_CALL.test(nearby)))
 		) {
 			out.push({ kind: "attribute", value: literal.value, templated: false })
@@ -132,8 +147,9 @@ const emitsAt = (
 ): boolean => {
 	const text = lines[index]
 	if (text === undefined || isCommentLine(text)) return false
-	const nearby = lines.slice(Math.max(0, index - 4), index).join("\n")
-	return emittedNames(text, nearby).some(
+	const nearby = Arr.join(lines.slice(Math.max(0, index - 4), index), "\n")
+	return Arr.some(
+		emittedNames(text, nearby),
 		(emitted) => emitted.kind === kind && emitted.value === name && !emitted.templated,
 	)
 }
@@ -144,7 +160,7 @@ export const lineEmitting = (
 	name: string,
 	kind: EmittedName["kind"],
 ): number | undefined => {
-	const lines = content.split("\n")
+	const lines = Str.split("\n")(content)
 	const index = lines.findIndex((_, i) => emitsAt(lines, i, name, kind))
 	return index === -1 ? undefined : index + 1
 }
@@ -155,4 +171,4 @@ export const lineEmitsAt = (
 	line: number,
 	name: string,
 	kind: EmittedName["kind"],
-): boolean => emitsAt(content.split("\n"), line - 1, name, kind)
+): boolean => emitsAt(Str.split("\n")(content), line - 1, name, kind)

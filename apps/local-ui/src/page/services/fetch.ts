@@ -1,6 +1,6 @@
 import { CH } from "@maple/query-engine"
 import type { TimeBounds } from "../../lib/time"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { localParams, queryRows } from "../../data/local-query"
 import type { ServiceCatalogEntry } from "./model"
 
@@ -37,7 +37,11 @@ export const fetchCatalog = (
 			[
 				queryRows(
 					CH.compile(
-						CH.serviceCatalogQuery({ deploymentEnvironment: env, serviceNamespace: ns, limit: 200 }),
+						CH.serviceCatalogQuery({
+							deploymentEnvironment: env,
+							serviceNamespace: ns,
+							limit: 200,
+						}),
 						params,
 					),
 					apiBase,
@@ -46,6 +50,6 @@ export const fetchCatalog = (
 			],
 			{ concurrency: "unbounded" },
 		)
-		const logsByService = new Map(usageRows.map((row) => [row.serviceName, row.totalLogCount]))
-		return catalogRows.map((row) => toCatalogEntry(row, logsByService.get(row.serviceName) ?? 0))
+		const logsByService = new Map(Arr.map(usageRows, (row) => [row.serviceName, row.totalLogCount]))
+		return Arr.map(catalogRows, (row) => toCatalogEntry(row, logsByService.get(row.serviceName) ?? 0))
 	})

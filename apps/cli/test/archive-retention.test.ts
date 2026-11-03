@@ -12,20 +12,21 @@ import {
 	retiredDayLedgerPath,
 	RetiredDayAuthority,
 	retireLiveDayInServer,
-} from "../src/server/archives/retention"
-import { ARCHIVE_SIGNALS, type ArchiveSignalName } from "../src/server/archives/signals"
+} from "@maple/local-server/archives/retention"
+import { ARCHIVE_SIGNALS, type ArchiveSignalName } from "@maple/local-server/archives/signals"
 import {
 	activePointerPath,
 	generationManifestPath,
 	nextMidnightUtc,
 	rangeRoot,
 	shardsRoot,
-} from "../src/server/archives/paths"
-import { rebuildCatalog } from "../src/server/archives/listing"
-import type { ArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { RequestQuiescenceGate } from "../src/server/serve"
-import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
+} from "@maple/local-server/archives/paths"
+import { rebuildCatalog } from "@maple/local-server/archives/listing"
+import type { ArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
+import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
+import { RequestQuiescenceGate } from "@maple/local-server/serve"
+import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex")
 
@@ -105,8 +106,8 @@ const seedCompleteDay = async (
 	archiveDir: string,
 	date: string,
 ): Promise<Record<ArchiveSignalName, string>> => {
-	const generations = Object.fromEntries(
-		ARCHIVE_SIGNALS.map((signal) => [signal.name, seed(archiveDir, signal.name, date)]),
+	const generations = Rec.fromEntries(
+		Arr.map(ARCHIVE_SIGNALS, (signal) => [signal.name, seed(archiveDir, signal.name, date)]),
 	) as Record<ArchiveSignalName, string>
 	for (const signal of ARCHIVE_SIGNALS) await rebuildCatalog(archiveDir, signal.name)
 	return generations
@@ -118,7 +119,7 @@ const mockDb = (options: {
 	readonly archiveDigest?: string
 	readonly corruptDuringDigest?: () => void
 }) => {
-	const counts = new Map(ARCHIVE_SIGNALS.map((signal) => [signal.name, 1]))
+	const counts = new Map(Arr.map(ARCHIVE_SIGNALS, (signal) => [signal.name, 1]))
 	const execs: string[] = []
 	let digestQueries = 0
 	return {
@@ -131,23 +132,27 @@ const mockDb = (options: {
 				)
 				if (described)
 					return `${JSON.stringify({ name: described.eventTimeColumn, type: "DateTime64(9)" })}\n`
-				const counted = ARCHIVE_SIGNALS.find((signal) => sql.includes(`FROM ${signal.name} WHERE`))
-				if (sql.startsWith("SELECT DISTINCT") && counted)
+				const counted = ARCHIVE_SIGNALS.find((signal) =>
+					Str.includes(`FROM ${signal.name} WHERE`)(sql),
+				)
+				if (Str.startsWith("SELECT DISTINCT")(sql) && counted)
 					return counts.get(counted.name) === 0
 						? ""
 						: `${JSON.stringify({ rangeDate: options.date })}\n`
-				if (sql.startsWith("SELECT count()") && counted)
+				if (Str.startsWith("SELECT count()")(sql) && counted)
 					return `${JSON.stringify({ count: counts.get(counted.name) })}\n`
-				if (sql.startsWith("SELECT concat")) {
+				if (Str.startsWith("SELECT concat")(sql)) {
 					digestQueries++
 					if (digestQueries === 1) options.corruptDuringDigest?.()
-					return `${JSON.stringify({ d: sql.includes("file('") ? (options.archiveDigest ?? "1:2:3:4") : (options.liveDigest ?? "1:2:3:4") })}\n`
+					return `${JSON.stringify({ d: Str.includes("file('")(sql) ? (options.archiveDigest ?? "1:2:3:4") : (options.liveDigest ?? "1:2:3:4") })}\n`
 				}
 				throw new Error(`unexpected query: ${sql}`)
 			},
 			exec(sql: string): void {
 				execs.push(sql)
-				const signal = ARCHIVE_SIGNALS.find((candidate) => sql.includes(`TABLE ${candidate.name} `))
+				const signal = ARCHIVE_SIGNALS.find((candidate) =>
+					Str.includes(`TABLE ${candidate.name} `)(sql),
+				)
 				if (!signal) throw new Error(`unexpected exec: ${sql}`)
 				counts.set(signal.name, 0)
 			},
@@ -168,10 +173,10 @@ const writeRetiredLedger = (
 				{
 					rangeDate: date,
 					retiredAt: "2026-01-03T00:00:00.000Z",
-					signals: ARCHIVE_SIGNALS.map((signal) => ({
+					signals: Arr.map(ARCHIVE_SIGNALS, (signal) => ({
 						signal: signal.name,
 						generationId: generations[signal.name],
-						manifestSha256: "a".repeat(64),
+						manifestSha256: Str.repeat(64)("a"),
 						archivedRowCount: 1,
 						contentDigest: "1:2:3:4",
 					})),
@@ -192,8 +197,8 @@ describe("durable retired-day authority", () => {
 	it("rejects late OTLP rows before insertion", async () =>
 		fixture(async (_root, dataDir) => {
 			const date = "2026-01-01"
-			const generations = Object.fromEntries(
-				ARCHIVE_SIGNALS.map((signal) => [signal.name, randomUUID()]),
+			const generations = Rec.fromEntries(
+				Arr.map(ARCHIVE_SIGNALS, (signal) => [signal.name, randomUUID()]),
 			) as Record<ArchiveSignalName, string>
 			writeRetiredLedger(dataDir, date, generations)
 			const authority = new RetiredDayAuthority(dataDir)
@@ -210,16 +215,19 @@ describe("durable retired-day authority", () => {
 	it("filters retired rows while preserving current rows in a mixed batch", async () =>
 		fixture(async (_root, dataDir) => {
 			const date = "2026-01-01"
-			const generations = Object.fromEntries(
-				ARCHIVE_SIGNALS.map((signal) => [signal.name, randomUUID()]),
+			const generations = Rec.fromEntries(
+				Arr.map(ARCHIVE_SIGNALS, (signal) => [signal.name, randomUUID()]),
 			) as Record<ArchiveSignalName, string>
 			writeRetiredLedger(dataDir, date, generations)
 			const filtered = new RetiredDayAuthority(dataDir).filterBatch(
 				"logs",
-				[
-					JSON.stringify({ timestamp: `${date} 12:00:00.000000000`, body: "late" }),
-					JSON.stringify({ timestamp: "2026-01-04 12:00:00.000000000", body: "current" }),
-				].join("\n"),
+				Arr.join(
+					[
+						JSON.stringify({ timestamp: `${date} 12:00:00.000000000`, body: "late" }),
+						JSON.stringify({ timestamp: "2026-01-04 12:00:00.000000000", body: "current" }),
+					],
+					"\n",
+				),
 			)
 			strictEqual(filtered.rejected, 1)
 			strictEqual(filtered.accepted, 1)
@@ -229,15 +237,15 @@ describe("durable retired-day authority", () => {
 	it("replays retirement after checkpoint restoration before serving", async () =>
 		fixture(async (_root, dataDir) => {
 			const date = "2026-01-01"
-			const generations = Object.fromEntries(
-				ARCHIVE_SIGNALS.map((signal) => [signal.name, randomUUID()]),
+			const generations = Rec.fromEntries(
+				Arr.map(ARCHIVE_SIGNALS, (signal) => [signal.name, randomUUID()]),
 			) as Record<ArchiveSignalName, string>
 			writeRetiredLedger(dataDir, date, generations)
 			const mocked = mockDb({ date })
 			new RetiredDayAuthority(dataDir).replay(mocked.db)
 			for (const signal of ARCHIVE_SIGNALS) strictEqual(mocked.counts.get(signal.name), 0)
 			strictEqual(
-				mocked.execs.every((sql) => sql.includes("toDate(") && sql.includes("'UTC'")),
+				Arr.every(mocked.execs, (sql) => Str.includes("toDate(")(sql) && Str.includes("'UTC'")(sql)),
 				true,
 			)
 		}))
@@ -259,7 +267,10 @@ describe("server-coordinated live retirement", () => {
 			strictEqual(existsSync(join(dataDir, "retention")), false)
 			strictEqual(mocked.execs.length, ARCHIVE_SIGNALS.length)
 			strictEqual(
-				mocked.execs.every((sql) => sql.includes("DELETE WHERE") && !sql.includes("DROP PARTITION")),
+				Arr.every(
+					mocked.execs,
+					(sql) => Str.includes("DELETE WHERE")(sql) && !Str.includes("DROP PARTITION")(sql),
+				),
 				true,
 			)
 		}))

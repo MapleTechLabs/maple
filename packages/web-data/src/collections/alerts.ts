@@ -3,6 +3,8 @@ import {
 	AlertDestinationDocument,
 	AlertDestinationId,
 	AlertDestinationType,
+	AlertEvaluationErrorKind,
+	AlertEvaluationIntervalMinutes,
 	AlertEventType,
 	AlertGroupBy,
 	AlertIncidentDocument,
@@ -34,11 +36,13 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 const asErrorIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const decodeDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
 
-const asDestinationType = Schema.decodeUnknownSync(AlertDestinationType)
+const decodeDestinationType = Schema.decodeUnknownOption(AlertDestinationType)
 
 const asSeverity = Schema.decodeUnknownSync(AlertSeverity)
 const asSignalType = Schema.decodeUnknownSync(AlertSignalType)
 const asComparator = Schema.decodeUnknownSync(AlertComparator)
+const asEvaluationInterval = Schema.decodeUnknownSync(Schema.NullOr(AlertEvaluationIntervalMinutes))
+const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
 const asIncidentStatus = Schema.decodeUnknownSync(AlertIncidentStatus)
 const asHoldReason = Schema.decodeUnknownSync(AlertIncidentHoldReason)
 const asEventType = Schema.decodeUnknownSync(AlertEventType)
@@ -89,6 +93,7 @@ export const AlertRuleRowSchema = Schema.Struct({
 	// Optional: rows synced before the column existed omit it.
 	thresholds_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
 	window_minutes: Schema.Number,
+	evaluation_interval_minutes: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	minimum_sample_count: Schema.Number,
 	consecutive_breaches_required: Schema.Number,
 	breaches_out_of: Schema.optionalKey(Schema.NullOr(Schema.Number)),
@@ -104,6 +109,8 @@ export const AlertRuleRowSchema = Schema.Struct({
 	sample_count_strategy: Schema.NullOr(Schema.String),
 	no_data_behavior: Schema.String,
 	last_scheduled_at: Schema.NullOr(Schema.String),
+	slowed_interval_minutes: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	slowed_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	created_at: Schema.String,
 	updated_at: Schema.String,
 	created_by: Schema.String,
@@ -125,6 +132,7 @@ export const AlertRuleStateRowSchema = Schema.Struct({
 	last_sample_count: Schema.NullOr(Schema.Number),
 	last_evaluated_at: Schema.NullOr(Schema.String),
 	last_error: Schema.NullOr(Schema.String),
+	last_error_kind: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	updated_at: Schema.String,
 })
 export type AlertRuleStateRow = typeof AlertRuleStateRowSchema.Type
@@ -194,7 +202,9 @@ export const rowToAlertRuleDocument = (
 	statesByRuleId: Map<string, AlertRuleStateRow>,
 ): AlertRuleDocument => {
 	const state = statesByRuleId.get(row.id)
-	const destinationIds = safeParseStringArray(row.destination_ids_json).map((id) => decodeDestinationId(id))
+	const destinationIds = Arr.map(safeParseStringArray(row.destination_ids_json), (id) =>
+		decodeDestinationId(id),
+	)
 	// Rows written before tiers carry none: they are one tier from the legacy columns.
 	const legacyTier = legacyAlertThreshold({
 		severity: asSeverity(row.severity),
@@ -227,6 +237,7 @@ export const rowToAlertRuleDocument = (
 		threshold: legacy.threshold,
 		thresholdUpper: legacy.thresholdUpper,
 		windowMinutes: row.window_minutes,
+		evaluationIntervalMinutes: asEvaluationInterval(row.evaluation_interval_minutes ?? null),
 		minimumSampleCount: row.minimum_sample_count,
 		consecutiveBreachesRequired: row.consecutive_breaches_required,
 		breachesOutOf: row.breaches_out_of ?? null,
@@ -242,6 +253,9 @@ export const rowToAlertRuleDocument = (
 		destinationIds: legacy.destinationIds,
 		noDataBehavior: Option.getOrElse(decodeNoDataBehavior(row.no_data_behavior), () => "skip" as const),
 		lastEvaluationError: state?.last_error ?? null,
+		lastEvaluationErrorKind: Option.getOrNull(decodeErrorKind(state?.last_error_kind)),
+		slowedIntervalMinutes: asEvaluationInterval(row.slowed_interval_minutes ?? null),
+		slowedAt: row.slowed_at != null ? decodeIso(row.slowed_at) : null,
 		lastEvaluatedAt: state?.last_evaluated_at != null ? decodeIso(state.last_evaluated_at) : null,
 		lastScheduledAt: row.last_scheduled_at != null ? decodeIso(row.last_scheduled_at) : null,
 		createdAt: decodeIso(row.created_at),
@@ -289,7 +303,7 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
  * column-restricted server-side (the encrypted `secret_*` columns are dropped —
  * see the proxy whitelist), so this struct intentionally lists only the synced
  * columns. `config_json` carries ONLY public config (summary / channel label /
- * hazel metadata); the webhook secrets live in the excluded encrypted columns.
+ * chat workspace); the webhook secrets live in the excluded encrypted columns.
  */
 export const AlertDestinationRowSchema = Schema.Struct({
 	id: Schema.String,
@@ -309,8 +323,7 @@ export type AlertDestinationRow = typeof AlertDestinationRowSchema.Type
 
 /**
  * The public projection of a destination's `config_json` the browser renders —
- * mirrors the server's `DestinationPublicConfigSchema` (summary + channelLabel;
- * the hazel-* fields are excess and ignored here). The server stringifies the
+ * mirrors the server's `DestinationPublicConfigSchema`. The server stringifies the
  * jsonb before decoding; Electric's default parser already gives us the parsed
  * object, so we decode it directly.
  */
@@ -320,6 +333,7 @@ const AlertDestinationPublicConfig = Schema.Struct({
 	memberUserIds: Schema.optionalKey(Schema.Array(Schema.String)),
 	chatConnector: Schema.optionalKey(ChatConnectorId),
 	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
+	linearTeamId: Schema.optionalKey(Schema.String),
 })
 const decodeDestinationPublicConfig = Schema.decodeUnknownOption(AlertDestinationPublicConfig)
 
@@ -327,9 +341,24 @@ const decodeDestinationPublicConfig = Schema.decodeUnknownOption(AlertDestinatio
  * Decodes a raw `alert_destinations` row into the domain
  * {@link AlertDestinationDocument}, mirroring `rowToDestinationDocument` +
  * `safeParsePublicConfig` in AlertsService.ts (invalid config → the same
- * "Invalid destination config" fallback the server uses).
+ * "Invalid destination config" fallback the server uses). `None` for a type
+ * this build does not know (a retired provider's leftover row): it is dropped,
+ * never a crash.
  */
-export const rowToAlertDestinationDocument = (row: AlertDestinationRow): AlertDestinationDocument => {
+export const rowToAlertDestinationDocument = (
+	row: AlertDestinationRow,
+): Option.Option<AlertDestinationDocument> =>
+	Option.map(decodeDestinationType(row.type), (type) => destinationDocument(row, type))
+
+/** The live rows as documents, without rows of an unknown type. */
+export const rowsToAlertDestinationDocuments = (
+	rows: ReadonlyArray<AlertDestinationRow>,
+): ReadonlyArray<AlertDestinationDocument> => Arr.getSomes(Arr.map(rows, rowToAlertDestinationDocument))
+
+const destinationDocument = (
+	row: AlertDestinationRow,
+	type: AlertDestinationType,
+): AlertDestinationDocument => {
 	const publicConfig = Option.getOrElse(
 		decodeDestinationPublicConfig(row.config_json),
 		(): Schema.Schema.Type<typeof AlertDestinationPublicConfig> => ({
@@ -340,7 +369,7 @@ export const rowToAlertDestinationDocument = (row: AlertDestinationRow): AlertDe
 	return new AlertDestinationDocument({
 		id: decodeDestinationId(row.id),
 		name: row.name,
-		type: asDestinationType(row.type),
+		type,
 		enabled: row.enabled,
 		summary: publicConfig.summary,
 		channelLabel: publicConfig.channelLabel,
@@ -351,6 +380,9 @@ export const rowToAlertDestinationDocument = (row: AlertDestinationRow): AlertDe
 		...(publicConfig.chatWorkspaceId === undefined
 			? undefined
 			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
+		...(publicConfig.linearTeamId === undefined
+			? undefined
+			: { linearTeamId: publicConfig.linearTeamId }),
 		lastTestedAt: row.last_tested_at != null ? decodeIso(row.last_tested_at) : null,
 		lastTestError: row.last_test_error,
 		disabledAt: row.disabled_at != null ? decodeIso(row.disabled_at) : null,

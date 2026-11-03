@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { type Child, group, inkBox, inkLines, inkSolid, mesh, type Scope, type Vec3 } from "./kit"
 import type { MachineFinish } from "./props"
+import { Array as Arr } from "effect"
 
 /** A flat, double-sided triangle with an ink edge: pennants, bunting, pinwheel blades. */
 export function flag(
@@ -120,7 +121,7 @@ export function logPile(_scope: Scope, { finish, base }: { finish: MachineFinish
 	] as const
 	return group(
 		{},
-		logs.map(([z, row]) => {
+		Arr.map(logs, ([z, row]) => {
 			const y = base + 0.15 + row * 0.26
 			return group({}, [
 				inkSolid({
@@ -163,7 +164,7 @@ export function toadstools(_scope: Scope, { position, finish }: { position: Vec3
 	] as const
 	return group(
 		{},
-		clumps.map(([dx, dz, scale]) =>
+		Arr.map(clumps, ([dx, dz, scale]) =>
 			group({ position: [x + dx, y, z + dz], scale }, [
 				inkBox({
 					size: [0.07, 0.16, 0.07],

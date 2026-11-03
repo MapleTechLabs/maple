@@ -1,17 +1,17 @@
 // BOUNDARY: a merge patch is untyped JSON until the merged widget is decoded again.
 /** Partial widget edits: a JSON Merge Patch (RFC 7386) plus shorthand fields, over the saved widget. */
-import { Result, Schema, SchemaIssue } from "effect"
+import { Result, Schema, SchemaIssue, Array as Arr, Record as Rec } from "effect"
 import { DashboardWidgetSchema } from "@maple/domain/http"
 import type { DashboardWidget } from "./dashboard-mutations"
 
 const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /** Objects merge key by key, `null` deletes a key, anything else (arrays included) replaces. */
 export const mergePatch = (target: unknown, patch: unknown): unknown => {
 	if (!isPlainObject(patch)) return patch
 	const result: Record<string, unknown> = isPlainObject(target) ? { ...target } : {}
-	for (const [key, value] of Object.entries(patch)) {
+	for (const [key, value] of Rec.toEntries(patch)) {
 		if (value === null) delete result[key]
 		else result[key] = mergePatch(result[key], value)
 	}

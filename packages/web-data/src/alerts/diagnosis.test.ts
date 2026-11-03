@@ -2,7 +2,7 @@ import { AlertRuleDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AlertRuleStateRow } from "../collections/alerts"
-import { buildDiagnosis, diagnosisVerdict, type DiagnosisInput } from "./diagnosis"
+import { buildDiagnosis, diagnosisVerdict, intervalBeforeSlowdown, type DiagnosisInput } from "./diagnosis"
 
 const decodeRuleDoc = Schema.decodeUnknownSync(AlertRuleDocument)
 
@@ -31,6 +31,7 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 3,
 		breachesOutOf: null,
+		evaluationIntervalMinutes: null,
 		thresholds: [
 			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
 		],
@@ -43,6 +44,9 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		destinationIds: [DEST_ID],
 		noDataBehavior: "skip",
 		lastEvaluationError: null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
 		lastEvaluatedAt: iso(60_000),
 		lastScheduledAt: iso(60_000),
 		createdAt: "2026-01-01T00:00:00.000Z",
@@ -109,6 +113,122 @@ describe("buildDiagnosis", () => {
 		expect(query.status).toBe("fail")
 		expect(query.evidence).toContain("Unknown column Foo")
 		expect(diagnosisVerdict(stages).status).toBe("fail")
+	})
+
+	it("says a timed-out raw SQL query is too slow for its interval, and what a longer one allows", () => {
+		const stages = diagnose({
+			rule: makeRule({
+				signalType: "raw_query",
+				rawQuerySql:
+					"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				rawQueryReducer: "identity",
+			}),
+			states: [
+				makeState({
+					last_error: "Timeout exceeded: elapsed 5003 ms, maximum: 5000 ms",
+					last_error_kind: "query_too_slow",
+				}),
+			],
+		})
+		const query = stage(stages, "query")
+		expect(query.status).toBe("fail")
+		expect(query.summary).toBe("The query takes longer than the 5 s a check allows")
+		expect(query.evidence).toContain("Timeout exceeded: elapsed 5003 ms, maximum: 5000 ms")
+	})
+
+	it("quotes the limit a failure ran under, before or after a slowdown", () => {
+		const rawSlowed = {
+			signalType: "raw_query",
+			rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+			rawQueryReducer: "identity",
+			slowedIntervalMinutes: 5,
+			slowedAt: iso(10 * 60_000),
+		}
+		const failedAt = (minutesAgo: number) =>
+			stage(
+				diagnose({
+					rule: makeRule(rawSlowed),
+					states: [
+						makeState({
+							last_error: "Timeout exceeded",
+							last_error_kind: "query_too_slow",
+							last_evaluated_at: iso(minutesAgo * 60_000),
+						}),
+					],
+				}),
+				"query",
+			).summary
+		// The timeout that caused the slowdown ran at every minute, under 5 s.
+		expect(failedAt(11)).toBe("The query takes longer than the 5 s a check allows")
+		// One since then ran at every 5 minutes, under 15 s.
+		expect(failedAt(2)).toBe("The query takes longer than the 15 s a check allows")
+
+		// Slowed twice (1 -> 5 -> 10 min): the failure before the second step ran every 5 min, under 15 s.
+		const twice = stage(
+			diagnose({
+				rule: makeRule({ ...rawSlowed, windowMinutes: 10, slowedIntervalMinutes: 10 }),
+				states: [
+					makeState({
+						last_error: "Timeout exceeded",
+						last_error_kind: "query_too_slow",
+						last_evaluated_at: iso(11 * 60_000),
+					}),
+				],
+			}),
+			"query",
+		).summary
+		expect(twice).toBe("The query takes longer than the 15 s a check allows")
+	})
+
+	it("names the memory a check had and which intervals get more", () => {
+		const query = stage(
+			diagnose({
+				rule: makeRule({
+					signalType: "raw_query",
+					rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					rawQueryReducer: "identity",
+					windowMinutes: 30,
+					evaluationIntervalMinutes: 5,
+				}),
+				states: [makeState({ last_error: "Memory limit exceeded", last_error_kind: "query_too_much_memory" })],
+			}),
+			"query",
+		)
+		expect(query.summary).toBe("The query needs more memory than a check allows")
+		expect(query.evidence).toContain(
+			"Checked every 5 min, which allows 512 MB per check. Rules checked every 5 or 10 min get 512 MB, every 15 min or more 1 GB.",
+		)
+	})
+
+	it("reads the step before a slowdown from the limit the failures hit", () => {
+		const rule = (slowedIntervalMinutes: number, kind: "query_too_slow" | "query_too_much_memory") =>
+			makeRule({
+				windowMinutes: 30,
+				evaluationIntervalMinutes: 5,
+				slowedIntervalMinutes,
+				lastEvaluationErrorKind: kind,
+			})
+		// Out of memory at 5 min steps straight to 15, the next interval with more memory.
+		expect(intervalBeforeSlowdown(rule(15, "query_too_much_memory"))).toBe(5)
+		// Timeouts at 5 min step to 10, the next interval with more time.
+		expect(intervalBeforeSlowdown(rule(10, "query_too_slow"))).toBe(5)
+	})
+
+	it("keeps raw SQL limits out of a built-in rule's timeout", () => {
+		const stages = diagnose({
+			states: [makeState({ last_error: "Timeout exceeded", last_error_kind: "query_too_slow" })],
+		})
+		expect(stage(stages, "query").summary).toBe("The rule's query is timing out")
+	})
+
+	it("warns about a slowed-down rule whose query now succeeds, and how to undo it", () => {
+		const stages = diagnose({
+			rule: makeRule({ slowedIntervalMinutes: 5, slowedAt: iso(60 * 60_000) }),
+		})
+		const query = stage(stages, "query")
+		expect(query.status).toBe("warn")
+		expect(query.summary).toBe("Slowed to every 5 min because its query kept hitting its limit")
+		expect(query.action?.kind).toBe("edit")
 	})
 
 	it("marks never-evaluated rules failing on the evaluated stage", () => {

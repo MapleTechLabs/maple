@@ -3,15 +3,15 @@ import {
 	type AnalyticsMetricKey,
 	type AnalyticsMetricSource,
 	findMetric,
-} from "../../components/analytics/metrics"
-import { Option } from "effect"
+} from "@maple/views/lib/analytics-metrics"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import { bucketTooltipBody } from "../../charts/bucket-tooltip"
-import type { Message, Model } from "../../charts/chart"
-import type { ChartSpec } from "../../charts/chart-spec"
-import { plotFrame } from "../../charts/plot-frame"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
+import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import type { Message, Model } from "@maple/views/charts/chart"
+import type { ChartSpec } from "@maple/views/charts/chart-spec"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../infra-integrations/kit/chart-card"
 import { seriesLegend } from "../kit/series-legend"
 
@@ -20,7 +20,7 @@ import { seriesLegend } from "../kit/series-legend"
 
 export const TRAFFIC_TOKENS = ["--border", "--background", "--primary", "--chart-2"]
 
-const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 type Series = Readonly<{
 	key: "primary" | "companion"
@@ -51,8 +51,10 @@ const trafficData = (inputs: Resolved) => {
 	const primaryPoints = inputs.metric.series(inputs.source)
 	const companionPoints = inputs.companion?.series(inputs.source) ?? []
 	const byBucket = new Map<string, { primary?: number; companion?: number }>()
-	primaryPoints.forEach((point) => byBucket.set(point.bucket, { ...byBucket.get(point.bucket), primary: point.value }))
-	companionPoints.forEach((point) =>
+	Arr.forEach(primaryPoints, (point) =>
+		byBucket.set(point.bucket, { ...byBucket.get(point.bucket), primary: point.value }),
+	)
+	Arr.forEach(companionPoints, (point) =>
 		byBucket.set(point.bucket, { ...byBucket.get(point.bucket), companion: point.value }),
 	)
 	const buckets = [...byBucket.keys()].sort()
@@ -60,7 +62,7 @@ const trafficData = (inputs: Resolved) => {
 		descriptor?.zeroWhenAbsent === true && count > 0
 	const fillPrimary = fills(inputs.metric, primaryPoints.length)
 	const fillCompanion = fills(inputs.companion, companionPoints.length)
-	const points = buckets.map((bucket) => {
+	const points = Arr.map(buckets, (bucket) => {
 		const entry = byBucket.get(bucket) ?? {}
 		return {
 			bucket,
@@ -72,12 +74,20 @@ const trafficData = (inputs: Resolved) => {
 		{ key: "primary", descriptor: inputs.metric, token: "--primary", total: sum(primaryPoints) },
 		...(inputs.companion === undefined
 			? []
-			: [{ key: "companion" as const, descriptor: inputs.companion, token: "--chart-2", total: sum(companionPoints) }]),
+			: [
+					{
+						key: "companion" as const,
+						descriptor: inputs.companion,
+						token: "--chart-2",
+						total: sum(companionPoints),
+					},
+				]),
 	]
 	return { points, series }
 }
 
-const sum = (points: ReadonlyArray<{ readonly value: number }>) => points.reduce((total, point) => total + point.value, 0)
+const sum = (points: ReadonlyArray<{ readonly value: number }>) =>
+	Arr.reduce(points, 0, (total, point) => total + point.value)
 
 export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((model, raw, h): Html => {
 	const inputs = {
@@ -90,7 +100,7 @@ export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((
 	const spec: ChartSpec = {
 		_tag: "AnalyticsTraffic",
 		points,
-		series: painted.map((entry) => ({ key: entry.key, metric: entry.descriptor.key })),
+		series: Arr.map(painted, (entry) => ({ key: entry.key, metric: entry.descriptor.key })),
 		tickMetric: inputs.metric.key,
 		colors: {
 			primary: resolveColor(inputs.theme, "--primary"),
@@ -107,7 +117,7 @@ export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((
 		companion === undefined
 			? undefined
 			: seriesLegend(h, {
-					items: series.map((entry) => ({
+					items: Arr.map(series, (entry) => ({
 						key: entry.key,
 						label: entry.descriptor.label,
 						color: `var(${entry.token})`,
@@ -117,7 +127,10 @@ export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((
 	return chartCard(
 		h,
 		{
-			title: companion === undefined ? inputs.metric.label : `${inputs.metric.label} & ${companion.label.toLowerCase()}`,
+			title:
+				companion === undefined
+					? inputs.metric.label
+					: `${inputs.metric.label} & ${Str.toLowerCase(companion.label)}`,
 			legend,
 		},
 		[
@@ -137,7 +150,9 @@ export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((
 								className: "h-full w-full",
 								tooltipBody: (portal) =>
 									Option.flatMap(model.tooltip, (tooltip) =>
-										tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
+										tooltip._tag === "Bucket"
+											? Option.some(bucketTooltipBody(h, tooltip, portal))
+											: Option.none(),
 									),
 							}),
 						],

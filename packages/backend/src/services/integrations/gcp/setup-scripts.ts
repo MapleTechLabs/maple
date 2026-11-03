@@ -5,7 +5,6 @@ import {
 	GCP_READER_SCOPE_ROLES,
 	gcpConnectorResourceNames,
 } from "@maple/domain/gcp"
-import { IntegrationsPersistenceError } from "@maple/domain/http"
 import {
 	type GcpConnectorId,
 	GcpLogRuntime,
@@ -13,13 +12,14 @@ import {
 	type GcpResourceNumber,
 	type GcpScopeType,
 } from "@maple/domain/primitives"
-import { Effect } from "effect"
+import { forPaste } from "../paste-script"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Single-quote a value for bash. Every value a script uses goes through here; the scope named in
  * its header comment is an id the API has pattern-checked.
  */
-const sh = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
+const sh = (value: string): string => `'${Str.replaceAll("'", `'\\''`)(value)}'`
 
 const DOCS_URL = "https://maple.dev/docs/integrations/gcp"
 const OTEL_DOCS_URL = "https://maple.dev/docs/integrations/gcp-opentelemetry"
@@ -60,10 +60,14 @@ const APPLICATION_LOGS = {
 } satisfies Record<GcpLogRuntime, { readonly name: string; readonly leftOut: string }>
 
 const leftOutRuntimes = (applicationLogs: ReadonlyArray<GcpLogRuntime>) =>
-	GcpLogRuntime.literals.filter((runtime) => !applicationLogs.includes(runtime))
+	Arr.filter(GcpLogRuntime.literals, (runtime) => !applicationLogs.includes(runtime))
 
 export const gcpLogFilter = (applicationLogs: ReadonlyArray<GcpLogRuntime>): string =>
-	[...NOISE, ...leftOutRuntimes(applicationLogs).map((runtime) => APPLICATION_LOGS[runtime].leftOut)].join(
+	Arr.join(
+		[
+			...NOISE,
+			...Arr.map(leftOutRuntimes(applicationLogs), (runtime) => APPLICATION_LOGS[runtime].leftOut),
+		],
 		" AND ",
 	)
 
@@ -124,7 +128,10 @@ SUBSCRIPTION=${sh(names.subscription)}
 SINK=${sh(names.sink)}
 SERVICE_ACCOUNT=${sh(names.serviceAccountId)}
 SERVICE_ACCOUNT_EMAIL="$SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com"
-${more.map((line) => `${line}\n`).join("")}MAPLE_URL=${sh(target.mapleUrl)}
+${Arr.join(
+	Arr.map(more, (line) => `${line}\n`),
+	"",
+)}MAPLE_URL=${sh(target.mapleUrl)}
 SCOPE="${target.scopeType} $SCOPE_ID"
 OWNER="Owner on project $PROJECT_ID"
 SINK_ROLE="Logs Configuration Writer on $SCOPE"
@@ -292,7 +299,7 @@ const apisOff = (
 	scopeType: GcpScopeType,
 	apis: ReadonlyArray<string>,
 ) => `# Which of the APIs this script needs are off in ${hostProject(scopeType)}, asked once.
-APIS_OFF="$(off ${apis.join(" ")})"
+APIS_OFF="$(off ${Arr.join(apis, " ")})"
 # gcloud needs the Cloud Resource Manager API of the project its calls are counted against: this
 # one, or a service account's own project, usually this one too. So it is switched on before the
 # first read. Not everyone may switch an API on: a refusal here is reported further down.
@@ -420,12 +427,14 @@ esac
 }${
 	checks.permissions.length === 0
 		? ""
-		: `${PERMISSION_CHECK}${checks.permissions
-				.map(
+		: `${PERMISSION_CHECK}${Arr.join(
+				Arr.map(
+					checks.permissions,
 					([resource, where, ask, permissions]) =>
-						`allowed "${resource}" "${where}" "${ask}" \\\n  ${permissions.join(" ")}\n`,
-				)
-				.join("")}# Switching an API on takes a right of its own, asked about only when one is off.
+						`allowed "${resource}" "${where}" "${ask}" \\\n  ${Arr.join(permissions, " ")}\n`,
+				),
+				"",
+			)}# Switching an API on takes a right of its own, asked about only when one is off.
 [ -z "$APIS_OFF" ] || allowed "projects/$PROJECT_ID" "project $PROJECT_ID" "This script has to switch on:$APIS_OFF. Ask for Service Usage Admin there, or have an administrator switch them on." \\
   serviceusage.services.enable
 if [ "$CHECKED" = 1 ]; then
@@ -477,7 +486,7 @@ const permissionChecks = (
 		[
 			`${scopeType}s/$SCOPE_ID`,
 			"$SCOPE",
-			`Ask for ${roles.join(" and ")} there, ${administrator} If the ID looks wrong, check it with: ${scope.list}`,
+			`Ask for ${Arr.join(roles, " and ")} there, ${administrator} If the ID looks wrong, check it with: ${scope.list}`,
 			[...sink, ...(metrics ? [`resourcemanager.${scopeType}s.setIamPolicy`] : [])],
 		],
 	]
@@ -518,7 +527,7 @@ DESTINATION="pubsub.googleapis.com/projects/$PROJECT_ID/topics/$TOPIC"
 
 # APIs in ${hostProject(scopeType)}: Pub/Sub carries the log entries, Cloud Logging routes them,
 # and Cloud Resource Manager is what gcloud grants the roles below through.
-apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" ${GCP_LOG_APIS.join(" ")}
+apis "Pub/Sub, Cloud Logging, Cloud Resource Manager" ${Arr.join(GCP_LOG_APIS, " ")}
 
 if exists gcloud pubsub topics describe "$TOPIC" --project="$PROJECT_ID"; then
   ok "Topic already exists"
@@ -628,7 +637,7 @@ section "Metrics and resources"
 #   iamcredentials.googleapis.com  short-lived tokens for that account; no key is ever created
 #   cloudresourcemanager.googleapis.com  what gcloud grants the roles below through
 apis "Cloud Monitoring, Cloud Asset, IAM, IAM Credentials, Cloud Resource Manager" \\
-  ${GCP_METRIC_APIS.join(" ")}
+  ${Arr.join(GCP_METRIC_APIS, " ")}
 
 # A service account that an earlier run deleted (metrics switched off) fails this describe as
 # well and is created again. Google makes that a new account under the same name, with none of
@@ -647,7 +656,7 @@ fi
 #   roles/cloudasset.viewer  list resources (cloudasset.assets.searchAllResources)
 # These are the narrowest predefined roles for the two calls. Both are read-only, and broader
 # than the calls: Cloud Asset Viewer can also read resource metadata and IAM policies.
-for ROLE in ${GCP_READER_SCOPE_ROLES.join(" ")}; do
+for ROLE in ${Arr.join(GCP_READER_SCOPE_ROLES, " ")}; do
   grant "Couldn't grant the read-only roles." "$IAM_ROLE" \\
     ${SCOPES[scopeType].gcloud} add-iam-policy-binding "$SCOPE_ID" \\
     ${serviceAccountMember} --role="$ROLE" --condition=None
@@ -687,7 +696,7 @@ account_remains() {
 if account_remains gcloud iam service-accounts list --project="$PROJECT_ID" \\
   --filter="email=$SERVICE_ACCOUNT_EMAIL" --format='value(email)'; then
   # Role bindings first: once the account is deleted they can no longer be removed by name.
-  for ROLE in ${GCP_READER_SCOPE_ROLES.join(" ")}; do
+  for ROLE in ${Arr.join(GCP_READER_SCOPE_ROLES, " ")}; do
     unbind "$IAM_ROLE" ${SCOPES[scopeType].gcloud} remove-iam-policy-binding "$SCOPE_ID" \\
       ${serviceAccountMember} --role="$ROLE" --all
   done
@@ -700,34 +709,6 @@ else
   ok "Nothing left to remove"
 fi
 ${notifies ? `notify "Maple notified" '"metrics":false'\n` : ""}`
-
-/**
- * The text that is copied: the script as a here-document for a child bash. Pasted at a prompt,
- * nothing runs before the closing brace is read, a failing step ends the child and not the login
- * shell, and the terminal stays the script's stdin. The first line keeps the paste, secret and
- * all, out of the history file of zsh 5.3+ (which writes it after the command ran) and drops it
- * from the history of bash 5; its leading space does the same under `HISTCONTROL=ignorespace`
- * and `HIST_IGNORE_SPACE`. bash 3.2 keeps only the first line, which has no secret. Nothing
- * outside the here-document may be a comment: an interactive zsh runs `#` as a command.
- */
-// A terminal, not the bytes, decides where a pasted line ends: a CR or a TAB (completion) in a
-// value could end the here-document early and hand the rest to the login shell.
-const PASTE_SAFE = /^[\x20-\x7e\n]*$/u
-
-const forPaste = (marker: string, body: string): Effect.Effect<string, IntegrationsPersistenceError> =>
-	!PASTE_SAFE.test(body) || body.split("\n").includes(marker)
-		? Effect.fail(
-				new IntegrationsPersistenceError({
-					message: "A Google Cloud script value would end the script's here-document early",
-				}),
-			)
-		: Effect.succeed(
-				` { [ -z "\${ZSH_VERSION-}" ] || case "\${HISTORY_IGNORE-}" in *"*${marker}*"*) ;; *) HISTORY_IGNORE="(\${HISTORY_IGNORE:+$HISTORY_IGNORE|}*${marker}*)" ;; esac; [ -z "\${BASH_VERSION-}" ] || case "$(history 1)" in *${marker}*) history -d -1 ;; esac 2>/dev/null
-bash /dev/fd/3 3<<'${marker}'
-${body}${marker}
-}
-`,
-			)
 
 export interface GcpSetupScriptInput extends GcpScriptTarget {
 	/** The ingest gateway's receiver URL for this connector, including its secret. */
@@ -750,7 +731,7 @@ export interface GcpSetupScriptInput extends GcpScriptTarget {
 export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 	const { scopeType, logsEnabled: logs } = input
 	const applicationLogs = input.applicationLogs ?? []
-	const leftOut = leftOutRuntimes(applicationLogs).map((runtime) => APPLICATION_LOGS[runtime].name)
+	const leftOut = Arr.map(leftOutRuntimes(applicationLogs), (runtime) => APPLICATION_LOGS[runtime].name)
 	// On for the connector while this deployment has lost its Google identity: nothing is set up
 	// and, above all, nothing a customer set up earlier is removed.
 	const metrics = !input.metricsEnabled
@@ -762,6 +743,7 @@ export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 	const metricsState =
 		metrics === "lost" ? "not available on this Maple deployment, left as is" : state(metrics === "on")
 	return forPaste(
+		"Google Cloud",
 		"MAPLE_SETUP_SCRIPT",
 		`#!/usr/bin/env bash
 # Maple setup for Google Cloud ${scopeType} ${input.scopeId}
@@ -784,7 +766,7 @@ ${
 # send them over OpenTelemetry are then stored twice.
 # Details: ${OTEL_DOCS_URL}`
 		: `# It also leaves out what the code of these runtimes writes to stdout and stderr:
-#   ${leftOut.join(", ")}
+#   ${Arr.join(leftOut, ", ")}
 # A workload that also sends its logs over OpenTelemetry would have those lines stored twice. The
 # choice is made under Log filter in Maple.
 # Details: ${OTEL_DOCS_URL}`
@@ -881,6 +863,7 @@ export interface GcpCleanupScriptInput extends GcpScriptTarget {
 /** Removes what the setup script created. Without a push endpoint it carries no secret. */
 export const renderGcpCleanupScript = (input: GcpCleanupScriptInput) =>
 	forPaste(
+		"Google Cloud",
 		"MAPLE_CLEANUP_SCRIPT",
 		`#!/usr/bin/env bash
 # Maple cleanup for Google Cloud ${input.scopeType} ${input.scopeId}

@@ -1,16 +1,20 @@
 import { V2Source } from "@maple/domain/http/v2"
 import { PushSourcePlatform } from "@maple/domain/primitives"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
 import { DataIntegration } from "../../integrations/embed"
+import { FlowStage } from "../../integrations/flow"
 import { Model as IntegrationModel } from "../../integrations/model"
 
-// `/sources/new`: pick a platform, name it, copy the token.
+// `/sources/new`: pick a platform, name it, copy the token. Onboarding's drawer runs the same flow.
+
+/** Where the flow shows: its own page, or onboarding's drawer (no links away, Done closes it). */
+export type FlowHost = "page" | "drawer"
 
 /** The create's answer: the source and its one-time token, held in memory only. */
 export const Created = Schema.Struct({ source: V2Source, secret: Schema.String })
@@ -36,5 +40,7 @@ export const Model = Schema.Struct({
 	integrations: IntegrationModel,
 	/** A target was added in this visit: WarpStream's step is done (its targets read as Prometheus ones). */
 	hasAddedTarget: Schema.Boolean,
+	/** The integration's current step: Connect, Choose data or Go live. */
+	stage: FlowStage,
 })
 export type Model = typeof Model.Type

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { mintUnsubscribeToken, unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
+import { String as Str } from "effect"
 
 const SECRET = "test-secret"
 const SUB_ID = "4b7c1c2e-8f0a-4d7e-9b51-1f2a3b4c5d6e"
@@ -20,7 +21,7 @@ describe("unsubscribe tokens", () => {
 	})
 
 	it("rejects a token whose kind or id was swapped", () => {
-		const [, id, sig] = mintUnsubscribeToken(SECRET, "digest", SUB_ID).split(".")
+		const [, id, sig] = Str.split(".")(mintUnsubscribeToken(SECRET, "digest", SUB_ID))
 		expect(verifyUnsubscribeToken(SECRET, `web-analytics.${id}.${sig}`)).toBeUndefined()
 		expect(
 			verifyUnsubscribeToken(SECRET, `digest.00000000-0000-4000-8000-000000000000.${sig}`),

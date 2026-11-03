@@ -3,9 +3,10 @@ import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../../data/integration-statuses"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
+import { completeOAuthReturn } from "./oauth-return"
 import { BillingCustomerCache } from "../../data/billing-customer"
 import { readIsOrgAdmin } from "../../data/session-tenant"
 import { trackProduct } from "../../data/analytics"
@@ -15,6 +16,12 @@ const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 const Args = { key: Schema.String }
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
+
+/** Finishes a provider return the URL fragment carries (`oauth-return.ts`); a no-op otherwise. */
+export const CompleteOAuthReturn = Command.define("CompleteIntegrationsOAuthReturn", {
+	messages: [Message.CompletedOAuthReturn],
+	execute: Effect.map(completeOAuthReturn, (outcome) => Message.CompletedOAuthReturn({ outcome })),
+})
 
 /** Sequences the URL cleanup after the toast: one OutMessage per update. */
 export const StripChatParams = Command.define("StripIntegrationsChatParams", {
@@ -102,6 +109,35 @@ export const LoadGcp = Command.define("LoadIntegrationsGcpStatus", {
 		),
 })
 
+export const LoadAws = Command.define("LoadIntegrationsAwsStatus", {
+	args: Args,
+	messages: [Message.CompletedLoadAws],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.awsIntegration.status()
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLoadAws({ key, result })),
+		),
+})
+
+/** Shared with the sidebar and /infra/supabase through `IntegrationStatuses`. */
+export const LoadSupabase = Command.define("LoadIntegrationsSupabaseStatus", {
+	args: RefreshArgs,
+	messages: [Message.CompletedLoadSupabase],
+	execute: ({ key, refresh }) =>
+		Effect.map(
+			settle(
+				Effect.gen(function* () {
+					const statuses = yield* IntegrationStatuses
+					return yield* statuses.supabase({ refresh })
+				}),
+			),
+			(result) => Message.CompletedLoadSupabase({ key, result }),
+		),
+})
+
 /** `retainedQueryV2("planetscaleIntegration", "databases")`: the poller's inventory. */
 export const LoadPlanetscaleDatabases = Command.define("LoadIntegrationsPlanetscaleDatabases", {
 	args: Args,
@@ -116,16 +152,16 @@ export const LoadPlanetscaleDatabases = Command.define("LoadIntegrationsPlanetsc
 		),
 })
 
-export const LoadHazel = Command.define("LoadIntegrationsHazelStatus", {
+export const LoadLinear = Command.define("LoadIntegrationsLinearStatus", {
 	args: Args,
-	messages: [Message.CompletedLoadHazel],
+	messages: [Message.CompletedLoadLinear],
 	execute: ({ key }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
-			return yield* client.integrations.hazelStatus()
+			return yield* client.integrations.linearStatus()
 		}).pipe(
 			settle,
-			Effect.map((result) => Message.CompletedLoadHazel({ key, result })),
+			Effect.map((result) => Message.CompletedLoadLinear({ key, result })),
 		),
 })
 
@@ -179,7 +215,9 @@ export const TrackConnected = Command.define("TrackIntegrationConnected", {
 	args: { provider: Schema.String },
 	messages: [Message.CompletedTrackConnected],
 	execute: ({ provider }) =>
-		trackProduct("integration_connected", { provider }).pipe(Effect.as(Message.CompletedTrackConnected())),
+		trackProduct("integration_connected", { provider }).pipe(
+			Effect.as(Message.CompletedTrackConnected()),
+		),
 })
 
 /** `useIsOrgAdmin()`: the session the shell already read (`SessionTenant`), for the settings rail. */
@@ -190,11 +228,11 @@ export const LoadSession = Command.define("LoadIntegrationsSession", {
 
 /** `useMapleCustomer` (`billingCustomerAtom`). */
 export const LoadCustomer = Command.define("LoadIntegrationsCustomer", {
-	args: Args,
+	args: { key: Schema.String, orgId: Schema.String },
 	messages: [Message.CompletedLoadCustomer],
-	execute: ({ key }) =>
+	execute: ({ key, orgId }) =>
 		Effect.gen(function* () {
-			return yield* (yield* BillingCustomerCache).get()
+			return yield* (yield* BillingCustomerCache).get({ orgId })
 		}).pipe(
 			settle,
 			Effect.map((result) => Message.CompletedLoadCustomer({ key, result })),

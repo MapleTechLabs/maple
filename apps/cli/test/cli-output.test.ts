@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { strict as assert } from "node:assert"
-import { Cause } from "effect"
+import { Cause, Array as Arr, String as Str } from "effect"
 import { renderUnexpected } from "../src/core/outcomes"
 import { ModeError } from "../src/core/mode"
 import { TimeRangeError } from "../src/core/time"
@@ -151,7 +151,10 @@ describe("views", () => {
 			},
 		]
 		const sections = servicesView("none").table?.(rows) ?? []
-		const text = sections.map((s) => s.body).join("\n")
+		const text = Arr.join(
+			Arr.map(sections, (s) => s.body),
+			"\n",
+		)
 		assert.match(text, /SERVICE\s+THROUGHPUT/)
 		assert.match(text, /4\.49%/)
 		assert.match(text, /2\.18s/)
@@ -168,7 +171,10 @@ describe("views", () => {
 			lastSeen: "2026-09-25 23:00:00",
 			serviceName: "checkout-service",
 		}
-		const text = (errorsView("none").table?.([row]) ?? []).map((s) => s.body).join("\n")
+		const text = Arr.join(
+			Arr.map(errorsView("none").table?.([row]) ?? [], (s) => s.body),
+			"\n",
+		)
 		assert.match(text, /checkout-service \+1/)
 	})
 })
@@ -226,8 +232,8 @@ describe("failure rendering", () => {
 			"error: invalid --since \"1w\"\nhint: use --since 30m, 6h or 7d, or --start/--end as 'YYYY-MM-DD HH:mm:ss' (UTC) or ISO-8601\n",
 		)
 		assert.ok(
-			renderUnexpected(Cause.die(new Error("boom")), false).startsWith(
-				"error: unexpected failure: boom",
+			Str.startsWith("error: unexpected failure: boom")(
+				renderUnexpected(Cause.die(new Error("boom")), false),
 			),
 		)
 	})

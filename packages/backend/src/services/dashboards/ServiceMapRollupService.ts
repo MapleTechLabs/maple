@@ -6,6 +6,7 @@ import { Clock, Cause, Context, Effect, Layer, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -71,10 +72,11 @@ export interface ServiceMapRollupServiceApi {
 export class ServiceMapRollupService extends Context.Service<
 	ServiceMapRollupService,
 	ServiceMapRollupServiceApi
->()("@maple/api/services/ServiceMapRollupService", {
+>()("@maple/backend/services/ServiceMapRollupService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
+		const orgChSettings = yield* OrgClickHouseSettingsService
 
 		const systemTenant = (orgId: OrgId): TenantContext => ({
 			orgId,
@@ -191,9 +193,6 @@ export class ServiceMapRollupService extends Context.Service<
 		 * have no spans to join, so every hour they are handed costs two
 		 * warehouse scans to prove a join is empty.
 		 *
-		 * BYO-ClickHouse orgs are invisible to this managed-workspace scan and
-		 * are always processed.
-		 *
 		 * Fails OPEN, unlike the anomaly tick: a skipped rollup hour is a
 		 * permanent gap in the service map once it ages past `LOOKBACK_HOURS`,
 		 * whereas a skipped anomaly evaluation is only a late alert. A discovery
@@ -207,10 +206,6 @@ export class ServiceMapRollupService extends Context.Service<
 
 			const nowMs = yield* Clock.currentTimeMillis
 			const startTime = formatWarehouseDateTime(nowMs - ACTIVE_DISCOVERY_HOURS * HOUR_MS)
-			const byoRows = yield* database
-				.execute((db) => db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()))
-				.pipe(Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: OrgId }> => []))
-
 			return yield* warehouse
 				.crossOrgQuery(
 					systemTenant(knownOrgs[0]!),
@@ -224,10 +219,7 @@ export class ServiceMapRollupService extends Context.Service<
 				)
 				.pipe(
 					Effect.map((rows) => {
-						const active: ReadonlySet<OrgId> = new Set<OrgId>([
-							...byoRows.map((row) => row.orgId),
-							...rows.map((row) => row.orgId),
-						])
+						const active: ReadonlySet<OrgId> = new Set<OrgId>(rows.map((row) => row.orgId))
 						return active
 					}),
 					Effect.catchCause((cause) =>
@@ -250,15 +242,32 @@ export class ServiceMapRollupService extends Context.Service<
 				db.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
 			)
 
-			const knownOrgs = orgRows.map((row) => row.orgId)
+			// A BYO-ClickHouse org's service map reads its own cluster, while this
+			// rollup can only write the managed warehouse: the rows would never be
+			// read, and they would be derived from data the org controls.
+			const byoRows = yield* database.execute((db) =>
+				db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
+			)
+			const byoOrgs: ReadonlySet<OrgId> = new Set(byoRows.map((row) => row.orgId))
+			const knownOrgs = orgRows.map((row) => row.orgId).filter((orgId) => !byoOrgs.has(orgId))
 			const active = yield* resolveActiveOrgs(knownOrgs)
 			const targetOrgs =
 				active === undefined ? knownOrgs : knownOrgs.filter((orgId) => active.has(orgId))
 			yield* Effect.annotateCurrentSpan({
+				"maple.service_map.byo_orgs_skipped": orgRows.length - knownOrgs.length,
 				"maple.service_map.known_orgs": knownOrgs.length,
 				"maple.service_map.target_orgs": targetOrgs.length,
 				"maple.service_map.active_org_discovery": active === undefined ? "failed" : "ok",
 			})
+
+			// One batched read warms the org warehouse-config memo before the fan-out
+			// below, so 4 concurrent fibers do not each miss it cold. Best-effort.
+			yield* orgChSettings.primeRuntimeConfigs(targetOrgs).pipe(
+				Effect.ignore({
+					log: "Warn",
+					message: "Failed to prime service map rollup runtime configs",
+				}),
+			)
 
 			const results = yield* Effect.forEach(
 				targetOrgs,
@@ -305,5 +314,7 @@ export class ServiceMapRollupService extends Context.Service<
 		return { runRollupTick }
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, OrgClickHouseSettingsService.layer)),
+	)
 }

@@ -1,7 +1,7 @@
 import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
-import * as ServiceMap from "@maple/web/service-map/map/service-map"
-import { view as mapView } from "@maple/web/service-map/map/view"
-import { serviceMapLoading } from "@maple/web/service-map/map/loading"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
+import { view as mapView } from "@maple/views/service-map/map/view"
+import { serviceMapLoading } from "@maple/views/service-map/map/loading"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { PageViewInputs } from "../kit/inputs"
 import { signalEmptyState } from "../kit/signal-empty-state"
@@ -11,11 +11,22 @@ import { durationSecondsOf } from "./load"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { databasePanel } from "./view-db-panel"
-import { servicePanel } from "./view-service-panel"
+import { servicePanel } from "@maple/views/service-map/panel/service-panel"
+import { hrefFor } from "../../route"
+import { String as Str } from "effect"
 
 // `ServiceMapFlowCanvas` with local mode's empty state and detail panels.
 
 const toMap = (message: ServiceMap.Message) => Message.GotMapMessage({ message })
+
+const serviceHref =
+	(range: string) =>
+	(serviceName: string): string =>
+		hrefFor(`/services/${encodeURIComponent(serviceName)}`, new URLSearchParams({ range }))
+
+/** Span scope: most services never own a trace's root span. */
+const tracesHref = (serviceName: string, range: string): string =>
+	hrefFor("/traces", new URLSearchParams({ scope: "spans", service: serviceName, range }))
 
 /** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
 const detailPanel =
@@ -23,24 +34,25 @@ const detailPanel =
 	(selectedId: string): Html => {
 		const durationSeconds = durationSecondsOf(inputs.context)
 		const range = rangeOf(inputs.context)
-		if (selectedId.startsWith(DB_NODE_PREFIX))
+		if (Str.startsWith(DB_NODE_PREFIX)(selectedId))
 			return databasePanel(h, {
 				...parseDbNodeId(selectedId),
 				data,
 				durationSeconds,
-				range,
+				serviceHref: serviceHref(range),
 				onClose: toMap(ServiceMap.Message.ClickedCloseDetail()),
 			})
 		return servicePanel(h, {
-			serviceName: selectedId,
-			data,
-			colorMode: map.colorMode,
+			serviceId: selectedId,
+			map,
+			overviews: data.overviews,
+			edges: data.edges,
+			dbEdges: data.dbEdges,
+			platform: data.platforms.get(selectedId),
 			durationSeconds,
-			range,
-			actions: {
-				onFocus: toMap(ServiceMap.Message.ClickedFocusSelected()),
-				onClose: toMap(ServiceMap.Message.ClickedCloseDetail()),
-			},
+			serviceHref: serviceHref(range),
+			tracesHref: tracesHref(selectedId, range),
+			toMapMessage: toMap,
 		})
 	}
 
@@ -59,7 +71,7 @@ export const mapCanvas = (
 			noun: "services",
 			range,
 			onWidenRange: Message.ClickedWidenRange(),
-			maybePresence: inputs.presenceOf("traces"),
+			presence: inputs.presenceOf("traces"),
 			nowMs: inputs.presenceNowMs,
 			guide: {
 				id: "service-map-empty",

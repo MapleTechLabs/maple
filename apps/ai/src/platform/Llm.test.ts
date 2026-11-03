@@ -10,7 +10,17 @@
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
-import { ConfigProvider, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
@@ -24,6 +34,10 @@ import {
 	loadLlmSettings,
 	resolveDecisionModel,
 	resolveReviewModel,
+	resolveSecurityAuditModel,
+	securityAuditModelId,
+	securityAuditModelIds,
+	DEFAULT_AUDIT_MODELS,
 	resolveTriageModel,
 	type LlmCallTags,
 	type LlmSettings,
@@ -46,6 +60,7 @@ const captureRequest = (
 	env: LlmSettings,
 	tags?: LlmCallTags,
 	resolve: (env: LlmSettings, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
+	declareTool = false,
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -53,12 +68,12 @@ const captureRequest = (
 		const fakeFetch: typeof globalThis.fetch = async (input, init) => {
 			const headers: Record<string, string> = {}
 			new Headers(init?.headers).forEach((value, key) => {
-				headers[key.toLowerCase()] = value
+				headers[Str.toLowerCase(key)] = value
 			})
 			// The body arrives as bytes, not a string — `Response` is the cheapest correct decoder.
 			const bodyText = await new Response(init?.body ?? "{}").text()
 			captured = {
-				url: String(input),
+				url: input instanceof Request ? input.url : input.toString(),
 				headers,
 				body: JSON.parse(bodyText) as Record<string, unknown>,
 			}
@@ -67,7 +82,20 @@ const captureRequest = (
 
 		const model = resolve(env, tags)
 
-		yield* LanguageModel.generateText({ prompt: "hi", system: "You are concise." }).pipe(
+		const prompt = [
+			{ role: "system" as const, content: "You are concise." },
+			{ role: "user" as const, content: "hi" },
+		]
+		const call = declareTool
+			? Effect.asVoid(
+					LanguageModel.generateText({
+						prompt,
+						toolkit: Toolkit.make(listServices),
+						disableToolCallResolution: true,
+					}),
+				)
+			: Effect.asVoid(LanguageModel.generateText({ prompt }))
+		yield* call.pipe(
 			Effect.provide(model.layer),
 			Effect.ignore,
 			Effect.provide(layerLlm(env)),
@@ -130,7 +158,10 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 
 	it.live("truncates an over-long session id to OpenRouter's 256-character limit", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureRequest(openRouterEnv, { ...tags, sessionId: "s".repeat(400) })
+			const captured = yield* captureRequest(openRouterEnv, {
+				...tags,
+				sessionId: Str.repeat(400)("s"),
+			})
 
 			expect(captured.body.session_id).toHaveLength(256)
 		}),
@@ -150,6 +181,17 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 			)
 			expect(captured.body.usage).toEqual({ include: true })
 		}).pipe(Effect.withSpan("chat")),
+	)
+
+	it.live("leaves strict off a tool with no strict annotation, since some upstreams reject null", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(openRouterEnv, tags, resolveTriageModel, true)
+
+			// An exact match: a `strict: null` key left on the function fails it.
+			expect(captured.body.tools).toEqual([
+				{ type: "function", function: { name: "list_services", parameters: expect.anything() } },
+			])
+		}),
 	)
 
 	it.live("keeps the headers and tags off the Workers AI path", () =>
@@ -204,6 +246,53 @@ describe("reasoning effort", () => {
 			expect(captured.body).not.toHaveProperty("reasoning")
 		}),
 	)
+})
+
+describe("resolveSecurityAuditModel", () => {
+	it("resolves discovery and validation to different models, each overridable", () => {
+		const defaults = [
+			resolveSecurityAuditModel(openRouterEnv, "discovery").name,
+			resolveSecurityAuditModel(openRouterEnv, "validation").name,
+		]
+		const overridden = resolveSecurityAuditModel(
+			{ ...openRouterEnv, MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: "openai/gpt-6-luna" },
+			"validation",
+		).name
+		expect([defaults[0] !== defaults[1], overridden]).toEqual([true, "openai/gpt-6-luna"])
+	})
+
+	it("runs on the org's pick over the deployment's override", () => {
+		const env = { ...openRouterEnv, MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: "openai/gpt-6-luna" }
+		expect(
+			resolveSecurityAuditModel(env, "discovery", undefined, "anthropic/claude-haiku-5.5").name,
+		).toBe("anthropic/claude-haiku-5.5")
+	})
+
+	it("ignores a pick the region does not serve, or that cannot verify", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		expect([
+			securityAuditModelId(eu, "discovery", "deepseek/deepseek-v4.1-flash-1017:nitro"),
+			securityAuditModelId(openRouterEnv, "validation", "openai/gpt-6.1-sol"),
+			securityAuditModelId(openRouterEnv, "discovery", "not/a-listed-model"),
+		]).toEqual([
+			DEFAULT_AUDIT_MODELS.eu.discovery,
+			DEFAULT_AUDIT_MODELS.us.validation,
+			DEFAULT_AUDIT_MODELS.us.discovery,
+		])
+	})
+})
+
+describe("securityAuditModelIds", () => {
+	it("never verifies on the hunting model, even when the region's fallback lands both picks on one", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		// DeepSeek has no EU provider, so the hunter falls back to Haiku, which this org verifies with.
+		expect(
+			securityAuditModelIds(eu, {
+				discovery: "deepseek/deepseek-v4.1-flash-1017:nitro",
+				validation: "anthropic/claude-haiku-5.5",
+			}),
+		).toEqual({ discovery: DEFAULT_AUDIT_MODELS.eu.validation, validation: "anthropic/claude-haiku-5.5" })
+	})
 })
 
 describe("resolveReviewModel", () => {
@@ -400,19 +489,22 @@ const sseBody = (
 					})}`,
 					"",
 				]
-	return [
-		...chunks.flatMap((chunk) => [`data: ${JSON.stringify({ ...envelope, ...chunk })}`, ""]),
-		...terminal,
-		"data: [DONE]",
-		"",
-	].join("\n")
+	return Arr.join(
+		[
+			...Arr.flatMap(chunks, (chunk) => [`data: ${JSON.stringify({ ...envelope, ...chunk })}`, ""]),
+			...terminal,
+			"data: [DONE]",
+			"",
+		],
+		"\n",
+	)
 }
 
 /**
  * The one tool the streaming fixtures declare. A `tool-call` part is decoded against the toolkit
  * the call declared, so a stream that returns one is only readable with the tool in hand.
  */
-const listServices = Tool.make("list_services", { parameters: Schema.Struct({}) })
+const listServices = Tool.make("list_services")
 
 /**
  * How one streaming fixture is shaped: the wire, plus whether the call declares a tool. Only a
@@ -431,18 +523,17 @@ const streamParts = (usage: Record<string, unknown>, options: StreamFixture = {}
 			})
 
 		const model = resolveTriageModel(openRouterEnv)
-		return yield* LanguageModel.streamText({
-			prompt: "hi",
-			...(options.declareTool === true
-				? {
+		const stream =
+			options.declareTool === true
+				? LanguageModel.streamText({
+						prompt: "hi",
 						toolkit: Toolkit.make(listServices),
 						// What the agent engine sends: the run owns tool execution, the model call only
 						// reports the calls it was asked for.
 						disableToolCallResolution: true,
-					}
-				: undefined),
-		}).pipe(
-			Stream.runCollect,
+					})
+				: LanguageModel.streamText({ prompt: "hi" })
+		return yield* Stream.runCollect(stream).pipe(
 			// One provide, not a chain: the model layer needs the clients the LLM stack builds, so
 			// they go in as a single merged layer rather than two lifecycles stacked on each other.
 			Effect.provide(Layer.provide(model.layer, layerLlm(openRouterEnv))),
@@ -550,7 +641,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
 			// "said nothing" half of the report, and it survives a finish part on its own.
 			const parts = yield* streamParts(disjointReasoningUsage, { omitUsage: true })
 
-			expect(parts.map((part) => part.type)).toContain("text-end")
+			expect(Arr.map(parts, (part) => part.type)).toContain("text-end")
 		}),
 	)
 
@@ -610,7 +701,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
 		Effect.gen(function* () {
 			const parts = yield* streamParts(disjointReasoningUsage)
 
-			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "finish")).toHaveLength(1)
 		}),
 	)
 
@@ -645,8 +736,8 @@ describe("streamed completion — a stream that ends without a usage block", () 
 				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
 			})
 
-			expect(parts.filter((part) => part.type === "tool-call")).toHaveLength(1)
-			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "tool-call")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "finish")).toHaveLength(1)
 		}),
 	)
 })
@@ -681,11 +772,11 @@ describe("layerDecisionModel — Clef on Workers AI", () => {
 			const fakeFetch: typeof globalThis.fetch = async (input, init) => {
 				const headers: Record<string, string> = {}
 				new Headers(init?.headers).forEach((value, key) => {
-					headers[key.toLowerCase()] = value
+					headers[Str.toLowerCase(key)] = value
 				})
 				const bodyText = await new Response(init?.body ?? "{}").text()
 				captured = {
-					url: String(input),
+					url: input instanceof Request ? input.url : input.toString(),
 					headers,
 					body: JSON.parse(bodyText) as Record<string, unknown>,
 				}
@@ -731,6 +822,55 @@ describe("layerDecisionModel — Clef on Workers AI", () => {
 
 			assert.match(captured.url, /\/ai\/run\/@cf\/cloudflare\/clef-flash$/)
 			assert.strictEqual(captured.body.model, "clef-flash")
+		}),
+	)
+
+	it.live("sends score levels as descriptions and keys the answer's probabilities by label", () =>
+		Effect.gen(function* () {
+			const severity = Decision.make({
+				input: Schema.Struct({ message: Schema.String }),
+				decisions: {
+					severity: Decision.rate({
+						instructions: "How urgent is this incident",
+						criteria: [
+							{ label: "low", description: "Cosmetic, no user impact" },
+							{ label: "medium", description: "Degraded for some users" },
+							{ label: "high", description: "Outage or data loss" },
+						],
+					}),
+				},
+			})
+			let questions: unknown
+			const fakeFetch: typeof globalThis.fetch = async (_input, init) => {
+				const body = JSON.parse(await new Response(init?.body ?? "{}").text()) as Record<
+					string,
+					unknown
+				>
+				questions = body.questions
+				const answer = { type: "score", score: 2, probabilities: { "0": 0.1, "1": 0.2, "2": 0.7 } }
+				const output = { answers: { severity: answer }, usage: { input_tokens: 1, output_tokens: 1 } }
+				return new Response(JSON.stringify({ result: output }), { status: 200 })
+			}
+
+			const response = yield* DecisionModel.decide(severity, { input: { message: "db down" } }).pipe(
+				Effect.provide(layerDecisionModel(workersAiEnv)),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+
+			assert.deepStrictEqual(questions, {
+				severity: {
+					type: "score",
+					instructions: "How urgent is this incident",
+					criteria: ["Cosmetic, no user impact", "Degraded for some users", "Outage or data loss"],
+				},
+			})
+			assert.strictEqual(response.answers.severity.rating, 2)
+			assert.strictEqual(response.answers.severity.label, "high")
+			assert.deepStrictEqual(response.answers.severity.probabilities, {
+				low: 0.1,
+				medium: 0.2,
+				high: 0.7,
+			})
 		}),
 	)
 })

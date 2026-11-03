@@ -9,7 +9,7 @@
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { Investigations } from "@maple/db/tables"
 import { InvestigationFreeformSubject, InvestigationId, OrgId } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -97,7 +97,7 @@ describe("isInvestigationStale", () => {
  * row would all pass `tsc` and fail in prod, on a statement that runs every tick.
  */
 describe("sweepAbandonedInvestigations", () => {
-	const idOf = (id: string) => asInvestigationId(`00000000-0000-4000-8000-${id.padStart(12, "0")}`)
+	const idOf = (id: string) => asInvestigationId(`00000000-0000-4000-8000-${Str.padStart(12, "0")(id)}`)
 
 	const seed = (id: string, input: { startedMsAgo: number; heartbeatMsAgo?: number; progress?: unknown }) =>
 		Effect.gen(function* () {

@@ -1,4 +1,5 @@
 import type { GcpConnectorId, GcpScopeType } from "./primitives"
+import { String as Str } from "effect"
 
 /** The read-only account's roles: on the scope, and on the host project its reads are billed to. */
 export const GCP_READER_SCOPE_ROLES = ["roles/monitoring.viewer", "roles/cloudasset.viewer"]
@@ -33,8 +34,8 @@ export const GCP_PUSH_SUBSCRIPTION = {
  * the service account id at Google's 30-character limit.
  */
 export const gcpConnectorResourceNames = (connectorId: GcpConnectorId) => {
-	const hex = connectorId.replaceAll("-", "")
-	const name = `maple-${hex.slice(0, 24)}`
+	const hex = Str.replaceAll("-", "")(connectorId)
+	const name = `maple-${Str.slice(0, 24)(hex)}`
 	return {
 		serviceAccountId: name,
 		topic: name,
@@ -42,7 +43,7 @@ export const gcpConnectorResourceNames = (connectorId: GcpConnectorId) => {
 		sink: name,
 		// What a console or code setup's subscription signs its pushes as; it holds no role. The
 		// ingest gateway also checks the host project and an audience naming the connector in full.
-		pushServiceAccountId: `maple-push-${hex.slice(0, 19)}`,
+		pushServiceAccountId: `maple-push-${Str.slice(0, 19)(hex)}`,
 	}
 }
 

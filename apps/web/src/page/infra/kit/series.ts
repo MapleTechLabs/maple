@@ -1,7 +1,7 @@
 import { Schema } from "effect"
-import * as Chart from "../../../charts/chart"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 
 // A metric chart's data as every infra detail page reads it: the long-form rows of an
 // `*InfraTimeseries` response and its unit, keyed per metric, with the chart's interaction state.

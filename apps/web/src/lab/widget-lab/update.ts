@@ -1,12 +1,12 @@
-import { Clock, Effect, Option } from "effect"
+import { Clock, Effect, Option, Array as Arr } from "effect"
 import { Command, Update } from "foldkit"
-import * as Chart from "../../charts/chart"
-import { LoadChartRuntime } from "../../charts/chart-runtime"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import type { Resources } from "../../platform/resources"
-import * as CopyButton from "../../ui/copy-button"
-import * as Menu from "../../ui/menu"
-import * as Popover from "../../ui/popover"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Menu from "@maple/views/ui/menu"
+import * as Popover from "@maple/views/ui/popover"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { foldLabShell, initLabShell, type LabShellFlags } from "../app-shell"
 import { foldLabToasts, initLabToasts } from "../toasts"
 import { Message, type Model } from "./model"
@@ -40,7 +40,8 @@ export const init = (flags: WidgetLabFlags): Return => {
 			orgId: Option.getOrNull(flags.maybeOrgId),
 		},
 		commands: [
-			...(shell.commands ?? []).map(
+			...Arr.map(
+				shell.commands ?? [],
 				Command.mapMessage((message) => Message.GotShellMessage({ message })),
 			),
 			ReadClock(),
@@ -138,4 +139,3 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 export const isEditMode = (model: Model): boolean => model.mode.values.includes("edit")
-

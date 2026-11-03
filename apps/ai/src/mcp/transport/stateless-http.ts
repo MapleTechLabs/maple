@@ -24,7 +24,7 @@
  * live request. No `mcp-session-id` is issued, so clients never send one back
  * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
-import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Option, Predicate, Queue, Ref, Schema, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -36,6 +36,10 @@ import {
 	type RequestEncoded,
 } from "effect/rpc/RpcMessage"
 import type { McpToolsUnavailableError } from "../executor-loader"
+import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
+import { INTERNAL_SERVICE_USER_ID } from "../lib/resolve-tenant"
+import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
+import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it
@@ -50,6 +54,8 @@ const SYNTHETIC_INITIALIZE_ID = "__maple/mcp/synthetic-initialize"
  * credential, which the authorization middleware has already resolved.
  */
 const SYNTHETIC_CLIENT_INFO = { name: "maple-stateless-transport", version: "1" }
+
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const syntheticInitialize = (protocolVersion: string) => ({
 	jsonrpc: "2.0",
@@ -83,6 +89,18 @@ const isInitializeMessage = (message: FromClientEncoded): boolean =>
 
 const isToolMessage = (message: FromClientEncoded): boolean =>
 	message._tag === "Request" && message.tag.startsWith("tools/")
+
+const isToolCallMessage = (message: FromClientEncoded): boolean =>
+	message._tag === "Request" && message.tag === "tools/call"
+
+const toolsUnavailable = () =>
+	HttpServerResponse.jsonUnsafe(
+		{
+			error: "service_unavailable",
+			message: "MCP tools are temporarily unavailable; retry with backoff.",
+		},
+		{ status: 503, headers: { "cache-control": "no-store" } },
+	)
 
 /**
  * The server advertises `tools` in its `initialize` reply only once a tool is registered.
@@ -136,8 +154,11 @@ export const layerStatelessMcpHttp = (options: {
 	readonly protocol: McpProtocol.ProtocolAdapter
 	readonly allowedOrigins?: ReadonlyArray<string> | undefined
 	/** Registers the server's tools. Runs before any `tools/*` request, not up front: most
-	 * requests never touch a tool, and building the catalog dominates a cold request's CPU. */
+	 * requests never touch a tool. */
 	readonly registerTools: Effect.Effect<void, McpToolsUnavailableError>
+	/** Builds the tool executor before a `tools/call`; it dominates a cold call's CPU.
+	 * `built` is true on the one request that paid for it, which the response then says. */
+	readonly loadToolExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
 }): Layer.Layer<RpcServer.Protocol, never, RpcSerialization.RpcSerialization | HttpRouter.HttpRouter> =>
 	Layer.effect(RpcServer.Protocol)(
 		Effect.gen(function* () {
@@ -146,7 +167,7 @@ export const layerStatelessMcpHttp = (options: {
 
 			const disconnects = yield* Queue.make<number>()
 			let writeRequest!: (clientId: number, message: FromClientEncoded) => Effect.Effect<void>
-			let clientId = 0
+			const nextClientId = yield* Ref.make(0)
 
 			type Client = {
 				readonly write: (response: FromServerEncoded) => Effect.Effect<void>
@@ -173,7 +194,20 @@ export const layerStatelessMcpHttp = (options: {
 			): Effect.Effect<HttpServerResponse.HttpServerResponse, never, Scope.Scope> =>
 				Effect.gen(function* () {
 					const scope = yield* Scope.Scope
-					const requestHeaders = Object.entries(request.headers)
+					const tracer = yield* Effect.tracer
+					const tenant = yield* CurrentMcpRequestTenant
+					// Internal services share one user id, so it names no one and is left off.
+					const caller = mcpCaller(
+						request,
+						tenant === undefined || tenant.userId === INTERNAL_SERVICE_USER_ID
+							? undefined
+							: tenant.userId,
+					)
+					// No session id is ever issued, so a client's leftover one is dropped: the server
+					// would look the session up by that id instead of by this request's client.
+					const requestHeaders = Object.entries(request.headers).filter(
+						([name]) => name !== "mcp-session-id",
+					)
 					// A body that cannot be read is a request we can still answer as
 					// JSON-RPC — the same `-32700` an undecodable body gets below.
 					// `Effect.orDie` here made it a defect instead, which escaped every
@@ -187,7 +221,7 @@ export const layerStatelessMcpHttp = (options: {
 					)
 					if (body === undefined) return jsonRpcError(null, -32700, "Parse error")
 
-					const id = clientId++
+					const id = yield* Ref.getAndUpdate(nextClientId, (n) => n + 1)
 					const queue = yield* Queue.make<FromServerEncoded, Cause.Done>()
 					const requestIds: Array<RequestId> = []
 
@@ -221,15 +255,18 @@ export const layerStatelessMcpHttp = (options: {
 					// what makes it mint a session id instead of filing the session under
 					// this client. Everything the handlers need from the request travels
 					// on the messages themselves, as `requestHeaders` below.
-					const write = (message: FromClientEncoded) =>
-						Effect.updateContext(writeRequest(id, message), omitRequest)
+					// Each message gets a tracer that gives its server span the MCP conventions
+					// (`span-conventions.ts`); the synthetic handshake's span is not recorded.
+					const write = (message: FromClientEncoded, synthetic = false) =>
+						Effect.updateContext(writeRequest(id, message), omitRequest).pipe(
+							Effect.withTracer(mcpMessageTracer(tracer, message, caller, { synthetic })),
+						)
 
 					const parser = serialization.makeUnsafe()
 
-					const decoded = yield* Effect.try({
-						try: () => parser.decode(body) as ReadonlyArray<FromClientEncoded>,
-						catch: (cause) => cause,
-					}).pipe(Effect.option)
+					const decoded = Option.liftThrowable(
+						() => parser.decode(body) as ReadonlyArray<FromClientEncoded>,
+					)()
 					if (decoded._tag === "None") {
 						return jsonRpcError(null, -32700, "Parse error")
 					}
@@ -238,33 +275,39 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
-					if (messages.some(isToolMessage)) {
-						const registered = yield* Effect.exit(options.registerTools)
-						if (Exit.isFailure(registered)) {
-							yield* Effect.logError("MCP tool registration failed", registered.cause)
-							return HttpServerResponse.jsonUnsafe(
-								{
-									error: "service_unavailable",
-									message: "MCP tools are temporarily unavailable; retry with backoff.",
-								},
-								{ status: 503, headers: { "cache-control": "no-store" } },
-							)
-						}
+					const registered = messages.some(isToolMessage)
+						? yield* Effect.exit(options.registerTools)
+						: Exit.void
+					if (Exit.isFailure(registered)) {
+						yield* Effect.logError("MCP tool registration failed", registered.cause)
+						return toolsUnavailable()
 					}
+					const loaded = messages.some(isToolCallMessage)
+						? yield* Effect.exit(options.loadToolExecutor)
+						: Exit.succeed({ built: false })
+					if (Exit.isFailure(loaded)) {
+						yield* Effect.logError("MCP tool executor failed to load", loaded.cause)
+						return toolsUnavailable()
+					}
+					if (loaded.value.built) yield* Effect.annotateCurrentSpan("maple.mcp.tools_built", true)
 
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.
 					if (!messages.some(isInitializeMessage)) {
-						const synthetic = parser.decode(
-							JSON.stringify(syntheticInitialize(options.protocol.protocolVersion)),
-						) as ReadonlyArray<FromClientEncoded>
-						yield* Effect.forEach(synthetic, (message) => write(message), { discard: true })
+						const initializeJson = yield* encodeJson(
+							syntheticInitialize(options.protocol.protocolVersion),
+						).pipe(Effect.orDie)
+						const synthetic = parser.decode(initializeJson) as ReadonlyArray<FromClientEncoded>
+						yield* Effect.forEach(synthetic, (message) => write(message, true), { discard: true })
 					}
 
 					yield* Effect.forEach(
 						messages,
-						(message) =>
+						(received) =>
 							Effect.suspend(() => {
+								// The caller's span in `params._meta` parents the server span; `RpcServer`
+								// links the HTTP request's span instead.
+								const message = withMetaTraceContext(received)
 								if (message._tag === "Request") {
 									requestIds.push(RequestId(message.id))
 									;(
@@ -297,6 +340,8 @@ export const layerStatelessMcpHttp = (options: {
 						.map(withToolsCapability(initializeIds))
 					return HttpServerResponse.text(parser.encode(visible) as string, {
 						contentType: serialization.contentType,
+						// api moves it onto its own span and strips it: this request's CPU shows only there.
+						...(loaded.value.built ? { headers: { [MCP_TOOLS_BUILT_HEADER]: "1" } } : undefined),
 					})
 				})
 
@@ -340,7 +385,9 @@ export const layerStatelessMcpHttp = (options: {
 					initialMessage: Effect.succeedNone,
 					supportsAck: false,
 					supportsTransferables: false,
-					supportsSpanPropagation: false,
+					// The caller's span arrives in `params._meta`, set on the message by
+					// `withMetaTraceContext`; `RpcServer` makes it the parent and links ours.
+					supportsSpanPropagation: true,
 					supportsNotifications: false,
 					codecFor: serialization.codecFor,
 				})

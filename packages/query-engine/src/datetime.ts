@@ -9,7 +9,16 @@
 // DateTime string into an unambiguous UTC value. Already-zoned strings (with a
 // `Z` or numeric offset) and non-matching shapes are passed through untouched.
 
-import { DateTime, Effect, Option, Schema, SchemaGetter, SchemaIssue } from "effect"
+import {
+	DateTime,
+	Effect,
+	Option,
+	Schema,
+	SchemaGetter,
+	SchemaIssue,
+	Array as Arr,
+	String as Str,
+} from "effect"
 
 const WAREHOUSE_DATETIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d+))?$/
 
@@ -20,7 +29,7 @@ const WAREHOUSE_DATETIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(
  * timestamps) are returned trimmed but otherwise unchanged.
  */
 export function warehouseDateTimeToIso(value: string): string {
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	const match = WAREHOUSE_DATETIME_PATTERN.exec(trimmed)
 	if (!match) {
 		return trimmed
@@ -31,7 +40,7 @@ export function warehouseDateTimeToIso(value: string): string {
 		return `${date}T${time}Z`
 	}
 
-	const milliseconds = `${fractional}000`.slice(0, 3)
+	const milliseconds = Str.slice(0, 3)(`${fractional}000`)
 	return `${date}T${time}.${milliseconds}Z`
 }
 
@@ -54,7 +63,7 @@ export function parseWarehouseDateTime(value: string): number {
  * `formatForTinybird`, and `toWarehouseDateTime` — all identical.
  */
 export function formatWarehouseDateTime(epochMs: number): string {
-	return new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+	return Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 }
 
 /**
@@ -65,8 +74,25 @@ export function formatWarehouseDateTime(epochMs: number): string {
  * `formatWarehouseDateTime` because truncating those to whole seconds
  * collapses events that must stay ordered.
  */
+const HOUR_MS = 3_600_000
+
+/**
+ * The whole hours `serviceHealthSnapshotQuery` reads for a window, [floor(start), ceil(end)),
+ * at the query's whole-second precision. Rates over that read divide by `seconds`.
+ */
+export function serviceHealthSnapshotHours(
+	startTime: string,
+	endTime: string,
+): { readonly startMs: number; readonly endMs: number; readonly seconds: number } {
+	const startSecondMs = Math.floor(parseWarehouseDateTime(startTime) / 1000) * 1000
+	const endSecondMs = Math.floor(parseWarehouseDateTime(endTime) / 1000) * 1000
+	const startMs = Math.floor(startSecondMs / HOUR_MS) * HOUR_MS
+	const endMs = Math.floor((endSecondMs + HOUR_MS - 1000) / HOUR_MS) * HOUR_MS
+	return { startMs, endMs, seconds: Math.max(0, endMs - startMs) / 1000 }
+}
+
 export function formatWarehouseDateTimeMs(epochMs: number): string {
-	return new Date(epochMs).toISOString().replace("T", " ").replace(/Z$/, "")
+	return Str.replace(/Z$/, "")(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 }
 
 // Warehouse time as a schema
@@ -233,7 +259,7 @@ export function warehouseDateTime(epochMs: number): WarehouseDateTime {
  * impossible calendar dates. The replacement for `parseWarehouseDateTime`.
  */
 export const parseUtc = (value: string): Option.Option<DateTime.Utc> => {
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	return TIME_INPUT_PATTERN.test(trimmed) && hasRealCalendarFields(trimmed)
 		? Option.map(DateTime.make(warehouseDateTimeToIso(trimmed)), DateTime.toUtc)
 		: Option.none()
@@ -241,25 +267,22 @@ export const parseUtc = (value: string): Option.Option<DateTime.Utc> => {
 
 /** Parses the warehouse wire shape (tz-less = UTC), or ISO with `Z`/offset. */
 const warehouseWireToUtc = SchemaGetter.transformEffect<DateTime.Utc, string>((value, options) =>
-	Option.match(parseUtc(value), {
-		onNone: () =>
-			Effect.fail(
+	Effect.fromOption(parseUtc(value)).pipe(
+		Effect.mapError(
+			() =>
 				new SchemaIssue.InvalidValue(
 					{ message: `\`${value}\` is not a warehouse DateTime` },
 					value,
 					options,
 				),
-			),
-		onSome: Effect.succeed,
-	}),
+		),
+	),
 )
 
 /** `DateTime.Utc` -> `YYYY-MM-DD hh:mm:ss[.SSS]`; second precision floors. */
 const utcToWarehouseWire = (fractionDigits: 0 | 3) =>
 	SchemaGetter.transform<string, DateTime.Utc>((value) =>
-		DateTime.formatIso(value)
-			.slice(0, fractionDigits === 0 ? 19 : 23)
-			.replace("T", " "),
+		Str.replace("T", " ")(Str.slice(0, fractionDigits === 0 ? 19 : 23)(DateTime.formatIso(value))),
 	)
 
 /**
@@ -378,7 +401,7 @@ export function zonedPartsToEpochMs(parts: ZonedDateParts, timeZone: string): nu
 	for (const probe of [asUtc - HALF_DAY_MS, asUtc, asUtc + HALF_DAY_MS]) {
 		offsets.add(timeZoneOffsetMs(timeZone, probe))
 	}
-	const candidates = [...offsets].map((offset) => asUtc - offset).sort((a, b) => a - b)
+	const candidates = Arr.map([...offsets], (offset) => asUtc - offset).sort((a, b) => a - b)
 	// Compare against the components AFTER `Date.UTC` rolled them over: a caller
 	// may pass `day: -6` to mean "six days before the 1st", and the wall clock
 	// read back from a candidate is always normalized.
@@ -496,7 +519,7 @@ function startOfDayDaysBack(epochMs: number, daysBack: number, timeZone: string 
  * one. Use `resolveRelativeRange` to build actual query bounds.
  */
 export function relativeRangeSeconds(shorthand: string): number | null {
-	const trimmed = shorthand.trim().toLowerCase()
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	if (trimmed === "today") return 86_400
 
 	const match = RELATIVE_RANGE_PATTERN.exec(trimmed)
@@ -522,7 +545,7 @@ export function resolveRelativeRange(
 	nowMs: number = Date.now(),
 	timeZone?: string,
 ): { startMs: number; endMs: number } | null {
-	const trimmed = shorthand.trim().toLowerCase()
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 
 	if (trimmed === "today") {
 		return { startMs: startOfDay(nowMs, timeZone), endMs: nowMs }
@@ -666,7 +689,7 @@ export function snapRangeForCache(
  * the clock and must be snapped with the end like any rolling window.
  */
 export function isCalendarAlignedShorthand(shorthand: string): boolean {
-	const trimmed = shorthand.trim().toLowerCase()
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	return trimmed === "today" || /^\d+[dw]$/.test(trimmed)
 }
 
@@ -794,7 +817,7 @@ export function computeBucketSeconds(
 	const rangeSeconds = Math.max((endMs - startMs) / 1000, 1)
 	const raw = Math.max(Math.ceil(rangeSeconds / targetPoints), 1)
 
-	const ladder = AUTO_BUCKET_LADDER.filter((candidate) => candidate >= minBucketSeconds)
+	const ladder = Arr.filter(AUTO_BUCKET_LADDER, (candidate) => candidate >= minBucketSeconds)
 	const rungs = ladder.length > 0 ? ladder : [AUTO_BUCKET_LADDER[AUTO_BUCKET_LADDER.length - 1]]
 
 	let bucket: number = rungs.reduce<number>(
@@ -805,7 +828,7 @@ export function computeBucketSeconds(
 	// Never coarser than what keeps at least `minBuckets` buckets over the range.
 	const maxBucketForMin = Math.floor(rangeSeconds / minBuckets)
 	if (bucket > maxBucketForMin) {
-		const finer = rungs.filter((candidate) => candidate <= maxBucketForMin)
+		const finer = Arr.filter(rungs, (candidate) => candidate <= maxBucketForMin)
 		// `rungs[0]` rather than the raw ladder's floor: `minBuckets` must not be
 		// allowed to step below the caller's `minBucketSeconds`.
 		bucket = finer.length > 0 ? finer[finer.length - 1] : rungs[0]
@@ -964,7 +987,7 @@ export function computeBucketSecondsForWidth(
 	// Never coarser than what keeps at least `minBuckets` buckets over the range.
 	const maxBucketForMin = Math.floor(rangeSeconds / minBuckets)
 	if (bucket > maxBucketForMin) {
-		const finer = WIDTH_INTERVAL_LADDER.filter(([, seconds]) => seconds <= maxBucketForMin)
+		const finer = Arr.filter(WIDTH_INTERVAL_LADDER, ([, seconds]) => seconds <= maxBucketForMin)
 		bucket = finer.length > 0 ? finer[finer.length - 1][1] : WIDTH_INTERVAL_LADDER[0][1]
 	}
 
@@ -1032,8 +1055,9 @@ export const ALERT_TICK_SECONDS = 60
  *     (`ErrorsService`'s cutoff floors to the minute and subtracts one more).
  *  2. SHARING — every rule in a tick computed its own `now`, so rules over the
  *     identical query still produced distinct windows and distinct cache keys.
- *     Snapping makes a tick's rules agree, which is what lets the `qe-evaluate`
- *     entry be reused by, say, warn-at-100 and page-at-500 on one signal.
+ *     Snapping makes a tick's rules agree, which is what lets the in-tick
+ *     bucket memo (`withAlertEvaluationScope`) serve, say, warn-at-100 and
+ *     page-at-500 on one signal from one read.
  *
  * Costs up to one tick of extra lag, which is bounded by the tick period the
  * scheduler already imposes.
@@ -1050,6 +1074,76 @@ export const ALERT_MAX_EVALUATION_INTERVAL_MINUTES = 5
 export const alertEvaluationIntervalMinutes = (windowMinutes: number): number =>
 	Math.min(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, Math.max(1, Math.floor(windowMinutes / 5)))
 
+/**
+ * A rule's check interval: the one its author picked, else a fifth of its window,
+ * stretched to the scheduler's slowdown when its queries kept hitting their limit.
+ */
+export const alertRuleIntervalMinutes = (rule: {
+	readonly windowMinutes: number
+	readonly evaluationIntervalMinutes: number | null
+	readonly slowedIntervalMinutes?: number | null
+}): number =>
+	Math.max(
+		rule.evaluationIntervalMinutes ?? alertEvaluationIntervalMinutes(rule.windowMinutes),
+		rule.slowedIntervalMinutes ?? 0,
+	)
+
+/** What one check of a raw SQL rule may spend in the warehouse. */
+export interface AlertQueryLimits {
+	readonly timeSeconds: number
+	readonly memoryBytes: number
+}
+
+/**
+ * Rules checked less often may run longer queries: a check's cost is spread over its interval.
+ * The top limit stays under the query engine's 30s ceiling, so the warehouse's own typed
+ * timeout fires first and the scheduler can tell a slow query from a stuck one.
+ */
+export const alertQueryLimits = (intervalMinutes: number): AlertQueryLimits =>
+	intervalMinutes >= 15
+		? { timeSeconds: 25, memoryBytes: 1_000_000_000 }
+		: intervalMinutes >= 10
+			? { timeSeconds: 25, memoryBytes: 512_000_000 }
+			: intervalMinutes >= 5
+				? { timeSeconds: 15, memoryBytes: 512_000_000 }
+				: { timeSeconds: 5, memoryBytes: 256_000_000 }
+
+// The intervals a rule can pick (`ALERT_EVALUATION_INTERVALS` in `@maple/domain/http`, kept out of this module).
+const ALERT_PICKABLE_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+
+/** Check intervals a query taking `elapsedMs` fits, keeping a fifth of each limit spare. */
+export const alertIntervalsFitting = (
+	elapsedMs: number,
+): ReadonlyArray<(typeof ALERT_PICKABLE_INTERVALS)[number]> =>
+	Arr.filter(
+		ALERT_PICKABLE_INTERVALS,
+		(interval) => elapsedMs <= alertQueryLimits(interval).timeSeconds * 1000 * 0.8,
+	)
+
+/**
+ * The next interval up that raises the limit the query ran out of, at most `windowMinutes`
+ * so slowing down never leaves data between checks unread. Null when none is left.
+ */
+export const nextSlowerAlertInterval = (
+	intervalMinutes: number,
+	windowMinutes: number,
+	exceeded: "time" | "memory",
+): number | null => {
+	const current = alertQueryLimits(intervalMinutes)
+	return (
+		ALERT_PICKABLE_INTERVALS.find((candidate) => {
+			const limits = alertQueryLimits(candidate)
+			return (
+				candidate > intervalMinutes &&
+				candidate <= windowMinutes &&
+				(exceeded === "time"
+					? limits.timeSeconds > current.timeSeconds
+					: limits.memoryBytes > current.memoryBytes)
+			)
+		}) ?? null
+	)
+}
+
 // FNV-1a: a stable phase per rule, so rules sharing an interval split across its minutes.
 const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {
 	let hash = 0x811c9dc5
@@ -1061,7 +1155,8 @@ const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {
 
 export interface AlertRuleDueInput {
 	readonly ruleId: string
-	readonly windowMinutes: number
+	/** `alertRuleIntervalMinutes` for the rule. */
+	readonly intervalMinutes: number
 	/** The rule's last edit, epoch ms. */
 	readonly updatedAt: number
 	/** When a tick last claimed the rule, epoch ms; 0 or undefined when never or released. */
@@ -1076,7 +1171,7 @@ export interface AlertRuleDueInput {
  */
 export const isAlertRuleDue = (input: AlertRuleDueInput): boolean => {
 	const tickMs = ALERT_TICK_SECONDS * 1000
-	const intervalMinutes = alertEvaluationIntervalMinutes(input.windowMinutes)
+	const { intervalMinutes } = input
 	const lastClaimedAt = input.lastClaimedAt ?? 0
 	if (lastClaimedAt <= 0 || input.updatedAt > lastClaimedAt) return true
 	// Claims land seconds into their minute, so compare on the minute.

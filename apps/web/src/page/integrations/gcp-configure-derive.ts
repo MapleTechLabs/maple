@@ -9,6 +9,7 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import type { ApplyOpened, Capability, ConfigureModel, GcpFlags } from "./gcp-configure-schema"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpConfigure`'s pure rules: the scope step's readiness, what a save changes and when.
 
@@ -24,26 +25,27 @@ export const newDraft = (configure: ConfigureModel) => ({
 export const createRequest = (configure: ConfigureModel) => gcpCreateRequest(newDraft(configure))
 
 export const isScopeReady = (configure: ConfigureModel): boolean => {
-	const scopeId = configure.scopeId.value.trim()
+	const scopeId = Str.trim(configure.scopeId.value)
 	return configure.scopeType === "project"
 		? isGcpProjectId(scopeId)
-		: isGcpResourceNumber(scopeId) && isGcpProjectId(configure.hostProjectId.value.trim())
+		: isGcpResourceNumber(scopeId) && isGcpProjectId(Str.trim(configure.hostProjectId.value))
 }
 
 type Acting = Readonly<{ capability: Capability; acts: "stops-now" | "resumes-now" }>
 
 /** `ChooseStage`: what changed, what acts in Maple when saved, and whether a script run follows. */
 export const chooseChanges = (connector: V2GcpConnector, draft: GcpFlags) => {
-	const changed = CAPABILITY_IDS.filter(
+	const changed = Arr.filter(
+		CAPABILITY_IDS,
 		(capability) => draft[CAPABILITIES[capability].flag] !== connector[CAPABILITIES[capability].flag],
 	)
 	const effect = (capability: Capability) =>
 		gcpDraftEffect(connector, capability, draft[CAPABILITIES[capability].flag])
-	const immediate: ReadonlyArray<Acting> = CAPABILITY_IDS.flatMap((capability) => {
+	const immediate: ReadonlyArray<Acting> = Arr.flatMap(CAPABILITY_IDS, (capability) => {
 		const acts = effect(capability)
 		return acts === "stops-now" || acts === "resumes-now" ? [{ capability, acts }] : []
 	})
-	const scripted = CAPABILITY_IDS.some((capability) => {
+	const scripted = Arr.some(CAPABILITY_IDS, (capability) => {
 		const acts = effect(capability)
 		return acts !== null && acts !== "resumes-now"
 	})
@@ -51,8 +53,8 @@ export const chooseChanges = (connector: V2GcpConnector, draft: GcpFlags) => {
 		changed,
 		effect,
 		immediate,
-		stopping: immediate.filter(({ acts }) => acts === "stops-now"),
-		resuming: immediate.filter(({ acts }) => acts === "resumes-now"),
+		stopping: Arr.filter(immediate, ({ acts }) => acts === "stops-now"),
+		resuming: Arr.filter(immediate, ({ acts }) => acts === "resumes-now"),
 		scripted,
 	}
 }

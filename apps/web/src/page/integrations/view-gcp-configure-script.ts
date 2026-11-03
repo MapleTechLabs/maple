@@ -2,40 +2,48 @@ import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { REPLAY_BLOCK_CLASS } from "../../components/common/replay-privacy"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import * as CopyButton from "../../ui/copy-button"
-import { icon } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
+import { button } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { ScriptFailure } from "./view-gcp-parts"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { String as Str } from "effect"
 
 // `FileCard` and `LoadFailure`: a generated file to copy, the start in view, the rest on request.
 
 type H = HtmlBuilder<Message>
 
 const COPY_ID = "configure-file"
-const LINK = "h-auto p-0 font-normal text-xs text-muted-foreground hover:text-foreground"
+const LINK = typographyClass({
+	size: "xs",
+	tone: "muted",
+	weight: "normal",
+	hoverTone: "foreground",
+	className: "h-auto p-0",
+})
 
 /** Why a file couldn't be loaded, and the way to load it again. */
 export const loadFailure = (h: H, failure: ScriptFailure): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
-		[
-			h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [failure.message]),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					isLoading: failure.isRetrying,
-					attributes: [h.OnClick(Message.ClickedGcpConfigureScriptRetry())],
-				},
-				["Try again"],
-			),
-		],
-	)
+	hstack(h, { gap: "2", wrap: true }, [
+		typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [
+			failure.message,
+		]),
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				isLoading: failure.isRetrying,
+				attributes: [h.OnClick(Message.ClickedGcpConfigureScriptRetry())],
+			},
+			["Try again"],
+		),
+	])
 
 export type FileCardOptions = Readonly<{
 	name: string
@@ -59,7 +67,10 @@ const promptButton = (h: H, configure: ConfigureModel, prompt: string | null): H
 			isDisabled: prompt === null,
 			attributes: prompt === null ? [] : [h.OnClick(Message.ClickedGcpCopyPrompt({ prompt }))],
 		},
-		[...(isCopied ? [icon(h, "CheckIcon", { size: 12 })] : []), isCopied ? "Prompt copied" : "Copy prompt for coding agent"],
+		[
+			...(isCopied ? [icon(h, "CheckIcon", { size: 12 })] : []),
+			isCopied ? "Prompt copied" : "Copy prompt for coding agent",
+		],
 	)
 }
 
@@ -71,31 +82,31 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 	const copyable = promptShown ? (prompt ?? null) : text
 	const shown = promptShown ? (prompt?.trimEnd() ?? null) : (text?.trimEnd() ?? null)
 	return h.div(
-		[h.Class("overflow-clip rounded-lg border")],
+		[h.Class("overflow-clip rounded-md border")],
 		[
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2")],
+				[h.Class("flex flex-wrap items-center gap-2 border-b bg-surface-sunken px-3 py-2")],
 				[
-					h.span(
-						[h.Class("font-mono text-xs text-muted-foreground")],
-						[
-							promptShown ? "Prompt for a coding agent" : name,
-							...(shown === null || promptShown ? [] : [` · ${countLabel(shown.split("\n").length, "line")}`]),
-						],
-					),
+					typography(h, { size: "xs", tone: "muted", mono: true }, [
+						promptShown ? "Prompt for a coding agent" : name,
+						...(shown === null || promptShown
+							? []
+							: [` · ${countLabel(Str.split("\n")(shown).length, "line")}`]),
+					]),
 					h.span(
 						[h.Class("ml-auto flex flex-wrap items-center justify-end gap-2")],
 						[
 							...(prompt === undefined ? [] : [promptButton(h, configure, prompt)]),
 							CopyButton.view(h, {
 								model: model.gcpCard.copies[COPY_ID] ?? CopyButton.init(),
-								toParentMessage: (message) => Message.GotGcpCopyMessage({ id: COPY_ID, message }),
+								toParentMessage: (message) =>
+									Message.GotGcpCopyMessage({ id: COPY_ID, message }),
 								value: copyable ?? "",
 								label: promptShown ? "prompt" : name,
 								idleLabel: secret ? "Copy script" : "Copy",
 								variant: children === undefined ? "default" : "outline",
 								size: "sm",
-								className: cn(children === undefined && "text-primary-foreground hover:text-primary-foreground"),
+								keepsFillInk: children === undefined,
 								attributes: copyable === null ? [h.Disabled(true)] : [],
 							}),
 							...(children ?? []),
@@ -154,9 +165,16 @@ const fileText = (
 
 const footerText = (configure: ConfigureModel, name: string, secret: boolean): string => {
 	if (!configure.isPromptShown)
-		return secret ? "Holds this connection's secret. Don't share or commit it." : "No secrets in this file. Safe to commit."
+		return secret
+			? "Holds this connection's secret. Don't share or commit it."
+			: "No secrets in this file. Safe to commit."
 	const copied = configure.promptCopied
-	const status = copied === false ? "Couldn't copy: select the prompt and copy it." : copied === true ? "Copied." : "Copying."
+	const status =
+		copied === false
+			? "Couldn't copy: select the prompt and copy it."
+			: copied === true
+				? "Copied."
+				: "Copying."
 	return `${status} It ends with the full ${name}.`
 }
 

@@ -8,28 +8,28 @@ import {
 	toStackedBarProductionRows,
 	toThroughputProductionRows,
 } from "../charts/timeseries-data"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, Mount, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import * as Chart from "../../charts/chart"
+import * as Chart from "@maple/views/charts/chart"
 import {
 	ChartRuntime,
 	ChartRuntimeMessage,
 	isChartRuntimeReady,
 	LoadChartRuntime,
-} from "../../charts/chart-runtime"
-import * as AreaChart from "../../charts/area-chart"
-import * as BarChart from "../../charts/bar-chart"
-import * as HeatmapChart from "../../charts/heatmap-chart"
-import * as HistogramChart from "../../charts/histogram-chart"
-import * as PieChart from "../../charts/pie-chart"
-import { ResolveThemeColors, ThemeColors, ThemeMessage } from "../../charts/theme-colors"
-import { eyebrow } from "../../ui/eyebrow"
-import { chartEmpty } from "../../ui/chart-state"
+} from "@maple/views/charts/chart-runtime"
+import * as AreaChart from "@maple/views/charts/area-chart"
+import * as BarChart from "@maple/views/charts/bar-chart"
+import * as HeatmapChart from "@maple/views/charts/heatmap-chart"
+import * as HistogramChart from "@maple/views/charts/histogram-chart"
+import * as PieChart from "@maple/views/charts/pie-chart"
+import { ResolveThemeColors, ThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { chartEmpty } from "@maple/views/ui/chart-state"
 import { widgetShell } from "../../page/dashboards/kit/tile-shell"
-import { inlineCode } from "../../ui/inline-code"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { ARM_TITLES, type ChartsLabArm, SECTIONS } from "../charts/arms"
 import {
 	histogramSpikeValues,
@@ -42,27 +42,32 @@ import { SPIKE_ARMS, SPIKE_TOKENS_ALL } from "../charts/spike-arms"
 import { spikeView } from "../charts/spike-view"
 import { defineLab } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
-import * as Toast from "../../ui/toast"
+import * as Toast from "@maple/views/ui/toast"
 
 // `/lab/charts`: the gallery, canvas renderer.
 
 const PRODUCTION_CHART_CLASS = "h-full w-full aspect-auto"
-const pieRows = toBreakdownRows(pieSampleData, pickValueField(pieSampleData)).map((row) => ({
+const pieRows = Arr.map(toBreakdownRows(pieSampleData, pickValueField(pieSampleData)), (row) => ({
 	name: row.name,
 	value: row.value,
 }))
-const histogramProductionRows: ReadonlyArray<Record<string, unknown>> = histogramSpikeValues.map((value) => ({
-	value,
-}))
+const histogramProductionRows: ReadonlyArray<Record<string, unknown>> = Arr.map(
+	histogramSpikeValues,
+	(value) => ({
+		value,
+	}),
+)
 
 type ChartRow = Readonly<Record<string, string | number | boolean>>
 
 /** The production rows narrowed to the scalar cells the timeseries charts read. */
 const scalarRows = (rows: ReadonlyArray<Record<string, unknown>>): ReadonlyArray<ChartRow> =>
-	rows.map((row) =>
-		Object.fromEntries(
-			Object.entries(row).flatMap(([key, value]) =>
-				typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? [[key, value]] : [],
+	Arr.map(rows, (row) =>
+		Rec.fromEntries(
+			Arr.flatMap(Rec.toEntries(row), ([key, value]) =>
+				typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+					? [[key, value]]
+					: [],
 			),
 		),
 	)
@@ -70,11 +75,22 @@ const scalarRows = (rows: ReadonlyArray<Record<string, unknown>>): ReadonlyArray
 /** The production timeseries arms: `QueryBuilderLineChart`, `QueryBuilderAreaChart`, stacked bars. */
 const PRODUCTION_TIMESERIES = {
 	"line-production": { kind: "line", rows: scalarRows(toLatencyProductionRows(TIMESERIES_SPIKE_ROWS)) },
-	"line-incomplete-production": { kind: "line", rows: scalarRows(toLatencyProductionRows(TIMESERIES_PARTIAL_ROWS)) },
+	"line-incomplete-production": {
+		kind: "line",
+		rows: scalarRows(toLatencyProductionRows(TIMESERIES_PARTIAL_ROWS)),
+	},
 	"area-production": { kind: "area", rows: scalarRows(toThroughputProductionRows(TIMESERIES_SPIKE_ROWS)) },
-	"area-incomplete-production": { kind: "area", rows: scalarRows(toThroughputProductionRows(TIMESERIES_PARTIAL_ROWS)) },
-	"stacked-bar-production": { kind: "bar", rows: scalarRows(toStackedBarProductionRows(STACKED_BAR_SPIKE_ROWS)) },
-} satisfies Partial<Record<ChartsLabArm, Readonly<{ kind: "line" | "area" | "bar"; rows: ReadonlyArray<ChartRow> }>>>
+	"area-incomplete-production": {
+		kind: "area",
+		rows: scalarRows(toThroughputProductionRows(TIMESERIES_PARTIAL_ROWS)),
+	},
+	"stacked-bar-production": {
+		kind: "bar",
+		rows: scalarRows(toStackedBarProductionRows(STACKED_BAR_SPIKE_ROWS)),
+	},
+} satisfies Partial<
+	Record<ChartsLabArm, Readonly<{ kind: "line" | "area" | "bar"; rows: ReadonlyArray<ChartRow> }>>
+>
 
 const productionTimeseriesOf = (arm: ChartsLabArm) => {
 	switch (arm) {
@@ -139,17 +155,22 @@ const init = (): Update.Return<Model, Message> => ({
 		maybeTheme: Option.none(),
 		chartRuntime: ChartRuntime.Loading(),
 		nowMs: 0,
-		charts: Object.fromEntries(
-			SECTIONS.flatMap((section, sectionIndex) =>
-				section.rows.flatMap((row, rowIndex) =>
-					row.filter(isPorted).map((arm) => [slotOf(`${sectionIndex}.${rowIndex}`, arm), Chart.init()]),
+		charts: Rec.fromEntries(
+			Arr.flatMap(SECTIONS, (section, sectionIndex) =>
+				Arr.flatMap(section.rows, (row, rowIndex) =>
+					Arr.map(Arr.filter(row, isPorted), (arm) => [
+						slotOf(`${sectionIndex}.${rowIndex}`, arm),
+						Chart.init(),
+					]),
 				),
 			),
 		),
 		toasts: initLabToasts(),
 	},
 	commands: [
-		...Command.mapMessages([LoadChartRuntime()], (message) => Message.GotChartRuntimeMessage({ message })),
+		...Command.mapMessages([LoadChartRuntime()], (message) =>
+			Message.GotChartRuntimeMessage({ message }),
+		),
 		ReadClock(),
 	],
 })
@@ -217,7 +238,7 @@ const chartNode = (
 	const chart = model.charts[slot]
 	if (chart === undefined) return []
 	const common = { slotId: slot, model: chart, toParentMessage: toChartMessage(slot) }
-	const chartId = slot.replace(/[:.]/g, "-")
+	const chartId = Str.replace(/[:.]/g, "-")(slot)
 	if (arm === "pie-production") {
 		const viewInputs = {
 			chartId,
@@ -250,18 +271,43 @@ const chartNode = (
 		return [h.submodel({ ...common, view: HistogramChart.view, viewInputs })]
 	}
 	if (arm === "heatmap-production") {
-		const viewInputs = { chartId, data: heatmapSampleData, theme, tooltip: "visible", className: PRODUCTION_CHART_CLASS } as const
+		const viewInputs = {
+			chartId,
+			data: heatmapSampleData,
+			theme,
+			tooltip: "visible",
+			className: PRODUCTION_CHART_CLASS,
+		} as const
 		return [h.submodel({ ...common, view: HeatmapChart.view, viewInputs })]
 	}
 	const timeseries = productionTimeseriesOf(arm)
 	if (timeseries !== undefined) {
-		const base = { chartId, data: timeseries.rows, theme, nowMs: model.nowMs, showTooltip: true, className: PRODUCTION_CHART_CLASS }
+		const base = {
+			chartId,
+			data: timeseries.rows,
+			theme,
+			nowMs: model.nowMs,
+			showTooltip: true,
+			className: PRODUCTION_CHART_CLASS,
+		}
 		return timeseries.kind === "bar"
 			? [h.submodel({ ...common, view: BarChart.view, viewInputs: { ...base, stacked: true } })]
-			: [h.submodel({ ...common, view: AreaChart.view, viewInputs: { ...base, mark: timeseries.kind } })]
+			: [
+					h.submodel({
+						...common,
+						view: AreaChart.view,
+						viewInputs: { ...base, mark: timeseries.kind },
+					}),
+				]
 	}
 	if (arm === "pie-legend-tanstack" || arm === "pie-solid-legend-tanstack") {
-		const viewInputs = { chartId, rows: pieRows, theme, donut: arm === "pie-legend-tanstack", className: "h-full w-full" }
+		const viewInputs = {
+			chartId,
+			rows: pieRows,
+			theme,
+			donut: arm === "pie-legend-tanstack",
+			className: "h-full w-full",
+		}
 		return [h.submodel({ ...common, view: pieLegendSpikeView, viewInputs })]
 	}
 	const spike = SPIKE_ARMS.get(arm)
@@ -275,7 +321,9 @@ const chartNode = (
 			ariaLabel: spike.ariaLabel,
 			className: "h-full w-full",
 			...(spike.footer === undefined ? undefined : { footer: spike.footer }),
-			...(legend === undefined ? undefined : { legend: { label: legend.label, series: legend.series(theme) } }),
+			...(legend === undefined
+				? undefined
+				: { legend: { label: legend.label, series: legend.series(theme) } }),
 		}
 		return [h.submodel({ ...common, view: spikeView, viewInputs })]
 	}
@@ -318,7 +366,7 @@ const sectionRow = (
 	if (arms.length === 1 && only !== undefined) return chartArm(model, h, theme, position, only)
 	return h.div(
 		[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-2")],
-		arms.map((arm) => chartArm(model, h, theme, position, arm)),
+		Arr.map(arms, (arm) => chartArm(model, h, theme, position, arm)),
 	)
 }
 
@@ -353,13 +401,21 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 const emptyMetricsGrid = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.DataAttribute("metrics-grid", ""), h.Class("grid grid-cols-1 md:grid-cols-2 gap-3")],
-		["Latency", "Throughput", "Apdex", "Error Rate"].map((title) =>
+		Arr.map(["Latency", "Throughput", "Apdex", "Error rate"], (title) =>
 			h.div(
 				[h.Class("h-[240px] md:h-[280px]")],
 				[
 					widgetShell(
 						h,
-						{ widgetId: title, hasGrip: false, title, isEdit: false, menu: null, isMenuOpen: false, contentClassName: undefined },
+						{
+							widgetId: title,
+							hasGrip: false,
+							title,
+							isEdit: false,
+							menu: null,
+							isMenuOpen: false,
+							contentClassName: undefined,
+						},
 						[chartEmpty(h, { hint: "Try a wider time range" }, ["No data in this window"])],
 					),
 				],
@@ -384,14 +440,18 @@ const gallery = (model: Model, h: HtmlBuilder<Message>, theme: ThemeColors): Rea
 			),
 		],
 	),
-	...SECTIONS.map((entry, sectionIndex) =>
+	...Arr.map(SECTIONS, (entry, sectionIndex) =>
 		section(
 			h,
 			entry.title,
-			entry.rows.map((arms, rowIndex) => sectionRow(model, h, theme, `${sectionIndex}.${rowIndex}`, arms)),
+			Arr.map(entry.rows, (arms, rowIndex) =>
+				sectionRow(model, h, theme, `${sectionIndex}.${rowIndex}`, arms),
+			),
 		),
 	),
-	section(h, "Empty window — MetricsGrid", [h.div([h.DataAttribute("testid", "charts-lab-empty")], [emptyMetricsGrid(h)])]),
+	section(h, "Empty window: MetricsGrid", [
+		h.div([h.DataAttribute("testid", "charts-lab-empty")], [emptyMetricsGrid(h)]),
+	]),
 ]
 
 const readyTheme = (model: Model): Option.Option<ThemeColors> =>

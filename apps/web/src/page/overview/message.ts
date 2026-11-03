@@ -1,12 +1,12 @@
 import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../charts/chart"
-import { FixedMetricRow } from "../../charts/chart-spec"
-import { ThemeColors } from "../../charts/theme-colors"
-import { LoadFailure } from "../../data/load-failure"
-import * as Select from "../../ui/select"
-import { SignalPresences } from "../kit/signal-presence"
+import * as Chart from "@maple/views/charts/chart"
+import { FixedMetricRow } from "@maple/views/charts/chart-spec"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Select from "@maple/views/ui/select"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
 import {
@@ -45,9 +45,10 @@ export const Message = defineMessageUnion({
 	CompletedFetchRefinement: result(Schema.Array(RefinementPoint)),
 	CompletedSaveFacetsHint: {},
 	UpdatedIncidents: { orgId: Schema.String, incidents: Schema.Array(Incident) },
+	FailedLoadIncidents: { orgId: Schema.String },
+	FailedLoadRules: { orgId: Schema.String },
 	UpdatedRules: { orgId: Schema.String, enabled: Schema.Array(Schema.Boolean) },
 	UpdatedRuleStates: { orgId: Schema.String },
-	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
@@ -55,6 +56,8 @@ export const Message = defineMessageUnion({
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetry: { target: RetryTarget },
+	/** The page strip's Try again: every failed read on the page, not just one card's. */
+	ClickedRetryPage: {},
 	ClickedResetTimeRange: {},
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },

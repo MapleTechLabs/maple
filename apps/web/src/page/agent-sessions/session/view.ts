@@ -2,14 +2,15 @@ import { breadcrumbSessionId, buildBackToSessionsHref, resolveWindow } from "@ma
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../data/load-failure"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
-import * as Tabs from "../../../ui/tabs"
-import * as TabsView from "../../../ui/tabs-view"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { SESSION_TOO_LARGE_TAG } from "./command"
 import { type SessionData, sessionData, viewOf } from "./derive"
@@ -121,17 +122,10 @@ const loadingBody = (h: H): Html =>
 		],
 	)
 
-/** `DetailHeaderSkeleton meta={false}`. */
-const loadingHeader = (h: H): Html =>
-	h.div(
-		[h.Class("min-w-0 space-y-2.5"), h.AriaBusy(true)],
-		[skeleton(h, "h-3 w-32"), skeleton(h, "h-7 w-3/4")],
-	)
-
 const failureBody = (h: H, failure: LoadFailure): Html =>
 	errorState(h, {
 		failure,
-		title: failure._tag === SESSION_TOO_LARGE_TAG ? undefined : "Failed to load this agent session",
+		title: failure._tag === SESSION_TOO_LARGE_TAG ? undefined : "Couldn't load this agent session",
 	})
 
 const notFoundBody = (h: H, model: Model): Html => {
@@ -143,8 +137,8 @@ const notFoundBody = (h: H, model: Model): Html => {
 			"Nothing was found for ",
 			h.span([h.Class("font-mono")], [model.sessionId]),
 			isWindowed
-				? " around the time this link points at. Open it from the Agent Sessions list to search again."
-				: " in any retained trace — the session may be older than the trace retention.",
+				? " around the time this link points at. Open it from the agent sessions list to search again."
+				: " in any retained trace. The session may be older than the trace retention.",
 		],
 		back: { href: "/agent-sessions", label: "Back to agent sessions" },
 	})
@@ -172,7 +166,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		? dashboardPage(h, {}, [notFoundBody(h, model)])
 		: AsyncData.matchData(model.firstPage.data, {
 				onEmpty: () =>
-					dashboardPage(h, { titleContent: loadingHeader(h), fill: true }, [loadingBody(h)]),
+					dashboardPage(h, { titleContent: detailTitleSkeleton(h), fill: true }, [loadingBody(h)]),
 				onFailure: (failure) => dashboardPage(h, {}, [failureBody(h, failure)]),
 				onData: () => loadedPage(h, model, inputs),
 			}),
@@ -185,5 +179,5 @@ export const breadcrumbsOf = (model: Model) => {
 		onFailure: () => "Error",
 		onData: (page) => (page.data.length === 0 ? "Not found" : breadcrumbSessionId(model.sessionId)),
 	})
-	return [{ label: "Agent Sessions", href: buildBackToSessionsHref(model.searchStr) }, { label: last }]
+	return [{ label: "Agent sessions", href: buildBackToSessionsHref(model.searchStr) }, { label: last }]
 }

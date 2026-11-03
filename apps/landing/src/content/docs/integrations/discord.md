@@ -15,7 +15,7 @@ The Discord integration adds the Maple bot to a Discord server and links that se
 
 ## Add the bot to a server
 
-1. Open **Integrations → Discord** in Maple.
+1. Open **Settings → Integrations → Discord** in Maple.
 2. Click **Add to Discord**. Maple redirects you to Discord.
 3. Pick the server and approve the install. Discord returns you to Maple, which shows **Connected** with the server name.
 
@@ -36,7 +36,7 @@ The bot asks for no member, role, channel, or moderation permissions.
 
 The bot answers only people who have linked their Discord account to a Maple user. Each person links once.
 
-1. Open **Integrations → Discord** in Maple.
+1. Open **Settings → Integrations → Discord** in Maple.
 2. Under **Your Discord account**, click **Link your account** and approve in Discord.
 
 The link asks Discord for your user ID and nothing else. It adds no permissions on any server. You can only link your own account, and only members of the Maple organization get answers.
@@ -73,12 +73,12 @@ To post alerts to a server without installing the bot, use the [Discord webhook 
 
 ## Verify
 
-1. **Integrations → Discord** shows your server with **Connected**.
+1. **Settings → Integrations → Discord** shows your server with **Connected**.
 2. In a channel the bot can see, send `@Maple which services had errors in the last hour?`. A thread opens with the answer.
 
 ## Disconnect
 
-On **Integrations → Discord**, click **Disconnect** next to the server and confirm. The server is unlinked immediately. To remove the bot from the server, kick it in Discord. Removing the bot in Discord also unlinks the server in Maple.
+On **Settings → Integrations → Discord**, click **Disconnect** next to the server and confirm. The server is unlinked immediately. To remove the bot from the server, kick it in Discord. Removing the bot in Discord also unlinks the server in Maple.
 
 To unlink your own account, click **Unlink** under **Your Discord account**.
 

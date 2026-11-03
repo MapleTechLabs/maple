@@ -1,9 +1,9 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Select from "../../../ui/select"
-import * as Tabs from "../../../ui/tabs"
-import { SignalPresences } from "../../kit/signal-presence"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Select from "@maple/views/ui/select"
+import * as Tabs from "@maple/views/ui/tabs"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import { InvestigationPage, TriageBudget } from "./model"
 
 const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })
@@ -24,7 +24,6 @@ export const Message = defineMessageUnion({
 	ElapsedSearchDebounce: { generation: Schema.Number },
 	ClickedClearFilters: {},
 	ClickedRow: { id: Schema.String },
-	PaintedHero: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	GotTabsMessage: { message: Tabs.Message },
 	GotKindSelectMessage: { message: Select.Message },

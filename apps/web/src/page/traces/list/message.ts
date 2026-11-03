@@ -1,11 +1,11 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as Dialog from "../../../ui/dialog"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as Dialog from "@maple/views/ui/dialog"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
-import { SignalPresences } from "../../kit/signal-presence"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import { Message as DetailMessage } from "../detail/message"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TracesFacets, TracesPage, VirtualRow } from "./model"
@@ -47,7 +47,6 @@ export const Message = defineMessageUnion({
 	/** A later page; `key` is the first page's key it continues. */
 	CompletedFetchNextPage: { ...result(TracesPage), generation: Schema.Number, offset: Schema.Number },
 	ChangedVirtualWindow: { rows: Schema.Array(VirtualRow), totalSize: Schema.Number },
-	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },

@@ -16,7 +16,9 @@
  * timestamp, so the value is whatever the caller passes. `history()` passes the row's stored
  * `created_at`; a tail can only pass receive time. Message *content* is identical either way.
  */
-import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState, ChatToolCall } from "./chat-session"
+import { ChatToolCall } from "./chat-session"
+import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState } from "./chat-session"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * A transcript being folded, event by event.
@@ -67,7 +69,7 @@ export const makeChatTranscript = (): ChatTranscript => {
 				foldTaskEvent(top, nested, event, event.task, createdAt)
 				return
 			}
-			foldInto(top, event, createdAt)
+			foldInto(top, event, createdAt, nested)
 		},
 	}
 }
@@ -111,7 +113,13 @@ const openAssistant = (drafts: Drafts, id: string, createdAt: number, startSeq: 
  * *literally the same code* — two implementations of "concatenate deltas, settle tool calls in
  * place" would drift, and the nested one is the harder to notice when it does.
  */
-const foldInto = (drafts: Drafts, event: ChatEvent, createdAt: number): void => {
+const foldInto = (
+	drafts: Drafts,
+	event: ChatEvent,
+	createdAt: number,
+	/** The top level's sub-agent transcripts, which a stopped parent turn settles too. */
+	nested?: Map<string, Drafts>,
+): void => {
 	const open = (messageId: string) => openAssistant(drafts, messageId, createdAt, event.seq)
 	switch (event.type) {
 		case "user-message": {
@@ -140,17 +148,19 @@ const foldInto = (drafts: Drafts, event: ChatEvent, createdAt: number): void => 
 		}
 		case "tool-call": {
 			const message = open(event.messageId)
-			message.toolCalls.push({
-				id: event.callId,
-				name: event.name,
-				input: event.input,
-				// Where the prose stood when the model asked for this call. `ChatMessage` keeps text
-				// and calls in two flat fields, so this offset is the only record of how the turn
-				// actually unfolded — the client re-interleaves from it on a cold load.
-				textOffset: message.text.length,
-				...(event.proposed === true ? { proposed: true } : undefined),
-				...(event.label === undefined ? undefined : { label: event.label }),
-			} as ChatToolCall)
+			message.toolCalls.push(
+				new ChatToolCall({
+					id: event.callId,
+					name: event.name,
+					input: event.input,
+					// Where the prose stood when the model asked for this call. `ChatMessage` keeps text
+					// and calls in two flat fields, so this offset is the only record of how the turn
+					// actually unfolded — the client re-interleaves from it on a cold load.
+					textOffset: message.text.length,
+					...(event.proposed === true ? { proposed: true } : undefined),
+					...(event.label === undefined ? undefined : { label: event.label }),
+				}),
+			)
 			break
 		}
 		case "tool-result": {
@@ -181,12 +191,30 @@ const foldInto = (drafts: Drafts, event: ChatEvent, createdAt: number): void => 
 			// the retraction that accounts for it, so `retractChars` can legitimately exceed what
 			// actually landed.
 			const message = open(event.messageId)
-			message.text = message.text.slice(0, Math.max(0, message.text.length - event.retractChars))
+			message.text = Str.slice(0, Math.max(0, message.text.length - event.retractChars))(message.text)
 			break
 		}
 		case "turn-end":
+			settleUnfinished(drafts, event.messageId, nested)
 			break
 	}
+}
+
+/**
+ * Mark the calls a turn ended before they settled as stopped, and a sub-agent still running under
+ * one as aborted, with its own unsettled calls. A proposal is left alone: it waits on the user.
+ */
+const settleUnfinished = (drafts: Drafts, messageId: string, nested?: Map<string, Drafts>): void => {
+	const message = drafts.byId.get(messageId)
+	if (message === undefined) return
+	message.toolCalls = Arr.map(message.toolCalls, (call) => {
+		if (call.output !== undefined || call.proposed === true || call.stopped === true) return call
+		const child = nested?.get(call.id)
+		child?.messages.forEach((draft) => settleUnfinished(child, draft.id))
+		const task =
+			call.task?.status === "running" ? { ...call.task, status: "aborted" as const } : call.task
+		return { ...call, stopped: true, ...(task === undefined ? undefined : { task }) } as ChatToolCall
+	})
 }
 
 /**

@@ -3,6 +3,7 @@
 
 import type { AiSessionGenAiValues, AiSessionSpan } from "@maple/domain/http"
 import { agentSpan, llmSpan, toolSpan, userMessages } from "@maple/agent-sessions/testing"
+import { Array as Arr, String as Str } from "effect"
 
 const SECOND = 1000
 const TURN_GAP_MS = 90 * SECOND
@@ -20,10 +21,9 @@ function mulberry32(seed: number): () => number {
 	}
 }
 
-const WORDS =
-	"retry backoff webhook idempotency charge invoice customer ledger dispatch queue partition replica latency p95 deploy rollback config jitter attempt handler schema migration index cursor".split(
-		" ",
-	)
+const WORDS = Str.split(" ")(
+	"retry backoff webhook idempotency charge invoice customer ledger dispatch queue partition replica latency p95 deploy rollback config jitter attempt handler schema migration index cursor",
+)
 
 function prose(random: () => number, words: number): string {
 	const out: string[] = []
@@ -31,16 +31,19 @@ function prose(random: () => number, words: number): string {
 		const word = WORDS[Math.floor(random() * WORDS.length)]!
 		out.push(i > 0 && i % 17 === 0 ? `${word}.` : word)
 	}
-	return out.join(" ")
+	return Arr.join(out, " ")
 }
 
-const SYSTEM_INSTRUCTIONS = [
-	"You are a careful coding agent working in a payments monorepo.",
-	"",
-	"## Rules",
-	"",
-	...Array.from({ length: 160 }, (_, i) => `${i + 1}. Rule ${i + 1}: ${prose(mulberry32(i), 14)}`),
-].join("\n")
+const SYSTEM_INSTRUCTIONS = Arr.join(
+	[
+		"You are a careful coding agent working in a payments monorepo.",
+		"",
+		"## Rules",
+		"",
+		...Array.from({ length: 160 }, (_, i) => `${i + 1}. Rule ${i + 1}: ${prose(mulberry32(i), 14)}`),
+	],
+	"\n",
+)
 
 function markdownReply(random: () => number, paragraphs: number): string {
 	const blocks: string[] = []
@@ -48,23 +51,29 @@ function markdownReply(random: () => number, paragraphs: number): string {
 		blocks.push(prose(random, 40 + Math.floor(random() * 50)))
 		if (p % 3 === 1) {
 			blocks.push(
-				[
-					"```ts",
-					...Array.from(
-						{ length: 12 },
-						(_, i) => `const step${i} = retry(${i}, { jitter: ${random().toFixed(3)} })`,
-					),
-					"```",
-				].join("\n"),
+				Arr.join(
+					[
+						"```ts",
+						...Array.from(
+							{ length: 12 },
+							(_, i) => `const step${i} = retry(${i}, { jitter: ${random().toFixed(3)} })`,
+						),
+						"```",
+					],
+					"\n",
+				),
 			)
 		}
 		if (p % 4 === 2) {
 			blocks.push(
-				Array.from({ length: 5 }, (_, i) => `- **item ${i}** — ${prose(random, 9)}`).join("\n"),
+				Arr.join(
+					Array.from({ length: 5 }, (_, i) => `- **item ${i}**: ${prose(random, 9)}`),
+					"\n",
+				),
 			)
 		}
 	}
-	return blocks.join("\n\n")
+	return Arr.join(blocks, "\n\n")
 }
 
 /** A warehouse-shaped result: rows of one query, sized by `rows`. */
@@ -84,10 +93,13 @@ function jsonResult(random: () => number, rows: number): Record<string, unknown>
 }
 
 function textResult(random: () => number, lines: number): string {
-	return Array.from(
-		{ length: lines },
-		(_, i) => `${String(i + 1).padStart(4, " ")}  ${prose(random, 10)}`,
-	).join("\n")
+	return Arr.join(
+		Array.from(
+			{ length: lines },
+			(_, i) => `${Str.padStart(4, " ")(String(i + 1))}  ${prose(random, 10)}`,
+		),
+		"\n",
+	)
 }
 
 function usage(inputTokens: number, outputTokens: number): AiSessionGenAiValues {

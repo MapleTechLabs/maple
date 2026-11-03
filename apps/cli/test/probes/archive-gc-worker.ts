@@ -13,7 +13,7 @@
 //     --scratch-root <s> --keep <n> [--block-ms <n>]
 
 import { writeFileSync, existsSync, mkdirSync } from "node:fs"
-import { runArchiveGc } from "../../src/server/archives/gc"
+import { runArchiveGc } from "@maple/local-server/archives/gc"
 
 interface Args {
 	boundary: string

@@ -34,7 +34,7 @@ export const NetworkErrorBody = makeClientErrorBody({
 	_tag: NetworkErrorTag,
 	code: "network_unreachable",
 	title: "Cannot reach Maple API",
-	message: "Check your connection. Data will resume once the API is reachable.",
+	message: "Maple's API is unreachable.",
 	retryable: true,
 	recovery: "retry",
 })
@@ -79,7 +79,7 @@ const UnexpectedError = makeClientErrorBody({
 	_tag: UnexpectedErrorTag,
 	code: "unexpected_error",
 	title: "Something went wrong",
-	message: "An unexpected error occurred. Try again, or reload if the problem continues.",
+	message: "An unexpected error occurred. Try again or reload.",
 	retryable: false,
 	recovery: "refresh",
 })

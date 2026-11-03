@@ -1,8 +1,8 @@
 import { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure } from "../../data/load-failure"
-import * as CopyButton from "../../ui/copy-button"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
 
 // `/recommendations/$recommendationKey`.
 

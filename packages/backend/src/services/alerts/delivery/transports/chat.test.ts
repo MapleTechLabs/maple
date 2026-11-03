@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { ChatOutboundError, chatConnectorId, type ChatAlertBlock, type ChatBlock } from "@maple/chat-platform"
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { chatDeliveryFailure } from "../../ChatAlertPoster"
 import type { DispatchContext } from "../context"
@@ -19,7 +19,7 @@ import { buildChatAlertBlocks, chatTransport } from "./chat"
 const ORG = Schema.decodeUnknownSync(OrgId)("org_1")
 const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 const config: SecretConfigOf<"chat"> = {
 	type: "chat",
@@ -107,15 +107,12 @@ describe("chat alert blocks", () => {
 		assert.strictEqual(card.color, "#e01e5a")
 		assert.include(card.summary, "**Error Rate** is **8%**")
 		assert.deepStrictEqual(
-			card.fields.map((field) => field.label),
+			Arr.map(card.fields, (field) => field.label),
 			["Severity", "Group"],
 		)
 		assert.strictEqual(card.fields[1]?.value, "`checkout`")
 		assert.strictEqual(card.imageUrl, "https://charts.localhost/c.png")
-		assert.deepStrictEqual(card.links, [
-			{ label: "Open in Maple", url: LINK, primary: true },
-			{ label: "✨ Ask Maple AI", url: CHAT, primary: false },
-		])
+		assert.deepStrictEqual(card.links, [{ label: "Open in Maple", url: LINK, primary: true }])
 		assert.deepStrictEqual(card.footer, ["\u{1F341} Maple Alerts", "`▁▂▅▇`", "Incident `inc_1`"])
 		assert.strictEqual(card.sentAtMs, 1_700_000_000_000)
 	})
@@ -131,7 +128,7 @@ describe("chat alert blocks", () => {
 			buildChatAlertBlocks(inputFor({ context: { ...context, groupKey: "__total__" } })),
 		)
 		assert.deepStrictEqual(
-			card.fields.map((field) => field.label),
+			Arr.map(card.fields, (field) => field.label),
 			["Severity"],
 		)
 	})

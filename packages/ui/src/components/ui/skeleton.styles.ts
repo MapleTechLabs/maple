@@ -9,9 +9,10 @@ export const skeletonListGapStyles = {
 
 // The sweep lives on a transform-animated pseudo-element so it stays on the
 // compositor — animating background-position on a `fixed`-attachment gradient
-// repaints every skeleton per frame and visibly lags busy loading screens.
+// repaints every skeleton per frame and visibly lags busy loading screens. `loading-delay` keeps
+// it blank for the first 300ms, so a fast load never flashes a skeleton.
 export const skeletonStyles =
-	"relative isolate overflow-hidden rounded-sm bg-muted before:absolute before:inset-0 before:animate-skeleton before:[background:linear-gradient(120deg,transparent_40%,var(--skeleton-highlight),transparent_60%)] [--skeleton-highlight:--alpha(var(--color-white)/64%)] dark:[--skeleton-highlight:--alpha(var(--color-white)/4%)] motion-reduce:before:animate-none"
+	"loading-delay relative isolate overflow-hidden rounded-sm bg-muted before:absolute before:inset-0 before:animate-skeleton before:[background:linear-gradient(120deg,transparent_40%,var(--skeleton-highlight),transparent_60%)] [--skeleton-highlight:--alpha(var(--color-white)/64%)] dark:[--skeleton-highlight:--alpha(var(--color-white)/4%)] motion-reduce:before:animate-none"
 
 export const skeletonListRowDefaultStyles = "h-8"
 

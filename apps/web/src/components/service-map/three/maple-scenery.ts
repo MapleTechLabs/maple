@@ -4,6 +4,7 @@ import type { Creek, Meadow } from "./maple-scenery-field"
 import { hash, type Prototypes, type Sketch } from "./maple-scenery-sketch"
 import type { Growth, Plant } from "./maple-scenery-plan"
 import type { Vec3 } from "./types"
+import { Array as Arr } from "effect"
 
 /** Places parts relative to an origin turned by `yaw`; extra rotation stays about y then z. */
 export function placer(sketch: Sketch, [ox, oy, oz]: Vec3, yaw: number, scale = 1) {
@@ -28,7 +29,7 @@ export function placer(sketch: Sketch, [ox, oy, oz]: Vec3, yaw: number, scale = 
 				typeof size === "number" ? size * scale : [size[0] * scale, size[1] * scale, size[2] * scale],
 			color,
 		})
-	const stroke = (points: Vec3[]) => sketch.lines(points.flatMap((point) => at(point)))
+	const stroke = (points: Vec3[]) => sketch.lines(Arr.flatMap(points, (point) => at(point)))
 	return { part, stroke }
 }
 
@@ -78,7 +79,7 @@ export function drawPlant(
 		case "spruce": {
 			const tiers = kind === "pine" ? [0.42, 0.35, 0.27, 0.18] : [0.36, 0.25]
 			part(stock.box, [0, 0.15, 0], [0.1, 0.3, 0.1], palette.trunk)
-			tiers.forEach((radius, i) =>
+			Arr.forEach(tiers, (radius, i) =>
 				part(stock.tier, [0, 0.48 + i * 0.26, 0], [radius, 0.46, radius], palette.evergreen),
 			)
 			return
@@ -148,19 +149,27 @@ function drawUndergrowth(
 			])
 			return
 		case "mushrooms":
-			;[
-				[0, 0, 1],
-				[0.14, 0.08, 0.7],
-				[-0.06, 0.16, 0.55],
-			].forEach(([dx = 0, dz = 0, size = 1]) => {
-				part(stock.box, [dx, 0.05 * size, dz], [0.04 * size, 0.1 * size, 0.04 * size], palette.birch)
-				part(
-					stock.cap,
-					[dx, 0.12 * size, dz],
-					[0.08 * size, 0.06 * size, 0.08 * size],
-					leaf(palette, 0),
-				)
-			})
+			Arr.forEach(
+				[
+					[0, 0, 1],
+					[0.14, 0.08, 0.7],
+					[-0.06, 0.16, 0.55],
+				],
+				([dx = 0, dz = 0, size = 1]) => {
+					part(
+						stock.box,
+						[dx, 0.05 * size, dz],
+						[0.04 * size, 0.1 * size, 0.04 * size],
+						palette.birch,
+					)
+					part(
+						stock.cap,
+						[dx, 0.12 * size, dz],
+						[0.08 * size, 0.06 * size, 0.08 * size],
+						leaf(palette, 0),
+					)
+				},
+			)
 			return
 		case "grass":
 			stroke(tuft(0, 0))
@@ -252,7 +261,7 @@ export function drawFence(
 			zig = i % 2 === 0 ? -0.12 : 0.12
 		return [ax + (bx - ax) * t + px * zig, floor, az + (bz - az) * t + pz * zig]
 	})
-	posts.forEach(([x, , z], i) => {
+	Arr.forEach(posts, ([x, , z], i) => {
 		sketch.solid(stock.box, {
 			position: [x, floor + 0.23, z],
 			scale: [0.06, 0.46, 0.06],
@@ -335,7 +344,7 @@ export function drawPerch(sketch: Sketch, stock: Prototypes, palette: InkPalette
 		[0.5, 0.86, 0],
 		[0.6, 0.96, 0],
 	])
-	;[0.14, 0.3, 0.44].forEach((x, i) => {
+	Arr.forEach([0.14, 0.3, 0.44], (x, i) => {
 		const color = i === 1 ? palette.iron : leaf(palette, 0)
 		part(stock.box, [x, 0.92, 0], [0.09, 0.07, 0.06], color)
 		part(stock.box, [x + 0.05, 0.97, 0], [0.045, 0.045, 0.045], color)
@@ -391,6 +400,40 @@ export function drawBird(sketch: Sketch, stock: Prototypes, color: string) {
 	sketch.solid(stock.box, { position: [0, 0, 0], scale: [0.12, 0.03, 0.035], color })
 }
 
+/** A Maple blimp: a faceted envelope with tapered ends, a red band, tail fins and a gondola,
+ * built at the origin facing +x. */
+export function drawBlimp(sketch: Sketch, stock: Prototypes, palette: InkPalette) {
+	const red = palette.gifts[0] ?? palette.selected
+	const across: Vec3 = [0, 0, -Math.PI / 2]
+	sketch.solid(stock.log, {
+		position: [0, 0, 0],
+		rotation: across,
+		scale: [0.32, 1, 0.32],
+		color: palette.birch,
+	})
+	sketch.solid(stock.log, {
+		position: [0.1, 0, 0],
+		rotation: across,
+		scale: [0.325, 0.14, 0.325],
+		color: red,
+	})
+	sketch.solid(stock.cap, {
+		position: [0.7, 0, 0],
+		rotation: across,
+		scale: [0.32, 0.4, 0.32],
+		color: palette.birch,
+	})
+	sketch.solid(stock.cap, {
+		position: [-0.75, 0, 0],
+		rotation: [0, 0, Math.PI / 2],
+		scale: [0.32, 0.5, 0.32],
+		color: palette.birch,
+	})
+	sketch.solid(stock.box, { position: [-0.82, 0.24, 0], scale: [0.26, 0.28, 0.03], color: red })
+	sketch.solid(stock.box, { position: [-0.82, 0, 0], scale: [0.26, 0.03, 0.72], color: red })
+	sketch.solid(stock.box, { position: [0.05, -0.37, 0], scale: [0.36, 0.1, 0.13], color: palette.soil })
+}
+
 /** The meadow floor: one flat blob under every zone with an inked edge, grass tufts and
  * a few flowers along its border. The paper only shows past this natural edge. */
 export function drawMeadow(
@@ -437,7 +480,7 @@ export function drawSteppingStones(
 	floor: number,
 ) {
 	const { x, z, nx, nz, w } = creek.at(creek.length * 0.72)
-	;[-0.75, -0.25, 0.25, 0.75].forEach((t, i) =>
+	Arr.forEach([-0.75, -0.25, 0.25, 0.75], (t, i) =>
 		sketch.solid(stock.rock, {
 			position: [x + nx * w * t * 1.15, floor + 0.03, z + nz * w * t * 1.15],
 			rotation: [0, hash(i, x) * 6, 0],

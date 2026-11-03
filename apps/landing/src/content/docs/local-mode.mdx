@@ -5,14 +5,14 @@ group: "Local Mode"
 order: 1
 ---
 
-import LocalHero from "../../components/local/LocalHero.astro"
-import LocalFlow from "../../components/local/LocalFlow.astro"
-import LocalCommandGrid from "../../components/local/LocalCommandGrid.astro"
-import InstallTabs from "../../components/local/InstallTabs.astro"
-
-<LocalHero />
-
 Maple Local is the full product running on your machine, free, for local development. Point any OpenTelemetry exporter at `localhost`, open the dashboard, and explore traces, logs, metrics, errors and a service map. It is not a client for the hosted service and needs no account. Your telemetry is stored and queried on your machine. The CLI does make a few network calls of its own by default, listed in [What connects to the internet](#what-connects-to-the-internet).
+
+Two commands get you running:
+
+```bash
+brew install Makisuo/tap/maple
+maple start
+```
 
 ## What you get
 
@@ -27,21 +27,41 @@ Data lives in `~/.maple/data` and survives restarts. See [Your data](#your-data)
 
 ## 1. Install
 
-Homebrew is the easiest path on macOS and Linux. The install script works anywhere a shell does.
+Both methods install the same two-file bundle, `maple` and `libchdb`, on macOS and Linux, and verify its checksum.
 
-<InstallTabs />
+### Homebrew
 
-> Prefer to do it by hand? Download a release bundle (both `maple` and `libchdb`) from [GitHub Releases](https://github.com/MapleTechLabs/maple/releases), or read [`scripts/install.sh`](https://github.com/MapleTechLabs/maple/blob/main/scripts/install.sh) before piping it to a shell. Later, `maple update` upgrades a script install in place; Homebrew installs use `brew upgrade maple`.
+```bash
+brew install Makisuo/tap/maple
+```
+
+Upgrade with `brew upgrade maple` and remove it with `brew uninstall maple`.
+
+### Install script
+
+```bash
+curl -fsSL https://maple.dev/cli/install | sh
+```
+
+The script detects your OS and architecture, downloads the matching bundle from the latest GitHub release, installs it into `~/.maple/bin`, clears the macOS Gatekeeper quarantine, and links `maple` onto your `PATH`. Read [`scripts/install.sh`](https://github.com/MapleTechLabs/maple/blob/main/scripts/install.sh) before piping it to a shell. Upgrade in place with `maple update`. To remove it:
+
+```bash
+curl -fsSL https://maple.dev/cli/uninstall | sh
+```
+
+Uninstalling keeps `~/.maple/data`. If you later move to Homebrew, delete the old `maple` symlink on your `PATH` so your shell finds Homebrew's binary.
+
+To install by hand, download a release bundle from [GitHub Releases](https://github.com/MapleTechLabs/maple/releases) and keep `maple` and `libchdb` in the same directory.
 
 ## 2. Start the server
 
 ```bash
-maple start            # ingest + embedded ClickHouse + query API on :4318
-maple start --offline  # …and serve the dashboard from the binary
-maple start -d         # …detached; logs to ~/.maple/maple.log, stop with `maple stop`
+maple start            # ingest, store and query API on :4318
+maple start --offline  # also serve the dashboard from the binary
+maple start -d         # run detached; stop with `maple stop`
 ```
 
-`maple start` is the one long-lived process. It owns the embedded database and hosts ingest, the query API and, with `--offline`, the dashboard, all on a single port bound to loopback. The startup banner prints the addresses and a link to open.
+`maple start` is the one long-lived process. It owns the embedded database and hosts ingest, the query API and, with `--offline`, the dashboard, all on a single port bound to loopback. The startup banner prints the addresses and a link to open. A detached server writes its output to `~/.maple/maple.log`.
 
 The flags you are likely to touch:
 
@@ -64,49 +84,62 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"
 export OTEL_SERVICE_NAME="my-service"
 ```
 
-For custom spans, log correlation and framework auto-instrumentation, follow the guide for your language in [Instrument your application](/docs/instrumentation). Anything you can send to hosted Maple flows into the local server unchanged.
+Your exporter posts to `/v1/traces`, `/v1/logs` and `/v1/metrics`. The server writes each batch to the embedded ClickHouse store in `~/.maple/data`, and the dashboard and the CLI read it back through `POST /local/query`.
 
-<LocalFlow />
+For custom spans, log correlation and framework auto-instrumentation, follow the guide for your language in [Instrument your application](/docs/instrumentation). Anything you can send to hosted Maple flows into the local server unchanged.
 
 ## 4. Open the dashboard
 
 The banner links to the dashboard. There are two ways to serve it:
 
-|                         | Default (`local.maple.dev`)                                | `--offline`               |
+|                         | Default, from local.maple.dev                              | Offline                   |
 | ----------------------- | ---------------------------------------------------------- | ------------------------- |
 | Where the UI comes from | Hosted, always the latest build                            | Bundled inside the binary |
 | Talks to your data over | Loopback, from a public origin                             | Same origin               |
 | Needs internet          | Yes, to load the page                                      | No                        |
 | Browser prompt          | Chrome asks once to "access devices on your local network" | None                      |
 
-Both read the same local store. Pick `--offline` when you are on a plane, behind a strict proxy, or would rather not see the prompt.
+Both read the same local store. Start with `--offline` when you are on a plane, behind a strict proxy, or would rather not see the prompt.
 
 ### Reaching it from another machine
 
-Bind to all interfaces and print a hostname the other browser will actually use:
+Bind to all interfaces with two secrets: an ingest key for OTLP and an access token for the dashboard and queries.
 
 ```bash
-maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
+export MAPLE_LOCAL_INGEST_KEY="$(openssl rand -hex 32)"
+export MAPLE_LOCAL_ACCESS_TOKEN="$(openssl rand -hex 32)"
+maple start --host 0.0.0.0 --offline
 ```
 
-Anyone who can reach the port can then use the UI, run raw SQL through `/local/query`, and send OTLP data. None of these routes check credentials. The maintenance routes (checkpoint, day retirement and the local event routes) require a token that `maple start` writes beside the data directory with mode `0600` (`<data-dir>.maintenance-token`, and `<data-dir>.event-consumer-token` for event consumers). They are only as safe as those files. `/local/retention/retire` deletes a day of live data. The full route list is in the [CLI reference](/docs/reference/cli#server-endpoints).
+- Exporters send the ingest key as `Authorization: Bearer <key>`, e.g. `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20<key>"`. It can write telemetry, never read it.
+- The dashboard asks for the access token once and keeps you signed in for 30 days. Scripts send it as `Authorization: Bearer <token>`; `maple` CLI commands send it when `MAPLE_LOCAL_ACCESS_TOKEN` is set.
 
-Use a non-loopback bind only on a network you trust, or behind TLS with browser-managed auth such as a session cookie. The bundled UI does not attach API keys to its requests.
+Without the secrets the server still starts and its banner warns you: anyone who can reach the port can use the UI, run raw SQL through `/local/query`, and send OTLP data. The maintenance routes (checkpoint, scoped delete, day retirement and the local event routes) require a token that `maple start` writes beside the data directory with mode `0600` (`<data-dir>.maintenance-token`, and `<data-dir>.event-consumer-token` for event consumers). They are only as safe as those files. `/local/retention/retire` deletes a day of live data. The full route list is in the [CLI reference](/docs/reference/cli#server-endpoints).
+
+Put a TLS-terminating proxy in front of anything reachable from the internet; the session cookie is marked `Secure` when the proxy forwards `X-Forwarded-Proto: https`. To run it on a server or a container platform, use the image described in [Self-hosting](/docs/self-hosting).
 
 ## Query from the terminal
 
 The same binary is the query CLI. Every command runs against the running server and prints JSON by default. Add `--format table` for an aligned table, or `--debug` to see the compiled SQL on stderr.
 
 ```bash
-maple services                         # active services at a glance
-maple traces --service api --since 1h  # recent spans for one service
-maple errors --since 24h               # error groups by fingerprint
+maple services                         # active services
+maple traces --service api --since 1h  # recent spans
+maple errors --since 24h               # error groups
 maple query "SELECT count() FROM traces"
 ```
 
-<LocalCommandGrid />
+| Command                                                               | What it does                                            |
+| --------------------------------------------------------------------- | ------------------------------------------------------- |
+| `maple services` · `diagnose <svc>` · `service-map` · `top-ops <svc>` | Service health, dependencies and the hottest operations |
+| `maple traces` · `trace <id>` · `slow-traces`                         | Search spans, open one span tree, find the slowest      |
+| `maple errors` · `error <hash>`                                       | Error groups by fingerprint, and one group in detail    |
+| `maple logs` · `log-patterns`                                         | Search logs, or cluster them into templates             |
+| `maple timeseries` · `breakdown` · `compare`                          | Bucketed metrics, top-N breakdowns, two windows         |
+| `maple metrics` · `attributes keys`                                   | Discover metrics and attribute keys                     |
+| `maple query "<sql>"`                                                 | Read-only SQL when the typed commands don't cover it    |
 
-Most query commands share the same filters: `--since` (`30m`, `1h`, `24h`, `7d`) or absolute `--start`/`--end`, `--service`/`-s`, `--env`/`-e`, and `--limit`/`-n`. The [CLI reference](/docs/reference/cli) has every command, argument and flag.
+Most query commands share the same filters: `--since` (`30m`, `1h`, `24h`, `7d`) or absolute `--start`/`--end`, `--service`/`-s`, `--env`/`-e`, and `--limit`/`-n`. The [CLI reference](/docs/reference/cli#command-index) has every command, argument and flag.
 
 ## Your data
 
@@ -120,25 +153,36 @@ Most query commands share the same filters: `--since` (`30m`, `1h`, `24h`, `7d`)
 
 Your telemetry and query results stay on your machine. These calls go out by default:
 
-| Call                                                                                                          | When                                                       | Turn it off                                          |
-| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
-| The CLI's own traces and metrics, sent to `https://ingest.maple.dev` with an ingest key built into the binary | Every command, and every request `maple start` handles     | `MAPLE_TELEMETRY=off`                                |
-| Release check against the GitHub releases API                                                                 | At most once per 24 hours, only in an interactive terminal | `MAPLE_NO_UPDATE_CHECK=1` (Homebrew installs set it) |
-| The dashboard page from `local.maple.dev`                                                                     | When you open the dashboard                                | `maple start --offline`                              |
+| Call                                  | When                                                   | Turn it off                                          |
+| ------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------- |
+| CLI traces and metrics                | Every command, and every request `maple start` handles | `MAPLE_TELEMETRY=off`                                |
+| Release check on GitHub               | At most once a day, only in an interactive terminal    | `MAPLE_NO_UPDATE_CHECK=1` (Homebrew installs set it) |
+| Dashboard page from `local.maple.dev` | When you open the dashboard                            | `maple start --offline`                              |
 
-The CLI's own telemetry describes the CLI, not your data. It reports the service name `maple-cli`, the command, its duration and errors. For each OTLP request `maple start` handles it records the signal, the body size and the number of items, never the payload. For each `/local/query` request it records only the timing and whether it succeeded. SQL text, filter values and error messages are never exported, and the CLI's own logs are not sent at all. `MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT` and `MAPLE_ENVIRONMENT` redirect or relabel this export; see [Environment variables](/docs/reference/cli#environment-variables).
+The CLI sends its own telemetry to `https://ingest.maple.dev` with an ingest key built into the binary. It describes the CLI, not your data: it reports the service name `maple-cli`, the command, its duration and errors. For each OTLP request `maple start` handles it records the signal, the body size and the number of items, never the payload. For each `/local/query` request it records only the timing and whether it succeeded. SQL text, filter values and error messages are never exported, and the CLI's own logs are not sent at all. `MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT` and `MAPLE_ENVIRONMENT` redirect or relabel this export. With `MAPLE_ENDPOINT` unset, the CLI uses `OTEL_EXPORTER_OTLP_ENDPOINT` if it is set, and `MAPLE_REGION=eu` switches the default to `https://ingest.eu.maple.dev`. So if you export `OTEL_EXPORTER_OTLP_ENDPOINT` for your app in the same shell, the CLI's own telemetry goes there too. See [Environment variables](/docs/reference/cli#environment-variables).
 
 ## One CLI, two backends
 
 The same `maple` also talks to a hosted Maple workspace. Sign in from the terminal and it opens your browser:
 
 ```bash
-maple auth login     # browser sign-in; `--with-token` reads a token from stdin instead
-maple whoami         # which backend a command would hit right now
-maple use local      # pin it; `maple use auto` restores detection
+maple auth login   # browser sign-in
+maple whoami       # the backend a command would use now
+maple use local    # pin it; `maple use auto` undoes this
 ```
 
-Per command, an explicit `--local` or `--remote` wins, then the pinned default, then auto-detect: a stored login means remote, otherwise the CLI probes the local server. Everything except `maple query` works against both. Raw SQL stays local because the hosted warehouse is shared between organizations. See [Using the CLI with hosted Maple](/docs/reference/cli#using-the-cli-with-hosted-maple).
+To sign in without a browser, pipe a token into `maple auth login --with-token`.
+
+For each command, an explicit `--local` or `--remote` wins, then the default pinned with `maple use`, then auto-detect: a set `MAPLE_LOCAL_URL` means local, otherwise a stored login means remote, otherwise the CLI probes the local server (`GET /local/status`).
+
+Every query command works against both, `maple query` included. Against hosted Maple, the SQL must include `$__orgFilter` and returns at most 100 rows. The macros expand locally too, so one query runs unchanged in both modes. Quote it in single quotes so the shell leaves `$__` alone:
+
+```bash
+maple query 'SELECT count() FROM traces
+  WHERE $__orgFilter AND $__timeFilter(Timestamp)' --since 1h
+```
+
+See [Using the CLI with hosted Maple](/docs/reference/cli#using-the-cli-with-hosted-maple).
 
 ## Under the hood
 

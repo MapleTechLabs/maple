@@ -43,18 +43,81 @@
 		"maple/no-effect-die": "error",
 		"maple/no-ordie-compiled-query": "error",
 		"maple/no-raw-tool-layer": "error",
-		"maple/no-react-use-effect": "warn",
+		"maple/no-react-use-effect": "error",
 		"maple/no-record-string-any": "error",
 		"maple/no-try-catch": "error",
 		"maple/no-date-parse": "error",
-		"typescript/no-explicit-any": "warn",
+		"typescript/no-explicit-any": "error",
 		"typescript/no-non-null-assertion": "error",
 		"no-alert": "error",
+		"no-loss-of-precision": "error",
+		"no-unused-vars": [
+			"error",
+			{ "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+		],
+		"no-extra-boolean-cast": "error",
+		"no-unsafe-optional-chaining": "error",
+		"no-unused-expressions": "error",
+		"no-useless-escape": "error",
+		"oxc/double-comparisons": "error",
+		"typescript/no-non-null-asserted-optional-chain": "error",
+		"typescript/prefer-as-const": "error",
+		"unicorn/no-new-array": "error",
+		"unicorn/no-thenable": "error",
+		"unicorn/no-useless-fallback-in-spread": "error",
+		"unicorn/prefer-string-starts-ends-with": "error",
 		"oxc/approx-constant": "warn",
 		"no-plusplus": "off",
 		"require-yield": "off"
 	},
 	"overrides": [
+		// The dashboard's design rules (docs/design-rules.md), on the apps and their kit.
+		{
+			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**", "packages/ui/src/**"],
+			"rules": {
+				"maple/couldnt-copy": "error",
+				"maple/hover-needs-active": "error",
+				"maple/instant-state": "error",
+				"maple/no-arbitrary-radius": "error",
+				"maple/no-dimmed-icon": "error",
+				"maple/no-raw-shadow": "error",
+				"maple/no-transition-all": "error",
+				"maple/single-tooltip-delay": "error",
+				"maple/tone-alpha-steps": "error",
+				"maple/no-raw-color": "error",
+				"maple/no-arbitrary-text-size": "error"
+			}
+		},
+		// Build from the kit (docs/design-rules.md): pages compose packages/views/src/ui and each app's page/kit.
+		// Existing sites are ratcheted per file by scripts/oxlint-plugins/ui-kit-baseline.json.
+		{
+			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**"],
+			"rules": {
+				"maple/no-kit-styles-in-pages": "error",
+				"maple/no-raw-control": "error",
+				"maple/no-raw-heading": "error"
+			}
+		},
+		// The kit itself, the lab that showcases it, and tests render raw elements.
+		{
+			"files": [
+				"packages/views/src/ui/**",
+				"apps/web/src/page/kit/**",
+				"apps/local-ui/src/page/kit/**",
+				"apps/web/src/lab/**",
+				"**/*.test.ts"
+			],
+			"rules": {
+				"maple/no-kit-styles-in-pages": "off",
+				"maple/no-raw-control": "off",
+				"maple/no-raw-heading": "off"
+			}
+		},
+		// Lab fixtures hold sample telemetry (log bodies, error messages), not UI copy.
+		{
+			"files": ["apps/web/src/lab/**"],
+			"rules": { "maple/couldnt-copy": "off" }
+		},
 		// Existing API burndown entries, relocated with their implementation.
 		{
 			"files": [
@@ -197,16 +260,81 @@
 				"typescript/no-non-null-assertion": "off"
 			}
 		},
+		// Burndown entries relocated with their implementation from apps/cli into
+		// @maple/local-server, one block per rule. Drop each file as it is converted.
+		{
+			"files": [
+				"packages/local-server/src/archives/export.ts",
+				"packages/local-server/src/archives/gc.ts",
+				"packages/local-server/src/archives/generation.ts",
+				"packages/local-server/src/archives/journal.ts",
+				"packages/local-server/src/archives/listing.ts",
+				"packages/local-server/src/archives/manifest.ts",
+				"packages/local-server/src/archives/paths.ts",
+				"packages/local-server/src/chdb.ts",
+				"packages/local-server/src/checkpoints.ts",
+				"packages/local-server/src/durable-files.ts",
+				"packages/local-server/src/eventing/control-store.ts",
+				"packages/local-server/src/local-address.ts",
+				"packages/local-server/src/local-store-migration-journal.ts",
+				"packages/local-server/src/otlp/encode.ts",
+				"packages/local-server/src/schema-physical.ts",
+				"packages/local-server/src/serve.ts",
+				"packages/local-server/src/store-claim.ts",
+				"packages/local-server/src/store-version.ts"
+			],
+			"rules": { "maple/no-try-catch": "off" }
+		},
+		{
+			"files": [
+				"packages/local-server/src/archives/export.ts",
+				"packages/local-server/src/archives/gc.ts",
+				"packages/local-server/src/archives/journal.ts",
+				"packages/local-server/src/archives/paths.ts",
+				"packages/local-server/src/archives/retention.ts",
+				"packages/local-server/src/checkpoints.ts",
+				"packages/local-server/src/insert-batcher.ts",
+				"packages/local-server/src/local-store-migration-journal.ts",
+				"packages/local-server/src/otlp/encode.ts",
+				"packages/local-server/src/schema-manifest.ts",
+				"packages/local-server/src/schema-physical.ts",
+				"packages/local-server/src/scoped-delete.ts"
+			],
+			"rules": { "typescript/no-non-null-assertion": "off" }
+		},
+		{
+			"files": [
+				"packages/local-server/src/archives/generation.ts",
+				"packages/local-server/src/archives/manifest.ts",
+				"packages/local-server/src/archives/paths.ts",
+				"packages/local-server/src/archives/retention.ts",
+				"packages/local-server/src/checkpoints.ts",
+				"packages/local-server/src/eventing/control-store.ts",
+				"packages/local-server/src/identity-schema.ts",
+				"packages/local-server/src/service-map-rollup.ts",
+				"packages/local-server/src/store-version.ts"
+			],
+			"rules": { "maple/no-date-parse": "off" }
+		},
+		// Astro templates are `{expression}` blocks the parser reads as bare statements.
+		{
+			"files": ["**/*.astro"],
+			"rules": { "no-unused-expressions": "off" }
+		},
 		// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins,
-		// Tailwind class pins, and source greps. Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
+		// Tailwind class pins, source greps, exact command lists and SQL projection pins.
+		// Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
 		{
 			"files": ["**/*.test.ts", "**/*.test.tsx"],
 			"plugins": ["vitest"],
 			"rules": {
 				"test-slop/no-classname-assertions": "error",
 				"test-slop/no-constant-pin": "error",
+				"test-slop/no-exact-name-list": "error",
 				"test-slop/no-source-text-assertions": "error",
+				"test-slop/no-sql-text-pin": "error",
 				"test-slop/no-weak-only-assertions": "error",
+				"vitest/valid-describe-callback": "error",
 				"vitest/expect-expect": [
 					"error",
 					{
@@ -232,7 +360,8 @@
 							"match",
 							"doesNotMatch",
 							"fail",
-							"expectTypeOf"
+							"expectTypeOf",
+							"Lazy.expectAllReused"
 						]
 					}
 				],
@@ -247,6 +376,13 @@
 				"vitest/valid-title": "off"
 			}
 		},
+		// The raw-SQL preparer is a text rewriter: its output SQL text is the behavior under test.
+		{
+			"files": ["packages/query-engine/src/runtime/raw-sql*.test.ts"],
+			"rules": {
+				"test-slop/no-sql-text-pin": "off"
+			}
+		},
 		// "shape" is Electric's own protocol noun — `/v1/shape` is the endpoint this
 		// app proxies and `maple.electric.shape` is the span attribute naming which
 		// one. The rule is about `shape` as a stand-in for a domain role it could not
@@ -256,6 +392,19 @@
 			"rules": {
 				"anti-slop/no-shape-in-symbol-names": "off"
 			}
+		},
+		// `any` burndown: drop each file as its casts get real types.
+		{
+			"files": [
+				"apps/ai/src/security-audit/workflow.run.test.ts",
+				"apps/api/scripts/bench-startup-cpu.ts",
+				"apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.test.ts",
+				"packages/auth/src/index.ts",
+				"packages/backend/src/platform/durable-step.test.ts",
+				"packages/effect-sdk/src/client/flushable.test.ts",
+				"packages/web-data/src/warehouse/custom-charts.ts"
+			],
+			"rules": { "typescript/no-explicit-any": "off" }
 		},
 		// Standalone generic DSLs use `any` as a variance placeholder; Maple product code may not.
 		{
@@ -274,7 +423,7 @@
 				"apps/api/src/runtime/service-graph.ts",
 				"packages/backend/src/services/integrations/vcs/VcsProviderRegistry.ts",
 				"apps/api/src/routes/internal/integrations.http.ts",
-				"apps/api/src/routes/integrations-callback.http.ts",
+				"apps/api/src/routes/oauth-complete.ts",
 				"packages/backend/src/services/integrations/vcs/vendor/**",
 				"packages/backend/src/services/integrations/vcs/__tests__/**"
 			],
@@ -297,6 +446,23 @@
 			"files": ["apps/ai/src/**/*.ts"],
 			"excludeFiles": ["**/*.test.ts"],
 			"rules": { "maple/mcp-tracer-anticipated-errors": "error" }
+		},
+		// The status Worker must keep serving while Maple is down: no Postgres, auth or backend services.
+		{
+			"files": ["apps/status/**/*.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^(?:@maple/backend|@maple/db|@maple-dev/effect-orm|@maple/auth|@clerk/)",
+								"message": "apps/status serves pages while Maple is down; it reads only KV, R2 and the colo cache. Share pure code through @maple/domain or @maple/status-page."
+							}
+						]
+					}
+				]
+			}
 		},
 		// Customer SDK bundle boundaries (were source-grepping architecture tests). Later overrides
 		// replace earlier rule options, so the narrower tiers repeat the broader patterns.
@@ -377,6 +543,25 @@
 					"location",
 					"localStorage",
 					"indexedDB"
+				]
+			}
+		},
+		// Code views highlight through lib/highlight, whose output falls back to plain text past the
+		// display cap; a span per token of a megabyte log body froze the log sheet.
+		{
+			"files": ["apps/web/src/**/*.ts", "packages/views/src/**/*.ts", "apps/local-ui/src/**/*.ts"],
+			"excludeFiles": ["packages/views/src/lib/highlight.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "@pierre/highlights",
+								"message": "Use highlightCode from lib/highlight (or cappedCode from ui/logs/log-message): they bound what a view renders."
+							}
+						]
+					}
 				]
 			}
 		},
@@ -490,7 +675,7 @@
 					{
 						"patterns": [
 							{
-								"regex": "(^|/)(dispatcher|mcp-service-graph)$",
+								"regex": "(^|/)(dispatcher|mcp-service-graph|mcp-tool-graph)$",
 								"allowTypeImports": true,
 								"message": "The tool graph loads lazily through McpToolExecutorLoader; import its types only."
 							}
@@ -640,15 +825,33 @@
 					}
 				]
 			}
+		},
+		// @maple/local-server is bundled into @maple-dev/alchemy's sidecar; the CLI, its
+		// migrations and its historical schema snapshots must never be reachable from it.
+		{
+			"files": ["packages/local-server/src/**/*.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"regex": "^@maple/cli($|/)|/apps/cli/",
+								"message": "@maple/local-server must not depend on the CLI; the CLI depends on it."
+							}
+						]
+					}
+				]
+			}
 		}
 	],
 	// Vendored third-party source is read as a unit and re-pulled wholesale from its upstream,
 	// so house rules that would be rewrites are not applied to it.
 	"ignorePatterns": [
+		"packages/security-audit/skill/**",
 		".agents/**",
 		".codex/**",
 		".context/**",
-		".deepsec/**",
 		".factory/**",
 		".impeccable/**",
 		".superset/**",

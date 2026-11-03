@@ -1,8 +1,8 @@
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { fromString } from "foldkit/url"
 import { describe, expect, test } from "vitest"
-import { FetchSignalPresence, ProbeServer } from "./command"
+import { FetchSignalPresence, LoadExternal, ProbeServer, WaitBeforeProbe } from "./command"
 import { init } from "./main"
 import type { Model } from "./model"
 import { PageOutMessage } from "./page/contract"
@@ -11,6 +11,7 @@ import { PageMessage } from "./page/registry"
 import { update } from "./update"
 import { foldPageOut, updatePageMessage } from "./update-page"
 import { Message } from "./message"
+import { ProbeOutcome } from "./server/state"
 
 const flags = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
@@ -27,10 +28,12 @@ const url = Option.getOrThrow(fromString("http://localhost/#/traces"))
 const settled = (): Model => ({
 	...init(flags, url).model,
 	probe: { isInFlight: false, version: 1 },
-	presence: AsyncData.Success({ data: { rows: [], nowMs: 1_000 } }),
+	presence: AsyncData.Success({ data: { signals: {}, nowMs: 1_000 } }),
 })
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
-const argsOf = (commands: ReadonlyArray<{ readonly args?: unknown }> | undefined) => (commands ?? []).map(({ args }) => args)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
+const argsOf = (commands: ReadonlyArray<{ readonly args?: unknown }> | undefined) =>
+	Arr.map(commands ?? [], ({ args }) => args)
 
 describe("refresh in place", () => {
 	test("re-probes the server, and the next empty state reads the presence again", () => {
@@ -53,11 +56,13 @@ describe("superseded requests", () => {
 	/** /logs with its list and both facets in flight. */
 	const loadingLogs = (): Model => {
 		const opened = update(settled(), Message.ChangedUrl({ url: urlOf("#/logs") })).model
-		const clocked = PageMessage.GotLogsMessage({ message: LogsMessage.CompletedReadClock({ nowMs: NOW }) })
+		const clocked = PageMessage.GotLogsMessage({
+			message: LogsMessage.CompletedReadClock({ nowMs: NOW }),
+		})
 		return updatePageMessage(opened, clocked).model
 	}
 	const stops = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-		names(commands).filter((name) => name.endsWith(".Interrupt"))
+		Arr.filter(names(commands), (name) => Str.endsWith(".Interrupt")(name))
 
 	test("a new search stops the list and facet requests it supersedes", () => {
 		const searched = update(loadingLogs(), Message.ChangedUrl({ url: urlOf("#/logs?q=timeout") }))
@@ -80,7 +85,36 @@ describe("superseded requests", () => {
 	test("an answer that lands stops nothing", () => {
 		const model = loadingLogs()
 		const key = model.page._tag === "LogsPage" ? (model.page.logs.key ?? "") : ""
-		const answer = LogsMessage.SucceededFetchLogs({ key, data: { pages: [[]], hasNextPage: false }, fetchedAtMs: NOW })
-		expect(stops(updatePageMessage(model, PageMessage.GotLogsMessage({ message: answer })).commands)).toEqual([])
+		const answer = LogsMessage.SucceededFetchLogs({
+			key,
+			data: { pages: [[]], hasNextPage: false },
+			fetchedAtMs: NOW,
+		})
+		expect(
+			stops(updatePageMessage(model, PageMessage.GotLogsMessage({ message: answer })).commands),
+		).toEqual([])
+	})
+})
+
+describe("signed-out self-hosted server", () => {
+	const rejected = (model: Model, status: number) =>
+		update(
+			model,
+			Message.CompletedProbeServer({
+				outcome: ProbeOutcome.Rejected({ status, detail: "" }),
+				checkedAtMs: 1,
+			}),
+		)
+
+	test("a 401 probe sends the bundled UI to the sign-in page", () => {
+		const signedOut = rejected(settled(), 401)
+		expect(names(signedOut.commands)).toEqual([LoadExternal.name])
+		expect(argsOf(signedOut.commands)).toEqual([{ href: "/login" }])
+	})
+
+	test("the hosted UI and other rejections keep probing", () => {
+		const hosted = { ...settled(), env: { ...flags.env, isHosted: true } }
+		expect(names(rejected(hosted, 401).commands)).toEqual([WaitBeforeProbe.name])
+		expect(names(rejected(settled(), 403).commands)).toEqual([WaitBeforeProbe.name])
 	})
 })

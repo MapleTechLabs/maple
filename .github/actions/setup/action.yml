@@ -20,7 +20,7 @@ inputs:
 runs:
     using: composite
     steps:
-        - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
           with:
               install_args: ${{ inputs.tools }}
 
@@ -41,4 +41,4 @@ runs:
 
         # One cache for every job and workflow, so any job's build output is a hit for the rest.
         - if: ${{ inputs.turbo-cache == 'true' }}
-          uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
+          uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2

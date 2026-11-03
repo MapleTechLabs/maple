@@ -22,7 +22,7 @@ const UpdatePassword = Command.define("UpdateClerkPassword", {
 	},
 	messages: [Message.CompletedSubmit],
 	execute: ({ newPassword, currentPassword, signOutOfOtherSessions }) =>
-		withUserReverified("Failed to update your password", (user) =>
+		withUserReverified("Couldn't update your password", (user) =>
 			user.updatePassword({
 				newPassword,
 				// Clerk rejects `currentPassword` on an account that has none yet.

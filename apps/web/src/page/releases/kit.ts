@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { ReleaseHealth } from "../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Release health and commit helpers, shared by the list and the detail.
 
@@ -32,7 +33,7 @@ export const RELEASE_HEALTH_DOT_CLASS = {
 export const PILL_CLASS = {
 	regressed: TONE_SOFT.crit,
 	watch: TONE_SOFT.warn,
-	rolling: "bg-primary/10 text-primary",
+	rolling: "bg-primary-a2 text-primary",
 	healthy: TONE_SOFT.ok,
 } as const satisfies Record<ReleaseHealth, string>
 
@@ -65,27 +66,37 @@ export const isResolvableSha = (sha: string): boolean => /^[0-9a-f]{40}$/i.test(
 /** `firstLine`: a commit message's subject. */
 export const firstLine = (message: string): string => {
 	const index = message.indexOf("\n")
-	return (index === -1 ? message : message.slice(0, index)).trim()
+	return Str.trim(index === -1 ? message : Str.slice(0, index)(message))
 }
 
 /** `commitsQueryKey`: the resolvable shas, deduped and sorted. */
 export const commitsQueryKey = (shas: Iterable<string>): string =>
-	[...new Set(shas)].filter(isResolvableSha).toSorted().join(",")
+	Arr.join(Arr.filter([...new Set(shas)], isResolvableSha).toSorted(), ",")
 
 /** `commitRangesKey`: resolvable `base..head` pairs, deduped and sorted. */
 export const commitRangesKey = (ranges: Iterable<Readonly<{ base: string; head: string }>>): string =>
-	[
-		...new Set(
-			[...ranges]
-				.filter((range) => isResolvableSha(range.base) && isResolvableSha(range.head))
-				.map((range) => `${range.base}..${range.head}`),
-		),
-	]
-		.toSorted()
-		.join(",")
+	Arr.join(
+		[
+			...new Set(
+				Arr.map(
+					Arr.filter(
+						[...ranges],
+						(range) => isResolvableSha(range.base) && isResolvableSha(range.head),
+					),
+					(range) => `${range.base}..${range.head}`,
+				),
+			),
+		].toSorted(),
+		",",
+	)
 
 /** `CommitAvatar`. TODO(avatar-error): a broken avatar URL does not fall back to initials. */
-export const commitAvatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, isCompact = true): Html => {
+export const commitAvatar = <M>(
+	h: HtmlBuilder<M>,
+	url: string | null,
+	name: string,
+	isCompact = true,
+): Html => {
 	const size = isCompact ? "size-5" : "size-7"
 	return url === null
 		? h.div(
@@ -97,7 +108,7 @@ export const commitAvatar = <M>(h: HtmlBuilder<M>, url: string | null, name: str
 						),
 					),
 				],
-				[name.slice(0, 2)],
+				[Str.slice(0, 2)(name)],
 			)
 		: h.img([
 				h.Src(url),
@@ -115,17 +126,20 @@ export const commitAvatar = <M>(h: HtmlBuilder<M>, url: string | null, name: str
 export const withQueryOrder = (href: string, keys: ReadonlyArray<string>): string => {
 	const [path, query] = href.split("?", 2)
 	if (query === undefined) return href
-	const pairs = query.split("&").map((pair) => [pair.split("=", 1)[0] ?? "", pair] as const)
+	const pairs = Arr.map(Str.split("&")(query), (pair) => [pair.split("=", 1)[0] ?? "", pair] as const)
 	const rank = (key: string) => {
 		const index = keys.indexOf(key)
 		return index === -1 ? keys.length : index
 	}
-	return `${path}?${pairs
-		.toSorted((a, b) => rank(a[0]) - rank(b[0]))
-		.map(([, pair]) => pair)
-		.join("&")}`
+	return `${path}?${Arr.join(
+		Arr.map(
+			pairs.toSorted((a, b) => rank(a[0]) - rank(b[0])),
+			([, pair]) => pair,
+		),
+		"&",
+	)}`
 }
 
 /** `<Link to="/releases/$commitSha" search={search}>`: the query in `search`'s key order. */
 export const releaseHref = (commitSha: string, search: Readonly<Record<string, unknown>>): string =>
-	withQueryOrder(hrefOf(AppRoute.Release({ commitSha, search })), Object.keys(search))
+	withQueryOrder(hrefOf(AppRoute.Release({ commitSha, search })), Rec.keys(search))

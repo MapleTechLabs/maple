@@ -9,6 +9,7 @@ import type {
 	ServiceDbEdgesRequest,
 	ServiceDependenciesRequest,
 	ServiceWorkloadsRequest,
+	ServiceRuntimesRequest,
 	ServiceUsageRequest,
 	ErrorDetailTracesRequest,
 	ErrorRateByServiceRequest,
@@ -38,6 +39,8 @@ import type {
 	ServiceHealthSnapshotRequest,
 	ServiceOverviewRequest,
 	ReleasesListRequest,
+	UptimeChecksRequest,
+	UptimePhaseTimingsRequest,
 	ReleaseDetailRequest,
 	WorkloadDetailSummaryRequest,
 	WebAnalyticsSummaryRequest,
@@ -49,10 +52,12 @@ import type {
 	WebAnalyticsBreakdownsRequest,
 	WebAnalyticsAiReferralsRequest,
 	WebAnalyticsAiCrawlersRequest,
+	SecurityExposureRequest,
+	SecurityRuntimesRequest,
 } from "@maple/domain/http"
 import { Match } from "effect"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { formatWarehouseDateTime } from "../datetime"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import * as CH from "../ch"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
@@ -272,15 +277,18 @@ export const serviceDependenciesForService = defineQuery({
 		),
 })
 
-export const serviceDbEdgesForService = defineQuery({
-	id: "serviceDbEdgesForService",
-	profile: "aggregation",
+// The minute-tier/raw pairs share ids and cache keys: both return the exact window.
+// `Raw` reads the partial hours from `traces`, for a cluster without migration 0049.
+const serviceDbEdgesForServiceDef = (minuteTier: boolean) => ({
+	id: "serviceDbEdgesForService" as const,
+	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: ServiceDbEdgesForServiceRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceDbEdgesForServiceQuery({
 				serviceName: payload.serviceName,
 				deploymentEnv: payload.deploymentEnv,
+				minuteTier,
 			}),
 			{
 				orgId,
@@ -289,6 +297,9 @@ export const serviceDbEdgesForService = defineQuery({
 			},
 		),
 })
+
+export const serviceDbEdgesForService = defineQuery(serviceDbEdgesForServiceDef(true))
+export const serviceDbEdgesForServiceRaw = defineQuery(serviceDbEdgesForServiceDef(false))
 
 /** Capability-aware so dashboard search uses the same bloom/tokenbf plan as the CLI. */
 export const listLogs = defineQuery({
@@ -549,6 +560,38 @@ export const releasesList = defineQuery({
 		),
 })
 
+// One uptime monitor's per-bucket phase averages, for the monitor page's breakdown chart.
+export const uptimePhaseTimings = defineQuery({
+	id: "uptimePhaseTimings",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: UptimePhaseTimingsRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.uptimePhaseTimingsQuery(),
+			{
+				orgId,
+				monitorId: payload.monitorId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+				bucketSeconds: payload.bucketSeconds,
+			},
+			{ rowSchema: CH.uptimePhaseTimingsRowSchema },
+		),
+})
+
+// One uptime monitor's checks with their phases, for the monitor page's per-check chart.
+export const uptimeChecks = defineQuery({
+	id: "uptimeChecks",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: UptimeChecksRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.uptimeChecksQuery({ limit: payload.limit }),
+			{ orgId, monitorId: payload.monitorId, startTime: payload.startTime, endTime: payload.endTime },
+			{ rowSchema: CH.uptimeChecksRowSchema },
+		),
+})
+
 export const releasesTimeline = defineQuery({
 	id: "releasesTimeline",
 	profile: "list",
@@ -722,16 +765,19 @@ export const serviceDependencies = defineQuery({
 		),
 })
 
-export const serviceDbEdges = defineQuery({
-	id: "serviceDbEdges",
-	profile: "aggregation",
+const serviceDbEdgesDef = (minuteTier: boolean) => ({
+	id: "serviceDbEdges" as const,
+	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: ServiceDbEdgesRequest, orgId: OrgId) =>
 		CH.serviceDbEdgesSQL(
-			{ deploymentEnv: payload.deploymentEnv },
+			{ deploymentEnv: payload.deploymentEnv, minuteTier },
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
 })
+
+export const serviceDbEdges = defineQuery(serviceDbEdgesDef(true))
+export const serviceDbEdgesRaw = defineQuery(serviceDbEdgesDef(false))
 
 export const serviceWorkloads = defineQuery({
 	id: "serviceWorkloads",
@@ -739,6 +785,17 @@ export const serviceWorkloads = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: ServiceWorkloadsRequest, orgId: OrgId) =>
 		CH.serviceWorkloadsSQL(
+			{ services: payload.services },
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+export const serviceRuntimes = defineQuery({
+	id: "serviceRuntimes",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ServiceRuntimesRequest, orgId: OrgId) =>
+		CH.serviceRuntimesSQL(
 			{ services: payload.services },
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
@@ -1033,6 +1090,67 @@ export const webAnalyticsAiCrawledPages = defineQuery({
 		),
 })
 
+// Security Center telemetry. The four exposure reads share one request; each is a small scan of
+// `scanner_requests`.
+const securityWindow = (payload: SecurityExposureRequest | SecurityRuntimesRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+export const scannerSignatures = defineQuery({
+	id: "scannerSignatures",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerSignaturesQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerExposed = defineQuery({
+	id: "scannerExposed",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerExposedQuery(), securityWindow(payload, orgId)),
+})
+
+export const scannerSources = defineQuery({
+	id: "scannerSources",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(CH.scannerSourcesQuery(), securityWindow(payload, orgId)),
+})
+
+/**
+ * The requested bucket, widened so the window never needs more buckets than the query returns. Buckets
+ * sit on the epoch grid, so a window can straddle one more than its length divided by the bucket.
+ */
+export const scannerTimelineBucketSeconds = (payload: SecurityExposureRequest): number => {
+	const requested = payload.bucketSeconds ?? 3600
+	const windowMs = parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)
+	return Math.max(requested, Math.ceil(windowMs / 1000 / (CH.SCANNER_TIMELINE_MAX_BUCKETS - 1)))
+}
+
+export const scannerTimeline = defineQuery({
+	id: "scannerTimeline",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.scannerTimelineQuery({ bucketSeconds: scannerTimelineBucketSeconds(payload) }),
+			securityWindow(payload, orgId),
+		),
+})
+
+export const runtimeVersions = defineQuery({
+	id: "runtimeVersions",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: SecurityRuntimesRequest, orgId: OrgId) =>
+		CH.compile(CH.runtimeVersionsQuery(), securityWindow(payload, orgId)),
+})
+
 export const podFacets = defineQuery({
 	id: "podFacets",
 	profile: "discovery",
@@ -1312,6 +1430,8 @@ export const spanHierarchy = defineQuery({
 				traceId: payload.traceId,
 				spanId: payload.spanId,
 				narrowByTime,
+				// One sentinel row past the cap, so callers can tell a truncated trace.
+				limit: CH.SPAN_HIERARCHY_MAX_SPANS + 1,
 			}),
 			narrowByTime ? { orgId, startTime: payload.startTime, endTime: payload.endTime } : { orgId },
 		)
@@ -1428,4 +1548,119 @@ export const serviceOperationsTimeseriesRaw = defineQuery({
 			...serviceOperationsParams(payload, orgId),
 			bucketSeconds: payload.bucketSeconds,
 		}),
+})
+
+// Service API tab. Totals and timeseries share the operations splice and its raw
+// fallback; the endpoint detail reads only service_endpoint_details_hourly.
+
+interface ServiceApiWindowInput {
+	readonly serviceName: string
+	readonly startTime: string
+	readonly endTime: string
+	readonly environments?: ReadonlyArray<string> | undefined
+}
+
+type ServiceApiTimeseriesInput = ServiceApiWindowInput & {
+	readonly bucketSeconds: number
+	readonly spanNames?: ReadonlyArray<string> | undefined
+}
+
+const serviceApiWindowParams = (payload: ServiceApiWindowInput, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+const serviceApiScope = (payload: ServiceApiWindowInput, tiers: CH.ServiceApiTiers) => ({
+	serviceName: payload.serviceName,
+	environments: payload.environments,
+	tiers,
+})
+
+const serviceApiTotalsFor = (tiers: CH.ServiceApiTiers) =>
+	defineQuery({
+		id: "serviceApiTotals",
+		profile: "aggregation",
+		settings: tiers === "raw" ? SERVICE_OPERATIONS_RAW_SETTINGS : undefined,
+		cache: undefined,
+		compile: (payload: ServiceApiWindowInput, orgId: OrgId) =>
+			CH.compile(
+				CH.serviceApiTotalsQuery(serviceApiScope(payload, tiers)),
+				serviceApiWindowParams(payload, orgId),
+				{
+					rowSchema: CH.serviceApiTotalsRowSchema,
+				},
+			),
+	})
+
+export const serviceApiTotals = serviceApiTotalsFor("spliced")
+export const serviceApiTotalsRaw = serviceApiTotalsFor("raw")
+
+const serviceApiTimeseriesFor = (tiers: CH.ServiceApiTiers) =>
+	defineQuery({
+		id: "serviceApiTimeseries",
+		profile: "aggregation",
+		settings: tiers === "raw" ? SERVICE_OPERATIONS_RAW_SETTINGS : undefined,
+		cache: undefined,
+		compile: (payload: ServiceApiTimeseriesInput, orgId: OrgId) =>
+			CH.compile(
+				CH.serviceApiTimeseriesQuery({
+					...serviceApiScope(payload, tiers),
+					bucketSeconds: payload.bucketSeconds,
+					spanNames: payload.spanNames,
+				}),
+				{ ...serviceApiWindowParams(payload, orgId), bucketSeconds: payload.bucketSeconds },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	})
+
+export const serviceApiTimeseries = serviceApiTimeseriesFor("spliced")
+export const serviceApiTimeseriesRaw = serviceApiTimeseriesFor("raw")
+
+export const serviceEndpointStatusBreakdown = defineQuery({
+	id: "serviceEndpointStatusBreakdown",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceApiWindowInput & { readonly spanName?: string | undefined }, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointStatusBreakdownQuery({
+				serviceName: payload.serviceName,
+				environments: payload.environments,
+				spanName: payload.spanName,
+			}),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointStatusBreakdownRowSchema },
+		),
+})
+
+type ServiceEndpointDetailInput = ServiceApiWindowInput & { readonly spanName: string }
+
+const endpointDetailOpts = (payload: ServiceEndpointDetailInput) => ({
+	serviceName: payload.serviceName,
+	environments: payload.environments,
+	spanName: payload.spanName,
+})
+
+export const serviceEndpointDistribution = defineQuery({
+	id: "serviceEndpointDistribution",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceEndpointDetailInput, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointDistributionQuery(endpointDetailOpts(payload)),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointDistributionRowSchema },
+		),
+})
+
+export const serviceEndpointSlowest = defineQuery({
+	id: "serviceEndpointSlowest",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceEndpointDetailInput, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointSlowestQuery(endpointDetailOpts(payload)),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointSlowestRowSchema },
+		),
 })

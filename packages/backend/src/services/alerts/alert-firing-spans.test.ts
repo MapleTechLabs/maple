@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 
 import type { AlertEvaluationStatus } from "@maple/domain/http"
@@ -15,6 +15,8 @@ const spansOf = (
 const thresholds = (breaches: number, healthy: number): AlertReplayPolicy => ({
 	consecutiveBreachesRequired: breaches,
 	breachesOutOf: null,
+	evaluationIntervalMinutes: null,
+	slowedIntervalMinutes: null,
 	consecutiveHealthyRequired: healthy,
 	thresholds: [{ severity: "warning" }],
 })
@@ -26,7 +28,7 @@ describe("simulateFiringSpans", () => {
 		statuses: ReadonlyArray<AlertEvaluationStatus>,
 		options?: { readonly provisionalLast?: boolean },
 	): ReadonlyArray<SimulatedEvaluation> =>
-		statuses.map((status, i) => ({
+		Arr.map(statuses, (status, i) => ({
 			bucketMs: i * MINUTE,
 			evaluation: {
 				status,
@@ -125,7 +127,7 @@ describe("simulateFiringSpans", () => {
 		// 0 = clear, w = warning only, c = warning and critical.
 		const ticks = ["w", "w", "c", "c", "w", "w", "0", "0"] as const
 		const spans = spansOf(
-			ticks.map((tick, i) => ({
+			Arr.map(ticks, (tick, i) => ({
 				bucketMs: i * MINUTE,
 				evaluation: {
 					status: tick === "0" ? "healthy" : "breached",

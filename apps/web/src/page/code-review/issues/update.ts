@@ -1,12 +1,12 @@
 import { PrReviewCategory, PrReviewFindingStatus, PrReviewSeverity } from "@maple/domain/http"
 import { Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import type { CodeReviewIssuesSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Select from "@maple/views/ui/select"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { ALL, type FrameOut, type FrameReturn } from "../kit/frame"
@@ -22,12 +22,22 @@ import type { Retained } from "../kit/retained"
 import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
 import type { SheetOut } from "../kit/review-sheet"
 import { initSheet, type SheetReturn, syncSheet, updateSheet } from "../kit/review-sheet-update"
-import { FetchFindingAuthors, FetchFindings, type FilterKey, Message, type Model } from "./model"
+import { draftQuery, syncedDraft } from "../kit/search"
+import {
+	FetchFindingAuthors,
+	FetchFindings,
+	type FilterKey,
+	Message,
+	type Model,
+	WaitSearchDebounce,
+} from "./model"
+import type { PresetValue } from "../../kit/time-controls"
+import { Array as Arr } from "effect"
 
 export type Search = typeof CodeReviewIssuesSearch.Type
 type Return = PageReturn<Model, Message>
 
-export const DEFAULT_PRESET = "30d"
+export const DEFAULT_PRESET: PresetValue = "1mo"
 export const PAGE = 50
 export const MAX_ROWS = 200
 const FRAME_ID = "code-review-issues"
@@ -35,7 +45,7 @@ const FRAME_ID = "code-review-issues"
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewIssues({ search }))
 
 const navigate = (model: Model, patch: Partial<Search>): Return => {
-	const isFilter = Object.keys(patch).some((key) => key !== "review")
+	const isFilter = Arr.some(Object.keys(patch), (key) => key !== "review")
 	return {
 		model: isFilter ? { ...model, limit: PAGE } : model,
 		outMessage: PageOutMessage.RequestedNavigation({
@@ -53,6 +63,7 @@ const request = (model: Model, context: PageContext, window: TimeWindow, mode: K
 		severity: model.search.severity,
 		category: model.search.category,
 		status: model.search.state,
+		q: model.search.q,
 		limit: model.limit,
 	}
 	const authorsQuery = { ...base, author: undefined }
@@ -150,6 +161,7 @@ const withSelects = (model: Model, search: Search): Model => ({
 	severitySelect: { ...model.severitySelect, value: search.severity ?? ALL },
 	categorySelect: { ...model.categorySelect, value: search.category ?? ALL },
 	stateSelect: { ...model.stateSelect, value: search.state ?? ALL },
+	searchDraft: syncedDraft(model.searchDraft, search.q),
 })
 
 // ENTRY POINTS
@@ -173,6 +185,8 @@ export const init = (
 			severitySelect: select("severity"),
 			categorySelect: select("category"),
 			stateSelect: select("state"),
+			searchDraft: route.search.q ?? "",
+			searchGeneration: 0,
 			timeTooltip: Tooltip.init(`${FRAME_ID}-time`),
 			sheet: {
 				...initSheet(`${FRAME_ID}-review`),
@@ -198,7 +212,14 @@ export const routeChanged = (
 	return combine(
 		liftFrame(
 			next,
-			frameRouteChanged(next.frame, model.search, route.search, route.search.author, DEFAULT_PRESET, context),
+			frameRouteChanged(
+				next.frame,
+				model.search,
+				route.search,
+				route.search.author,
+				DEFAULT_PRESET,
+				context,
+			),
 			context,
 		),
 		(changed) =>
@@ -236,6 +257,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				severity: undefined,
 				category: undefined,
 				state: undefined,
+				q: undefined,
 			}),
 		ClickedFinding: ({ reviewId }) => navigate(model, { review: reviewId }),
 		ClickedLoadMore: () => {
@@ -267,6 +289,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
+		ChangedSearchDraft: ({ value }) => {
+			const searchGeneration = model.searchGeneration + 1
+			return {
+				model: { ...model, searchDraft: value, searchGeneration },
+				commands: [WaitSearchDebounce({ generation: searchGeneration })],
+			}
+		},
+		ElapsedSearchDebounce: ({ generation }) =>
+			generation === model.searchGeneration && draftQuery(model.searchDraft) !== model.search.q
+				? navigate(model, { q: draftQuery(model.searchDraft) })
+				: { model },
 		GotSheetMessage: ({ message: inner }) => liftSheet(model, updateSheet(model.sheet, inner, context)),
 	})
 

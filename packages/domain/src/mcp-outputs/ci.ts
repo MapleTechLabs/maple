@@ -19,7 +19,7 @@ export const CiRunRow = Schema.Struct({
 	branch: Schema.String,
 	revision: Schema.String,
 	runId: Schema.String,
-	attempt: Schema.String,
+	attempt: Schema.Number,
 	trigger: Schema.String,
 	/** `cicd.pipeline.result`: success, failure, timeout, cancellation, skip, error. */
 	result: Schema.String,

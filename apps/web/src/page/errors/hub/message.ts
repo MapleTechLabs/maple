@@ -1,15 +1,15 @@
 import { V2ErrorIssueServiceCount, V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as ContextMenu from "../../../ui/context-menu"
-import * as Menu from "../../../ui/menu"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as ContextMenu from "@maple/views/ui/context-menu"
+import * as Menu from "@maple/views/ui/menu"
 import * as QuickPick from "../kit/quick-pick"
-import * as Select from "../../../ui/select"
-import * as Tabs from "../../../ui/tabs"
-import { SignalPresences } from "../../kit/signal-presence"
+import * as Select from "@maple/views/ui/select"
+import * as Tabs from "@maple/views/ui/tabs"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import { HubWrite, WriteOutcome } from "./writes"
 import { ErrorsSummary, IssuePage, SparkSeries, VolumeRow } from "./model"
 
@@ -36,7 +36,6 @@ export const Message = defineMessageUnion({
 	CompletedFetchVolume: result(Schema.Array(VolumeRow)),
 	CompletedFetchSpark: result(Schema.Array(SparkSeries)),
 	CompletedFetchInvestigations: result(Schema.Array(V2Investigation)),
-	PaintedEmptyList: {},
 	/** The filter rail mounted (inline, or in the sheet below `lg`). */
 	MountedFilterRail: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },

@@ -137,6 +137,25 @@ impl SourcePolicy {
 
     /// A paused key is accepted but its data is dropped. Matches the API's status.
     pub(crate) fn is_paused(&self, now_ms: i64) -> bool {
+        PauseWindow {
+            paused_at_ms: self.paused_at_ms,
+            paused_until_ms: self.paused_until_ms,
+        }
+        .is_paused(now_ms)
+    }
+}
+
+/// A source's `paused_at` / `paused_until`, kept as read so a cached copy is
+/// judged against the clock of each request.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PauseWindow {
+    pub(crate) paused_at_ms: Option<i64>,
+    /// `None` while paused means paused until resumed.
+    pub(crate) paused_until_ms: Option<i64>,
+}
+
+impl PauseWindow {
+    pub(crate) fn is_paused(self, now_ms: i64) -> bool {
         self.paused_at_ms.is_some()
             && self
                 .paused_until_ms
@@ -530,6 +549,21 @@ mod tests {
         assert!(!timed.is_paused(1_000));
         config.paused_until_ms = None;
         assert!(SourcePolicy::from_row(&config).is_paused(i64::MAX));
+    }
+
+    #[test]
+    fn a_pause_window_without_a_start_is_never_paused() {
+        let ended = PauseWindow {
+            paused_at_ms: Some(100),
+            paused_until_ms: Some(1_000),
+        };
+        assert!(ended.is_paused(999));
+        assert!(!ended.is_paused(1_000));
+        let unstarted = PauseWindow {
+            paused_at_ms: None,
+            paused_until_ms: Some(i64::MAX),
+        };
+        assert!(!unstarted.is_paused(0));
     }
 
     #[test]

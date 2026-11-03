@@ -2,7 +2,9 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { keyOf, request, type Slot } from "../../data/slot"
+import { requestKeepingFailure, type Keyed } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import { keyOf } from "../../data/local-query"
 import { queryOf } from "../../route"
 import { type PageContext, rangeOf } from "../contract"
 import { FetchCatalog } from "./command"
@@ -17,16 +19,16 @@ export const boundsOf = (model: Model, context: PageContext): Option.Option<Time
 const catalogKey = (env: string | undefined, ns: string | undefined, bounds: TimeBounds): string =>
 	keyOf("services-catalog", { env: env ?? null, ns: ns ?? null, bounds: `${bounds.startTime}/${bounds.endTime}` })
 
-type Step = Readonly<{ slot: Slot<Catalog>; fetch: boolean; readsCache: boolean }>
+type Step = Readonly<{ slot: Keyed<Catalog, LoadFailure>; fetch: boolean; readsCache: boolean }>
 
 /**
  * One slot onto `key`: unchanged when it holds it, served from the result cache when the
  * other slot already has that key's rows, else a fetch (or a forced refetch).
  */
-const stepSlot = (slot: Slot<Catalog>, key: string, cache: ReadonlyArray<Slot<Catalog>>, force: boolean): Step => {
+const stepSlot = (slot: Keyed<Catalog, LoadFailure>, key: string, cache: ReadonlyArray<Keyed<Catalog, LoadFailure>>, force: boolean): Step => {
 	const cached = cache.find((other) => other.key === key && Option.isSome(AsyncData.getData(other.data)))
 	if (!force && slot.key !== key && cached !== undefined) return { slot: cached, fetch: false, readsCache: false }
-	return Option.match(request(slot, key, force), {
+	return Option.match(requestKeepingFailure(slot, key, force ? "Refresh" : "Load"), {
 		onNone: () => ({ slot, fetch: false, readsCache: false }),
 		onSome: (next) => ({ slot: next, fetch: true, readsCache: slot.key !== key }),
 	})

@@ -27,15 +27,16 @@ import {
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer, Option } from "effect"
 import { ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { ChatSessionLive } from "./chat/ChatSession"
+import SecurityAuditWorkflow from "./security-audit/SecurityAuditWorkflow"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
 import { aiPorts, AiBindingsLive, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
-import { buildApp, makeFetch } from "./worker/http"
+import { buildApp, buildMcpApp, makeFetch } from "./worker/http"
 import { AiObservabilityLive } from "./worker/observability"
 
 /** Config-sourced env. The tools query the warehouse as the calling org, so this is largely api's set. */
@@ -83,10 +84,16 @@ const props = Effect.gen(function* () {
 		workersDev: false,
 		// Same as api: keeps DB graph init off the first Postgres dial (docs/infra.md).
 		build: { output: { strictExecutionOrder: false } },
+		// A security-audit Workflow step is one agent run that parses up to 20 minutes of streamed
+		// model output; the paid-plan ceiling keeps it inside one step's CPU budget. One Workflow
+		// invocation runs many agents, and the default 10,000 outbound requests cut a run short.
+		limits: { cpuMs: 300_000, subrequests: 100_000 },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...mapleDbEnv(db, "ai"),
 			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
+			// Runs the agents' `run_code` programs, each in a fresh Dynamic Worker with no network.
+			CODE_LOADER: Cloudflare.WorkerLoader(),
 			...env,
 			...devEnv,
 		},
@@ -100,32 +107,34 @@ export default MapleAi.make(
 	Effect.gen(function* () {
 		// Yielding the hosted DO binds, registers and exports it. Its hosting must not move.
 		const chatSessions = yield* ChatSessionObject
+		// Yielding the Workflow binds, registers and exports it from this Worker, where the agents run.
+		const audits = yield* SecurityAuditWorkflow
 		const clients = yield* bindAiClients
 		const env = yield* Cloudflare.WorkerEnvironment
-		const ports = aiPorts(clients, env, yield* WorkersAiGateway, chatSessions)
+		const gateway = yield* WorkersAiGateway
+		const ports = aiPorts(clients, env, gateway, chatSessions, audits)
 		// Captured before any event, so the first request's context cannot leak into later ones.
-		const isolate = isolateContext(yield* Effect.context())
+		const context = yield* Effect.context()
+		const isolate = isolateContext(context)
 		const app = yield* cachedRecoverable(buildApp(isolate, ports))
-		return { fetch: yield* makeFetch(app, ports) }
+		const mcpApp = yield* cachedRecoverable(buildMcpApp(isolate, ports))
+		return { fetch: yield* makeFetch(app, ports, mcpApp) }
 	}).pipe(
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(
-			Layer.mergeAll(
-				AiBindingsLive,
-				// The init runs once per isolate, so this is the isolate's request counter.
-				IsolateAge.layer,
-				// The DO's implementation. The gateway reaches it through activation, not env.
-				ChatSessionLive.pipe(Layer.provide(WorkersAiGatewayLive)),
-				WorkerTelemetry({
-					serviceName: "maple-ai",
-					// Expected MCP 400/401s export as `Ok` (only 5xx is `Error`);
-					// `chat/turn-runner.ts` passes the same set to its own tracer.
-					dropSpanNames: ["McpServer/Notifications."],
-					anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-				}),
-				// Read by the bridge's `HttpMiddleware.tracer`; cannot live in the app graph.
-				AlchemyTelemetry.layer(AiObservabilityLive),
-			),
-		),
+		Effect.provide([
+			AiBindingsLive,
+			// The init runs once per isolate, so this is the isolate's request counter.
+			IsolateAge.layer,
+			// The DO's implementation. The gateway reaches it through activation, not env.
+			ChatSessionLive.pipe(Layer.provide(WorkersAiGatewayLive)),
+			WorkerTelemetry({
+				serviceName: "maple-ai",
+				// Expected MCP 400/401s export as `Ok` (only 5xx is `Error`);
+				// `chat/turn-runner.ts` passes the same set to its own tracer.
+				dropSpanNames: ["McpServer/Notifications."],
+				anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
+			}),
+			// Read by the bridge's `HttpMiddleware.tracer`; cannot live in the app graph.
+			AlchemyTelemetry.layer(AiObservabilityLive),
+		]),
 	),
 )

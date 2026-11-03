@@ -2,9 +2,9 @@ import { allowedTransitionsForAll, type ErrorIssueDocument, type WorkflowState }
 import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
 import { Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
-import * as ContextMenu from "../../../ui/context-menu"
-import type * as ContextMenuView from "../../../ui/context-menu-view"
-import { icon } from "../../../ui/icon"
+import * as ContextMenu from "@maple/views/ui/context-menu"
+import type * as ContextMenuView from "@maple/views/ui/context-menu-view"
+import { icon } from "@maple/views/ui/icon"
 import type { PageReturn } from "../../contract"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/workflow"
 import { CopyRowText, OpenInNewTab } from "./command"
@@ -12,6 +12,7 @@ import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { startHubWrite } from "./selection"
+import { Array as Arr } from "effect"
 
 // The issue context menu: a row's right-click menu.
 
@@ -48,7 +49,7 @@ export const rowMenuEntries = <M>(
 ): ReadonlyArray<ContextMenuView.Entry> => {
 	const targets = targetsOf(issue)
 	const current = issue.workflowState
-	return actionsOf(issue).map((action): ContextMenuView.Entry => {
+	return Arr.map(actionsOf(issue), (action): ContextMenuView.Entry => {
 		switch (action) {
 			case "separator":
 				return { _tag: "Separator" }
@@ -82,7 +83,7 @@ export const rowMenuEntries = <M>(
 										],
 									},
 								]
-							: targets.map((state) => ({
+							: Arr.map(targets, (state) => ({
 									_tag: "Item" as const,
 									label: WORKFLOW_LABEL[state],
 									content: [

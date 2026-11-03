@@ -1,12 +1,12 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { chipsView } from "../../../../ui/combobox-view"
-import { errorState } from "../../../../ui/error-state"
-import { field, fieldDescription, fieldLabel, type FieldState } from "../../../../ui/field"
-import { icon } from "../../../../ui/icon"
-import { nativeOption, nativeSelect } from "../../../../ui/native-select"
-import { panel } from "../../../../ui/panel"
+import { button } from "@maple/views/ui/button"
+import { chipsView } from "@maple/views/ui/combobox-view"
+import { errorState } from "@maple/views/ui/error-state"
+import { field, fieldDescription, fieldLabel, type FieldState } from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { panel } from "@maple/views/ui/panel"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { saveBar } from "../../kit/save-bar"
 import { settingsSection, settingsSections } from "../../kit/section"
@@ -23,10 +23,18 @@ import {
 	isOpsEnabled,
 	isWebEnabled,
 } from "./update"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 
 const previewButton = (h: H, model: Model, digest: "ops" | "web"): Html =>
 	button(
@@ -65,7 +73,7 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "dayOfWeek", value })),
 						],
 					},
-					DIGEST_DAYS.map((day) => nativeOption(String(day.value), day.label)),
+					Arr.map(DIGEST_DAYS, (day) => nativeOption(String(day.value), day.label)),
 				),
 				h.span([], ["at"]),
 				nativeSelect(
@@ -79,7 +87,7 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "sendHour", value })),
 						],
 					},
-					DIGEST_HOURS.map((hour) => nativeOption(String(hour.value), hour.label)),
+					Arr.map(DIGEST_HOURS, (hour) => nativeOption(String(hour.value), hour.label)),
 				),
 				nativeSelect(
 					h,
@@ -92,15 +100,18 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "timezone", value })),
 						],
 					},
-					zones.map((zone) => nativeOption(zone, zone)),
+					Arr.map(zones, (zone) => nativeOption(zone, zone)),
 				),
 			],
 		),
-		fieldDescription(h, { ids, state: IDLE }, "Sent in your time zone. Both digests follow this schedule."),
-		h.p(
-			[h.Class("text-xs text-muted-foreground")],
-			["Changes apply from the next send, so moving the day right after a digest went out skips to next week."],
+		fieldDescription(
+			h,
+			{ ids, state: IDLE },
+			"Sent in your time zone. Both digests follow this schedule.",
 		),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"Changes apply from the next send, so moving the day right after a digest went out skips to next week.",
+		]),
 	])
 }
 
@@ -134,7 +145,7 @@ const scopeField = (
 				ariaLabelledBy: ids.label,
 				ariaDescribedBy: ids.description,
 				placeholder: values.length === 0 ? `All ${options.plural}` : `Add ${options.noun}...`,
-				emptyText: `No ${options.plural} detected.`,
+				emptyText: `No ${options.plural} detected`,
 				toView: (parts) => h.div([h.Class("sm:max-w-xs")], parts),
 			},
 		}),
@@ -164,7 +175,12 @@ const preferences = (h: H, model: Model): ReadonlyArray<Html> => {
 					? [
 							panel(h, { tone: "muted", padded: true, className: "gap-4" }, [
 								scheduleField(h, model),
-								scopeField(h, model, { key: "namespaces", label: "Namespaces", noun: "namespace", plural: "namespaces" }),
+								scopeField(h, model, {
+									key: "namespaces",
+									label: "Namespaces",
+									noun: "namespace",
+									plural: "namespaces",
+								}),
 								scopeField(h, model, {
 									key: "environments",
 									label: "Environments",
@@ -191,7 +207,9 @@ const preferences = (h: H, model: Model): ReadonlyArray<Html> => {
 					onToggle: Message.ToggledWeb(),
 					before: [previewButton(h, model, "web")],
 				},
-				!enabled && webEnabled ? [panel(h, { tone: "muted", padded: true }, [scheduleField(h, model)])] : [],
+				!enabled && webEnabled
+					? [panel(h, { tone: "muted", padded: true }, [scheduleField(h, model)])]
+					: [],
 			),
 		]),
 		...saveBar(h, {
@@ -212,30 +230,43 @@ const recipient = (h: H, model: Model): ReadonlyArray<Html | string> =>
 				...(model.orgName === null ? [] : [` for ${model.orgName}`]),
 			]
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) => {
-	if (!model.isLoaded || AsyncData.isLoading(model.subscription) || AsyncData.isIdle(model.subscription))
-		return accountSectionSkeleton(h)
-	return settingsSections(h, "standard", [
-		settingsSection(
-			h,
-			{ id: "account-email-preferences", title: "Email preferences", description: recipient(h, model), framed: false },
-			[
-				// Switches built on defaults would upsert over preferences that could not be read.
-				...AsyncData.matchDataSplitEmpty(model.subscription, {
-					onIdle: () => [],
-					onLoading: () => [],
-					onFailure: (failure) => [
-						errorState(h, {
-							variant: "row",
-							failure,
-							title: "Couldn't load your email preferences",
-							onRetry: Message.ClickedRetry(),
-						}),
-					],
-					onData: () => preferences(h, model),
-				}),
-				h.p([h.Class("text-xs text-muted-foreground")], ["Unsubscribe links in each email turn the matching digest off."]),
-			],
-		),
-	])
-})
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
+	(model, _inputs, h) => {
+		if (
+			!model.isLoaded ||
+			AsyncData.isLoading(model.subscription) ||
+			AsyncData.isIdle(model.subscription)
+		)
+			return accountSectionSkeleton(h)
+		return settingsSections(h, [
+			settingsSection(
+				h,
+				{
+					id: "account-email-preferences",
+					title: "Email preferences",
+					description: recipient(h, model),
+					framed: false,
+				},
+				[
+					// Switches built on defaults would upsert over preferences that could not be read.
+					...AsyncData.matchDataSplitEmpty(model.subscription, {
+						onIdle: () => [],
+						onLoading: () => [],
+						onFailure: (failure) => [
+							errorState(h, {
+								variant: "row",
+								failure,
+								title: "Couldn't load your email preferences",
+								onRetry: Message.ClickedRetry(),
+							}),
+						],
+						onData: () => preferences(h, model),
+					}),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Unsubscribe links in each email turn the matching digest off.",
+					]),
+				],
+			),
+		])
+	},
+)

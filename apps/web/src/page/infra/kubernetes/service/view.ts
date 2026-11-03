@@ -1,22 +1,33 @@
-import { deriveLensVerdict, lensHeadline, lensSubhead } from "../../../../components/infra/service-lens/service-lens-summary"
+import {
+	deriveLensVerdict,
+	lensHeadline,
+	lensSubhead,
+} from "../../../../components/infra/service-lens/service-lens-summary"
 import { unifiedBucketDomain } from "../../../../components/infra/service-lens/bucket-domain"
 import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../../ui/empty"
-import { errorState } from "../../../../ui/error-state"
-import { icon } from "../../../../ui/icon"
-import { skeleton } from "../../../../ui/skeleton"
+import {
+	empty,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyMessage,
+	emptyTitle,
+} from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import * as Frame from "../../kit/frame"
-import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { chartLoading } from "../../../../ui/chart-state"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { chartLoading } from "@maple/views/ui/chart-state"
 import { pageHero } from "../../kit/page-parts"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { sectionHeading } from "../../../kit/section-heading"
@@ -28,21 +39,28 @@ import { bucketSecondsOf, cpuRowsOf, type LinkedWorkload, linkedWorkload, worstP
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
-import * as Chart from "../../../../charts/chart"
-import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
-import { MountLinkedCursor } from "../../../../charts/linked-cursor"
+import * as Chart from "@maple/views/charts/chart"
+import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
+import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { correlationStrips, type StripSeries } from "../../kit/correlation-strips"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // `ServiceLensPage` / `LensBody` in `ServiceLensShell`.
 
 type H = HtmlBuilder<Message>
 
-const isInitial = (data: AsyncData.AsyncData<unknown, unknown>) => AsyncData.isIdle(data) || AsyncData.isLoading(data)
+const isInitial = (data: AsyncData.AsyncData<unknown, unknown>) =>
+	AsyncData.isIdle(data) || AsyncData.isLoading(data)
 
 const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedWorkload | null): Html => {
 	if (workload === null) return null
 	return h.div(
-		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground")],
+		[
+			h.Class(
+				"flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground",
+			),
+		],
 		[
 			h.a(
 				[
@@ -55,7 +73,7 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 							}),
 						),
 					),
-					h.Class("hover:text-foreground"),
+					h.Class(typographyClass({ hoverTone: "foreground" })),
 				],
 				[workload.workloadKind, " ", workload.workloadName],
 			),
@@ -64,7 +82,9 @@ const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedW
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Service({ serviceName, search: model.search }))),
-					h.Class("text-primary hover:underline"),
+					h.Class(
+						typographyClass({ tone: "primary", className: "hover:underline active:underline" }),
+					),
 				],
 				["Open the service"],
 			),
@@ -88,24 +108,37 @@ const noWorkload = (h: H, serviceName: string): Html =>
 		"py-16",
 	)
 
-const podsSection = (h: H, model: Model, inputs: PageViewInputs, pods: ReadonlyArray<PodRow>, totalPods: number): Html =>
+const podsSection = (
+	h: H,
+	model: Model,
+	inputs: PageViewInputs,
+	pods: ReadonlyArray<PodRow>,
+	totalPods: number,
+): Html =>
 	h.section(
 		[h.Class("space-y-2.5")],
 		[
 			sectionHeading(h, {
 				title: "The pods behind this service",
 				hint: "worst first, by peak saturation",
-				actions: h.span([h.Class("font-mono text-2xs tabular-nums text-muted-foreground")], [
-					totalPods > pods.length ? `Top ${pods.length} of ${formatNumber(totalPods)}` : countLabel(totalPods, "pod"),
+				actions: typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
+					totalPods > pods.length
+						? `Top ${pods.length} of ${formatNumber(totalPods)}`
+						: countLabel(totalPods, "pod"),
 				]),
 			}),
 			AsyncData.matchData(model.pods.data, {
 				onEmpty: () => podTableLoading(h),
-				onFailure: (failure) => errorState(h, { failure, title: "Failed to load pods", onRetry: Message.ClickedRetryPods() }),
+				onFailure: (failure) =>
+					errorState(h, {
+						failure,
+						title: "Couldn't load pods",
+						onRetry: Message.ClickedRetryPods(),
+					}),
 				onData: (page) =>
 					page.data.length === 0
 						? emptyMessage(h, { dashed: true, className: "py-12" }, [
-								"No pods reported for this workload in the selected window.",
+								"No pods reported for this workload in this window",
 							])
 						: podTable(h, page.data, {
 								sortBy: "saturation",
@@ -127,7 +160,11 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 			onEmpty: () => null,
 			onData: () => null,
 			onFailure: (failure) =>
-				errorState(h, { failure, title: "Failed to load this service", onRetry: Message.ClickedRetryOverview() }),
+				errorState(h, {
+					failure,
+					title: "Couldn't load this service",
+					onRetry: Message.ClickedRetryOverview(),
+				}),
 		})
 	const workload = linkedWorkload(model)
 	const points = AsyncData.getOrElse(model.overview.data, () => [])
@@ -140,7 +177,11 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 		hasWorkload: workload !== null,
 		pods,
 		totalPods,
-		latency: points.map((point) => ({ bucket: point.bucket, value: point.p99LatencyMs, hasTraffic: point.totalCount > 0 })),
+		latency: Arr.map(points, (point) => ({
+			bucket: point.bucket,
+			value: point.p99LatencyMs,
+			hasTraffic: point.totalCount > 0,
+		})),
 		cpuOfLimit: worstCpuRows,
 		bucketSeconds: window === null ? 0 : bucketSecondsOf(model, window),
 	})
@@ -157,7 +198,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 			label: "p99 latency",
 			source: "from spans",
 			unit: "milliseconds",
-			rows: points.map((p) => ({ bucket: p.bucket, attributeValue: "", value: p.p99LatencyMs })),
+			rows: Arr.map(points, (p) => ({ bucket: p.bucket, attributeValue: "", value: p.p99LatencyMs })),
 		},
 		{
 			id: "cpu",
@@ -165,17 +206,17 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 			source: workload === null ? "no workload" : `worst pod · ${workload.workloadName}`,
 			unit: "percent",
 			showThreshold: true,
-			rows: worstCpuRows.map((row) => ({ ...row, attributeValue: "" })),
+			rows: Arr.map(worstCpuRows, (row) => ({ ...row, attributeValue: "" })),
 		},
 		{
 			id: "throughput",
 			label: "Throughput",
 			source: "spans per second",
 			unit: "rate",
-			rows: points.map((p) => ({ bucket: p.bucket, attributeValue: "", value: p.throughput })),
+			rows: Arr.map(points, (p) => ({ bucket: p.bucket, attributeValue: "", value: p.throughput })),
 		},
 	]
-	const xDomain = unifiedBucketDomain([points.map((p) => p.bucket), cpuRows.map((r) => r.bucket)])
+	const xDomain = unifiedBucketDomain([Arr.map(points, (p) => p.bucket), Arr.map(cpuRows, (r) => r.bucket)])
 	const theme = model.themeColors
 	return h.div(
 		[h.Class("space-y-7 pb-4")],
@@ -183,10 +224,16 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 			isLoading
 				? h.header(
 						[h.Class("space-y-3")],
-						[skeleton(h, "h-9 w-[520px]"), skeleton(h, "h-4 w-[420px]"), workloadMeta(h, model, serviceName, workload)],
+						[
+							skeleton(h, "h-9 w-[520px]"),
+							skeleton(h, "h-4 w-[420px]"),
+							workloadMeta(h, model, serviceName, workload),
+						],
 					)
 				: pageHero(h, {
-						title: evidenceMissing ? `${serviceName}: evidence incomplete.` : lensHeadline(verdict, serviceName),
+						title: evidenceMissing
+							? `${serviceName}: evidence incomplete.`
+							: lensHeadline(verdict, serviceName),
 						description: evidenceMissing
 							? "The pod list or the CPU series failed to load, so this page can't say whether Kubernetes is involved. The charts below show what did arrive."
 							: lensSubhead(verdict),
@@ -233,34 +280,36 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 /** `PodDistribution`: which nodes the service landed on; nothing for one node. */
 const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean): Html => {
 	const byNode = [
-		...pods
-			.reduce((map, pod) => {
-				const node = pod.nodeName || "unknown"
-				const existing = map.get(node) ?? { count: 0, worst: 0 }
-				return map.set(node, { count: existing.count + 1, worst: Math.max(existing.worst, pod.saturation) })
-			}, new Map<string, { count: number; worst: number }>())
-			.entries(),
+		...Arr.reduce(pods, new Map<string, { count: number; worst: number }>(), (map, pod) => {
+			const node = pod.nodeName || "unknown"
+			const existing = map.get(node) ?? { count: 0, worst: 0 }
+			return map.set(node, {
+				count: existing.count + 1,
+				worst: Math.max(existing.worst, pod.saturation),
+			})
+		}).entries(),
 	].sort((a, b) => b[1].worst - a[1].worst)
 	if (byNode.length <= 1) return null
 	return h.section(
 		[h.Class(cn("space-y-2.5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 		[
 			sectionHeading(h, { title: "Spread across nodes" }),
-			h.div(
-				[h.Class("flex flex-wrap gap-2")],
-				byNode.map(([node, { count, worst }]) =>
+			hstack(
+				h,
+				{ gap: "2", align: "stretch", wrap: true },
+				Arr.map(byNode, ([node, { count, worst }]) =>
 					h.a(
 						[
 							h.Key(node),
 							h.Href(hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} }))),
 							h.Class(
-								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs transition-colors hover:bg-accent/50",
+								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs hover:bg-surface-sunken active:bg-surface-sunken",
 							),
 						],
 						[
 							h.span([h.Class("text-foreground")], [node]),
 							h.span([h.Class("text-muted-foreground")], [countLabel(count, "pod")]),
-							h.span([h.Class("tabular-nums text-muted-foreground")], ["worst ", formatPercent(worst)]),
+							typography(h, { tone: "muted", numeric: true }, ["worst ", formatPercent(worst)]),
 						],
 					),
 				),
@@ -310,12 +359,22 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					tabs: kubernetesViewTabs(h, "services", model.search),
+					filtersLabel: "Services",
 					filters: lensRail(h, model.rail, model.serviceName ?? undefined, model.search),
 					filtersWidth: "w-72",
 				},
-				[model.serviceName === null ? pickAService(h, model) : lensBody(h, model, model.serviceName, inputs)],
+				[
+					model.serviceName === null
+						? pickAService(h, model)
+						: lensBody(h, model, model.serviceName, inputs),
+				],
 			),
 		],
 	),

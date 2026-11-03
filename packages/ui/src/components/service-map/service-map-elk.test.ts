@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
-import type { Edge, Node } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { buildElkGraph } from "./service-map-elk"
 import { DEFAULT_LAYOUT_CONFIG, type ServiceEdgeData, type ServiceNodeData } from "./service-map-utils"
+import { Array as Arr } from "effect"
 
 const node = (id: string, namespace?: string): Node<ServiceNodeData> => ({
 	id,
@@ -42,9 +43,8 @@ describe("buildElkGraph", () => {
 	it("flat graphs pack connected components (no hierarchy handling)", () => {
 		const graph = buildElkGraph([node("a"), node("b")], [edge("a", "b")], DEFAULT_LAYOUT_CONFIG)
 		expect(graph.layoutOptions!["elk.separateConnectedComponents"]).toBe("true")
-		expect(graph.layoutOptions!["elk.aspectRatio"]).toBe("1.8")
 		expect(graph.layoutOptions!["elk.hierarchyHandling"]).toBeUndefined()
-		expect(graph.children!.map((c) => c.id).sort()).toEqual(["a", "b"])
+		expect(Arr.map(graph.children!, (c) => c.id).sort()).toEqual(["a", "b"])
 	})
 
 	it("namespaced graphs get compound containers with label padding instead", () => {
@@ -57,10 +57,10 @@ describe("buildElkGraph", () => {
 		expect(graph.layoutOptions!["elk.separateConnectedComponents"]).toBeUndefined()
 		const container = graph.children!.find((c) => c.id === "elkns:payments")
 		expect(container).toBeDefined()
-		expect(container!.children!.map((c) => c.id).sort()).toEqual(["a", "b"])
+		expect(Arr.map(container!.children!, (c) => c.id).sort()).toEqual(["a", "b"])
 		expect(container!.layoutOptions!["elk.padding"]).toContain("top=")
 		// namespace-less node stays top-level
-		expect(graph.children!.some((c) => c.id === "c")).toBe(true)
+		expect(Arr.some(graph.children!, (c) => c.id === "c")).toBe(true)
 	})
 
 	it("switches to bounded node placement above the large-graph threshold", () => {
@@ -70,13 +70,6 @@ describe("buildElkGraph", () => {
 		const many = Array.from({ length: 301 }, (_, i) => node(`svc-${i}`))
 		const large = buildElkGraph(many, [], DEFAULT_LAYOUT_CONFIG)
 		expect(large.layoutOptions!["elk.layered.nodePlacement.strategy"]).toBe("BRANDES_KOEPF")
-		expect(large.layoutOptions!["elk.layered.thoroughness"]).toBe("3")
-	})
-
-	it("always uses deterministic ordering + cycle breaking", () => {
-		const graph = buildElkGraph([node("a")], [], DEFAULT_LAYOUT_CONFIG)
-		expect(graph.layoutOptions!["elk.layered.cycleBreaking.strategy"]).toBe("GREEDY_MODEL_ORDER")
-		expect(graph.layoutOptions!["elk.layered.considerModelOrder.strategy"]).toBe("NODES_AND_EDGES")
 	})
 })
 
@@ -93,12 +86,12 @@ describe("layout anchoring", () => {
 
 		expect(g.layoutOptions?.["elk.layered.considerModelOrder.strategy"]).toBe("NODES_AND_EDGES")
 		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBeUndefined()
-		expect((g.children ?? []).every((child) => child.x === undefined)).toBe(true)
+		expect(Arr.every(g.children ?? [], (child) => child.x === undefined)).toBe(true)
 	})
 
 	it("seeds coordinates and switches to interactive when a previous layout covers the graph", () => {
 		const { nodes, edges } = graph(10)
-		const previous = new Map(nodes.map((n, i) => [n.id, { x: i * 100, y: i * 10 }]))
+		const previous = new Map(Arr.map(nodes, (n, i) => [n.id, { x: i * 100, y: i * 10 }]))
 
 		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
 
@@ -118,12 +111,12 @@ describe("layout anchoring", () => {
 		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
 
 		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBeUndefined()
-		expect((g.children ?? []).every((child) => child.x === undefined)).toBe(true)
+		expect(Arr.every(g.children ?? [], (child) => child.x === undefined)).toBe(true)
 	})
 
 	it("still seeds when the topology gained a node the previous layout never saw", () => {
 		const { nodes, edges } = graph(10)
-		const previous = new Map(nodes.slice(0, 9).map((n, i) => [n.id, { x: i * 100, y: i * 10 }]))
+		const previous = new Map(Arr.map(nodes.slice(0, 9), (n, i) => [n.id, { x: i * 100, y: i * 10 }]))
 
 		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
 

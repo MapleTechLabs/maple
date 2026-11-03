@@ -1,18 +1,15 @@
 import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
 import * as Timeline from "@maple/web/page/traces/detail/timeline"
-import * as SpanPanel from "@maple/web/page/traces/detail/span-panel/message"
-import { TraceData } from "@maple/web/page/traces/detail/trace-data"
-import * as TraceFlow from "@maple/web/service-map/trace-flow/trace-flow"
-import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
-import * as Tabs from "@maple/web/ui/tabs"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import { TraceData } from "@maple/views/traces/trace-data"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import * as Tabs from "@maple/views/ui/tabs"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { CachedOf } from "../../data/cached"
-import { LoadFailure } from "../../data/local-query"
-import { Message as LogSheetMessage } from "../kit/log-sheet/message"
-import { LocalLog } from "../kit/log-sheet/model"
-import { SpanDetailRequest, SpanLogsRequest } from "./requests"
-import { SpanAttrs, SpanLog } from "./panel-model"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as LogSheet from "@maple/views/logs/log-sheet"
+import { LocalLog } from "../../lib/log-shape"
 
 export const Message = defineMessageUnion({
 	SucceededFetchTrace: { key: Schema.String, trace: Schema.Option(TraceData), fetchedAtMs: Schema.Number },
@@ -28,22 +25,12 @@ export const Message = defineMessageUnion({
 	GotTimelineMessage: { message: Timeline.Message },
 	GotWaterfallMessage: { message: Waterfall.Message },
 	GotFlowMessage: { message: TraceFlow.Message },
-	SucceededFetchSpanDetail: { key: Schema.String, detail: SpanAttrs, fetchedAtMs: Schema.Number },
-	FailedFetchSpanDetail: { key: Schema.String, failure: LoadFailure },
-	/** The result cache answered first; `request` is the read the fetch then repeats. */
-	FoundCachedSpanDetail: { request: SpanDetailRequest, cached: CachedOf(SpanAttrs) },
-	SucceededFetchSpanLogs: { key: Schema.String, logs: Schema.Array(SpanLog), fetchedAtMs: Schema.Number },
-	FailedFetchSpanLogs: { key: Schema.String, failure: LoadFailure },
-	FoundCachedSpanLogs: { request: SpanLogsRequest, cached: CachedOf(Schema.Array(SpanLog)) },
-	/** The panel's header, copy and error parts (the web panel's markup and Messages). */
 	GotSpanPanelMessage: { message: SpanPanel.Message },
-	GotPanelTabsMessage: { message: Tabs.Message },
-	GotAttributesMessage: { message: AttributesPanel.Message },
-	/** A row of the span's Logs tab: `LogDetailSheet` opens on it. */
-	ClickedSpanLog: { log: LocalLog },
-	GotLogSheetMessage: { message: LogSheetMessage },
-	CompletedWriteClipboard: { id: Schema.String, generation: Schema.Number, isOk: Schema.Boolean },
-	ElapsedCopyStatus: { id: Schema.String, generation: Schema.Number },
+	/** A Logs-tab row's whole log: `LogDetailSheet` opens on it. */
+	FoundSpanLog: { log: LocalLog },
+	/** The clicked row's log could not be read again: the panel's reads are refreshed. */
+	FailedReadSpanLog: {},
+	GotLogSheetMessage: { message: LogSheet.Message },
 	CompletedFocusSpanPanel: {},
 })
 export type Message = typeof Message.Type

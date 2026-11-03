@@ -64,7 +64,7 @@ export const InspectMcpAuthorization = Command.define("InspectMcpAuthorization",
 	execute: ({ requestId }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
-			const response = yield* client.auth.mcpOAuthAuthorizationInspect({ params: { requestId } })
+			const response = yield* client.authSession.mcpOAuthAuthorizationInspect({ params: { requestId } })
 			const expiresAtLabel = yield* localeTimeOf(response.expiresAt)
 			const returnsTo = yield* Effect.sync(() => redirectTarget(response.redirectUri))
 			return Message.SucceededInspectMcpAuthorization({
@@ -75,7 +75,10 @@ export const InspectMcpAuthorization = Command.define("InspectMcpAuthorization",
 			Effect.catch((error) =>
 				Effect.succeed(
 					Message.FailedInspectMcpAuthorization({
-						message: endpointMessage(error, "This MCP authorization request is invalid or expired."),
+						message: endpointMessage(
+							error,
+							"This MCP authorization request is invalid or expired.",
+						),
 					}),
 				),
 			),
@@ -90,8 +93,8 @@ export const DecideMcpAuthorization = Command.define("DecideMcpAuthorization", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
 			const result = yield* action === "approve"
-				? client.auth.mcpOAuthAuthorizationApprove({ params: { requestId } })
-				: client.auth.mcpOAuthAuthorizationDeny({ params: { requestId } })
+				? client.authSession.mcpOAuthAuthorizationApprove({ params: { requestId } })
+				: client.authSession.mcpOAuthAuthorizationDeny({ params: { requestId } })
 			return Message.SucceededDecideMcpAuthorization({ redirectUri: result.redirectUri })
 		}).pipe(
 			Effect.catch((error) =>

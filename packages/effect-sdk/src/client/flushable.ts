@@ -16,7 +16,7 @@ import {
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
 import { SDK_VERSION } from "../version.js"
-import { Layer, Redacted } from "effect"
+import { Layer, Redacted, String as Str } from "effect"
 import {
 	buildResolved,
 	type FlushTransport,
@@ -31,8 +31,8 @@ import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
-import { browserDocument, browserNavigator } from "./browser-globals.js"
-import { trySyncOrUndefined } from "../shared/try-sync.js"
+import { browserDocument, browserNavigator, browserResourceAttributes } from "./browser-globals.js"
+import { isBrowserNoise } from "./error-noise.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
 import type { PrivacyOptions } from "./track.js"
@@ -46,7 +46,7 @@ const POST_TIMEOUT_MS_PER_KIB = 10
 
 const browserInstanceId =
 	globalThis.crypto?.randomUUID?.() ??
-	`browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+	`browser-${Date.now().toString(36)}-${Str.slice(2)(Math.random().toString(36))}`
 
 export interface MapleClientFlushableConfig extends MapleSpanOptions {
 	/** Service name reported in traces, logs, and metrics. */
@@ -154,6 +154,7 @@ export interface FlushableTelemetry {
 
 /** Keepalive-budgeted POST (see file header), aborted when it takes too long. */
 const postOtlp = (url: string, headers: Record<string, string>, body: unknown) => {
+	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const json = JSON.stringify(body)
 	const timeoutMs = POST_TIMEOUT_MS + (json.length / 1024) * POST_TIMEOUT_MS_PER_KIB
 	const controller = new AbortController()
@@ -168,22 +169,10 @@ const postOtlp = (url: string, headers: Record<string, string>, body: unknown) =
 
 const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<string, unknown> => {
 	const attributes: Record<string, unknown> = {
+		...browserResourceAttributes(),
 		"maple.sdk.type": "client",
 		"service.instance.id": browserInstanceId,
 	} satisfies Record<string, unknown>
-	const nav = browserNavigator()
-	if (nav) {
-		// `user_agent.original` is the semconv key; `browser.user_agent` was
-		// deprecated in favour of it.
-		if (nav.userAgent) attributes["user_agent.original"] = nav.userAgent
-		if (nav.language) attributes["browser.language"] = nav.language
-	}
-	if (typeof Intl !== "undefined") {
-		// A locale-stripped build throws from `DateTimeFormat` rather than
-		// reporting an unknown zone.
-		const timezone = trySyncOrUndefined(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
-		if (timezone) attributes["browser.timezone"] = timezone
-	}
 	if (config.environment) {
 		// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + the canonical
 		// resource attribute. Keep both until the MVs coalesce them.
@@ -372,7 +361,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		// louder error tracker.
 		const error: unknown =
 			event.error ?? (event.message && event.filename ? new Error(event.message) : undefined)
-		if (error === undefined) return
+		if (error === undefined || isBrowserNoise(error, "window.onerror", event.filename)) return
 		captureException(error, {
 			name: "browser.uncaught_error",
 			attributes: {
@@ -388,6 +377,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	}
 
 	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
+		if (isBrowserNoise(event.reason, "unhandledrejection")) return
 		captureException(event.reason, {
 			name: "browser.unhandled_rejection",
 			attributes: { "maple.exception.source": "unhandledrejection" },

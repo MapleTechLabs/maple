@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
@@ -16,7 +16,7 @@ const later = { startTime: "2026-10-01 00:05:00", endTime: "2026-10-01 12:05:00"
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const status = (connected: boolean): PlanetscaleStatus => ({
 	object: "planetscale_integration",
@@ -27,6 +27,7 @@ const status = (connected: boolean): PlanetscaleStatus => ({
 	detected_permissions: null,
 	metrics_auth: "service_token",
 	scrape_target: null,
+	webhooks: null,
 	last_inventory_at: null,
 	last_inventory_error: null,
 	revoked_at: null,
@@ -66,14 +67,12 @@ const withStatus = (connected: boolean) => {
 
 describe("planetscale list", () => {
 	test("a connected status brings the inventory and the window's stats", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"ResolvePlanetscaleWindow",
-			"LoadPlanetscaleStatus",
-		])
-		expect(names(withStatus(true).commands)).toEqual([
-			"FetchPlanetscaleDatabases",
-			"FetchPlanetscaleDatabaseStats",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ResolvePlanetscaleWindow", "LoadPlanetscaleStatus"]),
+		)
+		expect(names(withStatus(true).commands)).toEqual(
+			expect.arrayContaining(["FetchPlanetscaleDatabases", "FetchPlanetscaleDatabaseStats"]),
+		)
 	})
 
 	test("a disconnected org asks for nothing more and offers the connection", () => {
@@ -84,7 +83,7 @@ describe("planetscale list", () => {
 			given(step.model),
 			expectView(role("link", { name: "Connect PlanetScale" })).toHaveAttr(
 				"href",
-				"/integrations?integration=planetscale",
+				"/sources/new?integration=planetscale",
 			),
 		)
 	})

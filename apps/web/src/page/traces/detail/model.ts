@@ -1,14 +1,15 @@
 import { Schema } from "effect"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TraceSearch } from "../../../route/search"
-import type { FlowGraph } from "../../../service-map/trace-flow/trace-flow"
-import * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
-import * as Resizable from "../../../ui/resizable"
-import * as Tabs from "../../../ui/tabs"
-import * as SpanPanel from "./span-panel"
+import type { FlowGraph } from "@maple/views/service-map/trace-flow/trace-flow"
+import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
+import * as Resizable from "@maple/views/ui/resizable"
+import * as Tabs from "@maple/views/ui/tabs"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import * as InfraCorrelation from "../../kit/infra-correlation"
 import * as Timeline from "./timeline"
-import { SpanEvents, TraceData } from "./trace-data"
+import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
 import * as Waterfall from "./waterfall"
 
 // `/traces/$traceId`.
@@ -53,6 +54,8 @@ export const Model = Schema.Struct({
 	waterfall: Schema.NullOr(Waterfall.Model),
 	flow: Schema.NullOr(Schema.Struct({ graph: FlowGraphData, model: TraceFlow.Model })),
 	spanPanel: Schema.NullOr(SpanPanel.Model),
+	/** The span panel's Infrastructure tab, mounted with the panel. */
+	spanInfra: Schema.NullOr(InfraCorrelation.Model),
 	/** Inside the list's peek sheet: no span or product events are read (`TracePeekLoaded`). */
 	isPeek: Schema.Boolean,
 })

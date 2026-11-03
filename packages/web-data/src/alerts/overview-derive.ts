@@ -7,7 +7,9 @@ import {
 	isRangeComparator,
 	signalLabels,
 } from "./form-utils"
+import { incidentGroup } from "./incident-timeline"
 import { type DerivedRuleStatus, needsAttention } from "./rule-status"
+import { Array as Arr, String as Str } from "effect"
 
 /** The four mutually exclusive buckets the Rules tab filters by. */
 export type RuleBucket = "firing" | "blind" | "healthy" | "disabled"
@@ -32,20 +34,60 @@ export function ruleConditionSummary(rule: AlertRuleDocument): string {
 		: formatSignalValue(display, rule.threshold)
 	const subject =
 		rule.signalType === "builder_query" && rule.queryBuilderDraft
-			? rule.queryBuilderDraft.aggregation.replaceAll("_", " ")
+			? Str.replaceAll("_", " ")(rule.queryBuilderDraft.aggregation)
 			: signalLabels[rule.signalType]
 	const parts = [`${subject} ${comparatorLabels[rule.comparator]} ${threshold}`, `${rule.windowMinutes}m`]
-	if (rule.groupBy !== null) parts.push(`per ${rule.groupBy.join(", ")}`)
+	if (rule.groupBy !== null) parts.push(`per ${Arr.join(rule.groupBy, ", ")}`)
 	if (rule.serviceNames.length === 1) parts.push(rule.serviceNames[0] ?? "")
 	else if (rule.serviceNames.length > 1) parts.push(`${rule.serviceNames.length} services`)
-	return parts.join(" · ")
+	return Arr.join(parts, " · ")
 }
 
-/** "Error rate 8.4% on checkout": what an open incident is about, in one line. */
-export function incidentTitle(incident: AlertIncidentDocument): string {
+type IncidentLine = Pick<
+	AlertIncidentDocument,
+	"signalType" | "ruleName" | "groupKey" | "status" | "lastObservedValue" | "threshold"
+>
+
+/** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
+const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
+
+/** Raw SQL and builder rules: "Raw SQL 5" says nothing, so the rule name is what fired. */
+export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalType">) =>
+	incident.signalType === "raw_query" || incident.signalType === "builder_query"
+
+/** "Error rate 8.4% on checkout", "checkout-api is down", or a query rule's name: what an incident is about, in one line. */
+export function incidentTitle(incident: IncidentLine): string {
+	if (isUptime(incident))
+		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
+	if (isQueryIncident(incident)) return incident.ruleName
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
 	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
+}
+
+/** The group shown next to the rule name: an uptime incident's only when it is a real service. */
+export function incidentScope(incident: IncidentLine): string | null {
+	return isUptime(incident) ? incidentGroup(incident) : incident.groupKey
+}
+
+/** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */
+export function incidentSubline(incident: IncidentLine): string {
+	const scope = incidentScope(incident)
+	const lead = isQueryIncident(incident) ? signalLabels[incident.signalType] : incident.ruleName
+	return scope === null ? lead : `${lead} · ${scope}`
+}
+
+/** An empty cell, without an em dash. */
+export const NO_THRESHOLD = "–"
+
+/** The Now / threshold cells: an uptime incident is "Down" (or "Up") with no threshold. */
+export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string }> {
+	if (isUptime(incident))
+		return { now: incident.status === "resolved" ? "Up" : "Down", threshold: NO_THRESHOLD }
+	return {
+		now: formatSignalValue(incident.signalType, incident.lastObservedValue),
+		threshold: formatSignalValue(incident.signalType, incident.threshold),
+	}
 }
 
 export interface Headroom {
@@ -83,7 +125,7 @@ const breaches = (rule: AlertRuleDocument, value: number): boolean => {
 /** Current value against the threshold on a shared 0..max scale. */
 export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 	const thresholds = [rule.threshold, ...(rule.thresholdUpper !== null ? [rule.thresholdUpper] : [])]
-	const max = Math.max(value * 1.1, ...thresholds.map((t) => t * 1.5), Number.EPSILON)
+	const max = Math.max(value * 1.1, ...Arr.map(thresholds, (t) => t * 1.5), Number.EPSILON)
 	const above = rule.comparator === "gt" || rule.comparator === "gte"
 	const below = rule.comparator === "lt" || rule.comparator === "lte"
 	const headroom =
@@ -96,7 +138,7 @@ export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 					: null
 	return {
 		fill: Math.min(1, Math.max(0, value / max)),
-		ticks: thresholds.map((t) => Math.min(1, Math.max(0, t / max))),
+		ticks: Arr.map(thresholds, (t) => Math.min(1, Math.max(0, t / max))),
 		breached: breaches(rule, value),
 		headroom,
 	}
@@ -145,9 +187,11 @@ export function fireLanes(
 		if (lane) lane.bars.push(bar)
 		else lanes.set(incident.ruleId, { ruleName: incident.ruleName, bars: [bar] })
 	}
-	return [...lanes.entries()]
-		.map(([ruleId, lane]) => ({ ruleId, ruleName: lane.ruleName, bars: lane.bars }))
-		.sort((a, b) => b.bars.length - a.bars.length || a.ruleName.localeCompare(b.ruleName))
+	return Arr.map([...lanes.entries()], ([ruleId, lane]) => ({
+		ruleId,
+		ruleName: lane.ruleName,
+		bars: lane.bars,
+	})).sort((a, b) => b.bars.length - a.bars.length || Str.localeCompare(b.ruleName)(a.ruleName))
 }
 
 export type RibbonCell = "quiet" | "warning" | "critical"
@@ -162,17 +206,17 @@ export function ruleRibbon(
 	return Array.from({ length: cells }, (_, i) => {
 		const cellStart = range.min + i * width
 		const cellEnd = cellStart + width
-		const hits = incidents.filter((incident) => {
+		const hits = Arr.filter(incidents, (incident) => {
 			const start = Date.parse(incident.firstTriggeredAt)
 			const end = incident.resolvedAt === null ? range.max : Date.parse(incident.resolvedAt)
 			return end > cellStart && start < cellEnd
 		})
-		if (hits.some((incident) => incident.severity === "critical")) return "critical"
+		if (Arr.some(hits, (incident) => incident.severity === "critical")) return "critical"
 		return hits.length > 0 ? "warning" : "quiet"
 	})
 }
 
-export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery"
+export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery" | "slowed"
 
 export interface BlindSpot {
 	readonly rule: AlertRuleDocument
@@ -186,9 +230,10 @@ const BLIND_SPOT_ORDER: Record<BlindSpotKind, number> = {
 	"no-data": 2,
 	unrouted: 3,
 	delivery: 4,
+	slowed: 5,
 } satisfies Record<BlindSpotKind, number>
 
-/** Enabled rules that cannot fire, or can fire but reach nobody. One entry per rule, worst first. */
+/** Enabled rules that cannot fire, reach nobody, or were slowed to keep up. One entry per rule, worst first. */
 export function blindSpots(
 	rules: ReadonlyArray<AlertRuleDocument>,
 	derivedByRuleId: ReadonlyMap<string, DerivedRuleStatus>,
@@ -205,6 +250,13 @@ export function blindSpots(
 			spots.push({ rule, kind: "unrouted", detail: "No destinations, so nobody is notified" })
 		else if (derived.attention.recentDeliveryFailure)
 			spots.push({ rule, kind: "delivery", detail: "The last notification failed to deliver" })
+		// Last: a slowed rule still fires, so a rule that reaches nobody outranks it.
+		else if (derived.attention.slowedDown && rule.slowedIntervalMinutes !== null)
+			spots.push({
+				rule,
+				kind: "slowed",
+				detail: `Checked every ${rule.slowedIntervalMinutes} min because its query kept hitting its limit`,
+			})
 	}
 	return spots.sort((a, b) => BLIND_SPOT_ORDER[a.kind] - BLIND_SPOT_ORDER[b.kind])
 }

@@ -1,4 +1,4 @@
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	errorTextTokens,
@@ -8,24 +8,28 @@ import {
 	variantDifferences,
 	type VariantDifference,
 } from "../../../lib/agent-sessions/tool-error-display"
-import { formatToolCount, UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
+import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import type * as Dialog from "../../../ui/dialog"
-import * as DialogView from "../../../ui/dialog-view"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { miniBars } from "../../../ui/mini-bars"
+import type * as Dialog from "@maple/views/ui/dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { linkButton } from "@maple/views/ui/button"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { miniBars } from "@maple/views/ui/mini-bars"
 import { errorTextHeading, failureStatusLine, windowRangeLabel } from "../tools-kit/error-parts"
 import { type ErrorDetail, Message, type Model } from "./error-modal-model"
 import { occurrencesOf } from "./error-modal-update"
 import { railView } from "./view-error-modal-rail"
 import { samplesPane } from "./view-error-modal-samples"
 import type { Prepared } from "./view-errors"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The tool error modal: one error group of one tool in full.
 
@@ -51,51 +55,58 @@ export const detailOf = (model: Model): ErrorDetail =>
 	Option.getOrElse(AsyncData.getData(model.detail.data), () => EMPTY_DETAIL)
 
 export const differencesOf = (detail: ErrorDetail): ReadonlyMap<string, VariantDifference> => {
-	const found = variantDifferences(detail.variants.map((row) => unwrapToolErrorText(row.message).text))
-	return new Map(detail.variants.flatMap((row, index) => Option.toArray(Option.fromUndefinedOr(found[index])).map((difference) => [row.message, difference] as const)))
+	const found = variantDifferences(Arr.map(detail.variants, (row) => unwrapToolErrorText(row.message).text))
+	return new Map(
+		Arr.flatMap(detail.variants, (row, index) =>
+			Arr.map(
+				Option.toArray(Option.fromUndefinedOr(found[index])),
+				(difference) => [row.message, difference] as const,
+			),
+		),
+	)
 }
 
 const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =>
-	items.map((item, index) =>
+	Arr.map(items, (item, index) =>
 		h.span(
 			[h.Class("contents")],
 			[
-				...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"])] : []),
+				...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-foreground-faint")], ["·"])] : []),
 				typeof item === "string" ? h.span([h.Class("text-muted-foreground")], [item]) : item,
 			],
 		),
 	)
 
-const MUTED_HEADING = "font-mono text-lg leading-[26px] font-semibold tracking-[-0.01em] text-muted-foreground"
+const mutedHeading = (h: H, text: string): Html =>
+	heading(h, { level: 2, variant: "code", className: "text-muted-foreground" }, [text])
 
 const headingOf = (h: H, group: Prepared, text: string): Html => {
 	if (group.fingerprint === UNGROUPED_FINGERPRINT)
-		return h.div(
-			[h.Class("flex flex-col gap-1")],
-			[
-				h.h2([h.Class(MUTED_HEADING)], ["Failures recorded before error grouping"]),
-				h.p(
-					[h.Class("max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground")],
-					[
-						"These calls failed before Maple kept a failure's text, so they cannot be told apart by what they said. They leave this list as raw retention ages them out.",
-					],
-				),
-			],
-		)
-	if (text === "") return h.h2([h.Class(MUTED_HEADING)], ["No error message recorded"])
+		return vstack(h, { gap: "1" }, [
+			mutedHeading(h, "Failures recorded before error grouping"),
+			h.p(
+				[h.Class("max-w-[90ch] font-mono text-xs leading-[17px] text-muted-foreground")],
+				[
+					"These calls failed before Maple kept a failure's text, so they cannot be told apart by what they said. They leave this list as raw retention ages them out.",
+				],
+			),
+		])
+	if (text === "") return mutedHeading(h, "No error message recorded")
 	return errorTextHeading(h, errorTextTokens(text))
 }
 
 const headerFacts = (h: H, inputs: ModalInputs): ReadonlyArray<Html> => {
 	const { group, timeZone } = inputs
-	const share = formatPercent(inputs.toolFailures > 0 ? group.calls / inputs.toolFailures : 0, { floor: 0.01 })
+	const share = formatPercent(inputs.toolFailures > 0 ? group.calls / inputs.toolFailures : 0, {
+		floor: 0.01,
+	})
 	return facts(h, [
 		h.span(
 			[h.Class("text-foreground")],
-			[formatToolCount(group.calls), " failed call", group.calls === 1 ? "" : "s"],
+			[formatNumber(group.calls), ` failed ${pluralize(group.calls, "call")}`],
 		),
 		`${share} of failures`,
-		`${formatToolCount(group.sessions)} session${group.sessions === 1 ? "" : "s"}`,
+		`${formatNumber(group.sessions)} ${pluralize(group.sessions, "session")}`,
 		`first seen ${formatTimestampInTimezone(group.firstSeen, { timeZone })}`,
 		`last seen ${formatTimestampInTimezone(group.lastSeen, { timeZone })}`,
 	])
@@ -107,18 +118,26 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 		[h.Class("flex min-w-0 flex-1 flex-col gap-2.5")],
 		[
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/80")],
+				[
+					h.Class(
+						"flex flex-wrap items-center gap-2.5 font-mono text-2xs leading-3.5 text-foreground-subtle",
+					),
+				],
 				[
 					h.span([], [inputs.tool]),
-					h.span([h.Class("text-muted-foreground/40")], ["/"]),
+					h.span([h.Class("text-foreground-faint")], ["/"]),
 					h.span([], ["errors"]),
-					h.span([h.Class("text-muted-foreground/40")], ["/"]),
+					h.span([h.Class("text-foreground-faint")], ["/"]),
 					h.span([], [String(position.index + 1), " of ", String(position.total)]),
 					...(group.errorType === ""
 						? []
 						: [
 								h.span(
-									[h.Class("ml-1 rounded-sm border border-border px-[5px] text-2xs text-muted-foreground/70")],
+									[
+										h.Class(
+											"ml-1 rounded-sm border border-border px-1.5 text-2xs text-foreground-subtle",
+										),
+									],
 									["error.type ", group.errorType],
 								),
 							]),
@@ -126,7 +145,11 @@ const headerLead = (h: H, inputs: ModalInputs): Html => {
 			),
 			headingOf(h, group, unwrapToolErrorText(group.message).text),
 			h.div(
-				[h.Class("flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5")],
+				[
+					h.Class(
+						"flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 font-mono text-2xs leading-3.5",
+					),
+				],
 				headerFacts(h, inputs),
 			),
 		],
@@ -150,11 +173,14 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 			h.div(
 				[h.Class("flex items-baseline justify-between font-mono")],
 				[
-					eyebrow(h, { variant: "mono", className: "leading-3.5" }, ["Failed calls / ", bucket.unit]),
-					h.span(
-						[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
-						["max ", formatToolCount(Math.max(0, ...group.spark))],
-					),
+					eyebrow(h, { variant: "mono", className: "leading-3.5" }, [
+						"Failed calls / ",
+						bucket.unit,
+					]),
+					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
+						"max ",
+						formatNumber(Math.max(0, ...group.spark)),
+					]),
 				],
 			),
 			miniBars(h, {
@@ -167,7 +193,7 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 				className: "h-11 w-[340px] shrink-0",
 			}),
 			h.div(
-				[h.Class("flex justify-between font-mono text-2xs leading-3.5 text-muted-foreground/70")],
+				[h.Class("flex justify-between font-mono text-2xs leading-3.5 text-foreground-subtle")],
 				[
 					h.span([], [windowRangeLabel(range.startMs, range.startMs, timeZone)]),
 					h.span([], [windowRangeLabel(range.endMs, range.endMs, timeZone)]),
@@ -181,7 +207,7 @@ const headerTrend = (h: H, inputs: ModalInputs): Html => {
 				calls: inputs.toolCalls,
 				failures: group.calls,
 				activeBuckets: {
-					active: group.spark.filter((count) => count > 0).length,
+					active: Arr.filter(group.spark, (count) => count > 0).length,
 					total: group.spark.length,
 					unit: bucket.unit,
 				},
@@ -210,7 +236,7 @@ const content = (h: H, model: Model, inputs: ModalInputs): Html => {
 			h.header(
 				[
 					h.Class(
-						"flex shrink-0 items-start gap-8 border-b border-border px-6 pt-5 pb-[18px] max-lg:flex-col max-lg:gap-4",
+						"flex shrink-0 items-start gap-8 border-b border-border px-6 py-5 max-lg:flex-col max-lg:gap-4",
 					),
 				],
 				[
@@ -262,69 +288,71 @@ const errorModal = (h: H, model: Model, inputs: ModalInputs | undefined): Html =
 		},
 	})
 
-const NAV_BUTTON = "text-muted-foreground hover:text-foreground"
+const NAV_BUTTON = typographyClass({ tone: "muted", hoverTone: "foreground" })
 
 const headerActions = (h: H, model: Model, inputs: ModalInputs): Html => {
 	const { position } = inputs
-	return h.div(
-		[h.Class("flex items-center gap-2")],
-		[
-			iconButton(
-				h,
-				{
-					label: "Previous error",
-					variant: "outline",
-					className: NAV_BUTTON,
-					isDisabled: position.index === 0,
-					attributes: [h.OnClick(Message.ClickedStep({ offset: -1 }))],
-				},
-				[icon(h, "ChevronUpIcon", { attributes: [h.AriaHidden(true)] })],
-			),
-			iconButton(
-				h,
-				{
-					label: "Next error",
-					variant: "outline",
-					className: NAV_BUTTON,
-					isDisabled: position.index >= position.total - 1,
-					attributes: [h.OnClick(Message.ClickedStep({ offset: 1 }))],
-				},
-				[icon(h, "ChevronDownIcon", { attributes: [h.AriaHidden(true)] })],
-			),
-			iconButton(
-				h,
-				{
-					label:
-						model.linkCopy === "failed"
-							? "Copy failed"
-							: model.linkCopy === "copied"
-								? "Link copied"
-								: "Copy link",
-					variant: "outline",
-					className: NAV_BUTTON,
-					attributes: [h.OnClick(Message.ClickedCopyLink())],
-				},
-				[icon(h, model.linkCopy === "copied" ? "CheckIcon" : "LinkIcon", { attributes: [h.AriaHidden(true)] })],
-			),
-			h.a(
-				[
-					h.Href(hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool], hasErrors: true } }))),
-					h.Class(
-						"inline-flex h-[30px] items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50",
-					),
-				],
-				[
-					"Open in Sessions",
-					icon(h, "ExternalLinkIcon", {
-						size: 11,
-						className: "text-muted-foreground",
-						attributes: [h.AriaHidden(true)],
-					}),
-				],
-			),
-			iconButton(h, { label: "Close", attributes: [h.OnClick(Message.ClickedClose())] }, [
-				icon(h, "XmarkIcon", { attributes: [h.AriaHidden(true)] }),
-			]),
-		],
-	)
+	return hstack(h, { gap: "2" }, [
+		iconButton(
+			h,
+			{
+				label: "Previous error",
+				variant: "outline",
+				className: NAV_BUTTON,
+				isDisabled: position.index === 0,
+				attributes: [h.OnClick(Message.ClickedStep({ offset: -1 }))],
+			},
+			[icon(h, "ChevronUpIcon", { attributes: [h.AriaHidden(true)] })],
+		),
+		iconButton(
+			h,
+			{
+				label: "Next error",
+				variant: "outline",
+				className: NAV_BUTTON,
+				isDisabled: position.index >= position.total - 1,
+				attributes: [h.OnClick(Message.ClickedStep({ offset: 1 }))],
+			},
+			[icon(h, "ChevronDownIcon", { attributes: [h.AriaHidden(true)] })],
+		),
+		iconButton(
+			h,
+			{
+				label:
+					model.linkCopy === "failed"
+						? "Copy failed"
+						: model.linkCopy === "copied"
+							? "Link copied"
+							: "Copy link",
+				variant: "outline",
+				className: NAV_BUTTON,
+				attributes: [h.OnClick(Message.ClickedCopyLink())],
+			},
+			[
+				icon(h, model.linkCopy === "copied" ? "CheckIcon" : "LinkIcon", {
+					attributes: [h.AriaHidden(true)],
+				}),
+			],
+		),
+		linkButton(
+			h,
+			{
+				variant: "outline",
+				size: "sm",
+				className: "font-mono text-2xs sm:text-2xs",
+				href: hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool], hasErrors: true } })),
+			},
+			[
+				"Open in Sessions",
+				icon(h, "ExternalLinkIcon", {
+					size: 12,
+					className: "text-muted-foreground",
+					attributes: [h.AriaHidden(true)],
+				}),
+			],
+		),
+		iconButton(h, { label: "Close", attributes: [h.OnClick(Message.ClickedClose())] }, [
+			icon(h, "XmarkIcon", { attributes: [h.AriaHidden(true)] }),
+		]),
+	])
 }

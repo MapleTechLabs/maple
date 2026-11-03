@@ -1,3 +1,4 @@
+import { Schema, Array as Arr } from "effect"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 import type { ListAiSessionsInput } from "@maple/web-data/warehouse/ai-sessions"
 import type { Types } from "effect"
@@ -5,6 +6,8 @@ import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { AgentSessionsSearch } from "../../../route/search"
 import type { Model, RangeKey, SessionRow } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // copied: agent-sessions-filter-inputs.ts (it imports a hook type through `@/`) and the paging
 // arithmetic of `useInfiniteAiSessions`.
@@ -74,9 +77,9 @@ export const sortPatch = (
 }
 
 export const hasFilters = (search: Search): boolean =>
-	FILTER_KEYS.some((key) => {
+	Arr.some(FILTER_KEYS, (key) => {
 		const value = search[key]
-		return Array.isArray(value) ? value.length > 0 : value !== undefined && value !== false
+		return Arr.isArray(value) ? value.length > 0 : value !== undefined && value !== false
 	})
 
 const some = (values: ReadonlyArray<string> | undefined) =>
@@ -148,7 +151,7 @@ export const presentInputs = (inputs: FilterInputs): FilterInputs => {
 		const value = inputs[key]
 		if (value !== undefined) present[key] = value
 	}
-	OPTIONAL_INPUT_KEYS.forEach(copy)
+	Arr.forEach(OPTIONAL_INPUT_KEYS, copy)
 	return present
 }
 
@@ -164,21 +167,21 @@ export const countedFilters = (inputs: FilterInputs) => ({
 })
 
 /** `JSON.stringify` keys, like the hook's memo keys. */
-export const filterKeyOf = (inputs: FilterInputs): string => JSON.stringify(inputs)
-export const detailsKeyOf = (inputs: FilterInputs): string => JSON.stringify(countedFilters(inputs))
+export const filterKeyOf = (inputs: FilterInputs): string => encodeJson(inputs)
+export const detailsKeyOf = (inputs: FilterInputs): string => encodeJson(countedFilters(inputs))
 
 /** The rows as the pages returned them, before their details. */
 export const pageRows = (model: Model, filterKey: string): ReadonlyArray<SessionRow> => {
 	const first = AsyncData.getOrElse(model.firstPage.data, () => ({ data: [], ranked: 0 }))
 	const more = model.morePages.filterKey === filterKey ? model.morePages.pages : []
-	return [...first.data, ...more.flatMap((page) => page.data)].slice(0, MAX_RETAINED_SESSIONS)
+	return [...first.data, ...Arr.flatMap(more, (page) => page.data)].slice(0, MAX_RETAINED_SESSIONS)
 }
 
 export type DisplayRow = SessionRow & { readonly hasDetails: boolean }
 
 /** Rows with their details merged in; the ranked measures stay the index's. */
 export const displayedRows = (model: Model, filterKey: string): ReadonlyArray<DisplayRow> =>
-	pageRows(model, filterKey).map((row) => {
+	Arr.map(pageRows(model, filterKey), (row) => {
 		const detailed = model.details.bySession[row.sessionId]
 		return detailed === undefined
 			? { ...row, hasDetails: false }
@@ -204,5 +207,5 @@ export const hasNextPage = (model: Model, filterKey: string): boolean => {
 export const rankedCount = (model: Model, filterKey: string): number => {
 	const first = AsyncData.getOrElse(model.firstPage.data, () => ({ data: [], ranked: 0 })).ranked
 	const more = model.morePages.filterKey === filterKey ? model.morePages.pages : []
-	return more.reduce((sum, page) => sum + page.ranked, first)
+	return Arr.reduce(more, first, (sum, page) => sum + page.ranked)
 }

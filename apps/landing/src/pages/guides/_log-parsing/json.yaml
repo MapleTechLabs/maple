@@ -1,0 +1,34 @@
+receivers:
+    file_log/app:
+        include: [/var/log/app/app.log]
+        resource:
+            service.name: app
+        operators:
+            - type: json_parser
+              timestamp:
+                  parse_from: attributes.ts
+                  layout_type: gotime
+                  layout: "2006-01-02T15:04:05Z07:00"
+              severity:
+                  parse_from: attributes.level
+            - type: move
+              from: attributes.msg
+              to: body
+              on_error: send_quiet
+
+processors:
+    batch: {}
+
+exporters:
+    otlp_http/maple:
+        endpoint: https://ingest.maple.dev
+        compression: gzip
+        headers:
+            x-maple-ingest-key: ${env:MAPLE_INGEST_KEY}
+
+service:
+    pipelines:
+        logs:
+            receivers: [file_log/app]
+            processors: [batch]
+            exporters: [otlp_http/maple]

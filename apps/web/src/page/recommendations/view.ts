@@ -1,26 +1,28 @@
 import type { V2Recommendation } from "@maple/domain/http/v2"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import type { BreadcrumbEntry } from "../../shell"
-import { button, linkButton } from "../../ui/button"
-import { detailRailGroup, detailRailRow } from "../../ui/detail-rail"
-import { badge } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
+import { button, linkButton } from "@maple/views/ui/button"
+import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
-import { detailTitle } from "../kit/detail-header"
+import { detailTitle, detailTitleSkeleton } from "../kit/detail-header"
 import { relativeTime } from "../kit/relative-time"
 import { resourceNotFound } from "../kit/resource-not-found"
 import { selectedOf } from "./update"
 import { body, code, isApplyable, isLive } from "./view-body"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -43,14 +45,14 @@ const MODE = {
 	auto: {
 		label: "Auto-apply",
 		icon: "BoltIcon",
-		className: "border-primary/30 text-primary",
-		title: "Maple can apply this for you — Apply creates the ingest mapping.",
+		className: "border-primary-a3 text-primary",
+		title: "Maple can apply this for you. Apply creates the ingest mapping.",
 	},
 	manual: {
 		label: "Manual fix",
 		icon: "CodeIcon",
 		className: "text-muted-foreground",
-		title: "Fix this in your SDK — an ingest mapping can't resolve it.",
+		title: "Fix this in your SDK. An ingest mapping can't resolve it.",
 	},
 } as const
 
@@ -58,16 +60,20 @@ const MODE = {
 const recSentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string> =>
 	issue.kind === "double-emission"
 		? [
-				h.span([h.Class("text-foreground font-medium")], ["Standardize on"]),
+				typography(h, { tone: "foreground", weight: "medium" }, ["Standardize on"]),
 				" ",
 				code(h, issue.canonical_key),
-				h.span([h.Class("text-muted-foreground")], [" — spans also emit "]),
+				h.span([h.Class("text-muted-foreground")], [". Spans also emit "]),
 				code(h, issue.source_key),
 			]
 		: issue.kind === "naming"
-			? [h.span([h.Class("text-foreground font-medium")], ["Rename non-conforming key"]), " ", code(h, issue.source_key)]
+			? [
+					typography(h, { tone: "foreground", weight: "medium" }, ["Rename non-conforming key"]),
+					" ",
+					code(h, issue.source_key),
+				]
 			: [
-					h.span([h.Class("text-foreground font-medium")], ["Rename"]),
+					typography(h, { tone: "foreground", weight: "medium" }, ["Rename"]),
 					" ",
 					code(h, issue.source_key),
 					" ",
@@ -94,57 +100,59 @@ const RESOLVES = [
 
 const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 	if (isLive(issue))
-		return h.div(
-			[h.Class("flex flex-col gap-3")],
-			[
-				h.p(
-					[h.Class("flex items-center gap-2 text-sm text-severity-info")],
-					[icon(h, "CircleCheckIcon", { size: 14 }), issue.status === "resolved" ? "Resolved" : "Mapping is active"],
-				),
-				linkButton(h, { variant: "outline", size: "sm", className: "w-full", href: INGESTION_HREF }, ["Manage mappings"]),
-			],
-		)
+		return vstack(h, { gap: "3" }, [
+			h.p(
+				[h.Class("flex items-center gap-2 text-sm text-severity-info")],
+				[
+					icon(h, "CircleCheckIcon", { size: 14 }),
+					issue.status === "resolved" ? "Resolved" : "Mapping is active",
+				],
+			),
+			linkButton(h, { variant: "outline", size: "sm", className: "w-full", href: INGESTION_HREF }, [
+				"Manage mappings",
+			]),
+		])
 	if (issue.status === "dismissed")
-		return h.div(
-			[h.Class("flex flex-col gap-2")],
-			[
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						className: "w-full",
-						isLoading: model.busy === "reopen",
-						attributes: [h.OnClick(Message.ClickedReopen())],
-					},
-					[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen recommendation"],
-				),
-				h.p(
-					[h.Class("text-xs leading-relaxed text-muted-foreground")],
-					["Dismissed recommendations come back if the key is still emitted."],
-				),
-			],
-		)
-	return h.div(
-		[h.Class("flex flex-col gap-2")],
-		[
-			isApplyable(issue)
-				? button(
-						h,
-						{ className: "w-full", isLoading: model.busy === "apply", attributes: [h.OnClick(Message.ClickedApply())] },
-						[icon(h, "BoltIcon"), "Apply mapping"],
-					)
-				: h.p(
-						[h.Class("text-xs leading-relaxed text-muted-foreground")],
-						["This one is a manual fix — rename the attribute at your SDK. Maple can't apply it for you."],
-					),
+		return vstack(h, { gap: "2" }, [
 			button(
 				h,
-				{ className: "w-full", isLoading: model.busy === "dismiss", attributes: [h.OnClick(Message.ClickedDismiss())] },
-				[icon(h, "XmarkIcon"), "Dismiss recommendation"],
+				{
+					variant: "outline",
+					size: "sm",
+					className: "w-full",
+					isLoading: model.busy === "reopen",
+					attributes: [h.OnClick(Message.ClickedReopen())],
+				},
+				[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen recommendation"],
 			),
-		],
-	)
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+				"Dismissed recommendations come back if the key is still emitted.",
+			]),
+		])
+	return vstack(h, { gap: "2" }, [
+		isApplyable(issue)
+			? button(
+					h,
+					{
+						className: "w-full",
+						isLoading: model.busy === "apply",
+						attributes: [h.OnClick(Message.ClickedApply())],
+					},
+					[icon(h, "BoltIcon"), "Apply mapping"],
+				)
+			: typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+					"This one is a manual fix: rename the attribute at your SDK. Maple can't apply it for you.",
+				]),
+		button(
+			h,
+			{
+				className: "w-full",
+				isLoading: model.busy === "dismiss",
+				attributes: [h.OnClick(Message.ClickedDismiss())],
+			},
+			[icon(h, "XmarkIcon"), "Dismiss recommendation"],
+		),
+	])
 }
 
 const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string): Html => {
@@ -152,36 +160,68 @@ const sidebar = (h: H, model: Model, issue: V2Recommendation, timeZone: string):
 	const mode = issue.kind === "rename" ? MODE.auto : MODE.manual
 	const status = STATUS_BADGE[issue.status]
 	return h.div(
-		[h.Class("flex h-full w-80 shrink-0 flex-col overflow-y-auto border-l bg-card/30")],
+		[h.Class("flex flex-col")],
 		[
 			detailRailGroup(h, "Details", [
 				row(h, "Status", [badge(h, { variant: status.variant }, [status.label])]),
 				row(h, "Type", [badge(h, { variant: kindBadge.variant }, [kindBadge.label])]),
 				row(h, "Fix", [
-					badge(h, { variant: "outline", className: cn("gap-1", mode.className), attributes: [h.Title(mode.title)] }, [
-						icon(h, mode.icon, { size: 11 }),
-						mode.label,
-					]),
+					badge(
+						h,
+						{
+							variant: "outline",
+							className: cn("gap-1", mode.className),
+							attributes: [h.Title(mode.title)],
+						},
+						[icon(h, mode.icon, { size: 12 }), mode.label],
+					),
 				]),
-				row(h, "Spans", [h.span([h.Class("tabular-nums text-foreground")], [formatNumber(issue.usage_count)])]),
+				row(h, "Spans", [
+					typography(h, { tone: "foreground", numeric: true }, [formatNumber(issue.usage_count)]),
+				]),
 				row(h, "Opened", [
 					relativeTime(h, {
 						value: issue.opened_at,
 						nowMs: model.nowMs ?? 0,
 						timeZone,
 						tooltip: "title",
-						className: "tabular-nums text-muted-foreground",
+						className: typographyClass({ tone: "muted", numeric: true }),
 					}),
 				]),
-				row(h, "Key", [h.code([h.Class("truncate font-mono text-xs text-muted-foreground")], [issue.source_key])], issue.source_key),
+				row(
+					h,
+					"Key",
+					[
+						h.code(
+							[
+								h.Class(
+									typographyClass({
+										size: "xs",
+										tone: "muted",
+										mono: true,
+										truncate: true,
+									}),
+								),
+							],
+							[issue.source_key],
+						),
+					],
+					issue.source_key,
+				),
 			]),
 			detailRailGroup(h, "How this resolves", [
 				h.ul(
 					[h.Class("flex flex-col gap-1.5 text-xs leading-relaxed text-muted-foreground")],
-					RESOLVES.map((line) =>
+					Arr.map(RESOLVES, (line) =>
 						h.li(
 							[h.Class("flex gap-2")],
-							[h.span([h.AriaHidden(true), h.Class("select-none text-muted-foreground/50")], ["·"]), h.span([], [line])],
+							[
+								h.span(
+									[h.AriaHidden(true), h.Class("select-none text-foreground-faint")],
+									["·"],
+								),
+								h.span([], [line]),
+							],
 						),
 					),
 				),
@@ -195,22 +235,35 @@ const column = { width: "narrow", gap: "lg" } as const
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	AsyncData.match(model.list.data, {
-		onIdle: () => dashboardPage(h, column, loadingBody(h)),
-		onLoading: () => dashboardPage(h, column, loadingBody(h)),
+		onIdle: () => dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
+		onLoading: () =>
+			dashboardPage(h, { ...column, titleContent: detailTitleSkeleton(h) }, loadingBody(h)),
 		onFailure: (failure) =>
 			dashboardPage(h, column, [
-				errorState(h, { failure, title: "Failed to load recommendation", onRetry: Message.ClickedRetry() }),
+				errorState(h, {
+					failure,
+					title: "Couldn't load recommendation",
+					onRetry: Message.ClickedRetry(),
+				}),
 			]),
 		onStale: ({ error }) =>
 			dashboardPage(h, column, [
-				errorState(h, { failure: error, title: "Failed to load recommendation", onRetry: Message.ClickedRetry() }),
+				errorState(h, {
+					failure: error,
+					title: "Couldn't load recommendation",
+					onRetry: Message.ClickedRetry(),
+				}),
 			]),
 		onSuccess: () => loaded(h, model, inputs.context.timeZone),
 		onRefreshing: () => loaded(h, model, inputs.context.timeZone),
 	}),
 )
 
-const loadingBody = (h: H) => [skeleton(h, "h-12 w-full"), skeleton(h, "h-28 w-full"), skeleton(h, "h-24 w-full")]
+const loadingBody = (h: H) => [
+	skeleton(h, "h-12 w-full"),
+	skeleton(h, "h-28 w-full"),
+	skeleton(h, "h-24 w-full"),
+]
 
 const loaded = (h: H, model: Model, timeZone: string): Html =>
 	Option.match(selectedOf(model), {
@@ -219,7 +272,8 @@ const loaded = (h: H, model: Model, timeZone: string): Html =>
 				resourceNotFound(h, {
 					icon: icon(h, "PulseIcon", { className: "text-muted-foreground" }),
 					title: "Recommendation not found",
-					description: "This recommendation isn't in your list anymore. It may have resolved on its own.",
+					description:
+						"This recommendation isn't in your list anymore. It may have resolved on its own.",
 					back: { href: INGESTION_HREF, label: "Back to recommendations" },
 				}),
 			]),
@@ -236,6 +290,7 @@ const loaded = (h: H, model: Model, timeZone: string): Html =>
 						meta: [badge(h, { variant: status.variant, size: "lg" }, [status.label])],
 					}),
 					rightPanel: sidebar(h, model, issue, timeZone),
+					rightPanelWidth: "w-80",
 				},
 				body(h, model, issue),
 			)

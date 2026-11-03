@@ -7,12 +7,18 @@
  */
 import { followUpScope, ignoredPathsInKickoff, pathIgnored } from "@maple/backend/services/pr-review/findings"
 import { pathsInDiffAnswer, reviewablePathsInListing } from "../mcp/tools/pull-request"
+import { Array as Arr } from "effect"
 
 export interface ReviewCoverage {
 	/** One successful tool answer, by tool name. */
 	readonly observe: (tool: string, answer: string) => void
 	/** Reviewed files with a patch whose diff no `pr_file_diff` answer has shown yet, in listing order. */
 	readonly unread: () => ReadonlyArray<string>
+	/**
+	 * The kickoff names no narrower scope and a file listing arrived: every reviewed file was due,
+	 * not only what changed since. Without a listing nothing is due, so nothing was checked.
+	 */
+	readonly wholeDiff: () => boolean
 }
 
 /**
@@ -26,15 +32,18 @@ export const makeReviewCoverage = (kickoff: string): ReviewCoverage => {
 		(scope === undefined || scope.includes(path)) && !pathIgnored(path, ignored)
 	const due = new Set<string>()
 	const read = new Set<string>()
+	let listed = false
 	return {
 		observe: (tool, answer) => {
 			if (tool === "pr_changed_files") {
+				listed = true
 				for (const path of reviewablePathsInListing(answer)) if (inScope(path)) due.add(path)
 			} else if (tool === "pr_file_diff") {
 				for (const path of pathsInDiffAnswer(answer)) read.add(path)
 			}
 		},
-		unread: () => [...due].filter((path) => !read.has(path)),
+		unread: () => Arr.filter([...due], (path) => !read.has(path)),
+		wholeDiff: () => scope === undefined && listed,
 	}
 }
 
@@ -42,9 +51,12 @@ const LISTED_UNREAD = 30
 
 /** The one-time refusal `submit_review` answers with while files are unread. */
 export const unreadRefusal = (unread: ReadonlyArray<string>): string =>
-	[
-		`You have not read the diff of ${unread.length} reviewed ${unread.length === 1 ? "file" : "files"}: ` +
-			`${unread.slice(0, LISTED_UNREAD).join(", ")}${unread.length > LISTED_UNREAD ? `, and ${unread.length - LISTED_UNREAD} more` : ""}.`,
-		"Read them with pr_file_diff (several per call) or review_files, then call submit_review again. " +
-			"If you left them unread on purpose, call submit_review again now and it will be recorded; say in the summary what was not read.",
-	].join(" ")
+	Arr.join(
+		[
+			`You have not read the diff of ${unread.length} reviewed ${unread.length === 1 ? "file" : "files"}: ` +
+				`${Arr.join(unread.slice(0, LISTED_UNREAD), ", ")}${unread.length > LISTED_UNREAD ? `, and ${unread.length - LISTED_UNREAD} more` : ""}.`,
+			"Read them with pr_file_diff (several per call) or review_files, then call submit_review again. " +
+				"If you left them unread on purpose, call submit_review again now and it will be recorded; say in the summary what was not read.",
+		],
+		" ",
+	)

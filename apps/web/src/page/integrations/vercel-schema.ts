@@ -7,11 +7,11 @@ import {
 	VercelTeam,
 } from "@maple/domain/http"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure } from "../../data/load-failure"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
-import * as RadioGroup from "../../ui/radio-group"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as RadioGroup from "@maple/views/ui/radio-group"
 
 // The Vercel card's data shapes (shared by the Model and the Messages).
 

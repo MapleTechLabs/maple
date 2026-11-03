@@ -7,7 +7,7 @@ const decode = Schema.decodeUnknownExit(UpsertDigestSubscriptionRequest)
 
 describe("UpsertDigestSubscriptionRequest schedule fields", () => {
 	it("accepts an IANA zone, a weekday and an hour in range", () => {
-		const exit = decode({ email: "a@example.com", dayOfWeek: 0, sendHour: 23, timezone: "Europe/Berlin" })
+		const exit = decode({ dayOfWeek: 0, sendHour: 23, timezone: "Europe/Berlin" })
 		expect(exit._tag).toBe("Success")
 	})
 
@@ -19,7 +19,7 @@ describe("UpsertDigestSubscriptionRequest schedule fields", () => {
 			{ sendHour: 24 },
 			{ sendHour: -1 },
 		]) {
-			expect(decode({ email: "a@example.com", ...patch })._tag).toBe("Failure")
+			expect(decode(patch)._tag).toBe("Failure")
 		}
 	})
 })

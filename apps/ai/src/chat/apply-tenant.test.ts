@@ -12,8 +12,13 @@
  *     an approval to the identity that does carry `org:admin`.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Schema } from "effect"
-import { AuthorizationUnavailableError, ErrorPersistenceError, RoleName } from "@maple/domain/http"
+import { Effect, Layer, Schema } from "effect"
+import {
+	ActorDocument,
+	AuthorizationUnavailableError,
+	ErrorPersistenceError,
+	RoleName,
+} from "@maple/domain/http"
 import {
 	CONNECTOR_TENANT_USER_ID,
 	connectorTurnTenant,
@@ -23,6 +28,7 @@ import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { auditAttribution } from "@maple/backend/services/audit/audit-access"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { resolveTenant } from "./apply-proposal"
 import { toTenantContext, turnTenant } from "./turn-actor"
 
@@ -43,7 +49,7 @@ const APPROVER: ChatConnectorOrigin = {
 const die = () => Effect.die("not reached in this test")
 
 /** A connector turn's actor lookup, which only the org-level branch reaches. */
-const unusedActors = {
+const unusedActors: ErrorActorsService["Service"] = {
 	registerAgent: die,
 	listAgents: die,
 	lookupActor: die,
@@ -53,6 +59,7 @@ const unusedActors = {
 	ensureAgentActor: die,
 	touchActor: die,
 	collectActorDocs: die,
+	findOwnedAgentActor: die,
 }
 
 const noActors = Layer.succeed(ErrorActorsService, unusedActors)
@@ -64,10 +71,20 @@ const actorsThat = (actor: ActorId | undefined): Layer.Layer<ErrorActorsService>
 		ensureAgentActor: () =>
 			actor === undefined
 				? Effect.fail(new ErrorPersistenceError({ message: "actors table unavailable" }))
-				: Effect.succeed({ id: actor, orgId: ORG, kind: "agent", name: "chat-connector-testchat" }),
-	} as ErrorActorsService)
+				: Effect.succeed(
+						new ActorDocument({
+							id: actor,
+							type: "agent",
+							userId: null,
+							agentName: "chat-connector-testchat",
+							model: null,
+							capabilities: [],
+							lastActiveAt: null,
+						}),
+					),
+	})
 
-const memberships = (verify: OrgMembershipService["verify"]): Layer.Layer<OrgMembershipService> =>
+const memberships = (verify: OrgMembershipService["Service"]["verify"]): Layer.Layer<OrgMembershipService> =>
 	Layer.succeed(OrgMembershipService, { verify })
 
 const proposal = (actingUserId?: UserId) => ({
@@ -82,7 +99,7 @@ const proposal = (actingUserId?: UserId) => ({
 describe("whose authority an approval runs under", () => {
 	it.effect("runs an app approval as the caller, under their own roles, audited as them", () =>
 		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, {
+			const tenant: TenantContext = yield* resolveTenant(ORG, {
 				env: {},
 				sessionId: `${ORG}:tab-1`,
 				approver: { kind: "app" },
@@ -91,7 +108,7 @@ describe("whose authority an approval runs under", () => {
 				input: {},
 			}).pipe(
 				// Neither lookup is consulted: the route already authenticated the caller.
-				Effect.provide(Layer.mergeAll(memberships(die), noActors)),
+				Effect.provide([memberships(die), noActors]),
 			)
 
 			assert.strictEqual(tenant.userId, ADA)
@@ -108,13 +125,11 @@ describe("whose authority an approval runs under", () => {
 
 	it.effect("gives a linked user their OWN roles, and grants nothing", () =>
 		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
-						noActors,
-					),
-				),
+			const tenant: TenantContext = yield* resolveTenant(ORG, proposal(ADA)).pipe(
+				Effect.provide([
+					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER })),
+					noActors,
+				]),
 			)
 
 			assert.strictEqual(tenant.userId, ADA)
@@ -133,12 +148,7 @@ describe("whose authority an approval runs under", () => {
 			// The link outlived the membership. Falling back to the org-level identity here would
 			// hand `org:admin` to somebody who was removed.
 			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.none())),
-						noActors,
-					),
-				),
+				Effect.provide([memberships(() => Effect.succeedNone), noActors]),
 				Effect.flip,
 			)
 
@@ -149,18 +159,16 @@ describe("whose authority an approval runs under", () => {
 	it.effect("fails closed when membership cannot be checked at all", () =>
 		Effect.gen(function* () {
 			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() =>
-							Effect.fail(
-								new AuthorizationUnavailableError({
-									message: "the directory was unreachable",
-								}),
-							),
+				Effect.provide([
+					memberships(() =>
+						Effect.fail(
+							new AuthorizationUnavailableError({
+								message: "the directory was unreachable",
+							}),
 						),
-						noActors,
 					),
-				),
+					noActors,
+				]),
 				Effect.flip,
 			)
 
@@ -171,10 +179,10 @@ describe("whose authority an approval runs under", () => {
 
 	it.effect("acts as the org, with `org:admin`, when the connector cannot name who clicked", () =>
 		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, proposal()).pipe(
+			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
 				// The membership check is never consulted: there is no user to check. The actor lookup
 				// failing must not cost an answer either; `withConnectorActor` absorbs it.
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(undefined))),
+				Effect.provide([memberships(die), actorsThat(undefined)]),
 			)
 
 			// The placeholder user, because nobody can be named — and the one role the mutating
@@ -187,8 +195,8 @@ describe("whose authority an approval runs under", () => {
 
 	it.effect("pins the connector's agent actor on that path, so the audit log names it", () =>
 		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, proposal()).pipe(
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
+				Effect.provide([memberships(die), actorsThat(CONNECTOR_ACTOR)]),
 			)
 
 			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
@@ -206,13 +214,11 @@ describe("whose authority a connector turn reads under", () => {
 
 	it.effect("reads as the linked asker, under the roles they hold now", () =>
 		Effect.gen(function* () {
-			const tenant = yield* run(asking(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
-						noActors,
-					),
-				),
+			const tenant: TenantContext = yield* run(asking(ADA)).pipe(
+				Effect.provide([
+					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER })),
+					noActors,
+				]),
 			)
 
 			assert.strictEqual(tenant.userId, ADA)
@@ -224,12 +230,7 @@ describe("whose authority a connector turn reads under", () => {
 	it.effect("refuses a linked asker who left the organization", () =>
 		Effect.gen(function* () {
 			const failure = yield* run(asking(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.none())),
-						noActors,
-					),
-				),
+				Effect.provide([memberships(() => Effect.succeedNone), noActors]),
 				Effect.flip,
 			)
 
@@ -241,7 +242,7 @@ describe("whose authority a connector turn reads under", () => {
 	it.effect("refuses a linked id that does not decode, rather than reading as the connector", () =>
 		Effect.gen(function* () {
 			const failure = yield* run({ ...APPROVER, actingUserId: "" }).pipe(
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+				Effect.provide([memberships(die), actorsThat(CONNECTOR_ACTOR)]),
 				Effect.flip,
 			)
 
@@ -251,8 +252,8 @@ describe("whose authority a connector turn reads under", () => {
 
 	it.effect("reads as the connector, with no roles, when nobody is named", () =>
 		Effect.gen(function* () {
-			const tenant = yield* run(asking()).pipe(
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+			const tenant: TenantContext = yield* run(asking()).pipe(
+				Effect.provide([memberships(die), actorsThat(CONNECTOR_ACTOR)]),
 			)
 
 			assert.strictEqual(tenant.userId, CONNECTOR_TENANT_USER_ID)

@@ -4,11 +4,12 @@ import type {
 	CodeReviewCiRunsQuery,
 	CodeReviewFindingsQuery,
 	CodeReviewListQuery,
+	CodeReviewTeamQuery,
 	PrReviewId,
 } from "@maple/domain/http"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Effect } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
@@ -45,3 +46,5 @@ export const getCiAnalytics = (query: CodeReviewCiQuery) =>
 	call((api) => api.codeReview.ciAnalytics({ query }))
 
 export const listCiRuns = (query: CodeReviewCiRunsQuery) => call((api) => api.codeReview.ciRuns({ query }))
+
+export const getTeam = (query: CodeReviewTeamQuery) => call((api) => api.codeReview.team({ query }))

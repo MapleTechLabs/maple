@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // Builds an LLM-ready debugging prompt from an error message plus the handful of
 // telemetry attributes that usually matter. Shared by the log error banner and
 // the span detail panel's "Copy as prompt" action.
@@ -53,7 +54,7 @@ ${
 	contextLines.length > 0
 		? `
 **Context:**
-${contextLines.join("\n")}
+${Arr.join(contextLines, "\n")}
 `
 		: ""
 }

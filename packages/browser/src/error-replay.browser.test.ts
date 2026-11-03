@@ -61,4 +61,39 @@ describe("replay.onErrorSampleRate", () => {
 		expect(getSession()).toMatchObject({ replaySampled: true, replayTrigger: "error" })
 		await vi.waitFor(() => expect(urls.some((url) => url.endsWith("/v1/sessionReplays/blob"))).toBe(true))
 	})
+
+	const startBuffered = async (tracing: { enabled?: boolean; captureErrors?: boolean }) => {
+		const urls: string[] = []
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL) => {
+				urls.push(String(input))
+				return new Response("{}")
+			}),
+		)
+		Object.defineProperty(navigator, "userAgent", { value: DESKTOP_UA, configurable: true })
+		handle = MapleBrowser.init({
+			ingestKey: "k",
+			serviceName: "web",
+			endpoint: "https://ingest.test",
+			tracing: { instrumentFetch: false, instrumentXhr: false, ...tracing },
+			webVitals: false,
+			replay: { sampleRate: 0, onErrorSampleRate: 1 },
+		})
+		await vi.waitFor(() => expect(urls.some((url) => url.endsWith("/v1/sessionReplays/meta"))).toBe(true))
+		return urls
+	}
+
+	it("keeps a buffered replay for a reported error with tracing off, sending no span", async () => {
+		const urls = await startBuffered({ enabled: false })
+		MapleBrowser.captureException(new Error("checkout failed"))
+		expect(getSession()).toMatchObject({ replaySampled: true, replayTrigger: "error" })
+		expect(urls.some((url) => url.endsWith("/v1/traces"))).toBe(false)
+	})
+
+	it("keeps a buffered replay for an uncaught error when error capture is off", async () => {
+		await startBuffered({ captureErrors: false })
+		window.dispatchEvent(new ErrorEvent("error", { error: new Error("uncaught"), message: "uncaught" }))
+		expect(getSession()).toMatchObject({ replaySampled: true, replayTrigger: "error" })
+	})
 })

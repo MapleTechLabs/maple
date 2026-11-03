@@ -2,12 +2,39 @@
 // `Domain=`: a visit claim scoped host-only while the visitor id spans
 // subdomains would stop deduplicating exactly on the marketing-site → app hop.
 
-/** Scope cookies to the registered domain so subdomains share them. */
-let crossSubdomainCookie = true
-/** Explicit `Domain=` override; `""` forces a host-only cookie. */
-let cookieDomainOverride: string | undefined
-/** Memoized probe result. `undefined` = not resolved yet. */
-let probedCookieDomain: string | undefined
+import { randomUuid } from "./uuid"
+
+interface CookieScope {
+	/** Scope cookies to the registered domain so subdomains share them. */
+	crossSubdomainCookie: boolean
+	/** Explicit `Domain=` override; `""` forces a host-only cookie. */
+	cookieDomainOverride: string | undefined
+	/** Memoized probe result. `undefined` = not resolved yet. */
+	probedCookieDomain: string | undefined
+}
+
+/**
+ * On `globalThis`, like consent: two bundled SDK copies writing the same cookies
+ * under different `Domain=` scopes would each keep a copy the other cannot delete.
+ */
+const SCOPE_KEY = "__MAPLE_BROWSER_COOKIE_SCOPE__"
+
+function scope(): CookieScope {
+	const owner: Record<string, unknown> = globalThis
+	const existing = owner[SCOPE_KEY]
+	if (isCookieScope(existing)) return existing
+	const fresh: CookieScope = {
+		cookieDomainOverride: undefined,
+		crossSubdomainCookie: true,
+		probedCookieDomain: undefined,
+	}
+	owner[SCOPE_KEY] = fresh
+	return fresh
+}
+
+function isCookieScope(value: unknown): value is CookieScope {
+	return typeof value === "object" && value !== null && "crossSubdomainCookie" in value
+}
 
 /**
  * Apply the host app's cookie configuration. Called from `configurePrivacy`, so
@@ -27,35 +54,51 @@ export function configureCookieScope(options: {
 	readonly crossSubdomainCookie?: boolean | undefined
 	readonly cookieDomain?: string | undefined
 }): void {
-	if (options.crossSubdomainCookie === false) crossSubdomainCookie = false
+	const state = scope()
+	if (options.crossSubdomainCookie === false) state.crossSubdomainCookie = false
 	if (options.cookieDomain !== undefined) {
-		cookieDomainOverride = tighterCookieDomain(cookieDomainOverride, options.cookieDomain)
+		state.cookieDomainOverride = tighterCookieDomain(state.cookieDomainOverride, options.cookieDomain)
 	}
-	probedCookieDomain = undefined
+	state.probedCookieDomain = undefined
 }
 
 /** The narrower of two `Domain=` values, treating `undefined` as "unset". */
-function tighterCookieDomain(current: string | undefined, next: string): string {
+export function tighterCookieDomain(current: string | undefined, next: string): string {
 	if (current === undefined) return next
 	// Host-only beats any domain-scoped cookie, whichever side asked for it.
 	if (current === "" || next === "") return ""
 	return next.length > current.length ? next : current
 }
 
-export function readRawCookie(name: string): string | undefined {
-	if (typeof document === "undefined") return undefined
+/** Every value stored under `name`: a host-only and a domain cookie can coexist. */
+function readRawCookies(name: string): ReadonlyArray<string> {
+	if (typeof document === "undefined") return []
+	const values: string[] = []
 	try {
 		for (const part of document.cookie.split(";")) {
 			const raw = part.trim()
 			if (!raw.startsWith(`${name}=`)) continue
-			return decodeURIComponent(raw.slice(name.length + 1))
+			try {
+				values.push(decodeURIComponent(raw.slice(name.length + 1)))
+			} catch {
+				// Malformed percent-encoding (written by someone else): skip that one.
+			}
 		}
 	} catch {
 		// Cookies disabled entirely: indistinguishable from "not set".
 	}
-	return undefined
+	return values
 }
 
+export function readRawCookie(name: string): string | undefined {
+	return readRawCookies(name)[0]
+}
+
+/**
+ * Write a cookie, returning whether the browser actually kept it. Assigning to
+ * `document.cookie` succeeds silently when the cookie is refused (blocked,
+ * oversized, bad `Domain=`), so a stored cookie is confirmed by reading it back.
+ */
 export function setRawCookie(name: string, value: string, domain: string, maxAgeSeconds: number): boolean {
 	if (typeof document === "undefined") return false
 	const attributes = [
@@ -69,10 +112,10 @@ export function setRawCookie(name: string, value: string, domain: string, maxAge
 	if (typeof location !== "undefined" && location.protocol === "https:") attributes.push("Secure")
 	try {
 		document.cookie = attributes.join("; ")
-		return true
 	} catch {
 		return false
 	}
+	return maxAgeSeconds <= 0 || readRawCookies(name).includes(value)
 }
 
 /**
@@ -82,16 +125,20 @@ export function setRawCookie(name: string, value: string, domain: string, maxAge
  */
 export function deleteRawCookie(name: string): void {
 	setRawCookie(name, "", "", 0)
-	for (const domain of candidateDomains()) setRawCookie(name, "", domain, 0)
-	if (cookieDomainOverride) setRawCookie(name, "", cookieDomainOverride, 0)
+	const hostname = typeof location === "undefined" ? "" : location.hostname
+	for (const domain of candidateDomains(hostname)) setRawCookie(name, "", domain, 0)
+	const override = scope().cookieDomainOverride
+	if (override) setRawCookie(name, "", override, 0)
 }
 
-/** Parent domains of this host, broadest first. Empty for single-label hosts and IPs. */
-function candidateDomains(): ReadonlyArray<string> {
-	if (typeof location === "undefined") return []
-	const hostname = location.hostname
+/**
+ * Parent domains of `hostname`, broadest first. Empty for single-label hosts,
+ * IPs, and hosts with an empty label (`example.com.`), whose suffixes are not domains.
+ */
+export function candidateDomains(hostname: string): ReadonlyArray<string> {
 	if (!hostname || /^[\d.]+$/.test(hostname) || hostname.includes(":")) return []
 	const parts = hostname.split(".")
+	if (parts.includes("")) return []
 	const candidates: string[] = []
 	for (let i = parts.length - 2; i >= 0; i--) candidates.push(parts.slice(i).join("."))
 	return candidates
@@ -108,10 +155,12 @@ function candidateDomains(): ReadonlyArray<string> {
  * for bare IPs, neither of which can carry a `Domain=` attribute.
  */
 function probeCookieDomain(): string {
-	if (typeof document === "undefined") return ""
-	for (const candidate of candidateDomains()) {
-		const probe = "__maple_probe"
-		if (setRawCookie(probe, "1", candidate, 60) && readRawCookie(probe) === "1") {
+	if (typeof document === "undefined" || typeof location === "undefined") return ""
+	const probe = "__maple_probe"
+	// Random, so another tab probing at the same moment cannot confirm our candidate.
+	const value = randomUuid().slice(0, 8)
+	for (const candidate of candidateDomains(location.hostname)) {
+		if (setRawCookie(probe, value, candidate, 60)) {
 			setRawCookie(probe, "", candidate, 0)
 			return candidate
 		}
@@ -120,15 +169,17 @@ function probeCookieDomain(): string {
 }
 
 export function cookieDomain(): string {
-	if (cookieDomainOverride !== undefined) return cookieDomainOverride
-	if (!crossSubdomainCookie) return ""
-	if (probedCookieDomain === undefined) probedCookieDomain = probeCookieDomain()
-	return probedCookieDomain
+	const state = scope()
+	if (state.cookieDomainOverride !== undefined) return state.cookieDomainOverride
+	if (!state.crossSubdomainCookie) return ""
+	if (state.probedCookieDomain === undefined) state.probedCookieDomain = probeCookieDomain()
+	return state.probedCookieDomain
 }
 
 /** Test seam: drops the memoized domain and any configured scope. */
 export function resetCookieScopeForTests(): void {
-	crossSubdomainCookie = true
-	cookieDomainOverride = undefined
-	probedCookieDomain = undefined
+	const state = scope()
+	state.crossSubdomainCookie = true
+	state.cookieDomainOverride = undefined
+	state.probedCookieDomain = undefined
 }

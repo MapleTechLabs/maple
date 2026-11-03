@@ -14,7 +14,7 @@ import {
 	MapleAiApi,
 	internalServiceBearer,
 } from "@maple/domain/http"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
 import { HttpApiClient } from "effect/http-api"
 import { AiWorkerFetcher } from "@maple/backend/platform/bindings"
@@ -43,7 +43,8 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 	"@maple/backend/errors/IncidentClassifier",
 	{
 		make: Effect.gen(function* () {
-			const binding = Option.flatten(yield* Effect.serviceOption(AiWorkerFetcher))
+			const fetcher = yield* Effect.serviceOption(AiWorkerFetcher)
+			const binding = Option.flatten(fetcher)
 			const config = yield* Env
 			const token = Option.map(config.INTERNAL_SERVICE_TOKEN, Redacted.value)
 

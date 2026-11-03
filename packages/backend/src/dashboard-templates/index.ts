@@ -27,6 +27,7 @@ import { kafkaTemplate } from "./messaging/kafka"
 import { natsTemplate } from "./messaging/nats"
 import { rabbitmqTemplate } from "./messaging/rabbitmq"
 import type { TemplateDefinition, TemplateMetadata, TemplatePreviewWidget } from "./types"
+import { Array as Arr } from "effect"
 
 export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	// Application
@@ -60,7 +61,7 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	rabbitmqTemplate,
 ]
 
-const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(DASHBOARD_TEMPLATES.map((t) => [t.id, t]))
+const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(Arr.map(DASHBOARD_TEMPLATES, (t) => [t.id, t]))
 
 export function getTemplate(id: string): TemplateDefinition | undefined {
 	return TEMPLATE_BY_ID.get(id)
@@ -91,16 +92,16 @@ function previewKindForWidget(visualization: string, chartId: unknown): Dashboar
 export function buildTemplatePreview(template: TemplateDefinition): TemplatePreviewWidget[] {
 	const { widgets, sections = [] } = template.build({})
 	const containers = [
-		widgets.filter((w) => w.sectionId === undefined),
-		...sections.map((section) =>
-			widgets.filter((w) => w.sectionId === section.id && w.tabId === section.tabs[0]?.id),
+		Arr.filter(widgets, (w) => w.sectionId === undefined),
+		...Arr.map(sections, (section) =>
+			Arr.filter(widgets, (w) => w.sectionId === section.id && w.tabId === section.tabs[0]?.id),
 		),
 	]
 	let top = 0
-	return containers.flatMap((container) => {
+	return Arr.flatMap(containers, (container) => {
 		const offset = top
-		top += Math.max(0, ...container.map((w) => w.layout.y + w.layout.h))
-		return container.map((w) => ({
+		top += Math.max(0, ...Arr.map(container, (w) => w.layout.y + w.layout.h))
+		return Arr.map(container, (w) => ({
 			x: w.layout.x,
 			y: w.layout.y + offset,
 			w: w.layout.w,
@@ -115,7 +116,7 @@ export function buildTemplatePreview(template: TemplateDefinition): TemplatePrev
 const templatePreview = memoize(buildTemplatePreview)
 
 export function listTemplateMetadata(): TemplateMetadata[] {
-	return DASHBOARD_TEMPLATES.map((t) => ({
+	return Arr.map(DASHBOARD_TEMPLATES, (t) => ({
 		id: t.id,
 		name: t.name,
 		description: t.description,

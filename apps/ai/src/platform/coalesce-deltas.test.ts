@@ -1,7 +1,7 @@
 /**
  * Joined deltas carry the same text in fewer parts, and never cross a part or a kind.
  */
-import { Effect, Stream } from "effect"
+import { Effect, Stream, Array as Arr, String as Str } from "effect"
 import { Response } from "effect/ai"
 import { assert, describe, it } from "vitest"
 import { COALESCED_DELTA_CHARS, coalesceDeltas } from "./coalesce-deltas"
@@ -21,7 +21,7 @@ describe("coalesceDeltas", () => {
 			Response.makePart("text-delta", { id: "t", delta: "." }),
 		])
 		assert.deepEqual(
-			out.map((part) => part.type),
+			Arr.map(out, (part) => part.type),
 			["reasoning-start", "reasoning-delta", "reasoning-end", "text-delta"],
 		)
 		assert.equal(out[1]!.type === "reasoning-delta" ? out[1]!.delta : "", "Let me check.")
@@ -30,7 +30,7 @@ describe("coalesceDeltas", () => {
 	})
 
 	it("never joins two parts, two kinds, or past the size bound", async () => {
-		const big = "x".repeat(COALESCED_DELTA_CHARS)
+		const big = Str.repeat(COALESCED_DELTA_CHARS)("x")
 		const out = await run([
 			Response.makePart("text-delta", { id: "a", delta: "1" }),
 			Response.makePart("text-delta", { id: "b", delta: "2" }),

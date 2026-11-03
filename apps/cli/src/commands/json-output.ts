@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { encodeJsonPrettyEffect } from "@maple/local-server/json"
 
 /**
  * Whether the global `--format json` was given explicitly. That flag defaults
@@ -13,6 +14,11 @@ export const jsonFormatRequested = (argv: ReadonlyArray<string> = process.argv):
 }
 
 export const writeJson = (value: unknown): Effect.Effect<void> =>
-	Effect.sync(() => {
-		process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
-	})
+	encodeJsonPrettyEffect(value).pipe(
+		Effect.orDie,
+		Effect.flatMap((text) =>
+			Effect.sync(() => {
+				process.stdout.write(`${text}\n`)
+			}),
+		),
+	)

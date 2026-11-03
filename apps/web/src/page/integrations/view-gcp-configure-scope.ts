@@ -6,15 +6,18 @@ import {
 	isGcpResourceNumber,
 } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../ui/alert"
-import * as Field from "../../ui/field"
-import { icon } from "../../ui/icon"
-import * as ToggleGroup from "../../ui/toggle-group"
+import { heading } from "@maple/views/ui/heading"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import * as Field from "@maple/views/ui/field"
+import { icon } from "@maple/views/ui/icon"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { PROJECT_ID_RULE, SCOPE_TYPES, SCOPES } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import type { Model } from "./model"
 import { Message } from "./message"
-import { GCP_TITLE, gcpCommand, SMALL } from "./view-gcp-parts"
+import { gcpCommand, SMALL } from "./view-gcp-parts"
+import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `ScopeFields`: what kind of thing to connect, and its ID.
 
@@ -37,8 +40,8 @@ export const scopeFields = (
 ): ReadonlyArray<Html> => {
 	const scope = SCOPES[configure.scopeType]
 	const aggregated = configure.scopeType !== "project"
-	const scopeId = configure.scopeId.value.trim()
-	const hostProjectId = configure.hostProjectId.value.trim()
+	const scopeId = Str.trim(configure.scopeId.value)
+	const hostProjectId = Str.trim(configure.hostProjectId.value)
 	const scopeIdInvalid =
 		configure.scopeId.isTouched &&
 		scopeId.length > 0 &&
@@ -50,24 +53,22 @@ export const scopeFields = (
 		!isGcpProjectId(hostProjectId)
 	const overlap = gcpOverlapNote(configure.scopeType, existing)
 	return [
-		h.div(
-			[h.Class("flex flex-col gap-2")],
-			[
-				h.h3([h.Class(GCP_TITLE)], ["What should Maple watch?"]),
-				ToggleGroup.view(h, {
-					model: configure.scopeGroup,
-					toParentMessage: (message) => Message.GotGcpScopeTypeMessage({ message }),
-					items: SCOPE_TYPES.map((scopeType) => ({
-						value: scopeType,
-						label: GCP_SCOPE_NAMES[scopeType],
-					})),
-					variant: "outline",
-					itemClassName: "flex-1",
-					className: "w-full",
-				}),
-				h.p([h.Class(SMALL)], [scope.description]),
-			],
-		),
+		vstack(h, { gap: "2" }, [
+			heading(h, { level: 3, variant: "subsection" }, ["What should Maple watch?"]),
+			ToggleGroup.view(h, {
+				model: configure.scopeGroup,
+				toParentMessage: (message) => Message.GotGcpScopeTypeMessage({ message }),
+				items: Arr.map(SCOPE_TYPES, (scopeType) => ({
+					value: scopeType,
+					label: GCP_SCOPE_NAMES[scopeType],
+				})),
+				variant: "outline",
+				// Shrinks on a phone, where "Organization" otherwise runs past the card.
+				itemClassName: "min-w-0 flex-1 px-1 text-sm sm:px-3",
+				className: "w-full",
+			}),
+			h.p([h.Class(SMALL)], [scope.description]),
+		]),
 		idField(h, configure, {
 			field: "scopeId",
 			control: "gcp-scope-id",
@@ -89,7 +90,7 @@ export const scopeFields = (
 						label: "Host project ID",
 						description: [
 							"Holds Maple's Pub/Sub topic and read-only service account. A project inside the ",
-							GCP_SCOPE_NAMES[configure.scopeType].toLowerCase(),
+							Str.toLowerCase(GCP_SCOPE_NAMES[configure.scopeType]),
 							" with billing enabled that won't be deleted.",
 						],
 						placeholder: "acme-observability",

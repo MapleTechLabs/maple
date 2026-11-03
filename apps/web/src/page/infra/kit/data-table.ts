@@ -1,14 +1,14 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { divTableHead, sortButton } from "@maple/views/ui/table"
 import type { SortDir } from "../../kit/table-sort"
 
 // `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.
 
 export const ROW_LINK_CLASS =
-	"group flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+	"group flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none"
 
 /** A sortable head's state: `null` sort is the skeleton's inert head (no current key). */
 export const headSort = <M, K extends string>(
@@ -29,46 +29,31 @@ export type ColumnHeadOptions<M> = Readonly<{
 	hidden?: string
 }>
 
+/** A column head in the kit's table-head type; a sortable one is the kit `sortButton`. */
 export const columnHead = <M>(h: HtmlBuilder<M>, options: ColumnHeadOptions<M>): Html => {
 	const sort = options.sort
-	return h.div(
-		[
-			h.Class(
-				cn(
-					"flex items-center text-2xs font-medium",
-					options.align === "right" && "justify-end",
-					options.width,
-					options.hidden,
-				),
+	return divTableHead(
+		h,
+		{
+			className: cn(
+				"flex items-center",
+				options.align === "right" && "justify-end",
+				options.width,
+				options.hidden,
 			),
-		],
+		},
 		[
-			sort === undefined
-				? h.span([h.Class("text-muted-foreground")], [options.label])
-				: h.button(
-						[
-							h.Type("button"),
-							...(sort.onSort === undefined ? [] : [h.OnClick(sort.onSort)]),
-							h.Class(
-								cn(
-									"inline-flex items-center gap-1 transition-colors",
-									sort.isActive
-										? "text-foreground"
-										: "text-muted-foreground hover:text-foreground",
-								),
-							),
-						],
-						[
-							options.label,
-							icon(h, "ArrowUpDownIcon", {
-								size: 10,
-								className: cn(
-									"transition-opacity",
-									sort.isActive ? "opacity-100" : "opacity-40",
-									sort.isActive && sort.dir === "asc" && "rotate-180",
-								),
-							}),
-						],
+			sort?.onSort === undefined
+				? h.span([], [options.label])
+				: sortButton(
+						h,
+						{
+							isActive: sort.isActive,
+							direction: sort.dir,
+							onClick: sort.onSort,
+							align: options.align,
+						},
+						[options.label],
 					),
 		],
 	)
@@ -93,12 +78,12 @@ export const dataTable = <M>(
 	const isWaiting = options.isWaiting === true
 	const scrolls = options.maxHeight !== undefined
 	const headClass = cn(
-		"flex items-center gap-4 border-b border-border/60 px-4 py-2",
+		"flex items-center gap-4 border-b border-border-subtle px-4 py-2",
 		scrolls && `sticky top-0 z-10 ${options.stickySurfaceClass ?? "bg-background"}`,
 	)
 	return h.div(
 		[
-			h.Class(cn("border-y border-border/70", refreshingClass(isWaiting), options.className)),
+			h.Class(cn("border-y border-border-subtle", refreshingClass(isWaiting), options.className)),
 			h.AriaLabel(options.ariaLabel),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
 		],
@@ -128,7 +113,7 @@ export const skeletonRows = <M>(
 ): ReadonlyArray<Html> =>
 	Array.from({ length: count }, () =>
 		h.div(
-			[h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0")],
+			[h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0")],
 			cells(),
 		),
 	)

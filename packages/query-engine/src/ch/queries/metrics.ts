@@ -9,7 +9,7 @@ import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
-import { from, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
+import { from, type CHQuery, type ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import { table } from "@maple-dev/effect-orm/clickhouse"
 import {
 	MetricsSum,
@@ -23,6 +23,7 @@ import { resolveMetricTable, metricsSelectExprs, timeseriesBucket, wholeRangeEnd
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
+import { Array as Arr } from "effect"
 
 /**
  * WHERE conditions for `resourceAttributeFilters` — predicates on the
@@ -33,14 +34,14 @@ import { finalizeTimeseries } from "./series-cap"
 function resourceFilterConditions(
 	filters: readonly AttributeFilter[] | undefined,
 ): ReadonlyArray<CH.Condition> {
-	return (filters ?? []).map((rf) => buildAttrFilterCondition(rf, "ResourceAttributes"))
+	return Arr.map(filters ?? [], (rf) => buildAttrFilterCondition(rf, "ResourceAttributes"))
 }
 
 /** WHERE conditions for `attributeFilters`: any mode or negation on the datapoint Attributes map. */
 function datapointFilterConditions(
 	filters: readonly AttributeFilter[] | undefined,
 ): ReadonlyArray<CH.Condition> {
-	return (filters ?? []).map((af) => buildAttrFilterCondition(af, "Attributes"))
+	return Arr.map(filters ?? [], (af) => buildAttrFilterCondition(af, "Attributes"))
 }
 
 // Shared options & output types
@@ -227,7 +228,7 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 
 function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput, {}> {
 	const bucket = CH.toStartOfInterval(
 		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
@@ -378,7 +379,7 @@ export function metricDeltaExpr(args: {
 
 export function metricsTimeseriesRateQuery(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput, {}> {
 	if (canUseSpanMetricsCallsHourly(opts)) return metricsTimeseriesRateFromSpanMetricsCallsHourly(opts)
 
 	// Prometheus-style counters often land as gauges (or as sums flagged

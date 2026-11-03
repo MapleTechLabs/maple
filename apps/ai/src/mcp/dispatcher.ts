@@ -4,7 +4,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
-import type { SandboxError } from "@yielded/agent/sandbox"
+import type { SandboxError } from "@maple/backend/sandbox/contract"
 import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
 
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
@@ -27,20 +27,30 @@ import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
+import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
+import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
+import { withoutInvocationContext } from "@maple/backend/platform/invocation-context"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
-import { CurrentMcpTenant } from "./lib/query-warehouse"
+import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./lib/query-warehouse"
 import { recordExpectedMcpFailure } from "./expected-failures"
 import { loadRegistry } from "./tool-catalog"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -98,10 +108,13 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 				recordExpectedMcpFailure(error, "Invalid tool input").pipe(
 					Effect.as(
 						failureResult(
-							[
-								`Invalid input${error.parameter === undefined ? "" : ` (\`${error.parameter}\`)`}: ${error.message}`,
-								...(error.example === undefined ? [] : [`Example: ${error.example}`]),
-							].join("\n"),
+							Arr.join(
+								[
+									`Invalid input${error.parameter === undefined ? "" : ` (\`${error.parameter}\`)`}: ${error.message}`,
+									...(error.example === undefined ? [] : [`Example: ${error.example}`]),
+								],
+								"\n",
+							),
 							"invalid_input",
 						),
 					),
@@ -151,9 +164,10 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 		Effect.tap((result) =>
 			Effect.annotateCurrentSpan({
 				"result.isError": result.isError === true,
-				"maple.mcp.result.chars": result.content.reduce(
-					(total, block) => total + block.text.length,
+				"maple.mcp.result.chars": Arr.reduce(
+					result.content,
 					0,
+					(total, block) => total + block.text.length,
 				),
 				"maple.mcp.result.structured": result.structuredContent !== undefined,
 				...(result.failureCategory === undefined
@@ -257,6 +271,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	AlertsService.layer,
 	AuditLogService.layer,
 	DashboardPersistenceService.layer,
+	DependencyScanReader.layer,
 	ErrorActorsService.layer,
 	ErrorIssueReadModelsService.layer,
 	ErrorIssueWorkflowService.layer,
@@ -269,8 +284,15 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	RailwayMetricsService.layer,
 	RecommendationIssueService.layer,
 	RepoSandboxService.layer,
+	RuntimeAdvisoryCatalog.layer,
+	RuntimeReleaseCatalog.layer,
 	ScrapeTargetsService.layer,
+	SecurityAuditStore.layer,
 	SetupAuditService.layer,
+	StatusPageSnapshotBuilder.layer,
+	StatusPagesService.layer,
+	UptimeMonitorsService.layer,
+	IngestRuleService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	VercelIntegrationService.layer,
@@ -286,10 +308,17 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 )
 
 export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExecutorApi>()(
-	"@maple/api/mcp/McpToolExecutor",
+	"@maple/ai/mcp/McpToolExecutor",
 	{
 		make: Effect.gen(function* () {
-			const runtimeServices = yield* Effect.context<McpToolRuntimeRequirements>()
+			// Provided on every later call, so it must not carry this build's request (its Postgres
+			// scope, Scope, span or tenant): those would override the calling request's own.
+			const buildContext = yield* Effect.context<McpToolRuntimeRequirements>()
+			const runtimeServices = Context.omit(
+				CurrentMcpRequestTenant,
+				CurrentMcpTenant,
+				Cloudflare.WorkerExecutionContext,
+			)(withoutInvocationContext(buildContext))
 			const sandbox = yield* RepoSandboxService
 			const source = yield* VcsSourceService
 

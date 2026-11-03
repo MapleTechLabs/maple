@@ -34,7 +34,7 @@ export interface PullRequestLookupApi {
 }
 
 export class PullRequestLookup extends Context.Service<PullRequestLookup, PullRequestLookupApi>()(
-	"@maple/api/services/errors/PullRequestLookup",
+	"@maple/backend/services/errors/PullRequestLookup",
 ) {
 	static readonly none = Layer.succeed(this, {
 		fetch: () => Effect.succeedNone,

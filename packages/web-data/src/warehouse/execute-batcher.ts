@@ -4,6 +4,7 @@ import {
 	QUERY_ENGINE_BATCH_MAX,
 	type QueryEngineBatchOutcome,
 } from "@maple/query-engine"
+import { Array as Arr } from "effect"
 
 /**
  * Coalesces individual query executions into `/internal/query-engine/execute-batch`.
@@ -67,9 +68,9 @@ export const makeExecuteBatcher = (
 		pending = pending.slice(QUERY_ENGINE_BATCH_MAX)
 		if (pending.length > 0) schedule()
 
-		send(batch.map((entry) => entry.payload)).then(
+		send(Arr.map(batch, (entry) => entry.payload)).then(
 			(results) => {
-				batch.forEach((entry, index) => {
+				Arr.forEach(batch, (entry, index) => {
 					const outcome = results[index]
 					if (outcome === undefined) {
 						entry.reject(new Error("Batch response was missing a result for this query."))

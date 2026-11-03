@@ -1,7 +1,7 @@
 import { getPodFacets, podsSummary, type PodsSummaryInput } from "@maple/web-data/warehouse/infra"
 import { Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { fetchPods, fetchRestarts, PodsInput, RestartsInput } from "../pod-data"
 import { Message } from "./message"
@@ -11,7 +11,8 @@ export const PAGE_SIZE = 50
 export const FetchPods = Command.define("FetchInfraPods", {
 	args: { key: Schema.String, input: PodsInput },
 	messages: [Message.CompletedFetchPods],
-	execute: ({ key, input }) => Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
+	execute: ({ key, input }) =>
+		Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
 })
 
 export const FetchRestarts = Command.define("FetchInfraPodRestarts", {
@@ -36,14 +37,16 @@ export const FetchSummary = Command.define("FetchInfraPodsSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		podsSummary({ data: input satisfies PodsSummaryInput }).pipe(
-			Effect.map((counts) => ({
-				livePods: counts.livePods,
-				endedPods: counts.endedPods,
-				saturatedPods: counts.saturatedPods,
-				elevatedPods: counts.elevatedPods,
-				unboundedPods: counts.unboundedPods,
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (counts) => ({
+					livePods: counts.livePods,
+					endedPods: counts.endedPods,
+					saturatedPods: counts.saturatedPods,
+					elevatedPods: counts.elevatedPods,
+					unboundedPods: counts.unboundedPods,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
 		),
@@ -54,8 +57,7 @@ export const FetchFacets = Command.define("FetchInfraPodFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getPodFacets({ data: window }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -64,5 +66,6 @@ export const FetchFacets = Command.define("FetchInfraPodFacets", {
 export const DebounceSearch = Command.define("DebounceInfraPodsSearch", {
 	args: { query: Schema.String },
 	messages: [Message.ElapsedSearchDebounce],
-	execute: ({ query }) => Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
+	execute: ({ query }) =>
+		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
 })

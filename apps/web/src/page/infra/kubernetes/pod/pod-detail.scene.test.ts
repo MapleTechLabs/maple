@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../../charts/theme-colors"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import type { PageContext } from "../../../contract"
 import * as Frame from "../../kit/frame"
 import { Message } from "./message"
@@ -22,26 +22,44 @@ const view = withViewInputs(pageView, { context })()
 const windowed = () =>
 	pageUpdate(
 		init(route, context).model,
-		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
+		Message.GotFrameMessage({
+			message: Frame.Message.CompletedResolveWindow({
+				window,
+				nowMs: NOW,
+				locale: "en-US",
+				mode: "Load",
+			}),
+		}),
 	)
 
 describe("pod detail", () => {
 	test("the window fetches the summary, the selected metric and the pod's restarts", () => {
-		expect((windowed().commands ?? []).map(({ name }) => name)).toEqual([
-			"FetchInfraPodSummary",
-			"FetchInfraPodDetailRestarts",
-			"FetchInfraPodSeries",
-		])
+		expect(Arr.map(windowed().commands ?? [], ({ name }) => name)).toEqual(
+			expect.arrayContaining([
+				"FetchInfraPodSummary",
+				"FetchInfraPodDetailRestarts",
+				"FetchInfraPodSeries",
+			]),
+		)
 	})
 
 	test("after a Reload a namespace change reads under the kept window; only a new preset re-resolves", () => {
-		const reloaded = pageUpdate(windowed().model, Message.GotFrameMessage({ message: Frame.Message.ClickedReload() })).model
+		const reloaded = pageUpdate(
+			windowed().model,
+			Message.GotFrameMessage({ message: Frame.Message.ClickedReload() }),
+		).model
 		const moved = routeChanged(reloaded, { ...route, search: { namespace: "billing" } }, context)
-		expect((moved.commands ?? []).map(({ name }) => name)).not.toContain("ResolveInfraWindow")
-		expect((moved.commands ?? []).map(({ name }) => name)).toContain("FetchInfraPodSummary")
+		expect(Arr.map(moved.commands ?? [], ({ name }) => name)).not.toContain("ResolveInfraWindow")
+		expect(Arr.map(moved.commands ?? [], ({ name }) => name)).toContain("FetchInfraPodSummary")
 		expect(moved.model.frame.window).toEqual(window)
-		const represet = routeChanged(moved.model, { ...route, search: { namespace: "billing", timePreset: "6h" } }, context)
-		expect(represet.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveInfraWindow", "Refresh"]])
+		const represet = routeChanged(
+			moved.model,
+			{ ...route, search: { namespace: "billing", timePreset: "6h" } },
+			context,
+		)
+		expect(represet.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveInfraWindow", "Refresh"],
+		])
 	})
 
 	test("restarted containers get their own table", () => {

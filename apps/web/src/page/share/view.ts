@@ -2,16 +2,21 @@ import { containerKeyFor, containerKeyOf, ROOT_CONTAINER_KEY } from "@maple/doma
 import { normalizeLayout } from "@maple/grid-engine"
 import { ALL_VALUE, type VariableValues } from "@maple/query-engine"
 import { resolveSectionView } from "../../lib/dashboards/section-view-state"
-import { GRID_ROW_HEIGHT, projectLayout, tierForWidth } from "../../components/dashboard-builder/canvas/grid-breakpoints"
+import {
+	GRID_ROW_HEIGHT,
+	projectLayout,
+	tierForWidth,
+} from "../../components/dashboard-builder/canvas/grid-breakpoints"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../dashboards/kit/chart-tokens"
-import * as Chart from "../../charts/chart"
-import { ResolveThemeColors } from "../../charts/theme-colors"
-import { button } from "../../ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyTitle } from "../../ui/empty"
-import { icon } from "../../ui/icon"
-import { skeleton } from "../../ui/skeleton"
+import * as Chart from "@maple/views/charts/chart"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
+import { button } from "@maple/views/ui/button"
+import { heading } from "@maple/views/ui/heading"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../contract"
 import { toPanelType } from "../dashboards/kit/chart-registry"
 import type { WidgetDataState } from "../dashboards/kit/data-state"
@@ -22,35 +27,58 @@ import { Message } from "./message"
 import type { Model, ShareError, SharedDashboard, ShareWidget, WidgetState } from "./model"
 import { refreshSecondsOf } from "./update"
 import { sharedSection } from "./view-sections"
+import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { scrollRegion } from "@maple/views/ui/scroll-region"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `SharePage`: its own chrome outside the app shell.
 
 type H = HtmlBuilder<Message>
 
 const shell = (h: H, children: ReadonlyArray<Html>, title?: string): Html =>
-	h.div([h.Class("flex min-h-screen flex-col bg-background")], [
-		h.header([h.Class("flex items-center justify-between gap-4 border-b px-6 py-3")], [
-			title === undefined
-				? h.span([], [])
-				: h.h1([h.Class("min-w-0 truncate font-medium text-sm"), h.Title(title)], [title]),
-			h.a(
+	h.div(
+		[h.Class("flex min-h-screen flex-col bg-background")],
+		[
+			h.header(
+				[h.Class("flex items-center justify-between gap-4 border-b px-6 py-3")],
 				[
-					h.Href("https://maple.dev"),
-					h.Target("_blank"),
-					h.Rel("noopener noreferrer"),
-					h.Class(
-						"flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs transition-colors hover:text-foreground",
+					title === undefined
+						? h.span([], [])
+						: heading(
+								h,
+								{
+									level: 1,
+									variant: "subsection",
+									className: "min-w-0 truncate",
+									attributes: [h.Title(title)],
+								},
+								[title],
+							),
+					h.a(
+						[
+							h.Href("https://maple.dev"),
+							h.Target("_blank"),
+							h.Rel("noopener noreferrer"),
+							h.Class(
+								"flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs hover:text-foreground active:text-foreground",
+							),
+						],
+						[
+							h.span([h.Class("hidden sm:inline")], ["Shared via"]),
+							icon(h, "MapleMark", {
+								size: 14,
+								className: "shrink-0",
+								attributes: [h.AriaHidden(true)],
+							}),
+							h.span([h.Class("font-medium")], ["Maple"]),
+						],
 					),
 				],
-				[
-					h.span([h.Class("hidden sm:inline")], ["Shared via"]),
-					icon(h, "MapleMark", { size: 14, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
-					h.span([h.Class("font-medium")], ["Maple"]),
-				],
 			),
-		]),
-		h.main([h.Class("flex-1 p-6")], children),
-	])
+			h.main([h.Class("flex-1 p-6")], children),
+		],
+	)
 
 const embedShell = (h: H, children: ReadonlyArray<Html>, scope: SharedDashboard["scope"]): Html =>
 	h.div([h.Class(`${scope === "dashboard" ? "min-h-screen" : "h-screen"} w-full p-2`)], children)
@@ -68,9 +96,12 @@ const centeredCard = (h: H, title: string, body: string, children: ReadonlyArray
 const errorCard = (h: H, error: ShareError): Html => {
 	switch (error._tag) {
 		case "SignInRequired":
-			return centeredCard(h, "Sign in to view this dashboard", "This dashboard is shared with its organization only.", [
-				button(h, { attributes: [h.OnClick(Message.ClickedSignIn())] }, ["Sign in"]),
-			])
+			return centeredCard(
+				h,
+				"Sign in to view this dashboard",
+				"This dashboard is shared with its organization only.",
+				[button(h, { attributes: [h.OnClick(Message.ClickedSignIn())] }, ["Sign in"])],
+			)
 		case "WrongOrg":
 			return centeredCard(
 				h,
@@ -78,11 +109,19 @@ const errorCard = (h: H, error: ShareError): Html => {
 				"It's shared with a different organization. Switch organizations and try again.",
 			)
 		case "RateLimited":
-			return centeredCard(h, "Too many requests", "This shared dashboard is busy right now. Try again in a moment.")
+			return centeredCard(
+				h,
+				"Too many requests",
+				"This shared dashboard is busy right now. Try again in a moment.",
+			)
 		case "Unavailable":
 			return centeredCard(h, "This link isn't available", error.message)
 		case "NotFound":
-			return centeredCard(h, "This link isn't available", "The link may have been revoked, or it never existed.")
+			return centeredCard(
+				h,
+				"This link isn't available",
+				"The link may have been revoked, or it never existed.",
+			)
 	}
 }
 
@@ -97,7 +136,7 @@ const notEmbeddableCard = (h: H): Html =>
 const shareSkeleton = (h: H): Html =>
 	h.div(
 		[h.Class("grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3")],
-		[0, 1, 2, 3].map(() => skeleton(h, "h-64 rounded-md border")),
+		Arr.map([0, 1, 2, 3], () => skeleton(h, "h-64 rounded-md border")),
 	)
 
 const dataStateOf = (state: WidgetState | undefined): WidgetDataState => {
@@ -107,7 +146,13 @@ const dataStateOf = (state: WidgetState | undefined): WidgetDataState => {
 }
 
 /** `SharedWidgetRenderer`: the board's tile from the page's batched state, no actions. */
-const sharedTile = (h: H, model: Model, widget: ShareWidget, variables: VariableValues, timeZone: string): Html => {
+const sharedTile = (
+	h: H,
+	model: Model,
+	widget: ShareWidget,
+	variables: VariableValues,
+	timeZone: string,
+): Html => {
 	const chartId = widget.display.chartId
 	const panelType = toPanelType(widget.visualization, typeof chartId === "string" ? chartId : undefined)
 	return h.div(
@@ -131,7 +176,8 @@ const sharedTile = (h: H, model: Model, widget: ShareWidget, variables: Variable
 					tableSort: model.tableSorts[widget.id] ?? { key: null, dir: "desc" },
 					variables,
 					onChart: (message) => Message.GotChartMessage({ widgetId: widget.id, message }),
-					onSort: (field, isText) => Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
+					onSort: (field, isText) =>
+						Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
 				},
 				widget,
 			),
@@ -139,11 +185,21 @@ const sharedTile = (h: H, model: Model, widget: ShareWidget, variables: Variable
 	)
 }
 
-const gridOf = (h: H, model: Model, widgets: ReadonlyArray<ShareWidget>, variables: VariableValues, timeZone: string): Html | null => {
+const gridOf = (
+	h: H,
+	model: Model,
+	widgets: ReadonlyArray<ShareWidget>,
+	variables: VariableValues,
+	timeZone: string,
+): Html | null => {
 	if (model.gridWidth <= 0 || widgets.length === 0) return null
 	const tier = tierForWidth(model.gridWidth)
-	const layout = normalizeLayout(projectLayout(widgets, tier), tier.cols, tier.canonical ? "vertical" : "none")
-	const byId = new Map(layout.map((item) => [item.i, item]))
+	const layout = normalizeLayout(
+		projectLayout(widgets, tier),
+		tier.cols,
+		tier.canonical ? "vertical" : "none",
+	)
+	const byId = new Map(Arr.map(layout, (item) => [item.i, item]))
 	return h.div(
 		[
 			h.DataAttribute("dashboard-grid", ""),
@@ -157,7 +213,7 @@ const gridOf = (h: H, model: Model, widgets: ReadonlyArray<ShareWidget>, variabl
 				"padding-block": `${tier.margin[1]}px`,
 			}),
 		],
-		widgets.flatMap((widget) => {
+		Arr.flatMap(widgets, (widget) => {
 			const item = byId.get(widget.id)
 			return item === undefined
 				? []
@@ -175,7 +231,12 @@ const gridOf = (h: H, model: Model, widgets: ReadonlyArray<ShareWidget>, variabl
 									"grid-row": `${item.y + 1} / span ${item.h}`,
 								}),
 							],
-							[h.div([h.Class("h-full w-full")], [sharedTile(h, model, widget, variables, timeZone)])],
+							[
+								h.div(
+									[h.Class("h-full w-full")],
+									[sharedTile(h, model, widget, variables, timeZone)],
+								),
+							],
 						),
 					]
 		}),
@@ -183,31 +244,47 @@ const gridOf = (h: H, model: Model, widgets: ReadonlyArray<ShareWidget>, variabl
 }
 
 /** `ReadOnlyDashboardView`: the root grid, then each group with its active tab's grid. */
-const board = (h: H, model: Model, share: SharedDashboard, variables: VariableValues, timeZone: string): Html => {
+const board = (
+	h: H,
+	model: Model,
+	share: SharedDashboard,
+	variables: VariableValues,
+	timeZone: string,
+): Html => {
 	const { widgets, sections } = share.dashboard
-	const root = widgets.filter((widget) => containerKeyOf(widget) === ROOT_CONTAINER_KEY)
+	const root = Arr.filter(widgets, (widget) => containerKeyOf(widget) === ROOT_CONTAINER_KEY)
 	const view = resolveSectionView(sections, widgets, model.sectionView)
 	const rootGrid = gridOf(h, model, root, variables, timeZone)
-	return h.div([h.Class("flex h-full min-h-0 w-full flex-col")], [
-		h.div([h.Class("min-h-0 flex-1 overflow-y-auto")], [
-			h.div([h.Class("group/canvas is-layout-locked"), h.OnMount(MeasureGrid())], [
-				...(rootGrid === null ? [] : [rootGrid]),
-				...(model.gridWidth <= 0
-					? []
-					: sections.map((section) => {
-							const activeTabId = view.activeTabs.get(section.id) ?? section.tabs[0]?.id ?? section.id
-							const key = containerKeyFor({ sectionId: section.id, tabId: activeTabId })
-							const inTab = widgets.filter((widget) => containerKeyOf(widget) === key)
-							return sharedSection(h, {
-								section,
-								activeTabId,
-								isCollapsed: view.collapsed.has(section.id),
-								grid: gridOf(h, model, inTab, variables, timeZone),
-							})
-						})),
+	return h.div(
+		[h.Class("flex h-full min-h-0 w-full flex-col")],
+		[
+			scrollRegion(h, {}, [
+				h.div(
+					[h.Class("group/canvas is-layout-locked"), h.OnMount(MeasureGrid())],
+					[
+						...(rootGrid === null ? [] : [rootGrid]),
+						...(model.gridWidth <= 0
+							? []
+							: Arr.map(sections, (section) => {
+									const activeTabId =
+										view.activeTabs.get(section.id) ?? section.tabs[0]?.id ?? section.id
+									const key = containerKeyFor({ sectionId: section.id, tabId: activeTabId })
+									const inTab = Arr.filter(
+										widgets,
+										(widget) => containerKeyOf(widget) === key,
+									)
+									return sharedSection(h, {
+										section,
+										activeTabId,
+										isCollapsed: view.collapsed.has(section.id),
+										grid: gridOf(h, model, inTab, variables, timeZone),
+									})
+								})),
+					],
+				),
 			]),
-		]),
-	])
+		],
+	)
 }
 
 /** `SingleWidgetShare`: one chart filling the page, no grid. */
@@ -221,9 +298,12 @@ const singleWidget = (
 ): Html =>
 	h.div(
 		[h.Class("h-full w-full")],
-		share.dashboard.widgets.map((widget) =>
+		Arr.map(share.dashboard.widgets, (widget) =>
 			h.div(
-				[h.Key(widget.id), h.Class(isEmbed ? "h-[calc(100vh-1rem)] w-full" : "h-[calc(100vh-9rem)] w-full")],
+				[
+					h.Key(widget.id),
+					h.Class(isEmbed ? "h-[calc(100vh-1rem)] w-full" : "h-[calc(100vh-9rem)] w-full"),
+				],
 				[sharedTile(h, model, widget, variables, timeZone)],
 			),
 		),
@@ -239,18 +319,34 @@ const shareBody = (h: H, model: Model, share: SharedDashboard, isEmbed: boolean,
 			"Open the link with an explicit window (?from=…&to=…) instead.",
 		)
 	// Titles read "All" for an All selection, never the expansion, so no option list is needed.
-	const variables: VariableValues = Object.fromEntries(
-		Object.entries(model.variables).map(([name, value]) => [name, { value, isAll: value === ALL_VALUE, options: [] }]),
+	const variables: VariableValues = Rec.fromEntries(
+		Arr.map(Rec.toEntries(model.variables), ([name, value]) => [
+			name,
+			{ value, isAll: value === ALL_VALUE, options: [] },
+		]),
 	)
 	if (share.scope === "widget") return singleWidget(h, model, share, isEmbed, variables, timeZone)
 	if (share.dashboard.widgets.length === 0)
-		return centeredCard(h, "This dashboard has no charts yet", "Ask whoever shared it to add widgets, then reload.")
-	return h.div([h.Class("flex flex-col gap-3")], [
+		return centeredCard(
+			h,
+			"This dashboard has no charts yet",
+			"Ask whoever shared it to add widgets, then reload.",
+		)
+	return vstack(h, { gap: "3" }, [
 		...(isEmbed
 			? []
 			: [
-					h.div([h.Class("flex items-center justify-between gap-2")], [
-						h.div([h.Class("text-muted-foreground text-xs"), h.DataAttribute("testid", "share-time-range")], [window.label]),
+					hstack(h, { gap: "2", justify: "between" }, [
+						typography(
+							h,
+							{
+								size: "xs",
+								tone: "muted",
+								as: "div",
+								attributes: [h.DataAttribute("testid", "share-time-range")],
+							},
+							[window.label],
+						),
 						refreshControls(h, {
 							seconds: refreshSecondsOf(model),
 							savedDefault: share.dashboard.refreshIntervalSeconds,
@@ -292,8 +388,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				? wrap([errorCard(h, resolve.error)])
 				: model.isFramed && !resolve.share.embeddable
 					? embedShellOrShell([notEmbeddableCard(h)])
-					: wrap([shareBody(h, model, resolve.share, isEmbed, timeZone)], resolve.share.dashboard.name)
-	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))], [
-		appearance === null ? page : h.div([h.Class("contents"), h.OnMount(ApplyShareAppearance(appearance))], [page]),
-	])
+					: wrap(
+							[shareBody(h, model, resolve.share, isEmbed, timeZone)],
+							resolve.share.dashboard.name,
+						)
+	return h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
+		[
+			appearance === null
+				? page
+				: h.div([h.Class("contents"), h.OnMount(ApplyShareAppearance(appearance))], [page]),
+		],
+	)
 })

@@ -1,21 +1,22 @@
 import type { ScrapeTargetId } from "@maple/domain/http"
 import { ScrapeIntervalSeconds } from "@maple/domain/http"
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import * as Keyed from "../../data/keyed"
-import type { LoadFailure } from "../../data/load-failure"
-import { requestKey } from "../../data/request-key"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
-import * as Menu from "../../ui/menu"
-import * as Select from "../../ui/select"
+import * as Keyed from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { requestKey } from "@maple/views/data/request-key"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Menu from "@maple/views/ui/menu"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	DeleteTarget,
 	emptyForm,
 	FetchChecks,
 	type FormFieldName,
+	hostnameOf,
 	type PrometheusCardModel,
 	ProbeTarget,
 	SaveTarget,
@@ -25,6 +26,8 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // `ScrapeTargetsSection`'s state changes.
 
@@ -41,13 +44,13 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 })
 
 const refreshTargets = (model: Model, context: PageContext): Return =>
-	requestStatus(model, context, "scrapeTargets", "Refresh")
+	requestStatus(model, context, "scrapeTargets", "Supersede")
 
 /** The prometheus targets (`sourceFilter`), as the list read answered them. */
 export const prometheusTargets = (model: Model): ReadonlyArray<V2ScrapeTarget> =>
 	Option.match(AsyncData.getData(model.statuses.scrapeTargets.data), {
 		onNone: () => [],
-		onSome: (targets) => targets.filter((target) => target.target_type === "prometheus"),
+		onSome: (targets) => Arr.filter(targets, (target) => target.target_type === "prometheus"),
 	})
 
 const targetOf = (model: Model, id: ScrapeTargetId) =>
@@ -70,7 +73,7 @@ export const clickedTarget = (model: Model, context: PageContext, id: ScrapeTarg
 	requestChecks(withCard(model, { selectedId: id }), context, "Load")
 
 const without = (ids: ReadonlyArray<ScrapeTargetId>, id: ScrapeTargetId) =>
-	ids.filter((entry) => entry !== id)
+	Arr.filter(ids, (entry) => entry !== id)
 
 export const clickedProbe = (model: Model, id: ScrapeTargetId): Return =>
 	model.prometheusCard.probing.includes(id)
@@ -89,8 +92,12 @@ export const completedProbe = (
 	success: boolean,
 	error: string | null,
 ): Return => {
-	const settled = withCard(model, { probing: without(model.prometheusCard.probing, id) })
-	if (failure !== null) return toast(settled, "error", "Failed to test connection", failure.message)
+	const outcome = failure === null ? { success, error } : { success: false, error: failure.message }
+	const settled = withCard(model, {
+		probing: without(model.prometheusCard.probing, id),
+		probes: { ...model.prometheusCard.probes, [id]: outcome },
+	})
+	if (failure !== null) return toast(settled, "error", "Couldn't test connection", failure.message)
 	return chain(settled, [
 		(next) => refreshTargets(next, context),
 		(next) =>
@@ -118,7 +125,7 @@ export const completedToggle = (
 	const settled = withCard(model, { toggling: without(model.prometheusCard.toggling, id) })
 	return failure === null
 		? refreshTargets(settled, context)
-		: toast(settled, "error", "Failed to update scrape target", failure.message)
+		: toast(settled, "error", "Couldn't update scrape target", failure.message)
 }
 
 // FORM
@@ -142,8 +149,6 @@ const openForm = (model: Model, editingId: ScrapeTargetId | null, form: ScrapeFo
 		}),
 		Dialog.open(model.prometheusCard.formDialog),
 	)
-
-export const clickedAdd = (model: Model): Return => openForm(model, null, emptyForm())
 
 export const clickedEdit = (model: Model, id: ScrapeTargetId): Return => {
 	const target = targetOf(model, id)
@@ -206,35 +211,44 @@ export const parsedInterval = (form: ScrapeForm): number | null => {
 }
 
 export const isFormValid = (form: ScrapeForm): boolean =>
-	form.name.value.trim().length > 0 && form.url.value.trim().length > 0 && parsedInterval(form) !== null
+	Str.trim(form.name.value).length > 0 &&
+	Str.trim(form.url.value).length > 0 &&
+	parsedInterval(form) !== null
 
 const credentialsOf = (form: ScrapeForm): string | null => {
 	if (form.authType === "bearer")
-		return form.token.value.trim() === "" ? null : JSON.stringify({ token: form.token.value.trim() })
+		return Str.trim(form.token.value) === "" ? null : encodeJson({ token: Str.trim(form.token.value) })
 	if (form.authType === "basic")
-		return form.username.value.trim() === "" && form.password.value.trim() === ""
+		return Str.trim(form.username.value) === "" && Str.trim(form.password.value) === ""
 			? null
-			: JSON.stringify({ username: form.username.value.trim(), password: form.password.value.trim() })
+			: encodeJson({ username: Str.trim(form.username.value), password: Str.trim(form.password.value) })
 	return null
 }
 
+/** The connect flow asks for the URL first: a blank name falls back to the URL's host. */
+const withDefaultName = (form: ScrapeForm): ScrapeForm =>
+	Str.trim(form.name.value) === "" && Str.trim(form.url.value) !== ""
+		? { ...form, name: Field.init(hostnameOf(Str.trim(form.url.value))) }
+		: form
+
 export const submittedForm = (model: Model): Return => {
 	const card = model.prometheusCard
-	const interval = parsedInterval(card.form)
-	if (card.isSaving || !isFormValid(card.form) || interval === null) return { model }
-	const credentials = credentialsOf(card.form)
-	const serviceName = card.form.serviceName.value.trim()
+	const form = withDefaultName(card.form)
+	const interval = parsedInterval(form)
+	if (card.isSaving || !isFormValid(form) || interval === null) return { model }
+	const credentials = credentialsOf(form)
+	const serviceName = Str.trim(form.serviceName.value)
 	return {
-		model: withCard(model, { isSaving: true }),
+		model: withCard(model, { isSaving: true, form }),
 		commands: [
 			SaveTarget({
 				editingId: card.editingId,
 				payload: {
-					name: card.form.name.value.trim(),
+					name: Str.trim(form.name.value),
 					scrape_interval_seconds: interval,
 					service_name: serviceName === "" ? null : serviceName,
-					url: card.form.url.value.trim(),
-					auth_type: card.form.authType,
+					url: Str.trim(form.url.value),
+					auth_type: form.authType,
 					auth_credentials: credentials ?? undefined,
 				},
 			}),
@@ -254,14 +268,20 @@ export const completedSave = (
 		return toast(
 			settled,
 			"error",
-			isEdit ? "Failed to update scrape target" : "Failed to create scrape target",
+			isEdit ? "Couldn't update scrape target" : "Couldn't create scrape target",
 			failure.message,
 		)
 	return chain(settled, [
 		(next) => toast(next, "success", isEdit ? "Scrape target updated" : "Scrape target created"),
 		(next) => refreshTargets(next, context),
 		(next) => formDialogStep(next, Dialog.close(next.prometheusCard.formDialog)),
-		(next) => (isEdit || id === null ? { model: next } : clickedTarget(next, context, id)),
+		// A new target becomes the one being edited, so the connect flow's later saves update it.
+		(next) =>
+			isEdit || id === null
+				? { model: next }
+				: clickedTarget(withCard(next, { editingId: id }), context, id),
+		// Every save is probed, so the flow's status row answers without a Test button.
+		(next) => (id === null ? { model: next } : clickedProbe(next, id)),
 	])
 }
 
@@ -296,7 +316,7 @@ export const completedDelete = (
 	failure: LoadFailure | null,
 ): Return => {
 	const settled = withCard(model, { isDeleting: false })
-	if (failure !== null) return toast(settled, "error", "Failed to delete scrape target", failure.message)
+	if (failure !== null) return toast(settled, "error", "Couldn't delete scrape target", failure.message)
 	return chain(settled, [
 		(next) => toast(next, "success", "Scrape target deleted"),
 		(next) => refreshTargets(next, context),

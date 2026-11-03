@@ -1,5 +1,5 @@
 import { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 
 import type { AlertRuleStateRow } from "../collections/alerts"
@@ -15,7 +15,7 @@ const NOW = Date.parse("2026-10-16T00:00:00.000Z")
 function rule(id: string, overrides: Record<string, unknown> = {}): AlertRuleDocument {
 	return decodeRule({
 		id,
-		name: `rule ${id.slice(-1)}`,
+		name: `rule ${Str.slice(-1)(id)}`,
 		notes: null,
 		notificationTemplate: null,
 		enabled: true,
@@ -34,6 +34,7 @@ function rule(id: string, overrides: Record<string, unknown> = {}): AlertRuleDoc
 		noDataBehavior: "skip",
 		consecutiveBreachesRequired: 2,
 		breachesOutOf: null,
+		evaluationIntervalMinutes: null,
 		thresholds: [
 			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
 		],
@@ -45,6 +46,9 @@ function rule(id: string, overrides: Record<string, unknown> = {}): AlertRuleDoc
 		rawQueryReducer: null,
 		destinationIds: [],
 		lastEvaluationError: null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
 		lastEvaluatedAt: "2026-10-15T23:59:00.000Z",
 		lastScheduledAt: "2026-10-15T23:59:00.000Z",
 		createdAt: "2026-10-15T00:00:00.000Z",
@@ -82,7 +86,7 @@ describe("ruleHeadroom", () => {
 		)
 
 		const rounded = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)
-		expect(rows.map((row) => [row.rule.id, row.groupKey, rounded(row.closeness)])).toEqual([
+		expect(Arr.map(rows, (row) => [row.rule.id, row.groupKey, rounded(row.closeness)])).toEqual([
 			[RULE_A, "web", 0.8],
 			// A floor: 10 needed, 40 seen.
 			[RULE_B, null, 0.25],

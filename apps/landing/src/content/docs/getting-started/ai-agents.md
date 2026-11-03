@@ -83,7 +83,7 @@ You get better answers when you name the **service**, the **time window** and th
 1. The agent finds the error with `find_errors` or `list_error_issues`.
 2. `error_detail` gives sample occurrences, stack traces and related logs.
 3. `inspect_trace` shows the full request: which service called which, and where it failed.
-4. With the GitHub integration, `read_source_file` opens the code at the commit that was running.
+4. The agent reads the code at the commit that was running, in your local checkout.
 5. The agent proposes a fix in your repository.
 
 From the **Errors** page you can skip step 1: right-click an issue and choose **Copy agent prompt** to hand your agent the issue with its context.
@@ -111,6 +111,34 @@ For heavier dashboard work, give your agent the [maple-dashboard-widgets](https:
 
 When no tool fits, `describe_warehouse_tables` lists the tables and columns, and `run_sql` runs a read-only query scoped to your organization. See [SQL](/docs/reference/sql).
 
+## Check whether a Maple Cloud fix is deployed
+
+Each region reports the commit its dashboard and API are running. Both are public `GET` requests, no sign-in needed.
+
+| Region | Dashboard                               | API                               |
+| ------ | --------------------------------------- | --------------------------------- |
+| US     | `https://app.maple.dev/version.json`    | `https://api.maple.dev/health`    |
+| EU     | `https://app.eu.maple.dev/version.json` | `https://api.eu.maple.dev/health` |
+
+```bash
+curl -fsS https://app.maple.dev/version.json | jq -r .commit
+curl -fsS -D - -o /dev/null https://api.maple.dev/health | grep -i x-maple-revision
+```
+
+The dashboard and API deploy separately, so compare each one. No `x-maple-revision` header means the API revision is unknown.
+
+To check whether a serving commit includes a merged PR, compare it with the PR's merge commit, not the branch's own commits (PRs are squash-merged):
+
+```bash
+repo=https://api.github.com/repos/MapleTechLabs/maple
+curl -fsS "$repo/pulls/<pr-number>" | jq -r 'select(.merged) | .merge_commit_sha'
+curl -fsS "$repo/compare/<merge-sha>...<serving-sha>" | jq -r .status
+```
+
+Empty output from the first request means the PR is not merged yet. A status of `identical` or `ahead` means the fix is deployed; `behind` or `diverged` means it is not.
+
+Ingest and the MCP server deploy on their own and are not covered by these checks. A [changelog](/changelog) entry or a merged PR does not show what a region is running.
+
 ## Instrument with a coding agent
 
 Open-source skills teach a coding agent how to set up OpenTelemetry for Maple:
@@ -125,7 +153,17 @@ Install them together with the per-language guides they read:
 bunx skills add MapleTechLabs/maple/skills --skill '*'
 ```
 
-Then ask: _"Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk\_…"_ or _"Audit my Maple instrumentation."_ EU organizations give `https://ingest.eu.maple.dev`. With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
+Then ask your agent:
+
+```text
+Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk_…
+```
+
+Or ask it to audit an existing setup: `Audit my Maple instrumentation.` EU organizations give `https://ingest.eu.maple.dev`.
+
+Give the public key (`maple_pk_…`). The skill writes the key into your source code, and the public key is safe to commit: it can only send telemetry. Your servers can switch to the private key later; see [Ingest keys](/docs/reference/authentication#ingest-keys).
+
+With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
 
 ## Stay in control
 
@@ -145,7 +183,7 @@ The [`maple` CLI](/docs/reference/cli) outputs JSON by default, so an agent with
 - **Source code tools return nothing.** They need the [GitHub App](/docs/integrations/github) installed with access to that repository.
 - **The agent guesses instead of querying.** Tell it to use Maple: _"Use the maple MCP tools to check."_
 
-## Related
+## Next steps
 
 - [MCP server reference](/docs/reference/mcp): endpoints, authentication and every tool
 - [Errors](/docs/errors/overview): issue states, leases and fix verification

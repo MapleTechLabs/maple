@@ -1,7 +1,8 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VercelDrainState, VercelProjectScope } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId, SourceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
+import { Sources } from "./sources"
 
 /**
  * One Vercel team per Maple org: the AES-GCM encrypted access token, the drains Maple created on
@@ -11,6 +12,8 @@ export const VercelConnections = PG.table("vercel_connections", {
 	columns: {
 		id: PG.text,
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		// The source the drains send as. Deleting the source deletes the row.
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		teamId: PG.column(PG.text, { name: "team_id" }),
 		teamSlug: PG.column(PG.text, { name: "team_slug" }),
 		teamName: PG.column(PG.text, { name: "team_name" }),
@@ -45,7 +48,18 @@ export const VercelConnections = PG.table("vercel_connections", {
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	primaryKey: ["id"],
-	indexes: [PG.uniqueIndex("vercel_connections_org_idx", ["orgId"])],
+	indexes: [
+		PG.index("vercel_connections_source_idx", ["sourceId"]),
+		PG.uniqueIndex("vercel_connections_org_idx", ["orgId"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["sourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
 	tenantColumn: "orgId",
 })
 

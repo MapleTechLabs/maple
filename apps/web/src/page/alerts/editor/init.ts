@@ -1,10 +1,10 @@
 import { Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
 import type { AppRoute } from "../../../route"
-import * as Dialog from "../../../ui/dialog"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageContext, PageReturn } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -53,6 +53,7 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		isSaving: false,
 		kindNotice: null,
 		isNotesOpen: false,
+		tagSuggestions: [],
 		isSqlCollapsed: false,
 		isMessageTemplateOpen: false,
 		tagDraft: "",

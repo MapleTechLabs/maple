@@ -1,4 +1,4 @@
-import { Clock, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Queue, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import { Command, Mount } from "foldkit"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { dataSourceTransform, toReadyData } from "../dashboards/kit/widget-data"
@@ -8,8 +8,8 @@ import { type Resolve, type ShareError, SharedDashboard, type WidgetState } from
 
 // The share's reads: resolve the token, then widget data in batches of four (`useShareWidgetData`).
 
-const SHARE_UNAVAILABLE_MESSAGE = "This dashboard could not be loaded. Try again later."
-const DATA_UNAVAILABLE_MESSAGE = "This data could not be loaded."
+const SHARE_UNAVAILABLE_MESSAGE = "Couldn't load this dashboard. Try again later."
+export const DATA_UNAVAILABLE_MESSAGE = "Couldn't load this data."
 
 export const ResolveClock = Command.define("ResolveShareClock", {
 	messages: [Message.CompletedResolveClock],
@@ -22,10 +22,19 @@ export const ResolveReloadClock = Command.define("ResolveShareReloadClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveReloadClock({ nowMs })),
 })
 
+/** Reading `window.top` threw: a cross-origin parent. */
+export class FrameReadError extends Schema.TaggedError<FrameReadError>()("@maple/web/share/FrameReadError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
+
 /** `isFramed`: reading a cross-origin `top` throws, and that means framed by someone unseen. */
 export const ReadFrame = Command.define("ReadShareFrame", {
 	messages: [Message.CompletedReadFrame],
-	execute: Effect.try(() => window.self !== window.top).pipe(
+	execute: Effect.try({
+		try: () => window.self !== window.top,
+		catch: (cause) => new FrameReadError({ message: "window.top is not readable", cause }),
+	}).pipe(
 		Effect.orElseSucceed(() => true),
 		Effect.map((isFramed) => Message.CompletedReadFrame({ isFramed })),
 	),
@@ -43,10 +52,17 @@ export const sectionsOf = (dashboard: unknown) =>
 	)
 
 const decodeObject = (value: unknown): Readonly<Record<string, unknown>> =>
-	Option.getOrElse(Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(value), () => ({}))
+	Option.getOrElse(
+		Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))(value),
+		() => ({}),
+	)
 
-const decodeEnvelope = Schema.decodeUnknownOption(Schema.Struct({ error: Schema.Struct({ _tag: Schema.String }) }))
-const decodeMessage = Schema.decodeUnknownOption(Schema.Struct({ error: Schema.Struct({ message: Schema.String }) }))
+const decodeEnvelope = Schema.decodeUnknownOption(
+	Schema.Struct({ error: Schema.Struct({ _tag: Schema.String }) }),
+)
+const decodeMessage = Schema.decodeUnknownOption(
+	Schema.Struct({ error: Schema.Struct({ message: Schema.String }) }),
+)
 const decodeTagged = Schema.decodeUnknownOption(Schema.Struct({ _tag: Schema.String }))
 
 /** The error's tag: the v2 envelope's (`{ error: { _tag } }`), or the error's own. */
@@ -104,30 +120,39 @@ export const WaitFlushFrame = Command.define("WaitShareFlushFrame", {
 	}),
 })
 
-const BatchRequest = Schema.Struct({ widgetId: Schema.String, key: Schema.String, maxDataPoints: Schema.optional(Schema.Number), transform: Schema.optional(Schema.Unknown) })
+const BatchRequest = Schema.Struct({
+	widgetId: Schema.String,
+	key: Schema.String,
+	maxDataPoints: Schema.optional(Schema.Number),
+	transform: Schema.optional(Schema.Unknown),
+})
 
 /** One `/v2/share/widget-data` call for up to four widgets. */
 export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 	args: {
 		token: Schema.String,
+		batchId: Schema.Number,
 		startTime: Schema.String,
 		endTime: Schema.String,
 		variableValues: Schema.Record(Schema.String, Schema.String),
 		requests: Schema.Array(BatchRequest),
 	},
 	messages: [Message.CompletedFetchBatch],
-	execute: ({ token, startTime, endTime, variableValues, requests }) => {
-		const keys = Object.fromEntries(requests.map((request) => [request.widgetId, request.key]))
+	execute: ({ token, batchId, startTime, endTime, variableValues, requests }) => {
+		const keys = Rec.fromEntries(Arr.map(requests, (request) => [request.widgetId, request.key]))
 		const failAll = (message: string) =>
-			Object.fromEntries(
-				requests.map((request): [string, WidgetState] => [request.widgetId, { _tag: "Error", message, kind: null }]),
+			Rec.fromEntries(
+				Arr.map(requests, (request): [string, WidgetState] => [
+					request.widgetId,
+					{ _tag: "Error", message, kind: null },
+				]),
 			)
 		return Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.sharePublic.widgetData({
 				payload: {
 					token,
-					requests: requests.map((request) =>
+					requests: Arr.map(requests, (request) =>
 						request.maxDataPoints === undefined
 							? { widgetId: request.widgetId }
 							: { widgetId: request.widgetId, maxDataPoints: request.maxDataPoints },
@@ -136,26 +161,37 @@ export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 					variableValues,
 				},
 			})
-			const transforms = new Map(requests.map((request) => [request.widgetId, request.transform]))
-			const states = Object.fromEntries(
-				response.results.map((result): [string, WidgetState] => [
+			const transforms = new Map(Arr.map(requests, (request) => [request.widgetId, request.transform]))
+			const states = Rec.fromEntries(
+				Arr.map(response.results, (result): [string, WidgetState] => [
 					result.widgetId,
 					result.ok === true
 						? {
 								_tag: "Ready",
-								data: toReadyData(result.data, dataSourceTransform({ transform: transforms.get(result.widgetId) })),
+								data: toReadyData(
+									result.data,
+									dataSourceTransform({ transform: transforms.get(result.widgetId) }),
+								),
 							}
-						: { _tag: "Error", message: result.message, kind: result.reason === "unsupported" ? "range" : "runtime" },
+						: {
+								_tag: "Error",
+								message: result.message,
+								kind: result.reason === "unsupported" ? "range" : "runtime",
+							},
 				]),
 			)
-			return Message.CompletedFetchBatch({ keys, states, variables: response.variables })
+			return Message.CompletedFetchBatch({ batchId, keys, states, variables: response.variables })
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(
 					Message.CompletedFetchBatch({
+						batchId,
 						keys,
 						states: failAll(
-							Option.getOrElse(Option.map(decodeMessage(error), (envelope) => envelope.error.message), () => DATA_UNAVAILABLE_MESSAGE),
+							Option.getOrElse(
+								Option.map(decodeMessage(error), (envelope) => envelope.error.message),
+								() => DATA_UNAVAILABLE_MESSAGE,
+							),
 						),
 					}),
 				),
@@ -181,11 +217,17 @@ export const MeasureGrid = Mount.defineStream("MeasureShareGrid", {
 		Stream.callback<typeof Message.MeasuredGrid.Type>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
-					Queue.offerUnsafe(queue, Message.MeasuredGrid({ width: Math.round(element.getBoundingClientRect().width) }))
+					Queue.offerUnsafe(
+						queue,
+						Message.MeasuredGrid({ width: Math.round(element.getBoundingClientRect().width) }),
+					)
 					const observer = new ResizeObserver((entries) => {
 						const entry = entries.at(-1)
 						if (entry !== undefined)
-							Queue.offerUnsafe(queue, Message.MeasuredGrid({ width: Math.round(entry.contentRect.width) }))
+							Queue.offerUnsafe(
+								queue,
+								Message.MeasuredGrid({ width: Math.round(entry.contentRect.width) }),
+							)
 					})
 					observer.observe(element)
 					return observer
@@ -196,7 +238,9 @@ export const MeasureGrid = Mount.defineStream("MeasureShareGrid", {
 })
 
 const quantize = (widthPx: number): Option.Option<number> =>
-	!Number.isFinite(widthPx) || widthPx <= 0 ? Option.none() : Option.some(Math.max(100, Math.floor(widthPx / 100) * 100))
+	!Number.isFinite(widthPx) || widthPx <= 0
+		? Option.none()
+		: Option.some(Math.max(100, Math.floor(widthPx / 100) * 100))
 
 /** `useMeasuredWidgetMaxDataPoints`: the tile's width on a 100 px grid, as data points for its panel. */
 export const WatchTile = Mount.defineStream("WatchShareTile", {
@@ -217,7 +261,9 @@ export const WatchTile = Mount.defineStream("WatchShareTile", {
 							),
 						)
 					report(element.getBoundingClientRect().width)
-					const observer = new ResizeObserver((entries) => entries.forEach((entry) => report(entry.contentRect.width)))
+					const observer = new ResizeObserver((entries) =>
+						Arr.forEach(entries, (entry) => report(entry.contentRect.width)),
+					)
 					observer.observe(element)
 					return observer
 				}),
@@ -225,7 +271,6 @@ export const WatchTile = Mount.defineStream("WatchShareTile", {
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
 })
-
 
 type Appearance = Readonly<{ theme: string | null; background: string; colorScheme: string }>
 

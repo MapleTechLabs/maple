@@ -1,3 +1,3 @@
-export const confirmDialogMediaDestructiveStyles = "bg-destructive/10"
+export const confirmDialogMediaDestructiveStyles = "bg-destructive-a2"
 
 export const confirmDialogIconDestructiveStyles = "text-destructive"

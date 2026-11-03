@@ -4,24 +4,35 @@ import {
 	GCP_READER_SCOPE_ROLES,
 	type GcpSetupPlan,
 } from "@maple/domain/gcp"
+import { Array as Arr, String as Str } from "effect"
 
 /** An HCL string literal: `${` and `%{` would start a template, a newline would end the line. */
 export const hcl = (value: string): string =>
-	`"${value
-		.replaceAll("\\", "\\\\")
-		.replaceAll('"', '\\"')
-		.replaceAll("\n", "\\n")
-		// A function: in a replacement string, `$$` is itself an escape for one `$`.
-		.replaceAll("${", () => "$${")
-		.replaceAll("%{", "%%{")}"`
+	`"${Str.replaceAll(
+		"%{",
+		"%%{",
+	)(
+		Str.replaceAll(
+			"\n",
+			"\\n",
+		)(Str.replaceAll('"', '\\"')(Str.replaceAll("\\", "\\\\")(value)))
+			// A function: in a replacement string, `$$` is itself an escape for one `$`.
+			.replaceAll("${", () => "$${"),
+	)}"`
 
 const hclList = (values: ReadonlyArray<string>) =>
-	`[\n${values.map((value) => `    ${hcl(value)},\n`).join("")}  ]`
+	`[\n${Arr.join(
+		Arr.map(values, (value) => `    ${hcl(value)},\n`),
+		"",
+	)}  ]`
 
 // `terraform fmt` aligns the equals signs of consecutive attributes.
 const attributes = (pairs: ReadonlyArray<readonly [string, string]>) => {
-	const width = Math.max(...pairs.map(([name]) => name.length))
-	return pairs.map(([name, value]) => `  ${name.padEnd(width)} = ${value}\n`).join("")
+	const width = Math.max(...Arr.map(pairs, ([name]) => name.length))
+	return Arr.join(
+		Arr.map(pairs, ([name, value]) => `  ${Str.padEnd(width)(name)} = ${value}\n`),
+		"",
+	)
 }
 
 // Per scope: the sink resource, the IAM member resource, their scope argument and value, and the
@@ -53,7 +64,10 @@ const SCOPES = {
 // `commented`: for a resource only some earlier setups created, to take over by uncommenting.
 const importBlock = (to: string, id: string, commented = false) => {
 	const block = [`import {`, `  to = ${to}`, `  id = ${hcl(id)}`, `}`]
-	return `\n${block.map((line) => (commented ? `# ${line}` : line)).join("\n")}\n`
+	return `\n${Arr.join(
+		Arr.map(block, (line) => (commented ? `# ${line}` : line)),
+		"\n",
+	)}\n`
 }
 
 /** What Maple has recorded as set up: Terraform imports it rather than failing on a duplicate. */

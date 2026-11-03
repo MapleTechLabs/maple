@@ -1,11 +1,11 @@
 import { OrgId } from "@maple/domain"
 import { buildToolAnalyticsFixture, buildToolCells, toolFixtureFacets } from "../agent-tools-fixture"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { fromString } from "foldkit/url"
-import { ResolveThemeColors } from "../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import type { PageContext, PageOutMessage } from "../../page/contract"
 import { Selection } from "../../page/agent-sessions/tools-kit/reads"
 import { TOOL_CHART_TOKENS } from "../../page/agent-sessions/tools-kit/series-chart"
@@ -26,10 +26,12 @@ import { contextOf as detailContextOf, settle as settleDetail } from "../agent-t
 import { DETAIL_TOOLS } from "../agent-tools-detail-fixture"
 import type { Resources } from "../../platform/resources"
 import { urlToAppRoute } from "../../route"
-import * as Toast from "../../ui/toast"
-import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
+import * as Toast from "@maple/views/ui/toast"
+import { ViewerFlags, viewerFlags } from "@maple/views/ui/logs/viewer"
 import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // `/lab/agent-tools`: the tools page over a synthetic
 // week. The page's warehouse reads are answered from the fixture; its URL is the lab's state. The
@@ -175,11 +177,12 @@ type PageStep = Readonly<{
 /** Runs a page step to rest: reads are answered in place, navigations re-enter, the rest is lifted. */
 const settle = (model: Model, step: PageStep): Return => {
 	const withPage: Model = { ...model, page: step.model }
-	const resolved = (step.commands ?? []).map(
+	const resolved = Arr.map(
+		step.commands ?? [],
 		(command) => [command, answer(command, step.model.nowMs)] as const,
 	)
-	const answers = resolved.flatMap(([, maybe]) => Option.toArray(maybe))
-	const rest = resolved.flatMap(([command, maybe]) => (Option.isNone(maybe) ? [command] : []))
+	const answers = Arr.flatMap(resolved, ([, maybe]) => Option.toArray(maybe))
+	const rest = Arr.flatMap(resolved, ([command, maybe]) => (Option.isNone(maybe) ? [command] : []))
 	const navigated = Option.match(followNavigation(withPage, step.outMessage), {
 		onNone: () => ({ model: withPage, commands: [] }),
 		onSome: (next) => settle(withPage, next),
@@ -207,9 +210,16 @@ const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMe
 /** The detail page entered on `tool`, its reads answered; the lab's Commands carry the rest. */
 const enterDetail = (tool: (typeof DETAIL_TOOLS)[number], timeZone: string, previous?: ToolModel) => {
 	// The toolbar filters carry over; the theme read stays, since its Mount does not run again.
-	const search = { service: previous?.search.service, env: previous?.search.env, model: previous?.search.model }
+	const search = {
+		service: previous?.search.service,
+		env: previous?.search.env,
+		model: previous?.search.model,
+	}
 	const entered = toolInit({ toolName: tool, search }, detailContextOf(timeZone))
-	const carried = previous === undefined ? entered : { ...entered, model: { ...entered.model, themeColors: previous.themeColors } }
+	const carried =
+		previous === undefined
+			? entered
+			: { ...entered, model: { ...entered.model, themeColors: previous.themeColors } }
 	const settled = settleDetail(carried, timeZone)
 	return {
 		detail: settled.model,
@@ -241,16 +251,24 @@ const update = (model: Model, message: Message): Return =>
 		GotPageMessage: ({ message: inner }) =>
 			settle(model, toolsUpdate(model.page, inner, contextOf(model.timeZone))),
 		GotDetailMessage: ({ message: inner }) => {
-			const settled = settleDetail(toolUpdate(model.detail, inner, detailContextOf(model.timeZone)), model.timeZone)
+			const settled = settleDetail(
+				toolUpdate(model.detail, inner, detailContextOf(model.timeZone)),
+				model.timeZone,
+			)
 			return {
 				model: { ...model, detail: settled.model },
-				commands: Command.mapMessages(settled.commands, (message) => Message.GotDetailMessage({ message })),
+				commands: Command.mapMessages(settled.commands, (message) =>
+					Message.GotDetailMessage({ message }),
+				),
 			}
 		},
 		// A different tool is a fresh page: its group, session and variant are not carried over.
 		ClickedDetailTool: ({ tool }) => {
 			const entered = enterDetail(tool, model.timeZone, model.detail)
-			return { model: { ...model, detail: entered.detail, detailTool: tool }, commands: entered.commands }
+			return {
+				model: { ...model, detail: entered.detail, detailTool: tool },
+				commands: entered.commands,
+			}
 		},
 		ToggledErrorsLoading: () => ({ model: { ...model, isErrorsLoading: !model.isErrorsLoading } }),
 		ClickedView: ({ view }) => ({ model: { ...model, view } }),
@@ -260,8 +278,8 @@ const update = (model: Model, message: Message): Return =>
 
 const toggleClass = (isActive: boolean): string =>
 	isActive
-		? "rounded border border-border bg-accent px-2 py-1 text-xs"
-		: "rounded border border-border px-2 py-1 text-xs text-muted-foreground"
+		? "rounded-sm border border-border bg-accent px-2 py-1 text-xs"
+		: "rounded-sm border border-border px-2 py-1 text-xs text-muted-foreground"
 
 const labButton = (h: HtmlBuilder<Message>, label: string, isActive: boolean, onClick: Message): Html =>
 	h.button([h.Class(toggleClass(isActive)), h.Type("button"), h.OnClick(onClick)], [label])
@@ -276,27 +294,33 @@ const toolsPage = Submodel.defineView<ToolsModel, ToolsMessage, Readonly<{ timeZ
 
 /** The search as the lab prints it: the keys set, in the page's order. */
 const searchJson = (model: Model): string =>
-	JSON.stringify(
-		Object.fromEntries(
-			Object.entries(model.view === "detail" ? model.detail.search : model.page.search).filter(
+	encodeJson(
+		Rec.fromEntries(
+			Arr.filter(
+				Object.entries(model.view === "detail" ? model.detail.search : model.page.search),
 				([key, value]) => value !== undefined && key !== "timePreset",
 			),
 		),
 	)
 
 /** The detail page without the route's time controls, the Errors read held while "errors loading". */
-const detailPage = Submodel.defineView<ToolModel, ToolMessage, Readonly<{ timeZone: string; isErrorsLoading: boolean }>>(
-	(detail, inputs, h) =>
-		h.div(
-			[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: GRID_TOKENS }))],
-			[
-				toolDetailBody(
-					h,
-					inputs.isErrorsLoading ? { ...detail, errors: { ...detail.errors, data: AsyncData.Loading() } } : detail,
-					{ timeZone: inputs.timeZone, isRoute: false },
-				),
-			],
-		),
+const detailPage = Submodel.defineView<
+	ToolModel,
+	ToolMessage,
+	Readonly<{ timeZone: string; isErrorsLoading: boolean }>
+>((detail, inputs, h) =>
+	h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: GRID_TOKENS }))],
+		[
+			toolDetailBody(
+				h,
+				inputs.isErrorsLoading
+					? { ...detail, errors: { ...detail.errors, data: AsyncData.Loading() } }
+					: detail,
+				{ timeZone: inputs.timeZone, isRoute: false },
+			),
+		],
+	),
 )
 
 const page = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -306,11 +330,11 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[
-					...VIEWS.map((view) =>
+					...Arr.map(VIEWS, (view) =>
 						labButton(h, view, model.view === view, Message.ClickedView({ view })),
 					),
 					h.span([h.Class("w-4")], []),
-					...WIDTHS.map((option) =>
+					...Arr.map(WIDTHS, (option) =>
 						labButton(
 							h,
 							option.label,
@@ -321,10 +345,20 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 					...(model.view === "detail"
 						? [
 								h.span([h.Class("w-4")], []),
-								...DETAIL_TOOLS.map((tool) =>
-									labButton(h, tool, model.detailTool === tool, Message.ClickedDetailTool({ tool })),
+								...Arr.map(DETAIL_TOOLS, (tool) =>
+									labButton(
+										h,
+										tool,
+										model.detailTool === tool,
+										Message.ClickedDetailTool({ tool }),
+									),
 								),
-								labButton(h, "errors loading", model.isErrorsLoading, Message.ToggledErrorsLoading()),
+								labButton(
+									h,
+									"errors loading",
+									model.isErrorsLoading,
+									Message.ToggledErrorsLoading(),
+								),
 							]
 						: []),
 					h.span([h.Class("ml-2 font-mono text-2xs text-muted-foreground")], [searchJson(model)]),
@@ -341,15 +375,20 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 								slotId: "lab-agent-tools-detail",
 								model: model.detail,
 								view: detailPage,
-								viewInputs: { timeZone: model.timeZone, isErrorsLoading: model.isErrorsLoading },
-								toParentMessage: (message: ToolMessage) => Message.GotDetailMessage({ message }),
+								viewInputs: {
+									timeZone: model.timeZone,
+									isErrorsLoading: model.isErrorsLoading,
+								},
+								toParentMessage: (message: ToolMessage) =>
+									Message.GotDetailMessage({ message }),
 							})
 						: h.submodel({
 								slotId: "lab-agent-tools-page",
 								model: model.page,
 								view: toolsPage,
 								viewInputs: { timeZone: model.timeZone },
-								toParentMessage: (message: ToolsMessage) => Message.GotPageMessage({ message }),
+								toParentMessage: (message: ToolsMessage) =>
+									Message.GotPageMessage({ message }),
 							}),
 				],
 			),

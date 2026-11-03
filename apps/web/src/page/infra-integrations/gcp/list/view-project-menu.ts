@@ -1,13 +1,16 @@
 import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
-import { icon } from "../../../../ui/icon"
-import type * as Menu from "../../../../ui/menu"
-import * as MenuView from "../../../../ui/menu-view"
+import { pressable } from "@maple/views/ui/pressable"
+import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
+import type * as Menu from "@maple/views/ui/menu"
+import * as MenuView from "@maple/views/ui/menu-view"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { Message } from "./model"
 import type { H } from "./view-rows"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpProjectMenu`: with two or more projects the title's chip picks one of them, or all.
 
@@ -25,32 +28,22 @@ const projectItem = (
 	counts: string,
 	health: GcpProjectHealth | undefined,
 ): ReadonlyArray<Html> => [
-	h.span(
-		[h.Class("flex items-start gap-2")],
-		[
-			h.span(
-				[h.Class("mt-1.5 flex w-1.5 shrink-0")],
-				health === undefined
-					? []
-					: [
-							h.span([
-								h.AriaHidden(true),
-								h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_FILL[health.tone])),
-							]),
-						],
-			),
-			h.span(
-				[h.Class("flex flex-col")],
-				[
-					h.span([h.Class("font-mono")], [project]),
-					h.span(
-						[h.Class(cn("text-3xs", healthText(health)))],
-						health === undefined ? [counts] : [counts, ` · ${health.message}`],
-					),
-				],
-			),
-		],
-	),
+	hstack(h, { gap: "2", align: "start", as: "span" }, [
+		h.span(
+			[h.Class("mt-1.5 flex w-1.5 shrink-0")],
+			health === undefined ? [] : [statusDot(h, { tone: health.tone })],
+		),
+		h.span(
+			[h.Class("flex flex-col")],
+			[
+				h.span([h.Class("font-mono")], [project]),
+				h.span(
+					[h.Class(cn("text-3xs", healthText(health)))],
+					health === undefined ? [counts] : [counts, ` · ${health.message}`],
+				),
+			],
+		),
+	]),
 ]
 
 export const projectMenu = (
@@ -83,7 +76,7 @@ export const projectMenu = (
 				{ _tag: "Separator" },
 				{
 					_tag: "RadioGroup",
-					items: options.projects.map((project) => ({
+					items: Arr.map(options.projects, (project) => ({
 						value: project,
 						label: project,
 						isChecked: value === project,
@@ -102,31 +95,21 @@ export const projectMenu = (
 				h.span(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.Tabindex(0),
-								h.Class(
-									cn(
-										badgeVariants({
-											className:
-												"cursor-pointer gap-1 font-normal text-muted-foreground transition-colors hover:text-foreground",
-											mono: true,
-											size: "xs",
-											variant: "meta",
-										}),
-									),
-								),
-								...trigger,
-							],
-							[
-								value === undefined ? "projects" : "project",
-								h.span(
-									[h.Class("text-foreground")],
-									[value ?? `All ${options.projects.length}`],
-								),
-								icon(h, "ChevronDownIcon", { className: "size-3 opacity-60" }),
-							],
+						pressable(
+							h,
+							{ className: heroFieldChipClass(true), attributes: [h.Tabindex(0), ...trigger] },
+							// "All 3 projects", or just the picked project's name.
+							heroFieldChipParts(
+								h,
+								value === undefined
+									? {
+											label: "projects",
+											value: `All ${options.projects.length}`,
+											isValueFirst: true,
+											isPicker: true,
+										}
+									: { label: "", value, isPicker: true },
+							),
 						),
 					),
 				),

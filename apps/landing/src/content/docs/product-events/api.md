@@ -25,31 +25,31 @@ EU organizations use `https://ingest.eu.maple.dev`. The body is **NDJSON**: one 
 
 ## Fields
 
-| Field          | Type   | Notes                                                                                                                                                           |
-| -------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`         | string | **Required.** 1–128 bytes. Names starting with `$` are reserved for Maple's SDKs and dropped, except `$screen` (mobile screen view, stored as `Kind = screen`). |
-| `timestamp`    | string | RFC 3339 (`2026-08-17T10:15:30.123Z`) or `YYYY-MM-DD HH:MM:SS[.fff]` (UTC). Defaults to the time the gateway received the batch. Stored as UTC.                 |
-| `source`       | string | `server` (default) or `mobile`. `browser` is reserved for the SDKs; other values drop the row.                                                                  |
-| `visitor_id`   | string | Anonymous or device id: the browser SDK cookie value, or a persistent mobile install id. ≤ 256 bytes.                                                           |
-| `user_id`      | string | Your user id after sign-in, matching what you pass to `identify()`. ≤ 256 bytes.                                                                                |
-| `group_id`     | string | Account / workspace / org id. ≤ 256 bytes.                                                                                                                      |
-| `session_id`   | string | Optional link to a browser or mobile session. ≤ 256 bytes.                                                                                                      |
-| `service_name` | string | The emitting service (`maple-api`, `acme-ios`). ≤ 128 bytes.                                                                                                    |
-| `url`          | string | Optional. `host` (lowercase) and `page_path` (pathname only) are derived from it.                                                                               |
-| `page_path`    | string | Optional explicit path; overrides the one derived from `url`. Mobile `$screen` events put the screen name here.                                                 |
-| `attributes`   | object | Optional properties. ≤ 32 keys, key ≤ 64 bytes, value ≤ 1024 bytes; non-string values are stringified.                                                          |
+| Field          | Type   | Notes                                                                                                                                                                                                                                               |
+| -------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`         | string | **Required.** 1–128 bytes. Names starting with `$` are reserved for Maple's SDKs and dropped, except `$screen` (mobile screen view, stored as `Kind = screen`).                                                                                     |
+| `timestamp`    | string | RFC 3339 (`2026-08-17T10:15:30.123Z`) or `YYYY-MM-DD HH:MM:SS[.fff]` (UTC). Defaults to the time the gateway received the batch. Stored as UTC. Must be within the last 30 days and no more than 1 day ahead; rows outside that window are dropped. |
+| `source`       | string | `server` (default) or `mobile`. `browser` is reserved for the SDKs; other values drop the row.                                                                                                                                                      |
+| `visitor_id`   | string | Anonymous or device id: the browser SDK cookie value, or a persistent mobile install id. ≤ 256 bytes.                                                                                                                                               |
+| `user_id`      | string | Your user id after sign-in, matching what you pass to `identify()`. ≤ 256 bytes.                                                                                                                                                                    |
+| `group_id`     | string | Account / workspace / org id. ≤ 256 bytes.                                                                                                                                                                                                          |
+| `session_id`   | string | Optional link to a browser or mobile session. ≤ 256 bytes.                                                                                                                                                                                          |
+| `service_name` | string | The emitting service (`maple-api`, `acme-ios`). ≤ 128 bytes.                                                                                                                                                                                        |
+| `url`          | string | Optional. `host` (lowercase) and `page_path` (pathname only) are derived from it. ≤ 2048 bytes.                                                                                                                                                     |
+| `page_path`    | string | Optional explicit path; overrides the one derived from `url`. Mobile `$screen` events put the screen name here. ≤ 1024 bytes.                                                                                                                       |
+| `attributes`   | object | Optional properties. ≤ 32 keys, key ≤ 64 bytes, value ≤ 1024 bytes; non-string values are stringified.                                                                                                                                              |
 
-Over-long strings are truncated at the caps above. Unknown fields are discarded.
+Over-long fields are truncated at the caps above, except `name`: a name over 128 bytes drops the row. Unknown fields are discarded.
 
 ## Responses
 
-| Status | Meaning                                                                                                                                |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `200`  | `{"accepted": <n>}`: rows durably queued. Malformed rows (bad `name`, `source`, `timestamp`) are dropped individually and not counted. |
-| `400`  | A line is not valid JSON, or not a JSON object. The whole batch is rejected.                                                           |
-| `401`  | Missing or invalid ingest key.                                                                                                         |
-| `402`  | The organization is out of quota for product events (`product_events` is metered per event, separately from browser sessions).         |
-| `503`  | Storage temporarily unavailable. Retry with backoff.                                                                                   |
+| Status | Meaning                                                                                                                                                                              |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `200`  | `{"accepted": <n>}`: rows durably queued. Malformed rows (bad `name`, `source`, `timestamp`, or a `timestamp` outside the accepted window) are dropped individually and not counted. |
+| `400`  | A line is not valid JSON, or not a JSON object. The whole batch is rejected.                                                                                                         |
+| `401`  | Missing or invalid ingest key.                                                                                                                                                       |
+| `429`  | More than 1,000 requests in flight for this organization. Retry with backoff.                                                                                                        |
+| `503`  | Storage temporarily unavailable. Retry with backoff.                                                                                                                                 |
 
 Product events are metered as their own unit, one per accepted row. Browser `track()` calls count in the same unit.
 
@@ -64,4 +64,6 @@ curl -X POST https://ingest.maple.dev/v1/events \
 
 ## Verify
 
-Send the example above. A `200` with `{"accepted": 1}` means the row was queued. Within a minute, the event is available in dashboard charts that use **Product events** as their data source. `{"accepted": 0}` means the row was dropped: check `name`, `source` and `timestamp` against the table above.
+1. Send the example above. A `200` with `{"accepted": 1}` means the row was queued.
+2. Within a minute, add a dashboard chart with **Product events** as its data source. The event name is available to count and filter.
+3. If the response is `{"accepted": 0}`, the row was dropped. Check `name`, `source` and `timestamp` against the table above, including the 30-day window on `timestamp`.

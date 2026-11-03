@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { eyebrow } from "../../ui/eyebrow"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 
 // `SectionHeading`: the `title` row and the
 // `eyebrow` overline.

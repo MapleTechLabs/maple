@@ -2,7 +2,8 @@ import type { Resources } from "../../platform/resources"
 import { boundsForRange, type TimeBounds } from "../../lib/time"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
-import { keyOf, request } from "../../data/slot"
+import { requestKeepingFailure } from "@maple/views/data/keyed"
+import { keyOf } from "../../data/local-query"
 import { type PageContext, rangeOf } from "../contract"
 import { queryOf } from "../../route"
 import { FetchFacets, FetchSessions } from "./command"
@@ -33,9 +34,9 @@ export const load = (
 				onNone: () => 1,
 				onSome: (data) => (force && model.sessions.key === sessionsKey ? Math.max(1, data.pages.length) : 1),
 			})
-			const sessions = request(model.sessions, sessionsKey, force)
+			const sessions = requestKeepingFailure(model.sessions, sessionsKey, force ? "Refresh" : "Load")
 			const facetsKey = keyFor("session-facets", context, bounds)
-			const facets = request(model.facets, facetsKey, force)
+			const facets = requestKeepingFailure(model.facets, facetsKey, force ? "Refresh" : "Load")
 			return {
 				model: {
 					...model,

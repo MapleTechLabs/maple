@@ -1,33 +1,54 @@
-import type * as CopyButton from "@maple/web/ui/copy-button"
-import { filterSection } from "@maple/web/ui/filters/filter-section"
-import type * as FilterSections from "@maple/web/ui/filters/filter-sections"
-import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
-import { Option } from "effect"
+import type * as CopyButton from "@maple/views/ui/copy-button"
+import { errorState } from "@maple/views/ui/error-state"
+import { filterSection } from "@maple/views/ui/filters/filter-section"
+import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import { queryOf } from "../../route"
 import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
-import { errorState } from "../kit/view-states"
-import { activeFilterCount, facetsOf, filtersOf, type ServicesFilters, unfilteredSlot, visibleEntries } from "./derive"
+import {
+	refreshButton,
+	timeRangeSelect,
+	toolbar,
+	toolbarSearch,
+	toolbarStat,
+	toolbarStats,
+} from "../kit/toolbar"
+import {
+	activeFilterCount,
+	facetsOf,
+	filtersOf,
+	type ServicesFilters,
+	unfilteredSlot,
+	visibleEntries,
+} from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { servicesSkeleton, servicesTable } from "./view-table"
+import { filterRailFrame } from "../kit/filter-rail"
 
 // The services list page.
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 const toCopy = (id: string, message: CopyButton.Message) => Message.GotCopyMessage({ id, message })
 
-const isFetching = (slot: Model["catalog"]) => AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
+const isFetching = (slot: Model["catalog"]) =>
+	AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
 
 const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ServicesFilters): Html => {
 	const { envFacets, nsFacets } = facetsOf(model, filters)
-	const facet = (title: string, param: "env" | "ns", options: typeof envFacets, selected: string | undefined) =>
+	const facet = (
+		title: string,
+		param: "env" | "ns",
+		options: typeof envFacets,
+		selected: string | undefined,
+	) =>
 		filterSection(h, {
 			title,
 			options,
@@ -37,15 +58,22 @@ const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ServicesFilters
 			toSectionsMessage: toSections,
 			onToggle: (name) => Message.ToggledFacetOption({ param, name }),
 		})
-	return filterSidebarFrame(
+	return filterRailFrame(
 		h,
-		{ className: "w-56 shrink-0 px-4", isWaiting: isFetching(model.catalog) || isFetching(unfilteredSlot(model, filters)) },
+		{ isWaiting: isFetching(model.catalog) || isFetching(unfilteredSlot(model, filters)) },
 		[
-			filterSidebarHeader(h, activeFilterCount(filters) > 0 ? { onClear: Message.ClickedClearFacets() } : {}),
+			filterSidebarHeader(
+				h,
+				activeFilterCount(filters) > 0 ? { onClear: Message.ClickedClearFacets() } : {},
+			),
 			...filterSidebarBody(
 				h,
 				"services-filters",
-				[facet("Environment", "env", envFacets, filters.env), facet("Namespace", "ns", nsFacets, filters.ns)].filter(
+				Arr.filter(
+					[
+						facet("Environment", "env", envFacets, filters.env),
+						facet("Namespace", "ns", nsFacets, filters.ns),
+					],
 					(section) => section !== null,
 				),
 			),
@@ -53,7 +81,13 @@ const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ServicesFilters
 	)
 }
 
-const servicesToolbar = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, count: number, errors: number) =>
+const servicesToolbar = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	inputs: PageViewInputs,
+	count: number,
+	errors: number,
+) =>
 	toolbar(h, [
 		toolbarSearch(h, {
 			id: "services-search",
@@ -85,12 +119,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const filters = filtersOf(query)
 	const count = activeFilterCount(filters)
 	const entries = visibleEntries(model, filters)
-	const totalErrorCount = entries.reduce((sum, entry) => sum + entry.errorCount, 0)
+	const totalErrorCount = Arr.reduce(entries, 0, (sum, entry) => sum + entry.errorCount)
 	const content = (): Html => {
-		if (isPending(model.catalog)) return servicesSkeleton(h)
+		if (isAwaitingFirstData(model.catalog)) return servicesSkeleton(h)
 		const failure = failureWithoutData(model.catalog)
 		if (Option.isSome(failure))
-			return errorState(h, { label: "services", failure: failure.value, onRetry: Message.ClickedRefresh() })
+			return errorState(h, {
+				failure: failure.value,
+				title: "Couldn’t load services",
+				onRetry: Message.ClickedRefresh(),
+			})
 		if (entries.length === 0)
 			return signalEmptyState(h, {
 				signal: "traces",
@@ -99,11 +137,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onClearFilters: Message.ClickedClearFilters(),
 				range: rangeOf(context),
 				onWidenRange: Message.ClickedWidenRange(),
-				maybePresence: inputs.presenceOf("traces"),
+				presence: inputs.presenceOf("traces"),
 				nowMs: inputs.presenceNowMs,
-				guide: { id: "services-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+				guide: {
+					id: "services-empty",
+					endpoint: context.env.otlpEndpoint,
+					copies: model.copies,
+					toCopyMessage: toCopy,
+				},
 			})
-		return servicesTable(h, entries, query, model.catalog.isPlaceholder)
+		return servicesTable(h, entries, query, model.catalog.retained === true)
 	}
 	return pageShell(
 		h,

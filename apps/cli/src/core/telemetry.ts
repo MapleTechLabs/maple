@@ -1,8 +1,9 @@
 import { getAutoPlatformAttributes } from "@maple-dev/effect-sdk/server"
-import { Config, Effect, Layer, Option, Redacted } from "effect"
+import { Config, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { FetchHttpClient, HttpBody } from "effect/http"
 import { OtlpMetrics, OtlpResource, OtlpSerialization, OtlpTracer } from "effect/observability"
-import { MAPLE_VERSION } from "../version"
+import { MAPLE_VERSION } from "@maple/local-server/version"
 
 // Publishable ("pk") ingest token, baked into the distributed binary so CLI
 // telemetry works on a fresh install with zero config. The `maple_pk_` class is
@@ -47,9 +48,9 @@ const resolveEndpoint = Config.all({
 		Option.match(
 			Option.orElse(maple, () => otel),
 			{
-				onSome: (explicit) => explicit.replace(/\/+$/, ""),
+				onSome: (explicit) => Str.replace(/\/+$/, "")(explicit),
 				onNone: () =>
-					region.trim().toLowerCase() === "eu"
+					Str.toLowerCase(Str.trim(region)) === "eu"
 						? "https://ingest.eu.maple.dev"
 						: "https://ingest.maple.dev",
 			},
@@ -99,38 +100,41 @@ export const sanitizeArgv = (argv: string): string => {
 	const kept: string[] = []
 	let commandWords = 0
 	let leading = true
-	for (const token of argv.split(/\s+/)) {
+	for (const token of Str.split(/\s+/)(argv)) {
 		if (token === "") continue
-		if (token.startsWith("-")) {
-			kept.push(token.split("=")[0] ?? token)
+		if (Str.startsWith("-")(token)) {
+			kept.push(Str.split("=")(token)[0] ?? token)
 			leading = false
 		} else if (leading && commandWords < 2 && /^[a-z][a-z-]*$/.test(token)) {
 			kept.push(token)
 			commandWords++
 		} else leading = false
 	}
-	return kept.join(" ")
+	return Arr.join(kept, " ")
 }
 
 /** Stack frames without the message lines or directory prefixes. */
 export const sanitizeStack = (stack: string): string =>
-	stack
-		.split("\n")
-		.filter((line) => /^\s+at\s/.test(line))
-		.map((line) => line.replace(/(?:[A-Za-z]:)?[\\/][^\s():]*[\\/]([^\\/\s():]+)/g, "$1"))
-		.join("\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(Str.split("\n")(stack), (line) => /^\s+at\s/.test(line)),
+			(line) => Str.replace(/(?:[A-Za-z]:)?[\\/][^\s():]*[\\/]([^\\/\s():]+)/g, "$1")(line),
+		),
+		"\n",
+	)
 
 export const scrubAttributes = (
 	attributes: ReadonlyArray<OtlpResource.KeyValue>,
 ): Array<OtlpResource.KeyValue> =>
-	attributes.flatMap((attribute): Array<OtlpResource.KeyValue> => {
+	Arr.flatMap(attributes, (attribute): Array<OtlpResource.KeyValue> => {
 		const { key } = attribute
 		if (DROPPED_KEYS.has(key) || DROPPED_KEY_PATTERN.test(key)) return []
 		const value = attributeString(attribute)
 		if (key === "cli.argv" && value !== undefined) return [withString(key, sanitizeArgv(value))]
 		if (key === "exception.stacktrace" && value !== undefined)
 			return [withString(key, sanitizeStack(value))]
-		if (key === "url.full" && value !== undefined) return [withString(key, value.replace(/[?#].*$/, ""))]
+		if (key === "url.full" && value !== undefined)
+			return [withString(key, Str.replace(/[?#].*$/, "")(value))]
 		return [attribute]
 	})
 
@@ -144,18 +148,18 @@ const scrubEvent = (event: SpanEvent): SpanEvent => {
 export const scrubSpan = (span: OtlpSpan): OtlpSpan => ({
 	...span,
 	attributes: scrubAttributes(span.attributes),
-	events: span.events.map(scrubEvent),
-	links: span.links.map((link) => ({ ...link, attributes: scrubAttributes(link.attributes) })),
+	events: Arr.map(span.events, scrubEvent),
+	links: Arr.map(span.links, (link) => ({ ...link, attributes: scrubAttributes(link.attributes) })),
 	// The status message is the first error's message; the type is on the event.
 	status: { code: span.status.code },
 })
 
 export const scrubTraceData = (data: TraceData): TraceData => ({
-	resourceSpans: data.resourceSpans.map((resourceSpan) => ({
+	resourceSpans: Arr.map(data.resourceSpans, (resourceSpan) => ({
 		...resourceSpan,
-		scopeSpans: resourceSpan.scopeSpans.map((scopeSpan) => ({
+		scopeSpans: Arr.map(resourceSpan.scopeSpans, (scopeSpan) => ({
 			...scopeSpan,
-			spans: scopeSpan.spans.map(scrubSpan),
+			spans: Arr.map(scopeSpan.spans, scrubSpan),
 		})),
 	})),
 })
@@ -188,13 +192,14 @@ const makeTelemetryLayer = Effect.gen(function* () {
 	const endpoint = yield* resolveEndpoint
 	const environment = yield* resolveEnvironment
 	const key = yield* ingestKey
+	const instanceId = yield* SecureRandom.make(SecureRandom.randomBytesUnsafe).uuidV4()
 	const resource = {
 		serviceName: "maple-cli",
 		serviceVersion: MAPLE_VERSION,
 		attributes: {
 			...getAutoPlatformAttributes(),
 			"maple.sdk.type": "server",
-			"service.instance.id": crypto.randomUUID(),
+			"service.instance.id": instanceId,
 			"service.namespace": "core",
 			"deployment.environment": environment,
 			"deployment.environment.name": environment,
@@ -203,8 +208,20 @@ const makeTelemetryLayer = Effect.gen(function* () {
 	}
 	const headers = { Authorization: `Bearer ${Redacted.value(key)}` }
 	return Layer.mergeAll(
-		OtlpTracer.layer({ url: `${endpoint}/v1/traces`, resource, headers, shutdownTimeout: "3 seconds" }),
-		OtlpMetrics.layer({ url: `${endpoint}/v1/metrics`, resource, headers, shutdownTimeout: "3 seconds" }),
+		OtlpTracer.layer({
+			url: `${endpoint}/v1/traces`,
+			resource,
+			headers,
+			compression: "gzip",
+			shutdownTimeout: "3 seconds",
+		}),
+		OtlpMetrics.layer({
+			url: `${endpoint}/v1/metrics`,
+			resource,
+			headers,
+			compression: "gzip",
+			shutdownTimeout: "3 seconds",
+		}),
 	).pipe(Layer.provide(ScrubbedSerialization), Layer.provide(FetchHttpClient.layer))
 })
 

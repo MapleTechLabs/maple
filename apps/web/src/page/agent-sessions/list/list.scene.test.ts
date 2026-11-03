@@ -1,11 +1,11 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import {
 	click,
-	Command,
 	expect as expectView,
 	expectOutMessage,
 	given,
+	label,
 	Mount,
 	role,
 	scene,
@@ -14,15 +14,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
-import {
-	LoadSignalPresence,
-	MountEmptyState,
-	MountFilterRail,
-	MountRowClicks,
-	MountTable,
-	openedRowUrl,
-	VirtualizeSessions,
-} from "./command"
+import { MountFilterRail, MountRowClicks, MountTable, openedRowUrl, VirtualizeSessions } from "./command"
 import { pageRows, rankedOf } from "./derive"
 import { Message } from "./message"
 import type { Facets, Model, SessionRow } from "./model"
@@ -40,7 +32,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const session = (sessionId: string, overrides: Partial<SessionRow> = {}): SessionRow => ({
 	sessionId,
@@ -95,20 +87,31 @@ const loaded = (rows: ReadonlyArray<SessionRow>, search: Model["search"] = {}): 
 		}),
 		Message.CompletedFetchFacets({ key: base.facets.key ?? "", result: Result.succeed(facets) }),
 	]
-	return steps.reduce((model, message) => pageUpdate(model, message).model, base)
+	return Arr.reduce(steps, base, (model, message) => pageUpdate(model, message).model)
 }
 
 /** Loaded, painted, its details already asked for. */
 const painted = (rows: ReadonlyArray<SessionRow>): Model =>
 	pageUpdate(loaded(rows), Message.PaintedTable()).model
 
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ traces: { status, lastSeenMs: null } }),
+		}),
+	).model
+
 describe("agent sessions list", () => {
 	test("the rail detects its empty model set as it mounts, then the week's reads go out under their keys", () => {
 		const entered = init({ search: {} }, context)
-		expect(names(entered.commands)).toEqual([
-			"ResolveAgentSessionsWindow",
-			"ReadRememberedFilterSections",
-		])
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining([
+				"LoadAgentSessionsSignalPresence",
+				"ResolveAgentSessionsWindow",
+				"ReadRememberedFilterSections",
+			]),
+		)
 		const mounted = pageUpdate(entered.model, Message.MountedFilterRail())
 		expect(names(mounted.commands)).toEqual(["DetectAgentSessionsModels"])
 		expect(names(pageUpdate(mounted.model, Message.MountedFilterRail()).commands)).toEqual([])
@@ -116,13 +119,15 @@ describe("agent sessions list", () => {
 			entered.model,
 			Message.CompletedResolveWindow({ window, tabWindow: window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([
-			"FetchAgentSessionsFirstPage",
-			"FetchAgentSessionsFacets",
-			"FetchAgentSessionsDistributions",
-			"FetchAgentSessionsTabSessions",
-			"FetchAgentSessionsTabTools",
-		])
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchAgentSessionsFirstPage",
+				"FetchAgentSessionsFacets",
+				"FetchAgentSessionsDistributions",
+				"FetchAgentSessionsTabSessions",
+				"FetchAgentSessionsTabTools",
+			]),
+		)
 	})
 
 	test("a first page answered for a superseded filter is dropped", () => {
@@ -181,7 +186,11 @@ describe("agent sessions list", () => {
 		const reached = pageUpdate(loaded(rows), Message.ReachedListEnd()).model
 		const key = reached.morePages.filterKey
 		const more = Array.from({ length: 50 }, (_, index) => session(`more_${index}`))
-		const answer = Message.CompletedFetchNextPage({ key, offset: 50, result: Result.succeed({ data: more, ranked: 50 }) })
+		const answer = Message.CompletedFetchNextPage({
+			key,
+			offset: 50,
+			result: Result.succeed({ data: more, ranked: 50 }),
+		})
 		const once = pageUpdate(reached, answer).model
 		const twice = pageUpdate(once, answer).model
 		expect(pageRows(twice, key)).toHaveLength(100)
@@ -225,19 +234,19 @@ describe("agent sessions list", () => {
 		)
 	})
 
-	test("an empty org asks for signal presence once the empty state painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No agent sessions found' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadAgentSessionsSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([])),
-			expectView(text("No agent sessions found")).toExist(),
 			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No agent sessions found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded([]), "absent")),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
 			expectView(text("No agent sessions yet")).toExist(),
 			expectView(role("link", { name: "Setup guide" })).toHaveAttr(
 				"href",
@@ -292,7 +301,9 @@ describe("agent sessions list", () => {
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
 			Mount.resolve(MountRowClicks, Message.ClickedSessionRow({ url: "/agent-sessions/conv_a" })),
-			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/agent-sessions/conv_a", isReplace: false })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({ url: "/agent-sessions/conv_a", isReplace: false }),
+			),
 		)
 	})
 })

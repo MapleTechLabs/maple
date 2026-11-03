@@ -1,11 +1,11 @@
 import { ErrorIssueId, InvestigationId } from "@maple/domain/http"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { loadKnownServices } from "../../chat/kit/known-services"
-import { Clock, Effect, type Result, Schema } from "effect"
+import { loadKnownServices } from "../conversation/kit/known-services"
+import { Clock, Effect, type Result, Schema, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { clickStream, factsOf, nodeLinkClick } from "../clicks"
-import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message } from "./message"
 
@@ -28,8 +28,10 @@ export const CheckTipFocus = Command.define("CheckInvestigationTipFocus", {
 		),
 })
 
-const finish = <A, E, R, M>(effect: Effect.Effect<A, E, R>, toMessage: (result: Result.Result<A, LoadFailure>) => M) =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
+const finish = <A, E, R, M>(
+	effect: Effect.Effect<A, E, R>,
+	toMessage: (result: Result.Result<A, LoadFailure>) => M,
+) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
 export const ReadInvestigationClock = Command.define("ReadInvestigationClock", {
 	messages: [Message.ReadClock],
@@ -60,7 +62,11 @@ export const FetchSignalLogs = Command.define("FetchInvestigationSignalLogs", {
 						filters: { serviceName: service },
 					},
 				}),
-				(response) => response.data.map((point) => ({ bucket: point.bucket, series: { ...point.series } })),
+				(response) =>
+					Arr.map(response.data, (point) => ({
+						bucket: point.bucket,
+						series: { ...point.series },
+					})),
 			),
 			(result) => Message.CompletedFetchLogs({ key, result }),
 		),
@@ -77,10 +83,21 @@ export const FetchSignalTraces = Command.define("FetchInvestigationSignalTraces"
 	messages: [Message.CompletedFetchTraces],
 	execute: ({ key, startTime, endTime, namespaces }) =>
 		finish(
-			Effect.map(getServiceOverview({
-				data: { startTime, endTime, namespaces: namespaces === undefined ? undefined : [...namespaces] },
-			}), (response) =>
-				response.data.map(({ serviceName, spanCount, p95LatencyMs, errorRate }) => ({ serviceName, spanCount, p95LatencyMs, errorRate })),
+			Effect.map(
+				getServiceOverview({
+					data: {
+						startTime,
+						endTime,
+						namespaces: namespaces === undefined ? undefined : [...namespaces],
+					},
+				}),
+				(response) =>
+					Arr.map(response.data, ({ serviceName, spanCount, p95LatencyMs, errorRate }) => ({
+						serviceName,
+						spanCount,
+						p95LatencyMs,
+						errorRate,
+					})),
 			),
 			(result) => Message.CompletedFetchTraces({ key, result }),
 		),
@@ -95,12 +112,14 @@ export const FetchEscalation = Command.define("FetchInvestigationEscalation", {
 			Effect.gen(function* () {
 				const client = yield* MapleInternalApiClient
 				const response = yield* client.errors.listIssueEscalations({ params: { issueId } })
-				const attempt = response.attempts.find((candidate) => candidate.investigationId === investigationId)
+				const attempt = response.attempts.find(
+					(candidate) => candidate.investigationId === investigationId,
+				)
 				return attempt === undefined
 					? null
 					: {
 							status: attempt.status,
-							destinations: attempt.deliveries.map((delivery) => ({
+							destinations: Arr.map(attempt.deliveries, (delivery) => ({
 								name: delivery.destinationName ?? delivery.destinationId,
 								status: delivery.status,
 							})),

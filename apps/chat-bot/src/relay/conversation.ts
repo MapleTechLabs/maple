@@ -10,7 +10,7 @@
 import type { ChatHistoryMessage, InboundMessage } from "@maple/chat-platform"
 import { CHAT_CONTEXT_CLOSE, CHAT_CONTEXT_OPEN, wrapChatContext } from "@maple/domain/chat-preamble"
 import { ChatConversationKey } from "@maple/domain/chat-session"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 /**
  * The bot opened a conversation and could not record that it had.
@@ -48,7 +48,7 @@ const CONTEXT_MAX_MESSAGE_CHARS = 400
 export const FOLLOW_UP_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /** UTC to the second. Milliseconds say nothing about when somebody spoke. */
-const instant = (at: number): string => `${new Date(at).toISOString().slice(0, 19)}Z`
+const instant = (at: number): string => `${Str.slice(0, 19)(new Date(at).toISOString())}Z`
 
 /**
  * Take the fence's own markers out of anything a stranger wrote.
@@ -60,13 +60,13 @@ const instant = (at: number): string => `${new Date(at).toISOString().slice(0, 1
  * something the asker typed. Removing the markers costs a message nothing: nobody types them.
  */
 const unfenced = (value: string): string =>
-	value.split(CHAT_CONTEXT_CLOSE).join("").split(CHAT_CONTEXT_OPEN).join("")
+	Arr.join(Str.split(CHAT_CONTEXT_OPEN)(Arr.join(Str.split(CHAT_CONTEXT_CLOSE)(value), "")), "")
 
 /** One line per message: no newline inside one survives, so the block reads as a transcript. */
 const line = (message: ChatHistoryMessage): string => {
-	const text = unfenced(message.text).replace(/\s+/gu, " ").trim()
+	const text = Str.trim(Str.replace(/\s+/gu, " ")(unfenced(message.text)))
 	const cut =
-		text.length > CONTEXT_MAX_MESSAGE_CHARS ? `${text.slice(0, CONTEXT_MAX_MESSAGE_CHARS)}…` : text
+		text.length > CONTEXT_MAX_MESSAGE_CHARS ? `${Str.slice(0, CONTEXT_MAX_MESSAGE_CHARS)(text)}…` : text
 	return `${instant(message.at)} ${unfenced(message.displayName)}${message.isBot ? " (bot)" : ""}: ${cut}`
 }
 
@@ -89,7 +89,7 @@ const contextLines = (recent: ReadonlyArray<ChatHistoryMessage>, seenUpTo: numbe
 		// otherwise be read twice. Before the first turn there is no transcript to duplicate, and
 		// what a bot said there — an alert, a deploy — is often the whole question.
 		if (message.at <= seenUpTo || (seenUpTo > 0 && message.isBot)) continue
-		if (message.text.trim() === "") continue
+		if (Str.trim(message.text) === "") continue
 		const rendered = line(message)
 		if (rendered.length > budget) break
 		budget -= rendered.length
@@ -132,7 +132,7 @@ export const chatTurnText = (message: InboundMessage, context: ConversationConte
 			...earlier,
 		)
 	}
-	return wrapChatContext(lines.join("\n"), message.text)
+	return wrapChatContext(Arr.join(lines, "\n"), message.text)
 }
 
 /**
@@ -150,7 +150,7 @@ export const chatTurnText = (message: InboundMessage, context: ConversationConte
  * decides whether to speak at all is also a per-message cost and a new way to be wrong.
  */
 export const couldAnswerUnaddressed = (message: InboundMessage, ownsConversation: boolean): boolean =>
-	ownsConversation && !message.author.isBot && message.text.trim() !== ""
+	ownsConversation && !message.author.isBot && Str.trim(message.text) !== ""
 
 /**
  * The other half, asked once the conversation's session has been read: the bot has actually

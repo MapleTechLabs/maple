@@ -1,9 +1,10 @@
 import { bucketTimeline, computeBucketSecondsForRange } from "@maple/query-engine"
+import { String as Str } from "effect"
 
 const TINYBIRD_DATETIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?$/
 
 function toEpochMs(value: string): number {
-	return new Date(value.replace(" ", "T") + "Z").getTime()
+	return new Date(Str.replace(" ", "T")(value) + "Z").getTime()
 }
 
 function ceilToBucketMs(epochMs: number, bucketSeconds: number): number {
@@ -67,7 +68,7 @@ export function toIsoBucket(value: string | Date): string {
 		return value.toISOString()
 	}
 
-	const raw = value.trim()
+	const raw = Str.trim(value)
 	const tinybirdDateTimeMatch = raw.match(TINYBIRD_DATETIME_RE)
 	const normalized = tinybirdDateTimeMatch
 		? `${tinybirdDateTimeMatch[1]}T${tinybirdDateTimeMatch[2]}${tinybirdDateTimeMatch[3] ?? ""}Z`

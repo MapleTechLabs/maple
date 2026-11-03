@@ -6,8 +6,8 @@
  * sandbox calls. Per turn and per repository: once the sandbox is unavailable, or the checkout
  * missed two waits, further sandbox calls for that repository are refused at once.
  */
-import type { SandboxError } from "@yielded/agent/sandbox"
-import { Effect, Ref } from "effect"
+import type { SandboxError } from "@maple/backend/sandbox/contract"
+import { Effect, Ref, String as Str } from "effect"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { fromSandboxError } from "../mcp/lib/source-errors"
 import type { McpToolResult } from "../mcp/tools/types"
@@ -22,7 +22,7 @@ interface RepositoryState {
 
 const UP: RepositoryState = { missedWaits: 0, down: false }
 
-const isSandboxTool = (name: string): boolean => name.startsWith("sandbox_")
+const isSandboxTool = (name: string): boolean => Str.startsWith("sandbox_")(name)
 
 /** The sandbox tools name their repository as `owner/name`; GitHub treats it case-insensitively. */
 const repositoryOf = (input: unknown): string | undefined =>
@@ -30,7 +30,7 @@ const repositoryOf = (input: unknown): string | undefined =>
 	input !== null &&
 	"repository" in input &&
 	typeof input.repository === "string"
-		? input.repository.trim().toLowerCase()
+		? Str.toLowerCase(Str.trim(input.repository))
 		: undefined
 
 const refused = (repository: string): McpToolResult => ({
@@ -77,7 +77,7 @@ export const withSandboxBreaker = (executor: McpToolExecutorApi): Effect.Effect<
 			executor.prepareRepository(tenant, target).pipe(
 				Effect.tapError((error: SandboxError) =>
 					fromSandboxError("prepare")(error)._tag === "@maple/mcp/errors/McpUnavailableError"
-						? update(target.repository.trim().toLowerCase(), (state) => ({
+						? update(Str.toLowerCase(Str.trim(target.repository)), (state) => ({
 								...state,
 								down: true,
 							}))

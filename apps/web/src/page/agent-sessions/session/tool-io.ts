@@ -3,14 +3,16 @@ import { formatBytes } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon } from "../../../ui/icon"
+import { badge } from "@maple/views/ui/display"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
 import type { ClampLines } from "./clamped-text"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
 import { clampedBody, payloadCopyButton } from "./transcript-kit"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // Tool input and output, and its summary: one invocation, both halves, joined by a spine.
 
@@ -18,7 +20,7 @@ type H = HtmlBuilder<Message>
 
 const IN_CLAMP: ClampLines = 8
 const OUT_CLAMP: ClampLines = 14
-const META = "font-mono text-3xs text-muted-foreground"
+const META = typographyClass({ size: "3xs", tone: "muted", mono: true })
 const GUTTER = "flex w-8 shrink-0 flex-col items-center gap-1.5 pt-2.5"
 
 const sizeLine = (payload: TranscriptPayload): string => {
@@ -37,7 +39,7 @@ export const toolIoSummary = (
 		[
 			icon(h, "ArrowDownIcon", {
 				size: 10,
-				className: "text-muted-foreground/70",
+				className: "text-foreground-subtle",
 				attributes: [h.AriaHidden(true)],
 			}),
 			args === undefined ? "not captured" : formatBytes(args.byteLength),
@@ -87,7 +89,7 @@ const marker = (h: H, direction: "in" | "out", isFailed: boolean): Html =>
 export const truncatedNote = (h: H): Html =>
 	h.p(
 		[h.Class("text-2xs text-muted-foreground italic")],
-		["Cut off here by the instrumentation, not by Maple — the tail was never recorded."],
+		["Cut off here by the instrumentation, not by Maple. The tail was never recorded."],
 	)
 
 export const truncatedBadge = (h: H): Html =>
@@ -161,8 +163,8 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 			h.Class(
 				cn(
 					"flex items-stretch",
-					half.direction === "in" ? "bg-black/[0.06]" : "border-border/60 border-t",
-					half.direction === "out" && half.isFailed && "bg-severity-error/5",
+					half.direction === "in" ? "bg-surface-sunken" : "border-border-subtle border-t",
+					half.direction === "out" && half.isFailed && "bg-severity-error-a1",
 				),
 			),
 		],
@@ -179,38 +181,35 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 			h.div(
 				[h.Class("flex min-w-0 grow flex-col gap-2 pt-2.5 pr-3 pb-3")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
-						[
-							eyebrow(
-								h,
-								{
-									variant: "mono",
-									className: half.isFailed ? "text-severity-error" : "text-foreground",
-								},
-								[half.label],
-							),
-							h.span(
-								[h.Class(META)],
-								[
-									[half.name, half.meta, sizeLine(half.payload)]
-										.filter((part) => part !== undefined && part !== "")
-										.join(" · "),
-								],
-							),
-							...(half.payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
-							...payloadActions(h, model, {
-								payload: half.payload,
-								textKey: half.textKey,
-								label: half.name,
-							}),
-						],
-					),
+					hstack(h, { gap: "2", wrap: true }, [
+						eyebrow(
+							h,
+							{
+								variant: "mono",
+								className: half.isFailed ? "text-severity-error" : "text-foreground",
+							},
+							[half.label],
+						),
+						h.span(
+							[h.Class(META)],
+							[
+								[half.name, half.meta, sizeLine(half.payload)]
+									.filter((part) => part !== undefined && part !== "")
+									.join(" · "),
+							],
+						),
+						...(half.payload.truncatedByEmitter ? [truncatedBadge(h)] : []),
+						...payloadActions(h, model, {
+							payload: half.payload,
+							textKey: half.textKey,
+							label: half.name,
+						}),
+					]),
 					...payloadBody(h, model, {
 						payload: half.payload,
 						textKey: half.textKey,
 						clampLines: half.clampLines,
-						toneClass: half.isFailed ? "text-severity-error/90" : undefined,
+						toneClass: half.isFailed ? "text-severity-error" : undefined,
 					}),
 					...(half.payload.truncatedByEmitter ? [truncatedNote(h)] : []),
 				],
@@ -220,7 +219,7 @@ const ioHalf = (h: H, model: Model, half: Half): Html =>
 
 const missingHalf = (h: H, label: string, note: string): Html =>
 	h.div(
-		[h.Class("flex items-center border-input border-t border-dashed bg-muted/20 py-2.5 pr-3")],
+		[h.Class("flex items-center border-input border-t border-dashed bg-surface-faint py-2.5 pr-3")],
 		[
 			h.span(
 				[h.Class("flex w-8 shrink-0 justify-center")],
@@ -236,7 +235,7 @@ const missingHalf = (h: H, label: string, note: string): Html =>
 				],
 			),
 			eyebrow(h, { variant: "mono", className: "shrink-0 pr-2.5 text-muted-foreground" }, [label]),
-			h.span([h.Class("min-w-0 text-muted-foreground text-xs")], [note]),
+			typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [note]),
 		],
 	)
 
@@ -259,27 +258,26 @@ export const toolIo = (
 			h.div(
 				[
 					h.Class(
-						"flex items-center gap-2.5 border-input border-t border-dashed bg-muted/20 px-3 py-2.5",
+						"flex items-center gap-2.5 border-input border-t border-dashed bg-surface-faint px-3 py-2.5",
 					),
 				],
 				[
 					h.span(
 						[
 							h.AriaHidden(true),
-							h.Class("flex shrink-0 items-center gap-0.5 text-muted-foreground/60"),
+							h.Class("flex shrink-0 items-center gap-0.5 text-foreground-subtle"),
 						],
 						[icon(h, "ArrowDownIcon", { size: 10 }), icon(h, "ArrowUpIcon", { size: 10 })],
 					),
-					h.span(
-						[h.Class("min-w-0 text-muted-foreground text-xs")],
-						["Payloads not captured — this span records the call's timing and identity only."],
-					),
+					typography(h, { size: "xs", tone: "muted", className: "min-w-0" }, [
+						"Payloads not captured. This span records the call's timing and identity only.",
+					]),
 				],
 			),
 		]
 	return [
 		args === undefined
-			? missingHalf(h, "Sent", "not captured — the span carries no arguments attribute.")
+			? missingHalf(h, "Sent", "not captured. The span carries no arguments attribute.")
 			: ioHalf(h, model, {
 					direction: "in",
 					label: "Sent",

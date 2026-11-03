@@ -2,7 +2,14 @@
 // fills `IntegrationInventoryInputs` (narrow column projections, epoch ms), then
 // `buildIntegrationInventory` derives every status, same shape as `./setup-audit`.
 
+import {
+	SOURCE_HEALTH_STATUSES,
+	type SourceHealthResult,
+	type SourceHealthStatus,
+	worstSourceStatus,
+} from "./source-health"
 import { redactUrlSecrets } from "./url-redaction"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 export const INTEGRATION_PROVIDERS = [
 	"github",
@@ -15,29 +22,30 @@ export const INTEGRATION_PROVIDERS = [
 ] as const
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 
-/** Worst first: a provider takes the worst status of itself and its resources. */
-export const INTEGRATION_STATUSES = ["disconnected", "failing", "stale", "pending", "healthy"] as const
-export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number]
+/** Worst first: a provider takes the worst status of its sources and resources. Same as a source's. */
+export const INTEGRATION_STATUSES = SOURCE_HEALTH_STATUSES
+export type IntegrationStatus = SourceHealthStatus
 
 const STATUS_RANK = {
 	disconnected: 0,
 	failing: 1,
 	stale: 2,
-	pending: 3,
-	healthy: 4,
+	paused: 3,
+	pending: 4,
+	healthy: 5,
 } satisfies Record<IntegrationStatus, number>
 
-export const worstStatus = (statuses: ReadonlyArray<IntegrationStatus>): IntegrationStatus =>
-	statuses.reduce<IntegrationStatus>(
-		(worst, s) => (STATUS_RANK[s] < STATUS_RANK[worst] ? s : worst),
-		"healthy",
-	)
+export const worstStatus = worstSourceStatus
 
 /** The alerting pollers tick every 5 minutes; six missed ticks is no longer a blip. */
 const POLLER_STALE_MS = 30 * 60 * 1000
 /** PlanetScale inventory refreshes hourly and deploy requests round-robin 25 databases per tick. */
 const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
+
+/** How long a scrape target may go without a good scrape: ten intervals, at least 10 minutes. */
+export const scrapeStaleAfterMs = (scrapeIntervalSeconds: number) =>
+	Math.max(SCRAPE_MIN_STALE_MS, scrapeIntervalSeconds * 10 * 1000)
 
 export interface PollState {
 	readonly lastSuccessAt: number | null
@@ -135,6 +143,8 @@ export interface IntegrationInventoryInputs {
 		readonly scrapeIntervalSeconds: number
 		readonly lastScrapeAt: number | null
 		readonly lastScrapeError: string | null
+		/** False for a target switched off; absent reads as on. */
+		readonly enabled?: boolean
 	}>
 	readonly chatWorkspaces: ReadonlyArray<{
 		readonly connector: string
@@ -181,7 +191,7 @@ export interface IntegrationInventory {
 
 export const INTEGRATION_FEEDS = {
 	github: [
-		"source code for investigations (list_source_repositories, search_source_code, read_source_file)",
+		"source code for Maple's investigations and pull request review",
 		"commit metadata for deploys (service_deployments)",
 		"GitHub Actions runs as traces under service.name=github-actions, with job logs as logs on their step spans",
 	],
@@ -201,7 +211,7 @@ export const INTEGRATION_FEEDS = {
 		"query insights and deploy-request events",
 	],
 	prometheus: ["metrics scraped from Prometheus endpoints (list_metrics)"],
-	chat: ["the Maple bot in chat workspaces"],
+	chat: ["the Maple bot in chat workspaces", "alert issues and comments in Linear"],
 } satisfies Record<IntegrationProvider, ReadonlyArray<string>>
 
 /** The newest attempt decides: an error newer than the last success is failing. */
@@ -221,10 +231,10 @@ const failingError = (state: PollState, status: IntegrationStatus) =>
 
 /** "2 of 14 zones failing: <first error>", or null when every resource is healthy. */
 const summarizeResources = (resources: ReadonlyArray<IntegrationResource>): string | null => {
-	const unhealthy = resources.filter((r) => r.status !== "healthy")
+	const unhealthy = Arr.filter(resources, (r) => r.status !== "healthy")
 	if (unhealthy.length === 0) return null
-	const worst = worstStatus(unhealthy.map((r) => r.status))
-	const ofWorst = unhealthy.filter((r) => r.status === worst)
+	const worst = worstStatus(Arr.map(unhealthy, (r) => r.status))
+	const ofWorst = Arr.filter(unhealthy, (r) => r.status === worst)
 	const example = ofWorst.find((r) => r.lastError !== null) ?? ofWorst[0]
 	if (example === undefined) return null
 	const detail = example.lastError ?? example.note
@@ -260,8 +270,8 @@ const entry = (
 		readonly feeds?: ReadonlyArray<string>
 	},
 ): IntegrationEntry => {
-	const resources = fields.resources.map((r) => withAge(r, now))
-	const resourceStatus = worstStatus(resources.map((r) => r.status))
+	const resources = Arr.map(fields.resources, (r) => withAge(r, now))
+	const resourceStatus = worstStatus(Arr.map(resources, (r) => r.status))
 	const status = worstStatus([fields.own?.status ?? "healthy", resourceStatus])
 	const problem =
 		fields.own && STATUS_RANK[fields.own.status] <= STATUS_RANK[resourceStatus]
@@ -275,7 +285,7 @@ const entry = (
 		problem: status === "healthy" ? null : problem,
 		feeds: fields.feeds ?? INTEGRATION_FEEDS[provider],
 		resources: [...resources].sort(
-			(a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name),
+			(a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || Str.localeCompare(b.name)(a.name),
 		),
 	}
 }
@@ -292,12 +302,12 @@ const revokedProblem = (label: string) => ({
 })
 
 const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
-	const installations = inputs.vcsInstallations.filter((i) => i.provider === "github")
+	const installations = Arr.filter(inputs.vcsInstallations, (i) => i.provider === "github")
 	if (installations.length === 0) return null
-	const active = installations.filter((i) => i.status === "active")
-	const resources = inputs.vcsRepositories
-		.filter((r) => r.provider === "github")
-		.map((repo): IntegrationResource => {
+	const active = Arr.filter(installations, (i) => i.status === "active")
+	const resources = Arr.map(
+		Arr.filter(inputs.vcsRepositories, (r) => r.provider === "github"),
+		(repo): IntegrationResource => {
 			const status: IntegrationStatus =
 				repo.syncStatus === "error" ? "failing" : repo.syncStatus === "ready" ? "healthy" : "pending"
 			const branch = repo.trackedBranch ?? repo.defaultBranch
@@ -309,27 +319,37 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 				lastError: status === "failing" ? repo.lastSyncError : null,
 				note: `tracks ${branch}${repo.prReviewEnabled ? ", PR review on" : ""}${status === "pending" ? `, sync ${repo.syncStatus}` : ""}`,
 			}
-		})
-	const ciTraces = active.some((i) => i.ciTracesEnabled)
+		},
+	)
+	const ciTraces = Arr.some(active, (i) => i.ciTracesEnabled)
 	return entry("github", now, {
-		account: installations.map((i) => i.accountLogin).join(", "),
-		connectedAt: Math.min(...installations.map((i) => i.createdAt)),
+		account: Arr.join(
+			Arr.map(installations, (i) => i.accountLogin),
+			", ",
+		),
+		connectedAt: Math.min(...Arr.map(installations, (i) => i.createdAt)),
 		own:
 			active.length === 0
 				? {
 						status: "disconnected",
-						problem: `The GitHub App installation is ${installations.map((i) => i.status).join(", ")}; reinstall it in Sources.`,
+						problem: `The GitHub App installation is ${Arr.join(
+							Arr.map(installations, (i) => i.status),
+							", ",
+						)}; reinstall it in Sources.`,
 					}
 				: undefined,
 		resources,
-		feeds: INTEGRATION_FEEDS.github.filter((feed) => ciTraces || !feed.startsWith("GitHub Actions")),
+		feeds: Arr.filter(
+			INTEGRATION_FEEDS.github,
+			(feed) => ciTraces || !Str.startsWith("GitHub Actions")(feed),
+		),
 	})
 }
 
 const cloudflare = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const oauth = oauthFor(inputs, "cloudflare")
 	if (!oauth && inputs.cloudflareStates.length === 0 && inputs.cloudflareLogpush.length === 0) return null
-	const analytics = inputs.cloudflareStates.map((state): IntegrationResource => {
+	const analytics = Arr.map(inputs.cloudflareStates, (state): IntegrationResource => {
 		const status = pollStatus(state, now, POLLER_STALE_MS)
 		const isZone = state.dataset === "http_requests"
 		return {
@@ -341,7 +361,7 @@ const cloudflare = (inputs: IntegrationInventoryInputs, now: number): Integratio
 			note: null,
 		}
 	})
-	const logpush = inputs.cloudflareLogpush.map((connector): IntegrationResource => ({
+	const logpush = Arr.map(inputs.cloudflareLogpush, (connector): IntegrationResource => ({
 		kind: "logpush",
 		name: connector.name,
 		status:
@@ -354,7 +374,7 @@ const cloudflare = (inputs: IntegrationInventoryInputs, now: number): Integratio
 		lastError: connector.lastError,
 		note: `${connector.zoneName} → service ${connector.serviceName}`,
 	}))
-	const hyperdrives = inputs.cloudflareHyperdrives.map((config): IntegrationResource => ({
+	const hyperdrives = Arr.map(inputs.cloudflareHyperdrives, (config): IntegrationResource => ({
 		kind: "hyperdrive",
 		name: config.name,
 		status: "healthy",
@@ -373,7 +393,7 @@ const cloudflare = (inputs: IntegrationInventoryInputs, now: number): Integratio
 const railway = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const connection = inputs.railwayConnection
 	if (connection === null) return null
-	const resources = inputs.railwayEnvironments.map((env): IntegrationResource => {
+	const resources = Arr.map(inputs.railwayEnvironments, (env): IntegrationResource => {
 		const status = pollStatus(env, now, POLLER_STALE_MS)
 		return {
 			kind: "environment",
@@ -477,9 +497,9 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 			resources: [],
 		})
 	}
-	const databases = inputs.planetscaleDatabases.map((db): IntegrationResource => {
-		const states = inputs.planetscalePollStates.filter((s) => s.databaseId === db.databaseId)
-		const statuses = states.map((s) => pollStatus(s, now, PLANETSCALE_STALE_MS))
+	const databases = Arr.map(inputs.planetscaleDatabases, (db): IntegrationResource => {
+		const states = Arr.filter(inputs.planetscalePollStates, (s) => s.databaseId === db.databaseId)
+		const statuses = Arr.map(states, (s) => pollStatus(s, now, PLANETSCALE_STALE_MS))
 		const status = states.length === 0 ? "healthy" : worstStatus(statuses)
 		const failing = states.find((_, i) => statuses[i] === "failing")
 		return {
@@ -497,12 +517,20 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 			note: [db.kind, db.region, db.state].filter((part) => part !== null && part !== "").join(", "),
 		}
 	})
-	const scrape = inputs.scrapeTargets
-		.filter((t) => t.managedBy?.startsWith("planetscale:"))
-		.map((t) => scrapeResource(t, now, "metrics scrape"))
-	const missing = Object.entries(connection.detectedPermissions ?? {})
-		.filter(([, granted]) => !granted)
-		.map(([permission]) => permission)
+	// A disabled managed target only holds branch filters: metrics come from the metrics API.
+	const scrape = Arr.map(
+		inputs.scrapeTargets.filter((t) => t.managedBy?.startsWith("planetscale:") && t.enabled !== false),
+		(t) => scrapeResource(t, now, "metrics scrape"),
+	)
+	// Only permissions something still depends on; older bindings stored ones that no longer matter.
+	const missing = Arr.map(
+		Arr.filter(
+			Rec.toEntries(connection.detectedPermissions ?? {}),
+			([permission, granted]) =>
+				!granted && Arr.some(PLANETSCALE_PERMISSION_FEEDS, ([key]) => key === permission),
+		),
+		([permission]) => permission,
+	)
 	// The inventory pass clears its error on success, so a set error is the latest outcome.
 	const own = isRevoked(oauth)
 		? revokedProblem("PlanetScale")
@@ -511,9 +539,10 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 			: missing.length > 0
 				? {
 						status: "failing" as const,
-						problem: `The grant lacks ${missing
-							.map((permission) => `${permission} (${permissionFeed(permission)})`)
-							.join(", ")}; reconnect PlanetScale in Sources with it granted.`,
+						problem: `The grant lacks ${Arr.join(
+							Arr.map(missing, (permission) => `${permission} (${permissionFeed(permission)})`),
+							", ",
+						)}; reconnect PlanetScale in Sources with it granted.`,
 					}
 				: connection.lastInventoryAt === null
 					? { status: "pending" as const, problem: "The first database inventory has not run yet." }
@@ -528,7 +557,6 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 
 /** What each permission probed at org-binding time feeds, so a missing one names its effect. */
 const PLANETSCALE_PERMISSION_FEEDS = [
-	["readMetricsEndpoints", "database metrics"],
 	["readDatabases", "the database inventory and deploy requests"],
 	["readOrganization", "the organization lookup"],
 ] as const
@@ -541,42 +569,47 @@ export const scrapeResource = (
 	now: number,
 	kind: string,
 ): IntegrationResource => {
-	const staleAfterMs = Math.max(SCRAPE_MIN_STALE_MS, target.scrapeIntervalSeconds * 10 * 1000)
+	const staleAfterMs = scrapeStaleAfterMs(target.scrapeIntervalSeconds)
 	// A failed scrape leaves lastScrapeAt at the last success and sets the error; a later success clears it.
 	const status: IntegrationStatus =
-		target.lastScrapeError !== null
-			? "failing"
-			: target.lastScrapeAt === null
-				? "pending"
-				: now - target.lastScrapeAt > staleAfterMs
-					? "stale"
-					: "healthy"
+		target.enabled === false
+			? "paused"
+			: target.lastScrapeError !== null
+				? "failing"
+				: target.lastScrapeAt === null
+					? "pending"
+					: now - target.lastScrapeAt > staleAfterMs
+						? "stale"
+						: "healthy"
 	return {
 		kind,
 		name: target.name,
 		status,
 		lastSuccessAt: target.lastScrapeAt,
 		lastError: target.lastScrapeError,
-		note: target.serviceName
-			? `${redactUrlSecrets(target.url)} → service ${target.serviceName}`
-			: redactUrlSecrets(target.url),
+		note:
+			target.enabled === false
+				? "Scraping is turned off"
+				: target.serviceName
+					? `${redactUrlSecrets(target.url)} → service ${target.serviceName}`
+					: redactUrlSecrets(target.url),
 	}
 }
 
 const prometheus = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
-	const targets = inputs.scrapeTargets.filter((t) => t.managedBy === null)
+	const targets = Arr.filter(inputs.scrapeTargets, (t) => t.managedBy === null)
 	if (targets.length === 0) return null
 	return entry("prometheus", now, {
 		account: null,
 		connectedAt: null,
-		resources: targets.map((t) => scrapeResource(t, now, "scrape target")),
+		resources: Arr.map(targets, (t) => scrapeResource(t, now, "scrape target")),
 	})
 }
 
 const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
-	const hazel = oauthFor(inputs, "hazel")
-	if (!hazel && inputs.chatWorkspaces.length === 0) return null
-	const workspaces = inputs.chatWorkspaces.map((w): IntegrationResource => ({
+	const linear = oauthFor(inputs, "linear")
+	if (!linear && inputs.chatWorkspaces.length === 0) return null
+	const workspaces = Arr.map(inputs.chatWorkspaces, (w): IntegrationResource => ({
 		kind: "workspace",
 		name: w.name,
 		status: "healthy",
@@ -584,26 +617,26 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 		lastError: null,
 		note: w.connector,
 	}))
-	const hazelResource: ReadonlyArray<IntegrationResource> = hazel
+	const linearResource: ReadonlyArray<IntegrationResource> = linear
 		? [
 				{
 					kind: "workspace",
-					name: hazel.externalAccountName ?? hazel.externalUserEmail ?? "Hazel",
-					status: hazel.revokedAt === null ? "healthy" : "disconnected",
+					name: linear.externalAccountName ?? "Linear",
+					status: linear.revokedAt === null ? "healthy" : "disconnected",
 					lastSuccessAt: null,
 					lastError: null,
-					note: "hazel",
+					note: "linear",
 				},
 			]
 		: []
 	const connectedAt = [
-		...inputs.chatWorkspaces.map((w) => w.createdAt),
-		...(hazel ? [hazel.createdAt] : []),
+		...Arr.map(inputs.chatWorkspaces, (w) => w.createdAt),
+		...(linear ? [linear.createdAt] : []),
 	]
 	return entry("chat", now, {
 		account: null,
 		connectedAt: Math.min(...connectedAt),
-		resources: [...workspaces, ...hazelResource],
+		resources: [...workspaces, ...linearResource],
 	})
 }
 
@@ -611,21 +644,45 @@ export const buildIntegrationInventory = (
 	inputs: IntegrationInventoryInputs,
 	now: number,
 ): IntegrationInventory => {
-	const integrations = [
-		github(inputs, now),
-		cloudflare(inputs, now),
-		railway(inputs, now),
-		vercel(inputs, now),
-		planetscale(inputs, now),
-		prometheus(inputs, now),
-		chat(inputs, now),
-	].filter((e): e is IntegrationEntry => e !== null)
-	const connected = new Set(integrations.map((e) => e.provider))
+	const integrations = Arr.filter(
+		[
+			github(inputs, now),
+			cloudflare(inputs, now),
+			railway(inputs, now),
+			vercel(inputs, now),
+			planetscale(inputs, now),
+			prometheus(inputs, now),
+			chat(inputs, now),
+		],
+		(e): e is IntegrationEntry => e !== null,
+	)
+	const connected = new Set(Arr.map(integrations, (e) => e.provider))
 	return {
 		integrations,
-		available: INTEGRATION_PROVIDERS.filter((p) => !connected.has(p)).map((provider) => ({
-			provider,
-			feeds: INTEGRATION_FEEDS[provider],
-		})),
+		available: Arr.map(
+			Arr.filter(INTEGRATION_PROVIDERS, (p) => !connected.has(p)),
+			(provider) => ({
+				provider,
+				feeds: INTEGRATION_FEEDS[provider],
+			}),
+		),
 	}
 }
+
+/**
+ * A provider reads as the worst of its sources and its own resources, so `list_integrations`
+ * never reads better than Sources.
+ */
+export const withSourceHealth = (
+	inventory: IntegrationInventory,
+	sources: ReadonlyArray<{ readonly platform: string; readonly health: SourceHealthResult }>,
+): IntegrationInventory => ({
+	...inventory,
+	integrations: Arr.map(inventory.integrations, (entry) => {
+		const own = Arr.filter(sources, (source) => source.platform === entry.provider)
+		if (own.length === 0) return entry
+		const status = worstStatus([entry.status, ...Arr.map(own, (source) => source.health.status)])
+		const problem = own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
+		return { ...entry, status, problem: status === "healthy" ? null : problem }
+	}),
+})

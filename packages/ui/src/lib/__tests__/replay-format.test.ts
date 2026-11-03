@@ -13,12 +13,13 @@ describe("formatSessionDuration", () => {
 		expect(formatSessionDuration(45_000)).toBe("45s")
 		expect(formatSessionDuration(90_000)).toBe("1m 30s")
 		expect(formatSessionDuration(3_599_499)).toBe("59m 59s")
+		expect(formatSessionDuration(600_000)).toBe("10m")
 	})
 
-	it("rolls minutes into hours", () => {
-		expect(formatSessionDuration(3_600_000)).toBe("1h 0m")
+	it("rolls minutes into hours and drops a zero minute part", () => {
+		expect(formatSessionDuration(3_600_000)).toBe("1h")
 		expect(formatSessionDuration(5_400_000)).toBe("1h 30m")
-		expect(formatSessionDuration(28_812_000)).toBe("8h 0m")
+		expect(formatSessionDuration(28_812_000)).toBe("8h")
 	})
 })
 

@@ -1,19 +1,21 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import { button } from "../../../ui/button"
-import * as CopyButton from "../../../ui/copy-button"
-import { badge, kbd, kbdGroup } from "../../../ui/display"
-import { filterChip } from "../../../ui/filter-chip"
-import { icon } from "../../../ui/icon"
-import { iconButton } from "../../../ui/icon-button"
-import { inlineCode } from "../../../ui/inline-code"
-import { refreshButton } from "../../../ui/refresh-button"
-import { statusDot } from "../../../ui/status-dot"
-import * as Toggle from "../../../ui/toggle"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import { button } from "@maple/views/ui/button"
+import { cardButton } from "@maple/views/ui/card-button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { badge, kbd, kbdGroup } from "@maple/views/ui/display"
+import { filterChip } from "@maple/views/ui/filter-chip"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { refreshButton } from "@maple/views/ui/refresh-button"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { textLink } from "@maple/views/ui/text-link"
+import * as Toggle from "@maple/views/ui/toggle"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { defineLab } from "../../define"
 import { kitPage, kitRow, kitSection } from "../../kit/kit-layout"
 
@@ -27,6 +29,7 @@ const VARIANTS = [
 	"destructive",
 	"destructive-outline",
 	"link",
+	"dashed",
 ] as const
 const TEXT_SIZES = ["xs", "sm", "default", "lg", "xl"] as const
 const ICON_SIZES = ["icon-2xs", "icon-xs", "icon-sm", "icon", "icon-lg", "icon-xl"] as const
@@ -63,14 +66,14 @@ type Model = typeof Model.Type
 
 const init = (): Update.Return<Model, Message> => ({
 	model: {
-		toggles: Object.fromEntries(TOGGLES.map((id) => [id, Toggle.init(id.endsWith("-pressed"))])),
+		toggles: Rec.fromEntries(Arr.map(TOGGLES, (id) => [id, Toggle.init(Str.endsWith("-pressed")(id))])),
 		toggleGroups: {
 			window: ToggleGroup.init({ label: "Window", values: ["1h"] }),
 			layout: ToggleGroup.init({ label: "Layout", values: ["list"] }),
 			signals: ToggleGroup.init({ label: "Signals", isMultiple: true, values: ["logs", "traces"] }),
 		},
 		filterChips: { errors: true, warnings: false, ok: true },
-		copyButtons: Object.fromEntries(COPY_BUTTONS.map((id) => [id, CopyButton.init()])),
+		copyButtons: Rec.fromEntries(Arr.map(COPY_BUTTONS, (id) => [id, CopyButton.init()])),
 	},
 })
 
@@ -122,10 +125,10 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 // VIEW
 
 const buttonVariantRows = (h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
-	VARIANTS.map((variant) =>
+	Arr.map(VARIANTS, (variant) =>
 		kitRow(h, variant, [
-			...TEXT_SIZES.map((size) => button(h, { variant, size }, [size])),
-			...ICON_SIZES.map((size) =>
+			...Arr.map(TEXT_SIZES, (size) => button(h, { variant, size }, [size])),
+			...Arr.map(ICON_SIZES, (size) =>
 				button(h, { variant, size, attributes: [h.AriaLabel(`${variant} ${size}`)] }, [
 					icon(h, "PlusIcon"),
 				]),
@@ -139,8 +142,8 @@ const buttonStates = (h: HtmlBuilder<Message>): Html =>
 		button(h, { variant: "outline" }, ["Cancel edit"]),
 		button(h, { isDisabled: true }, ["Disabled"]),
 		button(h, { variant: "outline", isDisabled: true }, ["Disabled outline"]),
-		button(h, { isLoading: true }, ["Loading"]),
-		button(h, { variant: "outline", isLoading: true }, ["Loading outline"]),
+		button(h, { isLoading: true }, ["Save changes"]),
+		button(h, { variant: "outline", isLoading: true }, ["Save changes"]),
 		button(h, { variant: "outline" }, [icon(h, "PlusIcon"), " With icon"]),
 	])
 
@@ -217,7 +220,7 @@ const toggleGroupOf = (
 }
 
 const items = (...labels: ReadonlyArray<readonly [string, string]>) =>
-	labels.map(([value, label]) => ({ value, label }))
+	Arr.map(labels, ([value, label]) => ({ value, label }))
 
 const toggleGroups = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	kitRow(
@@ -320,10 +323,10 @@ const badges = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	kitRow(
 		h,
 		"variants",
-		BADGE_VARIANTS.map((variant) => badge(h, { variant }, [variant])),
+		Arr.map(BADGE_VARIANTS, (variant) => badge(h, { variant }, [variant])),
 	),
 	kitRow(h, "sizes, pill, mono", [
-		...BADGE_SIZES.map((size) => badge(h, { size, variant: "secondary" }, [size])),
+		...Arr.map(BADGE_SIZES, (size) => badge(h, { size, variant: "secondary" }, [size])),
 		badge(h, { pill: true, variant: "muted" }, ["pill"]),
 		badge(h, { mono: true, variant: "outline" }, ["12,480"]),
 	]),
@@ -331,7 +334,7 @@ const badges = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 
 const statusDots = (h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
-		...TONES.map((tone) =>
+		...Arr.map(TONES, (tone) =>
 			h.span([h.Class("flex items-center gap-1.5 text-xs")], [statusDot(h, { tone }), ` ${tone}`]),
 		),
 		statusDot(h, { tone: "crit", size: "sm" }),
@@ -358,6 +361,49 @@ const kbdAndInlineCode = (h: HtmlBuilder<Message>): Html =>
 		),
 	])
 
+const textLinks = (h: HtmlBuilder<Message>): Html =>
+	kitRow(h, undefined, [
+		textLink(h, { onClick: Message.ClickedRefresh() }, ["View all →"]),
+		textLink(h, { href: "#text-link" }, ["Open settings"]),
+		textLink(h, { tone: "muted", onClick: Message.ClickedRefresh() }, ["Clear filters"]),
+		textLink(
+			h,
+			{ tone: "muted", isMono: true, className: "text-3xs", onClick: Message.ClickedRefresh() },
+			["+4 more"],
+		),
+		textLink(h, { onClick: Message.ClickedRefresh(), isDisabled: true }, ["Disabled"]),
+	])
+
+const cardButtons = (h: HtmlBuilder<Message>): Html =>
+	kitRow(
+		h,
+		undefined,
+		Arr.map(
+			[
+				["Resting", false, false],
+				["Selected", true, false],
+				["Disabled", false, true],
+			] as const,
+			([title, isSelected, isDisabled]) =>
+				cardButton(
+					h,
+					{
+						onClick: Message.ClickedRefresh(),
+						isSelected,
+						isDisabled,
+						className: "flex w-56 flex-col gap-1 p-3",
+					},
+					[
+						h.span([h.Class("text-sm font-medium")], [title]),
+						h.span(
+							[h.Class("text-xs text-muted-foreground")],
+							["A whole card as one click target."],
+						),
+					],
+				),
+		),
+	)
+
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitPage(
 		h,
@@ -369,6 +415,8 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			kitSection(h, "Button variants x sizes", buttonVariantRows(h)),
 			kitSection(h, "Button states", [buttonStates(h)]),
 			kitSection(h, "Icon button", [iconButtons(h)]),
+			kitSection(h, "Text link", [textLinks(h)]),
+			kitSection(h, "Card button", [cardButtons(h)]),
 			kitSection(h, "Toggle", [toggles(model, h)]),
 			kitSection(h, "Toggle group", toggleGroups(model, h)),
 			kitSection(h, "Copy and refresh buttons", [copyAndRefresh(model, h)]),

@@ -44,6 +44,14 @@ import { migration_0042_trace_index } from "./0042_trace_index"
 import { migration_0043_traces_span_name_index } from "./0043_traces_span_name_index"
 import { migration_0044_drop_trace_detail_spans } from "./0044_drop_trace_detail_spans"
 import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
+import { migration_0046_source_usage_hourly } from "./0046_source_usage_hourly"
+import { migration_0047_ci_runs_jobs } from "./0047_ci_runs_jobs"
+import { migration_0048_service_api_http_details } from "./0048_service_api_http_details"
+import { migration_0049_service_map_db_edges_minutely } from "./0049_service_map_db_edges_minutely"
+import { migration_0050_security_telemetry } from "./0050_security_telemetry"
+import { migration_0051_error_fingerprint_fuzz_fixes } from "./0051_error_fingerprint_fuzz_fixes"
+import { migration_0052_error_fingerprint_json_frames } from "./0052_error_fingerprint_json_frames"
+import { Array as Arr } from "effect"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -120,13 +128,19 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0043_traces_span_name_index,
 	migration_0044_drop_trace_detail_spans,
 	migration_0045_ttl_only_drop_parts,
+	migration_0046_source_usage_hourly,
+	migration_0047_ci_runs_jobs,
+	migration_0048_service_api_http_details,
+	migration_0049_service_map_db_edges_minutely,
+	migration_0050_security_telemetry,
+	migration_0051_error_fingerprint_fuzz_fixes,
+	migration_0052_error_fingerprint_json_frames,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied
  * ClickHouse instance reaches. */
-export const latestMigrationVersion: number = migrations.reduce(
-	(max, migration) => Math.max(max, migration.version),
-	0,
+export const latestMigrationVersion: number = Arr.reduce(migrations, 0, (max, migration) =>
+	Math.max(max, migration.version),
 )
 
 /**
@@ -148,8 +162,7 @@ export const latestMigrationVersion: number = migrations.reduce(
  * `clickhouse_insert_mappings.rs` by `scripts/generate-clickhouse-insert-mappings.ts`).
  */
 export const clickHouseSchemaVersion: string = String(
-	migrations.reduce(
-		(max, migration) => (migration.requiredForIngest === false ? max : Math.max(max, migration.version)),
-		0,
+	Arr.reduce(migrations, 0, (max, migration) =>
+		migration.requiredForIngest === false ? max : Math.max(max, migration.version),
 	),
 )

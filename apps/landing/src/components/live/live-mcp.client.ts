@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Drives the MCP transcript as a session being typed rather than a list fading
  * in. Three line kinds, marked in the markup with `data-type`:
@@ -98,11 +99,14 @@ export function playMcp(root: HTMLElement) {
 	}
 
 	const landResult = (line: HTMLElement, index: number) => {
-		line.style.transition = [
-			`opacity ${RESULT_REVEAL_MS}ms ${EASE}`,
-			`transform ${RESULT_REVEAL_MS}ms ${EASE}`,
-			`filter ${RESULT_REVEAL_MS}ms ${EASE}`,
-		].join(", ")
+		line.style.transition = Arr.join(
+			[
+				`opacity ${RESULT_REVEAL_MS}ms ${EASE}`,
+				`transform ${RESULT_REVEAL_MS}ms ${EASE}`,
+				`filter ${RESULT_REVEAL_MS}ms ${EASE}`,
+			],
+			", ",
+		)
 		line.style.transitionDelay = `${index * RESULT_STAGGER_MS}ms`
 		line.style.opacity = "1"
 		line.style.transform = "translateY(0)"
@@ -145,7 +149,7 @@ export function playMcp(root: HTMLElement) {
 						}
 						typed += take
 						budget -= take
-						current.node.data = current.full.slice(0, typed)
+						current.node.data = Str.slice(0, typed)(current.full)
 						if (typed >= current.full.length) {
 							part += 1
 							typed = 0
@@ -170,7 +174,7 @@ export function playMcp(root: HTMLElement) {
 			const flush = async () => {
 				if (!pending.length) return
 				await sleep(RESULT_LATENCY_MS)
-				pending.forEach(landResult)
+				Arr.forEach(pending, landResult)
 				pending = []
 				await sleep(READ_MS)
 			}
@@ -204,7 +208,7 @@ export function playMcp(root: HTMLElement) {
 	io.observe(root)
 
 	hideAll()
-	run()
+	void run()
 }
 
 /** Every non-blank text node under `line`, in document order, with its text. */
@@ -214,7 +218,7 @@ function textChunks(line: HTMLElement): Chunk[] {
 	let node = walker.nextNode()
 	while (node) {
 		const text = node as Text
-		if (text.data.trim()) out.push({ node: text, full: text.data })
+		if (Str.trim(text.data)) out.push({ node: text, full: text.data })
 		node = walker.nextNode()
 	}
 	return out

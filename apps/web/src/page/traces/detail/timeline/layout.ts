@@ -14,27 +14,30 @@ import {
 } from "@maple/ui/components/traces/trace-timeline-types"
 import { getValueHue } from "@maple/ui/lib/colors"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
-import type { SpanNodeData } from "../trace-data"
+import type { SpanNodeData } from "@maple/views/traces/trace-data"
+import { Array as Arr, String as Str } from "effect"
 
 // copied: the pure layout half of packages/ui/src/components/traces/use-trace-timeline.ts (a React
 // module), over the Model's readonly tree.
 
 export const ROW_PITCH = ROW_HEIGHT + ROW_GAP
 
-const ERROR_HUE = 25
-const NEUTRAL_FILL = "oklch(0.22 0.005 0)"
-const NEUTRAL_BORDER = "oklch(0.45 0.02 0)"
-
-const barFillFromHue = (hue: number | null, isError: boolean, statusPreset: boolean): string => {
-	if (isError && !statusPreset) return `oklch(0.22 0.06 ${ERROR_HUE})`
-	if (hue === null) return NEUTRAL_FILL
-	return `oklch(0.22 0.015 ${hue})`
-}
+// The border carries the hue; the fill is that colour washed into the page background, so bars
+// read in both themes. Oklab, not oklch: the backgrounds carry a hue that would rotate the mix.
+const NEUTRAL_BORDER = "var(--muted-foreground)"
+const ERROR_BORDER = "var(--severity-error)"
+const wash = (color: string, percent: number): string =>
+	`color-mix(in oklab, ${color} ${percent}%, var(--background))`
 
 const barBorderFromHue = (hue: number | null, isError: boolean, statusPreset: boolean): string => {
-	if (isError && !statusPreset) return `oklch(0.62 0.22 ${ERROR_HUE})`
+	if (isError && !statusPreset) return ERROR_BORDER
 	if (hue === null) return NEUTRAL_BORDER
 	return `oklch(0.55 0.18 ${hue})`
+}
+
+const barFillFromHue = (hue: number | null, isError: boolean, statusPreset: boolean): string => {
+	if (isError && !statusPreset) return wash(ERROR_BORDER, 22)
+	return wash(barBorderFromHue(hue, false, statusPreset), hue === null ? 12 : 16)
 }
 
 /** `TimelineBar` over `SpanNodeData`. */
@@ -55,7 +58,7 @@ export interface Bar {
 
 /** `countDescendants`. */
 export const countDescendants = (node: SpanNodeData): number =>
-	node.children.reduce((sum, child) => sum + 1 + countDescendants(child), 0)
+	Arr.reduce(node.children, 0, (sum, child) => sum + 1 + countDescendants(child))
 
 /** `layoutSpans`: the visible rows, depth-first, collapsed subtrees skipped. */
 export const layoutSpans = (
@@ -65,7 +68,8 @@ export const layoutSpans = (
 	traceStartMs: number,
 ): ReadonlyArray<Bar> => {
 	const statusPreset = isStatusCodePreset(colorBy)
-	const visit = (node: SpanNodeData): ReadonlyArray<Bar> => {
+	const bars: Array<Bar> = []
+	const visit = (node: SpanNodeData): void => {
 		const startMs = spanStartMs(node)
 		const endMs = startMs + node.durationMs
 		const hasChildren = node.children.length > 0
@@ -86,9 +90,11 @@ export const layoutSpans = (
 			borderColor: barBorderFromHue(hue, isError, statusPreset),
 			hasChildren,
 		}
-		return isCollapsed ? [bar] : [bar, ...node.children.flatMap(visit)]
+		bars.push(bar)
+		if (!isCollapsed) Arr.forEach(node.children, visit)
 	}
-	return rootSpans.flatMap(visit)
+	Arr.forEach(rootSpans, visit)
+	return bars
 }
 
 /** Every span id with children, bucketed by depth (`collectParentIdsByLevel`). */
@@ -99,14 +105,14 @@ export const collectParentIdsByLevel = (rootSpans: ReadonlyArray<SpanNodeData>):
 		const level = byLevel.get(node.depth) ?? new Set<string>()
 		level.add(node.spanId)
 		byLevel.set(node.depth, level)
-		node.children.forEach(visit)
+		Arr.forEach(node.children, visit)
 	}
-	rootSpans.forEach(visit)
+	Arr.forEach(rootSpans, visit)
 	return byLevel
 }
 
 const allSpans = (rootSpans: ReadonlyArray<SpanNodeData>): ReadonlyArray<SpanNodeData> =>
-	rootSpans.flatMap((node) => [node, ...allSpans(node.children)])
+	Arr.flatMap(rootSpans, (node) => [node, ...allSpans(node.children)])
 
 export const countSpans = (rootSpans: ReadonlyArray<SpanNodeData>): number => allSpans(rootSpans).length
 
@@ -117,14 +123,16 @@ export const traceBounds = (
 	totalDurationMs: number,
 ): { traceStartMs: number; traceEndMs: number } => {
 	const reportedStart = new Date(traceStartTime).getTime()
-	const finite = allSpans(rootSpans)
-		.map((node) => ({ start: spanStartMs(node), duration: node.durationMs }))
-		.filter(({ start }) => Number.isFinite(start))
-	const start = finite.length === 0 ? reportedStart : Math.min(reportedStart, ...finite.map((s) => s.start))
+	const finite = Arr.filter(
+		Arr.map(allSpans(rootSpans), (node) => ({ start: spanStartMs(node), duration: node.durationMs })),
+		({ start }) => Number.isFinite(start),
+	)
+	const start =
+		finite.length === 0 ? reportedStart : Math.min(reportedStart, ...Arr.map(finite, (s) => s.start))
 	const end =
 		finite.length === 0
 			? reportedStart + totalDurationMs
-			: Math.max(reportedStart + totalDurationMs, ...finite.map((s) => s.start + s.duration))
+			: Math.max(reportedStart + totalDurationMs, ...Arr.map(finite, (s) => s.start + s.duration))
 	return { traceStartMs: start, traceEndMs: end <= start ? start + 1 : end }
 }
 
@@ -174,18 +182,32 @@ export const computeTimeAxisTicks = (
 	return { ticks, intervalMs }
 }
 
+const NO_MATCHES: ReadonlySet<string> = new Set()
+const lastMatches: Array<{ bars: ReadonlyArray<Bar>; query: string; matches: ReadonlySet<string> }> = []
+
+/** The span ids matching `query`, reused while the bars and query are the same. */
 export const computeSearchMatches = (bars: ReadonlyArray<Bar>, query: string): ReadonlySet<string> => {
-	if (query.trim() === "") return new Set()
-	const q = query.toLowerCase()
+	if (Str.trim(query) === "") return NO_MATCHES
+	const last = lastMatches[0]
+	if (last !== undefined && last.bars === bars && last.query === query) return last.matches
+	const matches = searchMatches(bars, query)
+	lastMatches[0] = { bars, query, matches }
+	return matches
+}
+
+const searchMatches = (bars: ReadonlyArray<Bar>, query: string): ReadonlySet<string> => {
+	const q = Str.toLowerCase(query)
 	return new Set(
-		bars
-			.filter(
+		Arr.map(
+			Arr.filter(
+				bars,
 				(bar) =>
-					bar.span.spanName.toLowerCase().includes(q) ||
-					bar.span.serviceName.toLowerCase().includes(q) ||
-					bar.span.spanId.toLowerCase().includes(q),
-			)
-			.map((bar) => bar.span.spanId),
+					Str.includes(q)(Str.toLowerCase(bar.span.spanName)) ||
+					Str.includes(q)(Str.toLowerCase(bar.span.serviceName)) ||
+					Str.includes(q)(Str.toLowerCase(bar.span.spanId)),
+			),
+			(bar) => bar.span.spanId,
+		),
 	)
 }
 
@@ -224,7 +246,7 @@ export const collectMinimapSpans = (
 ): { spans: ReadonlyArray<MinimapSpan>; maxDepth: number } => {
 	const statusPreset = isStatusCodePreset(colorBy)
 	const nodes = allSpans(rootSpans)
-	const spans = nodes.map((node): MinimapSpan => {
+	const spans = Arr.map(nodes, (node): MinimapSpan => {
 		const leftPercent = ((spanStartMs(node) - domainStartMs) / domainDurationMs) * 100
 		const widthPercent = (node.durationMs / domainDurationMs) * 100
 		const isError = node.statusCode === "Error"
@@ -248,6 +270,6 @@ export const collectMinimapSpans = (
 	// Errors last, painted on top of same-position siblings (a stable sort).
 	return {
 		spans: [...spans].sort((a, b) => Number(a.isError) - Number(b.isError)),
-		maxDepth: nodes.reduce((max, node) => Math.max(max, node.depth), 0),
+		maxDepth: Arr.reduce(nodes, 0, (max, node) => Math.max(max, node.depth)),
 	}
 }

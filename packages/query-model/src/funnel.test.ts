@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 import {
 	FUNNEL_EMPTY_GROUP_LABEL,
@@ -43,7 +43,7 @@ describe("funnelWidgetBreakdownRows", () => {
 			{ group: "twitter.com", step: 1, count: 80 },
 			{ group: "twitter.com", step: 2, count: 10 },
 		])
-		expect(rows.map((row) => row.group)).toEqual([
+		expect(Arr.map(rows, (row) => row.group)).toEqual([
 			"news.ycombinator.com",
 			"news.ycombinator.com",
 			"news.ycombinator.com",
@@ -54,7 +54,12 @@ describe("funnelWidgetBreakdownRows", () => {
 			FUNNEL_EMPTY_GROUP_LABEL,
 			FUNNEL_EMPTY_GROUP_LABEL,
 		])
-		expect(rows.filter((row) => row.group === "twitter.com").map((row) => row.value)).toEqual([80, 10, 0])
+		expect(
+			Arr.map(
+				Arr.filter(rows, (row) => row.group === "twitter.com"),
+				(row) => row.value,
+			),
+		).toEqual([80, 10, 0])
 		expect(rows[0]).toEqual({ name: "/pricing", value: 80, group: "news.ycombinator.com" })
 	})
 })

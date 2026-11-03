@@ -6,3 +6,7 @@
 # deliberately; the trade is that a new resolution can pick up a release nobody
 # has had time to catch yet.
 minimumReleaseAge = 0
+
+[test]
+# Vitest suites fail fast under `bun test`; see scripts/bun-test-guard.ts.
+preload = ["./scripts/bun-test-guard.ts"]

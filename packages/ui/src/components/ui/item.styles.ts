@@ -1,15 +1,15 @@
 import { cva } from "class-variance-authority"
 
 export const itemVariants = cva(
-	"[a]:hover:bg-muted rounded-xl border text-xs w-full group/item focus-visible:border-ring focus-visible:ring-ring/50 flex items-center flex-wrap outline-none transition-colors duration-100 focus-visible:ring-[3px] [a]:transition-colors",
+	"[a]:hover:bg-muted [a]:active:bg-muted rounded-xl border text-xs w-full group/item focus-visible:border-ring focus-visible:ring-ring/50 flex items-center flex-wrap outline-none duration-100 focus-visible:ring-[3px] [a]:transition-colors",
 	{
 		variants: {
 			variant: {
 				default: "border-transparent",
 				outline: "border-border",
-				muted: "bg-muted/50 border-transparent",
+				muted: "bg-surface-sunken border-transparent",
 				// Raised panel row on the page surface (integration headers, linked resources).
-				card: "rounded-lg border-border/60 bg-card",
+				card: "rounded-lg border-border-subtle bg-card",
 				// Row inside a `divide-y` list: no frame of its own.
 				flush: "rounded-none border-transparent",
 			},

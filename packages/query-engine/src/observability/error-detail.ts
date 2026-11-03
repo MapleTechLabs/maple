@@ -1,4 +1,4 @@
-import { Array as Arr, DateTime, Effect, pipe } from "effect"
+import { Array as Arr, DateTime, Effect, pipe, String as Str } from "effect"
 import type { ErrorDetailTracesOutput, ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
 import { parseWarehouseDateTime, formatWarehouseDateTime, warehouseDateTimeToIso } from "../datetime"
 import * as CH from "../ch"
@@ -109,7 +109,7 @@ export interface ErrorDetailOutput {
 
 /** "{}" is what some SDKs put in a status message when they had nothing to say. */
 const meaningful = (text: string | undefined): string => {
-	const trimmed = (text ?? "").trim()
+	const trimmed = Str.trim(text ?? "")
 	return trimmed === "{}" || trimmed === "[]" || trimmed === "null" ? "" : trimmed
 }
 
@@ -156,7 +156,7 @@ const SEVERITY_RANK: ReadonlyMap<string, number> = new Map([
 	["WARN", 2],
 	["WARNING", 2],
 ])
-const severityRank = (severity: string): number => SEVERITY_RANK.get(severity.toUpperCase()) ?? 3
+const severityRank = (severity: string): number => SEVERITY_RANK.get(Str.toUpperCase(severity)) ?? 3
 
 /** Error-level logs first (then newest first): a trace's last Info line is rarely the clue. */
 export const errorFirstLogs = <L extends { readonly severityText: string; readonly timestamp: string }>(
@@ -324,7 +324,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 				errorSpan: errorSpanOf(t),
 				logs: pipe(
 					errorFirstLogs(
-						(logsResults[i]?.data ?? []).map((l) => ({
+						Arr.map(logsResults[i]?.data ?? [], (l) => ({
 							timestamp: l.timestamp,
 							severityText: l.severityText || "INFO",
 							body: l.body,
@@ -344,15 +344,18 @@ const relatedFingerprints = Effect.fn("Observability.relatedFingerprints")(funct
 	traces: ReadonlyArray<ErrorDetailTracesOutput>,
 ) {
 	if (traces.length === 0) return []
-	const starts = traces.map((t) => parseWarehouseDateTime(t.startTime)).filter((ms) => !Number.isNaN(ms))
+	const starts = Arr.filter(
+		Arr.map(traces, (t) => parseWarehouseDateTime(t.startTime)),
+		(ms) => !Number.isNaN(ms),
+	)
 	if (starts.length === 0) return []
-	const maxDurationMs = Math.max(...traces.map((t) => t.durationMicros / 1000))
+	const maxDurationMs = Math.max(...Arr.map(traces, (t) => t.durationMicros / 1000))
 	const executor = yield* WarehouseExecutor
 	const rows = yield* executor.compiledQuery(
 		CH.compile(
 			CH.errorCooccurringFingerprintsQuery({
 				fingerprintHash,
-				traceIds: traces.map((t) => t.traceId),
+				traceIds: Arr.map(traces, (t) => t.traceId),
 			}),
 			{
 				orgId: executor.orgId,
@@ -362,7 +365,7 @@ const relatedFingerprints = Effect.fn("Observability.relatedFingerprints")(funct
 		),
 		{ profile: "list", context: "errorCooccurringFingerprints" },
 	)
-	return rows.map((row): ErrorDetailRelated => ({
+	return Arr.map(rows, (row): ErrorDetailRelated => ({
 		fingerprintHash: row.fingerprintHash,
 		label: row.errorLabel,
 		serviceName: row.serviceName,

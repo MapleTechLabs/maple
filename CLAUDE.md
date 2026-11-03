@@ -7,6 +7,7 @@ backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relation
 
 - `apps/*`: deployables (web, api, ai, ingest, alerting, cli, landing, sandbox, ...).
 - `packages/*`: shared code that knows Maple (`domain`, `query-engine`, `backend`, `ui`, `db`, ...).
+  `views` is the Foldkit kit, charts and service map that `apps/web` and `apps/local-ui` share.
 - `lib/*`: zero Maple knowledge, could ship as a standalone OSS library. A `lib/` package that
   imports `@maple/domain` must move to `packages/`. New packages default to `packages/`.
 
@@ -32,8 +33,10 @@ with `packageManager`.
 
 ## Backend architecture
 
-- `apps/ai` runs the public MCP server, the chat agent, and investigations. `apps/api` forwards
-  `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding; OAuth stays in `apps/api`.
+- `apps/ai` runs the public MCP server and the shared agent runtime (the `ChatSession` Durable
+  Object) behind investigations and their follow-ups, PR review and the Slack/Discord bot.
+  `apps/api` forwards `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding;
+  OAuth stays in `apps/api`.
 - An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
   planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
 - LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
@@ -108,8 +111,9 @@ truthiness.
 - **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
   spans on hot paths like token validation.
 - **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
-  Tailwind 4, Nucleo icons.
-  Add icons to `apps/web/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
+  Tailwind 4, Nucleo icons. Dashboard pages are built from the kit only; read `apps/web/CLAUDE.md`
+  before UI work (find the component in `packages/views/src/ui/INDEX.md`, build missing ones in the kit).
+  Add icons to `packages/views/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
   ```bash
   sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
@@ -129,7 +133,7 @@ rendering. `registry.contract.test.ts` enforces it across the catalog.
 - Parameters come from `apps/ai/src/mcp/lib/params.ts` (`P.timeWindow`, `P.service`, `P.limit`,
   `P.oneOf`...): one spelling per concept, retired names only as `aliases`.
 - Output is an Effect Schema in `packages/domain/src/mcp-outputs/` (`outputSchema` /
-  `structuredContent`, and the chat UI's payload). The model reads `render(output)`, a `ToolDoc`
+  `structuredContent`, which `apps/cli` decodes). The model reads `render(output)`, a `ToolDoc`
   whose `next` calls the registry validates.
 - Failures are typed (`McpInvalidInputError`, `McpNotReadyError`, `McpUnavailableError`,
   `McpQueryBudgetError`, `McpQueryError`); no `isError` literals in tools.
@@ -148,7 +152,10 @@ Test with `bun run --cwd apps/sandbox verify:image` (needs Docker); it catches w
 ## PR previews
 
 A PR labelled `preview` deploys the full stack to `app-pr-<n>.maple.dev` / `api-pr-<n>.maple.dev`
-on the Clerk development instance (`docs/pr-previews.md`). To sign in to one:
+on the Clerk development instance (`docs/pr-previews.md`). Default to `preview:web` for dashboard,
+API or AI changes: it deploys only the Workers on the same seeded data, faster and without a VPC.
+Use `preview` only to test ingest, Electric live sync, landing, or a connect flow that sends
+telemetry. To sign in to either:
 
 ```bash
 infisical run --env dev -- bun run preview:signin <n>   # one-shot signed-in link, valid 2 minutes
@@ -169,4 +176,4 @@ form on the sign-in page with `PREVIEW_SIGNIN_KEY` (Infisical `dev`).
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
 `packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
 `ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
-`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`).
+`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`), `design-rules.md` (tokens and the `maple/*` design lint rules for `apps/web` and `packages/ui`).

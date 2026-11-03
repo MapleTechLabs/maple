@@ -11,6 +11,7 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
 import { UNGROUPED_GROUP_KEY } from "@maple/domain/http"
 import { formatAlertDuration, formatSignalValue, signalLabels } from "./form-utils"
+import { Array as Arr } from "effect"
 
 export interface IncidentTimelineEntry {
 	readonly key: string
@@ -102,7 +103,10 @@ function deliveryEntry(
 		tone: failed ? "crit" : sending ? "neutral" : event.eventType === "resolve" ? "ok" : "info",
 		pending: sending,
 		title,
-		detail: parts.filter((part) => part != null).join(" · "),
+		detail: Arr.join(
+			Arr.filter(parts, (part) => part != null),
+			" · ",
+		),
 		investigation: null,
 	}
 }
@@ -166,7 +170,11 @@ export function buildIncidentTimeline(input: {
 }): ReadonlyArray<IncidentTimelineEntry> {
 	const { incident } = input
 	const group = incidentGroup(incident)
-	const condition = `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
+	// An uptime rule has no threshold to read out: the monitor's checks failed.
+	const condition =
+		incident.signalType === "uptime"
+			? `${incident.ruleName} went down`
+			: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
 
 	const opened: IncidentTimelineEntry = {
 		key: "opened",
@@ -216,16 +224,20 @@ export function buildIncidentTimeline(input: {
 			tone: "crit",
 			pending: true,
 			title: "Still breaching",
-			detail: [
-				`Last value ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
-				reminder,
-			]
-				.filter((part) => part != null)
-				.join(" · "),
+			detail: Arr.join(
+				Arr.filter(
+					[
+						`Last value ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+						reminder,
+					],
+					(part) => part != null,
+				),
+				" · ",
+			),
 			investigation: null,
 		})
 	}
 
 	// Stable sort keeps the insertion order (opened first) for identical stamps.
-	return events.filter((entry) => Number.isFinite(entry.at)).toSorted((a, b) => a.at - b.at)
+	return Arr.filter(events, (entry) => Number.isFinite(entry.at)).toSorted((a, b) => a.at - b.at)
 }

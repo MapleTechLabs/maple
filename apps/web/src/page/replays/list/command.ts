@@ -3,7 +3,7 @@ import { sessionTagsFromSearch } from "../../../components/replays/session-tags"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { ReplaysSearch } from "../../../route/search"
@@ -26,6 +26,7 @@ export const filterInputs = (search: Search, window: TimeWindow) => ({
 	userId: search.userId,
 	userSearch: search.user,
 	groupName: search.group,
+	groupId: search.groupId,
 	visitorId: search.visitorId,
 	hasErrors: search.hasErrors,
 	search: search.q,
@@ -107,19 +108,10 @@ export const FetchFacets = Command.define("FetchReplaysFacets", {
 })
 
 export const LoadSignalPresence = Command.define("LoadReplaysSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
-})
-
-export const MountEmptyState = Mount.define("MountReplaysEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `ReachEndSentinel`: the 1px marker under the list came within 400 px of the viewport. */

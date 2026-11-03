@@ -1,18 +1,18 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import type { GcpConnectorId } from "@maple/domain/primitives"
 import { gcpNothingSeen, gcpScopeLabel } from "../../components/integrations/gcp-connector-state"
-import { encodeLogAttributeFilter } from "../../lib/logs/log-attribute-filters"
-import { Option } from "effect"
+import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import * as Keyed from "../../data/keyed"
-import type { LoadFailure } from "../../data/load-failure"
-import { requestKey } from "../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { requestKey } from "@maple/views/data/request-key"
 import { resolveWindow } from "../../data/time-range"
 import { AppRoute, hrefOf } from "../../route"
-import * as CopyButton from "../../ui/copy-button"
-import * as Dialog from "../../ui/dialog"
-import * as Menu from "../../ui/menu"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	DeleteConnector,
@@ -25,6 +25,8 @@ import {
 	type RemovedConnector,
 	WriteRemoved,
 } from "./gcp"
+import { initConfigure } from "./gcp-configure"
+import { disconnectSpec } from "./disconnect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { ConfigureTarget } from "./gcp-schema"
@@ -45,9 +47,24 @@ export const gcpConnectors = (model: Model): ReadonlyArray<V2GcpConnector> =>
 		onSome: (status) => status.connectors,
 	})
 
-/** The card's entry: the cleanup list from storage. */
+/**
+ * The card's entry: the cleanup list from storage, and a new connection for the connect flow.
+ * Metrics start on until the status says the deployment lacks them.
+ */
 export const enterGcp = (model: Model, context: PageContext): Return => ({
-	model,
+	model:
+		model.gcpCard.configure === null
+			? withCard(model, {
+					configure: initConfigure(
+						{ _tag: "New" },
+						gcpConnectors(model),
+						Option.match(AsyncData.getData(model.statuses.gcp.data), {
+							onNone: () => true,
+							onSome: (status) => status.metrics_available,
+						}),
+					),
+				})
+			: model,
 	commands: [ReadRemoved({ orgId: context.orgId })],
 })
 
@@ -57,8 +74,8 @@ export const enterGcp = (model: Model, context: PageContext): Return => ({
  */
 export const requestBand = (model: Model, context: PageContext): Return => {
 	const connectors = gcpConnectors(model)
-	const logs = connectors.some((connector) => connector.last_log_received_at !== null)
-	const metrics = connectors.some((connector) => connector.last_metrics_received_at !== null)
+	const logs = Arr.some(connectors, (connector) => connector.last_log_received_at !== null)
+	const metrics = Arr.some(connectors, (connector) => connector.last_metrics_received_at !== null)
 	if ((!logs && !metrics) || model.nowMs === 0) return { model }
 	const window =
 		model.gcpCard.window ??
@@ -188,6 +205,12 @@ export const gotMenu = (
 	return { model: next, commands }
 }
 
+/** The removal dialog for a connector by id, opened from outside its menu (a source's Delete). */
+export const clickedDisconnect = (model: Model, context: PageContext, id: string): Return => {
+	const connector = gcpConnectors(model).find((entry) => entry.id === id)
+	return connector === undefined ? { model } : openDisconnect(model, context, connector)
+}
+
 /** "Try again" on the script read. */
 export const retriedScripts = (model: Model, context: PageContext): Return => {
 	const id = model.gcpCard.disconnectId
@@ -224,7 +247,7 @@ export const completedDisconnect = (
 			model: settled,
 			outMessage: PageOutMessage.RequestedToast({
 				type: "error",
-				title: "Failed to disconnect",
+				title: disconnectSpec("gcp").error,
 				description: failure?.message ?? "",
 			}),
 		}
@@ -250,7 +273,7 @@ export const completedDisconnect = (
 	return chain(withCard(settled, { removed, disconnectId: null }), [
 		(next) => disconnectStep(next, Dialog.close(next.gcpCard.disconnectDialog)),
 		(next) => ({ model: next, commands: [WriteRemoved({ orgId: context.orgId, removed })] }),
-		(next) => requestStatus(next, context, "gcp", "Refresh"),
+		(next) => requestStatus(next, context, "gcp", "Supersede"),
 		// `GCP_REACTIVITY_KEYS` also covers the resource inventory the band reads.
 		(next) => refreshInventory(next),
 	])
@@ -282,7 +305,7 @@ export const gotDismissDialog = (model: Model, message: Dialog.Message): Return 
 	dismissStep(model, Dialog.update(model.gcpCard.dismissDialog, message))
 
 export const confirmedDismiss = (model: Model, context: PageContext): Return => {
-	const removed = model.gcpCard.removed.filter((entry) => entry.id !== model.gcpCard.dismissingId)
+	const removed = Arr.filter(model.gcpCard.removed, (entry) => entry.id !== model.gcpCard.dismissingId)
 	return chain(withCard(model, { removed, dismissingId: null }), [
 		(next) => dismissStep(next, Dialog.close(next.gcpCard.dismissDialog)),
 		(next) => ({ model: next, commands: [WriteRemoved({ orgId: context.orgId, removed })] }),

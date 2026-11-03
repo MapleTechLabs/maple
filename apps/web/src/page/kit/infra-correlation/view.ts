@@ -1,17 +1,21 @@
-import { getActiveInfraCorrelations, type InfraCorrelation } from "../../../components/infra/infra-correlations"
+import {
+	getActiveInfraCorrelations,
+	type InfraCorrelation,
+} from "../../../components/infra/infra-correlations"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { INFRA_CHART_TOKENS } from "../../../charts/infra-metric-series"
-import { LINKED_CURSOR_STYLE } from "../../../charts/linked-cursor"
-import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
+import { LINKED_CURSOR_STYLE } from "@maple/views/charts/linked-cursor"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { emptyMessage } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { truncatedText } from "../../../ui/truncated-text"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { docsLink } from "../signal-empty-state"
 import { type Message, type Model } from "./model"
 import { correlationCharts } from "./view-charts"
 import { MountInfraCorrelation } from "./window"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -24,7 +28,7 @@ export type ViewInputs = Readonly<{
 }>
 
 const LINK_CLASS =
-	"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground transition-colors hover:text-foreground"
+	"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground hover:text-foreground active:text-foreground"
 
 /** `CorrelationLink`: the matching infra detail route, per kind. */
 const correlationHref = (correlation: InfraCorrelation): string => {
@@ -63,11 +67,15 @@ const section = (h: H, model: Model, correlation: InfraCorrelation, timeZone: st
 							h.span([h.Class("text-xs font-medium text-foreground")], [correlation.title]),
 							h.a(
 								[h.Href(correlationHref(correlation)), h.Class(LINK_CLASS)],
-								["View in Infrastructure", icon(h, "ExternalLinkIcon", { size: 11 })],
+								["View in Infrastructure", icon(h, "ExternalLinkIcon", { size: 12 })],
 							),
 						],
 					),
-					truncatedText(h, { text: correlation.identifier, mono: true, className: "text-2xs text-muted-foreground" }),
+					truncatedText(h, {
+						text: correlation.identifier,
+						mono: true,
+						className: "text-2xs text-muted-foreground",
+					}),
 				],
 			),
 			correlationCharts(h, model, correlation, timeZone),
@@ -79,7 +87,9 @@ const noCorrelation = (h: H): Html =>
 		h.p([], ["No Kubernetes, container, or host metadata on this record."]),
 		h.p(
 			[h.Class("text-xs")],
-			["Set host.name, container.id or k8s.pod.name as resource attributes to link records to infrastructure."],
+			[
+				"Set host.name, container.id or k8s.pod.name as resource attributes to link records to infrastructure.",
+			],
 		),
 		docsLink(h, "otelConventions"),
 	])
@@ -88,7 +98,10 @@ const noCorrelation = (h: H): Html =>
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const correlations = getActiveInfraCorrelations({ ...inputs.resourceAttributes })
 	if (correlations.length === 0) return noCorrelation(h)
-	const identity = correlations.map((correlation) => `${correlation.kind}:${correlation.identifier}`).join("|")
+	const identity = Arr.join(
+		Arr.map(correlations, (correlation) => `${correlation.kind}:${correlation.identifier}`),
+		"|",
+	)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
@@ -106,7 +119,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						}),
 					),
 				],
-				correlations.map((correlation) => section(h, model, correlation, inputs.timeZone)),
+				Arr.map(correlations, (correlation) => section(h, model, correlation, inputs.timeZone)),
 			),
 		],
 	)

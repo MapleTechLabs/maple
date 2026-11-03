@@ -29,5 +29,5 @@ export interface WorkflowEventSinkApi {
 }
 
 export class WorkflowEventSink extends Context.Service<WorkflowEventSink, WorkflowEventSinkApi>()(
-	"@maple/api/services/integrations/vcs/WorkflowEventSink",
+	"@maple/backend/services/integrations/vcs/WorkflowEventSink",
 ) {}

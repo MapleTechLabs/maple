@@ -1,5 +1,5 @@
 import type { SessionTokenTotals } from "@maple/agent-sessions"
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 
 export const TOKEN_BUCKETS = [
 	{

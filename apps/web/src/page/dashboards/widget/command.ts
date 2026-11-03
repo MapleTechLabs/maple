@@ -1,7 +1,8 @@
 import { DashboardVariableSchema, DashboardWidgetSchema, TimeRangeSchema } from "@maple/domain/http"
-import { Clock, Effect, Queue, Schema, Stream } from "effect"
+import { Clock, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { errorMessageOf, mutateDashboard } from "../kit/store"
@@ -55,13 +56,13 @@ export const FetchVariableOptions = Command.define("FetchWidgetEditorVariableOpt
 		),
 })
 
-/** `crypto.randomUUID()` for a new or cloned query, or a new formula. */
+/** A fresh UUID for a new or cloned query, or a new formula. */
 export const GenerateId = Command.define("GenerateWidgetEditorId", {
 	args: { purpose: GeneratedIdPurpose, source: Schema.String },
 	messages: [Message.GeneratedId],
 	execute: ({ purpose, source }) =>
 		Effect.map(
-			Effect.sync(() => crypto.randomUUID()),
+			Effect.flatMap(Effect.service(SecureRandom.SecureRandom), (random) => random.uuidV4()),
 			(id) => Message.GeneratedId({ purpose, source, id }),
 		),
 })
@@ -92,7 +93,7 @@ export const SaveWidget = Command.define("SaveDashboardWidget", {
 	execute: ({ orgId, dashboardId, widget }) =>
 		mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
 			...document,
-			widgets: document.widgets.map((existing) => (existing.id === widget.id ? widget : existing)),
+			widgets: Arr.map(document.widgets, (existing) => (existing.id === widget.id ? widget : existing)),
 			updatedAt: nowIso,
 		})).pipe(
 			Effect.match({
@@ -120,7 +121,7 @@ export const MeasurePreview = Mount.defineStream("MeasureWidgetEditorPreview", {
 					}
 					measure(element.getBoundingClientRect().width)
 					const observer = new ResizeObserver((entries) =>
-						entries.forEach((entry) => measure(entry.contentRect.width)),
+						Arr.forEach(entries, (entry) => measure(entry.contentRect.width)),
 					)
 					observer.observe(element)
 					return observer

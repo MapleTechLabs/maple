@@ -10,7 +10,7 @@ import {
 	resolveWorkerPlacement,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 
 const props = Effect.gen(function* () {

@@ -2,12 +2,26 @@ import { V2SourceUpdateParams } from "@maple/domain/http/v2"
 import { PushSourcePlatform, SourceId } from "@maple/domain/primitives"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { baseKey } from "../../../data/keyed"
-import { toLoadFailure } from "../../../data/load-failure"
+import { baseKey } from "@maple/views/data/keyed"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSource, loadSources } from "../kit/data"
 import { ExpiryChoice, expiresAtOf } from "../kit/rules"
 import { Message } from "./message"
+
+/** A new step or source starts at the top; the scroll area otherwise keeps the old offset. */
+export const ScrollToTop = Command.define("ScrollSourcesNewToTop", {
+	messages: [Message.CompletedScrollToTop],
+	execute: Effect.sync(() => {
+		document.querySelector('[data-slot="page-scroll-area"]')?.scrollTo({ top: 0 })
+		// Onboarding's drawer: the sheet panel's viewport around the flow.
+		document
+			.querySelector("[data-connect-flow-scroll]")
+			?.closest('[data-slot="scroll-area-viewport"]')
+			?.scrollTo({ top: 0 })
+		return Message.CompletedScrollToTop()
+	}),
+})
 
 /** `FirstDataStatus`'s `POLL_MS`. */
 export const POLL_MS = 5_000
@@ -37,7 +51,8 @@ export const FetchCreatedSource = Command.define("FetchCreatedSource", {
 export const WaitFirstDataPoll = Command.define("WaitFirstDataPoll", {
 	args: { key: Schema.String },
 	messages: [Message.ElapsedPoll],
-	execute: ({ key }) => Effect.sleep(Duration.millis(POLL_MS)).pipe(Effect.as(Message.ElapsedPoll({ key }))),
+	execute: ({ key }) =>
+		Effect.sleep(Duration.millis(POLL_MS)).pipe(Effect.as(Message.ElapsedPoll({ key }))),
 })
 
 /** `sources.create` with the rules payload; the expiry resolves against the clock at submit. */

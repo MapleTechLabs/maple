@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -41,7 +41,7 @@ const recordingEdgeCache = () => {
 		invalidate: (options) =>
 			Effect.sync(() => void invalidated.push({ bucket: options.bucket, key: options.key })),
 		rawGetDetailed: () => Effect.succeed({ status: "miss", value: Option.none(), readMs: 0 }),
-		rawGet: () => Effect.succeed(Option.none()),
+		rawGet: () => Effect.succeedNone,
 		rawPut: () => Effect.void,
 		rawDelete: () => Effect.void,
 	}
@@ -76,7 +76,7 @@ const seedEmailDestination = (db: TestDb, id: string, org: OrgId, members: Array
 	Effect.gen(function* () {
 		const secret = JSON.stringify({
 			type: "email",
-			members: members.map((member) => ({
+			members: Arr.map(members, (member) => ({
 				userId: member,
 				email: `${member}@example.com`,
 				name: null,
@@ -171,6 +171,25 @@ const issueMcpGrant = Effect.fnUntraced(function* (
 	)
 	return { clientId: client.client_id, tokens }
 })
+
+/** A digest subscriber row; `optedOut` stamps the member's own opt-out. */
+const seedDigestSubscription = (db: TestDb, id: string, org: OrgId, user: UserId, optedOut = false) =>
+	Effect.promise(() =>
+		db.pglite.query(
+			`insert into digest_subscriptions
+				(id, org_id, user_id, email, enabled, opted_out_at, created_at, updated_at)
+			 values ($1, $2, $3, $1 || '@example.com', $4, $5, now(), now())`,
+			[id, org, user, !optedOut, optedOut ? new Date() : null],
+		),
+	)
+
+const digestState = (db: TestDb) =>
+	Effect.promise(() =>
+		db.pglite.query<{ id: string; enabled: boolean; web_analytics_enabled: boolean; opted_out: boolean }>(
+			`select id, enabled, web_analytics_enabled, opted_out_at is not null as opted_out
+			 from digest_subscriptions order by id`,
+		),
+	).pipe(Effect.map((result) => result.rows))
 
 const countRows = (db: TestDb, sql: string, params: unknown[] = []) =>
 	Effect.promise(() => queryFirstRow<{ count: number }>(db, sql, params)).pipe(
@@ -290,6 +309,46 @@ describe("MembershipRevocationService", () => {
 			// an admin can see why it went quiet.
 			expect(destination?.enabled).toBe(false)
 			expect(destination?.disabled_reason).toContain("left the organization")
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
+	it.effect("stops a removed member's digests in that org only", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			yield* seedDigestSubscription(db, "dig_leaver", orgId, userId)
+			yield* seedDigestSubscription(db, "dig_leaver_other_org", otherOrgId, userId)
+			yield* seedDigestSubscription(db, "dig_stayer", orgId, stayerId)
+
+			const summary = yield* revocation.revokeMembership(orgId, userId)
+
+			expect(summary.digestSubscriptionsDisabled).toBe(1)
+			expect(yield* digestState(db)).toEqual([
+				{ id: "dig_leaver", enabled: false, web_analytics_enabled: false, opted_out: false },
+				{ id: "dig_leaver_other_org", enabled: true, web_analytics_enabled: true, opted_out: false },
+				{ id: "dig_stayer", enabled: true, web_analytics_enabled: true, opted_out: false },
+			])
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
+	it.effect("stops a deleted user's digests in every org and keeps their own opt-out", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			yield* seedDigestSubscription(db, "dig_a", orgId, userId)
+			yield* seedDigestSubscription(db, "dig_b", otherOrgId, userId, true)
+			yield* seedDigestSubscription(db, "dig_c", orgId, stayerId)
+
+			const summary = yield* revocation.revokeUser(userId)
+
+			expect(summary.digestSubscriptionsDisabled).toBe(2)
+			expect(yield* digestState(db)).toEqual([
+				{ id: "dig_a", enabled: false, web_analytics_enabled: false, opted_out: false },
+				{ id: "dig_b", enabled: false, web_analytics_enabled: false, opted_out: true },
+				{ id: "dig_c", enabled: true, web_analytics_enabled: true, opted_out: false },
+			])
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 

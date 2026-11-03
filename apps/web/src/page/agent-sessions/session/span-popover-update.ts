@@ -1,16 +1,16 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 import { SpanId, TraceId } from "@maple/domain"
 import { spanMessages } from "@maple/agent-sessions"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
-import * as Dialog from "../../../ui/dialog"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import type { PageContext, PageReturn } from "../../contract"
-import { FetchSpanDetail, FetchSpanLogs, LOG_LIMIT } from "../../traces/detail/span-panel/command"
-import type { Message as SpanPanelMessage } from "../../traces/detail/span-panel/message"
-import type { PanelState } from "../../traces/detail/span-panel/model"
+import { FetchSpanDetail, FetchSpanLogs, LOG_LIMIT } from "@maple/views/traces/span-panel/command"
+import type { Message as SpanPanelMessage } from "@maple/views/traces/span-panel/message"
+import type { PanelState } from "@maple/views/traces/span-panel/model"
 import { sessionData, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -39,17 +39,17 @@ export const popoverSpan = (model: Model): AiSessionSpan | undefined => {
 	const spanId = model.search.span
 	if (spanId === undefined || !OVERLAY_VIEWS.has(viewOf(model.search.view))) return undefined
 	if (!AsyncData.hasData(model.firstPage.data)) return undefined
-	return sessionData(model)
-		.turns.flatMap((turn) => turn.spans)
-		.find((span) => span.spanId === spanId)
+	return Arr.flatMap(sessionData(model).turns, (turn) => turn.spans).find((span) => span.spanId === spanId)
 }
 
 export const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, spanDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotSpanDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotSpanDialogMessage({ message }),
+	),
 })
 
-const notPopover = (key: string) => !key.startsWith(`${POPOVER_KEY}:`)
+const notPopover = (key: string) => !Str.startsWith(`${POPOVER_KEY}:`)(key)
 
 /** A new span starts from the defaults: no reads, no disclosures, nothing measured. */
 const forSpan = (model: Model, spanId: string): Model =>
@@ -59,8 +59,8 @@ const forSpan = (model: Model, spanId: string): Model =>
 				...model,
 				spanPanelId: spanId,
 				spanPanel: freshSpanPanel(),
-				openRows: model.openRows.filter(notPopover),
-				clampedBodies: model.clampedBodies.filter(notPopover),
+				openRows: Arr.filter(model.openRows, notPopover),
+				clampedBodies: Arr.filter(model.clampedBodies, notPopover),
 			}
 
 const decodeTraceId = Schema.decodeUnknownOption(TraceId)
@@ -83,7 +83,14 @@ const readFor = (model: Model, context: PageContext, span: AiSessionSpan): Retur
 			onSome: (detail) => ({
 				model: { ...model, spanPanel: { ...model.spanPanel, detail } },
 				commands: Command.mapMessages(
-					[FetchSpanDetail({ key, traceId, spanId, timestamp: span.timestamp })],
+					[
+						FetchSpanDetail({
+							key,
+							request: { traceId, spanId, timestamp: span.timestamp },
+							fallback: { spanAttributes: {}, resourceAttributes: {} },
+							readsCache: false,
+						}),
+					],
 					toPanel,
 				),
 			}),
@@ -95,7 +102,22 @@ const readFor = (model: Model, context: PageContext, span: AiSessionSpan): Retur
 		onNone: () => ({ model }),
 		onSome: (logs) => ({
 			model: { ...model, spanPanel: { ...model.spanPanel, logs } },
-			commands: Command.mapMessages([FetchSpanLogs({ key, traceId, spanId })], toPanel),
+			commands: Command.mapMessages(
+				[
+					FetchSpanLogs({
+						key,
+						request: {
+							traceId,
+							spanId,
+							startTime: span.timestamp,
+							durationMs: span.durationMs,
+							limit: LOG_LIMIT,
+						},
+						readsCache: false,
+					}),
+				],
+				toPanel,
+			),
 		}),
 	})
 }
@@ -137,7 +159,9 @@ export const CheckCloseFocus = Command.define("CheckAgentSessionCloseFocus", {
 
 const liftTooltip = (model: Model, step: ReturnType<typeof Tooltip.update>): Return => ({
 	model: { ...model, closeTooltip: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotCloseTooltipMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotCloseTooltipMessage({ message }),
+	),
 })
 
 /** The Close button's tooltip; its focus opens it only once `:focus-visible` confirms it. */
@@ -148,7 +172,13 @@ export const stepCloseTooltip = (model: Model, message: Tooltip.Message): Return
 
 export const checkedCloseFocus = (model: Model, triggerId: string, isFocusVisible: boolean): Return =>
 	isFocusVisible
-		? liftTooltip(model, Tooltip.update(model.closeTooltip, Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true })))
+		? liftTooltip(
+				model,
+				Tooltip.update(
+					model.closeTooltip,
+					Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true }),
+				),
+			)
 		: { model }
 
 /** The Messages tab's markdown bodies, when that tab is the one open. */

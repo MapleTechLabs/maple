@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
 import { groupEndpoints, leafLabel, looksLikeProbe, looksUnrouted } from "./endpoint-grouping"
+import { Array as Arr } from "effect"
 
 const endpoint = (method: string, route: string, calls = 100, errors = 0): ServiceEndpoint => ({
 	spanName: `${method} ${route}`,
@@ -15,10 +16,16 @@ const endpoint = (method: string, route: string, calls = 100, errors = 0): Servi
 	p50DurationMs: 10,
 	p95DurationMs: 20,
 	p99DurationMs: 30,
+	httpClassifiedSpanCount: calls,
+	httpStatusCount: calls,
+	http4xxCount: 0,
+	http5xxCount: errors,
+	requestBodyBytes: 0,
+	requestBodyCount: 0,
 })
 
 const stems = (groups: ReturnType<typeof groupEndpoints>) =>
-	groups.map((g) => (g.kind === "stem" ? g.stem : g.kind))
+	Arr.map(groups, (g) => (g.kind === "stem" ? g.stem : g.kind))
 
 describe("groupEndpoints", () => {
 	it("uses the longest common prefix, not the first branch point", () => {
@@ -40,7 +47,7 @@ describe("groupEndpoints", () => {
 			endpoint("GET", "/v2/status"),
 		])
 		expect(stems(groups)).toEqual(["/v2/webhooks", "ungrouped"])
-		expect(groups[1]?.endpoints.map((e) => e.route)).toEqual(["/v2/status"])
+		expect(Arr.map(groups[1]?.endpoints, (e) => e.route)).toEqual(["/v2/status"])
 	})
 
 	it("emits no headers at all for a flat API", () => {
@@ -50,7 +57,7 @@ describe("groupEndpoints", () => {
 			endpoint("GET", "/metrics"),
 		])
 		expect(stems(groups)).toEqual(["ungrouped", "ungrouped", "ungrouped"])
-		expect(groups.every((g) => g.endpoints.length === 1)).toBe(true)
+		expect(Arr.every(groups, (g) => g.endpoints.length === 1)).toBe(true)
 	})
 
 	it("lets a busy loose endpoint outrank a group", () => {
@@ -97,7 +104,10 @@ describe("groupEndpoints", () => {
 			endpoint("GET", "/v2/subs/{id}/checkout", 700),
 		])
 		expect(stems(groups)).toEqual(["/v2/webhooks", "/v2/subs/{id}"])
-		expect(groups[1]?.endpoints.map((e) => e.route)).toEqual(["/v2/subs/{id}/checkout", "/v2/subs/{id}"])
+		expect(Arr.map(groups[1]?.endpoints, (e) => e.route)).toEqual([
+			"/v2/subs/{id}/checkout",
+			"/v2/subs/{id}",
+		])
 	})
 
 	it("sorts by path when asked", () => {
@@ -111,7 +121,7 @@ describe("groupEndpoints", () => {
 			"path",
 		)
 		expect(stems(groups)).toEqual(["/v2/subs/{id}", "/v2/webhooks"])
-		expect(groups[1]?.endpoints.map((e) => e.route)).toEqual([
+		expect(Arr.map(groups[1]?.endpoints, (e) => e.route)).toEqual([
 			"/v2/webhooks/github",
 			"/v2/webhooks/stripe",
 		])
@@ -129,7 +139,7 @@ describe("groupEndpoints", () => {
 			"errorRate",
 		)
 		expect(stems(groups)).toEqual(["/v2/webhooks", "/v2/subs/{id}", "probes"])
-		expect(groups[0]?.endpoints.map((e) => e.route)).toEqual([
+		expect(Arr.map(groups[0]?.endpoints, (e) => e.route)).toEqual([
 			"/v2/webhooks/stripe",
 			"/v2/webhooks/github",
 		])
@@ -141,7 +151,7 @@ describe("groupEndpoints", () => {
 			"errorRate",
 			"asc",
 		)
-		expect(ascending[0]?.endpoints.map((e) => e.route)).toEqual([
+		expect(Arr.map(ascending[0]?.endpoints, (e) => e.route)).toEqual([
 			"/v2/webhooks/github",
 			"/v2/webhooks/stripe",
 		])
@@ -249,7 +259,7 @@ describe("scanner noise", () => {
 			endpoint("POST", "/.env", 22),
 		])
 		expect(stems(groups)).toEqual(["/v2/webhooks", "unrouted", "probes"])
-		expect(groups[2]?.endpoints.map((e) => e.route)).toEqual(["/wp-login.php", "/.env"])
+		expect(Arr.map(groups[2]?.endpoints, (e) => e.route)).toEqual(["/wp-login.php", "/.env"])
 	})
 
 	it("keeps probes out of the stem trie entirely", () => {

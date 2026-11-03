@@ -15,6 +15,8 @@ import { resolveMetricTable } from "./query-helpers"
 export interface AttributeKeysQueryOpts {
 	scope: string
 	limit?: number
+	/** Restrict to these exact keys, to check presence without relying on the top-N list. */
+	keys?: readonly string[]
 }
 
 export interface AttributeKeysOutput {
@@ -33,6 +35,7 @@ export function attributeKeysQuery(opts: AttributeKeysQueryOpts) {
 			$.Hour.gte(utcSecondsParam("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq(opts.scope),
+			opts.keys ? CH.inList($.AttributeKey, opts.keys) : undefined,
 		])
 		.groupBy("attributeKey")
 		.orderBy(["usageCount", "desc"])

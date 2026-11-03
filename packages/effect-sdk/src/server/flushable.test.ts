@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber } from "effect"
+import { Duration, Effect, Fiber, Array as Arr, Record as Rec, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
@@ -19,7 +19,7 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		const initHeaders = init?.headers
 		if (initHeaders instanceof Headers) {
 			initHeaders.forEach((v, k) => (headers[k] = v))
-		} else if (Array.isArray(initHeaders)) {
+		} else if (Arr.isArray(initHeaders)) {
 			for (const [k, v] of initHeaders) headers[k] = v
 		} else if (initHeaders) {
 			Object.assign(headers, initHeaders)
@@ -29,6 +29,12 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		return responder(url)
 	}) as typeof fetch
 	return { calls, restore: () => void (globalThis.fetch = original) }
+}
+
+// The keyless tests resolve the key and endpoint from env. Effect snapshots
+// `process.env` on first read, so ambient values are cleared before any test runs.
+for (const name of ["MAPLE_INGEST_KEY", "MAPLE_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"]) {
+	vi.stubEnv(name, undefined)
 }
 
 // Deterministic config that doesn't depend on ambient env, with the auto-flush
@@ -56,15 +62,15 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
+		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
 		expect(traceCall).toBeDefined()
 		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
 		expect(traceCall!.headers.authorization).toBe("Bearer secret")
@@ -75,9 +81,9 @@ describe("MapleFlush.make (server)", () => {
 			}>
 		}
 		const spans = body.resourceSpans[0].scopeSpans[0].spans
-		expect(spans.map((s) => s.name).sort()).toEqual(["op-1", "op-2"])
+		expect(Arr.map(spans, (s) => s.name).sort()).toEqual(["op-1", "op-2"])
 		const attrs = body.resourceSpans[0].resource.attributes
-		const attrMap = Object.fromEntries(attrs.map((a) => [a.key, a.value.stringValue]))
+		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["service.namespace"]).toBe("unit-test-ns")
 		expect(attrMap["maple.sdk.type"]).toBe("server")
@@ -104,7 +110,7 @@ describe("MapleFlush.make (server)", () => {
 
 		await telemetry.flush()
 
-		const logCall = calls.find((c) => c.url.endsWith("/v1/logs"))
+		const logCall = calls.find((c) => Str.endsWith("/v1/logs")(c.url))
 		expect(logCall).toBeDefined()
 		const body = logCall!.body as {
 			resourceLogs: Array<{
@@ -138,7 +144,7 @@ describe("MapleFlush.make (server)", () => {
 
 			yield* Effect.promise(() => telemetry.flush())
 
-			const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
+			const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
 			expect(
 				traceCall,
 				"expected traces to be POSTed even though the inner span was interrupted",
@@ -157,8 +163,8 @@ describe("MapleFlush.make (server)", () => {
 			const span = body.resourceSpans[0].scopeSpans[0].spans.find((s) => s.name === "slow-op")
 			expect(span, "slow-op span should be present in the export").toBeDefined()
 			assert.strictEqual(span!.status.code, 1)
-			assert.strictEqual(span!.status.message, "Interrupted")
-			const interrupted = span!.attributes.find((a) => a.key === "status.interrupted")
+			assert.strictEqual(span!.status.message, undefined)
+			const interrupted = span!.attributes.find((a) => a.key === "maple.interrupted")
 			assert.strictEqual(interrupted?.value.boolValue, true)
 		}),
 	)
@@ -169,7 +175,7 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-once"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-once"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 		const firstCount = calls.length
@@ -187,9 +193,7 @@ describe("MapleFlush.make (server)", () => {
 		// No `ingestKey` and no endpoint → resolveResource yields no key → no-op.
 		const telemetry = make({ serviceName: "unit-test", autoFlushInterval: false })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
 		expect(calls.length).toBe(0)
@@ -198,11 +202,30 @@ describe("MapleFlush.make (server)", () => {
 
 		// One-shot: a second flush stays silent.
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 		expect(calls.length).toBe(0)
 		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
+	})
+
+	it("exports without Authorization to a custom endpoint when no ingest key is configured", async () => {
+		const consoleInfoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+		const { calls, restore: r } = setupFetch()
+		restore = () => {
+			r()
+			consoleInfoSpy.mockRestore()
+		}
+		const { ingestKey: _ingestKey, ...keyless } = baseConfig
+		const telemetry = make({ ...keyless, endpoint: "http://localhost:4318" })
+
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
+		await telemetry.flush()
+
+		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
+		expect(tracesCall?.body).toBeDefined()
+		expect(tracesCall?.headers).not.toHaveProperty("authorization")
+		expect(consoleInfoSpy).not.toHaveBeenCalled()
 	})
 
 	it("survives a failing collector — disables the signal for a cooldown", async () => {
@@ -214,14 +237,12 @@ describe("MapleFlush.make (server)", () => {
 		}
 		const telemetry = make(baseConfig)
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush() // fails, sets cooldown
 		const failedCount = calls.length
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush() // within cooldown, no POST
 		expect(calls.length).toBe(failedCount)
@@ -235,12 +256,12 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make({ ...baseConfig, autoFlushInterval: 5_000 })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("timed-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("timed-op"), Effect.provide(telemetry.layer)),
 		)
 
 		// No manual flush — advance past the interval and let async work settle.
 		await vi.advanceTimersByTimeAsync(5_000)
-		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
+		expect(Arr.some(calls, (c) => Str.endsWith("/v1/traces")(c.url))).toBe(true)
 		const afterAuto = calls.length
 
 		// dispose() clears the timer (its final flush is a no-op — buffer drained).
@@ -255,26 +276,23 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make({ ...baseConfig, dropSpanNames: ["internal."] })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("internal.healthcheck"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.undefined.pipe(Effect.withSpan("internal.healthcheck"), Effect.provide(telemetry.layer)),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("public.request"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.undefined.pipe(Effect.withSpan("public.request"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
+		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
 		expect(traceCall).toBeDefined()
-		const names = (
-			traceCall!.body as {
-				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
-			}
-		).resourceSpans[0].scopeSpans[0].spans.map((s) => s.name)
+		const names = Arr.map(
+			(
+				traceCall!.body as {
+					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
+				}
+			).resourceSpans[0].scopeSpans[0].spans,
+			(s) => s.name,
+		)
 		expect(names).toEqual(["public.request"])
 	})
 
@@ -292,8 +310,8 @@ describe("MapleFlush.make (server)", () => {
 		)
 		await telemetry.flush()
 
-		expect(calls.some((c) => c.url === "https://collector.test/otlp/traces")).toBe(true)
-		expect(calls.some((c) => c.url === "https://collector.test/otlp/logs")).toBe(true)
+		expect(Arr.some(calls, (c) => c.url === "https://collector.test/otlp/traces")).toBe(true)
+		expect(Arr.some(calls, (c) => c.url === "https://collector.test/otlp/logs")).toBe(true)
 	})
 
 	it("normalizes a trailing slash on the endpoint (no double slash)", async () => {
@@ -301,12 +319,10 @@ describe("MapleFlush.make (server)", () => {
 		restore = r
 		const telemetry = make({ ...baseConfig, endpoint: "https://collector.test/" })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => c.url.includes("/v1/traces"))
+		const traceCall = calls.find((c) => Str.includes("/v1/traces")(c.url))
 		expect(traceCall?.url).toBe("https://collector.test/v1/traces")
 	})
 
@@ -331,7 +347,7 @@ describe("MapleFlush.make (server)", () => {
 		await telemetry.flush()
 
 		const span = (
-			calls.find((c) => c.url.endsWith("/v1/traces"))!.body as {
+			calls.find((c) => Str.endsWith("/v1/traces")(c.url))!.body as {
 				resourceSpans: Array<{
 					scopeSpans: Array<{ spans: Array<{ traceId: string; spanId: string }> }>
 				}>
@@ -339,7 +355,7 @@ describe("MapleFlush.make (server)", () => {
 		).resourceSpans[0].scopeSpans[0].spans[0]
 
 		const record = (
-			calls.find((c) => c.url.endsWith("/v1/logs"))!.body as {
+			calls.find((c) => Str.endsWith("/v1/logs")(c.url))!.body as {
 				resourceLogs: Array<{
 					scopeLogs: Array<{
 						logRecords: Array<{ traceId?: string; spanId?: string; severityNumber?: number }>

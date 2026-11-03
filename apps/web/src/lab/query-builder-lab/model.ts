@@ -1,15 +1,15 @@
 import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure } from "../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import { AutocompleteLookup, LookupNames } from "../../page/kit/autocomplete-lookups"
 import { QueryChange } from "../../page/kit/query-builder/change"
 import { QueryDraft } from "../../page/kit/query-builder/draft"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
-import * as Combobox from "../../ui/combobox"
-import * as Select from "../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Select from "@maple/views/ui/select"
 
 // The query builder lab.
 

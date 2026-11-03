@@ -1,9 +1,9 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as Tabs from "../../../ui/tabs"
-import { SignalPresences } from "../../kit/signal-presence"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as Tabs from "@maple/views/ui/tabs"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import { GroupKey, IncidentPage, StatusTab } from "./model"
 
 /** The sidebar facets, each with its excluded twin in the URL. */
@@ -44,7 +44,6 @@ export const Message = defineMessageUnion({
 	/** `useListNavigation`: j/k and the arrows move the focus, Enter opens it, Escape clears it. */
 	PressedListKey: { key: Schema.Literals(["Next", "Previous", "Open", "Escape"]) },
 	CompletedScrollRow: {},
-	PaintedBody: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	GotTabsMessage: { message: Tabs.Message },
 	GotFilterSectionsMessage: { message: FilterSections.Message },

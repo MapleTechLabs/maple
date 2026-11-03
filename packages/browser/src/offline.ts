@@ -1,7 +1,7 @@
 // The eager half of the offline queue: span batches the exporter gave up on
 // (after its own retries) are handed to the deferred chunk, which stores them
 // and sends them again once the browser is back online.
-import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace"
 
 type SpanStash = (spans: ReadableSpan[]) => void
 
@@ -11,9 +11,13 @@ const MAX_HELD = 20
 let stash: SpanStash | undefined
 let held: ReadableSpan[][] = []
 
+/** Attach the deferred chunk's stash, or detach it on shutdown, dropping what is held: it belongs to that session. */
 export function attachSpanStash(next: SpanStash | undefined): void {
 	stash = next
-	if (!next) return
+	if (!next) {
+		held = []
+		return
+	}
 	const pending = held
 	held = []
 	for (const spans of pending) next(spans)

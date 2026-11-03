@@ -1,8 +1,8 @@
 import type { AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
 import type { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
 import { v2DeliveryToDocument } from "@maple/web-data/alerts/form-utils"
-import { Effect } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { Effect, Array as Arr } from "effect"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { SessionTenant } from "../../../data/session-tenant"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
@@ -15,7 +15,7 @@ export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
 		const response = yield* client.alertDeliveries.list({
 			query: incidentId === undefined ? { limit: 100 } : { incident_id: incidentId, limit: 100 },
 		})
-		return response.data.map(v2DeliveryToDocument)
+		return Arr.map(response.data, v2DeliveryToDocument)
 	})
 
 export const listDeliveries = (incidentId?: AlertIncidentId) =>
@@ -24,7 +24,7 @@ export const listDeliveries = (incidentId?: AlertIncidentId) =>
 /** The session's roles allow org administration (`root` or `org:admin`). */
 export const readIsAdmin = Effect.gen(function* () {
 	const session = yield* (yield* SessionTenant).get
-	return session.roles.some((role) => role === "root" || role === "org:admin")
+	return Arr.some(session.roles, (role) => role === "root" || role === "org:admin")
 }).pipe(Effect.orElseSucceed(() => false))
 
 /** `toggleRuleHandler`: PATCH the rule's `enabled`. */
@@ -34,7 +34,10 @@ export const setRuleEnabled = (ruleId: AlertRuleId, isEnabled: boolean) =>
 		yield* client.alertRules.update({ params: { id: ruleId }, payload: { enabled: isEnabled } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
-export const updateDestination = (destinationId: AlertDestinationId, payload: V2AlertDestinationUpdateParams) =>
+export const updateDestination = (
+	destinationId: AlertDestinationId,
+	payload: V2AlertDestinationUpdateParams,
+) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		const params = { id: destinationId }
@@ -44,15 +47,17 @@ export const updateDestination = (destinationId: AlertDestinationId, payload: V2
 				return yield* client.alertDestinations.update({ params, payload })
 			case "webhook":
 				return yield* client.alertDestinations.update({ params, payload })
-			case "hazel-oauth":
-				return yield* client.alertDestinations.update({ params, payload })
 			case "discord":
 				return yield* client.alertDestinations.update({ params, payload })
 			case "telegram":
 				return yield* client.alertDestinations.update({ params, payload })
+			case "google-chat":
+				return yield* client.alertDestinations.update({ params, payload })
 			case "email":
 				return yield* client.alertDestinations.update({ params, payload })
 			case "chat":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "linear":
 				return yield* client.alertDestinations.update({ params, payload })
 		}
 	}).pipe(Effect.asVoid, Effect.mapError(toLoadFailure))

@@ -1,6 +1,6 @@
 import { Array, Function } from "effect"
 import { Command } from "foldkit"
-import { isInFlight, type Slot } from "./slot"
+import { isInFlight, type Keyed } from "@maple/views/data/keyed"
 
 // A query nothing reads any more is aborted, and chDB runs one query at a
 // time, so a superseded or abandoned request must not hold up the ones behind it.
@@ -19,7 +19,11 @@ export type Lane = Readonly<{
 }>
 
 /** A slot's lane: `stop` interrupts the slot's own Command under the slot's current key. */
-export const slotLane = <A>(scope: string, slot: Slot<A>, stop: (key: string) => Command.Command<Outcome>): ReadonlyArray<Lane> => {
+export const slotLane = <A, E>(
+	scope: string,
+	slot: Keyed<A, E>,
+	stop: (key: string) => Command.Command<Outcome>,
+): ReadonlyArray<Lane> => {
 	const { key } = slot
 	return key === null ? [] : [{ scope, key, isInFlight: isInFlight(slot), stop: () => stop(key) }]
 }
@@ -30,8 +34,8 @@ export const stopSuperseded = <M>(
 	after: ReadonlyArray<Lane>,
 	done: (outcome: Outcome) => M,
 ): ReadonlyArray<Command.Command<M>> => {
-	const held = new Set(after.map((lane) => `${lane.scope}\n${lane.key}`))
-	const stale = before.filter((lane) => lane.isInFlight && !held.has(`${lane.scope}\n${lane.key}`))
+	const held = new Set(Array.map(after, (lane) => `${lane.scope}\n${lane.key}`))
+	const stale = Array.filter(before, (lane) => lane.isInFlight && !held.has(`${lane.scope}\n${lane.key}`))
 	const once = Array.dedupeWith(stale, (a, b) => a.scope === b.scope && a.key === b.key)
-	return once.map((lane) => Command.mapMessage(lane.stop(), done))
+	return Array.map(once, (lane) => Command.mapMessage(lane.stop(), done))
 }

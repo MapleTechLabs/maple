@@ -99,9 +99,9 @@ Maple computes Apdex over the entry-point spans of a service: server spans, cons
 
 ### 1. Start from the Low Apdex score template
 
-Open **Alerts → New rule**. Starting from a service page instead (**Services → your service → Create Alert**) pre-fills the scope.
+Open **Alerts → New rule**. Starting from a service page instead (**Services → your service → Create alert**) pre-fills the service.
 
-The rule builder opens on **Start with a template**. Pick <span class="hl-t">Low Apdex score</span> and every field below is filled: signal Apdex, target 500ms, fires below 0.8, five-minute window. Nothing is locked afterwards.
+The rule editor opens on **Start with a template**. Pick <span class="hl-t">Low Apdex score</span> and every field below is filled: signal Apdex, target 500ms, fires below 0.8, five-minute window. Nothing is locked afterwards.
 
 <figure class="shot">
   <img src="/screenshots/docs/apdex-01-template.webp" alt="The Start with a template dialog in Maple's rule builder, with the Low Apdex score template reading “Apdex < 0.8 / 5min (target 500ms)”." loading="lazy" />
@@ -110,9 +110,9 @@ The rule builder opens on **Start with a template**. Pick <span class="hl-t">Low
 
 ### 2. Set the target, then the score you defend
 
-<span class="hl-t">Apdex target (ms)</span> is your T: requests under it count as <span class="hl-ok">fully satisfied</span>, and the <span class="hl-bad">frustrated</span> line follows automatically at 4T. Then set **Condition** to `<` and **Threshold** to the score worth paging for, typically `0.8`.
+<span class="hl-t">Apdex target</span> (in milliseconds) is your T: requests under it count as <span class="hl-ok">fully satisfied</span>, and the <span class="hl-bad">frustrated</span> line follows automatically at 4T. Then set **Alert when the value** to **is below** and **Threshold** to the score worth paging for, typically `0.8`.
 
-The panel also states the measurement boundary: built-in signals read entry-point spans only. A service that swallows failures on child spans and returns success from its entry point stays healthy here at any threshold. Use a **Query** or **Raw SQL** rule for that case.
+The **What to watch** section also states the measurement boundary: built-in signals read entry-point spans only. A service that swallows failures on child spans and returns success from its entry point stays healthy here at any threshold. Use a **Query builder** or **SQL** rule for that case.
 
 <figure class="shot">
   <img src="/screenshots/docs/apdex-02-signal.webp" alt="The Signal & threshold panel with the Apdex chip selected, Apdex target 500 ms, condition less-than, threshold 0.8 and severity Warning." loading="lazy" />
@@ -121,25 +121,25 @@ The panel also states the measurement boundary: built-in signals read entry-poin
 
 ### 3. Scope it
 
-One T fits one class of traffic. If a rule covers many services or routes, set **Group by** to `service.name` or `attr.http.route` so each group is scored on its own and opens its own incident. Scope, grouping and the other fields shared by every signal are described in [Alert rules](/docs/alerting/alert-rules#scope).
+One T fits one class of traffic. If a rule covers many services or routes, set **Split by** to `service.name` or `attr.http.route` so each group is scored on its own and opens its own incident. **Services**, **Environment**, **Split by** and **Exclude** are described in [Alert rules](/docs/alerting/alert-rules#built-in).
 
 <figure class="shot">
   <img src="/screenshots/docs/apdex-03-scope.webp" alt="The Scope panel of the rule builder, with Services, Environments, Group by and Exclude services fields." loading="lazy" />
   <figcaption>Scope and grouping. Empty means every service and every environment.</figcaption>
 </figure>
 
-### 4. Window, timing, destinations
+### 4. Set the window and destinations
 
-Five minutes is the default window. Short windows on low-traffic services are noisy for Apdex in particular, because a handful of slow requests moves the ratio a long way. Keep **Min samples** at 50 or higher, and raise it on low-traffic services, so a service with 4 requests at 3am cannot post a score of 0.5 and page someone.
+Five minutes is the default window. Short windows on low-traffic services are noisy for Apdex in particular, because a handful of slow requests moves the ratio a long way. Keep **Minimum samples** at 50 or higher, and raise it on low-traffic services, so a service with 4 requests at 3am cannot post a score of 0.5 and page someone.
 
 <figure class="shot">
   <img src="/screenshots/docs/apdex-04-timing.webp" alt="The severity toggle set to Warning, and the expanded evaluation timing row: window 5 minutes, 2 breaches to fire, 2 healthy checks to resolve, minimum 50 samples, renotify every 30 minutes." loading="lazy" />
   <figcaption>Severity and evaluation timing. The defaults shown are the ones the template sets.</figcaption>
 </figure>
 
-An Apdex rule skips windows with no requests, so a service that goes quiet overnight does not read as a score of 0. The other timing fields (**Breaches to fire**, **Healthy to resolve**, **Renotify (min)**) work as on every rule. See [Evaluation timing](/docs/alerting/alert-rules#evaluation-timing).
+An Apdex rule skips windows with no requests, so a service that goes quiet overnight does not read as a score of 0. The other fields (**Breaches to fire**, **Resolve after**, **Remind while open, every**) work as on every rule. See [How alert rules are evaluated](/docs/alerting/rule-evaluation).
 
-Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations), click **Test rule** to replay the rule over the past week, and save.
+Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations) under **Who gets notified**, and pick **Last 1 week** in the range picker above the chart to replay the rule over the past week. Then click **Create rule**.
 
 ### Creating the same rule over the API
 
@@ -200,7 +200,7 @@ After the rule exists, you can ask which of your Apdex rules would never fire, o
 ## Known limitations
 
 - **Apdex is computed on sampled spans.** Under uniform sampling the score stays representative. A sampler that keeps slow or failed traces preferentially, without reporting its sampling weight, drags the score down. See [Sampling and throughput](/docs/concepts/sampling-throughput).
-- **One T per rule.** A service whose `/healthz` and `/reports/export` share a rule is being measured against a target that fits neither. Group by `attr.http.route`, or write separate rules.
+- **One T per rule.** A service whose `/healthz` and `/reports/export` share a rule is being measured against a target that fits neither. Split by `attr.http.route`, or write separate rules.
 - **The score hides magnitude.** It counts frustrated requests without weighting how frustrated they were. Pair it with a p99 rule.
 
 The [What is Apdex?](/guides/what-is-apdex) guide covers the formula, a worked example, what counts as a good score, and how Apdex compares to p95 and p99.

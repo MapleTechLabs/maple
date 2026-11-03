@@ -1,16 +1,16 @@
-import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { logAttributeQueryFilters } from "../../../lib/logs/log-attribute-filters"
+import { Density, readLogsViewPreferences, saveLogsViewPreferences } from "@maple/views/ui/logs/viewer"
+import { logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { listInput, PAGE_SIZE, toVolumeBuckets, volumeInput } from "./derive"
 import { Message, RequestMode } from "./message"
-import { Density, type LogRowSchema, type LogsPage } from "./model"
+import type { LogRowSchema, LogsPage } from "./model"
 
 /** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
 export const ResolveWindow = Command.define("ResolveLogsWindow", {
@@ -49,8 +49,10 @@ export const FetchFirstPage = Command.define("FetchLogsFirstPage", {
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, search, window, pinnedNamespace }) =>
 		listLogs({ data: listInput(search, window, pinnedNamespace) }).pipe(
-			Effect.map((response) => page(response.data, response.meta.cursor)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => page(response.data, response.meta.cursor),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
 		),
@@ -62,8 +64,10 @@ export const FetchNextPage = Command.define("FetchLogsNextPage", {
 	messages: [Message.CompletedFetchNextPage],
 	execute: ({ key, search, window, pinnedNamespace, generation, cursor }) =>
 		listLogs({ data: { ...listInput(search, window, pinnedNamespace), cursor, limit: PAGE_SIZE } }).pipe(
-			Effect.map((response) => page(response.data, response.meta.cursor)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => page(response.data, response.meta.cursor),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchNextPage({ key, generation, result })),
 		),
@@ -87,8 +91,7 @@ export const FetchFacets = Command.define("FetchLogsFacets", {
 				...logAttributeQueryFilters(attrs),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -100,8 +103,10 @@ export const FetchVolume = Command.define("FetchLogsVolume", {
 	messages: [Message.CompletedFetchVolume],
 	execute: ({ key, search, window, pinnedNamespace, bucketSeconds }) =>
 		getCustomChartTimeSeries({ data: volumeInput(search, window, bucketSeconds, pinnedNamespace) }).pipe(
-			Effect.map((response) => toVolumeBuckets(response.data)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => toVolumeBuckets(response.data),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchVolume({ key, result })),
 		),
@@ -113,10 +118,11 @@ export const FetchAttributeKeys = Command.define("FetchLogAttributeKeys", {
 	messages: [Message.CompletedFetchAttributeKeys],
 	execute: ({ key, window }) =>
 		getLogAttributeKeys({ data: window }).pipe(
-			Effect.map((response) =>
-				response.data.map((row) => ({ name: row.attributeKey, count: row.usageCount })),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					Arr.map(response.data, (row) => ({ name: row.attributeKey, count: row.usageCount })),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchAttributeKeys({ key, result })),
 		),
@@ -124,35 +130,19 @@ export const FetchAttributeKeys = Command.define("FetchLogAttributeKeys", {
 
 // PREFERENCES
 
-const WRAP_KEY = "maple.logs.wrap"
-const DENSITY_KEY = "maple.logs.density"
-const decodeWrap = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Boolean))
-const decodeDensity = Schema.decodeUnknownOption(Schema.fromJsonString(Density))
-
-/** The `Atom.kvs` preferences (JSON in localStorage) and the number locale, read on entry. */
+/** The view preferences and the number locale, read on entry. */
 export const ReadPreferences = Command.define("ReadLogsPreferences", {
 	messages: [Message.CompletedReadPreferences],
-	execute: Effect.sync(() =>
-		Message.CompletedReadPreferences({
-			wrap: Option.getOrElse(Option.flatMap(readLocalStorage(WRAP_KEY), decodeWrap), () => false),
-			density: Option.getOrElse(
-				Option.flatMap(readLocalStorage(DENSITY_KEY), decodeDensity),
-				() => "compact" as const,
-			),
-			locale: navigator.language,
-		}),
+	execute: Effect.map(readLogsViewPreferences, (preferences) =>
+		Message.CompletedReadPreferences({ ...preferences, locale: navigator.language }),
 	),
 })
 
 export const SavePreferences = Command.define("SaveLogsPreferences", {
 	args: { wrap: Schema.Boolean, density: Density },
 	messages: [Message.CompletedSavePreference],
-	execute: ({ wrap, density }) =>
-		Effect.sync(() => {
-			writeLocalStorage(WRAP_KEY, JSON.stringify(wrap))
-			writeLocalStorage(DENSITY_KEY, JSON.stringify(density))
-			return Message.CompletedSavePreference()
-		}),
+	execute: (preferences) =>
+		Effect.as(saveLogsViewPreferences(preferences), Message.CompletedSavePreference()),
 })
 
 /** `PageRefreshProvider` keeps Reload busy this long. */
@@ -177,20 +167,10 @@ export const MountFilterRail = Mount.define("MountLogsFilterRail", {
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
 })
 
-/** The empty state is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountLogsEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 /** `useSignalPresence`, sent when the empty state mounts (never with the data). */
 export const LoadSignalPresence = Command.define("LoadLogsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })

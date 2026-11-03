@@ -1,0 +1,10 @@
+---
+// The core subsets from scripts/fonts/subset-fonts.py. Every page draws both
+// families (Geist Mono is the body face), so both are preloaded; the extended
+// files stay behind their unicode-range.
+import geistCore from "../fonts/geist-core.woff2?url&no-inline";
+import geistMonoCore from "../fonts/geist-mono-core.woff2?url&no-inline";
+---
+
+<link rel="preload" href={geistMonoCore} as="font" type="font/woff2" crossorigin />
+<link rel="preload" href={geistCore} as="font" type="font/woff2" crossorigin />

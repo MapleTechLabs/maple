@@ -1,11 +1,11 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
-import { ResolveThemeColors, ThemeMessage } from "../../../../charts/theme-colors"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import * as Frame from "../../kit/frame"
-import { LinkedCursorMessage, MountLinkedCursor } from "../../../../charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { Message } from "./message"
 import type { HostSummary, Model } from "./model"
 import { init, update } from "./update"
@@ -44,15 +44,22 @@ const mounted = () => [
 const resolved = (model: Model, at = window) =>
 	pageUpdate(
 		model,
-		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window: at, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
+		Message.GotFrameMessage({
+			message: Frame.Message.CompletedResolveWindow({
+				window: at,
+				nowMs: NOW,
+				locale: "en-US",
+				mode: "Load",
+			}),
+		}),
 	)
 
 describe("host detail", () => {
 	test("the window fetches the summary and one series per metric strip", () => {
 		const entered = init(route, context)
-		const names = (resolved(entered.model).commands ?? []).map(({ name }) => name)
-		expect(names.filter((name) => name === "FetchInfraHostSummary")).toHaveLength(1)
-		expect(names.filter((name) => name === "FetchInfraHostSeries")).toHaveLength(5)
+		const names = Arr.map(resolved(entered.model).commands ?? [], ({ name }) => name)
+		expect(Arr.filter(names, (name) => name === "FetchInfraHostSummary")).toHaveLength(1)
+		expect(Arr.filter(names, (name) => name === "FetchInfraHostSeries")).toHaveLength(5)
 	})
 
 	test("a series answer for a superseded window is dropped", () => {
@@ -73,7 +80,10 @@ describe("host detail", () => {
 		const windowed = resolved(init(route, context).model).model
 		const loaded = pageUpdate(
 			windowed,
-			Message.CompletedFetchSummary({ key: windowed.summary.key ?? "", result: Result.succeed(summary) }),
+			Message.CompletedFetchSummary({
+				key: windowed.summary.key ?? "",
+				result: Result.succeed(summary),
+			}),
 		).model
 		scene(
 			{ update: pageUpdate, view },
@@ -90,7 +100,12 @@ describe("host detail", () => {
 			windowed,
 			Message.CompletedFetchSummary({ key: windowed.summary.key ?? "", result: Result.succeed(null) }),
 		).model
-		scene({ update: pageUpdate, view }, given(empty), ...mounted(), expectView(text("Show last 7 days")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			...mounted(),
+			expectView(text("Show last 7 days")).toExist(),
+		)
 		expect(pageUpdate(empty, Message.ClickedWidenRange()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/infra/hosts/ip-10-0-12-84?timePreset=7d",

@@ -1,8 +1,8 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import * as Dialog from "../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../platform/resources"
-import { OpenGlobalChat, SaveTheme } from "./command"
+import { SaveTheme } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
 import { DelayClose, ReleasePaletteServices } from "./palette/command"
@@ -31,7 +31,7 @@ export const paletteContextOf = (model: Model): Palette.Context => ({
 export const openPalette = (model: Model): UpdateReturn => {
 	if (model.palette !== null) return { model }
 	const opened = Palette.open()
-	return { model: { ...model, palette: opened.model }, commands: (opened.commands ?? []).map(toPalette) }
+	return { model: { ...model, palette: opened.model }, commands: Arr.map(opened.commands ?? [], toPalette) }
 }
 
 /** The unmount: the services read's idle TTL starts. */
@@ -76,8 +76,8 @@ export const paletteStep = (model: Model, message: PaletteModel.Message): Update
 	// A closing palette only waits for its delay; nothing else reaches it.
 	if (model.palette.isClosing && message._tag !== "ElapsedCloseDelay") return { model }
 	const next = Palette.update(model.palette, message, paletteContextOf(model))
-	const stepped: Model = { ...model, palette: next.model }
-	const commands = (next.commands ?? []).map(toPalette)
+	const stepped: Model = next.model === model.palette ? model : { ...model, palette: next.model }
+	const commands = Arr.map(next.commands ?? [], toPalette)
 	const out = next.outMessage
 	if (out === undefined) return { model: stepped, commands }
 	const closed = withCommands(closePalette(stepped), commands)
@@ -89,15 +89,6 @@ export const paletteStep = (model: Model, message: PaletteModel.Message): Update
 			return { ...closed, outMessage: OutMessage.RequestedNavigation({ url: out.href }) }
 		case "RanAction":
 			switch (out.action) {
-				case "AskMapleAi":
-					return {
-						model: closing,
-						commands: [
-							...commands,
-							OpenGlobalChat({ isFocusVisible: true }),
-							toPalette(DelayClose()),
-						],
-					}
 				case "ToggleTheme":
 					return withCommands(toggleTheme(closed.model), closed.commands)
 				case "ShowShortcuts":
@@ -116,6 +107,6 @@ export const shortcutsDialogStep = (model: Model, message: Dialog.Message): Upda
 		? { model: { ...model, shortcutsDialog: null } }
 		: {
 				model: { ...model, shortcutsDialog: next.model },
-				commands: (next.commands ?? []).map(toShortcuts),
+				commands: Arr.map(next.commands ?? [], toShortcuts),
 			}
 }

@@ -2,23 +2,31 @@ import type { V2ApiKey } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { apiKeyRowPermissions } from "../../../components/settings/api-key-permissions"
-import { KEY_TYPE_LABELS, keyAccessSummary, type KeyRow, type KeyType } from "../../../components/settings/keys-table"
+import {
+	KEY_TYPE_LABELS,
+	keyAccessSummary,
+	type KeyRow,
+	type KeyType,
+} from "../../../components/settings/keys-table"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import * as Menu from "../../../ui/menu"
-import type * as MenuView from "../../../ui/menu-view"
-import { rowActionsMenu } from "../../../ui/row-actions-menu"
-import { truncatedText } from "../../../ui/truncated-text"
+import { badge } from "@maple/views/ui/display"
+import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import * as Menu from "@maple/views/ui/menu"
+import type * as MenuView from "@maple/views/ui/menu-view"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead, dataTable } from "../../infra/kit/data-table"
 import { relativeTime } from "../../kit/relative-time"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
 
-// `KeysTable`, `ApiRow`.
+// `KeysTable`, `ApiRow`, `DevicesTable`.
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -31,20 +39,27 @@ const TYPE_BADGE = {
 } as const satisfies { readonly [Type in KeyType]: "muted" | "ok" }
 
 const COL = {
-	name: "w-0 min-w-[180px] flex-1",
-	access: "hidden w-[150px] shrink-0 @xl:block",
-	createdBy: "hidden w-[140px] shrink-0 @min-[820px]:block",
-	lastUsed: "hidden w-[80px] shrink-0 @2xl:block",
-	expires: "w-[100px] shrink-0",
+	name: "w-0 min-w-44 flex-1",
+	access: "hidden w-36 shrink-0 @xl:block",
+	createdBy: "hidden w-36 shrink-0 @min-[820px]:block",
+	lastUsed: "hidden w-20 shrink-0 @2xl:block",
+	expires: "w-24 shrink-0",
 	menu: "w-7 shrink-0",
 }
 
-const ROW_CLASS = "flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0"
+const ROW_CLASS =
+	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 transition-colors last:border-0"
 
 const typeBadge = (h: H, type: KeyType): Html =>
 	badge(h, { variant: TYPE_BADGE[type], size: "sm", mono: true }, [KEY_TYPE_LABELS[type]])
 
-const rowMenu = (h: H, model: Model, menuId: string, label: string, entries: ReadonlyArray<MenuView.MenuEntry>) =>
+const rowMenu = (
+	h: H,
+	model: Model,
+	menuId: string,
+	label: string,
+	entries: ReadonlyArray<MenuView.MenuEntry>,
+) =>
 	rowActionsMenu(h, {
 		slotId: menuId,
 		model: model.rowMenus[menuId] ?? Menu.init(menuId),
@@ -72,51 +87,93 @@ const statusBadge = (h: H, row: KeyRow, now: number): ReadonlyArray<Html> => {
 	return []
 }
 
-const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (iso: string) => string): Html => {
+const apiRow = (
+	h: H,
+	model: Model,
+	row: KeyRow,
+	inputs: Inputs,
+	formatDate: (iso: string) => string,
+): Html => {
 	const key: V2ApiKey = row.key
 	const isDead = row.status === "revoked" || row.status === "expired"
 	const can = apiKeyRowPermissions(key, { isAdmin: model.isAdmin, userId: model.userId })
 	const entries: ReadonlyArray<MenuView.MenuEntry> = [
-		...(can.canRoll ? [{ _tag: "Item" as const, value: "roll", label: "Roll key", icon: "ArrowPathIcon" as const }] : []),
+		...(can.canRoll
+			? [{ _tag: "Item" as const, value: "roll", label: "Roll key", icon: "ArrowPathIcon" as const }]
+			: []),
 		...(can.canRevoke
-			? [{ _tag: "Item" as const, value: "revoke", label: "Revoke key", icon: "TrashIcon" as const, variant: "destructive" as const }]
+			? [
+					{
+						_tag: "Item" as const,
+						value: "revoke",
+						label: "Revoke key",
+						icon: "TrashIcon" as const,
+						variant: "destructive" as const,
+					},
+				]
 			: []),
 	]
 	return h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-muted/20"))],
+		[
+			h.Key(row.id),
+			h.Class(
+				cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken active:bg-surface-sunken"),
+			),
+		],
 		[
 			h.div(
-				[h.Class(cn(COL.name, "flex flex-col gap-1"))],
+				[h.Class(cn(COL.name, vstackClass({ gap: "1" })))],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							truncatedText(h, { text: key.name, className: "text-foreground text-sm font-medium" }),
-							h.span([h.Class("text-muted-foreground shrink-0 font-mono text-2xs")], [key.key_prefix]),
-							typeBadge(h, row.type),
-						],
-					),
-					...(key.description ? [truncatedText(h, { text: key.description, className: "text-muted-foreground text-2xs" })] : []),
+					hstack(h, { gap: "2", shrink: true }, [
+						truncatedText(h, {
+							text: key.name,
+							className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
+						}),
+						h.span(
+							[h.Class("text-muted-foreground shrink-0 font-mono text-2xs")],
+							[key.key_prefix],
+						),
+						typeBadge(h, row.type),
+					]),
+					...(key.description
+						? [
+								truncatedText(h, {
+									text: key.description,
+									className: typographyClass({ size: "2xs", tone: "muted" }),
+								}),
+							]
+						: []),
 				],
 			),
-			truncatedText(h, { text: keyAccessSummary(row), className: cn(COL.access, "text-foreground/80 text-2xs") }),
+			truncatedText(h, {
+				text: keyAccessSummary(row),
+				className: cn(COL.access, "text-foreground-soft text-2xs"),
+			}),
 			h.div(
 				[h.Class(COL.createdBy)],
 				[
 					h.div(
 						[h.Class("flex min-w-0 flex-col gap-0.5 text-2xs")],
 						[
-							truncatedText(h, { text: key.created_by_email ?? EMPTY_VALUE, className: "text-foreground/80" }),
-							h.span([h.Class("text-muted-foreground truncate")], [formatDate(key.created_at)]),
+							truncatedText(h, {
+								text: key.created_by_email ?? EMPTY_VALUE,
+								className: "text-foreground-soft",
+							}),
+							typography(h, { tone: "muted", truncate: true }, [formatDate(key.created_at)]),
 						],
 					),
 				],
 			),
 			h.span(
-				[h.Class(cn(COL.lastUsed, "text-muted-foreground truncate text-2xs"))],
+				[h.Class(cn(COL.lastUsed, typographyClass({ size: "2xs", tone: "muted", truncate: true })))],
 				[
 					key.last_used_at
-						? relativeTime(h, { value: key.last_used_at, nowMs: inputs.nowMs, timeZone: inputs.timeZone, tooltip: "title" })
+						? relativeTime(h, {
+								value: key.last_used_at,
+								nowMs: inputs.nowMs,
+								timeZone: inputs.timeZone,
+								tooltip: "title",
+							})
 						: EMPTY_VALUE,
 				],
 			),
@@ -132,7 +189,9 @@ const apiRow = (h: H, model: Model, row: KeyRow, inputs: Inputs, formatDate: (is
 			),
 			h.div(
 				[h.Class(cn(COL.menu, "flex items-center justify-end"))],
-				entries.length === 0 ? [] : [rowMenu(h, model, `keys-row-${key.id}`, `Actions for ${key.name}`, entries)],
+				entries.length === 0
+					? []
+					: [rowMenu(h, model, `keys-row-${key.id}`, `Actions for ${key.name}`, entries)],
 			),
 		],
 	)
@@ -151,22 +210,142 @@ export const keysTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, input
 			columnHead(h, { label: "Expires", width: COL.expires }),
 			h.span([h.Class(COL.menu)], []),
 		],
-		rows.map((row) => apiRow(h, model, row, inputs, formatDate)),
+		Arr.map(rows, (row) => apiRow(h, model, row, inputs, formatDate)),
+	)
+}
+
+const DEVICE_COL = {
+	name: "w-0 min-w-44 flex-1",
+	owner: "hidden w-44 shrink-0 @xl:block",
+	created: "hidden w-28 shrink-0 @2xl:block",
+	lastUsed: "hidden w-20 shrink-0 @lg:block",
+	expires: "w-24 shrink-0",
+	menu: "w-7 shrink-0",
+}
+
+const deviceRow = (
+	h: H,
+	model: Model,
+	row: KeyRow,
+	inputs: Inputs,
+	formatDate: (iso: string) => string,
+): Html => {
+	const key: V2ApiKey = row.key
+	const can = apiKeyRowPermissions(key, { isAdmin: model.isAdmin, userId: model.userId })
+	const entries: ReadonlyArray<MenuView.MenuEntry> = can.canRevoke
+		? [
+				{
+					_tag: "Item",
+					value: "revoke",
+					label: "Revoke device key",
+					icon: "TrashIcon",
+					variant: "destructive",
+				},
+			]
+		: []
+	return h.div(
+		[h.Key(row.id), h.Class(cn(ROW_CLASS, "hover:bg-surface-sunken active:bg-surface-sunken"))],
+		[
+			h.div(
+				[h.Class(cn(DEVICE_COL.name, hstackClass({ gap: "2", shrink: true })))],
+				[
+					truncatedText(h, {
+						text: key.name,
+						className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
+					}),
+					h.span([h.Class("text-muted-foreground shrink-0 font-mono text-2xs")], [key.key_prefix]),
+				],
+			),
+			truncatedText(h, {
+				text: key.created_by_email ?? EMPTY_VALUE,
+				className: cn(DEVICE_COL.owner, "text-foreground-soft text-2xs"),
+			}),
+			h.span(
+				[
+					h.Class(
+						cn(
+							DEVICE_COL.created,
+							typographyClass({ size: "2xs", tone: "muted", truncate: true }),
+						),
+					),
+				],
+				[formatDate(key.created_at)],
+			),
+			h.span(
+				[
+					h.Class(
+						cn(
+							DEVICE_COL.lastUsed,
+							typographyClass({ size: "2xs", tone: "muted", truncate: true }),
+						),
+					),
+				],
+				[
+					key.last_used_at
+						? relativeTime(h, {
+								value: key.last_used_at,
+								nowMs: inputs.nowMs,
+								timeZone: inputs.timeZone,
+								tooltip: "title",
+							})
+						: EMPTY_VALUE,
+				],
+			),
+			h.span(
+				[
+					h.Class(
+						cn(
+							DEVICE_COL.expires,
+							typographyClass({ size: "2xs", tone: "muted", truncate: true }),
+						),
+					),
+				],
+				[key.expires_at ? formatDate(key.expires_at) : "Never"],
+			),
+			h.div(
+				[h.Class(cn(DEVICE_COL.menu, "flex items-center justify-end"))],
+				entries.length === 0
+					? []
+					: [rowMenu(h, model, `keys-row-${key.id}`, `Actions for ${key.name}`, entries)],
+			),
+		],
+	)
+}
+
+/** One row per phone with Home Screen widgets: the key its app minted for them. */
+export const devicesTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, inputs: Inputs): Html => {
+	const formatDate = (iso: string) => formatDateInTimezone(iso, { timeZone: inputs.timeZone })
+	return dataTable(
+		h,
+		{ ariaLabel: "Mobile devices", stickySurfaceClass: "bg-card", className: "@container border-y-0" },
+		[
+			columnHead(h, { label: "Device key", width: DEVICE_COL.name }),
+			columnHead(h, { label: "Owner", width: DEVICE_COL.owner }),
+			columnHead(h, { label: "Created", width: DEVICE_COL.created }),
+			columnHead(h, { label: "Last used", width: DEVICE_COL.lastUsed }),
+			columnHead(h, { label: "Expires", width: DEVICE_COL.expires }),
+			h.span([h.Class(DEVICE_COL.menu)], []),
+		],
+		Arr.map(rows, (row) => deviceRow(h, model, row, inputs, formatDate)),
 	)
 }
 
 export const keysEmpty = (h: H, model: Model): Html => {
-	const needle = model.search.trim()
+	const needle = Str.trim(model.search)
+	if (needle.length > 0)
+		return filteredEmpty(h, {
+			noun: "keys",
+			description: `Nothing matches "${needle}".`,
+			className: "py-8",
+		})
 	return empty(
 		h,
 		[
 			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "KeyIcon", { size: 16 })]),
-				emptyTitle(h, [needle.length > 0 ? "No keys match" : "No keys here"]),
+				emptyMedia(h, { variant: "icon" }, [icon(h, "KeyIcon")]),
+				emptyTitle(h, ["No keys here"]),
 				emptyDescription(h, [
-					needle.length > 0
-						? `Nothing matches "${needle}".`
-						: `There are no ${STATUS_LABELS[model.statusFilter].toLowerCase()} keys of this type.`,
+					`There are no ${Str.toLowerCase(STATUS_LABELS[model.statusFilter])} keys of this type.`,
 				]),
 			]),
 		],

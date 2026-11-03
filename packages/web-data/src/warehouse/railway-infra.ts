@@ -1,8 +1,14 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { RailwayInfraServicesRequest, RailwayInfraServiceTimeseriesRequest } from "@maple/domain/http"
-import { formatWarehouseDateTime } from "@maple/query-engine"
 import { MapleInternalHttp } from "./warehouse-services"
-import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
+import {
+	InfraWindowInput,
+	decodeInput,
+	resolveInfraWindow,
+	runWarehouseQuery,
+	wireNumber,
+	wireString,
+} from "./effect-utils"
 
 /** /infra/railway data access over the `railway.*` gauges the Railway poller ingests. */
 
@@ -39,35 +45,24 @@ export interface RailwayServiceTimeseriesRow {
 	replicas: number
 }
 
-const TimeRangeInputSchema = Schema.Struct({
-	startTime: Schema.optional(WarehouseDateTimeString),
-	endTime: Schema.optional(WarehouseDateTimeString),
-})
-
 const TimeseriesInputSchema = Schema.Struct({
-	...TimeRangeInputSchema.fields,
+	...InfraWindowInput.fields,
 	environmentId: Schema.String,
 	serviceId: Schema.String,
 	bucketSeconds: Schema.Number,
 })
 
-export type RailwayTimeRangeInput = (typeof TimeRangeInputSchema)["Encoded"]
+export type RailwayTimeRangeInput = (typeof InfraWindowInput)["Encoded"]
 export type RailwayTimeseriesInput = (typeof TimeseriesInputSchema)["Encoded"]
-
-const resolveRange = (input: { startTime?: string; endTime?: string }, nowMillis: number) => ({
-	startTime: input.startTime ?? formatWarehouseDateTime(nowMillis - 6 * 60 * 60 * 1000),
-	endTime: input.endTime ?? formatWarehouseDateTime(nowMillis),
-})
-
-const num = (value: unknown) => Number(value ?? 0)
 
 export const getRailwayServices = Effect.fn("QueryEngine.getRailwayServices")(function* ({
 	data,
 }: {
 	data: RailwayTimeRangeInput
 }) {
-	const input = yield* decodeInput(TimeRangeInputSchema, data, "getRailwayServices")
-	const range = resolveRange(input, yield* Clock.currentTimeMillis)
+	const input = yield* decodeInput(InfraWindowInput, data, "getRailwayServices")
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	const result = yield* runWarehouseQuery("railwayInfraServices", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -77,20 +72,20 @@ export const getRailwayServices = Effect.fn("QueryEngine.getRailwayServices")(fu
 		}),
 	)
 	return {
-		services: result.data.map((row): RailwayServiceRow => ({
-			environmentId: String(row.environmentId ?? ""),
-			serviceId: String(row.serviceId ?? ""),
-			serviceName: String(row.serviceName ?? ""),
-			projectName: String(row.projectName ?? ""),
-			environmentName: String(row.environmentName ?? ""),
-			cpuAvg: num(row.cpuAvg),
-			cpuMax: num(row.cpuMax),
-			cpuLimit: num(row.cpuLimit),
-			memoryAvg: num(row.memoryAvg),
-			memoryMax: num(row.memoryMax),
-			memoryLimit: num(row.memoryLimit),
-			replicas: num(row.replicas),
-			lastSeen: String(row.lastSeen ?? ""),
+		services: Arr.map(result.data, (row): RailwayServiceRow => ({
+			environmentId: wireString(row.environmentId),
+			serviceId: wireString(row.serviceId),
+			serviceName: wireString(row.serviceName),
+			projectName: wireString(row.projectName),
+			environmentName: wireString(row.environmentName),
+			cpuAvg: wireNumber(row.cpuAvg),
+			cpuMax: wireNumber(row.cpuMax),
+			cpuLimit: wireNumber(row.cpuLimit),
+			memoryAvg: wireNumber(row.memoryAvg),
+			memoryMax: wireNumber(row.memoryMax),
+			memoryLimit: wireNumber(row.memoryLimit),
+			replicas: wireNumber(row.replicas),
+			lastSeen: wireString(row.lastSeen),
 		})),
 	}
 })
@@ -101,7 +96,8 @@ export const getRailwayServiceTimeseries = Effect.fn("QueryEngine.getRailwayServ
 	data: RailwayTimeseriesInput
 }) {
 	const input = yield* decodeInput(TimeseriesInputSchema, data, "getRailwayServiceTimeseries")
-	const range = resolveRange(input, yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const range = resolveInfraWindow(input, now)
 	const result = yield* runWarehouseQuery("railwayInfraServiceTimeseries", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -116,19 +112,19 @@ export const getRailwayServiceTimeseries = Effect.fn("QueryEngine.getRailwayServ
 		}),
 	)
 	return {
-		buckets: result.data.map((row): RailwayServiceTimeseriesRow => ({
-			bucket: String(row.bucket ?? ""),
-			cpuAvg: num(row.cpuAvg),
-			cpuMax: num(row.cpuMax),
-			cpuLimit: num(row.cpuLimit),
-			memoryAvg: num(row.memoryAvg),
-			memoryMax: num(row.memoryMax),
-			memoryLimit: num(row.memoryLimit),
-			networkRx: num(row.networkRx),
-			networkTx: num(row.networkTx),
-			diskVolume: num(row.diskVolume),
-			diskEphemeral: num(row.diskEphemeral),
-			replicas: num(row.replicas),
+		buckets: Arr.map(result.data, (row): RailwayServiceTimeseriesRow => ({
+			bucket: wireString(row.bucket),
+			cpuAvg: wireNumber(row.cpuAvg),
+			cpuMax: wireNumber(row.cpuMax),
+			cpuLimit: wireNumber(row.cpuLimit),
+			memoryAvg: wireNumber(row.memoryAvg),
+			memoryMax: wireNumber(row.memoryMax),
+			memoryLimit: wireNumber(row.memoryLimit),
+			networkRx: wireNumber(row.networkRx),
+			networkTx: wireNumber(row.networkTx),
+			diskVolume: wireNumber(row.diskVolume),
+			diskEphemeral: wireNumber(row.diskEphemeral),
+			replicas: wireNumber(row.replicas),
 		})),
 	}
 })

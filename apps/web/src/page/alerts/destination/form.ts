@@ -13,16 +13,13 @@ export const DestinationForm = Schema.Struct({
 	signingSecret: Schema.String,
 	telegramBotToken: Schema.String,
 	telegramChatId: Schema.String,
-	hazelOrganizationId: Schema.String,
-	hazelOrganizationName: Schema.String,
-	hazelOrganizationLogoUrl: Schema.NullOr(Schema.String),
-	hazelChannelId: Schema.String,
-	hazelChannelName: Schema.String,
 	memberUserIds: Schema.Array(Schema.String),
 	chatWorkspaceId: Schema.NullOr(ChatWorkspaceId),
 	chatConnector: Schema.String,
 	chatChannelId: Schema.String,
 	chatChannelName: Schema.String,
+	linearTeamId: Schema.String,
+	linearTeamName: Schema.String,
 })
 export type DestinationForm = typeof DestinationForm.Type
 

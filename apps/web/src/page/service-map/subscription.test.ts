@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Effect, Option, Result, Schema, Stream } from "effect"
+import { Effect, Option, Result, Schema, Stream, Array as Arr } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { PageContext } from "../contract"
 import { Message } from "./message"
@@ -21,7 +21,15 @@ const withMap = (): Model => {
 		Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
 	)
 	const stored = step(resolved, Message.CompletedReadStored({ stored: STORED }))
-	const bundle = { edges: [], dbEdges: [], overview: [], platforms: [], workloads: [] }
+	const bundle = {
+		edges: [],
+		dbEdges: [],
+		dbEdgesTimedOut: false,
+		overview: [],
+		platforms: [],
+		workloads: [],
+		runtimes: [],
+	}
 	return step(
 		stored,
 		Message.CompletedFetchBundle({
@@ -44,7 +52,7 @@ const afterFirstEmit = (model: Model) =>
 		reducedMotion
 			.dependenciesToStream(reducedMotion.modelToDependencies({ model, context }))
 			.pipe(Stream.take(1), Stream.runCollect),
-	).then((messages) => Array.from(messages).reduce(step, model))
+	).then((messages) => Arr.reduce(Array.from(messages), model, step))
 
 const particlesGated = (model: Model) => Option.getOrThrow(model.map).reducedMotion
 

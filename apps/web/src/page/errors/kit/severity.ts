@@ -1,17 +1,18 @@
 import type { IssueSeverity } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { Array as Arr } from "effect"
 
 // The severity badge's maps and marks.
 
 export const SEVERITY_TONE = {
-	critical: "bg-severity-fatal/12 text-severity-fatal",
-	high: "bg-severity-error/12 text-severity-error",
-	medium: "bg-severity-warn/12 text-severity-warn",
-	low: "bg-severity-debug/12 text-severity-debug",
+	critical: "bg-severity-fatal-a2 text-severity-fatal",
+	high: "bg-severity-error-a2 text-severity-error",
+	medium: "bg-severity-warn-a2 text-severity-warn",
+	low: "bg-severity-debug-a2 text-severity-debug",
 } satisfies Record<IssueSeverity, string>
 
 export const SEVERITY_FILL = {
@@ -54,7 +55,7 @@ export const severityDot = <M>(h: HtmlBuilder<M>, severity: IssueSeverity | null
 		tone: "custom",
 		size: "lg",
 		className: cn(
-			severity === null ? "border border-muted-foreground/50" : SEVERITY_FILL[severity],
+			severity === null ? "border border-foreground-subtle" : SEVERITY_FILL[severity],
 			className,
 		),
 	})
@@ -110,13 +111,13 @@ export const severityIcon = <M>(
 		const blocks = ["M3 12H3.01", "M11 12H11.01", "M19 12H19.01"]
 		return svg(
 			"text-muted-foreground",
-			blocks.map((d) => h.path([h.Attribute("d", d)])),
+			Arr.map(blocks, (d) => h.path([h.Attribute("d", d)])),
 		)
 	}
 	const filled = severity === "high" ? 3 : severity === "medium" ? 2 : 1
 	return svg(
 		SEVERITY_TEXT[severity],
-		SEVERITY_BARS.map((d, index) =>
+		Arr.map(SEVERITY_BARS, (d, index) =>
 			h.path([h.Attribute("d", d), h.Attribute("opacity", index < filled ? "1" : "0.25")]),
 		),
 	)

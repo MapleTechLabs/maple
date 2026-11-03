@@ -1,9 +1,7 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import type { McpToolExecutorApi } from "./dispatcher"
-import { McpToolExecutorLoader, type McpToolsUnavailableError } from "./executor-loader"
-import { listMcpTools } from "./tool-catalog"
+import { McpToolExecutorLoader, McpToolsUnavailableError } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
@@ -15,7 +13,7 @@ import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 const toCallToolResult = (result: McpToolResult): McpSchema.CallToolResult =>
 	new McpSchema.CallToolResult({
 		isError: result.isError === true ? true : undefined,
-		content: result.content.map((entry) => ({
+		content: Arr.map(result.content, (entry) => ({
 			type: "text" as const,
 			text: entry.text,
 		})),
@@ -24,6 +22,48 @@ const toCallToolResult = (result: McpToolResult): McpSchema.CallToolResult =>
 			: { structuredContent: result.structuredContent }),
 	})
 
+/** Long enough to tell failures apart in the MCP hub's error groups, short enough for a span. */
+const MAX_ERROR_MESSAGE_CHARS = 300
+
+/**
+ * The failure's text with its per-call values (times, ids, counts) masked, so one cause is one
+ * error group in the hub. The raw text stays on the dispatcher span.
+ */
+export const failureGroupMessage = (text: string): string =>
+	Str.slice(
+		0,
+		MAX_ERROR_MESSAGE_CHARS,
+	)(
+		Str.replace(
+			/(?<!(?:HTTP|status|code) )\b\d{2,}(?:\.\d+)?/gi,
+			"<n>",
+		)(
+			Str.replace(
+				/\b[a-z]{2,6}_(?=[A-Za-z_]*\d)[A-Za-z0-9]{10,}\b|\b[0-9a-f]{12,}\b/g,
+				"<id>",
+			)(
+				Str.replace(
+					/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+					"<id>",
+				)(Str.replace(/\d{4}-\d\d-\d\d[ T]\d\d:\d\d(?::\d\d(?:\.\d+)?)?Z?/g, "<time>")(text)),
+			),
+		),
+	)
+
+/**
+ * A failed call's reason on the `tools/call` span. `error.type` stays `tool_error` per the MCP
+ * conventions, so without the message every failure is one group in the hub.
+ */
+const annotateToolFailure = (result: McpToolResult) =>
+	result.isError === true
+		? Effect.annotateCurrentSpan({
+				"error.message": failureGroupMessage(result.content[0]?.text ?? ""),
+				...(result.failureCategory === undefined
+					? undefined
+					: { "maple.mcp.error.category": result.failureCategory }),
+			})
+		: Effect.void
+
 const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message: string }) =>
 	toCallToolResult({
 		isError: true,
@@ -31,18 +71,23 @@ const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message:
 	})
 
 /**
- * Public MCP transport backed by the same dispatcher as internal Worker RPC. Loading the catalog,
- * its JSON Schemas and the executor's service graph is costly, so tools register once per
- * isolate, before the first authorized `tools/*` request.
+ * Public MCP transport backed by the same dispatcher as internal Worker RPC. Tools register from
+ * the generated descriptors, so `tools/list` imports neither the catalog nor the executor's
+ * service graph; the executor loads on the first `tools/call` (`McpToolExecutorLoader`).
  */
 export class McpToolRegistration extends Context.Service<
 	McpToolRegistration,
-	{ readonly ensureRegistered: Effect.Effect<void, McpToolsUnavailableError> }
+	{
+		/** Adds every public tool to the server, once per isolate, before the first `tools/*` request. */
+		readonly ensureRegistered: Effect.Effect<void, McpToolsUnavailableError>
+		/** Builds the executor before a `tools/call`; `built` marks the request that paid for it. */
+		readonly ensureExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
+	}
 >()("@maple/ai/mcp/McpToolRegistration", {
 	make: Effect.gen(function* () {
 		const server = yield* EffectMcpServer.McpServer
 		const loader = yield* McpToolExecutorLoader
-		const addTool = (executor: McpToolExecutorApi) => (descriptor: McpToolDescriptor) =>
+		const addTool = (descriptor: McpToolDescriptor) =>
 			server.addTool({
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
@@ -67,21 +112,40 @@ export class McpToolRegistration extends Context.Service<
 							})
 						}
 
-						return yield* executor.execute(tenant, descriptor.name, payload, "mcp").pipe(
-							Effect.map(toCallToolResult),
-							Effect.catchTag("@maple/mcp/ToolNotFoundError", (error) =>
+						// Already built by the transport before the call; this reads the cached executor.
+						const executor = yield* loader.load
+						return yield* executor
+							.execute(tenant, descriptor.name, payload, "mcp")
+							.pipe(Effect.tap(annotateToolFailure), Effect.map(toCallToolResult))
+					}).pipe(
+						Effect.catchTags({
+							"@maple/mcp/ToolNotFoundError": (error) =>
 								Effect.succeed(toBoundaryErrorResult(error)),
-							),
-						)
-					}),
+							"@maple/mcp/errors/McpToolsUnavailableError": (error) =>
+								Effect.succeed(toBoundaryErrorResult(error)),
+						}),
+						// Runs on the `tools/call` server span: an `isError` result is a successful
+						// JSON-RPC call, so the MCP conventions mark it with `error.type` alone.
+						Effect.tap((result) =>
+							result.isError === true
+								? Effect.annotateCurrentSpan("error.type", "tool_error")
+								: Effect.void,
+						),
+					),
 			})
-		const register = Effect.gen(function* () {
-			const executor = yield* loader.load
-			const descriptors = yield* listMcpTools
-			yield* Effect.forEach(descriptors, addTool(executor), { discard: true })
-		})
-		// Recoverable: a graph that failed to build is retried by the next `tools/*` request.
-		return { ensureRegistered: yield* cachedRecoverable(register) }
+		const register = Effect.tryPromise({
+			try: () => import("./tool-descriptors.generated"),
+			catch: (cause) =>
+				new McpToolsUnavailableError({ message: "The MCP tool descriptors failed to load", cause }),
+		}).pipe(
+			Effect.flatMap(({ MCP_TOOL_DESCRIPTORS }) =>
+				Effect.forEach(MCP_TOOL_DESCRIPTORS, addTool, { discard: true }),
+			),
+		)
+		return {
+			ensureRegistered: yield* cachedRecoverable(register),
+			ensureExecutor: Effect.map(loader.loadReportingBuild, ({ built }) => ({ built })),
+		}
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

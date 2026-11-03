@@ -1,15 +1,15 @@
 import { DB_NODE_PREFIX } from "@maple/ui/components/service-map/service-map-utils"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Chart from "../../charts/chart"
-import { LoadChartRuntime } from "../../charts/chart-runtime"
-import * as Keyed from "../../data/keyed"
-import * as ServiceMap from "../../service-map/map/service-map"
-import { sameFocus } from "../../service-map/map/state"
-import * as Select from "../../ui/select"
-import * as Tabs from "../../ui/tabs"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
+import { sameFocus } from "@maple/views/service-map/map/state"
+import * as Select from "@maple/views/ui/select"
+import * as Tabs from "@maple/views/ui/tabs"
 import type { PageContext } from "../contract"
-import { SignalPresenceData } from "../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
@@ -60,7 +60,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		}),
 		timePicker: TimeRangePicker.init("service-map-time-range"),
 		scene3d: Scene3d.init(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -69,6 +69,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			ReadStored({ orgId: context.orgId }),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
@@ -89,7 +90,7 @@ const merge = (result: Return, next: Return): Return => ({
 })
 
 const panelKind = (selectedId: Option.Option<string>) =>
-	Option.map(selectedId, (id) => (id.startsWith(DB_NODE_PREFIX) ? "database" : "service"))
+	Option.map(selectedId, (id) => (Str.startsWith(DB_NODE_PREFIX)(id) ? "database" : "service"))
 
 /**
  * What the host does after the map moved: the focus goes to the URL (replace), prefs and drags
@@ -211,7 +212,10 @@ export const routeChanged = (
 	const isEntering3d = route.search.view === "3d" && model.search.view !== "3d"
 	const next = { ...model, search: route.search, scene3d: isEntering3d ? Scene3d.init() : model.scene3d }
 	const requested = routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: (mode) => requestAll(next, context, mode),
 	})
 	return applyUrlFocus(requested, context)
@@ -290,7 +294,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedResolveWindow: ({ window, timeZone, facetsWindow, nowMs, mode }) =>
 			// The facets window is minted once per visit and kept.
 			requestAll(
-				{ ...model, window, windowZone: timeZone, facetsWindow: model.facetsWindow ?? facetsWindow, nowMs },
+				{
+					...model,
+					window,
+					windowZone: timeZone,
+					facetsWindow: model.facetsWindow ?? facetsWindow,
+					nowMs,
+				},
 				context,
 				mode,
 			),
@@ -331,14 +341,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchBranchStats: ({ key, result }) => ({
 			model: { ...model, branchStats: Keyed.accept(model.branchStats, key, result) },
 		}),
-		// `useSignalPresence` mounts with the empty state, so its first paint is the "unknown" copy.
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

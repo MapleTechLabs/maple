@@ -7,8 +7,8 @@ import {
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Dialog from "../../../ui/dialog"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
 
 // `OrgClickHouseSettingsSection` and `DataPlatformUsageSection` (apps/web/src/components/settings/).
 
@@ -31,6 +31,9 @@ export const Model = Schema.Struct({
 	diff: AsyncData.Schema(OrgClickHouseSchemaDiffResponse, LoadFailure).schema,
 	/** Read once the cluster is configured (`SchemaSection` mounts then). */
 	applyStatus: AsyncData.Schema(OrgClickHouseApplySchemaStatus, LoadFailure).schema,
+	/** Status reads sent and the newest one answered: an older answer arriving late is dropped. */
+	applyStatusSent: Schema.Number,
+	applyStatusAnswered: Schema.Number,
 	usage: AsyncData.Schema(Totals, LoadFailure).schema,
 	/** The connection edits, `null` while the form shows the saved values. */
 	draft: Schema.NullOr(ConnectionDraft),
@@ -53,7 +56,7 @@ const done = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schem
 export const Message = defineMessageUnion({
 	CompletedFetchSettings: done(OrgClickHouseSettingsResponse),
 	CompletedFetchDiff: done(OrgClickHouseSchemaDiffResponse),
-	CompletedFetchApplyStatus: done(OrgClickHouseApplySchemaStatus),
+	CompletedFetchApplyStatus: { sequence: Schema.Number, ...done(OrgClickHouseApplySchemaStatus) },
 	CompletedFetchUsage: done(Totals),
 	ChangedConnection: { field: ConnectionField, value: Schema.String },
 	ChangedPassword: { value: Schema.String },

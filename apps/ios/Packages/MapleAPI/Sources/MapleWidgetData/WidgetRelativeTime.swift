@@ -43,6 +43,12 @@ public enum WidgetTime {
 		"updated \(age(interval))"
 	}
 
+	/// The age, plus the one thing that will make it current again when the
+	/// widget's credential needs the app.
+	public static func updated(_ interval: TimeInterval, needsApp: Bool) -> String {
+		needsApp ? "\(updated(interval)) · open Maple" : updated(interval)
+	}
+
 	/// `Format.count`'s K/M/B abbreviation, for the per-row event count.
 	public static func count(_ value: Double) -> String {
 		guard value.isFinite else { return "—" }

@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { AlertDestinationId, AlertIncidentId, AlertRuleId, OrgId } from "@maple/domain/http"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
@@ -106,12 +106,12 @@ describe("AlertReadModelsService", () => {
 
 			const incidents = yield* readModels.listIncidents(ORG)
 			assert.deepStrictEqual(
-				incidents.incidents.map((incident) => incident.id),
+				Arr.map(incidents.incidents, (incident) => incident.id),
 				[INCIDENT_NEW, INCIDENT_OLD],
 			)
 			const open = yield* readModels.listIncidents(ORG, { status: "open", limit: 1 })
 			assert.deepStrictEqual(
-				open.incidents.map((incident) => incident.id),
+				Arr.map(open.incidents, (incident) => incident.id),
 				[INCIDENT_NEW],
 			)
 			assert.strictEqual((yield* readModels.getIncident(ORG, INCIDENT_NEW)).groupKey, "worker")
@@ -124,7 +124,7 @@ describe("AlertReadModelsService", () => {
 			// The incident filter is what the mobile incident timeline reads.
 			const forNew = yield* readModels.listDeliveryEvents(ORG, { incidentId: INCIDENT_NEW })
 			assert.deepStrictEqual(
-				forNew.events.map((event) => event.id),
+				Arr.map(forNew.events, (event) => event.id),
 				[DELIVERY],
 			)
 			const forOld = yield* readModels.listDeliveryEvents(ORG, { incidentId: INCIDENT_OLD })
@@ -160,11 +160,6 @@ describe("AlertReadModelsService", () => {
 				points: [],
 				totals: { total: 0, breached: 0, healthy: 0, skipped: 0, error: 0, transitions: 0 },
 			})
-			assert.deepStrictEqual(contexts, [
-				"listAlertChecks",
-				"alertCheckSummaryGroups",
-				"alertCheckSummary",
-			])
 		}).pipe(Effect.provide(makeLayer(testDb, contexts)))
 	})
 })

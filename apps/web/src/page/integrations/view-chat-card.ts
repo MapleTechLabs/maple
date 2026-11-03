@@ -1,11 +1,11 @@
 import type { ChatConnectorId } from "@maple/domain/primitives"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { confirmDialog } from "../../ui/confirm-dialog"
-import { errorState } from "../../ui/error-state"
-import { item, itemContent, itemMedia } from "../../ui/item"
-import { statusDot } from "../../ui/status-dot"
+import { heading } from "@maple/views/ui/heading"
+import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
+import { itemContent, mediaCard } from "@maple/views/ui/item"
+import { statusDot } from "@maple/views/ui/status-dot"
 import {
 	integrationEmpty,
 	integrationEmptyCard,
@@ -20,7 +20,11 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { chatConnectorStatus } from "./update-chat"
 import { chatCardLoading, identityRow, monoGlyph } from "./view-chat"
+import { disconnectConfirm } from "./view-disconnect"
 import { entryBrand } from "./view-entry"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ChatIntegrationCard`.
 // TODO(clerk): `useIsOrgAdmin` (self-hosted is the root admin) and `WorkspaceSettings`, which renders
@@ -39,7 +43,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 	if (status === null && AsyncData.isFailure(data))
 		return errorState(h, {
 			failure: data.error,
-			title: `Failed to load the ${manifest.name} integration`,
+			title: `Couldn't load the ${manifest.name} integration`,
 			onRetry: Message.ClickedRetryStatus({ name: "chat" }),
 		})
 	const entry = catalogEntry(chatIntegrationId(connector))
@@ -72,98 +76,98 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 		])
 
 	const confirmWorkspace = workspaces.find((workspace) => workspace.id === model.chatCard.confirmId)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			...workspaces.map((workspace) =>
-				item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-					itemMedia(h, {}, [integrationIconPlate(h, brand)]),
-					itemContent(
-						h,
-						[
-							h.div(
-								[h.Class("flex items-center gap-2")],
-								[
-									h.h3(
-										[h.Class("min-w-0 text-sm font-semibold [overflow-wrap:anywhere]")],
-										[workspace.name],
-									),
-									h.span(
-										[h.Class("flex items-center gap-1.5 text-xs text-muted-foreground")],
-										[statusDot(h, { tone: "ok", size: "lg" }), "Connected"],
-									),
-								],
+	return vstack(h, { gap: "4" }, [
+		...Arr.map(workspaces, (workspace) =>
+			mediaCard(h, integrationIconPlate(h, brand), [
+				itemContent(
+					h,
+					[
+						hstack(h, { gap: "2" }, [
+							heading(
+								h,
+								{
+									level: 3,
+									variant: "section",
+									className: "min-w-0 [overflow-wrap:anywhere]",
+								},
+								[workspace.name],
 							),
-							h.p(
-								[h.Class("text-xs text-muted-foreground")],
-								[
-									status?.supports_identity === true
-										? `Linked to your organization. Maple answers only people who have linked their ${manifest.name} account, as their own Maple user.`
-										: `Linked to your organization, for everyone in this workspace. No ${manifest.name} account is tied to an individual Maple user.`,
-								],
+							hstack(
+								h,
+								{
+									gap: "1.5",
+									as: "span",
+									className: typographyClass({ size: "xs", tone: "muted" }),
+								},
+								[statusDot(h, { tone: "ok", size: "lg" }), "Connected"],
 							),
-							relativeTime(h, {
-								value: workspace.created_at,
-								nowMs: model.nowMs,
-								timeZone,
-								prefix: "Connected",
-								className: "text-2xs text-muted-foreground",
-							}),
-							h.div(
-								[],
-								[
-									button(
-										h,
-										{
-											size: "sm",
-											variant: "outline",
-											isDisabled: !IS_ADMIN || busy !== null,
-											attributes: [
-												h.OnClick(
-													Message.ClickedChatDisconnect({
-														workspaceId: workspace.id,
-													}),
-												),
-											],
-										},
-										["Disconnect"],
-									),
-								],
-							),
-						],
-						"gap-2",
-					),
-				]),
-			),
-			...(status?.supports_identity === true
-				? [identityRow(h, model, manifest.name, status.identity)]
-				: []),
-			h.div(
-				[],
-				[
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: connectDisabled,
-							isLoading: busy === "install",
-							attributes: [h.OnClick(Message.ClickedChatInstall())],
-						},
-						["Add another workspace"],
-					),
-				],
-			),
-			confirmDialog(h, {
-				slotId: "integration-disconnect",
-				model: model.disconnect.dialog,
-				toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
-				title: confirmWorkspace ? `Disconnect ${confirmWorkspace.name}?` : "Disconnect workspace",
-				description: `${confirmWorkspace ? confirmWorkspace.name : "This workspace"} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`,
-				confirmLabel: "Disconnect",
-				onConfirm: Message.ConfirmedDisconnect(),
-				isPending: busy !== null && busy === model.chatCard.confirmId,
-			}),
-		],
-	)
+						]),
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							status?.supports_identity === true
+								? `Linked to your organization. Maple answers only people who have linked their ${manifest.name} account, as their own Maple user.`
+								: `Linked to your organization, for everyone in this workspace. No ${manifest.name} account is tied to an individual Maple user.`,
+						]),
+						relativeTime(h, {
+							value: workspace.created_at,
+							nowMs: model.nowMs,
+							timeZone,
+							prefix: "Connected",
+							className: typographyClass({ size: "2xs", tone: "muted" }),
+						}),
+						h.div(
+							[],
+							[
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "outline",
+										isDisabled: !IS_ADMIN || busy !== null,
+										attributes: [
+											h.OnClick(
+												Message.ClickedChatDisconnect({
+													workspaceId: workspace.id,
+												}),
+											),
+										],
+									},
+									["Disconnect"],
+								),
+							],
+						),
+					],
+					"gap-2",
+				),
+			]),
+		),
+		...(status?.supports_identity === true
+			? [identityRow(h, model, manifest.name, status.identity)]
+			: []),
+		h.div(
+			[],
+			[
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						isDisabled: connectDisabled,
+						isLoading: busy === "install",
+						attributes: [h.OnClick(Message.ClickedChatInstall())],
+					},
+					["Add another workspace"],
+				),
+			],
+		),
+		disconnectConfirm(h, {
+			provider: "chat",
+			slotId: "integration-disconnect",
+			model: model.disconnect.dialog,
+			toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
+			subject: confirmWorkspace?.name,
+			description: `${confirmWorkspace ? confirmWorkspace.name : "This workspace"} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`,
+			onConfirm: Message.ConfirmedDisconnect(),
+			isPending: busy !== null && busy === model.chatCard.confirmId,
+		}),
+	])
 }

@@ -1,4 +1,8 @@
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import {
+	alignServiceApiBucketSeconds,
+	formatWarehouseDateTime,
+	parseWarehouseDateTime,
+} from "@maple/query-engine"
 import { Option, Schema } from "effect"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ServiceSearch } from "../../../route/search"
@@ -50,6 +54,10 @@ export const OPERATIONS_LIMIT = 25
 /** `operationsBucketSeconds`: about 50 whole-minute buckets, at least one minute. */
 export const operationsBucketSeconds = (window: TimeWindow): number =>
 	Math.max(1, Math.round(windowSeconds(window) / OPERATIONS_SPARKLINE_BUCKETS / 60)) * 60
+
+/** The API tab's charts and sparklines: the operations bucket, aligned to what the rollups tile. */
+export const apiBucketSeconds = (window: TimeWindow): number =>
+	alignServiceApiBucketSeconds(operationsBucketSeconds(window))
 
 export const callsPerSecond = (estimatedSpanCount: number, seconds: number): number =>
 	seconds <= 0 ? 0 : estimatedSpanCount / seconds

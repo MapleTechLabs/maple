@@ -1,14 +1,14 @@
 import { V2OnboardingChecklist } from "@maple/domain/http/v2"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../data/analytics"
 import { SessionTenant } from "../data/session-tenant"
 import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
-import * as Popover from "../ui/popover"
+import * as Popover from "@maple/views/ui/popover"
 
 // The onboarding checklist button:
 // the Clerk top bar's reward pill, its one-time pointer and the checklist popover with the claim.
@@ -80,7 +80,7 @@ export const LoadViewer = Command.define("LoadOnboardingChecklistViewer", {
 		const tenant = yield* (yield* SessionTenant).get
 		const seenKey = `${SEEN_PREFIX}${tenant.orgId}:${tenant.userId}`
 		return Message.LoadedViewer({
-			isAdmin: tenant.roles.some((role) => role === "root" || role === "org:admin"),
+			isAdmin: Arr.some(tenant.roles, (role) => role === "root" || role === "org:admin"),
 			seenKey,
 			isSeen: Option.contains(readLocalStorage(seenKey), "true"),
 		})
@@ -130,7 +130,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: { ...model, isAdmin, seenKey: seenKey === "" ? null : seenKey, isSeen },
 		}),
 		GotPopoverMessage: ({ message: child }) => popoverStep(model, child),
-		ClickedPointer: () => (model.popover.isOpen ? { model } : popoverStep(model, Popover.Message.ClickedTrigger())),
+		ClickedPointer: () =>
+			model.popover.isOpen ? { model } : popoverStep(model, Popover.Message.ClickedTrigger()),
 		ClickedGotIt: () => markSeen(model),
 		ClickedStep: () => popoverStep(model, Popover.Message.ClickedClose()),
 		ClickedDone: () => popoverStep(model, Popover.Message.ClickedClose()),
@@ -142,7 +143,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: { ...model, isClaimPending: false, isJustClaimed: true },
 			commands: [LoadChecklist()],
 		}),
-		FailedClaim: ({ message: failure }) => ({ model: { ...model, isClaimPending: false, claimError: failure } }),
+		FailedClaim: ({ message: failure }) => ({
+			model: { ...model, isClaimPending: false, claimError: failure },
+		}),
 		TickedClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedSaveSeen: () => ({ model }),
 	})
@@ -159,5 +162,9 @@ export const ClaimReward = Command.define("ClaimOnboardingReward", {
 		// `onboarding_reward_claimed` once the credit landed.
 		yield* trackProduct("onboarding_reward_claimed")
 		return Message.SucceededClaim()
-	}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedClaim({ message: displayError(error).message })))),
+	}).pipe(
+		Effect.catch((error) =>
+			Effect.succeed(Message.FailedClaim({ message: displayError(error).message })),
+		),
+	),
 })

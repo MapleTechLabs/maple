@@ -1,16 +1,20 @@
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
 import { formatCountdown } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../ui/button"
-import { badge } from "../ui/display"
-import { icon } from "../ui/icon"
-import { iconButton } from "../ui/icon-button"
-import { meter } from "../ui/meter"
-import * as PopoverView from "../ui/popover"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { meter } from "@maple/views/ui/meter"
+import * as PopoverView from "@maple/views/ui/popover"
+import { pressable } from "@maple/views/ui/pressable"
 import { Message, type Model } from "./onboarding-checklist"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -19,7 +23,10 @@ const credits = (checklist: V2OnboardingChecklist): string => `$${checklist.rewa
 const deadlineOf = (checklist: V2OnboardingChecklist): number | null =>
 	checklist.deadline_at === null
 		? null
-		: Option.match(DateTime.make(checklist.deadline_at), { onNone: () => null, onSome: DateTime.toEpochMillis })
+		: Option.match(DateTime.make(checklist.deadline_at), {
+				onNone: () => null,
+				onSome: DateTime.toEpochMillis,
+			})
 
 /** `ProgressChip`: `2/5`, written out. */
 const progressChip = (h: H, completed: number, total: number): Html =>
@@ -31,7 +38,7 @@ const progressChip = (h: H, completed: number, total: number): Html =>
 			mono: true,
 			className: cn(
 				"text-2xs font-semibold sm:text-2xs",
-				completed === total ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary",
+				completed === total ? "bg-primary text-primary-foreground" : "bg-primary-a2 text-primary",
 			),
 		},
 		[String(completed), "/", String(total)],
@@ -43,13 +50,13 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 		[
 			h.Role("status"),
 			h.Class(
-				"absolute top-full right-0 z-40 mt-3 w-max max-w-[calc(100vw-1rem)] rounded-lg border border-primary/40 bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 slide-in-from-top-1",
+				"absolute top-full right-0 z-40 mt-3 w-max max-w-[calc(100vw-1rem)] rounded-lg border bg-popover text-popover-foreground shadow-popup animate-in fade-in-0 slide-in-from-top-1",
 			),
 		],
 		[
 			h.span(
 				[
-					h.Class("absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l border-primary/40 bg-popover"),
+					h.Class("absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l bg-popover"),
 					h.AriaHidden(true),
 				],
 				[],
@@ -57,19 +64,21 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 			h.div(
 				[h.Class("flex items-start gap-2 p-3 pr-2")],
 				[
-					h.button(
+					pressable(
+						h,
+						{
+							onClick: Message.ClickedPointer(),
+							className:
+								"min-w-0 flex-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+						},
 						[
-							h.Type("button"),
-							h.OnClick(Message.ClickedPointer()),
-							h.Class(
-								"min-w-0 flex-1 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+							h.span(
+								[h.Class("block whitespace-nowrap text-sm font-semibold")],
+								["Finish setting up"],
 							),
-						],
-						[
-							h.span([h.Class("block whitespace-nowrap text-sm font-semibold")], ["Finish the onboarding list"]),
 							h.span(
 								[h.Class("mt-0.5 block text-xs text-muted-foreground")],
-								["and get ", credits(checklist), " in credits."],
+								["Then claim ", credits(checklist), " in credits."],
 							),
 						],
 					),
@@ -90,12 +99,12 @@ const rewardCallout = (h: H, checklist: V2OnboardingChecklist): Html =>
 const optionalTag = (h: H): Html => badge(h, { variant: "meta", size: "xs", pill: true }, ["Optional"])
 
 /** `StepRow`: a done step struck through, an open one linking to where it is done. */
-const stepRow = (h: H, step: V2OnboardingChecklistStep, index: number): Html =>
+const stepRow = (h: H, step: V2OnboardingChecklistStep): Html =>
 	step.completed
 		? h.li(
 				[h.Class("flex items-center gap-3 rounded-md px-2 py-2 text-sm text-muted-foreground")],
 				[
-					icon(h, "CircleCheckIcon", { size: 18, className: "shrink-0 text-primary" }),
+					icon(h, "CircleCheckIcon", { size: 16, className: "shrink-0 text-severity-info" }),
 					h.span(
 						[h.Class("min-w-0 flex-1 leading-snug line-through decoration-muted-foreground/40")],
 						[step.title],
@@ -111,18 +120,18 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep, index: number): Html =>
 							h.Href(step.href),
 							h.OnClick(Message.ClickedStep()),
 							h.Class(
-								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",
+								"group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[
 							h.span(
 								[
 									h.Class(
-										"flex size-4.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 font-mono text-3xs text-muted-foreground transition-colors group-hover:border-primary group-hover:text-primary",
+										"size-4 shrink-0 rounded-full border border-dashed border-foreground-faint group-hover:border-solid group-hover:border-foreground",
 									),
 									h.AriaHidden(true),
 								],
-								[String(index)],
+								[],
 							),
 							h.span([h.Class("min-w-0 flex-1 leading-snug")], [step.title]),
 							...(step.optional ? [optionalTag(h)] : []),
@@ -137,10 +146,11 @@ const stepRow = (h: H, step: V2OnboardingChecklistStep, index: number): Html =>
 			)
 
 /** `OnboardingChecklistPanel`: the reward, the progress meter, the steps and the footer. */
-const panel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyArray<Html> => {
+export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyArray<Html> => {
 	const isClaimed = model.isJustClaimed || checklist.status === "claimed"
 	const deadlineMs = deadlineOf(checklist)
-	const timeLeft = deadlineMs === null ? null : formatCountdown(deadlineMs - model.nowMs, { fixedHours: true })
+	const timeLeft =
+		deadlineMs === null ? null : formatCountdown(deadlineMs - model.nowMs, { fixedHours: true })
 	const progress = checklist.total_count === 0 ? 0 : checklist.completed_count / checklist.total_count
 	const amount = credits(checklist)
 	return [
@@ -148,42 +158,47 @@ const panel = (h: H, model: Model, checklist: V2OnboardingChecklist): ReadonlyAr
 			[],
 			[
 				h.div(
-					[h.Class("relative space-y-3 border-b bg-primary/[0.06] px-4 pt-4 pb-3")],
+					[h.Class("relative space-y-3 border-b px-4 pt-4 pb-3")],
 					[
-						h.div(
-							[h.Class("flex items-start gap-3")],
-							[
-								h.span(
-									[
-										h.Class(
-											"flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/15 text-primary",
-										),
-									],
-									[icon(h, isClaimed ? "CircleCheckIcon" : "RocketIcon", { size: 18 })],
-								),
-								h.div(
-									[h.Class("min-w-0 space-y-1")],
-									[
-										h.h3(
-											[h.Class("text-base font-semibold leading-tight")],
-											[isClaimed ? `${amount} in credits added` : `Get ${amount} in credits`],
-										),
-										h.p(
-											[h.Class("text-xs leading-relaxed text-muted-foreground")],
-											[
-												isClaimed
-													? `${amount} in credits applied. It comes off your next invoice.`
-													: "Finish these steps within 24 hours of creating your org and we'll credit your balance.",
-											],
-										),
-									],
-								),
-							],
-						),
-						meter(h, { value: progress, minVisible: 0, className: "bg-primary/15", fillClassName: "bg-primary" }),
+						hstack(h, { gap: "3", align: "start" }, [
+							h.span(
+								[
+									h.Class(
+										"flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-strong text-foreground",
+									),
+								],
+								[icon(h, isClaimed ? "CircleCheckIcon" : "StarIcon", { size: 18 })],
+							),
+							h.div(
+								[h.Class("min-w-0 space-y-1")],
+								[
+									heading(h, { level: 3, variant: "section" }, [
+										isClaimed ? `${amount} in credits added` : `Get ${amount} in credits`,
+									]),
+									typography(
+										h,
+										{ size: "xs", tone: "muted", as: "p", className: "leading-relaxed" },
+										[
+											isClaimed
+												? `${amount} in credits applied. It comes off your next invoice.`
+												: "Finish these within 24 hours of creating your org, then claim the credits.",
+										],
+									),
+								],
+							),
+						]),
+						meter(h, {
+							value: progress,
+							minVisible: 0,
+							className: "bg-primary-a2",
+							fillClassName: "bg-primary",
+						}),
 					],
 				),
-				h.ol([h.Class("space-y-0.5 p-2")], checklist.steps.map((step, index) => stepRow(h, step, index + 1))),
+				h.ol(
+					[h.Class("space-y-0.5 p-2")],
+					Arr.map(checklist.steps, (step) => stepRow(h, step)),
+				),
 				h.div(
 					[h.Class("flex items-center justify-between gap-3 border-t px-4 py-3 text-xs")],
 					panelFooter(h, model, checklist, isClaimed, timeLeft),
@@ -199,7 +214,8 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 	if (checklist === null) return null
 	const isActive = checklist.status === "in_progress" || checklist.status === "claimable"
 	const deadlineMs = deadlineOf(checklist)
-	const isWindowOpen = checklist.status === "claimable" || (deadlineMs !== null && deadlineMs >= model.nowMs)
+	const isWindowOpen =
+		checklist.status === "claimable" || (deadlineMs !== null && deadlineMs >= model.nowMs)
 	if (!model.isJustClaimed && !(isActive && isWindowOpen)) return null
 	const isClaimable = checklist.status === "claimable"
 	return h.submodel({
@@ -208,7 +224,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 		view: PopoverView.view,
 		viewInputs: {
 			className: "w-[22rem] max-w-[calc(100vw-1rem)] p-0",
-			toContent: () => (model.popover.isOpen ? panel(h, model, checklist) : []),
+			toContent: () => (model.popover.isOpen ? checklistPanel(h, model, checklist) : []),
 			toView: ({ trigger, withTrigger }) =>
 				h.div(
 					[h.Class("relative")],
@@ -219,10 +235,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 								{
 									variant: "outline",
 									size: "sm",
-									className: cn(
-										"gap-2 border-primary/40 bg-primary/10 text-foreground hover:bg-primary/15",
-										isClaimable && "border-primary bg-primary/20",
-									),
+									className: cn("gap-2", isClaimable && "border-primary"),
 									slot: "popover-trigger",
 									attributes: trigger,
 								},
@@ -230,10 +243,11 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 									icon(h, "StarIcon", { className: "text-primary" }),
 									isClaimable || deadlineMs === null
 										? h.span([], ["Claim ", credits(checklist), " credits"])
-										: h.span(
-												[h.Class("font-mono tabular-nums")],
-												[formatCountdown(deadlineMs - model.nowMs, { fixedHours: true })],
-											),
+										: typography(h, { mono: true, numeric: true }, [
+												formatCountdown(deadlineMs - model.nowMs, {
+													fixedHours: true,
+												}),
+											]),
 									progressChip(h, checklist.completed_count, checklist.total_count),
 								],
 							),
@@ -246,7 +260,13 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
 	})
 })
 
-const panelFooter = (h: H, model: Model, checklist: V2OnboardingChecklist, isClaimed: boolean, timeLeft: string | null): ReadonlyArray<Html> => {
+const panelFooter = (
+	h: H,
+	model: Model,
+	checklist: V2OnboardingChecklist,
+	isClaimed: boolean,
+	timeLeft: string | null,
+): ReadonlyArray<Html> => {
 	if (isClaimed)
 		return [
 			h.span([h.Class("text-muted-foreground")], ["You're all set."]),
@@ -256,26 +276,48 @@ const panelFooter = (h: H, model: Model, checklist: V2OnboardingChecklist, isCla
 		return model.isAdmin
 			? [
 					h.span(
-						[h.Class(cn("text-muted-foreground", model.claimError !== null && "text-severity-error"))],
+						[
+							h.Class(
+								cn(
+									"text-muted-foreground",
+									model.claimError !== null && "text-severity-error",
+								),
+							),
+						],
 						[model.claimError ?? "Every step is done."],
 					),
-					button(h, { size: "sm", isLoading: model.isClaimPending, attributes: [h.OnClick(Message.ClickedClaim())] }, [
-						"Claim ",
-						credits(checklist),
-						" credits",
-					]),
+					button(
+						h,
+						{
+							size: "sm",
+							isLoading: model.isClaimPending,
+							attributes: [h.OnClick(Message.ClickedClaim())],
+						},
+						["Claim ", credits(checklist), " credits"],
+					),
 				]
-			: [h.span([h.Class("text-muted-foreground")], ["All done. Ask an org admin to claim the credits."])]
+			: [
+					h.span(
+						[h.Class("text-muted-foreground")],
+						["All done. Ask an org admin to claim the credits."],
+					),
+				]
 	return [
-		h.span(
-			[h.Class("font-mono tabular-nums text-muted-foreground")],
-			[String(checklist.completed_count), " of ", String(checklist.total_count), " done"],
-		),
+		typography(h, { tone: "muted", mono: true, numeric: true }, [
+			String(checklist.completed_count),
+			" of ",
+			String(checklist.total_count),
+			" done",
+		]),
 		...(timeLeft === null
 			? []
 			: [
 					h.span(
-						[h.Class("inline-flex items-center gap-1 font-mono font-medium tabular-nums text-primary")],
+						[
+							h.Class(
+								"inline-flex items-center gap-1 font-mono tabular-nums text-muted-foreground",
+							),
+						],
 						[icon(h, "ClockIcon", { size: 12 }), timeLeft],
 					),
 				]),

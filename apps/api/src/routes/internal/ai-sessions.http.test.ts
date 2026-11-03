@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/http"
 
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -61,7 +61,7 @@ const AuthorizationStubLayer = Layer.succeed(
 /** One warehouse row, in the wire shape `aiSessionSpansRowSchema` decodes. */
 const spanRow = (index: number) => ({
 	traceId: TRACE_ID,
-	spanId: index.toString(16).padStart(16, "0"),
+	spanId: Str.padStart(16, "0")(index.toString(16)),
 	parentSpanId: "",
 	spanName: "chat",
 	spanKind: "SPAN_KIND_CLIENT",
@@ -485,8 +485,8 @@ describe("POST /internal/ai-sessions/list", () => {
 			// The fan-out over `traces` is seconds on a cold partition,
 			// which is why it is the client's second request (`/details`) and not
 			// part of this one.
-			expect(reads.map((read) => read.context)).toEqual(["aiSessionsRank", "aiSessionsPage"])
-			const [rank, page] = reads.map((read) => read.sql)
+			expect(Arr.map(reads, (read) => read.context)).toEqual(["aiSessionsRank", "aiSessionsPage"])
+			const [rank, page] = Arr.map(reads, (read) => read.sql)
 			for (const sql of [rank, page]) {
 				expect(sql).toContain("FROM ai_trace_index")
 				expect(sql).not.toContain("FROM traces")
@@ -539,7 +539,11 @@ describe("POST /internal/ai-sessions/list", () => {
 			const data = response.body.data as ReadonlyArray<Record<string, unknown>>
 			// The page's order is the order that was paged; re-sorting here would
 			// let a row jump between pages on a scroll.
-			expect(data.map((r) => r.sessionId)).toEqual(["wrun_beta", "wrun_alpha", `trace:${TRACE_ID}`])
+			expect(Arr.map(data, (r) => r.sessionId)).toEqual([
+				"wrun_beta",
+				"wrun_alpha",
+				`trace:${TRACE_ID}`,
+			])
 			expect(data[0]).toMatchObject({
 				vendorId: "eve",
 				vendorVersion: "1",
@@ -625,7 +629,7 @@ describe("POST /internal/ai-sessions/details", () => {
 				expect(options?.context).toBe("aiSessionsDetails")
 				detailsSql.push(compiledQueryOf(compiled).sql)
 				return compiledQueryOf(compiled)
-					.decodeRows(DETAILS_BODY.sessionIds.map(detailsRow))
+					.decodeRows(Arr.map(DETAILS_BODY.sessionIds, detailsRow))
 					.pipe(Effect.orDie)
 			},
 		})
@@ -654,7 +658,7 @@ describe("POST /internal/ai-sessions/details", () => {
 			expect(sql).not.toContain("__PARAM_")
 			// The rows as the fan-out returned them; the client merges by id.
 			expect(response.body).toEqual({
-				data: DETAILS_BODY.sessionIds.map((sessionId) => ({
+				data: Arr.map(DETAILS_BODY.sessionIds, (sessionId) => ({
 					sessionId,
 					spanCount: 12,
 					errorSpanCount: 2,
@@ -1044,7 +1048,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 				const sql = compiledQueryOf(compiled).sql
 				sqls.push(sql)
 				return compiledQueryOf(compiled)
-					.decodeRows(sql.includes("GROUP BY turnKey") ? rows : totals)
+					.decodeRows(Str.includes("GROUP BY turnKey")(sql) ? rows : totals)
 					.pipe(Effect.orDie)
 			},
 		})
@@ -1449,7 +1453,7 @@ describe("POST /internal/ai-sessions/tools/breakdowns", () => {
 		try {
 			const response = await harness.post("/internal/ai-sessions/tools/breakdowns", TOOLS_WINDOW)
 			expect(response.status).toBe(200)
-			expect((response.body.tools as ReadonlyArray<{ key: string }>).map((row) => row.key)).toEqual([
+			expect(Arr.map(response.body.tools as ReadonlyArray<{ key: string }>, (row) => row.key)).toEqual([
 				"search_traces",
 				"run_sql",
 			])
@@ -1782,7 +1786,7 @@ describe("POST /internal/ai-sessions/tools/error-samples", () => {
 				nextCursor?: unknown
 			}
 			// The extra row only says there is more; it is the next page's first.
-			expect(body.occurrences.map((row) => row.spanId)).toEqual([occurrence.spanId])
+			expect(Arr.map(body.occurrences, (row) => row.spanId)).toEqual([occurrence.spanId])
 			expect(body.nextCursor).toEqual({ timestamp: occurrence.timestamp, spanId: occurrence.spanId })
 			expect(seen[1]).not.toContain(older.spanId)
 		} finally {

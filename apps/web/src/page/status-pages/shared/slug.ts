@@ -1,0 +1,38 @@
+import { StatusPageSlug } from "@maple/domain/status-page"
+import { Schema, String as Str } from "effect"
+
+// The page address: suggested from the name until typed, checked as the API checks it.
+
+const SLUG_MAX = 48
+
+/** `Acme Status!` as `acme-status`: lowercase letters and digits, single inner hyphens. */
+export const slugFromName = (name: string): string =>
+	Str.replace(
+		/-+$/u,
+		"",
+	)(
+		Str.slice(
+			0,
+			SLUG_MAX,
+		)(
+			Str.replace(
+				/^-+|-+$/gu,
+				"",
+			)(
+				Str.replace(
+					/[^a-z0-9]+/gu,
+					"-",
+				)(Str.replace(/\p{M}+/gu, "")(Str.toLowerCase(name).normalize("NFKD"))),
+			),
+		),
+	)
+
+const isSlug = Schema.is(StatusPageSlug)
+
+/** Why a slug would be refused, or `null` when it is fine. */
+export const slugIssue = (slug: string): string | null =>
+	slug === ""
+		? "Add an address."
+		: isSlug(slug)
+			? null
+			: "Use 3 to 48 lowercase letters, digits or inner hyphens."

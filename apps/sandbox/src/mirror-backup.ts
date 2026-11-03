@@ -11,7 +11,7 @@
  * Durable Object arrives as a {@link MirrorBackupHost}.
  */
 import { SANDBOX_MIRROR_DIR, SANDBOX_SEED_DIR, SANDBOX_SNAPSHOT_DIR, shellQuote } from "@maple/domain/sandbox"
-import { Duration, Effect, Option, Schema } from "effect"
+import { Duration, Effect, Option, Schema, String as Str } from "effect"
 import { snapshotScript } from "./checkout"
 
 /** Where the latest backup's handle lives in the Durable Object's storage. */
@@ -141,7 +141,7 @@ export const backupMirror = (host: MirrorBackupHost): Effect.Effect<BackupOutcom
 		if (snapshot.exitCode === 3) return "no-mirror"
 		if (snapshot.exitCode !== 0)
 			return yield* new MirrorBackupError({
-				message: `snapshot the mirror: exit ${snapshot.exitCode}: ${snapshot.stderr.trim().slice(0, 500)}`,
+				message: `snapshot the mirror: exit ${snapshot.exitCode}: ${Str.slice(0, 500)(Str.trim(snapshot.stderr))}`,
 			})
 		const createdAt = host.now()
 		const record = yield* call("archive the mirror", () =>

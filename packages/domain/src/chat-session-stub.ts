@@ -5,7 +5,7 @@
  * api, alerting and chat-bot, which hold a cross-script binding to it. Keeping them in one place
  * is what keeps those bindings structurally safe.
  */
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Schema, Stream, Array as Arr } from "effect"
 import type {
 	ChatEvent,
 	ChatEventInput,
@@ -28,7 +28,7 @@ export const CHAT_ABORT_REASONS = ["user", "superseded", "stale", "evicted"] as 
 export type ChatAbortReason = (typeof CHAT_ABORT_REASONS)[number]
 
 export const isChatAbortReason = (value: unknown): value is ChatAbortReason =>
-	CHAT_ABORT_REASONS.some((reason) => reason === value)
+	Arr.some(CHAT_ABORT_REASONS, (reason) => reason === value)
 
 /**
  * The `ChatSession` Durable Object's RPC surface, as the object answers it over Workers RPC.
@@ -141,7 +141,9 @@ export const chatSessionClient = (rpc: ChatSessionRpc): ChatSessionClient => ({
 	history: () => rpc.history().pipe(Effect.mapError(callFailed("history"))),
 	since: (cursor) => rpc.since(cursor).pipe(Effect.mapError(callFailed("since"))),
 	subscribe: (cursor) =>
-		rpc.subscribe(cursor).pipe(Effect.mapError(callFailed("subscribe")), Effect.map(subscription)),
+		rpc
+			.subscribe(cursor)
+			.pipe(Effect.mapBoth({ onSuccess: subscription, onFailure: callFailed("subscribe") })),
 	append: (event) => rpc.append(event).pipe(Effect.mapError(callFailed("append"))),
 	beginTurn: (input) => rpc.beginTurn(input).pipe(Effect.mapError(callFailed("beginTurn"))),
 	settleProposal: (input) => rpc.settleProposal(input).pipe(Effect.mapError(callFailed("settleProposal"))),

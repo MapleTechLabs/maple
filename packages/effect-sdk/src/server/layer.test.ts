@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Data, Effect, Layer, Tracer } from "effect"
+import { Data, Effect, Layer, Tracer, Array as Arr, String as Str } from "effect"
 import { OtlpExporter } from "effect/observability"
 import { afterEach, beforeEach, expect, vi } from "vitest"
 import { layer } from "./layer.js"
@@ -42,10 +42,12 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 }) as typeof fetch
 
 const exportedSpans = (): Array<ExportedSpan> =>
-	calls
-		.filter((call) => call.url.endsWith("/v1/traces"))
-		.flatMap((call) => call.body.resourceSpans ?? [])
-		.flatMap((resourceSpan) => resourceSpan.scopeSpans.flatMap((scope) => scope.spans))
+	Arr.flatMap(
+		Arr.filter(calls, (call) => Str.endsWith("/v1/traces")(call.url)).flatMap(
+			(call) => call.body.resourceSpans ?? [],
+		),
+		(resourceSpan) => resourceSpan.scopeSpans.flatMap((scope) => scope.spans),
+	)
 
 class DuplicateDocument extends Data.TaggedError("DuplicateDocument")<{}> {}
 
@@ -59,7 +61,7 @@ const serviceKeys = async (config: Parameters<typeof layer>[0]): Promise<Array<s
 	const context = await Effect.runPromise(Effect.scoped(Layer.build(layer(config))))
 	// `CurrentMemoMap` is bookkeeping every `Layer.build` adds, including
 	// `Layer.empty`'s — it is not a service the layer contributed.
-	return [...context.mapUnsafe.keys()].filter((key) => key !== "effect/Layer/CurrentMemoMap")
+	return Arr.filter([...context.mapUnsafe.keys()], (key) => key !== "effect/Layer/CurrentMemoMap")
 }
 
 describe("Maple.layer", () => {
@@ -99,7 +101,12 @@ describe("Maple.layer", () => {
 		const keys = await serviceKeys({ serviceName: "unit-test" })
 
 		expect(keys).toContain("effect/Tracer")
-		expect(warnSpy.mock.calls.map((call) => String(call[0])).join("\n")).toContain("401")
+		expect(
+			Arr.join(
+				Arr.map(warnSpy.mock.calls, (call) => String(call[0])),
+				"\n",
+			),
+		).toContain("401")
 	})
 })
 
@@ -127,7 +134,7 @@ describe("Maple.layer span options", () => {
 		const keys = traces?.body.resourceSpans?.[0]?.resource.attributes.map((attribute) => attribute.key)
 		expect(keys).toContain("service.name")
 		expect(keys).toContain("deployment.environment.name")
-		expect(exportedSpans().map((span) => span.name)).toEqual(["hello"])
+		expect(Arr.map(exportedSpans(), (span) => span.name)).toEqual(["hello"])
 	})
 
 	// The signal layers share one memoized `layerFlusher`, so its flush drains them all.
@@ -137,7 +144,7 @@ describe("Maple.layer span options", () => {
 				yield* Effect.log("processing").pipe(Effect.withSpan("job.process"))
 				const flusher = yield* OtlpExporter.Flusher
 				yield* flusher.flush
-				return calls.map((call) => new URL(call.url).pathname)
+				return Arr.map(calls, (call) => new URL(call.url).pathname)
 			}).pipe(Effect.provide(layer(config))),
 		)
 
@@ -155,12 +162,13 @@ describe("Maple.layer span options", () => {
 		)
 
 		const spans = exportedSpans()
-		expect(spans.map((span) => span.name)).toEqual(["job.process"])
-		const logTraceIds = calls
-			.filter((call) => call.url.endsWith("/v1/logs"))
-			.flatMap((call) => call.body.resourceLogs ?? [])
-			.flatMap((resourceLog) => resourceLog.scopeLogs.flatMap((scope) => scope.logRecords))
-			.map((record) => record.traceId)
+		expect(Arr.map(spans, (span) => span.name)).toEqual(["job.process"])
+		const logTraceIds = Arr.flatMap(
+			Arr.filter(calls, (call) => Str.endsWith("/v1/logs")(call.url)).flatMap(
+				(call) => call.body.resourceLogs ?? [],
+			),
+			(resourceLog) => resourceLog.scopeLogs.flatMap((scope) => scope.logRecords),
+		).map((record) => record.traceId)
 		expect(logTraceIds).toContain(spans[0]?.traceId)
 	})
 
@@ -172,7 +180,7 @@ describe("Maple.layer span options", () => {
 
 		const [span] = exportedSpans()
 		expect(span?.status.code).toBe(1)
-		expect(span?.events.some((event) => event.name === "exception")).toBe(false)
+		expect(Arr.some(span?.events, (event) => event.name === "exception")).toBe(false)
 	})
 
 	it("still records unexpected failures as Error", async () => {
@@ -180,7 +188,7 @@ describe("Maple.layer span options", () => {
 
 		const [span] = exportedSpans()
 		expect(span?.status.code).toBe(2)
-		expect(span?.events.some((event) => event.name === "exception")).toBe(true)
+		expect(Arr.some(span?.events, (event) => event.name === "exception")).toBe(true)
 	})
 
 	// The no-option recipe the docs point to: a Debug span under an Info
@@ -197,6 +205,6 @@ describe("Maple.layer span options", () => {
 			}).pipe(Effect.provideService(Tracer.MinimumTraceLevel, "Info")),
 		)
 
-		expect(exportedSpans().map((span) => span.name)).toEqual(["job.process"])
+		expect(Arr.map(exportedSpans(), (span) => span.name)).toEqual(["job.process"])
 	})
 })

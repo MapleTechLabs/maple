@@ -1,6 +1,6 @@
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
-import { DateTime, Option, Predicate, Schema } from "effect"
+import { DateTime, Option, Predicate, Schema, Array as Arr, String as Str } from "effect"
 import type { AppRoute, RouteTag } from "./app-route"
 
 // The session time range middleware: a navigation that names no
@@ -20,10 +20,11 @@ const DEFAULT_MAX_RANGE_SECONDS = 32 * 24 * 60 * 60
 
 /** The routes that carry the middleware, with the ceiling they pass it. */
 const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
-	...(["Services", "Service", "ServiceMap", "Releases", "Release", "AlertRule"] as const).map(
+	...Arr.map(
+		["Services", "Service", "ServiceMap", "Releases", "Release", "AlertRule"] as const,
 		(tag) => [tag, ONE_YEAR_SECONDS] as const,
 	),
-	...(
+	...Arr.map(
 		[
 			"Home",
 			"Metric",
@@ -35,6 +36,11 @@ const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 			"ErrorIssue",
 			"AgentSessionTool",
 			"AgentSessionTools",
+			"McpServers",
+			"McpServer",
+			"McpServerTool",
+			"McpServerSessions",
+			"McpServerSession",
 			"Infra",
 			"InfraCloudflare",
 			"InfraCloudflareZone",
@@ -43,6 +49,10 @@ const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 			"InfraRailwayService",
 			"InfraVercel",
 			"InfraVercelProject",
+			"InfraSupabase",
+			"InfraSupabaseProject",
+			"InfraAws",
+			"InfraAwsResource",
 			"InfraGcp",
 			"InfraGcpResource",
 			"InfraPlanetscale",
@@ -60,12 +70,15 @@ const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 			"InfraKubernetesPod",
 			"InfraKubernetesServices",
 			"InfraKubernetesService",
-		] as const
-	).map((tag) => [tag, DEFAULT_MAX_RANGE_SECONDS] as const),
+		] as const,
+		(tag) => [tag, DEFAULT_MAX_RANGE_SECONDS] as const,
+	),
 ])
 
 const searchOf = (route: AppRoute): Option.Option<Readonly<Record<string, unknown>>> =>
-	Predicate.hasProperty(route, "search") && Predicate.isReadonlyObject(route.search) ? Option.some(route.search) : Option.none()
+	Predicate.hasProperty(route, "search") && Predicate.isReadonlyObject(route.search)
+		? Option.some(route.search)
+		: Option.none()
 
 const isSet = (value: unknown): value is string => typeof value === "string" && value !== ""
 
@@ -85,7 +98,12 @@ const epochOf = (value: string): Option.Option<number> =>
 	Option.map(DateTime.make(normalizeTimestampInput(value)), DateTime.toEpochMillis)
 
 /** `isTimeRangeWithin`, a preset resolved against the clock first (`relativeToAbsolute`). */
-export const isWithin = (stored: SessionTimeRange, maxSeconds: number, nowMs: number, timeZone: string): boolean => {
+export const isWithin = (
+	stored: SessionTimeRange,
+	maxSeconds: number,
+	nowMs: number,
+	timeZone: string,
+): boolean => {
 	const range =
 		stored.timePreset !== undefined
 			? Option.fromNullishOr(resolveRelativeRangeToWarehouse(stored.timePreset, nowMs, timeZone))
@@ -119,7 +137,7 @@ export const withSessionRange = (
 	if (ceiling === undefined || !isComplete(stored)) return Option.none()
 	return Option.flatMap(searchOf(route), (search) => {
 		if (namesTimeRange(search) || !isWithin(stored, ceiling, nowMs, timeZone)) return Option.none()
-		const [path = "", query = ""] = url.split("?")
+		const [path, query = ""] = Str.split("?")(url)
 		const params = new URLSearchParams(query)
 		for (const key of ["startTime", "endTime", "timePreset"] as const) {
 			const value = stored[key]

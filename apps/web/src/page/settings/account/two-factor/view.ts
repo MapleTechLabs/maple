@@ -1,20 +1,23 @@
 import { REPLAY_BLOCK_CLASS } from "../../../../components/common/replay-privacy"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../../ui/button"
-import { confirmDialog } from "../../../../ui/confirm-dialog"
-import * as CopyButton from "../../../../ui/copy-button"
-import { copyableField } from "../../../../ui/copyable-field"
-import * as DialogView from "../../../../ui/dialog-view"
-import { badge } from "../../../../ui/display"
-import { icon } from "../../../../ui/icon"
-import * as OtpField from "../../../../ui/otp-field"
+import { button } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import * as DialogView from "@maple/views/ui/dialog-view"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
 import { codeField } from "../code-field"
 import type { AccountUser } from "../user"
 import { type EnrollStep, Message, type Model } from "./model"
 import { qrCode } from "./qr-code"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -28,26 +31,41 @@ const authenticatorSection = (h: H, model: Model, user: AccountUser): Html =>
 				"Require a six-digit code from an authenticator app (1Password, Authy, Google Authenticator) in addition to your password when you sign in.",
 			],
 			actions: user.totpEnabled
-				? badge(h, { variant: "outline", className: "gap-1" }, [icon(h, "CircleCheckIcon", { size: 12 }), "Enabled"])
+				? badge(h, { variant: "outline", className: "gap-1" }, [
+						icon(h, "CircleCheckIcon", { size: 12 }),
+						"Enabled",
+					])
 				: badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Not set up"]),
 		},
 		[
 			user.totpEnabled
-				? h.div(
-						[h.Class("flex items-center justify-between gap-4")],
-						[
-							h.p([h.Class("text-xs text-muted-foreground")], ["Your authenticator app is registered for this account."]),
-							button(
-								h,
-								{ variant: "outline", size: "sm", isDisabled: model.isBusy, attributes: [h.OnClick(Message.ClickedRemove())] },
-								["Remove"],
-							),
-						],
-					)
+				? hstack(h, { gap: "4", justify: "between" }, [
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Your authenticator app is registered for this account.",
+						]),
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: model.isBusy,
+								attributes: [h.OnClick(Message.ClickedRemove())],
+							},
+							["Remove"],
+						),
+					])
 				: button(
 						h,
-						{ size: "sm", className: "self-start", isLoading: model.isBusy, attributes: [h.OnClick(Message.ClickedSetUp())] },
-						[icon(h, "ShieldIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Set up authenticator"],
+						{
+							size: "sm",
+							className: "self-start",
+							isLoading: model.isBusy,
+							attributes: [h.OnClick(Message.ClickedSetUp())],
+						},
+						[
+							icon(h, "ShieldIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+							"Set up authenticator",
+						],
 					),
 		],
 	)
@@ -63,7 +81,9 @@ const backupSection = (h: H, model: Model, user: AccountUser): ReadonlyArray<Htm
 						description: [
 							"Single-use codes for signing in when you cannot reach your authenticator. Generating a new set invalidates the old one.",
 						],
-						...(user.backupCodeEnabled && { actions: badge(h, { variant: "secondary" }, ["Active"]) }),
+						...(user.backupCodeEnabled && {
+							actions: badge(h, { variant: "secondary" }, ["Active"]),
+						}),
 					},
 					[
 						button(
@@ -93,12 +113,20 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 	switch (step._tag) {
 		case "Scan":
 			return [
-				header(h, id, "Scan this code", "Open your authenticator app and scan the code, or enter the setup key by hand."),
+				header(
+					h,
+					id,
+					"Scan this code",
+					"Open your authenticator app and scan the code, or enter the setup key by hand.",
+				),
 				DialogView.dialogPanel(h, "dialog", id, [
 					h.div(
 						[h.Class("flex flex-col items-center gap-4")],
 						[
-							h.div([h.Class("rounded-md border border-border bg-background p-3")], [qrCode(h, step.uri, "size-44")]),
+							h.div(
+								[h.Class("rounded-md border border-border bg-background p-3")],
+								[qrCode(h, step.uri, "size-44")],
+							),
 							h.div(
 								[h.Class("w-full")],
 								[
@@ -116,13 +144,22 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 					),
 				]),
 				DialogView.dialogFooter(h, "dialog", [
-					button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancelEnroll())] }, ["Cancel"]),
+					button(
+						h,
+						{ variant: "outline", attributes: [h.OnClick(Message.ClickedCancelEnroll())] },
+						["Cancel"],
+					),
 					button(h, { attributes: [h.OnClick(Message.ClickedContinue())] }, ["Continue"]),
 				]),
 			]
 		case "Verify":
 			return [
-				header(h, id, "Enter the code", "Type the six-digit code your authenticator app is showing now."),
+				header(
+					h,
+					id,
+					"Enter the code",
+					"Type the six-digit code your authenticator app is showing now.",
+				),
 				DialogView.dialogPanel(h, "dialog", id, [
 					codeField(h, {
 						model: model.code,
@@ -131,7 +168,15 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 					}),
 				]),
 				DialogView.dialogFooter(h, "dialog", [
-					button(h, { variant: "outline", isDisabled: model.isBusy, attributes: [h.OnClick(Message.ClickedBack())] }, ["Back"]),
+					button(
+						h,
+						{
+							variant: "outline",
+							isDisabled: model.isBusy,
+							attributes: [h.OnClick(Message.ClickedBack())],
+						},
+						["Back"],
+					),
 					button(
 						h,
 						{
@@ -153,15 +198,19 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 				),
 				DialogView.dialogPanel(h, "dialog", id, [
 					h.div(
-						[h.Class("grid grid-cols-2 gap-1.5 rounded-md border border-border bg-muted/30 p-3 font-mono text-xs")],
-						step.codes.map((code) => h.span([h.Key(code)], [code])),
+						[
+							h.Class(
+								"grid grid-cols-2 gap-1.5 rounded-md border border-border bg-surface-sunken p-3 font-mono text-xs",
+							),
+						],
+						Arr.map(step.codes, (code) => h.span([h.Key(code)], [code])),
 					),
 				]),
 				DialogView.dialogFooter(h, "dialog", [
 					CopyButton.view(h, {
 						model: model.codesCopy,
 						toParentMessage: (message) => Message.GotCodesCopyMessage({ message }),
-						value: step.codes.join("\n"),
+						value: Arr.join(step.codes, "\n"),
 						label: "Backup codes",
 						idleLabel: "Copy all",
 						variant: "outline",
@@ -188,7 +237,7 @@ const enrollDialog = (h: H, model: Model): Html =>
 	})
 
 const loaded = (h: H, model: Model, user: AccountUser): Html =>
-	settingsSections(h, "standard", [
+	settingsSections(h, [
 		authenticatorSection(h, model, user),
 		...backupSection(h, model, user),
 		enrollDialog(h, model),
@@ -197,8 +246,9 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			model: model.disableDialog,
 			toParentMessage: (message) => Message.GotDisableDialogMessage({ message }),
 			title: "Remove two-factor authentication?",
-			description: "Your account will be protected by your password alone, and your backup codes stop working.",
-			confirmLabel: "Remove",
+			description:
+				"Your account will be protected by your password alone, and your backup codes stop working.",
+			confirmLabel: "Remove two-factor",
 			isPending: model.isBusy,
 			onConfirm: Message.ClickedConfirmRemove(),
 		}),

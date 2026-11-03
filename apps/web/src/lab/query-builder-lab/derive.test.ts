@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { groupByOptionsOf, parseMetricSelection, scrollOverflowOf, seriesKeysOf, toRunPoints } from "./derive"
 import { searchOf } from "./flags"
+import { Array as Arr, Record as Rec } from "effect"
 
 describe("query builder lab derivations", () => {
 	test("run points keep the bucket and the finite numeric series only", () => {
@@ -9,7 +10,7 @@ describe("query builder lab derivations", () => {
 	})
 
 	test("the table shows at most six series, in first-seen order", () => {
-		const series = Object.fromEntries(["a", "b", "c", "d", "e", "f", "g"].map((key) => [key, 1]))
+		const series = Rec.fromEntries(Arr.map(["a", "b", "c", "d", "e", "f", "g"], (key) => [key, 1]))
 		expect(seriesKeysOf([{ bucket: "x", series }])).toEqual(["a", "b", "c", "d", "e", "f"])
 	})
 

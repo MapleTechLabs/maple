@@ -20,12 +20,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for the Vercel AI SDK in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-vercel-ai-sdk -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-vercel-ai-sdk -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the packages
 
@@ -188,11 +189,9 @@ A short-lived process can exit before its spans are exported. In a script, call 
 
 Read streams to the end (`await result.consumeStream()`) before flushing, since a stream's spans only end when it has been read. On Vercel, `@vercel/otel` flushes after each request, but queue consumers and cron jobs need their own `forceFlush()`.
 
-## Check that it works
+## Verify
 
-Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your conversation id with framework **Vercel AI SDK**, one turn per call, and a transcript with the prompts, replies and tool calls.
-
-Cost shows as unpriced because the AI SDK doesn't report it.
+Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your conversation id with framework **Vercel AI SDK**, one turn per call, and a transcript with the prompts, replies and tool calls. Cost shows as unpriced because the AI SDK doesn't report it.
 
 ## Troubleshooting
 
@@ -201,7 +200,7 @@ Cost shows as unpriced because the AI SDK doesn't report it.
 - **Every span shows up twice.** `registerTelemetry()` ran twice, or a second OpenTelemetry SDK (such as Sentry without `skipOpenTelemetrySetup: true`) exports the same spans.
 - **A failed tool shows as successful.** The tool returned an error value. Throw from `execute` instead.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [AI SDK telemetry](https://ai-sdk.dev/docs/ai-sdk-core/telemetry)

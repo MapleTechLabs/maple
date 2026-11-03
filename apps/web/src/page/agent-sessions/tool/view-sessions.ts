@@ -7,18 +7,21 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { TONE_BORDER, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
 import { orderedSearch } from "../../../route/tanstack-search"
-import { badge } from "../../../ui/display"
-import { emptyMessage } from "../../../ui/empty"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { skeletonList } from "../../../ui/skeleton"
-import { statusDot } from "../../../ui/status-dot"
+import { badge } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { linkButton } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { vendorLabel } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
 import type { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -38,16 +41,18 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 		[
 			h.Key(session.sessionId),
 			h.Class(
-				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none",
+				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left last:border-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none",
 			),
 			// `{ ...sessionLinkWindow(session), tool, view }` in that order.
 			h.Href(
-				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch([
-					["t", sessionLinkWindow(session).t],
-					["end", sessionLinkWindow(session).end],
-					["tool", tool],
-					["view", "trace"],
-				])}`,
+				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch(
+					[
+						["t", sessionLinkWindow(session).t],
+						["end", sessionLinkWindow(session).end],
+						["tool", tool],
+						["view", "trace"],
+					],
+				)}`,
 			),
 		],
 		[
@@ -72,40 +77,41 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 						],
 						[sessionRowId(session.sessionId)],
 					),
-					h.span(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[vendorLabel(session.vendorId)],
-					),
+					typography(h, { size: "xs", tone: "muted", truncate: true }, [
+						vendorLabel(session.vendorId),
+					]),
 				],
 			),
 			h.span(
 				[
 					h.Class(
-						"hidden w-[176px] shrink-0 truncate text-xs text-muted-foreground @min-[720px]/panel:block",
+						"hidden w-44 shrink-0 truncate text-xs text-muted-foreground @min-[720px]/panel:block",
 					),
 				],
-				[[session.firstAgentName, ...session.serviceNames].filter((part) => part !== "").join(" · ")],
+				[
+					Arr.join(
+						Arr.filter([session.firstAgentName, ...session.serviceNames], (part) => part !== ""),
+						" · ",
+					),
+				],
 			),
 			h.span(
-				[h.Class("hidden w-[216px] shrink-0 items-baseline gap-2 @min-[560px]/panel:flex")],
+				[h.Class("hidden w-56 shrink-0 items-baseline gap-2 @min-[560px]/panel:flex")],
 				[
 					h.span(
 						[h.Class("font-mono text-ui font-semibold tabular-nums text-foreground")],
 						[formatSessionDuration(session.durationMs)],
 					),
-					h.span(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[
-							countLabel(session.traceCount, "trace"),
-							" ·",
-							" ",
-							countLabel(session.spanCount, "span"),
-						],
-					),
+					typography(h, { size: "xs", tone: "muted", truncate: true }, [
+						countLabel(session.traceCount, "trace"),
+						" ·",
+						" ",
+						countLabel(session.spanCount, "span"),
+					]),
 				],
 			),
 			h.span(
-				[h.Class("hidden w-[140px] shrink-0 @min-[900px]/panel:flex")],
+				[h.Class("hidden w-36 shrink-0 @min-[900px]/panel:flex")],
 				hasErrors ? [errorCountPill(h, session.errorSpanCount)] : [],
 			),
 			relativeTime(h, {
@@ -144,27 +150,29 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 					h.div(
 						[h.Class("flex min-w-0 items-baseline gap-2.5 font-mono")],
 						[
-							h.span(
-								[h.Class("text-xs font-medium text-foreground")],
-								["Sessions running ", inputs.tool],
-							),
-							h.span(
-								[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
+							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [
+								"Sessions running ",
+								inputs.tool,
+							]),
+							typography(
+								h,
+								{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
 								[countLabel(inputs.rows.length, "session")],
 							),
 						],
 					),
-					h.a(
-						[
-							h.Class(
-								"inline-flex h-7 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-2.5 font-mono text-2xs text-foreground transition-colors hover:bg-muted/50",
-							),
-							h.Href(hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool] } }))),
-						],
+					linkButton(
+						h,
+						{
+							variant: "outline",
+							size: "xs",
+							className: "font-mono text-2xs sm:text-2xs",
+							href: hrefOf(AppRoute.AgentSessions({ search: { tools: [inputs.tool] } })),
+						},
 						[
 							"Open in Sessions",
 							icon(h, "ExternalLinkIcon", {
-								size: 11,
+								size: 12,
 								className: "text-muted-foreground",
 								attributes: [h.AriaHidden(true)],
 							}),
@@ -178,7 +186,7 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 					? [
 							errorState(h, {
 								failure: inputs.failure,
-								title: `Failed to load sessions running ${inputs.tool}`,
+								title: `Couldn't load sessions running ${inputs.tool}`,
 							}),
 						]
 					: inputs.isLoading
@@ -188,10 +196,10 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 									emptyMessage(h, { className: "py-12 font-mono" }, [
 										"No sessions called ",
 										inputs.tool,
-										" in the selected window.",
+										" in this window",
 									]),
 								]
-							: inputs.rows.map((session) =>
+							: Arr.map(inputs.rows, (session) =>
 									sessionRow(h, session, inputs.tool, inputs.nowMs, inputs.timeZone),
 								),
 			),
@@ -202,7 +210,7 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 							[
 								"Showing the ",
 								formatNumber(inputs.rows.length),
-								" most recent sessions — narrow the time range to see older ones",
+								" most recent sessions. Narrow the time range to see older ones",
 							],
 						),
 					]

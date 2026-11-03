@@ -5,7 +5,13 @@ const calls: string[] = []
 vi.mock("../replay/record", () => ({
 	startRecording: () => {
 		calls.push("stream")
-		return { stop: () => calls.push("stream.stop"), flush: async () => {}, getClickCount: () => 0 }
+		return {
+			stop: () => calls.push("stream.stop"),
+			flush: async (keepalive?: boolean) => {
+				calls.push(`stream.flush:${keepalive === true}`)
+			},
+			getClickCount: () => 0,
+		}
 	},
 	startBufferedRecording: () => {
 		calls.push("buffer")
@@ -33,7 +39,7 @@ vi.mock("../platform/transport", async (importOriginal) => ({
 }))
 
 const { startReplaySession } = await import("./replay-session")
-const { claimReplayMode, getSession } = await import("./session")
+const { claimReplayMode, getSession, resetSessionStorageStateForTests } = await import("./session")
 
 const resourceAttribute = (row: Record<string, unknown> | undefined, key: string): string | undefined => {
 	const attributes = row?.resource_attributes
@@ -50,6 +56,8 @@ afterEach(() => {
 	calls.length = 0
 	rows.length = 0
 	sessionStorage.clear()
+	// A cleared sessionStorage alone is a host app's logout, which keeps the session.
+	resetSessionStorageStateForTests()
 })
 
 describe("startReplaySession in buffer mode", () => {
@@ -92,5 +100,34 @@ describe("startReplaySession in buffer mode", () => {
 		expect(recorded(rows.at(-1))).toBe("true")
 		expect(trigger(rows.at(-1))).toBeUndefined()
 		await handle?.shutdown()
+	})
+})
+
+describe("startReplaySession across tab switches", () => {
+	const setVisibility = (state: "visible" | "hidden"): void => {
+		Object.defineProperty(document, "visibilityState", { value: state, configurable: true })
+		document.dispatchEvent(new Event("visibilitychange"))
+	}
+	afterEach(() => {
+		Reflect.deleteProperty(document, "visibilityState")
+	})
+
+	it("flushes on hide and keeps the same recorder when shown again, with no new snapshot", async () => {
+		getSession()
+		const handle = startReplaySession({
+			endpoint: "https://ingest.test",
+			sdk: "maple-test/0.0.0",
+			serviceName: "web",
+			maskAllInputs: true,
+			maskAllText: false,
+		})
+		setVisibility("hidden")
+		setVisibility("visible")
+		setVisibility("hidden")
+		setVisibility("visible")
+		expect(calls).toEqual(["stream", "events", "stream.flush:true", "stream.flush:true"])
+		expect(rows.map((row) => row.status)).toEqual(["active", "ended", "active", "ended", "active"])
+		await handle?.shutdown()
+		expect(calls.at(-1)).toBe("stream.stop")
 	})
 })

@@ -1,28 +1,31 @@
+import { errorState } from "@maple/views/ui/error-state"
 import type { TimeFormat } from "../kit/local-time"
 import * as Timeline from "@maple/web/page/traces/detail/timeline"
-import type { TraceData } from "@maple/web/page/traces/detail/trace-data"
+import type { TraceData } from "@maple/views/traces/trace-data"
 import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
-import { view as traceFlowView } from "@maple/web/service-map/trace-flow/view"
-import { button } from "@maple/web/ui/button"
-import { httpSpanLabel } from "@maple/web/ui/http-span-label"
-import { icon } from "@maple/web/ui/icon"
-import * as TabsView from "@maple/web/ui/tabs-view"
+import { view as traceFlowView } from "@maple/views/service-map/trace-flow/view"
+import { button } from "@maple/views/ui/button"
+import { httpSpanLabel } from "@maple/views/ui/http-span-label"
+import { icon } from "@maple/views/ui/icon"
+import * as TabsView from "@maple/views/ui/tabs-view"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureWithoutData, isPending } from "../../data/slot"
+import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
 import type { PageViewInputs } from "../kit/inputs"
 import { refreshButton } from "../kit/toolbar"
-import { errorState } from "../kit/view-states"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { loadedTrace } from "./update"
 import { anatomyStrip, httpInfoOf, rootSpanOf } from "./view-anatomy"
-import { spanPanel } from "./view-panel"
+import * as SpanPanel from "@maple/views/traces/span-panel"
+import * as LogSheet from "@maple/views/logs/log-sheet"
+import { sheetClock, traceHash } from "../kit/log-sheet"
 import { spanTooltip } from "./view-span-tooltip"
-import { TrackPointer } from "./command"
+import { FocusSpanPanel, TrackPointer } from "./command"
 import { findSpan } from "@maple/web/page/traces/detail/select"
 import { traceDetailLoading, traceNotFound } from "./view-states"
+import { typography } from "@maple/views/ui/typography"
 
 // The trace detail page.
 
@@ -39,7 +42,14 @@ const title = (h: H, trace: TraceData | undefined): ReadonlyArray<Html> => {
 	const root = trace === undefined ? undefined : rootSpanOf(trace)
 	if (root === undefined) return []
 	return httpInfoOf(root) !== null && httpInfoOf(root) !== undefined
-		? [httpSpanLabel(h, { spanName: root.spanName, spanAttributes: root.spanAttributes, spanKind: root.spanKind, className: "min-w-0 gap-3" })]
+		? [
+				httpSpanLabel(h, {
+					spanName: root.spanName,
+					spanAttributes: root.spanAttributes,
+					spanKind: root.spanKind,
+					className: "min-w-0 gap-3",
+				}),
+			]
 		: [h.span([h.Class("block truncate"), h.Title(root.spanName)], [root.spanName])]
 }
 
@@ -66,7 +76,11 @@ const tabPanel = (h: H, model: Model, value: string): ReadonlyArray<Html> | unde
 			}),
 		]
 	if (value === "flow" && model.flow !== null)
-		return [traceFlowView(h, model.flow.graph, model.flow.model, (message) => Message.GotFlowMessage({ message }))]
+		return [
+			traceFlowView(h, model.flow.graph, model.flow.model, (message) =>
+				Message.GotFlowMessage({ message }),
+			),
+		]
 	return undefined
 }
 
@@ -83,7 +97,12 @@ const traceViewTabs = (h: H, model: Model): Html =>
 			listClassName: "shrink-0",
 			panelClassName: "flex-1 min-h-0",
 			tabContent: (value: string, label: string) => [
-				icon(h, TAB_ICONS.get(value === "waterfall" || value === "flow" ? value : "timeline") ?? "FireIcon", { size: 14 }),
+				icon(
+					h,
+					TAB_ICONS.get(value === "waterfall" || value === "flow" ? value : "timeline") ??
+						"FireIcon",
+					{ size: 14 },
+				),
 				label,
 			],
 			panel: (value: string) => tabPanel(h, model, value),
@@ -102,16 +121,40 @@ const loadedBody = (h: H, model: Model, trace: TraceData, timeFormat: TimeFormat
 					h.div([h.Class("min-h-0 flex-1")], [traceViewTabs(h, model)]),
 				],
 			),
-			...(model.panel === null
-				? []
-				: [
-						spanPanel(h, model.panel, {
-							traceStartTime: trace.traceStartTime ?? "",
-							totalDurationMs: trace.totalDurationMs,
-							nowMs: model.traceUpdatedAtMs,
-							timeFormat,
-						}),
-					]),
+			...(model.panel === null ? [] : [spanPanel(h, model.panel, timeFormat)]),
+			...Option.match(model.maybeLogSheet, {
+				onNone: () => [],
+				onSome: (sheet) => [
+					h.submodel({
+						slotId: "span-log-sheet",
+						model: sheet,
+						view: LogSheet.view,
+						viewInputs: { ...sheetClock(timeFormat), canFilter: false, traceHref: traceHash },
+						toParentMessage: (message) => Message.GotLogSheetMessage({ message }),
+					}),
+				],
+			}),
+		],
+	)
+
+/** The shared span panel beside the trace; it takes focus when deep-linked so Escape closes it. */
+const spanPanel = (h: H, panel: SpanPanel.Model, timeFormat: TimeFormat): Html =>
+	h.aside(
+		[
+			h.Tabindex(-1),
+			h.OnMount(FocusSpanPanel()),
+			h.Class(
+				"flex h-full w-full shrink-0 flex-col overflow-hidden border-l focus:outline-none sm:w-[28rem]",
+			),
+		],
+		[
+			h.submodel({
+				slotId: "span-panel",
+				model: panel,
+				view: SpanPanel.view,
+				viewInputs: { timeZone: timeFormat.timeZone, canFilterAttributes: false },
+				toParentMessage: (message: SpanPanel.Message) => Message.GotSpanPanelMessage({ message }),
+			}),
 		],
 	)
 
@@ -133,9 +176,14 @@ const hoverTooltip = (h: H, model: Model, trace: TraceData | undefined): Readonl
 }
 
 const body = (h: H, model: Model, timeFormat: TimeFormat): Html => {
-	if (isPending(model.trace)) return traceDetailLoading(h)
+	if (isAwaitingFirstData(model.trace)) return traceDetailLoading(h)
 	const failure = failureWithoutData(model.trace)
-	if (Option.isSome(failure)) return errorState(h, { label: "trace", failure: failure.value, onRetry: Message.ClickedRefresh() })
+	if (Option.isSome(failure))
+		return errorState(h, {
+			failure: failure.value,
+			title: "Couldn’t load trace",
+			onRetry: Message.ClickedRefresh(),
+		})
 	return Option.match(loadedTrace(model), {
 		onNone: () => traceNotFound(h, model.traceId),
 		onSome: (trace) => loadedBody(h, model, trace, timeFormat),
@@ -148,17 +196,31 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[
 			h.Class("flex h-full flex-col"),
 			h.OnMount(TrackPointer()),
-			h.OnKeyDownPreventDefault((key) => (key === "Escape" && model.panel !== null ? Option.some(Message.PressedEscape()) : Option.none())),
+			h.OnKeyDownPreventDefault((key) =>
+				key === "Escape" && model.panel !== null
+					? Option.some(Message.PressedEscape())
+					: Option.none(),
+			),
 		],
 		[
 			h.div(
 				[h.Class("flex shrink-0 items-center gap-3 border-b px-4 py-2")],
 				[
-					button(h, { variant: "ghost", size: "sm", className: "shrink-0 gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
-						icon(h, "ArrowLeftIcon"),
-						inputs.context.canGoBack ? "Back" : "Traces",
-					]),
-					h.div([h.Class("min-w-0 flex-1 text-sm font-semibold")], title(h, trace)),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							className: "shrink-0 gap-1.5",
+							attributes: [h.OnClick(Message.ClickedBack())],
+						},
+						[icon(h, "ArrowLeftIcon"), inputs.context.canGoBack ? "Back" : "Traces"],
+					),
+					typography(
+						h,
+						{ as: "div", size: "sm", weight: "semibold", className: "min-w-0 flex-1" },
+						title(h, trace),
+					),
 					refreshButton(h, {
 						isSpinning: model.isRefreshing,
 						hasNewData: inputs.hasNewDataSince(model.traceUpdatedAtMs),
@@ -172,4 +234,3 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		],
 	)
 })
-

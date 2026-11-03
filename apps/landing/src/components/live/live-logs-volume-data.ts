@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Stub buckets for LiveLogsVolumeChart. 60 five-minute buckets ending now,
  * with severity-stacked counts. The shape tells a story: quiet baseline →
@@ -50,17 +51,11 @@ function generateBuckets(): LogBucket[] {
 export const stubBuckets = generateBuckets()
 
 export function totalCount(buckets: LogBucket[]): number {
-	return buckets.reduce((sum, b) => sum + b.INFO + b.DEBUG + b.WARN + b.ERROR, 0)
+	return Arr.reduce(buckets, 0, (sum, b) => sum + b.INFO + b.DEBUG + b.WARN + b.ERROR)
 }
 
 export function formatNumber(num: number): string {
 	if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
 	if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
 	return num.toLocaleString()
-}
-
-export function formatBucketTick(value: string): string {
-	const d = new Date(value)
-	if (Number.isNaN(d.getTime())) return value
-	return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
 }

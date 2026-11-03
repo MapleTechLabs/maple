@@ -1,5 +1,5 @@
 import { trySync } from "@maple/ui/lib/try-sync"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { defineRouteUnion } from "foldkit/route"
 
 // Routes live in the fragment,
@@ -27,8 +27,8 @@ export type Location = typeof Location.Type
 
 /** `parseLocation`: `#/sessions?range=1h` without its `#`. */
 export const parseLocation = (hash: string): Location => {
-	const [rawPath = "", rawSearch = ""] = hash.split("?")
-	return { path: rawPath.startsWith("/") ? rawPath : "/traces", search: rawSearch }
+	const [rawPath, rawSearch = ""] = Str.split("?")(hash)
+	return { path: Str.startsWith("/")(rawPath) ? rawPath : "/traces", search: rawSearch }
 }
 
 export const queryOf = (location: Location): URLSearchParams => new URLSearchParams(location.search)
@@ -59,12 +59,12 @@ export const parseRoute = (path: string): AppRoute => {
 	if (Option.isSome(serviceName)) return AppRoute.ServiceDetail({ serviceName: serviceName.value })
 	const sessionId = detail(path, "sessions")
 	if (Option.isSome(sessionId)) return AppRoute.SessionDetail({ sessionId: sessionId.value })
-	if (path.startsWith("/errors")) return AppRoute.Errors()
-	if (path.startsWith("/logs")) return AppRoute.Logs()
-	if (path.startsWith("/metrics")) return AppRoute.Metrics()
-	if (path.startsWith("/service-map")) return AppRoute.ServiceMap()
-	if (path.startsWith("/services")) return AppRoute.Services()
-	if (path.startsWith("/sessions")) return AppRoute.Sessions()
-	if (path.startsWith("/query")) return AppRoute.Query()
+	if (Str.startsWith("/errors")(path)) return AppRoute.Errors()
+	if (Str.startsWith("/logs")(path)) return AppRoute.Logs()
+	if (Str.startsWith("/metrics")(path)) return AppRoute.Metrics()
+	if (Str.startsWith("/service-map")(path)) return AppRoute.ServiceMap()
+	if (Str.startsWith("/services")(path)) return AppRoute.Services()
+	if (Str.startsWith("/sessions")(path)) return AppRoute.Sessions()
+	if (Str.startsWith("/query")(path)) return AppRoute.Query()
 	return AppRoute.Traces()
 }

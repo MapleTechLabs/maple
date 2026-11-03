@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Duration, Effect, Schema } from "effect"
 
 export class ClerkRequestError extends Schema.TaggedError<ClerkRequestError>()(
 	"@maple/backend/services/auth/ClerkRequestError",
@@ -15,6 +15,9 @@ const responseStatus = (cause: unknown): number | null =>
 	typeof cause === "object" && cause !== null && "status" in cause && typeof cause.status === "number"
 		? cause.status
 		: null
+
+/** Ceiling on one Clerk call; the SDK takes no signal, so a stall would otherwise hang the request. */
+export const CLERK_REQUEST_TIMEOUT = Duration.seconds(10)
 
 type ClerkSpanAttributes = Readonly<Record<string, string | number | boolean>>
 
@@ -38,6 +41,18 @@ export const clerkRequest = <A>(
 				cause,
 			}),
 	}).pipe(
+		Effect.timeoutOrElse({
+			duration: CLERK_REQUEST_TIMEOUT,
+			orElse: () =>
+				Effect.fail(
+					new ClerkRequestError({
+						operation: spanName,
+						message: `Clerk request timed out after ${Duration.format(CLERK_REQUEST_TIMEOUT)}`,
+						status: null,
+						cause: null,
+					}),
+				),
+		}),
 		Effect.withSpan(spanName, {
 			kind: "client",
 			attributes: { "peer.service": "clerk", ...attributes },

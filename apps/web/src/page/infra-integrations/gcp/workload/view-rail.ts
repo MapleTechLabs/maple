@@ -5,10 +5,14 @@ import { gcpStateLabel } from "../../../../components/infra/gcp/tabs"
 import type { GcpRailFact } from "../../../../components/infra/gcp/workload-signals"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { detailRailField, detailRailGroup, detailRailMetaRow } from "../../../../ui/detail-rail"
-import { icon, type IconName } from "../../../../ui/icon"
-import { serviceDot } from "../../../../ui/values"
+import { detailRailField, detailRailGroup, detailRailMetaRow } from "@maple/views/ui/detail-rail"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import { serviceDot } from "@maple/views/ui/values"
 import type { Message } from "./model"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `GcpWorkloadRail`.
 
@@ -32,14 +36,15 @@ const FACT_TONE = {
 } as const
 
 const RAIL_LINK =
-	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground/85 transition-colors hover:bg-muted/60 hover:text-foreground"
+	"group -mx-2 flex h-8 items-center gap-2 rounded-md px-2 text-xs text-foreground-soft hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground"
 
-const label = (h: H, text: string): Html => h.span([h.Class("min-w-0 flex-1 truncate")], [text])
+const label = (h: H, text: string): Html =>
+	typography(h, { truncate: true, className: "min-w-0 flex-1" }, [text])
 
 const chevron = (h: H): Html =>
 	icon(h, "ChevronRightIcon", {
 		size: 12,
-		className: "shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground",
+		className: "shrink-0 text-foreground-faint transition-colors group-hover:text-foreground",
 	})
 
 const linkBody = (h: H, name: IconName, text: string): ReadonlyArray<Html> => [
@@ -59,20 +64,27 @@ const externalLink = (h: H, href: string, name: IconName, text: string): Html =>
 			label(h, text),
 			icon(h, "ExternalLinkIcon", {
 				size: 12,
-				className: "shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground",
+				className: "shrink-0 text-foreground-faint transition-colors group-hover:text-foreground",
 			}),
 		],
 	)
 
+/** Rail keys in sentence case; the signal modules keep lowercase keys for their own prose. */
+const railKey = (label: string): string => {
+	const [first, ...rest] = Str.split(" ")(label)
+	const lead = first === "cpu" ? "CPU" : Str.toUpperCase(first.charAt(0)) + Str.slice(1)(first)
+	return Arr.join([lead, ...rest], " ")
+}
+
 const factRow = (h: H, fact: GcpRailFact): Html | null =>
 	detailRailMetaRow(h, {
-		label: fact.label,
+		label: railKey(fact.label),
 		value: fact.value,
 		valueClassName: fact.tone === undefined ? undefined : FACT_TONE[fact.tone],
 	})
 
 const present = (nodes: ReadonlyArray<Html | null>): ReadonlyArray<Html> =>
-	nodes.filter((node): node is Html => node !== null)
+	Arr.filter(nodes, (node): node is Html => node !== null)
 
 export type RailOptions = Readonly<{
 	service: GcpInfraServiceId
@@ -93,7 +105,7 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 	const labels =
 		inventory === undefined
 			? []
-			: Object.entries(inventory.labels).map(([key, value]) => `${key}=${value}`)
+			: Arr.map(Rec.toEntries(inventory.labels), ([key, value]) => `${key}=${value}`)
 	const tracedService = options.traced?.service ?? null
 	const { timeSearch } = options
 	return h.div(
@@ -101,32 +113,32 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 		[
 			detailRailGroup(h, RAIL_TITLE[options.service], [
 				...present([
-					detailRailMetaRow(h, { label: "location", value: options.location }),
-					detailRailMetaRow(h, { label: "project", value: options.project }),
+					detailRailMetaRow(h, { label: "Location", value: options.location }),
+					detailRailMetaRow(h, { label: "Project", value: options.project }),
 					detailRailMetaRow(h, {
-						label: "state",
+						label: "State",
 						value:
 							inventory === undefined || inventory.state === null
 								? null
 								: gcpStateLabel(inventory.state),
 					}),
-					...options.facts.map((fact) => factRow(h, fact)),
+					...Arr.map(options.facts, (fact) => factRow(h, fact)),
 				]),
 				...(labels.length === 0
 					? []
 					: [
-							detailRailField(h, { label: "labels" }, [
-								h.div(
-									[h.Class("flex flex-wrap gap-1")],
-									labels.map((text) =>
+							detailRailField(h, { label: "Labels" }, [
+								hstack(
+									h,
+									{ gap: "1", align: "stretch", wrap: true },
+									Arr.map(labels, (text) =>
 										h.span(
+											[h.Class("flex min-w-0 max-w-full"), h.Title(text)],
 											[
-												h.Class(
-													"max-w-full truncate rounded-sm bg-muted px-1.5 font-mono text-2xs/[18px]",
-												),
-												h.Title(text),
+												inlineCode(h, { className: "truncate text-2xs/[18px]" }, [
+													text,
+												]),
 											],
-											[text],
 										),
 									),
 								),
@@ -135,14 +147,21 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 			]),
 			...(options.health.length === 0
 				? []
-				: [detailRailGroup(h, "Health", present(options.health.map((fact) => factRow(h, fact))))]),
+				: [
+						detailRailGroup(
+							h,
+							"Health",
+							present(Arr.map(options.health, (fact) => factRow(h, fact))),
+						),
+					]),
 			...(options.traced === undefined
 				? []
 				: [
 						detailRailGroup(h, "Traced as", [
 							options.traced.service === null
-								? h.p(
-										[h.Class("text-2xs leading-relaxed text-muted-foreground")],
+								? typography(
+										h,
+										{ size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" },
 										[
 											`No service named ${options.traced.name} sent spans in this window, so Google Cloud's metrics are all there is.`,
 										],

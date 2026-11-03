@@ -14,6 +14,7 @@ import type { VariableValues } from "@maple/query-engine"
 import { sectionView } from "./view-sections"
 import { resolveSectionView } from "../../../lib/dashboards/section-view-state"
 import { containerKeyFor } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 // The dashboard sections and grid: one measured container, CSS Grid placement per stored layout.
 
@@ -40,7 +41,7 @@ const resizeHandle = (h: H): Html =>
 		h.DataAttribute("grid-resize-handle", ""),
 		h.AriaHidden(true),
 		h.Class(
-			"absolute right-0 bottom-0 size-5 cursor-se-resize touch-none opacity-0 transition-opacity group-hover/cell:opacity-100 group-[.is-layout-locked]/canvas:hidden after:absolute after:right-1 after:bottom-1 after:size-1.5 after:border-r-2 after:border-b-2 after:border-muted-foreground/60",
+			"absolute right-0 bottom-0 size-5 cursor-se-resize touch-none opacity-0 transition-opacity group-hover/cell:opacity-100 group-[.is-layout-locked]/canvas:hidden after:absolute after:right-1 after:bottom-1 after:size-1.5 after:border-r-2 after:border-b-2 after:border-foreground-subtle",
 		),
 	])
 
@@ -113,7 +114,7 @@ const gestureLayers = (h: H, model: Model, shown: ReadonlyArray<GridItem>): Read
 				h.div([
 					h.AriaHidden(true),
 					h.DataAttribute("grid-placeholder", ""),
-					h.Class("rounded-lg border border-dashed border-primary/60 bg-primary/5"),
+					h.Class("rounded-lg border border-dashed border-primary/60 bg-primary-a1"),
 					h.Style(gridArea(item)),
 				]),
 			]
@@ -123,7 +124,7 @@ const dashboardGrid = (h: H, ctx: TileContext, grid: CanvasGrid): Html => {
 	const { tier } = grid
 	const isEditable = isEditing(ctx.model) && tier.canonical
 	const shown = shownLayoutOf(ctx.model, grid)
-	const byId = new Map(shown.map((item) => [item.i, item]))
+	const byId = new Map(Arr.map(shown, (item) => [item.i, item]))
 	return h.div(
 		[
 			h.DataAttribute("dashboard-grid", ""),
@@ -139,7 +140,7 @@ const dashboardGrid = (h: H, ctx: TileContext, grid: CanvasGrid): Html => {
 			}),
 		],
 		[
-			...grid.widgets.flatMap((widget) => {
+			...Arr.flatMap(grid.widgets, (widget) => {
 				const item = byId.get(widget.id)
 				return item === undefined ? [] : [gridCell(h, ctx, widget, item, isEditable)]
 			}),
@@ -164,7 +165,7 @@ const sectionsOf = (h: H, ctx: TileContext, document: DashboardDocument): Readon
 	const sections = document.sections ?? []
 	const view = resolveSectionView(sections, document.widgets, ctx.model.search)
 	const isEditable = isEditing(ctx.model) && canvasGridOf(ctx.model)?.tier.canonical === true
-	return sections.map((section, index) => {
+	return Arr.map(sections, (section, index) => {
 		const activeTabId = view.activeTabs.get(section.id) ?? section.tabs[0]?.id ?? section.id
 		const grid = canvasGridOf(ctx.model, containerKeyFor({ sectionId: section.id, tabId: activeTabId }))
 		return sectionView(h, ctx.model, {

@@ -1,7 +1,7 @@
 import { Duration, Effect, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
-import * as LogsStream from "../../ui/logs/logs-stream"
-import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import { ViewerFlags, viewerFlags } from "@maple/views/ui/logs/viewer"
 import * as Shell from "../../shell"
 import { LabShellFlags, labShellFlags, labShellSubscriptions } from "../app-shell"
 import { defineLabWithFlags } from "../define"
@@ -9,6 +9,7 @@ import type { Resources } from "../../platform/resources"
 import { Message, Model } from "../logs-lab/model"
 import { init, update } from "../logs-lab/update"
 import { view } from "../logs-lab/view"
+import { pollTicks } from "../../data/poll"
 
 /**
  * `/lab/logs`: the logs stream over a production-like fixture, with the lab's toggles for
@@ -38,8 +39,7 @@ const own = Subscription.make<Model, Message, Resources>()((entry) => ({
 			}),
 			dependenciesToStream: ({ intervalSeconds }) =>
 				intervalSeconds > 0
-					? Stream.tick(Duration.seconds(intervalSeconds)).pipe(
-							Stream.drop(1),
+					? pollTicks(Duration.seconds(intervalSeconds)).pipe(
 							Stream.map(() => Message.TickedAutoRefresh()),
 						)
 					: Stream.empty,

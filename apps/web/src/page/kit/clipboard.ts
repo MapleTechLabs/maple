@@ -1,14 +1,9 @@
-import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
-import { Effect } from "effect"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import { PageOutMessage } from "../contract"
+import { String as Str } from "effect"
 
 /** `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed. */
-export const writeClipboard = (text: string): Effect.Effect<boolean> =>
-	Effect.tryPromise(() => navigator.clipboard.writeText(text)).pipe(
-		Effect.as(true),
-		Effect.catch(() => Effect.try(() => writeClipboardFallback(text))),
-		Effect.orElseSucceed(() => false),
-	)
+export const writeClipboard = CopyButton.writeClipboard
 
 /** `useCopy({ label, successMessage })`'s toast for a finished copy (no label: the generic titles). */
 export const copyToast = (label: string | undefined, isOk: boolean, successMessage?: string) =>
@@ -21,7 +16,7 @@ export const copyToast = (label: string | undefined, isOk: boolean, successMessa
 				}
 			: {
 					type: "error",
-					title: label ? `Failed to copy ${label.toLowerCase()}` : "Failed to copy",
+					title: label ? `Couldn't copy ${Str.toLowerCase(label)}` : "Couldn't copy",
 					description: "",
 				},
 	)

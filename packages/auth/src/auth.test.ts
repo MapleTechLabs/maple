@@ -1,12 +1,14 @@
 import { assert, describe, it } from "@effect/vitest"
 import { createHmac } from "node:crypto"
-import { Effect, Exit, Option, Redacted, Schema } from "effect"
+import { Effect, Exit, Option, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
 import {
+	extractVerifiedPrimaryEmail,
 	makeGetCustomerData,
 	makeLoginSelfHosted,
 	makeRefreshSelfHostedSession,
+	makeResolveClerkUser,
 	makeResolveMcpTenant,
 	makeResolveTenant,
 	ORG_SELECTION_HEADER,
@@ -63,7 +65,7 @@ const validClaims = {
 }
 // The baseline minus one claim, so a negative test isolates the claim it names.
 const withoutClaim = (key: keyof typeof validClaims) =>
-	Object.fromEntries(Object.entries(validClaims).filter(([name]) => name !== key))
+	Rec.fromEntries(Arr.filter(Rec.toEntries(validClaims), ([name]) => name !== key))
 const atFixedTime = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.gen(function* () {
 		yield* TestClock.adjust(`${clockSeconds} seconds`)
@@ -175,11 +177,14 @@ describe("makeResolveTenant", () => {
 					authorization: "Bearer test-token",
 				}),
 			)
-			const failure = getFailure(exit) as { _tag?: string; message?: string } | undefined
+			const failure = getFailure(exit)
 
 			assert.isTrue(Exit.isFailure(exit))
-			assert.strictEqual(failure?._tag, "@maple/http/errors/UnauthorizedError")
-			assert.strictEqual(failure?.message, "Active organization is required")
+			assert.deepInclude(failure, {
+				_tag: "@maple/http/errors/UnauthorizedError",
+				message: "Active organization is required",
+				reason: "no_active_organization",
+			})
 		}),
 	)
 
@@ -199,7 +204,7 @@ describe("makeResolveTenant", () => {
 	it.effect("rejects self-hosted requests with invalid token signature", () =>
 		Effect.gen(function* () {
 			const token = signClaims(validClaims)
-			const data = token.slice(0, token.lastIndexOf("."))
+			const data = Str.slice(0, token.lastIndexOf("."))(token)
 			const forged = `${data}.${createHmac("sha256", "not-the-root-password").update(data).digest("base64url")}`
 
 			assert.isTrue(Exit.isSuccess(yield* resolveSignedToken(token)))
@@ -226,6 +231,68 @@ describe("makeResolveTenant", () => {
 				userId: asUserId("root"),
 				roles: [asRoleName("root")],
 				authMode: "self_hosted",
+			})
+		}),
+	)
+})
+
+describe("pending Clerk sessions (no organization chosen yet)", () => {
+	const clerkEnv = {
+		...baseEnv,
+		MAPLE_AUTH_MODE: "clerk",
+		CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+		CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+	} as const
+
+	// Mirrors @clerk/backend: a pending session reads as signed out unless the caller opts in.
+	const pendingSession = async () => ({
+		isAuthenticated: true,
+		message: null,
+		toAuth: ({ treatPendingAsSignedOut = true }: { treatPendingAsSignedOut?: boolean } = {}) =>
+			treatPendingAsSignedOut
+				? {
+						isAuthenticated: false,
+						tokenType: "session_token",
+						userId: null,
+						orgId: null,
+						orgRole: null,
+					}
+				: {
+						isAuthenticated: true,
+						tokenType: "session_token",
+						userId: "user_new",
+						orgId: null,
+						orgRole: null,
+					},
+	})
+
+	it.effect("resolves the user, so they can create their first organization", () =>
+		Effect.gen(function* () {
+			const userId = yield* makeResolveClerkUser(
+				clerkEnv,
+				pendingSession,
+			)({
+				authorization: "Bearer test-token",
+			})
+			assert.strictEqual(userId, asUserId("user_new"))
+		}),
+	)
+
+	it.effect("is refused on organization-scoped routes as having no active organization", () =>
+		Effect.gen(function* () {
+			// Membership would be granted, yet a pending session never adopts a selection.
+			const resolveTenant = makeResolveTenant(
+				clerkEnv,
+				pendingSession,
+				"session_token",
+				(_userId, orgId) => Effect.succeedSome({ orgId, role: asRoleName("org:admin") }),
+			)
+			const exit = yield* Effect.exit(
+				resolveTenant({ authorization: "Bearer test-token", [ORG_SELECTION_HEADER]: "org_123" }),
+			)
+			assert.deepInclude(getFailure(exit), {
+				_tag: "@maple/http/errors/UnauthorizedError",
+				reason: "no_active_organization",
 			})
 		}),
 	)
@@ -267,7 +334,8 @@ describe("makeResolveMcpTenant", () => {
 		}),
 	)
 
-	it.effect("resolves tenant from a user API key with MAPLE_ORG_ID_OVERRIDE", () =>
+	// The pin is a development-only setting; elsewhere an unprovable membership is refused.
+	it.effect("resolves tenant from a user API key with MAPLE_ORG_ID_OVERRIDE in development", () =>
 		Effect.gen(function* () {
 			const resolveMcpTenant = makeResolveMcpTenant(
 				{
@@ -276,6 +344,7 @@ describe("makeResolveMcpTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 					MAPLE_ORG_ID_OVERRIDE: Option.some("org_override"),
+					MAPLE_ENVIRONMENT: "development",
 				},
 				async () => ({
 					isAuthenticated: true,
@@ -414,6 +483,25 @@ describe("makeGetCustomerData", () => {
 			assert.deepStrictEqual(result, { email: null, orgName: null })
 		}),
 	)
+})
+
+describe("extractVerifiedPrimaryEmail", () => {
+	const address = (id: string, emailAddress: string, status: "verified" | "unverified") => ({
+		id,
+		emailAddress,
+		verification: { status },
+	})
+
+	it("returns the primary address only once it is verified, never another address", () => {
+		const verified = address("e_1", "ada@acme.test", "verified")
+		const unverified = address("e_2", "someone@else.test", "unverified")
+		const pick = (primaryEmailAddressId: string | null, emailAddresses: ReadonlyArray<typeof verified>) =>
+			extractVerifiedPrimaryEmail({ primaryEmailAddressId, emailAddresses })
+
+		assert.strictEqual(pick("e_1", [unverified, verified]), "ada@acme.test")
+		assert.strictEqual(pick("e_2", [verified, unverified]), null)
+		assert.strictEqual(pick(null, [verified]), null)
+	})
 })
 
 describe("makeLoginSelfHosted", () => {
@@ -758,7 +846,7 @@ describe("self-hosted session temporal boundaries", () => {
 
 describe("self-hosted session lifetime", () => {
 	const decodeTokenClaims = (token: string): Record<string, unknown> => {
-		const payload = token.split(".")[1] ?? ""
+		const payload = Str.split(".")(token)[1] ?? ""
 		return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))
 	}
 
@@ -1227,22 +1315,32 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 		}),
 	)
 
-	// No membership directory wired (MCP, electric-sync): the pin can prove nothing, so no role.
-	it.effect("MAPLE_ORG_ID_OVERRIDE confers no role without a verifier", () =>
+	// No membership directory wired (MCP, electric-sync): the pin can prove nothing.
+	it.effect("MAPLE_ORG_ID_OVERRIDE refuses a non-member without a verifier outside development", () =>
 		Effect.gen(function* () {
 			const resolveTenant = makeResolveTenant(
 				{ ...clerkEnv, MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned") },
 				clerkAuth(),
 			)
 
+			assertDenied(yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" })))
+		}),
+	)
+
+	it.effect("MAPLE_ORG_ID_OVERRIDE without a verifier still admits a development session", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(
+				{
+					...clerkEnv,
+					MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned"),
+					MAPLE_ENVIRONMENT: "development",
+				},
+				clerkAuth(),
+			)
+
 			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
 
-			assert.deepStrictEqual(tenant, {
-				orgId: asOrgId("org_pinned"),
-				roles: [],
-				userId: asUserId("user_123"),
-				authMode: "clerk",
-			})
+			assert.strictEqual(tenant.orgId, asOrgId("org_pinned"))
 		}),
 	)
 

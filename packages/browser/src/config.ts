@@ -180,7 +180,18 @@ export function resolveIdentity(config: {
 	return normalizeIdentity((config.user ?? config.userId) as IdentifyInput)
 }
 
+let warnedServiceName = false
+
 export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
+	// Plain JS callers and env-driven configs can pass nothing; every span would then be unattributed.
+	if (typeof config.serviceName !== "string" || config.serviceName.trim() === "") {
+		if (!warnedServiceName) {
+			warnedServiceName = true
+			console.warn(
+				"[maple] init() needs a `serviceName`; telemetry is reported without one. Pass the name of your app.",
+			)
+		}
+	}
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	warnIfKeylessMapleIngest({
 		logPrefix: "[maple]",
@@ -192,7 +203,7 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 	return {
 		...resolveSignalOptions(config),
 		ingestKey: config.ingestKey,
-		serviceName: config.serviceName,
+		serviceName: typeof config.serviceName === "string" ? config.serviceName : "",
 		endpoint,
 		serviceNamespace: config.serviceNamespace,
 		serviceVersion: config.serviceVersion,

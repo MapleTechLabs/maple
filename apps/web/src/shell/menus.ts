@@ -1,5 +1,6 @@
-import type { Align, Side } from "../ui/anchor"
+import type { Align, Side } from "@maple/views/ui/anchor"
 import { Menu } from "./message"
+import { String as Str } from "effect"
 
 /** Trigger element id: the positioning Mount anchors to it and focus returns to it on Escape. */
 export const triggerIdOf = (menu: Menu): string =>
@@ -7,7 +8,7 @@ export const triggerIdOf = (menu: Menu): string =>
 		Org: () => "shell-org-switcher",
 		User: () => "shell-user-menu",
 		Support: () => "shell-support-menu",
-		NavSection: ({ title }) => `shell-nav-${title.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}`,
+		NavSection: ({ title }) => `shell-nav-${Str.replaceAll(/[^a-z0-9]+/g, "-")(Str.toLowerCase(title))}`,
 	})
 
 export const popupIdOf = (menu: Menu): string => `${triggerIdOf(menu)}-popup`

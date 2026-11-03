@@ -62,7 +62,7 @@ export const DigestTimeZone = Schema.String.check(
 export class UpsertDigestSubscriptionRequest extends Schema.Class<UpsertDigestSubscriptionRequest>(
 	"UpsertDigestSubscriptionRequest",
 )({
-	email: Schema.String,
+	// No address field: the server sends to the member's own verified primary email.
 	enabled: Schema.optionalKey(Schema.Boolean),
 	dayOfWeek: Schema.optionalKey(DigestDayOfWeek),
 	sendHour: Schema.optionalKey(DigestSendHour),
@@ -106,6 +106,14 @@ export class DigestRenderError extends Schema.TaggedError<DigestRenderError>()(
 		message: Schema.String,
 	},
 	{ httpApiStatus: 500 },
+) {}
+
+export class DigestEmailUnavailableError extends Schema.TaggedError<DigestEmailUnavailableError>()(
+	"@maple/http/errors/DigestEmailUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{ httpApiStatus: 422 },
 ) {}
 
 export class DigestUnsubscribeTokenInvalidError extends Schema.TaggedError<DigestUnsubscribeTokenInvalidError>()(
@@ -154,7 +162,7 @@ export class DigestApiGroup extends HttpApiGroup.make("digest")
 		HttpApiEndpoint.post("upsertSubscription", "/", {
 			payload: UpsertDigestSubscriptionRequest,
 			success: DigestSubscriptionResponse,
-			error: [DigestPersistenceError, DigestNotFoundError],
+			error: [DigestPersistenceError, DigestNotFoundError, DigestEmailUnavailableError],
 		}),
 	)
 	.add(

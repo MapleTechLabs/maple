@@ -6,9 +6,9 @@ import {
 	getErrorsSpark,
 	getErrorsSummary,
 } from "@maple/web-data/warehouse/errors"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -54,8 +54,7 @@ export const FetchSummary = Command.define("FetchErrorsSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, filters }) =>
 		getErrorsSummary({ data: warehouseData(filters) }).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
 		),
@@ -83,8 +82,10 @@ export const FetchEnvironments = Command.define("FetchErrorsEnvironments", {
 	messages: [Message.CompletedFetchEnvironments],
 	execute: ({ key, window }) =>
 		getErrorsFacets({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-			Effect.map((response) => response.data.deploymentEnvs.map((env) => env.name)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => Arr.map(response.data.deploymentEnvs, (env) => env.name),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchEnvironments({ key, result })),
 		),
@@ -96,8 +97,10 @@ export const FetchRanking = Command.define("FetchErrorsRanking", {
 	messages: [Message.CompletedFetchRanking],
 	execute: ({ key, filters, limit }) =>
 		getErrorsByType({ data: { ...warehouseData(filters), limit } }).pipe(
-			Effect.map((response) => response.data.map((row) => row.fingerprintHash)),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) => Arr.map(response.data, (row) => row.fingerprintHash),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchRanking({ key, result })),
 		),
@@ -133,8 +136,7 @@ export const FetchVolume = Command.define("FetchErrorsVolume", {
 				limit: Math.max(1, fingerprintHashes.length),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchVolume({ key, result })),
 		),
@@ -152,8 +154,7 @@ export const FetchSpark = Command.define("FetchErrorsSpark", {
 		getErrorsSpark({
 			data: { ...warehouseData(filters), fingerprintHashes: [...fingerprintHashes], bucketSeconds },
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSpark({ key, result })),
 		),
@@ -176,8 +177,10 @@ export const FetchInvestigations = Command.define("FetchErrorsInvestigations", {
 })
 
 export const LoadSignalPresence = Command.define("LoadErrorsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `ToolbarSearch`'s 300 ms debounce; a newer keystroke bumps the generation. */
@@ -200,18 +203,6 @@ export const CompleteReloadSpin = Command.define("CompleteErrorsReloadSpin", {
 export const MountFilterRail = Mount.define("MountErrorsFilterRail", {
 	messages: [Message.MountedFilterRail],
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
-})
-
-/** The empty list is on screen: `useSignalPresence` mounts with it. */
-export const MountEmptyList = Mount.define("MountErrorsEmptyList", {
-	messages: [Message.PaintedEmptyList],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyList>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyList()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
 })
 
 /** A row's or the selection's workflow write. */

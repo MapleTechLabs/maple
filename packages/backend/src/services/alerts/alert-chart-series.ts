@@ -35,7 +35,17 @@ import {
 	type ChartPoint,
 	type ChartUnit,
 } from "@maple/widgets/chart/static-chart"
-import { Array as Arr, DateTime, Duration, Effect, Option, Order, Result, Schema } from "effect"
+import {
+	Array as Arr,
+	DateTime,
+	Duration,
+	Effect,
+	Option,
+	Order,
+	Result,
+	Schema,
+	String as Str,
+} from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -219,7 +229,7 @@ export const loadChartSeries = (
 		const drawn = downsample(points, MAX_CHART_POINTS, breachSide)
 		return {
 			points: drawn,
-			sparkline: sparkline(drawn.map((p) => p[1])),
+			sparkline: sparkline(Arr.map(drawn, (p) => p[1])),
 			threshold: options.threshold,
 			breachSide,
 		}
@@ -275,7 +285,7 @@ export const chartImageUrl = (options: {
 			toMs: options.toMs,
 			// Bounded before signing: the id travels in a URL, and a rule with a
 			// paragraph for a name must not be able to grow it without limit.
-			title: options.title.slice(0, 120),
+			title: Str.slice(0, 120)(options.title),
 			unit: options.unit,
 			threshold: options.threshold,
 			breachSide: options.breachSide,

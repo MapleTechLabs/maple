@@ -2,28 +2,32 @@ import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../ui/alert"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { emptyMessage } from "../../ui/empty"
-import { errorState } from "../../ui/error-state"
-import { eyebrow } from "../../ui/eyebrow"
-import { icon } from "../../ui/icon"
-import { keyValue, keyValueList } from "../../ui/key-value"
-import { panel } from "../../ui/panel"
-import { skeletonList } from "../../ui/skeleton"
-import { statusDot } from "../../ui/status-dot"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../ui/table"
+import { heading } from "@maple/views/ui/heading"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon } from "@maple/views/ui/icon"
+import { keyValue, keyValueList } from "@maple/views/ui/key-value"
+import { panel } from "@maple/views/ui/panel"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { AUTH_TYPE_LABELS, hostnameOf, type ScheduledStatus, toneBadge } from "./view-prometheus"
+import { hostnameOf } from "./prometheus"
+import { AUTH_TYPE_LABELS, type ScheduledStatus, toneBadge } from "./view-prometheus"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `ScrapeTargetDetails`, `MetricBox` and `ScrapeTargetChecksTable`.
-// TODO(tooltip): a check's message renders its trigger; the full-message popup is the overlay port's.
 
 type H = HtmlBuilder<Message>
 
@@ -57,7 +61,7 @@ const labelEntries = (labelsJson: string | null): ReadonlyArray<readonly [string
 	return Option.match(decodeLabels(labelsJson), {
 		onNone: () => [],
 		onSome: (parsed) =>
-			Object.entries(parsed).flatMap(([key, value]) =>
+			Arr.flatMap(Rec.toEntries(parsed), ([key, value]) =>
 				isString(value) ? [[key, value] as const] : [],
 			),
 	})
@@ -79,9 +83,9 @@ const checksTable = (
 		onIdle: () => skeletonList(h, { rows: 3, gap: "2" }),
 		onLoading: () => skeletonList(h, { rows: 3, gap: "2" }),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load scheduled checks", variant: "row" }),
+			errorState(h, { failure, title: "Couldn't load scheduled checks", variant: "row" }),
 		onStale: ({ error }) =>
-			errorState(h, { failure: error, title: "Failed to load scheduled checks", variant: "row" }),
+			errorState(h, { failure: error, title: "Couldn't load scheduled checks", variant: "row" }),
 		onRefreshing: () => checksRows(h, checks, timeZone),
 		onSuccess: () => checksRows(h, checks, timeZone),
 	})
@@ -96,22 +100,21 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 					tableHeader(h, [
 						tableRow(h, [
 							tableHead(h, ["Time"], "w-full pl-3"),
-							tableHead(h, ["State"], "w-[64px]"),
-							tableHead(h, ["Duration"], "w-[70px]"),
-							tableHead(h, ["Samples"], "w-[72px] pr-3"),
+							tableHead(h, ["State"], "w-16"),
+							tableHead(h, ["Duration"], "w-16"),
+							tableHead(h, ["Samples"], "w-20 pr-3"),
 						]),
 					]),
 					tableBody(
 						h,
-						checks.map((check) =>
+						Arr.map(checks, (check) =>
 							tableRow(h, [
 								tableCell(
 									h,
 									[
-										h.div(
-											[h.Class("truncate font-mono")],
-											[formatTimestampInTimezone(check.timestamp, { timeZone })],
-										),
+										typography(h, { mono: true, truncate: true, as: "div" }, [
+											formatTimestampInTimezone(check.timestamp, { timeZone }),
+										]),
 										...(check.message !== null && check.message !== ""
 											? [
 													h.div(
@@ -121,6 +124,8 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 																"text-muted-foreground mt-0.5 cursor-default truncate",
 															),
 															h.DataAttribute("slot", "tooltip-trigger"),
+															h.Tabindex(0),
+															...tooltipTrigger(h, check.message),
 														],
 														[check.message],
 													),
@@ -130,21 +135,18 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 									"max-w-0 min-w-[100px] pl-3",
 								),
 								tableCell(h, [
-									h.span(
-										[h.Class("flex items-center gap-1.5")],
-										[
-											check.success
-												? icon(h, "CircleCheckIcon", {
-														size: 12,
-														className: "text-severity-info",
-													})
-												: icon(h, "CircleXmarkIcon", {
-														size: 12,
-														className: "text-severity-error",
-													}),
-											h.span([], [check.success ? "up" : "down"]),
-										],
-									),
+									hstack(h, { gap: "1.5", as: "span" }, [
+										check.success
+											? icon(h, "CircleCheckIcon", {
+													size: 12,
+													className: "text-severity-info",
+												})
+											: icon(h, "CircleXmarkIcon", {
+													size: 12,
+													className: "text-severity-error",
+												}),
+										h.span([], [check.success ? "up" : "down"]),
+									]),
 								]),
 								tableCell(h, [durationOf(check.duration_seconds)], "font-mono"),
 								tableCell(h, [countOf(check.samples_scraped)], "pr-3 font-mono"),
@@ -181,16 +183,19 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 						h.div(
 							[h.Class("min-w-0")],
 							[
-								h.div(
-									[h.Class("flex items-center gap-2")],
-									[
-										statusDot(h, { tone: status.tone, size: "lg" }),
-										h.h3(
-											[h.Class("truncate text-sm font-semibold"), h.Title(target.name)],
-											[target.name],
-										),
-									],
-								),
+								hstack(h, { gap: "2" }, [
+									statusDot(h, { tone: status.tone, size: "lg" }),
+									heading(
+										h,
+										{
+											level: 3,
+											variant: "section",
+											className: "truncate",
+											attributes: [h.Title(target.name)],
+										},
+										[target.name],
+									),
+								]),
 								h.p(
 									[
 										h.Class(
@@ -205,52 +210,49 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 						badge(h, { variant: toneBadge(status.tone) }, [status.label]),
 					],
 				),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								isLoading: card.probing.includes(target.id),
-								attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }))],
-							},
-							[icon(h, "BoltIcon"), "Test"],
-						),
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								isDisabled: isManaged,
-								attributes: [h.OnClick(Message.ClickedEditTarget({ id: target.id }))],
-							},
-							[icon(h, "PencilIcon"), "Edit"],
-						),
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								isDisabled: card.toggling.includes(target.id),
-								attributes: [h.OnClick(Message.ClickedToggleTarget({ id: target.id }))],
-							},
-							[target.enabled ? "Disable" : "Enable"],
-						),
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								className: "text-destructive",
-								isDisabled: isManaged,
-								attributes: [h.OnClick(Message.ClickedDeleteTarget({ id: target.id }))],
-							},
-							[icon(h, "TrashIcon"), "Delete"],
-						),
-					],
-				),
+				hstack(h, { gap: "2", wrap: true }, [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							isLoading: card.probing.includes(target.id),
+							attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }))],
+						},
+						[icon(h, "BoltIcon"), "Test"],
+					),
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							isDisabled: isManaged,
+							attributes: [h.OnClick(Message.ClickedEditTarget({ id: target.id }))],
+						},
+						[icon(h, "PencilIcon"), "Edit"],
+					),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							isDisabled: card.toggling.includes(target.id),
+							attributes: [h.OnClick(Message.ClickedToggleTarget({ id: target.id }))],
+						},
+						[target.enabled ? "Disable" : "Enable"],
+					),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							className: "text-destructive",
+							isDisabled: isManaged,
+							attributes: [h.OnClick(Message.ClickedDeleteTarget({ id: target.id }))],
+						},
+						[icon(h, "TrashIcon"), "Delete scrape target"],
+					),
+				]),
 			],
 		),
 		h.div(
@@ -267,17 +269,20 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 									h.div(
 										[h.Class("space-y-1")],
 										[
-											h.p([h.Class("font-medium text-foreground")], ["How to fix"]),
+											typography(h, { tone: "foreground", weight: "medium", as: "p" }, [
+												"How to fix",
+											]),
 											h.ul(
 												[h.Class("list-disc space-y-0.5 pl-4")],
-												diagnosis.fixes.map((fix) => h.li([], [fix])),
+												Arr.map(diagnosis.fixes, (fix) => h.li([], [fix])),
 											),
 										],
 									),
 									...(failureMessage !== null && failureMessage !== ""
 										? [
-												h.p(
-													[h.Class("font-mono text-2xs text-muted-foreground/80")],
+												typography(
+													h,
+													{ size: "2xs", tone: "subtle", mono: true, as: "p" },
 													[failureMessage],
 												),
 											]
@@ -334,9 +339,13 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 							? [
 									h.div(
 										[h.Class("flex flex-wrap gap-1.5 pt-1")],
-										labels.map(([key, value]) =>
+										Arr.map(labels, ([key, value]) =>
 											badge(h, { variant: "outline", className: "max-w-full" }, [
-												h.span([h.Class("truncate font-mono")], [key, "=", value]),
+												typography(h, { mono: true, truncate: true }, [
+													key,
+													"=",
+													value,
+												]),
 											]),
 										),
 									),
@@ -347,23 +356,20 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 				h.section(
 					[h.Class("space-y-2")],
 					[
-						h.div(
-							[h.Class("flex items-center justify-between gap-3")],
-							[
-								sectionTitle(h, "HistoryIcon", "Check history"),
-								...(latest === null
-									? []
-									: [
-											relativeTime(h, {
-												value: latest.timestamp,
-												nowMs: model.nowMs,
-												timeZone,
-												prefix: "Latest",
-												className: "text-muted-foreground text-xs",
-											}),
-										]),
-							],
-						),
+						hstack(h, { gap: "3", justify: "between" }, [
+							sectionTitle(h, "HistoryIcon", "Check history"),
+							...(latest === null
+								? []
+								: [
+										relativeTime(h, {
+											value: latest.timestamp,
+											nowMs: model.nowMs,
+											timeZone,
+											prefix: "Latest",
+											className: typographyClass({ size: "xs", tone: "muted" }),
+										}),
+									]),
+						]),
 						checksTable(h, model, checks, timeZone),
 					],
 				),
@@ -373,7 +379,7 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 }
 
 const sectionTitle = (h: H, iconName: "PulseIcon" | "ExternalLinkIcon" | "HistoryIcon", text: string): Html =>
-	eyebrow(h, { variant: "label", className: "flex items-center gap-2", as: "div" }, [
-		icon(h, iconName, { size: 13 }),
+	eyebrow(h, { variant: "label", className: hstackClass({ gap: "2" }), as: "div" }, [
+		icon(h, iconName, { size: 14 }),
 		text,
 	])

@@ -1,8 +1,8 @@
 import { PrReviewCategory, PrReviewRepositoryConfig } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { ALL_CATEGORIES, configFromState, FormState, Mode, sameState, stateFromConfig } from "./state"
 
 // `ReviewRulesForm` as a Submodel: the edited state,
@@ -20,11 +20,17 @@ export const SelectField = Schema.Literals([
 	"minInlineSeverity",
 	"feedbackScope",
 	"reviewDrafts",
+	"reviewExternalContributors",
 	"blockOnContractBreaks",
 	"postMergeCheck",
 ])
 export type SelectField = typeof SelectField.Type
-export const SwitchField = Schema.Literals(["reviewDrafts", "blockOnContractBreaks", "postMergeCheck"])
+export const SwitchField = Schema.Literals([
+	"reviewDrafts",
+	"reviewExternalContributors",
+	"blockOnContractBreaks",
+	"postMergeCheck",
+])
 export type SwitchField = typeof SwitchField.Type
 
 export const Model = Schema.Struct({
@@ -84,8 +90,8 @@ export const init = (
 		isSaving: false,
 		focused: null,
 		touched: [],
-		selects: Object.fromEntries(
-			SELECTS.map((field) => [
+		selects: Rec.fromEntries(
+			Arr.map(SELECTS, (field) => [
 				field,
 				Select.init(`${id}-${field}`, { value: state[field], selectedIndex: null }),
 			]),
@@ -97,8 +103,8 @@ export const init = (
 const withState = (model: Model, state: FormState): Model => ({
 	...model,
 	state,
-	selects: Object.fromEntries(
-		SELECTS.map((field) => [
+	selects: Rec.fromEntries(
+		Arr.map(SELECTS, (field) => [
 			field,
 			{
 				...(model.selects[field] ??
@@ -146,7 +152,7 @@ export const update = (model: Model, message: Message): Return =>
 			const current = model.state.categories ?? parentCategories(model)
 			return edit(model, {
 				categories: current.includes(category)
-					? current.filter((value) => value !== category)
+					? Arr.filter(current, (value) => value !== category)
 					: [...current, category],
 			})
 		},

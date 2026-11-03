@@ -1,3 +1,4 @@
+/* oxlint-disable effecttsgo/global-json -- measurement harness: importing effect here would skew the heap and CPU it measures */
 // cold-path-scorecard.mjs — one-shot local measurement of maple-api's cold-path cost.
 // Usage: node cold-path-scorecard.mjs <bundle-dir>   (bundle built via alchemy rolldown, SEO off)
 // Metrics: startup-graph size/eval/heap, full-graph eval/heap, registry reachability.
@@ -14,10 +15,6 @@ const js = readdirSync(dir).filter((f) => f.endsWith(".js"))
 const src = Object.fromEntries(js.map((f) => [f, readFileSync(join(dir, f), "utf8")]))
 const size = (f) => statSync(join(dir, f)).size
 const staticImports = (f) => [...(src[f]?.matchAll(/from"\.\/([^"]+\.js)"/g) ?? [])].map((m) => m[1])
-const allImports = (f) => [
-	...staticImports(f),
-	...[...(src[f]?.matchAll(/import\([`"]\.\/([^`"]+\.js)[`"]\)/g) ?? [])].map((m) => m[1]),
-]
 const closure = (roots, edges) => {
 	const seen = new Set()
 	const q = [...roots]
@@ -31,7 +28,7 @@ const closure = (roots, edges) => {
 }
 
 const startup = closure(["worker.js"], staticImports)
-const full = closure(["worker.js"], allImports)
+
 const mb = (n) => Math.round(n / 1e4) / 100
 const sum = (set) => mb([...set].reduce((a, f) => a + (src[f] ? size(f) : 0), 0))
 const registry = js.find((f) => f.startsWith("registry-"))

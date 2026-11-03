@@ -5,7 +5,13 @@ import type {
 	AlertIncidentDocument,
 	AlertRuleDocument,
 } from "@maple/domain/http"
-import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
+import {
+	alertQueryLimits,
+	alertRuleIntervalMinutes,
+	nextSlowerAlertInterval,
+} from "@maple/query-engine/datetime"
+import { ALERT_EVALUATION_INTERVALS, AlertEvaluationErrorKind } from "@maple/domain/http"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
@@ -13,9 +19,85 @@ import { comparatorLabels, formatSignalValue } from "./form-utils"
 import { staleThresholdMs } from "./rule-status"
 import { formatTimestampInTimezone } from "../lib/timezone-format"
 
-const evaluationCadence = (windowMinutes: number): string => {
-	const minutes = alertEvaluationIntervalMinutes(windowMinutes)
+const evaluationCadence = (rule: AlertRuleDocument): string => {
+	const minutes = alertRuleIntervalMinutes(rule)
 	return minutes === 1 ? "every minute" : `every ${minutes} minutes`
+}
+
+const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
+
+/**
+ * The interval a slowed rule ran at just before its latest slowdown: the step the scheduler
+ * took to reach the slowed interval, from the rule's own interval or an earlier slowdown.
+ * The limit the failures hit picks the step; when two steps could, the one slowdown is likelier.
+ */
+export const intervalBeforeSlowdown = (
+	rule: AlertRuleDocument,
+	kind: AlertEvaluationErrorKind | null = rule.lastEvaluationErrorKind,
+): number => {
+	const base = alertRuleIntervalMinutes({
+		windowMinutes: rule.windowMinutes,
+		evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
+		slowedIntervalMinutes: null,
+	})
+	const slowed = rule.slowedIntervalMinutes
+	if (slowed === null) return base
+	const exceeded: ReadonlyArray<"time" | "memory"> =
+		kind === "query_too_slow"
+			? ["time"]
+			: kind === "query_too_much_memory"
+				? ["memory"]
+				: ["time", "memory"]
+	const steps = [
+		base,
+		...Arr.filter(ALERT_EVALUATION_INTERVALS, (minutes) => minutes > base && minutes < slowed),
+	]
+	return (
+		steps.find((from) =>
+			Arr.some(
+				exceeded,
+				(limit) => nextSlowerAlertInterval(from, rule.windowMinutes, limit) === slowed,
+			),
+		) ?? base
+	)
+}
+
+/** What a failing query's kind means for its author, in plain words. */
+const formatMemory = (bytes: number): string =>
+	bytes >= 1_000_000_000 ? `${bytes / 1_000_000_000} GB` : `${bytes / 1_000_000} MB`
+
+const queryFailureCause = (
+	kind: AlertEvaluationErrorKind | null,
+	isRawSql: boolean,
+	intervalMinutes: number,
+	limitSeconds: number,
+): { readonly summary: string; readonly evidence: ReadonlyArray<string> } => {
+	const every = intervalMinutes === 1 ? "every minute" : `every ${intervalMinutes} min`
+	if (kind === "query_too_slow" && !isRawSql) {
+		return { summary: "The rule's query is timing out", evidence: [] }
+	}
+	if (kind === "query_too_slow") {
+		return {
+			summary: `The query takes longer than the ${limitSeconds} s a check allows`,
+			evidence: [
+				`Checked ${every}, which allows ${limitSeconds} s per check. Rules checked every 5 min get 15 s, every 10 min or more 25 s.`,
+				"Narrow the query (a service filter, a structured attribute instead of a Body match) or check less often.",
+			],
+		}
+	}
+	if (kind === "query_too_much_memory") {
+		return {
+			summary: "The query needs more memory than a check allows",
+			evidence: [
+				`Checked ${every}, which allows ${formatMemory(alertQueryLimits(intervalMinutes).memoryBytes)} per check. Rules checked every 5 or 10 min get 512 MB, every 15 min or more 1 GB.`,
+				"Narrow the query or group by fewer values.",
+			],
+		}
+	}
+	if (kind === "invalid_query") {
+		return { summary: "The rule's query is invalid", evidence: [] }
+	}
+	return { summary: "The rule's query is failing", evidence: [] }
 }
 
 export type DiagnosisStageStatus = "pass" | "fail" | "warn" | "unknown"
@@ -69,11 +151,11 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	// ungrouped / unselected).
 	const states =
 		input.selectedGroupKey != null
-			? input.states.filter((s) => s.group_key === input.selectedGroupKey)
+			? Arr.filter(input.states, (s) => s.group_key === input.selectedGroupKey)
 			: input.states
 	const groupChecks =
 		input.selectedGroupKey != null
-			? checks.filter((c) => c.groupKey === input.selectedGroupKey || c.status === "error")
+			? Arr.filter(checks, (c) => c.groupKey === input.selectedGroupKey || c.status === "error")
 			: checks
 
 	const stages: DiagnosisStage[] = []
@@ -99,10 +181,10 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	)
 
 	/* 2 — Evaluated recently */
-	const stateEvaluatedAt = states
-		.map((s) => parseMs(s.last_evaluated_at))
-		.filter((ms): ms is number => ms != null)
-		.reduce<number | null>((max, ms) => (max == null || ms > max ? ms : max), null)
+	const stateEvaluatedAt = Arr.filter(
+		Arr.map(states, (s) => parseMs(s.last_evaluated_at)),
+		(ms): ms is number => ms != null,
+	).reduce<number | null>((max, ms) => (max == null || ms > max ? ms : max), null)
 	const evaluatedAt = stateEvaluatedAt ?? parseMs(rule.lastEvaluatedAt)
 	const scheduledAt = parseMs(rule.lastScheduledAt)
 	if (evaluatedAt == null && scheduledAt == null) {
@@ -128,39 +210,79 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			],
 		})
 	} else if (evaluatedAt != null) {
-		const stale = now - evaluatedAt > staleThresholdMs()
+		const stale = now - evaluatedAt > staleThresholdMs(rule)
 		stages.push({
 			id: "evaluated",
 			label: "Evaluated recently",
 			status: stale ? "warn" : "pass",
 			summary: stale
-				? `Last evaluated ${relative(now, evaluatedAt)}, expected ${evaluationCadence(rule.windowMinutes)}`
+				? `Last evaluated ${relative(now, evaluatedAt)}, expected ${evaluationCadence(rule)}`
 				: `Last evaluated ${relative(now, evaluatedAt)}`,
-			evidence: [
-				`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,
-				scheduledAt != null
-					? `Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`
-					: null,
-			].filter((line): line is string => line != null),
+			evidence: Arr.filter(
+				[
+					`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,
+					scheduledAt != null
+						? `Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`
+						: null,
+				],
+				(line): line is string => line != null,
+			),
 		})
 	}
 
 	/* 3 — Query succeeded */
-	const stateError = states.find((s) => s.last_error != null)?.last_error ?? null
-	const errorMessage = stateError ?? rule.lastEvaluationError
-	const errorChecks = checks.filter((c) => c.status === "error")
+	const errorState = states.find((s) => s.last_error != null)
+	const errorMessage = errorState?.last_error ?? rule.lastEvaluationError
+	// The kind of the same error as the message: the state's own, else the rule document's.
+	const errorKind =
+		errorState === undefined
+			? rule.lastEvaluationErrorKind
+			: Option.getOrNull(decodeErrorKind(errorState.last_error_kind))
+	const errorChecks = Arr.filter(checks, (c) => c.status === "error")
+	// An error from before a slowdown ran under the interval the rule had then, not the slowed one.
+	const errorAt = parseMs(errorState?.last_evaluated_at ?? rule.lastEvaluatedAt)
+	const slowedAt = parseMs(rule.slowedAt)
+	const isErrorBeforeSlowdown = slowedAt != null && errorAt != null && errorAt <= slowedAt
+	const intervalMinutes = isErrorBeforeSlowdown
+		? intervalBeforeSlowdown(rule, errorKind)
+		: alertRuleIntervalMinutes(rule)
+	const limitSeconds = alertQueryLimits(intervalMinutes).timeSeconds
+	const slowedLine =
+		rule.slowedIntervalMinutes !== null && rule.slowedAt !== null
+			? `Slowed to every ${rule.slowedIntervalMinutes} min on ${formatTimestampInTimezone(parseMs(rule.slowedAt) ?? now, { timeZone, withYear: true })} after 3 checks in a row hit their limit. Editing the rule resets this.`
+			: null
 	if (errorMessage != null) {
+		const cause = queryFailureCause(
+			errorKind,
+			rule.signalType === "raw_query",
+			intervalMinutes,
+			limitSeconds,
+		)
 		stages.push({
 			id: "query",
 			label: "Query succeeded",
 			status: "fail",
-			summary: "The rule's query is failing",
+			summary: cause.summary,
 			evidence: [
+				...cause.evidence,
+				...(slowedLine !== null ? [slowedLine] : []),
 				errorMessage,
 				...(errorChecks[0]?.errorCategory != null
 					? [`Category: ${errorChecks[0].errorCategory}`]
 					: []),
 				...(evaluatedAt != null ? [`Last attempt ${relative(now, evaluatedAt)}`] : []),
+			],
+			action: { label: "Edit rule", kind: "edit" },
+		})
+	} else if (slowedLine !== null) {
+		stages.push({
+			id: "query",
+			label: "Query succeeded",
+			status: "warn",
+			summary: `Slowed to every ${rule.slowedIntervalMinutes} min because its query kept hitting its limit`,
+			evidence: [
+				slowedLine,
+				"Make the query cheaper, or pick this interval yourself, before you edit the rule.",
 			],
 			action: { label: "Edit rule", kind: "edit" },
 		})
@@ -186,8 +308,8 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	const latestState = states[0] ?? null
 	const latestCheck = groupChecks.find((c) => c.status !== "error") ?? null
 	const sampleCount = latestState?.last_sample_count ?? latestCheck?.sampleCount ?? null
-	const skippedChecks = groupChecks.filter((c) => c.status === "skipped").length
-	const observableChecks = groupChecks.filter((c) => c.status !== "error").length
+	const skippedChecks = Arr.filter(groupChecks, (c) => c.status === "skipped").length
+	const observableChecks = Arr.filter(groupChecks, (c) => c.status !== "error").length
 	const noDataExplainer =
 		rule.noDataBehavior === "zero"
 			? "No-data windows are treated as 0 (they still evaluate)."
@@ -195,8 +317,8 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				? "No-data windows count as breaches."
 				: "No-data windows are skipped (they never breach). Turn on alerting when there is no data to hear about it."
 	// Checks recorded before skip reasons existed carry none and count as neither.
-	const belowMinChecks = groupChecks.filter((c) => c.skipReason === "below_min_samples").length
-	const noDataChecks = groupChecks.filter((c) => c.skipReason === "no_data").length
+	const belowMinChecks = Arr.filter(groupChecks, (c) => c.skipReason === "below_min_samples").length
+	const noDataChecks = Arr.filter(groupChecks, (c) => c.skipReason === "no_data").length
 	if (observableChecks > 0 && skippedChecks === observableChecks) {
 		stages.push({
 			id: "data",
@@ -206,16 +328,19 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				belowMinChecks > 0 && noDataChecks === 0
 					? "Every check in this window was skipped: fewer samples than the minimum"
 					: "Every check in this window was skipped: no matching data",
-			evidence: [
-				`${skippedChecks} of ${observableChecks} checks skipped`,
-				noDataChecks > 0 ? `${noDataChecks} had no data (the query matched nothing)` : null,
-				belowMinChecks > 0 ? `${belowMinChecks} were below the minimum sample count` : null,
-				rule.minimumSampleCount > 0
-					? `Minimum sample count: ${rule.minimumSampleCount} — windows below it are skipped`
-					: null,
-				noDataExplainer,
-				"Check the rule's service scope and filters against what is actually ingesting.",
-			].filter((line): line is string => line != null),
+			evidence: Arr.filter(
+				[
+					`${skippedChecks} of ${observableChecks} checks skipped`,
+					noDataChecks > 0 ? `${noDataChecks} had no data (the query matched nothing)` : null,
+					belowMinChecks > 0 ? `${belowMinChecks} were below the minimum sample count` : null,
+					rule.minimumSampleCount > 0
+						? `Minimum sample count: ${rule.minimumSampleCount} — windows below it are skipped`
+						: null,
+					noDataExplainer,
+					"Check the rule's service scope and filters against what is actually ingesting.",
+				],
+				(line): line is string => line != null,
+			),
 			action: { label: "Edit rule", kind: "edit" },
 		})
 	} else {
@@ -231,11 +356,14 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				: sampleCount != null
 					? `${sampleCount} samples in the last window`
 					: "No sample data yet",
-			evidence: [
-				skippedChecks > 0 ? `${skippedChecks} skipped checks in this window` : null,
-				rule.minimumSampleCount > 0 ? `Minimum sample count: ${rule.minimumSampleCount}` : null,
-				noDataExplainer,
-			].filter((line): line is string => line != null),
+			evidence: Arr.filter(
+				[
+					skippedChecks > 0 ? `${skippedChecks} skipped checks in this window` : null,
+					rule.minimumSampleCount > 0 ? `Minimum sample count: ${rule.minimumSampleCount}` : null,
+					noDataExplainer,
+				],
+				(line): line is string => line != null,
+			),
 		})
 	}
 
@@ -283,7 +411,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	/* 6 — Incident opened */
 	const groupIncidents =
 		input.selectedGroupKey != null
-			? openIncidents.filter((i) => i.groupKey === input.selectedGroupKey || i.groupKey == null)
+			? Arr.filter(openIncidents, (i) => i.groupKey === input.selectedGroupKey || i.groupKey == null)
 			: openIncidents
 	if (groupIncidents.length > 0) {
 		const first = groupIncidents[0]!
@@ -295,12 +423,11 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				groupIncidents.length === 1
 					? `1 open incident since ${relative(now, new Date(first.firstTriggeredAt).getTime())}`
 					: `${groupIncidents.length} open incidents`,
-			evidence: groupIncidents
-				.slice(0, 5)
-				.map(
-					(i) =>
-						`${i.groupKey ?? "all"} — opened ${relative(now, new Date(i.firstTriggeredAt).getTime())}`,
-				),
+			evidence: Arr.map(
+				groupIncidents.slice(0, 5),
+				(i) =>
+					`${i.groupKey ?? "all"} — opened ${relative(now, new Date(i.firstTriggeredAt).getTime())}`,
+			),
 		})
 	} else {
 		stages.push({
@@ -323,7 +450,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			action: { label: "Configure destinations", kind: "destinations" },
 		})
 	} else {
-		const destinationById = new Map(destinations.map((d) => [d.id as string, d]))
+		const destinationById = new Map(Arr.map(destinations, (d) => [d.id as string, d]))
 		const evidence: string[] = []
 		let failures = 0
 		let deliveries = 0
@@ -344,7 +471,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			} else if (latest.status === "success") {
 				deliveries += 1
 				evidence.push(
-					`${name}: delivered ${latest.attemptedAt != null ? relative(now, new Date(latest.attemptedAt).getTime()) : ""}`.trim(),
+					Str.trim(
+						`${name}: delivered ${latest.attemptedAt != null ? relative(now, new Date(latest.attemptedAt).getTime()) : ""}`,
+					),
 				)
 			} else {
 				evidence.push(`${name}: ${latest.status}`)

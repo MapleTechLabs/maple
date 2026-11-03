@@ -2,11 +2,24 @@ import type { DocsPage } from "../../../lib/docs"
 import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { searchInput } from "../../../ui/search-input"
-import { docsLink, emptyActions } from "../../kit/signal-empty-state"
+import { button } from "@maple/views/ui/button"
+import {
+	empty,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyMessage,
+	emptyTitle,
+} from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
+import { pageTitle } from "@maple/views/ui/page-layout"
+import { searchInput } from "@maple/views/ui/search-input"
+import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
+import { docsLink } from "../../kit/signal-empty-state"
+import { emptyActions } from "@maple/views/ui/signal-empty-state"
+import { hstack } from "@maple/views/ui/stack"
+import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
 
 // `PageHero`, `SearchToolbar` and the infra empty states.
 
@@ -22,45 +35,74 @@ export type PageHeroOptions = Readonly<{
 	className?: string
 }>
 
-const isHtmlList = (value: Html | ReadonlyArray<Html>): value is ReadonlyArray<Html> => Array.isArray(value)
+const isHtmlList = (value: Html | ReadonlyArray<Html>): value is ReadonlyArray<Html> => Arr.isArray(value)
 
 const trailingOf = (trailing: PageHeroOptions["trailing"]): ReadonlyArray<Html> =>
 	trailing === undefined ? [] : isHtmlList(trailing) ? trailing : [trailing]
 
-export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =>
-	h.header(
-		[h.Class(cn("flex flex-wrap items-start gap-x-6 gap-y-3", options.className))],
+/**
+ * `pageHero` split for `dashboardPage`: the title, its trailing badge and the description go in the
+ * header beside the time controls (one title row on every page); meta opens the body.
+ */
+export const pageHeroParts = <M>(
+	h: HtmlBuilder<M>,
+	options: Omit<PageHeroOptions, "actions" | "className">,
+): Readonly<{ title: Html; body: Html }> => ({
+	title: h.div(
+		[h.Class("min-w-0 space-y-0.5")],
 		[
 			h.div(
-				[h.Class("min-w-0 flex-1 space-y-1")],
+				// Centred, not baseline: a small chip on a baseline rides high beside the large title.
+				[h.Class("flex min-w-0 flex-wrap items-center gap-3")],
 				[
-					h.div(
-						[h.Class("flex flex-wrap items-baseline gap-3")],
-						[
-							h.h1(
-								[
-									h.Class(
-										"font-display text-2xl font-semibold leading-[1.1] tracking-tight text-foreground",
-									),
-								],
-								[options.title],
-							),
-							...trailingOf(options.trailing),
-						],
+					pageTitle(
+						h,
+						{
+							title: typeof options.title === "string" ? options.title : undefined,
+							className: "min-w-0 leading-8 text-foreground",
+						},
+						[options.title],
 					),
-					...(options.description === undefined || options.description === ""
-						? []
-						: [h.p([h.Class("max-w-2xl text-sm text-muted-foreground")], [options.description])]),
-					...(options.meta === undefined
-						? []
-						: [h.div([h.Class("mt-2 flex flex-wrap items-center gap-2")], options.meta)]),
+					...trailingOf(options.trailing),
 				],
+			),
+			...(options.description === undefined || options.description === ""
+				? []
+				: [
+						h.p(
+							[h.Class("max-w-2xl font-prose text-sm text-muted-foreground")],
+							[options.description],
+						),
+					]),
+		],
+	),
+	body:
+		options.meta === undefined || options.meta.length === 0
+			? null
+			: hstack(h, { gap: "2", wrap: true }, options.meta),
+})
+
+/** `PageHero` for a page that draws its header in the body: `pageHeroParts` with actions beside it. */
+export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html => {
+	const parts = pageHeroParts(h, options)
+	return h.header(
+		[h.Class(cn("flex flex-wrap items-start gap-x-6 gap-y-3", options.className))],
+		[
+			spaced(
+				h,
+				{ space: "2", fill: true },
+				parts.body === null ? [parts.title] : [parts.title, parts.body],
 			),
 			...(options.actions === undefined || options.actions.length === 0
 				? []
-				: [h.div([h.Class("flex shrink-0 items-center gap-2")], options.actions)]),
+				: [hstack(h, { gap: "2", className: "shrink-0" }, options.actions)]),
 		],
 	)
+}
+
+/** The header's right side: a page's own actions before its time controls. */
+export const headerActions = <M>(h: HtmlBuilder<M>, extra: ReadonlyArray<Html>, controls: Html): Html =>
+	extra.length === 0 ? controls : hstack(h, { gap: "2", wrap: true }, [...extra, controls])
 
 export type SearchToolbarOptions<M> = Readonly<{
 	id: string
@@ -74,31 +116,28 @@ export type SearchToolbarOptions<M> = Readonly<{
 	className?: string
 }>
 
-/** `SearchToolbar` over `SearchInput size="default"` (w-64). */
+/** `SearchToolbar` over `SearchInput size="sm"` (w-64), on the shared list toolbar. */
 export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOptions<M>): Html =>
-	h.div(
-		[h.Class(cn("flex flex-wrap items-center justify-between gap-3", options.className))],
-		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2")],
-				[
-					searchInput(h, {
-						id: options.id,
-						size: "default",
-						className: "w-64",
-						placeholder: options.placeholder,
-						value: options.value,
-						onInput: options.onInput,
-						onClear: options.onClear,
-					}),
-					...(options.children ?? []),
-				],
-			),
-			...(options.trailing === undefined || options.trailing === ""
+	listToolbar(h, {
+		// Parents space their sections; the list toolbar's own bottom padding would double it.
+		className: cn("pb-0", options.className),
+		leading: hstack(h, { gap: "2", wrap: true }, [
+			searchInput(h, {
+				id: options.id,
+				size: "sm",
+				className: "w-64",
+				placeholder: options.placeholder,
+				value: options.value,
+				onInput: options.onInput,
+				onClear: options.onClear,
+			}),
+			...(options.children ?? []),
+		]),
+		trailing:
+			options.trailing === undefined || options.trailing === ""
 				? []
-				: [h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [options.trailing])]),
-		],
-	)
+				: [toolbarCount(h, [options.trailing])],
+	})
 
 /** `InfraSetupEmpty`: nothing reporting yet; the button opens the page's install modal. */
 export const setupEmpty = <M>(
@@ -138,7 +177,9 @@ export const setupEmpty = <M>(
 
 /** `NoMetricsMessage`. */
 export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
-	emptyMessage(h, { dashed: true, className: "py-12" }, [`No metrics arrived for this ${noun} in the selected window.`])
+	emptyMessage(h, { dashed: true, className: "py-12" }, [
+		`No metrics arrived for this ${noun} in this window`,
+	])
 
 /** `countLabel`: "Top 50 of 541 pods" for a slice, "541 pods" for the whole list. */
 export const countLabel = (shown: number, total: number, noun: string): string => {

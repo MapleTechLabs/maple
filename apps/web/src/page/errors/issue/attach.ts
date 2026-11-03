@@ -1,23 +1,25 @@
 import { parsePullRequestUrl, type PullRequestSummary } from "@maple/domain/http"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Combobox from "../../../ui/combobox"
-import * as ComboboxView from "../../../ui/combobox-view"
-import * as SelectView from "../../../ui/select-view"
-import * as Dialog from "../../../ui/dialog"
-import { badge } from "../../../ui/display"
-import { field, fieldLabel } from "../../../ui/field"
-import { formDialog } from "../../../ui/form-dialog"
-import { input } from "../../../ui/input"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as ComboboxView from "@maple/views/ui/combobox-view"
+import * as SelectView from "@maple/views/ui/select-view"
+import * as Dialog from "@maple/views/ui/dialog"
+import { badge } from "@maple/views/ui/display"
+import { field, fieldLabel } from "@maple/views/ui/field"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { input } from "@maple/views/ui/input"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { docsLink } from "../../kit/signal-empty-state"
 import { LinkPullRequest } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The attach pull request dialog: pick a pull request
 // of the connected repository (a Select picks it when the org has several), or paste a link.
@@ -25,7 +27,7 @@ import type { Model } from "./model"
 type Return = PageReturn<Model, Message>
 type H = HtmlBuilder<Message>
 
-const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
+const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 const PULL_REQUEST_STATE_TONE = {
 	open: IN_FLIGHT_SOFT,
 	merged: TONE_SOFT.done,
@@ -35,12 +37,12 @@ const PULL_REQUEST_STATE_TONE = {
 /** The connection and the picker's repository: the suggestion while the org has it, else the first. */
 export const githubOf = (model: Model) => {
 	const status = Option.getOrNull(AsyncData.getData(model.githubStatus.data))
-	const repositories = (status?.repositories ?? []).filter((repo) => repo.status === "active")
+	const repositories = Arr.filter(status?.repositories ?? [], (repo) => repo.status === "active")
 	const suggested =
 		Option.getOrNull(AsyncData.getData(model.pullRequests.data))?.suggestedRepository ?? null
 	const repository =
 		model.attachRepository ??
-		(suggested !== null && repositories.some((repo) => repo.fullName === suggested)
+		(suggested !== null && Arr.some(repositories, (repo) => repo.fullName === suggested)
 			? suggested
 			: (repositories[0]?.fullName ?? null))
 	return { isConnected: status?.state === "connected", repository, repositories }
@@ -48,7 +50,7 @@ export const githubOf = (model: Model) => {
 
 /** `resolveTypedReference`: `#123`, `123` (with a repository) or a full PR URL. */
 export const typedPullRequestUrl = (draft: string, repository: string | null): string | null => {
-	const trimmed = draft.trim()
+	const trimmed = Str.trim(draft)
 	if (trimmed.length === 0) return null
 	const parsed = parsePullRequestUrl(trimmed)
 	if (parsed !== null) return parsed.url
@@ -63,13 +65,13 @@ export const typedPullRequestUrl = (draft: string, repository: string | null): s
 const typedOf = (model: Model) => typedPullRequestUrl(model.attachDraft, githubOf(model).repository)
 
 const matchesFilter = (pr: PullRequestSummary, filter: string): boolean => {
-	const needle = filter.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(filter))
 	return (
 		needle.length === 0 ||
-		pr.title.toLowerCase().includes(needle) ||
-		String(pr.number).includes(needle.replace("#", "")) ||
-		pr.headRef.toLowerCase().includes(needle) ||
-		(pr.authorLogin ?? "").toLowerCase().includes(needle)
+		Str.includes(needle)(Str.toLowerCase(pr.title)) ||
+		Str.includes(Str.replace("#", "")(needle))(String(pr.number)) ||
+		Str.includes(needle)(Str.toLowerCase(pr.headRef)) ||
+		Str.includes(needle)(Str.toLowerCase(pr.authorLogin ?? ""))
 	)
 }
 
@@ -166,51 +168,44 @@ const pasteField = (h: H, model: Model): Html =>
 					h.OnInput((value) => Message.ChangedAttachDraft({ value })),
 				],
 			}),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				[
-					h.a(
-						[
-							h.Class("underline hover:no-underline"),
-							h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
-						],
-						["Connect GitHub"],
-					),
-					" ",
-					"to pick from your repositories instead of pasting a link.",
-				],
-			),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				h.a(
+					[
+						h.Class("underline hover:no-underline active:no-underline"),
+						h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
+					],
+					["Connect GitHub"],
+				),
+				" ",
+				"to pick from your repositories instead of pasting a link.",
+			]),
 			docsLink(h, "github", "GitHub integration docs"),
 		],
 	)
 
 const pullRequestItem = (h: H, pr: PullRequestSummary): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-0.5")],
-		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					h.span(
-						[h.Class("truncate text-xs font-medium")],
-						["#", String(pr.number), " ", pr.title],
-					),
-					badge(
-						h,
-						{
-							variant: "outline",
-							className: cn("shrink-0 capitalize", PULL_REQUEST_STATE_TONE[pr.state]),
-						},
-						[pr.isDraft && pr.state === "open" ? "draft" : pr.state],
-					),
-				],
+	vstack(h, { gap: "0.5", shrink: true }, [
+		hstack(h, { gap: "2" }, [
+			typography(h, { size: "xs", weight: "medium", truncate: true }, [
+				"#",
+				String(pr.number),
+				" ",
+				pr.title,
+			]),
+			badge(
+				h,
+				{
+					variant: "outline",
+					className: cn("shrink-0 capitalize", PULL_REQUEST_STATE_TONE[pr.state]),
+				},
+				[pr.isDraft && pr.state === "open" ? "draft" : pr.state],
 			),
-			h.span(
-				[h.Class("truncate text-2xs text-muted-foreground")],
-				[pr.headRef, ...(pr.authorLogin ? [` · ${pr.authorLogin}`] : [])],
-			),
-		],
-	),
+		]),
+		typography(h, { size: "2xs", tone: "muted", truncate: true }, [
+			pr.headRef,
+			...(pr.authorLogin ? [` · ${pr.authorLogin}`] : []),
+		]),
+	]),
 ]
 
 const FIELD_IDS = {
@@ -228,7 +223,7 @@ const pickerField = (h: H, model: Model): Html => {
 		isTouched: false,
 	}
 	const pullRequests = pullRequestsOf(model)
-	const visible = pullRequests.filter((pr) => matchesFilter(pr, model.attachDraft))
+	const visible = Arr.filter(pullRequests, (pr) => matchesFilter(pr, model.attachDraft))
 	const emptyText =
 		typedOf(model) !== null
 			? "Press Enter to attach the pull request you typed."
@@ -236,15 +231,19 @@ const pickerField = (h: H, model: Model): Html => {
 				? "No pull requests in this repository yet."
 				: "Nothing matches that search."
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		fieldLabel(h, { ids: FIELD_IDS, className: "text-xs text-muted-foreground", state }, "Pull request"),
+		fieldLabel(
+			h,
+			{ ids: FIELD_IDS, className: typographyClass({ size: "xs", tone: "muted" }), state },
+			"Pull request",
+		),
 		h.submodel({
 			slotId: model.attachCombobox.id,
 			model: model.attachCombobox,
 			view: ComboboxView.view,
 			toParentMessage: (message) => Message.GotAttachComboboxMessage({ message }),
 			viewInputs: {
-				items: visible.map((pr) => pr.url),
-				placeholder: "Search by title, number, branch, or paste a link",
+				items: Arr.map(visible, (pr) => pr.url),
+				placeholder: "Search by title, number, branch, or paste a link…",
 				emptyText,
 				isUnfiltered: true,
 				className: "w-full text-xs",
@@ -265,16 +264,34 @@ const REPOSITORY_IDS = {
 }
 
 /** The repository `Select`, shown when the org has more than one. */
-const repositoryField = (h: H, model: Model, repositories: ReadonlyArray<string>, value: string | null): Html => {
-	const state = { isInvalid: false, isDirty: false, isFilled: value !== null, isFocused: false, isTouched: false }
+const repositoryField = (
+	h: H,
+	model: Model,
+	repositories: ReadonlyArray<string>,
+	value: string | null,
+): Html => {
+	const state = {
+		isInvalid: false,
+		isDirty: false,
+		isFilled: value !== null,
+		isFocused: false,
+		isTouched: false,
+	}
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		fieldLabel(h, { ids: REPOSITORY_IDS, className: "text-xs text-muted-foreground", state }, "Repository"),
+		fieldLabel(
+			h,
+			{ ids: REPOSITORY_IDS, className: typographyClass({ size: "xs", tone: "muted" }), state },
+			"Repository",
+		),
 		h.submodel({
 			slotId: model.repositorySelect.id,
 			model: { ...model.repositorySelect, value: value ?? "" },
 			view: SelectView.view,
 			viewInputs: {
-				entries: repositories.map((name) => ({ _tag: "Item" as const, item: { value: name, label: name } })),
+				entries: Arr.map(repositories, (name) => ({
+					_tag: "Item" as const,
+					item: { value: name, label: name },
+				})),
 				labelledBy: REPOSITORY_IDS.label,
 				size: "sm",
 				className: "w-full text-xs",
@@ -288,7 +305,7 @@ const repositoryField = (h: H, model: Model, repositories: ReadonlyArray<string>
 
 export const attachDialog = (h: H, model: Model): Html => {
 	const { isConnected, repositories, repository } = githubOf(model)
-	const names = repositories.map((repo) => repo.fullName)
+	const names = Arr.map(repositories, (repo) => repo.fullName)
 	return formDialog(h, {
 		slotId: "issue-attach-pr",
 		model: model.attachDialog,
@@ -304,7 +321,10 @@ export const attachDialog = (h: H, model: Model): Html => {
 		isReturningFocus: false,
 		panelClassName: "space-y-3",
 		fields: isConnected
-			? [...(names.length > 1 ? [repositoryField(h, model, names, repository)] : []), pickerField(h, model)]
+			? [
+					...(names.length > 1 ? [repositoryField(h, model, names, repository)] : []),
+					pickerField(h, model),
+				]
 			: [pasteField(h, model)],
 	})
 }

@@ -1,18 +1,18 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { AgentSessionToolsSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
-import * as ToggleGroup from "../../../ui/toggle-group"
+import * as Select from "@maple/views/ui/select"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	chartBucketSeconds,
@@ -36,7 +36,7 @@ import {
 } from "./command"
 import { type FacetKey, Message, type RequestMode } from "./message"
 import type { Breakdowns, Model } from "./model"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -204,7 +204,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		searchVersion: 0,
 		lastSentQuery: search.q ?? "",
 		chart: Chart.init(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		themeColors: null,
 		chartRuntime: { _tag: "Loading" },
 		refreshVersion: 0,
@@ -213,6 +213,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(search, context, "Load"),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
@@ -244,7 +245,12 @@ export const routeChanged = (
 	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
 	return isSameTime(model.search, route.search)
 		? requestAll(next, context, "Load")
-		: { model: next, commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+		: {
+				model: next,
+				commands: [
+					resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh"),
+				],
+			}
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => ({
@@ -310,7 +316,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ElapsedSearchDebounce: ({ version }) => {
 			if (version !== model.searchVersion) return { model }
-			const trimmed = model.searchInput.trim()
+			const trimmed = Str.trim(model.searchInput)
 			const q = trimmed === "" ? undefined : trimmed
 			return navigate({ ...model, lastSentQuery: q ?? "" }, { ...model.search, q })
 		},
@@ -369,13 +375,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}
 		},
 		GotSparkMessage: () => ({ model }),
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

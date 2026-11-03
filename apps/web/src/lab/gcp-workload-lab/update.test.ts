@@ -1,9 +1,10 @@
 import { describe, expect, test } from "vitest"
-import * as Chart from "../../charts/chart"
+import * as Chart from "@maple/views/charts/chart"
 import * as Workload from "../../page/infra-integrations/gcp/workload/model"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
+import { Record as Rec } from "effect"
 
 const start = () => init({ timeZone: "UTC" }).model
 
@@ -26,7 +27,7 @@ describe("Google Cloud workload lab", () => {
 			ready(start()),
 			Workload.Message.GotChartMessage({ chartId: "gcp-chart-0", message: Chart.Message.LeftLegend() }),
 		).model
-		expect(Object.keys(hovered.workload.charts)).toEqual(["gcp-chart-0"])
+		expect(Rec.keys(hovered.workload.charts)).toEqual(["gcp-chart-0"])
 		const sql = update(hovered, Message.ClickedLabPage({ page: "sql" })).model
 		expect([sql.workload.service, sql.workload.name]).toEqual(["cloudSql", "acme-prod:orders-db"])
 		expect([sql.workload.charts, sql.workload.chartRuntime._tag]).toEqual([{}, "Ready"])

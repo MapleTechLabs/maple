@@ -8,10 +8,9 @@ import {
 	AlertRuleDocument,
 	AlertRulePreviewFiringSpan,
 	AlertRulePreviewPoint,
+	AlertQueryTiming,
 	AlertRulePreviewResponse,
 	AlertRulePreviewSeries,
-	HazelChannelId,
-	HazelOrganizationId,
 	IsoDateTimeString,
 	UserId,
 	type AlertComparator,
@@ -24,6 +23,7 @@ import {
 	type ChatWorkspaceId,
 	type QueryBuilderQueryDraftPayload,
 	MAX_ALERT_BREACH_WINDOW,
+	AlertEvaluationIntervalMinutes,
 } from "@maple/domain/http"
 import type {
 	V2AlertCheck,
@@ -37,7 +37,7 @@ import type {
 } from "@maple/domain/http/v2"
 import { fromV2Threshold } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Option, Schema, Record as Rec, String as Str } from "effect"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
@@ -48,8 +48,6 @@ import { getBrowserTimeZone } from "../lib/timezone"
 import { formatDateInTimezone, formatTimeInTimezone, formatTimestampInTimezone } from "../lib/timezone-format"
 import type { Tone } from "@maple/ui/lib/tone"
 
-const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
-const asHazelChannelId = Schema.decodeUnknownSync(HazelChannelId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 
 // v2 timestamps arrive as plain ISO strings; the v1 domain documents brand them.
@@ -87,6 +85,8 @@ export type RuleFormState = {
 	/** The critical tier over a warning one; null on a one-tier rule. */
 	escalation: EscalationTierForm | null
 	windowMinutes: string
+	/** Minutes between checks; "" checks every fifth of the window. */
+	evaluationIntervalMinutes: string
 	minimumSampleCount: string
 	/** Count an empty window as a breach instead of skipping it. */
 	alertOnNoData: boolean
@@ -129,6 +129,7 @@ export const signalLabels: Record<AlertSignalType, string> = {
 	throughput: "Throughput",
 	builder_query: "Query builder",
 	raw_query: "Raw SQL",
+	uptime: "Uptime check",
 } satisfies Record<AlertSignalType, string>
 
 export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
@@ -181,6 +182,9 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 		case "builder_query":
 		case "raw_query":
 			return formatNumber(value)
+		// An uptime rule observes 1 while its monitor is down, else 0.
+		case "uptime":
+			return value >= 1 ? "Down" : "Up"
 	}
 }
 
@@ -236,6 +240,14 @@ export function domainThresholdToForm(subject: ThresholdSubject, value: number):
 	// toPrecision(12) drops float noise: 0.07 * 100 is 7.000000000000001.
 	return isPercentSignal(subject) ? String(Number((value * 100).toPrecision(12))) : String(value)
 }
+
+const decodeEvaluationInterval = Schema.decodeUnknownOption(AlertEvaluationIntervalMinutes)
+
+/** The interval the form picked, or null for the window's own. */
+export const formEvaluationInterval = (form: RuleFormState): AlertEvaluationIntervalMinutes | null =>
+	Str.trim(form.evaluationIntervalMinutes).length === 0
+		? null
+		: Option.getOrNull(decodeEvaluationInterval(Number(form.evaluationIntervalMinutes)))
 
 function parsePositiveNumber(value: string, fallback: number): number {
 	const parsed = Number(value)
@@ -303,6 +315,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		recoveryValue: "",
 		escalation: null,
 		windowMinutes: "5",
+		evaluationIntervalMinutes: "",
 		minimumSampleCount: "50",
 		alertOnNoData: false,
 		consecutiveBreachesRequired: "2",
@@ -323,7 +336,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 export function ruleFormIsGrouped(form: RuleFormState): boolean {
 	if (form.signalType === "raw_query") return false
 	if (form.signalType === "builder_query") {
-		return form.queryBuilderDraft.groupBy.some((token) => token !== "none" && token.length > 0)
+		return Arr.some(form.queryBuilderDraft.groupBy, (token) => token !== "none" && token.length > 0)
 	}
 	return form.groupBy.length > 0
 }
@@ -358,6 +371,8 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 						destinationIds: [...escalation.destinationIds],
 					},
 		windowMinutes: String(rule.windowMinutes),
+		evaluationIntervalMinutes:
+			rule.evaluationIntervalMinutes === null ? "" : String(rule.evaluationIntervalMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
 		alertOnNoData: rule.noDataBehavior === "alert",
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
@@ -375,13 +390,13 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 }
 
 export function rawSqlHasValueColumn(sql: string): boolean {
-	const trimmed = sql.trim()
+	const trimmed = Str.trim(sql)
 	if (trimmed.length === 0) return false
 
 	if (/\bas\s+["`]?value["`]?\b/i.test(trimmed)) return true
 
 	const firstFrom = trimmed.search(/\bfrom\b/i)
-	const selectHead = firstFrom >= 0 ? trimmed.slice(0, firstFrom) : trimmed.slice(0, 500)
+	const selectHead = firstFrom >= 0 ? Str.slice(0, firstFrom)(trimmed) : Str.slice(0, 500)(trimmed)
 	return /(?:\bselect\b|,)\s*["`]?value["`]?\s*(?:,|$)/i.test(selectHead)
 }
 
@@ -394,7 +409,7 @@ export function deriveRuleQueryIssues(form: RuleFormState): string[] {
 		}
 	}
 	if (form.signalType === "raw_query") {
-		const sql = form.rawQuerySql.trim()
+		const sql = Str.trim(form.rawQuerySql)
 		if (sql.length > 0 && !rawSqlHasValueColumn(sql)) {
 			issues.push("SQL value column")
 		}
@@ -409,7 +424,7 @@ export function comparatorSupportsTiers(comparator: AlertComparator): boolean {
 
 /** A form value that may be left empty, in domain units; null when empty or not a number. */
 export function optionalFormThreshold(subject: ThresholdSubject, value: string): number | null {
-	return value.trim().length > 0 && Number.isFinite(Number(value))
+	return Str.trim(value).length > 0 && Number.isFinite(Number(value))
 		? formThresholdToDomain(subject, value)
 		: null
 }
@@ -427,7 +442,7 @@ function breachesOneSided(value: number, comparator: AlertComparator, threshold:
 
 /** `Number("")` is 0, so an empty field would otherwise pass as a value of zero. */
 export const isFilledNumber = (value: string): boolean =>
-	value.trim().length > 0 && Number.isFinite(Number(value))
+	Str.trim(value).length > 0 && Number.isFinite(Number(value))
 
 /**
  * The tier and breach-window problems the server would reject, named for the form. Mirrors
@@ -439,7 +454,7 @@ export function deriveTierIssues(form: RuleFormState): string[] {
 	// Tier ordering is strict even for inclusive comparators: equal tiers would always fire together.
 	const strict = form.comparator === "gte" ? "gt" : form.comparator === "lte" ? "lt" : form.comparator
 	const recoveryIssue = (label: string, threshold: string, recovery: string) => {
-		if (recovery.trim().length === 0 || !isFilledNumber(threshold)) return
+		if (Str.trim(recovery).length === 0 || !isFilledNumber(threshold)) return
 		if (
 			!isFilledNumber(recovery) ||
 			breachesOneSided(Number(recovery), form.comparator, Number(threshold))
@@ -466,7 +481,7 @@ export function deriveTierIssues(form: RuleFormState): string[] {
 		recoveryIssue("Critical recovery value", escalation.threshold, escalation.recoveryValue)
 		if (escalation.destinationIds.length === 0) issues.push("Critical destinations")
 	}
-	if (form.breachesOutOf.trim().length > 0) {
+	if (Str.trim(form.breachesOutOf).length > 0) {
 		const outOf = Number(form.breachesOutOf)
 		const required = Number(form.consecutiveBreachesRequired)
 		if (!Number.isInteger(outOf) || outOf < required || outOf > MAX_ALERT_BREACH_WINDOW) {
@@ -510,8 +525,8 @@ export function formThresholds(form: RuleFormState): Arr.NonEmptyReadonlyArray<V
 export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateParams {
 	const signalType = form.signalType
 	const queryOwnsScope = signalType === "builder_query" || signalType === "raw_query"
-	const notificationTitle = form.notificationTitle.trim()
-	const notificationBody = form.notificationBody.trim()
+	const notificationTitle = Str.trim(form.notificationTitle)
+	const notificationBody = Str.trim(form.notificationBody)
 	const notificationTemplate =
 		notificationTitle.length > 0 || notificationBody.length > 0
 			? {
@@ -524,37 +539,36 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 	const thresholds = formThresholds(form)
 	const primary = Arr.headNonEmpty(thresholds)
 	return {
-		name: form.name.trim(),
-		notes: form.notes.trim() || null,
+		name: Str.trim(form.name),
+		notes: Str.trim(form.notes) || null,
 		enabled: form.enabled,
 		thresholds,
 		severity: Arr.lastNonEmpty(thresholds).severity,
 		tags: form.tags,
-		service_names: queryOwnsScope ? [] : form.serviceNames.filter((s) => s.trim().length > 0),
+		service_names: queryOwnsScope ? [] : Arr.filter(form.serviceNames, (s) => Str.trim(s).length > 0),
 		exclude_service_names: queryOwnsScope
 			? []
-			: form.excludeServiceNames.filter((s) => s.trim().length > 0),
-		environments: queryOwnsScope ? [] : form.environments.filter((s) => s.trim().length > 0),
+			: Arr.filter(form.excludeServiceNames, (s) => Str.trim(s).length > 0),
+		environments: queryOwnsScope ? [] : Arr.filter(form.environments, (s) => Str.trim(s).length > 0),
 		group_by: queryOwnsScope ? null : form.groupBy.length > 0 ? form.groupBy : null,
 		signal_type: signalType,
 		comparator: form.comparator,
 		threshold: primary.value,
 		threshold_upper: primary.upper,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
+		evaluation_interval_minutes: formEvaluationInterval(form),
 		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
 		alert_on_no_data: form.alertOnNoData && !ruleFormIsGrouped(form),
 		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
-		breaches_out_of: form.breachesOutOf.trim().length === 0 ? null : Number(form.breachesOutOf),
+		breaches_out_of: Str.trim(form.breachesOutOf).length === 0 ? null : Number(form.breachesOutOf),
 		consecutive_healthy_required: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
 		apdex_threshold_ms: signalType === "apdex" ? parsePositiveNumber(form.apdexThresholdMs, 500) : null,
 		query_builder_draft:
-			signalType === "builder_query"
-				? Object.fromEntries(Object.entries(form.queryBuilderDraft))
-				: null,
-		raw_query_sql: signalType === "raw_query" ? form.rawQuerySql.trim() || null : null,
+			signalType === "builder_query" ? Rec.fromEntries(Object.entries(form.queryBuilderDraft)) : null,
+		raw_query_sql: signalType === "raw_query" ? Str.trim(form.rawQuerySql) || null : null,
 		raw_query_reducer: signalType === "raw_query" ? form.rawQueryReducer : null,
-		destination_ids: Arr.dedupe(thresholds.flatMap((tier) => tier.destination_ids)),
+		destination_ids: Arr.dedupe(Arr.flatMap(thresholds, (tier) => tier.destination_ids)),
 		notification_template: notificationTemplate,
 	}
 }
@@ -567,16 +581,16 @@ export function buildRuleTestParamsV2(form: RuleFormState, sendNotification: boo
 }
 
 export function isRulePreviewReady(form: RuleFormState): boolean {
-	if (form.name.trim().length === 0) return false
+	if (Str.trim(form.name).length === 0) return false
 	if (!isFilledNumber(form.threshold)) return false
 	if (isRangeComparator(form.comparator) && !isFilledNumber(form.thresholdUpper)) return false
-	if (deriveTierIssues(form).some((issue) => issue !== "Critical destinations")) return false
+	if (Arr.some(deriveTierIssues(form), (issue) => issue !== "Critical destinations")) return false
 	if (form.signalType === "builder_query") return deriveRuleQueryIssues(form).length === 0
 	if (form.signalType === "raw_query") {
 		// The alert workload additionally requires $__timeFilter, and the shared
 		// validator covers the deny list, statement shape and terminal clauses that
 		// this used to leave for the server to discover.
-		return isValidRawSql(form.rawQuerySql.trim(), "alert") && deriveRuleQueryIssues(form).length === 0
+		return isValidRawSql(Str.trim(form.rawQuerySql), "alert") && deriveRuleQueryIssues(form).length === 0
 	}
 	return deriveRuleQueryIssues(form).length === 0
 }
@@ -589,7 +603,7 @@ export type DestinationFormState = {
 	type: AlertDestinationType
 	name: string
 	enabled: boolean
-	/** Discord incoming-webhook URL. */
+	/** Discord or Google Chat incoming-webhook URL. */
 	webhookUrl: string
 	integrationKey: string
 	url: string
@@ -597,11 +611,6 @@ export type DestinationFormState = {
 	/** Telegram bot token from @BotFather, and the chat it posts to. */
 	telegramBotToken: string
 	telegramChatId: string
-	hazelOrganizationId: string
-	hazelOrganizationName: string
-	hazelOrganizationLogoUrl: string | null
-	hazelChannelId: string
-	hazelChannelName: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
 	/**
@@ -613,6 +622,9 @@ export type DestinationFormState = {
 	chatConnector: string
 	chatChannelId: string
 	chatChannelName: string
+	/** Linear destination: the team issues open in, and its name for the suggested name. */
+	linearTeamId: string
+	linearTeamName: string
 }
 
 export const MAX_EMAIL_MEMBER_RECIPIENTS = 10
@@ -629,16 +641,13 @@ export function defaultDestinationForm(type: AlertDestinationType = "discord"): 
 		signingSecret: "",
 		telegramBotToken: "",
 		telegramChatId: "",
-		hazelOrganizationId: "",
-		hazelOrganizationName: "",
-		hazelOrganizationLogoUrl: null,
-		hazelChannelId: "",
-		hazelChannelName: "",
 		memberUserIds: [],
 		chatWorkspaceId: null,
 		chatConnector: "",
 		chatChannelId: "",
 		chatChannelName: "",
+		linearTeamId: "",
+		linearTeamName: "",
 	}
 }
 
@@ -647,13 +656,13 @@ export function pickDefaultDestination(
 	destinations: ReadonlyArray<Pick<AlertDestinationDocument, "id" | "enabled" | "disabledAt">>,
 	rules: ReadonlyArray<Pick<AlertRuleDocument, "destinationIds">>,
 ): AlertDestinationDocument["id"] | null {
-	const usable = destinations.filter((d) => d.enabled && !d.disabledAt)
+	const usable = Arr.filter(destinations, (d) => d.enabled && !d.disabledAt)
 	if (usable.length === 1) return usable[0]!.id
 	const uses = new Map<string, number>()
-	for (const id of rules.flatMap((rule) => rule.destinationIds)) uses.set(id, (uses.get(id) ?? 0) + 1)
-	const ranked = usable
-		.filter((d) => (uses.get(d.id) ?? 0) > 0)
-		.sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0))
+	for (const id of Arr.flatMap(rules, (rule) => rule.destinationIds)) uses.set(id, (uses.get(id) ?? 0) + 1)
+	const ranked = Arr.filter(usable, (d) => (uses.get(d.id) ?? 0) > 0).sort(
+		(a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0),
+	)
 	return ranked[0]?.id ?? null
 }
 
@@ -670,16 +679,18 @@ export function suggestedDestinationName(form: DestinationFormState): string {
 	switch (form.type) {
 		case "chat":
 			return form.chatChannelName.length > 0 ? `#${form.chatChannelName}` : ""
-		case "hazel-oauth":
-			return form.hazelChannelName.length > 0 ? `Hazel #${form.hazelChannelName}` : "Hazel"
+		case "linear":
+			return form.linearTeamName.length > 0 ? `Linear ${form.linearTeamName}` : "Linear"
 		case "webhook":
-			return URL.canParse(form.url.trim()) ? new URL(form.url.trim()).host : "Webhook"
+			return URL.canParse(Str.trim(form.url)) ? new URL(Str.trim(form.url)).host : "Webhook"
 		case "pagerduty":
 			return "PagerDuty"
 		case "discord":
 			return "Discord"
 		case "telegram":
 			return "Telegram"
+		case "google-chat":
+			return "Google Chat"
 		case "email":
 			return "Email"
 	}
@@ -698,11 +709,6 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		// comes back as `channelLabel` so an edit doesn't demand retyping it.
 		telegramBotToken: "",
 		telegramChatId: destination.type === "telegram" ? (destination.channelLabel ?? "") : "",
-		hazelOrganizationId: "",
-		hazelOrganizationName: "",
-		hazelOrganizationLogoUrl: null,
-		hazelChannelId: "",
-		hazelChannelName: "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
 		// The stored channel's id isn't returned, its `#name` is — kept so the current
 		// channel stays visible on edit (an empty id keeps the stored one).
@@ -711,6 +717,10 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		chatChannelId: "",
 		chatChannelName:
 			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
+		// The team's name is only in the server's "Linear · <team>" summary.
+		linearTeamId: destination.linearTeamId ?? "",
+		linearTeamName:
+			destination.type === "linear" ? Str.replace(/^Linear · /, "")(destination.summary) : "",
 	}
 }
 
@@ -719,56 +729,48 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 		case "pagerduty":
 			return {
 				type: "pagerduty",
-				name: form.name.trim(),
+				name: Str.trim(form.name),
 				enabled: form.enabled,
-				integration_key: form.integrationKey.trim(),
+				integration_key: Str.trim(form.integrationKey),
 			}
 		case "webhook": {
-			const signingSecret = form.signingSecret.trim()
+			const signingSecret = Str.trim(form.signingSecret)
 			return {
 				type: "webhook",
-				name: form.name.trim(),
+				name: Str.trim(form.name),
 				enabled: form.enabled,
-				url: form.url.trim(),
+				url: Str.trim(form.url),
 				...(signingSecret ? { signing_secret: signingSecret } : undefined),
-			}
-		}
-		case "hazel-oauth": {
-			const logoUrl = form.hazelOrganizationLogoUrl
-			return {
-				type: "hazel-oauth",
-				name: form.name.trim(),
-				enabled: form.enabled,
-				hazel_organization_id: asHazelOrganizationId(form.hazelOrganizationId.trim()),
-				hazel_organization_name: form.hazelOrganizationName.trim(),
-				...(logoUrl !== null && logoUrl.trim().length > 0
-					? { hazel_organization_logo_url: logoUrl.trim() }
-					: undefined),
-				hazel_channel_id: asHazelChannelId(form.hazelChannelId.trim()),
-				hazel_channel_name: form.hazelChannelName.trim(),
 			}
 		}
 		case "discord":
 			return {
 				type: "discord",
-				name: form.name.trim(),
+				name: Str.trim(form.name),
 				enabled: form.enabled,
-				webhook_url: form.webhookUrl.trim(),
+				webhook_url: Str.trim(form.webhookUrl),
 			}
 		case "telegram":
 			return {
 				type: "telegram",
-				name: form.name.trim(),
+				name: Str.trim(form.name),
 				enabled: form.enabled,
-				bot_token: form.telegramBotToken.trim(),
-				chat_id: form.telegramChatId.trim(),
+				bot_token: Str.trim(form.telegramBotToken),
+				chat_id: Str.trim(form.telegramChatId),
+			}
+		case "google-chat":
+			return {
+				type: "google-chat",
+				name: Str.trim(form.name),
+				enabled: form.enabled,
+				webhook_url: Str.trim(form.webhookUrl),
 			}
 		case "email":
 			return {
 				type: "email",
-				name: form.name.trim(),
+				name: Str.trim(form.name),
 				enabled: form.enabled,
-				member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
+				member_user_ids: Arr.map(form.memberUserIds, (userId) => asUserId(userId)),
 			}
 		case "chat":
 			// Unreachable from the dialog: its save stays disabled until a workspace is picked.
@@ -776,10 +778,18 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 			// No channel name: the server reads it from the workspace's own listing.
 			return {
 				type: "chat",
-				name: form.name.trim(),
+				name: Str.trim(form.name),
 				enabled: form.enabled,
 				workspace_id: form.chatWorkspaceId,
-				channel_id: form.chatChannelId.trim(),
+				channel_id: Str.trim(form.chatChannelId),
+			}
+		case "linear":
+			// The team's key and name are read from Linear on save.
+			return {
+				type: "linear",
+				name: Str.trim(form.name),
+				enabled: form.enabled,
+				team_id: Str.trim(form.linearTeamId),
 			}
 	}
 }
@@ -789,10 +799,10 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
  * (secrets the user didn't re-enter) are dropped from the payload entirely.
  */
 export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2AlertDestinationUpdateParams {
-	const name = form.name.trim()
+	const name = Str.trim(form.name)
 	switch (form.type) {
 		case "pagerduty": {
-			const integrationKey = form.integrationKey.trim()
+			const integrationKey = Str.trim(form.integrationKey)
 			return {
 				type: "pagerduty",
 				enabled: form.enabled,
@@ -801,8 +811,8 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 			}
 		}
 		case "webhook": {
-			const url = form.url.trim()
-			const signingSecret = form.signingSecret.trim()
+			const url = Str.trim(form.url)
+			const signingSecret = Str.trim(form.signingSecret)
 			return {
 				type: "webhook",
 				enabled: form.enabled,
@@ -811,30 +821,8 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 				...(signingSecret ? { signing_secret: signingSecret } : undefined),
 			}
 		}
-		case "hazel-oauth": {
-			const organizationId = form.hazelOrganizationId.trim()
-			const organizationName = form.hazelOrganizationName.trim()
-			const channelId = form.hazelChannelId.trim()
-			const channelName = form.hazelChannelName.trim()
-			return {
-				type: "hazel-oauth",
-				enabled: form.enabled,
-				...(name ? { name } : undefined),
-				...(organizationId
-					? { hazel_organization_id: asHazelOrganizationId(organizationId) }
-					: undefined),
-				...(organizationName ? { hazel_organization_name: organizationName } : undefined),
-				...(form.hazelOrganizationLogoUrl === null
-					? { hazel_organization_logo_url: null }
-					: form.hazelOrganizationLogoUrl.trim()
-						? { hazel_organization_logo_url: form.hazelOrganizationLogoUrl.trim() }
-						: {}),
-				...(channelId ? { hazel_channel_id: asHazelChannelId(channelId) } : undefined),
-				...(channelName ? { hazel_channel_name: channelName } : undefined),
-			}
-		}
 		case "discord": {
-			const webhookUrl = form.webhookUrl.trim()
+			const webhookUrl = Str.trim(form.webhookUrl)
 			return {
 				type: "discord",
 				enabled: form.enabled,
@@ -842,9 +830,18 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
 			}
 		}
+		case "google-chat": {
+			const webhookUrl = Str.trim(form.webhookUrl)
+			return {
+				type: "google-chat",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
+			}
+		}
 		case "telegram": {
-			const botToken = form.telegramBotToken.trim()
-			const chatId = form.telegramChatId.trim()
+			const botToken = Str.trim(form.telegramBotToken)
+			const chatId = Str.trim(form.telegramChatId)
 			return {
 				type: "telegram",
 				enabled: form.enabled,
@@ -860,18 +857,27 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 				...(name ? { name } : undefined),
 				...(form.memberUserIds.length > 0
 					? {
-							member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
+							member_user_ids: Arr.map(form.memberUserIds, (userId) => asUserId(userId)),
 						}
 					: undefined),
 			}
 		case "chat": {
 			// Editing keeps the stored channel until a new one is picked.
-			const channelId = form.chatChannelId.trim()
+			const channelId = Str.trim(form.chatChannelId)
 			return {
 				type: "chat",
 				enabled: form.enabled,
 				...(name ? { name } : undefined),
 				...(channelId ? { channel_id: channelId } : undefined),
+			}
+		}
+		case "linear": {
+			const teamId = Str.trim(form.linearTeamId)
+			return {
+				type: "linear",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(teamId ? { team_id: teamId } : undefined),
 			}
 		}
 	}
@@ -897,11 +903,13 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 		thresholds: Arr.map(result.thresholds, fromV2Threshold),
 		comparator: result.comparator,
 		truncatedToStart: asIsoOrNull(result.truncated_to_start),
-		series: result.series.map(
+		series: Arr.map(
+			result.series,
 			(series) =>
 				new AlertRulePreviewSeries({
 					groupKey: series.group_key,
-					points: series.points.map(
+					points: Arr.map(
+						series.points,
 						(point) =>
 							new AlertRulePreviewPoint({
 								bucket: asIso(point.bucket),
@@ -919,7 +927,8 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 					),
 				}),
 		),
-		wouldFire: result.would_fire.map(
+		wouldFire: Arr.map(
+			result.would_fire,
 			(span) =>
 				new AlertRulePreviewFiringSpan({
 					groupKey: span.group_key,
@@ -928,6 +937,19 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 					severity: span.severity,
 				}),
 		),
+		...(result.series_failure === undefined ? undefined : { seriesFailure: result.series_failure }),
+		...(result.query_timing === undefined
+			? undefined
+			: {
+					queryTiming: new AlertQueryTiming({
+						elapsedMs: result.query_timing.elapsed_ms,
+						failure: result.query_timing.failure,
+						probeLimitMs: result.query_timing.probe_limit_ms,
+						intervalMinutes: result.query_timing.interval_minutes,
+						limitMs: result.query_timing.limit_ms,
+						fitsIntervalMinutes: result.query_timing.fits_interval_minutes,
+					}),
+				}),
 	})
 }
 
@@ -987,11 +1009,11 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 	const resolvedIncidents = incidents.filter((i) => i.resolvedAt && i.firstTriggeredAt)
 	const avgResolutionMs =
 		resolvedIncidents.length > 0
-			? resolvedIncidents.reduce((sum, i) => {
+			? Arr.reduce(resolvedIncidents, 0, (sum, i) => {
 					const start = new Date(i.firstTriggeredAt).getTime()
 					const end = new Date(i.resolvedAt!).getTime()
 					return sum + (end - start)
-				}, 0) / resolvedIncidents.length
+				}) / resolvedIncidents.length
 			: 0
 
 	const avgResolution = avgResolutionMs > 0 ? formatResolutionDuration(avgResolutionMs) : EMPTY_VALUE
@@ -1001,7 +1023,7 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 		const groupKey = i.groupKey ?? "all"
 		groupCounts[groupKey] = (groupCounts[groupKey] ?? 0) + 1
 	}
-	const topContributors = Object.entries(groupCounts)
+	const topContributors = Rec.toEntries(groupCounts)
 		.sort(([, a], [, b]) => b - a)
 		.slice(0, 5)
 
@@ -1098,7 +1120,11 @@ export function groupDeliveryEventsByDay(
 		if (last && last.key === key) {
 			last.events.push(event)
 		} else {
-			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt, timeZone, nowMs), events: [event] })
+			groups.push({
+				key,
+				label: formatAlertDayHeading(event.scheduledAt, timeZone, nowMs),
+				events: [event],
+			})
 		}
 	}
 	return groups

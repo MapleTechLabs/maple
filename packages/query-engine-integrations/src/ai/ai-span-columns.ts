@@ -34,6 +34,7 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { compile } from "@maple-dev/effect-orm/sql"
 import { AI_SESSION_SPANS_MAX_SPANS } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 /**
  * Reporters collected per trace, and again per session once the traces are
@@ -238,11 +239,17 @@ export function nettedReportersExpr(reporters: string): Expr<unknown> {
 	const tokens = (element: number) => entry(`r.${element}, 0., 0.`)
 	// Elements 1–8 of a looked-up value: tokens, cost, the five buckets, and
 	// whether the span is a reporter.
-	const claims = `arrayReduce('sumMap', ${entry("r.12, r.13, r.1")}, ${tokens(3)}, ${entry("0., r.4, 0.")}, ${[7, 8, 9, 10, 11].map(tokens).join(", ")}, ${entry("0., 0., 1.")})`
+	const claims = `arrayReduce('sumMap', ${entry("r.12, r.13, r.1")}, ${tokens(3)}, ${entry("0., r.4, 0.")}, ${Arr.join(Arr.map([7, 8, 9, 10, 11], tokens), ", ")}, ${entry("0., 0., 1.")})`
 	const values = Array.from({ length: 8 }, (_, index) => `claims.${index + 2}`)
-	const table = bind("claims", claims, `arrayZip(claims.1, arrayZip(${values.join(", ")}))`)
-	const needles = `arrayConcat(${[1, 12, 13, 2].map((element) => `tupleElement(${reporters}, ${element})`).join(", ")})`
-	const nothing = `(${values.map(() => "0.").join(", ")})`
+	const table = bind("claims", claims, `arrayZip(claims.1, arrayZip(${Arr.join(values, ", ")}))`)
+	const needles = `arrayConcat(${Arr.join(
+		Arr.map([1, 12, 13, 2], (element) => `tupleElement(${reporters}, ${element})`),
+		", ",
+	)})`
+	const nothing = `(${Arr.join(
+		Arr.map(values, () => "0."),
+		", ",
+	)})`
 	const part = (index: number) =>
 		`arraySlice(charged, ${index} * length(${reporters}) + 1, length(${reporters}))`
 
@@ -266,7 +273,12 @@ export function nettedReportersExpr(reporters: string): Expr<unknown> {
 		bind(
 			"charged",
 			lookupExpr(table, needles, nothing),
-			`arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, ${counts}, ${measures.map(([element, chargedElement, measure]) => claim(element, chargedElement, measure)).join(", ")}), ${reporters}, ${[0, 1, 2, 3].map(part).join(", ")})`,
+			`arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, ${counts}, ${Arr.join(
+				Arr.map(measures, ([element, chargedElement, measure]) =>
+					claim(element, chargedElement, measure),
+				),
+				", ",
+			)}), ${reporters}, ${Arr.join(Arr.map([0, 1, 2, 3], part), ", ")})`,
 		),
 	)
 }

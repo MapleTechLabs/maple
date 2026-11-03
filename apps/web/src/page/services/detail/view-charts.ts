@@ -1,27 +1,32 @@
 import { mergeExactThroughput } from "@maple/web-data/warehouse/custom-charts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import { chartSkeleton, type ChartSkeletonVariant } from "../../../ui/chart-skeleton"
-import { ChartSpec, type FixedMetricRow } from "../../../charts/chart-spec"
-import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
-import { fixedMetricLegend, latencySeries } from "../../../charts/fixed-metric-legend"
+import * as Chart from "@maple/views/charts/chart"
+import { chartSkeleton, type ChartSkeletonVariant } from "@maple/views/ui/chart-skeleton"
+import { ChartSpec, type FixedMetricRow } from "@maple/views/charts/chart-spec"
+import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
+import { latencySeries } from "@maple/views/charts/fixed-metric-legend"
 import {
 	fixedMetricModel,
 	LATENCY_SERIES,
 	throughputLegend,
 	throughputPlot,
-} from "../../../charts/fixed-metric-series"
-import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
+} from "@maple/views/charts/fixed-metric-series"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { widgetShell } from "../../overview/view-widget"
 import { commitMarkers, markerLayout } from "./derive-markers"
-import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "../../../charts/linked-cursor"
+import {
+	LINKED_CURSOR_STYLE,
+	linkedCursorOverlay,
+	MountLinkedCursor,
+} from "@maple/views/charts/linked-cursor"
 import { markersOverlay } from "./view-markers"
 import { Message } from "./message"
 import type { DetailPoint, Model } from "./model"
+import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
 // `MetricsGrid` as the Overview tab feeds it (`SERVICE_CHARTS`, `syncId`, `overlay`, `yAxisWidth={72}`).
 
@@ -80,7 +85,7 @@ const CHARTS: ReadonlyArray<{
 	{
 		id: "error-rate",
 		kind: "ErrorRate",
-		title: "Error Rate",
+		title: "Error rate",
 		ariaLabel: "Error rate",
 		skeleton: "area",
 		gradientPrefix: "errorRate",
@@ -94,7 +99,7 @@ export const mergedPoints = (model: Model): ReadonlyArray<DetailPoint> => {
 		() => [],
 	)
 	const exact = AsyncData.getOrElse(model.refinement.data, () => [])
-	return mergeExactThroughput(base, new Map(exact.map((point) => [point.bucket, point.throughput])))
+	return mergeExactThroughput(base, new Map(Arr.map(exact, (point) => [point.bucket, point.throughput])))
 }
 
 type ChartConfig = (typeof CHARTS)[number]
@@ -108,8 +113,8 @@ const colorsOf = (kind: Kind, theme: ThemeColors): Readonly<Record<string, strin
 		case "Latency":
 			return {
 				...chrome,
-				...Object.fromEntries(
-					LATENCY_SERIES.map((entry) => [entry.key, resolveColor(theme, entry.token)]),
+				...Rec.fromEntries(
+					Arr.map(LATENCY_SERIES, (entry) => [entry.key, resolveColor(theme, entry.token)]),
 				),
 			}
 		case "Throughput":
@@ -141,13 +146,19 @@ const specOf = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context
 	})
 
 /** The hoisted header chips (`usePlotLegendSlot`): only the throughput card has two series. */
+/** Every card's legend sits in its header, right side, so latency and throughput read alike. */
 const headerChips = (chart: ChartConfig, rows: ReadonlyArray<FixedMetricRow>, context: GridContext) =>
-	chart.kind !== "Throughput"
-		? []
-		: throughputLegend(throughputPlot(fixedMetricModel(rows, context.timeZone, context.nowMs), true), {
-				throughput: resolveColor(context.theme, "--chart-throughput"),
-				error: resolveColor(context.theme, "--chart-error"),
-			})
+	chart.kind === "Latency"
+		? latencySeries(context.theme)
+		: chart.kind !== "Throughput"
+			? []
+			: throughputLegend(
+					throughputPlot(fixedMetricModel(rows, context.timeZone, context.nowMs), true),
+					{
+						throughput: resolveColor(context.theme, "--chart-throughput"),
+						error: resolveColor(context.theme, "--chart-error"),
+					},
+				)
 
 export type GridState = Readonly<{
 	/** No overview yet (`Result.isInitial`), or the chart runtime and theme are still loading. */
@@ -192,11 +203,7 @@ const chartBody = <M>(
 					chartId: chart.id,
 					ariaLabel: chart.ariaLabel,
 					spec: specOf(chart, rows, context),
-					className: "h-full w-full aspect-auto",
-					legend:
-						chart.kind === "Latency"
-							? fixedMetricLegend(h, latencySeries(context.theme))
-							: undefined,
+					className: chartFrameClass("fill"),
 					overlay,
 					reportPlot: true,
 				},
@@ -215,7 +222,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 		onSome: (data) =>
 			commitMarkers(
 				data.releases,
-				points.map((point) => point.bucket),
+				Arr.map(points, (point) => point.bucket),
 				model.commits,
 			),
 	})
@@ -223,7 +230,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 		h,
 		{
 			charts: model.charts,
-			rows: points.map((point) => ({ ...point })),
+			rows: Arr.map(points, (point) => ({ ...point })),
 			markers,
 			toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
 			linkedCursorMount: MountLinkedCursor(),
@@ -244,7 +251,7 @@ export const metricsGridOf = <M>(h: HtmlBuilder<M>, input: GridInput<M>, state: 
 			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(state.isWaiting))),
 			h.Style(LINKED_CURSOR_STYLE),
 		],
-		CHARTS.map((chart) => {
+		Arr.map(CHARTS, (chart) => {
 			const context = state.context
 			const isChart = !state.isLoading && context !== null
 			return h.div(

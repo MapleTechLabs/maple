@@ -1,12 +1,12 @@
 import { McpToolCatalogEntry } from "@maple/domain/http"
 import { V2McpConnection } from "@maple/domain/http/v2"
 import { MCP_CLIENTS } from "../../../components/settings/mcp-client-config"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { LoadFailure } from "../../../data/load-failure"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Tabs from "../../../ui/tabs"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Tabs from "@maple/views/ui/tabs"
 import * as CreateKey from "../keys/create-dialog"
 
 // `McpSection`: connect a client, the connected OAuth clients and the tool catalog. Shared by
@@ -35,5 +35,5 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const CLIENT_VALUES = MCP_CLIENTS.map((client) => client.id)
-export const CLIENT_LABELS = MCP_CLIENTS.map((client) => client.label)
+export const CLIENT_VALUES = Arr.map(MCP_CLIENTS, (client) => client.id)
+export const CLIENT_LABELS = Arr.map(MCP_CLIENTS, (client) => client.label)

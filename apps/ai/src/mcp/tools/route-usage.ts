@@ -1,4 +1,4 @@
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr } from "effect"
 import { RouteUsageOutput, RouteUsageSort } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -24,7 +24,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Route Usage",
 		description:
-			'HTTP endpoints (`METHOD /route`, from `http.route`, falling back to `url.path`) per service with request count, error rate, p95 and first/last seen, over up to 90 days from the operations rollup. Answers "is this route still called, and by how much?" in one call. `sort=least_recent` lists the stalest routes first. Last seen is hour-grained for hours wholly inside the window. Outbound HTTP calls named like an endpoint can appear under the calling service.',
+			'HTTP endpoints (`METHOD /route`, from `http.route`, falling back to `url.path`) per service with request count, error rate, p95 and first/last seen, over up to 90 days from the operations rollup. Answers "is this route still called, and by how much?" in one call. `sort=least_recent` lists the stalest routes first. Last seen is hour-grained for hours wholly inside the window. Outbound HTTP calls named like an endpoint can appear under the calling service. All span names of one service ranked by a metric: get_service_top_operations.',
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -76,7 +76,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 				...(params.search === undefined ? undefined : { search: params.search }),
 				sort,
 				truncated: rows.length >= params.limit,
-				routes: rows.map((row) => {
+				routes: Arr.map(rows, (row) => {
 					const { method, route } = CH.splitEndpointName(row.spanName)
 					return {
 						service: row.serviceName,
@@ -130,7 +130,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 										"First seen",
 										"Last seen",
 									],
-									routes.map((r) => [
+									Arr.map(routes, (r) => [
 										r.service,
 										r.method,
 										truncate(r.route, 80),

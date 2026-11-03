@@ -22,7 +22,7 @@ import {
 } from "../../../../components/infra/gcp/list-model"
 import { gcpWorkload, gcpWorkloadTone } from "../../../../components/infra/gcp/tabs"
 import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "../../../../components/infra/gcp/workload-signals"
-import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
+import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { TraceSide } from "../data"
 import { successOf } from "../list/derive"
 import type { Model } from "./model"

@@ -5,6 +5,7 @@ import type { PageSubscriptionInput } from "../../../contract"
 import { phaseOf, statusOf } from "./derive"
 import { Message } from "./model"
 import type { Model } from "./model"
+import { pollTicks } from "../../../../data/poll"
 
 /** `useCloudflareIngestPhase`'s poll, matched to the poller's own cadence. */
 const INGEST_POLL = Duration.seconds(30)
@@ -24,9 +25,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isSettling: isSettling(model) }),
 				dependenciesToStream: ({ isSettling: settling }) =>
 					settling
-						? Stream.fromEffectRepeat(
-								Effect.as(Effect.sleep(INGEST_POLL), Message.TickedIngestPoll()),
-							)
+						? Stream.map(pollTicks(INGEST_POLL), () => Message.TickedIngestPoll())
 						: Stream.empty,
 			},
 		),

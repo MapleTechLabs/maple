@@ -4,21 +4,22 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { docsUrl } from "../../lib/docs"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "../../ui/alert"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
-import * as Menu from "../../ui/menu"
-import { panel } from "../../ui/panel"
-import { rowActionsMenu } from "../../ui/row-actions-menu"
-import { skeletonList } from "../../ui/skeleton"
-import { statusDot } from "../../ui/status-dot"
-import { switchControl } from "../../ui/switch"
+import { alert, alertDescription } from "@maple/views/ui/alert"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
+import * as Menu from "@maple/views/ui/menu"
+import { panel } from "@maple/views/ui/panel"
+import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { skeletonList } from "@maple/views/ui/skeleton"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { switchControl } from "@maple/views/ui/switch"
 import { docsLink } from "../kit/signal-empty-state"
 import {
 	integrationEmpty,
@@ -31,21 +32,26 @@ import {
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
+import type { ScrapeIntegration } from "./flow-prometheus"
+import { hostnameOf } from "./prometheus"
 import { prometheusTargets } from "./update-prometheus"
 import { targetDetails } from "./view-prometheus-details"
 import { targetDialogs } from "./view-prometheus-form"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
-// TODO(tooltip): the last-error line renders its trigger; the raw-error popup is the overlay port's.
 
 type H = HtmlBuilder<Message>
 
 export const AUTH_TYPE_LABELS = {
 	none: "None",
-	bearer: "Bearer Token",
-	basic: "Basic Auth",
+	bearer: "Bearer token",
+	basic: "Basic auth",
 	token: "Service Token",
 	planetscale_oauth: "PlanetScale OAuth",
+	supabase_oauth: "Supabase OAuth",
 } satisfies { readonly [K in ScrapeAuthType]: string }
 
 export interface ScheduledStatus {
@@ -77,11 +83,8 @@ export const statusFromRollup = (target: V2ScrapeTarget, nowMs: number): Schedul
 
 export const toneBadge = (tone: Tone) => (tone === "neutral" ? "outline" : tone)
 
-/** `hostnameFromUrl`: the URL's host, or the raw value when it does not parse. */
-export const hostnameOf = (value: string): string => (URL.canParse(value) ? new URL(value).host : value)
-
 /** The Prometheus or WarpStream intro alert above the section. */
-export const scrapeIntro = (h: H, integration: "prometheus" | "warpstream"): Html =>
+export const scrapeIntro = (h: H, integration: ScrapeIntegration): Html =>
 	alert(h, { variant: "info" }, [
 		icon(h, "CircleInfoIcon"),
 		alertDescription(
@@ -127,15 +130,19 @@ const COPY = {
 	],
 } as const
 
-const addButton = (h: H, className?: string): Html =>
-	button(
+/** New targets are added in `/sources/new`'s connect flow, not a dialog. */
+const addButton = (h: H, integration: ScrapeIntegration, className?: string): Html =>
+	linkButton(
 		h,
 		{
 			size: className === undefined ? undefined : "sm",
 			className,
-			attributes: [h.OnClick(Message.ClickedAddTarget())],
+			href: hrefOf(AppRoute.SourcesNew({ search: { integration } })),
 		},
-		[icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Add target"],
+		[
+			icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+			"Add another target",
+		],
 	)
 
 const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string): Html => {
@@ -157,8 +164,8 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 			),
 			h.Class(
 				cn(
-					"flex cursor-pointer items-center gap-3 px-3 py-3 outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50",
-					isSelected && "bg-muted/60",
+					"flex cursor-pointer items-center gap-3 px-3 py-3 outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken",
+					isSelected && "bg-surface-strong",
 				),
 			),
 		],
@@ -167,38 +174,33 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							h.span(
-								[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
-								[target.name],
-							),
-							badge(h, { variant: toneBadge(status.tone), className: "shrink-0" }, [
-								status.label,
-							]),
-							...(target.service_name !== null && target.service_name !== ""
-								? [
-										badge(
-											h,
-											{
-												variant: "outline",
-												className: "min-w-0 max-w-40",
-												attributes: [h.Title(target.service_name)],
-											},
-											[h.span([h.Class("truncate")], [target.service_name])],
-										),
-									]
-								: []),
-							...(target.auth_type !== "none"
-								? [
-										badge(h, { variant: "outline", className: "shrink-0" }, [
-											AUTH_TYPE_LABELS[target.auth_type],
-										]),
-									]
-								: []),
-						],
-					),
+					hstack(h, { gap: "2", shrink: true }, [
+						h.span(
+							[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
+							[target.name],
+						),
+						badge(h, { variant: toneBadge(status.tone), className: "shrink-0" }, [status.label]),
+						...(target.service_name !== null && target.service_name !== ""
+							? [
+									badge(
+										h,
+										{
+											variant: "outline",
+											className: "min-w-0 max-w-40",
+											attributes: [h.Title(target.service_name)],
+										},
+										[h.span([h.Class("truncate")], [target.service_name])],
+									),
+								]
+							: []),
+						...(target.auth_type !== "none"
+							? [
+									badge(h, { variant: "outline", className: "shrink-0" }, [
+										AUTH_TYPE_LABELS[target.auth_type],
+									]),
+								]
+							: []),
+					]),
 					h.div(
 						[
 							h.Class(
@@ -234,6 +236,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 											"mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground",
 										),
 										h.DataAttribute("slot", "tooltip-trigger"),
+										...tooltipTrigger(h, target.last_scrape_error),
 									],
 									[
 										icon(h, "CircleInfoIcon", { size: 12, className: "shrink-0" }),
@@ -265,7 +268,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 					isLoading: card.probing.includes(target.id),
 					attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }), { propagation: "Stop" })],
 				},
-				[icon(h, "BoltIcon"), "Test"],
+				[icon(h, "ArrowRotateClockwiseIcon"), "Sync now"],
 			),
 			h.div(
 				[h.OnClick(Message.ClickedTargetControls(), { propagation: "Stop" })],
@@ -274,12 +277,16 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 						slotId: menuId,
 						model: card.menus[menuId] ?? Menu.init(menuId),
 						label: `Actions for ${target.name}`,
-						className: "text-muted-foreground hover:text-foreground shrink-0",
+						className: typographyClass({
+							tone: "muted",
+							hoverTone: "foreground",
+							className: "shrink-0",
+						}),
 						entries: [
 							{
 								_tag: "Item",
 								value: "edit",
-								label: "Edit",
+								label: "Edit data",
 								icon: "PencilIcon",
 								isDisabled: isManaged,
 							},
@@ -287,7 +294,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 							{
 								_tag: "Item",
 								value: "delete",
-								label: "Delete",
+								label: "Delete scrape target",
 								icon: "TrashIcon",
 								variant: "destructive",
 								isDisabled: isManaged,
@@ -302,13 +309,13 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 	)
 }
 
-const emptyState = (h: H): Html =>
+const emptyState = (h: H, integration: ScrapeIntegration): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, COPY.features),
 		integrationEmptyCard(h, [
 			integrationEmptyMedia(h, { icon: "PrometheusIcon", accent: "#E6522C" }),
 			integrationEmptyHint(h, [COPY.emptyHint]),
-			addButton(h),
+			addButton(h, integration),
 			docsLink(h, "prometheus"),
 			integrationEmptyFooter(h, [COPY.emptyFooter]),
 		]),
@@ -336,10 +343,11 @@ export const scrapeTargetsSection = (
 	model: Model,
 	timeZone: string,
 	focusId: string | null = null,
+	integration: ScrapeIntegration = "prometheus",
 ): ReadonlyArray<Html> => {
 	const data = model.statuses.scrapeTargets.data
 	const all = prometheusTargets(model)
-	const targets = focusId === null ? all : all.filter((target) => target.id === focusId)
+	const targets = focusId === null ? all : Arr.filter(all, (target) => target.id === focusId)
 	const isLoaded = AsyncData.isSuccess(data) || AsyncData.isRefreshing(data)
 	const isEmpty = isLoaded && targets.length === 0
 	const selected = targets.find((target) => target.id === model.prometheusCard.selectedId)
@@ -349,13 +357,13 @@ export const scrapeTargetsSection = (
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load scrape targets",
+				title: "Couldn't load scrape targets",
 				onRetry: Message.ClickedRetryStatus({ name: "scrapeTargets" }),
 			}),
 		onStale: ({ error }) =>
 			errorState(h, {
 				failure: error,
-				title: "Failed to load scrape targets",
+				title: "Couldn't load scrape targets",
 				onRetry: Message.ClickedRetryStatus({ name: "scrapeTargets" }),
 			}),
 		onRefreshing: () => list(),
@@ -364,15 +372,17 @@ export const scrapeTargetsSection = (
 	function list(): Html {
 		return targets.length === 0
 			? focusId === null
-				? emptyState(h)
-				: h.p([h.Class("text-muted-foreground text-sm")], ["This scrape target no longer exists."])
+				? emptyState(h, integration)
+				: typography(h, { size: "sm", tone: "muted", as: "p" }, [
+						"This scrape target no longer exists.",
+					])
 			: h.div(
 					[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]")],
 					[
 						panel(
 							h,
 							{ className: "divide-y" },
-							targets.map((target) => targetRow(h, model, target, timeZone)),
+							Arr.map(targets, (target) => targetRow(h, model, target, timeZone)),
 						),
 						selected === undefined ? placeholder(h) : targetDetails(h, model, selected, timeZone),
 					],
@@ -385,13 +395,10 @@ export const scrapeTargetsSection = (
 				...(isEmpty
 					? []
 					: [
-							h.div(
-								[h.Class("flex items-center justify-between gap-3")],
-								[
-									h.p([h.Class("text-muted-foreground text-sm")], [COPY.description]),
-									addButton(h, "shrink-0"),
-								],
-							),
+							hstack(h, { gap: "3", justify: "between" }, [
+								typography(h, { size: "sm", tone: "muted", as: "p" }, [COPY.description]),
+								addButton(h, integration, "shrink-0"),
+							]),
 						]),
 				body,
 			],
@@ -406,7 +413,7 @@ const setupGuide = (h: H, page: "prometheus" | "warpstream"): Html =>
 			h.Href(docsUrl(page)),
 			h.Target("_blank"),
 			h.Rel("noreferrer"),
-			h.Class("text-foreground underline underline-offset-2 hover:no-underline"),
+			h.Class("text-foreground underline underline-offset-2 hover:no-underline active:no-underline"),
 		],
 		["Setup guide"],
 	)

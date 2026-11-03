@@ -35,20 +35,19 @@ public struct WidgetCredential: Codable, Sendable, Equatable {
 
 	public func isExpired(at date: Date) -> Bool { date >= expiresAt }
 
-	/// Re-mint with a week to spare.
+	/// Re-mint with four days to spare, of the server's fourteen.
 	///
-	/// The window is generous on purpose: renewal needs a signed-in foreground,
-	/// and a phone that only gets opened at the weekend must not be one bad
-	/// Monday away from a Home Screen that has gone quiet with no way to
-	/// recover on its own.
-	public static let renewalLead: TimeInterval = 7 * 24 * 60 * 60
+	/// Renewal needs a signed-in foreground, so the lead covers a phone opened
+	/// every few days without letting a lifted credential live long.
+	public static let renewalLead: TimeInterval = 4 * 24 * 60 * 60
 
 	public func needsRenewal(at date: Date) -> Bool {
 		date.addingTimeInterval(Self.renewalLead) >= expiresAt
 	}
 }
 
-/// Where the credential lives: a file in the shared App Group container.
+/// Where the credential lives: a file in the shared App Group container, in a
+/// directory excluded from backups.
 ///
 /// **Not `UserDefaults`, unlike the snapshots.** A suite plist is a bearer
 /// credential sitting in cleartext in a backup; a file can carry a data
@@ -57,11 +56,9 @@ public struct WidgetCredential: Codable, Sendable, Equatable {
 /// accessories on a locked phone, so anything stricter would make the widget
 /// fail exactly where it is most visible.
 ///
-/// **Not the Keychain either, yet.** The app's keychain access group is where
-/// Clerk keeps the session, and sharing *that* group with the extension would
-/// hand it the session this whole design exists to keep out of it. A separate
-/// group is the eventual home; it needs a provisioning change, and this store's
-/// interface is what lets that happen later without touching the wire.
+/// Device-bound credentials keep only public facts and a DPoP-bound token
+/// here; their private keys live in a widget-only keychain group (see
+/// `KeychainDeviceKeyStore`), never Clerk's.
 public struct WidgetCredentialStore: Sendable {
 	private let appGroupIdentifier: String
 	/// Tests only. `containerURL(forSecurityApplicationGroupIdentifier:)` answers
@@ -99,12 +96,15 @@ public struct WidgetCredentialStore: Sendable {
 	/// `../../org_a` and `org_a` onto the same file, so an id that should have
 	/// been refused outright would instead quietly overwrite a real
 	/// organization's credential. Nothing legitimate ever fails this check.
-	private func url(for organizationId: String) -> URL? {
-		guard
-			!organizationId.isEmpty,
-			organizationId.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" })
-		else { return nil }
-		return directory?.appendingPathComponent("widget-\(organizationId).json", isDirectory: false)
+	private func url(for organizationId: String, prefix: String = "widget") -> URL? {
+		guard Self.isSafeOrganizationId(organizationId) else { return nil }
+		return directory?.appendingPathComponent("\(prefix)-\(organizationId).json", isDirectory: false)
+	}
+
+	/// The check above, shared with the keychain store, which uses the id as an account.
+	static func isSafeOrganizationId(_ organizationId: String) -> Bool {
+		!organizationId.isEmpty
+			&& organizationId.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" })
 	}
 
 	public func load(organizationId: String) -> WidgetCredential? {
@@ -127,6 +127,8 @@ public struct WidgetCredentialStore: Sendable {
 			let data = try? Self.encoder.encode(credential)
 		else { return false }
 		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		// Never in an iCloud or computer backup: a restored phone mints its own.
+		Self.excludeFromBackup(directory)
 		do {
 			try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
 			return true
@@ -135,9 +137,76 @@ public struct WidgetCredentialStore: Sendable {
 		}
 	}
 
+	/// Everything this organization has here: the legacy key, the device
+	/// registration and the cached access token.
 	public func clear(organizationId: String) {
+		for prefix in ["widget", "device", "token"] {
+			guard let url = url(for: organizationId, prefix: prefix) else { return }
+			try? FileManager.default.removeItem(at: url)
+		}
+	}
+
+	/// The `maple_ak_` key alone, once a device credential has replaced it.
+	public func clearLegacy(organizationId: String) {
 		guard let url = url(for: organizationId) else { return }
 		try? FileManager.default.removeItem(at: url)
+	}
+
+	// MARK: Device-bound credentials
+
+	public func loadDevice(organizationId: String) -> DeviceCredential? {
+		guard let record: DeviceCredential = read(organizationId: organizationId, prefix: "device") else { return nil }
+		return record.organizationId == organizationId ? record : nil
+	}
+
+	@discardableResult
+	public func saveDevice(_ credential: DeviceCredential) -> Bool {
+		write(credential, organizationId: credential.organizationId, prefix: "device")
+	}
+
+	public func clearDevice(organizationId: String) {
+		for prefix in ["device", "token"] {
+			guard let url = url(for: organizationId, prefix: prefix) else { return }
+			try? FileManager.default.removeItem(at: url)
+		}
+	}
+
+	public func loadToken(organizationId: String) -> DeviceAccessToken? {
+		guard let token: DeviceAccessToken = read(organizationId: organizationId, prefix: "token") else { return nil }
+		return token.organizationId == organizationId ? token : nil
+	}
+
+	@discardableResult
+	public func saveToken(_ token: DeviceAccessToken) -> Bool {
+		write(token, organizationId: token.organizationId, prefix: "token")
+	}
+
+	public func clearToken(organizationId: String) {
+		guard let url = url(for: organizationId, prefix: "token") else { return }
+		try? FileManager.default.removeItem(at: url)
+	}
+
+	private func read<T: Decodable>(organizationId: String, prefix: String) -> T? {
+		guard let url = url(for: organizationId, prefix: prefix), let data = try? Data(contentsOf: url) else {
+			return nil
+		}
+		return try? Self.decoder.decode(T.self, from: data)
+	}
+
+	private func write<T: Encodable>(_ value: T, organizationId: String, prefix: String) -> Bool {
+		guard
+			let directory,
+			let url = url(for: organizationId, prefix: prefix),
+			let data = try? Self.encoder.encode(value)
+		else { return false }
+		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		Self.excludeFromBackup(directory)
+		do {
+			try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+			return true
+		} catch {
+			return false
+		}
 	}
 
 	/// Sign-out. Everything, not just the organizations this build knows about:
@@ -148,7 +217,86 @@ public struct WidgetCredentialStore: Sendable {
 		try? FileManager.default.removeItem(at: directory)
 	}
 
+	/// Set on every save, not just at creation, so a directory left by an older
+	/// build gets the flag too.
+	static func excludeFromBackup(_ directory: URL) {
+		var values = URLResourceValues()
+		values.isExcludedFromBackup = true
+		var url = directory
+		try? url.setResourceValues(values)
+	}
+
 	private static var encoder: JSONEncoder { WidgetJSON.encoder }
 	/// Tolerant of fractional seconds — see `WidgetJSON`.
 	private static var decoder: JSONDecoder { WidgetJSON.decoder }
+}
+
+/// A device-bound credential the app registered for one organization.
+///
+/// Public facts only: the key itself stays in the keychain, and this record
+/// tells the extension which host to ask and which key the server expects.
+public struct DeviceCredential: Codable, Sendable, Equatable {
+	public var organizationId: String
+	public var credentialId: String
+	/// RFC 7638 thumbprint of the registered key.
+	public var jkt: String
+	public var apiBaseURL: URL
+	public var attested: Bool
+	/// Rolling, extended by re-registering the same key.
+	public var expiresAt: Date
+	/// The cap no refresh extends past; the key is rotated before it.
+	public var hardExpiresAt: Date
+	public var registeredAt: Date
+
+	public init(
+		organizationId: String,
+		credentialId: String,
+		jkt: String,
+		apiBaseURL: URL,
+		attested: Bool,
+		expiresAt: Date,
+		hardExpiresAt: Date,
+		registeredAt: Date
+	) {
+		self.organizationId = organizationId
+		self.credentialId = credentialId
+		self.jkt = jkt
+		self.apiBaseURL = apiBaseURL
+		self.attested = attested
+		self.expiresAt = expiresAt
+		self.hardExpiresAt = hardExpiresAt
+		self.registeredAt = registeredAt
+	}
+
+	public func isExpired(at date: Date) -> Bool { date >= expiresAt }
+
+	/// Re-register the same key this long before `expires_at` (30-day rolling).
+	public static let refreshLead: TimeInterval = 7 * 24 * 60 * 60
+
+	public func needsRefresh(at date: Date) -> Bool {
+		date.addingTimeInterval(Self.refreshLead) >= expiresAt
+	}
+
+	/// A refresh can no longer help: rotate to a new key instead.
+	public func needsRotation(at date: Date) -> Bool {
+		date.addingTimeInterval(Self.refreshLead) >= hardExpiresAt
+	}
+}
+
+/// A cached DPoP access token. Useless without the key it is bound to.
+public struct DeviceAccessToken: Codable, Sendable, Equatable {
+	public var organizationId: String
+	public var jkt: String
+	public var accessToken: String
+	public var expiresAt: Date
+
+	public init(organizationId: String, jkt: String, accessToken: String, expiresAt: Date) {
+		self.organizationId = organizationId
+		self.jkt = jkt
+		self.accessToken = accessToken
+		self.expiresAt = expiresAt
+	}
+
+	/// With a minute to spare, so a token does not expire in flight.
+	public func isUsable(at date: Date) -> Bool { date.addingTimeInterval(60) < expiresAt }
 }

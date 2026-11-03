@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { AiSessionSpan } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, type Command, Submodel } from "foldkit"
 import { fromString } from "foldkit/url"
 import type { PageContext, PageOutMessage } from "../page/contract"
@@ -16,6 +16,8 @@ import { views } from "../page/agent-sessions/session/view"
 import { sessionHeader } from "../page/agent-sessions/session/view-header"
 import type { Resources } from "../platform/resources"
 import { urlToAppRoute } from "../route"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The session page driven by a fixture, for `/lab/agent-session` and `/lab/bench/agent-transcript`:
 // the spans stand in for the warehouse, the lab's state for the URL.
@@ -41,7 +43,7 @@ export const toWire = (
 	spans: ReadonlyArray<AiSessionSpan>,
 	sessionId: string,
 ): ReadonlyArray<AiSessionSpan> =>
-	spans.flatMap((span) => Option.toArray(decodeSpan(JSON.stringify({ ...span, sessionId }))))
+	Arr.flatMap(spans, (span) => Option.toArray(decodeSpan(encodeJson({ ...span, sessionId }))))
 
 /**
  * The page's navigations land as the route change the shell would deliver: only the view and the
@@ -58,14 +60,18 @@ const followNavigation = (
 		onSome: (next) => {
 			if (next._tag !== "AgentSession") return { session, commands: [] }
 			const search = { ...session.search, view: next.search.view, span: next.search.span }
-			const changed = sessionRouteChanged(session, { sessionId: session.sessionId, search }, contextOf(timeZone))
+			const changed = sessionRouteChanged(
+				session,
+				{ sessionId: session.sessionId, search },
+				contextOf(timeZone),
+			)
 			return { session: changed.model, commands: withoutReads(changed.commands) }
 		},
 	})
 }
 
 const withoutReads = (commands: SessionCommands | undefined): SessionCommands =>
-	(commands ?? []).filter((command) => !READS.has(command.name))
+	Arr.filter(commands ?? [], (command) => !READS.has(command.name))
 
 /** The page's step, with its navigations folded back in and its reads dropped. */
 export const stepSession = (

@@ -5,8 +5,10 @@ import {
 	GcpResourceNumber,
 	GcpScopeType,
 	OrgId,
+	SourceId,
 } from "@maple/domain/primitives"
 import { Schema } from "effect"
+import { Sources } from "./sources"
 
 // One row per connected Google Cloud scope: a project, or everything under a folder or
 // organization. `project_id` is the host project, where Maple's own resources live (Pub/Sub topic,
@@ -18,6 +20,8 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 	columns: {
 		id: PG.brand(PG.text, GcpConnectorId),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		// The source this integration sends as. Deleting the source deletes the row.
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		scopeType: PG.column(PG.brand(PG.text, GcpScopeType), { name: "scope_type" }),
 		scopeId: PG.column(PG.brand(PG.text, Schema.Union([GcpProjectId, GcpResourceNumber])), {
 			name: "scope_id",
@@ -55,8 +59,17 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 	},
 	primaryKey: ["id"],
 	indexes: [
+		PG.index("gcp_connectors_source_idx", ["sourceId"]),
 		PG.uniqueIndex("gcp_connectors_org_scope_idx", ["orgId", "scopeType", "scopeId"]),
 		PG.uniqueIndex("gcp_connectors_secret_hash_unique", ["secretHash"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["sourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
 	],
 	tenantColumn: "orgId",
 })

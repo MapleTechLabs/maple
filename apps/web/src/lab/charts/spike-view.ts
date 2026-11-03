@@ -1,16 +1,19 @@
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import type { Message, Model } from "../../charts/chart"
-import { ChartSpec, ChartTooltip } from "../../charts/chart-spec"
-import { type BucketTooltip, bucketTooltipBody } from "../../charts/bucket-tooltip"
-import { plotFrame } from "../../charts/plot-frame"
-import { legendRow, type PlotLegendSeries } from "../../charts/plot-legend"
-import { sequentialColorScale } from "../../charts/sequential-colors"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
+import type { Message, Model } from "@maple/views/charts/chart"
+import { ChartSpec, ChartTooltip } from "@maple/views/charts/chart-spec"
+import { type BucketTooltip, bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
+import { plotFrame } from "@maple/views/charts/plot-frame"
+import { legendRow, type PlotLegendSeries } from "@maple/views/charts/plot-legend"
+import { sequentialColorScale } from "@maple/views/charts/sequential-colors"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { formatNumber } from "@maple/ui/lib/format"
 import { HEATMAP_SPIKE_ROWS, heatmapSpikeModel } from "./spike-heatmap-model"
 import { RAMP_TOKENS, type TokenWithFallback } from "./spike-timeseries-tokens"
+import { registerChartHost } from "@maple/views/charts/chart-mounts"
+
+registerChartHost("lab", () => import("./spike-host"))
 
 // A `/lab/charts` prototype in its `PlotFrame`: the lab host draws it from `ChartSpec.LabSpike`,
 // the frame carries its DOM legend (`PlotSeriesLegend`) and the tooltip body.
@@ -47,12 +50,16 @@ const stackTooltipBody = (h: H, bucket: BucketTooltip, total: string, portal: At
 		[h.Class("grid min-w-[9rem] items-start gap-1.5"), portal],
 		[
 			h.div(
-				[h.Class("border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight")],
+				[
+					h.Class(
+						"border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight",
+					),
+				],
 				[bucket.heading],
 			),
 			h.div(
 				[h.Class("grid gap-1.5")],
-				bucket.rows.map((row) =>
+				Arr.map(bucket.rows, (row) =>
 					h.div(
 						[
 							h.Key(row.label),
@@ -78,7 +85,7 @@ const stackTooltipBody = (h: H, bucket: BucketTooltip, total: string, portal: At
 			h.div(
 				[
 					h.Class(
-						"flex w-full items-center justify-between gap-3 border-border/50 border-t pt-1 leading-none",
+						"flex w-full items-center justify-between gap-3 border-border-subtle border-t pt-1 leading-none",
 					),
 				],
 				[h.span([h.Class("text-muted-foreground")], ["Total"]), figure(h, total)],
@@ -90,7 +97,7 @@ const stackTooltipBody = (h: H, bucket: BucketTooltip, total: string, portal: At
 const bandTooltipBody = (h: H, bucket: BucketTooltip, portal: Attribute<Message>): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2"), portal],
-		bucket.rows.flatMap((row) => [
+		Arr.flatMap(bucket.rows, (row) => [
 			swatch(h, row.color, false),
 			h.span([h.Class("text-muted-foreground")], [row.label]),
 			figure(h, row.value),
@@ -112,7 +119,7 @@ const slotTooltipBody = (
 		)
 	const model = heatmapSpikeModel(HEATMAP_SPIKE_ROWS)
 	const colorAt = sequentialColorScale({
-		stops: RAMP_TOKENS.amber.map(([token, fallback]) => resolveColor(inputs.theme, token, fallback)),
+		stops: Arr.map(RAMP_TOKENS.amber, ([token, fallback]) => resolveColor(inputs.theme, token, fallback)),
 		domain: model.domain,
 		scaleType: "linear",
 	})
@@ -137,7 +144,7 @@ const keyValue = (h: H, label: string, value: string, className: string): Html =
 /** `BoxPlotSpike`'s body: the operation, then its outlier or its five-number summary. */
 const boxTooltipBody = (h: H, bucket: BucketTooltip, portal: Attribute<Message>): Html => {
 	const heading = h.div(
-		[h.Class("border-border/50 border-b pb-1 font-medium text-muted-foreground tracking-tight")],
+		[h.Class("border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight")],
 		[bucket.heading],
 	)
 	const row = (label: string, value: string, className: string) =>
@@ -146,7 +153,7 @@ const boxTooltipBody = (h: H, bucket: BucketTooltip, portal: Attribute<Message>)
 	if (bucket.highlighted === undefined)
 		return h.div(
 			[h.Class("grid min-w-[10rem] items-start gap-1.5"), portal],
-			[heading, ...bucket.rows.map((entry) => row(entry.label, entry.value, base))],
+			[heading, ...Arr.map(bucket.rows, (entry) => row(entry.label, entry.value, base))],
 		)
 	return h.div(
 		[h.Class("grid min-w-[11rem] items-start gap-1.5"), portal],
@@ -154,7 +161,7 @@ const boxTooltipBody = (h: H, bucket: BucketTooltip, portal: Attribute<Message>)
 			heading,
 			h.div(
 				[h.Class("grid gap-1.5")],
-				bucket.rows.map((entry) =>
+				Arr.map(bucket.rows, (entry) =>
 					row(
 						entry.label,
 						entry.value,
@@ -255,8 +262,8 @@ export const spikeView = Submodel.defineView<Model, Message, SpikeInputs>((model
 		host: "lab",
 		spec: ChartSpec.LabSpike({
 			arm: inputs.arm,
-			colors: Object.fromEntries(
-				inputs.tokens.map((token) =>
+			colors: Rec.fromEntries(
+				Arr.map(inputs.tokens, (token) =>
 					typeof token === "string"
 						? [token, resolveColor(inputs.theme, token)]
 						: [token[0], resolveColor(inputs.theme, token[0], token[1])],
@@ -270,7 +277,7 @@ export const spikeView = Submodel.defineView<Model, Message, SpikeInputs>((model
 			? undefined
 			: {
 					footer: h.p(
-						[h.Class("pt-1 text-right text-3xs text-muted-foreground/70")],
+						[h.Class("pt-1 text-right text-3xs text-foreground-subtle")],
 						[inputs.footer],
 					),
 				}),

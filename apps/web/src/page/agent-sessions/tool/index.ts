@@ -19,7 +19,7 @@ export const page = definePage(
 		view,
 		subscriptions,
 		breadcrumbs: (model) => [
-			{ label: "Agent Sessions", href: "/agent-sessions" },
+			{ label: "Agent sessions", href: "/agent-sessions" },
 			{ label: "Tools", href: "/agent-sessions/tools" },
 			{ label: model.toolName },
 		],

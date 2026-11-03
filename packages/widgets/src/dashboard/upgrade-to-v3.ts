@@ -5,6 +5,7 @@ import { migrateToLatest } from "./migrations"
 import { CURRENT_DASHBOARD_SCHEMA_VERSION } from "./version"
 import type { WidgetDataSourceTransformV2 } from "./shared/transform"
 import type { WidgetDataSourceV3 } from "./v3/data-source"
+import { Array as Arr } from "effect"
 
 /**
  * The one-shot upgrade of a stored dashboard document from the v2
@@ -33,7 +34,7 @@ type V3DataSource = typeof WidgetDataSourceV3.Type
 type Transform = typeof WidgetDataSourceTransformV2.Type
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /** Spread-if-present, so an absent `optionalKey` never becomes a present `undefined`. */
 const put = <K extends string, V>(key: K, value: V | undefined): Record<string, never> | { [P in K]: V } => {
@@ -88,12 +89,12 @@ export const fromLegacyDataSource = (dataSource: unknown): V3DataSource => {
 		return {
 			kind: "query",
 			resultShape: resultKind,
-			queries: Array.isArray(params.queries)
-				? (params.queries.map(repairQueryDraft) as QuerySet["queries"])
+			queries: Arr.isArray(params.queries)
+				? (Arr.map(params.queries, repairQueryDraft) as QuerySet["queries"])
 				: [],
 			...put(
 				"formulas",
-				Array.isArray(params.formulas) ? (params.formulas as QuerySet["formulas"]) : undefined,
+				Arr.isArray(params.formulas) ? (params.formulas as QuerySet["formulas"]) : undefined,
 			),
 			...put(
 				"comparison",
@@ -103,7 +104,7 @@ export const fromLegacyDataSource = (dataSource: unknown): V3DataSource => {
 			...put("limit", typeof params.limit === "number" ? params.limit : undefined),
 			...put(
 				"columns",
-				Array.isArray(params.columns) ? (params.columns as ReadonlyArray<string>) : undefined,
+				Arr.isArray(params.columns) ? (params.columns as ReadonlyArray<string>) : undefined,
 			),
 			...transform,
 		}
@@ -183,8 +184,8 @@ const upgradeWidget = (widget: unknown): unknown => {
 
 export const upgradeDocumentToV3 = (document: unknown): unknown => {
 	if (!isRecord(document)) return document
-	if (!Array.isArray(document.widgets)) return document
-	return { ...document, widgets: document.widgets.map(upgradeWidget) }
+	if (!Arr.isArray(document.widgets)) return document
+	return { ...document, widgets: Arr.map(document.widgets, upgradeWidget) }
 }
 
 /**
@@ -229,9 +230,9 @@ export const upgradeStoredDocument = (payload: unknown): unknown => {
  * about what "done" means.
  */
 export const isDocumentV3 = (document: unknown): boolean => {
-	if (!isRecord(document) || !Array.isArray(document.widgets)) return true
+	if (!isRecord(document) || !Arr.isArray(document.widgets)) return true
 
-	return document.widgets.every((widget) => {
+	return Arr.every(document.widgets, (widget) => {
 		if (!isRecord(widget)) return true
 		if (widget.dataSource !== undefined && !isV3DataSource(widget.dataSource)) return false
 

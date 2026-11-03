@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
+import { badge } from "@maple/views/ui/display"
 
 // `ScopeChip`: what a panel is scoped to. With an explanation it is a tooltip trigger; the page's Tooltip
 // renders the explanation.
@@ -19,7 +19,7 @@ export const scopeChip = <M>(
 ): Html => {
 	const chipClass = cn(
 		"bg-background/60 font-normal",
-		options.tone === "muted" ? "text-muted-foreground/70" : "text-muted-foreground",
+		options.tone === "muted" ? "text-foreground-subtle" : "text-muted-foreground",
 		options.className,
 	)
 	return options.trigger === undefined

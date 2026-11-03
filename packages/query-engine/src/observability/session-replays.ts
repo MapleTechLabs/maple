@@ -109,9 +109,13 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 	}
 
 	// 2) Per-trace summaries (root span name/service, duration, error, span count).
-	const summariesCompiled = CH.compile(CH.sessionTraceSummariesQuery({ traceIds }), {
-		orgId: executor.orgId,
-	})
+	const summariesCompiled = CH.compile(
+		CH.sessionTraceSummariesQuery({
+			traceIds,
+			...CH.sessionTraceWindow(session.startTime, session.endTime),
+		}),
+		{ orgId: executor.orgId },
+	)
 	const traces = yield* executor.compiledQuery(summariesCompiled, {
 		profile: "list",
 		context: "sessionTraceSummaries",

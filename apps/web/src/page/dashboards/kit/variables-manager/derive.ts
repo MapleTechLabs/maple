@@ -1,6 +1,6 @@
 import { DashboardVariableName } from "@maple/domain/http"
 import { QUERY_BUILDER_METRIC_TYPES, type QueryBuilderMetricType } from "@maple/query-model"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { Variable } from "./model"
 
 // The pure half of `VariablesManagerDialog`: labels, summaries, retyping and per-draft validation.
@@ -53,7 +53,10 @@ export const VARIABLE_TYPES: ReadonlyArray<Variable["type"]> = ["query", "custom
 /** `sourceSummary`: the row's second line. */
 export const sourceSummary = (variable: Variable): string => {
 	if (variable.type === "custom") {
-		const listed = variable.options.map((option) => option.value).join(", ")
+		const listed = Arr.join(
+			Arr.map(variable.options, (option) => option.value),
+			", ",
+		)
 		return listed === "" ? "No options" : listed
 	}
 	if (variable.type === "textbox") return "Free text"
@@ -68,7 +71,11 @@ export const sourceSummary = (variable: Variable): string => {
 	}
 }
 
-export const newVariable = (): Variable => ({ name: "", type: "query", source: { kind: "facet", facet: "service" } })
+export const newVariable = (): Variable => ({
+	name: "",
+	type: "query",
+	source: { kind: "facet", facet: "service" },
+})
 
 /** `withType`: retyped, keeping the shared base fields. */
 export const withType = (variable: Variable, type: Variable["type"]): Variable => {
@@ -89,15 +96,21 @@ export const withType = (variable: Variable, type: Variable["type"]): Variable =
 }
 
 /** `draftError`: the first problem with a draft, computed live. */
-export const draftError = (draft: Variable, index: number, drafts: ReadonlyArray<Variable>): string | null => {
+export const draftError = (
+	draft: Variable,
+	index: number,
+	drafts: ReadonlyArray<Variable>,
+): string | null => {
 	if (draft.name === "") return "Name is required."
-	if (!isValidVariableName(draft.name)) return "Names start with a letter, then letters, digits, or underscores."
-	if (drafts.some((other, i) => i !== index && other.name === draft.name))
+	if (!isValidVariableName(draft.name))
+		return "Names start with a letter, then letters, digits, or underscores."
+	if (Arr.some(drafts, (other, i) => i !== index && other.name === draft.name))
 		return `Another variable is already named "${draft.name}".`
-	if (draft.type === "query" && draft.source.kind !== "facet" && draft.source.attributeKey.trim() === "")
+	if (draft.type === "query" && draft.source.kind !== "facet" && Str.trim(draft.source.attributeKey) === "")
 		return "Pick the attribute key to list values for."
 	if (draft.type === "query" && draft.source.kind === "metric") {
-		if (draft.source.metricNames.some((name) => name === "")) return "Name at least one metric to list values from."
+		if (Arr.some(draft.source.metricNames, (name) => name === ""))
+			return "Name at least one metric to list values from."
 		if (draft.source.metricNames.length > 20) return "List at most 20 metrics."
 	}
 	return null
@@ -105,11 +118,13 @@ export const draftError = (draft: Variable, index: number, drafts: ReadonlyArray
 
 /** The "Values from" select's value for a query source. */
 export const sourceValueOf = (variable: QueryVariable): string =>
-	variable.source.kind === "facet" ? `facet:${variable.source.facet}` : `${variable.source.kind}:${variable.source.scope}`
+	variable.source.kind === "facet"
+		? `facet:${variable.source.facet}`
+		: `${variable.source.kind}:${variable.source.scope}`
 
 /** The "Values from" pick applied to a query variable. */
 export const withSourceValue = (variable: QueryVariable, value: string): Variable => {
-	const [kind, detail] = value.split(":")
+	const [kind, detail] = Str.split(":")(value)
 	const source = variable.source
 	const attributeKey = source.kind === "facet" ? "" : source.attributeKey
 	const facet = FACETS.find((candidate) => candidate === detail)
@@ -131,7 +146,7 @@ export const withSourceValue = (variable: QueryVariable, value: string): Variabl
 }
 
 export const SOURCE_ITEMS: ReadonlyArray<{ readonly value: string; readonly label: string }> = [
-	...FACETS.map((facet) => ({ value: `facet:${facet}`, label: FACET_LABELS[facet] })),
+	...Arr.map(FACETS, (facet) => ({ value: `facet:${facet}`, label: FACET_LABELS[facet] })),
 	{ value: "attribute:span", label: "Span attribute…" },
 	{ value: "attribute:resource", label: "Resource attribute…" },
 	{ value: "metric:metric", label: "Metric attribute…" },

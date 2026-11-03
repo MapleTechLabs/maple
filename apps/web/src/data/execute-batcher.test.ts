@@ -3,7 +3,7 @@ import {
 	type QueryEngineBatchOutcome,
 	QueryEngineExecuteRequest,
 } from "@maple/query-engine"
-import { Effect, Exit, Fiber, Ref, type Scope } from "effect"
+import { Effect, Exit, Fiber, Ref, type Scope, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
 import { MissingBatchResultError, makeExecuteBatcher, type SendExecuteBatch } from "./execute-batcher"
@@ -32,7 +32,7 @@ const countOf = (outcome: { readonly result: { readonly kind: string; readonly d
 	outcome.result.kind === "count" ? outcome.result.data : undefined
 
 const echo = (requests: ReadonlyArray<QueryEngineExecuteRequest>): ReadonlyArray<QueryEngineBatchOutcome> =>
-	requests.map((_, index) => ({
+	Arr.map(requests, (_, index) => ({
 		outcome: "success",
 		result: { kind: "count", source: "logs", data: { total: index } },
 	}))
@@ -69,7 +69,7 @@ describe("makeExecuteBatcher", () => {
 				yield* TestClock.adjust("1 millis")
 				const responses = yield* Fiber.joinAll([first, second])
 				expect(yield* Ref.get(batches)).toEqual([2])
-				expect(responses.map(countOf)).toEqual([{ total: 0 }, { total: 1 }])
+				expect(Arr.map(responses, countOf)).toEqual([{ total: 0 }, { total: 1 }])
 			}),
 		))
 
@@ -115,7 +115,7 @@ describe("makeExecuteBatcher", () => {
 		run(
 			Effect.gen(function* () {
 				const { send } = yield* recording((requests) =>
-					requests.flatMap((_, index): ReadonlyArray<QueryEngineBatchOutcome> =>
+					Arr.flatMap(requests, (_, index): ReadonlyArray<QueryEngineBatchOutcome> =>
 						index === 1
 							? [{ outcome: "failure", error: timeout }]
 							: index === 2
@@ -152,6 +152,35 @@ describe("makeExecuteBatcher", () => {
 				)
 				yield* TestClock.adjust(`${WINDOW_MS} millis`)
 				expect(yield* Fiber.joinAll(fibers)).toEqual([Exit.fail(error), Exit.fail(error)])
+			}),
+		))
+
+	test("a send that dies fails every query in that batch as unanswered, not with a crash or a wait", () =>
+		run(
+			Effect.gen(function* () {
+				const batcher = yield* makeExecuteBatcher(() => Effect.die("decoder blew up"), WINDOW_MS)
+				const fibers = yield* Effect.forEach([0, 1], (index) =>
+					Effect.forkChild(Effect.exit(batcher.enqueue(request(index)))),
+				)
+				yield* TestClock.adjust(`${WINDOW_MS} millis`)
+				const unanswered = Exit.fail(
+					new MissingBatchResultError({ message: "The batch request ended without an answer." }),
+				)
+				expect(yield* Fiber.joinAll(fibers)).toEqual([unanswered, unanswered])
+			}),
+		))
+
+	test("an interrupted send fails every query in that batch without interrupting its callers", () =>
+		run(
+			Effect.gen(function* () {
+				const batcher = yield* makeExecuteBatcher(() => Effect.interrupt, WINDOW_MS)
+				const fibers = yield* Effect.forEach([0, 1], (index) =>
+					Effect.forkChild(Effect.exit(batcher.enqueue(request(index)))),
+				)
+				yield* TestClock.adjust(`${WINDOW_MS} millis`)
+				const exits = yield* Fiber.joinAll(fibers)
+				expect(Arr.every(exits, Exit.isFailure)).toBe(true)
+				expect(Arr.some(exits, Exit.hasInterrupts)).toBe(false)
 			}),
 		))
 })

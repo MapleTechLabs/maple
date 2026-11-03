@@ -161,4 +161,65 @@ describe("track", () => {
 		const rows = await flushedRows("sess-7")
 		expect(rows).toHaveLength(0)
 	})
+
+	it("ignores $-prefixed names, which belong to SDK events, and warns once", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		startEventSink(CONFIG, "sess-reserved")
+		track("$pageview")
+		track(" $identify ")
+		track("signup")
+
+		const rows = await flushedRows("sess-reserved")
+		expect(rows.map((row) => row.message)).toEqual(["signup"])
+		expect(warn).toHaveBeenCalledTimes(1)
+		warn.mockRestore()
+	})
+
+	it("treats only objects as property bags", async () => {
+		startEventSink(CONFIG, "sess-bag")
+		track("from-string", "hello" as never)
+		track("from-array", ["a", "b"] as never)
+
+		const rows = await flushedRows("sess-bag")
+		expect(rows.map((row) => row.attributes)).toEqual([{}, {}])
+	})
+
+	it("drops a property whose getter throws and keeps the rest", async () => {
+		startEventSink(CONFIG, "sess-getter")
+		const props = {
+			ok: "yes",
+			get broken(): string {
+				throw new Error("getter")
+			},
+		}
+		track("getter", props)
+
+		const rows = await flushedRows("sess-getter")
+		expect(rows[0]?.attributes).toEqual({ ok: "yes" })
+	})
+
+	it("records nothing from a Proxy whose traps throw, and still records the event", async () => {
+		startEventSink(CONFIG, "sess-proxy")
+		const hostile = new Proxy(
+			{},
+			{
+				ownKeys: () => {
+					throw new Error("trap")
+				},
+			},
+		)
+		track("proxied", hostile)
+
+		const rows = await flushedRows("sess-proxy")
+		expect(rows).toHaveLength(1)
+		expect(rows[0]?.attributes).toEqual({})
+	})
+
+	it("never cuts the name through an emoji", async () => {
+		startEventSink(CONFIG, "sess-emoji")
+		track(`${"n".repeat(127)}😀`)
+
+		const rows = await flushedRows("sess-emoji")
+		expect(rows[0]?.message).toBe("n".repeat(127))
+	})
 })

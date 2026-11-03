@@ -1,9 +1,9 @@
 import { all, click, expect, expectAll, given, Mount, role, scene, text, type } from "foldkit/scene"
 import { describe, test } from "vitest"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Toast from "../../../ui/toast"
-import * as Tooltip from "../../../ui/tooltip"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Toast from "@maple/views/ui/toast"
+import * as Tooltip from "@maple/views/ui/tooltip"
 import { init, update } from "./update"
 import { view } from "./view"
 
@@ -15,13 +15,15 @@ const toastPortals = () => [
 ]
 
 describe("kit overlays gallery", () => {
-	test("without an item it lists every overlay and opens none", () => {
+	test("without an item it lists every overlay and opens the dialog", () => {
 		scene(
 			config,
 			given(init({ item: null }).model),
 			...toastPortals(),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectAll(all.role("link")).toHaveCount(18),
-			expect(role("dialog")).toBeAbsent(),
+			expect(role("link", { name: "dialog" })).toHaveAttr("aria-current", "page"),
+			expect(role("dialog", { name: "Rename dashboard" })).toExist(),
 		)
 	})
 
@@ -31,6 +33,7 @@ describe("kit overlays gallery", () => {
 			given(init({ item: "nope" }).model),
 			...toastPortals(),
 			expect(role("region", { name: "nope" })).toBeAbsent(),
+			expect(role("dialog")).toBeAbsent(),
 		)
 		scene(
 			config,

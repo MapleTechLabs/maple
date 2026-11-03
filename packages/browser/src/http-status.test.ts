@@ -1,17 +1,19 @@
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api"
 import {
-	BasicTracerProvider,
+	TracerProvider,
 	InMemorySpanExporter,
 	type ReadableSpan,
 	SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base"
+} from "@opentelemetry/sdk-trace"
 import { describe, expect, it } from "vitest"
 import { HttpStatusExporter } from "./http-status"
 
 const exported = new InMemorySpanExporter()
 const tracerWith = (captureStatus?: ConstructorParameters<typeof HttpStatusExporter>[1]) =>
-	new BasicTracerProvider({
-		spanProcessors: [new SimpleSpanProcessor(new HttpStatusExporter(exported, captureStatus))],
+	new TracerProvider({
+		spanProcessors: [
+			new SimpleSpanProcessor({ exporter: new HttpStatusExporter(exported, captureStatus) }),
+		],
 	}).getTracer("test")
 const tracer = tracerWith()
 

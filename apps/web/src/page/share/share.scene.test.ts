@@ -1,8 +1,8 @@
 import { OrgId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors } from "../../charts/theme-colors"
+import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import type { PageContext } from "../contract"
 import { FetchBatch, ResolveReloadClock, ResolveShare } from "./command"
 import { Message } from "./message"
@@ -10,11 +10,16 @@ import type { Model, SharedDashboard, ShareWidget } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("public"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("public"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
+const answer = (batchId: number) => Message.CompletedFetchBatch({ batchId, keys: {}, states: {} })
 
 const widget = (id: string): ShareWidget => ({
 	id,
@@ -38,15 +43,20 @@ const share = (count: number): SharedDashboard => ({
 })
 
 const resolved = (count: number): Model =>
-	[
-		Message.CompletedResolveClock({ nowMs: NOW }),
-		Message.CompletedResolveShare({ token: "tok", resolve: { _tag: "Ready", share: share(count) } }),
-	].reduce((model, message) => update(model, message).model, init({ token: "tok", search: {} }).model)
+	Arr.reduce(
+		[
+			Message.CompletedResolveClock({ nowMs: NOW }),
+			Message.CompletedResolveShare({ token: "tok", resolve: { _tag: "Ready", share: share(count) } }),
+		],
+		init({ token: "tok", search: {} }).model,
+		(model, message) => update(model, message).model,
+	)
 
 const measured = (count: number): Model =>
-	Array.from({ length: count }, (_, i) => i).reduce(
-		(model, i) => update(model, Message.MeasuredWidget({ widgetId: `w${i}`, maxDataPoints: 300 })).model,
+	Arr.reduce(
+		Array.from({ length: count }, (_, i) => i),
 		resolved(count),
+		(model, i) => update(model, Message.MeasuredWidget({ widgetId: `w${i}`, maxDataPoints: 300 })).model,
 	)
 
 describe("share", () => {
@@ -59,9 +69,46 @@ describe("share", () => {
 		const flushed = update(measured(6), Message.CompletedFlushFrame())
 		expect(names(flushed.commands)).toEqual([FetchBatch.name])
 		expect(flushed.model.queuedBatches).toHaveLength(1)
-		const answered = update(flushed.model, Message.CompletedFetchBatch({ keys: {}, states: {} }))
+		const answered = update(flushed.model, answer(flushed.model.sentBatchId))
 		expect(names(answered.commands)).toEqual([FetchBatch.name])
 		expect(answered.model.queuedBatches).toHaveLength(0)
+	})
+
+	test("a reload drops batches queued for the old window", () => {
+		const flushed = update(measured(6), Message.CompletedFlushFrame())
+		const reloaded = update(
+			flushed.model,
+			Message.CompletedResolveReloadClock({ nowMs: NOW + 5 * 60_000 }),
+		).model
+		const queuedKeys = Arr.flatMap(reloaded.queuedBatches, (batch) =>
+			Arr.map(batch.requests, (request) => request.key),
+		)
+		expect(Arr.every(queuedKeys, (key) => Str.includes("12:05:00")(key))).toBe(true)
+	})
+
+	test("the old window's answer after a reload does not send the new window's queued batch early", () => {
+		const flushed = update(measured(6), Message.CompletedFlushFrame()).model
+		const reloaded = update(flushed, Message.CompletedResolveReloadClock({ nowMs: NOW + 5 * 60_000 }))
+		expect(names(reloaded.commands)).toEqual([FetchBatch.name])
+		const stale = update(reloaded.model, answer(flushed.sentBatchId))
+		expect(names(stale.commands)).toEqual([])
+		expect(stale.model.queuedBatches).toHaveLength(1)
+		const current = update(stale.model, answer(reloaded.model.sentBatchId))
+		expect(names(current.commands)).toEqual([FetchBatch.name])
+		expect(names(update(current.model, answer(current.model.sentBatchId)).commands)).toEqual([])
+	})
+
+	test("a tile the answer left out settles as a failure, not loading", () => {
+		const flushed = update(measured(1), Message.CompletedFlushFrame()).model
+		const answered = update(
+			flushed,
+			Message.CompletedFetchBatch({
+				batchId: flushed.sentBatchId,
+				keys: { w0: flushed.requested.w0 ?? "" },
+				states: {},
+			}),
+		)
+		expect(answered.model.states.w0?._tag).toBe("Error")
 	})
 
 	test("a reload refetches every reported tile", () => {
@@ -69,7 +116,9 @@ describe("share", () => {
 		expect(names(update(settled, Message.CompletedFlushFrame()).commands)).toEqual([])
 		const clicked = update(settled, Message.ClickedReload())
 		expect(names(clicked.commands)).toEqual([ResolveReloadClock.name])
-		expect(names(update(clicked.model, Message.CompletedResolveReloadClock({ nowMs: NOW })).commands)).toContain(FetchBatch.name)
+		expect(
+			names(update(clicked.model, Message.CompletedResolveReloadClock({ nowMs: NOW })).commands),
+		).toContain(FetchBatch.name)
 	})
 
 	test("a reload or an auto-refresh tick moves a relative window to the current time", () => {
@@ -85,7 +134,15 @@ describe("share", () => {
 	test("an unknown link renders the unavailable card", () => {
 		scene(
 			{ update: (model, message) => update(model, message), view },
-			given(update(init({ token: "tok", search: {} }).model, Message.CompletedResolveShare({ token: "tok", resolve: { _tag: "Failed", error: { _tag: "NotFound" } } })).model),
+			given(
+				update(
+					init({ token: "tok", search: {} }).model,
+					Message.CompletedResolveShare({
+						token: "tok",
+						resolve: { _tag: "Failed", error: { _tag: "NotFound" } },
+					}),
+				).model,
+			),
 			Mount.resolve(ResolveThemeColors, Message.ResolvedThemeColors({ colors: {} })),
 			expectView(text("This link isn't available")).toExist(),
 		)

@@ -6,6 +6,7 @@ import {
 	type QueryEngineBatchOutcome,
 } from "@maple/query-engine"
 import { makeExecuteBatcher, type SendExecuteBatch } from "./execute-batcher"
+import { Array as Arr } from "effect"
 
 // The batcher never inspects the payload, so the cheapest valid query will do.
 const request = () =>
@@ -34,7 +35,9 @@ const recordingSend = (
 
 describe("makeExecuteBatcher", () => {
 	it("coalesces concurrent queries into a single request", async () => {
-		const { send, batches } = recordingSend((requests) => requests.map((_, index) => countOutcome(index)))
+		const { send, batches } = recordingSend((requests) =>
+			Arr.map(requests, (_, index) => countOutcome(index)),
+		)
 		const batcher = makeExecuteBatcher(send, 1)
 
 		const responses = await Promise.all([
@@ -44,14 +47,14 @@ describe("makeExecuteBatcher", () => {
 		])
 
 		expect(batches).toEqual([3])
-		expect(responses.map((r) => (r.result.kind === "count" ? r.result.data.total : -1))).toEqual([
+		expect(Arr.map(responses, (r) => (r.result.kind === "count" ? r.result.data.total : -1))).toEqual([
 			0, 1, 2,
 		])
 	})
 
 	it("settles each caller from its own positional outcome", async () => {
 		const { send } = recordingSend((requests) =>
-			requests.map((_, index) =>
+			Arr.map(requests, (_, index) =>
 				index === 1
 					? ({
 							outcome: "failure",
@@ -69,7 +72,7 @@ describe("makeExecuteBatcher", () => {
 		])
 
 		// One failing query must not take its siblings down with it.
-		expect(settled.map((s) => s.status)).toEqual(["fulfilled", "rejected", "fulfilled"])
+		expect(Arr.map(settled, (s) => s.status)).toEqual(["fulfilled", "rejected", "fulfilled"])
 		const rejected = settled[1]
 		if (rejected?.status !== "rejected") throw new Error("expected a rejection")
 		// The server's complete public error body survives the successful batch response.
@@ -90,7 +93,7 @@ describe("makeExecuteBatcher", () => {
 
 		const settled = await Promise.allSettled([batcher.enqueue(request()), batcher.enqueue(request())])
 
-		expect(settled.map((s) => s.status)).toEqual(["rejected", "rejected"])
+		expect(Arr.map(settled, (s) => s.status)).toEqual(["rejected", "rejected"])
 		for (const result of settled) {
 			if (result.status !== "rejected") throw new Error("expected a rejection")
 			expect(result.reason).toBe(cause)
@@ -98,7 +101,7 @@ describe("makeExecuteBatcher", () => {
 	})
 
 	it("splits past the batch cap instead of dropping queries", async () => {
-		const { send, batches } = recordingSend((requests) => requests.map(() => countOutcome(1)))
+		const { send, batches } = recordingSend((requests) => Arr.map(requests, () => countOutcome(1)))
 		const batcher = makeExecuteBatcher(send, 1)
 		const overflow = 3
 
@@ -111,7 +114,7 @@ describe("makeExecuteBatcher", () => {
 	})
 
 	it("does not hold a query for a batch that already went out", async () => {
-		const { send, batches } = recordingSend((requests) => requests.map(() => countOutcome(1)))
+		const { send, batches } = recordingSend((requests) => Arr.map(requests, () => countOutcome(1)))
 		const batcher = makeExecuteBatcher(send, 1)
 
 		await batcher.enqueue(request())

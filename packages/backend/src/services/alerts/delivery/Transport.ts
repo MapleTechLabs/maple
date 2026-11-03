@@ -6,7 +6,7 @@
  * time the fetch, check `!response.ok`, read the body, hand-concatenate
  * `"<Provider> delivery failed with <status>: <detail>"`. That sentence was
  * written out five separate times, and no arm had a span, so the outbound calls
- * to PagerDuty/Discord/Hazel were invisible.
+ * to PagerDuty/Discord were invisible.
  *
  * Here each provider declares only what is genuinely provider-specific, and
  * `runHttpTransport` owns everything shared: the spans, the timeout, the SSRF
@@ -18,8 +18,14 @@
  * cover before and are cheap now.
  */
 import type { ChatBlock } from "@maple/chat-platform"
-import type { AlertDeliveryFailure, AlertDestinationType, ChatWorkspaceId, OrgId } from "@maple/domain/http"
-import type { Effect, Result } from "effect"
+import type {
+	AlertDeliveryFailure,
+	AlertDestinationId,
+	AlertDestinationType,
+	ChatWorkspaceId,
+	OrgId,
+} from "@maple/domain/http"
+import type { Effect, Result, Schema } from "effect"
 import type { DestinationSecretConfig } from "../AlertDestinationHydration"
 import type { DispatchContext, DispatchResult } from "./context"
 
@@ -29,6 +35,7 @@ export interface RenderInput<Config> {
 	readonly config: Config
 	readonly context: DispatchContext
 	readonly linkUrl: string
+	/** The alert rule's page. No button links it; PagerDuty's `custom_details` carry it. */
 	readonly chatUrl: string
 	/**
 	 * The canonical wire payload. `webhook` ships it verbatim and HMAC-signs it,
@@ -60,7 +67,7 @@ export interface HttpRequestSpec {
 	 */
 	readonly guarded: boolean
 	/**
-	 * `true` when the URL path itself carries a credential — Discord and Hazel
+	 * `true` when the URL path itself carries a credential: Discord
 	 * webhook URLs embed their delivery token in the path. The runner then
 	 * annotates `server.address` only, never `url.path`.
 	 *
@@ -94,7 +101,7 @@ export interface HttpTransport<Config> {
 	readonly followUps?: (input: RenderInput<Config>) => ReadonlyArray<HttpRequestSpec>
 	/**
 	 * PURE. Give a non-2xx a better message than the generic one. Return null to
-	 * fall through to the runner's default. Only `hazel-oauth` implements this.
+	 * fall through to the runner's default. Only `google-chat` implements this.
 	 */
 	readonly describeStatus?: (status: number) => string | null
 	/**
@@ -143,6 +150,50 @@ export interface ChatAlertPosted {
 	readonly messageId: string
 }
 
+/** The Linear issue an alert thread keeps (`alert_linear_issues`). */
+export interface LinearThread {
+	readonly orgId: OrgId
+	readonly destinationId: AlertDestinationId
+	readonly threadKey: string
+	readonly linearTeamId: string
+	readonly linearIssueId: string
+	readonly linearIdentifier: string
+	readonly linearUrl: string
+	/** The incident behind the thread's latest trigger; error-issue notifications carry none. */
+	readonly incidentId: string | null
+}
+
+export interface LinearOperation {
+	readonly name: string
+	readonly document: string
+	readonly variables: Record<string, unknown>
+}
+
+/** The org's Linear workspace, and where each alert thread's issue is remembered. */
+export interface LinearDeliveryPort {
+	/**
+	 * Run one GraphQL operation with the org's token and decode `data`. Null only when an option
+	 * allows it: an entity that is gone or hidden from Maple, or a create whose id already exists.
+	 */
+	readonly request: <A>(
+		orgId: OrgId,
+		operation: LinearOperation,
+		schema: Schema.Decoder<A>,
+		options?: {
+			readonly missingIsNull?: boolean
+			/** Also null for FORBIDDEN: only reads, where a hidden entity is as good as gone. */
+			readonly hiddenIsNull?: boolean
+			readonly duplicateIsSuccess?: boolean
+		},
+	) => Effect.Effect<A | null, AlertDeliveryFailure>
+	readonly findThread: (
+		orgId: OrgId,
+		destinationId: AlertDestinationId,
+		threadKey: string,
+	) => Effect.Effect<LinearThread | null, AlertDeliveryFailure>
+	readonly saveThread: (thread: LinearThread) => Effect.Effect<void, AlertDeliveryFailure>
+}
+
 export interface EffectTransportDeps {
 	readonly sendEmail: (
 		to: string,
@@ -154,6 +205,7 @@ export interface EffectTransportDeps {
 	 * destination can only ever reach a workspace its own org linked.
 	 */
 	readonly postChatAlert: (post: ChatAlertPost) => Effect.Effect<ChatAlertPosted, AlertDeliveryFailure>
+	readonly linear: LinearDeliveryPort
 }
 
 /** Narrows the secret-config union to the member a given destination type carries. */

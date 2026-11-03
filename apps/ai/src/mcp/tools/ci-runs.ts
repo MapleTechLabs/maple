@@ -1,8 +1,9 @@
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { CiRunsOutput } from "@maple/domain/mcp-outputs"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import type { McpToolRegistrar } from "./types"
+import { isMissingCiTables } from "@maple/backend/services/warehouse/missing-table"
+import { McpUnavailableError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
@@ -29,48 +30,55 @@ const formatRunDuration = (ms: number) => {
 const quantile = (sorted: ReadonlyArray<number>, q: number) =>
 	sorted.length === 0 ? 0 : (sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0)
 
-const summarize = (runs: ReadonlyArray<CH.CiRunsOutput>): Output["pipelines"] => {
-	const groups = new Map<string, Array<CH.CiRunsOutput>>()
+interface SummarizedRun {
+	readonly repository: string
+	readonly pipeline: string
+	readonly result: string
+	readonly revision: string
+	readonly durationMs: number
+	readonly startedAt: DateTime.Utc
+}
+
+const summarize = (runs: ReadonlyArray<SummarizedRun>): Output["pipelines"] => {
+	const groups = new Map<string, Array<SummarizedRun>>()
 	for (const run of runs) {
 		const key = `${run.repository}\u0000${run.pipeline}`
 		groups.set(key, [...(groups.get(key) ?? []), run])
 	}
-	return [...groups.values()]
-		.flatMap((group) => {
-			// Rows arrive newest first, so the head of each group is its latest run.
-			const latest = group[0]
-			if (latest === undefined) return []
-			const durations = group.map((run) => run.durationMs).sort((a, b) => a - b)
-			const streak = CH.ciRedStreak(group)
-			const red =
-				streak === undefined
-					? undefined
-					: {
-							failedRuns: streak.failedRuns,
-							since: DateTime.formatIso(streak.firstFailed.startedAt),
-							firstFailedRevision: streak.firstFailed.revision,
-							...(streak.lastGreen === undefined
-								? undefined
-								: {
-										lastGreenRevision: streak.lastGreen.revision,
-										lastGreenAt: DateTime.formatIso(streak.lastGreen.startedAt),
-									}),
-						}
-			return [
-				{
-					pipeline: latest.pipeline,
-					repository: latest.repository,
-					runs: group.length,
-					failed: group.filter((run) => CH.isCiFailedResult(run.result)).length,
-					p50DurationMs: quantile(durations, 0.5),
-					p95DurationMs: quantile(durations, 0.95),
-					lastResult: latest.result,
-					lastStartedAt: DateTime.formatIso(latest.startedAt),
-					...(red === undefined ? undefined : { red }),
-				},
-			]
-		})
-		.sort((a, b) => b.failed - a.failed || b.runs - a.runs)
+	return Arr.flatMap([...groups.values()], (group) => {
+		// Rows arrive newest first, so the head of each group is its latest run.
+		const latest = group[0]
+		if (latest === undefined) return []
+		const durations = Arr.map(group, (run) => run.durationMs).sort((a, b) => a - b)
+		const streak = CH.ciRedStreak(group)
+		const red =
+			streak === undefined
+				? undefined
+				: {
+						failedRuns: streak.failedRuns,
+						since: DateTime.formatIso(streak.firstFailed.startedAt),
+						firstFailedRevision: streak.firstFailed.revision,
+						...(streak.lastGreen === undefined
+							? undefined
+							: {
+									lastGreenRevision: streak.lastGreen.revision,
+									lastGreenAt: DateTime.formatIso(streak.lastGreen.startedAt),
+								}),
+					}
+		return [
+			{
+				pipeline: latest.pipeline,
+				repository: latest.repository,
+				runs: group.length,
+				failed: Arr.filter(group, (run) => CH.isCiFailedResult(run.result)).length,
+				p50DurationMs: quantile(durations, 0.5),
+				p95DurationMs: quantile(durations, 0.95),
+				lastResult: latest.result,
+				lastStartedAt: DateTime.formatIso(latest.startedAt),
+				...(red === undefined ? undefined : { red }),
+			},
+		]
+	}).sort((a, b) => b.failed - a.failed || b.runs - a.runs)
 }
 
 export function registerCiRunsTool(server: McpToolRegistrar) {
@@ -89,6 +97,8 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 		}),
 		output: CiRunsOutput,
 		hints: { readOnly: true },
+		// Maple's own agents only: the org's CI history is not for third-party MCP clients.
+		audience: "agent",
 		phrases: ["Checking CI runs", "Reading workflow runs"],
 		handler: Effect.fn("McpTool.ciRuns")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
@@ -113,12 +123,13 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 						),
 						{ profile: "list", context: "ciRuns" },
 					)
-					const matched = runs.filter(
+					const matched = Arr.filter(
+						runs,
 						(run) => params.result === undefined || run.result === params.result,
 					)
 					const listed = matched.slice(0, params.limit)
-					const failed = listed.filter((run) => CH.isCiFailedResult(run.result))
-					const failedIds = failed.map((run) => run.traceId)
+					const failed = Arr.filter(listed, (run) => CH.isCiFailedResult(run.result))
+					const failedIds = Arr.map(failed, (run) => run.traceId)
 					// Jobs can be queued after the window ends: read them over the failed runs' own span.
 					const span = CH.ciRunsSpanMs(failed)
 					const failedJobs =
@@ -146,7 +157,19 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 						failedJobsCap: failedIds.length * FAILED_JOBS_PER_RUN,
 					}
 				}),
-			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
+			).pipe(
+				// A self-hosted ClickHouse gets the CI tables only once an admin applies the schema.
+				Effect.catchIf(isMissingCiTables, () =>
+					Effect.fail(
+						new McpUnavailableError({
+							message:
+								"This org's warehouse has no CI tables yet. On a self-hosted ClickHouse, apply the schema from its ClickHouse settings page.",
+							capability: "ci_runs",
+						}),
+					),
+				),
+				Effect.catchTags(warehouseToMcpHandlers(TOOL)),
+			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", runs.length)
 
 			return {
@@ -158,27 +181,28 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 					...(params.result === undefined ? undefined : { result: params.result }),
 				},
 				pipelines: summarize(runs),
-				runs: listed.map((run) => ({
+				runs: Arr.map(listed, (run) => ({
 					pipeline: run.pipeline,
 					repository: run.repository,
 					branch: run.branch,
 					revision: run.revision,
 					runId: run.runId,
-					attempt: run.attempt,
+					attempt: Math.max(run.attempt, 1),
 					trigger: run.trigger,
 					result: run.result,
 					durationMs: run.durationMs,
 					startedAt: DateTime.formatIso(run.startedAt),
 					url: run.url,
 					traceId: run.traceId,
-					failedJobs: failedJobs
-						.filter((job) => job.traceId === run.traceId)
-						.map((job) => ({
+					failedJobs: Arr.map(
+						Arr.filter(failedJobs, (job) => job.traceId === run.traceId),
+						(job) => ({
 							job: job.job,
 							result: job.result,
 							reason: job.reason,
 							url: job.url,
-						})),
+						}),
+					),
 				})),
 				runsRead: runs.length,
 				runsMatched: matched.length,
@@ -211,12 +235,12 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 					blocks: [],
 				}
 			}
-			const redPipelines = output.pipelines.flatMap((p) =>
+			const redPipelines = Arr.flatMap(output.pipelines, (p) =>
 				p.red === undefined ? [] : [{ ...p, red: p.red }],
 			)
 			const firstFailed = output.runs.find((run) => CH.isCiFailedResult(run.result))
 			const next: Array<NextCall> = [
-				...redPipelines.flatMap((p) =>
+				...Arr.flatMap(redPipelines, (p) =>
 					p.red.lastGreenRevision === undefined ||
 					p.red.lastGreenRevision === p.red.firstFailedRevision
 						? []
@@ -247,12 +271,13 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 						: [
 								doc.heading("Red workflows"),
 								doc.list(
-									redPipelines.map(
+									Arr.map(
+										redPipelines,
 										(p) =>
-											`${p.repository} ${p.pipeline}: ${p.red.failedRuns} failed run${p.red.failedRuns === 1 ? "" : "s"} in a row since ${p.red.since}, first on ${p.red.firstFailedRevision.slice(0, 12)}. ` +
+											`${p.repository} ${p.pipeline}: ${p.red.failedRuns} failed run${p.red.failedRuns === 1 ? "" : "s"} in a row since ${p.red.since}, first on ${Str.slice(0, 12)(p.red.firstFailedRevision)}. ` +
 											(p.red.lastGreenRevision === undefined
 												? "No passing run in this window; widen it to find the last green commit."
-												: `Last green: ${p.red.lastGreenRevision.slice(0, 12)} at ${p.red.lastGreenAt}.`),
+												: `Last green: ${Str.slice(0, 12)(p.red.lastGreenRevision)} at ${p.red.lastGreenAt}.`),
 									),
 								),
 							]),
@@ -266,7 +291,7 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 							]),
 					doc.table(
 						["Repository", "Workflow", "Runs", "Failed", "p50", "p95", "Last"],
-						output.pipelines.map((p) => [
+						Arr.map(output.pipelines, (p) => [
 							p.repository,
 							p.pipeline,
 							String(p.runs),
@@ -310,26 +335,27 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 										"Failed jobs",
 										"Trace",
 									],
-									output.runs.map((run) => [
+									Arr.map(output.runs, (run) => [
 										run.startedAt,
 										run.repository,
 										run.pipeline,
 										run.branch,
 										run.revision,
-										run.attempt !== "" && run.attempt !== "1"
+										run.attempt > 1
 											? `${run.result} (attempt ${run.attempt})`
 											: run.result,
 										formatRunDuration(run.durationMs),
 										run.failedJobs.length === 0
 											? "—"
 											: truncate(
-													run.failedJobs
-														.map((job) =>
+													Arr.join(
+														Arr.map(run.failedJobs, (job) =>
 															job.reason === ""
 																? job.job
 																: `${job.job}: ${job.reason}`,
-														)
-														.join("; "),
+														),
+														"; ",
+													),
 													240,
 												),
 										run.traceId,

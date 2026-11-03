@@ -49,7 +49,7 @@ const makeRenderer = async (assets: AssetFetcher): Promise<Renderer> => {
 	// the worse failure.
 	for (const font of FONTS) {
 		const data = await loadFont(assets, font.path)
-		if (data !== undefined) engine.registerFont({ name: font.name, data })
+		if (data !== undefined) await engine.registerFont({ name: font.name, data })
 	}
 
 	return engine

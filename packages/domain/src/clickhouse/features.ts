@@ -7,7 +7,7 @@
  * portable schema, while a later server upgrade can pick up newer indexes on
  * the next schema Apply.
  */
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 
 export const ClickHouseSchemaFeatureId = Schema.String.pipe(
 	Schema.brand("@maple/domain/ClickHouseSchemaFeatureId"),
@@ -54,7 +54,7 @@ export const clickHouseSchemaFeatures: ReadonlyArray<ClickHouseSchemaFeature> = 
 ] as const
 
 const parseVersion = (version: string): readonly [number, number, number] => {
-	const match = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(version.trim())
+	const match = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(Str.trim(version))
 	return [Number(match?.[1] ?? 0), Number(match?.[2] ?? 0), Number(match?.[3] ?? 0)]
 }
 

@@ -3,12 +3,14 @@ import {
 	PrReviewCostNote,
 	PrReviewFinding,
 	PrReviewHotFile,
+	PrReviewLinkedIssue,
 	PrReviewOperationTraffic,
 	PrReviewPostMerge,
 	PrReviewTelemetry,
+	PrReviewTelemetryChange,
 	PrReviewTelemetryReference,
 } from "@maple/domain/http"
-import { DateTime, Duration } from "effect"
+import { DateTime, Duration, Array as Arr, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	comparedOperations,
@@ -90,7 +92,7 @@ describe("telemetryFindings", () => {
 	it("files an alert break as critical and a dashboard break as a warning", () => {
 		const findings = telemetryFindings(telemetry())
 		assert.deepStrictEqual(
-			findings.map((item) => [item.checkId, item.severity, item.title]),
+			Arr.map(findings, (item) => [item.checkId, item.severity, item.title]),
 			[
 				[
 					"TEL-01",
@@ -114,7 +116,7 @@ describe("telemetryFindings", () => {
 			}),
 		)
 		assert.deepStrictEqual(
-			findings.map((item) => [item.checkId, item.severity, item.line]),
+			Arr.map(findings, (item) => [item.checkId, item.severity, item.line]),
 			[
 				["TEL-02", "warn", 1],
 				["TEL-03", "warn", 3],
@@ -127,7 +129,7 @@ describe("telemetryFindings", () => {
 			{ name: "payment.provider", path: "src/other.ts", line: 4 },
 		])
 		assert.deepStrictEqual(
-			telemetryFindings(proved).map((item) => item.title.split(",")[0]),
+			Arr.map(telemetryFindings(proved), (item) => Str.split(",")(item.title)[0]),
 			["Removes `Payments.charge`"],
 		)
 		assert.deepStrictEqual(proved.contractBreaks[0]?.dismissed, { path: "src/other.ts", line: 4 })
@@ -160,15 +162,18 @@ describe("weighByTraffic", () => {
 
 describe("lineStillEmits", () => {
 	it("accepts only a telemetry call of the same kind, never a comment, log or plain string", () => {
-		const content = [
-			"a",
-			'span.setAttribute("payment.provider", p)',
-			'// "payment.provider"',
-			'console.log("payment.provider")',
-			'const note = "payment.provider"',
-			"Effect.annotateCurrentSpan({",
-			'	"payment.provider": p,',
-		].join("\n")
+		const content = Arr.join(
+			[
+				"a",
+				'span.setAttribute("payment.provider", p)',
+				'// "payment.provider"',
+				'console.log("payment.provider")',
+				'const note = "payment.provider"',
+				"Effect.annotateCurrentSpan({",
+				'	"payment.provider": p,',
+			],
+			"\n",
+		)
 		assert.isTrue(lineStillEmits(content, 2, "payment.provider", "attribute"))
 		assert.isFalse(lineStillEmits(content, 2, "payment.provider", "span"))
 		assert.isFalse(lineStillEmits(content, 3, "payment.provider", "attribute"))
@@ -190,7 +195,7 @@ describe("fixedContractBreaks", () => {
 			{ title: "Removes `gone.key`, which alert “x” reads", category: "observability" },
 		]
 		assert.deepStrictEqual(
-			fixedContractBreaks(open, telemetry()).map((item) => item.title),
+			Arr.map(fixedContractBreaks(open, telemetry()), (item) => item.title),
 			["Removes `gone.key`, which alert “x” reads"],
 		)
 		assert.deepStrictEqual(fixedContractBreaks(open, undefined), [])
@@ -199,7 +204,7 @@ describe("fixedContractBreaks", () => {
 
 describe("rendering", () => {
 	it("states the breaks and traffic in the kickoff", () => {
-		const text = renderTelemetryKickoff(telemetry()).join("\n")
+		const text = Arr.join(renderTelemetryKickoff(telemetry()), "\n")
 		assert.include(text, "`payment.provider` (attribute, ~1.0k/day) removed at src/pay.ts:12")
 		assert.include(text, "telemetryDismissals")
 		assert.include(text, "src/checkout.ts: ~41k calls/day")
@@ -207,14 +212,83 @@ describe("rendering", () => {
 
 	it("says the check blocks only when the repository asked", () => {
 		assert.include(
-			renderTelemetryMarkdown(telemetry(), { blocking: true }).join("\n"),
+			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: true }), "\n"),
 			"This check fails",
 		)
 		assert.notInclude(
-			renderTelemetryMarkdown(telemetry(), { blocking: false }).join("\n"),
+			Arr.join(renderTelemetryMarkdown(telemetry(), { blocking: false }), "\n"),
 			"This check fails",
 		)
 		assert.deepStrictEqual(renderTelemetryMarkdown(undefined, { blocking: false }), [])
+	})
+
+	const issue = (id: string, title: string, occurrences: number) =>
+		new PrReviewLinkedIssue({
+			issueId: id,
+			fingerprintHash: `fp-${id}`,
+			title,
+			service: "alerting",
+			path: "src/scheduled.ts",
+			topFrame: "src/scheduled.ts:10",
+			occurrences,
+			lastSeenAt: 0,
+		})
+
+	// Separate fingerprints of one error read as the same row repeated.
+	it("folds open errors with the same title, service and file into one summed row", () => {
+		const text = Arr.join(
+			renderTelemetryMarkdown(
+				telemetry({
+					contractBreaks: [],
+					linkedIssues: [
+						issue("a", "ForbiddenError", 4_600),
+						issue("b", "ForbiddenError", 4_600),
+						issue("c", "ForbiddenError", 4_600),
+						issue("d", "WarehouseAuthError", 1_500),
+					],
+				}),
+				{ blocking: false },
+			),
+			"\n",
+		)
+		assert.include(text, "<details><summary>Open errors in the changed files (2)</summary>")
+		assert.include(text, "| ForbiddenError (3 issues) | alerting | 14k | `src/scheduled.ts` |")
+		assert.include(text, "| WarehouseAuthError | alerting | 1.5k | `src/scheduled.ts` |")
+		assert.notInclude(text, "<details open>")
+	})
+
+	// The comment keeps what needs action; traffic, the telemetry inventory and log costs are the check's.
+	it("keeps only breaks and open errors in the brief comment section", () => {
+		const full = telemetry({
+			linkedIssues: [issue("a", "ForbiddenError", 10)],
+			added: [
+				new PrReviewTelemetryChange({ kind: "span", name: "Cache.read", path: "src/c.ts", line: 4 }),
+			],
+			costNotes: [
+				new PrReviewCostNote({
+					path: "src/c.ts",
+					line: 9,
+					kind: "log",
+					gbPerMonth: 2,
+					note: "about 2 GB a month",
+				}),
+			],
+		})
+		const brief = Arr.join(renderTelemetryMarkdown(full, { blocking: false, brief: true }), "\n")
+		assert.include(brief, "`payment.provider` (attribute")
+		assert.include(brief, "Open errors in the changed files (1)")
+		assert.notInclude(brief, "Production traffic")
+		assert.notInclude(brief, "Telemetry this change adds and removes")
+		assert.notInclude(brief, "Ingest cost of new log lines")
+		const check = Arr.join(renderTelemetryMarkdown(full, { blocking: false }), "\n")
+		assert.include(check, "Production traffic")
+		assert.include(check, "Telemetry this change adds and removes (1)")
+		assert.include(check, "Ingest cost of new log lines")
+		// Nothing that needs action: the comment has no section at all.
+		assert.deepStrictEqual(
+			renderTelemetryMarkdown(telemetry({ contractBreaks: [] }), { blocking: false, brief: true }),
+			[],
+		)
 	})
 })
 
@@ -289,7 +363,7 @@ describe("post-merge", () => {
 
 	it("compares the busiest operations and finds names that stopped arriving", () => {
 		assert.deepStrictEqual(
-			comparedOperations(telemetry()).map((operation) => operation.spanName),
+			Arr.map(comparedOperations(telemetry()), (operation) => operation.spanName),
 			["POST /checkout"],
 		)
 		assert.deepStrictEqual(missingAfterDeploy(telemetry(), new Set(["http.route"])), ["payment.provider"])

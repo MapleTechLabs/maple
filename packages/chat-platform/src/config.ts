@@ -1,4 +1,4 @@
-import { Array as Arr, Config, Option, Redacted } from "effect"
+import { Array as Arr, Config, Option, Redacted, String as Str } from "effect"
 import { connectors } from "./connectors/index"
 import type { ConnectorConfig, ConnectorConfigKey } from "./ingress"
 import type { ChatConnectorConfig } from "./install"
@@ -20,19 +20,22 @@ import type { ChatConnectorConfig } from "./install"
 
 /** Every install config key the registered connectors declare, de-duplicated by name. */
 export const chatConnectorConfigKeys: ReadonlyArray<ConnectorConfigKey> = Arr.dedupeWith(
-	connectors.flatMap((connector) => connector.install.requiredConfig),
+	Arr.flatMap(connectors, (connector) => connector.install.requiredConfig),
 	(left, right) => left.name === right.name,
 )
 
-export const chatConnectorConfigNames: ReadonlyArray<string> = chatConnectorConfigKeys.map((key) => key.name)
+export const chatConnectorConfigNames: ReadonlyArray<string> = Arr.map(
+	chatConnectorConfigKeys,
+	(key) => key.name,
+)
 
 export const chatConnectorConfig: Config.Config<ChatConnectorConfig> = Config.all(
-	chatConnectorConfigNames.map((name) =>
+	Arr.map(chatConnectorConfigNames, (name) =>
 		Config.option(Config.String(name)).pipe(
 			Config.map((value) =>
 				Option.flatMap(value, (raw) =>
-					raw.trim().length > 0
-						? Option.some([name, Redacted.make(raw.trim())] as const)
+					Str.trim(raw).length > 0
+						? Option.some([name, Redacted.make(Str.trim(raw))] as const)
 						: Option.none(),
 				),
 			),
@@ -42,7 +45,7 @@ export const chatConnectorConfig: Config.Config<ChatConnectorConfig> = Config.al
 
 /** Every OUTBOUND config key the registered connectors declare, de-duplicated by name. */
 export const chatConnectorOutboundConfigKeys: ReadonlyArray<ConnectorConfigKey> = Arr.dedupeWith(
-	connectors.flatMap((connector) => connector.outbound.requiredConfig),
+	Arr.flatMap(connectors, (connector) => connector.outbound.requiredConfig),
 	(left, right) => left.name === right.name,
 )
 
@@ -53,11 +56,13 @@ export const chatConnectorOutboundConfigKeys: ReadonlyArray<ConnectorConfigKey> 
  * never leaves the host that hands it to a connector.
  */
 export const chatConnectorOutboundConfig: Config.Config<ConnectorConfig> = Config.all(
-	chatConnectorOutboundConfigKeys.map((key) =>
+	Arr.map(chatConnectorOutboundConfigKeys, (key) =>
 		Config.option(Config.String(key.name)).pipe(
 			Config.map((value) =>
 				Option.flatMap(value, (raw) =>
-					raw.trim().length > 0 ? Option.some([key.name, raw.trim()] as const) : Option.none(),
+					Str.trim(raw).length > 0
+						? Option.some([key.name, Str.trim(raw)] as const)
+						: Option.none(),
 				),
 			),
 		),

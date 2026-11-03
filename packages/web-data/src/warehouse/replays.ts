@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema, type Types } from "effect"
+import { Clock, Effect, Schema, type Types, Array as Arr, String as Str } from "effect"
 import { ReplaysFacetsRequest, SessionId, SessionTraceSummariesRequest, TraceId } from "@maple/domain/http"
 import { SessionTag } from "@maple/domain/query-engine"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -6,10 +6,11 @@ import { MapleApiV2Http } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery, runWarehouseQueryV2 } from "./effect-utils"
 
 import {
+	MAX_TRANSCRIPT_PAGE_SIZE,
 	V2SessionReplayNotFound,
 	type V2SessionReplaySearchParams,
 	type V2SessionReplayWindowQuery,
-	type V2SessionReplayCollectionQuery,
+	type V2SessionTranscriptQuery,
 	type V2SessionReplaysForTraceParams,
 } from "@maple/domain/http/v2"
 import { collectV2Pages } from "../lib/v2-pagination"
@@ -29,6 +30,8 @@ const ListReplaysInput = Schema.Struct({
 	userSearch: Schema.optional(Schema.String),
 	/** Identified group (company / team) name. */
 	groupName: Schema.optional(Schema.String),
+	/** Identified group id; unlike the name, unique. */
+	groupId: Schema.optional(Schema.String),
 	/** Every session from one browser — the marketing-visit → signup join. */
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
@@ -61,7 +64,8 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 	data: ListReplaysInput
 }) {
 	const input = yield* decodeInput(ListReplaysInput, data ?? {}, "listReplays")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQueryV2("listReplays", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Http
@@ -77,6 +81,7 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 			if (input.userId !== undefined) payload.user_id = input.userId
 			if (input.userSearch !== undefined) payload.user_search = input.userSearch
 			if (input.groupName !== undefined) payload.group_name = input.groupName
+			if (input.groupId !== undefined) payload.group_id = input.groupId
 			if (input.visitorId !== undefined) payload.visitor_id = input.visitorId
 			if (input.hasErrors !== undefined) payload.has_errors = input.hasErrors
 			if (input.search !== undefined) payload.search = input.search
@@ -91,7 +96,7 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 		}),
 	)
 	return {
-		data: result.data.map(replayListItemFromV2),
+		data: Arr.map(result.data, replayListItemFromV2),
 		hasMore: result.has_more,
 		nextCursor: result.next_cursor,
 	}
@@ -109,6 +114,7 @@ const ReplaysFacetsInput = Schema.Struct({
 	userId: Schema.optional(Schema.String),
 	userSearch: Schema.optional(Schema.String),
 	groupName: Schema.optional(Schema.String),
+	groupId: Schema.optional(Schema.String),
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
@@ -123,7 +129,8 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 	data: ReplaysFacetsInput
 }) {
 	const input = yield* decodeInput(ReplaysFacetsInput, data ?? {}, "replaysFacets")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const result = yield* runWarehouseQuery("replaysFacets", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -138,6 +145,7 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 					userId: input.userId,
 					userSearch: input.userSearch,
 					groupName: input.groupName,
+					groupId: input.groupId,
 					visitorId: input.visitorId,
 					hasErrors: input.hasErrors,
 					search: input.search,
@@ -208,7 +216,7 @@ export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 // All replay resource reads use v2; payload reads remain manifest-first and bounded.
 
 /** Warehouse `YYYY-MM-DD HH:mm:ss` → the ISO-8601 the v2 query params take. */
-const toIsoWindow = (value: string) => new Date(`${value.replace(" ", "T")}Z`).toISOString()
+const toIsoWindow = (value: string) => new Date(`${Str.replace(" ", "T")(value)}Z`).toISOString()
 
 const replayWindow = (input: { windowStart?: string; windowEnd?: string }) => {
 	const query: Types.Mutable<V2SessionReplayWindowQuery> = {}
@@ -302,16 +310,17 @@ export const getSessionTranscript = Effect.fn("SessionReplays.sessionTranscript"
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Http
 			return yield* collectV2Pages((cursor) => {
-				const query: Types.Mutable<typeof V2SessionReplayCollectionQuery.Type> = {
+				// Pages are sequential round trips; the widest page keeps most sessions to one.
+				const query: Types.Mutable<typeof V2SessionTranscriptQuery.Type> = {
 					...replayWindow(input),
-					limit: 100,
+					limit: MAX_TRANSCRIPT_PAGE_SIZE,
 				}
 				if (cursor !== undefined) query.cursor = cursor
 				return client.sessionReplays.transcript({ params: { id: input.sessionId }, query })
 			}).pipe(Effect.catchIf(Schema.is(V2SessionReplayNotFound.schema), () => Effect.succeed([])))
 		}),
 	)
-	return { data: events.map(replayEventFromV2) }
+	return { data: Arr.map(events, replayEventFromV2) }
 })
 
 // Reverse correlation: replays observing a trace
@@ -329,7 +338,8 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 	data: ReplaysForTraceInput
 }) {
 	const input = yield* decodeInput(ReplaysForTraceInput, data ?? {}, "replaysForTrace")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultTimeRange(now)
 	const replays = yield* runWarehouseQueryV2("replaysForTrace", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Http
@@ -346,7 +356,7 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 		}),
 	)
 	return {
-		data: replays.map((replay) => ({
+		data: Arr.map(replays, (replay) => ({
 			sessionId: replay.id,
 			startTime: replay.start_time,
 			durationMs: replay.duration_ms,

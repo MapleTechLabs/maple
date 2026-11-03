@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import {
 	buildSessionChecks,
@@ -133,21 +133,23 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						skipped: counts.skipped,
 					},
 					// Only what needs attention carries its sentence; a passed check is its name.
-					checks: checks.checks
-						.filter((check) => check.status !== "passed")
-						.map((check) => ({
+					checks: Arr.map(
+						Arr.filter(checks.checks, (check) => check.status !== "passed"),
+						(check) => ({
 							id: check.id,
 							name: check.name,
 							status: check.status,
 							headline: check.headline,
 							...(check.action === undefined ? undefined : { action: check.action }),
 							...(check.fixArea === undefined ? undefined : { fixArea: check.fixArea }),
-						})),
-					passedChecks: checks.checks
-						.filter((check) => check.status === "passed")
-						.map((check) => check.name),
+						}),
+					),
+					passedChecks: Arr.map(
+						Arr.filter(checks.checks, (check) => check.status === "passed"),
+						(check) => check.name,
+					),
 					findingCount: report.findings.length,
-					findings: report.findings.slice(0, MAX_FINDINGS).map((finding) => ({
+					findings: Arr.map(report.findings.slice(0, MAX_FINDINGS), (finding) => ({
 						kind: finding.kind,
 						severity: finding.severity,
 						label: finding.label,
@@ -162,7 +164,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						idleMs: summary.idleMs,
 						idleGapCount: summary.idleGaps.length,
 						agentTimeMs: summary.agentTime.totalMs,
-						agentTimeSegments: summary.agentTime.segments.map((segment) => ({
+						agentTimeSegments: Arr.map(summary.agentTime.segments, (segment) => ({
 							kind: segment.kind,
 							ms: segment.ms,
 						})),
@@ -177,14 +179,14 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					tokens: summary.tokens,
 					tokenReporting: summary.tokenReporting,
 					...(summary.cost === undefined ? undefined : { cost: summary.cost }),
-					models: summary.models.map((usage) => ({
+					models: Arr.map(summary.models, (usage) => ({
 						model: usage.model,
 						llmCalls: usage.llmCalls,
 						totalTokens: usage.tokens.total,
 						...(usage.cost === undefined ? undefined : { cost: usage.cost }),
 					})),
 					toolCount: summary.tools.length,
-					tools: summary.tools.slice(0, MAX_TOOLS).map((tool) => ({
+					tools: Arr.map(summary.tools.slice(0, MAX_TOOLS), (tool) => ({
 						name: tool.name,
 						calls: tool.calls,
 						failed: tool.failed,
@@ -193,7 +195,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					})),
 					// Turn by turn is the transcript's index; this read says how many, and how many failed.
 					turnCount: turns.length,
-					failedTurnCount: turns.filter((turn) => turn.failed).length,
+					failedTurnCount: Arr.filter(turns, (turn) => turn.failed).length,
 					...(evidence === undefined
 						? undefined
 						: {
@@ -214,14 +216,16 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 		),
 		render: (output) => {
 			const { tokens, checkCounts } = output
-			const attention = output.checks.filter(
+			const attention = Arr.filter(
+				output.checks,
 				(check) => check.status === "failed" || check.status === "warning",
 			)
-			const settled = output.checks.filter(
+			const settled = Arr.filter(
+				output.checks,
 				(check) => check.status === "passed" || check.status === "skipped",
 			)
 			const note = truncationNote(output.load)
-			const orDash = (values: ReadonlyArray<string>) => values.join(", ") || "—"
+			const orDash = (values: ReadonlyArray<string>) => Arr.join(values, ", ") || "—"
 			return {
 				title: `AI agent session ${output.sessionId}`,
 				scope: [
@@ -236,7 +240,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					doc.text(
 						`Vendor ${orDash(output.vendorIds)} · agents ${orDash(output.agentNames)} · services ${orDash(
 							output.serviceNames,
-						)} · models ${orDash(output.models.map((usage) => usage.model))}`,
+						)} · models ${orDash(Arr.map(output.models, (usage) => usage.model))}`,
 					),
 					...(output.title === undefined
 						? []
@@ -252,7 +256,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 						? doc.text("Nothing needs attention.")
 						: doc.table(
 								["Status", "Check", "What happened", "Do"],
-								attention.map((check) => [
+								Arr.map(attention, (check) => [
 									check.status,
 									check.name,
 									truncate(check.headline, 160),
@@ -261,12 +265,13 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							),
 					...(output.passedChecks.length === 0
 						? []
-						: [doc.text(`Passed: ${output.passedChecks.join(", ")}.`)]),
+						: [doc.text(`Passed: ${Arr.join(output.passedChecks, ", ")}.`)]),
 					...(settled.length === 0
 						? []
 						: [
 								doc.list(
-									settled.map(
+									Arr.map(
+										settled,
 										(check) =>
 											`${check.name} (${check.status}): ${tableCell(check.headline, 200)}`,
 									),
@@ -275,7 +280,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					...tableSection(
 						`Findings (${output.findingCount})`,
 						["Severity", "What", "×", "Where", "Detail", "Span"],
-						output.findings.map((finding) => [
+						Arr.map(output.findings, (finding) => [
 							finding.severity,
 							truncate(finding.label, 60),
 							String(finding.count),
@@ -290,9 +295,13 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 							output.vitals.activeMs,
 						)} · idle ${formatDurationFromMs(output.vitals.idleMs)} over ${output.vitals.idleGapCount} gap(s)`,
 						`Agent time ${formatDurationFromMs(output.vitals.agentTimeMs)} (${
-							output.vitals.agentTimeSegments
-								.map((segment) => `${segment.kind} ${formatDurationFromMs(segment.ms)}`)
-								.join(", ") || "unbroken"
+							Arr.join(
+								Arr.map(
+									output.vitals.agentTimeSegments,
+									(segment) => `${segment.kind} ${formatDurationFromMs(segment.ms)}`,
+								),
+								", ",
+							) || "unbroken"
 						})`,
 					]),
 					doc.heading("Work"),
@@ -309,7 +318,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					...tableSection(
 						"Models",
 						["Model", "LLM calls", "Tokens", "Cost"],
-						output.models.map((usage) => [
+						Arr.map(output.models, (usage) => [
 							usage.model,
 							formatNumber(usage.llmCalls),
 							formatNumber(usage.totalTokens),
@@ -319,7 +328,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 					...tableSection(
 						`Tools (${output.toolCount})`,
 						["Tool", "Calls", "Failed", "Total", "Slowest"],
-						output.tools.map((tool) => [
+						Arr.map(output.tools, (tool) => [
 							tool.name,
 							formatNumber(tool.calls),
 							tool.failed > 0 ? String(tool.failed) : "—",

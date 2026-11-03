@@ -10,6 +10,7 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { classifyAiSpan } from "./session-turns"
+import { Array as Arr, String as Str } from "effect"
 
 /** Status messages a framework stamps on every failed tool call regardless of
  *  cause. They name nothing, so the recorded result is read instead. */
@@ -43,7 +44,7 @@ const INCOMPLETE = /stopped without required completion tool\s+(\S+)/i
 const TOOL_SCHEMA_NAME = /"([\w.:-]+)" tool schema/
 
 export function clipDetail(text: string): string {
-	return text.length > 140 ? `${text.slice(0, 139)}…` : text
+	return text.length > 140 ? `${Str.slice(0, 139)(text)}…` : text
 }
 
 /**
@@ -76,10 +77,10 @@ const PROSE_KEYS = [
 function wholeProse(value: unknown, depth = 0): string | undefined {
 	if (depth > 4) return undefined
 	if (typeof value === "string") {
-		const text = value.trim()
+		const text = Str.trim(value)
 		return text === "" ? undefined : text
 	}
-	if (Array.isArray(value)) {
+	if (Arr.isArray(value)) {
 		for (const entry of value) {
 			const prose = wholeProse(entry, depth + 1)
 			if (prose !== undefined) return prose
@@ -104,7 +105,7 @@ function wholeProse(value: unknown, depth = 0): string | undefined {
  * call's recorded result. `undefined` when the span said nothing at all.
  */
 export function rawFailureText(span: AiSessionSpan): string | undefined {
-	const message = span.statusMessage.trim()
+	const message = Str.trim(span.statusMessage)
 	const errorType = span.genAi.errorType
 	const informative = message !== "" && message !== errorType && !GENERIC_TOOL_MESSAGE.test(message)
 	if (informative) return message
@@ -122,19 +123,19 @@ const SCHEMA_ERROR_CLOSE = /\)(?:\.\s*Check the "[^"]+" tool schema[^\n]*)?$/i
 /** The text with its framework prefixes and error-tag chain stripped. Every
  *  pass removes something or ends the loop, so it is bounded by the text. */
 export function stripFailurePrefixes(text: string): string {
-	let out = text.trim()
+	let out = Str.trim(text)
 	let wrapped = false
 	for (;;) {
 		const before = out
-		for (const prefix of LEADING_PREFIXES) out = out.replace(prefix, "")
+		for (const prefix of LEADING_PREFIXES) out = Str.replace(prefix, "")(out)
 		if (SCHEMA_ERROR_OPEN.test(out)) {
-			out = out.replace(SCHEMA_ERROR_OPEN, "")
+			out = Str.replace(SCHEMA_ERROR_OPEN, "")(out)
 			wrapped = true
 		}
-		out = out.replace(ERROR_TAG, "").replace(ERROR_ENVELOPE, "")
+		out = Str.replace(ERROR_ENVELOPE, "")(Str.replace(ERROR_TAG, "")(out))
 		if (out === before) break
 	}
-	return wrapped ? out.replace(SCHEMA_ERROR_CLOSE, "").trim() : out
+	return wrapped ? Str.trim(Str.replace(SCHEMA_ERROR_CLOSE, "")(out)) : out
 }
 
 /**
@@ -145,29 +146,29 @@ export function stripFailurePrefixes(text: string): string {
 export function describeSchemaFailure(text: string): string | undefined {
 	// Effect's `Schema` puts the path on its own line; one space between the
 	// words and the marker is all the parse below needs.
-	const message = stripFailurePrefixes(text).replace(/\s+/g, " ")
-	const lower = message.toLowerCase()
-	const kind = lower.startsWith("missing key")
+	const message = Str.replace(/\s+/g, " ")(stripFailurePrefixes(text))
+	const lower = Str.toLowerCase(message)
+	const kind = Str.startsWith("missing key")(lower)
 		? "missing"
-		: lower.startsWith("expected ")
+		: Str.startsWith("expected ")(lower)
 			? "expected"
 			: undefined
 	if (kind === undefined) return undefined
 	const marker = message.indexOf(SCHEMA_PATH_MARKER)
 	if (marker === -1) return undefined
-	const path = SCHEMA_PATH.exec(message.slice(marker + SCHEMA_PATH_MARKER.length - 1))?.[0]
+	const path = SCHEMA_PATH.exec(Str.slice(marker + SCHEMA_PATH_MARKER.length - 1)(message))?.[0]
 	if (path === undefined) return undefined
-	const keys = [...path.matchAll(SCHEMA_PATH_KEY)].flatMap((entry) =>
+	const keys = Arr.flatMap([...path.matchAll(SCHEMA_PATH_KEY)], (entry) =>
 		entry[1] === undefined ? [] : [entry[1]],
 	)
 	const field = keys[keys.length - 1]
 	if (field === undefined) return undefined
 	if (kind === "missing") {
-		return message.slice(0, marker).trim().toLowerCase() === "missing key"
+		return Str.toLowerCase(Str.trim(Str.slice(0, marker)(message))) === "missing key"
 			? `missing key \`${field}\``
 			: undefined
 	}
-	const expected = message.slice("expected ".length, marker).trim()
+	const expected = Str.trim(Str.slice("expected ".length, marker)(message))
 	return expected === "" ? undefined : `\`${field}\`: expected ${expected}`
 }
 
@@ -175,7 +176,8 @@ export function describeSchemaFailure(text: string): string | undefined {
 export function incompleteRunTool(text: string): string | undefined {
 	let tool = INCOMPLETE.exec(text)?.[1]
 	if (tool === undefined) return undefined
-	while (tool.endsWith(".") || tool.endsWith(",") || tool.endsWith(";")) tool = tool.slice(0, -1)
+	while (Str.endsWith(".")(tool) || Str.endsWith(",")(tool) || Str.endsWith(";")(tool))
+		tool = Str.slice(0, -1)(tool)
 	return tool === "" ? undefined : tool
 }
 
@@ -212,12 +214,12 @@ export function failureDetailText(span: AiSessionSpan): string | undefined {
  *  only introduces the reason (`Invalid parameters for \`x\`:` over a list of
  *  what was wrong), so the lines under it join it. */
 function oneLine(text: string): string {
-	const lines = text
-		.split("\n")
-		.map((raw) => raw.trim())
-		.filter((raw) => raw.length > 0)
+	const lines = Arr.filter(
+		Arr.map(Str.split("\n")(text), (raw) => Str.trim(raw)),
+		(raw) => raw.length > 0,
+	)
 	const [first, ...rest] = lines
 	if (first === undefined) return text
-	if (!first.endsWith(":") || rest.length === 0) return first
-	return [first, ...rest.map((line) => line.replace(/^[-*•]\s+/, ""))].join(" ")
+	if (!Str.endsWith(":")(first) || rest.length === 0) return first
+	return Arr.join([first, ...Arr.map(rest, (line) => Str.replace(/^[-*•]\s+/, "")(line))], " ")
 }

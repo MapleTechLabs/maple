@@ -16,6 +16,7 @@ import {
 	summarizeRailway,
 	summarizeVercel,
 } from "./summaries"
+import { Array as Arr } from "effect"
 
 type HostRow = ListHostsResponse["data"][number]
 
@@ -72,9 +73,9 @@ const db = (
 
 describe("summarizeHosts", () => {
 	it("lists saturated hosts busiest first and folds the rest into one line", () => {
-		const hosts = [0.95, 0.99, 0.91, 0.92, 0.3].map((cpu, i) => host(`h${i}`, cpu))
+		const hosts = Arr.map([0.95, 0.99, 0.91, 0.92, 0.3], (cpu, i) => host(`h${i}`, cpu))
 		const { findings, segments } = summarizeHosts(hosts, END)
-		expect(findings.map((f) => f.title)).toEqual([
+		expect(Arr.map(findings, (f) => f.title)).toEqual([
 			"h1 at 99% CPU",
 			"h0 at 95% CPU",
 			"h3 at 92% CPU",
@@ -97,7 +98,7 @@ describe("summarizeCloudflare", () => {
 			zone("quiet.dev", 20, 0.5),
 			zone("api.acme.dev", 10_000, 0.06),
 		])
-		expect(findings.map((f) => f.title)).toEqual(["api.acme.dev returning 6.0% 5xx"])
+		expect(Arr.map(findings, (f) => f.title)).toEqual(["api.acme.dev returning 6.0% 5xx"])
 		expect(findings[0]?.tone).toBe("crit")
 	})
 })
@@ -130,16 +131,16 @@ describe("summarizeVercel", () => {
 			["warn", "web returning 1.5% 5xx"],
 		])
 		expect(summary.findings[0]?.target).toEqual({ kind: "vercel", projectId: "prj_api" })
-		expect(summary.headline).toBe("17.0K requests, 2.1% 5xx")
+		expect(summary.headline).toBe("17K requests, 2.1% 5xx")
 	})
 })
 
 describe("summarizePlanetScale", () => {
 	it("flags lag and storage separately and puts critical findings first", () => {
 		const { findings } = summarizePlanetScale([db("ledger", 2, 92), db("users", 0.1, null)])
-		expect(findings.map((f) => [f.tone, f.title])).toEqual([
+		expect(Arr.map(findings, (f) => [f.tone, f.title])).toEqual([
 			["crit", "ledger storage at 92%"],
-			["warn", "ledger replica 2.0s behind primary"],
+			["warn", "ledger replica 2.00s behind primary"],
 		])
 	})
 })
@@ -147,7 +148,9 @@ describe("summarizePlanetScale", () => {
 describe("summarizePlanetScale CPU", () => {
 	it("flags a CPU spike even when lag and storage are fine", () => {
 		const summary = summarizePlanetScale([{ ...db("ledger", 0, 20), cpuMaxPercent: 95 }])
-		expect(summary.findings.map((f) => [f.tone, f.title])).toEqual([["crit", "ledger CPU peaked at 95%"]])
+		expect(Arr.map(summary.findings, (f) => [f.tone, f.title])).toEqual([
+			["crit", "ledger CPU peaked at 95%"],
+		])
 		expect(summary.segments.find((s) => s.key === "ok")?.count).toBe(0)
 	})
 })
@@ -304,7 +307,7 @@ describe("summarizeGcp", () => {
 			{
 				service: "cloudRun",
 				failed: false,
-				points: ["a", "b", "c", "d"].flatMap((name) => [
+				points: Arr.flatMap(["a", "b", "c", "d"], (name) => [
 					point([name, "acme-prod", "europe-west1"], "gcp.cloud_run.requests", "2xx", 900),
 					point([name, "acme-prod", "europe-west1"], "gcp.cloud_run.requests", "5xx", 100),
 				]),

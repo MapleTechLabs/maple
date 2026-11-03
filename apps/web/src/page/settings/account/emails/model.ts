@@ -1,8 +1,8 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Dialog from "../../../../ui/dialog"
-import * as Menu from "../../../../ui/menu"
-import * as OtpField from "../../../../ui/otp-field"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { AccountEmail, AccountUser } from "../user"
 
 // The Email addresses tab.

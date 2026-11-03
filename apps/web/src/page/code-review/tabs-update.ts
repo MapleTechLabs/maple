@@ -8,6 +8,7 @@ import type * as CiTab from "./ci/model"
 import type * as IssuesTab from "./issues/model"
 import type * as PullRequestsTab from "./pull-requests/model"
 import type * as SettingsTab from "./settings/model"
+import type * as TeamTab from "./team/model"
 import * as Ci from "./ci/update"
 import * as Issues from "./issues/update"
 import type { Carried } from "./kit/frame-update"
@@ -15,6 +16,7 @@ import { breadcrumbsOf } from "./kit/layout"
 import { emptyRetained, mergeRetained, type Retained } from "./kit/retained"
 import * as PullRequests from "./pull-requests/update"
 import * as Settings from "./settings/update"
+import * as Team from "./team/update"
 import { Message, type Model, type Tab } from "./tabs"
 
 type Return = PageReturn<Model, Message>
@@ -26,6 +28,7 @@ export type CodeReviewRoute = Extract<
 			| "CodeReview"
 			| "CodeReviewPullRequests"
 			| "CodeReviewCi"
+			| "CodeReviewTeam"
 			| "CodeReviewIssues"
 			| "CodeReviewSettings"
 	}
@@ -46,12 +49,14 @@ const lift = <M, Inner>(
 const toAnalytics = (model: AnalyticsTab.Model): Tab => ({ _tag: "Analytics", model })
 const toPullRequests = (model: PullRequestsTab.Model): Tab => ({ _tag: "PullRequests", model })
 const toCi = (model: CiTab.Model): Tab => ({ _tag: "Ci", model })
+const toTeam = (model: TeamTab.Model): Tab => ({ _tag: "Team", model })
 const toIssues = (model: IssuesTab.Model): Tab => ({ _tag: "Issues", model })
 const toSettings = (model: SettingsTab.Model): Tab => ({ _tag: "Settings", model })
 
 const wrapAnalytics = (message: AnalyticsMessage.Message) => Message.GotAnalyticsMessage({ message })
 const wrapPullRequests = (message: PullRequestsTab.Message) => Message.GotPullRequestsMessage({ message })
 const wrapCi = (message: CiTab.Message) => Message.GotCiMessage({ message })
+const wrapTeam = (message: TeamTab.Message) => Message.GotTeamMessage({ message })
 const wrapIssues = (message: IssuesTab.Message) => Message.GotIssuesMessage({ message })
 const wrapSettings = (message: SettingsTab.Message) => Message.GotSettingsMessage({ message })
 
@@ -64,6 +69,8 @@ const tabTagOf = (route: CodeReviewRoute): Tab["_tag"] => {
 			return "PullRequests"
 		case "CodeReviewCi":
 			return "Ci"
+		case "CodeReviewTeam":
+			return "Team"
 		case "CodeReviewIssues":
 			return "Issues"
 		case "CodeReviewSettings":
@@ -81,6 +88,8 @@ const enter = (base: Omit<Model, "tab">, route: CodeReviewRoute, context: PageCo
 			return lift(base, PullRequests.init(route, context, carried), toPullRequests, wrapPullRequests)
 		case "CodeReviewCi":
 			return lift(base, Ci.init(route, context, carried), toCi, wrapCi)
+		case "CodeReviewTeam":
+			return lift(base, Team.init(route, context, carried), toTeam, wrapTeam)
 		case "CodeReviewIssues":
 			return lift(base, Issues.init(route, context, carried), toIssues, wrapIssues)
 		case "CodeReviewSettings":
@@ -105,6 +114,11 @@ const leaving = (model: Model): Readonly<{ retained: Retained; nowMs: number }> 
 		case "Ci":
 			return {
 				retained: mergeRetained(model.retained, Ci.retainedOf(tab.model)),
+				nowMs: tab.model.frame.nowMs,
+			}
+		case "Team":
+			return {
+				retained: mergeRetained(model.retained, Team.retainedOf(tab.model)),
 				nowMs: tab.model.frame.nowMs,
 			}
 		case "Issues":
@@ -145,6 +159,10 @@ export const routeChanged = (model: Model, route: CodeReviewRoute, context: Page
 			return tab._tag === "Ci"
 				? lift(model, Ci.routeChanged(tab.model, route, context), toCi, wrapCi)
 				: { model }
+		case "CodeReviewTeam":
+			return tab._tag === "Team"
+				? lift(model, Team.routeChanged(tab.model, route, context), toTeam, wrapTeam)
+				: { model }
 		case "CodeReviewIssues":
 			return tab._tag === "Issues"
 				? lift(model, Issues.routeChanged(tab.model, route, context), toIssues, wrapIssues)
@@ -168,6 +186,8 @@ export const contextChanged = (model: Model, context: PageContext): Return => {
 			)
 		case "Ci":
 			return lift(model, Ci.contextChanged(tab.model, context), toCi, wrapCi)
+		case "Team":
+			return lift(model, Team.contextChanged(tab.model, context), toTeam, wrapTeam)
 		case "Issues":
 			return lift(model, Issues.contextChanged(tab.model, context), toIssues, wrapIssues)
 		case "Settings":
@@ -194,6 +214,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: { model },
 		GotCiMessage: ({ message: inner }) =>
 			tab._tag === "Ci" ? lift(model, Ci.update(tab.model, inner, context), toCi, wrapCi) : { model },
+		GotTeamMessage: ({ message: inner }) =>
+			tab._tag === "Team"
+				? lift(model, Team.update(tab.model, inner, context), toTeam, wrapTeam)
+				: { model },
 		GotIssuesMessage: ({ message: inner }) =>
 			tab._tag === "Issues"
 				? lift(model, Issues.update(tab.model, inner, context), toIssues, wrapIssues)
@@ -209,6 +233,7 @@ const BREADCRUMB_TAB = {
 	Analytics: "analytics",
 	PullRequests: "pull-requests",
 	Ci: "ci",
+	Team: "team",
 	Issues: "issues",
 	Settings: "settings",
 } as const

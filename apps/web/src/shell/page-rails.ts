@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html } from "foldkit/html"
 
 // The filter and right sidebars below `lg`: each renders as a sheet, not an
@@ -12,7 +12,7 @@ const slotOf = (node: Child): string | undefined =>
 	typeof node === "string" ? undefined : node.data?.attrs?.["data-slot"]?.toString()
 
 /** The rails' children, already built in the page's boundary, so their Messages stay the page's. */
-export type LiftedRail = Readonly<{ children: ReadonlyArray<Html> }>
+export type LiftedRail = Readonly<{ children: ReadonlyArray<Html>; label: Option.Option<string> }>
 
 export type SplitPage = Readonly<{
 	body: Html
@@ -21,9 +21,13 @@ export type SplitPage = Readonly<{
 }>
 
 const railOf = (children: ReadonlyArray<Child>, slot: string): Option.Option<LiftedRail> =>
-	Option.map(
-		Option.fromNullishOr(children.find((child) => slotOf(child) === slot)),
-		(rail) => ({ children: typeof rail === "string" ? [] : (rail.children ?? []).filter(isNode) }),
+	Option.map(Option.fromNullishOr(children.find((child) => slotOf(child) === slot)), (rail) =>
+		typeof rail === "string"
+			? { children: [], label: Option.none() }
+			: {
+					children: Arr.filter(rail.children ?? [], isNode),
+					label: Option.fromNullishOr(rail.data?.attrs?.["data-rail-label"]?.toString()),
+				},
 	)
 
 const isNode = (child: Child): child is VNode => typeof child !== "string"
@@ -39,19 +43,22 @@ const liftFrom = (node: VNode, depth: number): Option.Option<Lifted> => {
 			return slot === "page-filter-sidebar" || slot === "page-right-sidebar"
 		}
 		return Option.some({
-			body: { ...node, children: children.filter((child) => !isRail(child)) },
+			body: { ...node, children: Arr.filter(children, (child) => !isRail(child)) },
 			maybeFilters: railOf(children, "page-filter-sidebar"),
 			maybeRight: railOf(children, "page-right-sidebar"),
 		})
 	}
 	if (depth === 0) return Option.none()
 	return Option.firstSomeOf(
-		children.map((child, index) =>
+		Arr.map(children, (child, index) =>
 			typeof child === "string"
 				? Option.none()
 				: Option.map(liftFrom(child, depth - 1), (split) => ({
 						...split,
-						body: { ...node, children: children.map((other, at) => (at === index ? split.body : other)) },
+						body: {
+							...node,
+							children: Arr.map(children, (other, at) => (at === index ? split.body : other)),
+						},
 					})),
 		),
 	)

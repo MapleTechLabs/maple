@@ -22,6 +22,7 @@ import {
 import { setupStandaloneSession } from "./standalone-session.js"
 import { getCurrentIdentity } from "./user.js"
 import { CLIENT_SDK_HINT } from "../version.js"
+import { String as Str } from "effect"
 
 export interface ClientReplayConfig {
 	/** Record rrweb session replays. Default `true`. */
@@ -32,6 +33,11 @@ export interface ClientReplayConfig {
 	readonly maskAllInputs?: boolean | undefined
 	/** Mask all text in the recording. Default `false`. */
 	readonly maskAllText?: boolean | undefined
+	/**
+	 * Record `<canvas>` content at this many frames per second. Off by default,
+	 * and never with `maskAllText`: canvas pixels can hold text.
+	 */
+	readonly canvasFps?: number | undefined
 }
 
 export interface ClientSessionConfig {
@@ -77,7 +83,7 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 		return noOpHandle
 
 	const engineConfig = {
-		endpoint: config.endpoint.replace(/\/$/, ""),
+		endpoint: Str.replace(/\/$/, "")(config.endpoint),
 		ingestKey: config.ingestKey,
 		sdk: CLIENT_SDK_HINT,
 		maskAllInputs: config.replay?.maskAllInputs ?? true,
@@ -137,6 +143,7 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 						serviceVersion: config.serviceVersion,
 						maskAllInputs: engineConfig.maskAllInputs,
 						maskAllText: engineConfig.maskAllText,
+						canvasFps: config.replay?.canvasFps,
 						getIdentity: getCurrentIdentity,
 						captureUserEmail: config.privacy?.captureUserEmail,
 					})

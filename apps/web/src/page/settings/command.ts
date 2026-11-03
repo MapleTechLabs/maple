@@ -1,8 +1,9 @@
 import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { Clock, Effect, Schema } from "effect"
+import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
+import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { SessionTenant } from "../../data/session-tenant"
 import { Message } from "./message"
 import { BillingCustomerCache } from "../../data/billing-customer"
@@ -18,7 +19,7 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 	execute: Effect.gen(function* () {
 		const session = yield* (yield* SessionTenant).get
 		return {
-			isAdmin: session.roles.some((role) => role === "root" || role === "org:admin"),
+			isAdmin: Arr.some(session.roles, (role) => role === "root" || role === "org:admin"),
 			userId: session.userId,
 			hasAiAutoTriage: isClerkAuthEnabled
 				? organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata).aiAutoTriage
@@ -31,14 +32,20 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 	),
 })
 
+/** A customer read still pending after this reads as unreachable, so Billing shows Retry, not shimmer. */
+const CUSTOMER_TIMEOUT = Duration.seconds(10)
+
 /** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab. */
 export const FetchSettingsCustomer = Command.define("FetchSettingsCustomer", {
-	args: { refresh: Schema.Boolean },
+	// `orgId` on entry; a refresh passes null and reads under the org the entry named.
+	args: { orgId: Schema.NullOr(Schema.String), refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchCustomer],
-	execute: ({ refresh }) =>
+	execute: ({ orgId, refresh }) =>
 		Effect.gen(function* () {
-			return yield* (yield* BillingCustomerCache).get({ refresh })
+			return yield* (yield* BillingCustomerCache).get(orgId === null ? { refresh } : { refresh, orgId })
 		}).pipe(
+			Effect.timeoutOrElse({ duration: CUSTOMER_TIMEOUT, orElse: () => Effect.fail(NetworkErrorBody) }),
+			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchCustomer({ result })),

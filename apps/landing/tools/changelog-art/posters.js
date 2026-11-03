@@ -31,8 +31,6 @@ const T = {
 	amberSoft: "#f0b070",
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
 /** getShaderNoiseTexture() hands back an <img> that ShaderMount refuses until it has decoded. */
 let noiseTex = null
 async function loadNoise() {
@@ -380,6 +378,7 @@ async function save(name, canvas) {
 	const res = await fetch("/save", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
+		// oxlint-disable-next-line effecttsgo/global-json -- plain browser script loaded without a bundler, no effect runtime
 		body: JSON.stringify({ name, dataUrl }),
 	})
 	return res.text()

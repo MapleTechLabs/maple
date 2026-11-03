@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Cause } from "effect"
+import { Cause, String as Str } from "effect"
 import { toDatabaseError } from "./DatabaseLive"
 import { summarizeCause } from "./describe-cause"
 
@@ -57,9 +57,11 @@ describe("summarizeCause", () => {
 	})
 
 	it("caps a statement a warehouse error inlined whole", () => {
-		const summary = summarizeCause(Cause.fail(new Error(`syntax error near ${"SELECT x, ".repeat(200)}`)))
+		const summary = summarizeCause(
+			Cause.fail(new Error(`syntax error near ${Str.repeat(200)("SELECT x, ")}`)),
+		)
 		assert.isBelow(summary.length, 550)
-		assert.isTrue(summary.endsWith("…[truncated]"))
+		assert.isTrue(Str.endsWith("…[truncated]")(summary))
 	})
 
 	it("stays legible for a failure that is not an Error", () => {

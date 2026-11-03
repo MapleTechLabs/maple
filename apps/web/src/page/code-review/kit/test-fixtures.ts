@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { CodeReviewAnalytics, GithubIntegrationStatus, VcsRepositoryId } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import type { PageContext } from "../../contract"
 
 // Shared fixtures for the Code Review scene tests.
@@ -41,7 +41,7 @@ export const analyticsOf = (reviews: number, authors: ReadonlyArray<string> = []
 		categories: [],
 		verdicts: { clean: reviews, issues: 0, notApplicable: 0 },
 		repositories: [],
-		authors: authors.map((author) => ({ author, pullRequests: 1, findings: 0 })),
+		authors: Arr.map(authors, (author) => ({ author, pullRequests: 1, findings: 0 })),
 	})
 
 export const githubStatusOf = (repositories: ReadonlyArray<{ name: string; reviewed: boolean }>) =>
@@ -52,7 +52,8 @@ export const githubStatusOf = (repositories: ReadonlyArray<{ name: string; revie
 		accountType: "organization",
 		repositorySelection: "selected",
 		ciTracesEnabled: true,
-		repositories: repositories.map((repo, index) => ({
+		repositoryDiscovery: null,
+		repositories: Arr.map(repositories, (repo, index) => ({
 			id: `00000c01-0000-4000-8000-00000000000${index + 1}`,
 			fullName: `acme-shop/${repo.name}`,
 			htmlUrl: `https://github.com/acme-shop/${repo.name}`,
@@ -68,4 +69,4 @@ export const githubStatusOf = (repositories: ReadonlyArray<{ name: string; revie
 	})
 
 export const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)

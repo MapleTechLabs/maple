@@ -1,4 +1,10 @@
-import { GcpConnectorPublicId, ScrapeTargetPublicId, SourcePublicId, type V2Source } from "@maple/domain/http/v2"
+import {
+	AwsConnectionPublicId,
+	GcpConnectorPublicId,
+	ScrapeTargetPublicId,
+	SourcePublicId,
+	type V2Source,
+} from "@maple/domain/http/v2"
 import {
 	isPushSourcePlatform,
 	type PullSourcePlatform,
@@ -6,7 +12,7 @@ import {
 	type SourceAttributeMode,
 	type SourceSignal,
 } from "@maple/domain/primitives"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
 import { statusRank } from "./status"
@@ -29,9 +35,13 @@ export const MODE_LABELS = {
 export const signalsSummary = (signals: V2Source["allowed_signals"]): string =>
 	signals === null
 		? "All signals"
-		: SIGNALS.filter((signal) => signals.includes(signal.value))
-				.map((signal) => signal.label)
-				.join(", ")
+		: Arr.join(
+				Arr.map(
+					Arr.filter(SIGNALS, (signal) => signals.includes(signal.value)),
+					(signal) => signal.label,
+				),
+				", ",
+			)
 
 export const rateLimitLabel = (rps: number | null): string => (rps === null ? "No limit" : `${rps} req/s`)
 
@@ -55,8 +65,8 @@ export const hasToken = (source: V2Source): boolean => source.key_prefix !== nul
 
 /** Default source first, then worst status first, then the API's order (newest first). */
 export const orderSources = (sources: ReadonlyArray<V2Source>): ReadonlyArray<V2Source> => [
-	...sources.filter((source) => source.is_default),
-	...sources.filter((source) => !source.is_default).toSorted((a, b) => statusRank(a) - statusRank(b)),
+	...Arr.filter(sources, (source) => source.is_default),
+	...Arr.filter(sources, (source) => !source.is_default).toSorted((a, b) => statusRank(a) - statusRank(b)),
 ]
 
 /** `/sources/$sourceId` in its public id form; the overview tab drops `tab`. */
@@ -75,7 +85,7 @@ export const integrationPlatformOf = (source: V2Source): PullSourcePlatform | nu
 /** The tabs a source shows: Setup for push sources, Connection for integration sources. */
 export const tabsOf = (source: V2Source): ReadonlyArray<SourceTab> => {
 	const hidden: SourceTab = integrationPlatformOf(source) === null ? "connection" : "setup"
-	return SOURCE_TABS.filter((tab) => tab !== hidden)
+	return Arr.filter(SOURCE_TABS, (tab) => tab !== hidden)
 }
 
 /** `?tab=` as this source shows it: a link to the other kind's tab opens this kind's one. */
@@ -90,6 +100,8 @@ const VIA = {
 	vercel: "API token",
 	planetscale: "OAuth",
 	github: "GitHub App",
+	aws: "IAM role",
+	supabase: "OAuth",
 } as const satisfies Record<PullSourcePlatform, string>
 
 /** How the source reaches Maple: its token prefix, the org keys, or the integration's credential. */
@@ -109,9 +121,12 @@ export const scrapeTargetIdOf = (source: V2Source): ScrapeTargetId | null =>
 		: Option.getOrNull(decodeScrapeTargetId(source.integration_id))
 
 const decodeGcpConnectorId = Schema.decodeUnknownOption(GcpConnectorPublicId)
+const decodeAwsConnectionId = Schema.decodeUnknownOption(AwsConnectionPublicId)
 
-/** The record an integration source's card focuses on: its scrape target or Google Cloud connector. */
-export const focusIdOf = (source: V2Source): string | null =>
-	source.platform === "gcp" && source.integration_id !== null
-		? Option.getOrNull(decodeGcpConnectorId(source.integration_id))
-		: scrapeTargetIdOf(source)
+/** The record an integration source's card focuses on: its scrape target, connector or connection. */
+export const focusIdOf = (source: V2Source): string | null => {
+	if (source.integration_id === null) return scrapeTargetIdOf(source)
+	if (source.platform === "gcp") return Option.getOrNull(decodeGcpConnectorId(source.integration_id))
+	if (source.platform === "aws") return Option.getOrNull(decodeAwsConnectionId(source.integration_id))
+	return scrapeTargetIdOf(source)
+}

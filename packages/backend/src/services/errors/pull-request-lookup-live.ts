@@ -1,4 +1,4 @@
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Array as Arr } from "effect"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { PullRequestLookup } from "./PullRequestLookup"
 
@@ -29,7 +29,7 @@ export const PullRequestLookupLive = Layer.effect(
 				),
 			listRepositories: (orgId) =>
 				source.listRepositories(orgId).pipe(
-					Effect.map((repos) => repos.map((repo) => repo.fullName)),
+					Effect.map((repos) => Arr.map(repos, (repo) => repo.fullName)),
 					Effect.orElseSucceed(() => []),
 				),
 		}

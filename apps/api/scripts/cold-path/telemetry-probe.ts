@@ -1,4 +1,3 @@
-// oxlint-disable effecttsgo/strict-effect-provide -- Offline benchmark entry point.
 /** A concurrent flush fixture; export CPU is measured separately from span creation. */
 import { Effect } from "effect"
 import { make } from "../../../../packages/effect-sdk/src/cloudflare/index"

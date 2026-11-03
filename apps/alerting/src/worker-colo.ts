@@ -27,10 +27,10 @@ export const lookupColo = Effect.fn("alerting.lookup_colo")(
 		const body = yield* response.text.pipe(
 			Effect.mapError((cause) => new ColoLookupError({ message: "Trace body unreadable", cause })),
 		)
-		return yield* Option.match(parseTraceColo(body), {
-			onNone: () => Effect.fail(new ColoLookupError({ message: "Trace body has no colo" })),
-			onSome: Effect.succeed,
-		})
+		return yield* Effect.fromOption(
+			parseTraceColo(body),
+			() => new ColoLookupError({ message: "Trace body has no colo" }),
+		)
 	},
 	(effect) =>
 		effect.pipe(
@@ -40,3 +40,33 @@ export const lookupColo = Effect.fn("alerting.lookup_colo")(
 			}),
 		),
 )
+
+/**
+ * Caches the isolate's colo once known. No single-flight: a request awaiting another request's
+ * in-flight lookup is resumed in that request's I/O context, and workerd cancels it as hung.
+ */
+export const isolateColoCache = <R>(lookup: Effect.Effect<string, ColoLookupError, R>) =>
+	Effect.sync(() => {
+		let known: string | undefined
+		// A failed lookup reads "unknown" for the isolate rather than costing every fire a timeout,
+		// but never hides a colo a concurrent lookup learned, before or after it.
+		let failed = false
+		return Effect.suspend(() => {
+			if (known !== undefined) return Effect.succeed(known)
+			if (failed) return Effect.succeed("unknown")
+			return lookup.pipe(
+				Effect.tap((colo) =>
+					Effect.sync(() => {
+						known = colo
+					}),
+				),
+				Effect.tapError((error) => Effect.logWarning("Alerting colo lookup failed", error)),
+				Effect.catch(() =>
+					Effect.sync(() => {
+						failed = true
+						return known ?? "unknown"
+					}),
+				),
+			)
+		})
+	})

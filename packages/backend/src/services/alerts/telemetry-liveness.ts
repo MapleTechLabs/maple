@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -171,7 +171,7 @@ const probeOrgWindow = (
 			profile: "list",
 			context: "telemetryLivenessPulse",
 		})
-		return rows.reduce((total, row) => total + row.count, 0)
+		return Arr.reduce(rows, 0, (total, row) => total + row.count)
 	}).pipe(Effect.orElseSucceed(() => null))
 
 /**
@@ -213,66 +213,65 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 						{ concurrency: 2 },
 					)),
 				)
-			: verdictForServiceTotals(
-					// One pair per (service, environment): `verdictForServiceTotals`
-					// already vetoes when ANY baseline-active pair goes dark, so an
-					// env-scoped rule cannot have a production gap papered over by
-					// staging traffic on the same service.
-					yield* Effect.forEach(
-						serviceNames.flatMap(
-							(
-								serviceName,
-							): ReadonlyArray<{
-								readonly serviceName: string
-								readonly deploymentEnv: string | null
-							}> =>
-								input.environments.length === 0
-									? [{ serviceName, deploymentEnv: null }]
-									: input.environments.map((deploymentEnv) => ({
-											serviceName,
-											deploymentEnv,
-										})),
-						),
-						({ serviceName, deploymentEnv }): Effect.Effect<ServiceWindowPair, never> =>
-							Effect.all(
-								[
-									probeServiceWindow(
-										warehouse,
-										tenant,
+			: // One pair per (service, environment): `verdictForServiceTotals`
+				// already vetoes when ANY baseline-active pair goes dark, so an
+				// env-scoped rule cannot have a production gap papered over by
+				// staging traffic on the same service.
+				yield* Effect.forEach(
+					Arr.flatMap(
+						serviceNames,
+						(
+							serviceName,
+						): ReadonlyArray<{
+							readonly serviceName: string
+							readonly deploymentEnv: string | null
+						}> =>
+							input.environments.length === 0
+								? [{ serviceName, deploymentEnv: null }]
+								: Arr.map(input.environments, (deploymentEnv) => ({
 										serviceName,
 										deploymentEnv,
-										windowStartMs,
-										windowEndMs,
-									),
-									Effect.all(
-										[
-											probeServiceWindow(
-												warehouse,
-												tenant,
-												serviceName,
-												deploymentEnv,
-												baselineStartMs,
-												baselineEndMs,
-											),
-											priorDay === null
-												? Effect.succeed(null)
-												: probeServiceWindow(
-														warehouse,
-														tenant,
-														serviceName,
-														deploymentEnv,
-														priorDay.startMs,
-														priorDay.endMs,
-													),
-										],
-										{ concurrency: 2 },
-									).pipe(Effect.map(([onset, prior]) => pickServiceBaseline(onset, prior))),
-								],
-								{ concurrency: 2 },
-							),
-						{ concurrency: 4 },
+									})),
 					),
-				)
+					({ serviceName, deploymentEnv }): Effect.Effect<ServiceWindowPair, never> =>
+						Effect.all(
+							[
+								probeServiceWindow(
+									warehouse,
+									tenant,
+									serviceName,
+									deploymentEnv,
+									windowStartMs,
+									windowEndMs,
+								),
+								Effect.all(
+									[
+										probeServiceWindow(
+											warehouse,
+											tenant,
+											serviceName,
+											deploymentEnv,
+											baselineStartMs,
+											baselineEndMs,
+										),
+										priorDay === null
+											? Effect.succeed(null)
+											: probeServiceWindow(
+													warehouse,
+													tenant,
+													serviceName,
+													deploymentEnv,
+													priorDay.startMs,
+													priorDay.endMs,
+												),
+									],
+									{ concurrency: 2 },
+								).pipe(Effect.map(([onset, prior]) => pickServiceBaseline(onset, prior))),
+							],
+							{ concurrency: 2 },
+						),
+					{ concurrency: 4 },
+				).pipe(Effect.map(verdictForServiceTotals))
 
 	yield* Effect.annotateCurrentSpan({
 		"maple.liveness.data_flowing": result.dataFlowing,

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Redacted } from "effect"
+import { Effect, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { make, ClickHouseServerError, ClickHouseLimitError } from "./index"
 
@@ -53,7 +53,7 @@ describe.skipIf(!enabled)("real ClickHouse HTTP wire format", () => {
 					client.query({ sql: "SELECT missing_column FROM system.one" }),
 				)
 				assert.instanceOf(error, ClickHouseServerError)
-				if (error instanceof ClickHouseServerError) {
+				if (Schema.is(ClickHouseServerError)(error)) {
 					assert.strictEqual(error.code, "47")
 					assert.strictEqual(error.type, "UNKNOWN_IDENTIFIER")
 				}
@@ -75,7 +75,7 @@ describe.skipIf(!enabled)("real ClickHouse HTTP wire format", () => {
 					}),
 				)
 				assert.instanceOf(error, ClickHouseServerError)
-				if (error instanceof ClickHouseServerError) {
+				if (Schema.is(ClickHouseServerError)(error)) {
 					assert.strictEqual(error.code, "395")
 					assert.strictEqual(error.status, 200)
 				}

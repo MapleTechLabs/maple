@@ -1,10 +1,14 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
+import { Schema } from "effect"
+import { Sources } from "./sources"
 
 export const OAuthConnections = PG.table("oauth_connections", {
 	columns: {
 		id: PG.text,
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		// Only Cloudflare connections own a source; other providers leave it null.
+		sourceId: PG.column(PG.nullable(PG.brand(PG.text, SourceId)), { name: "source_id" }),
 		provider: PG.text,
 		externalUserId: PG.column(PG.text, { name: "external_user_id" }),
 		externalUserEmail: PG.column(PG.nullable(PG.text), { name: "external_user_email" }),
@@ -32,8 +36,17 @@ export const OAuthConnections = PG.table("oauth_connections", {
 	},
 	primaryKey: ["id"],
 	indexes: [
+		PG.index("oauth_connections_source_idx", ["sourceId"]),
 		PG.uniqueIndex("oauth_connections_org_provider_idx", ["orgId", "provider"]),
 		PG.index("oauth_connections_org_idx", ["orgId"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["sourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
 	],
 	tenantColumn: "orgId",
 })
@@ -49,6 +62,10 @@ export const OAuthAuthStates = PG.table("oauth_auth_states", {
 		// PKCE code verifier (RFC 7636). Set for providers that use the Authorization Code + PKCE
 		// flow (e.g. Cloudflare public clients, which carry no client secret); null otherwise.
 		codeVerifier: PG.column(PG.nullable(PG.text), { name: "code_verifier" }),
+		// A GitHub selection stores only the ids proven by user OAuth, never its token.
+		githubInstallationIds: PG.column(PG.nullable(PG.jsonb(Schema.Array(Schema.String))), {
+			name: "github_installation_ids",
+		}),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		expiresAt: PG.column(PG.timestamptzMillis, { name: "expires_at" }),
 	},

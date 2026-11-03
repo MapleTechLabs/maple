@@ -1,6 +1,7 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
+import { loadTraced } from "../../kit/traced"
 import { loadRailwayServices, loadRailwayTimeseries } from "../data"
 import { Message, RequestMode } from "./message"
 
@@ -29,6 +30,13 @@ export const FetchServices = Command.define("FetchRailwayServiceRows", {
 	messages: [Message.CompletedFetchServices],
 	execute: ({ key, window }) =>
 		Effect.map(loadRailwayServices(window), (result) => Message.CompletedFetchServices({ key, result })),
+})
+
+export const FetchTraced = Command.define("FetchRailwayServiceTraced", {
+	args: { key: Schema.String, window: TimeWindow },
+	messages: [Message.CompletedFetchTraced],
+	execute: ({ key, window }) =>
+		Effect.map(loadTraced(window), (result) => Message.CompletedFetchTraced({ key, result })),
 })
 
 export const TimeseriesInput = Schema.Struct({

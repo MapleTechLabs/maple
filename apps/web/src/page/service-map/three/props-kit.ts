@@ -11,6 +11,7 @@ import {
 	shadeFaces,
 	type Vec3,
 } from "./kit"
+import { Array as Arr } from "effect"
 
 /** The shared finish, its `running` read live so a pause needs no rebuild. */
 export type MachineFinish = Omit<LegacyMachineFinish, "running"> & { readonly running: Running }
@@ -37,8 +38,9 @@ export type MapleFinish = MachineFinish & {
 /** FNV-1a over a node id: the same service always draws the same homestead. */
 export function seedOf(id: string) {
 	return (
-		Array.from(id).reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619), 2166136261) >>>
-		0
+		Arr.reduce(Array.from(id), 2166136261, (hash, char) =>
+			Math.imul(hash ^ char.charCodeAt(0), 16777619),
+		) >>> 0
 	)
 }
 
@@ -67,16 +69,16 @@ function partGeometry(part: Part) {
 }
 
 function mergeParts(parts: readonly Part[]) {
-	const solids = parts.map(partGeometry)
+	const solids = Arr.map(parts, partGeometry)
 	const join = (name: string) =>
 		new THREE.Float32BufferAttribute(
-			solids.flatMap((solid) => Array.from(solid.getAttribute(name).array)),
+			Arr.flatMap(solids, (solid) => Array.from(solid.getAttribute(name).array)),
 			3,
 		)
 	const merged = new THREE.BufferGeometry()
 	merged.setAttribute("position", join("position"))
 	merged.setAttribute("normal", join("normal"))
-	solids.forEach((solid) => solid.dispose())
+	Arr.forEach(solids, (solid) => solid.dispose())
 	return shadeFaces(merged)
 }
 
@@ -100,7 +102,7 @@ export function grain([x, y, z]: Vec3, normal: "x" | "z", radius: number) {
 			v = radius * Math.sin((k * Math.PI) / 4)
 		return normal === "x" ? [x, y + v, z + u] : [x + u, y + v, z]
 	}
-	return range(8).flatMap((k) => [...at(k), ...at(k + 1)])
+	return Arr.flatMap(range(8), (k) => [...at(k), ...at(k + 1)])
 }
 
 /** Smoke that reads request volume: one lazy wisp near idle, a thick fast column when busy,
@@ -113,12 +115,12 @@ export function mapleSmoke(scope: Scope, { position, finish }: { position: Vec3;
 	const speed = 0.16 + finish.activity * 0.4
 	const size = 0.55 + finish.activity * 0.7
 	const color = finish.trouble === "degraded" ? finish.iron : finish.tape
-	const puffs = range(count).map(() =>
+	const puffs = Arr.map(range(count), () =>
 		group({}, [mesh(faces, paperMaterial(color)), inkOutline(lines, finish.ink)]),
 	)
 	scope.frames.push((delta) => {
 		if (finish.running()) elapsed.value += Math.min(delta, 0.05)
-		puffs.forEach((puff, i) => {
+		Arr.forEach(puffs, (puff, i) => {
 			const t = (elapsed.value * speed + i / count) % 1
 			puff.position.set(t * 0.3, t * (0.7 + finish.activity * 0.6), -t * 0.1)
 			puff.scale.setScalar(Math.max(0.001, Math.sin(Math.PI * t) * (0.7 + t * 0.6) * size))

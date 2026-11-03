@@ -3,14 +3,18 @@ import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { segmentedBar } from "../../../ui/meter"
-import { skeleton } from "../../../ui/skeleton"
+import { segmentedBar } from "@maple/views/ui/meter"
+import { skeleton, skeletonMeter } from "@maple/views/ui/skeleton"
+import { statFigure } from "@maple/views/ui/stat-figure"
 import { statRailItem } from "../../kit/stat-rail"
+import { typography } from "@maple/views/ui/typography"
+import { borderedBoxClass } from "@maple/views/ui/bordered-box"
+import { Array as Arr, String as Str } from "effect"
 
 // `FleetBand` and `FleetBandLoading`.
 
 /** A band standing alone on a page body rather than flush under a shell's header. */
-export const FLEET_BAND_BOXED = "overflow-hidden rounded-md border"
+export const FLEET_BAND_BOXED = borderedBoxClass({ overflow: "hidden" })
 
 export type FleetBandSegment = Readonly<{ key: string; count: number; className: string }>
 
@@ -35,11 +39,13 @@ export type FleetBandOptions<S extends string, M> = Readonly<{
 	className?: string
 }>
 
+const capitalize = (text: string): string => Str.toUpperCase(text.charAt(0)) + Str.slice(1)(text)
+
 const BAND = "flex flex-col border-b bg-background md:flex-row md:items-stretch"
 
 export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: FleetBandOptions<S, M>): Html => {
 	const isWaiting = options.isWaiting === true
-	const drawn = options.segments.filter((segment) => segment.count > 0)
+	const drawn = Arr.filter(options.segments, (segment) => segment.count > 0)
 	return h.div(
 		[
 			h.Class(cn(BAND, refreshingClass(isWaiting), options.className)),
@@ -49,44 +55,38 @@ export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: Fleet
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0")],
 				[
-					h.span(
-						[h.Class("flex items-baseline gap-1.5")],
-						[
-							h.span(
-								[h.Class("font-mono text-base font-semibold tabular-nums")],
-								[formatNumber(options.total)],
-							),
-							h.span(
-								[h.Class("text-2xs text-muted-foreground")],
-								[pluralize(options.total, options.noun), " in scope"],
-							),
-						],
-					),
+					// The same anatomy as the cells beside it: label, value, then the bar and its caption.
+					typography(h, { size: "2xs", tone: "muted", weight: "medium", truncate: true }, [
+						capitalize(pluralize(2, options.noun)),
+						" in scope",
+					]),
+					statFigure(h, { value: formatNumber(options.total), size: "sm", className: "-mt-1" }),
 					options.total > 0
 						? segmentedBar(h, {
 								className: "w-full gap-px bg-transparent",
 								total: options.total,
 								minVisible: 2,
-								label: options.segments
-									.map((segment) => `${segment.count} ${segment.key}`)
-									.join(", "),
-								segments: drawn.map((segment) => ({
+								label: Arr.join(
+									Arr.map(options.segments, (segment) => `${segment.count} ${segment.key}`),
+									", ",
+								),
+								segments: Arr.map(drawn, (segment) => ({
 									key: segment.key,
 									value: segment.count,
 									className: segment.className,
 								})),
 							})
 						: h.div([h.Class("h-1.5 w-full rounded-full bg-muted")]),
-					h.span([h.Class("text-3xs text-muted-foreground")], [options.caption]),
+					typography(h, { size: "3xs", tone: "muted" }, [options.caption]),
 				],
 			),
-			...options.cells.map((cell) => {
+			...Arr.map(options.cells, (cell) => {
 				const isActive = options.activeScope === cell.scope
 				return statRailItem(h, {
 					size: "sm",
 					eyebrow: cell.label,
 					value: String(cell.value),
-					hint: cell.hint,
+					subline: cell.hint,
 					tone: cell.tone,
 					valueClassName: cell.value === 0 ? "text-muted-foreground" : undefined,
 					onSelect: options.onScopeChange(isActive ? undefined : cell.scope),
@@ -106,15 +106,16 @@ export const fleetBandLoading = <M>(h: HtmlBuilder<M>, cells: number, className?
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-72 md:shrink-0")],
 				[
-					skeleton(h, "h-4 w-28"),
-					skeleton(h, "h-1.5 w-full rounded-full"),
+					skeleton(h, "h-3 w-24"),
+					skeleton(h, "h-5 w-10"),
+					skeletonMeter(h),
 					skeleton(h, "h-2.5 w-40"),
 				],
 			),
 			...Array.from({ length: cells }, () =>
 				h.div(
 					[h.Class("flex flex-1 flex-col justify-center gap-1.5 border-l px-4 py-3")],
-					[skeleton(h, "h-3 w-20"), skeleton(h, "h-5 w-10")],
+					[skeleton(h, "h-3 w-20"), skeleton(h, "h-5 w-10"), skeleton(h, "h-2.5 w-32")],
 				),
 			),
 		],

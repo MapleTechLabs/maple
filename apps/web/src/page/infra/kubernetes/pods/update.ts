@@ -1,10 +1,11 @@
+import { Schema, Array as Arr, String as Str } from "effect"
 import { podKey } from "../../../../components/infra/pod-restarts"
 import { AsyncData, Command } from "foldkit"
-import * as Keyed from "../../../../data/keyed"
-import { requestKey } from "../../../../data/request-key"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
-import * as FilterSections from "../../../../ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import type { SortDir } from "../../../kit/table-sort"
 import { excludedValue, type FacetLists, onlyValue, toggledValue } from "../../kit/facets"
@@ -20,6 +21,8 @@ import type { PodSortKey } from "../pod-table"
 import { DebounceSearch, FetchFacets, FetchPods, FetchRestarts, FetchSummary, PAGE_SIZE } from "./command"
 import { type Facet, Message } from "./message"
 import type { Model } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Return = PageReturn<Model, Message>
 export type Search = Model["search"]
@@ -76,19 +79,20 @@ export const sortOf = (search: Search) => {
 }
 
 const resetKeyOf = (model: Model) =>
-	JSON.stringify({
+	encodeJson({
 		filters: filtersOf(model.search),
-		q: model.debouncedQuery.trim(),
+		q: Str.trim(model.debouncedQuery),
 		scope: model.search.scope,
 		...sortOf(model.search),
 	})
 
-export const pageIndexOf = (model: Model) => (model.page.resetKey === resetKeyOf(model) ? model.page.index : 0)
+export const pageIndexOf = (model: Model) =>
+	model.page.resetKey === resetKeyOf(model) ? model.page.index : 0
 
 /** "Ended" swaps the fleet on screen (lifecycle); the other scopes narrow the live one. */
 export const podsInput = (model: Model, window: TimeWindow): PodsInput => {
 	const scope = model.search.scope
-	const query = model.debouncedQuery.trim()
+	const query = Str.trim(model.debouncedQuery)
 	return {
 		startTime: window.startTime,
 		endTime: window.endTime,
@@ -102,7 +106,12 @@ export const podsInput = (model: Model, window: TimeWindow): PodsInput => {
 	}
 }
 
-type RequestStep = (model: Model, context: PageContext, window: TimeWindow, mode: Frame.RequestMode) => Step<Model, Message>
+type RequestStep = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	mode: Frame.RequestMode,
+) => Step<Model, Message>
 
 const podsStep: RequestStep = (model, context, window, mode) => {
 	const input = podsInput(model, window)
@@ -131,7 +140,12 @@ export const peekOf = (model: Model) =>
 	PeekUpdate.resolvePeek(AsyncData.getOrElse(model.pods.data, () => null)?.data ?? [], model.search.peek)
 
 const syncPeek = (context: PageContext, result: Return): Return => {
-	const synced = PeekUpdate.sync(result.model.peek, context, result.model.frame.window, peekOf(result.model))
+	const synced = PeekUpdate.sync(
+		result.model.peek,
+		context,
+		result.model.frame.window,
+		peekOf(result.model),
+	)
 	return {
 		...result,
 		model: { ...result.model, peek: synced.model },
@@ -153,7 +167,7 @@ const followRestarts = (context: PageContext, result: Return): Return => {
 	const input = {
 		startTime: window.startTime,
 		endTime: window.endTime,
-		podNames: pods.data.map((pod) => pod.podName),
+		podNames: Arr.map(pods.data, (pod) => pod.podName),
 		limit: PAGE_RESTARTS_LIMIT,
 	}
 	const step: Step<Model, Message> = keyed(
@@ -244,17 +258,26 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	const href = (search: Search) => hrefOf(AppRoute.InfraKubernetesPods({ search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	const debounce =
-		(model.search.q ?? "") === (route.search.q ?? "") ? [] : [DebounceSearch({ query: route.search.q ?? "" })]
-	const requested = routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
+		(model.search.q ?? "") === (route.search.q ?? "")
+			? []
+			: [DebounceSearch({ query: route.search.q ?? "" })]
+	const requested = routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
+		requestAll(moved, context, mode),
+	)
 	return { ...requested, commands: [...(requested.commands ?? []), ...debounce] }
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	requestAll(model, context, "Load")
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -273,25 +296,37 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			query !== (model.search.q ?? "") || query === model.debouncedQuery
 				? { model }
 				: requestAll({ ...model, debouncedQuery: query }, context, "Load"),
-		ChangedQuery: ({ value }) => navigate(model, { ...model.search, q: value === "" ? undefined : value }),
+		ChangedQuery: ({ value }) =>
+			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedScope: ({ scope }) => navigate(model, { ...model.search, scope, peek: undefined }),
 		ClickedShowEnded: () => navigate(model, { ...model.search, scope: "ended" }),
 		ClickedSort: ({ key }) => {
 			const { sortBy, sortDir } = sortOf(model.search)
 			return key === sortBy
 				? navigate(model, { ...model.search, sortDir: sortDir === "desc" ? "asc" : "desc" })
-				: navigate(model, { ...model.search, sortBy: key, sortDir: key === "podName" ? "asc" : "desc" })
+				: navigate(model, {
+						...model.search,
+						sortBy: key,
+						sortDir: key === "podName" ? "asc" : "desc",
+					})
 		},
 		ToggledFacetOption: ({ facet, name }) =>
 			navigate(model, withFacet(model.search, facet, toggledValue(listsOf(model.search, facet), name))),
-		ClickedOnlyFacetOption: ({ facet, name }) => navigate(model, withFacet(model.search, facet, onlyValue(name))),
+		ClickedOnlyFacetOption: ({ facet, name }) =>
+			navigate(model, withFacet(model.search, facet, onlyValue(name))),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
-			navigate(model, withFacet(model.search, facet, excludedValue(listsOf(model.search, facet), name))),
+			navigate(
+				model,
+				withFacet(model.search, facet, excludedValue(listsOf(model.search, facet), name)),
+			),
 		ClickedClearFilters: () => navigate(model, pickTimeSearch(model.search)),
 		RemovedFilterChip: ({ param }) => navigate(model, { ...model.search, [param]: undefined }),
 		ClickedPage: ({ direction }) =>
 			requestAll(
-				{ ...model, page: { resetKey: resetKeyOf(model), index: Math.max(0, pageIndexOf(model) + direction) } },
+				{
+					...model,
+					page: { resetKey: resetKeyOf(model), index: Math.max(0, pageIndexOf(model) + direction) },
+				},
 				context,
 				"Load",
 			),
@@ -299,14 +334,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.frame.window === null
 				? { model }
 				: followPods(context)(
-						applySteps<Model, Message>(model, [podsStep(model, context, model.frame.window, "Refresh")]),
+						applySteps<Model, Message>(model, [
+							podsStep(model, context, model.frame.window, "Refresh"),
+						]),
 					),
 		ClickedPeekRow: ({ key }) => navigate(model, { ...model.search, peek: key }),
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)
 			return {
 				model: { ...model, filterSections: next.model },
-				commands: Command.mapMessages(next.commands, (m) => Message.GotFilterSectionsMessage({ message: m })),
+				commands: Command.mapMessages(next.commands, (m) =>
+					Message.GotFilterSectionsMessage({ message: m }),
+				),
 			}
 		},
 		GotFrameMessage: ({ message: inner }) =>
@@ -314,7 +353,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onResolved: (next, mode) => requestAll(next, context, mode),
 				onTimeSearch: (next, search) => navigate(next, { ...next.search, ...search }),
 			}),
-		GotInstallMessage: ({ message: inner }) => liftInstall(model, InstallModal.update(model.install, inner)),
+		GotInstallMessage: ({ message: inner }) =>
+			liftInstall(model, InstallModal.update(model.install, inner)),
 		GotPeekMessage: ({ message: inner }) => updatePeek(model, inner, context),
 	})
 
@@ -326,7 +366,8 @@ const updatePeek = (model: Model, message: PeekMessage.Message, context: PageCon
 	const commands = Command.mapMessages(result.commands ?? [], toPeek)
 	const out = result.outMessage
 	if (out === undefined) return { model: lifted, commands }
-	if (out._tag === "Closed") return { ...navigate(lifted, { ...model.search, peek: undefined }, true), commands }
+	if (out._tag === "Closed")
+		return { ...navigate(lifted, { ...model.search, peek: undefined }, true), commands }
 	const pods = AsyncData.getOrElse(model.pods.data, () => null)?.data ?? []
 	const next = peek === null ? undefined : pods[peek.index + out.step]
 	return next === undefined

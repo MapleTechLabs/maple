@@ -89,8 +89,10 @@ export interface Config extends MapleSpanOptions {
 	readonly region?: MapleRegion | undefined
 	/**
 	 * Maple ingest key. Defaults to `env.MAPLE_INGEST_KEY`. When unset, the
-	 * SDK runs in no-op mode (no flushes are attempted; buffers are drained
-	 * so they don't grow across the isolate's lifetime).
+	 * SDK exports without `Authorization` to a custom endpoint (a local
+	 * `maple start`, a self-hosted collector), and runs in no-op mode against
+	 * Maple's hosted ingest (no flushes; buffers are drained so they don't
+	 * grow across the isolate's lifetime).
 	 */
 	readonly ingestKey?: string | undefined
 	readonly attributes?: Record<string, unknown> | undefined
@@ -137,8 +139,9 @@ export interface Telemetry {
 	 * `ctx.waitUntil(telemetry.flush(env))` after sending the response.
 	 *
 	 * - Lazy env resolution on first call.
-	 * - No-op when no ingest key is configured (drains buffers, never POSTs;
-	 *   logs one info line on first call so devs know telemetry is disabled).
+	 * - No-op when no ingest key is configured and the endpoint is Maple's
+	 *   hosted ingest (drains buffers, never POSTs; logs one info line on first
+	 *   call so devs know telemetry is disabled).
 	 * - Errors are caught and logged to `console.error`; cooldown of 60s
 	 *   per signal before next attempt after a failure.
 	 */
@@ -152,7 +155,7 @@ const resolveOnce = (env: Record<string, unknown>, config: Config): Resolved => 
 		logsPath: config.logsPath,
 		metricsPath: config.metricsPath,
 		userAgent: `maple-effect-sdk-cloudflare/${SDK_VERSION}`,
-		keyless: "disable",
+		keyless: "disable-at-maple-ingest",
 	})
 }
 
@@ -162,7 +165,10 @@ export const make = (config: Config = {}): Telemetry => {
 	const metrics = makeMetricBuffer()
 
 	let resolved: Resolved | undefined = undefined
-	const noOpNotice = makeNoOpNotice("[MapleCloudflareSDK]", "set MAPLE_INGEST_KEY to enable")
+	const noOpNotice = makeNoOpNotice(
+		"[MapleCloudflareSDK]",
+		"set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector",
+	)
 	const tracesState: SignalState = { disabledUntil: 0 }
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }

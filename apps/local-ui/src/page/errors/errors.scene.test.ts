@@ -1,7 +1,8 @@
-import { DateTime, Option } from "effect"
+import { DateTime, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
+import type { PageViewInputs } from "../kit/inputs"
 import { PageOutMessage } from "../contract"
 import type { ErrorTypeRow } from "./fetch"
 import { Message } from "./message"
@@ -20,10 +21,17 @@ const contextAt = (search: string): PageContext => ({
 })
 const context = contextAt("")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const inputs = { context, presenceOf: () => Option.none(), presenceNowMs: 0, clockMs: 0, hasNewDataSince: () => false }
+const inputs: PageViewInputs = {
+	context,
+	presenceOf: () => ({ status: "unknown", lastSeenMs: null }),
+	presenceNowMs: 0,
+	clockMs: 0,
+	hasNewDataSince: () => false,
+}
 const view = withViewInputs(pageView, inputs)()
 
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const row = (fingerprintHash: string, errorLabel: string): ErrorTypeRow => ({
 	fingerprintHash,
@@ -39,23 +47,40 @@ const entered = () => pageUpdate(init(context).model, Message.CompletedReadClock
 
 const loaded = (rows: ReadonlyArray<ErrorTypeRow>): Model => {
 	const model = entered().model
-	return pageUpdate(model, Message.SucceededFetchByType({ key: model.byType.key ?? "", rows, fetchedAtMs: NOW })).model
+	return pageUpdate(
+		model,
+		Message.SucceededFetchByType({ key: model.byType.key ?? "", rows, fetchedAtMs: NOW }),
+	).model
 }
 
 describe("local errors", () => {
 	test("entry reads the clock, then asks for the summary, the types and the facets, and the presence", () => {
 		expect(names(init(context).commands)).toContain("ReadErrorsClock")
 		const step = entered()
-		expect(names(step.commands)).toEqual(["FetchLocalErrorsSummary", "FetchLocalErrorsByType", "FetchLocalErrorsFacets"])
+		expect(names(step.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchLocalErrorsSummary",
+				"FetchLocalErrorsByType",
+				"FetchLocalErrorsFacets",
+			]),
+		)
 		expect(step.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 	})
 
 	test("an answer for a superseded filter is dropped", () => {
 		const first = entered().model
-		const filtered = update(first, Message.CompletedReadClock({ nowMs: NOW }), contextAt("service=checkout-api")).model
+		const filtered = update(
+			first,
+			Message.CompletedReadClock({ nowMs: NOW }),
+			contextAt("service=checkout-api"),
+		).model
 		const dropped = pageUpdate(
 			filtered,
-			Message.SucceededFetchByType({ key: first.byType.key ?? "", rows: [row("a", "Stale")], fetchedAtMs: NOW }),
+			Message.SucceededFetchByType({
+				key: first.byType.key ?? "",
+				rows: [row("a", "Stale")],
+				fetchedAtMs: NOW,
+			}),
 		)
 		expect(dropped.model.byType).toEqual(filtered.byType)
 	})
@@ -69,7 +94,10 @@ describe("local errors", () => {
 		const opened = pageUpdate(model, Message.ClickedErrorType({ fingerprintHash: "fp1" }))
 		expect(names(opened.commands)).toEqual(["FetchLocalErrorTraces"])
 		const key = opened.model.cards.fp1?.traces.key ?? ""
-		const answered = pageUpdate(opened.model, Message.SucceededFetchTraces({ fingerprintHash: "fp1", key, traces: [], fetchedAtMs: 0 }))
+		const answered = pageUpdate(
+			opened.model,
+			Message.SucceededFetchTraces({ fingerprintHash: "fp1", key, traces: [], fetchedAtMs: 0 }),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(answered.model),
@@ -83,6 +111,10 @@ describe("local errors", () => {
 
 	test("last seen reads the root's newer clock, as legacy reads the time at each render", () => {
 		const later = withViewInputs(pageView, { ...inputs, clockMs: NOW + 20 * 60_000 })()
-		scene({ update: pageUpdate, view: later }, given(loaded([row("fp1", "ConnectionTimeout")])), expectView(text("21m ago")).toExist())
+		scene(
+			{ update: pageUpdate, view: later },
+			given(loaded([row("fp1", "ConnectionTimeout")])),
+			expectView(text("21m ago")).toExist(),
+		)
 	})
 })

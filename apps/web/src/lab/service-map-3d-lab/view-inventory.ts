@@ -3,9 +3,10 @@ import { health, HEALTH_COLOR } from "../../components/service-map/three/spatial
 import type { Node3D } from "../../components/service-map/three/types"
 import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { input } from "../../ui/input"
-import { statusDot } from "../../ui/status-dot"
+import { input } from "@maple/views/ui/input"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model } from "./update"
+import { Array as Arr, String as Str } from "effect"
 
 // `ServiceInventory` with nothing selected: the searchable list sorted by error rate.
 
@@ -13,10 +14,13 @@ export const topology = SERVICE_MAP_3D_TOPOLOGY
 type H = HtmlBuilder<Message>
 
 export const healthDot = (h: H, node: Node3D): Html =>
-	statusDot(h, { tone: "custom", attributes: [h.Style({ "background-color": HEALTH_COLOR[health(node.errorRate)] })] })
+	statusDot(h, {
+		tone: "custom",
+		attributes: [h.Style({ "background-color": HEALTH_COLOR[health(node.errorRate)] })],
+	})
 
 const ROW_CLASS =
-	"group flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
+	"group flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-surface-strong active:bg-surface-strong focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
 
 const row = (h: H, node: Node3D): Html =>
 	h.button(
@@ -39,7 +43,10 @@ const row = (h: H, node: Node3D): Html =>
 					),
 				],
 			),
-			h.span([h.Class("shrink-0 text-2xs tabular-nums text-muted-foreground")], [formatErrorRate(node.errorRate)]),
+			h.span(
+				[h.Class("shrink-0 text-2xs tabular-nums text-muted-foreground")],
+				[formatErrorRate(node.errorRate)],
+			),
 		],
 	)
 
@@ -69,11 +76,14 @@ const header = (h: H, model: Model): Html =>
 	)
 
 export const inventory = (h: H, model: Model): Html => {
-	const needle = model.query.trim().toLowerCase()
-	const sorted = topology.nodes
-		.filter((node) => `${node.label} ${node.namespace} ${node.kind}`.includes(needle))
-		.toSorted((a, b) => b.errorRate - a.errorRate)
-	const degraded = topology.nodes.filter((node) => health(node.errorRate) === "degraded").length
+	const needle = Str.toLowerCase(Str.trim(model.query))
+	const sorted = Arr.filter(topology.nodes, (node) =>
+		Str.includes(needle)(`${node.label} ${node.namespace} ${node.kind}`),
+	).toSorted((a, b) => b.errorRate - a.errorRate)
+	const countOf = (level: "elevated" | "degraded") =>
+		Arr.filter(topology.nodes, (node) => health(node.errorRate) === level).length
+	const degraded = countOf("elevated")
+	const failing = countOf("degraded")
 	return h.aside(
 		[
 			h.Class(
@@ -84,24 +94,43 @@ export const inventory = (h: H, model: Model): Html => {
 		[
 			header(h, model),
 			h.div(
-				[h.Class("flex items-center justify-between border-b px-4 py-2.5 text-2xs text-muted-foreground")],
 				[
-					h.span([], ["Sorted by error rate"]),
-					h.span([h.Class("text-severity-error")], [`${degraded} degraded`]),
+					h.Class(
+						"flex items-center justify-between border-b px-4 py-2.5 text-2xs text-muted-foreground",
+					),
+				],
+				[
+					h.span([h.Class("whitespace-nowrap")], ["By error rate"]),
+					h.span(
+						[h.Class("whitespace-nowrap")],
+						[
+							h.span(
+								[h.Class(degraded > 0 ? "text-severity-warn" : "")],
+								[`${degraded} degraded`],
+							),
+							" · ",
+							h.span([h.Class(failing > 0 ? "text-severity-error" : "")], [`${failing} error`]),
+						],
+					),
 				],
 			),
 			h.div(
 				[h.Class("min-h-0 flex-1 overflow-y-auto py-1")],
 				[
 					...(sorted.length === 0
-						? [h.p([h.Class("p-4 text-xs text-muted-foreground")], [`No services match “${model.query}”.`])]
+						? [
+								h.p(
+									[h.Class("p-4 text-xs text-muted-foreground")],
+									[`No services match “${model.query}”.`],
+								),
+							]
 						: []),
-					...sorted.map((node) => row(h, node)),
+					...Arr.map(sorted, (node) => row(h, node)),
 				],
 			),
 			h.p(
 				[h.Class("border-t px-4 py-3 text-3xs leading-relaxed text-muted-foreground")],
-				["Sample health thresholds", h.br([]), "Elevated > 1% · Degraded > 5% errors"],
+				["Sample health thresholds", h.br([]), "Degraded > 1% · Error > 5% errors"],
 			),
 		],
 	)

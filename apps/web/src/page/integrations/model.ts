@@ -2,11 +2,13 @@ import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
 	GithubIntegrationStatus,
-	HazelIntegrationStatus,
+	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	VercelIntegrationStatus,
+	SupabaseIntegrationStatus,
 } from "@maple/domain/http"
 import {
+	V2AwsIntegration,
 	V2ChatConnectorList,
 	V2GcpIntegration,
 	V2PlanetScaleDatabaseList,
@@ -14,10 +16,10 @@ import {
 	V2ScrapeTarget,
 } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure } from "../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { IntegrationsSearch } from "../../route/search"
-import * as Dialog from "../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { ChatCardModel } from "./chat"
 import { CloudflareCardModel } from "./cloudflare"
 import { GithubCardModel } from "./github"
@@ -25,6 +27,8 @@ import { PrometheusCardModel } from "./prometheus"
 import { RailwayCardModel } from "./railway"
 import { PlanetscaleCardModel } from "./planetscale"
 import { GcpCardModel } from "./gcp"
+import { AwsCardModel } from "./aws"
+import { SupabaseCardModel } from "./supabase"
 import { ConnectModel } from "./connect"
 import { VercelCardModel } from "./vercel-schema"
 
@@ -40,7 +44,9 @@ export const Statuses = Schema.Struct({
 	planetscale: keyed(V2PlanetScaleIntegration),
 	planetscaleDatabases: keyed(V2PlanetScaleDatabaseList),
 	gcp: keyed(V2GcpIntegration),
-	hazel: keyed(HazelIntegrationStatus),
+	aws: keyed(V2AwsIntegration),
+	supabase: keyed(SupabaseIntegrationStatus),
+	linear: keyed(LinearIntegrationStatus),
 	github: keyed(GithubIntegrationStatus),
 	chat: keyed(V2ChatConnectorList),
 	scrapeTargets: keyed(Schema.Array(V2ScrapeTarget)),
@@ -68,5 +74,7 @@ export const Model = Schema.Struct({
 	vercelCard: VercelCardModel,
 	planetscaleCard: PlanetscaleCardModel,
 	gcpCard: GcpCardModel,
+	awsCard: AwsCardModel,
+	supabaseCard: SupabaseCardModel,
 })
 export type Model = typeof Model.Type

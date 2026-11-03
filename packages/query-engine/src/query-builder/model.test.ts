@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { OrgId } from "@maple/domain"
+import { tracesBreakdownQuery } from "../ch/queries/traces"
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import {
@@ -9,6 +12,7 @@ import {
 	GROUP_BY_TOKENS,
 	resolveGroupBy,
 } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 // Minimal traces draft factory — only the fields the builder reads matter; the
 // rest satisfy the payload shape.
@@ -91,10 +95,10 @@ describe("buildTimeseriesQuerySpec where-clause → attribute filters", () => {
 	})
 
 	it("warns (blocking) when the 5 attr-filter cap is exceeded", () => {
-		const clause = ["a = 1", "b = 2", "c = 3", "d = 4", "e = 5", "f = 6"].join(" AND ")
+		const clause = Arr.join(["a = 1", "b = 2", "c = 3", "d = 4", "e = 5", "f = 6"], " AND ")
 		const { warnings, attributeFilters } = attrFilters(clause)
 		expect(attributeFilters).toHaveLength(5)
-		expect(warnings.some((w) => w.includes("Maximum of 5 attr.* filters"))).toBe(true)
+		expect(Arr.some(warnings, (w) => Str.includes("Maximum of 5 attr.* filters")(w))).toBe(true)
 	})
 })
 
@@ -248,7 +252,7 @@ describe("buildTimeseriesQuerySpec series limit", () => {
 	it("warns and disables the cap for a non-positive or non-integer value", () => {
 		const zero = seriesLimitOf({ seriesLimit: "0" })
 		expect(zero.seriesLimit).toBeUndefined()
-		expect(zero.warnings.some((w) => w.includes("series limit"))).toBe(true)
+		expect(Arr.some(zero.warnings, (w) => Str.includes("series limit")(w))).toBe(true)
 
 		expect(seriesLimitOf({ seriesLimit: "-3" }).seriesLimit).toBeUndefined()
 		expect(seriesLimitOf({ seriesLimit: "abc" }).seriesLimit).toBeUndefined()
@@ -376,14 +380,17 @@ describe("metrics resource.* support", () => {
 			whereClause: '(attr.state = "user" OR service.name = "api")',
 		})
 		expect(filters).not.toHaveProperty("attributeFilters")
-		expect(warnings.some((w) => w.includes("Metrics OR group ignored"))).toBe(true)
+		expect(Arr.some(warnings, (w) => Str.includes("Metrics OR group ignored")(w))).toBe(true)
 	})
 
 	it("warns when the 5 resource-filter cap is exceeded", () => {
-		const clause = ["a", "b", "c", "d", "e", "f"].map((k) => `resource.${k} = "1"`).join(" AND ")
+		const clause = Arr.join(
+			Arr.map(["a", "b", "c", "d", "e", "f"], (k) => `resource.${k} = "1"`),
+			" AND ",
+		)
 		const { warnings, filters } = metricsFiltersOf({ whereClause: clause })
 		expect(filters?.resourceAttributeFilters).toHaveLength(5)
-		expect(warnings.some((w) => w.includes("Maximum of 5 resource.* filters"))).toBe(true)
+		expect(Arr.some(warnings, (w) => Str.includes("Maximum of 5 resource.* filters")(w))).toBe(true)
 	})
 
 	it("resource.<key> group-by resolves to resource_attribute + groupByResourceAttributeKey", () => {
@@ -413,7 +420,7 @@ describe("metrics resource.* support", () => {
 			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
 			groupBy: ["attr.state", "resource.host.name"],
 		})
-		expect(warnings.some((w) => w.includes("single attribute group by"))).toBe(true)
+		expect(Arr.some(warnings, (w) => Str.includes("single attribute group by")(w))).toBe(true)
 		expect(groupBy).toEqual(["attribute"])
 		expect(filters?.groupByAttributeKey).toBe("state")
 		expect(filters).not.toHaveProperty("groupByResourceAttributeKey")
@@ -499,7 +506,7 @@ describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
 
 	it("logs does not support attr.* — the catalog lists no prefixes for it", () => {
 		const result = buildTimeseriesQuerySpec(draftFor("logs", ["attr.anything"]))
-		expect(result.warnings.join(" ")).toContain("logs source does not support attr.*")
+		expect(Arr.join(result.warnings, " ")).toContain("logs source does not support attr.*")
 	})
 
 	// The catalogue is the documented vocabulary (MCP schema doc renders it) and
@@ -627,7 +634,7 @@ describe("product_events drafts", () => {
 	it("warns on an operator a row column cannot take", () => {
 		const { filters, warnings } = filtersOf('event.name contains "signup"')
 		expect(filters).toBeUndefined()
-		expect(warnings.join(" ")).toContain("supports only = and !=")
+		expect(Arr.join(warnings, " ")).toContain("supports only = and !=")
 	})
 
 	it("carries a single attr.* group-by key on the filters", () => {
@@ -705,7 +712,7 @@ describe("product_events clause edge cases", () => {
 	it("rejects != on visitor.type instead of selecting the negated value", () => {
 		const result = buildTimeseriesQuerySpec(draft({ whereClause: 'visitor.type != "new"' }))
 		expect(result.query).toMatchObject({ filters: undefined })
-		expect(result.warnings.join(" ")).toContain("supports only =")
+		expect(Arr.join(result.warnings, " ")).toContain("supports only =")
 	})
 })
 
@@ -801,5 +808,40 @@ describe("buildTimeseriesQuerySpec where-clause OR groups", () => {
 		expect(attrFilters(formatted).attributeFilters).toEqual([
 			{ key: "a", mode: "equals", value: "1", or: [{ key: "b", mode: "exists", negated: true }] },
 		])
+	})
+})
+
+describe("traces group by attr.<key>", () => {
+	it("compiles a breakdown grouped by the span attribute", () => {
+		const { query } = buildBreakdownQuerySpec(
+			tracesDraft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.code.namespace"],
+			}),
+		)
+		const keys =
+			query?.kind === "breakdown" && query.source === "traces"
+				? query.filters?.groupByAttributeKeys
+				: undefined
+		expect(query).toMatchObject({ kind: "breakdown", groupBy: "attribute" })
+		const { sql } = compileUnsafe(
+			tracesBreakdownQuery({ metric: "count", groupBy: "attribute", groupByAttributeKey: keys?.[0] }),
+			{
+				orgId: OrgId.make("org_123"),
+				startTime: "2024-01-01 00:00:00",
+				endTime: "2024-01-02 00:00:00",
+			},
+		)
+		expect(sql).toContain("SpanAttributes['code.namespace']")
+	})
+	it("keeps the case of the attribute key", () => {
+		const { query } = buildTimeseriesQuerySpec(
+			tracesDraft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.userId"],
+			}),
+		)
+		expect(query).toMatchObject({ filters: { groupByAttributeKeys: ["userId"] } })
+		expect(resolveGroupBy("metrics", ["ATTR.tenantId"]).attributeKeys).toEqual(["tenantId"])
 	})
 })

@@ -2,8 +2,8 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../../../charts/theme-colors"
-import { toLoadFailure } from "../../../../data/load-failure"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	VERCEL_API_AI_GATEWAY,
 	VERCEL_API_DEPLOYMENTS,

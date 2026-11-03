@@ -1,10 +1,10 @@
 import { OrgId } from "@maple/domain"
-import { encodeLogKey } from "../../../lib/log-key"
+import { encodeLogKey } from "@maple/views/lib/log-key"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import type { LogRecord } from "../../../ui/logs/log-row-view"
+import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import type { PageContext } from "../../contract"
-import * as LogDetail from "../detail"
+import * as LogDetail from "@maple/views/logs/log-sheet"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 

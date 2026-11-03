@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Predicate, Result, Schema } from "effect"
+import { Effect, Predicate, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { MapleApiV2 } from "./api"
 import { V2AlertDestinationCreateParams } from "./alert-destinations"
 import { V2AlertIncident } from "./alert-incidents"
@@ -370,6 +370,9 @@ describe("V2 alerts wire format", () => {
 			},
 		],
 		window_minutes: 5,
+		evaluation_interval_minutes: null,
+		slowed_interval_minutes: null,
+		slowed_at: null,
 		minimum_sample_count: 50,
 		consecutive_breaches_required: 2,
 		breaches_out_of: null,
@@ -383,6 +386,7 @@ describe("V2 alerts wire format", () => {
 		no_data_behavior: "skip",
 		alert_on_no_data: false,
 		last_evaluation_error: null,
+		last_evaluation_error_kind: null,
 		last_evaluated_at: null,
 		last_scheduled_at: null,
 		created_at: "2026-07-15T00:00:00.000Z",
@@ -647,9 +651,10 @@ describe("scopes", () => {
 	// derivation cannot classify is a 500, so every declared one must classify.
 	it("classifies every scope-protected v2 route template", () => {
 		let checked = 0
-		for (const group of Object.values(MapleApiV2.groups)) {
+		for (const group of Rec.values(MapleApiV2.groups)) {
 			for (const endpoint of Object.values(group.endpoints)) {
-				const scoped = Array.from(endpoint.middlewares).some(
+				const scoped = Arr.some(
+					Array.from(endpoint.middlewares),
 					(middleware) =>
 						Predicate.hasProperty(middleware, "key") &&
 						Predicate.isString(middleware.key) &&
@@ -732,7 +737,7 @@ describe("telemetry contracts", () => {
 	it("round-trips the synthetic composite log ID", () => {
 		const internal = JSON.stringify(["2026-07-15 12:00:00.123", "00112233445566778899AABBCCDDEEFF"])
 		const wire = Schema.encodeSync(LogPublicId)(internal)
-		expect(wire.startsWith("log_")).toBe(true)
+		expect(Str.startsWith("log_")(wire)).toBe(true)
 		expect(Schema.decodeSync(LogPublicId)(wire)).toBe(internal)
 	})
 
@@ -861,10 +866,15 @@ describe("timestamps", () => {
 
 describe("isScopeExemptRoute", () => {
 	it("exempts only sending and listing agent feedback", () => {
-		expect(isScopeExemptRoute("POST", "/v2/agent_feedback")).toBe(true)
-		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/")).toBe(true)
-		expect(isScopeExemptRoute("GET", "/v2/agent_feedback")).toBe(true)
-		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback")).toBe(false)
-		expect(isScopeExemptRoute("POST", "/v2/api_keys")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback", "standard")).toBe(true)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/", "standard")).toBe(true)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback", "standard")).toBe(true)
+		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback", "standard")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/api_keys", "standard")).toBe(false)
+	})
+
+	it("exempts nothing for a device credential", () => {
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback", "device")).toBe(false)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback", "device")).toBe(false)
 	})
 })

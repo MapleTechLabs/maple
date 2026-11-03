@@ -1,18 +1,16 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Layer, Schema, Tracer } from "effect"
+import { Context, Effect, Layer, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor } from "./dispatcher"
 import { listMcpTools } from "./tool-catalog"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
+import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
-import {
-	WarehouseQueryService,
-	type WarehouseQueryServiceApi,
-} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryError } from "@maple/domain"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import {
@@ -73,12 +71,13 @@ describe("MCP dispatcher", () => {
 		// Strict MCP clients (the Vercel AI SDK's `tools/list` validator) drop the
 		// WHOLE connection when any tool's inputSchema.type is not "object" — the
 		// offending tool names are collected so a failure names them.
-		const invalidSchemas = mapleToolCatalog
-			.map((definition) => ({
+		const invalidSchemas = Arr.filter(
+			Arr.map(mapleToolCatalog, (definition) => ({
 				name: definition.name,
 				type: toInputSchema(definition.schema).type,
-			}))
-			.filter(({ type }) => type !== "object")
+			})),
+			({ type }) => type !== "object",
+		)
 
 		expect(invalidSchemas).toEqual([])
 	})
@@ -87,9 +86,13 @@ describe("MCP dispatcher", () => {
 		Effect.gen(function* () {
 			const descriptors = yield* listMcpTools
 			expect(
-				descriptors.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+				Arr.map(descriptors, ({ name, description, inputSchema }) => ({
+					name,
+					description,
+					inputSchema,
+				})),
 			).toEqual(
-				mapleToolCatalogFor("mcp").map((definition) => ({
+				Arr.map(mapleToolCatalogFor("mcp"), (definition) => ({
 					name: definition.name,
 					description: definition.description,
 					inputSchema: toInputSchema(definition.schema),
@@ -117,34 +120,52 @@ describe("MCP dispatcher", () => {
 	)
 
 	describe("tool audience", () => {
-		// The sandbox tools execute code inside a container holding the org's source, and the
-		// pull request tools act on the org's behalf. A third-party MCP client sees neither.
-		const AGENT_TOOLS = ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]
+		// The sandbox and GitHub tools read the org's source, commits and CI, and the pull
+		// request tools act on the org's behalf. A third-party MCP client sees none of them.
+		const AGENT_TOOLS = [
+			"sandbox_grep",
+			"sandbox_list_files",
+			"sandbox_read_file",
+			"sandbox_exec",
+			"list_source_repositories",
+			"search_source_code",
+			"read_source_file",
+			"ci_runs",
+			"compare_commits",
+		]
 		const INTERNAL_TOOLS = ["pr_changed_files", "pr_context", "pr_file_diff", ...AGENT_TOOLS]
 
 		it("keeps the sandbox tools agent-only and the pull request tools internal", () => {
-			const agent = mapleToolCatalog.filter((d) => d.audience === "agent").map((d) => d.name)
-			const internal = mapleToolCatalog.filter((d) => d.audience === "internal").map((d) => d.name)
+			const agent = Arr.map(
+				Arr.filter(mapleToolCatalog, (d) => d.audience === "agent"),
+				(d) => d.name,
+			)
+			const internal = Arr.map(
+				Arr.filter(mapleToolCatalog, (d) => d.audience === "internal"),
+				(d) => d.name,
+			)
 			expect(agent.sort()).toEqual([...AGENT_TOOLS].sort())
 			expect(internal.sort()).toEqual(["pr_changed_files", "pr_context", "pr_file_diff"])
 		})
 
 		it("offers the bot the sandbox but not the pull request tools", () => {
-			const bot = new Set(mapleToolCatalogFor("bot").map((d) => d.name))
-			expect(AGENT_TOOLS.filter((name) => !bot.has(name))).toEqual([])
+			const bot = new Set(Arr.map(mapleToolCatalogFor("bot"), (d) => d.name))
+			expect(Arr.filter(AGENT_TOOLS, (name) => !bot.has(name))).toEqual([])
 			expect(
-				["pr_changed_files", "pr_context", "pr_file_diff"].filter((name) => bot.has(name)),
+				Arr.filter(["pr_changed_files", "pr_context", "pr_file_diff"], (name) => bot.has(name)),
 			).toEqual([])
 		})
 
 		it.effect("does not list an internal tool on the public transport", () =>
 			Effect.gen(function* () {
 				const listed = new Set((yield* listMcpTools).map((descriptor) => descriptor.name))
-				expect(INTERNAL_TOOLS.filter((name) => listed.has(name))).toEqual([])
+				expect(Arr.filter(INTERNAL_TOOLS, (name) => listed.has(name))).toEqual([])
 				// The agents' catalogs still carry them.
-				const chat = new Set(mapleToolCatalogFor("chat").map((d) => d.name))
-				const workflow = new Set(mapleToolCatalogFor("workflow").map((d) => d.name))
-				expect(INTERNAL_TOOLS.filter((name) => !chat.has(name) || !workflow.has(name))).toEqual([])
+				const chat = new Set(Arr.map(mapleToolCatalogFor("chat"), (d) => d.name))
+				const workflow = new Set(Arr.map(mapleToolCatalogFor("workflow"), (d) => d.name))
+				expect(Arr.filter(INTERNAL_TOOLS, (name) => !chat.has(name) || !workflow.has(name))).toEqual(
+					[],
+				)
 			}),
 		)
 
@@ -258,6 +279,24 @@ describe("MCP dispatcher", () => {
 			}),
 		)
 
+		// A failure message can quote a whole SQL statement; the span keeps a bounded prefix.
+		it.effect("caps the failure message it puts on the span", () =>
+			Effect.gen(function* () {
+				const { spans, tracer } = makeRecordingTracer()
+				const message = `SQL rejected: ${Str.repeat(5_000)("x")}`
+				yield* recordExpectedMcpFailure(
+					{ _tag: "@maple/mcp/errors/McpInvalidInputError", message },
+					"Invalid tool input",
+				).pipe(Effect.withSpan("probe"), Effect.withTracer(tracer))
+
+				const recorded = String(
+					spans.find((s) => s.name === "probe")?.attributes.get("maple.mcp.error.message"),
+				)
+				expect(recorded.length).toBeLessThan(message.length)
+				expect(Str.startsWith(recorded)(message)).toBe(true)
+			}),
+		)
+
 		// Expected 4xx (bad parameters, bad credentials) must not be Error spans —
 		// only 5xx is, per CLAUDE.md. Prod was recording `@maple/mcp/decode-error`
 		// and `McpAuthInvalidError` as Error status + exception events.
@@ -272,6 +311,7 @@ describe("MCP dispatcher", () => {
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
+				expect(dispatchSpan.attributes.get("maple.mcp.error.message")).toContain("inspect_trace")
 
 				// The inner registry span still FAILS with the decode error (the typed
 				// error stays in the error channel); the SDK exporter is what turns it
@@ -332,10 +372,10 @@ describe("MCP dispatcher", () => {
 		it.effect("fails the dispatcher span on a real query failure", () =>
 			Effect.gen(function* () {
 				// SAFETY: run_sql reaches only rawSqlQuery on the warehouse; no other method is called.
-				const warehouse = {
+				const warehouse = makeWarehouseServiceStub({
 					rawSqlQuery: () =>
 						Effect.fail(new WarehouseQueryError({ message: "boom", pipeName: "run_sql" })),
-				} as WarehouseQueryServiceApi
+				})
 				const executor = yield* McpToolExecutor.make.pipe(
 					Effect.provide(
 						Context.make(AuditLogService, makeMemoryAuditLog()).pipe(

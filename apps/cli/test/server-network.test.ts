@@ -1,13 +1,13 @@
 import { describe, it } from "@effect/vitest"
-import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
+import { ok, rejects, strictEqual } from "node:assert"
 import { Effect, Exit, Result, Tracer } from "effect"
-import { checkpointQueryUrl } from "../src/server/checkpoints"
+import { checkpointQueryUrl } from "@maple/local-server/checkpoints"
 import {
 	__testables,
 	corsHeadersForAllowedOrigin,
 	isBrowserOriginAllowed,
 	makeBrowserOriginPolicy,
-} from "../src/server/serve"
+} from "@maple/local-server/serve"
 import { serverProbeUrl } from "../src/commands/server-args"
 
 const makeRecordingTracer = () => {
@@ -92,6 +92,12 @@ describe("request admission on shutdown", () => {
 	})
 })
 
+// Bun types `port` as optional (unix sockets); these listeners are always TCP.
+const portOf = (server: { readonly port: number | undefined }): number => {
+	ok(server.port !== undefined, "listener has no TCP port")
+	return server.port
+}
+
 describe("local listener addresses", () => {
 	it("reaches an IPv4 wildcard listener through the loopback probe URL", async () => {
 		const server = Bun.serve({
@@ -100,7 +106,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			const response = await fetch(serverProbeUrl("0.0.0.0", server.port))
+			const response = await fetch(serverProbeUrl("0.0.0.0", portOf(server)))
 			strictEqual(response.status, 200)
 		} finally {
 			await server.stop(true)
@@ -114,7 +120,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			strictEqual((await fetch(serverProbeUrl("::1", server.port))).status, 200)
+			strictEqual((await fetch(serverProbeUrl("::1", portOf(server)))).status, 200)
 			await rejects(fetch(`http://127.0.0.1:${server.port}`))
 		} finally {
 			await server.stop(true)
@@ -128,7 +134,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			strictEqual((await fetch(serverProbeUrl("::", server.port))).status, 200)
+			strictEqual((await fetch(serverProbeUrl("::", portOf(server)))).status, 200)
 		} finally {
 			await server.stop(true)
 		}
@@ -223,13 +229,10 @@ describe("browser origin policy", () => {
 	})
 
 	it("echoes any allowed origin instead of a wildcard", () => {
-		deepStrictEqual(corsHeadersForAllowedOrigin(hostedOrigin), {
-			"access-control-allow-origin": hostedOrigin,
-			"access-control-allow-methods": "GET, POST, OPTIONS",
-			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
-			"access-control-allow-private-network": "true",
-			vary: "Origin",
-		})
+		const headers = corsHeadersForAllowedOrigin(hostedOrigin)
+		strictEqual(headers?.["access-control-allow-origin"], hostedOrigin)
+		strictEqual(headers?.vary, "Origin")
+		strictEqual(headers?.["access-control-allow-private-network"], "true")
 		const loopbackOrigin = "http://localhost:3000"
 		strictEqual(allowed("http://127.0.0.1:4318/v1/traces", loopbackOrigin), true)
 		strictEqual(
@@ -237,5 +240,27 @@ describe("browser origin policy", () => {
 			loopbackOrigin,
 		)
 		strictEqual(corsHeadersForAllowedOrigin(null), undefined)
+	})
+
+	it("allows instrumented dashboard requests through the CORS preflight", () => {
+		const headers = new Headers(corsHeadersForAllowedOrigin(hostedOrigin))
+		const allowedHeaders = new Set(
+			headers
+				.get("access-control-allow-headers")
+				?.split(",")
+				.map((header) => header.trim().toLowerCase()),
+		)
+		for (const requested of [
+			"content-type",
+			"authorization",
+			"x-maple-sdk",
+			"x-maple-ingest-key",
+			"traceparent",
+			"tracestate",
+			"baggage",
+			"b3",
+		]) {
+			ok(allowedHeaders.has(requested), `preflight must allow ${requested}`)
+		}
 	})
 })

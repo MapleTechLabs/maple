@@ -1,12 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { labelStyles } from "@maple/ui/styles/ui/label"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../ui/display"
-import { eyebrow } from "../../ui/eyebrow"
-import * as Select from "../../ui/select"
-import { type SelectOption, view as selectView } from "../../ui/select-view"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import * as Select from "@maple/views/ui/select"
+import { type SelectOption, view as selectView } from "@maple/views/ui/select-view"
 import { Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 // The small pieces the lab's query and formula cards share.
 
@@ -16,18 +15,15 @@ type H = HtmlBuilder<Message>
 export const fieldEyebrow = (h: H, text: string, className?: string): Html =>
 	eyebrow(h, { variant: "label", as: "p", className }, [text])
 
-/** `<Eyebrow variant="label" render={<Label />}>`: Label's classes under the eyebrow's. */
+/** `<Eyebrow variant="label" render={<Label />}>`: a label element at the eyebrow's size, like its siblings. */
 export const labelEyebrow = (h: H, text: string): Html =>
 	h.label(
-		[h.Class(cn(labelStyles, eyebrowVariants({ variant: "label" }))), h.DataAttribute("slot", "eyebrow")],
+		[
+			h.Class(cn("inline-flex items-center gap-2", eyebrowVariants({ variant: "label" }))),
+			h.DataAttribute("slot", "eyebrow"),
+		],
 		[text],
 	)
-
-/** The `A` / `F1` badge in the row's 44px gutter. */
-export const nameBadge = (h: H, name: string): Html =>
-	badge(h, { variant: "outline", className: "h-7 w-11 justify-center self-start font-mono text-2xs" }, [
-		name,
-	])
 
 export type LabSelectOptions = Readonly<{
 	className: string
@@ -55,7 +51,7 @@ export const labSelect = (
 		view: selectView,
 		toParentMessage: (message) => Message.GotSelectMessage({ id, message }),
 		viewInputs: {
-			entries: options.map((item) => ({ _tag: "Item" as const, item })),
+			entries: Arr.map(options, (item) => ({ _tag: "Item" as const, item })),
 			className: inputs.className,
 			toView: inputs.toView,
 			renderValue: placeholder === undefined || index !== -1 ? undefined : () => [placeholder],

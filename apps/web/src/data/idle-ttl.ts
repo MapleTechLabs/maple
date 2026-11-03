@@ -38,6 +38,8 @@ export const IdleTtl = {
 	releaseDetail: 30_000,
 	/** `COMMIT_DETAIL_TTL_MS` (`commitQueryAtom`, `commitsQueryAtom`). */
 	commitDetail: 300_000,
+	/** `GET /v2/telemetry_signals`: shared by every page's empty state. */
+	signalPresence: 60_000,
 	/** `DEFAULT_QUERY_TTL` (`retainedQueryV2`): `openAnomalyServiceCountsAtom`. */
 	retainedQuery: 60_000,
 } as const

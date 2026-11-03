@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
 	resolve: { tsconfigPaths: true },
@@ -6,6 +6,7 @@ export default defineConfig({
 		// Scene runs on VNodes: no DOM environment is needed.
 		environment: "node",
 		include: ["src/**/*.test.ts"],
+		exclude: [...configDefaults.exclude, "**/.claude/**", "**/.context/**", "**/worktrees/**"],
 		setupFiles: ["./src/vitest-setup.ts"],
 		server: { deps: { inline: ["foldkit", "@foldkit/ui"] } },
 	},

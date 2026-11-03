@@ -1,46 +1,27 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { traceHrefFrom } from "./peek"
-import { tableRowStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TracesSearch } from "../../../route/search"
 
 type Search = typeof TracesSearch.Type
-import { httpSpanLabel } from "../../../ui/http-span-label"
-import { truncatedText } from "../../../ui/truncated-text"
-import { servicePills, traceStatusBadge } from "../../../ui/trace-badges"
-import { button } from "../../../ui/button"
-import { tableCell } from "../../../ui/table"
+import { httpSpanLabel } from "@maple/views/ui/http-span-label"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { servicePills, traceStatusBadge } from "@maple/views/ui/trace-badges"
+import { button } from "@maple/views/ui/button"
+import { laneTableCell, rowLink, tableCell, tableRow } from "@maple/views/ui/table"
+import { latencyValue } from "@maple/views/ui/values"
+import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
 
 // One row of the traces table.
-
-/** The row's timestamp formats in the page's time zone. */
-export interface TimeFormat {
-	readonly row: Intl.DateTimeFormat
-	readonly withYear: Intl.DateTimeFormat
-}
-
-export const timeFormat = (timeZone: string): TimeFormat => {
-	const options = {
-		timeZone,
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	} as const
-	return {
-		row: new Intl.DateTimeFormat("en-US", options),
-		withYear: new Intl.DateTimeFormat("en-US", { ...options, year: "numeric" }),
-	}
-}
 
 const epochOf = (startTime: string): number => new Date(warehouseDateTimeToIso(startTime)).getTime()
 
@@ -52,7 +33,7 @@ export const traceHref = (search: Search, row: TraceRow): string =>
 const displayName = (row: TraceRow): string => {
 	const name = row.rootName !== "" ? row.rootName : row.rootSpanName !== "" ? row.rootSpanName : "Unknown"
 	const screenName = row.rootAttributes["screen.name"]
-	return screenName !== undefined && screenName !== "" && !name.includes(screenName)
+	return screenName !== undefined && screenName !== "" && !Str.includes(screenName)(name)
 		? `${name} · ${screenName}`
 		: name
 }
@@ -63,57 +44,42 @@ const rootSpanCell = (
 	h: HtmlBuilder<Message>,
 	row: TraceRow,
 	index: number,
-	time: TimeFormat,
+	timeZone: string,
 	nowMs: number,
 	search: Search,
 ): Html => {
 	const epochMs = epochOf(row.startTime)
-	const stamp = time.row.format(epochMs)
+	const stamp = formatTimestampInTimezone(epochMs, { timeZone })
 	const duration = formatDuration(row.durationMs)
 	return tableCell(
 		h,
 		[
-			h.div(
-				[h.Class("flex flex-col min-w-0")],
-				[
-					// A plain click peeks (`MountPeekRows`); modified, middle and right clicks follow the link.
-					h.a(
-						[
-							h.AriaLabel(`Open trace ${row.traceId}`),
-							h.Attribute("class", "after:absolute after:inset-0 after:content-['']"),
-							h.DataAttribute("peek-index", String(index)),
-							h.Href(traceHref(search, row)),
-							h.Tabindex(-1),
-						],
-						[],
-					),
-					httpSpanLabel(h, {
-						spanName: displayName(row),
-						spanAttributes: row.rootAttributes,
-						spanKind: row.rootKind,
-						textClassName: "text-xs",
-					}),
-					truncatedText(h, { text: stamp, className: "text-3xs text-muted-foreground" }, [
+			vstack(h, { shrink: true }, [
+				// A plain click peeks (`MountPeekRows`); modified, middle and right clicks follow the link.
+				rowLink(h, {
+					href: traceHref(search, row),
+					label: `Open trace ${row.traceId}`,
+					attributes: [h.DataAttribute("peek-index", String(index)), h.Tabindex(-1)],
+				}),
+				httpSpanLabel(h, {
+					spanName: displayName(row),
+					spanAttributes: row.rootAttributes,
+					spanKind: row.rootKind,
+					textClassName: "text-xs",
+				}),
+				truncatedText(
+					h,
+					{ text: stamp, className: typographyClass({ size: "3xs", tone: "muted" }) },
+					[
 						h.span([h.Class("hidden @min-[480px]/page:inline")], [stamp, " "]),
 						h.span(
-							[h.Class("text-muted-foreground/60")],
-							[
-								"(",
-								h.time(
-									[
-										h.Attribute("class", ""),
-										h.Attribute("datetime", new Date(epochMs).toISOString()),
-										h.Title(time.withYear.format(epochMs)),
-									],
-									[formatRelativeTime(epochMs, nowMs)],
-								),
-								")",
-							],
+							[h.Class("text-foreground-subtle")],
+							["(", listRelativeTime(h, { value: epochMs, nowMs, timeZone }), ")"],
 						),
 						h.span([h.Class("@min-[480px]/page:hidden")], [" · ", duration]),
-					]),
-				],
-			),
+					],
+				),
+			]),
 		],
 		CELL,
 	)
@@ -125,23 +91,61 @@ export const traceRow = (
 	h: HtmlBuilder<Message>,
 	row: TraceRow,
 	index: number,
-	time: TimeFormat,
+	timeZone: string,
 	nowMs: number,
 	state: RowState,
 ): Html =>
-	h.tr(
+	tableRow(
+		h,
 		[
-			h.Attribute(
-				"class",
-				cn(
-					tableRowStyles,
-					state.isActive && "bg-muted/40",
-					"hover:bg-muted/50 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-				),
+			laneTableCell(
+				h,
+				state.isActive,
+				[
+					h.a(
+						[
+							h.Attribute(
+								"class",
+								"relative z-10 font-mono text-xs text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
+							),
+							h.Href(traceHref(state.search, row)),
+						],
+						[shortId(row.traceId, "trace")],
+					),
+				],
+				CELL,
 			),
+			rootSpanCell(h, row, index, timeZone, nowMs, state.search),
+			tableCell(
+				h,
+				[servicePills(h, row.services) ?? ""],
+				cn(CELL, "hidden @min-[680px]/page:table-cell"),
+			),
+			tableCell(
+				h,
+				[typography(h, { size: "xs", tone: "muted", mono: true }, [formatNumber(row.spanCount)])],
+				cn(CELL, "hidden @min-[560px]/page:table-cell"),
+			),
+			tableCell(
+				h,
+				[latencyValue(h, { ms: row.durationMs, className: "text-xs" })],
+				cn(CELL, "hidden @min-[480px]/page:table-cell"),
+			),
+			tableCell(
+				h,
+				[traceStatusBadge(h, { hasError: row.hasError, httpStatusCode: row.httpStatusCode })],
+				CELL,
+			),
+		],
+		cn(
+			state.isActive && "bg-surface-strong",
+			"hover:bg-surface-sunken active:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+		),
+		[
+			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
+			h.Key(`row-${index}`),
 			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
 			h.DataAttribute("index", String(index)),
-			h.DataAttribute("slot", "table-row"),
 			h.Tabindex(0),
 			h.OnKeyDownPreventDefault((key) =>
 				key === "Enter" || key === " "
@@ -151,45 +155,6 @@ export const traceRow = (
 								: Message.ClickedPeekRow({ index }),
 						)
 					: Option.none(),
-			),
-		],
-		[
-			tableCell(
-				h,
-				[
-					h.a(
-						[
-							h.Attribute(
-								"class",
-								"relative z-10 font-mono text-xs text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary",
-							),
-							h.Href(traceHref(state.search, row)),
-						],
-						[shortId(row.traceId, "trace")],
-					),
-				],
-				cn(CELL, ROW_LANE, state.isActive ? "before:bg-primary" : "before:bg-transparent"),
-			),
-			rootSpanCell(h, row, index, time, nowMs, state.search),
-			tableCell(
-				h,
-				[servicePills(h, row.services) ?? ""],
-				cn(CELL, "hidden @min-[680px]/page:table-cell"),
-			),
-			tableCell(
-				h,
-				[h.span([h.Class("font-mono text-xs text-muted-foreground")], [formatNumber(row.spanCount)])],
-				cn(CELL, "hidden @min-[560px]/page:table-cell"),
-			),
-			tableCell(
-				h,
-				[h.span([h.Class("font-mono text-xs")], [formatDuration(row.durationMs)])],
-				cn(CELL, "hidden @min-[480px]/page:table-cell"),
-			),
-			tableCell(
-				h,
-				[traceStatusBadge(h, { hasError: row.hasError, httpStatusCode: row.httpStatusCode })],
-				CELL,
 			),
 		],
 	)
@@ -210,7 +175,7 @@ export const noiseNote = (h: HtmlBuilder<Message>, hidden: number): Html =>
 					variant: "link",
 					size: "xs",
 					className:
-						"h-auto p-0 text-primary underline decoration-primary/30 hover:decoration-primary",
+						"h-auto p-0 text-primary underline decoration-primary-a3 hover:decoration-primary active:decoration-primary",
 					attributes: [h.OnClick(Message.ClickedShowNoise())],
 				},
 				["show"],

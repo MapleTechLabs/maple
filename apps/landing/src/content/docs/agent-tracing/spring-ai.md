@@ -18,12 +18,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Spring AI in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-spring-ai -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-spring-ai -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the OpenTelemetry starter
 
@@ -234,7 +235,7 @@ public static void main(String[] args) {
 
 On serverless platforms, inject `SdkTracerProvider` and call `tracerProvider.forceFlush().join(10, TimeUnit.SECONDS)` at the end of each invocation.
 
-## Check that it works
+## Verify
 
 Send two or three messages with the same conversation id, including one that calls a tool. After about a minute, **Agent Sessions** in Maple shows one session for that id with framework **Spring AI**, one turn per `ChatClient` call, the transcript, and tokens on every model call. Cost shows as unpriced, because Spring AI doesn't report it.
 
@@ -245,7 +246,7 @@ Send two or three messages with the same conversation id, including one that cal
 - **The transcript is empty.** `maple.ai.capture-content` isn't `true`, or `MapleAiObservationConfig` isn't in a scanned package.
 - **Every span is its own trace.** The OpenTelemetry Java agent is attached next to the starter. Remove it, or follow the Java agent steps in the [skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing-spring-ai).
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [Spring AI observability reference](https://docs.spring.io/spring-ai/reference/observability/index.html)

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { WarehouseQuotaExceededError } from "@maple/domain/http"
+import { Schema } from "effect"
 import { HttpClientError, HttpClientRequest } from "effect/http"
 import {
 	isBlipping,
@@ -9,6 +10,7 @@ import {
 	PEER_OUTAGE_GRACE_MS,
 } from "../lib/peer-reachability"
 import {
+	isRequestTimeout,
 	WarehouseDecodeError,
 	WarehouseQueryError,
 	WarehouseUnreachableError,
@@ -46,7 +48,7 @@ describe("normalizeWarehouseError", () => {
 		const cause = new Error("transport failed")
 		const normalized = normalizeWarehouseError("query", cause)
 		expect(normalized).toBeInstanceOf(WarehouseQueryError)
-		if (!(normalized instanceof WarehouseQueryError)) throw new Error("expected WarehouseQueryError")
+		if (!Schema.is(WarehouseQueryError)(normalized)) throw new Error("expected WarehouseQueryError")
 		expect(normalized.message).toBe("transport failed")
 		expect(normalized.cause).toBe(cause)
 		expect(normalizeWarehouseError("query", normalized)).toBe(normalized)
@@ -81,7 +83,7 @@ describe("transport failures during a connectivity blip", () => {
 		const normalized = normalizeWarehouseError("query", transportFailure(), blipping())
 
 		expect(normalized).toBeInstanceOf(WarehouseUnreachableError)
-		if (!(normalized instanceof WarehouseUnreachableError)) throw new Error("expected unreachable")
+		if (!Schema.is(WarehouseUnreachableError)(normalized)) throw new Error("expected unreachable")
 		// The user is told the API is unreachable and that it retries — never that
 		// their query needs fixing.
 		expect(normalized.error.title).toBe("Cannot reach Maple API")
@@ -111,5 +113,27 @@ describe("transport failures during a connectivity blip", () => {
 		expect(normalizeWarehouseError("query", new Error("decode failed"), blipping())).toBeInstanceOf(
 			WarehouseQueryError,
 		)
+	})
+})
+
+describe("isRequestTimeout", () => {
+	const request = HttpClientRequest.get(`${apiBaseUrl}/v2/execute`)
+	const transport = (cause: unknown) =>
+		new HttpClientError.HttpClientError({
+			reason: new HttpClientError.TransportError({ request, description: "failed", cause }),
+		})
+
+	it("recognises the client deadline, also when a caller wrapped it", () => {
+		const timedOut = transport(new DOMException("No response within 45000ms", "TimeoutError"))
+		expect(isRequestTimeout(timedOut)).toBe(true)
+		expect(
+			isRequestTimeout(
+				new WarehouseUnreachableError({ operation: "execute", message: "x", cause: timedOut }),
+			),
+		).toBe(true)
+	})
+
+	it("a dropped connection is not a timeout", () => {
+		expect(isRequestTimeout(transport(new TypeError("Failed to fetch")))).toBe(false)
 	})
 })

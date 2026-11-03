@@ -5,6 +5,7 @@ import {
 	CodeReviewDetail,
 	CodeReviewFindingsResponse,
 	CodeReviewListResponse,
+	CodeReviewTeam,
 	GithubIntegrationStatus,
 } from "@maple/domain/http"
 import { Option, Schema } from "effect"
@@ -20,6 +21,7 @@ export const Retained = Schema.Struct({
 	reviews: ResponseCache(CodeReviewListResponse),
 	findings: ResponseCache(CodeReviewFindingsResponse),
 	ciRuns: ResponseCache(CodeReviewCiRunsResponse),
+	team: ResponseCache(CodeReviewTeam),
 	details: ResponseCache(CodeReviewDetail),
 	githubStatus: ResponseCache(GithubIntegrationStatus),
 })
@@ -31,6 +33,7 @@ export const emptyRetained: Retained = {
 	reviews: {},
 	findings: {},
 	ciRuns: {},
+	team: {},
 	details: {},
 	githubStatus: {},
 }
@@ -41,6 +44,7 @@ export const mergeRetained = (base: Retained, next: Partial<Retained>): Retained
 	reviews: { ...base.reviews, ...next.reviews },
 	findings: { ...base.findings, ...next.findings },
 	ciRuns: { ...base.ciRuns, ...next.ciRuns },
+	team: { ...base.team, ...next.team },
 	details: { ...base.details, ...next.details },
 	githubStatus: { ...base.githubStatus, ...next.githubStatus },
 })

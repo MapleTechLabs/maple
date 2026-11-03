@@ -3,6 +3,7 @@
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 
 import { severityLevel } from "../format"
+import { Array as Arr } from "effect"
 
 export type RailwayScope = "saturated" | "elevated" | "unbounded"
 
@@ -19,7 +20,7 @@ export interface RailwayRowView extends RailwayServiceRow {
 export function toView(row: RailwayServiceRow): RailwayRowView {
 	const cpuOfLimit = ofLimit(row.cpuMax, row.cpuLimit)
 	const memoryOfLimit = ofLimit(row.memoryMax, row.memoryLimit)
-	const finite = [cpuOfLimit, memoryOfLimit].filter(Number.isFinite)
+	const finite = Arr.filter([cpuOfLimit, memoryOfLimit], Number.isFinite)
 	return {
 		...row,
 		cpuOfLimit,

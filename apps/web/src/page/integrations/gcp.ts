@@ -7,14 +7,14 @@ import { parseWarehouseDateTime } from "@maple/query-engine"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { KeyedSchema } from "../../data/keyed"
-import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client } from "../../platform/api-clients"
-import * as CopyButton from "../../ui/copy-button"
-import * as Dialog from "../../ui/dialog"
-import * as Menu from "../../ui/menu"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { FleetRead, loadFleet, loadResources } from "../infra-integrations/gcp/data"
 import { Message } from "./message"
 import { ConfigureModel } from "./gcp-configure-schema"
@@ -93,14 +93,15 @@ export const LoadLogVolume = Command.define("LoadGcpIntegrationLogVolume", {
 				filters: { resourceAttributeFilters: [{ ...GCP_LOG_SOURCE, mode: "equals" }] },
 			},
 		}).pipe(
-			Effect.map((response) =>
-				gcpLogVolume(
-					response.data,
-					parseWarehouseDateTime(window.startTime),
-					parseWarehouseDateTime(window.endTime),
-				),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					gcpLogVolume(
+						response.data,
+						parseWarehouseDateTime(window.startTime),
+						parseWarehouseDateTime(window.endTime),
+					),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedGcpLogVolume({ key, result })),
 		),

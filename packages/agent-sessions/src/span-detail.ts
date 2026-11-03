@@ -12,6 +12,7 @@
 // messages yields an empty list, not a placeholder transcript.
 
 import type { AiSessionSpan } from "@maple/domain/http"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 import { classifyAiSpan, isLlmCall } from "./session-turns"
 
@@ -121,7 +122,7 @@ export function spanToolCalls(span: AiSessionSpan, results?: SessionToolResults)
  * under its model call is left where it is.
  */
 export function toolSpanIssuers(spans: readonly AiSessionSpan[]): ReadonlyMap<string, string> {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const issuerByCall = new Map<string, string>()
 	for (const span of spans) {
 		if (!isLlmCall(span)) continue
@@ -258,9 +259,10 @@ function ownToolCall(span: AiSessionSpan): SpanToolCall | undefined {
  *  display string re-serialises; the raw string case is already the payload. */
 export function jsonText(value: unknown): string {
 	if (typeof value === "string") return value
-	const text = JSON.stringify(value)
-	return text === undefined ? String(value) : text
+	return Option.getOrElse(encodeJson(value), () => String(value))
 }
+
+const encodeJson = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 /* -------------------------------------------------------------------------- */
 /* Message walking                                                            */
@@ -281,26 +283,26 @@ const REASONING_TYPES = new Set(["reasoning", "thinking", "redacted_thinking"])
 function systemMessages(value: unknown): readonly SpanMessage[] {
 	if (value === undefined || value === null) return []
 	if (typeof value === "string") {
-		return value.trim() === ""
+		return Str.trim(value) === ""
 			? []
 			: [{ role: "system", origin: "system", parts: [{ kind: "text", text: value }] }]
 	}
-	if (!Array.isArray(value)) {
+	if (!Arr.isArray(value)) {
 		return [{ role: "system", origin: "system", parts: [rawPart(value)] }]
 	}
 	// Entries carrying roles are messages; otherwise the array is one
 	// message's parts.
-	if (value.some((entry) => isRecord(entry) && typeof entry.role === "string")) {
+	if (Arr.some(value, (entry) => isRecord(entry) && typeof entry.role === "string")) {
 		return parseMessages(value, "system")
 	}
-	const parts = value.map(parsePart)
+	const parts = Arr.map(value, parsePart)
 	return parts.length === 0 ? [] : [{ role: "system", origin: "system", parts }]
 }
 
 function parseMessages(value: unknown, origin: SpanMessage["origin"]): readonly SpanMessage[] {
 	if (value === undefined || value === null) return []
-	if (!Array.isArray(value)) {
-		if (typeof value === "string" && value.trim() === "") return []
+	if (!Arr.isArray(value)) {
+		if (typeof value === "string" && Str.trim(value) === "") return []
 		return [{ role: origin === "output" ? "assistant" : "user", origin, parts: [rawPart(value)] }]
 	}
 
@@ -334,10 +336,13 @@ function parseMessages(value: unknown, origin: SpanMessage["origin"]): readonly 
  * there to stand for them.
  */
 function withoutStreamedChunks(entries: readonly unknown[]): readonly unknown[] {
-	const aggregated = entries.some(
+	const aggregated = Arr.some(
+		entries,
 		(entry) => isRecord(entry) && typeof entry.finish_reason === "string" && entry.finish_reason !== "",
 	)
-	return aggregated ? entries.filter((entry) => !(isRecord(entry) && entry.finish_reason === "")) : entries
+	return aggregated
+		? Arr.filter(entries, (entry) => !(isRecord(entry) && entry.finish_reason === ""))
+		: entries
 }
 
 function messageParts(message: Record<string, unknown>): readonly SpanMessagePart[] {
@@ -351,17 +356,17 @@ function messageParts(message: Record<string, unknown>): readonly SpanMessagePar
 
 function contentParts(source: unknown): readonly SpanMessagePart[] {
 	if (typeof source === "string") return source === "" ? [] : [{ kind: "text", text: source }]
-	if (!Array.isArray(source)) {
+	if (!Arr.isArray(source)) {
 		return source === undefined || source === null ? [] : [rawPart(source)]
 	}
-	return source.map(parsePart)
+	return Arr.map(source, parsePart)
 }
 
 /** OpenAI chat format puts the calls beside `content`, which is `null` when
  *  the message only calls tools: `[{ id, function: { name, arguments } }]`. */
 function openAiToolCalls(value: unknown): readonly SpanMessagePart[] {
-	if (!Array.isArray(value)) return []
-	return value.filter(isRecord).map((call) => {
+	if (!Arr.isArray(value)) return []
+	return Arr.map(Arr.filter(value, isRecord), (call) => {
 		const fn = isRecord(call.function) ? call.function : {}
 		return {
 			kind: "tool_call",
@@ -424,13 +429,14 @@ function reasoningText(part: Record<string, unknown>): string | undefined {
 }
 
 function blockText(value: unknown): string {
-	if (!Array.isArray(value)) return jsonText(value)
-	return value
-		.map((block) => {
+	if (!Arr.isArray(value)) return jsonText(value)
+	return Arr.join(
+		Arr.map(value, (block) => {
 			const part = parsePart(block)
 			return part.kind === "text" ? part.text : jsonText(block)
-		})
-		.join("\n")
+		}),
+		"\n",
+	)
 }
 
 /** A shape this walker does not know stays visible as its own JSON. */
@@ -443,5 +449,5 @@ function stringOrUndefined(value: unknown): string | undefined {
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
+	return typeof value === "object" && value !== null && !Arr.isArray(value)
 }

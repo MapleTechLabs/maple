@@ -16,6 +16,7 @@ import LocalSection from "./LocalSection.astro";
 import KubernetesSection from "./KubernetesSection.astro";
 import WebAnalyticsSection from "./WebAnalyticsSection.astro";
 import ProductEventsSection from "./ProductEventsSection.astro";
+import UptimeSection from "./UptimeSection.astro";
 import AgentSection from "./AgentSection.astro";
 import GitHubSection from "./GitHubSection.astro";
 import BillComparison from "../BillComparison.astro";
@@ -94,6 +95,10 @@ const homeFaqs = [
         <!-- 08: what that audience does once it is in: funnels on events from
              the browser, the server, or a span you already emit. -->
         <ProductEventsSection />
+
+        <!-- 08b: the same services watched from outside. Uptime checks land as
+             spans in the org's own traces; media-left between two copy-left sections. -->
+        <UptimeSection />
 
         <!-- 09: the same investigation as 02, run by an agent instead of a human. -->
         <AgentSection />

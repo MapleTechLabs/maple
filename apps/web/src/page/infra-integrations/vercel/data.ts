@@ -6,9 +6,9 @@ import {
 	getVercelRequestTimeseries,
 } from "@maple/web-data/warehouse/vercel-infra"
 import { Effect, Schema } from "effect"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
-import { chartBucketSeconds } from "../../../charts/infra-metric-series"
+import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
 // The Vercel reads as Effects; each page wraps them in its own Commands.

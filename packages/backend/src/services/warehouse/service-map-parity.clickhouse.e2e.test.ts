@@ -29,7 +29,7 @@
 //     carrying only the legacy `db.system` sit in the raw edge and the interior.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -54,7 +54,8 @@ const HOUR_MS = 3_600_000
 const MINUTE_MS = 60_000
 const SECOND_MS = 1000
 
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 /** Midnight, three days back — comfortably inside the TTL horizon on both ends. */
 const BASE_MS = Math.floor((Date.now() - 3 * DAY_MS) / DAY_MS) * DAY_MS
@@ -71,6 +72,9 @@ const END_TIME = chDateTime(END_MS)
 // The two seams the hourly splice is built on.
 const FIRST_FULL_HOUR_MS = BASE_MS + 11 * HOUR_MS
 const END_HOUR_FLOOR_MS = BASE_MS + 14 * HOUR_MS
+// And the two the database edges' minute tier adds inside the partial hours.
+const FIRST_FULL_MINUTE_MS = START_MS - 30 * SECOND_MS + MINUTE_MS
+const END_MINUTE_FLOOR_MS = END_MS - 30 * SECOND_MS
 
 const window = { orgId: ORG_ID, startTime: START_TIME, endTime: END_TIME }
 
@@ -169,6 +173,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	// Exactly on the trailing hour floor — back to the raw edge.
 	dbSpan(END_HOUR_FLOOR_MS, { status: "Error" }),
 	dbSpan(END_HOUR_FLOOR_MS + 5 * MINUTE_MS),
+	// The minute seams: raw owns the partial minutes, the minute rollup the rest.
+	dbSpan(FIRST_FULL_MINUTE_MS - SECOND_MS),
+	dbSpan(FIRST_FULL_MINUTE_MS),
+	dbSpan(END_MINUTE_FLOOR_MS - SECOND_MS, { status: "Error" }),
+	dbSpan(END_MINUTE_FLOOR_MS),
 
 	// --- Outside the window on both ends. Catches a bound that shifted. ---
 	// The first is the row the old code counted: same leading hour, before the
@@ -223,19 +232,22 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	).flat(),
 ]
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
-const seed = async (): Promise<void> => {
-	const rows = SEED_SPANS.map((row) => {
-		const spanAttributes =
-			row.spanAttributes ??
-			(row.dbSystem === ""
-				? "map('server.address', 'worker.internal')"
-				: row.legacyDbSystem
-					? `map('db.system', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'server.address', 'pg.internal', 'db.query.text', 'SELECT 1')`
-					: `map('db.system.name', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'db.query.text', 'SELECT 1')`)
-		return `(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(row.traceId)}, ${quote(row.spanId)}, ${quote(row.parentSpanId)}, ${quote("op")}, ${quote(row.kind)}, ${quote(row.service)}, ${row.durationNs}, ${quote(row.status)}, ${row.sampleRate}, '', ${spanAttributes}, map('deployment.environment', 'production'))`
-	}).join(",\n")
+const insertSpans = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
+	const rows = Arr.join(
+		Arr.map(spans, (row) => {
+			const spanAttributes =
+				row.spanAttributes ??
+				(row.dbSystem === ""
+					? "map('server.address', 'worker.internal')"
+					: row.legacyDbSystem
+						? `map('db.system', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'server.address', 'pg.internal', 'db.query.text', 'SELECT 1')`
+						: `map('db.system.name', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'db.query.text', 'SELECT 1')`)
+			return `(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(row.traceId)}, ${quote(row.spanId)}, ${quote(row.parentSpanId)}, ${quote("op")}, ${quote(row.kind)}, ${quote(row.service)}, ${row.durationNs}, ${quote(row.status)}, ${row.sampleRate}, '', ${spanAttributes}, map('deployment.environment', 'production'))`
+		}),
+		",\n",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -243,6 +255,24 @@ const seed = async (): Promise<void> => {
 		 VALUES\n${rows}`,
 		database,
 	)
+}
+
+/**
+ * The minute view stamps each row with its insert time, and the read only trusts the
+ * minute tier after the org's first one. Seeding happens now, after the window, so
+ * backdate the stamp to a view that already existed when the window began; the
+ * coverage tests below move it.
+ */
+const setMinuteRollupCreatedAt = (ms: number): Promise<string> =>
+	clickhouseExec(
+		`ALTER TABLE service_map_db_edges_minutely UPDATE FirstInsertedAt = toDateTime(${quote(chDateTime(ms))}) WHERE 1`,
+		database,
+		{ mutations_sync: "2" },
+	)
+
+const seed = async (): Promise<void> => {
+	await insertSpans(SEED_SPANS)
+	await setMinuteRollupCreatedAt(START_MS - HOUR_MS)
 }
 
 /**
@@ -309,6 +339,37 @@ const DB_EDGE_TRUTH_SQL = `
 	ORDER BY sourceService ASC, dbSystem ASC, dbNamespace ASC
 `
 
+/** The spliced database edges against {@link DB_EDGE_TRUTH_SQL}, edge by edge. */
+const assertDbEdgesMatchFlatScan = async (): Promise<void> => {
+	const [spliced, truth] = await Promise.all([
+		runJson(Effect.runSync(CH.serviceDbEdgesSQL({}, window)).sql),
+		runJson(DB_EDGE_TRUTH_SQL),
+	])
+
+	assert.isAbove(truth.length, 1, "ground truth collapsed to a single group — seed is too thin")
+	const key = (row: Record<string, unknown>) =>
+		`${String(row.sourceService)}::${String(row.dbSystem)}::${String(row.dbNamespace)}`
+	const bySplice = new Map(Arr.map(spliced, (row) => [key(row), row]))
+
+	assert.deepStrictEqual(
+		[...bySplice.keys()].sort(),
+		Arr.map(truth, key).sort(),
+		"spliced query and flat scan disagree on which database edges exist",
+	)
+	for (const expected of truth) {
+		const actual = bySplice.get(key(expected))
+		assert.isDefined(actual, `missing edge ${key(expected)}`)
+		assert.strictEqual(num(actual?.callCount), num(expected.callCount), `callCount ${key(expected)}`)
+		assert.strictEqual(num(actual?.errorCount), num(expected.errorCount), `errorCount ${key(expected)}`)
+		assert.closeTo(
+			num(actual?.estimatedSpanCount),
+			num(expected.estimatedSpanCount),
+			0.001,
+			`estimatedSpanCount ${key(expected)}`,
+		)
+	}
+}
+
 const SERVICE_EDGE_TRUTH_SQL = `
 	SELECT
 		toString(p.ServiceName) AS sourceService,
@@ -350,9 +411,10 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 		// The guard against a vacuous suite. Every comparison below is an equality
 		// between two result sets, and two empty sets satisfy all of them — which
 		// is exactly what a TTL-expired seed produces, silently.
-		const [traces, dbHourly, edgeHourly] = await Promise.all([
+		const [traces, dbHourly, dbMinutely, edgeHourly] = await Promise.all([
 			runJson("SELECT count() AS n FROM traces"),
 			runJson("SELECT sum(CallCount) AS n FROM service_map_db_edges_hourly"),
+			runJson("SELECT sum(CallCount) AS n FROM service_map_db_edges_minutely"),
 			runJson("SELECT sum(CallCount) AS n FROM service_map_edges_hourly"),
 		])
 
@@ -362,13 +424,19 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 			"traces seed did not land — check the rows against the table's TTL",
 		)
 		assert.isAbove(num(dbHourly[0]?.n), 0, "service_map_db_edges_hourly is empty")
+		assert.isAbove(num(dbMinutely[0]?.n), 0, "service_map_db_edges_minutely is empty")
 		assert.isAbove(num(edgeHourly[0]?.n), 0, "service_map_edges_hourly is empty — rollup did not run")
 	})
 
 	it("puts rows on every seam the splice depends on", async () => {
 		// If these are ever zero the boundary cases above have stopped being
 		// boundary cases, and the parity assertions weaken without failing.
-		for (const seam of [FIRST_FULL_HOUR_MS, END_HOUR_FLOOR_MS]) {
+		for (const seam of [
+			FIRST_FULL_HOUR_MS,
+			END_HOUR_FLOOR_MS,
+			FIRST_FULL_MINUTE_MS,
+			END_MINUTE_FLOOR_MS,
+		]) {
 			const rows = await runJson(
 				`SELECT count() AS n FROM traces WHERE Timestamp = ${quote(chDateTime(seam))}`,
 			)
@@ -384,39 +452,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 		assert.strictEqual(String(rows[0]?.hi), chDateTime(END_HOUR_FLOOR_MS - HOUR_MS))
 	})
 
-	it("matches a flat scan — database edges", async () => {
-		const [spliced, truth] = await Promise.all([
-			runJson(Effect.runSync(CH.serviceDbEdgesSQL({}, window)).sql),
-			runJson(DB_EDGE_TRUTH_SQL),
-		])
-
-		assert.isAbove(truth.length, 1, "ground truth collapsed to a single group — seed is too thin")
-		const key = (row: Record<string, unknown>) =>
-			`${String(row.sourceService)}::${String(row.dbSystem)}::${String(row.dbNamespace)}`
-		const bySplice = new Map(spliced.map((row) => [key(row), row]))
-
-		assert.deepStrictEqual(
-			[...bySplice.keys()].sort(),
-			truth.map(key).sort(),
-			"spliced query and flat scan disagree on which database edges exist",
-		)
-		for (const expected of truth) {
-			const actual = bySplice.get(key(expected))
-			assert.isDefined(actual, `missing edge ${key(expected)}`)
-			assert.strictEqual(num(actual?.callCount), num(expected.callCount), `callCount ${key(expected)}`)
-			assert.strictEqual(
-				num(actual?.errorCount),
-				num(expected.errorCount),
-				`errorCount ${key(expected)}`,
-			)
-			assert.closeTo(
-				num(actual?.estimatedSpanCount),
-				num(expected.estimatedSpanCount),
-				0.001,
-				`estimatedSpanCount ${key(expected)}`,
-			)
-		}
-	})
+	it("matches a flat scan — database edges", () => assertDbEdgesMatchFlatScan())
 
 	// Migration 0022 gave the edge rollups a t-digest so a database node can show a
 	// real p95 instead of the max it showed for months. The digest is merged from
@@ -449,7 +485,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 
 		const key = (row: Record<string, unknown>) =>
 			`${String(row.sourceService)}::${String(row.dbSystem)}::${String(row.dbNamespace)}`
-		const bySplice = new Map(spliced.map((row) => [key(row), row]))
+		const bySplice = new Map(Arr.map(spliced, (row) => [key(row), row]))
 
 		let compared = 0
 		for (const expected of truth) {
@@ -515,9 +551,9 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 		assert.isAbove(truth.length, 0, "ground truth found no service edges — seed is too thin")
 		const key = (row: Record<string, unknown>) =>
 			`${String(row.sourceService)}::${String(row.targetService)}`
-		const bySplice = new Map(spliced.map((row) => [key(row), row]))
+		const bySplice = new Map(Arr.map(spliced, (row) => [key(row), row]))
 
-		assert.deepStrictEqual([...bySplice.keys()].sort(), truth.map(key).sort())
+		assert.deepStrictEqual([...bySplice.keys()].sort(), Arr.map(truth, key).sort())
 		for (const expected of truth) {
 			const actual = bySplice.get(key(expected))
 			assert.strictEqual(num(actual?.callCount), num(expected.callCount), `callCount ${key(expected)}`)
@@ -537,9 +573,34 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 			runJson(DB_EDGE_TRUTH_SQL),
 		])
 
-		const expectedCalls = truth.reduce((sum, row) => sum + num(row.callCount), 0)
-		const expectedErrors = truth.reduce((sum, row) => sum + num(row.errorCount), 0)
+		const expectedCalls = Arr.reduce(truth, 0, (sum, row) => sum + num(row.callCount))
+		const expectedErrors = Arr.reduce(truth, 0, (sum, row) => sum + num(row.errorCount))
 		assert.strictEqual(num(spliced[0]?.queryCount), expectedCalls, "summary queryCount")
 		assert.strictEqual(num(spliced[0]?.errorCount), expectedErrors, "summary errorCount")
+	})
+	// The minute table ships empty (no backfill), so for 30 days a window can start
+	// before the view existed. Those minutes must come from raw traces, not vanish.
+	// These run last: they rewrite the minute table to stand in for a late creation.
+	it("reads raw traces before the minute view existed, even after a late span with an old timestamp", async () => {
+		const createdMs = END_HOUR_FLOOR_MS + 5 * MINUTE_MS
+		await clickhouseExec(
+			`DELETE FROM service_map_db_edges_minutely WHERE Minute < ${quote(chDateTime(createdMs))}`,
+			database,
+			{ mutations_sync: "2" },
+		)
+		await setMinuteRollupCreatedAt(createdMs)
+		// Arrives after the view exists, stamped inside the leading partial hour: the
+		// minute it lands in holds only this span, the rest went into `traces` earlier.
+		await insertSpans([dbSpan(START_MS + 2 * MINUTE_MS + 10 * SECOND_MS, { status: "Error" })])
+		const late = await runJson(
+			`SELECT count() AS n FROM service_map_db_edges_minutely WHERE Minute < ${quote(chDateTime(createdMs))}`,
+		)
+		assert.strictEqual(num(late[0]?.n), 1, "the late span did not reach the minute view")
+		await assertDbEdgesMatchFlatScan()
+	})
+
+	it("reads raw traces for the whole partial hours while the minute rollup is empty", async () => {
+		await clickhouseExec("TRUNCATE TABLE service_map_db_edges_minutely", database)
+		await assertDbEdgesMatchFlatScan()
 	})
 })

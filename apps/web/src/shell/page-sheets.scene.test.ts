@@ -4,7 +4,7 @@ import type { HtmlBuilder } from "foldkit/html"
 import { Command, Mount, click, expect, given, role, scene, selector, withViewInputs } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
 import { dashboardPage } from "../page/kit/dashboard-page"
-import * as Dialog from "../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import { Message } from "./message"
 import { init, type Model } from "./model"
 import { MeasureSidebarOverflow } from "./mounts"
@@ -33,6 +33,18 @@ const view = (model: Model, h: HtmlBuilder<Message>) =>
 				{ filters: h.p([], ["Health filter"]), rightPanel: h.p([], ["Deploy context"]) },
 				[h.p([], ["Service rows"])],
 			),
+		topbarActions: () => null,
+	})()(model, h)
+
+/** A settings-style page whose filter slot holds a nav, named by `filtersLabel`. */
+const settingsView = (model: Model, h: HtmlBuilder<Message>) =>
+	withViewInputs(frameView, {
+		currentPath: "/settings",
+		breadcrumbs: [{ label: "Settings" }],
+		page: () =>
+			dashboardPage(h, { filtersLabel: "Settings", filters: h.p([], ["Members tab"]) }, [
+				h.p([], ["General"]),
+			]),
 		topbarActions: () => null,
 	})()(model, h)
 
@@ -67,6 +79,19 @@ describe("page rails below lg", () => {
 			expect(filtersDialog).toExist(),
 			expect(filtersDialog).toContainText("Health filter"),
 			expect(selector('[data-slot="sheet-popup"]')).toHaveAttr("data-open", ""),
+		)
+	})
+
+	test("a rail named by filtersLabel names its trigger and sheet after it", () => {
+		scene(
+			{ update, view: settingsView },
+			given(signedIn()),
+			expect(openFilters).toBeAbsent(),
+			click(role("button", { name: "Open settings" })),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
+			Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+			expect(role("dialog", { name: "Settings" })).toContainText("Members tab"),
 		)
 	})
 

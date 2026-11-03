@@ -4,8 +4,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../platform/resources"
 import * as Shell from "../shell"
-import * as Toast from "../ui/toast"
-import * as ToastView from "../ui/toast-view"
+import * as Toast from "@maple/views/ui/toast"
+import * as ToastView from "@maple/views/ui/toast-view"
 import {
 	foldLabShell,
 	initLabShell,
@@ -95,7 +95,12 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 			}),
 		view: (model: Model, h: HtmlBuilder<Message>) =>
 			h.div(
-				[h.Id("app")],
+				[
+					h.Id("app"),
+					// A `before` toolbar floats at the viewport's bottom (48px bar, 16px off the edge):
+					// end the page's scroll area above it, so no row ever sits under the bar.
+					...(beforeView === null ? [] : [h.Class("[&_[data-slot=page-scroll-area]]:mb-20")]),
+				],
 				[
 					...(beforeView === null
 						? []

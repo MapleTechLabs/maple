@@ -1,3 +1,4 @@
+import { pluralize } from "@maple/ui/lib/format"
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
@@ -6,10 +7,13 @@ import { conditionPhrase, incidentGroup, signalTitle } from "@maple/web-data/ale
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { eyebrow } from "../../../ui/eyebrow"
-import { statusDot } from "../../../ui/status-dot"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { statusDot } from "@maple/views/ui/status-dot"
 import { createHref, incidentHref, ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `IncidentRail`: the incident detail's side rail.
 
@@ -25,10 +29,10 @@ const railSection = <M>(
 	h.section(
 		[h.Class("space-y-3 border-b pb-5 last:border-b-0")],
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-2")],
-				[eyebrow(h, { as: "h2" }, title), ...(action === null ? [] : [action])],
-			),
+			hstack(h, { gap: "2", justify: "between" }, [
+				eyebrow(h, { as: "h2" }, title),
+				...(action === null ? [] : [action]),
+			]),
 			...children,
 		],
 	)
@@ -44,29 +48,50 @@ const groupsSection = <M>(
 		const breached = Number(b.last_status === "breached") - Number(a.last_status === "breached")
 		return breached !== 0 ? breached : (b.last_value ?? 0) - (a.last_value ?? 0)
 	})
-	const breaching = rows.filter((row) => row.last_status === "breached").length
-	const openByGroup = new Map(openIncidents.map((open) => [open.groupKey, open]))
+	const breaching = Arr.filter(rows, (row) => row.last_status === "breached").length
+	const openByGroup = new Map(Arr.map(openIncidents, (open) => [open.groupKey, open]))
 	return railSection(h, [`Groups · ${breaching} of ${rows.length} breaching`], null, [
 		h.ul(
 			[h.Class("space-y-2")],
-			rows.slice(0, GROUP_ROW_LIMIT).map((row) => {
+			Arr.map(rows.slice(0, GROUP_ROW_LIMIT), (row) => {
 				const breached = row.last_status === "breached"
 				const open = openByGroup.get(row.group_key)
 				const current = row.group_key === incident.groupKey
 				return h.li(
 					[h.Key(row.group_key), h.Class("flex items-center gap-2 text-sm")],
 					[
-						statusDot(h, { tone: breached ? "crit" : row.last_status == null ? "neutral" : "ok" }),
+						statusDot(h, {
+							tone: breached ? "crit" : row.last_status == null ? "neutral" : "ok",
+						}),
 						open != null && !current
 							? h.a(
-									[h.Href(incidentHref(open.id)), h.Class("min-w-0 flex-1 truncate hover:underline")],
+									[
+										h.Href(incidentHref(open.id)),
+										h.Class("min-w-0 flex-1 truncate hover:underline active:underline"),
+									],
 									[row.group_key],
 								)
-							: h.span([h.Class(cn("min-w-0 flex-1 truncate", current && "font-medium"))], [row.group_key]),
+							: h.span(
+									[
+										h.Class(
+											cn(
+												typographyClass({
+													truncate: true,
+													className: "min-w-0 flex-1",
+												}),
+												current && "font-medium",
+											),
+										),
+									],
+									[row.group_key],
+								),
 						h.span(
 							[
 								h.Class(
-									cn("font-mono text-xs tabular-nums", breached ? "text-severity-error" : "text-muted-foreground"),
+									cn(
+										typographyClass({ size: "xs", mono: true, numeric: true }),
+										breached ? "text-severity-error" : "text-muted-foreground",
+									),
 								),
 							],
 							[formatSignalValue(rule.signalType, row.last_value)],
@@ -76,15 +101,23 @@ const groupsSection = <M>(
 			}),
 		),
 		...(rows.length > GROUP_ROW_LIMIT
-			? [h.p([h.Class("text-muted-foreground text-xs")], [String(rows.length - GROUP_ROW_LIMIT), " more groups"])]
+			? [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						String(rows.length - GROUP_ROW_LIMIT),
+						" more groups",
+					]),
+				]
 			: []),
 	])
 }
 
 const evidenceLink = <M>(h: HtmlBuilder<M>, detail: string, link: Html): Html =>
-	h.li([h.Class("space-y-0.5")], [link, h.p([h.Class("text-muted-foreground text-xs")], [detail])])
+	h.li([h.Class("space-y-0.5")], [link, typography(h, { size: "xs", tone: "muted", as: "p" }, [detail])])
 
-const incidentServices = (rule: AlertRuleDocument | null, incident: AlertIncidentDocument): ReadonlyArray<string> => {
+const incidentServices = (
+	rule: AlertRuleDocument | null,
+	incident: AlertIncidentDocument,
+): ReadonlyArray<string> => {
 	const group = incidentGroup(incident)
 	if (group != null && rule?.groupBy?.length === 1 && rule.groupBy[0] === "service.name") return [group]
 	return rule?.serviceNames ?? []
@@ -97,8 +130,11 @@ const evidenceSection = <M>(
 	window: Readonly<{ start: number; end: number }>,
 ): Html => {
 	const services = incidentServices(rule, incident)
-	const range = { startTime: formatWarehouseDateTime(window.start), endTime: formatWarehouseDateTime(window.end) }
-	const scope = services.length > 0 ? services.join(", ") : "all services"
+	const range = {
+		startTime: formatWarehouseDateTime(window.start),
+		endTime: formatWarehouseDateTime(window.end),
+	}
+	const scope = services.length > 0 ? Arr.join(services, ", ") : "all services"
 	const servicesSearch = services.length > 0 ? [...services] : undefined
 	return railSection(h, ["Evidence"], null, [
 		h.ul(
@@ -111,8 +147,15 @@ const evidenceSection = <M>(
 								"The error issue behind this alert",
 								h.a(
 									[
-										h.Href(hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} }))),
-										h.Class("hover:underline"),
+										h.Href(
+											hrefOf(
+												AppRoute.ErrorIssue({
+													issueId: incident.errorIssueId,
+													search: {},
+												}),
+											),
+										),
+										h.Class("hover:underline active:underline"),
 									],
 									["Linked error issue"],
 								),
@@ -135,7 +178,7 @@ const evidenceSection = <M>(
 									}),
 								),
 							),
-							h.Class("hover:underline"),
+							h.Class("hover:underline active:underline"),
 						],
 						[incident.signalType === "error_rate" ? "Error traces" : "Traces"],
 					),
@@ -146,7 +189,7 @@ const evidenceSection = <M>(
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Logs({ search: { services: servicesSearch, ...range } }))),
-							h.Class("hover:underline"),
+							h.Class("hover:underline active:underline"),
 						],
 						["Logs"],
 					),
@@ -162,38 +205,60 @@ const ruleSection = <M>(
 	ruleIncidents: ReadonlyArray<AlertIncidentDocument>,
 	now: number,
 ): Html => {
-	const recent = ruleIncidents.filter((i) => now - isoMs(i.firstTriggeredAt) <= 30 * DAY_MS)
-	const durations = recent
-		.flatMap((i) => (i.resolvedAt != null ? [isoMs(i.resolvedAt) - isoMs(i.firstTriggeredAt)] : []))
-		.sort((a, b) => a - b)
+	const recent = Arr.filter(ruleIncidents, (i) => now - isoMs(i.firstTriggeredAt) <= 30 * DAY_MS)
+	const durations = Arr.flatMap(recent, (i) =>
+		i.resolvedAt != null ? [isoMs(i.resolvedAt) - isoMs(i.firstTriggeredAt)] : [],
+	).sort((a, b) => a - b)
 	const median = durations.length > 0 ? durations[Math.floor(durations.length / 2)] : undefined
-	const scope = [
-		rule.groupBy != null && rule.groupBy.length > 0 ? `split by ${rule.groupBy.join(", ")}` : null,
-		rule.environments.length > 0 ? rule.environments.join(", ") : null,
-	].filter((part) => part != null)
+	const scope = Arr.filter(
+		[
+			rule.groupBy != null && rule.groupBy.length > 0
+				? `split by ${Arr.join(rule.groupBy, ", ")}`
+				: null,
+			rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : null,
+		],
+		(part) => part != null,
+	)
 	const breaches = rule.consecutiveBreachesRequired
-	const summary = `${signalTitle(rule.signalType)} ${conditionPhrase(rule)} over ${rule.windowMinutes}m, ${breaches} ${breaches === 1 ? "check" : "checks in a row"} to open${scope.length > 0 ? `, ${scope.join(", ")}` : ""}.`
+	const summary = `${signalTitle(rule.signalType)} ${conditionPhrase(rule)} over ${rule.windowMinutes}m, ${breaches} ${breaches === 1 ? "check" : "checks in a row"} to open${scope.length > 0 ? `, ${Arr.join(scope, ", ")}` : ""}.`
 	return railSection(
 		h,
 		["Rule"],
-		h.a([h.Href(createHref({ ruleId: rule.id })), h.Class("text-primary text-xs hover:underline")], ["Edit rule"]),
+		h.a(
+			[
+				h.Href(createHref({ ruleId: rule.id })),
+				h.Class(
+					typographyClass({
+						size: "xs",
+						tone: "primary",
+						className: "hover:underline active:underline",
+					}),
+				),
+			],
+			["Edit rule"],
+		),
 		[
 			h.div(
 				[h.Class("space-y-2")],
 				[
-					h.a([h.Href(ruleHref(rule.id)), h.Class("block text-sm hover:underline")], [rule.name]),
-					h.p([h.Class("text-muted-foreground text-xs leading-relaxed")], [summary]),
-					h.p(
-						[h.Class("text-muted-foreground text-xs")],
+					h.a(
 						[
-							"Fired ",
-							String(recent.length),
-							" ",
-							recent.length === 1 ? "time" : "times",
-							" in 30d",
-							median != null ? ` · median ${Math.max(1, Math.round(median / 60_000))}m` : "",
+							h.Href(ruleHref(rule.id)),
+							h.Class("block text-sm hover:underline active:underline"),
 						],
+						[rule.name],
 					),
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+						summary,
+					]),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Fired ",
+						String(recent.length),
+						" ",
+						pluralize(recent.length, "time"),
+						" in 30d",
+						median != null ? ` · median ${Math.max(1, Math.round(median / 60_000))}m` : "",
+					]),
 				],
 			),
 		],
@@ -223,7 +288,7 @@ export const incidentRail = <M>(
 							rule,
 							incident,
 							states,
-							options.ruleIncidents.filter((i) => i.status === "open"),
+							Arr.filter(options.ruleIncidents, (i) => i.status === "open"),
 						),
 					]
 				: []),

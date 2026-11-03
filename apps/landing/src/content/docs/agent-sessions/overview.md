@@ -82,7 +82,7 @@ The [MCP server](/docs/reference/mcp) exposes the same data. `list_agent_session
 
 - **Every message is its own session.** No span carried a session id Maple reads (`gen_ai.conversation.id` for most frameworks, `session.id` for some). The framework's guide shows where to set it.
 - **The transcript is empty.** Content capture is off, or the framework writes content only to span events or logs. Content on span attributes must be a JSON string such as a `[{role, parts}]` array.
-- **Cost shows as unpriced.** Maple shows cost only when spans carry `gen_ai.usage.cost`, `gen_ai.usage.total_cost` or `llm.cost.total`; it doesn't price tokens itself.
+- **Cost shows as unpriced.** Maple shows cost only when spans carry a cost attribute: `gen_ai.usage.cost`, `gen_ai.usage.total_cost`, `llm.cost.total`, `litellm.cost.total`, `operation.cost` or `openrouter.cost`. It does not price tokens itself.
 - **Token totals look doubled.** Two instrumentations recorded the same model call, usually the framework's and a provider SDK instrumentor. Turn one off.
 - **Nothing appears at all.** Check **Explore → Traces** for the service first. No traces there means the exporter isn't reaching Maple, often a short-lived script that exits before flushing. Traces there but no session means the framework's tracing isn't on.
 

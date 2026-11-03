@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { VercelProjectStatus, type VercelInfraProject } from "@maple/domain/http"
 
-import { decodeLogAttributeFilters } from "@/lib/logs/log-attribute-filters"
+import { decodeLogAttributeFilters } from "@maple/views/lib/log-attribute-filters"
 import { parseWhereClause } from "@/lib/traces/advanced-filter-sync"
 
 import {

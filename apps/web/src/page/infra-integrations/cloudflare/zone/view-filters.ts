@@ -1,15 +1,16 @@
-import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "../../../../components/infra/cloudflare/constants"
+import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "@maple/views/lib/cloudflare-constants"
 import {
 	activeFilterChips,
 	type CloudflareFilters,
 	hasActiveFilters,
 } from "../../../../components/infra/cloudflare/filters"
-import { cn } from "@maple/ui/lib/utils"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
+import { Option, Array as Arr, Record as Rec } from "effect"
+import { sectionOf } from "./derive"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as FilterSections from "../../../../ui/filters/filter-sections"
-import { type FilterOption, filterSection } from "../../../../ui/filters/filter-section"
+import { button } from "@maple/views/ui/button"
+import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import { type FilterOption, filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -17,8 +18,8 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../../ui/filters/filter-sidebar"
-import * as Popover from "../../../../ui/popover"
+} from "@maple/views/ui/filters/filter-sidebar"
+import * as Popover from "@maple/views/ui/popover"
 import { filterChipRail } from "../../kit/filter-chip-rail"
 import type { ZoneFacets } from "../data"
 import { type FilterKey, Message, type Model } from "./model"
@@ -39,7 +40,7 @@ export const filterChips = (h: H, model: Model, filters: CloudflareFilters): Htm
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const colorFrom = (map: Readonly<Record<string, string>>) => (name: string) =>
-	Object.hasOwn(map, name) ? map[name] : undefined
+	Rec.has(map, name) ? map[name] : undefined
 
 type SectionSpec = Readonly<{
 	title: string
@@ -55,7 +56,7 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 	const body = (response: ZoneFacets, isWaiting: boolean): Html => {
 		const f = response.data
 		const hasFilters = hasActiveFilters(filters)
-		if (!hasFilters && Object.values(f).every((options) => options.length === 0))
+		if (!hasFilters && Arr.every(Rec.values(f), (options) => options.length === 0))
 			return filterSidebarEmpty(h)
 		const sections: ReadonlyArray<SectionSpec> = [
 			{ title: "Path", key: "paths", options: f.paths, isSearchable: true, defaultOpen: true },
@@ -94,7 +95,7 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 			...filterSidebarBody(
 				h,
 				"cloudflare-zone-filters",
-				sections.flatMap((spec) => {
+				Arr.flatMap(sections, (spec) => {
 					const section = filterSection(h, {
 						title: spec.title,
 						options: spec.options,
@@ -112,11 +113,16 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 			),
 		])
 	}
+	// Only the traffic tab draws the detail read's error panel; elsewhere the rail must explain it.
+	const mainFailure =
+		sectionOf(model) === "traffic"
+			? Option.getOrUndefined(AsyncData.getError(model.detail.data))
+			: undefined
 	return AsyncData.match(model.facets.data, {
 		onIdle: () => filterSidebarLoading(h, 6),
 		onLoading: () => filterSidebarLoading(h, 6),
-		onFailure: (failure) => filterSidebarError(h, failure),
-		onStale: ({ error }) => filterSidebarError(h, error),
+		onFailure: (failure) => filterSidebarError(h, failure, undefined, mainFailure),
+		onStale: ({ error }) => filterSidebarError(h, error, undefined, mainFailure),
 		onSuccess: (response) => body(response, false),
 		onRefreshing: (response) => body(response, true),
 	})
@@ -135,21 +141,14 @@ export const filterPopover = (h: H, model: Model, filters: CloudflareFilters): H
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.DataAttribute("slot", "button"),
-								h.Class(
-									cn(
-										buttonVariants({
-											variant: "outline",
-											size: "xs",
-											className: "h-6 border-dashed font-mono text-2xs font-normal",
-										}),
-									),
-								),
-								...trigger,
-							],
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								className: "h-6 border-dashed font-mono text-2xs font-normal",
+								attributes: [...trigger],
+							},
 							["+ Filter"],
 						),
 					),

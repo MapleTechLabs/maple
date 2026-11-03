@@ -1,4 +1,4 @@
-import { DateTime, Schema, SchemaGetter } from "effect"
+import { DateTime, Schema, SchemaGetter, Array as Arr, Record as Rec } from "effect"
 
 /** What a forwarded row value becomes on the wire. */
 export type WireJson =
@@ -14,12 +14,13 @@ const toWire = (value: unknown): WireJson => {
 	if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
 	if (DateTime.isDateTime(value)) return DateTime.formatIso(value)
 	if (value instanceof Date) return value.toISOString()
-	if (Array.isArray(value)) return value.map(toWire)
+	if (Arr.isArray(value)) return Arr.map(value, toWire)
 	if (typeof value === "object") {
-		return Object.fromEntries(
-			Object.entries(value)
-				.filter(([, entry]) => entry !== undefined)
-				.map(([key, entry]) => [key, toWire(entry)]),
+		return Rec.fromEntries(
+			Arr.map(
+				Arr.filter(Rec.toEntries(value), ([, entry]) => entry !== undefined),
+				([key, entry]) => [key, toWire(entry)],
+			),
 		)
 	}
 	return String(value)

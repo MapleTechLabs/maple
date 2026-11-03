@@ -4,9 +4,10 @@
  * only join these integrations share with traces.
  */
 import type { InfraKindSection } from "@maple/domain/mcp-outputs"
+import { isMissingServiceMapDbEdgesMinutely } from "@maple/backend/services/warehouse/missing-table"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import type { InfraWindow } from "./infra"
 import { listProviderKind } from "./infra-providers"
 
@@ -27,15 +28,20 @@ const NONE = { rows: [], truncated: false }
 const calledDatabases = (service: string, window: InfraWindow) =>
 	Effect.gen(function* () {
 		const executor = yield* WarehouseExecutor
-		const rows = yield* executor.compiledQuery(
-			CH.compile(CH.serviceDbEdgesForServiceQuery({ serviceName: service }), {
-				orgId: executor.orgId,
-				startTime: window.startTime,
-				endTime: window.endTime,
-			}),
-			{ profile: "aggregation", context: "servicePlatformDbEdges" },
+		const read = (minuteTier: boolean) =>
+			executor.compiledQuery(
+				CH.compile(CH.serviceDbEdgesForServiceQuery({ serviceName: service, minuteTier }), {
+					orgId: executor.orgId,
+					startTime: window.startTime,
+					endTime: window.endTime,
+				}),
+				{ profile: "aggregation", context: "servicePlatformDbEdges" },
+			)
+		// A cluster without migration 0049 has no minute tier; the raw shape answers the same.
+		const rows = yield* read(true).pipe(
+			Effect.catchIf(isMissingServiceMapDbEdgesMinutely, () => read(false)),
 		)
-		return new Set(rows.map((row) => row.dbNamespace))
+		return new Set(Arr.map(rows, (row) => row.dbNamespace))
 	})
 
 export const servicePlatform = (
@@ -62,19 +68,19 @@ export const servicePlatform = (
 		const sections: Array<InfraKindSection> = [
 			{
 				kind: "railway_services",
-				rows: railway.rows.filter((row) => row.name === service && inEnvironment(row)),
+				rows: Arr.filter(railway.rows, (row) => row.name === service && inEnvironment(row)),
 				truncated: railway.truncated,
 			},
 			{
 				kind: "cloudflare_workers",
-				rows: workers.rows.filter((row) => row.name === service),
+				rows: Arr.filter(workers.rows, (row) => row.name === service),
 				truncated: workers.truncated,
 			},
 			{
 				kind: "planetscale_databases",
-				rows: databases.rows.filter((row) => namespaces.has(row.name)),
+				rows: Arr.filter(databases.rows, (row) => namespaces.has(row.name)),
 				truncated: databases.truncated,
 			},
 		]
-		return sections.filter((section) => section.rows.length > 0 || section.truncated)
+		return Arr.filter(sections, (section) => section.rows.length > 0 || section.truncated)
 	})

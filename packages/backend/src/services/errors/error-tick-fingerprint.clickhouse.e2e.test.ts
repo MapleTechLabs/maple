@@ -4,7 +4,7 @@
 
 import { randomUUID } from "node:crypto"
 import { afterAll, afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { migrations } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
@@ -47,7 +47,7 @@ afterAll(async () => {
 	for (const name of createdDatabases) await clickhouseExec(`DROP DATABASE IF EXISTS ${name}`)
 })
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 interface Span {
 	readonly type: string
@@ -55,20 +55,23 @@ interface Span {
 	readonly stacktrace: string
 }
 
-const frames = (...lines: ReadonlyArray<string>) => ["Error: boom", ...lines].join("\n")
+const frames = (...lines: ReadonlyArray<string>) => Arr.join(["Error: boom", ...lines], "\n")
 
 /**
  * Inside the tick's bootstrap window: the cutoff trails now by the ingestion lag
  * (1-2 minutes) and the window opens 2 minutes before that.
  */
 const spanTimestamp = () =>
-	new Date(Date.now() - 150_000).toISOString().replace("T", " ").replace("Z", "").slice(0, 23)
+	Str.slice(
+		0,
+		23,
+	)(Str.replace("Z", "")(Str.replace("T", " ")(new Date(Date.now() - 150_000).toISOString())))
 
 /** Three of each, so every fingerprint clears the promotion threshold. */
 const insertSpans = async (database: string, spans: ReadonlyArray<Span>): Promise<void> => {
 	const ts = spanTimestamp()
-	const rows = spans.flatMap((span) =>
-		[1, 2, 3].map((n) => {
+	const rows = Arr.flatMap(spans, (span) =>
+		Arr.map([1, 2, 3], (n) => {
 			const spanId = randomUUID()
 			return `(${quote(ORG)}, ${quote(ts)}, ${quote(`trace-${spanId}`)}, ${quote(spanId)}, '', 'GET /', 'Server', ${quote(SERVICE)}, 1000000, 'Error', ${quote(span.message)}, map(), map('service.version', ${quote(`1.0.${n}`)}), [toDateTime64(${quote(ts)}, 9)], ['exception'], [map('exception.type', ${quote(span.type)}, 'exception.message', ${quote(span.message)}, 'exception.stacktrace', ${quote(span.stacktrace)})])`
 		}),
@@ -76,20 +79,21 @@ const insertSpans = async (database: string, spans: ReadonlyArray<Span>): Promis
 	await clickhouseExec(
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SpanAttributes, ResourceAttributes, EventsTimestamp, EventsName, EventsAttributes)
-		 VALUES\n${rows.join(",\n")}`,
+		 VALUES\n${Arr.join(rows, ",\n")}`,
 		database,
 	)
 }
 
 const materializedHashes = async (database: string): Promise<ReadonlyArray<string>> =>
-	(
-		await clickhouseExec(
-			`SELECT DISTINCT toString(FingerprintHash) FROM error_events WHERE OrgId = ${quote(ORG)} ORDER BY 1 FORMAT TabSeparated`,
-			database,
-		)
+	Arr.filter(
+		Str.split("\n")(
+			await clickhouseExec(
+				`SELECT DISTINCT toString(FingerprintHash) FROM error_events WHERE OrgId = ${quote(ORG)} ORDER BY 1 FORMAT TabSeparated`,
+				database,
+			),
+		),
+		(line) => line !== "",
 	)
-		.split("\n")
-		.filter((line) => line !== "")
 
 const prepareWarehouse = async (): Promise<string> => {
 	const database = uniqueDatabase("maple_error_tick_fp_e2e")
@@ -127,14 +131,15 @@ const makeTickLayer = (database: string) => {
 		),
 	)
 	const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive))
+	const orgChSettingsLive = OrgClickHouseSettingsService.layer.pipe(
+		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
+	)
 	const warehouseLive = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				envLive,
-				OrgClickHouseSettingsService.layer.pipe(
-					Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
-				),
+				orgChSettingsLive,
 				TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive)),
 			),
 		),
@@ -152,6 +157,7 @@ const makeTickLayer = (database: string) => {
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(warehouseLive),
+		Layer.provide(orgChSettingsLive),
 		Layer.provide(edgeCacheLive),
 		Layer.provide(
 			Layer.succeed(NotificationDispatcher, {
@@ -247,7 +253,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 
 					const issues = yield* loadIssues
 					assert.sameMembers(
-						issues.map((issue) => issue.fingerprintHash),
+						Arr.map(issues, (issue) => issue.fingerprintHash),
 						[...hashes],
 					)
 					for (const issue of issues) {
@@ -256,7 +262,7 @@ describe.skipIf(!clickhouseE2eEnabled)("errors tick over the v3 fingerprint (Cli
 					}
 					// The two merged issues carry both spans' occurrences; 401 and 404 their own.
 					assert.deepStrictEqual(
-						issues.map((issue) => issue.occurrenceCount).sort((a, b) => a - b),
+						Arr.map(issues, (issue) => issue.occurrenceCount).sort((a, b) => a - b),
 						[3, 3, 6, 6],
 					)
 				}).pipe(Effect.provide(makeTickLayer(database)))

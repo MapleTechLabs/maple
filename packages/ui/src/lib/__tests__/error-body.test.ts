@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { parseErrorBody, splitErrorText, tokenizeJson } from "../error-body"
+import { Array as Arr } from "effect"
 
 describe("parseErrorBody", () => {
 	it("pretty-prints JSON objects", () => {
@@ -29,31 +30,61 @@ describe("parseErrorBody", () => {
 describe("tokenizeJson", () => {
 	it("distinguishes keys from string values", () => {
 		const tokens = tokenizeJson('{"message": "boom"}')
-		expect(tokens.filter((t) => t.type === "key").map((t) => t.text)).toEqual(['"message"'])
-		expect(tokens.filter((t) => t.type === "string").map((t) => t.text)).toEqual(['"boom"'])
+		expect(
+			Arr.map(
+				Arr.filter(tokens, (t) => t.type === "key"),
+				(t) => t.text,
+			),
+		).toEqual(['"message"'])
+		expect(
+			Arr.map(
+				Arr.filter(tokens, (t) => t.type === "string"),
+				(t) => t.text,
+			),
+		).toEqual(['"boom"'])
 	})
 
 	it("tags numbers and literals, and round-trips the source", () => {
 		const source = '{\n  "retries": -1.5e3,\n  "ok": false,\n  "cause": null\n}'
 		const tokens = tokenizeJson(source)
-		expect(tokens.map((t) => t.text).join("")).toBe(source)
-		expect(tokens.filter((t) => t.type === "number").map((t) => t.text)).toEqual(["-1.5e3"])
-		expect(tokens.filter((t) => t.type === "keyword").map((t) => t.text)).toEqual(["false", "null"])
+		expect(
+			Arr.join(
+				Arr.map(tokens, (t) => t.text),
+				"",
+			),
+		).toBe(source)
+		expect(
+			Arr.map(
+				Arr.filter(tokens, (t) => t.type === "number"),
+				(t) => t.text,
+			),
+		).toEqual(["-1.5e3"])
+		expect(
+			Arr.map(
+				Arr.filter(tokens, (t) => t.type === "keyword"),
+				(t) => t.text,
+			),
+		).toEqual(["false", "null"])
 	})
 
 	it("does not mistake a colon inside a string for a key separator", () => {
 		const tokens = tokenizeJson('{"url": "https://x.dev"}')
-		expect(tokens.filter((t) => t.type === "key").map((t) => t.text)).toEqual(['"url"'])
+		expect(
+			Arr.map(
+				Arr.filter(tokens, (t) => t.type === "key"),
+				(t) => t.text,
+			),
+		).toEqual(['"url"'])
 	})
 })
 
 describe("splitErrorText", () => {
 	it("marks stack frames after the first line", () => {
 		const lines = splitErrorText("Cannot read x\n    at handler (a.ts:1)\n    at run (b.ts:2)")
-		expect(lines.map((l) => l.frame)).toEqual([false, true, true])
+		expect(Arr.map(lines, (l) => l.frame)).toEqual([false, true, true])
 	})
 
 	it("keeps a multi-line message unframed", () => {
-		expect(splitErrorText("line one\nline two").map((l) => l.frame)).toEqual([false, false])
+		expect(Arr.map(splitErrorText("line one\nline two"), (l) => l.frame)).toEqual([false, false])
 	})
 })

@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 // Display lengths for the ids we print shortened. One table, so a trace id is
 // the same 8 characters on the list, the peek sheet and the breadcrumb.
 
@@ -19,5 +20,5 @@ export function shortId(
 ): string {
 	const length = options.length ?? ID_DISPLAY_LENGTH[kind]
 	if (value.length <= length) return value
-	return options.ellipsis ? `${value.slice(0, length)}…` : value.slice(0, length)
+	return options.ellipsis ? `${Str.slice(0, length)(value)}…` : Str.slice(0, length)(value)
 }

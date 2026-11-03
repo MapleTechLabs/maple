@@ -1,0 +1,20 @@
+{
+	"include": ["src/**/*.ts", "scripts/**/*.ts"],
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"lib": ["ES2023"],
+		"types": ["node"],
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"resolveJsonModule": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true
+	}
+}

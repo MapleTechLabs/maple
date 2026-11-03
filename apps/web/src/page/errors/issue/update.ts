@@ -1,17 +1,18 @@
 import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
-import * as Combobox from "../../../ui/combobox"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Select from "../../../ui/select"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -70,19 +71,16 @@ type Step = Readonly<{ patch: Partial<Model>; commands: ReadonlyArray<Cmd> }>
 
 const NO_STEP: Step = { patch: {}, commands: [] }
 
-/** `Supersede`: a post-write re-read, which restarts a read already in flight (reactivity invalidation). */
-type SlotMode = Keyed.RequestMode | "Supersede"
-
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
 	key: string,
-	mode: SlotMode,
+	mode: Keyed.ReadMode,
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Cmd,
 ): Step =>
-	Option.match(mode === "Supersede" ? Option.some(Keyed.supersede(slot, key)) : Keyed.request(slot, key, mode), {
+	Option.match(Keyed.requestFor(slot, key, mode), {
 		onNone: () => NO_STEP,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key ?? key)] }),
+		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key)] }),
 	})
 
 const applySteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
@@ -182,7 +180,7 @@ const loadedReads =
 	}
 
 const detailStep =
-	(context: PageContext, window: TimeWindow, mode: RequestMode | "Supersede") =>
+	(context: PageContext, window: TimeWindow, mode: Keyed.ReadMode) =>
 	(model: Model): Step => {
 		const query = detailQueryOf(window)
 		return keyed(
@@ -250,6 +248,8 @@ export const init = (
 		severitySelect: Select.init("issue-severity", { value: "none", selectedIndex: null }),
 		fingerprintCopy: CopyButton.init(),
 		issueIdCopy: CopyButton.init(),
+		promptCopy: CopyButton.init(),
+		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		busy: [],
@@ -294,7 +294,10 @@ export const routeChanged = (
 ): Return => {
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: () => ({ model: next }),
 	})
 }
@@ -398,7 +401,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		MountedRightRail: () =>
 			model.isRightRailMounted
 				? { model }
-				: applySteps({ ...model, isRightRailMounted: true }, [loadedReads(context), vcsStep(context)]),
+				: applySteps({ ...model, isRightRailMounted: true }, [
+						loadedReads(context),
+						vcsStep(context),
+					]),
 		CompletedFetchEvents: ({ key, result }) => ({
 			model: { ...model, events: Keyed.accept(model.events, key, result) },
 		}),
@@ -548,7 +554,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			]),
 		ChangedCommentDraft: ({ value }) => ({ model: { ...model, commentDraft: value } }),
 		ClickedComment: () => {
-			const body = model.commentDraft.trim()
+			const body = Str.trim(model.commentDraft)
 			return body.length === 0 || model.isCommenting
 				? { model }
 				: {
@@ -563,7 +569,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: settled,
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to add comment",
+						title: "Couldn't add comment",
 						description: failure.message,
 					}),
 				}),
@@ -598,7 +604,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: settled,
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to detach the pull request",
+						title: "Couldn't detach the pull request",
 						description: failure.message,
 					}),
 				}),
@@ -693,5 +699,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(issueIdCopy) => ({ issueIdCopy }),
 				(next) => Message.GotIssueIdCopyMessage({ message: next }),
 			),
-		GotChartMessage: () => ({ model }),
+		GotPromptCopyMessage: ({ message: inner }) =>
+			lift(
+				model,
+				CopyButton.update(model.promptCopy, inner),
+				(promptCopy) => ({ promptCopy }),
+				(next) => Message.GotPromptCopyMessage({ message: next }),
+			),
+		GotChartMessage: ({ message: inner }) =>
+			lift(
+				model,
+				Chart.update(model.chart, inner),
+				(chart) => ({ chart }),
+				(next) => Message.GotChartMessage({ message: next }),
+			),
 	})

@@ -1,0 +1,87 @@
+import { Schema, Array as Arr } from "effect"
+import { AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
+import { countLabel } from "@maple/ui/lib/format"
+import type { FleetRead } from "../../infra-integrations/aws/data"
+import { type ResourceView, resourceViews, summaryOf } from "../../infra-integrations/aws/derive"
+import type { Finding, SourceSummary } from "./model"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+// `summarizeAws`: the /infra/aws page's health, as the overview's row and findings.
+
+const MAX_FINDINGS = 3
+
+/** What a finding says after the resource's name, by the band cell it counts in. */
+const PHRASE = new Map([
+	["status", "failing its status check"],
+	["hot", "above 80% CPU or memory"],
+	["5xx", "serving 5xx on 1% of requests or more"],
+	["errors", "erroring on 1% of invocations or more"],
+	["throttled", "throttled"],
+	["backlog", "backed up over 5 min"],
+])
+
+const finding = (view: ResourceView, tone: "crit" | "warn"): Finding => ({
+	key: `aws:${view.kind}:${encodeJson(view.keys)}`,
+	source: "aws",
+	tone,
+	subject: view.name,
+	title: `${view.name} ${PHRASE.get(view.scope ?? "") ?? view.reason ?? "needs a look"}`,
+	detail: Arr.join(
+		Arr.filter([AWS_INFRA_KINDS[view.kind].label, view.cluster, view.region], (part) => part !== ""),
+		" · ",
+	),
+	target: {
+		kind: "aws",
+		resourceKind: view.kind,
+		name: view.name,
+		cluster: view.cluster,
+		region: view.region,
+		account: view.account,
+	},
+})
+
+/** `null` when every kind's read failed: the overview shows that as couldn't load, not as empty. */
+export const summarizeAws = (reads: ReadonlyArray<FleetRead>): SourceSummary | null => {
+	const failed = Arr.filter(reads, (read) => read.failed)
+	if (reads.length > 0 && failed.length === reads.length) return null
+	const views = Arr.flatMap(reads, resourceViews)
+	const summary = summaryOf(views)
+	const flagged = summary.counts.crit + summary.counts.warn
+	const findings = [
+		...Arr.map(
+			Arr.filter(views, (view) => view.health === "crit"),
+			(view) => finding(view, "crit"),
+		),
+		...Arr.map(
+			Arr.filter(views, (view) => view.health === "warn"),
+			(view) => finding(view, "warn"),
+		),
+	].slice(0, MAX_FINDINGS)
+	const unread = Arr.join(
+		Arr.map(failed, (read) => AWS_INFRA_KINDS[read.kind].title),
+		", ",
+	)
+	return {
+		resources: countLabel(summary.total, "resource"),
+		segments: [
+			{ key: "ok", count: summary.counts.ok },
+			{ key: "idle", count: summary.counts.idle },
+			{ key: "elevated", count: summary.counts.warn },
+			{ key: "saturated", count: summary.counts.crit },
+		],
+		headline:
+			Arr.join(
+				[
+					...(unread === "" ? [] : [`${unread} not read`]),
+					...(flagged > 0 ? [`${countLabel(flagged, "resource")} needing a look`] : []),
+					...(flagged === 0 && summary.counts.idle > 0
+						? [`${countLabel(summary.counts.idle, "resource")} idle, still billed`]
+						: []),
+				],
+				", ",
+			) || (summary.total > 0 ? "all healthy" : "no metrics in this window"),
+		headlineTone: summary.counts.crit > 0 ? "crit" : flagged > 0 ? "warn" : "neutral",
+		findings,
+	}
+}

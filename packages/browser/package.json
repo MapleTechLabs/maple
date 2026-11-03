@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/browser",
-	"version": "0.11.1",
+	"version": "0.14.0",
 	"description": "Maple browser SDK — OpenTelemetry tracing and rrweb session replay in one package. Every span and replay event shares a session id for trace↔replay correlation.",
 	"keywords": [
 		"maple",
@@ -43,19 +43,20 @@
 		"build": "tsdown",
 		"typecheck": "tsrs --noEmit",
 		"test": "vitest run",
+		"test:e2e": "tsdown && vitest run -c vitest.e2e.config.ts",
 		"size": "bun scripts/size.ts"
 	},
 	"dependencies": {
-		"@opentelemetry/api": "^1.9.0",
-		"@opentelemetry/instrumentation": "^0.222.0",
-		"@opentelemetry/instrumentation-fetch": "^0.222.0",
-		"@opentelemetry/instrumentation-xml-http-request": "^0.222.0",
-		"@opentelemetry/otlp-transformer": "^0.222.0",
-		"@opentelemetry/resources": "^2.10.0",
-		"@opentelemetry/sdk-logs": "^0.222.0",
-		"@opentelemetry/sdk-trace-base": "^2.10.0",
-		"@opentelemetry/sdk-trace-web": "^2.10.0",
-		"@opentelemetry/semantic-conventions": "^1.43.0",
+		"@opentelemetry/api": "^1.10.0",
+		"@opentelemetry/core": "^3.0.0",
+		"@opentelemetry/instrumentation": "^0.300.0",
+		"@opentelemetry/instrumentation-fetch": "^0.300.0",
+		"@opentelemetry/instrumentation-xml-http-request": "^0.300.0",
+		"@opentelemetry/otlp-transformer": "^0.300.0",
+		"@opentelemetry/resources": "^3.0.0",
+		"@opentelemetry/sdk-logs": "^3.0.0",
+		"@opentelemetry/sdk-trace": "^3.0.0",
+		"@opentelemetry/semantic-conventions": "^1.44.0",
 		"rrweb": "^2.0.0-alpha.18",
 		"web-vitals": "^6.2.2"
 	},
@@ -65,11 +66,13 @@
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
 		"@vitest/browser-playwright": "catalog:",
+		"fast-check": "^4.10.2",
 		"playwright": "catalog:",
 		"react": "catalog:react",
 		"react-dom": "catalog:react",
 		"tsdown": "^0.23.0",
 		"typescript": "catalog:tooling",
+		"vite": "catalog:",
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {

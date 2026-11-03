@@ -23,10 +23,19 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
+
+/** Disposing the proposal's runtime or flushing its spans rejected; both are best effort. */
+class ProposalCleanupError extends Schema.TaggedError<ProposalCleanupError>()(
+	"@maple/ai/chat/ProposalCleanupError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** Its own instance, at module scope, so an approval exports its spans from the isolate it ran in. */
 const telemetry = runtimeTelemetry({
@@ -146,7 +155,10 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		const tenant = yield* resolveTenant(orgId, input)
 		const surface = approver.kind === "app" ? "chat" : "bot"
 		const result = yield* executor.execute(tenant, input.tool, input.input, surface)
-		const content = result.content.map((entry) => entry.text).join("\n")
+		const content = Arr.join(
+			Arr.map(result.content, (entry) => entry.text),
+			"\n",
+		)
 		const refused = result.isError === true
 		yield* Effect.annotateCurrentSpan("maple.chat.apply", refused ? "refused" : "applied")
 		return {
@@ -200,9 +212,24 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	// after the runtime is disposed and the spans flushed, both best effort.
 	return Effect.runPromise(
 		Effect.promise(() => runtime.runPromiseExit(program)).pipe(
-			Effect.ensuring(Effect.tryPromise(() => runtime.dispose()).pipe(Effect.ignore)),
-			Effect.ensuring(Effect.tryPromise(() => telemetry.flush(input.env)).pipe(Effect.ignore)),
-			Effect.flatMap((exit) => exit),
+			Effect.ensuring(
+				Effect.tryPromise({
+					try: () => runtime.dispose(),
+					catch: (cause) =>
+						new ProposalCleanupError({
+							message: "Failed to dispose the proposal runtime",
+							cause,
+						}),
+				}).pipe(Effect.ignore),
+			),
+			Effect.ensuring(
+				Effect.tryPromise({
+					try: () => telemetry.flush(input.env),
+					catch: (cause) =>
+						new ProposalCleanupError({ message: "Failed to flush the proposal spans", cause }),
+				}).pipe(Effect.ignore),
+			),
+			Effect.flatten,
 		),
 	)
 }

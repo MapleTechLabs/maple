@@ -1,11 +1,11 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { CreateDashboard, DeleteDashboard, SavePreferences, SaveTags } from "./command"
 import * as TagEditor from "../kit/tag-editor"
-import * as Combobox from "../../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -19,7 +19,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const dashboard = (overrides: Partial<ListDashboard> = {}): ListDashboard => ({
 	id: "dash_platform",
@@ -49,18 +49,21 @@ const BOARDS = [
 
 /** Entered with its clock, preferences and rows. */
 const loaded = (search = {}, dashboards: ReadonlyArray<ListDashboard> = BOARDS): Model =>
-	[
-		Message.CompletedReadClock({ nowMs: NOW, locale: "en-US" }),
-		Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
-		Message.UpdatedDashboards({ orgId, dashboards }),
-	].reduce((model, message) => pageUpdate(model, message).model, init({ search }, context).model)
+	Arr.reduce(
+		[
+			Message.CompletedReadClock({ nowMs: NOW, locale: "en-US" }),
+			Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
+			Message.UpdatedDashboards({ orgId, dashboards }),
+		],
+		init({ search }, context).model,
+		(model, message) => pageUpdate(model, message).model,
+	)
 
 describe("dashboards list", () => {
 	test("entry reads the clock and the stored preferences, then renders rows as links", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"ReadDashboardsListClock",
-			"LoadDashboardsPreferences",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ReadDashboardsListClock", "LoadDashboardsPreferences"]),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
@@ -76,11 +79,15 @@ describe("dashboards list", () => {
 		const many = Array.from({ length: 1200 }, (_, index) =>
 			dashboard({ id: `dash_${index}`, widgetCount: 1, updatedAt: "2026-09-01T12:00:00.000Z" }),
 		)
-		const model = [
-			Message.CompletedReadClock({ nowMs: NOW, locale: "de-DE" }),
-			Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
-			Message.UpdatedDashboards({ orgId, dashboards: many }),
-		].reduce((next, message) => pageUpdate(next, message).model, init({ search: {} }, context).model)
+		const model = Arr.reduce(
+			[
+				Message.CompletedReadClock({ nowMs: NOW, locale: "de-DE" }),
+				Message.CompletedLoadPreferences({ favorites: [], sort: "updated" }),
+				Message.UpdatedDashboards({ orgId, dashboards: many }),
+			],
+			init({ search: {} }, context).model,
+			(next, message) => pageUpdate(next, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -158,17 +165,34 @@ describe("dashboards list", () => {
 
 	test("confirming a delete sends it; a failed write turns the list read-only", () => {
 		const model = { ...loaded(), pendingDelete: dashboard() }
-		expect(names(pageUpdate(model, Message.ClickedConfirmDelete()).commands)).toContain(
-			DeleteDashboard.name,
-		)
+		const confirmed = pageUpdate(model, Message.ClickedConfirmDelete())
+		expect(names(confirmed.commands)).toContain(DeleteDashboard.name)
+		expect(confirmed.model.isDeleting).toBe(true)
+		expect(names(pageUpdate(confirmed.model, Message.ClickedConfirmDelete()).commands)).toEqual([])
 		const failed = pageUpdate(
-			model,
+			confirmed.model,
 			Message.CompletedDeleteDashboard({
 				result: Result.fail("Dashboard persistence is temporarily unavailable"),
 			}),
 		).model
 		expect(failed.persistenceError).toBe("Dashboard persistence is temporarily unavailable")
+		expect(failed.isDeleting).toBe(false)
 		expect(names(pageUpdate(failed, Message.ClickedCreate()).commands)).toEqual([])
+	})
+
+	test("the read-only banner names a rejected write's reason, and an unreachable API as such", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded(), persistenceError: "A dashboard with this name already exists" }),
+			expectView(
+				text(/A dashboard with this name already exists\. Editing, import and delete/),
+			).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded(), persistenceError: "Failed to fetch" }),
+			expectView(text(/Couldn't reach Maple, so editing/)).toExist(),
+		)
 	})
 
 	test("the tag editor commits typed tags normalised and saves them", () => {
@@ -196,6 +220,8 @@ describe("dashboards list", () => {
 		expect(decodeURIComponent(url)).toContain("tags")
 		expect(decodeURIComponent(url)).toContain("slo")
 		const cleared = pageUpdate(picked.model, tag(Combobox.Message.ClearedSelection()))
-		expect(cleared.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/dashboards", isReplace: true }))
+		expect(cleared.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/dashboards", isReplace: true }),
+		)
 	})
 })

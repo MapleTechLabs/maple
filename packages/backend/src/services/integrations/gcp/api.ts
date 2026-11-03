@@ -16,7 +16,16 @@ import {
 	type GcpMetricGroup,
 } from "@maple/domain/gcp-metrics"
 import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
-import { Duration, Effect, Option, Redacted, Schema } from "effect"
+import {
+	Duration,
+	Effect,
+	Option,
+	Redacted,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -104,17 +113,17 @@ const decodeErrorMessage = Schema.decodeUnknownOption(
 const reasonFromMessage = (body: unknown): string | undefined => {
 	const message = Option.getOrUndefined(decodeErrorMessage(body))?.error.message
 	if (message === undefined) return undefined
-	if (message.includes("requires billing")) return "BILLING_DISABLED"
-	return message.includes("has not been used") || message.includes("is disabled")
+	if (Str.includes("requires billing")(message)) return "BILLING_DISABLED"
+	return Str.includes("has not been used")(message) || Str.includes("is disabled")(message)
 		? "SERVICE_DISABLED"
 		: undefined
 }
 
 const errorReason = (body: unknown, kind: GcpApiError["kind"]): string | undefined =>
-	Option.toArray(decodeErrorDetails(body))
-		.flatMap((decoded) => decoded.error.details)
-		.flatMap((detail) => Option.toArray(decodeErrorInfo(detail)))[0]?.reason ??
-	(kind === "denied" ? reasonFromMessage(body) : undefined)
+	Arr.flatMap(
+		Arr.flatMap(Option.toArray(decodeErrorDetails(body)), (decoded) => decoded.error.details),
+		(detail) => Option.toArray(decodeErrorInfo(detail)),
+	)[0]?.reason ?? (kind === "denied" ? reasonFromMessage(body) : undefined)
 
 /** One JSON call. `api` names the Google service in the error. */
 const call = <A>(
@@ -158,9 +167,10 @@ const ServiceAccountKey = Schema.Struct({
 	private_key_id: Schema.String,
 })
 const decodeServiceAccountKey = Schema.decodeUnknownEffect(Schema.fromJsonString(ServiceAccountKey))
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const pemToPkcs8 = (pem: string): ArrayBuffer => {
-	const der = Buffer.from(pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, ""), "base64")
+	const der = Buffer.from(Str.replace(/\s+/g, "")(Str.replace(/-----[^-]+-----/g, "")(pem)), "base64")
 	return der.buffer.slice(der.byteOffset, der.byteOffset + der.byteLength)
 }
 
@@ -168,15 +178,22 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 export const importServiceAccountKey = (encoded: Redacted.Redacted<string>) =>
 	decodeServiceAccountKey(Buffer.from(Redacted.value(encoded), "base64").toString("utf8")).pipe(
 		Effect.flatMap((key) =>
-			Effect.tryPromise(() =>
-				crypto.subtle.importKey(
-					"pkcs8",
-					pemToPkcs8(key.private_key),
-					{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-					false,
-					["sign"],
-				),
-			).pipe(
+			Effect.tryPromise({
+				try: () =>
+					crypto.subtle.importKey(
+						"pkcs8",
+						pemToPkcs8(key.private_key),
+						{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+						false,
+						["sign"],
+					),
+				catch: () =>
+					new GcpApiError({
+						message: "MAPLE_GCP_SERVICE_ACCOUNT_KEY holds a private key that does not import",
+						api: "Google OAuth",
+						kind: "invalid",
+					}),
+			}).pipe(
 				Effect.map((signingKey) => ({
 					clientEmail: key.client_email,
 					keyId: key.private_key_id,
@@ -208,18 +225,22 @@ export const fetchMapleAccessToken = Effect.fnUntraced(function* (
 	nowMs: number,
 ) {
 	const issuedAt = Math.floor(nowMs / 1000)
-	const signingInput = [
-		{ alg: "RS256", typ: "JWT", kid: signer.keyId },
-		{
-			iss: signer.clientEmail,
-			scope: IAM_SCOPE,
-			aud: TOKEN_URL,
-			iat: issuedAt,
-			exp: issuedAt + TOKEN_LIFETIME_SECONDS,
-		},
-	]
-		.map((part) => base64Url(JSON.stringify(part)))
-		.join(".")
+	const signingInput = Arr.join(
+		Arr.map(
+			[
+				{ alg: "RS256", typ: "JWT", kid: signer.keyId },
+				{
+					iss: signer.clientEmail,
+					scope: IAM_SCOPE,
+					aud: TOKEN_URL,
+					iat: issuedAt,
+					exp: issuedAt + TOKEN_LIFETIME_SECONDS,
+				},
+			],
+			(part) => base64Url(encodeJsonSync(part)),
+		),
+		".",
+	)
 	const signature = yield* Effect.promise(() =>
 		crypto.subtle.sign("RSASSA-PKCS1-v1_5", signer.key, new TextEncoder().encode(signingInput)),
 	)
@@ -377,8 +398,9 @@ export const listTimeSeriesPage = (
 				"aggregation.crossSeriesReducer": query.metric.reducer,
 				"aggregation.groupByFields": [
 					"resource.label.project_id",
-					...query.group.resourceLabels.map((label) => `resource.label.${label}`),
-					...[...query.group.resourceMetricLabels, ...query.metric.labels].map(
+					...Arr.map(query.group.resourceLabels, (label) => `resource.label.${label}`),
+					...Arr.map(
+						[...query.group.resourceMetricLabels, ...query.metric.labels],
 						(label) => `metric.label.${label}`,
 					),
 				],
@@ -427,7 +449,7 @@ export const searchResourcesPage = (
 			asReader(reader),
 			HttpClientRequest.setUrlParams({
 				assetTypes: GCP_ASSET_TYPES,
-				readMask: Object.keys(ResourceSearchResult.fields).join(","),
+				readMask: Arr.join(Rec.keys(ResourceSearchResult.fields), ","),
 				pageSize: RESOURCE_PAGE_SIZE,
 				pageToken,
 			}),

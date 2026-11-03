@@ -1,11 +1,10 @@
 import type { AiSessionDistribution } from "@maple/domain/http"
 import { getServiceColor } from "@maple/ui/lib/colors"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Checkbox from "../../../ui/checkbox"
-import { separator } from "../../../ui/display"
-import { filterDescriptionMark, filterSection } from "../../../ui/filters/filter-section"
+import * as Checkbox from "@maple/views/ui/checkbox"
+import { filterDescriptionMark, filterSection } from "@maple/views/ui/filters/filter-section"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -13,12 +12,13 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../ui/filters/filter-sidebar"
-import { percentilePresets, toLogBuckets } from "../../../ui/filters/range-distribution"
-import { type RangePreset, rangeFilterSection } from "../../../ui/filters/range-filter-section"
-import type { RangeUnit } from "../../../ui/filters/range-format"
-import type { RangeBucket } from "../../../ui/filters/range-histogram"
-import { label } from "../../../ui/label"
+	filterSidebarDivider,
+} from "@maple/views/ui/filters/filter-sidebar"
+import { percentilePresets, toLogBuckets } from "@maple/views/ui/filters/range-distribution"
+import { type RangePreset, rangeFilterSection } from "@maple/views/ui/filters/range-filter-section"
+import type { RangeUnit } from "@maple/views/ui/filters/range-format"
+import type { RangeBucket } from "@maple/views/ui/filters/range-histogram"
+import { label } from "@maple/views/ui/label"
 import { detectLookup } from "../kit/detected-models"
 import { modelVendorColor, modelVendorIcon, vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
 import { hasFilters, RANGE_PARAMS } from "./derive"
@@ -26,8 +26,6 @@ import { MountFilterRail } from "./command"
 import { type ListFacet, Message } from "./message"
 import type { Distributions, Facets, Model, RangeKey } from "./model"
 import { RANGE_UNITS } from "./update"
-
-// TODO(tooltip): the sections' description popovers are drawn as their closed info marks.
 
 type H = HtmlBuilder<Message>
 
@@ -47,7 +45,7 @@ const distributionControls = (
 		? { presets: intents }
 		: {
 				histogram: toLogBuckets(
-					distribution.buckets.map((bucket) => ({
+					Arr.map(distribution.buckets, (bucket) => ({
 						floor: bucket.floor * scale,
 						count: bucket.count,
 					})),
@@ -137,7 +135,7 @@ type FacetSpec = Readonly<{
 	title: string
 	facet: ListFacet
 	isSearchable: boolean
-	hasDescription: boolean
+	description?: string
 }>
 
 const facetSection = (
@@ -152,7 +150,7 @@ const facetSection = (
 		options,
 		selected: model.search[spec.facet] ?? [],
 		isSearchable: spec.isSearchable,
-		hasDescription: spec.hasDescription,
+		description: spec.description,
 		sections: model.filterSections,
 		toSectionsMessage: toSections,
 		onToggle: (name) => Message.ToggledFacetOption({ facet: spec.facet, name }),
@@ -160,7 +158,13 @@ const facetSection = (
 	})
 
 /** `SingleCheckboxFilter`. */
-const singleCheckbox = (h: H, title: string, isChecked: boolean, onToggle: Message): Html => {
+const singleCheckbox = (
+	h: H,
+	title: string,
+	description: string,
+	isChecked: boolean,
+	onToggle: Message,
+): Html => {
 	const inputId = `filter-${title}`
 	return h.div(
 		[h.Class("flex items-center gap-2 py-1.5")],
@@ -175,10 +179,14 @@ const singleCheckbox = (h: H, title: string, isChecked: boolean, onToggle: Messa
 				h,
 				{
 					className:
-						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal",
-					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(title)],
+						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal sm:text-xs",
+					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId))],
 				},
-				[h.span([h.Class("truncate")], [title]), filterDescriptionMark(h, title)],
+				// The title on the text only, so the info mark's tooltip is the one it shows.
+				[
+					h.span([h.Class("truncate"), h.Title(title)], [title]),
+					filterDescriptionMark(h, title, description),
+				],
 			),
 		],
 	)
@@ -197,33 +205,54 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 			facetSection(
 				h,
 				model,
-				{ title: "Agent", facet: "agents", isSearchable: true, hasDescription: true },
+				{
+					title: "Agent",
+					facet: "agents",
+					isSearchable: true,
+					description: "Sessions where any agent span carries this agent name.",
+				},
 				facets.agents,
 			),
 			facetSection(
 				h,
 				model,
-				{ title: "Tool", facet: "tools", isSearchable: true, hasDescription: true },
+				{
+					title: "Tool",
+					facet: "tools",
+					isSearchable: true,
+					description: "Sessions that called this tool at least once.",
+				},
 				facets.tools,
 			),
 			facetSection(
 				h,
 				model,
-				{ title: "Service", facet: "services", isSearchable: true, hasDescription: false },
+				{ title: "Service", facet: "services", isSearchable: true },
 				facets.services,
 				{ colorOf: getServiceColor },
 			),
 			facetSection(
 				h,
 				model,
-				{ title: "Framework", facet: "vendors", isSearchable: false, hasDescription: true },
+				{
+					title: "Framework",
+					facet: "vendors",
+					isSearchable: false,
+					description:
+						"The agent framework that ran the session, recognised at ingest from the attributes its instrumentation writes. Unidentified is AI telemetry no known framework matched.",
+				},
 				facets.vendors,
 				{ getOptionLabel: vendorLabel, getOptionIcon: vendorIcon, getOptionIconColor: vendorColor },
 			),
 			facetSection(
 				h,
 				model,
-				{ title: "Model", facet: "models", isSearchable: true, hasDescription: true },
+				{
+					title: "Model",
+					facet: "models",
+					isSearchable: true,
+					description: "Sessions where any agent span ran on this model.",
+				},
 				facets.models,
 				{
 					getOptionLabel: (name) => detect(name).displayName,
@@ -234,15 +263,16 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 			facetSection(
 				h,
 				model,
-				{ title: "Environment", facet: "environments", isSearchable: false, hasDescription: false },
+				{ title: "Environment", facet: "environments", isSearchable: false },
 				facets.environments,
 			),
-			separator(h, "horizontal", "my-2"),
-			...RANGES.map((spec) => rangeSection(h, model, distributions, spec)),
-			separator(h, "horizontal", "my-2"),
+			filterSidebarDivider(h),
+			...Arr.map(RANGES, (spec) => rangeSection(h, model, distributions, spec)),
+			filterSidebarDivider(h),
 			singleCheckbox(
 				h,
 				"Hide single-trace sessions",
+				"A framework that reports no session ID gets one session per trace. This hides those; a session with its own ID stays, however many traces it spans.",
 				search.grouped === true,
 				Message.ToggledGrouped(),
 			),
@@ -257,7 +287,13 @@ export const filtersRail = (h: H, model: Model): Html =>
 		[
 			AsyncData.matchData(model.facets.data, {
 				onEmpty: () => filterSidebarLoading(h, 4),
-				onFailure: (failure) => filterSidebarError(h, failure),
+				onFailure: (failure) =>
+					filterSidebarError(
+						h,
+						failure,
+						undefined,
+						Option.getOrUndefined(AsyncData.getError(model.firstPage.data)),
+					),
 				onData: (facets) => loadedRail(h, model, facets),
 			}),
 		],

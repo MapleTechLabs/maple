@@ -9,7 +9,7 @@ import { forwardsToAi, forwardToAi } from "./ai-forward"
  * all. Both failures are silent in a typecheck, hence the table.
  */
 describe("forwardsToAi", () => {
-	it("forwards the MCP transport and the chat surfaces", () => {
+	it("forwards the MCP transport, the chat surfaces and the security audit API", () => {
 		for (const path of [
 			"/mcp",
 			"/mcp/",
@@ -20,6 +20,8 @@ describe("forwardsToAi", () => {
 			"/api/chat/sessions/org:tab/abort",
 			"/internal/chat/apply",
 			"/internal/mcp/tools",
+			"/api/security-audit/targets",
+			"/api/security-audit/runs/run-1/events",
 		]) {
 			assert.isTrue(forwardsToAi(path), path)
 		}
@@ -39,6 +41,8 @@ describe("forwardsToAi", () => {
 			"/internal/mcp",
 			"/internal/mcpx",
 			"/internal/ai-sessions",
+			"/api/security-audit",
+			"/api/security-auditx/targets",
 			"/v2/errors",
 		]) {
 			assert.isFalse(forwardsToAi(path), path)
@@ -108,6 +112,31 @@ describe("forwardToAi", () => {
 				{ ordinal: 1, ageMs: 0 },
 			)
 			assert.deepStrictEqual(response.headers, { "content-type": "application/json" })
+		}).pipe(Effect.withSpan("test-root")),
+	)
+
+	it.effect("marks the request that built maple-ai's tool executor, and strips the marker", () =>
+		Effect.gen(function* () {
+			const built = yield* forwardToAi(
+				echoFetcher([], { "x-maple-ai-mcp-tools-built": "1", "content-type": "application/json" }),
+				HttpServerRequest.fromWeb(new Request("https://api.maple.dev/mcp")),
+			)
+			const span = yield* Effect.currentSpan
+
+			assert.strictEqual(span.attributes.get("maple.ai.mcp.tools_built"), true)
+			assert.deepStrictEqual(built.headers, { "content-type": "application/json" })
+		}).pipe(Effect.withSpan("test-root")),
+	)
+
+	it.effect("leaves a warm tools request unmarked", () =>
+		Effect.gen(function* () {
+			yield* forwardToAi(
+				echoFetcher([]),
+				HttpServerRequest.fromWeb(new Request("https://api.maple.dev/mcp")),
+			)
+			const span = yield* Effect.currentSpan
+
+			assert.isUndefined(span.attributes.get("maple.ai.mcp.tools_built"))
 		}).pipe(Effect.withSpan("test-root")),
 	)
 

@@ -1,12 +1,13 @@
 /**
  * Runtime renderer for the alert notification email.
  *
- * The markup lives in `emails/alert-notification.html` and is compiled to
- * `src/generated/alert-notification.ts` by Maizzle (`bun run --cwd
- * packages/email build`). This module only splices those strings together.
+ * The markup lives in `templates/` and is compiled to
+ * `src/generated/alert-notification.ts` (`bun run --cwd packages/email build`).
+ * This module only splices those strings together.
  */
 import { FRAGMENTS, PAGE } from "./generated/alert-notification"
 import { escapeHtml, fill, preheaderPadding, truncate } from "./template"
+import { Array as Arr } from "effect"
 
 /**
  * All values are pre-formatted strings — the api layer formats via the same
@@ -30,8 +31,6 @@ export interface AlertNotificationProps {
 	accentColor: string
 	/** Deep link to the alert in Maple. */
 	linkUrl: string
-	/** Deep link to Maple AI for this alert. */
-	chatUrl: string
 }
 
 const FG = "#e8dfd3"
@@ -48,20 +47,23 @@ export function renderAlertNotification(props: AlertNotificationProps): string {
 		window,
 		accentColor,
 		linkUrl,
-		chatUrl,
 	} = props
 
 	const previewText = `${eventLabel}: ${ruleName} — ${observedSummary}`
 
-	const detailRows = [
-		{ label: "Severity", value: severity, valueColor: accentColor },
-		{ label: "Signal", value: signalLabel, valueColor: FG },
-		{ label: "Group", value: group, valueColor: FG },
-		{ label: "Observed", value: observedSummary, valueColor: FG },
-		{ label: "Window", value: window, valueColor: FG },
-	]
-		.map((row) => fill(FRAGMENTS.detailRow, row))
-		.join("\n")
+	const detailRows = Arr.join(
+		Arr.map(
+			[
+				{ label: "Severity", value: severity, valueColor: accentColor },
+				{ label: "Signal", value: signalLabel, valueColor: FG },
+				{ label: "Group", value: group, valueColor: FG },
+				{ label: "Observed", value: observedSummary, valueColor: FG },
+				{ label: "Window", value: window, valueColor: FG },
+			],
+			(row) => fill(FRAGMENTS.detailRow, row),
+		),
+		"\n",
+	)
 
 	return fill(
 		PAGE,
@@ -73,7 +75,6 @@ export function renderAlertNotification(props: AlertNotificationProps): string {
 			ruleName: truncate(ruleName, 80),
 			observedSummary,
 			linkUrl,
-			chatUrl,
 		},
 		{ preheaderPad: escapeHtml(preheaderPadding(previewText)), detailRows },
 	)

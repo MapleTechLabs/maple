@@ -1,26 +1,31 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 
-import type { BillingCustomer } from "@maple/domain/http"
-import { UpdateBillingControlsRequest } from "@maple/domain/http"
+import {
+	BillingControls,
+	BillingCustomer,
+	BillingSpendLimit,
+	UpdateBillingControlsRequest,
+} from "@maple/domain/http"
 
 import { maximumInvoiceCents, parseCapInput, uncappedFeatures, updateFeatureControls } from "./controls"
 import type { SpendModel } from "./spend"
 
-const customer = {
-	id: "org_test",
-	subscriptions: [],
-	billingControls: {
-		spendLimits: [
-			{
-				featureId: "traces",
-				enabled: true,
-				limitType: "absolute",
-				overageLimit: 75,
-			},
-		],
-	},
-} as BillingCustomer
+const customerWithLimits = (spendLimits: ReadonlyArray<BillingSpendLimit>) =>
+	new BillingCustomer({
+		id: "org_test",
+		subscriptions: [],
+		billingControls: new BillingControls({ spendLimits }),
+	})
+
+const customer = customerWithLimits([
+	new BillingSpendLimit({
+		featureId: "traces",
+		enabled: true,
+		limitType: "absolute",
+		overageLimit: 75,
+	}),
+])
 
 describe("updateFeatureControls", () => {
 	// The endpoint payload is a Schema.Class, so the HttpApi client encoder checks
@@ -71,15 +76,23 @@ describe("maximumInvoiceCents", () => {
 
 	it("adds every billable feature cap to the base invoice", () => {
 		expect(
-			maximumInvoiceCents(model, {
-				...customer,
-				billingControls: {
-					spendLimits: [
-						{ featureId: "logs", enabled: true, limitType: "absolute", overageLimit: 100 },
-						{ featureId: "traces", enabled: true, limitType: "absolute", overageLimit: 50 },
-					],
-				},
-			} as BillingCustomer),
+			maximumInvoiceCents(
+				model,
+				customerWithLimits([
+					new BillingSpendLimit({
+						featureId: "logs",
+						enabled: true,
+						limitType: "absolute",
+						overageLimit: 100,
+					}),
+					new BillingSpendLimit({
+						featureId: "traces",
+						enabled: true,
+						limitType: "absolute",
+						overageLimit: 50,
+					}),
+				]),
+			),
 		).toBe(8_400)
 	})
 
@@ -89,7 +102,7 @@ describe("maximumInvoiceCents", () => {
 
 	it("counts only billable features without a cap as uncapped", () => {
 		// Metrics is unlimited and sessions are hard-capped: no cap can bound either.
-		expect(uncappedFeatures(model, customer).map((feature) => feature.featureId)).toEqual(["logs"])
+		expect(Arr.map(uncappedFeatures(model, customer), (feature) => feature.featureId)).toEqual(["logs"])
 	})
 })
 

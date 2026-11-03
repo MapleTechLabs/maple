@@ -1,5 +1,6 @@
 import { Layer } from "effect"
-import { McpToolExecutor } from "../mcp/dispatcher"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { McpServicesLive } from "./mcp-tool-graph"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -8,10 +9,6 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
 import { PrReviewConversationService } from "@maple/backend/services/pr-review/PrReviewConversationService"
-
-export const McpServicesLive = McpToolExecutor.layer.pipe(
-	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
-)
 
 /**
  * What applying a proposal somebody approved from a chat platform needs, and nothing else.
@@ -43,4 +40,6 @@ export const InvestigationServicesLive = Layer.mergeAll(
 	PrReviewConversationService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 	// The org's own OpenRouter key, when it holds the add-on; the add-on check reads the cached customer.
 	OrgOpenRouterKeyService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	// Which org pays for the turn: a member org's AI credits are its billing org's.
+	BillingCustomerResolver.layer.pipe(Layer.provide(EdgeCacheServiceLive)),
 )

@@ -8,15 +8,15 @@ import {
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../charts/chart"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { LoadFailure } from "../../../data/load-failure"
-import * as Combobox from "../../../ui/combobox"
-import * as Dialog from "../../../ui/dialog"
-import * as Menu from "../../../ui/menu"
-import * as Tooltip from "../../../ui/tooltip"
-import * as RadioGroup from "../../../ui/radio-group"
-import * as Select from "../../../ui/select"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Combobox from "@maple/views/ui/combobox"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Menu from "@maple/views/ui/menu"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import * as RadioGroup from "@maple/views/ui/radio-group"
+import * as Select from "@maple/views/ui/select"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -87,7 +87,10 @@ export const Message = defineMessageUnion({
 	GotChartMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	ClickedSignalKind: { kind: SignalKind },
-	GotRadioMessage: { group: Schema.Literals(["signal", "severity"]), message: RadioGroup.Message },
+	GotRadioMessage: {
+		group: Schema.Literals(["signal", "severity", "interval"]),
+		message: RadioGroup.Message,
+	},
 	ClickedOpenInBuilder: {},
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
@@ -97,6 +100,8 @@ export const Message = defineMessageUnion({
 	ClickedAddCriticalTier: {},
 	ClickedRemoveCriticalTier: {},
 	ToggledAlertOnNoData: {},
+	/** The query time meter's switch to the shortest interval the query fits. */
+	ClickedUseInterval: { minutes: Schema.String },
 	ClickedDryRun: {},
 	ClickedSendTest: {},
 	CompletedTest: {
@@ -112,7 +117,6 @@ export const Message = defineMessageUnion({
 	GotTemplatesMessage: { message: Dialog.Message },
 	ClickedTemplate: { id: Schema.String },
 	ClickedStartBlank: {},
-	ClickedSkipTemplates: {},
 	ClickedSuggestName: {},
 	ChangedTagDraft: { value: Schema.String },
 	PressedTagKey: { key: Schema.String },

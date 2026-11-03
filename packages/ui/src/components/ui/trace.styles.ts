@@ -9,12 +9,12 @@ export const traceIconStyles =
 
 export const traceTitleStyles = "min-w-0 truncate motion-reduce:shimmer-none"
 
-export const traceDescriptionStyles = "shrink-0 text-muted-foreground/70 tabular-nums"
+export const traceDescriptionStyles = "shrink-0 text-foreground-subtle tabular-nums"
 
 export const traceCollapsibleStyles = "flex w-full min-w-0 flex-col"
 
 export const traceCollapsibleTriggerStyles =
-	"group/trace-collapsible-trigger flex w-fit max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-none text-left text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50 has-[[data-status=error]]:text-destructive"
+	"group/trace-collapsible-trigger flex w-fit max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-none text-left text-muted-foreground outline-none hover:text-foreground active:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50 has-[[data-status=error]]:text-destructive"
 
 export const traceCollapsibleTriggerIconStyles =
 	"transition-transform group-aria-expanded/trace-collapsible-trigger:rotate-90"

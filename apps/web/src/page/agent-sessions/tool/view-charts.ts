@@ -2,23 +2,24 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate } from "@maple/web-data/lib/tool-analytics"
-import { Option, Record } from "effect"
+import { Option, Record, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../charts/chart"
-import type { ThemeColors } from "../../../charts/theme-colors"
-import { chartEmpty } from "../../../ui/chart-state"
-import { panelHeader } from "../../../ui/panel"
+import * as Chart from "@maple/views/charts/chart"
+import type { ThemeColors } from "@maple/views/charts/theme-colors"
+import { chartEmpty } from "@maple/views/ui/chart-state"
+import { panelHeader } from "@maple/views/ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
 import type { ToolSeriesPoint } from "../tools-kit/model"
 import { type ToolPlotInputs, toolPlotView } from "../tools-kit/series-chart"
 import { Message } from "./message"
+import { vstackClass } from "@maple/views/ui/stack"
 
 // The tool detail charts: four readings of one tool.
 
 type H = HtmlBuilder<Message>
 
 const PLOT_HEIGHT = 160
-const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
+const CHART_EMPTY_MESSAGE = "No data for this metric in this window"
 
 type CellSpec = Readonly<{
 	id: string
@@ -69,9 +70,9 @@ export const GRID_TOKENS = [
 ]
 
 const rowsOf = (series: ReadonlyArray<ToolSeriesPoint>) =>
-	series
-		.toSorted((a, b) => a.bucket - b.bucket)
-		.map((bucket) => ({
+	Arr.map(
+		series.toSorted((a, b) => a.bucket - b.bucket),
+		(bucket) => ({
 			bucket: formatWarehouseDateTime(bucket.bucket),
 			calls: bucket.calls,
 			errorRate: errorRate(bucket),
@@ -79,7 +80,8 @@ const rowsOf = (series: ReadonlyArray<ToolSeriesPoint>) =>
 			p90: bucket.p90,
 			p95: bucket.p95,
 			callsPerSession: bucket.sessions > 0 ? bucket.calls / bucket.sessions : 0,
-		}))
+		}),
+	)
 
 const cell = (
 	h: H,
@@ -94,8 +96,8 @@ const cell = (
 		[
 			h.Class(
 				cn(
-					"flex min-w-0 flex-col",
-					"gap-3.5 border-b border-border px-6 pt-[22px] pb-5 @min-[900px]/page:[&:nth-child(odd)]:border-r",
+					vstackClass({ shrink: true }),
+					"gap-3.5 border-b border-border px-6 py-5 @min-[900px]/page:[&:nth-child(odd)]:border-r",
 				),
 			),
 		],
@@ -105,12 +107,11 @@ const cell = (
 				action:
 					spec.series.length > 1
 						? seriesLegend(h, {
-								items: spec.series.map((entry) => ({
+								items: Arr.map(spec.series, (entry) => ({
 									key: entry.key,
 									label: entry.label,
 									color: `var(${entry.token})`,
 								})),
-								swatch: "square",
 							})
 						: undefined,
 				divided: false,
@@ -156,6 +157,6 @@ export const detailCharts = (
 			h.Class(cn("grid @min-[900px]/page:grid-cols-2", refreshingClass(options.isWaiting))),
 			...(options.isWaiting ? [h.AriaBusy(true)] : []),
 		],
-		CELLS.map((spec) => cell(h, spec, rows, options.charts, options.theme, options.timeZone)),
+		Arr.map(CELLS, (spec) => cell(h, spec, rows, options.charts, options.theme, options.timeZone)),
 	)
 }

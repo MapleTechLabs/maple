@@ -1,11 +1,11 @@
 import { RailwayConnectRequest, type RailwayIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../platform/api-clients"
-import * as Field from "../../ui/field"
+import * as Field from "@maple/views/ui/field"
 import { Message } from "./message"
 
 // `RailwayIntegrationCard`: state and writes.
@@ -30,14 +30,16 @@ export const initRailwayCard = (): RailwayCardModel => ({
 
 /** Environments the poller has not completed a first sync for yet (and has not failed on). */
 export const unsyncedEnvironments = (status: RailwayIntegrationStatus): number =>
-	status.environments.filter(
+	Arr.filter(
+		status.environments,
 		(environment) => environment.lastSyncedAt === null && environment.lastError === null,
 	).length
 
 /** `connectedToast`. */
 export const connectedToastOf = (status: RailwayIntegrationStatus, mode: "connect" | "rotate") => {
-	const synced = status.environments.filter((environment) => environment.lastSyncedAt !== null).length
-	const failed = status.environments.filter(
+	const synced = Arr.filter(status.environments, (environment) => environment.lastSyncedAt !== null).length
+	const failed = Arr.filter(
+		status.environments,
 		(environment) => environment.lastSyncedAt === null && environment.lastError !== null,
 	).length
 	const queued = unsyncedEnvironments(status)
@@ -71,7 +73,7 @@ export const ConnectRailwayToken = Command.define("ConnectRailwayFromIntegration
 				return Effect.succeed(
 					Message.FailedRailwayConnect({
 						error: isUnexpectedError(presentation)
-							? "Failed to connect Railway."
+							? "Couldn't connect Railway."
 							: presentation.message,
 					}),
 				)

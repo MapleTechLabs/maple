@@ -8,7 +8,7 @@
 import { driveChatTurn } from "@maple/chat-platform"
 import { ChatSessionId } from "@maple/domain/chat-session"
 import { ChatConnectorId } from "@maple/domain/primitives"
-import { Clock, Effect, Option, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Schema, Stream, Array as Arr } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { sessionUnreachable } from "./events.ts"
 import type { RelayPorts } from "./turn.ts"
@@ -53,7 +53,8 @@ export const settleRelayedTurn = Effect.fn("ChatBotRelay.settleTurn")(
 		const events = yield* session.since(checkpoint.cursor).pipe(Effect.mapError(unreachable))
 		// Ended when its own `turn-end` is in the log — `running()` alone would also wait out a newer
 		// turn in the same session.
-		const ended = events.some(
+		const ended = Arr.some(
+			events,
 			(event) =>
 				event.type === "turn-end" &&
 				event.task === undefined &&

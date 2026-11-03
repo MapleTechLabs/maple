@@ -4,6 +4,7 @@ import type { Resources } from "../../../../platform/resources"
 import type { PageSubscriptionInput } from "../../../contract"
 import { isSettling, metricsConnectors, noticeOf, pageStateOf, statusOf, successOf } from "./derive"
 import { Message, type Model } from "./model"
+import { pollTicks } from "../../../../data/poll"
 
 // The page's `useIntervalRefresh` calls: the status while connected (faster while a connection
 // settles), the fleet while waiting on a first read or quiet, the inventory while it is empty.
@@ -17,11 +18,13 @@ const EMPTY_RESOURCES_REFRESH = Duration.seconds(30)
 const LIVE_CLOCK = Duration.seconds(30)
 
 const liveClock = Stream.fromEffectRepeat(
-	Effect.andThen(Effect.sleep(LIVE_CLOCK), () => Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveClock({ nowMs }))),
+	Effect.andThen(Effect.sleep(LIVE_CLOCK), () =>
+		Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveClock({ nowMs })),
+	),
 )
 
 const every = (interval: Duration.Duration, message: Message) =>
-	Stream.fromEffectRepeat(Effect.as(Effect.sleep(interval), message))
+	Stream.map(pollTicks(interval), () => message)
 
 const statusCadence = (model: Model): "off" | "settling" | "steady" => {
 	const status = statusOf(model)

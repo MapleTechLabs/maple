@@ -16,12 +16,12 @@ import {
 	stoppedByDraft,
 	VERCEL_SAMPLING_RATES,
 } from "../../components/integrations/vercel-model"
-import * as Keyed from "../../data/keyed"
-import type { LoadFailure } from "../../data/load-failure"
-import { requestKey } from "../../data/request-key"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
-import * as RadioGroup from "../../ui/radio-group"
+import * as Keyed from "@maple/views/data/keyed"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import { requestKey } from "@maple/views/data/request-key"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as RadioGroup from "@maple/views/ui/radio-group"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { integrationOfSearch } from "./catalog"
 import { ReadClock } from "./command"
@@ -123,7 +123,7 @@ export const enterVercel = (model: Model, context: PageContext): Return =>
 /** While a fresh connection settles: the status, the last 24 hours and the clock that ends it. */
 export const tickedSettle = (model: Model, context: PageContext): Return =>
 	chain(model, [
-		(next) => requestStatus(next, context, "vercel", "Poll"),
+		(next) => requestStatus(next, context, "vercel", "Refresh"),
 		(next) => requestUsage(next, context, "Refresh"),
 		(next) => ({ model: next, commands: [ReadClock()] }),
 	])

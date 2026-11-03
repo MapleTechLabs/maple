@@ -1,8 +1,9 @@
 import { OVERLAY_ITEMS } from "../overlay-items"
-import { Option } from "effect"
+import { cn } from "@maple/ui/lib/utils"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kitPage, kitSection } from "../kit-layout"
-import * as ToastView from "../../../ui/toast-view"
+import * as ToastView from "@maple/views/ui/toast-view"
 import { kitHoverCard, kitPopover, kitTooltip } from "./cards"
 import { kitAlertDialog, kitDialog, kitSheet } from "./dialogs"
 import { kitCommand } from "./command"
@@ -78,9 +79,12 @@ const itemLink = (h: H, name: OverlayItem, isActive: boolean): Html =>
 		[
 			...(isActive ? [h.AriaCurrent("page")] : []),
 			h.Class(
-				isActive
-					? "font-medium text-foreground active"
-					: "text-muted-foreground hover:text-foreground",
+				cn(
+					"rounded-md border px-2 py-1 font-mono text-xs transition-colors",
+					isActive
+						? "active border-foreground/20 bg-accent font-medium text-foreground"
+						: "border-border text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",
+				),
 			),
 			...(isActive ? [h.DataAttribute("status", "active")] : []),
 			h.Href(`/lab/kit/overlays?item=${name}`),
@@ -101,8 +105,10 @@ export const view = (model: Model, h: H): Html =>
 				[
 					kitSection(h, "Items", [
 						h.nav(
-							[h.AriaLabel("Overlay items"), h.Class("flex flex-wrap gap-x-3 gap-y-1 text-sm")],
-							OVERLAY_ITEMS.map((name) => itemLink(h, name, Option.contains(model.item, name))),
+							[h.AriaLabel("Overlay items"), h.Class("flex flex-wrap gap-1.5")],
+							Arr.map(OVERLAY_ITEMS, (name) =>
+								itemLink(h, name, Option.contains(model.item, name)),
+							),
 						),
 					]),
 					...Option.toArray(

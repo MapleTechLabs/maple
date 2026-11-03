@@ -3,9 +3,10 @@ import { createRequire } from "module"
 import { realpathSync, mkdirSync, writeFileSync, rmSync } from "fs"
 import { dirname, resolve } from "path"
 const alch = realpathSync(process.cwd() + "/node_modules/alchemy")
+const cloudflare = realpathSync(process.cwd() + "/node_modules/@alchemy.run/cloudflare")
 const req = createRequire(alch + "/package.json")
 const { rolldown } = await import(req.resolve("rolldown"))
-const cfMod = await import(req.resolve("@alchemy.run/cloudflare-runtime/rolldown"))
+const cfMod = await import("@alchemy.run/cloudflare-runtime/rolldown")
 const cloudflareRolldown = cfMod.default
 console.log("rolldown from:", req.resolve("rolldown"))
 
@@ -17,7 +18,7 @@ let input = {
 	telemetry: "apps/api/scripts/cold-path/telemetry-probe.ts",
 }
 if (process.env.STARTUP === "1") {
-	const { makeEffectVirtualEntry } = await import(alch + "/src/Cloudflare/Workers/Sources/Rolldown.ts")
+	const { makeEffectVirtualEntry } = await import(cloudflare + "/src/Workers/Sources/Rolldown.ts")
 	const entryDir = "apps/api/node_modules/.cache/maple-startup-entry"
 	mkdirSync(entryDir, { recursive: true })
 	const entry = entryDir + "/entry.ts"

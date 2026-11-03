@@ -6,11 +6,11 @@
  * decision to run anything at all. Everything below crosses a service binding
  * as JSON, so it is data only.
  *
- * The `SandboxRun*` names are deliberate: `@yielded/agent/sandbox` has its own
+ * The `SandboxRun*` names are deliberate: `@maple/backend/sandbox/contract` has its own
  * `SandboxExited` and friends, and both sets meet in the api's port. Distinct
  * names keep a `switch` on one from silently reading like the other.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** Where checkouts live inside the container; one directory per commit. */
 export const SANDBOX_WORKSPACE_ROOT = "/workspace/maple"
@@ -42,9 +42,20 @@ export const SANDBOX_RUN_AS_USER = "maple-agent"
  */
 export const SANDBOX_COMMAND_ENV = {
 	PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-	HOME: "/tmp",
 	LANG: "C.UTF-8",
+	// No global git config, so one command cannot change what git shows the next. The
+	// system config stays: it is root-owned and holds the checkout's `safe.directory`.
+	GIT_CONFIG_GLOBAL: "/dev/null",
 } as const satisfies Readonly<Record<string, string>>
+
+/** Set by the wrapper per command: a fresh, empty directory removed once the command returns. */
+export const SANDBOX_COMMAND_HOME_VAR = "HOME"
+
+/** Every name an agent command's environment holds: the fixed ones above plus its own HOME. */
+export const SANDBOX_COMMAND_ENV_NAMES: ReadonlyArray<string> = [
+	...Rec.keys(SANDBOX_COMMAND_ENV),
+	SANDBOX_COMMAND_HOME_VAR,
+].sort()
 
 /**
  * Trailer the wrapper prints after the command's own output, carrying the real
@@ -95,9 +106,9 @@ export const SandboxRelativePath = Schema.String.check(
 	Schema.isMaxLength(1024),
 	Schema.makeFilter(
 		(value: string) =>
-			!value.startsWith("/") &&
-			!value.split("/").includes("..") &&
-			// eslint-disable-next-line no-control-regex
+			!Str.startsWith("/")(value) &&
+			!Str.split("/")(value).includes("..") &&
+			// oxlint-disable-next-line no-control-regex
 			!/[\u0000-\u001f]/.test(value),
 		{ title: "sandboxRelativePath", expected: "a checkout-relative path with no `..` segment" },
 	),
@@ -106,7 +117,7 @@ export const SandboxRelativePath = Schema.String.check(
 /** A program name or argument. Control characters are refused: they truncate the shell program. */
 export const SandboxArgument = Schema.String.check(
 	Schema.isMaxLength(4096),
-	// eslint-disable-next-line no-control-regex
+	// oxlint-disable-next-line no-control-regex
 	Schema.makeFilter((value: string) => !/[\u0000]/.test(value), {
 		title: "sandboxArgument",
 		expected: "text with no NUL byte",
@@ -202,11 +213,11 @@ export const SANDBOX_EXEC_PATH = "/internal/sandbox/exec"
  * literal in `sh` apart from the quote itself, which is closed, escaped and
  * reopened — the one rule this needs to get right.
  */
-export const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
+export const shellQuote = (value: string): string => `'${Str.replaceAll("'", `'\\''`)(value)}'`
 
 /** A command line for `sh -c`, with every argument quoted. */
 export const shellCommand = (command: string, args: ReadonlyArray<string>): string =>
-	[command, ...args].map(shellQuote).join(" ")
+	Arr.join(Arr.map([command, ...args], shellQuote), " ")
 
 /**
  * Remove a credential from anything travelling back to a caller.
@@ -217,8 +228,8 @@ export const shellCommand = (command: string, args: ReadonlyArray<string>): stri
  * goes through this.
  */
 export const redactSecret = (text: string, secret: string): string =>
-	secret === "" ? text : text.replaceAll(secret, "<redacted>")
+	secret === "" ? text : Str.replaceAll(secret, "<redacted>")(text)
 
 /** Bound a diagnostic to what the wire schema accepts. */
 export const boundMessage = (text: string): string =>
-	text.length <= 4 * 1024 ? text : `${text.slice(0, 4 * 1024 - 1)}…`
+	text.length <= 4 * 1024 ? text : `${Str.slice(0, 4 * 1024 - 1)(text)}…`

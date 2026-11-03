@@ -6,6 +6,7 @@ import { renderFollowUp, renderIgnoredPaths } from "@maple/backend/services/pr-r
 import { assert, describe, it } from "vitest"
 import { renderChangedFiles, renderFileDiffs } from "../mcp/tools/pull-request"
 import { makeReviewCoverage, unreadRefusal } from "./review-coverage"
+import { Array as Arr } from "effect"
 
 const file = (path: string): PullRequestFile => ({
 	path,
@@ -56,19 +57,51 @@ describe("makeReviewCoverage", () => {
 			changes: { paths: ["src/b.ts"], rewritten: false },
 			open: [],
 		})
-		const coverage = makeReviewCoverage(["Review pull request #7.", ...followUp].join("\n"))
+		const coverage = makeReviewCoverage(Arr.join(["Review pull request #7.", ...followUp], "\n"))
 		coverage.observe("pr_changed_files", listing)
 		assert.deepEqual(coverage.unread(), ["src/b.ts"])
 
 		const nothing = makeReviewCoverage(
-			renderFollowUp({
-				previousSha: "abcdef1234",
-				changes: { paths: [], rewritten: false },
-				open: [],
-			}).join("\n"),
+			Arr.join(
+				renderFollowUp({
+					previousSha: "abcdef1234",
+					changes: { paths: [], rewritten: false },
+					open: [],
+				}),
+				"\n",
+			),
 		)
 		nothing.observe("pr_changed_files", listing)
 		assert.deepEqual(nothing.unread(), [])
+		assert.isFalse(coverage.wholeDiff())
+	})
+
+	it("owes the pass after an unchecked fix every file, whatever changed since", () => {
+		const coverage = makeReviewCoverage(
+			Arr.join(
+				[
+					"Review pull request #7.",
+					...renderFollowUp({
+						previousSha: "abcdef1234",
+						changes: { paths: ["src/b.ts"], rewritten: false },
+						open: [],
+						recheck: true,
+					}),
+				],
+				"\n",
+			),
+		)
+		coverage.observe("pr_changed_files", listing)
+		assert.lengthOf(coverage.unread(), 3)
+		assert.isTrue(coverage.wholeDiff())
+	})
+
+	// Without a listing nothing is due, so an empty unread list proves nothing was checked.
+	it("is no whole-diff read until a file listing arrives", () => {
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		assert.isFalse(coverage.wholeDiff())
+		coverage.observe("pr_changed_files", listing)
+		assert.isTrue(coverage.wholeDiff())
 	})
 })
 

@@ -3,14 +3,15 @@ import { V2ApiKey } from "@maple/domain/http/v2"
 import { Effect, Result, Schema } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
-import { button } from "../../../ui/button"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as DialogView from "../../../ui/dialog-view"
+import { button } from "@maple/views/ui/button"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as DialogView from "@maple/views/ui/dialog-view"
 import { secretReveal } from "./secret-reveal"
+import { typography } from "@maple/views/ui/typography"
 
 // `RollApiKeyDialog`.
 
@@ -95,7 +96,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isRolling: false },
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to roll API key",
+						title: "Couldn't roll API key",
 						description: error.message,
 					}),
 				}),
@@ -127,7 +128,7 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 								DialogView.dialogDescription(h, "dialog", model.dialog.id, [
 									"A new secret will be issued for",
 									" ",
-									h.span([h.Class("text-foreground font-medium")], [model.apiKey?.name ?? ""]),
+									typography(h, { tone: "foreground", weight: "medium" }, [model.apiKey?.name ?? ""]),
 									" and the current key will be revoked immediately. Any integrations using the old key will stop working until you update them with the new one.",
 								]),
 							]),

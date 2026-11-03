@@ -175,7 +175,7 @@ interface CommitProbeHit {
 	readonly reposProbed: number
 }
 export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommitServiceApi>()(
-	"@maple/api/services/vcs/VcsCommitService",
+	"@maple/backend/services/vcs/VcsCommitService",
 	{
 		make: Effect.gen(function* () {
 			const repo = yield* VcsRepository
@@ -394,9 +394,10 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				// dropped silently here. The singular endpoint still reports them as
 				// VcsCommitShaInvalidError; in a list they're just rows that render
 				// their raw reference, which is what the table does anyway.
-				const shas = Arr.getSomes(
-					yield* Effect.forEach(Arr.dedupe(rawShas), (raw) => decodeSha(raw).pipe(Effect.option)),
+				const decodedShas = yield* Effect.forEach(Arr.dedupe(rawShas), (raw) =>
+					decodeSha(raw).pipe(Effect.option),
 				)
+				const shas = Arr.getSomes(decodedShas)
 				if (shas.length === 0) return [] as ReadonlyArray<VcsCommitDetail>
 
 				// 1. One read for every stored commit, then one read for the repos they
@@ -438,12 +439,11 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				opts: { readonly limit: number },
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "vcs.commit_range.requested": ranges.length })
-				const shas = Arr.getSomes(
-					yield* Effect.forEach(
-						Arr.dedupe(ranges.flatMap((range) => [range.base, range.head])),
-						(raw) => decodeSha(raw).pipe(Effect.option),
-					),
+				const decodedShas = yield* Effect.forEach(
+					Arr.dedupe(ranges.flatMap((range) => [range.base, range.head])),
+					(raw) => decodeSha(raw).pipe(Effect.option),
 				)
+				const shas = Arr.getSomes(decodedShas)
 				const stored = yield* asPersistence(repo.findCommitsByShas(orgId, shas))
 				const bySha = new Map(stored.map((commit) => [commit.sha as string, commit]))
 

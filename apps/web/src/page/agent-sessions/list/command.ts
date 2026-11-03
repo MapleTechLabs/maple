@@ -6,9 +6,9 @@ import {
 	listAiSessions,
 } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Duration, Effect, Option, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AgentSessionsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -40,8 +40,10 @@ const fetchPage = (search: typeof AgentSessionsSearch.Type, window: TimeWindow, 
 	listAiSessions({
 		data: { ...presentInputs(filterInputs(search, window)), limit: PAGE_SIZE, offset },
 	}).pipe(
-		Effect.map((response) => ({ data: response.data, ranked: rankedOf(response) })),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response) => ({ data: response.data, ranked: rankedOf(response) }),
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
@@ -80,19 +82,18 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 	execute: ({ detailsKey, search, window, rows }) =>
 		getAiSessionDetails({
 			data: {
-				startTime: rows.map((row) => row.startTime).reduce((a, b) => (a < b ? a : b)),
-				endTime: rows.map((row) => row.endTime).reduce((a, b) => (a < b ? b : a)),
-				sessionIds: rows.map((row) => row.sessionId),
+				startTime: Arr.map(rows, (row) => row.startTime).reduce((a, b) => (a < b ? a : b)),
+				endTime: Arr.map(rows, (row) => row.endTime).reduce((a, b) => (a < b ? b : a)),
+				sessionIds: Arr.map(rows, (row) => row.sessionId),
 				...countedFilters(filterInputs(search, window)),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) =>
 				Message.CompletedFetchDetails({
 					detailsKey,
-					sessionIds: rows.map((row) => row.sessionId),
+					sessionIds: Arr.map(rows, (row) => row.sessionId),
 					result,
 				}),
 			),
@@ -129,8 +130,7 @@ export const FetchTabSessions = Command.define("FetchAgentSessionsTabSessions", 
 	messages: [Message.CompletedFetchTabSessions],
 	execute: ({ key, window }) =>
 		getAiToolTotals({ data: window }).pipe(
-			Effect.map((totals) => totals.allSessions),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (totals) => totals.allSessions, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTabSessions({ key, result })),
 		),
@@ -141,8 +141,7 @@ export const FetchTabTools = Command.define("FetchAgentSessionsTabTools", {
 	messages: [Message.CompletedFetchTabTools],
 	execute: ({ key, window }) =>
 		getAiToolBreakdowns({ data: window }).pipe(
-			Effect.map((breakdowns) => breakdowns.tools.length),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (breakdowns) => breakdowns.tools.length, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchTabTools({ key, result })),
 		),
@@ -233,9 +232,13 @@ export const MountRowClicks = Mount.defineStream("MountAgentSessionsRowClicks", 
 							shiftKey: event.shiftKey,
 							altKey: event.altKey,
 							isInsideLink: event.target.closest("a") !== null,
-							rowUrl: event.target.closest("tr[data-session-href]")?.getAttribute("data-session-href") ?? null,
+							rowUrl:
+								event.target
+									.closest("tr[data-session-href]")
+									?.getAttribute("data-session-href") ?? null,
 						})
-						if (Option.isSome(url)) Queue.offerUnsafe(queue, Message.ClickedSessionRow({ url: url.value }))
+						if (Option.isSome(url))
+							Queue.offerUnsafe(queue, Message.ClickedSessionRow({ url: url.value }))
 					}
 					element.addEventListener("click", onClick)
 					return onClick
@@ -252,23 +255,21 @@ export const VirtualizeSessions = Mount.defineStream("VirtualizeAgentSessions", 
 		viewStateChanges.pipe(
 			Stream.switchMap((viewState) =>
 				viewState === "Live" && element instanceof HTMLElement
-					? virtualize(element, { overscan: 10, isMeasured: true, rows: ":scope > tr[data-index]" }, (window) =>
-							Message.ChangedListWindow({ window }),
+					? virtualize(
+							element,
+							{ overscan: 10, isMeasured: true, rows: ":scope > tr[data-index]" },
+							(window) => Message.ChangedListWindow({ window }),
 						)
 					: Stream.never,
 			),
 		),
 })
 
-/** The empty state is on screen: `useSignalPresence` mounts with it. */
-export const MountEmptyState = Mount.define("MountAgentSessionsEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () => afterPaint(Message.PaintedEmptyState()),
-})
-
 export const LoadSignalPresence = Command.define("LoadAgentSessionsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `ReachEndSentinel`: the 1px marker nearing view (400px margin) asks for the next page. */

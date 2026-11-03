@@ -1,7 +1,10 @@
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { Base64Url } from "effect/encoding"
 import { V2CursorInvalid } from "@maple/domain/http/v2"
 import { parseUtc } from "@maple/query-engine"
+
+const CursorPartsJson = Schema.fromJsonString(Schema.Array(Schema.String))
+const encodeCursorParts = Schema.encodeSync(CursorPartsJson)
 
 /**
  * Opaque keyset cursors for the v2 list endpoints backed by warehouse queries.
@@ -14,11 +17,11 @@ import { parseUtc } from "@maple/query-engine"
  * previous page already showed.
  */
 export const encodeKeysetCursor = (prefix: string, parts: ReadonlyArray<string>) =>
-	`${prefix}_${Base64Url.encode(JSON.stringify(parts))}`
+	`${prefix}_${Base64Url.encode(encodeCursorParts(parts))}`
 
 const WAREHOUSE_CURSOR_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/u
 
-const decodeCursorParts = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Array(Schema.String)))
+const decodeCursorParts = Schema.decodeUnknownResult(CursorPartsJson)
 
 /**
  * Decode a keyset cursor into its parts.
@@ -35,8 +38,8 @@ const decodeCursorParts = Schema.decodeUnknownResult(Schema.fromJsonString(Schem
 export const decodeKeysetCursor = (value: string | undefined, prefix: string, length: number) => {
 	const invalid = Effect.fail(V2CursorInvalid.make(undefined, { param: "cursor" }))
 	if (value === undefined) return Effect.succeed<ReadonlyArray<string> | undefined>(undefined)
-	if (!value.startsWith(`${prefix}_`)) return invalid
-	const decoded = Base64Url.decodeString(value.slice(prefix.length + 1))
+	if (!Str.startsWith(`${prefix}_`)(value)) return invalid
+	const decoded = Base64Url.decodeString(Str.slice(prefix.length + 1)(value))
 	if (Result.isFailure(decoded)) return invalid
 	const parsed = decodeCursorParts(decoded.success)
 	if (Result.isFailure(parsed)) return invalid

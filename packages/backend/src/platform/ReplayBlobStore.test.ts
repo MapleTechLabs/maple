@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Array as Arr } from "effect"
 import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bindings"
 import { ReplayBlobStore, replayObjectKey } from "./ReplayBlobStore"
 
@@ -103,6 +103,22 @@ describe("ReplayBlobStore.hydrate", () => {
 		}),
 	)
 
+	it.live("drops a chunk whose object is not valid gzip rather than failing the request", () =>
+		Effect.gen(function* () {
+			const bucket = fakeBucket({
+				"v1/org_1/sess_1/00000000.json.gz": new TextEncoder().encode("not gzip"),
+				"v1/org_1/sess_1/00000001.json.gz": yield* gzip(events),
+			})
+			const result = yield* runWithBucket(bucket, (store) =>
+				store.hydrate("org_1", "sess_1", [
+					{ chunkSeq: 0, events: "" },
+					{ chunkSeq: 1, events: "" },
+				]),
+			)
+			expect(result).toEqual([{ chunkSeq: 1, events }])
+		}),
+	)
+
 	it.live("preserves chunk order despite concurrent fetches", () =>
 		Effect.gen(function* () {
 			const objects: Record<string, Uint8Array> = {}
@@ -116,7 +132,7 @@ describe("ReplayBlobStore.hydrate", () => {
 					Array.from({ length: 20 }, (_, seq) => ({ chunkSeq: seq, events: "" })),
 				),
 			)
-			expect(result.map((chunk) => chunk.events)).toEqual(
+			expect(Arr.map(result, (chunk) => chunk.events)).toEqual(
 				Array.from({ length: 20 }, (_, seq) => `[${seq}]`),
 			)
 		}),

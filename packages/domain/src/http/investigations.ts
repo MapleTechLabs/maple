@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	ErrorIssueId,
 	ErrorIssueVerificationId,
@@ -150,7 +150,7 @@ export type InvestigationSubject = Schema.Schema.Type<typeof InvestigationSubjec
  * plainly a verification, which is the dangerous direction.
  */
 export const InvestigationSubjectType = Schema.Literals(
-	InvestigationSubject.members.map((member) => member.fields.type.literal),
+	Arr.map(InvestigationSubject.members, (member) => member.fields.type.literal),
 ).annotate({ identifier: "@maple/InvestigationSubjectType", title: "Investigation Subject Type" })
 export type InvestigationSubjectType = Schema.Schema.Type<typeof InvestigationSubjectType>
 
@@ -274,6 +274,11 @@ export class SubmitDiagnosisRequest extends Schema.Class<SubmitDiagnosisRequest>
 	 * without one. It lands as `inconclusive`, never as a diagnosis.
 	 */
 	partial: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * The chat turn that filed it. A later turn's diagnosis supersedes this one and gets its own
+	 * timeline events; a retry within the same turn collapses into the first.
+	 */
+	turnId: Schema.optionalKey(Schema.String),
 }) {}
 
 // Errors

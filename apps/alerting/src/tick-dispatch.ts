@@ -5,9 +5,9 @@
  */
 import { internalTokenFor, selfFetcher } from "@maple/backend/platform/self-binding"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
-import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Option, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { Effect, Option, Schema, Stream, String as Str } from "effect"
+import { HttpClient, type HttpClientError, HttpClientRequest } from "effect/http"
 import { isLaneOf, type TickLane } from "./schedule.ts"
 
 /** The service binding to this Worker itself, declared in the Worker's props. */
@@ -21,9 +21,26 @@ export class TickDispatchError extends Schema.TaggedError<TickDispatchError>()(
 	{
 		message: Schema.String,
 		status: Schema.optionalKey(Schema.Number),
+		/** Cloudflare's id for the placed invocation, to find it in the Worker's own logs. */
+		ray: Schema.optionalKey(Schema.String),
+		/** The start of the answer's body: a runtime error page names what killed the invocation. */
+		body: Schema.optionalKey(Schema.String),
+		/** What the thrown fetch said, for a hop that never answered. */
+		failure: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
+
+/** Enough of a failed answer's body to name the failure, not enough to flood a log line. */
+const MAX_FAILURE_BODY_CHARS = 300
+
+/** The rejected fetch's own words: the client error's message is only its fixed transport text. */
+const thrownMessage = (error: HttpClientError.HttpClientError): string =>
+	error.cause instanceof Error
+		? error.cause.message
+		: typeof error.cause === "string"
+			? error.cause
+			: error.message
 
 /** The tick did not run in the placed handler, so the caller runs it inline. */
 export class TickDispatchUnavailable extends Schema.TaggedError<TickDispatchUnavailable>()(
@@ -76,7 +93,18 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	)
 	const response = yield* HttpClient.execute(request).pipe(
 		Effect.provideService(HttpClient.HttpClient, client),
-		Effect.mapError((cause) => new TickDispatchError({ message: "Placed tick request failed", cause })),
+		// A callee the runtime killed usually surfaces here, as a thrown fetch, not as an answer.
+		Effect.mapError(
+			(cause) =>
+				new TickDispatchError({
+					message: "Placed tick request failed",
+					failure: thrownMessage(cause),
+					cause,
+				}),
+		),
+		Effect.tapError((error) =>
+			Effect.annotateCurrentSpan("maple.alerting.tick_failure", error.failure ?? error.message),
+		),
 	)
 	if (response.status === 204) return
 	// The handler did not run the tick: a token mismatch or a version without the route.
@@ -86,9 +114,33 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 			reason: response.status === 401 ? "refused-401" : "refused-404",
 		})
 	}
+	// The placed handler leaves no telemetry when the runtime kills it; its answer is all there is.
+	// On the span, not in the message, so the error keeps one fingerprint.
+	const ray = response.headers["cf-ray"]
+	// Reads only until the cap: an error page can be large, and every failed lane holds one at once.
+	const body = yield* response.stream.pipe(
+		Stream.decodeText(),
+		Stream.scan(
+			() => "",
+			(head: string, text: string) => head + text,
+		),
+		Stream.takeUntil((head) => head.length >= MAX_FAILURE_BODY_CHARS),
+		Stream.runLast,
+		Effect.map((head) =>
+			Str.slice(0, MAX_FAILURE_BODY_CHARS)(Str.trim(Option.getOrElse(head, () => ""))),
+		),
+		Effect.orElseSucceed(() => ""),
+	)
+	yield* Effect.annotateCurrentSpan({
+		"http.response.status_code": response.status,
+		...(ray === undefined ? undefined : { "maple.alerting.tick_ray": ray }),
+		...(body === "" ? undefined : { "maple.alerting.tick_body": body }),
+	})
 	return yield* new TickDispatchError({
 		message: `Placed tick answered ${response.status}`,
 		status: response.status,
+		...(ray === undefined ? undefined : { ray }),
+		...(body === "" ? undefined : { body }),
 	})
 })
 
@@ -106,7 +158,8 @@ export const authorizeTickRequest = Effect.fnUntraced(function* (
 	if (request.method !== "POST" || url.pathname !== TICK_PATH) {
 		return yield* new TickRequestRefused({ message: "Not the tick route", status: 404 })
 	}
-	const authorized = Option.match(yield* internalTokenFor(env), {
+	const internalToken = yield* internalTokenFor(env)
+	const authorized = Option.match(internalToken, {
 		onNone: () => false,
 		onSome: (expected) =>
 			isValidInternalBearer(request.headers.get("authorization") ?? undefined, expected),

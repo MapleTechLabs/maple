@@ -1,4 +1,4 @@
-import type { RequestMode } from "../../data/keyed"
+import type { RequestMode } from "@maple/views/data/keyed"
 
 /**
  * `useEffectiveTimeRange` + `useRefreshableAtomValue` for a page's `routeChanged`: the window is

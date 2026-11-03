@@ -1,3 +1,5 @@
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+
 const usageFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 type SizeUnit = "MB" | "GB" | "TB"
@@ -12,7 +14,8 @@ const formatIn = (gb: number, unit: SizeUnit): string => {
 }
 
 export function formatUsage(gb: number): string {
-	if (!Number.isFinite(gb) || gb <= 0) return "0 GB"
+	if (!Number.isFinite(gb)) return EMPTY_VALUE
+	if (gb <= 0) return "0 GB"
 	return formatIn(gb, sizeUnitFor(gb))
 }
 

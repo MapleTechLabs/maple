@@ -5,7 +5,7 @@ import {
 	VcsSyncService,
 	type VcsSyncServiceApi,
 } from "@maple/backend/services/integrations/vcs/VcsSyncService"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, String as Str } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { processBatch, processPlacedBatch, recordExhaustedBatch } from "../vcs-sync-runtime"
 import { handOffVcsSyncBatch, serveVcsSyncBatch } from "./vcs-sync"
@@ -240,7 +240,7 @@ describe("the VCS sync batch route", () => {
 			})
 			assert.deepStrictEqual(yield* serve({}, notAJob), refused)
 			// No content-length on this request: the bounded read is what refuses it.
-			const oversize = JSON.stringify({ messages: [], pad: "x".repeat(VCS_SYNC_BATCH_MAX_BYTES) })
+			const oversize = JSON.stringify({ messages: [], pad: Str.repeat(VCS_SYNC_BATCH_MAX_BYTES)("x") })
 			assert.deepStrictEqual(yield* serve({}, oversize), refused)
 			assert.deepStrictEqual(
 				yield* serve({ "content-length": String(VCS_SYNC_BATCH_MAX_BYTES + 1) }, "{}"),

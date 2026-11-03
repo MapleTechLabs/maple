@@ -32,7 +32,8 @@ export function startEventCapture(config: IngestConfig, sessionId: string): Even
 	const emit = sink.emit
 
 	const uninstall = [
-		installConsoleCapture(emit),
+		// Under maskAllText a console line is masked text too: level and count only.
+		installConsoleCapture(emit, { maskText: config.maskAllText }),
 		installNetworkCapture(
 			emit,
 			sink.ignoreUrl,

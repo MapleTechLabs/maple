@@ -6,14 +6,14 @@ import {
 import { GcpConnectorId, GcpLogRuntime } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import * as Keyed from "../../data/keyed"
-import { toLoadFailure } from "../../data/load-failure"
+import * as Keyed from "@maple/views/data/keyed"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
-import * as CopyButton from "../../ui/copy-button"
-import * as Dialog from "../../ui/dialog"
-import * as Field from "../../ui/field"
-import * as Select from "../../ui/select"
-import * as ToggleGroup from "../../ui/toggle-group"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type ConfigureModel, GcpFlags } from "./gcp-configure-schema"
 import type { ConfigureTarget } from "./gcp-schema"
 import { Message } from "./message"
@@ -40,12 +40,10 @@ export const initConfigure = (
 	return {
 		target,
 		dialog: Dialog.init(CONFIGURE_DIALOG_ID, "dialog"),
-		newTitle: connectors.length === 0 ? "Connect Google Cloud" : "Add connection",
 		filter: { keep: null, runtimes: null },
 		isFilterOpen: false,
 		filterMode: Select.init("gcp-filter-mode", { value: "keep", selectedIndex: 0 }),
 		created: null,
-		step: "scope",
 		scopeType: "project",
 		scopeGroup: ToggleGroup.init({ label: "What should Maple watch?", values: ["project"] }),
 		scopeId: Field.init(),
@@ -153,5 +151,7 @@ export const CopyPrompt = Command.define("CopyGcpPrompt", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedGcpPromptCopy],
 	execute: ({ text }) =>
-		Effect.map(CopyButton.writeClipboard(text), (isCopied) => Message.CompletedGcpPromptCopy({ isCopied })),
+		Effect.map(CopyButton.writeClipboard(text), (isCopied) =>
+			Message.CompletedGcpPromptCopy({ isCopied }),
+		),
 })

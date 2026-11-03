@@ -20,7 +20,8 @@ const maple = MapleFoldkit.make({
 	serviceName: "maple-web",
 	endpoint: selfIngestUrl,
 	ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY,
-	environment: import.meta.env.MODE,
+	// The stage's name (`production`, `pr-<n>`, `development`); a preview build's MODE is `production` too.
+	environment: import.meta.env.VITE_MAPLE_ENVIRONMENT || import.meta.env.MODE,
 	serviceVersion: import.meta.env.VITE_COMMIT_SHA,
 	attributes: {
 		"service.namespace": "core",
@@ -35,8 +36,16 @@ const maple = MapleFoldkit.make({
 		"@maple/web/errors/WarehouseUnreachableError",
 	],
 	routeName,
+	// Starts no child span, but it is the boot's longest step before the first data read.
+	keepCommands: ["LoadClerk"],
+	// One frame: a view or patch over 16ms drops a frame, which the SDK's 50ms default does not report.
+	slowPhases: { View: 16, Patch: 16 },
 	// The perf bench builds with VITE_MAPLE_REPLAY=off and VITE_MAPLE_CAPTURE=off.
-	replay: { enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off" },
+	replay: {
+		enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off",
+		// Dashboard charts draw to <canvas>, which replays leave blank without this.
+		canvasFps: 1,
+	},
 	privacy: {
 		...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
 			? { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN }

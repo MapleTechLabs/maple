@@ -1,19 +1,20 @@
 import { toggleFilterValue, toggleTraffic } from "../../components/analytics/filters"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
-import * as Chart from "../../charts/chart"
-import { LoadChartRuntime } from "../../charts/chart-runtime"
-import * as Keyed from "../../data/keyed"
-import { type LoadFailure, toLoadFailure } from "../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
-import * as Dialog from "../../ui/dialog"
-import * as FilterSections from "../../ui/filters/filter-sections"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
-import { SignalPresenceData } from "../kit/signal-presence"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { nextSort } from "../kit/table-sort"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import type { PresetValue } from "../kit/time-controls"
 import { CompleteReloadSpin, LoadSignalPresence, ResolveWindow } from "./command"
 import { type FilterKey, Message, type RequestMode, type SlotName } from "./message"
 import {
@@ -36,7 +37,7 @@ import { filtersOf, requestSlots, showsOverviewContent, tabOf } from "./requests
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
-export const DEFAULT_PRESET = "7d"
+export const DEFAULT_PRESET: PresetValue = "1w"
 
 const SLOT_SCHEMAS = {
 	breakdowns: Breakdowns,
@@ -55,7 +56,7 @@ const SLOT_SCHEMAS = {
 	traceSamples: Schema.Array(TraceSample),
 } satisfies Record<SlotName, Schema.Top>
 
-const SLOTS = Object.keys(SLOT_SCHEMAS).filter((name): name is SlotName => name in SLOT_SCHEMAS)
+const SLOTS = Arr.filter(Rec.keys(SLOT_SCHEMAS), (name): name is SlotName => name in SLOT_SCHEMAS)
 
 const decodeFailure: LoadFailure = toLoadFailure("The response could not be read.")
 
@@ -86,7 +87,10 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 
 const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Analytics({ search })), isReplace }),
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: hrefOf(AppRoute.Analytics({ search })),
+		isReplace,
+	}),
 })
 
 /** `onFilterChange`: an empty value drops out of the URL. */
@@ -124,7 +128,9 @@ const seedPanels = (model: Model): Model => {
 	]
 	return seeds.reduce<Model>(
 		(next, [panel, hasViews]) =>
-			next.panels[panel] === undefined ? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" }) : next,
+			next.panels[panel] === undefined
+				? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" })
+				: next,
 		model,
 	)
 }
@@ -186,8 +192,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		model,
 		commands: [
 			resolveCommand(model, context, "Load"),
-			LoadSignalPresence(),
-			Command.mapMessage(FilterSections.ReadRemembered(), (message) => Message.GotFilterSectionsMessage({ message })),
+			LoadSignalPresence({ orgId: context.orgId }),
+			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
+				Message.GotFilterSectionsMessage({ message }),
+			),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
 					? Message.CompletedLoadChartRuntime()
@@ -199,18 +207,26 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Analytics({ search }))
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// A tab switch unmounts the other tab's cards, and with them their tab, search and sort.
 	const isSameTab = tabOf(model.search) === tabOf(route.search)
 	const next = { ...model, search: route.search, panels: isSameTab ? model.panels : {} }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: (mode) => withRequests(next, context, mode),
 	})
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return => withRequests(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	withRequests(model, context, "Load")
 
 const lift = <A>(
 	model: Model,
@@ -221,6 +237,10 @@ const lift = <A>(
 
 const refreshOnly = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
 	model.window === null ? { model } : requestSlots(model, context, model.window, "Refresh", slots)
+
+/** A failure card's Try again: `Load` asks again only for the slots among `slots` that failed. */
+const retryFailed = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
+	model.window === null ? { model } : requestSlots(model, context, model.window, "Load", slots)
 
 /** `onClearFilters`: the window and the tab stay; the filters go. */
 const clearedFilters = (search: Search): Search => ({
@@ -245,31 +265,55 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			withRequests({ ...model, window, nowMs }, context, mode),
 		CompletedFetch: ({ key, result }) => ({ model: delivered(model, key, result) }),
 		CompletedLoadSignalPresence: ({ result }) =>
-			withRequests(seedPanels({ ...model, presence: AsyncData.settle(model.presence, result) }), context, "Load"),
+			withRequests(
+				seedPanels({ ...model, presence: AsyncData.settle(model.presence, result) }),
+				context,
+				"Load",
+			),
 		TickedLivePoll: () => refreshOnly(model, context, ["live"]),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
 				model: reloaded,
-				commands: [resolveCommand(reloaded, context, "Refresh"), CompleteReloadSpin({ version: reloaded.refreshVersion })],
+				commands: [
+					resolveCommand(reloaded, context, "Refresh"),
+					CompleteReloadSpin({ version: reloaded.refreshVersion }),
+				],
 			}
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedResetTimeRange: () =>
-			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: DEFAULT_PRESET }),
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: DEFAULT_PRESET,
+			}),
 		ClickedRetrySummary: () => refreshOnly(model, context, ["summary"]),
 		ClickedRetryBreakdowns: () => refreshOnly(model, context, ["breakdowns"]),
+		ClickedRetrySummaryAndBreakdowns: () => refreshOnly(model, context, ["summary", "breakdowns"]),
+		ClickedRetryAiReferrals: () => retryFailed(model, context, ["aiReferrals", "previousAiReferrals"]),
+		ClickedRetryAiCrawlers: () => retryFailed(model, context, ["aiCrawlers"]),
 		ToggledFilter: ({ key, value }) => {
 			const filters = filtersOf(model.search)
 			return navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value)))
 		},
 		ChangedFilter: ({ key, value }) => navigate(model, withFilter(model.search, key, value)),
 		ToggledTraffic: ({ which, isOn }) =>
-			navigate(model, withFilter(model.search, "traffic", toggleTraffic(filtersOf(model.search).traffic, which, isOn))),
+			navigate(
+				model,
+				withFilter(
+					model.search,
+					"traffic",
+					toggleTraffic(filtersOf(model.search).traffic, which, isOn),
+				),
+			),
 		ClickedClearFilters: () => navigate(model, clearedFilters(model.search)),
 		PickedMetric: ({ metric }) => ({ model: { ...model, pickedMetric: metric } }),
-		PickedPanelTab: ({ panel, index }) => ({ model: withPanel(model, panel, { pickedTab: index, query: "" }) }),
+		PickedPanelTab: ({ panel, index }) => ({
+			model: withPanel(model, panel, { pickedTab: index, query: "" }),
+		}),
 		ChangedPanelQuery: ({ panel, value }) => ({ model: withPanel(model, panel, { query: value }) }),
 		ClickedPanelSort: ({ panel, key, current }) => {
 			const next = nextSort<"name" | "count" | "views">(current, key, { stringKeys: ["name"] })
@@ -284,7 +328,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const filters = filtersOf(model.search)
 			return {
 				...closed,
-				outMessage: navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value))).outMessage,
+				outMessage: navigate(
+					model,
+					withFilter(model.search, key, toggleFilterValue(filters[key], value)),
+				).outMessage,
 			}
 		},
 		FailedFavicon: ({ host }) =>
@@ -315,9 +362,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
-			return lift(model, next.commands, (m) => Message.GotChartMessage({ message: m }), { chart: next.model })
+			return lift(model, next.commands, (m) => Message.GotChartMessage({ message: m }), {
+				chart: next.model,
+			})
 		},
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 	})

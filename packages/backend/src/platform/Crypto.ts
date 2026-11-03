@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 
 export interface EncryptedValue {
 	readonly ciphertext: string
@@ -9,7 +9,7 @@ export interface EncryptedValue {
 
 export const parseBase64Aes256GcmKey = <E>(raw: string, onError: (message: string) => E) =>
 	Effect.suspend((): Effect.Effect<Buffer, E> => {
-		const trimmed = raw.trim()
+		const trimmed = Str.trim(raw)
 		if (trimmed.length === 0) {
 			return Effect.fail(onError("Expected a non-empty base64 encryption key"))
 		}

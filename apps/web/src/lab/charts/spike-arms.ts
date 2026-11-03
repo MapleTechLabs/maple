@@ -1,5 +1,5 @@
-import type { PlotLegendSeries } from "../../charts/plot-legend"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
+import type { PlotLegendSeries } from "@maple/views/charts/plot-legend"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { type ChartsLabArm, SECTIONS } from "./arms"
 import { FLOW_BANDS, FLOW_TOKENS } from "./spike-sankey-data"
 import { serviceToken, TILE_TOKENS, TREEMAP_SERVICES } from "./spike-treemap-data"
@@ -14,6 +14,7 @@ import {
 	STACK_TOKENS,
 	type TokenWithFallback,
 } from "./spike-timeseries-tokens"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The prototypes the lab host draws (`spike-host.ts`), by arm: the tokens each resolves, its
 // accessible name and, for the legend arms, the series key under it.
@@ -32,7 +33,7 @@ export interface SpikeArm {
 const series =
 	(entries: ReadonlyArray<readonly [key: string, label: string, token: string]>) =>
 	(theme: ThemeColors): ReadonlyArray<PlotLegendSeries> =>
-		entries.map(([key, label, token]) => ({ key, label, color: resolveColor(theme, token) }))
+		Arr.map(entries, ([key, label, token]) => ({ key, label, color: resolveColor(theme, token) }))
 
 const LATENCY = { tokens: [...LINE_TOKENS, ...CHROME_TOKENS], ariaLabel: "Latency percentiles" }
 const VOLUME = { tokens: [...AREA_TOKENS, ...CHROME_TOKENS], ariaLabel: "Request volume" }
@@ -79,7 +80,7 @@ const ARMS = {
 		ariaLabel: "Service call flow",
 		legend: {
 			label: "Flow health",
-			series: series(FLOW_BANDS.map((band) => [band.key, band.label, band.token] as const)),
+			series: series(Arr.map(FLOW_BANDS, (band) => [band.key, band.label, band.token] as const)),
 		},
 	},
 	treemap: { tokens: TILE_TOKENS, ariaLabel: "Span volume by service and operation" },
@@ -89,7 +90,7 @@ const ARMS = {
 		legend: {
 			label: "Span volume by service",
 			series: series(
-				TREEMAP_SERVICES.map((service) => [service, service, serviceToken(service)] as const),
+				Arr.map(TREEMAP_SERVICES, (service) => [service, service, serviceToken(service)] as const),
 			),
 		},
 	},
@@ -101,15 +102,18 @@ const ARMS = {
 		legend: {
 			label: "Spans by service",
 			series: series(
-				[...STACK_TOKEN_BY_SERVICE].map(([service, token]) => [service, service, token] as const),
+				Arr.map(
+					[...STACK_TOKEN_BY_SERVICE],
+					([service, token]) => [service, service, token] as const,
+				),
 			),
 		},
 	},
 } satisfies Partial<Record<ChartsLabArm, SpikeArm>>
 
 export const SPIKE_ARMS: ReadonlyMap<ChartsLabArm, SpikeArm> = new Map(
-	Object.entries(ARMS).flatMap(([arm, spike]) => {
-		const known = SECTIONS.flatMap((section) => section.rows.flat()).find(
+	Arr.flatMap(Rec.toEntries(ARMS), ([arm, spike]) => {
+		const known = Arr.flatMap(SECTIONS, (section) => section.rows.flat()).find(
 			(candidate) => candidate === arm,
 		)
 		return known === undefined ? [] : [[known, spike] as const]
@@ -118,8 +122,8 @@ export const SPIKE_ARMS: ReadonlyMap<ChartsLabArm, SpikeArm> = new Map(
 
 export const SPIKE_TOKENS_ALL: ReadonlyArray<string> = [
 	...new Set(
-		[...SPIKE_ARMS.values()].flatMap((arm) =>
-			arm.tokens.map((token) => (typeof token === "string" ? token : token[0])),
+		Arr.flatMap([...SPIKE_ARMS.values()], (arm) =>
+			Arr.map(arm.tokens, (token) => (typeof token === "string" ? token : token[0])),
 		),
 	),
 ]

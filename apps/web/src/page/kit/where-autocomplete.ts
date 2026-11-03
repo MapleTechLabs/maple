@@ -4,7 +4,7 @@ import {
 	type WhereClauseAutocompleteResult,
 } from "../../lib/query-builder/where-clause-autocomplete"
 import type { QueryBuilderDataSource } from "@maple/query-model"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream, String as Str } from "effect"
 import { Dom } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
@@ -33,7 +33,13 @@ export type CaretMessage = typeof CaretMessage.Type
 
 const anchorOf = (element: HTMLTextAreaElement): AnchorRect => {
 	const rect = element.getBoundingClientRect()
-	return { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width, viewportHeight: window.innerHeight }
+	return {
+		left: rect.left,
+		top: rect.top,
+		bottom: rect.bottom,
+		width: rect.width,
+		viewportHeight: window.innerHeight,
+	}
 }
 
 const caretOf = (element: HTMLTextAreaElement) => element.selectionStart ?? element.value.length
@@ -44,18 +50,33 @@ export const caretEvents = (element: Element): Stream.Stream<CaretMessage> => {
 	const moved = (keyUp: string | null) =>
 		CaretMessage.MovedCaret({ cursor: caretOf(element), anchor: anchorOf(element), keyUp })
 	const on = (type: "input" | "click" | "select") =>
-		Dom.streamFromEventFilterMap({ target: element, type, filterMapEvent: () => Option.some(moved(null)) })
+		Dom.streamFromEventFilterMap({
+			target: element,
+			type,
+			filterMapEvent: () => Option.some(moved(null)),
+		})
 	const streams: ReadonlyArray<Stream.Stream<CaretMessage>> = [
 		on("input"),
 		on("click"),
 		on("select"),
-		Dom.streamFromEventFilterMap({ target: element, type: "keyup", filterMapEvent: (event) => Option.some(moved(event.key)) }),
+		Dom.streamFromEventFilterMap({
+			target: element,
+			type: "keyup",
+			filterMapEvent: (event) => Option.some(moved(event.key)),
+		}),
 		Dom.streamFromEventFilterMap({
 			target: element,
 			type: "focus",
-			filterMapEvent: () => Option.some(CaretMessage.FocusedEditor({ cursor: caretOf(element), anchor: anchorOf(element) })),
+			filterMapEvent: () =>
+				Option.some(
+					CaretMessage.FocusedEditor({ cursor: caretOf(element), anchor: anchorOf(element) }),
+				),
 		}),
-		Dom.streamFromEventFilterMap({ target: element, type: "blur", filterMapEvent: () => Option.some(CaretMessage.BlurredEditor()) }),
+		Dom.streamFromEventFilterMap({
+			target: element,
+			type: "blur",
+			filterMapEvent: () => Option.some(CaretMessage.BlurredEditor()),
+		}),
 	]
 	return Stream.mergeAll(streams, { concurrency: "unbounded" })
 }
@@ -84,7 +105,12 @@ const anchorEvents = (textareaId: string): Stream.Stream<CaretMessage> => {
 	}
 	const streams: ReadonlyArray<Stream.Stream<CaretMessage>> = [
 		Dom.streamFromEventFilterMap({ target: window, type: "resize", filterMapEvent: measured }),
-		Dom.streamFromEventFilterMap({ target: window, type: "scroll", filterMapEvent: measured, options: { capture: true } }),
+		Dom.streamFromEventFilterMap({
+			target: window,
+			type: "scroll",
+			filterMapEvent: measured,
+			options: { capture: true },
+		}),
 	]
 	return Stream.mergeAll(streams, { concurrency: "unbounded" })
 }
@@ -139,8 +165,8 @@ export const activeKeysAt = (expression: string, cursor: number, dataSource: Que
 	const at = getWhereClauseAutocomplete({ expression, cursor, dataSource })
 	const key = at.context === "value" ? at.key : null
 	return {
-		attribute: key?.startsWith("attr.") === true ? key.slice(5) : null,
-		resource: key?.startsWith("resource.") === true ? key.slice(9) : null,
+		attribute: key?.startsWith("attr.") === true ? Str.slice(5)(key) : null,
+		resource: key?.startsWith("resource.") === true ? Str.slice(9)(key) : null,
 	}
 }
 

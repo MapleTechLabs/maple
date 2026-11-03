@@ -1,5 +1,15 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Fiber, Layer, Schema } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -99,7 +109,7 @@ const projectEdge = (project: ProjectNode) => ({
 	node: {
 		id: project.id,
 		name: project.name,
-		environments: { edges: project.environments.map((node) => ({ node })) },
+		environments: { edges: Arr.map(project.environments, (node) => ({ node })) },
 		services: { edges: [{ node: { id: "svc_api", name: "api" } }] },
 	},
 })
@@ -152,20 +162,20 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 			return new Response("slow down", { status: 429, headers: { "retry-after": "60" } })
 		}
 		if (options.railway === "unauthorized") return json({ errors: [{ message: "Not Authorized" }] })
-		if (query.includes("apiToken")) {
+		if (Str.includes("apiToken")(query)) {
 			return json({ data: { apiToken: { workspaces: [{ id: "ws_1", name: "Acme" }] } } })
 		}
-		if (query.includes("projects(")) {
+		if (Str.includes("projects(")(query)) {
 			const pages = options.projectPages ?? [[SHOP]]
-			const cursor = Object.values(body.variables ?? {}).find(
-				(value): value is string => typeof value === "string" && value.startsWith("cursor_"),
+			const cursor = Rec.values(body.variables ?? {}).find(
+				(value): value is string => typeof value === "string" && Str.startsWith("cursor_")(value),
 			)
-			const page = cursor === undefined ? 0 : Number(cursor.slice("cursor_".length))
+			const page = cursor === undefined ? 0 : Number(Str.slice("cursor_".length)(cursor))
 			const hasNextPage = page + 1 < pages.length
 			return json({
 				data: {
 					projects: {
-						edges: (pages[page] ?? []).map(projectEdge),
+						edges: Arr.map(pages[page] ?? [], projectEdge),
 						pageInfo: { hasNextPage, endCursor: hasNextPage ? `cursor_${page + 1}` : null },
 					},
 				},
@@ -229,15 +239,17 @@ describe("RailwayMetricsService", () => {
 				assert.isTrue(status.connected)
 				assert.strictEqual(status.workspaceNames, "Acme")
 				assert.deepStrictEqual(
-					status.environments.map((environment) => [
+					Arr.map(status.environments, (environment) => [
 						environment.environmentName,
 						environment.serviceCount,
 					]),
 					[["production", 1]],
 				)
-				assert.isTrue(calls.railway.every((call) => call.authorization === "Bearer rw_token_123"))
+				assert.isTrue(
+					Arr.every(calls.railway, (call) => call.authorization === "Bearer rw_token_123"),
+				)
 				// The metrics probe ran before the token was saved.
-				assert.isTrue(calls.railway.some((call) => call.query.includes("metrics(")))
+				assert.isTrue(Arr.some(calls.railway, (call) => Str.includes("metrics(")(call.query)))
 				// The first hour was pulled inline, so nothing waits on the cron.
 				assert.isNotNull(status.environments[0]!.lastSyncedAt)
 				assert.isNotNull(status.lastSyncedAt)
@@ -249,6 +261,71 @@ describe("RailwayMetricsService", () => {
 					),
 				)
 				assert.notInclude(row!.token_ciphertext, "rw_token_123")
+			}),
+		)
+	})
+
+	it.effect("a reconnect keeps the connection's source and disconnect removes it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const sourceIds = () =>
+			Effect.promise(() =>
+				testDb.pglite.query<{ id: string }>(
+					"SELECT s.id FROM sources s JOIN railway_connections c ON c.source_id = s.id",
+				),
+			).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.id)))
+		return run(
+			testDb,
+			stubFetch(calls),
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				const first = yield* sourceIds()
+				assert.lengthOf(first, 1)
+				yield* railway.connect(orgId, userId, "rw_token_456")
+				assert.deepStrictEqual(yield* sourceIds(), first)
+
+				yield* railway.disconnect(orgId)
+				const left = yield* Effect.promise(() =>
+					testDb.pglite.query("SELECT id FROM sources WHERE kind = 'integration'"),
+				)
+				assert.deepStrictEqual(left.rows, [])
+			}),
+		)
+	})
+
+	it.effect("a paused source reads nothing and resumes from now", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		return run(
+			testDb,
+			stubFetch(calls),
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				yield* resetWatermarks(testDb)
+				yield* Effect.promise(() =>
+					queryFirstRow(
+						testDb,
+						"UPDATE sources SET paused_at = now() WHERE kind = 'integration' RETURNING id",
+					),
+				)
+				const before = { railway: calls.railway.length, ingest: calls.ingest.length }
+
+				const summary = yield* railway.pollOrg(orgId)
+				assert.strictEqual(summary.skipped, "source paused")
+				assert.deepStrictEqual({ railway: calls.railway.length, ingest: calls.ingest.length }, before)
+				const environment = yield* Effect.promise(() =>
+					queryFirstRow<{ watermark_at: Date }>(
+						testDb,
+						"SELECT watermark_at FROM railway_environments WHERE environment_id = 'env_prod'",
+					),
+				)
+				// Nothing of the paused window is read after a resume.
+				assert.strictEqual(
+					new Date(environment!.watermark_at).getTime(),
+					Date.UTC(2026, 9, 3, 12, 28, 0),
+				)
 			}),
 		)
 	})
@@ -291,7 +368,8 @@ describe("RailwayMetricsService", () => {
 				const payload = Schema.decodeUnknownSync(Schema.fromJsonString(IngestPayload))(
 					calls.ingest[0]!.body,
 				)
-				const stamped = payload.resourceMetrics.map(
+				const stamped = Arr.map(
+					payload.resourceMetrics,
 					(resource) =>
 						resource.resource.attributes.find((attr) => attr.key === "maple_source_id")?.value
 							.stringValue,
@@ -300,7 +378,7 @@ describe("RailwayMetricsService", () => {
 				const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
 				assert.deepStrictEqual(
 					stamped,
-					stamped.map(() => expected),
+					Arr.map(stamped, () => expected),
 				)
 
 				const environment = yield* Effect.promise(() =>
@@ -462,6 +540,69 @@ describe("RailwayMetricsService", () => {
 		})
 	})
 
+	it.effect("each tick reports onto the source and a reconnect clears a rejected token", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const readSource = () =>
+			Effect.promise(() =>
+				queryFirstRow<{
+					last_poll_ok_at: Date | null
+					last_poll_error: string | null
+					disconnected_at: Date | null
+				}>(
+					testDb,
+					"SELECT s.last_poll_ok_at, s.last_poll_error, s.disconnected_at FROM sources s JOIN railway_connections c ON c.source_id = s.id",
+				),
+			)
+		const behindAndUnleased = Effect.promise(() =>
+			queryFirstRow(testDb, "UPDATE railway_connections SET lease_until = NULL RETURNING id"),
+		).pipe(Effect.andThen(resetWatermarks(testDb)))
+		return Effect.gen(function* () {
+			const okStub = stubFetch(calls)
+			const connect = RailwayMetricsService.use((railway) =>
+				railway.connect(orgId, userId, "rw_token_123"),
+			)
+			yield* run(testDb, okStub, connect)
+			const healthy = yield* readSource()
+			assert.isNotNull(healthy!.last_poll_ok_at)
+			assert.isNull(healthy!.last_poll_error)
+
+			yield* behindAndUnleased
+			const refusedStub = stubFetch(calls, { ingestStatus: 403 })
+			yield* run(
+				testDb,
+				refusedStub,
+				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+			)
+			const failed = yield* readSource()
+			const connection = yield* Effect.promise(() =>
+				queryFirstRow<{ last_error: string | null }>(
+					testDb,
+					"SELECT last_error FROM railway_connections",
+				),
+			)
+			assert.isNotNull(failed!.last_poll_error)
+			assert.strictEqual(failed!.last_poll_error, connection!.last_error)
+			assert.isNull(failed!.disconnected_at)
+
+			yield* behindAndUnleased
+			const revokedStub = stubFetch(calls, { railway: "unauthorized" })
+			yield* run(
+				testDb,
+				revokedStub,
+				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+			)
+			const rejected = yield* readSource()
+			assert.isNotNull(rejected!.disconnected_at)
+			assert.match(rejected!.last_poll_error ?? "", /Reconnect Railway/)
+
+			yield* run(testDb, stubFetch(calls), connect)
+			const reconnected = yield* readSource()
+			assert.isNull(reconnected!.disconnected_at)
+			assert.isNull(reconnected!.last_poll_error)
+		})
+	})
+
 	it.effect("discovery follows the projects cursor across pages", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: StubCalls = { railway: [], ingest: [] }
@@ -478,7 +619,7 @@ describe("RailwayMetricsService", () => {
 				const railway = yield* RailwayMetricsService
 				const status = yield* railway.connect(orgId, userId, "rw_token_123")
 				assert.deepStrictEqual(
-					status.environments.map((environment) => environment.projectName),
+					Arr.map(status.environments, (environment) => environment.projectName),
 					["blog", "shop"],
 				)
 			}),
@@ -502,7 +643,7 @@ describe("RailwayMetricsService", () => {
 		}
 		const hasProd = (status: {
 			readonly environments: ReadonlyArray<{ readonly environmentId: string }>
-		}) => status.environments.some((environment) => environment.environmentId === "env_prod")
+		}) => Arr.some(status.environments, (environment) => environment.environmentId === "env_prod")
 		return Effect.gen(function* () {
 			const connect = RailwayMetricsService.use((railway) =>
 				railway.connect(orgId, userId, "rw_token_123"),

@@ -7,6 +7,7 @@ import {
 	withSectionTarget,
 } from "@maple/domain/http"
 import type { DocumentFields } from "./store"
+import { Array as Arr, String as Str } from "effect"
 
 // The pure layout and widget edits over the stored document.
 
@@ -19,7 +20,7 @@ export const widgetsInContainer = (
 	target: SectionTarget,
 ): ReadonlyArray<Widget> => {
 	const key = containerKeyFor(target)
-	return widgets.filter((widget) => containerKeyOf(widget) === key)
+	return Arr.filter(widgets, (widget) => containerKeyOf(widget) === key)
 }
 
 /** `containerRank`: root first, then sections and tabs in order; a vanished container ranks as root. */
@@ -51,7 +52,7 @@ export const withLayouts = (
 	layouts: ReadonlyArray<LayoutChange>,
 	nowIso: DashboardDocument["updatedAt"],
 ): DocumentFields | null => {
-	const changed = document.widgets.some((widget) => {
+	const changed = Arr.some(document.widgets, (widget) => {
 		const layout = layouts.find((item) => item.i === widget.id)
 		return (
 			layout !== undefined &&
@@ -62,7 +63,7 @@ export const withLayouts = (
 		)
 	})
 	if (!changed) return null
-	const widgets = document.widgets.map((widget) => {
+	const widgets = Arr.map(document.widgets, (widget) => {
 		const layout = layouts.find((item) => item.i === widget.id)
 		return layout === undefined
 			? widget
@@ -82,7 +83,7 @@ export const withoutWidget = (
 	nowIso: DashboardDocument["updatedAt"],
 ): DocumentFields => ({
 	...document,
-	widgets: document.widgets.filter((widget) => widget.id !== widgetId),
+	widgets: Arr.filter(document.widgets, (widget) => widget.id !== widgetId),
 	updatedAt: nowIso,
 })
 
@@ -134,7 +135,7 @@ export const withAddedWidget = (
 
 /** `widgetId` from `generateId`: wall clock and a random suffix. */
 export const generateWidgetId = (nowMs: number, random: number): string =>
-	`${nowMs}-${random.toString(36).slice(2, 9)}`
+	`${nowMs}-${Str.slice(2, 9)(random.toString(36))}`
 
 /** `CANONICAL_COLS`: the editable canvas's width in columns. */
 const CANONICAL_COLS = 12
@@ -173,9 +174,11 @@ export const autoLaidOut = (
 	sections: ReadonlyArray<Section>,
 ): ReadonlyArray<Widget> => {
 	const sorted = sortWidgetsForLayout(widgets, sections)
-	const keys = [...new Set(sorted.map((widget) => containerKeyOf(widget)))]
+	const keys = [...new Set(Arr.map(sorted, (widget) => containerKeyOf(widget)))]
 	const placed = new Map(
-		keys.flatMap((key) => flowContainer(sorted.filter((widget) => containerKeyOf(widget) === key))),
+		Arr.flatMap(keys, (key) =>
+			flowContainer(Arr.filter(sorted, (widget) => containerKeyOf(widget) === key)),
+		),
 	)
-	return sorted.map((widget) => placed.get(widget) ?? widget)
+	return Arr.map(sorted, (widget) => placed.get(widget) ?? widget)
 }

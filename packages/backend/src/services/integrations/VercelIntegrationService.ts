@@ -44,9 +44,12 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
-	ensureIntegrationSource,
+	deleteSourcesOf,
 	integrationSourceName,
-	stampableSourceId,
+	type PollOutcome,
+	publicSourceId,
+	reportPoll,
+	upsertWithSource,
 } from "@maple/backend/services/org/integration-sources"
 import {
 	createDrain,
@@ -106,7 +109,7 @@ type DrainOwner = Pick<VercelConnectionRow, "orgId" | "teamId" | "logDrainId" | 
 /** The drains' header values, and the hash stored once every drain carries them. */
 interface DrainKey {
 	readonly key: string
-	readonly sourceId: string | undefined
+	readonly sourceId: string
 	readonly hash: string
 }
 
@@ -333,7 +336,13 @@ export class VercelIntegrationService extends Context.Service<
 				db.transaction(
 					Effect.gen(function* () {
 						// The connection row goes first: a poll holding its share lock finishes before this.
-						yield* db.run(PG.deleteFrom(VercelConnections).where(($) => [$.orgId.eq(orgId)]))
+						const rows = yield* db.run(
+							PG.deleteFrom(VercelConnections)
+								.where(($) => [$.orgId.eq(orgId)])
+								.returning("id", "sourceId"),
+						)
+						// The connection's source goes with it.
+						yield* deleteSourcesOf(db, orgId, rows)
 						yield* db.run(PG.deleteFrom(VercelDeployments).where(($) => [$.orgId.eq(orgId)]))
 						yield* db.run(PG.deleteFrom(VercelProjects).where(($) => [$.orgId.eq(orgId)]))
 					}),
@@ -349,14 +358,13 @@ export class VercelIntegrationService extends Context.Service<
 			)
 
 		/**
-		 * What the drains send as headers: the org's private ingest key and the connection's pull
-		 * source (`x-maple-source-id`, left out when the lookup fails). `hash` covers both, since
-		 * Vercel's listing does not show the headers a drain has.
+		 * What the drains send as headers: the org's private ingest key and the connection's source
+		 * (`x-maple-source-id`). `hash` covers both, since Vercel's listing does not show the headers
+		 * a drain has.
 		 */
 		const drainKey = Effect.fnUntraced(function* (
-			connection: Pick<VercelConnectionRow, "id" | "orgId" | "teamName">,
+			connection: Pick<VercelConnectionRow, "orgId" | "sourceId">,
 			userId: UserId,
-			now: number,
 		) {
 			const { orgId } = connection
 			const keys = yield* ingestKeys.getOrCreate(orgId, userId).pipe(
@@ -367,27 +375,9 @@ export class VercelIntegrationService extends Context.Service<
 						}),
 				),
 			)
-			const sourceId = yield* stampableSourceId(
-				dbExecute((db) =>
-					ensureIntegrationSource(
-						db,
-						orgId,
-						{
-							platform: "vercel",
-							integrationId: connection.id,
-							name: integrationSourceName.vercel(connection),
-						},
-						now,
-					),
-				),
-				{ orgId, platform: "vercel" },
-			)
+			const sourceId = publicSourceId(connection.sourceId)
 			const key = keys.privateKey
-			return {
-				key,
-				sourceId,
-				hash: hashIngestKey(sourceId === undefined ? key : `${key}:${sourceId}`, lookupHmacKey),
-			} satisfies DrainKey
+			return { key, sourceId, hash: hashIngestKey(`${key}:${sourceId}`, lookupHmacKey) } satisfies DrainKey
 		})
 
 		/** The delivery URL of the org's drain; the `maple_org` marker is how Maple finds it again. */
@@ -404,9 +394,7 @@ export class VercelIntegrationService extends Context.Service<
 		): VercelDrainBody => {
 			const headers = {
 				authorization: `Bearer ${ingestKey.key}`,
-				...(ingestKey.sourceId === undefined
-					? undefined
-					: { "x-maple-source-id": ingestKey.sourceId }),
+				"x-maple-source-id": ingestKey.sourceId,
 			}
 			const endpoint = drainEndpoint(kind, orgId)
 			const sampling =
@@ -1001,27 +989,49 @@ export class VercelIntegrationService extends Context.Service<
 				lastErrorAt: null,
 				updatedAt: now,
 			}
-			const [connection] = yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(VercelConnections)
-						.values({ id: randomUUID(), orgId, ...fields, createdAt: now })
-						.onConflictDoUpdate({
-							target: ["orgId"],
-							// A new team starts its drains and deployment history over.
-							set: () =>
-								sameTeam
-									? fields
-									: {
-											...fields,
-											logDrainId: null,
-											traceDrainId: null,
-											logDrainState: null,
-											traceDrainState: null,
-											drainKeyHash: null,
-											deploymentsWatermarkAt: null,
-										},
-						})
-						.returning(),
+			// A reconnect keeps the connection id and so its source.
+			const connection = yield* dbExecute((db) =>
+				db.transaction(
+					upsertWithSource(
+						db,
+						orgId,
+						{ platform: "vercel", name: integrationSourceName.vercel({ teamName: team.name }) },
+						now,
+						db
+							.run(
+								PG.from(VercelConnections)
+									.select("sourceId")
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1)
+									// Held until the upsert, so a concurrent disconnect cannot delete the reused source.
+									.forUpdate(),
+							)
+							.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
+						(sourceId) =>
+							db
+								.run(
+									PG.insertInto(VercelConnections)
+										.values({ id: randomUUID(), orgId, sourceId, ...fields, createdAt: now })
+										.onConflictDoUpdate({
+											target: ["orgId"],
+											// A new team starts its drains and deployment history over.
+											set: () =>
+												sameTeam
+													? fields
+													: {
+															...fields,
+															logDrainId: null,
+															traceDrainId: null,
+															logDrainState: null,
+															traceDrainState: null,
+															drainKeyHash: null,
+															deploymentsWatermarkAt: null,
+														},
+										})
+										.returning(),
+								)
+								.pipe(Effect.map(([row]) => row)),
+					),
 				),
 			)
 			if (connection === undefined) {
@@ -1030,7 +1040,7 @@ export class VercelIntegrationService extends Context.Service<
 				})
 			}
 			yield* storeProjects(orgId, team.id, projects, now)
-			const ingestKey = yield* drainKey(connection, userId, now)
+			const ingestKey = yield* drainKey(connection, userId)
 			const reconciled = yield* Effect.result(reconcileDrains(connection, token, request, ingestKey, true))
 			if (Result.isSuccess(reconciled)) {
 				if (!(yield* saveOutcomes(connection, reconciled.success, ingestKey.hash, now))) {
@@ -1078,7 +1088,7 @@ export class VercelIntegrationService extends Context.Service<
 			// Saved first: whatever the drains end up as, the next poll converges them on this.
 			yield* updateConnection(orgId, connection.teamId, { ...forwarding, updatedAt: now })
 			const token = yield* decryptToken(connection)
-			const ingestKey = yield* drainKey(connection, SYSTEM_USER_ID, now)
+			const ingestKey = yield* drainKey(connection, SYSTEM_USER_ID)
 			const outcomes = yield* reconcileDrains(connection, token, forwarding, ingestKey, true).pipe(
 				Effect.mapError(toDrainError),
 			)
@@ -1145,6 +1155,15 @@ export class VercelIntegrationService extends Context.Service<
 			// Lands only while the org is still on the claimed team: a reconnect elsewhere is not overwritten.
 			const write = (set: PG.UpdateSetOf<typeof VercelConnections>) =>
 				updateConnection(orgId, claimed.teamId, { ...set, updatedAt: now })
+			/** Best effort: a failed health report must not fail the tick it describes. */
+			const reportTick = (outcome: PollOutcome) =>
+				dbExecute((db) => reportPoll(db, claimed.sourceId, outcome, now)).pipe(
+					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
+						Effect.logWarning("vercel source health report failed").pipe(
+							Effect.annotateLogs({ sourceId: claimed.sourceId, error: error.message }),
+						),
+					),
+				)
 			const holdUntilRef = yield* Ref.make<number | null>(null)
 			const errorsRef = yield* Ref.make<ReadonlyArray<string>>([])
 			const recordError = (message: string) => Ref.update(errorsRef, (errors) => [...errors, message])
@@ -1169,6 +1188,7 @@ export class VercelIntegrationService extends Context.Service<
 									]),
 							),
 						)
+						yield* reportTick({ _tag: "Disconnected", reason: error.message })
 						return true
 					}
 					if (error.kind === "rate_limited") {
@@ -1223,7 +1243,7 @@ export class VercelIntegrationService extends Context.Service<
 				}
 
 				let drainsRepaired = 0
-				const ingestKey = yield* Effect.result(drainKey(claimed, SYSTEM_USER_ID, now))
+				const ingestKey = yield* Effect.result(drainKey(claimed, SYSTEM_USER_ID))
 				if (Result.isFailure(ingestKey)) {
 					yield* recordError(ingestKey.failure.message)
 				} else {
@@ -1255,11 +1275,13 @@ export class VercelIntegrationService extends Context.Service<
 				}
 
 				const errors = yield* Ref.get(errorsRef)
+				const lastError = errors.length === 0 ? null : (errors[0] ?? "").slice(0, 500)
 				yield* write(
-					errors.length === 0
+					lastError === null
 						? { lastSuccessAt: now, lastError: null, lastErrorAt: null }
-						: { lastError: (errors[0] ?? "").slice(0, 500), lastErrorAt: now },
+						: { lastError, lastErrorAt: now },
 				)
+				yield* reportTick(lastError === null ? { _tag: "Ok" } : { _tag: "Failed", error: lastError })
 				yield* Effect.annotateCurrentSpan({
 					"maple.vercel.deployments_upserted": deploymentsUpserted,
 					"maple.vercel.drains_repaired": drainsRepaired,

@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import type { McpToolExecutor, McpToolExecutorApi } from "./dispatcher"
-import type { McpServicesLive } from "../runtime/mcp-service-graph"
+import type { McpServicesLive } from "../runtime/mcp-tool-graph"
 
 /** What the tool-execution graph needs from the isolate: the Worker's platform services. */
 export type McpToolServicesRequirements = Layer.Services<typeof McpServicesLive>
@@ -12,6 +12,12 @@ export type McpToolServicesLayer = Layer.Layer<
 	Layer.Error<typeof McpServicesLive>,
 	McpToolServicesRequirements
 >
+
+/** The executor, and whether the request asking for it is the one that paid to build it. */
+export interface McpToolExecutorBuild {
+	readonly executor: McpToolExecutorApi
+	readonly built: boolean
+}
 
 /** The tool-execution graph failed to build; the request that needed it answers 503. */
 export class McpToolsUnavailableError extends Schema.TaggedError<McpToolsUnavailableError>()(
@@ -27,7 +33,11 @@ export class McpToolsUnavailableError extends Schema.TaggedError<McpToolsUnavail
  */
 export class McpToolExecutorLoader extends Context.Service<
 	McpToolExecutorLoader,
-	{ readonly load: Effect.Effect<McpToolExecutorApi, McpToolsUnavailableError> }
+	{
+		readonly load: Effect.Effect<McpToolExecutorApi, McpToolsUnavailableError>
+		/** `load`, also saying whether this fiber is the one that imported and built the graph. */
+		readonly loadReportingBuild: Effect.Effect<McpToolExecutorBuild, McpToolsUnavailableError>
+	}
 >()("@maple/ai/mcp/McpToolExecutorLoader") {
 	/** The loader around a given import of the graph; `layer` passes the real one. */
 	static readonly layerFrom = (importGraph: Effect.Effect<McpToolServicesLayer>) =>
@@ -39,13 +49,17 @@ export class McpToolExecutorLoader extends Context.Service<
 				const isolate = yield* Effect.context<McpToolServicesRequirements>()
 				const scope = yield* Effect.scope
 				const build = Effect.gen(function* () {
+					// `cachedRecoverable` runs the build on its first caller's fiber.
+					const builder = yield* Effect.fiberId
 					const graph = yield* importGraph
 					// Already loaded with the graph; imported for the service tag only.
 					const { McpToolExecutor } = yield* Effect.promise(() => import("./dispatcher"))
 					const services = yield* Layer.buildWithScope(graph, scope)
-					return Context.get(services, McpToolExecutor)
+					return { executor: Context.get(services, McpToolExecutor), builder }
 				}).pipe(
-					Effect.provideContext(isolate),
+					// Replaces the request's context rather than merging into it (`provideContext` merges),
+					// so nothing the first request carries, like its Postgres scope, reaches the graph.
+					Effect.setContext(isolate),
 					Effect.mapError(
 						(cause) =>
 							new McpToolsUnavailableError({
@@ -56,12 +70,20 @@ export class McpToolExecutorLoader extends Context.Service<
 					Effect.withSpan("McpToolExecutorLoader.load"),
 				)
 				// Forgets failures, so the next `tools/*` request retries a graph that failed to build.
-				return { load: yield* cachedRecoverable(build) }
+				const cached = yield* cachedRecoverable(build)
+				return {
+					load: Effect.map(cached, ({ executor }) => executor),
+					loadReportingBuild: Effect.gen(function* () {
+						const fiber = yield* Effect.fiberId
+						const { executor, builder } = yield* cached
+						return { executor, built: builder === fiber }
+					}),
+				}
 			}),
 		)
 
 	static readonly layer = this.layerFrom(
-		Effect.promise(() => import("../runtime/mcp-service-graph")).pipe(
+		Effect.promise(() => import("../runtime/mcp-tool-graph")).pipe(
 			Effect.map((graph) => graph.McpServicesLive),
 		),
 	)

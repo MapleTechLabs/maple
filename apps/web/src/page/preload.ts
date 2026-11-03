@@ -1,6 +1,7 @@
-import { Option, Predicate, Schema, Stream } from "effect"
+import { Option, Predicate, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import type { Command } from "foldkit"
 import { Dom } from "foldkit"
+import { baseKey } from "@maple/views/data/keyed"
 import type { Resources } from "../platform/resources"
 import type { PageMessage } from "./registry"
 
@@ -12,7 +13,7 @@ import type { PageMessage } from "./registry"
 
 /** TanStack's `defaultPreloadDelay`. */
 export const PRELOAD_DELAY_MS = 50
-/** `PRELOAD_HOLD_MS` in `lib/effect-router`: an unused preload is released after this. */
+/** An unused preload is released after this. */
 export const PRELOAD_HOLD_MS = 30_000
 
 export const Model = Schema.Struct({
@@ -29,12 +30,15 @@ export const init = (): Model => ({ intents: {}, version: 0, holder: "", heldKey
 
 type PageCommand = Command.Command<PageMessage, never, Resources>
 
-/** The request key a fetch Command carries (S6: `args.key`), if any. */
+/**
+ * The request key a fetch Command carries (S6: `args.key`), if any, without a superseding
+ * re-read's generation: the read cache holds the entry under the plain request key.
+ */
 export const keyOfCommand = (command: PageCommand): Option.Option<string> =>
-	Option.filter(Option.fromNullishOr(command.args?.["key"]), Predicate.isString)
+	Option.map(Option.filter(Option.fromNullishOr(command.args?.["key"]), Predicate.isString), baseKey)
 
 const without = <A>(record: Readonly<Record<string, A>>, key: string): Record<string, A> =>
-	Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key))
+	Rec.fromEntries(Arr.filter(Rec.toEntries(record), ([entryKey]) => entryKey !== key))
 
 // INTENT
 
@@ -43,12 +47,17 @@ export const intended = (model: Model, href: string): Option.Option<{ model: Mod
 	model.intents[href] !== undefined
 		? Option.none()
 		: Option.some({
-				model: { ...model, version: model.version + 1, intents: { ...model.intents, [href]: model.version + 1 } },
+				model: {
+					...model,
+					version: model.version + 1,
+					intents: { ...model.intents, [href]: model.version + 1 },
+				},
 				version: model.version + 1,
 			})
 
 /** `cancelPreload` on mouse leave or blur. */
-export const ended = (model: Model, href: string): Model => ({ ...model, intents: without(model.intents, href) })
+export const ended = (model: Model, href: string): Model =>
+	model.intents[href] === undefined ? model : { ...model, intents: without(model.intents, href) }
 
 /** The delay elapsed: `Some` when the link is still intended (the timer was not cancelled). */
 export const elapsed = (model: Model, href: string, version: number): Option.Option<Model> =>
@@ -58,25 +67,25 @@ export const elapsed = (model: Model, href: string, version: number): Option.Opt
 
 /** The keys a page step's Commands request (S6: `args.key`). */
 export const keysOf = (commands: ReadonlyArray<PageCommand>): ReadonlyArray<string> =>
-	commands.flatMap((command) => Option.toArray(keyOfCommand(command)))
+	Arr.flatMap(commands, (command) => Option.toArray(keyOfCommand(command)))
 
 /** A `Keyed` slot's key: `{ key: string, data: AsyncData }`. */
 const slotKeyOf = (value: { readonly [x: PropertyKey]: unknown }): Option.Option<string> => {
 	const key = value["key"]
 	const data = value["data"]
 	return Predicate.isString(key) && Predicate.isReadonlyObject(data) && Predicate.isString(data["_tag"])
-		? Option.some(key)
+		? Option.some(baseKey(key))
 		: Option.none()
 }
 
 /** The keys a page Model's `Keyed` slots stand on (their `data` is not walked: rows hold no slots). */
 export const liveKeysOf = (value: unknown): ReadonlyArray<string> =>
-	Array.isArray(value)
-		? value.flatMap(liveKeysOf)
+	Arr.isArray(value)
+		? Arr.flatMap(value, liveKeysOf)
 		: Predicate.isReadonlyObject(value)
 			? Option.match(slotKeyOf(value), {
 					onSome: (key) => [key],
-					onNone: () => Object.values(value).flatMap(liveKeysOf),
+					onNone: () => Arr.flatMap(Rec.values(value), liveKeysOf),
 				})
 			: []
 
@@ -90,25 +99,33 @@ export const held = (
 	model: Model,
 	holder: string,
 	commands: ReadonlyArray<PageCommand>,
-	liveKeys: ReadonlyArray<string> = [],
+	/** Walks the page Model, so it is only called when the step asks for new keys. */
+	liveKeys: () => ReadonlyArray<string> = () => [],
 ) => {
 	const keys = keysOf(commands)
 	const isSameHolder = holder === model.holder
-	const added = keys.filter((key) => !model.heldKeys.includes(key))
+	const added = Arr.filter(keys, (key) => !model.heldKeys.includes(key))
 	const isPruning = isSameHolder && added.length > 0
-	const kept = !isSameHolder
-		? []
-		: isPruning
-			? model.heldKeys.filter((key) => liveKeys.includes(key) || keys.includes(key))
-			: model.heldKeys
-	const heldKeys = [...kept, ...keys.filter((key) => !kept.includes(key))]
-	const released = isSameHolder && !isPruning ? [] : model.heldKeys.filter((key) => !heldKeys.includes(key))
-	return { model: { ...model, holder, heldKeys }, released, isNewHolder: !isSameHolder }
+	const stillLive = (live: ReadonlyArray<string>) =>
+		Arr.filter(model.heldKeys, (key) => live.includes(key) || keys.includes(key))
+	const kept = !isSameHolder ? [] : isPruning ? stillLive(liveKeys()) : model.heldKeys
+	const heldKeys = [...kept, ...Arr.filter(keys, (key) => !kept.includes(key))]
+	const released =
+		isSameHolder && !isPruning ? [] : Arr.filter(model.heldKeys, (key) => !heldKeys.includes(key))
+	const isUnchanged =
+		isSameHolder &&
+		heldKeys.length === model.heldKeys.length &&
+		Arr.every(heldKeys, (key, index) => key === model.heldKeys[index])
+	return {
+		model: isUnchanged ? model : { ...model, holder, heldKeys },
+		released,
+		isNewHolder: !isSameHolder,
+	}
 }
 
 /** The hold elapsed: the preloaded keys the open page does not hold are released. */
 export const expired = (model: Model, keys: ReadonlyArray<string>): ReadonlyArray<string> =>
-	keys.filter((key) => !model.heldKeys.includes(key))
+	Arr.filter(keys, (key) => !model.heldKeys.includes(key))
 
 // LINK INTENT
 
@@ -149,7 +166,8 @@ const pointerEntries: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "mousemove",
-			filterMapEvent: (event) => Option.some<PointerSample>({ x: event.clientX, y: event.clientY, href: null }),
+			filterMapEvent: (event) =>
+				Option.some<PointerSample>({ x: event.clientX, y: event.clientY, href: null }),
 		}),
 		Dom.streamFromEventFilterMap({
 			target: () => document,
@@ -167,7 +185,9 @@ const pointerEntries: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		() => Option.none<Position>(),
 		(last, sample): readonly [Option.Option<Position>, ReadonlyArray<LinkIntent>] => [
 			Option.some({ x: sample.x, y: sample.y }),
-			sample.href !== null && isPointerEntry(last, sample.x, sample.y) ? [intent(sample.href, false)] : [],
+			sample.href !== null && isPointerEntry(last, sample.x, sample.y)
+				? [intent(sample.href, false)]
+				: [],
 		],
 	),
 )
@@ -188,7 +208,8 @@ export const linkIntents: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "focusin",
-			filterMapEvent: (event) => Option.map(internalLink(event.target), (link) => intent(link.href, false)),
+			filterMapEvent: (event) =>
+				Option.map(internalLink(event.target), (link) => intent(link.href, false)),
 		}),
 		Dom.streamFromEventFilterMap({
 			target: () => document,
@@ -198,7 +219,8 @@ export const linkIntents: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "touchstart",
-			filterMapEvent: (event) => Option.map(internalLink(event.target), (link) => intent(link.href, true)),
+			filterMapEvent: (event) =>
+				Option.map(internalLink(event.target), (link) => intent(link.href, true)),
 		}),
 	],
 	{ concurrency: "unbounded" },

@@ -1,10 +1,10 @@
 import { Schema } from "effect"
 import { File } from "foldkit/file"
 import { defineMessageUnion } from "foldkit/message"
-import * as Dialog from "../../../ui/dialog"
+import * as Dialog from "@maple/views/ui/dialog"
 import * as TagEditor from "../kit/tag-editor"
-import * as Menu from "../../../ui/menu"
-import * as Combobox from "../../../ui/combobox"
+import * as Menu from "@maple/views/ui/menu"
+import * as Combobox from "@maple/views/ui/combobox"
 import { ListDashboard, Scope } from "./model"
 import { WriteSync } from "../kit/store"
 

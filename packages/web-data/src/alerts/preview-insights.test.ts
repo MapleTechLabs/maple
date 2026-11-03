@@ -1,5 +1,5 @@
 import { AlertIncidentDocument, AlertRulePreviewResponse } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { defaultRuleForm } from "./form-utils"
@@ -33,9 +33,9 @@ function preview(
 		],
 		comparator: "gt",
 		truncatedToStart: null,
-		series: Object.entries(series).map(([groupKey, points]) => ({
+		series: Arr.map(Rec.toEntries(series), ([groupKey, points]) => ({
 			groupKey,
-			points: points.map((point, i) => ({
+			points: Arr.map(points, (point, i) => ({
 				bucket: at(i * 5),
 				value: point.value,
 				sampleCount: 100,
@@ -43,7 +43,7 @@ function preview(
 				...(point.skipReason ? { skipReason: point.skipReason } : undefined),
 			})),
 		})),
-		wouldFire: wouldFire.map((span) => ({
+		wouldFire: Arr.map(wouldFire, (span) => ({
 			groupKey: span.groupKey,
 			start: at(span.start),
 			end: at(span.end),
@@ -144,7 +144,7 @@ describe("incidentsClearedByDraft", () => {
 
 	it("lists open incidents whose group the draft no longer holds open", () => {
 		const cleared = incidentsClearedByDraft([incident("checkout"), incident("payments")], draft)
-		expect(cleared.map((i) => i.groupKey)).toEqual(["payments"])
+		expect(Arr.map(cleared, (i) => i.groupKey)).toEqual(["payments"])
 	})
 
 	it("ignores resolved incidents and says nothing before the draft replay loads", () => {
@@ -161,6 +161,13 @@ describe("diffRuleForms", () => {
 		expect(diffRuleForms(saved, draft)).toEqual([
 			{ field: "Threshold", before: "1.5%", after: "2.0%" },
 			{ field: "Window", before: "5m", after: "15m" },
+		])
+	})
+
+	it("counts a new check interval as a change", () => {
+		const saved = { ...defaultRuleForm(), name: "Checkout errors", windowMinutes: "30" }
+		expect(diffRuleForms(saved, { ...saved, evaluationIntervalMinutes: "10" })).toEqual([
+			{ field: "Check every", before: "Auto", after: "10m" },
 		])
 	})
 

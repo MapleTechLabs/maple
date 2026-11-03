@@ -14,9 +14,24 @@ import type {
 	V2ErrorIssueActor,
 	V2ErrorIssueDetail,
 } from "@maple/domain/http/v2"
-import { MapleApiV2, V2CursorInvalid, V2CursorSortMismatch } from "@maple/domain/http/v2"
-import { Effect, Schema } from "effect"
+import {
+	MapleApiV2,
+	V2CursorInvalid,
+	V2CursorSortMismatch,
+	V2ErrorIssueLeaseConflict,
+	V2ErrorIssueTransitionConflict,
+	V2ParameterInvalid,
+} from "@maple/domain/http/v2"
+import type {
+	ErrorIssueLeaseConflictError,
+	ErrorIssueTransitionError,
+	ErrorValidationError,
+} from "@maple/domain/http"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
+import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 
 const toV2Actor = (actor: ActorDocument): V2ErrorIssueActor => ({
 	id: actor.id,
@@ -78,11 +93,11 @@ const toV2Incident = (incident: ErrorIncidentDocument): V2ErrorIncident => ({
 
 export const toV2IssueDetail = (detail: ErrorIssueDetailResponse): V2ErrorIssueDetail => ({
 	...toV2Issue(detail.issue),
-	timeseries: detail.timeseries.map((point) => ({
+	timeseries: Arr.map(detail.timeseries, (point) => ({
 		bucket: point.bucket,
 		count: point.count,
 	})),
-	sample_traces: detail.sampleTraces.map((trace) => ({
+	sample_traces: Arr.map(detail.sampleTraces, (trace) => ({
 		trace_id: trace.traceId,
 		span_id: trace.spanId,
 		service_name: trace.serviceName,
@@ -90,8 +105,8 @@ export const toV2IssueDetail = (detail: ErrorIssueDetailResponse): V2ErrorIssueD
 		exception_message: trace.exceptionMessage,
 		duration_micros: trace.durationMicros,
 	})),
-	incidents: detail.incidents.map(toV2Incident),
-	environments: detail.environments.map((env) => ({ name: env.name, count: env.count })),
+	incidents: Arr.map(detail.incidents, toV2Incident),
+	environments: Arr.map(detail.environments, (env) => ({ name: env.name, count: env.count })),
 })
 
 const decodeCursor = (
@@ -101,16 +116,16 @@ const decodeCursor = (
 	IssueListCursorFields | IssueSeverityListCursorFields | undefined,
 	ReturnType<typeof V2CursorInvalid.make> | ReturnType<typeof V2CursorSortMismatch.make>
 > => {
-	if (cursor === undefined) return Effect.succeed(undefined)
+	if (cursor === undefined) return Effect.undefined
 	if (sort === "severity") {
-		if (!cursor.startsWith("sev_")) {
+		if (!Str.startsWith("sev_")(cursor)) {
 			return Effect.fail(V2CursorSortMismatch.make(undefined, { param: "cursor" }))
 		}
-		return Schema.decodeEffect(IssueSeverityListCursor)(cursor.slice(4)).pipe(
+		return Schema.decodeEffect(IssueSeverityListCursor)(Str.slice(4)(cursor)).pipe(
 			Effect.mapError(() => V2CursorInvalid.make(undefined, { param: "cursor" })),
 		)
 	}
-	if (cursor.startsWith("sev_")) {
+	if (Str.startsWith("sev_")(cursor)) {
 		return Effect.fail(V2CursorSortMismatch.make(undefined, { param: "cursor" }))
 	}
 	return Schema.decodeEffect(IssueListCursor)(cursor).pipe(
@@ -125,15 +140,34 @@ const decodeCursor = (
  */
 function parseFingerprintHashes(raw: string | undefined): ReadonlyArray<string> | undefined {
 	if (raw === undefined) return undefined
-	return raw
-		.split(",")
-		.map((hash) => hash.trim())
-		.filter((hash) => hash.length > 0)
+	return Arr.filter(
+		Arr.map(Str.split(",")(raw), (hash) => Str.trim(hash)),
+		(hash) => hash.length > 0,
+	)
 }
+
+/** Workflow conflicts keep their domain message but take the v2 envelope. */
+const transitionConflict = (error: ErrorIssueTransitionError) =>
+	Effect.fail(V2ErrorIssueTransitionConflict.make(error.message))
+const leaseConflict = (error: ErrorIssueLeaseConflictError) =>
+	Effect.fail(V2ErrorIssueLeaseConflict.make(error.message))
+const validationFailed = (error: ErrorValidationError) =>
+	Effect.fail(V2ParameterInvalid.make(Arr.join([error.message, ...error.details], " ")))
 
 export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssues", (handlers) =>
 	Effect.gen(function* () {
 		const readModels = yield* ErrorIssueReadModelsService
+		const errors = yield* ErrorsService
+		const workflow = yield* ErrorIssueWorkflowService
+		const actors = yield* ErrorActorsService
+
+		// Actions run as the signed-in user's actor, the same one the dashboard uses.
+		const callerActor = Effect.gen(function* () {
+			const tenant = yield* CurrentTenant.Context
+			const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
+			return { orgId: tenant.orgId, actorId: actor.id }
+		})
+
 		return handlers
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
@@ -161,7 +195,7 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 
 					return {
 						object: "list" as const,
-						data: response.issues.map(toV2Issue),
+						data: Arr.map(response.issues, toV2Issue),
 						has_more: response.nextCursor !== undefined,
 						next_cursor: response.nextCursor ?? null,
 					}
@@ -174,7 +208,7 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 
 					return {
 						object: "list" as const,
-						data: counts.map((row) => ({
+						data: Arr.map(counts, (row) => ({
 							service_name: row.serviceName,
 							open_count: row.openCount,
 						})),
@@ -195,6 +229,75 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 
 					return toV2IssueDetail(detail)
 				}),
+			)
+			.handle("transition", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const { orgId, actorId } = yield* callerActor
+					const issue = yield* errors.transitionIssue(orgId, actorId, params.id, payload.to_state, {
+						...(payload.note === undefined ? undefined : { note: payload.note }),
+						...(payload.snooze_until === undefined
+							? undefined
+							: { snoozeUntil: payload.snooze_until }),
+					})
+					return toV2Issue(issue)
+				}).pipe(
+					Effect.catchTags({
+						"@maple/http/errors/ErrorIssueTransitionError": transitionConflict,
+						"@maple/http/errors/ErrorValidationError": validationFailed,
+					}),
+					Effect.withSpan("HttpV2ErrorIssues.transition"),
+				),
+			)
+			.handle("claim", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const { orgId, actorId } = yield* callerActor
+					const leaseMs =
+						payload.lease_duration_seconds === undefined
+							? undefined
+							: payload.lease_duration_seconds * 1000
+					const issue = yield* errors.claimIssue(orgId, actorId, params.id, leaseMs)
+					return toV2Issue(issue)
+				}).pipe(
+					Effect.catchTags({
+						"@maple/http/errors/ErrorIssueTransitionError": transitionConflict,
+						"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
+					}),
+					Effect.withSpan("HttpV2ErrorIssues.claim"),
+				),
+			)
+			.handle("release", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const { orgId, actorId } = yield* callerActor
+					const issue = yield* workflow.releaseIssue(orgId, actorId, params.id, {
+						...(payload.transition_to === undefined
+							? undefined
+							: { transitionTo: payload.transition_to }),
+						...(payload.note === undefined ? undefined : { note: payload.note }),
+					})
+					return toV2Issue(issue)
+				}).pipe(
+					Effect.catchTags({
+						"@maple/http/errors/ErrorIssueTransitionError": transitionConflict,
+						"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
+					}),
+					Effect.withSpan("HttpV2ErrorIssues.release"),
+				),
+			)
+			.handle("setSeverity", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const { orgId, actorId } = yield* callerActor
+					const issue = yield* workflow.setSeverity(
+						orgId,
+						actorId,
+						params.id,
+						payload.severity ?? null,
+						{
+							...(payload.note === undefined ? undefined : { note: payload.note }),
+							source: "manual",
+						},
+					)
+					return toV2Issue(issue)
+				}).pipe(Effect.withSpan("HttpV2ErrorIssues.setSeverity")),
 			)
 	}),
 )

@@ -1,11 +1,13 @@
 import { DigestSubscriptionResponse } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import * as EmailPreferences from "./email-preferences/update"
 import { Message as EmailPreferencesMessage } from "./email-preferences/model"
 import * as Password from "./password/update"
 import { Message as PasswordMessage } from "./password/model"
 import { canRemove } from "./emails/update"
+import * as Profile from "./profile/update"
+import { Message as ProfileMessage } from "./profile/model"
 import type { AccountUser } from "./user"
 import { OrgId } from "@maple/domain"
 import { REVERIFICATION_CANCELLED } from "../../../platform/clerk"
@@ -37,14 +39,21 @@ const user: AccountUser = {
 
 describe("password tab", () => {
 	const loaded = Password.update(Password.init().model, PasswordMessage.CompletedReadUser({ user })).model
-	const typed = [
-		PasswordMessage.ChangedPassword({ field: "current", value: "old-password-1" }),
-		PasswordMessage.ChangedPassword({ field: "next", value: "new-password-2" }),
-		PasswordMessage.ChangedPassword({ field: "confirm", value: "new-password-2" }),
-	].reduce((model, message) => Password.update(model, message).model, loaded)
+	const typed = Arr.reduce(
+		[
+			PasswordMessage.ChangedPassword({ field: "current", value: "old-password-1" }),
+			PasswordMessage.ChangedPassword({ field: "next", value: "new-password-2" }),
+			PasswordMessage.ChangedPassword({ field: "confirm", value: "new-password-2" }),
+		],
+		loaded,
+		(model, message) => Password.update(model, message).model,
+	)
 
 	test("a short or mismatched password cannot be submitted", () => {
-		const short = Password.update(loaded, PasswordMessage.ChangedPassword({ field: "next", value: "short" })).model
+		const short = Password.update(
+			loaded,
+			PasswordMessage.ChangedPassword({ field: "next", value: "short" }),
+		).model
 		expect(Password.isTooShort(short)).toBe(true)
 		expect(Password.canSubmit(short)).toBe(false)
 	})
@@ -52,12 +61,20 @@ describe("password tab", () => {
 	test("submit sends the current password, the new one and the sign-out choice", () => {
 		expect(Password.update(typed, PasswordMessage.ClickedSubmit()).commands?.[0]).toMatchObject({
 			name: "UpdateClerkPassword",
-			args: { newPassword: "new-password-2", currentPassword: "old-password-1", signOutOfOtherSessions: true },
+			args: {
+				newPassword: "new-password-2",
+				currentPassword: "old-password-1",
+				signOutOfOtherSessions: true,
+			},
 		})
 	})
 
 	test("a dismissed re-verification challenge frees the form without an error toast", () => {
-		const saving: AccountModel = { search: {}, nowMs: 0, tab: { _tag: "Password", model: { ...typed, isSaving: true } } }
+		const saving: AccountModel = {
+			search: {},
+			nowMs: 0,
+			tab: { _tag: "Password", model: { ...typed, isSaving: true } },
+		}
 		const failure = (message: string) =>
 			AccountMessage.GotPasswordMessage({
 				message: PasswordMessage.CompletedSubmit({ hadPassword: true, result: Result.fail(message) }),
@@ -65,11 +82,16 @@ describe("password tab", () => {
 		const cancelled = updateAccount(saving, failure(REVERIFICATION_CANCELLED), context)
 		expect(cancelled.outMessage).toBeUndefined()
 		expect(cancelled.model.tab?._tag === "Password" && cancelled.model.tab.model.isSaving).toBe(false)
-		expect(updateAccount(saving, failure("Wrong password"), context).outMessage).toMatchObject({ title: "Wrong password" })
+		expect(updateAccount(saving, failure("Wrong password"), context).outMessage).toMatchObject({
+			title: "Wrong password",
+		})
 	})
 
 	test("a changed password clears the fields", () => {
-		const done = Password.update(typed, PasswordMessage.CompletedSubmit({ hadPassword: true, result: Result.succeed(undefined) }))
+		const done = Password.update(
+			typed,
+			PasswordMessage.CompletedSubmit({ hadPassword: true, result: Result.succeed(undefined) }),
+		)
 		expect([done.model.current, done.model.next, done.model.confirm]).toEqual(["", "", ""])
 	})
 })
@@ -77,8 +99,14 @@ describe("password tab", () => {
 describe("email addresses tab", () => {
 	test("the primary address and the last verified one cannot be removed", () => {
 		expect(canRemove(user, { id: "email_primary", email: "ada@acme.test", isVerified: true })).toBe(false)
-		expect(canRemove(user, { id: "email_other", email: "ada@lovelace.test", isVerified: true })).toBe(true)
-		const single = { ...user, primaryEmailAddressId: null, emails: [{ id: "only", email: "ada@acme.test", isVerified: true }] }
+		expect(canRemove(user, { id: "email_other", email: "ada@lovelace.test", isVerified: true })).toBe(
+			true,
+		)
+		const single = {
+			...user,
+			primaryEmailAddressId: null,
+			emails: [{ id: "only", email: "ada@acme.test", isVerified: true }],
+		}
 		expect(canRemove(single, { id: "only", email: "ada@acme.test", isVerified: true })).toBe(false)
 	})
 })
@@ -109,9 +137,18 @@ describe("email preferences tab", () => {
 	).model
 
 	test("someone who never subscribed gets Monday 09:00 in the browser's zone, and a toggle records it", () => {
-		const fresh = EmailPreferences.update(entered, EmailPreferencesMessage.CompletedFetchSubscription({ result: Result.succeed(null) })).model
-		expect(EmailPreferences.draftOf(fresh)).toMatchObject({ dayOfWeek: 1, sendHour: 9, timezone: "Europe/Berlin" })
-		expect(EmailPreferences.update(fresh, EmailPreferencesMessage.ToggledOps()).commands?.[0]).toMatchObject({
+		const fresh = EmailPreferences.update(
+			entered,
+			EmailPreferencesMessage.CompletedFetchSubscription({ result: Result.succeed(null) }),
+		).model
+		expect(EmailPreferences.draftOf(fresh)).toMatchObject({
+			dayOfWeek: 1,
+			sendHour: 9,
+			timezone: "Europe/Berlin",
+		})
+		expect(
+			EmailPreferences.update(fresh, EmailPreferencesMessage.ToggledOps()).commands?.[0],
+		).toMatchObject({
 			name: "ToggleDigest",
 			args: { isOn: false, enabled: false, fields: { timezone: "Europe/Berlin" } },
 		})
@@ -122,7 +159,9 @@ describe("email preferences tab", () => {
 			entered,
 			EmailPreferencesMessage.CompletedFetchSubscription({ result: Result.succeed(subscription) }),
 		).model
-		expect(EmailPreferences.update(saved, EmailPreferencesMessage.ToggledWeb()).commands?.[0]).toMatchObject({
+		expect(
+			EmailPreferences.update(saved, EmailPreferencesMessage.ToggledWeb()).commands?.[0],
+		).toMatchObject({
 			name: "ToggleDigest",
 			args: { digest: "web", isOn: true, enabled: true, fields: { webAnalyticsEnabled: true } },
 		})
@@ -133,11 +172,23 @@ describe("email preferences tab", () => {
 			entered,
 			EmailPreferencesMessage.CompletedFetchSubscription({ result: Result.succeed(subscription) }),
 		).model
-		const edited = EmailPreferences.update(saved, EmailPreferencesMessage.ChangedSchedule({ field: "dayOfWeek", value: "2" })).model
+		const edited = EmailPreferences.update(
+			saved,
+			EmailPreferencesMessage.ChangedSchedule({ field: "dayOfWeek", value: "2" }),
+		).model
 		expect(EmailPreferences.isDraftDirty(edited)).toBe(true)
-		expect(EmailPreferences.update(edited, EmailPreferencesMessage.ClickedSave()).commands?.[0]).toMatchObject({
+		expect(
+			EmailPreferences.update(edited, EmailPreferencesMessage.ClickedSave()).commands?.[0],
+		).toMatchObject({
 			name: "SaveDigestPreferences",
-			args: { submitted: { dayOfWeek: 2, sendHour: 9, timezone: "Europe/London", environments: ["production"] } },
+			args: {
+				submitted: {
+					dayOfWeek: 2,
+					sendHour: 9,
+					timezone: "Europe/London",
+					environments: ["production"],
+				},
+			},
 		})
 	})
 
@@ -146,8 +197,24 @@ describe("email preferences tab", () => {
 			entered,
 			EmailPreferencesMessage.CompletedFetchSubscription({ result: Result.succeed(subscription) }),
 		).model
-		const edited = EmailPreferences.update(saved, EmailPreferencesMessage.ChangedSchedule({ field: "dayOfWeek", value: "2" })).model
+		const edited = EmailPreferences.update(
+			saved,
+			EmailPreferencesMessage.ChangedSchedule({ field: "dayOfWeek", value: "2" }),
+		).model
 		const toggling = EmailPreferences.update(edited, EmailPreferencesMessage.ToggledOps()).model
-		expect(EmailPreferences.update(toggling, EmailPreferencesMessage.ClickedSave()).commands ?? []).toEqual([])
+		expect(
+			EmailPreferences.update(toggling, EmailPreferencesMessage.ClickedSave()).commands ?? [],
+		).toEqual([])
+	})
+})
+
+describe("profile", () => {
+	test("discard drops the name edit, so the save bar has nothing to save", () => {
+		const loaded = Profile.update(Profile.init().model, ProfileMessage.CompletedReadUser({ user })).model
+		const edited = Profile.update(loaded, ProfileMessage.ChangedFirstName({ value: "Augusta" })).model
+		expect(Profile.isNameDirty(edited, user)).toBe(true)
+		const discarded = Profile.update(edited, ProfileMessage.ClickedDiscardName()).model
+		expect(Profile.namesOf(discarded, user).firstName).toBe("Ada")
+		expect(Profile.isNameDirty(discarded, user)).toBe(false)
 	})
 })

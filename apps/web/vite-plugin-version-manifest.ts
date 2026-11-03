@@ -1,4 +1,7 @@
+import { Schema } from "effect"
 import type { Plugin } from "vite"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
  * Emits `/version.json` carrying the commit this bundle was built from.
@@ -25,7 +28,7 @@ export function versionManifest(commitSha: string): Plugin {
 			this.emitFile({
 				type: "asset",
 				fileName: "version.json",
-				source: JSON.stringify({ commit: commitSha }),
+				source: encodeJson({ commit: commitSha }),
 			})
 		},
 	}

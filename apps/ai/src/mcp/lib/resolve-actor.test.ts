@@ -50,6 +50,23 @@ describe("resolveActor", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("never adopts another user's agent by naming the client after it", () =>
+		Effect.gen(function* () {
+			const actors = yield* ErrorActorsService
+			const teammate = asUserId("user_resolve_actor_teammate")
+			const theirs = yield* actors.registerAgent(ORG, teammate, { name: "their-bot" })
+
+			const resolved = yield* resolveActor(tenantWith({ mcpClientName: "their-bot" }))
+			assert.notStrictEqual(resolved.actorId, theirs.id)
+			assert.isFalse(resolved.isAgent)
+			const doc = yield* actors.lookupActor(ORG, resolved.actorId)
+			assert.strictEqual(doc.userId, USER)
+
+			const own = yield* resolveActor(tenantWith({ userId: teammate, mcpClientName: "their-bot" }))
+			assert.strictEqual(own.actorId, theirs.id)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("refuses reserved first-party names and falls back to the user actor", () =>
 		Effect.gen(function* () {
 			const resolved = yield* resolveActor(tenantWith({ mcpClientName: "maple-triage-agent" }))

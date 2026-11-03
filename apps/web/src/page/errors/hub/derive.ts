@@ -7,7 +7,7 @@ import {
 	indexInvestigationsByIssue,
 } from "../../../lib/models/error-signal"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorsSearch } from "../../../route/search"
@@ -55,8 +55,8 @@ export const listQueryOf = (search: Search, rankedHashes: ReadonlyArray<string> 
 				? undefined
 				: { state: view }),
 		...(view === "open" ? undefined : { include_archived: "true" as const }),
-		...(search.q ? { search: search.q.slice(0, ERROR_ISSUE_SEARCH_MAX_LENGTH) } : undefined),
-		...(rankedHashes === null ? undefined : { fingerprint_hash: rankedHashes.join(",") }),
+		...(search.q ? { search: Str.slice(0, ERROR_ISSUE_SEARCH_MAX_LENGTH)(search.q) } : undefined),
+		...(rankedHashes === null ? undefined : { fingerprint_hash: Arr.join(rankedHashes, ",") }),
 	}
 }
 
@@ -72,10 +72,7 @@ export const viewCovers = (view: HubView, state: WorkflowState): boolean => {
 	return states === "all" || states.includes(state)
 }
 
-export const sortSignals = (
-	signals: ReadonlyArray<ErrorSignal>,
-	sort: HubSort,
-): ReadonlyArray<ErrorSignal> =>
+export const sortSignals = (signals: ReadonlyArray<ErrorSignal>, sort: HubSort): ReadonlyArray<ErrorSignal> =>
 	sort === "volume"
 		? signals.toSorted((a, b) => (b.windowCount ?? -1) - (a.windowCount ?? -1))
 		: sort === "severity"
@@ -83,7 +80,7 @@ export const sortSignals = (
 					const diff = severityRank(a.severity) - severityRank(b.severity)
 					return diff !== 0 ? diff : (b.windowCount ?? -1) - (a.windowCount ?? -1)
 				})
-			: signals.toSorted((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))
+			: signals.toSorted((a, b) => Str.localeCompare(a.lastSeenAt)(b.lastSeenAt))
 
 /** Issues across the loaded pages, first slot wins, narrowed to the view. */
 export const uniqueIssues = (
@@ -91,10 +88,10 @@ export const uniqueIssues = (
 	view: HubView,
 ): ReadonlyArray<ErrorIssueDocument> => {
 	const byId = new Map<string, ErrorIssueDocument>()
-	pages.flat().forEach((issue) => {
+	Arr.forEach(pages.flat(), (issue) => {
 		if (!byId.has(issue.id)) byId.set(issue.id, issue)
 	})
-	return [...byId.values()].filter((issue) => viewCovers(view, issue.workflowState))
+	return Arr.filter([...byId.values()], (issue) => viewCovers(view, issue.workflowState))
 }
 
 // copied: `KIND_LABEL`, `errorFilterChips` and `hasErrorFilters` (lib/errors/error-filter-chips.ts
@@ -124,7 +121,7 @@ export const hasErrorFilters = (search: Search): boolean => errorFilterChips(sea
 
 /** Warehouse `YYYY-MM-DD HH:mm:ss` (UTC) to epoch ms; `null` when it does not parse. */
 const warehouseMs = (value: string): number | null =>
-	Option.getOrNull(Option.map(DateTime.make(value.replace(" ", "T") + "Z"), DateTime.toEpochMillis))
+	Option.getOrNull(Option.map(DateTime.make(Str.replace(" ", "T")(value) + "Z"), DateTime.toEpochMillis))
 
 /** The spark's bucket width: the window over `SPARK_BUCKETS`, at least a minute. */
 export const bucketSecondsOf = (window: TimeWindow): number => {
@@ -146,14 +143,16 @@ const dataOr = <A, E>(data: AsyncData.AsyncData<A, E>, fallback: A): A =>
 /** The issues on screen: every loaded page, in order. */
 export const issuesOf = (model: Model): ReadonlyArray<ErrorIssueDocument> =>
 	uniqueIssues(
-		model.pages.map((slot) =>
-			dataOr(slot.page.data, { data: [], hasMore: false, nextCursor: null }).data.map(errorIssueFromV2),
+		Arr.map(model.pages, (slot) =>
+			Arr.map(
+				dataOr(slot.page.data, { data: [], hasMore: false, nextCursor: null }).data,
+				errorIssueFromV2,
+			),
 		),
 		viewOf(model.search),
 	)
 
-/** Issues joined with the warehouse volume, the spark series and live investigations, sorted. */
-export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> =>
+const buildSignals = (model: Model): ReadonlyArray<ErrorSignal> =>
 	sortSignals(
 		buildErrorSignals({
 			issues: issuesOf(model),
@@ -164,15 +163,45 @@ export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> =>
 		sortOf(model.search),
 	)
 
+// The last join and the model fields it read. A hover or a menu changes none of them, so the list
+// keeps the same signal objects and its memoized rows stay cached.
+const lastSignals: Array<{
+	readonly inputs: ReadonlyArray<unknown>
+	readonly signals: ReadonlyArray<ErrorSignal>
+}> = []
+
+/** Issues joined with the warehouse volume, the spark series and live investigations, sorted. */
+export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> => {
+	const inputs = [model.pages, model.volume.data, model.spark.data, model.investigations.data, model.search]
+	const previous = lastSignals[0]
+	if (previous !== undefined && Arr.every(previous.inputs, (input, index) => input === inputs[index]))
+		return previous.signals
+	const signals = buildSignals(model)
+	lastSignals[0] = { inputs, signals }
+	return signals
+}
+
 export type ListStatus = "loading" | "failed" | "ready"
 
+/** The volume sort's ranking failed: no list page can be asked until it is retried. */
+export const rankingFailed = (model: Model): boolean =>
+	sortOf(model.search) === "volume" &&
+	(AsyncData.isFailure(model.ranking.data) || AsyncData.isStale(model.ranking.data))
+
 export const listStatusOf = (model: Model): ListStatus => {
+	if (rankingFailed(model)) return "failed"
 	const first = model.pages[0]
 	if (first === undefined) return "loading"
 	const data = first.page.data
 	if (AsyncData.isFailure(data) || AsyncData.isStale(data)) return "failed"
 	return AsyncData.hasData(data) ? "ready" : "loading"
 }
+
+/** What a `failed` list failed with: the ranking's error, else the first page's. */
+export const listFailureOf = (model: Model) =>
+	rankingFailed(model)
+		? AsyncData.getError(model.ranking.data)
+		: Option.flatMap(Option.fromNullishOr(model.pages[0]), (first) => AsyncData.getError(first.page.data))
 
 export type PagingState = "more" | "loading" | "failed" | "end"
 

@@ -1,5 +1,6 @@
 import { browserLocation, browserNavigator } from "../platform/browser-globals"
 import type { ResolvedIdentity } from "../identity/identity"
+import { stringifyWellFormed } from "../platform/json"
 import { type IngestConfig, ingestHeaders, postToIngest } from "../platform/transport"
 import type { EntryContext } from "../session/session"
 import { parseUserAgent } from "../platform/user-agent"
@@ -9,7 +10,7 @@ import { scrubUrl } from "../platform/url-privacy"
 export function formatCHDateTime(date: Date): string {
 	const pad = (n: number, width = 2) => String(n).padStart(width, "0")
 	return (
-		`${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
+		`${pad(date.getUTCFullYear(), 4)}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
 		`${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}.` +
 		pad(date.getUTCMilliseconds(), 3)
 	)
@@ -209,7 +210,9 @@ export async function postSessionMetaRow(
 	row: Record<string, unknown>,
 	keepalive = false,
 ): Promise<void> {
-	const body = `${JSON.stringify(row)}\n`
+	// Well-formed even for a lone surrogate the host app put in an identity or URL:
+	// ingest's parser would otherwise reject the row.
+	const body = `${stringifyWellFormed(row)}\n`
 	await postToIngest(
 		`${target.endpoint.replace(/\/$/, "")}/v1/sessionReplays/meta`,
 		{ ...ingestHeaders(target), "content-type": "application/x-ndjson" },

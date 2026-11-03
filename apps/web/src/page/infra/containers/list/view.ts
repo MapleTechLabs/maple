@@ -3,9 +3,9 @@ import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../../ui/error-state"
-import { activeFilterChips } from "../../../../ui/filters/active-filter-chips"
-import { icon } from "../../../../ui/icon"
+import { errorState } from "@maple/views/ui/error-state"
+import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
+import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { facetChips } from "../../kit/facets"
@@ -14,8 +14,8 @@ import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { offsetPager, pageRangeLabel } from "../../kit/offset-pager"
-import { countLabel, pageHero, searchToolbar, setupEmpty } from "../../kit/page-parts"
-import { filteredEmpty } from "../../../kit/signal-empty-state"
+import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { hostsViewTabs } from "../../kit/view-tabs"
 import { PAGE_SIZE } from "./command"
 import { type ContainerScope, type FilterParam, Message } from "./message"
@@ -23,6 +23,7 @@ import type { ContainerCounts, ContainersPage, Model } from "./model"
 import { DEFAULT_PRESET, filtersOf, pageIndexOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 import { containerTable, containerTableLoading } from "./view-table"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `ContainersPage`.
 
@@ -48,7 +49,10 @@ const summaryBand = (h: H, model: Model): Html =>
 		onEmpty: () => fleetBandLoading(h, 3, FLEET_BAND_BOXED),
 		onFailure: () => null,
 		onData: (counts: ContainerCounts) => {
-			const healthy = Math.max(counts.totalContainers - counts.saturatedContainers - counts.elevatedContainers, 0)
+			const healthy = Math.max(
+				counts.totalContainers - counts.saturatedContainers - counts.elevatedContainers,
+				0,
+			)
 			return fleetBand(h, {
 				total: counts.totalContainers,
 				noun: "container",
@@ -59,9 +63,27 @@ const summaryBand = (h: H, model: Model): Html =>
 					{ key: "saturated", count: counts.saturatedContainers, className: TONE_FILL.crit },
 				],
 				cells: [
-					{ scope: "saturated", label: "Saturated", hint: "≥90%", value: counts.saturatedContainers, tone: "crit" },
-					{ scope: "elevated", label: "Elevated", hint: "≥60%", value: counts.elevatedContainers, tone: "warn" },
-					{ scope: "stale", label: "Stale agent", hint: ">5m", value: counts.staleContainers, tone: "neutral" },
+					{
+						scope: "saturated",
+						label: "Saturated",
+						hint: "≥90%",
+						value: counts.saturatedContainers,
+						tone: "crit",
+					},
+					{
+						scope: "elevated",
+						label: "Elevated",
+						hint: "≥60%",
+						value: counts.elevatedContainers,
+						tone: "warn",
+					},
+					{
+						scope: "stale",
+						label: "Stale agent",
+						hint: ">5m",
+						value: counts.staleContainers,
+						tone: "neutral",
+					},
 				],
 				activeScope: model.search.scope,
 				onScopeChange: (scope) => Message.ChangedScope({ scope }),
@@ -78,8 +100,12 @@ const tableArea = (h: H, model: Model, page: ContainersPage, inputs: PageViewInp
 	const searchText = model.search.q ?? ""
 	const scope = model.search.scope
 	const offset = pageIndexOf(model) * PAGE_SIZE
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	const hasAnyNarrowing = hasStructuredFilter || searchText.trim() !== "" || scope !== undefined || offset > 0
+	const hasStructuredFilter = Arr.some(
+		Rec.values(filtersOf(model.search)),
+		(values) => (values?.length ?? 0) > 0,
+	)
+	const hasAnyNarrowing =
+		hasStructuredFilter || Str.trim(searchText) !== "" || scope !== undefined || offset > 0
 	const containers = page.data
 	if (containers.length === 0 && !hasAnyNarrowing)
 		return setupEmpty(h, {
@@ -90,7 +116,12 @@ const tableArea = (h: H, model: Model, page: ContainersPage, inputs: PageViewInp
 			actionLabel: "Install the Docker agent",
 			onAction: toInstall(InstallModal.Message.ClickedOpen()),
 			docs: "docker",
-			modal: h.submodel({ slotId: "install-modal", model: model.install, view: InstallModalView.mountedView, toParentMessage: toInstall }),
+			modal: h.submodel({
+				slotId: "install-modal",
+				model: model.install,
+				view: InstallModalView.mountedView,
+				toParentMessage: toInstall,
+			}),
 		})
 	const { sortBy, sortDir } = sortOf(model.search)
 	return h.div(
@@ -143,7 +174,11 @@ const containersArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.containers.data, {
 		onEmpty: () => containerTableLoading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load containers", onRetry: Message.ClickedRetryContainers() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load containers",
+				onRetry: Message.ClickedRetryContainers(),
+			}),
 		onData: (page) => tableArea(h, model, page, inputs),
 	})
 
@@ -156,24 +191,32 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					title: "Containers",
+					description:
+						"Sorted worst-first by peak utilization against each container's own limits.",
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+						AsyncData.isFailure(model.containers.data),
+					),
 					tabs: hostsViewTabs(h, "containers", model.search),
 					filters: filtersRail(h, model),
-					scrollClassName: "gap-6",
+					gap: "lg",
 				},
 				[
-					pageHero(h, {
-						title: "Containers",
-						description: "Sorted worst-first by peak utilization against each container's own limits.",
-					}),
 					activeFilterChips(h, {
-						chips: facetChips(FACETS, (param) => model.search[param]).map((chip) => ({
-							id: chip.param,
-							label: chip.label,
-							values: chip.values,
-							isNegated: chip.isNegated,
-							onRemove: Message.RemovedFilterChip({ param: chip.param }),
-						})),
+						chips: Arr.map(
+							facetChips(FACETS, (param) => model.search[param]),
+							(chip) => ({
+								id: chip.param,
+								label: chip.label,
+								values: chip.values,
+								isNegated: chip.isNegated,
+								onRemove: Message.RemovedFilterChip({ param: chip.param }),
+							}),
+						),
 					}),
 					summaryBand(h, model),
 					containersArea(h, model, inputs),

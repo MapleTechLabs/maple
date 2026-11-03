@@ -2,15 +2,15 @@ import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
-import { Effect, Predicate, Schema } from "effect"
+import { Effect, Predicate, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { VcsCommitDetailResponse, VcsCommitDetailsResponse } from "@maple/domain/http"
 import { IdleTtl } from "../../data/idle-ttl"
 import { ReadCache } from "../../data/read-cache"
-import { requestKey, type RequestKey } from "../../data/request-key"
+import { requestKey, type RequestKey } from "@maple/views/data/request-key"
 import { MapleInternalApiClient } from "../../platform/api-clients"
-import { skeleton } from "../../ui/skeleton"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { relativeTime } from "./relative-time"
 
 // The commit SHA hover card: the body
@@ -111,7 +111,12 @@ const externalText = <M>(h: HtmlBuilder<M>, href: string | null, className: stri
 					h.Href(href),
 					h.Target("_blank"),
 					h.Rel("noreferrer noopener"),
-					h.Class(cn("transition-colors hover:text-foreground hover:underline", className)),
+					h.Class(
+						cn(
+							"hover:text-foreground active:text-foreground hover:underline active:underline",
+							className,
+						),
+					),
 				],
 				[text],
 			)
@@ -126,7 +131,7 @@ const avatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, href: st
 							"size-7 flex shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
 						),
 					],
-					[name.slice(0, 2)],
+					[Str.slice(0, 2)(name)],
 				)
 			: h.img([
 					h.Src(url),
@@ -144,7 +149,7 @@ const avatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, href: st
 					h.Rel("noreferrer noopener"),
 					h.AriaLabel(`${name}'s profile`),
 					h.Class(
-						"shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-foreground/30",
+						"shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 active:opacity-80 focus-visible:ring-2 focus-visible:ring-foreground/30",
 					),
 				],
 				[inner],
@@ -159,8 +164,8 @@ const commitCard = <M>(
 	onCopy: M | undefined,
 ): Html => {
 	const newline = commit.message.indexOf("\n")
-	const title = newline === -1 ? commit.message : commit.message.slice(0, newline)
-	const body = newline === -1 ? "" : commit.message.slice(newline + 1).trim()
+	const title = newline === -1 ? commit.message : Str.slice(0, newline)(commit.message)
+	const body = newline === -1 ? "" : Str.trim(Str.slice(newline + 1)(commit.message))
 	const providerLabel = commit.provider === "github" ? "GitHub" : commit.provider
 	const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
 	const profileHref =
@@ -176,7 +181,10 @@ const commitCard = <M>(
 			h.div(
 				[h.Class("flex flex-col gap-1.5 p-3.5")],
 				[
-					h.p([h.Class(cn("font-medium leading-snug text-foreground", "line-clamp-2 text-sm"))], [title]),
+					h.p(
+						[h.Class(cn("font-medium leading-snug text-foreground", "line-clamp-2 text-sm"))],
+						[title],
+					),
 					...(body === ""
 						? []
 						: [h.p([h.Class("line-clamp-4 whitespace-pre-line text-muted-foreground")], [body])]),
@@ -223,7 +231,7 @@ const commitCard = <M>(
 					h.Target("_blank"),
 					h.Rel("noreferrer noopener"),
 					h.Class(
-						"flex items-center justify-center gap-1 font-medium text-primary transition-colors hover:bg-muted/60 px-3.5 py-2.5",
+						"flex items-center justify-center gap-1 font-medium text-primary hover:bg-surface-sunken active:bg-surface-sunken px-3.5 py-2.5",
 					),
 				],
 				["View on ", providerLabel, h.span([h.AriaHidden(true)], ["↗"])],
@@ -270,15 +278,15 @@ const commitSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 const describeError = (
 	tag: string,
 ): Readonly<{ title: string; detail: string; action?: "connect" | "manage" }> =>
-	tag.endsWith("VcsCommitShaInvalidError")
+	Str.endsWith("VcsCommitShaInvalidError")(tag)
 		? { title: "Non-standard commit reference", detail: "Not a resolvable git SHA." }
-		: tag.endsWith("VcsCommitNotFoundError")
+		: Str.endsWith("VcsCommitNotFoundError")(tag)
 			? {
 					title: "Commit not found",
 					detail: "Maple has no record of this commit. Make sure its repository is connected and Maple still has access to it.",
 					action: "manage",
 				}
-			: tag.endsWith("IntegrationsNotConnectedError")
+			: Str.endsWith("IntegrationsNotConnectedError")(tag)
 				? {
 						title: "No repository connected",
 						detail: "Connect a repository so Maple can resolve commits to their author, message, and repo.",
@@ -286,7 +294,8 @@ const describeError = (
 					}
 				: { title: "Couldn't load commit", detail: "Try again in a moment." }
 
-const ACTION_CLASS = "mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline"
+const ACTION_CLASS =
+	"mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline active:underline"
 
 /** `CommitMessage` (not compact). */
 const commitMessage = <M>(h: HtmlBuilder<M>, tag: string): Html => {

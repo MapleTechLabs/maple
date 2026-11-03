@@ -28,6 +28,7 @@ import {
 	spanStartMs,
 	type SessionTurn,
 } from "./session-turns"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * A hole this long INSIDE a turn is the framework stalled mid-flight. Gaps
@@ -112,9 +113,9 @@ export function buildSessionFindings(
 	turns: readonly SessionTurn[],
 	summary: SessionSummary,
 ): SessionFindingsReport {
-	const spans = turns.flatMap((turn) => turn.spans).sort((a, b) => spanStartMs(a) - spanStartMs(b))
+	const spans = Arr.flatMap(turns, (turn) => turn.spans).sort((a, b) => spanStartMs(a) - spanStartMs(b))
 	const turnIndexBySpan = new Map<string, number>()
-	turns.forEach((turn, index) => {
+	Arr.forEach(turns, (turn, index) => {
 		for (const span of turn.spans) turnIndexBySpan.set(span.spanId, index)
 	})
 	const lastTurnIndex = finalTurnIndex(turns)
@@ -177,8 +178,8 @@ function failureFindings(
 		byLabel.set(event.label, group)
 	}
 
-	return [...byLabel].map(([label, group]) => {
-		const turnIndices = distinctSorted(group.members.map((member) => member.turnIndex))
+	return Arr.map([...byLabel], ([label, group]) => {
+		const turnIndices = distinctSorted(Arr.map(group.members, (member) => member.turnIndex))
 		// The terminal group links the span the turn died on; a recovered group
 		// links its first event, where the trouble began.
 		const cause =
@@ -199,7 +200,7 @@ function failureFindings(
 			detail:
 				(group.kind === "contextExceeded" ? promptGrowth(spans) : undefined) ??
 				failureDetail(
-					group.members.map((member) => member.span),
+					Arr.map(group.members, (member) => member.span),
 					label,
 				),
 			spanId: linked.span.spanId,
@@ -233,8 +234,8 @@ function retryFindings(
 	turns: readonly SessionTurn[],
 	turnIndexBySpan: ReadonlyMap<string, number>,
 ): SessionFinding[] {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
-	const attempts = spans.filter((span) => isProviderAttempt(span) && spanFailed(span))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
+	const attempts = Arr.filter(spans, (span) => isProviderAttempt(span) && spanFailed(span))
 	const first = attempts[0]
 	if (first === undefined) return []
 
@@ -253,11 +254,14 @@ function retryFindings(
 		if (spanFailed(parent)) failedGenerations.add(parent.spanId)
 	}
 
-	const statuses = [...byStatus]
-		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-		.map(([status, count]) => `${status} ×${count}`)
-		.join(" · ")
-	const where = providers.size === 0 ? "" : ` — ${[...providers].sort().join(", ")}`
+	const statuses = Arr.join(
+		Arr.map(
+			[...byStatus].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+			([status, count]) => `${status} ×${count}`,
+		),
+		" · ",
+	)
+	const where = providers.size === 0 ? "" : ` — ${Arr.join([...providers].sort(), ", ")}`
 	const outcome =
 		generations.size === 0
 			? ""
@@ -274,7 +278,7 @@ function retryFindings(
 			tool: undefined,
 			count: attempts.length,
 			turnText: turnListText(
-				distinctSorted(attempts.map((span) => turnIndexBySpan.get(span.spanId) ?? 0)),
+				distinctSorted(Arr.map(attempts, (span) => turnIndexBySpan.get(span.spanId) ?? 0)),
 				turns,
 				false,
 			),
@@ -292,12 +296,16 @@ function retryFindings(
  * plus both cache buckets: what the model actually had in front of it).
  */
 function promptGrowth(spans: readonly AiSessionSpan[]): string | undefined {
-	const promptSizes = spans
-		.filter(isLlmCall)
-		.map(spanTokenBuckets)
-		.filter((buckets) => buckets !== undefined)
-		.map((buckets) => buckets.input + buckets.cacheRead + buckets.cacheWrite)
-		.filter((size) => size > 0)
+	const promptSizes = Arr.filter(
+		Arr.map(
+			Arr.filter(
+				Arr.map(Arr.filter(spans, isLlmCall), spanTokenBuckets),
+				(buckets) => buckets !== undefined,
+			),
+			(buckets) => buckets.input + buckets.cacheRead + buckets.cacheWrite,
+		),
+		(size) => size > 0,
+	)
 	const first = promptSizes[0]
 	const last = promptSizes[promptSizes.length - 1]
 	if (first === undefined || last === undefined || promptSizes.length < 2 || last <= first) {
@@ -312,7 +320,7 @@ function truncationFindings(
 	turnIndexBySpan: ReadonlyMap<string, number>,
 ): SessionFinding[] {
 	const shadowed = shadowedAncestorIds(spans, truncationSignal)
-	const members = spans.flatMap((span) => {
+	const members = Arr.flatMap(spans, (span) => {
 		const reason = truncationSignal(span)
 		return reason === undefined || shadowed.has(span.spanId) ? [] : [{ span, reason }]
 	})
@@ -329,7 +337,7 @@ function truncationFindings(
 			tool: undefined,
 			count: members.length,
 			turnText: turnListText(
-				distinctSorted(members.map(({ span }) => turnIndexBySpan.get(span.spanId) ?? 0)),
+				distinctSorted(Arr.map(members, ({ span }) => turnIndexBySpan.get(span.spanId) ?? 0)),
 				turns,
 				false,
 			),
@@ -347,14 +355,14 @@ function truncationSignal(span: AiSessionSpan): string | undefined {
 
 function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 	const findings: SessionFinding[] = []
-	turns.forEach((turn, index) => {
+	Arr.forEach(turns, (turn, index) => {
 		for (const gap of findIdleGaps(turn.spans)) {
 			if (gap.durationMs < MID_TURN_STALL_MIN_MS) continue
 			// The row links the span the session went quiet after — the closest
 			// thing the capture has to what it was stuck on.
-			const before = [...turn.spans]
-				.filter((span) => spanEndMs(span) <= gap.startMs)
-				.sort((a, b) => spanEndMs(b) - spanEndMs(a))[0]
+			const before = Arr.filter([...turn.spans], (span) => spanEndMs(span) <= gap.startMs).sort(
+				(a, b) => spanEndMs(b) - spanEndMs(a),
+			)[0]
 			findings.push({
 				id: gap.id,
 				kind: "stall",
@@ -385,7 +393,7 @@ function turnListText(indices: readonly number[], turns: readonly SessionTurn[],
 		const one = `${word} ${turns[indices[0]]?.index ?? indices[0] + 1}`
 		return terminal ? `${one} (final)` : one
 	}
-	if (indices.length > 4) return `${indices.length} of ${turns.length} ${word.toLowerCase()}s`
+	if (indices.length > 4) return `${indices.length} of ${turns.length} ${Str.toLowerCase(word)}s`
 	const numbers = indices.map((index) => turns[index]?.index ?? index + 1).join(", ")
 	return `${word}s ${numbers}${terminal ? " (final)" : ""}`
 }

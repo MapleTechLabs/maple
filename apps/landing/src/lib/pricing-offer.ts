@@ -13,8 +13,10 @@
  * `label: m.pricing_logs()` freezes whichever locale rendered first and every
  * other locale inherits it.
  */
+import { PRICING_CARD_FEATURE_IDS, isPricingCardFeature } from "@maple/domain/billing"
 import { Autumn } from "autumn-js"
 import * as m from "../paraglide/messages.js"
+import { Array as Arr } from "effect"
 
 const AUTUMN_API_VERSION = "2.3.0"
 
@@ -54,15 +56,10 @@ export interface Offer {
 	ctaLabel: string
 }
 
-const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
-
 /** Canonical row order: Autumn can return items in any order. */
-const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions", "product_events", "ai_credits"]
+const DATA_FEATURE_ORDER: ReadonlyArray<string> = PRICING_CARD_FEATURE_IDS
 
-const dataFeatureRank = (id: string | undefined) => {
-	const i = id ? DATA_FEATURE_ORDER.indexOf(id) : -1
-	return i === -1 ? DATA_FEATURE_ORDER.length : i
-}
+const dataFeatureRank = (id: string) => DATA_FEATURE_ORDER.indexOf(id)
 
 const FEATURE_UNITS = {
 	browser_sessions: "sessions",
@@ -101,7 +98,6 @@ export const platformFeatures = (): string[] => [
 	m.pricing_unlimited_dashboards(),
 	m.pricing_advanced_alerting(),
 	m.pricing_mcp_server(),
-	m.pricing_ai_chat(),
 	m.pricing_ai_triage(),
 	m.pricing_full_api(),
 ]
@@ -120,15 +116,16 @@ export async function getOffer(): Promise<Offer> {
 			xApiVersion: AUTUMN_API_VERSION,
 		})
 		const result = await autumn.plans.list()
-		const products = (result.list ?? []).filter((p) => !p.addOn)
+		const products = Arr.filter(result.list ?? [], (p) => !p.addOn)
 
 		if (products.length > 1) {
 			// The layout renders one offer. A second tier must fail loudly at build
 			// time rather than silently vanishing off the pricing page.
 			console.warn(
-				`[pricing-offer] Autumn returned ${products.length} non-add-on plans (${products
-					.map((p) => p.id)
-					.join(", ")}); only the first is rendered. Update PricingTable for multiple tiers.`,
+				`[pricing-offer] Autumn returned ${products.length} non-add-on plans (${Arr.join(
+					Arr.map(products, (p) => p.id),
+					", ",
+				)}); only the first is rendered. Update PricingTable for multiple tiers.`,
 			)
 		}
 
@@ -141,9 +138,9 @@ export async function getOffer(): Promise<Offer> {
 				interval: product.price?.interval ? `/${product.price.interval}` : undefined,
 				hasTrial: !!product.freeTrial,
 				trialDuration: product.freeTrial?.durationLength,
-				allotments: product.items
-					.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
-					.map((item) => {
+				allotments: Arr.map(
+					Arr.filter(product.items, (item) => isPricingCardFeature(item.featureId)),
+					(item) => {
 						const featureId = item.featureId
 						const unit = unitFor(featureId)
 						const billingUnits = Math.max(1, item.price?.billingUnits ?? 1)
@@ -158,8 +155,8 @@ export async function getOffer(): Promise<Offer> {
 							rate: amount == null ? undefined : (amount / billingUnits) * rateUnits,
 							rateUnits,
 						}
-					})
-					.sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
+					},
+				).sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
 				ctaLabel: product.freeTrial
 					? m.pricing_start_trial({ duration: String(product.freeTrial.durationLength) })
 					: m.cta_get_started(),

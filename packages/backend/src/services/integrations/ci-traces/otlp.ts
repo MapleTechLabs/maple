@@ -14,8 +14,9 @@ import {
 	type WorkflowRunJob,
 	type WorkflowStep,
 } from "@maple/domain/http"
+import { CI_SERVICE_NAME } from "@maple/domain/tinybird"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
-export const CI_SERVICE_NAME = "github-actions"
 export const SCOPE_NAME = "@maple/ci-traces"
 
 const SPAN_KIND_INTERNAL = 1
@@ -63,7 +64,7 @@ export interface OtlpTracesPayload {
 }
 
 const hashHex = (input: string, length: number) =>
-	createHash("sha256").update(input).digest("hex").slice(0, length)
+	Str.slice(0, length)(createHash("sha256").update(input).digest("hex"))
 
 interface RunKey {
 	readonly provider: string
@@ -90,21 +91,21 @@ const MAX_ANNOTATION_EVENTS = 20
 const GENERIC_EXIT_MESSAGE = /^Process completed with exit code \d+\.?$/
 
 const truncate = (value: string, length: number) =>
-	value.length > length ? `${value.slice(0, length)}...` : value
+	value.length > length ? `${Str.slice(0, length)(value)}...` : value
 
 /**
  * A step name without the commit an action is pinned to: `Run jdx/mise-action@2d8d4caf...` is
  * `Run jdx/mise-action`, so a dependency bump does not split the step's history in two.
  */
-export const ciStepName = (name: string) => name.replace(/@[0-9a-f]{7,40}\b/g, "")
+export const ciStepName = (name: string) => Str.replace(/@[0-9a-f]{7,40}\b/g, "")(name)
 
 /**
  * The annotation that best says why a job failed: a failure that names where it happened, then any
  * specific failure, and the runner's exit code only when there is nothing else.
  */
 const failureReason = (annotations: ReadonlyArray<WorkflowJobAnnotation>) => {
-	const failures = annotations.filter((annotation) => annotation.level === "failure")
-	const specific = failures.filter((annotation) => !GENERIC_EXIT_MESSAGE.test(annotation.message))
+	const failures = Arr.filter(annotations, (annotation) => annotation.level === "failure")
+	const specific = Arr.filter(failures, (annotation) => !GENERIC_EXIT_MESSAGE.test(annotation.message))
 	const reason =
 		specific.find((annotation) => annotation.path !== null || annotation.title !== null) ??
 		specific[0] ??
@@ -168,7 +169,7 @@ const errorTypeOf = (conclusion: string | null) =>
 	statusOf(conclusion).code === STATUS_ERROR ? resultOf(conclusion) : undefined
 
 export const attrs = (entries: Record<string, string | number | null | undefined>): OtlpKeyValue[] =>
-	Object.entries(entries).flatMap(([key, value]) => {
+	Arr.flatMap(Rec.toEntries(entries), ([key, value]) => {
 		if (value === null || value === undefined || value === "") return []
 		return [
 			{
@@ -185,7 +186,7 @@ export const attrs = (entries: Record<string, string | number | null | undefined
 const repositoryUrlOf = (url: string) => {
 	// The last match: a repository may itself be named `actions` or `runs`.
 	const actions = url.lastIndexOf("/actions/runs/")
-	return actions === -1 ? undefined : url.slice(0, actions)
+	return actions === -1 ? undefined : Str.slice(0, actions)(url)
 }
 
 /** `sourceId` is the installation's pull source, stamped as `maple_source_id` when known. */
@@ -194,8 +195,8 @@ export const resourceOf = (repoFullName: string, url: string, sourceId?: string)
 	return attrs({
 		"service.name": CI_SERVICE_NAME,
 		"vcs.provider.name": "github",
-		"vcs.owner.name": slash === -1 ? undefined : repoFullName.slice(0, slash),
-		"vcs.repository.name": slash === -1 ? repoFullName : repoFullName.slice(slash + 1),
+		"vcs.owner.name": slash === -1 ? undefined : Str.slice(0, slash)(repoFullName),
+		"vcs.repository.name": slash === -1 ? repoFullName : Str.slice(slash + 1)(repoFullName),
 		"vcs.repository.url.full": repositoryUrlOf(url),
 		[SOURCE_ID_ATTRIBUTE]: sourceId,
 	})
@@ -283,14 +284,14 @@ export const workflowJobToOtlp = (
 							...shared,
 							"maple.cicd.job.name": job.name,
 							"maple.cicd.queue_duration_ms": queueMs,
-							"maple.cicd.runner_labels": job.labels.join(","),
+							"maple.cicd.runner_labels": Arr.join(job.labels, ","),
 						}),
 						status: { code: STATUS_UNSET, message: "" },
 					},
 				]
 	// A step is a task too, nested in its job's: its own name, an id unique in the run, and a link
 	// to its line in the job's log.
-	const steps = job.steps.map((step): OtlpSpan => ({
+	const steps = Arr.map(job.steps, (step): OtlpSpan => ({
 		traceId,
 		spanId: stepSpanId(job, step),
 		parentSpanId: jobSpan,
@@ -314,12 +315,12 @@ export const workflowJobToOtlp = (
 	}))
 	const status = statusOf(job.conclusion)
 	const reason = status.code === STATUS_ERROR ? failureReason(annotations) : undefined
-	const events = [
-		...annotations.filter((annotation) => annotation.level === "failure"),
-		...annotations.filter((annotation) => annotation.level !== "failure"),
-	]
-		.slice(0, MAX_ANNOTATION_EVENTS)
-		.map((annotation): OtlpEvent => ({
+	const events = Arr.map(
+		[
+			...Arr.filter(annotations, (annotation) => annotation.level === "failure"),
+			...Arr.filter(annotations, (annotation) => annotation.level !== "failure"),
+		].slice(0, MAX_ANNOTATION_EVENTS),
+		(annotation): OtlpEvent => ({
 			name: "cicd.annotation",
 			timeUnixNano: unixNano(job.completedAtMs),
 			attributes: attrs({
@@ -329,7 +330,8 @@ export const workflowJobToOtlp = (
 				"code.file.path": annotation.path,
 				"code.line.number": annotation.startLine,
 			}),
-		}))
+		}),
+	)
 	return payloadOf(job.repoFullName, job.url, sourceId, [
 		{
 			traceId,
@@ -348,7 +350,7 @@ export const workflowJobToOtlp = (
 				"error.type": errorTypeOf(job.conclusion),
 				"cicd.worker.name": job.runnerName,
 				"maple.cicd.queue_duration_ms": queueMs,
-				"maple.cicd.runner_labels": job.labels.join(","),
+				"maple.cicd.runner_labels": Arr.join(job.labels, ","),
 				"maple.cicd.failure.reason": reason,
 			}),
 			status: reason === undefined ? status : { code: STATUS_ERROR, message: reason },

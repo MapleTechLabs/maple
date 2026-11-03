@@ -1,8 +1,9 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { filterSection, singleCheckboxFilter } from "../../../ui/filters/filter-section"
-import * as FilterSections from "../../../ui/filters/filter-sections"
+import { filterSection, singleCheckboxFilter } from "@maple/views/ui/filters/filter-section"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import {
 	filterSidebarBody,
 	filterSidebarEmpty,
@@ -10,9 +11,9 @@ import {
 	filterSidebarFrame,
 	filterSidebarHeader,
 	filterSidebarLoading,
-} from "../../../ui/filters/filter-sidebar"
-import { formatValue } from "../../../ui/filters/range-format"
-import { type RangePreset, rangeFilterSection } from "../../../ui/filters/range-filter-section"
+} from "@maple/views/ui/filters/filter-sidebar"
+import { formatValue } from "@maple/views/ui/filters/range-format"
+import { type RangePreset, rangeFilterSection } from "@maple/views/ui/filters/range-filter-section"
 import { pinnedNamespaceNotice } from "../../kit/pinned-namespace-notice"
 import { excludedOf, hasSidebarFilters } from "./derive"
 import { type Facet, Message } from "./message"
@@ -83,7 +84,7 @@ const loadedRail = (
 			}),
 			isRootOnly
 				? singleCheckboxFilter(h, {
-						title: "Hide Single-Span Noise",
+						title: "Hide single-span noise",
 						isChecked: search.hideNoise ?? true,
 						onToggle: Message.ToggledHideNoise(),
 					})
@@ -126,6 +127,7 @@ const loadedRail = (
 export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespace: string | null): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 5),
-		onFailure: (failure) => filterSidebarError(h, failure),
+		onFailure: (failure) =>
+			filterSidebarError(h, failure, undefined, Option.getOrUndefined(AsyncData.getError(model.firstPage.data))),
 		onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
 	})

@@ -1,14 +1,16 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import {
+	context,
 	diag,
 	DiagLogLevel,
 	INVALID_SPAN_CONTEXT,
+	propagation,
 	type Span as ApiSpan,
 	trace,
 	type Tracer,
 	type TracerProvider,
 } from "@opentelemetry/api"
-import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 // Capture what the batch processor actually hands to the exporter, so the
@@ -30,7 +32,7 @@ vi.mock("./otlp", async (original) => ({
 	},
 }))
 
-const { setupTracing, TraceIdCollector } = await import("./tracing")
+const { resourceAttributes, setupTracing, TraceIdCollector } = await import("./tracing")
 
 const CONFIG = {
 	ingestKey: "k",
@@ -118,6 +120,26 @@ describe("TraceIdCollector", () => {
 	})
 })
 
+describe("resourceAttributes", () => {
+	it("states the SDK, as the resource conventions require", () => {
+		expect(resourceAttributes(CONFIG)).toMatchObject({
+			"telemetry.sdk.name": "@maple-dev/browser",
+			"telemetry.sdk.language": "webjs",
+			"telemetry.sdk.version": expect.stringMatching(/^\d+\.\d+\.\d+/),
+		})
+	})
+
+	it("stamps only a commit-shaped serviceVersion as the head revision", () => {
+		const revision = (serviceVersion: string) =>
+			resourceAttributes({ ...CONFIG, serviceVersion })["vcs.ref.head.revision"]
+		expect(revision("20261030")).toBeUndefined()
+		expect(revision("1234567")).toBeUndefined()
+		expect(revision("1.4.2")).toBeUndefined()
+		expect(revision("3f9c2ab")).toBe("3f9c2ab")
+		expect(revision("1".repeat(40))).toBe("1".repeat(40))
+	})
+})
+
 describe("setupTracing unload flush", () => {
 	let shutdown: (() => Promise<void>) | undefined
 
@@ -165,6 +187,36 @@ describe("setupTracing unload flush", () => {
 		document.dispatchEvent(new Event("visibilitychange"))
 		await Promise.resolve()
 		expect(exported).toHaveLength(0)
+	})
+
+	it("registers W3C trace context and baggage propagation for the app's own requests", () => {
+		shutdown = setupTracing(CONFIG)
+		const span = trace.getTracer("test").startSpan("request")
+		const active = propagation.setBaggage(
+			trace.setSpan(context.active(), span),
+			propagation.createBaggage({ tenant: { value: "acme" } }),
+		)
+		const headers: Record<string, string> = {}
+		propagation.inject(active, headers)
+		span.end()
+
+		expect(headers.traceparent).toMatch(new RegExp(`^00-${span.spanContext().traceId}-[0-9a-f]{16}-01$`))
+		expect(headers.baggage).toBe("tenant=acme")
+	})
+
+	it("parents a span started inside an active span through the context manager", async () => {
+		shutdown = setupTracing(CONFIG)
+		const tracer = trace.getTracer("test")
+		tracer.startActiveSpan("parent", (parent) => {
+			tracer.startSpan("child").end()
+			parent.end()
+		})
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(2))
+
+		const parent = exported.find((span) => span.name === "parent")
+		const child = exported.find((span) => span.name === "child")
+		expect(child?.parentSpanContext?.spanId).toBe(parent?.spanContext().spanId)
 	})
 
 	it("exports spans again after init → shutdown → init, without a manual trace.disable", async () => {
@@ -326,6 +378,68 @@ describe("setupTracing unload flush", () => {
 
 		expect(exported[0]?.status.code).toBe(2)
 		expect(exported[0]?.attributes["maple.connection_lost"]).toBeUndefined()
+	})
+
+	it("marks a fetch an error when it failed in a tab that was already hidden", async () => {
+		// A dashboard polling in a background tab: its DNS and CORS failures are real.
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
+		const pending = stubPendingFetch()
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentFetch: true })
+
+		const request = fetch("https://api.test/poll")
+		pending.reject(new TypeError("Failed to fetch"))
+		await expect(request).rejects.toThrow(TypeError)
+		await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1), poll)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBeUndefined()
+	})
+
+	it("leaves an XMLHttpRequest the page unloaded under Unset, with the reason", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+		const url = URL.createObjectURL(new Blob(["gone"]))
+		URL.revokeObjectURL(url)
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		const settled = new Promise<void>((resolve) => xhr.addEventListener("loadend", () => resolve()))
+		xhr.send()
+		window.dispatchEvent(new Event("pagehide"))
+		await settled
+		await vi.advanceTimersByTimeAsync(400)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(0)
+		expect(exported[0]?.attributes["maple.connection_lost"]).toBe("page_unload")
+		expect(exported[0]?.attributes["error.type"]).toBeUndefined()
+	})
+
+	it("still marks an XMLHttpRequest that failed on a live page as an error", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const poll = { interval: 0 }
+		shutdown = setupTracing({ ...CONFIG, tracingInstrumentXhr: true })
+		const url = URL.createObjectURL(new Blob(["gone"]))
+		URL.revokeObjectURL(url)
+
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", url)
+		await new Promise<void>((resolve) => {
+			xhr.addEventListener("loadend", () => resolve())
+			xhr.send()
+		})
+		await vi.advanceTimersByTimeAsync(400)
+		window.dispatchEvent(new Event("pagehide"))
+		await vi.waitFor(() => expect(exported).toHaveLength(1), poll)
+
+		expect(exported[0]?.status.code).toBe(2)
+		expect(exported[0]?.attributes["error.type"]).toBe("error")
 	})
 
 	it("counts a fetch that timed out through AbortSignal.timeout() as an error", async () => {

@@ -1,24 +1,29 @@
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
 import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
-import { AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
-import { Option, Result, Schema } from "effect"
+import {
+	AlertIncidentRowSchema,
+	AlertRuleRowSchema,
+	AlertRuleStateRowSchema,
+} from "@maple/web-data/collections/alerts"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
-import { requestKey } from "../../../data/request-key"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
 	CreateInvestigation,
+	FetchIncidentChecks,
 	FetchIncidentDeliveries,
 	FetchIncidentInvestigation,
 	FetchIncidentPreview,
 	ReadIncidentClock,
 } from "./command"
-import { incidentViewOf, minuteOf } from "./derive"
+import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -29,12 +34,12 @@ type IncidentRoute = Extract<AppRoute, { readonly _tag: "AlertIncident" }>
 export const init = (route: IncidentRoute, _context: PageContext): Return => ({
 	model: {
 		incidentId: route.incidentId,
-		search: route.search,
 		nowMs: null,
 		incidents: null,
 		rules: null,
 		states: null,
 		preview: Keyed.idle(),
+		checks: Keyed.idle(),
 		deliveries: Keyed.idle(),
 		investigation: Keyed.idle(),
 		isStartingInvestigation: false,
@@ -72,32 +77,59 @@ const followData = (model: Model, context: PageContext): Return =>
 			})
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
-					Option.map(sameKey(model.deliveries, deliveriesKey) ? Option.none() : Keyed.request(model.deliveries, deliveriesKey, "Load"), (deliveries) => ({
-						patch: { deliveries },
-						commands: [FetchIncidentDeliveries({ key: deliveriesKey, incidentId })],
-					})),
+					Option.map(
+						sameKey(model.deliveries, deliveriesKey)
+							? Option.none()
+							: Keyed.request(model.deliveries, deliveriesKey, "Load"),
+						(deliveries) => ({
+							patch: { deliveries },
+							commands: [FetchIncidentDeliveries({ key: deliveriesKey, incidentId })],
+						}),
+					),
 				),
 				...Option.toArray(
-					Option.map(sameKey(model.investigation, investigationKey)
-						? Option.none()
-						: Keyed.request(model.investigation, investigationKey, "Load"), (investigation) => ({
-						patch: { investigation },
-						commands: [FetchIncidentInvestigation({ key: investigationKey, incidentId })],
-					})),
+					Option.map(
+						sameKey(model.investigation, investigationKey)
+							? Option.none()
+							: Keyed.request(model.investigation, investigationKey, "Load"),
+						(investigation) => ({
+							patch: { investigation },
+							commands: [FetchIncidentInvestigation({ key: investigationKey, incidentId })],
+						}),
+					),
+				),
+				...Option.toArray(
+					Option.flatMap(view.checksQuery, (query) => {
+						const key = requestKey(context.orgId, "alertRules.checksSummary", query)
+						return Option.map(
+							sameKey(model.checks, key)
+								? Option.none()
+								: Keyed.request(model.checks, key, "Load"),
+							(checks) => ({
+								patch: { checks },
+								commands: [FetchIncidentChecks({ key, ...query })],
+							}),
+						)
+					}),
 				),
 				...Option.toArray(
 					Option.flatMap(view.payload, (payload) => {
 						const key = requestKey(context.orgId, "alertRules.preview", payload)
-						return Option.map(sameKey(model.preview, key) ? Option.none() : Keyed.request(model.preview, key, "Load"), (preview) => ({
-							patch: { preview },
-							commands: [FetchIncidentPreview({ key, payload })],
-						}))
+						return Option.map(
+							sameKey(model.preview, key)
+								? Option.none()
+								: Keyed.request(model.preview, key, "Load"),
+							(preview) => ({
+								patch: { preview },
+								commands: [FetchIncidentPreview({ key, payload })],
+							}),
+						)
 					}),
 				),
 			]
 			return {
 				model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-				commands: steps.flatMap((step) => step.commands),
+				commands: Arr.flatMap(steps, (step) => step.commands),
 			}
 		},
 	})
@@ -120,10 +152,15 @@ const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams>
 			severity: incident.severity === "critical" ? ("critical" as const) : ("medium" as const),
 			facts: [
 				{ label: "Signal", value: signalLabels[incident.signalType] },
-				{ label: "Observed", value: formatSignalValue(incident.signalType, incident.lastObservedValue) },
+				{
+					label: "Observed",
+					value: formatSignalValue(incident.signalType, incident.lastObservedValue),
+				},
 				{ label: "Threshold", value: formatSignalValue(incident.signalType, incident.threshold) },
 			],
-			references: incident.errorIssueId ? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }] : [],
+			references: incident.errorIssueId
+				? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
+				: [],
 			incidentStartedAt: incident.firstTriggeredAt,
 			incidentEndedAt: incident.resolvedAt,
 		},
@@ -133,11 +170,48 @@ const withRows = (model: Model, context: PageContext, orgId: string, patch: Part
 	orgId === context.orgId ? followData({ ...model, ...patch }, context) : { model }
 
 const isSameIncidentRow = Schema.toEquivalence(AlertIncidentRowSchema)
+const isSameRuleRows = Schema.toEquivalence(Schema.Array(AlertRuleRowSchema))
+const isSameStateRows = Schema.toEquivalence(Schema.Array(AlertRuleStateRowSchema))
+
+const incidentRuleIdOf = (model: Model) =>
+	model.incidents?.find((row) => row.id === model.incidentId)?.rule_id
+
+/**
+ * The live rules and states are the whole org's and change on every alert tick. Once the incident
+ * is known, a change that leaves its own rule as it was keeps the model, so the page does not redraw.
+ */
+const withRuleRows = (
+	model: Model,
+	context: PageContext,
+	orgId: string,
+	patch: Readonly<{ rules: NonNullable<Model["rules"]> } | { states: NonNullable<Model["states"]> }>,
+): Return => {
+	const ruleId = incidentRuleIdOf(model)
+	if (orgId !== context.orgId || ruleId === undefined) return withRows(model, context, orgId, patch)
+	const isUnchanged =
+		"rules" in patch
+			? model.rules !== null &&
+				isSameRuleRows(
+					Arr.filter(model.rules, (row) => row.id === ruleId),
+					Arr.filter(patch.rules, (row) => row.id === ruleId),
+				)
+			: model.states !== null &&
+				isSameStateRows(
+					ruleStatesOf(model, ruleId),
+					ruleStatesOf({ ...model, states: patch.states }, ruleId),
+				)
+	return isUnchanged ? { model } : withRows(model, context, orgId, patch)
+}
 const incidentRowOf = (model: Model, rows: Model["incidents"]) =>
 	Option.fromNullishOr((rows ?? []).find((row) => row.id === model.incidentId))
 
 /** `clockAtSync`: once the incident row itself changes, the minute clock is read again. */
-const withIncidents = (model: Model, context: PageContext, orgId: string, rows: Model["incidents"]): Return => {
+const withIncidents = (
+	model: Model,
+	context: PageContext,
+	orgId: string,
+	rows: Model["incidents"],
+): Return => {
 	const next = withRows(model, context, orgId, { incidents: rows })
 	const before = incidentRowOf(model, model.incidents)
 	const after = incidentRowOf(model, rows)
@@ -153,10 +227,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs) }, context),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
-		UpdatedRules: ({ orgId, rows }) => withRows(model, context, orgId, { rules: rows }),
-		UpdatedRuleStates: ({ orgId, rows }) => withRows(model, context, orgId, { states: rows }),
+		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
+		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),
 		CompletedFetchPreview: ({ key, result }) => ({
 			model: { ...model, preview: Keyed.accept(model.preview, key, result) },
+		}),
+		CompletedFetchChecks: ({ key, result }) => ({
+			model: { ...model, checks: Keyed.accept(model.checks, key, result) },
 		}),
 		CompletedFetchDeliveries: ({ key, result }) => ({
 			model: { ...model, deliveries: Keyed.accept(model.deliveries, key, result) },
@@ -187,19 +264,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: { ...model, isStartingInvestigation: false },
 					outMessage: PageOutMessage.RequestedToast({
 						type: "error",
-						title: "Failed to start investigation",
+						title: "Couldn't start investigation",
 						description: failure.message,
 					}),
 				}),
 			}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotChartMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotChartMessage({ message }),
+				),
 			}
 		},
 	})

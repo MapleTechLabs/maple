@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { OpenApi } from "effect/http-api"
 import { MapleApiV2 } from "./api"
 import { V2AlertDestinationMutationResponse } from "./alert-destinations"
@@ -34,19 +34,19 @@ const operation = (method: string, path: string): GeneratedOpenApiObject =>
 	(spec.paths as GeneratedOpenApiObject)[path][method]
 const resolveSchema = (schema: GeneratedOpenApiObject): GeneratedOpenApiObject => {
 	const ref = schema.$ref as string | undefined
-	return ref === undefined ? schema : schemas[ref.slice(ref.lastIndexOf("/") + 1)]
+	return ref === undefined ? schema : schemas[Str.slice(ref.lastIndexOf("/") + 1)(ref)]
 }
 const schemaBranches = (schema: GeneratedOpenApiObject): ReadonlyArray<GeneratedOpenApiObject> => {
 	const resolved = resolveSchema(schema)
 	const alternatives = (resolved.anyOf ?? resolved.oneOf) as
 		| ReadonlyArray<GeneratedOpenApiObject>
 		| undefined
-	return alternatives === undefined ? [resolved] : alternatives.flatMap(schemaBranches)
+	return alternatives === undefined ? [resolved] : Arr.flatMap(alternatives, schemaBranches)
 }
 const responseErrorTags = (method: string, path: string, status: string): ReadonlyArray<string> => {
 	const response = operation(method, path).responses[status] as GeneratedOpenApiObject
 	const responseSchema = response.content["application/json"].schema as GeneratedOpenApiObject
-	return schemaBranches(responseSchema).map((branch) => {
+	return Arr.map(schemaBranches(responseSchema), (branch) => {
 		const tag = resolveSchema(branch).properties.error.properties._tag
 		expect(tag.type).toBe("string")
 		expect(tag.enum).toHaveLength(1)
@@ -67,13 +67,14 @@ const decodeParameterNames = Schema.decodeUnknownSync(Schema.Array(Schema.Struct
 
 describe("MapleApiV2 OpenAPI", () => {
 	it("exposes exactly the committed v2 paths", () => {
-		const surface = Object.entries(spec.paths ?? {})
-			.flatMap(([path, item]) =>
-				Object.keys(item ?? {})
-					.filter((key) => ["get", "post", "put", "patch", "delete"].includes(key))
-					.map((method) => `${method.toUpperCase()} ${path}`),
-			)
-			.sort()
+		const surface = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
+			Arr.map(
+				Arr.filter(Object.keys(item ?? {}), (key) =>
+					["get", "post", "put", "patch", "delete"].includes(key),
+				),
+				(method) => `${Str.toUpperCase(method)} ${path}`,
+			),
+		).sort()
 
 		expect(surface).toEqual([
 			"DELETE /v2/alerts/destinations/{id}",
@@ -83,6 +84,9 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/dashboards/{id}",
 			"DELETE /v2/dashboards/{id}/share",
 			"DELETE /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"DELETE /v2/device_credentials/{installation_id}",
+			"DELETE /v2/ingest_rules/{id}",
+			"DELETE /v2/integrations/aws/connections/{id}",
 			"DELETE /v2/integrations/chat_connectors/{connector}/identity",
 			"DELETE /v2/integrations/chat_workspaces/{id}",
 			"DELETE /v2/integrations/gcp/connectors/{id}",
@@ -92,6 +96,11 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/mobile_devices/{token}/live_activities/{incident_id}",
 			"DELETE /v2/scrape_targets/{id}",
 			"DELETE /v2/sources/{id}",
+			"DELETE /v2/status_page_incidents/{id}",
+			"DELETE /v2/status_pages/{id}",
+			"DELETE /v2/status_pages/{id}/break_glass",
+			"DELETE /v2/status_pages/{id}/components/{component_id}",
+			"DELETE /v2/uptime_monitors/{id}",
 			"DELETE /v2/widget_credentials/{installation_id}",
 			"GET /v2/agent_feedback",
 			"GET /v2/alerts/deliveries",
@@ -121,14 +130,21 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/dashboards/{id}/versions",
 			"GET /v2/dashboards/{id}/versions/{version_id}",
 			"GET /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"GET /v2/device_credentials/{installation_id}/attestation_challenge",
 			"GET /v2/environments",
 			"GET /v2/error_issues",
 			"GET /v2/error_issues/service_counts",
 			"GET /v2/error_issues/{id}",
 			"GET /v2/ingest_keys",
+			"GET /v2/ingest_rules",
+			"GET /v2/ingest_rules/stats",
+			"GET /v2/ingest_rules/{id}",
 			"GET /v2/instrumentation/audit",
 			"GET /v2/instrumentation/recommendations",
 			"GET /v2/instrumentation/signals",
+			"GET /v2/integrations/aws",
+			"GET /v2/integrations/aws/connections/{id}/ingest",
+			"GET /v2/integrations/aws/connections/{id}/setup",
 			"GET /v2/integrations/chat_connectors",
 			"GET /v2/integrations/chat_workspaces/{id}/destinations",
 			"GET /v2/integrations/gcp",
@@ -156,21 +172,36 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/session_replays/{id}/manifest",
 			"GET /v2/session_replays/{id}/transcript",
 			"GET /v2/sources",
+			"GET /v2/sources/usage",
 			"GET /v2/sources/{id}",
 			"GET /v2/sources/{id}/usage",
+			"GET /v2/status_page_incidents",
+			"GET /v2/status_page_incidents/{id}",
+			"GET /v2/status_pages",
+			"GET /v2/status_pages/{id}",
+			"GET /v2/status_pages/{id}/components",
+			"GET /v2/status_pages/{id}/config",
 			"GET /v2/support/slack_channel",
 			"GET /v2/traces/{trace_id}",
 			"GET /v2/traces/{trace_id}/spans/{span_id}",
+			"GET /v2/uptime_monitors",
+			"GET /v2/uptime_monitors/{id}",
 			"GET /v2/widget_summary",
 			"PATCH /v2/alerts/destinations/{id}",
 			"PATCH /v2/alerts/rules/{id}",
 			"PATCH /v2/anomalies/settings",
 			"PATCH /v2/attribute_mappings/{id}",
 			"PATCH /v2/dashboards/{id}",
+			"PATCH /v2/ingest_rules/{id}",
+			"PATCH /v2/integrations/aws/connections/{id}",
 			"PATCH /v2/integrations/chat_workspaces/{id}",
 			"PATCH /v2/integrations/gcp/connectors/{id}",
 			"PATCH /v2/scrape_targets/{id}",
 			"PATCH /v2/sources/{id}",
+			"PATCH /v2/status_page_incidents/{id}",
+			"PATCH /v2/status_pages/{id}",
+			"PATCH /v2/status_pages/{id}/components/{component_id}",
+			"PATCH /v2/uptime_monitors/{id}",
 			"POST /v2/agent_feedback",
 			"POST /v2/alerts/destinations",
 			"POST /v2/alerts/destinations/telegram/chats",
@@ -188,11 +219,20 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/dashboards/templates/{template_id}/preview",
 			"POST /v2/dashboards/{id}/share/rotate",
 			"POST /v2/dashboards/{id}/versions/{version_id}/restore",
+			"POST /v2/dashboards/{id}/widget_data",
 			"POST /v2/dashboards/{id}/widgets/{widget_id}/share/rotate",
+			"POST /v2/device_tokens",
+			"POST /v2/error_issues/{id}/claim",
+			"POST /v2/error_issues/{id}/release",
+			"POST /v2/error_issues/{id}/transitions",
 			"POST /v2/ingest_keys/private/roll",
 			"POST /v2/ingest_keys/public/roll",
+			"POST /v2/ingest_rules",
+			"POST /v2/ingest_rules/reorder",
 			"POST /v2/instrumentation/recommendations/{id}/dismiss",
 			"POST /v2/instrumentation/recommendations/{id}/reopen",
+			"POST /v2/integrations/aws/connections",
+			"POST /v2/integrations/aws/connections/{id}/check",
 			"POST /v2/integrations/chat_connectors/{connector}/identity/link",
 			"POST /v2/integrations/chat_connectors/{connector}/install",
 			"POST /v2/integrations/gcp/connectors",
@@ -214,6 +254,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/onboarding/checklist/claim",
 			"POST /v2/scrape_targets",
 			"POST /v2/scrape_targets/{id}/probe",
+			"POST /v2/services/health",
 			"POST /v2/session_replays/for_trace",
 			"POST /v2/session_replays/search",
 			"POST /v2/share/alert-chart",
@@ -226,15 +267,28 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/sources/{id}/pause",
 			"POST /v2/sources/{id}/resume",
 			"POST /v2/sources/{id}/roll",
+			"POST /v2/status_page_incidents",
+			"POST /v2/status_page_incidents/{id}/updates",
+			"POST /v2/status_pages",
+			"POST /v2/status_pages/preview",
+			"POST /v2/status_pages/{id}/components",
+			"POST /v2/status_pages/{id}/components/reorder",
+			"POST /v2/status_pages/{id}/publish",
+			"POST /v2/status_pages/{id}/rotate_break_glass",
 			"POST /v2/support/slack_channel/invite",
 			"POST /v2/traces/breakdown",
 			"POST /v2/traces/search",
 			"POST /v2/traces/timeseries",
+			"POST /v2/uptime_monitors",
+			"POST /v2/uptime_monitors/test",
 			"PUT /v2/anomalies/incidents/{id}/issue",
 			"PUT /v2/dashboards/{id}/share",
 			"PUT /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"PUT /v2/device_credentials/{installation_id}",
+			"PUT /v2/error_issues/{id}/severity",
 			"PUT /v2/mobile_devices/{token}",
 			"PUT /v2/mobile_devices/{token}/live_activities/{incident_id}",
+			"PUT /v2/status_pages/{id}/config",
 			"PUT /v2/widget_credentials/{installation_id}",
 		])
 	})
@@ -263,6 +317,8 @@ describe("MapleApiV2 OpenAPI", () => {
 		"resolveShareOgCard",
 		"resolveAlertChart",
 		"resolveChatChart",
+		// The DPoP token endpoint: the signed proof in the `DPoP` header is the credential.
+		"issueDeviceToken",
 	])
 
 	/**
@@ -275,14 +331,19 @@ describe("MapleApiV2 OpenAPI", () => {
 	])
 
 	it("gives every operation complete metadata, security, and common error envelopes", () => {
-		const operations = Object.entries(spec.paths ?? {}).flatMap(([path, item]) =>
-			Object.entries(item ?? {})
-				.filter(([method]) => ["get", "post", "put", "patch", "delete"].includes(method))
-				.map(([method, op]) => ({ method, path, op: decodeOperationMetadata(op) })),
+		const operations = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
+			Arr.map(
+				Arr.filter(Object.entries(item ?? {}), ([method]) =>
+					["get", "post", "put", "patch", "delete"].includes(method),
+				),
+				([method, op]) => ({ method, path, op: decodeOperationMetadata(op) }),
+			),
 		)
 		const operationIds = new Set<string>()
 		for (const { method, path, op } of operations) {
-			expect(op.operationId, `${method.toUpperCase()} ${path} operationId`).toEqual(expect.any(String))
+			expect(op.operationId, `${Str.toUpperCase(method)} ${path} operationId`).toEqual(
+				expect.any(String),
+			)
 			expect(operationIds.has(op.operationId), `${op.operationId} is unique`).toBe(false)
 			operationIds.add(op.operationId)
 			expect(op.summary).toEqual(expect.any(String))
@@ -307,7 +368,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			for (const status of commonStatuses) {
 				expect(
 					op.responses[status],
-					`${method.toUpperCase()} ${path} declares ${status}`,
+					`${Str.toUpperCase(method)} ${path} declares ${status}`,
 				).toBeDefined()
 			}
 			const rateLimitResponse = op.responses["429"] as GeneratedOpenApiObject
@@ -322,7 +383,7 @@ describe("MapleApiV2 OpenAPI", () => {
 	})
 
 	it("uses clean, unprefixed component schema names", () => {
-		const names = Object.keys(schemas)
+		const names = Rec.keys(schemas)
 		expect(names).toEqual(
 			expect.arrayContaining([
 				"ApiKey",
@@ -344,7 +405,12 @@ describe("MapleApiV2 OpenAPI", () => {
 			]),
 		)
 		// No internal / v2-prefixed / namespaced identifiers leaked into the public spec.
-		expect(names.some((n) => n.startsWith("V2") || n.includes("@maple") || n.includes("/"))).toBe(false)
+		expect(
+			Arr.some(
+				names,
+				(n) => Str.startsWith("V2")(n) || Str.includes("@maple")(n) || Str.includes("/")(n),
+			),
+		).toBe(false)
 	})
 
 	it("freezes the signal-scoped telemetry operations, examples, and result schemas", () => {
@@ -439,11 +505,11 @@ describe("MapleApiV2 OpenAPI", () => {
 	})
 
 	it("gives every error response an exhaustive literal-tag union", () => {
-		for (const [path, item] of Object.entries(spec.paths ?? {})) {
+		for (const [path, item] of Rec.toEntries(spec.paths ?? {})) {
 			for (const [method, candidate] of Object.entries(item ?? {})) {
 				if (!["get", "post", "put", "patch", "delete"].includes(method)) continue
 				const op = candidate as GeneratedOpenApiObject
-				for (const status of Object.keys(op.responses)) {
+				for (const status of Rec.keys(op.responses)) {
 					if (Number(status) < 400) continue
 					const response = (candidate as GeneratedOpenApiObject).responses[
 						status
@@ -452,22 +518,23 @@ describe("MapleApiV2 OpenAPI", () => {
 						.schema as GeneratedOpenApiObject
 					const branches = schemaBranches(responseSchema)
 					const tags = responseErrorTags(method, path, status)
-					expect(tags.length, `${method.toUpperCase()} ${path} ${status} has tags`).toBeGreaterThan(
-						0,
-					)
+					expect(
+						tags.length,
+						`${Str.toUpperCase(method)} ${path} ${status} has tags`,
+					).toBeGreaterThan(0)
 					expect(
 						new Set(tags).size,
-						`${method.toUpperCase()} ${path} ${status} tags are unique`,
+						`${Str.toUpperCase(method)} ${path} ${status} tags are unique`,
 					).toBe(tags.length)
 					for (const tag of tags) {
-						expect(tag, `${method.toUpperCase()} ${path} ${status} tag`).toMatch(
+						expect(tag, `${Str.toUpperCase(method)} ${path} ${status} tag`).toMatch(
 							/^@maple\/http\//,
 						)
 					}
 					for (const branch of branches) {
 						const envelope = resolveSchema(branch)
 						const body = envelope.properties.error as GeneratedOpenApiObject
-						const label = `${method.toUpperCase()} ${path} ${status}`
+						const label = `${Str.toUpperCase(method)} ${path} ${status}`
 						expect(envelope.required, `${label} envelope fields`).toEqual(["error"])
 						expect(envelope.additionalProperties, `${label} envelope is closed`).toBe(false)
 						expect(body.required, `${label} body fields`).toEqual([
@@ -513,6 +580,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		expect(responseErrorTags("get", "/v2/integrations/planetscale/organizations", "401")).toEqual([
 			"@maple/http/errors/IntegrationsRevokedError",
 			"@maple/http/v2/InvalidCredentialsError",
+			"@maple/http/v2/InvalidDpopProofError",
 			"@maple/http/errors/UnauthorizedError",
 		])
 		expect(responseErrorTags("get", "/v2/session_replays/{id}/events", "413")).toEqual([
@@ -542,6 +610,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			// From `AuthorizationV2` itself, so every v2 operation carries it: a request
 			// can always name an organization (`x-maple-org-id`) the caller is not in.
 			"@maple/http/v2/OrganizationAccessDeniedError",
+			// Also `AuthorizationV2`: a session token with no active organization.
+			"@maple/http/v2/NoActiveOrganizationError",
 		])
 		expect(responseErrorTags("get", "/v2/ingest_keys", "403")).toEqual([
 			"@maple/http/v2/InsufficientPermissionsError",
@@ -549,6 +619,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			// From `AuthorizationV2` itself, so every v2 operation carries it: a request
 			// can always name an organization (`x-maple-org-id`) the caller is not in.
 			"@maple/http/v2/OrganizationAccessDeniedError",
+			// Also `AuthorizationV2`: a session token with no active organization.
+			"@maple/http/v2/NoActiveOrganizationError",
 		])
 	})
 
@@ -563,7 +635,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		expect(responseErrorTags("post", path, "502")).toContain(
 			"@maple/http/errors/IntegrationsUpstreamError",
 		)
-		const declaredTags = ["400", "401", "409", "500", "502", "503"].flatMap((status) =>
+		const declaredTags = Arr.flatMap(["400", "401", "409", "500", "502", "503"], (status) =>
 			responseErrorTags("post", path, status),
 		)
 		expect(declaredTags).not.toContain("@maple/http/errors/ScrapeTargetAuthError")
@@ -621,11 +693,15 @@ describe("MapleApiV2 OpenAPI", () => {
 				"@maple/http/errors/WarehouseQuotaExceededError",
 			)
 			expect(responseErrorTags(method, path, "503")).toContain(
+				"@maple/http/errors/WarehouseUpstreamError",
+			)
+			const declaredTags = Arr.filter(
+				["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+				(status) => operation(method, path).responses[status] !== undefined,
+			).flatMap((status) => responseErrorTags(method, path, status))
+			expect(declaredTags, path).not.toContain(
 				"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
 			)
-			const declaredTags = ["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"]
-				.filter((status) => operation(method, path).responses[status] !== undefined)
-				.flatMap((status) => responseErrorTags(method, path, status))
 			expect(declaredTags, path).not.toContain("@maple/http/errors/TinybirdOrgTokenConfigError")
 			expect(declaredTags, path).not.toContain("@maple/http/errors/TinybirdOrgTokenMintError")
 			expect(declaredTags, path).not.toContain("@maple/http/errors/WarehouseValidationError")
@@ -635,7 +711,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			expect(responseErrorTags("get", path, "429")).toContain(
 				"@maple/http/errors/WarehouseQuotaExceededError",
 			)
-			const declaredTags = ["500", "502", "503"].flatMap((status) =>
+			const declaredTags = Arr.flatMap(["500", "502", "503"], (status) =>
 				responseErrorTags("get", path, status),
 			)
 			for (const impossibleRoutingTag of [
@@ -716,9 +792,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			["get", "/v2/dashboards/templates"],
 			["post", "/v2/dashboards/templates/{template_id}/preview"],
 		] as const) {
-			const tags = Object.keys(operation(method, path).responses)
-				.filter((status) => Number(status) >= 400)
-				.flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.filter(
+				Rec.keys(operation(method, path).responses),
+				(status) => Number(status) >= 400,
+			).flatMap((status) => responseErrorTags(method, path, status))
 			expect(tags, path).not.toContain("@maple/http/errors/DashboardStoredConfigInvalidError")
 		}
 	})
@@ -728,9 +805,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			["post", "/v2/investigations"],
 			["post", "/v2/investigations/{id}/restart"],
 		] as const) {
-			const tags = Object.keys(operation(method, path).responses)
-				.filter((status) => Number(status) >= 400)
-				.flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.filter(
+				Rec.keys(operation(method, path).responses),
+				(status) => Number(status) >= 400,
+			).flatMap((status) => responseErrorTags(method, path, status))
 			for (const impossibleTag of [
 				"@maple/http/investigations/InvestigationQuotaError",
 				"@maple/http/investigations/InvestigationAutomationDisabledError",
@@ -741,7 +819,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		}
 	})
 
-	it("preserves Hazel provisioning failures on alert destination mutations", () => {
+	it("preserves integration lookup failures on alert destination mutations", () => {
 		for (const [method, path] of [
 			["post", "/v2/alerts/destinations"],
 			["patch", "/v2/alerts/destinations/{id}"],
@@ -792,24 +870,25 @@ describe("MapleApiV2 OpenAPI", () => {
 				"@maple/http/errors/AlertDestinationStoredConfigInvalidError",
 			],
 		] as const) {
-			const tags = Object.keys(operation(method, path).responses)
-				.filter((status) => Number(status) >= 400)
-				.flatMap((status) => responseErrorTags(method, path, status))
+			const tags = Arr.filter(
+				Rec.keys(operation(method, path).responses),
+				(status) => Number(status) >= 400,
+			).flatMap((status) => responseErrorTags(method, path, status))
 			expect(tags, path).not.toContain(tag)
 		}
 
-		const previewTags = ["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"]
-			.filter((status) => operation("post", "/v2/alerts/rules/preview").responses[status] !== undefined)
-			.flatMap((status) => responseErrorTags("post", "/v2/alerts/rules/preview", status))
+		const previewTags = Arr.filter(
+			["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+			(status) => operation("post", "/v2/alerts/rules/preview").responses[status] !== undefined,
+		).flatMap((status) => responseErrorTags("post", "/v2/alerts/rules/preview", status))
 		expect(previewTags).not.toContain("@maple/http/errors/AlertPersistenceError")
 		expect(previewTags).not.toContain("@maple/http/errors/AlertDestinationDecryptionError")
 		expect(previewTags).not.toContain("@maple/http/errors/AlertDestinationStoredConfigInvalidError")
-		const destinationTestTags = ["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"]
-			.filter(
-				(status) =>
-					operation("post", "/v2/alerts/destinations/{id}/test").responses[status] !== undefined,
-			)
-			.flatMap((status) => responseErrorTags("post", "/v2/alerts/destinations/{id}/test", status))
+		const destinationTestTags = Arr.filter(
+			["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"],
+			(status) =>
+				operation("post", "/v2/alerts/destinations/{id}/test").responses[status] !== undefined,
+		).flatMap((status) => responseErrorTags("post", "/v2/alerts/destinations/{id}/test", status))
 		expect(destinationTestTags).not.toContain("@maple/http/errors/AlertValidationError")
 	})
 
@@ -831,13 +910,18 @@ describe("MapleApiV2 OpenAPI", () => {
 	})
 
 	it("generates syntactically valid examples for every public-ID primitive", () => {
-		const publicIds = Object.entries(schemas).filter(
+		const publicIds = Arr.filter(
+			Rec.toEntries(schemas),
 			([name, component]) =>
-				name.startsWith("_maple_") && JSON.stringify(component).includes("public object ID"),
+				Str.startsWith("_maple_")(name) &&
+				Str.includes("public object ID")(JSON.stringify(component)),
 		)
 		expect(publicIds.length).toBeGreaterThan(5)
 		for (const [name, component] of publicIds) {
-			const examples = [component, ...(component.allOf ?? [])].flatMap((part) => part.examples ?? [])
+			const examples = Arr.flatMap(
+				[component, ...(component.allOf ?? [])],
+				(part) => part.examples ?? [],
+			)
 			expect(examples, `${name} has an example`).toHaveLength(1)
 			expect(examples[0], `${name} has a valid prefixed base58 ID`).toMatch(
 				/^[a-z]+_[1-9A-HJ-NP-Za-km-z]+$/,
@@ -847,7 +931,7 @@ describe("MapleApiV2 OpenAPI", () => {
 
 	it("does not advertise ignored list pagination on session-replay retrieve", () => {
 		const parameters = decodeParameterNames(operation("get", "/v2/session_replays/{id}").parameters)
-		expect(parameters.map((parameter) => parameter.name).sort()).toEqual([
+		expect(Arr.map(parameters, (parameter) => parameter.name).sort()).toEqual([
 			"id",
 			"window_end",
 			"window_start",
@@ -864,14 +948,17 @@ describe("MapleApiV2 OpenAPI", () => {
 	 */
 	describe("nullable-union rendering", () => {
 		const queryParameters = (): ReadonlyArray<GeneratedOpenApiObject> =>
-			Object.values(spec.paths as GeneratedOpenApiObject).flatMap((item) =>
-				Object.entries(item as GeneratedOpenApiObject)
-					.filter(([method]) => method !== "parameters")
-					.flatMap(([, operation]) =>
+			Arr.flatMap(Rec.values(spec.paths as GeneratedOpenApiObject), (item) =>
+				Arr.flatMap(
+					Arr.filter(
+						Rec.toEntries(item as GeneratedOpenApiObject),
+						([method]) => method !== "parameters",
+					),
+					([, operation]) =>
 						((operation as GeneratedOpenApiObject).parameters ?? []).filter(
 							(parameter: GeneratedOpenApiObject) => parameter.in === "query",
 						),
-					),
+				),
 			)
 
 		const hasNullBranch = (schema: GeneratedOpenApiObject): boolean => {
@@ -883,9 +970,12 @@ describe("MapleApiV2 OpenAPI", () => {
 		it("publishes no query parameter that accepts null", () => {
 			const parameters = queryParameters()
 			expect(parameters.length).toBeGreaterThan(0)
-			const nullable = parameters
-				.filter((parameter) => hasNullBranch(parameter.schema as GeneratedOpenApiObject))
-				.map((parameter) => parameter.name as string)
+			const nullable = Arr.map(
+				Arr.filter(parameters, (parameter) =>
+					hasNullBranch(parameter.schema as GeneratedOpenApiObject),
+				),
+				(parameter) => parameter.name as string,
+			)
 			expect(nullable).toEqual([])
 		})
 
@@ -907,8 +997,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			const record = (value: unknown): GeneratedOpenApiObject => (value as GeneratedOpenApiObject) ?? {}
 
 			const nullable: string[] = []
-			for (const [groupName, group] of Object.entries(readGroups(MapleApiV2))) {
-				for (const [endpointName, endpoint] of Object.entries(record(group).endpoints ?? {})) {
+			for (const [groupName, group] of Rec.toEntries(readGroups(MapleApiV2))) {
+				for (const [endpointName, endpoint] of Rec.toEntries(record(group).endpoints ?? {})) {
 					const ast = record(endpoint).query?.ast
 					for (const property of ast?.propertySignatures ?? []) {
 						const type = record(property).type
@@ -954,21 +1044,21 @@ describe("MapleApiV2 OpenAPI", () => {
 		it("carries no component left unreferenced by inlining a parameter schema", () => {
 			const referenced = new Set<string>()
 			const walk = (node: unknown): void => {
-				if (Array.isArray(node)) return node.forEach(walk)
+				if (Arr.isArray(node)) return Arr.forEach(node, walk)
 				if (node === null || typeof node !== "object") return
 				const object = node as GeneratedOpenApiObject
 				const ref = object.$ref as string | undefined
 				if (ref !== undefined) {
-					const name = ref.slice(ref.lastIndexOf("/") + 1)
+					const name = Str.slice(ref.lastIndexOf("/") + 1)(ref)
 					if (!referenced.has(name)) {
 						referenced.add(name)
 						walk(schemas[name])
 					}
 				}
-				Object.values(object).forEach(walk)
+				Arr.forEach(Rec.values(object), walk)
 			}
 			walk(spec.paths)
-			expect(Object.keys(schemas).filter((name) => !referenced.has(name))).toEqual([])
+			expect(Arr.filter(Rec.keys(schemas), (name) => !referenced.has(name))).toEqual([])
 		})
 	})
 

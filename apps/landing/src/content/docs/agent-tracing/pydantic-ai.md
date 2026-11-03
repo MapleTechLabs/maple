@@ -16,19 +16,21 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Pydantic AI in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-pydantic-ai -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-pydantic-ai -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Export spans to Maple
 
 Install the OpenTelemetry SDK and the OTLP/HTTP exporter next to Pydantic AI. Swap `[openai]` for the extras of the providers you use.
 
 ```bash
-pip install "pydantic-ai-slim[openai]>=2.51" "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
+pip install "pydantic-ai-slim[openai]>=2.51" "opentelemetry-sdk>=1.45" \
+  "opentelemetry-exporter-otlp-proto-http>=1.45"
 ```
 
 Point the exporter at Maple. For an EU organization, use `https://ingest.eu.maple.dev`.
@@ -151,7 +153,7 @@ def handler(event, context):
 
 In a script or CLI, call `provider.shutdown()` at the end. With Logfire, use `logfire.force_flush()` or `logfire.shutdown()`.
 
-## Check that it works
+## Verify
 
 If Pydantic AI prints an `observability: off` banner on the first run, `tracing.py` didn't run before your first `agent.run()`.
 
@@ -165,7 +167,7 @@ Run a conversation with two messages and a tool call, then open **Agent Sessions
 - **A failed tool shows as successful.** The tool returned an error value. Raise `ToolFailed("...")` so the call is marked failed and the model still sees the message.
 - **Spans show up twice.** Another instrumentor (Logfire's `instrument_openai()`, OpenInference, OpenLLMetry) also traces the model client. Remove it and keep Pydantic AI's.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [Instrument a Python application](/docs/guides/instrumentation-python)

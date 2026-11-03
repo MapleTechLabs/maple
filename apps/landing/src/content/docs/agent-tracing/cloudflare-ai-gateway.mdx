@@ -17,9 +17,9 @@ Cloudflare AI Gateway can export a trace span for every request it proxies, with
 1. In the Cloudflare dashboard, open **AI → AI Gateway**, pick your gateway and go to **Settings**.
 2. Add an OpenTelemetry exporter and set **URL** to the full traces URL. The gateway doesn't append `/v1/traces`. EU organizations use `https://ingest.eu.maple.dev/v1/traces`.
 
-   ```text
-   https://ingest.maple.dev/v1/traces
-   ```
+    ```text
+    https://ingest.maple.dev/v1/traces
+    ```
 
 3. Add a header named `Authorization` with the value `Bearer YOUR_INGEST_KEY`. Your ingest key is in **Settings → Ingestion**.
 4. Leave **Content type** on JSON (protobuf works too) and save.
@@ -101,12 +101,16 @@ The binding forwards the same headers through `extraHeaders`:
 ```ts
 const span = trace.getActiveSpan()?.spanContext()
 
-await env.AI.run(model, { messages }, {
-	gateway: { id: "my-gateway", metadata: { session_id: conversationId } },
-	extraHeaders: span
-		? { "cf-aig-otel-trace-id": span.traceId, "cf-aig-otel-parent-span-id": span.spanId }
-		: {},
-})
+await env.AI.run(
+	model,
+	{ messages },
+	{
+		gateway: { id: "my-gateway", metadata: { session_id: conversationId } },
+		extraHeaders: span
+			? { "cf-aig-otel-trace-id": span.traceId, "cf-aig-otel-parent-span-id": span.spanId }
+			: {},
+	},
+)
 ```
 
 </LanguageTab>
@@ -114,7 +118,7 @@ await env.AI.run(model, { messages }, {
 
 The gateway span has no tool or agent spans around it. For those, trace your app with its [framework guide](/docs/agent-tracing) and nest the gateway under it as shown here.
 
-## Check that it works
+## Verify
 
 Run a conversation of three turns with the same `session_id`. After about a minute, open **Agent Sessions** and filter by service `ai-gateway`.
 
@@ -123,13 +127,27 @@ You should see one session named after your `session_id`, with vendor **Cloudfla
 The example below is a two-turn support chat through the gateway, with one tool call in the first turn.
 
 <figure class="shot">
-  <img src="/screenshots/docs/cloudflare-ai-gateway-01-trace.webp" alt="The Traces view of a Cloudflare AI Gateway session: two turns, the first with two cf.aig.request spans and the second with one, each labeled with its Llama 3.3 70B model, a token bar and its duration on a shared time axis." loading="lazy" />
-  <figcaption>The Traces view. Each turn is one trace because the app passed <code>cf-aig-otel-trace-id</code>; every model call is a <code>cf.aig.request</code> span with its model and tokens.</figcaption>
+	<img
+		src="/screenshots/docs/cloudflare-ai-gateway-01-trace.webp"
+		alt="The Traces view of a Cloudflare AI Gateway session: two turns, the first with two cf.aig.request spans and the second with one, each labeled with its Llama 3.3 70B model, a token bar and its duration on a shared time axis."
+		loading="lazy"
+	/>
+	<figcaption>
+		The Traces view. Each turn is one trace because the app passed <code>cf-aig-otel-trace-id</code>;
+		every model call is a <code>cf.aig.request</code> span with its model and tokens.
+	</figcaption>
 </figure>
 
 <figure class="shot">
-  <img src="/screenshots/docs/cloudflare-ai-gateway-02-transcript.webp" alt="The Transcript view of the same session: the system prompt, the user asking where order 4821 is, a get_order_status tool call, the assistant's answer with the model named, then a second turn about changing the delivery address and its answer." loading="lazy" />
-  <figcaption>The Transcript view. The gateway's raw request and response bodies read as a conversation, including the <code>get_order_status</code> tool call.</figcaption>
+	<img
+		src="/screenshots/docs/cloudflare-ai-gateway-02-transcript.webp"
+		alt="The Transcript view of the same session: the system prompt, the user asking where order 4821 is, a get_order_status tool call, the assistant's answer with the model named, then a second turn about changing the delivery address and its answer."
+		loading="lazy"
+	/>
+	<figcaption>
+		The Transcript view. The gateway's raw request and response bodies read as a conversation, including
+		the <code>get_order_status</code> tool call.
+	</figcaption>
 </figure>
 
 ## What the gateway doesn't export
@@ -144,7 +162,7 @@ The example below is a two-turn support chat through the gateway, with one tool 
 - **Every call is its own session, named `trace:<id>`.** The request has no `session_id` in its metadata. Check the `cf-aig-metadata` header is valid JSON.
 - **Tokens or LLM calls are about double.** Your app and the gateway both record each call. Nest the gateway span with the trace headers as shown above.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [AI Gateway OpenTelemetry integration](https://developers.cloudflare.com/ai-gateway/observability/otel-integration/)

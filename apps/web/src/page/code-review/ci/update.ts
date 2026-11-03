@@ -1,13 +1,13 @@
 import { CiRunResult, type CodeReviewCiRunsResponse } from "@maple/domain/http"
 import { type Result, Schema } from "effect"
-import type { LoadFailure } from "../../../data/load-failure"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Command } from "foldkit"
-import * as Chart from "../../../charts/chart"
-import { LoadChartRuntime } from "../../../charts/chart-runtime"
-import * as Keyed from "../../../data/keyed"
+import * as Chart from "@maple/views/charts/chart"
+import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Keyed from "@maple/views/data/keyed"
 import { AppRoute, hrefOf } from "../../../route"
 import type { CodeReviewCiSearch } from "../../../route/search"
-import * as Select from "../../../ui/select"
+import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { ALL, type FrameOut, type FrameReturn } from "../kit/frame"
 import {
@@ -22,12 +22,13 @@ import type { Retained } from "../kit/retained"
 import { remember } from "../kit/page-steps"
 import { Message, type Model } from "./model"
 import { followRuns, request, runsPageStep } from "./requests"
+import type { PresetValue } from "../../kit/time-controls"
 
 export type Search = typeof CodeReviewCiSearch.Type
 type Return = PageReturn<Model, Message>
 
-/** `CODE_REVIEW_CI_DEFAULT_PRESET`: CI scans raw traces, a week is the default. */
-export const DEFAULT_PRESET = "7d"
+/** `CODE_REVIEW_CI_DEFAULT_PRESET`: a week, since CI runs many times a day. */
+export const DEFAULT_PRESET: PresetValue = "1w"
 const FRAME_ID = "code-review-ci"
 const isRunResult = Schema.is(CiRunResult)
 

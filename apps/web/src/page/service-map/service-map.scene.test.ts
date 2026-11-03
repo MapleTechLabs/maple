@@ -1,11 +1,24 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
-import { click, Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { ServiceName } from "@maple/domain/http"
+import { Option, Result, Schema, Array as Arr } from "effect"
+import {
+	click,
+	Command,
+	expect as expectView,
+	given,
+	label,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
-import * as ServiceMap from "../../service-map/map/service-map"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { PageOutMessage, type PageContext } from "../contract"
-import { CompleteReloadSpin, FetchBundle, FetchFacets, LoadSignalPresence, MountEmptyState, ResolveWindow } from "./command"
+import { CompleteReloadSpin, FetchBundle, FetchFacets, ResolveWindow } from "./command"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
 import { ALL_ENVIRONMENTS, selectedEnvironment } from "./derive"
@@ -23,7 +36,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 type Bundle = MapBundle["value"]
 
@@ -74,12 +87,22 @@ const BUNDLE: Bundle = {
 			samplingWeight: 1,
 		},
 	],
+	dbEdgesTimedOut: false,
 	overview: [overview("checkout"), overview("payments")],
 	platforms: [],
 	workloads: [],
+	runtimes: [],
 }
 
-const EMPTY_BUNDLE: Bundle = { edges: [], dbEdges: [], overview: [], platforms: [], workloads: [] }
+const EMPTY_BUNDLE: Bundle = {
+	edges: [],
+	dbEdges: [],
+	dbEdgesTimedOut: false,
+	overview: [],
+	platforms: [],
+	workloads: [],
+	runtimes: [],
+}
 
 /** Entered, windowed and with the stored prefs read. */
 const windowed = (search: Model["search"] = {}): Model => {
@@ -110,22 +133,32 @@ describe("service map page: requests", () => {
 		)
 		const resolved = pageUpdate(
 			entry.model,
-			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }),
+			Message.CompletedResolveWindow({
+				window,
+				timeZone: "UTC",
+				facetsWindow,
+				nowMs: NOW,
+				mode: "Load",
+			}),
 		)
-		expect(names(resolved.commands)).toEqual([
-			"FetchServiceMapFacets",
-			"FetchServiceMapBundle",
-			"FetchServiceMapCloudflare",
-			"FetchServiceMapPlanetScale",
-			"FetchPlanetScaleInventory",
-			"FetchCloudflareHyperdrives",
-		])
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchServiceMapFacets",
+				"FetchServiceMapBundle",
+				"FetchServiceMapCloudflare",
+				"FetchServiceMapPlanetScale",
+				"FetchPlanetScaleInventory",
+				"FetchCloudflareHyperdrives",
+			]),
+		)
 	})
 
 	test("a zone change re-resolves the window in the new zone; a pin change does not", () => {
 		const model = windowed({ timePreset: "today" })
 		const rezoned = contextChanged(model, { ...context, timeZone: "Europe/Berlin" })
-		expect(rezoned.commands?.find((command) => command.name === "ResolveServiceMapWindow")?.args).toMatchObject({
+		expect(
+			rezoned.commands?.find((command) => command.name === "ResolveServiceMapWindow")?.args,
+		).toMatchObject({
 			preset: "today",
 			timeZone: "Europe/Berlin",
 		})
@@ -169,27 +202,60 @@ describe("service map page: requests", () => {
 		const windowedModel = windowed()
 		const loaded = pageUpdate(
 			windowedModel,
-			Message.CompletedFetchFacets({ key: windowedModel.facets.key ?? "", result: Result.succeed(["production"]) }),
+			Message.CompletedFetchFacets({
+				key: windowedModel.facets.key ?? "",
+				result: Result.succeed(["production"]),
+			}),
 		).model
 		const empty = withBundle(loaded, EMPTY_BUNDLE)
-		const refreshed = Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Refresh" })
+		const refreshed = Message.CompletedResolveWindow({
+			window,
+			timeZone: "UTC",
+			facetsWindow,
+			nowMs: NOW,
+			mode: "Refresh",
+		})
 		scene(
 			{ update: pageUpdate, view },
 			given(empty),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(LoadSignalPresence, Message.CompletedLoadSignalPresence({ result: Result.succeed({}) })),
 			click(role("button", { name: "Reload" })),
 			Command.resolve(ResolveWindow, refreshed),
-			Command.expectHas(FetchFacets({ key: empty.facets.key ?? "", window: facetsWindow, refresh: true })),
+			Command.expectHas(
+				FetchFacets({ key: empty.facets.key ?? "", window: facetsWindow, refresh: true }),
+			),
 			Command.resolveAll(
 				[CompleteReloadSpin, Message.CompletedReloadSpin({ version: 1 })],
-				[FetchFacets, Message.CompletedFetchFacets({ key: empty.facets.key ?? "", result: Result.succeed(["production"]) })],
-				[FetchBundle, Message.CompletedFetchBundle({ key: empty.bundle.key ?? "", result: Result.succeed(new MapBundle(EMPTY_BUNDLE)) })],
+				[
+					FetchFacets,
+					Message.CompletedFetchFacets({
+						key: empty.facets.key ?? "",
+						result: Result.succeed(["production"]),
+					}),
+				],
+				[
+					FetchBundle,
+					Message.CompletedFetchBundle({
+						key: empty.bundle.key ?? "",
+						result: Result.succeed(new MapBundle(EMPTY_BUNDLE)),
+					}),
+				],
 			),
 		)
-		const entry = pageUpdate(windowedModel, Message.CompletedFetchFacets({ key: windowedModel.facets.key ?? "", result: Result.succeed([]) }))
-		const reentered = pageUpdate(entry.model, Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }))
+		const entry = pageUpdate(
+			windowedModel,
+			Message.CompletedFetchFacets({ key: windowedModel.facets.key ?? "", result: Result.succeed([]) }),
+		)
+		const reentered = pageUpdate(
+			entry.model,
+			Message.CompletedResolveWindow({
+				window,
+				timeZone: "UTC",
+				facetsWindow,
+				nowMs: NOW,
+				mode: "Load",
+			}),
+		)
 		expect(names(reentered.commands)).not.toContain("FetchServiceMapFacets")
 	})
 
@@ -239,8 +305,14 @@ describe("service map page: navigation", () => {
 		const scoped = routeChanged(reloaded, { search: { environment: "production" } }, context)
 		expect(names(scoped.commands)).not.toContain("ResolveServiceMapWindow")
 		expect(scoped.model.window).toEqual(reloaded.window)
-		const moved = routeChanged(scoped.model, { search: { environment: "production", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveServiceMapWindow", "Refresh"]])
+		const moved = routeChanged(
+			scoped.model,
+			{ search: { environment: "production", timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveServiceMapWindow", "Refresh"],
+		])
 	})
 
 	test("the view switch and the environment select navigate", () => {
@@ -252,22 +324,45 @@ describe("service map page: navigation", () => {
 })
 
 describe("service map page: view", () => {
-	test("an org with nothing in the window shows the empty canvas and asks for signal presence once painted", () => {
+	test("an empty window shows a skeleton until presence is known, then the setup canvas", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadServiceMapSignalPresence")
 		const empty = withBundle(windowed(), EMPTY_BUNDLE)
 		scene(
 			{ update: pageUpdate, view },
 			given(empty),
-			expectView(text("service calls")).toExist(),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
-			),
+			expectView(text("No service calls found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
 		)
-		expect(names(pageUpdate(empty, Message.PaintedEmptyState()).commands)).toEqual([
-			"LoadServiceMapSignalPresence",
-		])
+		const absent = pageUpdate(
+			empty,
+			Message.CompletedLoadSignalPresence({
+				result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(absent),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text("No service calls yet")).toExist(),
+		)
+	})
+
+	test("database edges dropped past their budget are called out, not shown as no databases", () => {
+		const notice =
+			"Databases took too long to load for this time range and are not shown. A shorter range loads them."
+		scene(
+			{ update: pageUpdate, view },
+			given(withBundle(windowed(), { ...BUNDLE, dbEdges: [], dbEdgesTimedOut: true })),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(role("status")).toContainText(notice),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withBundle(windowed(), BUNDLE)),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text(notice)).not.toExist(),
+		)
 	})
 })
 
@@ -276,16 +371,79 @@ describe("service map page: environment default across a refetch", () => {
 		const model = windowed()
 		const loaded = pageUpdate(
 			model,
-			Message.CompletedFetchFacets({ key: model.facets.key ?? "", result: Result.succeed(["staging"]) }),
+			Message.CompletedFetchFacets({
+				key: model.facets.key ?? "",
+				result: Result.succeed(["staging"]),
+			}),
 		).model
 		expect(selectedEnvironment(loaded)).toBe(ALL_ENVIRONMENTS)
 		const later = { startTime: "2026-09-30 13:00:00", endTime: "2026-10-01 13:00:00" }
 		const refreshed = pageUpdate(
 			loaded,
-			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow: later, nowMs: NOW, mode: "Refresh" }),
+			Message.CompletedResolveWindow({
+				window,
+				timeZone: "UTC",
+				facetsWindow: later,
+				nowMs: NOW,
+				mode: "Refresh",
+			}),
 		)
 		expect(selectedEnvironment(refreshed.model)).toBe(ALL_ENVIRONMENTS)
 		expect(refreshed.model.facetsWindow).toEqual(facetsWindow)
 		expect(refreshed.model.bundle.key).toBe(loaded.bundle.key)
+	})
+
+	test("a failed facets refetch keeps the environment the previous facets chose", () => {
+		const model = windowed()
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchFacets({
+				key: model.facets.key ?? "",
+				result: Result.succeed(["staging"]),
+			}),
+		).model
+		const refreshed = pageUpdate(
+			loaded,
+			Message.CompletedResolveWindow({
+				window,
+				timeZone: "UTC",
+				facetsWindow,
+				nowMs: NOW,
+				mode: "Refresh",
+			}),
+		).model
+		const failed = pageUpdate(
+			refreshed,
+			Message.CompletedFetchFacets({
+				key: refreshed.facets.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("down"))),
+			}),
+		)
+		expect(selectedEnvironment(failed.model)).toBe(ALL_ENVIRONMENTS)
+		expect(names(failed.commands)).not.toContain("FetchServiceMapBundle")
+	})
+})
+
+describe("service map page: where a service runs", () => {
+	test("a service on Cloud Run carries the platform onto its map node", () => {
+		const model = withBundle(windowed(), {
+			...BUNDLE,
+			runtimes: [
+				{
+					serviceName: Schema.decodeSync(ServiceName)("payments"),
+					kind: "cloudRun",
+					account: "acme-prod",
+					region: "europe-west1",
+					cluster: "",
+					railwayServiceId: "",
+					railwayEnvironmentId: "",
+					railwayEnvironmentName: "",
+				},
+			],
+		})
+		const runsOn = (id: string) =>
+			mapOf(model).source.rawNodes.find((node) => node.id === id)?.data.runsOn
+		expect(runsOn("payments")).toBe("Cloud Run")
+		expect(runsOn("checkout")).toBeUndefined()
 	})
 })

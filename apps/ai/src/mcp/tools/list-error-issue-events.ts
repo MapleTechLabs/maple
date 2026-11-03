@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { ListErrorIssueEventsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -42,7 +42,7 @@ export function registerListErrorIssueEventsTool(server: McpToolRegistrar) {
 				issueId: params.issue_id,
 				limit: params.limit,
 				total: response.events.length,
-				events: response.events.map((e) => ({
+				events: Arr.map(response.events, (e) => ({
 					id: e.id,
 					type: e.type,
 					fromState: e.fromState,
@@ -67,8 +67,8 @@ export function registerListErrorIssueEventsTool(server: McpToolRegistrar) {
 							doc.text(`Total: ${output.total}`),
 							doc.table(
 								["Time", "Type", "From", "To", "Actor"],
-								output.events.map((e) => [
-									e.createdAt.slice(0, 19),
+								Arr.map(output.events, (e) => [
+									Str.slice(0, 19)(e.createdAt),
 									e.type,
 									e.fromState ?? "—",
 									e.toState ?? "—",

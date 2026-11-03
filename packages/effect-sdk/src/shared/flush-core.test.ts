@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { afterEach, expect, it as vitestIt, vi } from "vitest"
-import { Effect, Metric, Redacted } from "effect"
+import { Effect, Metric, Redacted, Array as Arr, String as Str } from "effect"
 import {
 	buildResolved,
 	fetchTransport,
@@ -19,11 +19,11 @@ const resolved = buildResolved(
 		ingestKey: Redacted.make("test-key"),
 		resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
 	},
-	{ userAgent: "test", keyless: "disable" },
+	{ userAgent: "test", keyless: "disable-at-maple-ingest" },
 )
 
 const recordSpan = (spans: ReturnType<typeof makeSpanBuffer>, name: string) =>
-	Effect.succeed(undefined).pipe(Effect.withSpan(name), Effect.provide(spans.tracerLayer))
+	Effect.undefined.pipe(Effect.withSpan(name), Effect.provide(spans.tracerLayer))
 
 const recordLog = (logs: ReturnType<typeof makeLogBuffer>, message: string) =>
 	Effect.logInfo(message).pipe(Effect.provide(logs.loggerLayer))
@@ -36,14 +36,27 @@ describe("buildResolved", () => {
 		expect(resolved.headers.authorization).toBe("Bearer test-key")
 	})
 
-	vitestIt("applies each preset's keyless policy: disable, or send without Authorization", () => {
-		const keyless = {
-			endpoint: "https://proxy.test",
-			ingestKey: undefined,
-			resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
-		}
-		expect(buildResolved(keyless, { userAgent: "test", keyless: "disable" }).noOp).toBe(true)
-		const sent = buildResolved(keyless, { userAgent: "test", keyless: "send" })
+	const keylessTo = (endpoint: string | undefined) => ({
+		endpoint,
+		ingestKey: undefined,
+		resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
+	})
+
+	vitestIt("disables keyless export only against Maple's hosted ingest", () => {
+		const policy = { userAgent: "test", keyless: "disable-at-maple-ingest" } as const
+		expect(buildResolved(keylessTo("https://ingest.maple.dev"), policy).noOp).toBe(true)
+		expect(buildResolved(keylessTo("https://ingest.eu.maple.dev/"), policy).noOp).toBe(true)
+		expect(buildResolved(keylessTo(undefined), policy).noOp).toBe(true)
+		const local = buildResolved(keylessTo("http://localhost:4318"), policy)
+		expect(local.noOp).toBe(false)
+		expect(local.headers).not.toHaveProperty("authorization")
+	})
+
+	vitestIt("sends keyless writes without Authorization under the send policy", () => {
+		const sent = buildResolved(keylessTo("https://ingest.maple.dev"), {
+			userAgent: "test",
+			keyless: "send",
+		})
 		expect(sent.noOp).toBe(false)
 		expect(sent.headers).not.toHaveProperty("authorization")
 	})
@@ -69,10 +82,10 @@ describe("runFlush", () => {
 			let failTraces = true
 			const transport: FlushTransport = {
 				post: async (url, _headers, body) => {
-					if (url.endsWith("/v1/traces")) {
+					if (Str.endsWith("/v1/traces")(url)) {
 						if (failTraces) throw new Error("collector unavailable")
 						traceBodies.push(body)
-					} else if (url.endsWith("/v1/logs")) {
+					} else if (Str.endsWith("/v1/logs")(url)) {
 						logBodies.push(body)
 					}
 				},
@@ -111,7 +124,7 @@ describe("runFlush", () => {
 			const body = traceBodies[0] as {
 				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 			}
-			expect(body.resourceSpans[0]!.scopeSpans[0]!.spans.map((span) => span.name)).toEqual([
+			expect(Arr.map(body.resourceSpans[0]!.scopeSpans[0]!.spans, (span) => span.name)).toEqual([
 				"first",
 				"second",
 			])
@@ -152,7 +165,7 @@ describe("runFlush", () => {
 		await flushed
 		globalThis.fetch = original
 		errorSpy.mockRestore()
-		expect(signals.map((signal) => signal?.aborted)).toEqual([true])
+		expect(Arr.map(signals, (signal) => signal?.aborted)).toEqual([true])
 		expect(spans.size()).toBe(1)
 		expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
 	})
@@ -251,7 +264,7 @@ describe("runFlush", () => {
 									scopeSpans: Array<{ spans: Array<{ name: string }> }>
 								}>
 							}
-							sent.push(resourceSpans[0]!.scopeSpans[0]!.spans.map((span) => span.name))
+							sent.push(Arr.map(resourceSpans[0]!.scopeSpans[0]!.spans, (span) => span.name))
 							// The newest request fails last: completion order must not decide the restore order.
 							if (sent.length === 1) await new Promise((resolve) => setTimeout(resolve, 5))
 							throw new Error("collector unavailable")
@@ -303,7 +316,7 @@ describe("runFlush", () => {
 					metricsState: { disabledUntil: 0 },
 					transport: {
 						post: async (url, _headers, body) => {
-							if (url.endsWith("/v1/metrics")) metricsBody = body
+							if (Str.endsWith("/v1/metrics")(url)) metricsBody = body
 						},
 					},
 					logPrefix: "[test]",
@@ -352,7 +365,7 @@ describe("runFlush", () => {
 					metricsState,
 					transport: {
 						post: async (url) => {
-							if (!url.endsWith("/v1/metrics")) return
+							if (!Str.endsWith("/v1/metrics")(url)) return
 							attempts += 1
 							if (attempts === 1) throw new Error("collector unavailable")
 						},

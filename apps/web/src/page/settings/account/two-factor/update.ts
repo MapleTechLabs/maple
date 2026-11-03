@@ -1,8 +1,8 @@
 import { Effect, Result, Schema } from "effect"
 import { Command } from "foldkit"
-import * as CopyButton from "../../../../ui/copy-button"
-import * as Dialog from "../../../../ui/dialog"
-import * as OtpField from "../../../../ui/otp-field"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import { settled, withUser, withUserReverified } from "../clerk-write"
 import { initCode, isComplete } from "../code-field"
@@ -24,7 +24,7 @@ const toMessageResult = <A, B>(toMessage: (result: Result.Result<A, string>) => 
 
 const CreateTotp = Command.define("CreateClerkTotp", {
 	messages: [Message.CompletedCreateTotp],
-	execute: withUserReverified("Failed to start two-factor setup", (user) => user.createTOTP()).pipe(
+	execute: withUserReverified("Couldn't start two-factor setup", (user) => user.createTOTP()).pipe(
 		Effect.map((totp) =>
 			totp.uri === undefined || totp.uri === "" || totp.secret === undefined || totp.secret === ""
 				? null
@@ -47,7 +47,7 @@ const VerifyTotp = Command.define("VerifyClerkTotp", {
 
 const CreateBackupCodes = Command.define("CreateClerkBackupCodes", {
 	messages: [Message.CompletedRegenerate],
-	execute: withUserReverified("Failed to generate backup codes", (user) => user.createBackupCode()).pipe(
+	execute: withUserReverified("Couldn't generate backup codes", (user) => user.createBackupCode()).pipe(
 		Effect.map((result) => result.codes),
 		toMessageResult((result) => Message.CompletedRegenerate({ result })),
 	),
@@ -55,7 +55,7 @@ const CreateBackupCodes = Command.define("CreateClerkBackupCodes", {
 
 const DisableTotp = Command.define("DisableClerkTotp", {
 	messages: [Message.CompletedDisable],
-	execute: withUserReverified("Failed to disable two-factor authentication", (user) => user.disableTOTP()).pipe(
+	execute: withUserReverified("Couldn't disable two-factor authentication", (user) => user.disableTOTP()).pipe(
 		settled((result) => Message.CompletedDisable({ result })),
 	),
 })

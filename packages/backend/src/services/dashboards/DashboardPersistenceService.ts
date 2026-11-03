@@ -23,7 +23,7 @@ import {
 import { parseStoredDashboard, stampCurrentVersion } from "@maple/widgets/dashboard"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Dashboards, DashboardVersions, type DashboardVersionRow } from "@maple/db/tables"
-import { Clock, Effect, Layer, Option, Schema, Context } from "effect"
+import { DateTime, Clock, Effect, Layer, Option, Schema, Context, Array as Arr } from "effect"
 import { randomUUID } from "node:crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -34,6 +34,7 @@ import { timestampMs } from "@maple/backend/platform/time"
 const decodeDashboardIdSync = Schema.decodeUnknownSync(DashboardId)
 const decodeDashboardVersionIdSync = Schema.decodeUnknownSync(DashboardVersionId)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
+const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const COALESCE_WINDOW_MS = 5_000
 
@@ -109,18 +110,18 @@ const parsePayload = Effect.fnUntraced(function* (
 // jsonb columns take the document object directly; this guard preserves the
 // pre-Postgres validation that the payload is JSON-serializable before write.
 const validatePayload = Effect.fnUntraced(function* (dashboard: DashboardDocument) {
-	const names = (dashboard.variables ?? []).map((variable) => variable.name)
-	const duplicates = names.filter((name, index) => names.indexOf(name) !== index)
+	const names = Arr.map(dashboard.variables ?? [], (variable) => variable.name)
+	const duplicates = Arr.filter(names, (name, index) => names.indexOf(name) !== index)
 	if (duplicates.length > 0) {
 		return yield* new DashboardValidationError({
 			message: "Dashboard variable names must be unique",
-			details: [...new Set(duplicates)].map((name) => `Duplicate variable name: ${name}`),
+			details: Arr.map([...new Set(duplicates)], (name) => `Duplicate variable name: ${name}`),
 		})
 	}
 
 	return yield* Effect.try({
 		try: () => {
-			JSON.stringify(dashboard)
+			encodeJsonSync(dashboard)
 			// Repair the section invariants here — the single choke point for every
 			// jsonb write — so v1 upsert, v2 PATCH, MCP, template instantiate,
 			// Perses import and version restore all get it, and every reader can
@@ -265,7 +266,7 @@ export interface DashboardPersistenceServiceApi {
 export class DashboardPersistenceService extends Context.Service<
 	DashboardPersistenceService,
 	DashboardPersistenceServiceApi
->()("@maple/api/services/DashboardPersistenceService", {
+>()("@maple/backend/services/DashboardPersistenceService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "DashboardPersistenceService", toPersistenceError)
@@ -395,9 +396,7 @@ export class DashboardPersistenceService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.dashboard.id": dashboardId })
 			const current = yield* loadCurrent(orgId, dashboardId)
 			if (current === null) {
-				return yield* Effect.fail(
-					new DashboardNotFoundError({ dashboardId, message: "Dashboard not found" }),
-				)
+				return yield* new DashboardNotFoundError({ dashboardId, message: "Dashboard not found" })
 			}
 			return current.document
 		})
@@ -500,12 +499,10 @@ export class DashboardPersistenceService extends Context.Service<
 					payloadJson,
 				)
 				if (!result.won) {
-					return yield* Effect.fail(
-						new DashboardConcurrencyError({
-							dashboardId: dashboard.id,
-							message: "Dashboard was modified by another writer. Refetch and try again.",
-						}),
-					)
+					return yield* new DashboardConcurrencyError({
+						dashboardId: dashboard.id,
+						message: "Dashboard was modified by another writer. Refetch and try again.",
+					})
 				}
 				txid = result.txid
 			}
@@ -600,12 +597,10 @@ export class DashboardPersistenceService extends Context.Service<
 			const attempt = Effect.gen(function* () {
 				const current = yield* loadCurrent(orgId, dashboardId)
 				if (current === null) {
-					return yield* Effect.fail(
-						new DashboardNotFoundError({
-							dashboardId,
-							message: "Dashboard not found",
-						}),
-					)
+					return yield* new DashboardNotFoundError({
+						dashboardId,
+						message: "Dashboard not found",
+					})
 				}
 
 				const next = yield* transform(current.document)
@@ -620,7 +615,7 @@ export class DashboardPersistenceService extends Context.Service<
 					updatedAt,
 					payloadJson,
 				)
-				if (!result.won) return yield* Effect.fail(conflict)
+				if (!result.won) return yield* conflict
 
 				yield* recordVersion(orgId, userId, next, current.document, versionOptions).pipe(
 					Effect.tapError((error) =>
@@ -657,12 +652,10 @@ export class DashboardPersistenceService extends Context.Service<
 			const deleted = Option.fromNullishOr(rows[0])
 
 			if (Option.isNone(deleted)) {
-				return yield* Effect.fail(
-					new DashboardNotFoundError({
-						dashboardId,
-						message: "Dashboard not found",
-					}),
-				)
+				return yield* new DashboardNotFoundError({
+					dashboardId,
+					message: "Dashboard not found",
+				})
 			}
 
 			const txid = readTxid(rows)
@@ -689,12 +682,10 @@ export class DashboardPersistenceService extends Context.Service<
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.dashboard.id": dashboardId })
 				const current = yield* loadCurrent(orgId, dashboardId)
 				if (current === null) {
-					return yield* Effect.fail(
-						new DashboardNotFoundError({
-							dashboardId,
-							message: "Dashboard not found",
-						}),
-					)
+					return yield* new DashboardNotFoundError({
+						dashboardId,
+						message: "Dashboard not found",
+					})
 				}
 				return current.document
 			},
@@ -759,13 +750,11 @@ export class DashboardPersistenceService extends Context.Service<
 
 			const row = rows[0]
 			if (!row || row.dashboardId !== dashboardId) {
-				return yield* Effect.fail(
-					new DashboardVersionNotFoundError({
-						dashboardId,
-						versionId,
-						message: "Dashboard version not found",
-					}),
-				)
+				return yield* new DashboardVersionNotFoundError({
+					dashboardId,
+					versionId,
+					message: "Dashboard version not found",
+				})
 			}
 
 			const snapshot = yield* parsePayload(row.snapshotJson, {
@@ -781,7 +770,9 @@ export class DashboardPersistenceService extends Context.Service<
 				changeKind: row.changeKind as DashboardVersionSummary["changeKind"],
 				changeSummary: row.changeSummary ?? null,
 				sourceVersionId: row.sourceVersionId ?? null,
-				createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+				createdAt: decodeIsoDateTimeStringSync(
+					DateTime.formatIso(DateTime.makeUnsafe(row.createdAt)),
+				),
 				createdBy: row.createdBy,
 				snapshot,
 			})
@@ -801,7 +792,8 @@ export class DashboardPersistenceService extends Context.Service<
 			})
 			const detail = yield* getVersion(orgId, dashboardId, versionId)
 
-			const nowIso = decodeIsoDateTimeStringSync(new Date(yield* Clock.currentTimeMillis).toISOString())
+			const nowMs = yield* Clock.currentTimeMillis
+			const nowIso = decodeIsoDateTimeStringSync(DateTime.formatIso(DateTime.makeUnsafe(nowMs)))
 			const restored = new DashboardDocument({
 				...detail.snapshot,
 				updatedAt: nowIso,

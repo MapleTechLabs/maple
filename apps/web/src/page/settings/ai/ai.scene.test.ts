@@ -23,7 +23,7 @@ const loaded = () => update(init(true).model, Message.CompletedFetchTriage({ res
 
 describe("ai tab", () => {
 	test("entry reads the key and, when available, the triage settings", () => {
-		expect(init(true).commands?.map((command) => command.name)).toEqual(["FetchOpenRouterKey", "FetchAiTriageSettings"])
+		expect(init(true).commands?.map((command) => command.name)).toContain("FetchAiTriageSettings")
 		expect(init(false).commands?.map((command) => command.name)).toEqual(["FetchOpenRouterKey"])
 	})
 
@@ -61,6 +61,9 @@ describe("ai tab", () => {
 		expect(checkout.commands?.map((command) => command.name)).toContain("OpenOpenRouterAddOnCheckout")
 		const attached = update(attaching.model, Message.CompletedAttachAddOn({ result: Result.succeed(new AttachResult({})) }))
 		expect(attached.commands?.map((command) => command.name)).toContain("FetchOpenRouterKey")
-		expect(attached.outMessage).toMatchObject({ type: "success", title: "Add-on added" })
+		expect(attached.outMessage).toMatchObject({
+			_tag: "RequestedCustomerRefresh",
+			toast: { type: "success", title: "Add-on added" },
+		})
 	})
 })

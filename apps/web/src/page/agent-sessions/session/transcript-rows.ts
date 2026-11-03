@@ -3,6 +3,7 @@ import { previewOf } from "./clamped-text"
 import type { SessionData } from "./derive"
 import type { Model } from "./model"
 import { disclosed, messageBody } from "./payload-view"
+import { Array as Arr } from "effect"
 
 // The transcript's rows and the markdown bodies they show, shared by the view and the parse it asks for.
 
@@ -42,9 +43,10 @@ export const continuedKeys = (rows: ReadonlyArray<TranscriptRow>): ReadonlySet<s
 
 /** FNV-1a over the text: the markdown cache's key, short whatever the body's size. */
 export const textHash = (text: string): string => {
-	const hash = Array.from(text).reduce(
-		(acc, char) => Math.imul(acc ^ (char.codePointAt(0) ?? 0), 16_777_619) >>> 0,
+	const hash = Arr.reduce(
+		Array.from(text),
 		2_166_136_261,
+		(acc, char) => Math.imul(acc ^ (char.codePointAt(0) ?? 0), 16_777_619) >>> 0,
 	)
 	return `${hash.toString(36)}:${text.length}`
 }
@@ -58,7 +60,7 @@ export const shownMarkdown = (model: Model, key: string, text: string): Readonly
 
 /** Every markdown text the transcript has on the page. */
 export const markdownTexts = (model: Model, rows: ReadonlyArray<TranscriptRow>): ReadonlyArray<string> =>
-	rows.flatMap((row) => {
+	Arr.flatMap(rows, (row) => {
 		switch (row.kind) {
 			case "user":
 			case "prompt":

@@ -170,47 +170,47 @@ private struct OrganizationRow: View {
 	}
 }
 
-/// The leading-toolbar control that opens the switcher.
-///
-/// This used to sit in `.principal` — the centred title slot — on all three
-/// tabs, which is what made the chrome read as not-quite-native: iOS puts the
-/// screen's *name* in the middle, so an organization there is a title that
-/// isn't one, and it cost the app its large titles as a side effect. As a
-/// leading item it reads as what it is (the context everything on screen is
-/// scoped to) and the title slot goes back to the system.
-///
-/// When the account has a single organization there is nothing to switch to,
-/// so the control disappears rather than sitting there dead — the screen's own
-/// large title already names the place.
+/// The organization pill at the top of every tab root: the context everything
+/// on screen is scoped to. With a single organization it names it and does
+/// nothing when tapped.
 struct OrganizationSwitcherButton: View {
 	@Environment(SessionController.self) private var session
 	@State private var isPresented = false
 
 	var body: some View {
-		if session.canSwitchOrganization {
-			Button { isPresented = true } label: {
-				HStack(spacing: 5) {
-					if let id = session.activeOrganizationId {
-						ServiceDot(serviceName: id, size: 7)
-					}
-					Text(session.activeOrganizationName ?? "Organization")
-						.font(Typo.smallMedium)
-						.foregroundStyle(Token.foreground)
-						.lineLimit(1)
-						// A long organization name must not push the trailing
-						// item off the bar; the sheet shows the full name.
-						.truncationMode(.tail)
-					Image(systemName: "chevron.down")
-						.font(.system(size: 8, weight: .semibold))
+		Button { isPresented = true } label: {
+			HStack(spacing: 8) {
+				Text(String((session.activeOrganizationName ?? "?").prefix(1)).uppercased())
+					.font(Typo.microMedium)
+					.foregroundStyle(Token.primaryForeground)
+					.frame(width: 24, height: 24)
+					.background(Token.primary, in: .rect(cornerRadius: Token.Radius.sm))
+				Text(session.activeOrganizationName ?? "Organization")
+					.font(Typo.body.weight(.regular))
+					.foregroundStyle(Token.foreground)
+					.lineLimit(1)
+					.truncationMode(.tail)
+				if session.canSwitchOrganization {
+					PixelIcon.chevronDown.image
+						.resizable()
+						.frame(width: 12, height: 12)
 						.foregroundStyle(Token.mutedForeground)
 				}
-				.frame(maxWidth: 160, alignment: .leading)
 			}
-			.accessibilityLabel("Switch organization")
-			.sheet(isPresented: $isPresented) {
-				OrganizationPickerView(mode: .switcher)
-					.environment(session)
-			}
+			.padding(.leading, 6)
+			.padding(.trailing, 12)
+			.frame(height: 36)
+			.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+			.overlay(RoundedRectangle(cornerRadius: Token.Radius.lg).stroke(Token.border, lineWidth: Token.hairline))
+			.frame(maxWidth: 200, alignment: .leading)
+		}
+		.buttonStyle(.plain)
+		.disabled(!session.canSwitchOrganization)
+		.accessibilityLabel("Switch organization")
+		.accessibilityValue(session.activeOrganizationName ?? "")
+		.sheet(isPresented: $isPresented) {
+			OrganizationPickerView(mode: .switcher)
+				.environment(session)
 		}
 	}
 }

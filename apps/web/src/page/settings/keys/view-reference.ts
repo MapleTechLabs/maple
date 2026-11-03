@@ -1,15 +1,18 @@
-import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { copyableField } from "../../../ui/copyable-field"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
-import { settingsSection } from "../kit/section"
+import { collapsible } from "@maple/views/ui/collapsible"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel } from "@maple/views/ui/panel"
+import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { linkButton } from "@maple/views/ui/button"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
 
 // `ApiReference` and `OAuthPointer`.
 
@@ -18,19 +21,54 @@ type H = HtmlBuilder<Message>
 const SCOPE_FAMILY_ROWS = [
 	{ id: "api_keys", label: "API keys", description: "Create, roll, and revoke API keys" },
 	{ id: "dashboards", label: "Dashboards", description: "Dashboards, templates, and version history" },
-	{ id: "alerts", label: "Alerts", description: "Alert rules (incl. test/preview/checks), destinations, and incidents" },
+	{
+		id: "alerts",
+		label: "Alerts",
+		description: "Alert rules (incl. test/preview/checks), destinations, and incidents",
+	},
 	{ id: "ingest_keys", label: "Ingest keys", description: "View and roll telemetry ingest keys" },
-	{ id: "attribute_mappings", label: "Attribute mappings", description: "Ingest-time attribute rewrite rules" },
-	{ id: "scrape_targets", label: "Scrape targets", description: "Prometheus/PlanetScale scrape targets, probes, and checks" },
+	{
+		id: "attribute_mappings",
+		label: "Attribute mappings",
+		description: "Ingest-time attribute rewrite rules",
+	},
+	{
+		id: "scrape_targets",
+		label: "Scrape targets",
+		description: "Prometheus/PlanetScale scrape targets, probes, and checks",
+	},
 	{ id: "instrumentation", label: "Recommendations", description: "Instrumentation recommendations" },
-	{ id: "investigations", label: "Investigations", description: "AI investigation war-rooms: list, open, and update status" },
-	{ id: "anomalies", label: "Anomalies", description: "Anomaly incidents (incl. timeseries/resolve/link-issue) and detector settings" },
-	{ id: "session_replays", label: "Session replays", description: "Search sessions, retrieve detail, events, and transcripts" },
+	{
+		id: "investigations",
+		label: "Investigations",
+		description: "AI investigation war-rooms: list, open, and update status",
+	},
+	{
+		id: "error_issues",
+		label: "Errors",
+		description: "Error issues and their events; triage actions need write",
+	},
+	{
+		id: "anomalies",
+		label: "Anomalies",
+		description: "Anomaly incidents (incl. timeseries/resolve/link-issue) and detector settings",
+	},
+	{
+		id: "session_replays",
+		label: "Session replays",
+		description: "Search sessions, retrieve detail, events, and transcripts",
+	},
 	{ id: "traces", label: "Traces", description: "Search traces and retrieve spans" },
 	{ id: "logs", label: "Logs", description: "Search and retrieve log records" },
 	{ id: "metrics", label: "Metrics", description: "Metric catalog and timeseries reads" },
 	{ id: "services", label: "Services", description: "Service catalog and health summaries" },
 	{ id: "service_map", label: "Service map", description: "Service-to-service topology" },
+	{ id: "sources", label: "Sources", description: "Ingest sources and their settings" },
+	{
+		id: "integrations",
+		label: "Integrations",
+		description: "Connected integrations, including source code repositories",
+	},
 	{ id: "query", label: "Query", description: "Structured telemetry queries" },
 	{ id: "organization", label: "Organization", description: "Read the organization's identity" },
 	{ id: "audit_log", label: "Audit log", description: "Read the audit log (org admins only)" },
@@ -38,69 +76,54 @@ const SCOPE_FAMILY_ROWS = [
 
 const scopeRow = (h: H, family: (typeof SCOPE_FAMILY_ROWS)[number]): Html =>
 	h.div(
-		[h.Key(family.id), h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-2.5")],
 		[
-			h.div(
-				[h.Class("min-w-0 flex-1 space-y-0.5")],
-				[
-					h.div([h.Class("text-sm")], [family.label]),
-					h.div([h.Class("text-muted-foreground text-xs")], [family.description]),
-				],
-			),
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-1.5")],
-				[
-					badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":read"]),
-					badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":write"]),
-				],
-			),
+			h.Key(family.id),
+			h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-2.5"),
+		],
+		[
+			spaced(h, { space: "0.5", fill: true }, [
+				h.div([h.Class("text-sm")], [family.label]),
+				typography(h, { size: "xs", tone: "muted", as: "div" }, [family.description]),
+			]),
+			hstack(h, { gap: "1.5", className: "shrink-0" }, [
+				badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":read"]),
+				badge(h, { variant: "outline", mono: true, className: "text-2xs" }, [family.id, ":write"]),
+			]),
 		],
 	)
 
 const scopes = (h: H, isOpen: boolean): Html =>
-	h.div(
-		[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+	collapsible(
+		h,
+		{
+			isOpen,
+			onToggle: Message.ToggledScopes(),
+			panelId: "keys-scopes-panel",
+			triggerClassName:
+				"group/scopes hover:bg-surface-sunken active:bg-surface-sunken flex w-full items-center gap-2 px-4 py-3 text-left",
+			trigger: [
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className:
+						"text-muted-foreground shrink-0 transition-transform group-data-[panel-open]/scopes:rotate-90",
+				}),
+				typography(h, { size: "sm", weight: "medium" }, ["Scopes"]),
+				typography(h, { size: "sm", tone: "muted" }, [
+					String(SCOPE_FAMILY_ROWS.length),
+					" resource families",
+				]),
+				h.span([h.Class("flex-1")], []),
+				h.span(
+					[h.Class("text-muted-foreground hidden text-2xs md:block")],
+					["Read or write per family. A key without scopes has full access."],
+				),
+			],
+		},
 		[
-			h.button(
-				[
-					...(isOpen ? [h.AriaControls("keys-scopes-panel")] : []),
-					h.AriaDisabled(false),
-					h.AriaExpanded(isOpen),
-					h.Class("group/scopes hover:bg-muted/20 flex w-full items-center gap-2 px-4 py-3 text-left"),
-					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
-					h.DataAttribute("slot", "collapsible-trigger"),
-					h.Tabindex(0),
-					h.Type("button"),
-					h.OnClick(Message.ToggledScopes()),
-				],
-				[
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className: "text-muted-foreground shrink-0 transition-transform group-data-[panel-open]/scopes:rotate-90",
-					}),
-					h.span([h.Class("text-sm font-medium")], ["Scopes"]),
-					h.span([h.Class("text-muted-foreground text-sm")], [String(SCOPE_FAMILY_ROWS.length), " resource families"]),
-					h.span([h.Class("flex-1")], []),
-					h.span(
-						[h.Class("text-muted-foreground hidden text-2xs md:block")],
-						["Read or write per family. A key without scopes has full access."],
-					),
-				],
+			h.div(
+				[h.Class("divide-y border-t")],
+				Arr.map(SCOPE_FAMILY_ROWS, (family) => scopeRow(h, family)),
 			),
-			...(isOpen
-				? [
-						h.div(
-							[
-								h.Class(collapsiblePanelStyles),
-								h.DataAttribute("open", ""),
-								h.DataAttribute("slot", "collapsible-panel"),
-								h.Id("keys-scopes-panel"),
-								h.Style({ "--collapsible-panel-height": "auto", "--collapsible-panel-width": "auto", "animation-name": "none" }),
-							],
-							[h.div([h.Class("divide-y border-t")], SCOPE_FAMILY_ROWS.map((family) => scopeRow(h, family)))],
-						),
-					]
-				: []),
 		],
 	)
 
@@ -110,18 +133,22 @@ export const apiReference = (h: H, model: Model): Html =>
 		{
 			id: "keys-reference-heading",
 			title: "API reference",
-			description: ["A REST interface with snake_case JSON, cursor-paginated lists and scoped API keys."],
-			width: "wide",
+			description: [
+				"A REST interface with snake_case JSON, cursor-paginated lists and scoped API keys.",
+			],
 			framed: false,
-			actions: h.a(
+			actions: linkButton(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					href: `${apiPublicUrl}/v2/docs`,
+					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+				},
 				[
-					h.Href(`${apiPublicUrl}/v2/docs`),
-					h.Target("_blank"),
-					h.Rel("noopener noreferrer"),
-					h.Class(cn(buttonVariants({ size: "sm", variant: "outline" }))),
-					h.DataAttribute("slot", "button"),
+					icon(h, "CodeIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+					"Open API reference",
 				],
-				[icon(h, "CodeIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Open API reference"],
 			),
 		},
 		[
@@ -129,9 +156,12 @@ export const apiReference = (h: H, model: Model): Html =>
 				h.div(
 					[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3")],
 					[
-						h.span([h.Class("text-muted-foreground w-20 shrink-0 text-xs")], ["Base URL"]),
+						h.span(
+							[h.Class("w-20 shrink-0 font-prose text-xs text-muted-foreground")],
+							["Base URL"],
+						),
 						h.div(
-							[h.Class("min-w-0 max-w-md flex-1")],
+							[h.Class("min-w-0 flex-1")],
 							[
 								copyableField(h, {
 									id: "keys-base-url",
@@ -151,16 +181,13 @@ export const apiReference = (h: H, model: Model): Html =>
 
 export const oauthPointer = (h: H): Html =>
 	h.p(
-		[h.Class("text-muted-foreground w-full rounded-md border border-dashed px-4 py-3 text-sm")],
+		[h.Class("w-full rounded-md border border-dashed p-4 font-prose text-sm text-muted-foreground")],
 		[
-			"Clients signed in with OAuth don't use keys. See and revoke them in",
-			" ",
+			"Clients signed in with OAuth don't use keys. See and revoke them in the ",
 			h.a(
-				[
-					h.Href("/settings?tab=mcp"),
-					h.Class("text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline"),
-				],
-				["MCP", icon(h, "ArrowRightIcon", { size: 12 }), "Connected clients"],
+				[h.Href("/settings?tab=mcp"), h.Class(INLINE_LINK_CLASS)],
+				["Connected clients section of MCP"],
 			),
+			".",
 		],
 	)

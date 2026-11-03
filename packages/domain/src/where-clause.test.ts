@@ -7,6 +7,7 @@ import {
 	quoteWhereValue,
 	splitCsv,
 } from "./where-clause"
+import { Array as Arr } from "effect"
 
 describe("normalizeKey", () => {
 	it("normalizes service alias", () => {
@@ -233,7 +234,7 @@ describe("quoteWhereValue", () => {
 
 	it("has no escape character: a backslash-escaped quote is not read back as a quote", () => {
 		const escaped = parseWhereClause('k = "say \\"hi\\""')
-		expect(escaped.clauses.map((clause) => clause.value)).not.toContain('say "hi"')
+		expect(Arr.map(escaped.clauses, (clause) => clause.value)).not.toContain('say "hi"')
 		const quoted = parseWhereClause(`k = ${quoteWhereValue('say "hi"')}`)
 		expect(quoted.clauses[0]?.value).toBe('say "hi"')
 	})
@@ -279,7 +280,7 @@ describe("OR groups", () => {
 		const result = parseWhereClause("(a = 1 OR b = 2) AND c = 3")
 		expect(result.groups).toEqual([])
 		expect(result.clauses).toHaveLength(1)
-		expect(result.warnings.map((w) => w.message)).toEqual([
+		expect(Arr.map(result.warnings, (w) => w.message)).toEqual([
 			"Unsupported clause syntax ignored: (a = 1 OR b = 2)",
 		])
 	})
@@ -291,7 +292,7 @@ describe("OR groups", () => {
 		)
 		expect(result.warnings).toEqual([])
 		expect(result.groups[0]?.map((c) => c.value)).toEqual(["buy and sell", "this or that"])
-		expect(result.clauses.map((c) => c.key)).toEqual(["x"])
+		expect(Arr.map(result.clauses, (c) => c.key)).toEqual(["x"])
 	})
 
 	it("treats a single parenthesized clause as a plain clause", () => {
@@ -311,6 +312,6 @@ describe("OR groups", () => {
 	it("keeps `(a) AND (b)` as two clauses", () => {
 		const result = parseWhereClause("(a = 1) AND (b = 2)", orGroups)
 		expect(result.warnings).toEqual([])
-		expect(result.clauses.map((c) => c.key)).toEqual(["a", "b"])
+		expect(Arr.map(result.clauses, (c) => c.key)).toEqual(["a", "b"])
 	})
 })

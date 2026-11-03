@@ -6,9 +6,9 @@ import {
 } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
-import { Clock, Duration, Effect, Option, Schema } from "effect"
-import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../data/load-failure"
+import { Clock, Duration, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { Command } from "foldkit"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { loadAnomalyServiceCounts } from "../../data/anomaly-service-counts"
 import { loadServicesFacets } from "../../data/services-facets-probe"
 import { TimeWindow } from "../../data/time-range"
@@ -100,11 +100,13 @@ export const FetchFacets = Command.define("FetchOverviewFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { refresh, key }).pipe(
-			Effect.map(({ data }) => ({
-				environments: data.environments.map((facet) => facet.name),
-				services: data.services.map((facet) => facet.name),
-			})),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: ({ data }) => ({
+					environments: Arr.map(data.environments, (facet) => facet.name),
+					services: Arr.map(data.services, (facet) => facet.name),
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
 		),
@@ -121,8 +123,7 @@ export const FetchSnapshot = Command.define("FetchServiceHealthSnapshot", {
 				environments: mutable(input.environments),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchSnapshot({ key, result })),
 		),
@@ -146,19 +147,17 @@ export const FetchUsage = Command.define("FetchOverviewServiceUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: ({ key, input }) =>
 		getServiceUsage({ data: input }).pipe(
-			Effect.map((response) => ({
-				totals: response.data.reduce(
-					(acc, service) => ({
+			Effect.mapBoth({
+				onSuccess: (response) => ({
+					totals: Arr.reduce(response.data, { logs: 0, traces: 0, metrics: 0 }, (acc, service) => ({
 						logs: acc.logs + service.totalLogs,
 						traces: acc.traces + service.totalTraces,
 						metrics: acc.metrics + service.totalMetrics,
-						dataSize: acc.dataSize + service.dataSizeBytes,
-					}),
-					{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
-				),
-				previous: response.previousTotals ?? null,
-			})),
-			Effect.mapError(toLoadFailure),
+					})),
+					previous: response.previousTotals ?? null,
+				}),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchUsage({ key, result })),
 		),
@@ -176,8 +175,7 @@ export const FetchOverviewSeries = Command.define("FetchOverviewTimeSeries", {
 				environments: mutable(input.environments),
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOverviewSeries({ key, result })),
 		),
@@ -202,16 +200,17 @@ export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 				},
 			},
 		}).pipe(
-			Effect.map((response) =>
-				response.data.map((point) => ({
-					bucket: point.bucket,
-					throughput: Object.values(point.series).reduce<number>(
-						(sum, value) => sum + (typeof value === "number" ? value : 0),
-						0,
-					),
-				})),
-			),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({
+				onSuccess: (response) =>
+					Arr.map(response.data, (point) => ({
+						bucket: point.bucket,
+						throughput: Rec.values(point.series).reduce<number>(
+							(sum, value) => sum + (typeof value === "number" ? value : 0),
+							0,
+						),
+					})),
+				onFailure: toLoadFailure,
+			}),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchLogSeries({ key, result })),
 		),
@@ -230,26 +229,15 @@ export const FetchRefinement = Command.define("FetchOverviewThroughputRefinement
 				samplingActive: input.samplingActive,
 			},
 		}).pipe(
-			Effect.map((response) => response.data),
-			Effect.mapError(toLoadFailure),
+			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchRefinement({ key, result })),
 		),
 })
 
-/** The services empty state is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountOverviewEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 export const LoadSignalPresence = Command.define("LoadOverviewSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })

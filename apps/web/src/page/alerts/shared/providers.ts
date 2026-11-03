@@ -2,13 +2,14 @@ import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-
 import type { AlertDestinationType } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../../ui/icon"
-import { manifestGlyph } from "../../../ui/manifest-glyph"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
+import { LINEAR_ACCENT } from "../../integrations/catalog"
+import { Array as Arr, String as Str } from "effect"
 
 // `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
 
 const BRANDFETCH_CLIENT_ID = "1id0IQ-4i8Z46-n-DfQ"
-const HAZEL_ACCENT_TEXT = "light-dark(#A34209, #F46F0F)"
 const INK_ON_DARK_ACCENT = "#FFFFFF"
 const INK_ON_BRIGHT_ACCENT = "#1E1B17"
 
@@ -62,18 +63,16 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 		},
 	],
 	[
-		"hazel-oauth",
+		"linear",
 		{
-			type: "hazel-oauth",
-			label: "Hazel",
-			description: "Connect Hazel via OAuth and pick a workspace to route alerts into.",
-			accent: "#F46F0F",
-			accentBg: "rgba(244,111,15,0.16)",
-			accentText: HAZEL_ACCENT_TEXT,
-			accentOn: INK_ON_BRIGHT_ACCENT,
-			fallbackIcon: "HazelIcon",
-			docsUrl: "https://hazel.sh/docs/integrations/maple",
-			docsLabel: "Hazel integration guide",
+			type: "linear",
+			label: "Linear",
+			description: "Open one Linear issue per alert rule in a team, and comment on it as it changes.",
+			accent: LINEAR_ACCENT,
+			accentBg: "rgba(94,106,213,0.18)",
+			accentText: "light-dark(#4651B8, #A9B0F0)",
+			accentOn: INK_ON_DARK_ACCENT,
+			fallbackIcon: "LinearIcon",
 		},
 	],
 	[
@@ -104,6 +103,21 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 			fallbackIcon: "TelegramIcon",
 			docsUrl: "https://maple.dev/docs/alerting/notification-destinations#telegram",
 			docsLabel: "Telegram setup guide",
+		},
+	],
+	[
+		"google-chat",
+		{
+			type: "google-chat",
+			label: "Google Chat",
+			description: "Post alerts to a Google Chat space via incoming webhook.",
+			accent: "#00AC47",
+			accentBg: "rgba(0,172,71,0.16)",
+			accentText: "light-dark(#00762F, #34C26B)",
+			accentOn: INK_ON_BRIGHT_ACCENT,
+			fallbackIcon: "GoogleChatIcon",
+			docsUrl: "https://maple.dev/docs/alerting/notification-destinations#google-chat",
+			docsLabel: "Google Chat setup guide",
 		},
 	],
 	[
@@ -138,7 +152,7 @@ const CHAT = PROVIDERS.get("chat")
 
 /** `CHAT_PROVIDERS`: a `chat` destination drawn as its connector (name, accent and mark). */
 const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
-	chatConnectorManifests.flatMap((manifest) =>
+	Arr.flatMap(chatConnectorManifests, (manifest) =>
 		CHAT === undefined
 			? []
 			: [
@@ -158,13 +172,23 @@ const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
 )
 
 /** `destinationProvider`: a `chat` destination's connector, else the type's provider. */
-export const destinationProvider = (type: AlertDestinationType, chatConnector?: string): DestinationProvider =>
+export const destinationProvider = (
+	type: AlertDestinationType,
+	chatConnector?: string,
+): DestinationProvider =>
 	(type === "chat" && chatConnector !== undefined ? CHAT_PROVIDERS.get(chatConnector) : undefined) ??
 	providerOf(type)
 
 export const providerOf = (type: AlertDestinationType): DestinationProvider =>
 	PROVIDERS.get(type) ??
-	WEBHOOK ?? { type, label: type, description: "", accent: "currentColor", accentBg: "transparent", accentOn: "" }
+	WEBHOOK ?? {
+		type,
+		label: type,
+		description: "",
+		accent: "currentColor",
+		accentBg: "transparent",
+		accentOn: "",
+	}
 
 /** `DESTINATION_TYPES` / `destinationTypesFor`: the provider tiles, in the order people reach for them. */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
@@ -172,7 +196,8 @@ export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"email",
 	"webhook",
 	"telegram",
-	"hazel-oauth",
+	"google-chat",
+	"linear",
 ]
 export const destinationTypesFor = (isDiscordLinked: boolean): ReadonlyArray<AlertDestinationType> =>
 	isDiscordLinked ? [...DESTINATION_TYPES, "discord"] : ["discord", ...DESTINATION_TYPES]
@@ -212,7 +237,7 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 			]
 		if (provider.monogram !== undefined || options.isLogoBroken) {
 			const mono = provider.monogram ?? {
-				letter: provider.label.slice(0, 1),
+				letter: Str.slice(0, 1)(provider.label),
 				gradient: [provider.accent, provider.accent] as const,
 			}
 			return [
@@ -253,12 +278,13 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 			]
 		return []
 	})()
-	if (options.isBare === true) return h.span(options.className === undefined ? [] : [h.Class(options.className)], content)
+	if (options.isBare === true)
+		return h.span(options.className === undefined ? [] : [h.Class(options.className)], content)
 	return h.span(
 		[
 			h.Class(
 				cn(
-					"relative inline-flex shrink-0 items-center justify-center rounded-lg border border-border/60 bg-card",
+					"relative inline-flex shrink-0 items-center justify-center rounded-md border border-border-subtle bg-card",
 					options.className,
 				),
 			),
@@ -267,8 +293,10 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 		[
 			h.span([
 				h.AriaHidden(true),
-				h.Class("absolute inset-0 rounded-lg opacity-70"),
-				h.Style({ background: `radial-gradient(circle at 30% 20%, ${provider.accentBg}, transparent 70%)` }),
+				h.Class("absolute inset-0 rounded-md opacity-70"),
+				h.Style({
+					background: `radial-gradient(circle at 30% 20%, ${provider.accentBg}, transparent 70%)`,
+				}),
 			]),
 			h.span([h.Class("relative")], content),
 		],

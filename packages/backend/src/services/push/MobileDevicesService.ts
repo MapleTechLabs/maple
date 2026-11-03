@@ -118,7 +118,7 @@ const toDevice = (row: MobileDeviceRow): MobileDevice => ({
 })
 
 export class MobileDevicesService extends Context.Service<MobileDevicesService, MobileDevicesServiceApi>()(
-	"@maple/api/services/push/MobileDevicesService",
+	"@maple/backend/services/push/MobileDevicesService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

@@ -2,23 +2,20 @@ import { peekPosition } from "./peek"
 import { MountPeekRows } from "./command"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { tableBodyStyles } from "@maple/ui/styles/ui/table"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { excludedEmptyHint } from "../../../ui/filters/excluded-empty-hint"
-import { listFooter, loadingMoreRow } from "../../../ui/list-footer"
-import { table, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { tableSkeleton } from "../../../ui/table-skeleton"
+import { errorState } from "@maple/views/ui/error-state"
+import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
+import { listFooter, loadingMoreRow } from "@maple/views/ui/list-footer"
+import { ariaSort, sortButton, table, tableBody, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { signalEmptyState } from "../../kit/signal-empty-state"
-import { presenceOf } from "../../kit/signal-presence"
-import { MountEmptyState } from "./command"
+import { presenceOf } from "@maple/views/data/signal-presence"
 import { canWidenTimeRange, isFiltered, traceFilterChips } from "./derive"
 import { Message, type SortKey } from "./message"
 import type { Model } from "./model"
 import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES } from "./update"
-import { noiseNote, timeFormat, traceRow } from "./view-row"
+import { noiseNote, traceRow } from "./view-row"
 import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
 
 /** `TRACE_COLUMNS`: shared by the table, the skeleton and the header. */
@@ -80,33 +77,16 @@ const loadingState = (h: HtmlBuilder<Message>): Html =>
 	)
 
 /** A sortable column header, no hint. */
-const sortableHeader = (h: HtmlBuilder<Message>, label: string, sortKey: SortKey, model: Model): Html => {
-	const isActive = (model.search.sortBy ?? "timestamp") === sortKey
-	const isAscending = (model.search.sortDir ?? "desc") === "asc"
-	return h.button(
-		[
-			h.Class(
-				cn(
-					"inline-flex items-center gap-1 transition-colors",
-					isActive ? "text-foreground" : "hover:text-foreground",
-				),
-			),
-			h.Type("button"),
-			h.OnClick(Message.ClickedSort({ key: sortKey })),
-		],
-		[
-			label,
-			icon(h, "ArrowUpDownIcon", {
-				size: 10,
-				className: cn(
-					"shrink-0 transition-opacity",
-					isActive ? "opacity-100" : "opacity-40",
-					isActive && isAscending && "rotate-180",
-				),
-			}),
-		],
+const sortableHeader = (h: HtmlBuilder<Message>, label: string, sortKey: SortKey, model: Model): Html =>
+	sortButton(
+		h,
+		{
+			isActive: (model.search.sortBy ?? "timestamp") === sortKey,
+			direction: model.search.sortDir ?? "desc",
+			onClick: Message.ClickedSort({ key: sortKey }),
+		},
+		[label],
 	)
-}
 
 const header = (h: HtmlBuilder<Message>, model: Model): Html => {
 	const sortBy = model.search.sortBy ?? "timestamp"
@@ -127,9 +107,7 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html => {
 						],
 						cn("px-2", responsiveOf(column)),
 						[
-							...(column.id === sortBy
-								? [h.AriaSort(sortDir === "asc" ? "ascending" : "descending")]
-								: []),
+							...ariaSort(h, column.id === sortBy, sortDir),
 							...(width === undefined ? [] : [h.Style({ width: `${width}px` })]),
 						],
 					)
@@ -140,26 +118,25 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html => {
 	)
 }
 
-const spacer = (h: HtmlBuilder<Message>, height: number): Html =>
-	h.tr([h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
+const spacer = (h: HtmlBuilder<Message>, key: string, height: number): Html =>
+	h.tr([h.Key(key), h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
 
 /** `VirtualTableBody`: spacers around the rendered window, then the loading row. */
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
 	const rows = allRows(model)
-	const time = timeFormat(timeZone)
 	const activeIndex = isMobile ? null : (peekPosition(model)?.index ?? null)
 	const first = model.virtualRows[0]
 	const last = model.virtualRows.at(-1)
-	return h.tbody(
-		[h.Class(tableBodyStyles), h.DataAttribute("slot", "table-body")],
+	return tableBody(
+		h,
 		[
-			...(first === undefined ? [] : [spacer(h, first.start)]),
+			...(first === undefined ? [] : [spacer(h, "spacer-before", first.start)]),
 			...model.virtualRows.flatMap((item) => {
 				const row = rows[item.index]
 				return row === undefined
 					? []
 					: [
-							traceRow(h, row, item.index, time, model.nowMs, {
+							traceRow(h, row, item.index, timeZone, model.nowMs, {
 								search: model.search,
 								isFocused: model.focusedIndex === item.index,
 								isActive: activeIndex === item.index,
@@ -167,11 +144,11 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile:
 							}),
 						]
 			}),
-			...(last === undefined ? [] : [spacer(h, model.totalSize - last.end)]),
+			...(last === undefined ? [] : [spacer(h, "spacer-after", model.totalSize - last.end)]),
 			...(model.pagination.isFetching
 				? [
 						h.tr(
-							[],
+							[h.Key("loading-more")],
 							[
 								h.td(
 									[h.Attribute("colspan", String(COLUMNS.length)), h.Class("p-2")],
@@ -240,7 +217,7 @@ const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
 		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
 		[
 			h.div(
-				[h.Class("rounded-md border"), h.OnMount(MountEmptyState())],
+				[h.Class("rounded-md border")],
 				[
 					signalEmptyState(h, {
 						signal: "traces",
@@ -270,8 +247,13 @@ export const tracesTable = (
 	isMobile = false,
 ): Html =>
 	AsyncData.matchData(model.firstPage.data, {
-		onEmpty: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		// A workspace that never sent traces gets its setup state without waiting on the list.
+		onEmpty: () =>
+			presenceOf(model.presence, "traces").status === "absent" && !isFiltered(model.search)
+				? emptyTable(h, model)
+				: loadingState(h),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load traces", onRetry: Message.ClickedReload() }),
 		onData: () =>
 			allRows(model).length === 0
 				? emptyTable(h, model)

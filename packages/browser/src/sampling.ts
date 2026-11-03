@@ -9,7 +9,7 @@ import {
 	trace,
 	TraceFlags,
 } from "@opentelemetry/api"
-import { type Sampler, SamplingDecision, type SamplingResult } from "@opentelemetry/sdk-trace-base"
+import { type Sampler, SamplingDecision, type SamplingResult } from "@opentelemetry/sdk-trace"
 
 const KEEP = createContextKey("maple.sampling.keep")
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { AiTriageSubmission, normalizeTriageSubmission } from "./ai-triage"
 
 const decode = Schema.decodeUnknownSync(AiTriageSubmission)
@@ -78,7 +78,7 @@ describe("normalizeTriageSubmission", () => {
 				],
 			}),
 		)
-		expect(filled.filter((field) => field.startsWith("evidence"))).toEqual(["evidence[1].note"])
+		expect(Arr.filter(filled, (field) => Str.startsWith("evidence")(field))).toEqual(["evidence[1].note"])
 	})
 
 	it("drops a severity the report cannot hold and says it did", () => {

@@ -1,10 +1,14 @@
-import type { CloudflareIntegrationStatus, RailwayIntegrationStatus } from "@maple/domain/http"
+import type {
+	CloudflareIntegrationStatus,
+	RailwayIntegrationStatus,
+	SupabaseIntegrationStatus,
+} from "@maple/domain/http"
 import type { V2GcpIntegration, V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { Context, Effect, Layer, Option, Ref, SynchronizedRef } from "effect"
 import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
 
 /**
- * The four integration statuses the sidebar mounts and the infra integration pages read:
+ * The integration statuses the sidebar mounts and the infra integration pages read:
  * one request per status, shared while in flight
  * and kept after, until a reader asks for a refresh (a write's `reactivityKeys`, an empty-page poll).
  */
@@ -55,6 +59,7 @@ export class IntegrationStatuses extends Context.Service<
 		readonly railway: Loader<RailwayIntegrationStatus>
 		readonly planetscale: Loader<PlanetscaleStatus>
 		readonly gcp: Loader<GcpStatus>
+		readonly supabase: Loader<SupabaseIntegrationStatus>
 		/** The open org: readers that do not name one read under it. */
 		readonly scopeTo: (orgId: string) => Effect.Effect<void>
 	}
@@ -71,11 +76,17 @@ export class IntegrationStatuses extends Context.Service<
 					Effect.flatMap(Ref.get(openOrg), (org) =>
 						loader({ ...options, orgId: options?.orgId ?? Option.getOrUndefined(org) }),
 					)
+			const cloudflare = yield* sharedLoader(internal.integrations.cloudflareStatus())
+			const railway = yield* sharedLoader(internal.integrations.railwayStatus())
+			const planetscale = yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status())
+			const gcp = yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status())
+			const supabase = yield* sharedLoader(internal.integrations.supabaseStatus())
 			return {
-				cloudflare: inOrg(yield* sharedLoader(internal.integrations.cloudflareStatus())),
-				railway: inOrg(yield* sharedLoader(internal.integrations.railwayStatus())),
-				planetscale: inOrg(yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status())),
-				gcp: inOrg(yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status())),
+				cloudflare: inOrg(cloudflare),
+				railway: inOrg(railway),
+				planetscale: inOrg(planetscale),
+				gcp: inOrg(gcp),
+				supabase: inOrg(supabase),
 				scopeTo: (orgId: string) => Ref.set(openOrg, Option.some(orgId)),
 			}
 		}),

@@ -1,11 +1,11 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
 import { modifyFields } from "foldkit/struct"
 import { MapleApiClient } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
-import * as OtpField from "../../ui/otp-field"
+import * as OtpField from "@maple/views/ui/otp-field"
 import { endpointMessage, localeTimeOf } from "./request"
 
 // `/cli-login`: approve a terminal's device code.
@@ -40,11 +40,8 @@ export type Model = typeof Model.Type
 
 /** `normalizeCliUserCode`: upper-case alphanumerics, eight at most, `XXXX-XXXX`. */
 export const normalizeCliUserCode = (value: string): string => {
-	const normalized = value
-		.toUpperCase()
-		.replace(/[^A-Z0-9]/g, "")
-		.slice(0, 8)
-	return normalized.length > 4 ? `${normalized.slice(0, 4)}-${normalized.slice(4)}` : normalized
+	const normalized = Str.slice(0, 8)(Str.replace(/[^A-Z0-9]/g, "")(Str.toUpperCase(value)))
+	return normalized.length > 4 ? `${Str.slice(0, 4)(normalized)}-${Str.slice(4)(normalized)}` : normalized
 }
 
 /** The code field's id: the first slot, which its label's `for` points at. */
@@ -78,7 +75,7 @@ export const InspectCliDevice = Command.define("InspectCliDevice", {
 	execute: ({ userCode }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
-			const response = yield* client.auth.cliDeviceInspect({ params: { userCode } })
+			const response = yield* client.authSession.cliDeviceInspect({ params: { userCode } })
 			const expiresAtLabel = yield* localeTimeOf(response.expiresAt)
 			return Message.SucceededInspectCliDevice({
 				userCode,
@@ -88,7 +85,10 @@ export const InspectCliDevice = Command.define("InspectCliDevice", {
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(
-					Message.FailedInspectCliDevice({ userCode, message: endpointMessage(error, INSPECT_FALLBACK) }),
+					Message.FailedInspectCliDevice({
+						userCode,
+						message: endpointMessage(error, INSPECT_FALLBACK),
+					}),
 				),
 			),
 		),
@@ -102,8 +102,8 @@ export const DecideCliDevice = Command.define("DecideCliDevice", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
 			yield* action === "approve"
-				? client.auth.cliDeviceApprove({ params: { userCode } })
-				: client.auth.cliDeviceDeny({ params: { userCode } })
+				? client.authSession.cliDeviceApprove({ params: { userCode } })
+				: client.authSession.cliDeviceDeny({ params: { userCode } })
 			return Message.SucceededDecideCliDevice({ action })
 		}).pipe(
 			Effect.catch((error) =>
@@ -122,10 +122,11 @@ type UpdateReturn = Update.Return<Model, Message, Resources>
 
 const inspect = (model: Model, code: string): UpdateReturn => {
 	const normalized = normalizeCliUserCode(code)
-	if (normalized.replace("-", "").length !== 8) {
+	if (Str.replace("-", "")(normalized).length !== 8) {
 		return {
 			model: modifyFields(model, {
-				state: () => State.Failed({ message: "Enter the eight-character code shown in your terminal." }),
+				state: () =>
+					State.Failed({ message: "Enter the eight-character code shown in your terminal." }),
 			}),
 		}
 	}
@@ -143,7 +144,7 @@ export const init = (initialCode: string | undefined): UpdateReturn => {
 		otp: OtpField.init({
 			id: CODE_FIELD_ID,
 			length: 8,
-			value: normalizeCliUserCode(initialCode ?? "").replace("-", ""),
+			value: Str.replace("-", "")(normalizeCliUserCode(initialCode ?? "")),
 			validation: "alphanumeric",
 			isUppercase: true,
 		}),
@@ -203,4 +204,3 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: modifyFields(model, { state: () => State.Failed({ message: failure }) }),
 		}),
 	})
-

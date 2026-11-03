@@ -1,7 +1,8 @@
-import { ALERT_MAX_EVALUATION_INTERVAL_MINUTES } from "@maple/query-engine/datetime"
+import { ALERT_MAX_EVALUATION_INTERVAL_MINUTES, alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
 import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { countLabel } from "@maple/ui/lib/format"
+import { Array as Arr } from "effect"
 
 /**
  * Derived health of an alert rule, in display-priority order:
@@ -14,6 +15,8 @@ export interface RuleAttention {
 	readonly noDestinations: boolean
 	/** The most recent delivery attempt for this rule failed. */
 	readonly recentDeliveryFailure: boolean
+	/** The scheduler slowed the rule down after its query kept hitting its time limit. */
+	readonly slowedDown: boolean
 }
 
 export interface DerivedRuleStatus {
@@ -24,13 +27,14 @@ export interface DerivedRuleStatus {
 }
 
 /**
- * A rule counts as stale after 3× its longest check interval: the scheduler
- * checks a rule every 1-5 minutes (`alertEvaluationIntervalMinutes`) and
- * republishes `last_evaluated_at` about as often (a 5-minute heartbeat). Not scaled by `windowMinutes`: that hid scheduler outages for up
- * to 3× the window (72h on a daily rule).
+ * A rule counts as stale after 3 of its check intervals, and never before 3x the
+ * 5-minute `last_evaluated_at` heartbeat. Not scaled by `windowMinutes`: that hid
+ * scheduler outages for up to 3x the window (72h on a daily rule).
  * Shared with the diagnosis panel so both surfaces agree on "stale".
  */
-export const staleThresholdMs = (): number => 3 * ALERT_MAX_EVALUATION_INTERVAL_MINUTES * 60_000
+export const staleThresholdMs = (
+	rule: Pick<AlertRuleDocument, "windowMinutes" | "evaluationIntervalMinutes" | "slowedIntervalMinutes">,
+): number => 3 * Math.max(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, alertRuleIntervalMinutes(rule)) * 60_000
 
 const lastEvaluatedMs = (
 	rule: AlertRuleDocument,
@@ -91,6 +95,7 @@ export function deriveRuleStatus(input: {
 	const attention: RuleAttention = {
 		noDestinations: rule.enabled && rule.destinationIds.length === 0,
 		recentDeliveryFailure: latestDelivery?.status === "failed",
+		slowedDown: rule.enabled && rule.slowedIntervalMinutes !== null,
 	}
 
 	if (!rule.enabled) {
@@ -112,7 +117,7 @@ export function deriveRuleStatus(input: {
 	}
 
 	const evaluatedAt = lastEvaluatedMs(rule, states)
-	if (evaluatedAt == null || now - evaluatedAt > staleThresholdMs()) {
+	if (evaluatedAt == null || now - evaluatedAt > staleThresholdMs(rule)) {
 		return {
 			status: "stale",
 			attention,
@@ -122,7 +127,7 @@ export function deriveRuleStatus(input: {
 
 	// No data only when we have state rows and ALL of them last skipped —
 	// a single skipped group among healthy ones is normal for grouped rules.
-	if (states.length > 0 && states.every((s) => s.last_status === "skipped")) {
+	if (states.length > 0 && Arr.every(states, (s) => s.last_status === "skipped")) {
 		return { status: "no-data", attention, reason: "All recent checks were skipped (no data)" }
 	}
 
@@ -136,6 +141,7 @@ export function needsAttention(derived: DerivedRuleStatus): boolean {
 		derived.status === "stale" ||
 		derived.status === "no-data" ||
 		derived.attention.noDestinations ||
-		derived.attention.recentDeliveryFailure
+		derived.attention.recentDeliveryFailure ||
+		derived.attention.slowedDown
 	)
 }

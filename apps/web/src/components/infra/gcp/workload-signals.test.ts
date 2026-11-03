@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { GcpBucketPoint } from "./charts"
 import { gcpRailFacts, gcpTraceGap, gcpTracedErrors, gcpWorkloadStrips } from "./workload-signals"
+import { Array as Arr } from "effect"
 
 const BUCKET_SECONDS = 300
 const START_MS = Date.parse("2026-10-14T12:00:00.000Z")
@@ -29,7 +30,7 @@ const cloudRun = (
 	activeInstances: ReadonlyArray<number>,
 	serverErrors = 500,
 ): ReadonlyArray<GcpBucketPoint> =>
-	activeInstances.flatMap((active, index) => [
+	Arr.flatMap(activeInstances, (active, index) => [
 		point(index, REQUESTS, "2xx", 1000),
 		...(index === 2 || index === 3 ? [point(index, REQUESTS, "5xx", serverErrors)] : []),
 		point(index, INSTANCES, "active", active),
@@ -95,7 +96,7 @@ describe("gcpWorkloadStrips", () => {
 		const strips = gcpWorkloadStrips("cloudRun", cloudRun([4, 4, 4, 4, 4, 4]), WINDOW)
 		const serverErrors = strips.find((strip) => strip.label === "5xx")
 		expect(serverErrors?.rows.map((row) => row.value)).toEqual([0, 0, 500, 500, 0, 0])
-		expect(serverErrors?.summary).toEqual({ value: "1.0K", caption: "14.3% of 7.0K", alert: true })
+		expect(serverErrors?.summary).toEqual({ value: "1K", caption: "14.3% of 7K", alert: true })
 	})
 
 	it("draws latency in milliseconds from the seconds Google stores", () => {
@@ -121,7 +122,7 @@ describe("gcpWorkloadStrips", () => {
 		]
 		const replica = [...primary, point(0, "gcp.cloud_sql.replication.lag", "", 4)]
 		const labels = (points: ReadonlyArray<GcpBucketPoint>) =>
-			gcpWorkloadStrips("cloudSql", points, WINDOW).map((strip) => strip.label)
+			Arr.map(gcpWorkloadStrips("cloudSql", points, WINDOW), (strip) => strip.label)
 		expect(labels(primary)).toEqual(["Connections", "CPU"])
 		expect(labels(insights)).toEqual(["Query latency", "Connections", "Lock wait", "CPU"])
 		expect(labels(replica)).toEqual(["Connections", "CPU", "Replica lag"])
@@ -158,7 +159,7 @@ describe("gcpWorkloadStrips", () => {
 			point(0, "gcp.pubsub.subscription.push_requests", "ack", 90),
 			point(0, "gcp.pubsub.subscription.push_requests", "internal", 10),
 		]
-		expect(gcpWorkloadStrips("pubsub", pull, WINDOW).map((strip) => strip.label)).not.toContain(
+		expect(Arr.map(gcpWorkloadStrips("pubsub", pull, WINDOW), (strip) => strip.label)).not.toContain(
 			"Push failed",
 		)
 		const failed = gcpWorkloadStrips("pubsub", push, WINDOW).find(
@@ -189,7 +190,7 @@ describe("gcpRailFacts", () => {
 			point(1, "gcp.cloud_run.container.billable_time", "", 3600),
 		]
 		expect(gcpRailFacts("cloudRun", points, BUCKET_SECONDS)).toEqual([
-			{ label: "billable", value: "2.0h in window" },
+			{ label: "billable", value: "2h in window" },
 		])
 	})
 })

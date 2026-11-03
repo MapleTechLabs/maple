@@ -1,8 +1,9 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
+import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type Elapsed, splitDuration } from "@maple/web-data/investigations/display"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Model, OverviewRow } from "./model"
 
 export const investigationOf = (model: Model): Option.Option<V2Investigation> =>
@@ -13,33 +14,34 @@ export const tabOf = (model: Model): Tab => model.search.tab ?? "overview"
 
 /** `breadcrumbLabel`: the first line, clamped to 64 characters. */
 export const breadcrumbLabel = (title: string): string => {
-	const line = (title.split("\n")[0] ?? "").trim()
-	return line.length > 64 ? `${line.slice(0, 63).trimEnd()}…` : line
+	const line = Str.trim(Str.split("\n")(title)[0] ?? "")
+	return line.length > 64 ? `${Str.trimEnd(Str.slice(0, 63)(line))}…` : line
 }
 
 /** `servicesTouched`: every service the evidence touched, the scope as fallback. */
 export const servicesTouched = (investigation: V2Investigation): ReadonlyArray<string> => {
 	const seen = new Set<string>()
-	;(investigation.report?.evidence ?? []).forEach((evidence) =>
-		evidence.relatedServices.forEach((service) => {
-			const name = service.trim()
+	Arr.forEach(investigation.report?.evidence ?? [], (evidence) =>
+		Arr.forEach(evidence.relatedServices, (service) => {
+			const name = Str.trim(service)
 			if (name) seen.add(name)
 		}),
 	)
 	if (seen.size === 0) {
 		const scope = investigation.snapshot.scope?.trim()
-		if (scope && !scope.includes(" ")) seen.add(scope)
+		if (scope && !Str.includes(" ")(scope)) seen.add(scope)
 	}
 	return [...seen]
 }
 
-/** `elapsedBetween`: the run's elapsed time. */
+/** `elapsedBetween`: the run's elapsed time; from a minute up, the shared "4m 12s" form. */
 export const elapsedBetween = (from: string, to: string | null): Elapsed | null => {
 	if (!to) return null
 	const start = toEpochMs(from)
 	const end = toEpochMs(to)
 	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null
-	return splitDuration(end - start)
+	const ms = end - start
+	return ms < 60_000 ? splitDuration(ms) : { value: formatDuration(ms), unit: "" }
 }
 
 const BUCKETS = 32
@@ -74,7 +76,9 @@ export const signalWindowOf = (investigation: V2Investigation): SignalWindow | n
 /** `resolveService`: the one service the signals card can speak for. */
 /** The overview is per service and environment; the busiest row for the service is the incident's. */
 export const busiestRowOf = (rows: ReadonlyArray<OverviewRow>, service: string): OverviewRow | null =>
-	rows.filter((row) => row.serviceName === service).toSorted((left, right) => right.spanCount - left.spanCount)[0] ?? null
+	Arr.filter(rows, (row) => row.serviceName === service).toSorted(
+		(left, right) => right.spanCount - left.spanCount,
+	)[0] ?? null
 
 export const signalServiceOf = (investigation: V2Investigation): string | null => {
 	const named = investigation.snapshot.serviceName?.trim()
@@ -90,9 +94,12 @@ export const traceTipId = (place: ChipPlace, traceId: string): string => `trace-
 /** Every trace chip trigger the page can render, and the trace each one names. */
 export const traceTips = (investigation: V2Investigation): ReadonlyMap<string, string> =>
 	new Map(
-		(investigation.report?.evidence ?? []).flatMap((evidence) =>
-			evidence.traceIds.flatMap((traceId) =>
-				(["sheet", "evidence", "card"] as const).map((place) => [traceTipId(place, traceId), traceId] as const),
+		Arr.flatMap(investigation.report?.evidence ?? [], (evidence) =>
+			Arr.flatMap(evidence.traceIds, (traceId) =>
+				Arr.map(
+					["sheet", "evidence", "card"] as const,
+					(place) => [traceTipId(place, traceId), traceId] as const,
+				),
 			),
 		),
 	)

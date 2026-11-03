@@ -1,18 +1,20 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../charts/chart"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { LoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as LogsStream from "../../../ui/logs/logs-stream"
-import * as Menu from "../../../ui/menu"
-import * as Popover from "../../../ui/popover"
-import * as Tooltip from "../../../ui/tooltip"
-import * as LogDetail from "../detail"
-import { SignalPresences } from "../../kit/signal-presence"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import * as Menu from "@maple/views/ui/menu"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import * as LogDetail from "@maple/views/logs/log-sheet"
+import * as InfraCorrelation from "../../kit/infra-correlation"
+import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { AttributeKey, Density, LogsFacets, LogsPage, VolumeBucket } from "./model"
+import { Density } from "@maple/views/ui/logs/viewer"
+import { AttributeKey, LogsFacets, LogsPage, VolumeBucket } from "./model"
 
 /** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
 export const RequestMode = Schema.Literals(["Load", "Refresh"])
@@ -39,7 +41,6 @@ export const Message = defineMessageUnion({
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
-	PaintedEmptyState: {},
 	/** `LogsFilterSidebar` mounted (inline, or in the sheet below `lg`): its facets read goes out. */
 	MountedFilterRail: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
@@ -71,6 +72,7 @@ export const Message = defineMessageUnion({
 	GotColumnsPopoverMessage: { message: Popover.Message },
 	GotSearchHelpMessage: { message: Popover.Message },
 	GotDetailMessage: { message: LogDetail.Message },
+	GotDetailInfraMessage: { message: InfraCorrelation.Message },
 	ToggledColumn: { key: Schema.String },
 	GotVolumeChartMessage: { message: Chart.Message },
 	PressedVolumeChart: {},

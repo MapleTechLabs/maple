@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * `window.__dashboardGridBench` for `perf/dashboard-grid.perf.spec.ts`. `react.commits`
  * counts DOM commits under the board (mutation batches), durations stay 0. A content render is one
@@ -68,13 +69,14 @@ const isPointerFollow = (record: MutationRecord): boolean =>
 	record.type === "attributes" &&
 	record.attributeName === "style" &&
 	record.target instanceof Element &&
-	(record.target.hasAttribute("data-grid-item") || record.target.matches('[aria-hidden="true"].border-dashed'))
+	(record.target.hasAttribute("data-grid-item") ||
+		record.target.matches('[aria-hidden="true"].border-dashed'))
 
 /** Counts DOM commits (mutation batches) under `root` until the returned stop is called. */
 const watchCommits = (root: Element) => {
 	const commits = { count: 0 }
 	const observer = new MutationObserver((records) => {
-		if (!records.every(isPointerFollow)) commits.count++
+		if (!Arr.every(records, isPointerFollow)) commits.count++
 	})
 	observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true })
 	return () => {
@@ -94,7 +96,7 @@ const reactMetrics = (commits: number): ReactRenderMetrics => ({
 const measureMount = (root: Element, requestRemount: () => void): Promise<MountMetrics> => {
 	const shift = { value: 0 }
 	const observer = new PerformanceObserver((list) =>
-		list.getEntries().forEach((entry) => {
+		Arr.forEach(list.getEntries(), (entry) => {
 			if ("value" in entry && typeof entry.value === "number") shift.value += entry.value
 		}),
 	)
@@ -146,9 +148,13 @@ const finish = (interaction: Interaction): InteractionMetrics => {
 	return {
 		frames: interaction.frames.length,
 		frameP95Ms: percentile(interaction.frames, 95),
-		droppedFrames: interaction.frames.filter((duration) => duration > FRAME_MS * 1.5).length,
+		droppedFrames: Arr.filter(interaction.frames, (duration) => duration > FRAME_MS * 1.5).length,
 		longTasks: interaction.longTasks.length,
-		totalBlockingMs: interaction.longTasks.reduce((sum, entry) => sum + Math.max(0, entry.duration - 50), 0),
+		totalBlockingMs: Arr.reduce(
+			interaction.longTasks,
+			0,
+			(sum, entry) => sum + Math.max(0, entry.duration - 50),
+		),
 		react: reactMetrics(commits),
 	}
 }
@@ -160,7 +166,11 @@ interface HarnessState {
 }
 
 /** Installs the harness on the bench root; `ready` flips once every tile's grip is on the page. */
-export const installDashboardGridBench = (root: Element, count: number, requestRemount: () => void): (() => void) => {
+export const installDashboardGridBench = (
+	root: Element,
+	count: number,
+	requestRemount: () => void,
+): (() => void) => {
 	const state: HarnessState = { interaction: null, handle: 0 }
 	const harness: DashboardGridBenchHarness = {
 		ready: false,

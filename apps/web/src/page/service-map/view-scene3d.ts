@@ -6,17 +6,21 @@ import {
 	formatLatency,
 	formatRate,
 	HEALTH_COLOR,
+	HEALTH_LABEL,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
-import { Option } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type * as ServiceMap from "../../service-map/map/service-map"
-import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { iconButton } from "../../ui/icon-button"
-import { middleTruncate } from "../../ui/middle-truncate"
-import * as ToggleGroup from "../../ui/toggle-group"
+import type * as ServiceMap from "@maple/views/service-map/map/service-map"
+import { button } from "@maple/views/ui/button"
+import { heading } from "@maple/views/ui/heading"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { middleTruncate } from "@maple/views/ui/middle-truncate"
+import { pressable } from "@maple/views/ui/pressable"
+import { statusDot } from "@maple/views/ui/status-dot"
+import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { machineBadge } from "./badge"
 import {
 	COMMAND_ATTRIBUTE,
@@ -28,6 +32,10 @@ import {
 	WatchTheme,
 } from "./scene3d"
 import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
+import { hstack } from "@maple/views/ui/stack"
+import { layer } from "@maple/views/ui/layer"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The 3D viewport: the perspective bar, the
 // paper section with the canvas wrappers, the timber sign labels, the HUD, legend and camera
@@ -50,12 +58,12 @@ const VIEW_COPY = {
 // rewrites inline style every frame, keeping only position and colour.
 const NAIL =
 	"before:absolute before:top-1/2 before:size-[2px] before:-translate-y-1/2 before:rounded-full before:bg-current after:absolute after:top-1/2 after:size-[2px] after:-translate-y-1/2 after:rounded-full after:bg-current"
-const SIGN_CLASS = "rounded-[3px] px-1.5 font-medium"
+const SIGN_CLASS = "rounded-xs px-1.5 font-medium"
 const TAG_CLASS =
-	"rounded-l-[7px] rounded-r-[2px] border-current/50 pr-1 pl-2.5 before:absolute before:top-1/2 before:left-[3px] before:size-[3px] before:-translate-y-1/2 before:rounded-full before:border before:border-current/70 after:absolute after:bottom-full after:left-[4px] after:h-1.5 after:w-px after:bg-current/50"
-const PLANK_CLASS = `rounded-[2px] px-2.5 py-px font-semibold before:left-[4px] after:right-[4px] ${NAIL}`
+	"rounded-l-lg-inset rounded-r-xs border-current/50 pr-1 pl-2.5 before:absolute before:top-1/2 before:left-[3px] before:size-[3px] before:-translate-y-1/2 before:rounded-full before:border before:border-current/70 after:absolute after:bottom-full after:left-[4px] after:h-1.5 after:w-px after:bg-current/50"
+const PLANK_CLASS = `rounded-xs px-2.5 py-px font-semibold before:left-[4px] after:right-[4px] ${NAIL}`
 
-const PANEL_CLASS = "rounded-[3px] border border-(--map-sign-ink)/35 bg-(--map-sign) text-(--map-sign-ink)"
+const PANEL_CLASS = "rounded-xs border border-(--map-sign-ink)/35 bg-(--map-sign) text-(--map-sign-ink)"
 
 const LABEL = "data-scene-label"
 
@@ -96,7 +104,7 @@ const perspectiveBar = <M>(
 	h: HtmlBuilder<M>,
 	{ model, reducedMotion, toMessage }: ViewportOptions<M>,
 ): Html => {
-	const flowing = model.traffic && !reducedMotion
+	const flowing = model.traffic ?? !reducedMotion
 	return h.div(
 		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2")],
 		[
@@ -122,21 +130,24 @@ const perspectiveBar = <M>(
 				[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
 				[VIEW_COPY[model.perspective].encoding],
 			),
+			// Reduced motion starts the traffic paused; the button still turns it on.
 			button(
 				h,
 				{
 					size: "sm",
 					variant: "ghost",
 					className: "ml-auto text-xs",
-					isDisabled: reducedMotion,
 					attributes: [
 						h.AriaPressed(String(flowing)),
-						h.OnClick(toMessage(Message.ClickedTraffic())),
+						h.OnClick(toMessage(Message.ClickedTraffic({ isFlowing: flowing }))),
+						...(reducedMotion && !flowing
+							? [h.Title("Paused for your reduced-motion setting")]
+							: []),
 					],
 				},
 				[
 					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-					reducedMotion ? "Reduced motion" : flowing ? "Pause traffic" : "Resume traffic",
+					flowing ? "Pause traffic" : "Play traffic",
 				],
 			),
 		],
@@ -166,23 +177,25 @@ const nodeLabels = <M>(
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Html> => {
 	const related = connectedIds(topology, selectedId)
-	return topology.nodes.map((node) => {
+	return Arr.map(topology.nodes, (node) => {
 		const badge = machineBadge(node)
 		const isSelected = selectedId === node.id
-		return h.button(
-			[
-				h.Key(node.id),
-				h.Type("button"),
-				h.Attribute(LABEL, node.id),
-				h.Title(badge ? `${node.label} · ${badge.label}` : node.label),
-				h.Class(
-					`pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current"}`,
-				),
-				h.Style(nodeSignStyle(palette, node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1)),
-				h.OnClick(toMessage(Message.PickedNode({ nodeId: isSelected ? null : node.id }))),
-				h.AriaLabel(`Select ${node.label}${badge ? `, ${badge.label}` : ""}`),
-				h.AriaPressed(String(isSelected)),
-			],
+		return pressable(
+			h,
+			{
+				onClick: toMessage(Message.PickedNode({ nodeId: isSelected ? null : node.id })),
+				isSelected,
+				label: `Select ${node.label}${badge ? `, ${badge.label}` : ""}`,
+				className: `pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0 ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current active:border-current"}`,
+				attributes: [
+					h.Key(node.id),
+					h.Attribute(LABEL, node.id),
+					h.Title(badge ? `${node.label} · ${badge.label}` : node.label),
+					h.Style(
+						nodeSignStyle(palette, node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1),
+					),
+				],
+			},
 			[middleTruncate(h, { text: node.label, tail: 10 })],
 		)
 	})
@@ -197,31 +210,35 @@ const linkTags = <M>(
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Html> => {
 	const labelOf = (id: string) => topology.nodes.find((node) => node.id === id)?.label
-	return links
-		.filter((link) => !link.edge.relation)
-		.filter((link) =>
-			selectedId ? link.edge.source === selectedId || link.edge.target === selectedId : link.prominent,
-		)
-		.map((link) => {
+	return Arr.map(
+		Arr.filter(
+			Arr.filter(links, (link) => !link.edge.relation),
+			(link) =>
+				selectedId
+					? link.edge.source === selectedId || link.edge.target === selectedId
+					: link.prominent,
+		),
+		(link) => {
 			const rate = formatRate(link.edge.callsPerSecond, link.edge.hasSampling)
-			return h.button(
-				[
-					h.Key(link.id),
-					h.Type("button"),
-					h.Attribute(LABEL, link.id),
-					h.Class(
-						`pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current focus-visible:outline-2 focus-visible:outline-ring ${TAG_CLASS}`,
-					),
-					h.Style(signStyle(palette)),
-					h.Title(
-						`${labelOf(link.edge.source)} → ${labelOf(link.edge.target)} · ${rate} calls · ${edgeLatency(link.edge)}`,
-					),
-					h.AriaLabel(`Inspect connection to ${labelOf(link.edge.target)}, ${rate}`),
-					h.OnClick(toMessage(Message.PickedNode({ nodeId: link.edge.target }))),
-				],
+			return pressable(
+				h,
+				{
+					onClick: toMessage(Message.PickedNode({ nodeId: link.edge.target })),
+					label: `Inspect connection to ${labelOf(link.edge.target)}, ${rate}`,
+					className: `pointer-events-auto absolute top-0 left-0 flex cursor-pointer items-center border font-mono text-4xs leading-normal tabular-nums hover:border-current active:border-current focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0 ${TAG_CLASS}`,
+					attributes: [
+						h.Key(link.id),
+						h.Attribute(LABEL, link.id),
+						h.Style(signStyle(palette)),
+						h.Title(
+							`${labelOf(link.edge.source)} → ${labelOf(link.edge.target)} · ${rate} calls · ${edgeLatency(link.edge)}`,
+						),
+					],
+				},
 				[rate],
 			)
-		})
+		},
+	)
 }
 
 const districtPlanks = <M>(
@@ -230,7 +247,7 @@ const districtPlanks = <M>(
 	perspective: string,
 	palette: Palette,
 ): ReadonlyArray<Html> =>
-	districts.map((district) =>
+	Arr.map(districts, (district) =>
 		h.span(
 			[
 				h.Key(`${perspective}:${district.id}`),
@@ -272,17 +289,17 @@ const canvas = <M>(
 				[
 					h.canvas([
 						h.Style({ display: "block" }),
-						h.Attribute(TOPOLOGY_ATTRIBUTE, JSON.stringify(input.topology)),
+						h.Attribute(TOPOLOGY_ATTRIBUTE, encodeJson(input.topology)),
 						h.Attribute(
 							STATE_ATTRIBUTE,
-							JSON.stringify({
+							encodeJson({
 								selectedId: input.selectedId,
 								view: input.model.perspective,
 								flowing: input.flowing,
 								dark: input.isDark,
 							}),
 						),
-						h.Attribute(COMMAND_ATTRIBUTE, JSON.stringify(input.model.command)),
+						h.Attribute(COMMAND_ATTRIBUTE, encodeJson(input.model.command)),
 						h.OnMount(Mount.mapMessage(MountScene(), toMessage)),
 					]),
 				],
@@ -316,7 +333,9 @@ const overlays = <M>(
 				h.Class(`pointer-events-none absolute top-4 left-4 px-3 py-2 ${PANEL_CLASS}`),
 			],
 			[
-				h.h2([h.Class("font-display text-base font-medium")], [copy.title]),
+				heading(h, { level: 2, variant: "section", className: "font-display text-current" }, [
+					copy.title,
+				]),
 				h.p([h.Class(`mt-1 text-2xs opacity-75`)], [copy.description]),
 			],
 		),
@@ -324,34 +343,29 @@ const overlays = <M>(
 			[
 				h.Attribute(LABEL, "overlay:legend"),
 				h.Class(
-					`pointer-events-none absolute bottom-14 left-4 flex flex-wrap gap-3 px-3 py-2 text-3xs sm:bottom-4 ${PANEL_CLASS}`,
+					`pointer-events-none absolute right-4 bottom-4 flex flex-wrap gap-3 px-3 py-2 text-3xs ${PANEL_CLASS}`,
 				),
 			],
-			(["healthy", "elevated", "degraded"] as const).map((status) =>
-				h.span(
-					[h.Class("flex items-center gap-1.5 capitalize")],
-					[
-						h.span(
-							[
-								h.Class("size-1.5 rounded-full"),
-								h.Style({ "background-color": HEALTH_COLOR[status] }),
-							],
-							[],
-						),
-						status,
-					],
-				),
+			Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
+				hstack(h, { gap: "1.5", as: "span" }, [
+					statusDot(h, {
+						tone: "custom",
+						attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
+					}),
+					HEALTH_LABEL[status],
+				]),
 			),
 		),
 		h.fieldset(
 			[
 				h.Attribute(LABEL, "overlay:controls"),
-				h.Class(`absolute right-4 bottom-4 flex gap-1 p-1 ${PANEL_CLASS}`),
+				// The 2D canvases' control stack: bottom left, zoom in, zoom out, then fit.
+				h.Class(`absolute bottom-4 left-4 flex flex-col gap-1 p-1 ${PANEL_CLASS}`),
 				h.AriaLabel("Camera controls"),
 			],
 			[
-				iconButton(h, { size: "icon-xs", label: "Zoom out", attributes: [camera("out")] }, ["−"]),
 				iconButton(h, { size: "icon-xs", label: "Zoom in", attributes: [camera("in")] }, ["+"]),
+				iconButton(h, { size: "icon-xs", label: "Zoom out", attributes: [camera("out")] }, ["−"]),
 				iconButton(h, { size: "icon-xs", label: "Reset camera", attributes: [camera("reset")] }, [
 					icon(h, "ArrowRotateAnticlockwiseIcon"),
 				]),
@@ -375,7 +389,7 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 	const { model, topology, selectedId, toMessage } = options
 	const isDark = model.isDark ?? true
 	const palette = mapPalette(isDark)
-	const flowing = model.traffic && !options.reducedMotion
+	const flowing = model.traffic ?? !options.reducedMotion
 	const layout = spatialLayoutOf(topology, model.perspective)
 	const related = connectedIds(topology, selectedId)
 	const background = paperBackground(palette)
@@ -407,24 +421,31 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 				],
 				[
 					scene,
-					h.div(
-						[
-							h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
-							h.AriaLabel("Map nodes"),
-						],
-						[
-							...nodeLabels(h, topology, selectedId, palette, toMessage),
-							...linkTags(
-								h,
-								topology,
-								linkLabels(topology, layout),
-								selectedId,
-								palette,
-								toMessage,
-							),
-							...districtPlanks(h, layout.districts, model.perspective, palette),
-						],
+					// The island fades into the paper instead of stopping at the canvas edge.
+					layer(
+						h,
+						{
+							attributes: [
+								h.AriaHidden(true),
+								h.Style({
+									"background-image": `radial-gradient(ellipse at center, transparent 58%, ${palette.paper} 100%)`,
+								}),
+							],
+						},
+						[],
 					),
+					layer(h, { clip: true, attributes: [h.AriaLabel("Map nodes")] }, [
+						...nodeLabels(h, topology, selectedId, palette, toMessage),
+						...linkTags(
+							h,
+							topology,
+							linkLabels(topology, layout),
+							selectedId,
+							palette,
+							toMessage,
+						),
+						...districtPlanks(h, layout.districts, model.perspective, palette),
+					]),
 					...overlays(h, model, toMessage),
 				],
 			),

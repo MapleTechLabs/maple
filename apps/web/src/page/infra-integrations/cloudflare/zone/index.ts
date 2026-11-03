@@ -3,6 +3,7 @@ import { Message, Model } from "./model"
 import { subscriptions } from "./subscription"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view } from "./view"
+import { platformSource } from "../../../../shell/source-link"
 
 /** `/infra/cloudflare/$zoneName`: one zone's traffic, DNS and security; another zone is another instance. */
 export const page = definePage(
@@ -17,6 +18,7 @@ export const page = definePage(
 		contextChanged,
 		view,
 		subscriptions,
+		source: () => platformSource("cloudflare"),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },
 			{ label: "Cloudflare", href: "/infra/cloudflare" },

@@ -20,7 +20,17 @@ import {
 	UnauthorizedError,
 	UserId,
 } from "@maple/domain/http"
-import { Clock, Effect, Option, Redacted, Schema, SchemaGetter } from "effect"
+import {
+	Clock,
+	Effect,
+	Option,
+	Redacted,
+	Schema,
+	SchemaGetter,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 
 /**
  * A self-hosted session is bounded by TWO clocks, because the HMAC key IS the
@@ -76,10 +86,10 @@ const JwtSeconds = Schema.Number.check(Schema.isFinite())
 const normalizeRoles = (value: readonly string[] | string): readonly string[] => {
 	const roles =
 		typeof value === "string"
-			? value
-					.split(",")
-					.map((part) => part.trim())
-					.filter(Boolean)
+			? Arr.filter(
+					Arr.map(Str.split(",")(value), (part) => Str.trim(part)),
+					Boolean,
+				)
 			: value
 	// A self-hosted token that names no role is the root operator: the HMAC key IS
 	// the root password, so signing capability already implies root. Preserved from
@@ -137,6 +147,10 @@ const unauthorized = (message: string) =>
 		message,
 	})
 
+/** A signed-in user with no organization to act in; v2 exposes this one case to clients. */
+const noActiveOrganization = () =>
+	new UnauthorizedError({ message: "Active organization is required", reason: "no_active_organization" })
+
 // NOTE: the decode helpers below deliberately discard the parse error and the
 // JWT helpers in `verifyHs256Jwt` do the same. Auth failures must NOT leak
 // validation hints (e.g. which schema field rejected the input) to unauthorized
@@ -154,21 +168,21 @@ const decodeRoleName = (value: string, message: string): Effect.Effect<RoleName,
 const getHeader = (headers: HeaderRecord, key: string): string | undefined => {
 	const exact = headers[key]
 	if (exact) return exact
-	return headers[key.toLowerCase()]
+	return headers[Str.toLowerCase(key)]
 }
 
 const getBearerToken = (headers: HeaderRecord): string | undefined => {
 	const header = getHeader(headers, "authorization")
 	if (!header) return undefined
-	const [scheme, token] = header.split(" ")
-	if (!scheme || !token || scheme.toLowerCase() !== "bearer") return undefined
+	const [scheme, token] = Str.split(" ")(header)
+	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
 	return token
 }
 
 const toHeaders = (headers: HeaderRecord): Headers => {
 	const requestHeaders = new Headers()
 
-	for (const [name, value] of Object.entries(headers)) {
+	for (const [name, value] of Rec.toEntries(headers)) {
 		if (value !== undefined) {
 			requestHeaders.set(name, value)
 		}
@@ -187,19 +201,21 @@ const toRequest = (headers: HeaderRecord): Request => {
 }
 
 const decodeBase64Url = (input: string): string => {
-	const normalized = input.replace(/-/g, "+").replace(/_/g, "/")
+	const normalized = Str.replace(/_/g, "/")(Str.replace(/-/g, "+")(input))
 	const padding = normalized.length % 4
-	const padded = padding === 0 ? normalized : normalized + "=".repeat(4 - padding)
+	const padded = padding === 0 ? normalized : normalized + Str.repeat(4 - padding)("=")
 	return Buffer.from(padded, "base64").toString("utf8")
 }
 
-const encodeBase64Url = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url")
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+const encodeBase64Url = (value: unknown): string => Buffer.from(encodeJson(value)).toString("base64url")
 
 const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSessionToken")(function* (
 	token: string,
 	secret: string,
 ): Effect.fn.Return<SelfHostedSessionClaims, UnauthorizedError> {
-	const parts = token.split(".")
+	const parts = Str.split(".")(token)
 	if (parts.length !== 3) {
 		return yield* unauthorized("Invalid JWT format")
 	}
@@ -329,7 +345,7 @@ const constantTimeEquals = (left: string, right: string): boolean => {
 	return leftBuffer.length === rightBuffer.length && timingSafeEqual(normalizedLeft, normalizedRight)
 }
 
-const getAuthMode = (mode: string): AuthMode => (mode.toLowerCase() === "clerk" ? "clerk" : "self_hosted")
+const getAuthMode = (mode: string): AuthMode => (Str.toLowerCase(mode) === "clerk" ? "clerk" : "self_hosted")
 
 const makeSelfHostedTenant = (defaultOrgId: string): TenantContext => ({
 	orgId: decodeOrgIdSync(defaultOrgId),
@@ -349,7 +365,7 @@ type ClerkSessionAuth = {
 type ClerkRequestState = {
 	readonly isAuthenticated: boolean
 	readonly message: string | null
-	readonly toAuth: () => ClerkSessionAuth | null
+	readonly toAuth: (options?: { readonly treatPendingAsSignedOut?: boolean }) => ClerkSessionAuth | null
 }
 
 type ClerkAuthenticateRequest = (
@@ -364,7 +380,7 @@ export interface AuthEnv {
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
-	/** Only `development` lets a pinned org trust a non-member's session role. */
+	/** Only `development` lets a pinned org admit a non-member (with their session role). */
 	readonly MAPLE_ENVIRONMENT?: string | undefined
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
@@ -427,21 +443,17 @@ export const makeLoginSelfHosted = (
 		SelfHostedAuthDisabledError | SelfHostedInvalidPasswordError
 	> {
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "self_hosted") {
-			return yield* Effect.fail(
-				new SelfHostedAuthDisabledError({
-					message: "Self-hosted password login is disabled",
-				}),
-			)
+			return yield* new SelfHostedAuthDisabledError({
+				message: "Self-hosted password login is disabled",
+			})
 		}
 
 		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
 
 		if (!constantTimeEquals(password, rootPassword)) {
-			return yield* Effect.fail(
-				new SelfHostedInvalidPasswordError({
-					message: "Invalid root password",
-				}),
-			)
+			return yield* new SelfHostedInvalidPasswordError({
+				message: "Invalid root password",
+			})
 		}
 
 		const tenant = makeSelfHostedTenant(env.MAPLE_DEFAULT_ORG_ID)
@@ -474,11 +486,9 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 		token: string,
 	): Effect.fn.Return<SelfHostedLoginResponse, SelfHostedAuthDisabledError | UnauthorizedError> {
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "self_hosted") {
-			return yield* Effect.fail(
-				new SelfHostedAuthDisabledError({
-					message: "Self-hosted session renewal is disabled",
-				}),
-			)
+			return yield* new SelfHostedAuthDisabledError({
+				message: "Self-hosted session renewal is disabled",
+			})
 		}
 
 		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
@@ -588,7 +598,7 @@ const selectRequestedOrg = Effect.fnUntraced(function* (
 	if (!requested) return Option.none()
 
 	const requestedOrgId = yield* decodeOrgId(requested, "Invalid organization selection")
-	if (!verify) return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+	if (!verify) return yield* organizationAccessDenied(requestedOrgId)
 
 	// Stamped only when the header actually decides the organization, so
 	// `maple.auth.org_source` answers "how much traffic selects an organization
@@ -600,7 +610,7 @@ const selectRequestedOrg = Effect.fnUntraced(function* (
 
 	const membership = yield* verify(userId, requestedOrgId)
 	if (Option.isNone(membership)) {
-		return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+		return yield* organizationAccessDenied(requestedOrgId)
 	}
 	return membership
 })
@@ -625,7 +635,7 @@ const applyRequestedOrg = Effect.fnUntraced(function* (
 	// branch here that returns the original tenant: that shape is what a silent
 	// ignore looks like, and it is the failure this whole path exists to avoid.
 	const membership = yield* selectRequestedOrg(tenant.userId, headers, verify)
-	if (Option.isNone(membership)) return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+	if (Option.isNone(membership)) return yield* organizationAccessDenied(requestedOrgId)
 
 	// The role travels with the organization. Carrying the token's `orgRole`
 	// across would grant an admin of org A admin of org B.
@@ -638,6 +648,7 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 	env: Pick<AuthEnv, "CLERK_JWT_KEY">,
 	authenticateClerkRequest: ClerkAuthenticateRequest,
 	acceptsToken: string | string[],
+	acceptPendingSession = false,
 ) {
 	const requestState = yield* Effect.tryPromise({
 		try: () =>
@@ -655,7 +666,9 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 		return yield* unauthorized(requestState.message ?? "Invalid Clerk session token")
 	}
 
-	const auth = requestState.toAuth()
+	// Clerk reports a `pending` session (one with an unfinished task, such as choosing an
+	// organization) as signed out unless asked otherwise.
+	const auth = requestState.toAuth({ treatPendingAsSignedOut: !acceptPendingSession })
 	if (!auth) {
 		return yield* unauthorized("Invalid Clerk session token")
 	}
@@ -668,7 +681,9 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 		return yield* unauthorized("Missing user in Clerk session token")
 	}
 
-	return { ...auth, userId: auth.userId }
+	// Pending by Clerk's own rule: authenticated only because pending sessions were let through.
+	const pending = acceptPendingSession && requestState.toAuth()?.isAuthenticated !== true
+	return { ...auth, userId: auth.userId, pending }
 })
 
 /**
@@ -686,7 +701,15 @@ export const makeResolveClerkUser = (
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "clerk" || !authenticateClerkRequest) {
 			return yield* unauthorized("A Clerk session is required")
 		}
-		const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, "session_token")
+		// A user with no organization yet holds a pending session until they create one, so
+		// this is the one place a pending session is accepted.
+		const auth = yield* authenticateClerkUser(
+			headers,
+			env,
+			authenticateClerkRequest,
+			"session_token",
+			true,
+		)
 		return yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
 	})
 
@@ -716,7 +739,18 @@ export const makeResolveTenant = (
 				return yield* unauthorized("CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk")
 			}
 
-			const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, acceptsToken)
+			const auth = yield* authenticateClerkUser(
+				headers,
+				env,
+				authenticateClerkRequest,
+				acceptsToken,
+				true,
+			)
+			// A pending session (a user who has not chosen an organization yet) is only
+			// classified so clients can show an org picker, never served.
+			if (auth.pending) {
+				return yield* auth.orgId ? unauthorized("Invalid Clerk token") : noActiveOrganization()
+			}
 
 			const orgIdOverride = getOptionalString(env.MAPLE_ORG_ID_OVERRIDE)
 			const userId = yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
@@ -749,10 +783,8 @@ export const makeResolveTenant = (
 				if (env.MAPLE_ENVIRONMENT === "development") {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
-				if (verifyOrgMembership) {
-					return yield* Effect.fail(organizationAccessDenied(pinnedOrgId))
-				}
-				return { orgId: pinnedOrgId, userId, roles: [], authMode: "clerk" }
+				// Outside development, membership the resolver cannot prove (no verifier) is a refusal.
+				return yield* organizationAccessDenied(pinnedOrgId)
 			}
 
 			if (!auth.orgId) {
@@ -762,7 +794,7 @@ export const makeResolveTenant = (
 				// foreground has active.
 				const selected = yield* selectRequestedOrg(userId, headers, selectable)
 				if (Option.isNone(selected)) {
-					return yield* unauthorized("Active organization is required")
+					return yield* noActiveOrganization()
 				}
 				return {
 					orgId: selected.value.orgId,
@@ -853,6 +885,19 @@ const extractPrimaryEmail = (u: ClerkUser): string | null => {
 	return primary?.emailAddress ?? u.emailAddresses?.[0]?.emailAddress ?? null
 }
 
+/** The primary address only once Clerk has verified it; never a fallback to another address. */
+export const extractVerifiedPrimaryEmail = (u: {
+	readonly primaryEmailAddressId: string | null
+	readonly emailAddresses: ReadonlyArray<{
+		readonly id: string
+		readonly emailAddress: string
+		readonly verification: { readonly status: string } | null
+	}>
+}): string | null => {
+	const primary = u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)
+	return primary?.verification?.status === "verified" ? primary.emailAddress : null
+}
+
 const makeClerkClient = (
 	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
 ) => {
@@ -885,6 +930,29 @@ export const makeGetUserEmail = (
 		return Option.match(user, {
 			onNone: () => null as string | null,
 			onSome: extractPrimaryEmail,
+		})
+	})
+}
+
+export const makeGetVerifiedPrimaryEmail = (
+	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
+) => {
+	const clerkClient = makeClerkClient(env)
+	if (!clerkClient) {
+		return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (_userId: string) {
+			return null as string | null
+		})
+	}
+
+	return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (userId: string) {
+		yield* Effect.annotateCurrentSpan("tenant.userId", userId)
+		const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
+			clerkClient.users.getUser(userId),
+		).pipe(Effect.option)
+
+		return Option.match(user, {
+			onNone: () => null as string | null,
+			onSome: extractVerifiedPrimaryEmail,
 		})
 	})
 }

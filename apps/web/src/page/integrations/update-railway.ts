@@ -1,8 +1,8 @@
 import { RailwayConnectRequest } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import type { LoadFailure } from "../../data/load-failure"
-import * as Field from "../../ui/field"
+import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Field from "@maple/views/ui/field"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -45,7 +45,7 @@ export const submittedToken = (model: Model): Return => {
 	const connect = model.railwayCard.connect
 	if (connect.isSubmitting) return { model }
 	const mode = model.railwayCard.isRotating || isAuthFailed(model) ? "rotate" : "connect"
-	return Option.match(decodeConnectRequest({ token: connect.token.value.trim() }), {
+	return Option.match(decodeConnectRequest({ token: Str.trim(connect.token.value) }), {
 		onNone: () => ({ model }),
 		onSome: (request) => ({
 			model: withCard(model, { connect: { ...connect, isSubmitting: true, error: null } }),
@@ -68,7 +68,7 @@ export const succeededConnect = (
 		}),
 		[
 			(next) => toast(next, "success", title, description),
-			(next) => requestStatus(next, context, "railway", "Refresh"),
+			(next) => requestStatus(next, context, "railway", "Supersede"),
 		],
 	)
 
@@ -84,8 +84,8 @@ export const clickedSync = (model: Model): Return =>
 export const completedSync = (model: Model, context: PageContext, failure: LoadFailure | null): Return => {
 	const settled = withCard(model, { isSyncing: false })
 	return failure === null
-		? requestStatus(settled, context, "railway", "Refresh")
-		: toast(settled, "error", "Failed to sync Railway", failure.message)
+		? requestStatus(settled, context, "railway", "Supersede")
+		: toast(settled, "error", "Couldn't sync Railway", failure.message)
 }
 
 export const setRotating = (model: Model, isRotating: boolean): Return => ({

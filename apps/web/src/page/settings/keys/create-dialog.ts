@@ -4,17 +4,17 @@ import {
 	type ApiKeyCreateOptions,
 	buildApiKeyCreatePayload,
 } from "../../../components/settings/api-key-create-payload"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../../../data/analytics"
-import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
-import * as CopyButton from "../../../ui/copy-button"
-import * as Dialog from "../../../ui/dialog"
-import * as Field from "../../../ui/field"
-import * as Select from "../../../ui/select"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
+import * as Select from "@maple/views/ui/select"
 
 // `CreateApiKeyDialog`, as one Submodel shared by the Keys and MCP tabs.
 
@@ -35,6 +35,7 @@ export const SCOPE_FAMILIES = [
 	{ id: "scrape_targets", label: "Scrape targets" },
 	{ id: "instrumentation", label: "Recommendations" },
 	{ id: "investigations", label: "Investigations" },
+	{ id: "error_issues", label: "Errors" },
 	{ id: "anomalies", label: "Anomalies" },
 	{ id: "session_replays", label: "Session replays" },
 	{ id: "traces", label: "Traces" },
@@ -42,6 +43,8 @@ export const SCOPE_FAMILIES = [
 	{ id: "metrics", label: "Metrics" },
 	{ id: "services", label: "Services" },
 	{ id: "service_map", label: "Service map" },
+	{ id: "sources", label: "Sources" },
+	{ id: "integrations", label: "Integrations" },
 	{ id: "query", label: "Query" },
 	{ id: "organization", label: "Organization" },
 	{ id: "audit_log", label: "Audit log" },
@@ -88,7 +91,6 @@ export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	GotNameMessage: { message: Field.Message },
 	GotDescriptionMessage: { message: Field.Message },
-	PressedNameKey: { key: Schema.String },
 	GotExpirationMessage: { message: Select.Message },
 	ClickedAccessMode: { mode: AccessMode },
 	ClickedAllScopes: { level: ScopeLevel },
@@ -107,7 +109,11 @@ export const Message = defineMessageUnion({
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
-	RequestedToast: { type: Schema.Literals(["success", "error"]), title: Schema.String, description: Schema.String },
+	RequestedToast: {
+		type: Schema.Literals(["success", "error"]),
+		title: Schema.String,
+		description: Schema.String,
+	},
 	CreatedKey: { secret: Schema.String },
 })
 export type OutMessage = typeof OutMessage.Type
@@ -141,10 +147,10 @@ export const TrackKeyCreated = Command.define("TrackApiKeyCreated", {
 const levelOf = (model: Model, family: string): ScopeLevel => model.scopeLevels[family] ?? "none"
 
 export const selectedFamilyCount = (model: Model): number =>
-	SCOPE_FAMILIES.filter((family) => levelOf(model, family.id) !== "none").length
+	Arr.filter(SCOPE_FAMILIES, (family) => levelOf(model, family.id) !== "none").length
 
 const scopesOf = (model: Model): ReadonlyArray<V2Scope> =>
-	SCOPE_FAMILIES.flatMap((family) => {
+	Arr.flatMap(SCOPE_FAMILIES, (family) => {
 		const level = levelOf(model, family.id)
 		return level === "read" || level === "write" ? [`${family.id}:${level}`] : []
 	})
@@ -155,11 +161,11 @@ const restrictedScopes = (model: Model): ReadonlyArray<V2Scope> | undefined =>
 const isMissingScopes = (model: Model): boolean => restrictedScopes(model)?.length === 0
 
 export const canCreate = (model: Model): boolean =>
-	model.name.value.trim().length > 0 && !isMissingScopes(model) && !model.isCreating
+	Str.trim(model.name.value).length > 0 && !isMissingScopes(model) && !model.isCreating
 
 /** A disabled Create says which field is missing. */
 export const blockedReason = (model: Model): string | null =>
-	model.name.value.trim().length === 0
+	Str.trim(model.name.value).length === 0
 		? "Name the key so you can tell it apart later."
 		: isMissingScopes(model)
 			? "Give at least one resource family read or write access."
@@ -196,13 +202,15 @@ const create = (model: Model): Return => {
 	if (!canCreate(model)) return { model }
 	const scopes = restrictedScopes(model)
 	const expiration = model.expiration.value
-	const expiry: ApiKeyCreateOptions = expiration === "never" ? {} : { expiresInSeconds: Number(expiration) * 86_400 }
+	const expiry: ApiKeyCreateOptions =
+		expiration === "never" ? {} : { expiresInSeconds: Number(expiration) * 86_400 }
 	const options: ApiKeyCreateOptions = scopes === undefined ? expiry : { ...expiry, scopes }
 	const payload = buildApiKeyCreatePayload(model.name.value, model.description.value, model.kind, options)
 	return { model: { ...model, isCreating: true }, commands: [CreateApiKey({ kind: model.kind, payload })] }
 }
 
-const field = (current: Field.Model, message: Field.Message): Field.Model => Field.update(current, message).model
+const field = (current: Field.Model, message: Field.Message): Field.Model =>
+	Field.update(current, message).model
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
@@ -215,17 +223,21 @@ export const update = (model: Model, message: Message): Return =>
 		GotDescriptionMessage: ({ message: child }) => ({
 			model: { ...model, description: field(model.description, child) },
 		}),
-		PressedNameKey: ({ key }) => (key === "Enter" ? create(model) : { model }),
 		GotExpirationMessage: ({ message: child }) => {
 			const step = Select.update(model.expiration, child)
 			return {
 				model: { ...model, expiration: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotExpirationMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotExpirationMessage({ message: inner }),
+				),
 			}
 		},
 		ClickedAccessMode: ({ mode }) => ({ model: { ...model, accessMode: mode } }),
 		ClickedAllScopes: ({ level }) => ({
-			model: { ...model, scopeLevels: Object.fromEntries(SCOPE_FAMILIES.map((family) => [family.id, level])) },
+			model: {
+				...model,
+				scopeLevels: Rec.fromEntries(Arr.map(SCOPE_FAMILIES, (family) => [family.id, level])),
+			},
 		}),
 		ClickedClearScopes: () => ({ model: { ...model, scopeLevels: {} } }),
 		ClickedScopeLevel: ({ family, level }) => ({
@@ -246,7 +258,7 @@ export const update = (model: Model, message: Message): Return =>
 					model: { ...model, isCreating: false },
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
-						title: kind === "mcp" ? "Failed to create MCP key" : "Failed to create API key",
+						title: kind === "mcp" ? "Couldn't create MCP key" : "Couldn't create API key",
 						description: error.message,
 					}),
 				}),
@@ -255,7 +267,9 @@ export const update = (model: Model, message: Message): Return =>
 			const step = CopyButton.update(model.secretCopy, child)
 			return {
 				model: { ...model, secretCopy: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotSecretCopyMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotSecretCopyMessage({ message: inner }),
+				),
 			}
 		},
 		ToggledSecretVisible: () => ({ model: { ...model, isSecretVisible: !model.isSecretVisible } }),

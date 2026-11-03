@@ -19,12 +19,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for the OpenAI Agents SDK in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-openai-agents -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-openai-agents -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the bridge
 
@@ -32,14 +33,19 @@ Your ingest key is in **Settings → Ingestion**. If your organization is in the
 <LanguageTab id="python">
 
 ```bash
-pip install "openai-agents>=0.22" "openinference-instrumentation-openai-agents>=2.5" "opentelemetry-sdk>=1.45" "opentelemetry-exporter-otlp-proto-http>=1.45"
+pip install "openai-agents>=0.22" \
+  "openinference-instrumentation-openai-agents>=2.5" \
+  "opentelemetry-sdk>=1.45" \
+  "opentelemetry-exporter-otlp-proto-http>=1.45"
 ```
 
 </LanguageTab>
 <LanguageTab id="typescript">
 
 ```bash
-npm install @openai/agents @arizeai/openinference-instrumentation-openai-agents @arizeai/openinference-core @opentelemetry/api @opentelemetry/sdk-node
+npm install @openai/agents \
+  @arizeai/openinference-instrumentation-openai-agents \
+  @arizeai/openinference-core @opentelemetry/api @opentelemetry/sdk-node
 ```
 
 </LanguageTab>
@@ -254,7 +260,7 @@ Then call `await spanProcessor.forceFlush()` in a `finally` block before the han
 </LanguageTab>
 </LanguageTabs>
 
-## Check that it works
+## Verify
 
 Send two or three messages with the same conversation id, one using a tool, then open **Agent Sessions**. You should see one session with one turn per run, the tool calls, and tokens on every model call. The framework shows as **OpenAI Agents SDK**. Cost shows as unpriced.
 
@@ -265,7 +271,7 @@ Send two or three messages with the same conversation id, one using a tool, then
 - **Streamed turns have zero tokens (Python).** Add `ModelSettings(include_usage=True)` to agents on a non-OpenAI base URL.
 - **Every model call appears twice.** Another instrumentation of the OpenAI client (OpenInference, Logfire, Langfuse, `@opentelemetry/instrumentation-openai`) is also active. Keep one.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview): what Maple builds from these spans.
 - [Tracing in the OpenAI Agents SDK](https://openai.github.io/openai-agents-python/tracing/) (Python) and [for TypeScript](https://openai.github.io/openai-agents-js/guides/tracing/): the switch that turns off prompt and reply capture.

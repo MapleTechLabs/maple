@@ -26,7 +26,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, type ErrorIncidentRow, ErrorIssues } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, DateTime, Effect, Layer, Match, Schema } from "effect"
+import { Clock, Context, DateTime, Effect, Layer, Match, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -58,7 +58,12 @@ const ACTIONABLE_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
 ]
 /** The list's "Closed" set: nobody has to act. `verifying` is here because the
  *  fix has merged and the verification tick, not a person, owns what happens next. */
-const CLOSED_LIST_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = ["verifying", "done", "cancelled", "wontfix"]
+const CLOSED_LIST_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
+	"verifying",
+	"done",
+	"cancelled",
+	"wontfix",
+]
 
 type IssueColumns = PG.ColumnAccessor<typeof ErrorIssues.columns>
 type IssueConditions = ($: IssueColumns) => Array<PG.Condition | undefined>
@@ -215,7 +220,10 @@ const make: Effect.Effect<
 				profile: "aggregation",
 				context: "errorIssueEnvFingerprints",
 			})
-			return fingerprintRows.map((row) => row.fingerprintHash).filter((hash) => hash.length > 0)
+			return Arr.filter(
+				Arr.map(fingerprintRows, (row) => row.fingerprintHash),
+				(hash) => hash.length > 0,
+			)
 		})
 
 	/** The filter half of the issue list, shared by the page and its count. `undefined` = matches nothing. */
@@ -387,7 +395,7 @@ const make: Effect.Effect<
 					.groupBy("serviceName"),
 			),
 		)
-		const counts = rows.filter((row) => row.serviceName !== "")
+		const counts = Arr.filter(rows, (row) => row.serviceName !== "")
 		yield* Effect.annotateCurrentSpan({ "result.serviceCount": counts.length })
 		return counts
 	})
@@ -461,14 +469,16 @@ const make: Effect.Effect<
 			{ concurrency: 4 },
 		)
 		const issue = (yield* workflow.hydrateIssueRows(orgId, [issueRow]))[0]!
-		const timeseries = timeseriesRows.map(
+		const timeseries = Arr.map(
+			timeseriesRows,
 			(row) =>
 				new ErrorIssueTimeseriesPoint({
 					bucket: decodeIsoDateTimeStringSync(DateTime.formatIso(row.bucket)),
 					count: row.count,
 				}),
 		)
-		const sampleTraces = sampleRows.map(
+		const sampleTraces = Arr.map(
+			sampleRows,
 			(row) =>
 				new ErrorIssueSampleTrace({
 					traceId: row.traceId,
@@ -480,7 +490,8 @@ const make: Effect.Effect<
 				}),
 		)
 
-		const environments = environmentRows.map(
+		const environments = Arr.map(
+			environmentRows,
 			(row) => new ErrorIssueEnvironment({ name: row.name, count: row.count }),
 		)
 
@@ -488,7 +499,7 @@ const make: Effect.Effect<
 			issue,
 			timeseries,
 			sampleTraces,
-			incidents: incidentRows.map(rowToIncident),
+			incidents: Arr.map(incidentRows, rowToIncident),
 			environments,
 		})
 	})
@@ -509,7 +520,7 @@ const make: Effect.Effect<
 		)
 		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
 		return new ErrorIncidentsListResponse({
-			incidents: rows.map(rowToIncident),
+			incidents: Arr.map(rows, rowToIncident),
 		})
 	})
 
@@ -528,7 +539,7 @@ const make: Effect.Effect<
 		)
 		yield* Effect.annotateCurrentSpan("result.incidentCount", rows.length)
 		return new ErrorIncidentsListResponse({
-			incidents: rows.map(rowToIncident),
+			incidents: Arr.map(rows, rowToIncident),
 		})
 	})
 
@@ -545,7 +556,7 @@ const make: Effect.Effect<
 export class ErrorIssueReadModelsService extends Context.Service<
 	ErrorIssueReadModelsService,
 	ErrorIssueReadModelsServiceApi
->()("@maple/api/services/errors/ErrorIssueReadModelsService", { make }) {
+>()("@maple/backend/services/errors/ErrorIssueReadModelsService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, ErrorIssueWorkflowService.layer)),
 	)

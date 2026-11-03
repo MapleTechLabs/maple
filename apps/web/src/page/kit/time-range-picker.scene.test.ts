@@ -14,11 +14,13 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import * as Popover from "../../ui/popover"
+import * as Popover from "@maple/views/ui/popover"
 import * as CustomRange from "./custom-range"
+import { presetSpanLabel } from "./time-controls"
 import {
 	formatUtcOffset,
 	init,
+	isActivePreset,
 	isOpenKey,
 	LONG_RANGE_PRESET_VALUES,
 	Message,
@@ -48,6 +50,26 @@ const sceneView = withViewInputs(view, {
 	timeZone: "Europe/Berlin",
 })
 
+describe("time range picker preset rail", () => {
+	test("a URL preset marks the row naming the same window, never a different one", () => {
+		expect(isActivePreset("7d", "1w")).toBe(true)
+		expect(isActivePreset("60m", "1h")).toBe(true)
+		expect(isActivePreset("24h", "24h")).toBe(true)
+		// "1d" is today since midnight and "30d" is not a calendar month: neither is a rolling window.
+		expect(isActivePreset("1d", "24h")).toBe(false)
+		expect(isActivePreset("30d", "1mo")).toBe(false)
+		expect(isActivePreset("today", "24h")).toBe(false)
+		expect(isActivePreset(undefined, "24h")).toBe(false)
+	})
+
+	test("a preset reads as the span it covers in comparison copy", () => {
+		expect(presetSpanLabel("1mo")).toBe("month")
+		expect(presetSpanLabel("1w")).toBe("week")
+		expect(presetSpanLabel("2w")).toBe("2 weeks")
+		expect(presetSpanLabel("today")).toBe("day")
+	})
+})
+
 describe("time range picker offset", () => {
 	test("the offset is the zone's at the given instant, and an unknown zone reads UTC", () => {
 		expect(formatUtcOffset("Europe/Berlin", SUMMER)).toBe("UTC+2")
@@ -61,29 +83,42 @@ describe("time range picker offset", () => {
 			{ update, view: sceneView() },
 			given(opened()),
 			Mount.resolve(Popover.MountPopover, Popover.Message.CompletedMountPopover()),
-			Mount.resolve(MountUtcOffset, Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" })),
+			Mount.resolve(
+				MountUtcOffset,
+				Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" }),
+			),
 			expectView(text("UTC+2")).toExist(),
 		)
 	})
 })
 
-const CI_MAX = 14 * 24 * 60 * 60 + 60 * 60
+const TWO_WEEKS_MAX = 14 * 24 * 60 * 60 + 60 * 60
 
 describe("time range picker maximum range", () => {
 	test("a preset or typed range past the page's maximum is refused and the popover stays open", () => {
-		const refused = update(opened(), Message.ClickedPreset({ value: "6w", maxRangeSeconds: CI_MAX }))
-		expect(refused.outMessage).toEqual(OutMessage.RejectedRange({ maxRangeSeconds: CI_MAX }))
-		expect(refused.model.popover.isOpen).toBe(true)
-		expect(update(opened(), Message.ClickedPreset({ value: "2w", maxRangeSeconds: CI_MAX })).outMessage).toEqual(
-			OutMessage.SelectedPreset({ presetValue: "2w" }),
+		const refused = update(
+			opened(),
+			Message.ClickedPreset({ value: "6w", maxRangeSeconds: TWO_WEEKS_MAX }),
 		)
-		const typed = update({ ...opened(), shorthand: "2mo" }, Message.PressedShorthandEnter({ maxRangeSeconds: CI_MAX }))
-		expect(typed.outMessage).toEqual(OutMessage.RejectedRange({ maxRangeSeconds: CI_MAX }))
+		expect(refused.outMessage).toEqual(OutMessage.RejectedRange({ maxRangeSeconds: TWO_WEEKS_MAX }))
+		expect(refused.model.popover.isOpen).toBe(true)
+		expect(
+			update(opened(), Message.ClickedPreset({ value: "2w", maxRangeSeconds: TWO_WEEKS_MAX }))
+				.outMessage,
+		).toEqual(OutMessage.SelectedPreset({ presetValue: "2w" }))
+		const typed = update(
+			{ ...opened(), shorthand: "2mo" },
+			Message.PressedShorthandEnter({ maxRangeSeconds: TWO_WEEKS_MAX }),
+		)
+		expect(typed.outMessage).toEqual(OutMessage.RejectedRange({ maxRangeSeconds: TWO_WEEKS_MAX }))
 		expect(typed.model.shorthand).toBe("")
 	})
 
 	test("the refusal toast names the maximum in days", () => {
-		expect(rejectedToast(CI_MAX)).toMatchObject({ type: "error", title: "This page supports a maximum range of 14 days" })
+		expect(rejectedToast(TWO_WEEKS_MAX)).toMatchObject({
+			type: "error",
+			title: "This page supports a maximum range of 14 days",
+		})
 	})
 })
 
@@ -96,7 +131,10 @@ const openCustom = () => [
 	Mount.resolve(Popover.MountPopover, Popover.Message.CompletedMountPopover()),
 	Mount.resolve(MountUtcOffset, Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" })),
 	click(customButton),
-	Command.resolve(ResolveCustomToday(SEED), Message.ResolvedCustomToday({ ...SEED, today: TODAY, lastDay: TODAY })),
+	Command.resolve(
+		ResolveCustomToday(SEED),
+		Message.ResolvedCustomToday({ ...SEED, today: TODAY, lastDay: TODAY }),
+	),
 	Mount.expectEnded(MountUtcOffset),
 ]
 
@@ -127,16 +165,25 @@ describe("time range picker custom range", () => {
 	})
 
 	test("Apply picks the absolute window through the zone and closes the picker", () => {
-		const seeded = update(opened(), Message.ResolvedCustomToday({ ...SEED, today: TODAY, lastDay: TODAY })).model
+		const seeded = update(
+			opened(),
+			Message.ResolvedCustomToday({ ...SEED, today: TODAY, lastDay: TODAY }),
+		).model
 		const custom = (model: typeof seeded, message: CustomRange.Message) =>
 			update(model, Message.GotCustomRangeMessage({ message })).model
 		const edited = custom(
 			custom(seeded, CustomRange.Message.ClickedDay({ date: Calendar.make(2026, 10, 16) })),
 			CustomRange.Message.ChangedEndTime({ value: "18:45" }),
 		)
-		const applied = update(edited, Message.GotCustomRangeMessage({ message: CustomRange.Message.ClickedApply() }))
+		const applied = update(
+			edited,
+			Message.GotCustomRangeMessage({ message: CustomRange.Message.ClickedApply() }),
+		)
 		expect(applied.outMessage).toEqual(
-			OutMessage.SelectedCustomRange({ startTime: "2026-10-14 08:00:00", endTime: "2026-10-16 16:45:00" }),
+			OutMessage.SelectedCustomRange({
+				startTime: "2026-10-14 08:00:00",
+				endTime: "2026-10-16 16:45:00",
+			}),
 		)
 		expect(applied.model.popover.isOpen).toBe(false)
 		expect(applied.model.tab).toBe("relative")
@@ -148,7 +195,10 @@ describe("time range picker custom range", () => {
 			given(opened()),
 			...openCustom(),
 			click(role("button", { name: "Cancel" })),
-			Mount.resolve(MountUtcOffset, Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" })),
+			Mount.resolve(
+				MountUtcOffset,
+				Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" }),
+			),
 			expectView(customButton).toExist(),
 			expectView(role("button", { name: "Apply" })).toBeAbsent(),
 		)
@@ -184,5 +234,9 @@ describe("time range picker hotkey", () => {
 		expect(isOpenKey(press("d", { metaKey: true }))).toBe(false)
 		expect(isOpenKey(press("D", { shiftKey: true }))).toBe(false)
 		expect(isOpenKey(press("f"))).toBe(false)
+	})
+
+	test("the key-less keydown Chrome fires on autofill opens nothing", () => {
+		expect(isOpenKey({ ...press("d"), key: undefined })).toBe(false)
 	})
 })

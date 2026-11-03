@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { FetchWidget } from "./command"
@@ -34,11 +34,15 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 })
 
 const revealed = (): Model =>
-	[
-		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
-		Message.RevealedWidget({ widgetId: "logs" }),
-	].reduce((model, message) => pageUpdate(model, message).model, init({ dashboardId: "dash_wide", search: {} }, context).model)
+	Arr.reduce(
+		[
+			Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+			Message.RevealedWidget({ widgetId: "logs" }),
+		],
+		init({ dashboardId: "dash_wide", search: {} }, context).model,
+		(model, message) => pageUpdate(model, message).model,
+	)
 
 describe("a list wider than the cap", () => {
 	test("is blocked until narrowed, then asks for the capped window", () => {
@@ -46,8 +50,11 @@ describe("a list wider than the cap", () => {
 		const narrowed = pageUpdate(revealed(), Message.ClickedNarrowRange({ widgetId: "logs" }))
 		const gate = slotOf(narrowed.model, "logs").gate
 		expect(gate?._tag).toBe("Request")
-		expect((narrowed.commands ?? []).map(({ name }) => name)).toContain(FetchWidget.name)
+		expect(Arr.map(narrowed.commands ?? [], ({ name }) => name)).toContain(FetchWidget.name)
 		const params = gate?._tag === "Request" ? gate.request.params : {}
-		expect([params["startTime"], params["endTime"]]).toEqual(["2026-09-24 12:00:00", "2026-10-01 12:00:00"])
+		expect([params["startTime"], params["endTime"]]).toEqual([
+			"2026-09-24 12:00:00",
+			"2026-10-01 12:00:00",
+		])
 	})
 })

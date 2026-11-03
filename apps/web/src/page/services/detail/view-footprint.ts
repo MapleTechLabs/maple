@@ -12,24 +12,30 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { delta } from "../../../ui/delta"
-import { eyebrow } from "../../../ui/eyebrow"
-import { icon, type IconName } from "../../../ui/icon"
-import { item, itemActions, itemContent, itemDescription, itemTitle } from "../../../ui/item"
-import { meter } from "../../../ui/meter"
-import { truncatedText } from "../../../ui/truncated-text"
-import { serviceDot } from "../../../ui/values"
+import { button } from "@maple/views/ui/button"
+import { delta } from "@maple/views/ui/delta"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { icon, type IconName } from "@maple/views/ui/icon"
+import { item, itemActions, itemContent, itemDescription, itemTitle } from "@maple/views/ui/item"
+import { meter } from "@maple/views/ui/meter"
+import { pressable } from "@maple/views/ui/pressable"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { serviceDot } from "@maple/views/ui/values"
+import { pickTimeSearch } from "../../infra/kit/view-tabs"
+import { type RuntimeLink, runtimeLink, workloadLink } from "../../kit/service-runtimes"
 import { type DependencyKind, type StripTarget, stripTargets } from "./derive-panels"
 import { Message } from "./message"
-import type { Model, UsageTotals, Workload } from "./model"
+import type { Model, UsageTotals } from "./model"
 import { sectionCard, viewAllButton } from "./view-panels"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
 
 type H = HtmlBuilder<Message>
 
-const allEnvironments = (h: H): Html =>
-	h.span([h.Class("text-3xs text-muted-foreground/60")], ["all environments"])
+const allEnvironments = (h: H): Html => typography(h, { size: "3xs", tone: "subtle" }, ["all environments"])
 
 const USAGE_STATS: ReadonlyArray<{
 	readonly key: keyof UsageTotals
@@ -58,13 +64,17 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 		[
 			h.div(
 				[h.Class("grid grid-cols-2 gap-px sm:grid-cols-4")],
-				USAGE_STATS.map((stat) =>
+				Arr.map(USAGE_STATS, (stat) =>
 					h.div(
 						[h.Key(stat.key), h.Class("flex flex-col gap-0.5 px-4 py-3")],
 						[
 							eyebrow(h, {}, [stat.label]),
 							h.span(
-								[h.Class("font-mono text-lg leading-tight tabular-nums text-foreground")],
+								[
+									h.Class(
+										"font-mono text-lg font-semibold leading-tight tabular-nums text-foreground",
+									),
+								],
 								[stat.format(totals[stat.key])],
 							),
 							delta(h, {
@@ -72,7 +82,7 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 								previous: previous?.[stat.key],
 								suffix: "vs prev",
 								flatThreshold: 0.005,
-								className: "text-3xs text-muted-foreground",
+								className: typographyClass({ size: "3xs", tone: "muted" }),
 							}),
 						],
 					),
@@ -81,13 +91,6 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 		],
 	)
 }
-
-const KIND_LABEL = new Map<Workload["workloadKind"], string>([
-	["deployment", "Deployment"],
-	["statefulset", "StatefulSet"],
-	["daemonset", "DaemonSet"],
-	["unknown", "Workload"],
-])
 
 /** `MeterRow`: label lane, the utilisation bar, the value lane. */
 const meterRow = (h: H, label: string, fraction: number): Html => {
@@ -98,16 +101,12 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 		[h.Key(label), h.Class("flex items-center gap-2 leading-none")],
 		[
 			h.span(
-				[
-					h.Class(
-						cn("w-8", "shrink-0 font-mono text-3xs tracking-[0.06em] text-muted-foreground/70"),
-					),
-				],
+				[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-foreground-subtle"))],
 				[label],
 			),
 			meter(h, {
 				value: clamped,
-				className: "h-[3px] flex-1 rounded-[1px]",
+				className: "h-[3px] flex-1 rounded-2xs",
 				fillClassName: BAR_FILL[level],
 			}),
 			h.span(
@@ -126,70 +125,119 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 	)
 }
 
-/** `ServiceWorkloadsPanel`: nothing while loading, on error or without k8s context. */
-export const workloadsPanel = (h: H, model: Model, envFilterActive: boolean): Html => {
+const runsOnRow = (
+	h: H,
+	link: RuntimeLink,
+	extra: { readonly count?: string; readonly meters: ReadonlyArray<Html> },
+): Html =>
+	item(h, { variant: "flush", className: "gap-x-3 gap-y-1.5 px-4 py-2.5" }, [
+		h.a(
+			[
+				h.Href(link.href),
+				h.Class(
+					"group flex min-w-0 flex-1 items-center gap-2.5 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+				),
+			],
+			[
+				icon(h, link.icon, { size: 14, className: "shrink-0" }),
+				itemContent(
+					h,
+					[
+						itemTitle(
+							h,
+							[link.name],
+							"block truncate font-mono text-xs font-normal text-foreground group-hover:text-primary",
+						),
+						itemDescription(
+							h,
+							[Arr.join([link.label, ...link.location], " · ")],
+							typographyClass({ size: "3xs", tone: "subtle", truncate: true }),
+						),
+					],
+					"gap-0 leading-tight",
+				),
+			],
+		),
+		...(extra.count === undefined
+			? []
+			: [
+					itemActions(
+						h,
+						[extra.count],
+						typographyClass({
+							size: "2xs",
+							tone: "muted",
+							mono: true,
+							numeric: true,
+							className: "shrink-0",
+						}),
+					),
+				]),
+		...(extra.meters.length === 0
+			? []
+			: [
+					h.div(
+						[h.Class(cn(vstackClass({ gap: "1" }), "max-w-[280px] basis-full pl-6"))],
+						extra.meters,
+					),
+				]),
+	])
+
+/** Every place the service runs, platform resources first: the header links the first. */
+export const runsOnLinks = (model: Model): ReadonlyArray<RuntimeLink> => {
+	const time = pickTimeSearch(model.search)
+	return [
+		...Arr.map(
+			AsyncData.getOrElse(model.runtimes.data, () => []),
+			(runtime) => runtimeLink(runtime, time),
+		),
+		...Arr.map(
+			AsyncData.getOrElse(model.workloads.data, () => []),
+			(workload) => workloadLink(workload, time),
+		),
+	]
+}
+
+/** Where the service runs: its platform resources, then its Kubernetes workloads. Nothing while empty. */
+export const runsOnPanel = (h: H, model: Model, envFilterActive: boolean): Html => {
+	const runtimes = AsyncData.getOrElse(model.runtimes.data, () => [])
 	const workloads = AsyncData.getOrElse(model.workloads.data, () => [])
-	if (workloads.length === 0) return null
+	if (runtimes.length === 0 && workloads.length === 0) return null
+	const time = pickTimeSearch(model.search)
 	return sectionCard(
 		h,
 		{
-			title: "Kubernetes",
+			title: "Runs on",
 			action: envFilterActive ? allEnvironments(h) : undefined,
-			className: refreshingClass(AsyncData.isRefreshing(model.workloads.data)),
+			className: refreshingClass(
+				AsyncData.isRefreshing(model.runtimes.data) || AsyncData.isRefreshing(model.workloads.data),
+			),
 		},
 		[
 			h.ul(
 				[h.Class("divide-y")],
-				workloads.map((workload) => {
-					const meters = [
-						...(workload.avgCpuLimitUtilization === null
-							? []
-							: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
-						...(workload.avgMemoryLimitUtilization === null
-							? []
-							: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
-					]
-					return item(
-						h,
-						{ tag: "li", variant: "flush", className: "gap-x-3 gap-y-1.5 px-4 py-2.5" },
-						[
-							itemContent(
-								h,
-								[
-									itemTitle(
-										h,
-										[workload.workloadName],
-										"block truncate font-mono text-xs font-normal text-foreground",
-									),
-									itemDescription(
-										h,
-										[
-											KIND_LABEL.get(workload.workloadKind) ?? "Workload",
-											" · ",
-											workload.namespace,
-											...(workload.clusterName ? [` · ${workload.clusterName}`] : []),
-										],
-										"truncate text-3xs text-muted-foreground/60",
-									),
-								],
-								"gap-0 leading-tight",
-							),
-							itemActions(
-								h,
-								[countLabel(workload.podCount, "pod")],
-								"shrink-0 font-mono text-2xs tabular-nums text-muted-foreground",
-							),
-							...(meters.length === 0
+				[
+					...Arr.map(runtimes, (runtime) => {
+						const link = runtimeLink(runtime, time)
+						return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
+					}),
+					...Arr.map(workloads, (workload) => {
+						const link = workloadLink(workload, time)
+						const meters = [
+							...(workload.avgCpuLimitUtilization === null
 								? []
-								: [
-										h.div(
-											[h.Class(cn("flex flex-col gap-1", "max-w-[280px] basis-full"))],
-											meters,
-										),
-									]),
-						],
-					)
-				}),
+								: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
+							...(workload.avgMemoryLimitUtilization === null
+								? []
+								: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
+						]
+						return h.keyed("li")(
+							link.key,
+							[],
+							[runsOnRow(h, link, { count: countLabel(workload.podCount, "pod"), meters })],
+						)
+					}),
+				],
 			),
 		],
 	)
@@ -204,7 +252,7 @@ const KIND_ICON = new Map<DependencyKind, IconName>([
 
 const STRIP_LIMIT = 8
 const CHIP =
-	"inline-flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-xs hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 
 const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 	target.kind === "service"
@@ -216,15 +264,11 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 				],
 				[serviceDot(h, { serviceName: target.name }), h.span([h.Class("truncate")], [target.name])],
 			)
-		: h.button(
+		: pressable(
+				h,
+				{ onClick, className: cn(CHIP, "text-muted-foreground"), attributes: [h.Key(target.id)] },
 				[
-					h.Key(target.id),
-					h.Type("button"),
-					h.OnClick(onClick),
-					h.Class(cn(CHIP, "text-muted-foreground")),
-				],
-				[
-					icon(h, KIND_ICON.get(target.kind) ?? "GlobeIcon", { size: 11 }),
+					icon(h, KIND_ICON.get(target.kind) ?? "GlobeIcon", { size: 12 }),
 					truncatedText(h, { text: target.name }),
 				],
 			)
@@ -244,17 +288,18 @@ export const dependencyStrip = (h: H, model: Model): Html => {
 		],
 		[
 			eyebrow(h, {}, ["Talks to"]),
-			...visible.map((target) => stripChip(h, target, onViewAll)),
+			...Arr.map(visible, (target) => stripChip(h, target, onViewAll)),
 			...(hiddenCount > 0
 				? [
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(onViewAll),
-								h.Class(
-									"inline-flex items-center rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-								),
-							],
+						button(
+							h,
+							{
+								variant: "dashed",
+								size: "xs",
+								// Sized like the chips it follows, not like a toolbar button.
+								className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
+								attributes: [h.OnClick(onViewAll)],
+							},
 							[`+${hiddenCount} more`],
 						),
 					]

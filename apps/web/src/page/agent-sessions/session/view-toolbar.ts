@@ -1,13 +1,16 @@
-import { Effect, Stream } from "effect"
+import { Effect, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
-import { label } from "../../../ui/label"
-import * as Popover from "../../../ui/popover"
-import { switchControl } from "../../../ui/switch"
+import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
+import { label } from "@maple/views/ui/label"
+import * as Popover from "@maple/views/ui/popover"
+import { switchControl } from "@maple/views/ui/switch"
 import { Message } from "./message"
 import type { Model, SessionView, ViewOption } from "./model"
-import { searchInput } from "../../../ui/search-input"
+import { searchInput } from "@maple/views/ui/search-input"
+import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 // The session views' control bar: the filter and the view options.
 
@@ -73,35 +76,32 @@ const filterInput = (h: H, model: Model, view: SessionView): Html =>
 	})
 
 const optionRow = (h: H, model: Model, row: OptionRow): Html =>
-	h.div(
-		[h.Key(row.id), h.Class("flex items-center justify-between gap-4")],
-		[
-			h.div(
-				[h.Class("space-y-0.5")],
-				[
-					label(
-						h,
-						{ className: "cursor-pointer", attributes: [h.For(row.id), h.Id(`${row.id}-label`)] },
-						[row.label],
-					),
-					h.p([h.Class("text-muted-foreground text-xs")], [row.hint]),
-				],
-			),
-			// Base UI: the `id` goes to the hidden input the label targets; the switch is labelled by it.
-			...switchControl(h, {
-				id: `${row.id}-switch`,
-				inputId: row.id,
-				labelledBy: `${row.id}-label`,
-				isChecked: model.options[row.option],
-				onToggle: Message.ToggledOption({ option: row.option }),
-			}),
-		],
-	)
+	hstack(h, { gap: "4", justify: "between", attributes: [h.Key(row.id)] }, [
+		h.div(
+			[h.Class("space-y-0.5")],
+			[
+				label(
+					h,
+					{ className: "cursor-pointer", attributes: [h.For(row.id), h.Id(`${row.id}-label`)] },
+					[row.label],
+				),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [row.hint]),
+			],
+		),
+		// Base UI: the `id` goes to the hidden input the label targets; the switch is labelled by it.
+		...switchControl(h, {
+			id: `${row.id}-switch`,
+			inputId: row.id,
+			labelledBy: `${row.id}-label`,
+			isChecked: model.options[row.option],
+			onToggle: Message.ToggledOption({ option: row.option }),
+		}),
+	])
 
 /** `ViewOptions`: what this view shows, behind one trigger. */
 const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 	const rows = optionsOf(view)
-	const on = rows.filter((row) => model.options[row.option]).length
+	const on = Arr.filter(rows, (row) => model.options[row.option]).length
 	return h.submodel({
 		slotId: "agent-session-display",
 		model: model.displayPopover,
@@ -113,27 +113,28 @@ const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								className: "data-[popup-open]:bg-surface-strong",
+								attributes: [
+									h.AriaLabel(`Display options, ${on} of ${rows.length} shown`),
+									...trigger,
+								],
+							},
 							[
-								h.Type("button"),
-								h.AriaLabel("Display options"),
-								h.Class(
-									"inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-background px-2 text-foreground text-xs transition-colors hover:bg-muted/64 data-[popup-open]:bg-muted/64",
-								),
-								...trigger,
-							],
-							[
-								icon(h, "SlidersIcon", { size: 13, className: "text-muted-foreground" }),
+								icon(h, "SlidersIcon", { size: 14, className: "text-muted-foreground" }),
 								"Display",
-								h.span(
-									[h.Class("text-muted-foreground tabular-nums")],
-									[String(on), "/", String(rows.length)],
-								),
+								typography(h, { tone: "muted", numeric: true }, [
+									`· ${on} of ${rows.length}`,
+								]),
 							],
 						),
 					),
 				),
-			toContent: () => rows.map((row) => optionRow(h, model, row)),
+			toContent: () => Arr.map(rows, (row) => optionRow(h, model, row)),
 		},
 	})
 }

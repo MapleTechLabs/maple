@@ -18,12 +18,13 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Haystack in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-haystack -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-haystack -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install and add the Maple tracer
 
@@ -247,7 +248,7 @@ finally:
 
 Long-running servers only need `provider.shutdown()` in their shutdown hook.
 
-## Check that it works
+## Verify
 
 Run a conversation of at least two turns, one with a tool call, and open **Agent Sessions** filtered by your service name. You should see one session per conversation id, labelled Haystack, with one turn per `pipeline.run()`, model calls with tokens, and tool calls with failed ones marked.
 
@@ -260,6 +261,6 @@ Run a conversation of at least two turns, one with a tool call, and open **Agent
 - **Tokens are zero with a non-OpenAI generator.** Print `result["replies"][0].meta["usage"]` once and add its keys to `_chat()`.
 - **A failed tool isn't counted.** The tool caught its own exception. Let it raise, or return `{"error": ...}`.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)

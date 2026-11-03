@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { AlertRuleId, OrgId } from "@maple/domain/primitives"
 import {
 	alertChartId,
@@ -38,11 +38,11 @@ describe("shareOgId", () => {
 
 	it("rejects a tampered id, a tampered signature, and a foreign key", () => {
 		const ogId = shareOgId(SHARE_ID, KEY)
-		const [encodedId, signature] = ogId.split(".") as [string, string]
+		const [encodedId, signature] = Str.split(".")(ogId) as [string, string]
 		const otherId = Buffer.from("dshare_someone-elses-share", "utf8").toString("base64url")
 
 		expect(verifyShareOgId(`${otherId}.${signature}`, KEY)).toBeUndefined()
-		expect(verifyShareOgId(`${encodedId}.${signature.slice(0, -1)}x`, KEY)).toBeUndefined()
+		expect(verifyShareOgId(`${encodedId}.${Str.slice(0, -1)(signature)}x`, KEY)).toBeUndefined()
 		expect(verifyShareOgId(ogId, "another-key")).toBeUndefined()
 	})
 
@@ -92,7 +92,7 @@ const verified = {
  */
 const tamperClaim = (id: string, index: number, value: unknown): string => {
 	// SAFETY: both minters emit exactly `<payload>.<signature>`.
-	const [encoded, signature] = id.split(".") as [string, string]
+	const [encoded, signature] = Str.split(".")(id) as [string, string]
 	// SAFETY: the payload is the array the encoder just wrote.
 	const claims = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown[]
 	claims[index] = value
@@ -211,7 +211,7 @@ describe("alertChartId, on claims only it carries", () => {
 			},
 			KEY,
 		)
-		const forged = `${id.split(".")[0]}.${other.split(".")[1]}`
+		const forged = `${Str.split(".")(id)[0]}.${Str.split(".")(other)[1]}`
 		expect(verifyAlertChartId(forged, KEY)).toBeUndefined()
 	})
 })

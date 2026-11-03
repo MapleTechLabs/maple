@@ -1,10 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../../ui/display"
-import { icon } from "../../../ui/icon"
-import { highlightedText } from "../../../ui/logs/highlight"
-import * as Popover from "../../../ui/popover"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { highlightedText } from "@maple/views/ui/logs/highlight"
+import * as Popover from "@maple/views/ui/popover"
 import { Message } from "./message"
+import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // What the log search box
 // accepts, from the info affordance beside the SEARCH label (a hover popover, 200 ms).
@@ -13,8 +16,8 @@ type Mode = "text" | "trace" | "header"
 
 // The search mode badge's label and colours.
 const MODE = new Map<Mode, Readonly<{ label: string; className: string }>>([
-	["text", { label: "Text", className: "bg-primary/15 text-primary" }],
-	["trace", { label: "Trace", className: "bg-info/15 text-info" }],
+	["text", { label: "Text", className: "bg-primary-a2 text-primary" }],
+	["trace", { label: "Trace", className: "bg-severity-debug-a2 text-severity-debug" }],
 	["header", { label: "Header", className: "bg-chart-throughput/15 text-chart-throughput" }],
 ])
 
@@ -61,26 +64,26 @@ const lookupRow = (h: HtmlBuilder<Message>, lookup: (typeof LOOKUPS)[number]): H
 			h.dd([h.Class("min-w-0 truncate font-mono text-2xs text-foreground")], [lookup.example]),
 			h.dd(
 				[h.Class("col-start-2 text-2xs text-muted-foreground leading-relaxed")],
-				[lookup.does, " ", h.span([h.Class("text-muted-foreground/60")], ["(", lookup.note, ")"])],
+				[lookup.does, " ", h.span([h.Class("text-foreground-subtle")], ["(", lookup.note, ")"])],
 			),
 		],
 	)
 }
 
 const content = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
-	h.p([h.Class("font-medium text-foreground text-xs")], ["What you can search"]),
+	typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "p" }, ["What you can search"]),
 	h.p(
 		[h.Class("mt-1 text-2xs text-muted-foreground leading-relaxed")],
 		["One box. It reads the shape of what you type and picks the lookup."],
 	),
 	h.dl(
 		[h.Class("mt-3 space-y-2.5")],
-		LOOKUPS.map((lookup) => lookupRow(h, lookup)),
+		Arr.map(LOOKUPS, (lookup) => lookupRow(h, lookup)),
 	),
 	h.div(
 		[
 			h.Class(
-				"mt-3 break-words rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-2xs text-foreground leading-relaxed",
+				"mt-3 break-words rounded-md border bg-surface-sunken px-2 py-1.5 font-mono text-2xs text-foreground leading-relaxed",
 			),
 		],
 		highlightedText(h, TEXT_EXAMPLE, "conn reset"),
@@ -90,7 +93,7 @@ const content = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 		[
 			"A trace scope becomes a chip you can remove. Wrap an id in",
 			" ",
-			h.span([h.Class("font-mono text-foreground")], ['"quotes"']),
+			typography(h, { tone: "foreground", mono: true }, ['"quotes"']),
 			" to search it as text instead.",
 		],
 	),
@@ -108,15 +111,16 @@ export const searchHelp = (h: HtmlBuilder<Message>, model: Popover.Model): Html 
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						h.button(
-							[
-								h.Type("button"),
-								h.AriaLabel("What you can search for"),
-								h.Class(
-									"cursor-pointer rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:text-foreground",
-								),
-								...trigger,
-							],
+						iconButton(
+							h,
+							{
+								label: "What you can search for",
+								size: "icon-2xs",
+								hasTooltip: false,
+								className:
+									"text-foreground-subtle hover:text-foreground active:text-foreground data-[popup-open]:text-foreground",
+								attributes: trigger,
+							},
 							[icon(h, "CircleInfoIcon", { size: 12 })],
 						),
 					),

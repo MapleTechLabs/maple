@@ -1,3 +1,4 @@
+import type { OrganizationFeatureFlags } from "@maple/domain/organization-feature-flags"
 import { Option, Schema } from "effect"
 import { AppRoute } from "./app-route"
 import { hrefOf } from "./routers"
@@ -40,7 +41,7 @@ const DATA_INTEGRATION_IDS: ReadonlySet<string> = new Set(DATA_INTEGRATIONS)
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
-/** Redirects of retired paths (connectors, developer, infra, errors/issues) and moved integrations. */
+/** Redirects of retired paths (connectors, developer, infra, errors/issues, alerts status pages, security) and moved integrations. */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,
@@ -52,11 +53,16 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 						: AppRoute.Integrations({ search: {} }),
 					false,
 				),
-			/** Old links and OAuth returns to a data integration's page open its step under Sources. */
+			/**
+			 * Old links and OAuth returns to a data integration's page open its step under Sources.
+			 * Hazel's app still links to the id its connector replaced.
+			 */
 			Integrations: ({ search }) =>
 				search.integration !== undefined && DATA_INTEGRATION_IDS.has(search.integration)
 					? redirect(AppRoute.SourcesNew({ search: { integration: search.integration } }), true)
-					: Option.none(),
+					: search.integration === "hazel"
+						? redirect(AppRoute.Integrations({ search: { integration: "chat-hazel" } }), true)
+						: Option.none(),
 			Developer: ({ search }) =>
 				redirect(
 					AppRoute.Settings({
@@ -66,8 +72,40 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 				),
 			InfraDiscover: () => redirect(AppRoute.Infra({ search: {} }), true),
 			InfraLegacyHost: ({ hostName }) => redirect(AppRoute.InfraHost({ hostName, search: {} }), true),
+			AlertIncidentsIndex: () => redirect(AppRoute.Alerts({ search: {} }), true),
+			/** Status pages left the Alerts hub for their own sidebar entry. */
+			Alerts: ({ search }) =>
+				search.tab === "status-pages" ? redirect(AppRoute.StatusPages(), true) : Option.none(),
+			AlertsStatusPage: ({ pageId, search }) =>
+				redirect(
+					AppRoute.StatusPage({
+						pageId,
+						search:
+							search.tab === "settings" || search.tab === "json" ? { view: search.tab } : {},
+					}),
+					true,
+				),
+			RecommendationsIndex: () => redirect(AppRoute.Settings({ search: { tab: "ingestion" } }), true),
 			InfraKubernetes: ({ search }) => redirect(AppRoute.InfraKubernetesPods({ search }), true),
 			ErrorIssues: (issues) => redirect(AppRoute.Errors({ search: errorsSearchOf(issues) }), true),
+			/** The code audit moved under `/security/code`; `/security` opens it until the hub has an overview. */
+			Security: () => redirect(AppRoute.SecurityCode(), true),
+			SecurityLegacyFindings: ({ search }) => redirect(AppRoute.SecurityCodeFindings({ search }), true),
+			SecurityLegacyRuns: ({ search }) => redirect(AppRoute.SecurityCodeRuns({ search }), true),
+			SecurityLegacyRun: ({ runId }) => redirect(AppRoute.SecurityRun({ runId }), true),
+			SecurityLegacyFinding: ({ targetId, fingerprint }) =>
+				redirect(AppRoute.SecurityFinding({ targetId, fingerprint }), true),
 		},
 		() => Option.none(),
 	)
+
+const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage"])
+
+/** A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`). */
+export const flaggedRouteRedirect = (
+	route: AppRoute,
+	flags: Pick<OrganizationFeatureFlags, "statusPages">,
+): Option.Option<Redirect> =>
+	!flags.statusPages && isStatusPageRoute(route)
+		? redirect(AppRoute.Home({ search: {} }), true)
+		: Option.none()

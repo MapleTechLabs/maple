@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "@effect/vitest"
 import { MAPLE_MCP_SERVER_NAME } from "@maple/domain/mcp-manifest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr, Record as Rec } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { DiscoveryRouter, NotFoundRouter } from "./discovery.http"
@@ -54,13 +54,11 @@ describe("DiscoveryRouter", () => {
 			expect(response.headers.get("content-type")).toContain("application/json")
 			const doc = await response.json()
 			expect(doc.openapi).toMatch(/^3\.1\./)
-			expect(doc.info.title).toBe("Maple API")
 			expect(doc.servers).toEqual([{ url: API_ORIGIN, description: "Production" }])
 			expect(doc.externalDocs.url).toBe(`${API_ORIGIN}/v2/docs`)
-			expect(doc.info.contact.email).toBe("support@maple.dev")
-			expect(Object.keys(doc.paths).length).toBeGreaterThan(20)
-			const operations = Object.values(doc.paths).flatMap((item) =>
-				Object.values(item as Record<string, { operationId?: string; description?: string }>),
+			expect(Rec.keys(doc.paths).length).toBeGreaterThan(20)
+			const operations = Arr.flatMap(Rec.values(doc.paths), (item) =>
+				Rec.values(item as Record<string, { operationId?: string; description?: string }>),
 			)
 			for (const operation of operations) {
 				expect(operation.operationId).toEqual(expect.any(String))

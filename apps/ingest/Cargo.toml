@@ -13,6 +13,8 @@ base64 = "0.22.1"
 bytes = "1"
 chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 flate2 = "1.1.5"
+futures-util = "0.3"
+http-body-util = "0.1"
 hmac = "0.12.1"
 dotenvy = "0.15.7"
 opentelemetry = "0.32"
@@ -37,6 +39,7 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
 ] }
 opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "trace", "logs", "metrics", "with-serde"] }
 prost = "0.14.3"
+regex = "1.12"
 crc32fast = "1.5"
 dashmap = "6.1"
 num_cpus = "1.17"
@@ -45,7 +48,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 sha2 = "0.10.9"
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "signal"] }
-tonic = { version = "0.14", features = ["transport"] }
+tonic = { version = "0.14", features = ["transport", "gzip"] }
 tracing = "0.1.41"
 tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }
@@ -78,6 +81,8 @@ default = []
 # CPU on the request path.
 hotpath = ["hotpath/hotpath"]
 hotpath-alloc = ["hotpath/hotpath-alloc"]
+# Exposes `ingest_rules::conformance` for the `ingest_rules_oracle` example.
+conformance = []
 
 [lints.rust]
 unsafe_code = "deny"
@@ -128,6 +133,7 @@ items_after_statements = "allow"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
+proptest = { version = "1.10", default-features = false, features = ["std"] }
 
 [[bench]]
 name = "ingest_bench"
@@ -136,3 +142,13 @@ harness = false
 [[bench]]
 name = "ai_session_bench"
 harness = false
+
+[[bench]]
+name = "ingest_rules_bench"
+harness = false
+
+# Reads fixture-shaped cases as JSON lines on stdin and prints each outcome; driven by
+# `bun run --cwd packages/ingest-rules fuzz` to diff this engine against the TS one.
+[[example]]
+name = "ingest_rules_oracle"
+required-features = ["conformance"]

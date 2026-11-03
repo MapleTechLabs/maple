@@ -15,10 +15,11 @@
  */
 import { connectors } from "@maple/chat-platform/connectors"
 import { merge, optionalPlain, optionalSecret } from "@maple/infra/env"
+import { Array as Arr } from "effect"
 
 export const connectorConfigEnv = merge(
-	...connectors.flatMap((connector) =>
-		connector.ingress.requiredConfig.map((key) =>
+	...Arr.flatMap(connectors, (connector) =>
+		Arr.map(connector.ingress.requiredConfig, (key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
 		),
 	),

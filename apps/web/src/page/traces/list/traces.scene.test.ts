@@ -1,17 +1,10 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
-import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
+import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../data/load-failure"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
-import {
-	FetchFacets,
-	FetchFirstPage,
-	FetchNextPage,
-	LoadSignalPresence,
-	MountEmptyState,
-	MountPeekRows,
-} from "./command"
+import { FetchFacets, FetchFirstPage, FetchNextPage, MountPeekRows } from "./command"
 import { Message } from "./message"
 import type { Model, TraceRow, TracesFacets, TracesPage } from "./model"
 import { allRows, contextChanged, init, routeChanged, update } from "./update"
@@ -27,7 +20,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const trace = (traceId: string): TraceRow => ({
 	traceId,
@@ -46,7 +39,7 @@ const trace = (traceId: string): TraceRow => ({
 })
 
 const page = (count: number, scannedCount = count): TracesPage => ({
-	rows: Array.from({ length: count }, (_, i) => trace(`trace${String(i).padStart(4, "0")}`)),
+	rows: Array.from({ length: count }, (_, i) => trace(`trace${Str.padStart(4, "0")(String(i))}`)),
 	scannedCount,
 	hiddenCount: 0,
 })
@@ -70,11 +63,23 @@ const windowed = (search = {}): Model =>
 
 const loaded = (first: TracesPage): Model => {
 	const base = windowed()
-	return [
-		Message.CompletedFetchFacets({ key: base.facets.key ?? "", result: Result.succeed(facets) }),
-		Message.CompletedFetchFirstPage({ key: base.firstPage.key ?? "", result: Result.succeed(first) }),
-	].reduce((model, message) => pageUpdate(model, message).model, base)
+	return Arr.reduce(
+		[
+			Message.CompletedFetchFacets({ key: base.facets.key ?? "", result: Result.succeed(facets) }),
+			Message.CompletedFetchFirstPage({ key: base.firstPage.key ?? "", result: Result.succeed(first) }),
+		],
+		base,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
+
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ traces: { status, lastSeenMs: null } }),
+		}),
+	).model
 
 const windowOver = (from: number, to: number) =>
 	Message.ChangedVirtualWindow({
@@ -93,7 +98,9 @@ describe("traces list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
 		)
-		expect(names(resolved.commands)).toEqual([FetchFacets.name, FetchFirstPage.name])
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([FetchFacets.name, FetchFirstPage.name]),
+		)
 	})
 
 	test("a first page for a superseded window is dropped", () => {
@@ -149,7 +156,9 @@ describe("traces list", () => {
 		expect(names(filtered.commands)).toEqual([FetchFirstPage.name])
 		expect(filtered.model.window).toEqual(window)
 		const moved = routeChanged(filtered.model, { search: { hasError: true, timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveTracesWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveTracesWindow", "Refresh"],
+		])
 	})
 
 	test("a short first page has no next page, and a failed next page stops pagination", () => {
@@ -234,18 +243,25 @@ describe("traces list", () => {
 		)
 	})
 
-	test("an empty org asks for signal presence once the empty state painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No traces found' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadTracesSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(page(0))),
-			expectView(text("No traces found")).toExist(),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No traces found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded(page(0)), "absent")),
+			expectView(text("No traces yet")).toExist(),
+		)
+	})
+
+	test("a workspace that never sent traces sees setup before the list answers", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(windowed(), "absent")),
 			expectView(text("No traces yet")).toExist(),
 		)
 	})

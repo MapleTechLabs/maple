@@ -1,6 +1,7 @@
 import type { MapleRegion } from "@maple/domain/organization-regions"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // `RegionFlag`: both flags on one 3:2 box.
 
@@ -25,11 +26,14 @@ const US_STARS = Array.from({ length: 9 }, (_, row) =>
 const EU_STAR_POINTS = (() => {
 	const outer = H / 18
 	const inner = outer * 0.382
-	return Array.from({ length: 10 }, (_, i) => {
-		const angle = -Math.PI / 2 + (i * Math.PI) / 5
-		const radius = i % 2 === 0 ? outer : inner
-		return `${(radius * Math.cos(angle)).toFixed(3)},${(radius * Math.sin(angle)).toFixed(3)}`
-	}).join(" ")
+	return Arr.join(
+		Array.from({ length: 10 }, (_, i) => {
+			const angle = -Math.PI / 2 + (i * Math.PI) / 5
+			const radius = i % 2 === 0 ? outer : inner
+			return `${(radius * Math.cos(angle)).toFixed(3)},${(radius * Math.sin(angle)).toFixed(3)}`
+		}),
+		" ",
+	)
 })()
 const EU_STARS = Array.from({ length: 12 }, (_, i) => {
 	const angle = (i * Math.PI) / 6
@@ -39,7 +43,14 @@ const EU_STARS = Array.from({ length: 12 }, (_, i) => {
 const usFlag = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => {
 	const { primary, secondary } = REGION_FLAG_COLORS.us
 	return [
-		h.rect([h.Attribute("width", String(W)), h.Attribute("height", String(H)), h.Attribute("fill", "#FFFFFF")], []),
+		h.rect(
+			[
+				h.Attribute("width", String(W)),
+				h.Attribute("height", String(H)),
+				h.Attribute("fill", "#FFFFFF"),
+			],
+			[],
+		),
 		...Array.from({ length: 7 }, (_, i) =>
 			h.rect(
 				[
@@ -51,10 +62,22 @@ const usFlag = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => {
 				[],
 			),
 		),
-		h.rect([h.Attribute("width", String(US_CANTON_W)), h.Attribute("height", String(US_CANTON_H)), h.Attribute("fill", secondary)], []),
-		...US_STARS.map((star) =>
+		h.rect(
+			[
+				h.Attribute("width", String(US_CANTON_W)),
+				h.Attribute("height", String(US_CANTON_H)),
+				h.Attribute("fill", secondary),
+			],
+			[],
+		),
+		...Arr.map(US_STARS, (star) =>
 			h.circle(
-				[h.Attribute("cx", String(star.cx)), h.Attribute("cy", String(star.cy)), h.Attribute("r", "0.55"), h.Attribute("fill", "#FFFFFF")],
+				[
+					h.Attribute("cx", String(star.cx)),
+					h.Attribute("cy", String(star.cy)),
+					h.Attribute("r", "0.55"),
+					h.Attribute("fill", "#FFFFFF"),
+				],
 				[],
 			),
 		),
@@ -64,8 +87,11 @@ const usFlag = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => {
 const euFlag = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => {
 	const { primary, secondary } = REGION_FLAG_COLORS.eu
 	return [
-		h.rect([h.Attribute("width", String(W)), h.Attribute("height", String(H)), h.Attribute("fill", primary)], []),
-		...EU_STARS.map((star) =>
+		h.rect(
+			[h.Attribute("width", String(W)), h.Attribute("height", String(H)), h.Attribute("fill", primary)],
+			[],
+		),
+		...Arr.map(EU_STARS, (star) =>
 			h.polygon(
 				[
 					h.Attribute("points", EU_STAR_POINTS),
@@ -94,7 +120,16 @@ export const regionFlag = <M>(h: HtmlBuilder<M>, region: MapleRegion, className?
 				[
 					h.clipPath(
 						[h.Id(clipId)],
-						[h.rect([h.Attribute("width", String(W)), h.Attribute("height", String(H)), h.Attribute("rx", "4")], [])],
+						[
+							h.rect(
+								[
+									h.Attribute("width", String(W)),
+									h.Attribute("height", String(H)),
+									h.Attribute("rx", "4"),
+								],
+								[],
+							),
+						],
 					),
 				],
 			),

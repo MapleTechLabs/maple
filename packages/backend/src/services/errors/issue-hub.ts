@@ -9,7 +9,7 @@ import {
 } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, AlertIncidents, ErrorIssueEvents, ErrorIssues, type ErrorIssueRow } from "@maple/db/tables"
-import { Clock, Effect, Schema } from "effect"
+import { DateTime, Clock, Effect, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { MaybeEnqueueTriageInput } from "./ai-triage-enqueue"
 import { issueSeverityFromAlert } from "./severity-map"
@@ -67,6 +67,10 @@ export interface UpsertAlertIssueResult {
 }
 
 const describeIncident = (input: UpsertAlertIssueInput): string => {
+	// An uptime rule's 1 >= 1 says nothing; its monitor being down does.
+	if (input.signalType === "uptime") {
+		return `Uptime monitor ${input.ruleName} is down${input.groupKey === "__total__" ? "" : ` (service ${input.groupKey})`}`
+	}
 	const observed = input.observedValue == null ? "no data" : `observed ${input.observedValue}`
 	const bound =
 		input.thresholdUpper == null ? `${input.threshold}` : `${input.threshold}..${input.thresholdUpper}`
@@ -347,8 +351,8 @@ export const upsertAlertIssue: (
 				serviceName: input.serviceName,
 				observedValue: input.observedValue,
 				sampleCount: input.sampleCount,
-				firstTriggeredAt: new Date(input.timestamp).toISOString(),
-				lastTriggeredAt: new Date(input.timestamp).toISOString(),
+				firstTriggeredAt: DateTime.formatIso(DateTime.makeUnsafe(input.timestamp)),
+				lastTriggeredAt: DateTime.formatIso(DateTime.makeUnsafe(input.timestamp)),
 				issueId,
 			},
 		}

@@ -1,9 +1,9 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
 import type { Resources } from "../../../platform/resources"
-import * as Combobox from "../../../ui/combobox"
+import * as Combobox from "@maple/views/ui/combobox"
 import type { DestinationForm } from "./form"
 
 // `EmailMemberPicker`: workspace members from Clerk's
@@ -44,21 +44,23 @@ export const FetchEmailMembers = Command.define("FetchAlertEmailMembers", {
 	messages: [Message.CompletedFetchMembers],
 	execute: currentClerkOrganization.pipe(
 		Effect.flatMap((organization) =>
-			clerkTry("Failed to load members", () =>
+			clerkTry("Couldn't load members", () =>
 				organization.getMemberships({ initialPage: 1, pageSize: PAGE_SIZE }),
 			),
 		),
-		Effect.map((result) =>
-			result.data.flatMap((member): ReadonlyArray<MemberOption> => {
-				const user = member.publicUserData
-				const userId = user?.userId
-				const email = user?.identifier
-				if (userId === undefined || userId === null || email === undefined || email === "") return []
-				const name = [user?.firstName, user?.lastName].filter((part) => part).join(" ")
-				return [{ userId, label: name || email, meta: name ? email : null }]
-			}),
-		),
-		Effect.mapError((error) => error.message),
+		Effect.mapBoth({
+			onSuccess: (result) =>
+				result.data.flatMap((member): ReadonlyArray<MemberOption> => {
+					const user = member.publicUserData
+					const userId = user?.userId
+					const email = user?.identifier
+					if (userId === undefined || userId === null || email === undefined || email === "")
+						return []
+					const name = [user?.firstName, user?.lastName].filter((part) => part).join(" ")
+					return [{ userId, label: name || email, meta: name ? email : null }]
+				}),
+			onFailure: (error) => error.message,
+		}),
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchMembers({ result })),
 	),
@@ -89,10 +91,14 @@ export const visibleIds = (
 	options: ReadonlyArray<MemberOption>,
 	inputValue: string,
 ): ReadonlyArray<string> => {
-	const query = inputValue.trim().toLocaleLowerCase()
-	return options
-		.filter((option) => query === "" || option.label.toLocaleLowerCase().includes(query))
-		.map((option) => option.userId)
+	const query = Str.trim(inputValue).toLocaleLowerCase()
+	return Arr.map(
+		Arr.filter(
+			options,
+			(option) => query === "" || Str.includes(query)(option.label.toLocaleLowerCase()),
+		),
+		(option) => option.userId,
+	)
 }
 
 export const update = (model: Model, message: Message): Return =>

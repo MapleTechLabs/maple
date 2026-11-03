@@ -2,7 +2,7 @@ import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
 import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
 import { McpProtocol, McpServer } from "effect/ai"
 import { RpcSerialization } from "effect/rpc"
-import { Cause, Effect, Layer } from "effect"
+import { Cause, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { McpToolRegistration } from "./server"
 import { layerStatelessMcpHttp, layerStatelessMcpServer } from "./transport/stateless-http"
@@ -15,6 +15,7 @@ import { CurrentMcpRequestTenant, CurrentMcpTenant, resolveHttpMcpTenant } from 
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { INTERNAL_SERVICE_PREFIX } from "./lib/resolve-tenant"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
@@ -39,7 +40,7 @@ const NEGOTIATED_PROTOCOL = McpProtocol.v2025_06_18
 const NEGOTIATED_PROTOCOL_VERSION = NEGOTIATED_PROTOCOL.protocolVersion
 
 const SUPPORTED_PROTOCOL_VERSIONS: ReadonlySet<string> = new Set(
-	MCP_PROTOCOLS.map((protocol) => protocol.protocolVersion),
+	Arr.map(MCP_PROTOCOLS, (protocol) => protocol.protocolVersion),
 )
 
 /**
@@ -71,19 +72,22 @@ const negotiateProtocolVersion = (request: HttpServerRequest.HttpServerRequest) 
 	})
 }
 
-const mcpChallenge = (invalid: boolean, message = "Authenticate with Maple to access this MCP server.") =>
-	Effect.gen(function* () {
-		const request = yield* HttpServerRequest.HttpServerRequest
-		const proto = request.headers["x-forwarded-proto"]?.split(",")[0]?.trim() ?? "https"
-		const host = request.headers["x-forwarded-host"]?.split(",")[0]?.trim() ?? request.headers.host
-		const resourceMetadata = host
-			? `${proto}://${host}/.well-known/oauth-protected-resource/mcp`
-			: "/.well-known/oauth-protected-resource/mcp"
-		const challenge = `Bearer ${[
-			`resource_metadata="${resourceMetadata}"`,
-			'scope="mcp:tools"',
-			...(invalid ? ['error="invalid_token"'] : []),
-		].join(", ")}`
+const mcpChallenge = (
+	apiBaseUrl: string,
+	invalid: boolean,
+	message = "Authenticate with Maple to access this MCP server.",
+) =>
+	Effect.sync(() => {
+		// The configured API origin, which is where the OAuth metadata is actually served.
+		const resourceMetadata = `${Str.replace(/\/+$/, "")(apiBaseUrl)}/.well-known/oauth-protected-resource/mcp`
+		const challenge = `Bearer ${Arr.join(
+			[
+				`resource_metadata="${resourceMetadata}"`,
+				'scope="mcp:tools"',
+				...(invalid ? ['error="invalid_token"'] : []),
+			],
+			", ",
+		)}`
 		return HttpServerResponse.jsonUnsafe(
 			{ error: "unauthorized", message },
 			{
@@ -115,8 +119,8 @@ const mcpAuditActor = (headers: Record<string, string | undefined>): AuditActorI
 	if (authorization?.toLowerCase().startsWith("bearer ") !== true) {
 		return { type: "user", source: "mcp" }
 	}
-	const bearer = authorization.slice("bearer ".length).trim()
-	return bearer.startsWith(INTERNAL_SERVICE_PREFIX)
+	const bearer = Str.trim(authorization.slice("bearer ".length))
+	return Str.startsWith(INTERNAL_SERVICE_PREFIX)(bearer)
 		? { type: "system", source: "system" }
 		: { type: "api_key", source: "mcp" }
 }
@@ -141,6 +145,7 @@ const mcpRateLimited = () =>
 const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpTenant }>()(
 	Effect.gen(function* () {
 		const apiKeys = yield* ApiKeysService
+		const actors = yield* ErrorActorsService
 		const auth = yield* AuthService
 		const env = yield* Env
 		const rateLimiter = yield* McpToolRateLimiter
@@ -149,6 +154,7 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 				const request = yield* HttpServerRequest.HttpServerRequest
 				return yield* resolveHttpMcpTenant.pipe(
 					Effect.provideService(ApiKeysService, apiKeys),
+					Effect.provideService(ErrorActorsService, actors),
 					Effect.provideService(AuthService, auth),
 					Effect.provideService(Env, env),
 					Effect.flatMap((tenant) =>
@@ -174,14 +180,16 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 						}),
 					),
 					Effect.catchTags({
-						"@maple/mcp/errors/McpAuthMissingError": () => mcpChallenge(false),
+						"@maple/mcp/errors/McpAuthMissingError": () =>
+							mcpChallenge(env.MAPLE_API_BASE_URL, false),
 						// A malformed bearer gets its specific fix; other reasons keep the generic text.
 						"@maple/mcp/errors/McpAuthInvalidError": (error) =>
 							error.reason === "malformed_token"
-								? mcpChallenge(true, error.message)
-								: mcpChallenge(true),
+								? mcpChallenge(env.MAPLE_API_BASE_URL, true, error.message)
+								: mcpChallenge(env.MAPLE_API_BASE_URL, true),
 						"@maple/mcp/errors/McpAuthUnavailableError": mcpUnavailable,
-						"@maple/mcp/errors/McpInvalidTenantError": () => mcpChallenge(true),
+						"@maple/mcp/errors/McpInvalidTenantError": () =>
+							mcpChallenge(env.MAPLE_API_BASE_URL, true),
 					}),
 					Effect.provideService(
 						HttpServerRequest.HttpServerRequest,
@@ -204,6 +212,7 @@ const McpTransportLive = Layer.unwrap(
 			path: "/mcp",
 			protocol: NEGOTIATED_PROTOCOL,
 			registerTools: tools.ensureRegistered,
+			loadToolExecutor: tools.ensureExecutor,
 		})
 	}),
 ).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))
@@ -219,7 +228,13 @@ const McpHttpLive = layerStatelessMcpServer({
 export const McpLive: Layer.Layer<
 	never,
 	Cause.IllegalArgumentError,
-	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutorLoader | McpToolRateLimiter
+	| HttpRouter.HttpRouter
+	| ApiKeysService
+	| AuthService
+	| Env
+	| ErrorActorsService
+	| McpToolExecutorLoader
+	| McpToolRateLimiter
 > = Layer.mergeAll(
 	McpHttpLive,
 	DebugErrorsPrompt,

@@ -1,5 +1,5 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import {
 	LogsFacetDimension,
 	QueryEngineExecuteRequest,
@@ -84,7 +84,8 @@ export function listLogs({ data }: { data: ListLogsInput }) {
 const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { data: ListLogsInput }) {
 	const input = yield* decodeInput(ListLogsInputSchema, data ?? {}, "listLogs")
 	const limit = input.limit ?? DEFAULT_LIMIT
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 
 	const logsResult = yield* runWarehouseQuery("listLogs", () =>
 		Effect.gen(function* () {
@@ -194,7 +195,8 @@ const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
 	data: ListLogsInput
 }) {
 	const input = yield* decodeInput(ListLogsInputSchema, data ?? {}, "getLogsCount")
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogsCount",
@@ -272,7 +274,8 @@ const getLogsFacetsEffect = Effect.fn("QueryEngine.getLogsFacets")(function* ({
 	data: GetLogsFacetsInput
 }) {
 	const input = yield* decodeInput(GetLogsFacetsInputSchema, data ?? {}, "getLogsFacets")
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogsFacets",
@@ -348,7 +351,8 @@ const getLogsFacetValuesEffect = Effect.fn("QueryEngine.getLogsFacetValues")(fun
 
 	yield* Effect.annotateCurrentSpan("facet", input.facet)
 
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogsFacetValues",
 		new QueryEngineExecuteRequest({
@@ -359,9 +363,10 @@ const getLogsFacetValuesEffect = Effect.fn("QueryEngine.getLogsFacetValues")(fun
 	)
 
 	return {
-		data: extractFacets(response)
-			.filter((row) => row.facetType === input.facet && row.name)
-			.map((row): FacetItem => ({ name: row.name, count: Number(row.count) })),
+		data: Arr.map(
+			extractFacets(response).filter((row) => row.facetType === input.facet && row.name),
+			(row): FacetItem => ({ name: row.name, count: Number(row.count) }),
+		),
 	}
 })
 
@@ -387,7 +392,8 @@ const getLogAttributeKeysEffect = Effect.fn("QueryEngine.getLogAttributeKeys")(f
 	data: GetLogAttributeKeysInput
 }) {
 	const input = yield* decodeInput(GetLogAttributeKeysInputSchema, data ?? {}, "getLogAttributeKeys")
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
+	const now = yield* Clock.currentTimeMillis
+	const fallback = defaultLogsTimeRange(now)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,
@@ -398,7 +404,7 @@ const getLogAttributeKeysEffect = Effect.fn("QueryEngine.getLogAttributeKeys")(f
 	if (result.kind !== "attributeKeys") return { data: [] }
 
 	return {
-		data: result.data.map((row) => ({
+		data: Arr.map(result.data, (row) => ({
 			attributeKey: row.key,
 			usageCount: Number(row.count),
 		})),

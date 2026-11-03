@@ -1,10 +1,10 @@
 import type { AgentTimeKind, AiSpanCategory } from "@maple/agent-sessions"
-import type { IconName } from "../../../ui/icon"
+import type { IconName } from "@maple/views/ui/icon"
 
 // Span visuals, as icon names: one token
 // per kind of work, read by the time breakdown, the waterfall and the flow.
 
-const NO_WORK_FILL = "bg-muted-foreground/40"
+const NO_WORK_FILL = "bg-foreground-faint"
 
 export const CATEGORY_FILL = {
 	agent: "bg-chart-ai-agent",
@@ -47,7 +47,7 @@ export const AGENT_TIME_TEXT = {
 	ttft: "text-chart-ai-ttft",
 	inference: "text-chart-ai-inference",
 	tool: "text-chart-ai-tool",
-	idle: "text-muted-foreground/70",
+	idle: "text-foreground-subtle",
 } satisfies Record<TimeBandKind, string>
 
 export const AGENT_TIME_LABEL = {

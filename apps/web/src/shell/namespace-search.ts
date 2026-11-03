@@ -1,6 +1,7 @@
-import { Effect, Option, type Scope } from "effect"
+import { Effect, Option, type Scope, Array as Arr, String as Str } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { input } from "../ui/input"
+import { input } from "@maple/views/ui/input"
+import { typography } from "@maple/views/ui/typography"
 
 /** `NamespaceScopeList`'s search: it only earns its row once the list is this long. */
 export const SEARCH_THRESHOLD = 8
@@ -8,12 +9,14 @@ export const SEARCH_THRESHOLD = 8
 export const hasNamespaceSearch = (observed: ReadonlyArray<string>): boolean =>
 	observed.length >= SEARCH_THRESHOLD
 
-const trimmedOf = (query: string) => query.trim().toLowerCase()
+const trimmedOf = (query: string) => Str.toLowerCase(Str.trim(query))
 
 /** The observed namespaces the query matches (all of them for a blank query). */
 export const matchingNamespaces = (observed: ReadonlyArray<string>, query: string): ReadonlyArray<string> => {
 	const trimmed = trimmedOf(query)
-	return trimmed === "" ? observed : observed.filter((name) => name.toLowerCase().includes(trimmed))
+	return trimmed === ""
+		? observed
+		: Arr.filter(observed, (name) => Str.includes(trimmed)(Str.toLowerCase(name)))
 }
 
 /** What the list shows for a query: "All namespaces" only unfiltered, the unseen pin while it matches. */
@@ -26,9 +29,15 @@ export const namespaceRows = (
 	const matches = matchingNamespaces(observed, query)
 	const unseenPin = Option.filter(
 		pinned,
-		(name) => !observed.includes(name) && (trimmed === "" || name.toLowerCase().includes(trimmed)),
+		(name) =>
+			!observed.includes(name) && (trimmed === "" || Str.includes(trimmed)(Str.toLowerCase(name))),
 	)
-	return { isFiltered: trimmed !== "", matches, unseenPin, isNoMatch: matches.length === 0 && trimmed !== "" }
+	return {
+		isFiltered: trimmed !== "",
+		matches,
+		unseenPin,
+		isNoMatch: matches.length === 0 && trimmed !== "",
+	}
 }
 
 /** `<div className="p-1 pb-1.5"><Input autoFocus placeholder size="sm" /></div>`. */
@@ -48,13 +57,17 @@ export const namespaceSearchRow = <Message>(
 			input(h, {
 				id: options.id,
 				size: "sm",
-				attributes: [h.Placeholder("Search namespaces…"), h.Value(options.query), ...options.attributes],
+				attributes: [
+					h.Placeholder("Search namespaces…"),
+					h.Value(options.query),
+					...options.attributes,
+				],
 			}),
 		],
 	)
 
 export const noNamespacesMatch = <Message>(h: HtmlBuilder<Message>): Html =>
-	h.div([h.Class("px-2 py-1.5 text-xs text-muted-foreground")], ["No namespaces match"])
+	typography(h, { size: "xs", tone: "muted", as: "div", className: "px-2 py-1.5" }, ["No namespaces match"])
 
 /**
  * The search input's mount: it takes focus (`autoFocus`) and its keydowns stop there, so the

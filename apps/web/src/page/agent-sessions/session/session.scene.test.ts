@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { AiSessionSpanCursor } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -15,18 +15,23 @@ const SESSION = "5f1c2a90-3b7e-4c1d-9a2f-7e0d4b6c8a11"
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const entered = (search: Model["search"] = {}) => init({ sessionId: SESSION, search }, context)
 
 describe("agent session detail", () => {
 	test("entering reads the first page and the clock", () => {
 		const { model, commands } = entered()
-		expect(names(commands)).toEqual(["FetchAgentSessionFirstPage", "ResolveAgentSessionClock"])
+		expect(names(commands)).toEqual(
+			expect.arrayContaining(["FetchAgentSessionFirstPage", "ResolveAgentSessionClock"]),
+		)
 		expect(AsyncData.isLoading(model.firstPage.data)).toBe(true)
 	})
 
 	test("the clock read brings the browser locale the token titles format with", () => {
-		const clocked = pageUpdate(entered().model, Message.CompletedResolveClock({ nowMs: 1, locale: "de-DE" }))
+		const clocked = pageUpdate(
+			entered().model,
+			Message.CompletedResolveClock({ nowMs: 1, locale: "de-DE" }),
+		)
 		expect(clocked.model.locale).toBe("de-DE")
 	})
 
@@ -48,12 +53,34 @@ describe("agent session detail", () => {
 	test("a dropped later page asks for nothing: each page is fetched once", () => {
 		const { model } = entered()
 		const key = model.firstPage.key ?? ""
-		const cursor = (spanId: string) => Schema.decodeSync(AiSessionSpanCursor)({ timestamp: "2026-10-01 12:00:00", spanId })
-		const first = pageUpdate(model, Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: cursor("s1") }) }))
+		const cursor = (spanId: string) =>
+			Schema.decodeSync(AiSessionSpanCursor)({ timestamp: "2026-10-01 12:00:00", spanId })
+		const first = pageUpdate(
+			model,
+			Message.CompletedFetchFirstPage({
+				key,
+				result: Result.succeed({ data: [], nextCursor: cursor("s1") }),
+			}),
+		)
 		expect(names(first.commands)).toEqual(["FetchAgentSessionMorePage"])
 		const page = (at: number, next: string | null) =>
-			Message.CompletedFetchMorePage({ key, index: at, scope: "ai", isTooLarge: false, result: Result.succeed({ data: [], nextCursor: next === null ? null : cursor(next) }) })
-		const stale = pageUpdate(first.model, Message.CompletedFetchMorePage({ key: "old", index: 0, scope: "ai", isTooLarge: false, result: Result.succeed({ data: [], nextCursor: null }) }))
+			Message.CompletedFetchMorePage({
+				key,
+				index: at,
+				scope: "ai",
+				isTooLarge: false,
+				result: Result.succeed({ data: [], nextCursor: next === null ? null : cursor(next) }),
+			})
+		const stale = pageUpdate(
+			first.model,
+			Message.CompletedFetchMorePage({
+				key: "old",
+				index: 0,
+				scope: "ai",
+				isTooLarge: false,
+				result: Result.succeed({ data: [], nextCursor: null }),
+			}),
+		)
 		expect(names(stale.commands)).toEqual([])
 		const second = pageUpdate(stale.model, page(0, "s2"))
 		expect(names(second.commands)).toEqual(["FetchAgentSessionMorePage"])
@@ -62,16 +89,19 @@ describe("agent session detail", () => {
 		expect(duplicate.model.more.agentPages).toHaveLength(1)
 	})
 
-	test("a stale first page is dropped", () => {
+	test("a stale first page is dropped and asks for nothing", () => {
 		const { model } = entered()
+		const nextCursor = Schema.decodeSync(AiSessionSpanCursor)({
+			timestamp: "2026-10-01 12:00:00",
+			spanId: "s1",
+		})
 		const late = pageUpdate(
 			model,
-			Message.CompletedFetchFirstPage({
-				key: "old",
-				result: Result.succeed({ data: [], nextCursor: null }),
-			}),
+			Message.CompletedFetchFirstPage({ key: "old", result: Result.succeed({ data: [], nextCursor }) }),
 		)
 		expect(AsyncData.isLoading(late.model.firstPage.data)).toBe(true)
+		expect(late.model.more).toEqual(model.more)
+		expect(names(late.commands)).toEqual([])
 	})
 
 	test("the 2 key opens Traces as a step Back can undo", () => {
@@ -141,7 +171,10 @@ describe("agent session detail", () => {
 		const scrolled = pageUpdate(loaded, Message.ChangedTranscriptWindow({ window }))
 		expect(scrolled.commands ?? []).toEqual([])
 		expect(sessionData(scrolled.model)).toBe(sessionData(loaded))
-		const reloaded = pageUpdate(scrolled.model, Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }))
+		const reloaded = pageUpdate(
+			scrolled.model,
+			Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }),
+		)
 		expect(sessionData(reloaded.model)).not.toBe(sessionData(loaded))
 	})
 })

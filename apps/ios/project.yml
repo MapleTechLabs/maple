@@ -167,6 +167,10 @@ targets:
                 # Injected from Config/Secrets.xcconfig so no key is baked into source.
                 MapleClerkPublishableKey: $(CLERK_PUBLISHABLE_KEY)
                 MapleAPIBaseURL: $(MAPLE_API_BASE_URL)
+                # The keychain group for the widgets' DPoP keys, as entitled in
+                # both targets. Read by KeychainDeviceKeyStore, which refuses to
+                # write anywhere else (the default group is Clerk's).
+                MapleWidgetKeychainGroup: $(AppIdentifierPrefix)com.maple.mobile.widget-keys
                 # Read by MapleBundleConfiguration at launch, so `Maple.start()` takes
                 # no arguments and the values move per-configuration and per-pipeline
                 # rather than per-commit. An unset build setting substitutes to empty,
@@ -231,6 +235,8 @@ targets:
                 CFBundleVersion: "100"
                 NSExtension:
                     NSExtensionPointIdentifier: com.apple.widgetkit-extension
+                # Same group as the app's; see KeychainDeviceKeyStore.
+                MapleWidgetKeychainGroup: $(AppIdentifierPrefix)com.maple.mobile.widget-keys
                 UIAppFonts:
                     - Geist-Regular.ttf
                     - Geist-SemiBold.ttf

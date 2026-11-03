@@ -1,5 +1,5 @@
 import { createEffectCollection } from "@maple/effect-db/electric"
-import { electricSyncBaseUrl } from "../../lib/services/common/electric-sync-url"
+import { electricSyncBaseUrl, electricSyncEnabled } from "../../lib/services/common/electric-sync-url"
 import {
 	Context,
 	Duration,
@@ -7,6 +7,7 @@ import {
 	Layer,
 	ManagedRuntime,
 	Option,
+	Schema,
 	type Scope,
 	Stream,
 	SubscriptionRef,
@@ -28,26 +29,37 @@ import { timestamptzParser } from "@maple/web-data/collections/shape-parsers"
 /** `getOrgCollections`'s 30 s fallback: a superseded set is cleaned up even if a reader lingers. */
 const CLEANUP_FALLBACK = Duration.seconds(30)
 
+export class CollectionCleanupError extends Schema.TaggedError<CollectionCleanupError>()(
+	"@maple/web/collections/CollectionCleanupError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** `syncProxyUrl` (`shape-fetch.ts`): the authenticating shape proxy, never Electric itself. */
 const syncProxyUrl = `${electricSyncBaseUrl}/api/sync/shape`
 
 /**
  * Electric's `fetchClient` contract is a `fetch`, so this is one; it adds the session bearer like
  * `mapleSyncFetch` and leaves `init.signal` alone (live requests long-poll and abort themselves).
+ * With sync off it answers the proxy's 503 itself, so collections give up without a request.
  */
-const makeSyncFetch =
-	(context: Context.Context<SessionBearer>): typeof globalThis.fetch =>
+export const makeSyncFetch =
+	(
+		context: Context.Context<SessionBearer>,
+		enabled: boolean = electricSyncEnabled,
+	): typeof globalThis.fetch =>
 	(input, init) =>
-		Effect.runPromiseWith(context)(
-			Effect.gen(function* () {
-				const bearer = yield* SessionBearer
-				const token = yield* bearer.token
-				const headers = new Headers(init?.headers)
-				if (Option.isSome(token) && !headers.has("authorization"))
-					headers.set("authorization", `Bearer ${token.value}`)
-				return { ...init, headers }
-			}),
-		).then((authorized) => globalThis.fetch(input, authorized))
+		!enabled
+			? Promise.resolve(new Response("Electric sync is not configured", { status: 503 }))
+			: Effect.runPromiseWith(context)(
+					Effect.gen(function* () {
+						const bearer = yield* SessionBearer
+						const token = yield* bearer.token
+						const headers = new Headers(init?.headers)
+						if (Option.isSome(token) && !headers.has("authorization"))
+							headers.set("authorization", `Bearer ${token.value}`)
+						return { ...init, headers }
+					}),
+				).then((authorized) => globalThis.fetch(input, authorized))
 
 const makeSet = (
 	orgId: string,
@@ -166,7 +178,13 @@ const cleanupWhenIdle = (collection: SyncedCollection): Effect.Effect<void> =>
 		return Effect.sync(off)
 	}).pipe(
 		Effect.timeoutOption(CLEANUP_FALLBACK),
-		Effect.andThen(Effect.tryPromise(() => collection.cleanup())),
+		Effect.andThen(
+			Effect.tryPromise({
+				try: () => collection.cleanup(),
+				catch: (cause) =>
+					new CollectionCleanupError({ message: "Could not clean up the collection", cause }),
+			}),
+		),
 		Effect.ignore,
 	)
 
@@ -180,7 +198,10 @@ export class OrgCollections extends Context.Service<
 	{
 		readonly forOrg: (orgId: string) => Effect.Effect<OrgCollectionSet>
 		/** A fresh scoped collection for one investigation; the caller releases it. */
-		readonly forInvestigation: (orgId: string, investigationId: string) => Effect.Effect<InvestigationCollection>
+		readonly forInvestigation: (
+			orgId: string,
+			investigationId: string,
+		) => Effect.Effect<InvestigationCollection>
 		/** Cleans the collection up once its last live query has let go (in the background). */
 		readonly releaseInvestigation: (collection: InvestigationCollection) => Effect.Effect<void>
 		/** `retryOrgCollections`: a fresh set for the open org; live streams move onto it. */
@@ -218,7 +239,8 @@ function makeOrgCollections(): Effect.Effect<
 > {
 	return Effect.gen(function* () {
 		const scope = yield* Effect.scope
-		const fetchClient = makeSyncFetch(yield* Effect.context<SessionBearer>())
+		const bearerContext = yield* Effect.context<SessionBearer>()
+		const fetchClient = makeSyncFetch(bearerContext)
 		const client = yield* MapleApiV2Client
 		// Collection handlers and backoff logs run here; none of Maple's collections need services.
 		const runtime = yield* Effect.acquireRelease(

@@ -8,13 +8,17 @@ import { SELF_HOSTED_AUTH_EVENT } from "./platform/auth-api"
 import { readEffectiveTimeZone, TIME_ZONE_PREFERENCE_EVENT, TIMEZONE_STORAGE_KEY } from "./platform/time-zone"
 import { rendersShell } from "./page/chrome"
 import * as Preload from "./page/preload"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { pageSubscriptions } from "./page/registry"
 import * as TimeRangePicker from "./page/kit/time-range-picker"
-import { pageContextOf } from "./update"
+import { onboardingInputsOf, pageContextOf } from "./update"
+import * as Onboarding from "./page/onboarding"
+import { connectSubscriptions } from "./page/onboarding/quick-start-connect"
+import * as SourcesFlow from "./page/sources/new/embed"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
-import * as ChatSheet from "./page/chat/sheet"
-import { hrefOf } from "./route"
+import { pollTicks } from "./data/poll"
+import { collectionLoadFailed } from "./page/alerts/shared/collection-load"
 
 /** Emits nothing: an Alt+click on a tri-state filter label is redirected to that row's Exclude button. */
 const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
@@ -32,7 +36,8 @@ const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 
 const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Event }> = window
 
-const timeZoneTarget: Dom.TypedEventTarget<{ [TIME_ZONE_PREFERENCE_EVENT]: Event; storage: StorageEvent }> = window
+const timeZoneTarget: Dom.TypedEventTarget<{ [TIME_ZONE_PREFERENCE_EVENT]: Event; storage: StorageEvent }> =
+	window
 
 /** `useTimezonePreference`: this tab's pick, or another tab's `storage` write of the key. */
 export const timeZonePreferenceChanges: Stream.Stream<Message> = Stream.merge(
@@ -53,6 +58,14 @@ const pages = Subscription.lift(pageSubscriptions)<Model, Message>({
 	read: (model) => Option.some({ page: model.page, context: Option.getOrNull(pageContextOf(model)) }),
 	toParentMessage: (message) => Message.GotPageMessage({ message }),
 })
+
+/** The org whose `dashboards` the shell reads: once the sidebar or palette wants them. */
+const shellDashboardsOrgId = (model: Model): string | null =>
+	model.session._tag === "SignedIn" &&
+	rendersShell(model.route) &&
+	(model.shell.hasRequestedSidebarData || model.shell.palette !== null)
+		? Option.getOrNull(model.shell.maybeOrgId)
+		: null
 
 const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	/** `subscribeSelfHostedAuthChanges`: a renewal elsewhere ended or replaced the session. */
@@ -88,16 +101,15 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
-	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })`: the Connect panel's poll, skipped while hidden. */
+	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })`: the Connect panel's poll, paused while hidden or offline. */
 	connectPoll: entry(
 		{ isPolling: Schema.Boolean },
 		{
 			modelToDependencies: (model) => ({ isPolling: Shell.isConnectPolling(model.shell) }),
 			dependenciesToStream: ({ isPolling }) =>
 				Stream.when(
-					Stream.fromSchedule(Schedule.spaced(Duration.seconds(15))).pipe(
-						Stream.filter(() => !document.hidden),
-						Stream.map(() => Message.GotShellMessage({ message: Shell.connectPollTicked() })),
+					Stream.map(pollTicks(Duration.seconds(15)), () =>
+						Message.GotShellMessage({ message: Shell.connectPollTicked() }),
 					),
 					Effect.sync(() => isPolling),
 				),
@@ -161,18 +173,33 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	shellDashboards: entry(
 		{ orgId: Schema.NullOr(Schema.String) },
 		{
-			modelToDependencies: (model) => ({
-				orgId:
-					model.session._tag === "SignedIn" && rendersShell(model.route) && (model.shell.hasRequestedSidebarData || model.shell.palette !== null)
-						? Option.getOrNull(model.shell.maybeOrgId)
-						: null,
-			}),
+			modelToDependencies: (model) => ({ orgId: shellDashboardsOrgId(model) }),
 			dependenciesToStream: ({ orgId }) =>
 				orgId === null
 					? Stream.empty
 					: Shell.pinnedDashboardRows(orgId, (dashboards) =>
 							Message.GotShellMessage({
 								message: Shell.Message.SucceededLoadDashboards({ orgId, dashboards }),
+							}),
+						),
+		},
+	),
+	/** `useCollectionLoadFailed` while the Pinned group waits on its first `dashboards` answer. */
+	shellDashboardsLoad: entry(
+		{ orgId: Schema.NullOr(Schema.String) },
+		{
+			modelToDependencies: (model) => ({
+				orgId:
+					model.shell.dashboards._tag === "Idle" || model.shell.dashboards._tag === "Loading"
+						? shellDashboardsOrgId(model)
+						: null,
+			}),
+			dependenciesToStream: ({ orgId }) =>
+				orgId === null
+					? Stream.empty
+					: collectionLoadFailed(`dashboards:${orgId}`, () =>
+							Message.GotShellMessage({
+								message: Shell.Message.FailedLoadDashboards({ orgId }),
 							}),
 						),
 		},
@@ -221,6 +248,27 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
+	/** The app-wide tooltip: pointer, press and focus on any `tooltipTrigger`. */
+	tooltipTriggers: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () =>
+				Stream.map(TooltipHost.triggerEvents, (message) => Message.GotTooltipMessage({ message })),
+		},
+	),
+	/** Escape, live text and trigger removal while a tooltip is pending or open. */
+	tooltipWhileEngaged: entry(
+		{ isEngaged: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({ isEngaged: TooltipHost.isEngaged(model.tooltip) }),
+			dependenciesToStream: ({ isEngaged }) =>
+				Stream.when(
+					Stream.map(TooltipHost.whileEngaged, (message) => Message.GotTooltipMessage({ message })),
+					Effect.sync(() => isEngaged),
+				),
+		},
+	),
 	/** Alt+click on a filter label excludes the value (`filter-section.ts`): it presses the row's Exclude. */
 	altClickExclude: entry(
 		{},
@@ -259,17 +307,23 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	),
 }))
 
-/** The global chat sheet's open event, `C`, and its conversation's live tail. */
-const chatSheet = Subscription.lift(ChatSheet.subscriptions)<Model, Message>({
+/** Onboarding's connect drawer: its flow's OAuth popup and polls, only while it is open. */
+const onboardingConnectFlow = Subscription.lift(SourcesFlow.subscriptions)<Model, Message>({
 	read: (model) =>
-		Option.some({
-			sheet: model.chatSheet,
-			isSignedIn: model.session._tag === "SignedIn" && rendersShell(model.route),
-			isTypeAnywhere:
-				model.route._tag === "Chat" && (model.route.search.shared === undefined || model.route.search.shared === ""),
-			pathname: hrefOf(model.route).split("?")[0] ?? "/",
-		}),
-	toParentMessage: (message) => Message.GotChatSheetMessage({ message }),
+		Option.flatMap(Option.fromNullishOr(model.onboarding), (onboarding) =>
+			Option.flatMap(onboardingInputsOf(model), (inputs) =>
+				Onboarding.connectFlowOf(onboarding, inputs),
+			),
+		),
+	toParentMessage: (message) =>
+		Message.GotOnboardingMessage({ message: Onboarding.fromConnectFlow(message) }),
 })
 
-export const subscriptions = Subscription.aggregate(root, pages, chatSheet)
+/** Onboarding's connect step: what is arriving, re-read while it shows. */
+const onboardingConnectPoll = Subscription.lift(connectSubscriptions)<Model, Message>({
+	read: (model) => Option.flatMap(Option.fromNullishOr(model.onboarding), Onboarding.connectPollOf),
+	toParentMessage: (message) =>
+		Message.GotOnboardingMessage({ message: Onboarding.fromConnectPoll(message) }),
+})
+
+export const subscriptions = Subscription.aggregate(root, pages, onboardingConnectFlow, onboardingConnectPoll)

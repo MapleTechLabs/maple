@@ -19,8 +19,10 @@ import {
 	plainWithDefault,
 	requireSecretEntry,
 	selfObservabilityEnv,
+	supabaseOAuthEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
+import { Array as Arr } from "effect"
 
 export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
@@ -62,15 +64,13 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 		optionalPlain("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 		optionalPlain("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
+		optionalPlain("MAPLE_CLERK_DASHBOARD_URL"),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
-		optionalPlain("HAZEL_API_BASE_URL"),
-		optionalPlain("HAZEL_OAUTH_DISCOVERY_URL"),
-		optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
-		optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
-		optionalPlain("HAZEL_OAUTH_SCOPES"),
+		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
+		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
 		// Each connector's declared install and outbound config; unset means unavailable.
-		...[...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys].map((key) =>
+		...Arr.map([...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys], (key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
 		),
 		apnsEnv,
@@ -81,5 +81,6 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		supabaseOAuthEnv,
 		optionalPlain("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
 	)

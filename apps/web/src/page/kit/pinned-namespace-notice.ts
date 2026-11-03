@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
-import { badge } from "../../ui/display"
-import { icon } from "../../ui/icon"
+import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
 
 /**
  * `PinnedNamespaceNotice`: replaces a
@@ -31,7 +31,7 @@ export const pinnedNamespaceNotice = <M>(h: HtmlBuilder<M>, namespace: string, o
 							variant: "link",
 							size: "xs",
 							className:
-								"h-auto p-0 text-2xs normal-case tracking-normal text-muted-foreground hover:text-foreground sm:text-2xs",
+								"h-auto p-0 text-2xs normal-case tracking-normal text-muted-foreground hover:text-foreground active:text-foreground sm:text-2xs",
 							attributes: onClear === undefined ? [] : [h.OnClick(onClear)],
 						},
 						["Clear"],

@@ -1,23 +1,25 @@
 import { Schema } from "effect"
-import * as Chart from "../../../charts/chart"
-import { ChartRuntime } from "../../../charts/chart-runtime"
-import { ThemeColors } from "../../../charts/theme-colors"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
+import * as Chart from "@maple/views/charts/chart"
+import { ChartRuntime } from "@maple/views/charts/chart-runtime"
+import { ThemeColors } from "@maple/views/charts/theme-colors"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
-import * as FilterSections from "../../../ui/filters/filter-sections"
-import * as LogsStream from "../../../ui/logs/logs-stream"
-import * as Menu from "../../../ui/menu"
-import * as Popover from "../../../ui/popover"
-import * as Tooltip from "../../../ui/tooltip"
-import * as LogDetail from "../detail"
-import { SignalPresenceData } from "../../kit/signal-presence"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
+import * as LogsStream from "@maple/views/ui/logs/logs-stream"
+import * as Menu from "@maple/views/ui/menu"
+import * as Popover from "@maple/views/ui/popover"
+import * as Tooltip from "@maple/views/ui/tooltip"
+import * as LogDetail from "@maple/views/logs/log-sheet"
+import * as InfraCorrelation from "../../kit/infra-correlation"
+import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
 // The `/logs` stream.
 
-import { LogRecord } from "../../../ui/logs/log-row-view"
+import { LogRecord } from "@maple/views/ui/logs/log-row-view"
+import { Density } from "@maple/views/ui/logs/viewer"
 
 /** `LogRow` (`@maple/query-engine` route-rows), shared with the stream (`ui/logs`). */
 export const LogRowSchema = LogRecord
@@ -49,8 +51,6 @@ export type VolumeBucket = typeof VolumeBucket.Type
 export const AttributeKey = Schema.Struct({ name: Schema.String, count: Schema.Number })
 export type AttributeKey = typeof AttributeKey.Type
 
-export const Density = Schema.Literals(["compact", "comfortable"])
-export type Density = typeof Density.Type
 
 /** `useInfiniteLogs`' later pages: owned by one first page (`generation`), reset with it. */
 export const Pagination = Schema.Struct({
@@ -108,6 +108,8 @@ export const Model = Schema.Struct({
 	searchHelp: Popover.Model,
 	/** `LogDetailSheet` and the row it shows (`selectedLog`, by index into the stream). */
 	detail: LogDetail.Model,
+	/** The sheet's Infrastructure tab, rebuilt per log. */
+	detailInfra: InfraCorrelation.Model,
 	selectedIndex: Schema.NullOr(Schema.Number),
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),

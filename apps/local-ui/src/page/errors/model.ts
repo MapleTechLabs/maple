@@ -1,13 +1,14 @@
-import * as FilterSections from "@maple/web/ui/filters/filter-sections"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { Schema } from "effect"
-import { SlotSchema } from "../../data/slot"
+import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 import { ErrorsFacets, ErrorsSummary, ErrorTrace, ErrorTypeRow } from "./fetch"
 
 /** One `ErrorTypeCard`'s own state: open or not, and its traces query (kept while closed). */
 export const Card = Schema.Struct({
 	isExpanded: Schema.Boolean,
-	traces: SlotSchema(Schema.Array(ErrorTrace)),
+	traces: KeyedSchema(Schema.Array(ErrorTrace), LoadFailure),
 })
 export type Card = typeof Card.Type
 
@@ -16,11 +17,11 @@ export const Model = Schema.TaggedStruct("ErrorsPage", {
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	/** The clock at the last read, for relative times. */
 	nowMs: Schema.Number,
-	summary: SlotSchema(Schema.NullOr(ErrorsSummary)),
-	byType: SlotSchema(Schema.Array(ErrorTypeRow)),
+	summary: KeyedSchema(Schema.NullOr(ErrorsSummary), LoadFailure),
+	byType: KeyedSchema(Schema.Array(ErrorTypeRow), LoadFailure),
 	/** `dataUpdatedAt` of the error types, for the "New data" pill. */
 	byTypeUpdatedAtMs: Schema.Number,
-	facets: SlotSchema(ErrorsFacets),
+	facets: KeyedSchema(ErrorsFacets, LoadFailure),
 	/** Cards by fingerprint hash. */
 	cards: Schema.Record(Schema.String, Card),
 	sections: FilterSections.Model,

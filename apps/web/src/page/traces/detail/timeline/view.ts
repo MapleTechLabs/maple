@@ -1,8 +1,8 @@
 import { SIDEBAR_WIDTH_NARROW_MIN } from "@maple/ui/components/traces/trace-timeline-types"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { emptyMessage } from "../../../../ui/empty"
+import { emptyMessage } from "@maple/views/ui/empty"
 import { MountAltToggle, MeasureTimelineBody } from "./command"
 import { type Bar, computeSearchMatches, computeTimeAxisTicks, ROW_PITCH, virtualRange } from "./layout"
 import { Message } from "./message"
@@ -62,11 +62,11 @@ const body = (
 	matches: ReadonlySet<string>,
 	ticks: ReadonlyArray<number>,
 ): Html => {
-	const isSearchActive = model.searchQuery.trim().length > 0
+	const isSearchActive = Str.trim(model.searchQuery).length > 0
 	const visible = model.viewport.endMs - model.viewport.startMs
 	const vp0 = model.viewport.startMs - model.traceStartMs
 	const k = 100 / visible
-	const rows = virtualRange(bars.length, model.scrollTop, model.scrollerHeight).flatMap((index) => {
+	const rows = Arr.flatMap(virtualRange(bars.length, model.scrollTop, model.scrollerHeight), (index) => {
 		const bar = bars[index]
 		if (bar === undefined) return []
 		const spanId = bar.span.spanId
@@ -115,12 +115,12 @@ const body = (
 									h.Class("pointer-events-none absolute inset-y-0 right-0 z-0"),
 									h.Style({ left: "var(--sidebar-w)" }),
 								],
-								ticks.map((offset) =>
+								Arr.map(ticks, (offset) =>
 									h.span(
 										[
 											h.Attribute(
 												"class",
-												"pointer-events-none absolute inset-y-0 w-px bg-border/40",
+												"pointer-events-none absolute inset-y-0 w-px bg-border-subtle",
 											),
 											h.Style({ left: tickLeft(offset, model) }),
 										],
@@ -137,7 +137,7 @@ const body = (
 				[
 					h.AriaOrientation("vertical"),
 					h.Class(
-						"absolute top-0 bottom-0 z-30 w-1 -ml-0.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 pointer-coarse:hidden",
+						"absolute top-0 bottom-0 z-30 w-1 -ml-0.5 cursor-col-resize bg-transparent hover:bg-primary-a3 active:bg-primary-a3 pointer-coarse:hidden",
 					),
 					h.Role("separator"),
 					h.Style({ left: `${sidebarWidth}px` }),
@@ -181,7 +181,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.Style({ "--sidebar-w": `${sidebarWidth}px` }),
 			h.Tabindex(0),
 			h.OnKeyDownSelfPreventDefault((key, modifiers) =>
-				TIMELINE_KEYS.has(key.toLowerCase())
+				TIMELINE_KEYS.has(Str.toLowerCase(key))
 					? Option.some(Message.PressedTimelineKey({ key, isShift: modifiers.shiftKey }))
 					: Option.none(),
 			),
@@ -191,7 +191,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			toolbar(h, model, bars.length, toolbarIds(inputs.idPrefix)),
 			alignedStrip(
 				h,
-				"shrink-0 border-b border-r border-border bg-muted/10",
+				"shrink-0 border-b border-r border-border bg-surface-faint",
 				"flex shrink-0",
 				"flex-1 min-w-0",
 				minimap(h, model),

@@ -316,6 +316,80 @@ describe("visibility", () => {
 	})
 })
 
+describe("visibility with an owner that pauses", () => {
+	const pausing = () => {
+		const calls: string[] = []
+		const hooks: Partial<SessionLifecycleHooks> = {
+			onStart: () => void calls.push("start"),
+			onSuspend: (options) => void calls.push(`suspend:${options.keepalive}`),
+			onPause: (options) => void calls.push(`pause:${options.keepalive}`),
+		}
+		return { calls, hooks }
+	}
+
+	it("flushes on hide and resumes the same capture on show", () => {
+		const { calls, hooks } = pausing()
+		const handle = start(hooks)
+		const id = handle!.sessionId
+		setVisibility("hidden")
+		expect(statuses()).toEqual(["active", "ended"])
+		expect(posted[1]!.keepalive).toBe(true)
+		setVisibility("visible")
+		expect(statuses()).toEqual(["active", "ended", "active"])
+		expect(calls).toEqual(["start", "pause:true"])
+		expect(handle!.sessionId).toBe(id)
+		// The heartbeat runs again.
+		vi.advanceTimersByTime(HEARTBEAT)
+		expect(statuses()).toEqual(["active", "ended", "active", "active"])
+	})
+
+	it("keeps a hidden session ended when something announces it, such as an error trigger", () => {
+		const { hooks } = pausing()
+		const handle = start(hooks)
+		setVisibility("hidden")
+		handle!.announce()
+		expect(statuses()).toEqual(["active", "ended", "ended"])
+		setVisibility("visible")
+		expect(statuses().at(-1)).toBe("active")
+	})
+
+	it("stops capture without a second ended row when the hidden page unloads", () => {
+		const { calls, hooks } = pausing()
+		start(hooks)
+		setVisibility("hidden")
+		windowListeners.dispatch("pagehide")
+		expect(statuses()).toEqual(["active", "ended"])
+		expect(calls).toEqual(["start", "pause:true", "suspend:true"])
+		// A back/forward cache restore starts capture again.
+		setVisibility("visible")
+		expect(calls).toEqual(["start", "pause:true", "suspend:true", "start"])
+	})
+
+	it("stops capture once a hidden tab passes the idle timeout, and rotates when shown", async () => {
+		const { calls, hooks } = pausing()
+		const handle = start(hooks)
+		const first = handle!.sessionId
+		setVisibility("hidden")
+		vi.advanceTimersByTime(31 * MINUTE)
+		expect(calls).toEqual(["start", "pause:true", "suspend:false"])
+		expect(statuses()).toEqual(["active", "ended"])
+		setVisibility("visible")
+		await flushMicrotasks()
+		expect(handle!.sessionId).not.toBe(first)
+		expect(calls).toEqual(["start", "pause:true", "suspend:false", "start"])
+		expect(last().session_id).toBe(handle!.sessionId)
+	})
+
+	it("detaches without posting on a consent revoke while paused", async () => {
+		const { calls, hooks } = pausing()
+		const handle = start(hooks)
+		setVisibility("hidden")
+		await handle!.shutdown({ flush: false })
+		expect(calls).toEqual(["start", "pause:true", "suspend:false"])
+		expect(statuses()).toEqual(["active", "ended"])
+	})
+})
+
 describe("row contents", () => {
 	it("reports the live exit path and page view count, not the session's first page", () => {
 		start()

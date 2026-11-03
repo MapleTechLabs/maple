@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { QuerySpec } from "@maple/domain/query-engine"
 import {
 	describeInvalidQuerySpec,
@@ -74,7 +74,7 @@ describe("query-spec token table matches the domain schemas", () => {
 		it(`${source}/${kind}: the table is not missing a token the schema accepts`, () => {
 			// Union of every token used anywhere, so a widened schema shows up as a
 			// value this combination now accepts but the table does not list.
-			const allMetrics = new Set(COMBOS.flatMap(([s, k]) => tokensFor(s, k).metrics))
+			const allMetrics = new Set(Arr.flatMap(COMBOS, ([s, k]) => tokensFor(s, k).metrics))
 			for (const metric of allMetrics) {
 				if (metrics.includes(metric)) continue
 				const groupBy = kind === "timeseries" ? { groupBy: [groupBys[0]] } : { groupBy: groupBys[0] }

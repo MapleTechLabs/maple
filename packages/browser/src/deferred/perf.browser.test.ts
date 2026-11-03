@@ -1,5 +1,5 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan } from "@opentelemetry/sdk-trace"
 import { userEvent } from "vitest/browser"
 import { afterEach, describe, expect, it, vi } from "vitest"
 

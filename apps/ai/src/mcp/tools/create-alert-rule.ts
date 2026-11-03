@@ -1,11 +1,14 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { CreateAlertRuleOutput } from "@maple/domain/mcp-outputs"
+import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import {
+	ALERT_EVALUATION_INTERVALS,
 	AlertRuleUpsertRequest,
+	MAX_ALERT_WINDOW_MINUTES,
 	QueryBuilderQueryDraftSchema,
 	type AlertComparator,
 	type AlertSignalType,
@@ -63,8 +66,10 @@ const ALERT_TEMPLATES = {
 
 export const CreateAlertRuleParameters = Schema.Struct({
 	name: P.text("Rule name"),
-	destination_ids: P.list(
-		"Destination IDs to notify (use list_alert_destinations to find IDs). Pass an empty list for none.",
+	destination_ids: P.resourceIdList(
+		"alertDestination",
+		"Required, at least one: destination IDs to notify, from list_alert_destinations",
+		{ blankIsEmpty: true },
 	),
 	template: P.optionalOneOf(
 		TEMPLATE_NAMES,
@@ -77,7 +82,13 @@ export const CreateAlertRuleParameters = Schema.Struct({
 	threshold: P.optionalNumber(
 		"The value compared against. Units: error_rate and apdex are 0-1 ratios, latency is milliseconds, throughput is requests per minute. Overrides the template's.",
 	),
-	window_minutes: P.optionalNumber("Evaluation window in minutes (default: 5)"),
+	window_minutes: P.optionalNumber(
+		`Evaluation window in minutes, at most ${MAX_ALERT_WINDOW_MINUTES} (default: 5)`,
+	),
+	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
+		ALERT_EVALUATION_INTERVALS,
+		'Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit (or pass "auto") to derive it: a fifth of the window, 1 to 5.',
+	),
 	services: P.optionalList("Service names to scope the alert to"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (e.g. 'production'). Omit for all environments. Ignored for builder_query / raw_query, which filter inside their own query.",
@@ -116,7 +127,7 @@ export const CreateAlertRuleParameters = Schema.Struct({
 		"The query to evaluate, in the query-builder draft shape dashboard custom-query widgets use ({ id, name, dataSource, aggregation, whereClause, groupBy, ... }). Required for signal_type=builder_query.",
 	),
 	raw_query_sql: P.optionalText(
-		"ClickHouse SQL returning a numeric `value` column and optional `group` / `samples` columns (`samples` is the event count behind each row; it feeds minimum_sample_count). A query returning no rows is a no-data check, not a healthy one. Must reference $__orgFilter and $__timeFilter(col); $__startTime, $__endTime and $__interval_s are also available. Required for signal_type=raw_query.",
+		`ClickHouse SQL returning a numeric \`value\` column and optional \`group\` / \`samples\` columns (\`samples\` is the event count behind each row; it feeds minimum_sample_count). A query returning no rows is a no-data check, not a healthy one. Must reference $__orgFilter and $__timeFilter(col); $__startTime, $__endTime and $__interval_s are also available. At most ${MAX_RAW_SQL_ALERT_GROUPS} distinct groups. Required for signal_type=raw_query.`,
 	),
 	raw_query_reducer: P.optionalOneOf(
 		ALERT_REDUCERS,
@@ -198,13 +209,13 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 				"raw_query_sql",
 			)
 		}
-		if (!params.raw_query_sql.includes("$__orgFilter")) {
+		if (!Str.includes("$__orgFilter")(params.raw_query_sql)) {
 			return yield* invalid(
 				"raw_query_sql must reference $__orgFilter for org scoping",
 				"raw_query_sql",
 			)
 		}
-		if (!params.raw_query_sql.includes("$__timeFilter(")) {
+		if (!Str.includes("$__timeFilter(")(params.raw_query_sql)) {
 			return yield* invalid(
 				"raw_query_sql must reference $__timeFilter(...) to bound alert reads",
 				"raw_query_sql",
@@ -226,6 +237,9 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 		comparator,
 		threshold,
 		windowMinutes: params.window_minutes ?? 5,
+		...(params.evaluation_interval_minutes == null
+			? undefined
+			: { evaluationIntervalMinutes: params.evaluation_interval_minutes }),
 		destinationIds: params.destination_ids,
 		...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
 		...(services === undefined ? undefined : { serviceNames: services }),
@@ -278,7 +292,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 		// repeating them here cost tokens twice for one fact.
 		description:
 			"Create an alert rule. Pick a `template` for the common cases; otherwise pass signal_type, comparator and threshold yourself. " +
-			"Use list_alert_destinations for destination_ids.",
+			"destination_ids is required (at least one, from list_alert_destinations).",
 		parameters: CreateAlertRuleParameters,
 		aliases: { service_names: "services" },
 		output: CreateAlertRuleOutput,

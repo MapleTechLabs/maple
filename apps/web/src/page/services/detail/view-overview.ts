@@ -1,16 +1,19 @@
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isChartRuntimeReady } from "../../../charts/chart-runtime"
-import { errorState } from "../../../ui/error-state"
+import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
+import { errorState } from "@maple/views/ui/error-state"
 import type { PageContext } from "../../contract"
 import { environmentsOf, ISSUES_DETAIL_LIMIT_MS } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { CHART_TOKENS, metricsGrid } from "./view-charts"
 import { deploysPanel, issuesPanel } from "./view-deploys"
-import { dependencyStrip, usagePanel, workloadsPanel } from "./view-footprint"
+import { dependencyStrip, runsOnPanel, usagePanel } from "./view-footprint"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
+import { uptimePanel } from "./view-uptime"
+import { vstack } from "@maple/views/ui/stack"
+import { grid } from "@maple/views/ui/grid"
 
 // The Overview tab: the chart grid, then the quiet panels and the "Talks to" strip.
 
@@ -24,7 +27,7 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 	if (AsyncData.isFailure(overview)) {
 		return errorState(h, {
 			failure: overview.error,
-			title: "Failed to load service overview",
+			title: "Couldn't load service overview",
 			onRetry: Message.ClickedRetry({ target: "Overview" }),
 		})
 	}
@@ -39,28 +42,23 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 		parseWarehouseDateTime(window.endTime) - parseWarehouseDateTime(window.startTime) >
 			ISSUES_DETAIL_LIMIT_MS
 	const clock = { nowMs, timeZone: context.timeZone }
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			metricsGrid(h, model, {
-				isLoading: isDetailLoading || !isChartReady,
-				isWaiting: AsyncData.isRefreshing(overview),
-				context:
-					model.themeColors === null
-						? null
-						: { theme: model.themeColors, timeZone: context.timeZone, nowMs },
-			}),
-			topOperationsPanel(h, model, model.themeColors),
-			h.div(
-				[h.Class("grid gap-3 lg:grid-cols-2")],
-				[
-					issuesPanel(h, model, clock, isLimited),
-					deploysPanel(h, model, clock, isDetailLoading),
-					usagePanel(h, model, envFilterActive),
-					workloadsPanel(h, model, envFilterActive),
-				],
-			),
-			dependencyStrip(h, model),
-		],
-	)
+	return vstack(h, { gap: "3" }, [
+		metricsGrid(h, model, {
+			isLoading: isDetailLoading || !isChartReady,
+			isWaiting: AsyncData.isRefreshing(overview),
+			context:
+				model.themeColors === null
+					? null
+					: { theme: model.themeColors, timeZone: context.timeZone, nowMs },
+		}),
+		topOperationsPanel(h, model, model.themeColors),
+		grid(h, { lg: 2, gap: "3" }, [
+			issuesPanel(h, model, clock, isLimited),
+			deploysPanel(h, model, clock, isDetailLoading),
+			usagePanel(h, model, envFilterActive),
+			uptimePanel(h, model),
+			runsOnPanel(h, model, envFilterActive),
+		]),
+		dependencyStrip(h, model),
+	])
 }

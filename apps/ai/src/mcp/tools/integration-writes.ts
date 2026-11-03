@@ -4,7 +4,7 @@
  * it needs an OAuth consent or a pasted token. Scrape credentials stay there too, so no secret
  * passes through a model.
  */
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	DeleteScrapeTargetOutput,
 	ScrapeTargetMutationOutput,
@@ -12,6 +12,7 @@ import {
 	SyncVercelOutput,
 } from "@maple/domain/mcp-outputs"
 import { CreateScrapeTargetRequest, UpdateScrapeTargetRequest } from "@maple/domain/http"
+import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ScrapeIntervalSeconds } from "@maple/domain/primitives"
 import { redactUrlSecrets } from "@maple/domain/url-redaction"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
@@ -87,7 +88,9 @@ const resolveTarget = (
 			Effect.flatMap((service) => service.list(orgId)),
 			Effect.mapError(queryError(tool)),
 		)
-		const matches = targets.targets.filter((target) => target.id === ref || target.name === ref)
+		// The REST id (scrp_…) names the same target as its UUID.
+		const id = decodePublicId(PublicIdPrefixes.scrapeTarget, ref) ?? ref
+		const matches = Arr.filter(targets.targets, (target) => target.id === id || target.name === ref)
 		const [target] = matches
 		if (target === undefined) {
 			return yield* new McpInvalidInputError({
@@ -97,13 +100,16 @@ const resolveTarget = (
 		}
 		if (matches.length > 1) {
 			return yield* new McpInvalidInputError({
-				message: `${matches.length} scrape targets are named "${ref}"; pass one's id instead: ${matches.map((m) => m.id).join(", ")}.`,
+				message: `${matches.length} scrape targets are named "${ref}"; pass one's id instead: ${Arr.join(
+					Arr.map(matches, (m) => m.id),
+					", ",
+				)}.`,
 				parameter: "target",
 			})
 		}
 		if (target.managedBy !== null) {
 			return yield* new McpInvalidInputError({
-				message: `"${target.name}" is managed by the ${target.managedBy.split(":")[0]} integration; change it from that integration in Sources.`,
+				message: `"${target.name}" is managed by the ${Str.split(":")(target.managedBy)[0]} integration; change it from that integration in Sources.`,
 				parameter: "target",
 			})
 		}
@@ -255,16 +261,17 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 				authFailed: status.authFailed,
 				lastSyncedAt: iso(status.lastSyncedAt),
 				lastError: status.lastError,
-				environments: status.environments
-					.filter((env) => env.enabled)
-					.map((env) => ({
+				environments: Arr.map(
+					Arr.filter(status.environments, (env) => env.enabled),
+					(env) => ({
 						project: env.projectName,
 						environment: env.environmentName,
 						services: env.serviceCount,
 						lastSyncedAt: iso(env.lastSyncedAt),
 						lastError: env.lastError,
 						stale: env.lastSyncedAt === null || now - env.lastSyncedAt > RAILWAY_STALE_MS,
-					})),
+					}),
+				),
 			}
 		}),
 		render: (output) =>
@@ -284,12 +291,11 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 										"Railway rejected the stored token, so nothing was polled. Save a new token in Sources.",
 									]
 								: []),
-							...output.environments
-								.filter((env) => env.stale && env.lastError === null)
-								.map(
-									(env) =>
-										`The poll ran, but ${env.project} / ${env.environment} still has no new data: Railway returned nothing for it. The token most likely lost access to that project or environment, or its services stopped. Check it in Railway, then save a token with access in Sources.`,
-								),
+							...Arr.map(
+								Arr.filter(output.environments, (env) => env.stale && env.lastError === null),
+								(env) =>
+									`The poll ran, but ${env.project} / ${env.environment} still has no new data: Railway returned nothing for it. The token most likely lost access to that project or environment, or its services stopped. Check it in Railway, then save a token with access in Sources.`,
+							),
 						],
 						blocks: [
 							doc.fields([
@@ -298,7 +304,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 							]),
 							doc.table(
 								["Project / environment", "Services", "Status", "Last success", "Error"],
-								output.environments.map((env) => [
+								Arr.map(output.environments, (env) => [
 									`${env.project} / ${env.environment}`,
 									String(env.services),
 									env.lastError !== null

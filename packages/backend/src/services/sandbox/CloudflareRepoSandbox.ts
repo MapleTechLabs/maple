@@ -15,7 +15,7 @@
  */
 import { OrgId } from "@maple/domain/http"
 import {
-	SANDBOX_COMMAND_ENV,
+	SANDBOX_COMMAND_ENV_NAMES,
 	SandboxCheckout,
 	SandboxExecRequest,
 	type SandboxExecResponse,
@@ -35,8 +35,18 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 	type SandboxRequest,
-} from "@yielded/agent/sandbox"
-import { Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
+} from "@maple/backend/sandbox/contract"
+import {
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schedule,
+	Schema,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import {
 	VcsSourceService,
@@ -109,14 +119,17 @@ export const admit = (
 				"this sandbox can only switch egress off entirely; it cannot enforce a destination allowlist",
 			)
 		// The container pins one fixed environment, so the allowlist is honoured only
-		// when it names exactly that set. A narrower request would still see all three,
+		// when it names exactly that set. A narrower request would still see all of them,
 		// and a request this cannot enforce is one the contract says to refuse.
-		const supportedEnv = Object.keys(SANDBOX_COMMAND_ENV)
+		const supportedEnv = SANDBOX_COMMAND_ENV_NAMES
 		const requestedEnv = new Set(request.environment.allow)
-		if (requestedEnv.size !== supportedEnv.length || supportedEnv.some((name) => !requestedEnv.has(name)))
+		if (
+			requestedEnv.size !== supportedEnv.length ||
+			Arr.some(supportedEnv, (name) => !requestedEnv.has(name))
+		)
 			return yield* unsupported(
 				"runtime",
-				`a command sees exactly ${supportedEnv.join(", ")}; this sandbox cannot narrow or widen that set`,
+				`a command sees exactly ${Arr.join(supportedEnv, ", ")}; this sandbox cannot narrow or widen that set`,
 			)
 		if (request.limits.cpuCores !== undefined)
 			return yield* unsupported("cpu-limit", "per-command CPU limits are not enforced")
@@ -141,10 +154,11 @@ export const admit = (
 			)
 		const orgId = decodeOrgId(parsed.value.orgId)
 		if (Option.isNone(orgId)) return yield* unsupported("mounts", "mount source names no organization")
-		if (request.cwd !== REPO_MOUNT_TARGET && !request.cwd.startsWith(`${REPO_MOUNT_TARGET}/`))
+		if (request.cwd !== REPO_MOUNT_TARGET && !Str.startsWith(`${REPO_MOUNT_TARGET}/`)(request.cwd))
 			return yield* unsupported("mounts", `cwd must be inside ${REPO_MOUNT_TARGET}`)
-		const cwd = request.cwd === REPO_MOUNT_TARGET ? "." : request.cwd.slice(REPO_MOUNT_TARGET.length + 1)
-		if (cwd.split("/").includes(".."))
+		const cwd =
+			request.cwd === REPO_MOUNT_TARGET ? "." : Str.slice(REPO_MOUNT_TARGET.length + 1)(request.cwd)
+		if (Str.split("/")(cwd).includes(".."))
 			return yield* unsupported("mounts", "cwd must stay inside the mount")
 		return { orgId: orgId.value, repository: parsed.value.repository, ref: parsed.value.ref, cwd }
 	})
@@ -153,7 +167,7 @@ const spawnError = (command: string, message: string, cause?: unknown) =>
 	new SandboxSpawnError({
 		implementation: IMPLEMENTATION,
 		command,
-		message: message.slice(0, SANDBOX_DIAGNOSTIC_MAX_LENGTH),
+		message: Str.slice(0, SANDBOX_DIAGNOSTIC_MAX_LENGTH)(message),
 		...(cause === undefined ? undefined : { cause }),
 	})
 
@@ -245,14 +259,17 @@ export const sandboxKey = (orgId: OrgId, checkout: RepositoryCheckout): Effect.E
 			crypto.subtle.digest(
 				"SHA-256",
 				new TextEncoder().encode(
-					`${orgId}\u0000${checkout.provider}\u0000${checkout.fullName.toLowerCase()}`,
+					`${orgId}\u0000${checkout.provider}\u0000${Str.toLowerCase(checkout.fullName)}`,
 				),
 			),
 		),
 		(digest) =>
-			`repo-${Array.from(new Uint8Array(digest).slice(0, 16))
-				.map((byte) => byte.toString(16).padStart(2, "0"))
-				.join("")}`,
+			`repo-${Arr.join(
+				Arr.map(Array.from(new Uint8Array(digest).slice(0, 16)), (byte) =>
+					Str.padStart(2, "0")(byte.toString(16)),
+				),
+				"",
+			)}`,
 	)
 
 export interface CloudflareRepoSandboxDeps {
@@ -322,7 +339,8 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 						`The checkout of ${checkout.fullName} at ${checkout.sha} is still being cloned after ${Duration.toSeconds(CHECKOUT_WAIT)}s. The clone continues in the background: gather other evidence first and come back to this repository later rather than calling again immediately.`,
 						answered.value,
 					)
-				return Stream.fromIterable(yield* toEvents(request, answered.value))
+				const events = yield* toEvents(request, answered.value)
+				return Stream.fromIterable(events)
 			}),
 		),
 })

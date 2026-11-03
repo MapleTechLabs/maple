@@ -7,7 +7,8 @@ import { Result } from "effect"
 import { PageOutMessage } from "../../contract"
 import { alertsHref } from "../shared/links"
 import { RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
-import { previewIdentityKey, validationIssues } from "./derive"
+import { previewIdentityKey, saveIssues } from "./derive"
+import { draftTimingOf } from "./derive-rows"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
@@ -40,14 +41,15 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 				description: "",
 			}),
 		}),
-		onFailure: (error) => ({ model: settled, outMessage: errorToast("Failed to preview rule", error.message) }),
+		onFailure: (error) => ({ model: settled, outMessage: errorToast("Couldn't preview rule", error.message) }),
 	})
 }
 
 /** `handleSave`: the ready form as create (or update) params; success lands on `/alerts`. */
 export const save = (model: Model): Return => {
 	const form = model.form
-	if (form === null || model.isSaving || validationIssues(form).length > 0) return { model }
+	if (form === null || model.isSaving) return { model }
+	if (saveIssues(form, draftTimingOf(model, form)).length > 0) return { model }
 	return {
 		model: { ...model, isSaving: true },
 		commands: [SaveRule({ ruleId: model.editingRuleId, payload: buildRuleCreateParamsV2(form) })],
@@ -72,6 +74,6 @@ export const completeSave = (model: Model, message: Extract<Message, { _tag: "Co
 		}),
 		onFailure: (error) => ({
 			model: { ...model, isSaving: false },
-			outMessage: errorToast("Failed to save rule", error.message),
+			outMessage: errorToast("Couldn't save rule", error.message),
 		}),
 	})

@@ -2,23 +2,25 @@ import { countLabel } from "@maple/ui/lib/format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
-import { emptyMessage } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
+import { button, linkButton } from "@maple/views/ui/button"
+import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import * as Frame from "../kit/frame"
 import * as InstallModal from "../kit/install-modal"
 import * as InstallModalView from "../kit/install-modal-view"
-import { pageHero } from "../kit/page-parts"
 import { pickTimeSearch } from "../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, SOURCE_IDS, type SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import { presentSources, sourceState, surfacesOf } from "./state"
 import { DEFAULT_PRESET } from "./update"
-import { needsAttention } from "./view-findings"
+import { needsAttention, sharedFailure } from "./view-findings"
 import { sourcesTable } from "./view-sources"
+import { typography } from "@maple/views/ui/typography"
+import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `InfraOverviewPage`.
 
@@ -40,20 +42,16 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 		h.div(
 			[h.Class("flex flex-col gap-3 @2xl:flex-row @2xl:items-center @2xl:gap-4")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-					[
-						h.span([h.Class("text-sm text-foreground")], ["Add a source"]),
-						h.span(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"Not reporting yet:",
-								" ",
-								...missing.flatMap((id, index) => missingMark(h, id, index === missing.length - 1)),
-							],
+				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+					typography(h, { size: "sm", tone: "foreground" }, ["Add a source"]),
+					typography(h, { size: "xs", tone: "muted" }, [
+						"Not reporting yet:",
+						" ",
+						...Arr.flatMap(missing, (id, index) =>
+							missingMark(h, id, index === missing.length - 1),
 						),
-					],
-				),
+					]),
+				]),
 				h.div(
 					[h.Class("grid gap-2 @sm:flex @sm:shrink-0")],
 					[
@@ -73,29 +71,45 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const sources = presentSources(surfacesOf(model, inputs.context))
-	const missing = SOURCE_IDS.filter((id) => !sources.includes(id))
-	const states = sources.map((id) => ({ id, state: sourceState(model, id) }))
+	const missing = sources === null ? [] : Arr.filter(SOURCE_IDS, (id) => !sources.includes(id))
+	const states = sources === null ? null : Arr.map(sources, (id) => ({ id, state: sourceState(model, id) }))
 	const time = pickTimeSearch(model.search)
+	// "Needs attention" states a failure every source shares once, so the rows need not repeat it.
+	const isFailureExplained = states !== null && sharedFailure(states) !== undefined
+	// "connected", not "reporting": presence says a source exists, not that its read just succeeded.
+	const description =
+		sources === null
+			? "Checking which sources report. What needs a look comes first."
+			: sources.length > 0
+				? isFailureExplained
+					? `${countLabel(sources.length, "source")} configured. Status unavailable right now.`
+					: `${countLabel(sources.length, "source")} connected. What needs a look comes first.`
+				: "Nothing is reporting yet. Install a collector or connect a provider to get started."
 	return h.div(
 		[h.Class("contents")],
 		[
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					title: "Infrastructure",
+					description,
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 				},
 				[
 					h.div(
 						[h.Class("space-y-10")],
 						[
-							pageHero(h, {
-								title: "Infrastructure",
-								description:
-									sources.length > 0
-										? `${countLabel(sources.length, "source")} reporting. What needs a look comes first.`
-										: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
-							}),
-							...(sources.length > 0 ? [needsAttention(h, states, time), sourcesTable(h, states, time)] : []),
+							...(sources === null || sources.length > 0
+								? [
+										needsAttention(h, states, time, Message.ClickedRetry()),
+										sourcesTable(h, states, time, isFailureExplained),
+									]
+								: []),
 							...(missing.length > 0 ? [addSource(h, missing)] : []),
 						],
 					),

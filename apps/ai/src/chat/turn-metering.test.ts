@@ -18,10 +18,11 @@ import {
 	connectorSessionId,
 } from "@maple/domain/chat-session"
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
-import { ConfigProvider, Effect, Logger, Schema } from "effect"
+import { ConfigProvider, Effect, Logger, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import { meterTurn } from "./turn-runner"
 
 const ORG = "org_test"
@@ -29,8 +30,8 @@ const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 
-/** An ordinary signed-in caller. Who drives a turn is its origin, never its user id. */
-const tenant = { orgId }
+/** The customer the turn bills to; the org itself, as for every unlinked org. */
+const customerId = ownBillingCustomer(orgId)
 
 const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
 const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
@@ -101,7 +102,7 @@ beforeEach(() => {
 					? new TextDecoder().decode(body)
 					: "{}"
 		const request = new Request(input, init)
-		if (request.url.endsWith("/v1/balances.track_tokens")) {
+		if (Str.endsWith("/v1/balances.track_tokens")(request.url)) {
 			charged.push(chargedFrom(JSON.parse(text), request.headers.get("idempotency-key")))
 		} else {
 			tracked.push(trackedFrom(JSON.parse(text)))
@@ -124,21 +125,25 @@ const meter = (
 	charges: Array<AiModelSpend> = [],
 ) =>
 	Effect.runPromise(
-		meterTurn(turn(sessionId, messageId), tenant, origin, { input, output, charges }).pipe(
+		meterTurn(turn(sessionId, messageId), customerId, origin, { input, output, charges }).pipe(
 			Effect.provide(configLayer),
 			// Read the global per call: the tests swap `globalThis.fetch`, and the default reference caches it.
 			Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
 		),
 	)
 
-const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
+const keysFor = (featureId: string) =>
+	Arr.map(
+		Arr.filter(tracked, (t) => t.featureId === featureId),
+		(t) => t.key,
+	)
 
 describe("meterTurn", () => {
 	it("charges nothing for a turn on the org's own OpenRouter key", async () => {
 		await Effect.runPromise(
 			meterTurn(
 				turn(`${ORG}:inv-${INVESTIGATION}`, "msg-1"),
-				tenant,
+				customerId,
 				{ kind: "app" },
 				{
 					input: 1200,
@@ -169,7 +174,7 @@ describe("meterTurn", () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1200, 340)
 
 		assert.deepEqual(
-			tracked.map((t) => ({ featureId: t.featureId, value: t.value })),
+			Arr.map(tracked, (t) => ({ featureId: t.featureId, value: t.value })),
 			[
 				{ featureId: "ai_input_tokens", value: 1200 },
 				{ featureId: "ai_output_tokens", value: 340 },
@@ -191,7 +196,11 @@ describe("meterTurn", () => {
 			`${INVESTIGATION}:turn-msg-3:triage:input`,
 		])
 		assert.strictEqual(
-			tracked.filter((t) => t.featureId === "ai_input_tokens").reduce((sum, t) => sum + t.value, 0),
+			Arr.reduce(
+				Arr.filter(tracked, (t) => t.featureId === "ai_input_tokens"),
+				0,
+				(sum, t) => sum + t.value,
+			),
 			6000,
 		)
 	})
@@ -220,7 +229,7 @@ describe("meterTurn", () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 900, 0)
 
 		assert.deepEqual(
-			tracked.map((t) => t.featureId),
+			Arr.map(tracked, (t) => t.featureId),
 			["ai_input_tokens"],
 		)
 	})
@@ -378,7 +387,7 @@ describe("meterTurn AI credits", () => {
 		await meterCharges(`${ORG}:inv-${INVESTIGATION}`, "msg-2", [charge(GLM, 1000, 200)])
 
 		assert.deepEqual(
-			charged.map((c) => c.key),
+			Arr.map(charged, (c) => c.key),
 			[`${INVESTIGATION}:turn-msg-2:triage:credits:0`],
 		)
 	})
@@ -388,7 +397,7 @@ describe("meterTurn AI credits", () => {
 		await meterCharges(`${ORG}:default`, "msg-1", [charge(GLM, 1000, 200)])
 
 		assert.deepEqual(
-			charged.map((c) => c.key),
+			Arr.map(charged, (c) => c.key),
 			[`${ORG}:default:msg-1:chat:credits:0`, `${ORG}:default:msg-1:chat:credits:0`],
 		)
 	})
@@ -401,7 +410,7 @@ describe("meterTurn AI credits", () => {
 			await Effect.runPromise(
 				meterTurn(
 					turn(`${ORG}:default`, "msg-1"),
-					tenant,
+					customerId,
 					{ kind: "app" },
 					{
 						input: 1000,
@@ -427,7 +436,7 @@ describe("meterTurn AI credits", () => {
 		await meterCharges(`${ORG}:default`, "msg-1", [charge(GLM, 0, 0), charge(SONNET, 1000, 100)])
 
 		assert.deepEqual(
-			charged.map((c) => c.key),
+			Arr.map(charged, (c) => c.key),
 			[`${ORG}:default:msg-1:chat:credits:1`],
 		)
 	})

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	CiRunsOutput,
 	CompareCommitsOutput,
@@ -42,14 +42,14 @@ describe("list_integrations", () => {
 	it("names every broken resource in one call, with unhealthy of total per provider", async () => {
 		const result = await runToolDirect(member, "list_integrations", {})
 		const output = decode(ListIntegrationsOutput, result)
-		const byProvider = new Map(output.integrations.map((i) => [i.provider, i]))
+		const byProvider = new Map(Arr.map(output.integrations, (i) => [i.provider, i]))
 		expect(byProvider.get("github")?.resources.map((r) => r.name)).toEqual([INTEGRATION_WORLD.brokenRepo])
 		expect(byProvider.get("railway")?.status).toBe("stale")
 		expect(byProvider.get("railway")?.unhealthyCount).toBe(1)
 		expect(byProvider.get("prometheus")?.resources.map((r) => r.name)).toEqual([
 			INTEGRATION_WORLD.failingScrapeTarget,
 		])
-		expect(output.available.map((a) => a.provider)).toEqual(["vercel", "chat"])
+		expect(Arr.map(output.available, (a) => a.provider)).toEqual(["vercel", "chat"])
 		expect(markdown(result)).toContain("no successful update for 4 h")
 	})
 
@@ -58,37 +58,48 @@ describe("list_integrations", () => {
 		expect(markdown(result)).not.toContain("fixture-secret")
 		expect(JSON.stringify(result.structuredContent)).not.toContain("fixture-secret")
 	})
+
+	it("points an agent at the GitHub tools but not a public MCP client, which cannot call them", async () => {
+		const github = { provider: "github" }
+		expect(markdown(await runToolDirect(member, "list_integrations", github, "chat"))).toContain(
+			"list_source_repositories",
+		)
+		expect(markdown(await runToolDirect(member, "list_integrations", github))).not.toContain(
+			"list_source_repositories",
+		)
+	})
 })
 
 describe("list_sources", () => {
 	it("lists every integration as a source, worst health first, beside the default source", async () => {
 		const result = await runToolDirect(member, "list_sources", {})
 		const output = decode(ListSourcesOutput, result)
-		const byName = new Map(output.sources.map((s) => [s.name, s]))
+		const byName = new Map(Arr.map(output.sources, (s) => [s.name, s]))
 		expect(byName.get(INTEGRATION_WORLD.failingScrapeTarget)).toMatchObject({
 			platform: "prometheus",
-			delivery: "pull",
+			kind: "integration",
 			status: "failing",
 		})
 		expect(output.sources.find((s) => s.platform === "railway")?.status).toBe("stale")
-		expect(output.sources.find((s) => s.isDefault)).toMatchObject({ delivery: "push", status: "pending" })
-		expect(output.sources.every((s) => s.id.startsWith("src_"))).toBe(true)
+		expect(output.sources.find((s) => s.kind === "default")).toMatchObject({ status: "pending" })
+		expect(Arr.every(output.sources, (s) => Str.startsWith("src_")(s.id))).toBe(true)
 		expect(output.sources[0]?.status).toBe("failing")
 		expect(JSON.stringify(result.structuredContent)).not.toContain("fixture-secret")
 	})
 
 	it("keeps source ids stable across calls", async () => {
 		const ids = async () =>
-			decode(ListSourcesOutput, await runToolDirect(member, "list_sources", {}))
-				.sources.map((s) => s.id)
-				.sort()
+			Arr.map(
+				decode(ListSourcesOutput, await runToolDirect(member, "list_sources", {})).sources,
+				(s) => s.id,
+			).sort()
 		expect(await ids()).toEqual(await ids())
 	})
 })
 
 describe("ci_runs", () => {
 	it("names the commit a red streak started on and hands compare_commits both full SHAs", async () => {
-		const result = await runToolDirect(member, "ci_runs", { repository: "shop" })
+		const result = await runToolDirect(member, "ci_runs", { repository: "shop" }, "chat")
 		const ci = decode(CiRunsOutput, result).pipelines.find((p) => p.pipeline === "CI")
 		expect(ci?.red).toMatchObject({
 			failedRuns: 3,
@@ -101,19 +112,29 @@ describe("ci_runs", () => {
 	})
 
 	it("still finds the last green commit when only failures are listed", async () => {
-		const result = await runToolDirect(member, "ci_runs", { repository: "shop", result: "failure" })
+		const result = await runToolDirect(
+			member,
+			"ci_runs",
+			{ repository: "shop", result: "failure" },
+			"chat",
+		)
 		const output = decode(CiRunsOutput, result)
-		expect(output.runs.every((run) => run.result === "failure")).toBe(true)
+		expect(Arr.every(output.runs, (run) => run.result === "failure")).toBe(true)
 		expect(output.runs[0]?.failedJobs[0]?.job).toBe(CI_WORLD.failingJob)
 		expect(output.pipelines.find((p) => p.pipeline === "CI")?.red?.lastGreenRevision).toBe(CI_WORLD.base)
 	})
 
 	it("says how many runs matched the result filter when the limit cut some off", async () => {
-		const result = await runToolDirect(member, "ci_runs", {
-			repository: "shop",
-			result: "failure",
-			limit: 1,
-		})
+		const result = await runToolDirect(
+			member,
+			"ci_runs",
+			{
+				repository: "shop",
+				result: "failure",
+				limit: 1,
+			},
+			"chat",
+		)
 		const output = decode(CiRunsOutput, result)
 		expect(output.runs).toHaveLength(1)
 		expect(output.runsMatched).toBe(3)
@@ -121,10 +142,15 @@ describe("ci_runs", () => {
 	})
 
 	it("keeps the workflow summary when the result filter matches no run", async () => {
-		const result = await runToolDirect(member, "ci_runs", { repository: "shop", result: "cancellation" })
+		const result = await runToolDirect(
+			member,
+			"ci_runs",
+			{ repository: "shop", result: "cancellation" },
+			"chat",
+		)
 		const output = decode(CiRunsOutput, result)
 		expect(output.runs).toEqual([])
-		expect(output.pipelines.map((p) => p.pipeline).sort()).toEqual(["CI", "Deploy"])
+		expect(Arr.map(output.pipelines, (p) => p.pipeline).sort()).toEqual(["CI", "Deploy"])
 		const text = markdown(result)
 		expect(text).toContain("No run in this window matched `result=cancellation`")
 		expect(text).not.toContain("No CI workflow runs in this window")
@@ -133,10 +159,10 @@ describe("ci_runs", () => {
 
 describe("compare_commits", () => {
 	it("lists what a service's latest deploy shipped", async () => {
-		const result = await runToolDirect(member, "compare_commits", { service: "checkout" })
+		const result = await runToolDirect(member, "compare_commits", { service: "checkout" }, "chat")
 		const output = decode(CompareCommitsOutput, result)
 		expect(output.status).toBe("resolved")
-		expect(output.commits.map((c) => c.sha)).toEqual([
+		expect(Arr.map(output.commits, (c) => c.sha)).toEqual([
 			CI_WORLD.head,
 			CI_WORLD.retryCommit,
 			CI_WORLD.couponCommit,
@@ -144,20 +170,30 @@ describe("compare_commits", () => {
 	})
 
 	it("narrows to the one commit between a last green and first red run", async () => {
-		const result = await runToolDirect(member, "compare_commits", {
-			base: CI_WORLD.base,
-			head: CI_WORLD.couponCommit,
-		})
-		expect(decode(CompareCommitsOutput, result).commits.map((c) => c.title)).toEqual([
+		const result = await runToolDirect(
+			member,
+			"compare_commits",
+			{
+				base: CI_WORLD.base,
+				head: CI_WORLD.couponCommit,
+			},
+			"chat",
+		)
+		expect(Arr.map(decode(CompareCommitsOutput, result).commits, (c) => c.title)).toEqual([
 			"feat(cart): allow stacking two coupons",
 		])
 	})
 
 	it("refuses a short SHA and says where full ones come from", async () => {
-		const result = await runToolDirect(member, "compare_commits", {
-			base: CI_WORLD.base.slice(0, 12),
-			head: CI_WORLD.head,
-		})
+		const result = await runToolDirect(
+			member,
+			"compare_commits",
+			{
+				base: Str.slice(0, 12)(CI_WORLD.base),
+				head: CI_WORLD.head,
+			},
+			"chat",
+		)
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toContain("full 40-character commit SHA")
 	})

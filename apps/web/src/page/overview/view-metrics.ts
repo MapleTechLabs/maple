@@ -2,29 +2,47 @@ import { mergeExactThroughput } from "@maple/web-data/warehouse/custom-charts"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Struct, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData as FoldkitAsyncData, Mount } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../charts/chart"
-import { chartSkeleton, type ChartSkeletonVariant } from "../../ui/chart-skeleton"
-import { chartEmpty } from "../../ui/chart-state"
-import * as FixedMetricChart from "../../charts/fixed-metric-chart"
-import type { FixedMetricChartInputs } from "../../charts/fixed-metric-chart"
-import { LINKED_CURSOR_STYLE, linkedCursorOverlay, MountLinkedCursor } from "../../charts/linked-cursor"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
+import * as Chart from "@maple/views/charts/chart"
+import { chartSkeleton, type ChartSkeletonVariant } from "@maple/views/ui/chart-skeleton"
+import { chartEmpty } from "@maple/views/ui/chart-state"
+import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
+import type { FixedMetricChartInputs } from "@maple/views/charts/fixed-metric-chart"
+import {
+	LINKED_CURSOR_STYLE,
+	linkedCursorOverlay,
+	MountLinkedCursor,
+} from "@maple/views/charts/linked-cursor"
 import {
 	fixedMetricModel,
 	type FixedMetricSeries,
 	LATENCY_SERIES,
 	throughputLegend,
 	throughputPlot,
-} from "../../charts/fixed-metric-series"
-import { ChartSpec, type FixedMetricRow } from "../../charts/chart-spec"
-import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
-import type { LoadFailure } from "../../data/load-failure"
-import { errorState } from "../../ui/error-state"
+} from "@maple/views/charts/fixed-metric-series"
+import { ChartSpec, type FixedMetricRow } from "@maple/views/charts/chart-spec"
+import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
+import { FAILURE_KEY_SEPARATOR, failureKey, type LoadFailure } from "@maple/views/data/load-failure"
+import { errorState, type FailureKind, failureKind } from "@maple/views/ui/error-state"
+import { presenceOf } from "@maple/views/data/signal-presence"
+import { stableSlice } from "../kit/stable-slice"
 import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
 import { widgetShell } from "./view-widget"
+import { typography } from "@maple/views/ui/typography"
+import { chartFrameClass } from "@maple/views/ui/chart-frame"
+
+type MetricsData = Pick<Model, "overviewSeries" | "logSeries" | "refinement" | "presence">
+type CardId = "throughput" | "error-rate" | "latency" | "log-volume"
+const CARD_IDS: ReadonlyArray<CardId> = ["throughput", "error-rate", "latency", "log-volume"]
+const EMPTY_CHART = Chart.init()
+const metricsDataOf = stableSlice((model: Model) =>
+	Struct.pick(model, ["overviewSeries", "logSeries", "refinement", "presence"]),
+)
+const gridContextOf = stableSlice((context: GridContext) => context)
+const cardSlot = createKeyedLazy()
 
 // The home page's metrics grid: its four overview charts.
 
@@ -40,12 +58,12 @@ export const THEME_TOKENS = [
 ]
 
 /** The exact pre-sampling volume, merged by ISO bucket where present (`mergeExactThroughput`). */
-export const overviewPoints = (model: Model, useRefinement: boolean): ReadonlyArray<OverviewPoint> => {
+export const overviewPoints = (model: MetricsData, useRefinement: boolean): ReadonlyArray<OverviewPoint> => {
 	const base = FoldkitAsyncData.getOrElse(model.overviewSeries.data, () => [])
 	const exact = useRefinement ? FoldkitAsyncData.getOrElse(model.refinement.data, () => []) : []
 	return base.length === 0
 		? base
-		: mergeExactThroughput(base, new Map(exact.map((point) => [point.bucket, point.throughput])))
+		: mergeExactThroughput(base, new Map(Arr.map(exact, (point) => [point.bucket, point.throughput])))
 }
 
 type Spec = FixedMetricChartInputs["spec"]
@@ -55,8 +73,9 @@ type CardBody =
 	| Readonly<{ _tag: "Loading" }>
 	| Readonly<{ _tag: "Failed"; failure: LoadFailure; retry: RetryTarget }>
 	| Readonly<{ _tag: "Chart"; spec: Spec; ariaLabel: string }>
-	/** `item.data.length === 0`: a chart handed no rows draws bare axes and says nothing. */
-	| Readonly<{ _tag: "Empty" }>
+	/** No rows: `NeverReceived` when the org has never sent the chart's signal; `isPresent` when it has. */
+	| Readonly<{ _tag: "Empty"; isPresent: boolean }>
+	| Readonly<{ _tag: "NeverReceived"; signal: "traces" | "logs" }>
 
 export type GridItem = Readonly<{
 	id: string
@@ -91,6 +110,8 @@ export type GridContext = Readonly<{
 	nowMs: number
 	/** `overviewSamplingActive` over every environment: the refinement is merged and may fail. */
 	useRefinement: boolean
+	/** The strips' `failureKey`s joined (a string keeps the cards cached); a card failing the same way says so in one line. */
+	pageFailureKeys: string
 }>
 
 const specOf = (
@@ -129,131 +150,207 @@ const throughputChips = (rows: ReadonlyArray<FixedMetricRow>, perSecond: boolean
 	)
 
 const latencyColors = (context: GridContext) =>
-	Object.fromEntries(LATENCY_SERIES.map((entry) => [entry.key, resolveColor(context.colors, entry.token)]))
+	Rec.fromEntries(
+		Arr.map(LATENCY_SERIES, (entry) => [entry.key, resolveColor(context.colors, entry.token)]),
+	)
 
 const LOADING: CardBody = { _tag: "Loading" }
-const EMPTY: CardBody = { _tag: "Empty" }
 
-/** `OVERVIEW_CHARTS` with the `metrics` memo's data, loading, error, header value and footer. */
-export const gridItems = <M>(
-	h: HtmlBuilder<M>,
-	model: Model,
-	context: GridContext,
-	footerError: Option.Option<Html>,
-): ReadonlyArray<GridItem> => {
-	const points = overviewPoints(model, context.useRefinement)
-	const overviewRows: ReadonlyArray<FixedMetricRow> = points.map((point) => ({ ...point }))
-	const logRows = FoldkitAsyncData.getOrElse(model.logSeries.data, () => [])
-	const chart = (body: CardBody) => (context.isChartReady || body._tag !== "Chart" ? body : LOADING)
-	const overviewBody = (spec: (rows: ReadonlyArray<FixedMetricRow>) => Spec, ariaLabel: string) =>
-		chart(
-			bodyOf(model.overviewSeries.data, "Overview", (): CardBody =>
-				overviewRows.length === 0 ? EMPTY : { _tag: "Chart", spec: spec(overviewRows), ariaLabel },
-			),
-		)
-	const isOverviewSettled =
-		!FoldkitAsyncData.isIdle(model.overviewSeries.data) &&
-		!FoldkitAsyncData.isLoading(model.overviewSeries.data)
-	const overviewFailed =
-		FoldkitAsyncData.isFailure(model.overviewSeries.data) ||
-		FoldkitAsyncData.isStale(model.overviewSeries.data)
-	const showSummary = isOverviewSettled && !overviewFailed
-	const totalVolume = points.reduce((sum, point) => sum + point.throughput, 0)
-	const weightedErrors = points.reduce((sum, point) => sum + point.throughput * point.errorRate, 0)
-	const avgErrorRate = totalVolume > 0 ? weightedErrors / totalVolume : 0
-	const throughput = throughputColors(context)
-	const throughputBody = overviewBody(
-		(rows) => specOf("Throughput", rows, throughput, context, true, "throughput"),
-		"Throughput",
-	)
-	const latencyBody = overviewBody(
-		(rows) => specOf("Latency", rows, latencyColors(context), context, false, "latency"),
-		"Latency percentiles",
-	)
-	const logBody = chart(
-		bodyOf(model.logSeries.data, "LogVolume", (rows): CardBody =>
-			rows.length === 0
-				? EMPTY
-				: {
-						_tag: "Chart",
-						spec: specOf("Throughput", rows, throughput, context, false, "log-volume"),
-						ariaLabel: "Throughput",
-					},
-		),
-	)
-	return [
-		{
-			id: "throughput",
-			title: "Request Volume",
-			skeleton: "area",
-			legend: throughputBody._tag === "Chart" ? throughputChips(overviewRows, true, context) : [],
-			body: throughputBody,
-			footer: !showSummary
-				? undefined
-				: Option.match(footerError, {
-						// Two text runs, as JSX's `Total{" "}` renders.
-						onNone: () => [
-							"Total",
-							" ",
-							h.span(
-								[h.Class("font-medium text-foreground tabular-nums")],
-								[formatNumber(totalVolume)],
-							),
-						],
-						onSome: (error) => [error],
-					}),
-		},
-		{
-			id: "error-rate",
-			title: "Error Rate",
-			skeleton: "area",
-			legend: [],
-			body: overviewBody(
-				(rows) =>
-					specOf("ErrorRate", rows, { errorRate: throughput.error }, context, false, "errorRate"),
-				"Error rate",
-			),
-			headerValue: showSummary
-				? h.span([h.Class("text-chart-error")], [formatErrorRate(avgErrorRate)])
-				: undefined,
-		},
-		{
-			id: "latency",
-			title: "Latency",
-			skeleton: "line",
-			legend:
-				latencyBody._tag === "Chart"
-					? LATENCY_SERIES.map((entry) => ({
-							key: entry.key,
-							label: entry.label,
-							color: resolveColor(context.colors, entry.token),
-						}))
-					: [],
-			body: latencyBody,
-		},
-		{
-			id: "log-volume",
-			title: "Log Volume",
-			skeleton: "area",
-			legend: logBody._tag === "Chart" ? throughputChips(logRows, false, context) : [],
-			body: logBody,
-		},
-	]
+/** An empty chart reads presence: a skeleton until it is known, setup copy when never received. */
+const emptyBody = (model: MetricsData, signal: "traces" | "logs"): CardBody => {
+	const { status } = presenceOf(model.presence, signal)
+	if (status === "loading") return LOADING
+	return status === "absent"
+		? { _tag: "NeverReceived", signal }
+		: { _tag: "Empty", isPresent: status === "present" }
 }
 
-const cardContent = (h: HtmlBuilder<Message>, model: Model, item: GridItem): Html => {
+/** The series come back zero-filled per bucket, so a never-received signal still has rows to draw. */
+const isNeverReceived = (model: MetricsData, signal: "traces" | "logs"): boolean =>
+	presenceOf(model.presence, signal).status === "absent"
+
+/** Build only the card whose data or interaction state changed. */
+const gridItem = (
+	h: HtmlBuilder<Message>,
+	model: MetricsData,
+	context: GridContext,
+	id: CardId,
+): GridItem => {
+	const chart = (body: CardBody) => (context.isChartReady || body._tag !== "Chart" ? body : LOADING)
+	const throughput = throughputColors(context)
+	if (id === "log-volume") {
+		const rows = FoldkitAsyncData.getOrElse(model.logSeries.data, () => [])
+		const body = chart(
+			bodyOf(model.logSeries.data, "LogVolume", (rows): CardBody =>
+				rows.length === 0 || isNeverReceived(model, "logs")
+					? emptyBody(model, "logs")
+					: {
+							_tag: "Chart",
+							spec: specOf("Throughput", rows, throughput, context, false, "log-volume"),
+							ariaLabel: "Throughput",
+						},
+			),
+		)
+		return {
+			id,
+			title: "Log volume",
+			skeleton: "area",
+			legend: body._tag === "Chart" ? throughputChips(rows, false, context) : [],
+			body,
+		}
+	}
+	const points = overviewPoints(model, context.useRefinement)
+	const rows: ReadonlyArray<FixedMetricRow> = points
+	const overviewBody = (spec: () => Spec, ariaLabel: string) =>
+		chart(
+			bodyOf(model.overviewSeries.data, "Overview", (): CardBody =>
+				rows.length === 0 || isNeverReceived(model, "traces")
+					? emptyBody(model, "traces")
+					: { _tag: "Chart", spec: spec(), ariaLabel },
+			),
+		)
+	const showSummary =
+		!FoldkitAsyncData.isIdle(model.overviewSeries.data) &&
+		!FoldkitAsyncData.isLoading(model.overviewSeries.data) &&
+		!FoldkitAsyncData.isFailure(model.overviewSeries.data) &&
+		!FoldkitAsyncData.isStale(model.overviewSeries.data)
+	switch (id) {
+		case "throughput": {
+			const body = overviewBody(
+				() => specOf("Throughput", rows, throughput, context, true, "throughput"),
+				"Throughput",
+			)
+			const footerError = context.useRefinement
+				? Option.map(FoldkitAsyncData.getError(model.refinement.data), (failure) =>
+						errorState(h, {
+							failure,
+							variant: "inline",
+							title: "Exact request volume unavailable",
+							onRetry: Message.ClickedRetry({ target: "Refinement" }),
+							className: "py-0",
+						}),
+					)
+				: Option.none()
+			return {
+				id,
+				title: "Request volume",
+				skeleton: "area",
+				legend: body._tag === "Chart" ? throughputChips(rows, true, context) : [],
+				body,
+				footer: !showSummary
+					? undefined
+					: Option.match(footerError, {
+							onNone: () => [
+								"Total",
+								" ",
+								typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+									formatNumber(
+										Arr.reduce(points, 0, (sum, point) => sum + point.throughput),
+									),
+								]),
+							],
+							onSome: (error) => [error],
+						}),
+			}
+		}
+		case "error-rate": {
+			const total = Arr.reduce(points, 0, (sum, point) => sum + point.throughput)
+			const errors = Arr.reduce(points, 0, (sum, point) => sum + point.throughput * point.errorRate)
+			return {
+				id,
+				title: "Error rate",
+				skeleton: "area",
+				legend: [],
+				body: overviewBody(
+					() =>
+						specOf(
+							"ErrorRate",
+							rows,
+							{ errorRate: throughput.error },
+							context,
+							false,
+							"errorRate",
+						),
+					"Error rate",
+				),
+				headerValue: showSummary
+					? h.span([h.Class("text-chart-error")], [formatErrorRate(total > 0 ? errors / total : 0)])
+					: undefined,
+			}
+		}
+		case "latency": {
+			const body = overviewBody(
+				() => specOf("Latency", rows, latencyColors(context), context, false, "latency"),
+				"Latency percentiles",
+			)
+			return {
+				id,
+				title: "Latency",
+				skeleton: "line",
+				body,
+				legend:
+					body._tag === "Chart"
+						? Arr.map(LATENCY_SERIES, (entry) => ({
+								key: entry.key,
+								label: entry.label,
+								color: resolveColor(context.colors, entry.token),
+							}))
+						: [],
+			}
+		}
+	}
+}
+
+/** A card under the page strip: what its blank chart means, by the strip's failure class. */
+const STRIPPED_CAPTION = {
+	outage: "No data while Maple reconnects",
+	fixable: "No data for this request",
+	access: "No access to this data",
+} satisfies Record<FailureKind, string>
+
+const cardContent = (
+	h: HtmlBuilder<Message>,
+	chart: Chart.Model,
+	item: GridItem,
+	pageFailureKeys: string,
+): Html => {
 	switch (item.body._tag) {
 		case "Loading":
 			return chartSkeleton(h, item.skeleton)
-		case "Failed":
+		case "Failed": {
+			const { failure: cardFailure, retry } = item.body
+			// The page strip already names this failure and retries it: the card keeps its frame and a
+			// one-line caption in the strip's failure class, centred in the plot area. No axis, no data.
+			if (Str.split(FAILURE_KEY_SEPARATOR)(pageFailureKeys).includes(failureKey(cardFailure)))
+				return h.div(
+					[h.Class("flex h-full flex-col px-4 pb-4")],
+					[
+						h.span(
+							[
+								h.Class(
+									"flex flex-1 items-center justify-center font-prose text-xs text-foreground-subtle",
+								),
+							],
+							[STRIPPED_CAPTION[failureKind(cardFailure)]],
+						),
+					],
+				)
 			return errorState(h, {
-				failure: item.body.failure,
+				failure: cardFailure,
 				variant: "panel",
 				className: "border-0",
-				onRetry: Message.ClickedRetry({ target: item.body.retry }),
+				onRetry: Message.ClickedRetry({ target: retry }),
 			})
+		}
 		case "Empty":
-			return chartEmpty(h, { hint: "Try a wider time range" }, ["No data in this window"])
+			// A wider window only helps when the signal was seen; a failed presence read says nothing.
+			return chartEmpty(h, item.body.isPresent ? { hint: "Try a wider time range" } : {}, [
+				"No data in this window",
+			])
+		case "NeverReceived":
+			return chartEmpty(h, { hint: "Fills in once Maple receives them" }, [
+				`No ${item.body.signal} yet`,
+			])
 		case "Chart": {
 			const { spec, ariaLabel } = item.body
 			return h.div(
@@ -261,13 +358,13 @@ const cardContent = (h: HtmlBuilder<Message>, model: Model, item: GridItem): Htm
 				[
 					h.submodel({
 						slotId: `chart-${item.id}`,
-						model: model.charts[item.id] ?? Chart.init(),
+						model: chart,
 						view: FixedMetricChart.view,
 						viewInputs: {
 							chartId: item.id,
 							ariaLabel,
 							spec,
-							className: "h-full w-full aspect-auto",
+							className: chartFrameClass("fill"),
 						},
 						toParentMessage: (message: Chart.Message) =>
 							Message.GotChartMessage({ chartId: item.id, message }),
@@ -279,14 +376,39 @@ const cardContent = (h: HtmlBuilder<Message>, model: Model, item: GridItem): Htm
 	}
 }
 
-/** `MetricsGrid` with `syncId`: two columns from `md`, every card 280 px tall. */
-export const metricsGrid = (
+const metricCard = (
 	h: HtmlBuilder<Message>,
-	model: Model,
-	items: ReadonlyArray<GridItem>,
-	isWaiting: boolean,
-): Html =>
-	h.div(
+	id: CardId,
+	data: MetricsData,
+	context: GridContext,
+	chart: Chart.Model,
+): Html => {
+	const item = gridItem(h, data, context, id)
+	return h.div(
+		[h.Key(id), h.DataAttribute("linked-cursor-chart", id), h.Class("h-[240px] md:h-[280px]")],
+		[
+			widgetShell(
+				h,
+				{
+					title: item.title,
+					legend: item.legend,
+					headerValue: item.headerValue,
+					footer: item.footer,
+				},
+				cardContent(h, chart, item, context.pageFailureKeys),
+			),
+		],
+	)
+}
+
+/** Cache each card separately: a tooltip update rebuilds only its own card. */
+export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, context: GridContext): Html => {
+	const data = metricsDataOf(model)
+	const gridContext = gridContextOf(context)
+	const isWaiting =
+		FoldkitAsyncData.isRefreshing(model.overviewSeries.data) ||
+		FoldkitAsyncData.isRefreshing(model.logSeries.data)
+	return h.div(
 		[
 			h.DataAttribute("metrics-grid", ""),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
@@ -294,25 +416,8 @@ export const metricsGrid = (
 			h.Style(LINKED_CURSOR_STYLE),
 			h.OnMount(Mount.mapMessage(MountLinkedCursor(), () => Message.CompletedMountLinkedCursor())),
 		],
-		items.map((item) =>
-			h.div(
-				[
-					h.Key(item.id),
-					h.DataAttribute("linked-cursor-chart", item.id),
-					h.Class("h-[240px] md:h-[280px]"),
-				],
-				[
-					widgetShell(
-						h,
-						{
-							title: item.title,
-							legend: item.legend,
-							headerValue: item.headerValue,
-							footer: item.footer,
-						},
-						cardContent(h, model, item),
-					),
-				],
-			),
+		Arr.map(CARD_IDS, (id) =>
+			cardSlot(id, metricCard, [h, id, data, gridContext, model.charts[id] ?? EMPTY_CHART]),
 		),
 	)
+}

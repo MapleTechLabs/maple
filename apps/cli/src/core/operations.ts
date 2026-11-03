@@ -10,7 +10,7 @@
 // Every operation returns the same type in both modes, so commands and
 // renderers never learn which backend answered.
 
-import { Clock, DateTime, Effect, Option, References, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, References, Schema, Array as Arr, String as Str } from "effect"
 import { CH, computeBucketSecondsForRange, type TracesMetric } from "@maple/query-engine"
 import { prepareRawSql } from "@maple/query-engine/runtime"
 import {
@@ -48,9 +48,26 @@ import {
 } from "@maple/query-engine/execution"
 import { HttpClient } from "effect/http"
 import { verboseLogging } from "../lib/debug"
-import { CliUsageError, LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
-import { isLocalUnreachable, isNotMapleServer, readOnlyRejection } from "../lib/failure"
-import type { ErrorRow, MetricSeriesOutput, ServiceMapResult, TopOperationRow } from "../lib/views"
+import {
+	CliUsageError,
+	LocalServerAccessDeniedError,
+	LocalServerUnreachableError,
+	ReadOnlyQueryError,
+} from "../lib/errors"
+import {
+	isLocalUnreachable,
+	isNotMapleServer,
+	type LocalAccessDenial,
+	localAccessDenial,
+	readOnlyRejection,
+} from "../lib/failure"
+import type {
+	CompareRow,
+	ErrorRow,
+	MetricSeriesOutput,
+	ServiceMapResult,
+	TopOperationRow,
+} from "../lib/views"
 import { LOCAL_ORG_ID, localDriverError } from "./executor"
 import { Mode, type ModeError } from "./mode"
 import * as Remote from "./remote-ops"
@@ -98,23 +115,49 @@ const backend: Effect.Effect<Backend, ModeError, Mode | HttpClient.HttpClient> =
 const quietUnlessVerbose = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
 	verboseLogging() ? effect : Effect.provideService(effect, References.MinimumLogLevel, "None")
 
-/** A local failure that is really "no Maple server at this URL", named with the URL. */
+/** The fix for a refused local query: Maple's access token, or the proxy's credentials. */
+const accessDenied = (baseUrl: string, denial: LocalAccessDenial): LocalServerAccessDeniedError => {
+	if (denial.by === "maple") {
+		return new LocalServerAccessDeniedError({
+			url: baseUrl,
+			status: denial.status,
+			message: `the Maple server at ${baseUrl} requires its access token`,
+			hint: "set MAPLE_LOCAL_ACCESS_TOKEN to the token the server was started with",
+		})
+	}
+	const origin = new URL(baseUrl).origin
+	return new LocalServerAccessDeniedError({
+		url: baseUrl,
+		status: denial.status,
+		message:
+			denial.status < 400
+				? `${origin} redirected the request (HTTP ${denial.status}) before it reached Maple`
+				: `${origin} refused the request before it reached Maple (HTTP ${denial.status})`,
+		hint: `if Cloudflare Access protects it, run \`cloudflared access login ${origin}\`; otherwise set MAPLE_LOCAL_HEADERS to the credentials its proxy expects`,
+	})
+}
+
+/** A local failure that is really "no Maple server at this URL" or "not let in", named with the URL. */
 const localServerFailure =
 	(baseUrl: string) =>
-	<E>(error: E): E | LocalServerUnreachableError =>
-		isLocalUnreachable(error)
+	<E>(error: E): E | LocalServerUnreachableError | LocalServerAccessDeniedError => {
+		if (isLocalUnreachable(error)) {
+			return new LocalServerUnreachableError({
+				url: baseUrl,
+				message: `could not reach the Maple server at ${baseUrl}`,
+				hint: "start it with `maple start`, or set MAPLE_LOCAL_URL to the address it printed",
+			})
+		}
+		const denial = localAccessDenial(error, baseUrl)
+		if (denial !== undefined) return accessDenied(baseUrl, denial)
+		return isNotMapleServer(error)
 			? new LocalServerUnreachableError({
 					url: baseUrl,
-					message: `could not reach the Maple server at ${baseUrl}`,
-					hint: "start it with `maple start`, or set MAPLE_LOCAL_URL to the address it printed",
+					message: `${baseUrl} answered, but it is not a Maple server`,
+					hint: "set MAPLE_LOCAL_URL to the address `maple start` printed",
 				})
-			: isNotMapleServer(error)
-				? new LocalServerUnreachableError({
-						url: baseUrl,
-						message: `${baseUrl} answered, but it is not a Maple server`,
-						hint: "set MAPLE_LOCAL_URL to the address `maple start` printed",
-					})
-				: error
+			: error
+	}
 
 /** Run `remote` against the workspace when one is configured, else `local`. */
 const dispatch = <A, E, R, E2, R2>(
@@ -122,10 +165,18 @@ const dispatch = <A, E, R, E2, R2>(
 	remote: (clients: RemoteClients) => Effect.Effect<A, E2, R2>,
 	pipeName: string,
 ) =>
-	Effect.flatMap(backend, (b): Effect.Effect<A, E | LocalServerUnreachableError | RemoteError, R | R2> =>
-		b._tag === "local"
-			? local.pipe(quietUnlessVerbose, Effect.mapError(localServerFailure(b.baseUrl)))
-			: Effect.mapError(remote(b), toWarehouseError(pipeName)),
+	Effect.flatMap(
+		backend,
+		(
+			b,
+		): Effect.Effect<
+			A,
+			E | LocalServerUnreachableError | LocalServerAccessDeniedError | RemoteError,
+			R | R2
+		> =>
+			b._tag === "local"
+				? local.pipe(quietUnlessVerbose, Effect.mapError(localServerFailure(b.baseUrl)))
+				: Effect.mapError(remote(b), toWarehouseError(pipeName)),
 	)
 
 /** The local server's URL when commands run against it, for links into its UI. */
@@ -257,7 +308,7 @@ const localFindErrors = (p: { range: Range; service?: string; environment?: stri
 			const issues = yield* executor.compiledQuery(
 				CH.compile(
 					CH.errorIssuesQuery({
-						fingerprintHashes: rows.map((r) => r.fingerprintHash),
+						fingerprintHashes: Arr.map(rows, (r) => r.fingerprintHash),
 						...(p.service ? { services: [p.service] } : undefined),
 						...(p.environment ? { deploymentEnvs: [p.environment] } : undefined),
 						limit: rows.length,
@@ -268,7 +319,7 @@ const localFindErrors = (p: { range: Range; service?: string; environment?: stri
 			)
 			for (const issue of issues) serviceOf.set(issue.fingerprintHash, issue.serviceName)
 		}
-		return rows.map((r): ErrorRow => ({ ...r, serviceName: serviceOf.get(r.fingerprintHash) ?? "" }))
+		return Arr.map(rows, (r): ErrorRow => ({ ...r, serviceName: serviceOf.get(r.fingerprintHash) ?? "" }))
 	})
 
 export const findErrors = (p: { range: Range; service?: string; environment?: string; limit?: number }) =>
@@ -470,11 +521,19 @@ export const topOperations = (p: {
 				limit: p.limit,
 			}),
 			(rows) =>
-				rows.map((r): TopOperationRow => ({ ...r, metric: p.metric, unit: metricUnit(p.metric) })),
+				Arr.map(rows, (r): TopOperationRow => ({
+					...r,
+					metric: p.metric,
+					unit: metricUnit(p.metric),
+				})),
 		),
 		({ mcp }) =>
 			Effect.map(RemoteMcp.topOperations(mcp, p), (rows) =>
-				rows.map((r): TopOperationRow => ({ ...r, metric: p.metric, unit: metricUnit(p.metric) })),
+				Arr.map(rows, (r): TopOperationRow => ({
+					...r,
+					metric: p.metric,
+					unit: metricUnit(p.metric),
+				})),
 			),
 		"top_operations",
 	)
@@ -494,7 +553,7 @@ export const listMetrics = (p: { range: Range; service?: string; search?: string
 				limit: p.limit ?? 100,
 			})
 			// chDB returns the flag as 0/1; remote mode already returns a boolean.
-			return result.data.map((m): ListMetricsOutput => ({
+			return Arr.map(result.data, (m): ListMetricsOutput => ({
 				...m,
 				isMonotonic: asBoolean(m.isMonotonic),
 			}))
@@ -530,7 +589,8 @@ const executeRawLocalQuery = Effect.fn("WarehouseExecutor.rawQuery", { kind: "cl
 		"query.context": "cli.rawQuery",
 	})
 	// This span is the database span; the request underneath adds no `http.client` span.
-	const http = warehouseHttpClient(yield* HttpClient.HttpClient)
+	const baseHttp = yield* HttpClient.HttpClient
+	const http = warehouseHttpClient(baseHttp)
 	const rows = yield* executeLocalQuery(sql, baseUrl).pipe(
 		Effect.provideService(HttpClient.HttpClient, http),
 		Effect.mapError((error) => mapWarehouseError("rawQuery", localDriverError(error))),
@@ -552,7 +612,7 @@ const executeRawLocalQuery = Effect.fn("WarehouseExecutor.rawQuery", { kind: "cl
 })
 
 /** True when the SQL uses the workspace's macros (`$__orgFilter`, `$__timeFilter(…)`, …). */
-const usesMacros = (sql: string): boolean => sql.includes("$__")
+const usesMacros = (sql: string): boolean => Str.includes("$__")(sql)
 
 /**
  * Expand the raw-SQL macros exactly as the workspace does, with the local
@@ -569,8 +629,10 @@ const expandLocalMacros = (sql: string, range: Range) =>
 		granularitySeconds: computeBucketSecondsForRange(range.startTime, range.endTime, "rawSql"),
 		workload: "interactive",
 	}).pipe(
-		Effect.map((prepared) => prepared.sql),
-		Effect.mapError((error) => new CliUsageError({ message: `SQL rejected: ${error.message}` })),
+		Effect.mapBoth({
+			onSuccess: (prepared) => prepared.sql,
+			onFailure: (error) => new CliUsageError({ message: `SQL rejected: ${error.message}` }),
+		}),
 	)
 
 /**
@@ -705,7 +767,7 @@ export const compareServiceOverview = (p: { current: Range; previous: Range; env
 const localCompareServiceOverview = (p: { current: Range; previous: Range; environment?: string }) =>
 	Effect.gen(function* () {
 		const executor = yield* WarehouseExecutor
-		const result = yield* executor.query("service_overview_compare", {
+		const result = yield* executor.query<CompareRow>("service_overview_compare", {
 			current_start_time: p.current.startTime,
 			current_end_time: p.current.endTime,
 			previous_start_time: p.previous.startTime,
@@ -726,7 +788,7 @@ const localServiceHasTelemetry = (service: string, range: Range) =>
 			),
 			{ profile: "list", context: "cli.servicePresence" },
 		)
-		return rows.some((r) => r.spanCount > 0)
+		return Arr.some(rows, (r) => r.spanCount > 0)
 	})
 
 /**
@@ -734,7 +796,7 @@ const localServiceHasTelemetry = (service: string, range: Range) =>
  * so unlike `knownServices` it is not limited to the busiest page of services.
  */
 export const serviceHasTelemetry = (service: string, range: Range) =>
-	service.trim() === ""
+	Str.trim(service) === ""
 		? Effect.succeed(false)
 		: dispatch(
 				localServiceHasTelemetry(service, range),
@@ -745,7 +807,10 @@ export const serviceHasTelemetry = (service: string, range: Range) =>
 /** Service names with trace telemetry in the window, busiest first. */
 export const knownServices = (range: Range) =>
 	Effect.map(listServices({ range }), (services) =>
-		[...services].sort((a, b) => b.throughput - a.throughput).map((s) => s.name),
+		Arr.map(
+			[...services].sort((a, b) => b.throughput - a.throughput),
+			(s) => s.name,
+		),
 	)
 
 const NICE_BUCKETS = [60, 300, 600, 900, 1800, 3600, 7200, 21_600, 43_200, 86_400]
@@ -795,7 +860,7 @@ const localMetricSeries = (p: MetricSeriesInput) =>
 		if (entry === undefined) {
 			return {
 				_tag: "missing",
-				similar: [...new Set(catalog.map((m) => m.metricName))],
+				similar: [...new Set(Arr.map(catalog, (m) => m.metricName))],
 			} satisfies MetricSeriesResult
 		}
 		const metricType = entry.metricType
@@ -867,7 +932,7 @@ const remoteMetricSeries = (client: MapleV2Client, p: MetricSeriesInput) =>
 		if (entry === undefined) {
 			return {
 				_tag: "missing",
-				similar: [...new Set(list.map((m) => m.metricName))],
+				similar: [...new Set(Arr.map(list, (m) => m.metricName))],
 			} satisfies MetricSeriesResult
 		}
 		const metricType = entry.metricType

@@ -1,52 +1,73 @@
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { errorState } from "../../../ui/error-state"
-import { listFooter } from "../../../ui/list-footer"
-import type * as Select from "../../../ui/select"
-import { type SelectEntry, view as selectView } from "../../../ui/select-view"
-import { skeletonList } from "../../../ui/skeleton"
+import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
+import { errorState } from "@maple/views/ui/error-state"
+import { listFooter } from "@maple/views/ui/list-footer"
+import type * as Select from "@maple/views/ui/select"
+import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../../contract"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { filtersView } from "../kit/filters-view"
-import { codeReviewLayout, nothingInWindow } from "../kit/layout"
+import { codeReviewLayout } from "../kit/layout"
 import type { SheetMessage } from "../kit/review-sheet"
 import * as ReviewSheetView from "../kit/review-sheet-view"
+import { reviewTableSkeleton } from "../kit/skeletons"
+import { searchBox } from "../kit/search"
 import { Message, type Model } from "./model"
-import { DEFAULT_PRESET, MAX_ROWS, STATUS_LABELS } from "./update"
+import { DEFAULT_PRESET, MAX_ROWS, sortOf, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
+import { vstack } from "@maple/views/ui/stack"
 
 // The code review pull requests page.
 
 type H = HtmlBuilder<Message>
 
-const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Object.entries(STATUS_LABELS).map(([value, label]) => ({
-	_tag: "Item",
-	item: { value, label },
-}))
+const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(
+	Rec.toEntries(STATUS_LABELS),
+	([value, label]) => ({
+		_tag: "Item",
+		item: { value, label },
+	}),
+)
 
 const isFiltered = (model: Model) =>
-	model.search.repo !== undefined || model.search.author !== undefined || model.search.status !== undefined
+	model.search.repo !== undefined ||
+	model.search.author !== undefined ||
+	model.search.status !== undefined ||
+	model.search.q !== undefined
 
 const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.reviews.data, {
-		onEmpty: () => skeletonList(h, { rows: 6, rowClassName: "h-14", gap: "2" }),
+		onEmpty: () => reviewTableSkeleton(h),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load reviews",
+				title: "Couldn't load pull requests",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onData: (response) => {
 			if (response.reviews.length === 0) {
 				const filtered = isFiltered(model)
-				return nothingInWindow(h, {
-					title: "No reviews in this window",
-					description: filtered
-						? "Nothing matches these filters."
-						: "Reviews appear here once a pull request is opened on a reviewed repository.",
-					onClear: filtered ? Message.ClickedClearFilters() : undefined,
-				})
+				if (filtered)
+					return filteredEmpty(h, {
+						noun: "reviews",
+						onClear: Message.ClickedClearFilters(),
+						className: emptyFrameClass("dashed"),
+					})
+				return empty(
+					h,
+					[
+						emptyHeader(h, [
+							emptyTitle(h, ["No reviews in this window"]),
+							emptyDescription(h, [
+								"Reviews appear here once a pull request is opened on a reviewed repository.",
+							]),
+						]),
+					],
+					emptyFrameClass("dashed"),
+				)
 			}
 			const footer =
 				response.nextCursor === null
@@ -59,65 +80,67 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							isLoading: AsyncData.isRefreshing(model.reviews.data),
 							onLoadMore: Message.ClickedLoadMore(),
 						})
-			return h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					reviewTable(h, response.reviews, {
-						selected: model.search.review,
-						nowMs: model.frame.nowMs,
-						timeZone,
-					}),
-					...(footer === null ? [] : [footer]),
-				],
-			)
+			return vstack(h, { gap: "3" }, [
+				reviewTable(h, response.reviews, sortOf(model.search), {
+					selected: model.search.review,
+					nowMs: model.frame.nowMs,
+					timeZone,
+				}),
+				...(footer === null ? [] : [footer]),
+			])
 		},
 	})
 
 const statusSelect = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-3")],
-		[
-			h.submodel({
-				slotId: model.statusSelect.id,
-				model: model.statusSelect,
-				view: selectView,
-				toParentMessage: (message: Select.Message) => Message.GotStatusSelectMessage({ message }),
-				viewInputs: {
-					entries: STATUS_ENTRIES,
-					size: "sm",
-					ariaLabel: "Status",
-					className: "w-40",
-					toView: (parts) => h.div([h.Class("contents")], parts),
-				},
-			}),
-		],
-	)
+	h.submodel({
+		slotId: model.statusSelect.id,
+		model: model.statusSelect,
+		view: selectView,
+		toParentMessage: (message: Select.Message) => Message.GotStatusSelectMessage({ message }),
+		viewInputs: {
+			entries: STATUS_ENTRIES,
+			size: "sm",
+			ariaLabel: "Status",
+			className: "w-40",
+			toView: (parts) => h.div([h.Class("contents")], parts),
+		},
+	})
 
 const authorsOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.authors.data), {
 		onNone: () => [],
-		onSome: (analytics) => analytics.authors.map((row) => row.author),
+		onSome: (analytics) => Arr.map(analytics.authors, (row) => row.author),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	codeReviewLayout(
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const filters = filtersView(h, {
+		frame: model.frame,
+		search: model.search,
+		reviewedOnly: true,
+		kind: "author",
+		options: authorsOf(model),
+		selected: model.search.author,
+		defaultPreset: DEFAULT_PRESET,
+		presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+		toMessage: (message) => Message.GotFrameMessage({ message }),
+		isFailed: AsyncData.isFailure(model.reviews.data),
+	})
+	return codeReviewLayout(
 		{
 			h,
 			active: "pull-requests",
 			search: model.search,
-			nowMs: model.frame.nowMs,
-			timeZone: inputs.context.timeZone,
-			toolbar: filtersView(h, {
-				frame: model.frame,
-				search: model.search,
-				reviewedOnly: true,
-				kind: "author",
-				options: authorsOf(model),
-				selected: model.search.author,
-				defaultPreset: DEFAULT_PRESET,
-				presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
-				toMessage: (message) => Message.GotFrameMessage({ message }),
-			}),
+			toolbar: filters.actions,
+			filters: [
+				searchBox(h, {
+					id: "code-review-pull-requests-search",
+					value: model.searchDraft,
+					placeholder: "Search pull requests…",
+					onInput: (value) => Message.ChangedSearchDraft({ value }),
+				}),
+				...filters.filters,
+				statusSelect(h, model),
+			],
 			overlay: h.submodel({
 				slotId: "code-review-pull-requests-sheet",
 				model: model.sheet,
@@ -126,6 +149,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				toParentMessage: (message: SheetMessage) => Message.GotSheetMessage({ message }),
 			}),
 		},
-		[statusSelect(h, model), content(h, model, inputs.context.timeZone)],
-	),
-)
+		[content(h, model, inputs.context.timeZone)],
+	)
+})
