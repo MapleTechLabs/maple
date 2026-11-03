@@ -84,7 +84,7 @@ process.on("SIGTERM", () => {
 })
 ```
 
-`@opentelemetry/sdk-logs` 0.220.0 and later take `{ exporter }`. Older releases take the exporter as the first argument, `new BatchLogRecordProcessor(exporter)`. A current release accepts the exporter as a positional argument without throwing, but then exports no log records.
+`@opentelemetry/sdk-logs` 0.220.0 and later, including 3.x, take `{ exporter }`. Older releases take the exporter as the first argument, `new BatchLogRecordProcessor(exporter)`. A current release accepts the exporter as a positional argument without throwing, but then exports no log records.
 
 On a Node.js version outside those in [Prerequisites](#prerequisites), import `register` from `node:module` instead and call `register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)`. Node.js 26 marks that form as deprecated.
 

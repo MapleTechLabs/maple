@@ -121,11 +121,11 @@ processors:
   batch:
 
 exporters:
-  otlphttp/newrelic:
+  otlp_http/newrelic:
     endpoint: https://otlp.nr-data.net      # EU: https://otlp.eu01.nr-data.net
     headers:
       api-key: \${env:NEW_RELIC_LICENSE_KEY}
-  otlphttp/maple:
+  otlp_http/maple:
     endpoint: https://ingest.maple.dev      # EU: https://ingest.eu.maple.dev
     headers:
       Authorization: Bearer \${env:MAPLE_INGEST_KEY}
@@ -135,11 +135,11 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/newrelic, otlphttp/maple]
+      exporters: [otlp_http/newrelic, otlp_http/maple]
     logs:
       receivers: [otlp]
       processors: [filter/drop-debug-logs, batch]
-      exporters: [otlphttp/newrelic, otlphttp/maple]`;
+      exporters: [otlp_http/newrelic, otlp_http/maple]`;
 
 const faqs = [
     {
@@ -614,7 +614,7 @@ const articleJsonLd = {
                         <pre><code set:html={highlight(collectorConfig, "yaml")} /></pre>
                     </div>
                     <p>
-                        The <code>otlphttp/maple</code> exporter sends a copy of the same data to Maple, so you can compare what each vendor would bill for identical traffic. Delete it, and its name in both <code>exporters</code> lists, if you only want the filter. Sampling traces and dropping attributes nobody queries cut ingest the same way; <a href="/docs/concepts/sampling-throughput">sampling and throughput</a> covers how Maple keeps request rates accurate under sampling.
+                        The <code>otlp_http/maple</code> exporter sends a copy of the same data to Maple, so you can compare what each vendor would bill for identical traffic. Delete it, and its name in both <code>exporters</code> lists, if you only want the filter. Sampling traces and dropping attributes nobody queries cut ingest the same way; <a href="/docs/concepts/sampling-throughput">sampling and throughput</a> covers how Maple keeps request rates accurate under sampling.
                     </p>
                     <p>
                         After a few days of dual export, compare the GB each signal sent to Maple with the <code>NrConsumption</code> numbers from the first query.

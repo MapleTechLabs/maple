@@ -46,9 +46,11 @@ export function register() {
     serviceName: "my-next-app",
     attributes: { "deployment.environment.name": "production" },
     traceExporter: { url: \`\${MAPLE_ENDPOINT}/v1/traces\`, headers },
-    logRecordProcessor: new SimpleLogRecordProcessor(
-      new OTLPLogExporter({ url: \`\${MAPLE_ENDPOINT}/v1/logs\`, headers })
-    ),
+    logRecordProcessors: [
+      new SimpleLogRecordProcessor({
+        exporter: new OTLPLogExporter({ url: \`\${MAPLE_ENDPOINT}/v1/logs\`, headers }),
+      }),
+    ],
   });
 }`,
 				language: "typescript",
@@ -169,12 +171,12 @@ const sdk = new NodeSDK({
     headers: { Authorization: "Bearer your-api-key" },
   }),
   logRecordProcessors: [
-    new SimpleLogRecordProcessor(
-      new OTLPLogExporter({
+    new SimpleLogRecordProcessor({
+      exporter: new OTLPLogExporter({
         url: "https://ingest.maple.dev/v1/logs",
         headers: { Authorization: "Bearer your-api-key" },
-      })
-    ),
+      }),
+    }),
   ],
   instrumentations: [getNodeAutoInstrumentations()],
 });
