@@ -105,6 +105,14 @@ export class ExecutorRunRequest extends Schema.Class<ExecutorRunRequest>("Execut
 	promote: Schema.Array(ExecutorPromotion).check(Schema.isMaxLength(EXECUTOR_LIMITS.promotedFiles)),
 }) {}
 
+/** One agent command, as the audit asks for it; the run and agent are added on the way. */
+export interface ExecutorCommandInput {
+	readonly command: string
+	readonly cwd: ExecutorWorkingDirectory
+	readonly timeoutMs: number
+	readonly promote: ReadonlyArray<ExecutorPromotion>
+}
+
 export class ExecutorDestroyRequest extends Schema.Class<ExecutorDestroyRequest>("ExecutorDestroyRequest")({
 	executorKey: ExecutorKey,
 }) {}

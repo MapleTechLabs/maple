@@ -1,7 +1,7 @@
 /**
  * The run's execution label, read at prepare: the manifests the pinned commit tracks and the few
- * config files that can name a private registry, submodule or local module. Labelling only, so a
- * failed read never fails the run; it says so in the label instead.
+ * config files that can name a private registry, submodule or local module. A failed read never
+ * fails the run; the run is then source-only and the label says why.
  */
 import type { OrgId } from "@maple/domain/http"
 import type {
@@ -11,6 +11,7 @@ import type {
 import {
 	configFilesToRead,
 	DEPENDENCY_PATHSPECS,
+	type Ecosystem,
 	type ExecutionProfile,
 	executionProfile,
 	scanDependencies,
@@ -35,6 +36,8 @@ export const inspectDependencies = (
 	orgId: OrgId,
 	/** `ref` is the full commit sha the run is pinned to. */
 	target: RepositoryTarget & { readonly ref: string },
+	/** Which ecosystems the execution sandbox can run; none when absent. */
+	hasSandbox?: (ecosystem: Ecosystem) => boolean,
 ): Effect.Effect<ExecutionProfile> =>
 	Effect.gen(function* () {
 		const listed = yield* sandbox.exec(orgId, target, {
@@ -66,7 +69,7 @@ export const inspectDependencies = (
 		)
 		// A cut read is a prefix, so its file is uninspected rather than scanned as whole.
 		const cut = configs.filter((config) => config.cut).map((config) => config.path)
-		const profile = executionProfile(scanDependencies(paths, texts))
+		const profile = executionProfile(scanDependencies(paths, texts), hasSandbox)
 		return cut.length === 0
 			? profile
 			: {

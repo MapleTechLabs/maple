@@ -8,7 +8,7 @@ import { Option, Schema } from "effect"
 export const Ecosystem = Schema.Literals(["node", "python", "go", "rust", "jvm"])
 export type Ecosystem = typeof Ecosystem.Type
 
-/** `executable` waits on an execution sandbox per ecosystem; every run is `source_only` until then. */
+/** `executable` when the execution sandbox covers at least one of the repository's ecosystems. */
 export const ExecutionMode = Schema.Literals(["source_only", "executable"])
 export type ExecutionMode = typeof ExecutionMode.Type
 
@@ -17,7 +17,7 @@ export const ExecutionProfile = Schema.Struct({
 	ecosystems: Schema.Array(Ecosystem),
 	/** Each private-dependency signal, as `<file>: <what>`. */
 	privateDependencies: Schema.Array(Schema.String),
-	/** Why the run executes nothing, one sentence each, for reports and the run page. */
+	/** What the run cannot execute, and why, one sentence each, for reports and the run page. */
 	reasons: Schema.Array(Schema.String),
 })
 export type ExecutionProfile = typeof ExecutionProfile.Type
@@ -385,8 +385,9 @@ export const scanDependencies = (
 const SIGNALS_IN_REASON = 3
 
 /**
- * How the run may execute target code. With no sandbox for any ecosystem (today), every run is
- * source-only; the shape already says which ecosystems a future `executable` run would need.
+ * How the run may execute target code: executable when the sandbox covers any of its ecosystems,
+ * with the rest (and any private dependency the install cannot fetch) named as what stays
+ * source-only.
  */
 export const executionProfile = (
 	scan: DependencyScan,
@@ -406,7 +407,7 @@ export const executionProfile = (
 				]),
 	]
 	return {
-		mode: reasons.length === 0 ? "executable" : "source_only",
+		mode: scan.ecosystems.some(hasSandbox) ? "executable" : "source_only",
 		ecosystems: scan.ecosystems,
 		privateDependencies: scan.privateDependencies,
 		reasons,
@@ -416,5 +417,5 @@ export const executionProfile = (
 /** The one line a report or the run page shows, e.g. "Source-only review: no execution sandbox for Go yet". */
 export const executionModeLine = (profile: ExecutionProfile): string =>
 	profile.mode === "executable"
-		? "Executable review: target code ran in the execution sandbox"
+		? `Executable review: target code ran in the execution sandbox${profile.reasons.length === 0 ? "" : ` (${profile.reasons.join("; ")})`}`
 		: `Source-only review: ${profile.reasons.join("; ") || "target code was not executed"}`

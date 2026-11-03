@@ -248,11 +248,19 @@ describe("executionProfile", () => {
 		])
 	})
 
-	it("is executable once every ecosystem has a sandbox and nothing is private", () => {
+	it("is executable once any ecosystem has a sandbox, naming what stays source-only", () => {
 		const node = (ecosystem: string) => ecosystem === "node"
+		const mixed = executionProfile({ ecosystems: ["node", "go"], privateDependencies: [] }, node)
 		expect([
 			executionProfile({ ecosystems: ["node"], privateDependencies: [] }, node).mode,
-			executionProfile({ ecosystems: ["node", "go"], privateDependencies: [] }, node).reasons,
-		]).toEqual(["executable", ["no execution sandbox for Go yet"]])
+			mixed.mode,
+			executionModeLine(mixed),
+			executionProfile({ ecosystems: ["go"], privateDependencies: [] }, node).mode,
+		]).toEqual([
+			"executable",
+			"executable",
+			"Executable review: target code ran in the execution sandbox (no execution sandbox for Go yet)",
+			"source_only",
+		])
 	})
 })
