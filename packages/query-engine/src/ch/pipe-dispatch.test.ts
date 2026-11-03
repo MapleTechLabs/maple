@@ -43,15 +43,21 @@ describe("compilePipeQuery", () => {
 	})
 
 	it("service_apdex_time_series filters by deployment_env on every tier", () => {
-		// 300s buckets read the rollups; 60s buckets read the raw entry-point spans.
-		for (const bucket_seconds of [300, 60]) {
+		// Minute and hour rollups, then the raw entry-point spans (a sub-minute bucket,
+		// or a threshold the rollups did not pre-count).
+		for (const tier of [
+			{ bucket_seconds: 300 },
+			{ bucket_seconds: 3600 },
+			{ bucket_seconds: 30 },
+			{ bucket_seconds: 300, apdex_threshold_ms: 1000 },
+		]) {
 			const sql = compilePipeQuery("service_apdex_time_series", {
 				...baseParams(),
 				service_name: "checkout",
-				bucket_seconds,
 				deployment_env: "production",
+				...tier,
 			})!.sql
-			expect(sql).toContain("'production'")
+			expect(sql, JSON.stringify(tier)).toContain("DeploymentEnv IN ('production')")
 		}
 	})
 
