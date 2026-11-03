@@ -220,7 +220,10 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 // VIEW
 
 const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
-	PricingCardsView.planCards(h, PLANS, null),
+	h.div(
+		[h.Class("space-y-6")],
+		[PricingCardsView.planCards(h, PLANS, null), PricingCardsView.compliance(h)],
+	),
 )
 
 const complete = (h: HtmlBuilder<Message>): Html =>

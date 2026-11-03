@@ -369,7 +369,7 @@ const complianceRow = (h: H, item: ComplianceItem): Html => {
 }
 
 /** `Compliance`: what a buyer can have today (the DPA) and the audits still in progress. */
-const compliance = (h: H): Html =>
+export const compliance = (h: H): Html =>
 	panel(h, { className: "gap-3 px-5 py-4 sm:max-w-sm" }, [
 		eyebrow(h, { as: "h3" }, ["Compliance"]),
 		h.ul(
