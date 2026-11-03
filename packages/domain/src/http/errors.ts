@@ -247,6 +247,13 @@ export const IssueKind = Schema.Literals(["error", "alert", "integration"]).anno
 })
 export type IssueKind = Schema.Schema.Type<typeof IssueKind>
 
+/** Why an issue owns a fingerprint beyond its own: someone merged it in, or a version bump re-keyed it. */
+export const IssueFingerprintSource = Schema.Literals(["merge", "rekey"]).annotate({
+	identifier: "@maple/IssueFingerprintSource",
+	title: "Issue Fingerprint Source",
+})
+export type IssueFingerprintSource = Schema.Schema.Type<typeof IssueFingerprintSource>
+
 export const ErrorIssueEventType = Schema.Literals([
 	"created",
 	"state_change",
@@ -315,6 +322,8 @@ export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorI
 	id: ErrorIssueId,
 	kind: IssueKind,
 	fingerprintHash: Schema.String,
+	/** Every fingerprint the issue owns, its own first. Warehouse reads for the issue filter on all of them. */
+	fingerprintHashes: Schema.Array(Schema.String),
 	serviceName: Schema.String,
 	exceptionType: Schema.String,
 	exceptionMessage: Schema.String,

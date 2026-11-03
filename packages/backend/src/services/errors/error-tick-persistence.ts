@@ -4,6 +4,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	ErrorFingerprintCandidates,
 	ErrorIncidents,
+	ErrorIssueFingerprints,
 	ErrorIssues,
 	ErrorIssueEvents,
 	ErrorIssueStates,
@@ -346,6 +347,51 @@ const mergeScanRows = (rows: ReadonlyArray<ErrorTickScanRow>): ReadonlyArray<Err
 	return [...merged.values()]
 }
 
+/**
+ * Rewrite each aliased fingerprint to the issue that owns it, then merge again:
+ * two hashes of one issue in a window must be one upsert row.
+ */
+const canonicalizeScanRows = (
+	tx: ErrorTickTransaction,
+	orgId: OrgId,
+	rows: ReadonlyArray<ErrorTickScanRow>,
+): Effect.Effect<ReadonlyArray<ErrorTickScanRow>, MapleDbError> =>
+	Effect.gen(function* () {
+		if (rows.length === 0) return rows
+		const aliases = yield* inChunks(rows, (chunk) =>
+			tx.run(
+				PG.from(ErrorIssueFingerprints)
+					.innerJoin(ErrorIssues, "issue", (alias, issue) => issue.id.eq(alias.issueId))
+					.select(($) => ({
+						alias: $.fingerprintHash,
+						fingerprintHash: $.issue.fingerprintHash,
+						serviceName: $.issue.serviceName,
+						exceptionType: $.issue.exceptionType,
+						exceptionMessage: $.issue.exceptionMessage,
+						errorLabel: $.issue.errorLabel,
+						topFrame: $.issue.topFrame,
+					}))
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.issue.orgId.eq(orgId),
+						$.fingerprintHash.in_(...Arr.map(chunk, (row) => row.fingerprintHash)),
+					]),
+			),
+		)
+		if (aliases.length === 0) return rows
+		// The owning issue keeps its own title and service; a merged-in hash only adds counts.
+		const ownerByAlias = new Map(Arr.map(aliases, ({ alias, ...owner }) => [alias, owner]))
+		// The merge keeps the last row's display fields, so aliased rows go first and an
+		// issue's own observation in this window wins over its stored fields.
+		return mergeScanRows([
+			...Arr.flatMap(rows, (row) => {
+				const owner = ownerByAlias.get(row.fingerprintHash)
+				return owner === undefined ? [] : [{ ...row, ...owner }]
+			}),
+			...Arr.filter(rows, (row) => !ownerByAlias.has(row.fingerprintHash)),
+		])
+	})
+
 const buildEvent = (
 	input: PersistErrorTickWindowInput,
 	issueId: ErrorIssueId,
@@ -438,7 +484,7 @@ export const persistErrorTickWindow = (
 			)
 			if (held.length === 0) return yield* claimLost(input.orgId, "preflight")
 
-			const rows = mergeScanRows(input.rows)
+			const rows = yield* canonicalizeScanRows(tx, input.orgId, mergeScanRows(input.rows))
 			const fingerprints = Arr.map(rows, (row) => row.fingerprintHash)
 			const existingIssues = yield* inChunks(fingerprints, (chunk) =>
 				tx.run(

@@ -24,7 +24,7 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ErrorIncidents, type ErrorIncidentRow, ErrorIssues } from "@maple/db/tables"
+import { ErrorIncidents, type ErrorIncidentRow, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { Clock, Context, DateTime, Effect, Layer, Match, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -32,6 +32,7 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
+import { issueFingerprintHashes } from "./issue-fingerprints"
 
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
 const encodeIssueListCursor = Schema.encodeSync(IssueListCursor)
@@ -67,6 +68,20 @@ const CLOSED_LIST_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
 
 type IssueColumns = PG.ColumnAccessor<typeof ErrorIssues.columns>
 type IssueConditions = ($: IssueColumns) => Array<PG.Condition | undefined>
+
+/** The issue's own hash or one merged into it is in `hashes`. Empty matches nothing. */
+const ownsAnyHash = ($: IssueColumns, orgId: OrgId, hashes: ReadonlyArray<string>) =>
+	hashes.length === 0
+		? $.fingerprintHash.in_()
+		: PG.or(
+				$.fingerprintHash.in_(...hashes),
+				PG.inSubquery(
+					$.id,
+					PG.from(ErrorIssueFingerprints)
+						.select("issueId")
+						.where(($alias) => [$alias.orgId.eq(orgId), $alias.fingerprintHash.in_(...hashes)]),
+				),
+			)
 
 /** Shared SQL ordering expression for the UI's critical-first issue ordering. */
 const issueSeverityOrder = ($: IssueColumns) =>
@@ -272,10 +287,8 @@ const make: Effect.Effect<
 						$.errorLabel.ilike(pattern),
 						$.serviceName.ilike(pattern),
 					),
-			opts.fingerprintHashes === undefined
-				? undefined
-				: $.fingerprintHash.in_(...opts.fingerprintHashes),
-			envHashes === undefined ? undefined : $.fingerprintHash.in_(...envHashes),
+			opts.fingerprintHashes === undefined ? undefined : ownsAnyHash($, orgId, opts.fingerprintHashes),
+			envHashes === undefined ? undefined : ownsAnyHash($, orgId, envHashes),
 			opts.assignedActorId ? $.assignedActorId.eq(opts.assignedActorId) : undefined,
 			opts.includeArchived ? undefined : $.archivedAt.isNull(),
 			endMs === undefined ? undefined : $.firstSeenAt.lt(endMs),
@@ -413,10 +426,12 @@ const make: Effect.Effect<
 		const sampleLimit = opts.sampleLimit ?? 25
 		const tenant = systemTenant(orgId)
 		const isErrorKind = issueRow.kind === "error"
+		const fingerprintHashes = (yield* dbExecute((db) =>
+			issueFingerprintHashes(db, orgId, [issueRow]),
+		)).get(issueRow.id) ?? [issueRow.fingerprintHash]
 
-		const timeseriesCompiled = CH.compile(CH.errorIssueTimeseriesQuery(), {
+		const timeseriesCompiled = CH.compile(CH.errorIssueTimeseriesQuery({ fingerprintHashes }), {
 			orgId,
-			fingerprintHash: issueRow.fingerprintHash,
 			startTime: formatWarehouseDateTime(startMs),
 			endTime: formatWarehouseDateTime(endMs),
 			bucketSeconds,
@@ -428,12 +443,14 @@ const make: Effect.Effect<
 				})
 			: Effect.succeed([])
 
-		const samplesCompiled = CH.compile(CH.errorIssueSampleTracesQuery({ limit: sampleLimit }), {
-			orgId,
-			fingerprintHash: issueRow.fingerprintHash,
-			startTime: formatWarehouseDateTime(startMs),
-			endTime: formatWarehouseDateTime(endMs),
-		})
+		const samplesCompiled = CH.compile(
+			CH.errorIssueSampleTracesQuery({ fingerprintHashes, limit: sampleLimit }),
+			{
+				orgId,
+				startTime: formatWarehouseDateTime(startMs),
+				endTime: formatWarehouseDateTime(endMs),
+			},
+		)
 		const samplesEffect = isErrorKind
 			? warehouse.compiledQuery(tenant, samplesCompiled, {
 					profile: "list",
@@ -441,9 +458,8 @@ const make: Effect.Effect<
 				})
 			: Effect.succeed([])
 
-		const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery(), {
+		const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery({ fingerprintHashes }), {
 			orgId,
-			fingerprintHash: issueRow.fingerprintHash,
 			startTime: formatWarehouseDateTime(startMs),
 			endTime: formatWarehouseDateTime(endMs),
 		})

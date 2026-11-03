@@ -66,6 +66,7 @@ const issueDocument = (overrides: Partial<ErrorIssueDocument> = {}): ErrorIssueD
 		id: decodeIssueId("11111111-1111-4111-8111-111111111111"),
 		kind: "error",
 		fingerprintHash: "12345",
+		fingerprintHashes: ["12345"],
 		serviceName: "api",
 		exceptionType: "TypeError",
 		exceptionMessage: "Cannot read properties of undefined",

@@ -6,6 +6,7 @@ import {
 	ErrorIncidentReason,
 	ErrorIncidentStatus,
 	ErrorIssueEventType,
+	IssueFingerprintSource,
 	IssueKind,
 	IssueSeverity,
 	IssueSeveritySource,
@@ -208,6 +209,27 @@ export const ErrorFingerprintCandidates = PG.table("error_fingerprint_candidates
 		// Retention prunes candidates that never reached the threshold.
 		PG.index("error_fingerprint_candidates_last_seen_idx", ["orgId", "lastSeenAt"]),
 	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * Fingerprints an issue owns besides its own `fingerprint_hash`. The tick reads
+ * this before `error_issues`, so an aliased hash lands on its issue even when
+ * the hash is also the primary of the archived issue it was merged out of.
+ */
+export const ErrorIssueFingerprints = PG.table("error_issue_fingerprints", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		fingerprintHash: PG.column(PG.text, { name: "fingerprint_hash" }),
+		issueId: PG.column(PG.brand(PG.text, ErrorIssueId), { name: "issue_id" }),
+		source: PG.brand(PG.text, IssueFingerprintSource),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: {
+		columns: ["orgId", "fingerprintHash"],
+		name: "error_issue_fingerprints_org_id_fingerprint_hash_pk",
+	},
+	indexes: [PG.index("error_issue_fingerprints_issue_idx", ["orgId", "issueId"])],
 	tenantColumn: "orgId",
 })
 

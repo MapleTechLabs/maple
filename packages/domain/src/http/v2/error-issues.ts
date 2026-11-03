@@ -38,6 +38,11 @@ export const V2ErrorIssue = Schema.Struct({
 	object: Schema.Literal("error_issue"),
 	kind: IssueKind,
 	fingerprint_hash: Schema.String,
+	fingerprint_hashes: Schema.optionalKey(
+		Schema.Array(Schema.String).annotate({
+			description: "Every fingerprint the issue owns, its own first: merged-in issues add theirs.",
+		}),
+	),
 	service_name: Schema.String,
 	exception_type: Schema.String,
 	exception_message: Schema.String,
