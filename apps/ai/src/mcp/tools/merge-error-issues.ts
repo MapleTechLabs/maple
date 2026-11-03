@@ -21,7 +21,8 @@ export function registerMergeErrorIssuesTool(server: McpToolRegistrar) {
 			merge_issue_ids: P.list(`Issue IDs to fold into it, at most ${MAX_ISSUE_MERGE_SOURCES}`),
 		}),
 		output: MergeErrorIssuesOutput,
-		hints: { readOnly: false, destructive: false, idempotent: false },
+		// Unmerge hands fingerprints back but not the closed incidents or cleared leases.
+		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Merging duplicate issues"],
 		handler: Effect.fn("McpTool.mergeErrorIssues")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

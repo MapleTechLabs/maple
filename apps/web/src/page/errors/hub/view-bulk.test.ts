@@ -3,8 +3,8 @@ import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { canMergeSelection } from "./view-bulk"
 
-const selection = (count: number, kind: "error" | "alert" = "error") =>
-	Arr.makeBy(count, () => ({ issue: { kind } }))
+const selection = (count: number, kind: "error" | "alert" = "error", archivedAt: string | null = null) =>
+	Arr.makeBy(count, () => ({ issue: { kind, archivedAt } }))
 
 describe("canMergeSelection", () => {
 	it("offers a merge only for 2+ error issues one request can carry", () => {
@@ -17,5 +17,11 @@ describe("canMergeSelection", () => {
 
 	it("never merges an alert or integration issue", () => {
 		expect(canMergeSelection([...selection(2), ...selection(1, "alert")])).toBe(false)
+	})
+
+	it("never offers to merge an archived issue, which the service refuses", () => {
+		expect(
+			canMergeSelection([...selection(1), ...selection(1, "error", "2026-11-01T00:00:00.000Z")]),
+		).toBe(false)
 	})
 })
