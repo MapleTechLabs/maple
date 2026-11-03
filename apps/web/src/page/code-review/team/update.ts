@@ -1,4 +1,5 @@
 import { Command } from "foldkit"
+import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
@@ -27,6 +28,7 @@ type Return = PageReturn<Model, Message>
 /** A month: enough merged pull requests per person for a median to mean something. */
 export const DEFAULT_PRESET: PresetValue = "1mo"
 const FRAME_ID = "code-review-team"
+export const ACTIVITY_CARD_ID = "code-review-team-activity"
 
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewTeam({ search }))
 
@@ -39,7 +41,7 @@ const navigate = (model: Model, patch: Partial<Search>): Return => ({
 })
 
 const request = (model: Model, context: PageContext, window: TimeWindow, mode: Keyed.RequestMode): Return => {
-	const query = { ...epochWindow(window), repositoryId: model.search.repo }
+	const query = { ...epochWindow(window), repositoryId: model.search.repo, timeZone: context.timeZone }
 	const step = cachedStep(
 		model.teamCache,
 		model.frame.nowMs,
@@ -86,6 +88,7 @@ export const init = (
 		frame: frame.frame,
 		team: Keyed.idle(),
 		teamCache: carried.retained.team,
+		activityCard: HoverCard.init(ACTIVITY_CARD_ID, { openDelayMs: 80, side: "top", sideOffset: 6 }),
 	}
 	return liftFrame(model, frame, context)
 }
@@ -133,6 +136,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return navigate(model, { sort: next === DEFAULT_SORT ? undefined : next })
 		},
 		SelectedView: ({ view }) => navigate(model, { ranked: view === "ranked" ? undefined : false }),
+		GotActivityCardMessage: ({ message: inner }) => {
+			const next = HoverCard.update(model.activityCard, inner)
+			return {
+				model: { ...model, activityCard: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotActivityCardMessage({ message }),
+				),
+			}
+		},
 	})
 
 /** What this tab hands the next one. */
