@@ -96,7 +96,19 @@ const resolveTarget = Effect.fn("McpErrorDetail.resolveTarget")(function* (param
 				issue.kind === "error" ? "integration" : issue.kind,
 				parameter,
 			)
-		return { fingerprint: issue.fingerprintHash, issueId: rawIssue }
+		const owned = yield* workflow.fingerprintHashesOf(tenant.orgId, issue).pipe(
+			Effect.catchTags({
+				"@maple/http/errors/ErrorPersistenceError": persistenceFailed("error_detail"),
+			}),
+		)
+		return {
+			fingerprint: issue.fingerprintHash,
+			issueId: rawIssue,
+			mergedFingerprints: Arr.filter(
+				owned,
+				(hash) => hash !== issue.fingerprintHash && isFingerprintHash(hash),
+			),
+		}
 	}
 	if (rawFingerprint === "")
 		return yield* new McpInvalidInputError({
@@ -106,7 +118,7 @@ const resolveTarget = Effect.fn("McpErrorDetail.resolveTarget")(function* (param
 			example: 'error_detail fingerprint="11640295108927840024"',
 		})
 	if (!isFingerprintHash(rawFingerprint)) return yield* rejectNonFingerprint(rawFingerprint)
-	return { fingerprint: rawFingerprint, issueId: undefined }
+	return { fingerprint: rawFingerprint, issueId: undefined, mergedFingerprints: [] }
 })
 
 type Output = typeof ErrorDetailOutput.Type
@@ -312,6 +324,9 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				timeRange: { start: result.timeRange.startTime, end: result.timeRange.endTime },
 				fingerprintHash: target.fingerprint,
 				...(target.issueId === undefined ? undefined : { issueId: target.issueId }),
+				...(target.mergedFingerprints.length === 0
+					? undefined
+					: { mergedFingerprints: target.mergedFingerprints }),
 				...(result.error === undefined ? undefined : { error: result.error }),
 				...(summary === undefined
 					? undefined
@@ -360,6 +375,19 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				["Service", output.service],
 			]
 			const title = `Error Detail: fingerprint ${output.fingerprintHash}`
+			// A merged issue's other fingerprints are not in this read; say so, and how to read them.
+			const merged = output.mergedFingerprints ?? []
+			const mergedNote =
+				merged.length === 0
+					? []
+					: [
+							doc.text(
+								`This issue also owns ${merged.length} merged fingerprint${merged.length === 1 ? "" : "s"} (${Arr.join(merged, ", ")}) that this read does not cover; read each with error_detail fingerprint=<hash>.`,
+							),
+						]
+			const mergedNext = Arr.map(merged.slice(0, 3), (fingerprint) =>
+				doc.next("error_detail", { fingerprint }, "a fingerprint merged into this issue"),
+			)
 			const summary = summaryBlock(output)
 			// The service the error belongs to, so the log search is not an org-wide `service=""`.
 			const logService =
@@ -388,6 +416,11 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 							hints: [
 								"A fingerprint changes when the error's type, top frames or message shape change. Run find_errors (or list_error_issues) for current fingerprints.",
 								"Widen start_time/end_time, or drop the service filter.",
+								...(merged.length === 0
+									? []
+									: [
+											`This issue also owns merged fingerprints: ${Arr.join(merged, ", ")}. Read them with error_detail fingerprint=<hash>.`,
+										]),
 							],
 						},
 					}
@@ -397,11 +430,12 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 					scope,
 					blocks: [
 						summary,
+						...mergedNote,
 						doc.text(
 							`No sample traces in ${window}: the spans behind these occurrences are no longer in trace storage, or fell outside this window. Pass start_time/end_time around the last-seen time to sample a specific period.`,
 						),
 					],
-					next: [logSearch],
+					next: [...mergedNext, logSearch],
 				}
 			}
 			const trend = output.timeseries ?? []
@@ -414,6 +448,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				scope,
 				blocks: [
 					...(summary === undefined ? [] : [summary]),
+					...mergedNote,
 					doc.text(`Sample traces: ${output.traces.length}`),
 					...Arr.flatMap(output.traces, traceBlocks(output.error?.message ?? "")),
 					...relatedBlocks(output),
@@ -455,6 +490,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 							`the other error in these traces ("${truncate(r.label, 40)}")`,
 						),
 					),
+					...mergedNext,
 					logSearch,
 				],
 			}

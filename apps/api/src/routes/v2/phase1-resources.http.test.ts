@@ -287,6 +287,8 @@ const errorIssueFixture = new ErrorIssueDocument({
 	id: decodeIssueId(ISS_UUID),
 	kind: "error",
 	fingerprintHash: "1234",
+	fingerprintHashes: ["1234"],
+	mergedIntoIssueId: null,
 	serviceName: "checkout-api",
 	exceptionType: "TimeoutError",
 	exceptionMessage: "upstream timed out",

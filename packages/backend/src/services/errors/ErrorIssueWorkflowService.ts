@@ -44,6 +44,7 @@ import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-ac
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
+import { issueFingerprintHashes } from "./issue-fingerprints"
 import { escalationDedupeKey, escalationReasonFor } from "./issue-severity"
 
 const StoredJsonRecord = Schema.Record(Schema.String, Schema.Unknown)
@@ -125,6 +126,7 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 		hasOpenIncident: boolean,
 		actorMap: Map<ActorId, ActorDocument>,
 		activity: IssueActivityRollup,
+		fingerprintHashes: ReadonlyArray<string>,
 	) => ErrorIssueDocument
 	readonly requireIssue: (
 		orgId: OrgId,
@@ -171,6 +173,19 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly payload?: StoredJsonRecord
 		},
 	) => ErrorIssueEventInsert
+	/** Every fingerprint the issue owns, its own first. */
+	readonly fingerprintHashesOf: (
+		orgId: OrgId,
+		row: ErrorIssueRow,
+	) => Effect.Effect<ReadonlyArray<string>, ErrorPersistenceError>
+	/** Mirror an actor-attributed issue event into the org audit log. Never fails. */
+	readonly recordEventAudit: (
+		orgId: OrgId,
+		issueId: ErrorIssueId,
+		actorId: ActorId,
+		type: ErrorIssueEventType,
+		opts: { readonly fromState?: WorkflowState | null; readonly toState?: WorkflowState | null },
+	) => Effect.Effect<void>
 	readonly applyTransition: (
 		orgId: OrgId,
 		actorId: ActorId | null,
@@ -215,11 +230,13 @@ const make: Effect.Effect<
 		hasOpenIncident,
 		actorMap,
 		activity,
+		fingerprintHashes,
 	) =>
 		new ErrorIssueDocument({
 			id: row.id,
 			kind: row.kind,
 			fingerprintHash: row.fingerprintHash,
+			fingerprintHashes,
 			serviceName: row.serviceName,
 			exceptionType: row.exceptionType,
 			exceptionMessage: row.exceptionMessage,
@@ -246,6 +263,7 @@ const make: Effect.Effect<
 			resolvedVersions: row.resolvedVersionsJson,
 			snoozeUntil: row.snoozeUntil == null ? null : isoFromMs(row.snoozeUntil),
 			archivedAt: row.archivedAt == null ? null : isoFromMs(row.archivedAt),
+			mergedIntoIssueId: row.mergedIntoIssueId,
 			hasOpenIncident,
 			commentCount: activity.commentCount,
 			openPullRequestCount: activity.openPullRequestCount,
@@ -377,12 +395,19 @@ const make: Effect.Effect<
 			const issueIds = Arr.map(rows, (row) => row.id)
 			const openSet = yield* issuesWithOpenIncidents(orgId, issueIds)
 			const activityMap = yield* issueActivityRollups(orgId, issueIds)
+			const hashesByIssue = yield* dbExecute((db) => issueFingerprintHashes(db, orgId, rows))
 			const actorMap = yield* actorsService.collectActorDocs(
 				orgId,
 				Arr.flatMap(rows, (row) => [row.assignedActorId ?? null, row.leaseHolderActorId ?? null]),
 			)
 			return Arr.map(rows, (row) =>
-				rowToIssue(row, openSet.has(row.id), actorMap, activityMap.get(row.id) ?? EMPTY_ACTIVITY),
+				rowToIssue(
+					row,
+					openSet.has(row.id),
+					actorMap,
+					activityMap.get(row.id) ?? EMPTY_ACTIVITY,
+					hashesByIssue.get(row.id) ?? [row.fingerprintHash],
+				),
 			)
 		})
 
@@ -929,6 +954,11 @@ const make: Effect.Effect<
 		hydrateIssue,
 		recordEvent,
 		buildEvent: buildEventInsert,
+		fingerprintHashesOf: (orgId, row) =>
+			dbExecute((db) => issueFingerprintHashes(db, orgId, [row])).pipe(
+				Effect.map((owned) => owned.get(row.id) ?? [row.fingerprintHash]),
+			),
+		recordEventAudit,
 		applyTransition,
 		heartbeatIssue,
 		releaseIssue,

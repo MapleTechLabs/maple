@@ -37,6 +37,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
 	ErrorFingerprintCandidates,
+	ErrorIssueFingerprints,
 	ErrorIncidents,
 	ErrorNotificationDeliveries,
 	ErrorIssues,
@@ -2127,6 +2128,52 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
+	it.effect("lands a merged-in fingerprint on the issue that owns it", () => {
+		const OWNER_FINGERPRINT = "22222222222222222222"
+		const rows = [
+			scanRow({ count: 3, serviceName: "billing-worker", exceptionType: "OtherError" }),
+			scanRow({ fingerprintHash: OWNER_FINGERPRINT, count: 2 }),
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const owner = asIssueId(randomUUID())
+			const mergedAway = asIssueId(randomUUID())
+			yield* seedIssue(owner, { fingerprintHash: OWNER_FINGERPRINT })
+			// The issue that was merged out keeps its own hash as its primary, archived.
+			yield* seedIssue(mergedAway, { fingerprintHash: SCAN_FINGERPRINT, archivedAt: TICK_MS })
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: SCAN_FINGERPRINT,
+						issueId: owner,
+						source: "merge",
+						createdAt: TICK_MS,
+					}),
+				),
+			)
+
+			yield* errors.runTick()
+
+			const updated = yield* loadIssueById(owner)
+			// Both hashes in one window are one upsert row, and the owner keeps its title.
+			assert.strictEqual(updated.occurrenceCount, 5)
+			assert.strictEqual(updated.serviceName, "checkout-api")
+			assert.strictEqual(updated.exceptionType, "TimeoutError")
+			assert.strictEqual((yield* loadIssueById(mergedAway)).occurrenceCount, 0)
+			const candidates = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select()
+						.where(($) => [$.fingerprintHash.eq(SCAN_FINGERPRINT)]),
+				),
+			)
+			assert.lengthOf(candidates, 0)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
 	it.effect(
 		"an occurrence from a pre-fix build leaves a done issue alone and opens no incident",
 		() => {
@@ -2596,6 +2643,28 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(issue.priority, 1)
 			// Restamped, so the version sweep does not archive it again.
 			assert.strictEqual(issue.fingerprintVersion, FINGERPRINT_VERSION)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("an occurrence never brings a merged-away issue back", () => {
+		// The hash is still the merged issue's primary with no alias yet: a tick that read
+		// the aliases before a merge committed. It must not reappear in the list.
+		const rows = [scanRow()]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const owner = asIssueId(randomUUID())
+			const mergedAway = asIssueId(randomUUID())
+			yield* seedIssue(owner, { fingerprintHash: "22222222222222222222" })
+			yield* seedIssue(mergedAway, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				archivedAt: TICK_MS - 1_000,
+				mergedIntoIssueId: owner,
+			})
+
+			yield* errors.runTick()
+
+			assert.strictEqual((yield* loadIssueById(mergedAway)).archivedAt, TICK_MS - 1_000)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 

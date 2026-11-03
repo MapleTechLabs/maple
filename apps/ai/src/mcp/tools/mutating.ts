@@ -25,6 +25,7 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"transition_error_issues",
 	"comment_on_error_issue",
 	"set_issue_severity",
+	"merge_error_issues",
 	"update_error_notification_policy",
 	// fixes / agents
 	"propose_fix",

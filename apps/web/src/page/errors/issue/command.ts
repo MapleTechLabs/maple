@@ -215,6 +215,8 @@ const runWrite = (issueId: ErrorIssueId, write: IssueWrite) =>
 					params,
 					payload: new ErrorIssueSetSeverityRequest({ severity: write.severity }),
 				})
+			case "Unmerge":
+				return yield* client.errors.unmergeIssue({ params })
 		}
 	})
 

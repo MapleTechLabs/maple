@@ -32,6 +32,7 @@ import {
 	ErrorFingerprintCandidates,
 	ErrorIssues,
 	ErrorIssueEvents,
+	ErrorIssueFingerprints,
 	type ErrorIssueRow,
 	ErrorIssueStates,
 	ErrorNotificationPolicies,
@@ -1497,6 +1498,22 @@ const make: Effect.Effect<
 									$.orgId.eq(orgId),
 									$.issueId.in_(...ids),
 								]),
+							),
+						)
+						// A purged issue's hashes stop landing on it, so the issues merged into it own theirs again.
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.update(ErrorIssues)
+									.set({ mergedIntoIssueId: null, updatedAt: nowMs })
+									.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
 							),
 						)
 						yield* dbExecute((db) =>

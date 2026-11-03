@@ -11,7 +11,9 @@ import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstackClass } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
+import { formatNumber } from "@maple/ui/lib/format"
+import type { ErrorSignal } from "../../../lib/models/error-signal"
 
 // The issues bulk bar: the selection's actions, pinned to the foot.
 
@@ -110,12 +112,35 @@ const moveEntries = (
 	]
 }
 
+/** One entry per selected issue: picking it keeps that issue and folds the rest into it. */
+const mergeEntries = (selected: ReadonlyArray<ErrorSignal>): ReadonlyArray<MenuView.MenuEntry> => [
+	{
+		_tag: "Group",
+		label: "Keep this issue, merge the rest into it",
+		entries: [
+			{ _tag: "Separator" },
+			...Arr.map(
+				// The busiest first: usually the one worth keeping.
+				Arr.sort(
+					selected,
+					Order.mapInput(Order.flip(Order.Number), (signal: ErrorSignal) => signal.totalCount),
+				),
+				(signal): MenuView.MenuEntry => ({
+					_tag: "Item",
+					value: signal.id,
+					label: `${signal.title} · ${signal.serviceName} · ${formatNumber(signal.totalCount)}`,
+				}),
+			),
+		],
+	},
+]
+
 export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
-	const selected = Arr.map(
-		Arr.filter(signalsOf(model), (signal) => model.selectedIds.includes(signal.id)),
-		(signal) => ({ id: signal.id, state: signal.issue.workflowState }),
-	)
+	const signals = Arr.filter(signalsOf(model), (signal) => model.selectedIds.includes(signal.id))
+	const selected = Arr.map(signals, (signal) => ({ id: signal.id, state: signal.issue.workflowState }))
 	if (selected.length === 0) return []
+	// Only error issues own fingerprints; alert and integration issues have nothing to merge.
+	const canMerge = signals.length >= 2 && Arr.every(signals, (signal) => signal.issue.kind === "error")
 	return [
 		h.div(
 			[
@@ -141,6 +166,13 @@ export const bulkBar = (h: H, model: Model): ReadonlyArray<Html> => {
 				bulkMenu(h, model.bulkMoveMenu, "Move to", moveEntries(selected), (message) =>
 					Message.GotBulkMoveMenuMessage({ message }),
 				),
+				...(canMerge
+					? [
+							bulkMenu(h, model.bulkMergeMenu, "Merge", mergeEntries(signals), (message) =>
+								Message.GotBulkMergeMenuMessage({ message }),
+							),
+						]
+					: []),
 				iconButton(
 					h,
 					{ label: "Clear selection", attributes: [h.OnClick(Message.ClickedClearSelection())] },

@@ -283,6 +283,8 @@ export const AuditActionLabels = {
 	"error_issue.pr_merged": "Merged linked pull request",
 	"error_issue.verification_started": "Started fix verification",
 	"error_issue.verification_verdict": "Recorded fix verification result",
+	"error_issue.merge": "Merged issues",
+	"error_issue.unmerge": "Unmerged issue",
 	"gcp_connector.created": "Connected Google Cloud",
 	"gcp_connector.updated": "Updated Google Cloud connector",
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",

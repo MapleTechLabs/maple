@@ -6,6 +6,7 @@ import {
 	ErrorIncidentReason,
 	ErrorIncidentStatus,
 	ErrorIssueEventType,
+	IssueFingerprintSource,
 	IssueKind,
 	IssueSeverity,
 	IssueSeveritySource,
@@ -134,6 +135,10 @@ export const ErrorIssues = PG.table("error_issues", {
 		}),
 		snoozeUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "snooze_until" }),
 		archivedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "archived_at" }),
+		// Set on an issue merged into another: it is archived, and its hashes now land there.
+		mergedIntoIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), {
+			name: "merged_into_issue_id",
+		}),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
@@ -167,6 +172,9 @@ export const ErrorIssues = PG.table("error_issues", {
 		// only the handful of archived rows.
 		PG.index("error_issues_org_archived_idx", ["orgId", "archivedAt"], {
 			where: `"archived_at" is not null`,
+		}),
+		PG.index("error_issues_org_merged_into_idx", ["orgId", "mergedIntoIssueId"], {
+			where: `"merged_into_issue_id" is not null`,
 		}),
 	],
 	tenantColumn: "orgId",
@@ -208,6 +216,29 @@ export const ErrorFingerprintCandidates = PG.table("error_fingerprint_candidates
 		// Retention prunes candidates that never reached the threshold.
 		PG.index("error_fingerprint_candidates_last_seen_idx", ["orgId", "lastSeenAt"]),
 	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * Fingerprints an issue owns besides its own `fingerprint_hash`. The tick reads
+ * this before `error_issues`, so an aliased hash lands on its issue even when
+ * the hash is also the primary of the archived issue it was merged out of.
+ */
+export const ErrorIssueFingerprints = PG.table("error_issue_fingerprints", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		fingerprintHash: PG.column(PG.text, { name: "fingerprint_hash" }),
+		issueId: PG.column(PG.brand(PG.text, ErrorIssueId), { name: "issue_id" }),
+		source: PG.brand(PG.text, IssueFingerprintSource),
+		// The merged issue that brought this hash, so unmerging can hand it back.
+		originIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "origin_issue_id" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: {
+		columns: ["orgId", "fingerprintHash"],
+		name: "error_issue_fingerprints_org_id_fingerprint_hash_pk",
+	},
+	indexes: [PG.index("error_issue_fingerprints_issue_idx", ["orgId", "issueId"])],
 	tenantColumn: "orgId",
 })
 
