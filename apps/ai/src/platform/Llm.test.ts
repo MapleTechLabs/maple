@@ -60,6 +60,7 @@ const captureRequest = (
 	env: LlmSettings,
 	tags?: LlmCallTags,
 	resolve: (env: LlmSettings, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
+	declareTool = false,
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -81,12 +82,20 @@ const captureRequest = (
 
 		const model = resolve(env, tags)
 
-		yield* LanguageModel.generateText({
-			prompt: [
-				{ role: "system", content: "You are concise." },
-				{ role: "user", content: "hi" },
-			],
-		}).pipe(
+		const prompt = [
+			{ role: "system" as const, content: "You are concise." },
+			{ role: "user" as const, content: "hi" },
+		]
+		const call = declareTool
+			? Effect.asVoid(
+					LanguageModel.generateText({
+						prompt,
+						toolkit: Toolkit.make(listServices),
+						disableToolCallResolution: true,
+					}),
+				)
+			: Effect.asVoid(LanguageModel.generateText({ prompt }))
+		yield* call.pipe(
 			Effect.provide(model.layer),
 			Effect.ignore,
 			Effect.provide(layerLlm(env)),
@@ -172,6 +181,17 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 			)
 			expect(captured.body.usage).toEqual({ include: true })
 		}).pipe(Effect.withSpan("chat")),
+	)
+
+	it.live("leaves strict off a tool with no strict annotation, since some upstreams reject null", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(openRouterEnv, tags, resolveTriageModel, true)
+
+			// An exact match: a `strict: null` key left on the function fails it.
+			expect(captured.body.tools).toEqual([
+				{ type: "function", function: { name: "list_services", parameters: expect.anything() } },
+			])
+		}),
 	)
 
 	it.live("keeps the headers and tags off the Workers AI path", () =>
