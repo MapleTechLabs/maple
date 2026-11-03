@@ -42,7 +42,7 @@ const TICK_MS = BASE_MS + 10 * HOUR_MS + 3 * MINUTE_MS
 const at = (hour: number, minute: number, second = 0) =>
 	BASE_MS + hour * HOUR_MS + minute * MINUTE_MS + second * 1000
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const decodeJsonRows = Schema.decodeUnknownSync(
 	Schema.fromJsonString(

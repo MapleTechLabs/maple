@@ -47,7 +47,7 @@ afterAll(async () => {
 	for (const name of createdDatabases) await clickhouseExec(`DROP DATABASE IF EXISTS ${name}`)
 })
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 interface Span {
 	readonly type: string

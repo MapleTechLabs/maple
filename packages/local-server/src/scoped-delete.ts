@@ -189,7 +189,7 @@ const requestedDimensions = (request: ScopedDeleteRequest): ReadonlyArray<Dimens
 export const floorToHour = (ms: number): number => Math.floor(ms / HOUR_MS) * HOUR_MS
 
 const sqlString = (value: string): string =>
-	`'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+	`'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const sourceExpression = (source: DimensionSource, dimension: Dimension): string => {
 	if ("column" in source) return source.column
