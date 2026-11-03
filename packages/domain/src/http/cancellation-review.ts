@@ -157,6 +157,32 @@ export const CancellationAuditEntry = Schema.Struct({
 })
 export type CancellationAuditEntry = Schema.Schema.Type<typeof CancellationAuditEntry>
 
+/** Another Maple org some of this org's members also belong to. */
+export const CancellationOtherOrg = Schema.Struct({
+	/** The org's name; null when it holds a member's name. */
+	name: Schema.NullOr(Schema.String),
+	/** The name was left out because it holds a member's name ("Jane's Org"). */
+	nameIsPersonal: Schema.Boolean,
+	/** Whole days from the org's creation to the cancellation; negative when created after it. */
+	createdDaysBeforeCancel: Schema.Int,
+	/** Its members now; null when Clerk did not say. */
+	members: Schema.NullOr(Count),
+	/** Of this org's members, how many are also in that one. */
+	sharedMembers: Count,
+	/** Its active plan now (`plan: null` for none); null when Autumn was not read for it. */
+	billing: Schema.NullOr(Schema.Struct({ plan: Schema.NullOr(Schema.String) })),
+})
+export type CancellationOtherOrg = Schema.Schema.Type<typeof CancellationOtherOrg>
+
+/** The orgs this org's members also belong to, newest first. */
+export const CancellationOtherOrgs = Schema.Struct({
+	/** Every such org found, including ones not listed. */
+	total: Count,
+	/** The newest few. */
+	orgs: Schema.Array(CancellationOtherOrg),
+})
+export type CancellationOtherOrgs = Schema.Schema.Type<typeof CancellationOtherOrgs>
+
 /**
  * Everything the model reads next to the rules' conclusion. Nothing in it names
  * a person; `company` names the business, so the model can say who it is.
@@ -179,6 +205,8 @@ export class CancellationModelRequest extends Schema.Class<CancellationModelRequ
 	billing: Schema.NullOr(CancellationBillingEvidence),
 	app: Schema.NullOr(CancellationAppEvidence),
 	telemetry: Schema.NullOr(CancellationTelemetryEvidence),
+	/** Null when the members' orgs could not be read; `total: 0` when every member is only in this one. */
+	otherOrgs: Schema.NullOr(CancellationOtherOrgs),
 }) {}
 
 /** `agree`: the rules' reason stands. `override`: the evidence shows a different one. */
