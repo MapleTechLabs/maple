@@ -269,7 +269,7 @@ export function startSessionLifecycle(
 			// Effect SDK's standalone mode, by spans), and none of those writes reach
 			// the captured object.
 			if (isSessionExpired(liveRecord())) {
-				endRun({ flush: true, keepalive: false })
+				void endRun({ flush: true, keepalive: false })
 				return
 			}
 			post("active", false)
@@ -314,7 +314,7 @@ export function startSessionLifecycle(
 		if (stopped || previous.id !== current.id) return
 		// Not keepalive: rotation is discovered by activity in a live tab, never on
 		// the way out, and the keepalive budget is shared with the unload writes.
-		endRun({ flush: true, keepalive: false })
+		void endRun({ flush: true, keepalive: false })
 		current = next
 		hooks.onSessionChange?.(next.id)
 		// The replacement record is written by the rotating caller immediately

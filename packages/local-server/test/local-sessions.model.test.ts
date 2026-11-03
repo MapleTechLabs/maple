@@ -16,8 +16,7 @@ const libchdbAvailable =
 	(process.env.MAPLE_LIBCHDB !== undefined && existsSync(process.env.MAPLE_LIBCHDB)) ||
 	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
 	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
-const describeWithChdb =
-	process.env.MAPLE_REQUIRE_LIBCHDB === "1" ? describe : describe.skipIf(!libchdbAvailable)
+const skipWithoutChdb = process.env.MAPLE_REQUIRE_LIBCHDB !== "1" && !libchdbAvailable
 
 const SESSION = join(import.meta.dir, "fixtures", "local-session.ts")
 
@@ -186,7 +185,7 @@ class Stop implements fc.AsyncCommand<{ running: number }, World> {
 
 const commands = [fc.constant(new Start()), fc.nat(5).map((pick) => new Stop(pick))]
 
-describeWithChdb("several alchemy dev sessions on one store", () => {
+describe.skipIf(skipWithoutChdb)("several alchemy dev sessions on one store", () => {
 	it.each(["foreign-exit", "lost-stdout"])(
 		"reopens cleanly after %s",
 		async (mode) => {

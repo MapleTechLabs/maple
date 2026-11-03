@@ -61,7 +61,7 @@ export const describeParity = (
 ) => {
 	const list = Array.isArray(tables) ? tables : Object.values(tables).filter(isTable)
 	const ormEntities = Effect.runSync(S.pgEntitiesOf(list))
-	const ormTables = new Set(list.map((table) => table.name))
+	const ormTables = new Set<string>(list.map((table) => table.name))
 
 	const SNAPSHOT_READ_TIMEOUT_MS = 30_000
 

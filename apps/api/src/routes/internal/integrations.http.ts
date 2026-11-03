@@ -403,7 +403,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 											.sort(([a], [b]) => a.localeCompare(b))
 											.map(([key, value]) => [
 												key,
-												Array.isArray(value) ? [...value].sort() : value,
+												typeof value === "string" ? value : [...value].sort(),
 											]),
 									),
 								).pipe(Effect.orDie)

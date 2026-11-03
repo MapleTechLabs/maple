@@ -339,7 +339,7 @@ describe("response errors and resource ownership", () => {
 			}),
 			(_input, init) =>
 				new Promise((_resolve, reject) => {
-					const signal = init?.signal!
+					const signal = init!.signal!
 					signal.addEventListener("abort", () => reject(signal.reason), { once: true })
 					Deferred.doneUnsafe(started, Effect.succeed(signal))
 				}),

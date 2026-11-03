@@ -55,7 +55,7 @@ const withReleaseServer = async (
 			requests,
 		})
 	} finally {
-		server.stop(true)
+		await server.stop(true)
 		rmSync(root, { recursive: true, force: true })
 	}
 }

@@ -166,7 +166,7 @@ export function startWaterfall(root: HTMLElement) {
 			if (entry.isIntersecting) {
 				if (!isVisible) {
 					isVisible = true
-					cycle()
+					void cycle()
 				}
 			} else if (isVisible) {
 				isVisible = false

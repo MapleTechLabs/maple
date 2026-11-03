@@ -73,7 +73,7 @@ export function errorSignal(mode: WorstCaseMode, base: ErrorSignal): ErrorSignal
 		serviceName: LONG_SERVICE,
 		lastSeenAt: new Date(NOW + 3 * 60 * 60 * 1000).toISOString(),
 		windowCount: 12_849_302,
-		totalCount: 9_007_199_254_740_993,
+		totalCount: 9_007_199_254_740_992,
 	}
 }
 

@@ -243,7 +243,7 @@ export const anchorPosition = (
 				floating.style.top = "0px"
 				floating.style.left = "0px"
 				const update = () => {
-					computePosition(reference, floating, {
+					void computePosition(reference, floating, {
 						placement: placementOf(state.preferredSide, config.align),
 						strategy: config.positionMethod,
 						middleware: middlewareFor(floating, config),

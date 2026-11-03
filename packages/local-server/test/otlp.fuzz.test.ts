@@ -483,8 +483,10 @@ const paths = (root: unknown): ReadonlyArray<ReadonlyArray<string | number>> => 
 	const walk = (value: unknown, at: ReadonlyArray<string | number>) => {
 		if (Array.isArray(value)) value.forEach((item, i) => (out.push([...at, i]), walk(item, [...at, i])))
 		else if (typeof value === "object" && value !== null)
-			for (const [key, item] of Object.entries(value))
-				(out.push([...at, key]), walk(item, [...at, key]))
+			for (const [key, item] of Object.entries(value)) {
+				out.push([...at, key])
+				walk(item, [...at, key])
+			}
 	}
 	walk(root, [])
 	return out

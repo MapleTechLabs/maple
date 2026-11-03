@@ -105,7 +105,7 @@ export function playLocalTerminal(root: HTMLElement) {
 		([entry], observer) => {
 			if (!entry?.isIntersecting) return
 			observer.disconnect()
-			run()
+			void run()
 		},
 		{ threshold: 0.35 },
 	)
