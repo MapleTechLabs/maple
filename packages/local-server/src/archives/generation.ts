@@ -68,7 +68,6 @@ import {
 	type ArchiveOperationIntent,
 	type ArchiveOperationPhase,
 	type CreateOperationIntent,
-	type GcOperationIntent,
 } from "./journal"
 import { assertCatalogExact, rebuildCatalog } from "./listing"
 import {

@@ -74,7 +74,6 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const sha = Schema.decodeUnknownSync(GitCommitSha)
 const HEAD = sha("1111111111111111111111111111111111111111")
 const HEAD_2 = sha("2222222222222222222222222222222222222222")
-const HEAD_3 = sha("3333333333333333333333333333333333333333")
 const HEAD_4 = sha("4444444444444444444444444444444444444444")
 const BASE = sha("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 

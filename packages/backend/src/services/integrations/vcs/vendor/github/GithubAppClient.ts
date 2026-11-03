@@ -231,7 +231,6 @@ const GithubApiRepoSchema = Schema.Struct({
 	html_url: Schema.String,
 	owner: Schema.Struct({ login: Schema.String }),
 })
-type GithubApiRepo = Schema.Schema.Type<typeof GithubApiRepoSchema>
 
 const GithubInstallationReposResponse = Schema.Struct({
 	total_count: Schema.Number,
@@ -288,7 +287,6 @@ const GithubApiBranchSchema = Schema.Struct({
 	name: Schema.String,
 	commit: Schema.Struct({ sha: GitCommitSha }), // 40-hex validated by the brand
 })
-type GithubApiBranch = Schema.Schema.Type<typeof GithubApiBranchSchema>
 const GithubApiBranchList = Schema.Array(GithubApiBranchSchema)
 
 // A pull request as the REST API reports it, list and detail alike (the detail

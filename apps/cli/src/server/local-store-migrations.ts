@@ -7,8 +7,8 @@
 
 import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statfsSync } from "node:fs"
-import { lstat, readdir, readFile, stat } from "node:fs/promises"
-import { dirname, join, relative, resolve } from "node:path"
+import { lstat, readdir, stat } from "node:fs/promises"
+import { dirname, join, resolve } from "node:path"
 import { Effect, Schema } from "effect"
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
@@ -22,8 +22,6 @@ import {
 } from "@maple/local-server/schema-identity"
 import {
 	checkStoreCompatible,
-	adoptLegacySidecars,
-	dataDirSidecarPath,
 	ensureStoreMarkerDurable,
 	isStoreDirty,
 	legacySidecarPath,

@@ -33,7 +33,6 @@ import {
 	connectorSessionId,
 	connectorTurnTenant,
 	type ChatConversationKey,
-	type ChatMessage,
 	type ChatSessionId,
 } from "@maple/domain/chat-session"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"

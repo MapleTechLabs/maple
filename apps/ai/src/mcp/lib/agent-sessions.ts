@@ -3,7 +3,7 @@
 // more than one tool prints. These are the `maple_ai.*` agent traces, not the
 // browser session replays `search_sessions` serves.
 
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
 	GetAiSessionSpansRequest,

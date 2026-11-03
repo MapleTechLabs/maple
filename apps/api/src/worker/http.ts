@@ -8,8 +8,6 @@ import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import type { HttpEffect } from "alchemy/Http"
 import { Cause, Config, Context, Effect, Exit, Layer, Option, Scope } from "effect"
 import { FetchHttpClient, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import * as Etag from "effect/http/Etag"
-import * as HttpPlatform from "effect/http/HttpPlatform"
 import {
 	API_CORS_RESPONSE_HEADERS,
 	API_TIMING_ALLOW_ORIGIN,

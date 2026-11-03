@@ -1796,7 +1796,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("hostInfraTimeseries", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const bucketSeconds = payload.bucketSeconds ?? 60
 
 						const spec = hostMetricSpec(payload.metric)
 

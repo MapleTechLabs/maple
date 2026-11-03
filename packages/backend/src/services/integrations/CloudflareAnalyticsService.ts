@@ -68,7 +68,6 @@ import {
 	Result,
 	Schema,
 } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/http"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
@@ -1285,7 +1284,6 @@ export class CloudflareAnalyticsService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
-		const httpClient = yield* HttpClient.HttpClient
 		const warehouse = yield* WarehouseQueryService
 		const oauth = yield* CloudflareOAuthService
 		const ingestKeys = yield* OrgIngestKeysService
@@ -3448,7 +3446,6 @@ export class CloudflareAnalyticsService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				OrgClickHouseSettingsService.layer,

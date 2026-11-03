@@ -5,7 +5,7 @@ import * as Flag from "effect/cli/Flag"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { closeSync, openSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import { ensurePortFree, ServerBindError, startServer } from "@maple/local-server/serve"
+import { ensurePortFree, startServer } from "@maple/local-server/serve"
 import { TelemetryLayer } from "../core/telemetry"
 import { loadProjectorModules, resolveProjectorModulePaths } from "../server/eventing/projector-modules"
 import {

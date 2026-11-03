@@ -318,7 +318,6 @@ console.log("\na restored backup")
 
 console.log("\nthe command wrapper")
 {
-	const dir = checkoutDir(SHA)
 	const wrapped = (command: string, args: ReadonlyArray<string>, maxOutputBytes = 48 * 1024): string =>
 		wrapCommand({ command, args, maxOutputBytes })
 
