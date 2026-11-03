@@ -95,16 +95,11 @@ export const ENTERPRISE_DATA_FEATURES: ReadonlyArray<FeatureRow> = [
 ]
 
 /**
- * The landing's `lib/compliance.ts`, which web cannot import. Only `Available` may read as held:
+ * The landing's `lib/compliance.ts`, which web cannot import. Only the DPA may read as held:
  * SOC 2 and ISO 27001 are audits in progress, not certifications.
  */
-export type ComplianceItem = Readonly<{ name: string; status: "Available" | "In progress"; href?: string }>
-
-export const COMPLIANCE_ITEMS: ReadonlyArray<ComplianceItem> = [
-	{ name: "DPA", status: "Available", href: "mailto:privacy@maple.dev?subject=DPA%20request" },
-	{ name: "SOC 2 Type II", status: "In progress" },
-	{ name: "ISO 27001", status: "In progress" },
-]
+export const COMPLIANCE_LINE = "DPA available · SOC 2 Type II and ISO 27001 in progress"
+export const DPA_REQUEST_URL = "mailto:privacy@maple.dev?subject=DPA%20request"
 
 export type Scenario = "new" | "active" | "scheduled" | "upgrade" | "downgrade"
 
