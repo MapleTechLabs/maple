@@ -204,7 +204,7 @@ export function playMcp(root: HTMLElement) {
 	io.observe(root)
 
 	hideAll()
-	run()
+	void run()
 }
 
 /** Every non-blank text node under `line`, in document order, with its text. */

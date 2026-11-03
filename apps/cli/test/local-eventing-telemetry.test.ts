@@ -39,7 +39,7 @@ describe("eventing metric export", () => {
 			strictEqual(exported.includes("tenantid"), false)
 		} finally {
 			await runtime.dispose()
-			server.stop(true)
+			await server.stop(true)
 		}
 	})
 })

@@ -29,7 +29,7 @@ const testEnv = (): Record<string, string> => ({
 })
 
 export interface EvalRuntime {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// oxlint-disable-next-line typescript/no-explicit-any
 	readonly runtime: ManagedRuntime.ManagedRuntime<any, never>
 	readonly tenant: TenantContext
 	/** The PGlite database behind the runtime, for seeding rows (`executeSql`). */
@@ -65,7 +65,7 @@ export const makeEvalRuntime = (
 	)
 	// `as any`: the residual requirement set is satisfied at runtime (same pattern
 	// as apps/api/src/agent.ts buildSetup).
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// oxlint-disable-next-line typescript/no-explicit-any
 	const runtime = ManagedRuntime.make(layer as any) as ManagedRuntime.ManagedRuntime<any, never>
 
 	return {
@@ -93,7 +93,7 @@ export const runToolDirect = async (
 	name: string,
 	params: unknown,
 	surface: McpToolSurface = "mcp",
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// oxlint-disable-next-line typescript/no-explicit-any
 ): Promise<any> => {
 	return rt.runtime.runPromise(
 		McpToolExecutor.pipe(

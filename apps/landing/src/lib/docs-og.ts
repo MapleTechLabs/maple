@@ -266,7 +266,7 @@ const makeRenderer = async () => {
 	]
 	for (const font of fonts) {
 		const woff2 = await readFile(new URL(`node_modules/${font.file}`, landing))
-		engine.registerFont({ name: font.name, data: new Uint8Array(await decompress(woff2)) })
+		await engine.registerFont({ name: font.name, data: new Uint8Array(await decompress(woff2)) })
 	}
 	const arts = [...new Set([...GROUP_ART.values(), DEFAULT_ART])]
 	const images = await Promise.all(

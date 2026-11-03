@@ -48,8 +48,8 @@ describe("newestFirst", () => {
 })
 
 describe("newestFirstOnExit", () => {
-	it("reports each batch once, failed when any part failed, however the parts settle", () => {
-		fc.assert(
+	it("reports each batch once, failed when any part failed, however the parts settle", async () => {
+		await fc.assert(
 			fc.asyncProperty(
 				batch,
 				fc.boolean(),

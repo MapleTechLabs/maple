@@ -33,7 +33,9 @@
 		"effecttsgo/map-map-error-to-map-both": "error",
 		"effecttsgo/multiple-catch-tag": "error",
 		"effecttsgo/multiple-effect-provide": "error",
-		"effecttsgo/nested-effect-gen-yield": "warn",
+		// Flags a ternary whose branches are generators, and inner generators used for an early
+		// `return`; inlining either reads worse.
+		"effecttsgo/nested-effect-gen-yield": "off",
 		"effecttsgo/outdated-api": "error",
 		"effecttsgo/promise-in-effect-success": "error",
 		"effecttsgo/provide-merge-all-to-array": "error",
@@ -50,7 +52,9 @@
 		"effecttsgo/unnecessary-effect-gen": "error",
 		"effecttsgo/unnecessary-pipe-chain": "error",
 		"effecttsgo/unnecessary-typeof-type": "error",
-		"effecttsgo/yield-in-call-argument": "error"
+		"effecttsgo/yield-in-call-argument": "error",
+		"typescript/no-floating-promises": "error",
+		"typescript/require-array-sort-compare": "error"
 	},
 	"overrides": [
 		// Framework composition roots, standalone libraries, generated-client CLI dispatch, and operational probes expose generic Effect channels.
@@ -106,6 +110,8 @@
 				"effecttsgo/node-builtin-import": "off",
 				"effecttsgo/process-env": "off",
 				"effecttsgo/strict-effect-provide": "off",
+				// Tests sort ids and tuples to compare them as sets; the default order is fine there.
+				"typescript/require-array-sort-compare": "off",
 				"effecttsgo/yield-in-call-argument": "off"
 			}
 		}

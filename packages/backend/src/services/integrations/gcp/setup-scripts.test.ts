@@ -224,7 +224,7 @@ interface RunOptions {
 	env?: Readonly<Record<string, string>>
 	/** Extra arguments for the shell the text is fed to, and text typed after it. */
 	shell?: ReadonlyArray<string>
-	then?: string
+	typedAfter?: string
 }
 
 /** Feed a rendered script to bash against the fakes; returns what it printed and issued. */
@@ -239,7 +239,7 @@ const run = (script: string, options: RunOptions = {}) => {
 	const read = (file: string) => (existsSync(file) ? readFileSync(file, "utf8").trim().split("\n") : [])
 	const log = join(dir, "gcloud.log")
 	const result = spawnSync("bash", options.shell ?? [], {
-		input: script + (options.then ?? ""),
+		input: script + (options.typedAfter ?? ""),
 		cwd: dir,
 		encoding: "utf8",
 		env: {
@@ -549,7 +549,8 @@ describe("the text that is copied", () => {
 			fail: "sinks create",
 			shell: ["--norc", "--noprofile", "-i"],
 			// The next command to fail must not close the shell either.
-			then: "echo STATUS=$? ALIVE; false; echo AFTER=$?; set -o | grep -E 'errexit|nounset'; history | grep -c 'MAPLE_SETUP_SCRIP[T]'\n",
+			typedAfter:
+				"echo STATUS=$? ALIVE; false; echo AFTER=$?; set -o | grep -E 'errexit|nounset'; history | grep -c 'MAPLE_SETUP_SCRIP[T]'\n",
 		})
 		expect(stdout).toContain(UNFINISHED)
 		expect(stdout).toContain("STATUS=1 ALIVE\nAFTER=1\n")

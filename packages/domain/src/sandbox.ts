@@ -108,7 +108,7 @@ export const SandboxRelativePath = Schema.String.check(
 		(value: string) =>
 			!value.startsWith("/") &&
 			!value.split("/").includes("..") &&
-			// eslint-disable-next-line no-control-regex
+			// oxlint-disable-next-line no-control-regex
 			!/[\u0000-\u001f]/.test(value),
 		{ title: "sandboxRelativePath", expected: "a checkout-relative path with no `..` segment" },
 	),
@@ -117,7 +117,7 @@ export const SandboxRelativePath = Schema.String.check(
 /** A program name or argument. Control characters are refused: they truncate the shell program. */
 export const SandboxArgument = Schema.String.check(
 	Schema.isMaxLength(4096),
-	// eslint-disable-next-line no-control-regex
+	// oxlint-disable-next-line no-control-regex
 	Schema.makeFilter((value: string) => !/[\u0000]/.test(value), {
 		title: "sandboxArgument",
 		expected: "text with no NUL byte",
