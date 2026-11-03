@@ -13,6 +13,7 @@ import { linkTabStrip } from "../kit/underline-tabs"
 import { populationOf, type Tab, TABS, tabOf } from "./definition"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { EVENTS_LIMIT } from "./requests"
 import { DEFAULT_PRESET, withDrafts } from "./update"
 import { eventsTab } from "./view-events"
 import { funnelsTab } from "./view-funnels"
@@ -27,6 +28,8 @@ const TAB_LABEL = { events: "Events", funnels: "Funnels", paths: "Paths" } satis
 const tabs = (h: H, model: Model): Html => {
 	const active = tabOf(model.search)
 	const eventCount = Option.getOrUndefined(AsyncData.getData(model.events.data))?.length
+	const shownCount =
+		eventCount === undefined ? undefined : eventCount > EVENTS_LIMIT ? `${EVENTS_LIMIT}+` : eventCount
 	return linkTabStrip(
 		h,
 		"Product analytics views",
@@ -38,7 +41,7 @@ const tabs = (h: H, model: Model): Html => {
 				}),
 			),
 			label: TAB_LABEL[tab],
-			count: tab === "events" ? eventCount : undefined,
+			count: tab === "events" ? shownCount : undefined,
 			isCurrent: tab === active,
 			isRouteActive: tab === active,
 		})),

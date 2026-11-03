@@ -25,7 +25,8 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 	const { startTime, endTime } = window
 	const breakdownsInput = { startTime, endTime, limitPerDimension: BREAKDOWN_LIMIT, ...population }
 	const events = (slot: SlotName, range: TimeWindow): Request => {
-		const input = { ...range, limit: EVENTS_LIMIT, ...population }
+		// One past the limit, so a full answer can tell "exactly 200" from "more than 200".
+		const input = { ...range, limit: EVENTS_LIMIT + 1, ...population }
 		return {
 			slot,
 			fn: "getProductEventNames",

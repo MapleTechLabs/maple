@@ -70,10 +70,8 @@ const kindSummary = (rows: ReadonlyArray<EventRow>): string => {
 	].join(" · ")
 }
 
-const stats = (h: H, model: Model, rows: ReadonlyArray<EventRow>): Html => {
+const stats = (h: H, model: Model, rows: ReadonlyArray<EventRow>, isCapped: boolean): Html => {
 	const total = sum(rows)
-	// The read stops at EVENTS_LIMIT names: past that, totals and the trend would undercount.
-	const isCapped = rows.length >= EVENTS_LIMIT
 	const top = rows
 		.filter(isCustomEvent)
 		.reduce<EventRow | undefined>(
@@ -223,8 +221,12 @@ export const eventsTab = (h: H, model: Model): Html =>
 				title: "Couldn't load product events",
 				onRetry: Message.ClickedRetry({ slot: "events" }),
 			}),
-		onData: (rows) =>
-			rows.length === 0
+		onData: (answer) => {
+			// The read asks for one name past EVENTS_LIMIT: if it came back, totals and the trend
+			// would undercount, so the page says so instead.
+			const isCapped = answer.length > EVENTS_LIMIT
+			const rows = answer.slice(0, EVENTS_LIMIT)
+			return rows.length === 0
 				? emptyPanel(h, "No product events in this window", [
 						"Page views arrive with web analytics. Custom events come from track() in the browser SDK, POST /v1/events from a backend, or an annotated span.",
 						hstack(h, { justify: "center", className: "mt-3" }, [
@@ -232,7 +234,7 @@ export const eventsTab = (h: H, model: Model): Html =>
 						]),
 					])
 				: vstack(h, { gap: "4" }, [
-						stats(h, model, rows),
+						stats(h, model, rows, isCapped),
 						panel(h, {}, [
 							panelHeader(h, {
 								title: "All events",
@@ -257,5 +259,6 @@ export const eventsTab = (h: H, model: Model): Html =>
 							eventsTable(h, model, rows),
 							sendYourOwn(h),
 						]),
-					]),
+					])
+		},
 	})

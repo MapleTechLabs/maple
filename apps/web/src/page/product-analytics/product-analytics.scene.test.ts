@@ -255,6 +255,27 @@ describe("product analytics", () => {
 		)
 	})
 
+	test("exactly 200 names is a full answer; one more says the totals are capped", () => {
+		const names = (count: number): ReadonlyArray<EventRow> =>
+			Array.from({ length: count }, (_, index) => ({
+				eventName: `event_${index}`,
+				kind: "custom",
+				count: 1,
+				sessions: 1,
+				persons: 1,
+			}))
+		scene(
+			{ update: pageUpdate, view },
+			given(settled(resolved().model, "events", names(200))),
+			expectView(text("200+")).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(settled(resolved().model, "events", names(201))),
+			expectView(text("across the top 200 names")).toExist(),
+		)
+	})
+
 	test("an org without events is told where they come from", () => {
 		scene(
 			{ update: pageUpdate, view },

@@ -15,6 +15,7 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { panel, panelChartBody, panelHeader } from "@maple/views/ui/panel"
+import { grid } from "@maple/views/ui/grid"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import {
 	numericTableCell,
@@ -263,44 +264,37 @@ const results = (h: H, model: Model): Html => {
 						}),
 					]),
 				]),
-				h.div(
-					[h.Class("grid gap-4 lg:grid-cols-2")],
-					[
-						panel(h, {}, [
-							panelHeader(h, {
-								title:
-									paths.direction === "after"
-										? "Most common next step"
-										: "Most common step before",
-							}),
-							tallyTable(h, model, {
-								label: "Event or page",
-								rows: nextSteps(rows),
-								total,
-								empty:
-									paths.direction === "after" ? "Nothing followed" : "Nothing came before",
-							}),
-						]),
-						panel(h, {}, [
-							// Walking back from the anchor, a sequence that runs out is where it began.
-							panelHeader(h, {
-								title:
-									paths.direction === "after"
-										? "Where sequences ended"
-										: "Where sequences started",
-							}),
-							tallyTable(h, model, {
-								label:
-									paths.direction === "after"
-										? "Last event or page"
-										: "First event or page",
-								rows: endings(rows),
-								total,
-								empty: "Every sequence ran the full number of steps",
-							}),
-						]),
-					],
-				),
+				grid(h, { lg: 2, gap: "4" }, [
+					panel(h, {}, [
+						panelHeader(h, {
+							title:
+								paths.direction === "after"
+									? "Most common next step"
+									: "Most common step before",
+						}),
+						tallyTable(h, model, {
+							label: "Event or page",
+							rows: nextSteps(rows),
+							total,
+							empty: paths.direction === "after" ? "Nothing followed" : "Nothing came before",
+						}),
+					]),
+					panel(h, {}, [
+						// Walking back from the anchor, a sequence that runs out is where it began.
+						panelHeader(h, {
+							title:
+								paths.direction === "after"
+									? "Where sequences ended"
+									: "Where sequences started",
+						}),
+						tallyTable(h, model, {
+							label: paths.direction === "after" ? "Last event or page" : "First event or page",
+							rows: endings(rows),
+							total,
+							empty: "Every sequence ran the full number of steps",
+						}),
+					]),
+				]),
 			])
 		},
 	})
