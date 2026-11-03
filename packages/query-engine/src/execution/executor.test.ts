@@ -309,12 +309,14 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 			}),
 	})
 
-	it.effect("retries an insert that hits a transient 520, then succeeds", () =>
+	it.effect("retries an opted-in insert that hits a transient 520, then succeeds", () =>
 		Effect.gen(function* () {
 			const attempts = { count: 0 }
 			const executor = makeWarehouseExecutor(failingInsertDeps(2, 520, attempts))
 			const fiber = yield* Effect.forkChild(
-				executor.ingest(tenant, "audit_log", [{ OrgId: "org_test" }]).pipe(Effect.exit),
+				executor
+					.ingest(tenant, "audit_log", [{ OrgId: "org_test" }], { retryTransient: true })
+					.pipe(Effect.exit),
 			)
 			yield* TestClock.adjust(Duration.seconds(1))
 			const exit = yield* Fiber.join(fiber)
@@ -323,12 +325,24 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 		}),
 	)
 
+	it.effect("does not retry a 520 unless the caller opts in, since the rows may have landed", () =>
+		Effect.gen(function* () {
+			const attempts = { count: 0 }
+			const executor = makeWarehouseExecutor(failingInsertDeps(2, 520, attempts))
+			const exit = yield* executor
+				.ingest(tenant, "service_map_edges_hourly", [{ OrgId: "org_test" }])
+				.pipe(Effect.exit)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual(attempts.count, 1)
+		}),
+	)
+
 	it.effect("does not retry an insert the warehouse rejects as bad input", () =>
 		Effect.gen(function* () {
 			const attempts = { count: 0 }
 			const executor = makeWarehouseExecutor(failingInsertDeps(5, 400, attempts))
 			const exit = yield* executor
-				.ingest(tenant, "audit_log", [{ OrgId: "org_test" }])
+				.ingest(tenant, "audit_log", [{ OrgId: "org_test" }], { retryTransient: true })
 				.pipe(Effect.exit)
 			assert.isTrue(Exit.isFailure(exit))
 			assert.strictEqual(attempts.count, 1)

@@ -35,6 +35,7 @@ const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) =
 		datasource: string
 		rows: ReadonlyArray<AuditLogRow>
 		bestEffort: boolean
+		retryTransient: boolean
 	}> = []
 	const sql: Array<string> = []
 	const layer = Layer.succeed(
@@ -47,6 +48,7 @@ const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) =
 						// SAFETY: this stub only ever receives the audit datasource's rows.
 						rows: batch as ReadonlyArray<AuditLogRow>,
 						bestEffort: options?.bestEffort === true,
+						retryTransient: options?.retryTransient === true,
 					})
 				}),
 			compiledQuery: ((_tenant: unknown, compiled: unknown) =>
@@ -113,6 +115,7 @@ describe("AuditLogService (warehouse-backed)", () => {
 			expect(warehouse.ingested[0]!.datasource).toBe(AUDIT_LOG_DATASOURCE)
 			// A lost audit row is a Warn, never an Error span that opens an issue.
 			expect(warehouse.ingested[0]!.bestEffort).toBe(true)
+			expect(warehouse.ingested[0]!.retryTransient).toBe(true)
 			const row = warehouse.ingested[0]!.rows[0]!
 			expect(row.OrgId).toBe(ORG)
 			expect(row.ActorType).toBe("user")

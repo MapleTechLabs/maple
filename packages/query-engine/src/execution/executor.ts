@@ -1269,8 +1269,15 @@ WHERE name = 'enable_full_text_index'`,
 			// SQL, and a rejection here usually means the rows are wrong, not that
 			// Maple composed a bad statement.
 			Effect.mapError((error) => mapWarehouseError(label, error)),
-			// A 5xx/520 from the Events API is usually a blip: retry it like a read.
-			Effect.retry({ schedule: TRANSIENT_RETRY_SCHEDULE, while: isTransientUpstreamError }),
+			// A 5xx/520 is usually a blip, but it can follow a landed write, so only
+			// callers that tolerate a duplicate row opt in.
+			(insert) =>
+				options?.retryTransient === true
+					? Effect.retry(insert, {
+							schedule: TRANSIENT_RETRY_SCHEDULE,
+							while: isTransientUpstreamError,
+						})
+					: insert,
 			Effect.tap(() =>
 				Clock.currentTimeMillis.pipe(
 					Effect.flatMap((completedAtMs) =>
