@@ -25,7 +25,10 @@ export interface SourceHealthResult {
 	readonly status: SourceHealthStatus
 	/** When data last arrived, or the last successful poll; null when never. */
 	readonly lastDataAt: number | null
-	/** One line on why the source is not healthy; null when it is. */
+	/**
+	 * One line on what is wrong; null when nothing is. A healthy source can carry one: data arrives,
+	 * but its integration reports a problem on the side (a revoked account, a dataset behind).
+	 */
 	readonly problem: string | null
 	/** For a source that stands for several resources (zones, repos): how many are not healthy. */
 	readonly resources?: SourceResourceCount
@@ -81,6 +84,12 @@ const POLICIES = {
  */
 const REFUSAL_WINDOW_MS = 15 * MINUTE
 
+/**
+ * Data that reached the gateway this recently outranks what the poller says about itself: a revoked
+ * account, one failed dataset or datasets the call budget has not reached yet are a note, not the status.
+ */
+const RECEIVING_WINDOW_MS = 15 * MINUTE
+
 /** The `sources` columns health reads, timestamps in epoch ms. */
 export interface SourceHealthInput {
 	readonly platform: SourcePlatform
@@ -115,19 +124,25 @@ export const sourceHealth = (source: SourceHealthInput, now: number): SourceHeal
 	const result = (status: SourceHealthStatus, problem: string | null): SourceHealthResult =>
 		resources === undefined ? { status, lastDataAt, problem } : { status, lastDataAt, problem, resources }
 
+	const receiving = source.lastUsedAt !== null && now - source.lastUsedAt <= RECEIVING_WINDOW_MS
+	const disconnected =
+		source.disconnectedAt === null ? null : (source.lastPollError ?? "The integration is disconnected")
+
 	if (source.status === "expired") return result("disconnected", "The token expired; senders get 401")
-	if (source.disconnectedAt !== null) {
-		return result("disconnected", source.lastPollError ?? "The integration is disconnected")
-	}
+	if (disconnected !== null && !receiving) return result("disconnected", disconnected)
 	if (source.status === "paused") return result("paused", "Data is dropped while paused")
 	if (source.turnedOff !== undefined) return result("paused", source.turnedOff)
 	if (source.lastRejectedAt !== null && now - source.lastRejectedAt <= REFUSAL_WINDOW_MS) {
 		return result("failing", source.lastRejection ?? "The gateway refused its requests")
 	}
-	if (source.lastPollError !== null) return result("failing", source.lastPollError)
 	if (source.failing !== undefined) return result("failing", source.failing)
-	if (resources !== undefined && resources.unhealthy > 0) {
-		return result("stale", `${resources.unhealthy} of ${resources.total} not up to date`)
+	const behind =
+		resources !== undefined && resources.unhealthy > 0
+			? `${resources.unhealthy} of ${resources.total} not up to date`
+			: null
+	if (!receiving) {
+		if (source.lastPollError !== null) return result("failing", source.lastPollError)
+		if (behind !== null) return result("stale", behind)
 	}
 	const freshAt = policy.freshness === "data" ? source.lastUsedAt : source.lastPollOkAt
 	const staleAfterMs = source.staleAfterMs ?? policy.staleAfterMs
@@ -136,7 +151,7 @@ export const sourceHealth = (source: SourceHealthInput, now: number): SourceHeal
 		const what = policy.freshness === "data" ? "No data" : "No successful update"
 		return result("stale", `${what} in the last ${formatWindow(staleAfterMs)}`)
 	}
-	return result("healthy", null)
+	return result("healthy", disconnected ?? source.lastPollError ?? behind)
 }
 
 /** Worst first, by `SOURCE_HEALTH_STATUSES`. */

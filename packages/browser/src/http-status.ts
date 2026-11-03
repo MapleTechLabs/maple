@@ -10,7 +10,7 @@ import {
 	responseStatus,
 } from "@maple/sdk-core"
 import { type Attributes, type SpanStatus, SpanKind, SpanStatusCode } from "@opentelemetry/api"
-import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base"
+import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace"
 
 const HTTP_STATUS = /^\d{3}$/
 
@@ -53,7 +53,13 @@ export class HttpStatusExporter implements SpanExporter {
 	) {}
 
 	private apply(span: ReadableSpan): ReadableSpan {
-		const read: ReadAttribute = (key) => span.attributes[key]
+		// Attributes are `AnyValue` since api 1.10; a status is only ever a scalar.
+		const read: ReadAttribute = (key) => {
+			const value = span.attributes[key]
+			return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+				? value
+				: undefined
+		}
 		const status = responseStatus(read)
 		if (
 			span.kind === SpanKind.CLIENT &&

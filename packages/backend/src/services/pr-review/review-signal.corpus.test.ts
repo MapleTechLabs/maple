@@ -25,6 +25,17 @@ const cases = Arr.map(
 const scored = Arr.map(cases, (item) => scoreCase(item, labels[item.id]))
 const score = scoreCorpus(scored)
 
+/**
+ * A published factors line in today's rules. Before #2149 high risk cost its point on its own, so a
+ * summary whose only deduction was `risk high −1` now prints plain `risk high`.
+ */
+const asCurrentRules = (factors: ReadonlyArray<string>): string => {
+	const deductions = factors.filter((factor) => /−\d+$/.test(factor))
+	return factors
+		.map((factor) => (deductions.length === 1 && factor === "risk high −1" ? "risk high" : factor))
+		.join(" · ")
+}
+
 /** Raise these as the renderer and the confidence improve; lower one only with a reason. */
 const MAX_VISIBLE_SHARE = 0.4
 const MAX_NEXT_FOUND_AT_9_10 = 0.1
@@ -59,7 +70,7 @@ describe("the review comment on real pull requests", () => {
 					confidencePrReview(review.parsed.report, review.open, review.parsed.partial)?.factors ??
 					[]
 				// Published factors predate the history factor; compare what both versions print.
-				return factors.join(" · ") === review.parsed.factors.join(" · ")
+				return factors.join(" · ") === asCurrentRules(review.parsed.factors)
 					? []
 					: [
 							`${item.id}@${review.head}: ${review.parsed.factors.join(" · ")} ≠ ${factors.join(" · ")}`,

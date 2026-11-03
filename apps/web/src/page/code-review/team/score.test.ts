@@ -1,6 +1,6 @@
 import { CodeReviewTeamMember } from "@maple/domain/http"
 import { describe, expect, test } from "vitest"
-import { medianOf, teamScores } from "./score"
+import { teamScores } from "./score"
 import { member } from "./team-member.fixture"
 
 /**
@@ -48,14 +48,18 @@ describe("teamScores", () => {
 		expect(scoreOf(members, "long")).toBeGreaterThan(scoreOf(members, "short"))
 	})
 
-	test("a couple of flawless pull requests read near the team, not at the top", () => {
+	test("a couple of flawless pull requests do not top the team", () => {
 		const members = [...team, flawless("newcomer", 2)]
 		const others = team.map((m) => scoreOf(members, m.login))
 		expect(scoreOf(members, "newcomer")).toBeLessThan(Math.max(...others))
-		expect(Math.abs(scoreOf(members, "newcomer") - (medianOf(others) ?? Number.NaN))).toBeLessThan(5)
 	})
 
-	test("splitting the same work into more pull requests buys little", () => {
+	test("a slightly better record over a fraction of the team's merges does not top those who carry it", () => {
+		const members = [steady("light", 40, 0.9), steady("heavy", 150, 0.85), steady("also", 155, 0.83)]
+		expect(scoreOf(members, "heavy")).toBeGreaterThan(scoreOf(members, "light"))
+	})
+
+	test("splitting the same work into more pull requests gains no more than the volume share", () => {
 		// Same findings, regressions and CI runs, cut into four times as many pull requests.
 		const whole = steady("whole", 10, 0.8)
 		const split = new CodeReviewTeamMember({
@@ -65,9 +69,10 @@ describe("teamScores", () => {
 			mergedPullRequests: 40,
 			shippedClean: whole.shippedClean + 30,
 		})
-		// The volume share still rises: in the counts a split reads the same as more work.
+		// In the counts a split reads the same as more work: volume rises to four times the team
+		// median, and the per pull request rates thin out. Without PR size that is the price.
 		const members = [...team, whole, split]
-		expect(scoreOf(members, "split") - scoreOf(members, "whole")).toBeLessThan(8)
+		expect(scoreOf(members, "split") - scoreOf(members, "whole")).toBeLessThan(14)
 	})
 
 	test("someone who never merges has nothing to judge and no score", () => {
@@ -105,18 +110,26 @@ describe("teamScores", () => {
 				openAtMergeFindings: base.openAtMergeFindings - 4,
 			},
 		],
+		["critical findings", { criticalFindings: 0 }],
+		["first-try green", { firstTryGreen: base.firstTryRuns }],
+	])("better %s raises the quality", (_column, change) => {
+		const before = teamScores([...team, base]).get("base")?.quality ?? Number.NaN
+		const improved = new CodeReviewTeamMember({ ...base, ...change })
+		expect(teamScores([...team, improved]).get("base")?.quality).toBeGreaterThan(before)
+	})
+
+	test.each<[string, Partial<CodeReviewTeamMember>]>([
+		// Judged per deploy and service, so a quiet service reads clean whoever ships to it.
 		[
 			"shipped clean",
 			{ shippedClean: base.shippedClean + 2, shippedRegressed: base.shippedRegressed - 2 },
 		],
-		["critical findings", { criticalFindings: 0 }],
-		["first-try green", { firstTryGreen: base.firstTryRuns }],
 		["reruns", { reruns: 0 }],
 		["merge time", { medianMergeSeconds: 600 }],
-	])("every column counts: better %s raises the quality", (_column, change) => {
-		const before = teamScores([...team, base]).get("base")?.quality ?? Number.NaN
-		const improved = new CodeReviewTeamMember({ ...base, ...change })
-		expect(teamScores([...team, improved]).get("base")?.quality).toBeGreaterThan(before)
+	])("%s is shown but leaves the quality alone", (_column, change) => {
+		const before = teamScores([...team, base]).get("base")?.quality
+		const changed = new CodeReviewTeamMember({ ...base, ...change })
+		expect(teamScores([...team, changed]).get("base")?.quality).toBe(before)
 	})
 
 	test("no CI evidence reads as the team's average, neither punished nor rewarded", () => {
@@ -145,16 +158,11 @@ describe("teamScores", () => {
 	})
 
 	test("people without a score still count toward the team rates others are judged against", () => {
-		const reviewsOnly = new CodeReviewTeamMember({
-			...steady("reviews-only", 12, 0.8),
-			ciRuns: 0,
-			firstTryRuns: 0,
-			firstTryGreen: 0,
-			reruns: 0,
-		})
-		const flaky = member("flaky", { ciRuns: 200, firstTryRuns: 200, firstTryGreen: 20, reruns: 120 })
-		expect(scoreOf([...team, reviewsOnly, flaky], "reviews-only")).toBeLessThan(
-			scoreOf([...team, reviewsOnly], "reviews-only"),
+		// Never merged, so unscored, but their critical findings raise the team's rate.
+		const careless = member("careless", { pullRequests: 20, findings: 40, criticalFindings: 30 })
+		const judged = steady("judged", 12, 0.8)
+		expect(scoreOf([...team, judged, careless], "judged")).toBeGreaterThan(
+			scoreOf([...team, judged], "judged"),
 		)
 	})
 

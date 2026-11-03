@@ -105,6 +105,44 @@ describe("sourceHealth", () => {
 	})
 })
 
+describe("sourceHealth while data arrives", () => {
+	const cloudflare = (fields: Partial<SourceHealthInput> = {}) =>
+		source({ platform: "cloudflare", lastUsedAt: now - 4 * MINUTE, lastPollOkAt: now - HOUR, ...fields })
+
+	it("is healthy with a note when the poller reports a revoked grant", () => {
+		const revoked = cloudflare({ disconnectedAt: now, lastPollError: "The Cloudflare grant was revoked" })
+		expect(sourceHealth(revoked, now)).toMatchObject({
+			status: "healthy",
+			problem: "The Cloudflare grant was revoked",
+		})
+		expect(sourceHealth({ ...revoked, lastUsedAt: now - HOUR }, now).status).toBe("disconnected")
+	})
+
+	it("is healthy with a note when one of its datasets fails or some fall behind", () => {
+		const oneFailed = cloudflare({
+			lastPollError: "Dataset httpRequests failed",
+			pollResources: { total: 254, unhealthy: 1 },
+		})
+		expect(sourceHealth(oneFailed, now)).toEqual({
+			status: "healthy",
+			lastDataAt: now - 4 * MINUTE,
+			problem: "Dataset httpRequests failed",
+			resources: { total: 254, unhealthy: 1 },
+		})
+		const behind = cloudflare({ pollResources: { total: 188, unhealthy: 88 } })
+		expect(sourceHealth(behind, now)).toMatchObject({
+			status: "healthy",
+			problem: "88 of 188 not up to date",
+		})
+		expect(sourceHealth({ ...behind, lastUsedAt: now - HOUR }, now).status).toBe("stale")
+	})
+
+	it("still fails while the gateway refuses part of it", () => {
+		const refused = cloudflare({ lastRejectedAt: now - MINUTE, lastRejection: "Rate limited" })
+		expect(sourceHealth(refused, now)).toMatchObject({ status: "failing", problem: "Rate limited" })
+	})
+})
+
 describe("sourceHealth for AWS", () => {
 	const aws = (fields: Partial<SourceHealthInput> = {}) => source({ platform: "aws", ...fields })
 
@@ -129,16 +167,14 @@ describe("sourceHealth for AWS", () => {
 		})
 	})
 
-	it("fails with what its integration reports, after a failed role check", () => {
+	it("fails on a refused delivery even while others arrive, and on a failed role check once they stop", () => {
 		const refused = aws({ lastUsedAt: now - MINUTE, failing: "A delivery was refused" })
 		expect(sourceHealth(refused, now)).toMatchObject({
 			status: "failing",
 			problem: "A delivery was refused",
 		})
-		expect(sourceHealth({ ...refused, lastPollError: "Role gone" }, now)).toMatchObject({
-			status: "failing",
-			problem: "Role gone",
-		})
+		const roleGone = aws({ lastUsedAt: now - HOUR, lastPollError: "Role gone" })
+		expect(sourceHealth(roleGone, now)).toMatchObject({ status: "failing", problem: "Role gone" })
 	})
 })
 

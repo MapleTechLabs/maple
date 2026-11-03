@@ -1,17 +1,17 @@
 import {
-	BasicTracerProvider,
+	TracerProvider,
 	InMemorySpanExporter,
 	type ReadableSpan,
 	SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base"
+} from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it } from "vitest"
 import { attachSpanStash, OfflineSpanExporter, resetOfflineForTests } from "./offline"
 
 const finishedSpans = (...names: string[]): ReadableSpan[] => {
 	const memory = new InMemorySpanExporter()
-	const tracer = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(memory)] }).getTracer(
-		"t",
-	)
+	const tracer = new TracerProvider({
+		spanProcessors: [new SimpleSpanProcessor({ exporter: memory })],
+	}).getTracer("t")
 	for (const name of names) tracer.startSpan(name).end()
 	return memory.getFinishedSpans()
 }

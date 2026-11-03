@@ -36,10 +36,15 @@ const member = (login: string, pullRequests: number, resolvedFindings: number) =
 	runnerMs: 3_600_000,
 })
 
-const teamOf = (members: ReadonlyArray<ReturnType<typeof member>>, runnerMs = 0) =>
+const teamOf = (
+	members: ReadonlyArray<ReturnType<typeof member>>,
+	runnerMs = 0,
+	activity: ReadonlyArray<Record<string, unknown>> = [],
+) =>
 	Schema.decodeUnknownSync(CodeReviewTeam)({
 		startTime: NOW - 30 * 86_400_000,
 		endTime: NOW,
+		activityStartTime: NOW - 365 * 86_400_000,
 		totals: {
 			pullRequests: 12,
 			mergedPullRequests: 10,
@@ -51,6 +56,7 @@ const teamOf = (members: ReadonlyArray<ReturnType<typeof member>>, runnerMs = 0)
 			p95QueueMs: 30_000,
 		},
 		members,
+		activity,
 	})
 
 const answered = (model: Model, team: CodeReviewTeam) =>
@@ -69,22 +75,36 @@ describe("code review team", () => {
 		})
 		const sorted = windowed({ sort: "fixRate" }).model
 		expect(pageUpdate(sorted, Message.ClickedSort({ sort: "fixRate" })).outMessage).toMatchObject({
+			url: "/code-review/team?sort=person",
+		})
+		expect(pageUpdate(sorted, Message.ClickedSort({ sort: "score" })).outMessage).toMatchObject({
 			url: "/code-review/team",
 		})
 	})
 
-	test("the ranked view is a URL of its own", () => {
+	test("everyone is a URL of its own; ranked is the bare page", () => {
 		expect(
-			pageUpdate(windowed().model, Message.SelectedView({ view: "ranked" })).outMessage,
+			pageUpdate(windowed().model, Message.SelectedView({ view: "scorecard" })).outMessage,
 		).toMatchObject({
-			url: "/code-review/team?ranked=true",
+			url: "/code-review/team?ranked=false",
+		})
+		expect(
+			pageUpdate(windowed({ ranked: false }).model, Message.SelectedView({ view: "ranked" }))
+				.outMessage,
+		).toMatchObject({
+			url: "/code-review/team",
 		})
 	})
 
 	test("the scorecard shows everyone next to the team median, with highlights", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(answered(windowed().model, teamOf([member("ada", 8, 9), member("lin", 2, 3)]))),
+			given(
+				answered(
+					windowed({ ranked: false }).model,
+					teamOf([member("ada", 8, 9), member("lin", 2, 3)]),
+				),
+			),
 			expectView(role("row", { name: /Team median/ })).toExist(),
 			expectView(role("row", { name: /ada/ })).toExist(),
 			expectView(role("row", { name: /lin/ })).toExist(),
@@ -92,21 +112,34 @@ describe("code review team", () => {
 		)
 	})
 
-	test("ranked leaves out people with too few pull requests and numbers the rest", () => {
+	test("the page opens ranked by score, leaving out people with too few pull requests", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(
-				answered(
-					windowed({ ranked: true }).model,
-					teamOf([member("ada", 8, 9), member("lin", 2, 3)]),
-				),
-			),
+			given(answered(windowed().model, teamOf([member("ada", 8, 9), member("lin", 2, 3)]))),
 			expectView(text("Ranked by score")).toExist(),
 			expectView(role("row", { name: /ada/ })).toExist(),
 			expectView(role("row", { name: /lin/ })).toBeAbsent(),
 			// A count is never a ranking: its header does not sort.
 			expectView(role("button", { name: "Merged" })).toBeAbsent(),
 			expectView(role("button", { name: "Fixed" })).toExist(),
+		)
+	})
+
+	test("the activity calendar has a cell per day, named by what happened on it", () => {
+		const day = new Date(NOW - 2 * 86_400_000).toISOString().slice(0, 10)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				answered(
+					windowed().model,
+					teamOf([member("ada", 8, 9)], 0, [
+						{ day, login: "ada", repository: "maple/maple", opened: 2, merged: 1 },
+					]),
+				),
+			),
+			expectView(role("grid", { name: "Pull requests opened and merged per day" })).toExist(),
+			expectView(role("gridcell", { name: /2 opened, 1 merged/ })).toExist(),
+			expectView(text("2 opened and 1 merged in the last 12 months")).toExist(),
 		)
 	})
 
