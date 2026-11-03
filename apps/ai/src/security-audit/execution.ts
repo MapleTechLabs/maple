@@ -39,7 +39,7 @@ const runInSandboxTool = Tool.make("run_in_sandbox", {
 		'Your scratch directory is the only writable place: cwd "scratch" starts there, and $HOME and $TMPDIR are inside it. Copy the checkout into scratch when a build must write beside the source.',
 		"There is no network beyond loopback, so start any server the check needs inside the same command. Use dummy principals, data and secrets only.",
 		`Limits: ${EXECUTOR_LIMITS.memoryBytes / 1024 / 1024} MiB memory, ${EXECUTOR_LIMITS.processes} processes, ${EXECUTOR_LIMITS.fileSizeBytes / 1024 / 1024} MiB per file, ${EXECUTOR_LIMITS.scratchBytes / 1024 / 1024} MiB scratch, ${EXECUTOR_LIMITS.maxTimeoutMs / 1000}s wall clock; output past ${EXECUTOR_LIMITS.outputBytes / 1024} KiB per stream is cut.`,
-		"To keep evidence, write it to a file in scratch and list its scratch-relative path in promote: the parent copies it out after every process of the command has exited, and reports its size and sha256.",
+		"To keep evidence, write it to a file in scratch and list its path relative to scratch in promote (for example poc/out.txt, never a path under agents/): the parent copies it out after every process of the command has exited, and answers the exact artifacts path a local check must cite.",
 	].join(" "),
 	parameters: Schema.Struct({
 		command: Schema.String.annotate({ description: "The bash program to run" }),
