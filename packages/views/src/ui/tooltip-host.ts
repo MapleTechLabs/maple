@@ -300,9 +300,9 @@ const escapes: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 		event.key === "Escape" ? Option.some(toTooltip(Tooltip.Message.PressedEscape())) : Option.none(),
 })
 
-/** The triggers in a removed subtree that have an id to match. */
+/** The triggers in a removed subtree that have an id to match; a moved node is still connected. */
 const removedTriggerIds = (node: Node): ReadonlyArray<string> =>
-	node instanceof Element
+	node instanceof Element && !node.isConnected
 		? [node, ...node.querySelectorAll(`[${CONTENT_ATTRIBUTE}]`)]
 				.filter((element) => element.matches(`[${CONTENT_ATTRIBUTE}]`) && element.id !== "")
 				.map((element) => element.id)

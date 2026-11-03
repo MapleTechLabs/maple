@@ -110,7 +110,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 		header: "Errors",
 		width: 100,
 		skeleton: "w-12",
-		sort: { key: "errorSpanCount", hint: "Failed turns and tool calls" },
+		sort: { key: "errorSpanCount", hint: "Failed turns, tool calls and any other span that errored" },
 	},
 	{
 		id: "startTime",
