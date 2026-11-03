@@ -229,12 +229,18 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 			// One row through the managed ingest pipeline. `ingest` is pinned to
 			// Tinybird regardless of the org's read backend, which is the point:
 			// the audit log is Maple's record and never lands in a BYO warehouse.
+			// Best effort: `record` drops a failed write anyway, so the insert logs
+			// it at Warn instead of leaving an Error span that opens an issue. A rare
+			// duplicate entry after a 520 beats a lost one, so it retries transients.
 			const writeDirect = (event: AuditLogEvent) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
-					yield* warehouse.ingest(systemTenant(event.orgId), AUDIT_LOG_DATASOURCE, [
-						auditEventToRow(event, now),
-					])
+					yield* warehouse.ingest(
+						systemTenant(event.orgId),
+						AUDIT_LOG_DATASOURCE,
+						[auditEventToRow(event, now)],
+						{ bestEffort: true, retryTransient: true },
+					)
 				})
 
 			/**

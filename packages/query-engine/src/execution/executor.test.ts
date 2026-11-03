@@ -288,6 +288,98 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 		}),
 	)
 
+	const failingInsertDeps = (failures: number, status: number, attempts: { count: number }) => ({
+		...makeDeps([]),
+		createClient: () =>
+			Effect.succeed<WarehouseSqlClient>({
+				sql: () => Effect.succeed({ data: [] }),
+				insert: () =>
+					Effect.suspend(() => {
+						attempts.count += 1
+						return attempts.count <= failures
+							? Effect.fail(
+									new WarehouseDriverError({
+										reason: "server",
+										status,
+										message: `Request failed with status ${status}`,
+									}),
+								)
+							: Effect.void
+					}),
+			}),
+	})
+
+	it.effect("retries an opted-in insert that hits a transient 520, then succeeds", () =>
+		Effect.gen(function* () {
+			const attempts = { count: 0 }
+			const executor = makeWarehouseExecutor(failingInsertDeps(2, 520, attempts))
+			const fiber = yield* Effect.forkChild(
+				executor
+					.ingest(tenant, "audit_log", [{ OrgId: "org_test" }], { retryTransient: true })
+					.pipe(Effect.exit),
+			)
+			yield* TestClock.adjust(Duration.seconds(1))
+			const exit = yield* Fiber.join(fiber)
+			assert.isTrue(Exit.isSuccess(exit))
+			assert.strictEqual(attempts.count, 3)
+		}),
+	)
+
+	it.effect("does not retry a 520 unless the caller opts in, since the rows may have landed", () =>
+		Effect.gen(function* () {
+			const attempts = { count: 0 }
+			const executor = makeWarehouseExecutor(failingInsertDeps(2, 520, attempts))
+			const exit = yield* executor
+				.ingest(tenant, "service_map_edges_hourly", [{ OrgId: "org_test" }])
+				.pipe(Effect.exit)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual(attempts.count, 1)
+		}),
+	)
+
+	it.effect("does not retry an insert the warehouse rejects as bad input", () =>
+		Effect.gen(function* () {
+			const attempts = { count: 0 }
+			const executor = makeWarehouseExecutor(failingInsertDeps(5, 400, attempts))
+			const exit = yield* executor
+				.ingest(tenant, "audit_log", [{ OrgId: "org_test" }], { retryTransient: true })
+				.pipe(Effect.exit)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual(attempts.count, 1)
+		}),
+	)
+
+	it.effect("swallows a best-effort insert failure inside an Ok span; a plain insert still fails", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const executor = makeWarehouseExecutor(failingInsertDeps(99, 520, { count: 0 }))
+			const ingestBoth = Effect.gen(function* () {
+				const bestEffort = yield* executor
+					.ingest(tenant, "audit_log", [{ OrgId: "org_test" }], { bestEffort: true })
+					.pipe(Effect.exit)
+				const plain = yield* executor
+					.ingest(tenant, "audit_log", [{ OrgId: "org_test" }])
+					.pipe(Effect.exit)
+				return { bestEffort, plain }
+			}).pipe(Effect.withTracer(tracer))
+			const fiber = yield* Effect.forkChild(ingestBoth)
+			yield* TestClock.adjust(Duration.seconds(5))
+			const { bestEffort, plain } = yield* Fiber.join(fiber)
+
+			assert.isTrue(Exit.isSuccess(bestEffort))
+			assert.isTrue(Exit.isFailure(plain))
+			const inserts = spans.filter((span) => span.name === "WarehouseQueryService.insert")
+			const statuses = inserts.map((span) =>
+				span.status._tag === "Ended" && Exit.isSuccess(span.status.exit) ? "ok" : "error",
+			)
+			assert.deepStrictEqual(statuses, ["ok", "error"])
+			assert.strictEqual(
+				inserts[0]!.attributes.get("error.type"),
+				"@maple/http/errors/WarehouseUpstreamError",
+			)
+		}),
+	)
+
 	it.effect("wraps capability metadata probes in an attributed Client span", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()

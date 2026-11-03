@@ -53,6 +53,7 @@ import type {
 	CapabilityCompile,
 	CompiledQueryInput,
 	ExecutionTenant,
+	IngestOptions,
 	ResolvedWarehouseConfig,
 	RoutePurpose,
 	SqlQueryOptions,
@@ -1214,6 +1215,7 @@ WHERE name = 'enable_full_text_index'`,
 		tenant: ExecutionTenant,
 		datasource: string,
 		rows: ReadonlyArray<T>,
+		options?: IngestOptions,
 	) {
 		yield* Effect.annotateCurrentSpan("datasource", datasource)
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
@@ -1258,6 +1260,8 @@ WHERE name = 'enable_full_text_index'`,
 		)
 		const insertStartedAtMs = yield* Clock.currentTimeMillis
 
+		const bestEffort = options?.bestEffort === true
+
 		yield* client.insert(datasource, rows).pipe(
 			// Classify like the read path so an auth failure or quota breach on
 			// insert surfaces with its real tag instead of a generic query error.
@@ -1265,6 +1269,15 @@ WHERE name = 'enable_full_text_index'`,
 			// SQL, and a rejection here usually means the rows are wrong, not that
 			// Maple composed a bad statement.
 			Effect.mapError((error) => mapWarehouseError(label, error)),
+			// A 5xx/520 is usually a blip, but it can follow a landed write, so only
+			// callers that tolerate a duplicate row opt in.
+			(insert) =>
+				options?.retryTransient === true
+					? Effect.retry(insert, {
+							schedule: TRANSIENT_RETRY_SCHEDULE,
+							while: isTransientUpstreamError,
+						})
+					: insert,
 			Effect.tap(() =>
 				Clock.currentTimeMillis.pipe(
 					Effect.flatMap((completedAtMs) =>
@@ -1284,16 +1297,22 @@ WHERE name = 'enable_full_text_index'`,
 						}),
 					),
 					Effect.andThen(
-						Effect.logError("WarehouseQueryService.ingest failed", {
-							datasource,
-							rowCount: rows.length,
-							backend: resolved.config.kind,
-							errorTag: error._tag,
-							message: error.message,
-						}),
+						(bestEffort ? Effect.logWarning : Effect.logError)(
+							"WarehouseQueryService.ingest failed",
+							{
+								datasource,
+								rowCount: rows.length,
+								backend: resolved.config.kind,
+								errorTag: error._tag,
+								message: error.message,
+							},
+						),
 					),
 				),
 			),
+			// A best-effort write the caller would drop anyway is swallowed here,
+			// inside the span, so its loss is a Warn and never an Error span.
+			(insert) => (bestEffort ? Effect.ignore(insert) : insert),
 			Effect.withSpan("WarehouseQueryService.insert", {
 				kind: "client",
 				attributes: {
@@ -1308,6 +1327,7 @@ WHERE name = 'enable_full_text_index'`,
 					"warehouse.backend": resolved.config.kind,
 					"warehouse.route": "ingest",
 					"warehouse.config_source": resolved.source,
+					"warehouse.best_effort": bestEffort,
 					datasource,
 				},
 			}),
