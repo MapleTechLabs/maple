@@ -406,28 +406,40 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					return
 				}
 			}
+			// Read before the run: the diff tools are pinned to it. An unreadable target reviews unpinned.
+			const target =
+				prReviewId === undefined
+					? Option.none()
+					: yield* reviews
+							.reviewTarget(tenant.orgId, prReviewId)
+							.pipe(
+								Effect.catch((error) =>
+									Effect.logInfo("Could not read the review's target").pipe(
+										Effect.annotateLogs({
+											sessionId: input.sessionId,
+											error: error.message,
+										}),
+										Effect.as(Option.none()),
+									),
+								),
+							)
 			// Clone the commit while the model reads the diff, rather than when its first source tool
 			// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
 			// parents it on this fiber): a clone still running when the turn ends carries on in the container.
-			if (prReviewId !== undefined) {
-				yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
-					Effect.flatMap(
-						Option.match({
-							onNone: () => Effect.void,
-							onSome: (target) =>
-								toolExecutor.prepareRepository(runTenant, {
-									repository: target.repository,
-									ref: target.headSha,
-								}),
-						}),
-					),
-					Effect.catch((error) =>
-						Effect.logInfo("Could not prepare the review's checkout").pipe(
-							Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
+			if (Option.isSome(target)) {
+				yield* toolExecutor
+					.prepareRepository(runTenant, {
+						repository: target.value.repository,
+						ref: target.value.headSha,
+					})
+					.pipe(
+						Effect.catch((error) =>
+							Effect.logInfo("Could not prepare the review's checkout").pipe(
+								Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
+							),
 						),
-					),
-					forkRequestScoped,
-				)
+						forkRequestScoped,
+					)
 			}
 			// An investigation picks its commit from telemetry mid-pass, so warm the repositories it
 			// could read instead: the deployed commit then clones from a filled mirror in seconds.
@@ -590,6 +602,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					...(turn.agent === undefined ? undefined : { agent: turn.agent }),
 					...(review === undefined ? undefined : { review }),
 					...(codeExecutor === undefined ? undefined : { codeExecutor }),
+					...Option.match(target, {
+						onNone: () => undefined,
+						onSome: ({ repository, number }) => ({ pullRequest: { repository, number } }),
+					}),
 					text: turn.text,
 					history: turn.history,
 					usage,
@@ -659,6 +675,29 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			let submitted = first.submitted
 			// Exhausted rather than failed: the engine's final answer ended in prose, not a report.
 			if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
+			// A review stopped for failing tool calls is usually a bad start, not an impossible review: it
+			// starts over once from the kickoff, inside the same wall clock, without the failed calls.
+			if (!submitted && failure === "stuck" && prReviewId !== undefined && holdsTurn()) {
+				const remaining = passDeadline - (yield* Clock.currentTimeMillis)
+				if (remaining >= MIN_CONTINUE_MS) {
+					failure = undefined
+					held = undefined
+					const restarted = yield* recoverAutonomousFailure(
+						run({
+							text,
+							history: prior,
+							agent: {
+								...agent,
+								budget: { ...agent.budget, maxDuration: Duration.millis(remaining) },
+							},
+						}),
+					)
+					observability.compactions = (observability.compactions ?? 0) + restarted.compactions
+					submitted = restarted.submitted
+					yield* Effect.annotateCurrentSpan("maple.pr_review.restarted", submitted)
+					if (!submitted && ranOutOfSteps()) failure ??= "step_limit"
+				}
+			}
 			// A review that answered in prose with no limit hit was not stopped, it stopped itself. With
 			// time left it gets one more pass that may still read, inside the same wall clock.
 			if (!submitted && failure === undefined && prReviewId !== undefined && holdsTurn()) {

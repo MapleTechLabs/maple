@@ -132,7 +132,15 @@ export interface BuildMapleToolsOptions {
 	readonly onAnswer?: (tool: string, answer: string) => void
 	/** Receives each successful call's UI payload, keyed by the call it belongs to. */
 	readonly onUi?: (toolCallId: string, ui: ToolUiPayload, call: UiSource) => void
+	/**
+	 * Arguments the run already knows, laid over whatever the model sent for that tool: a review's
+	 * own repository and pull request number, so a misspelled or missing one is not a failed call.
+	 */
+	readonly pinned?: (tool: string) => Readonly<Record<string, unknown>> | undefined
 }
+
+const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /** The call a UI payload came from: what a reader needs to draw a call no event announced. */
 export interface UiSource {
@@ -274,10 +282,12 @@ export const buildMapleToolkit = (
 					}),
 					Effect.tap((answer) => Effect.sync(() => options.onAnswer?.(definition.name, answer))),
 				)
+			const pin = options.pinned?.(definition.name)
 			const handle = (
-				params: unknown,
+				sent: unknown,
 				toolCallId: string | undefined,
 			): Effect.Effect<string, typeof ToolFailure.Type> => {
+				const params = pin === undefined ? sent : isPlainObject(sent) ? { ...sent, ...pin } : pin
 				if (gated) {
 					return Effect.fail(
 						new ApprovalRequired({

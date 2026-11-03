@@ -1097,6 +1097,7 @@ export const reviewLocally = async (
 				}),
 			...(turn.closeOut === true ? { closeOut: true } : undefined),
 			review: reviewState,
+			pullRequest: { repository, number: args.number },
 			...(promptOverride === undefined && args.historical !== true
 				? undefined
 				: {
