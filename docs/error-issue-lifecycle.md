@@ -7,15 +7,16 @@ This is the flow both humans and agents are meant to follow. If you are changing
 
 ## The pieces
 
-| Thing         | Where it lives                                              | What it is                                              |
-| ------------- | ----------------------------------------------------------- | ------------------------------------------------------- |
-| Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                  |
-| Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                       |
-| Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet worth a row of its own. |
-| **Issue**     | `error_issues`                                              | The durable, assignable record. One per fingerprint.    |
-| Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.               |
-| Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.          |
-| Verification  | `error_issue_verifications`                                 | One post-merge "did that actually work?" check.         |
+| Thing         | Where it lives                                              | What it is                                                           |
+| ------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                               |
+| Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                                    |
+| User key      | `maple.fingerprint` span or exception-event attribute       | Replaces the fingerprint: `cityHash64(org, service, key)`, unsalted. |
+| Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet worth a row of its own.              |
+| **Issue**     | `error_issues`                                              | The durable, assignable record. One per fingerprint.                 |
+| Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.                            |
+| Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.                       |
+| Verification  | `error_issue_verifications`                                 | One post-merge "did that actually work?" check.                      |
 
 The exception comes from the first OTel `exception` event, or the status message when
 there is no event. Only spans missing both fall back to `exception.*` span attributes,
