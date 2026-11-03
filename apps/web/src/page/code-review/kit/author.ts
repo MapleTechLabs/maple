@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { avatarFallback } from "@maple/views/ui/display"
+import { typography } from "@maple/views/ui/typography"
 import { String as Str } from "effect"
 
 /** A GitHub login's avatar, from GitHub's public `<login>.png` redirect; the initial while it loads. */
@@ -23,6 +24,14 @@ export const authorLabel = <M>(h: HtmlBuilder<M>, login: string, className?: str
 		[h.Class(cn("inline-flex min-w-0 items-center gap-1.5", className))],
 		[
 			authorAvatar(h, login),
-			h.span([h.Class(wrap ? "wrap-anywhere" : "truncate"), h.Title(login)], [login]),
+			typography(
+				h,
+				{
+					truncate: !wrap,
+					className: wrap ? "wrap-anywhere" : undefined,
+					attributes: [h.Title(login)],
+				},
+				[login],
+			),
 		],
 	)
