@@ -5,7 +5,7 @@
 import { type Dirent, readdirSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
-import { Effect, Option, Result } from "effect"
+import { Effect, Option, Result, String as Str } from "effect"
 import { assertCheckpointPinIdentity, checkpointPinsRoot, releaseCheckpointPin } from "../checkpoints"
 import { debugLog } from "../debug-log"
 import { ArchiveError } from "./errors"
@@ -67,14 +67,14 @@ export const retireLegacyCalibration = (
 			if (!checkpointDir.isDirectory()) continue
 			const checkpointId = checkpointDir.name
 			for (const file of yield* entriesOf(join(pinsRoot, checkpointId))) {
-				if (!file.isFile() || !file.name.endsWith(".json")) continue
+				if (!file.isFile() || !Str.endsWith(".json")(file.name)) continue
 				const pinPath = join(pinsRoot, checkpointId, file.name)
 				// A pin that does not validate is not provably calibration's; leave it.
 				const pin = yield* Effect.tryPromise({
 					try: () => assertCheckpointPinIdentity(dataDir, checkpointId, pinPath),
 					catch: archiveError,
 				}).pipe(Effect.option)
-				if (Option.isNone(pin) || !pin.value.purpose.startsWith(PIN_PURPOSE_PREFIX)) continue
+				if (Option.isNone(pin) || !Str.startsWith(PIN_PURPOSE_PREFIX)(pin.value.purpose)) continue
 				const released = yield* Effect.tryPromise({
 					try: () => releaseCheckpointPin(dataDir, checkpointId, pinPath, pin.value.purpose),
 					catch: archiveError,

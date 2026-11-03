@@ -4,6 +4,7 @@ import type { InkPalette } from "../../../components/service-map/three/palette"
 import type { District } from "../../../components/service-map/three/spatial-layout"
 import * as THREE from "three"
 import type { Child, Running, Scope, Vec3 } from "./kit"
+import { Array as Arr } from "effect"
 
 /** Short pale strokes slide downstream on the creek; they wrap at its ends. */
 export function ripples(
@@ -28,7 +29,7 @@ export function ripples(
 		if (running()) elapsed.value += Math.min(delta, 0.05)
 		const position = geometry.getAttribute("position")
 		const { length } = creek
-		seeds.forEach((seed, i) => {
+		Arr.forEach(seeds, (seed, i) => {
 			const s = ((seed.phase + (elapsed.value * seed.speed) / length) % 1) * (length - 0.3)
 			const set = (index: number, point: ReturnType<Creek["at"]>) =>
 				position.setXYZ(
@@ -89,7 +90,7 @@ export function fireflies(
 	scope.frames.push((delta) => {
 		if (running()) elapsed.value += Math.min(delta, 0.05)
 		const t = elapsed.value
-		anchors.forEach(([x, , z], i) => {
+		Arr.forEach(anchors, ([x, , z], i) => {
 			const phase = hash(x, z) * 6.28
 			pose.position.set(
 				x + Math.sin(t * 0.35 + phase) * 0.38,
@@ -110,11 +111,14 @@ export function fireflies(
 function leafGeometry(cut: "diamond" | "maple") {
 	if (cut === "diamond") return new THREE.PlaneGeometry(0.16, 0.16).rotateZ(Math.PI / 4)
 	const star = new THREE.Shape()
-	Array.from({ length: 10 }, (_, i) => {
-		const angle = Math.PI / 2 + (i * Math.PI) / 5
-		const radius = i % 2 === 0 ? 0.11 : 0.05
-		return [Math.cos(angle) * radius, Math.sin(angle) * radius] as const
-	}).forEach(([x, y], i) => (i === 0 ? star.moveTo(x, y) : star.lineTo(x, y)))
+	Arr.forEach(
+		Array.from({ length: 10 }, (_, i) => {
+			const angle = Math.PI / 2 + (i * Math.PI) / 5
+			const radius = i % 2 === 0 ? 0.11 : 0.05
+			return [Math.cos(angle) * radius, Math.sin(angle) * radius] as const
+		}),
+		([x, y], i) => (i === 0 ? star.moveTo(x, y) : star.lineTo(x, y)),
+	)
 	return new THREE.ShapeGeometry(star)
 }
 
@@ -157,7 +161,7 @@ function litterCut({
 		}),
 		matrices.length,
 	)
-	matrices.forEach((matrix, i) => mesh.setMatrixAt(i, matrix))
+	Arr.forEach(matrices, (matrix, i) => mesh.setMatrixAt(i, matrix))
 	mesh.instanceMatrix.needsUpdate = true
 	paint(mesh)
 	mesh.computeBoundingSphere()
@@ -168,7 +172,7 @@ export function leafLitter(
 	_scope: Scope,
 	{ districts, palette }: { districts: ReadonlyArray<District>; palette: InkPalette },
 ): Child {
-	const leaves = districts.flatMap((district) =>
+	const leaves = Arr.flatMap(districts, (district) =>
 		Array.from({ length: Math.round((district.width * district.depth) / 3) }, (_, i) => {
 			const u = hash(i + district.position[0], district.position[2] - i)
 			const v = hash(district.position[2] + i * 1.7, i - district.position[0])
@@ -185,8 +189,8 @@ export function leafLitter(
 		}),
 	)
 	return [
-		litterCut({ matrices: leaves.filter((_, i) => i % 3 !== 0), palette, cut: "diamond" }),
-		litterCut({ matrices: leaves.filter((_, i) => i % 3 === 0), palette, cut: "maple" }),
+		litterCut({ matrices: Arr.filter(leaves, (_, i) => i % 3 !== 0), palette, cut: "diamond" }),
+		litterCut({ matrices: Arr.filter(leaves, (_, i) => i % 3 === 0), palette, cut: "maple" }),
 	]
 }
 
@@ -232,7 +236,7 @@ function fallingCut(
 		if (running()) elapsed.value += Math.min(delta, 0.05)
 		const height = 5.5
 		const t = elapsed.value
-		seeds.forEach((seed, i) => {
+		Arr.forEach(seeds, (seed, i) => {
 			const fall = (seed.phase * height + t * seed.speed) % height
 			const sway = Math.sin(t * 1.3 + seed.phase * 9) * 0.45
 			pose.position.set(

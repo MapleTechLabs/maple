@@ -6,7 +6,7 @@ import {
 	getSupabaseProjectCallers,
 	getSupabaseProjectInsights,
 } from "@maple/web-data/warehouse/supabase-insights"
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
@@ -69,7 +69,7 @@ export const loadSupabaseFleetInsights = (refs: ReadonlyArray<string>) =>
 		{ concurrency: "unbounded" },
 	).pipe(
 		Effect.map((reads): SupabaseFleetInsights => ({
-			insights: reads.flatMap(({ result }) => (Result.isSuccess(result) ? [result.success] : [])),
-			failedRefs: reads.flatMap(({ ref, result }) => (Result.isFailure(result) ? [ref] : [])),
+			insights: Arr.flatMap(reads, ({ result }) => (Result.isSuccess(result) ? [result.success] : [])),
+			failedRefs: Arr.flatMap(reads, ({ ref, result }) => (Result.isFailure(result) ? [ref] : [])),
 		})),
 	)

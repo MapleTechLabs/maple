@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 // A live logs response (2026-10-21) with the project ref, client IPs, geo, ISP and JWT signature
 // fields replaced by placeholders (documentation IPs, "Example City", AS64500).
 import sample from "./__fixtures__/supabase-logs-sample.json" with { type: "json" }
@@ -29,7 +29,7 @@ const resource = {
 const otlp = (raw: ReadonlyArray<unknown>) => logsToOtlp(resource, decodeLogRows(raw))
 
 const attributeMap = (attributes: ReadonlyArray<{ key: string; value: { stringValue: string } }>) =>
-	Object.fromEntries(attributes.map((attribute) => [attribute.key, attribute.value.stringValue]))
+	Rec.fromEntries(Arr.map(attributes, (attribute) => [attribute.key, attribute.value.stringValue]))
 
 describe("nextLogsWindow", () => {
 	it("starts five minutes back on a fresh project and stays a minute behind now, on a second", () => {
@@ -84,7 +84,9 @@ describe("parseRowTimestamp", () => {
 describe("logsToOtlp", () => {
 	const payload = otlp(sample.result)
 	const records = payload.resourceLogs[0]!.scopeLogs[0]!.logRecords
-	const byId = new Map(records.map((record) => [attributeMap(record.attributes)["log.record.uid"], record]))
+	const byId = new Map(
+		Arr.map(records, (record) => [attributeMap(record.attributes)["log.record.uid"], record]),
+	)
 	const severityOfRow = (id: string) => {
 		const record = byId.get(id)
 		return record === undefined ? undefined : [record.severityText, record.severityNumber]
@@ -94,7 +96,9 @@ describe("logsToOtlp", () => {
 		assert.strictEqual(records.length, sample.result.length)
 		assert.deepStrictEqual(
 			[
-				...new Set(records.map((record) => attributeMap(record.attributes)["supabase.log.source"])),
+				...new Set(
+					Arr.map(records, (record) => attributeMap(record.attributes)["supabase.log.source"]),
+				),
 			].toSorted(),
 			[
 				"auth_logs",
@@ -109,14 +113,14 @@ describe("logsToOtlp", () => {
 	})
 
 	it("derives severity from each source's own hint", () => {
-		const severities = sample.result.map((row) => [
+		const severities = Arr.map(sample.result, (row) => [
 			row.source,
 			severityOfRow(row.id)?.[0],
-			row.event_message.slice(0, 30),
+			Str.slice(0, 30)(row.event_message),
 		])
 		const expectSeverity = (source: string, startsWith: string, severity: string) => {
 			const match = severities.find(
-				(item) => item[0] === source && String(item[2]).startsWith(startsWith),
+				(item) => item[0] === source && Str.startsWith(startsWith)(String(item[2])),
 			)
 			assert.strictEqual(match?.[1], severity, `${source} "${startsWith}"`)
 		}
@@ -200,9 +204,9 @@ describe("advanceWatermark", () => {
 	const window = { startMs: Date.UTC(2026, 9, 21, 17, 0), endMs: Date.UTC(2026, 9, 21, 17, 30) }
 	const rowsAt = (ms: ReadonlyArray<number>) =>
 		decodeLogRows(
-			ms.map((at, index) => ({
-				id: `r-${String(index).padStart(4, "0")}`,
-				timestamp: new Date(at).toISOString().replace("Z", "000"),
+			Arr.map(ms, (at, index) => ({
+				id: `r-${Str.padStart(4, "0")(String(index))}`,
+				timestamp: Str.replace("Z", "000")(new Date(at).toISOString()),
 				source: "auth_logs",
 				event_message: "",
 			})),

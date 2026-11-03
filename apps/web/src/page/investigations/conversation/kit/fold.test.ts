@@ -8,6 +8,7 @@ import {
 import { assert, describe, it } from "vitest"
 import { applyChatEvent, historyMessageToUIMessage } from "./fold"
 import type { UIMessage } from "./ui-message"
+import { Array as Arr } from "effect"
 
 // A turn that ends with calls in flight: Stop, a failure or the step limit. They never settle.
 
@@ -47,7 +48,8 @@ describe("a turn that ends with calls unsettled", () => {
 		)
 		const card = message?.parts.find((part) => part._tag === "task")
 		assert.strictEqual(card?._tag === "task" ? card.status : undefined, "error")
-		const nested = card?._tag === "task" ? card.messages.flatMap((child) => toolStates(child) ?? []) : []
+		const nested =
+			card?._tag === "task" ? Arr.flatMap(card.messages, (child) => toolStates(child) ?? []) : []
 		assert.deepStrictEqual(nested, ["output-stopped"])
 	})
 

@@ -4,7 +4,7 @@ import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { findFirstPartialIndex, splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
 import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import {
 	ERROR_KEY,
@@ -20,7 +20,13 @@ import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
-import { AREA_FILL_END, AREA_FILL_PARTIAL, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
+import {
+	AREA_FILL_END,
+	AREA_FILL_PARTIAL,
+	roundCapDasharray,
+	SERIES_STROKE_WIDTH,
+	verticalGradient,
+} from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 // Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`
@@ -81,11 +87,11 @@ const bucketTooltip =
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
 			// `resolveTooltipHighlight`: the series nearest the cursor is emphasised.
 			const highlighted = focus.highlight(
-				series.map((entry) => [entry.label, entry.value(datum)] as const),
+				Arr.map(series, (entry) => [entry.label, entry.value(datum)] as const),
 			)
 			const base = {
 				heading: formatBucketLabel(datum.bucket, model.axisContext, "tooltip"),
-				rows: series.flatMap((entry) => {
+				rows: Arr.flatMap(series, (entry) => {
 					const value = entry.value(datum)
 					return value == null
 						? []
@@ -167,7 +173,9 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, throughputColor),
-			...(hasDashed ? [verticalGradient(fadedGradientId, throughputColor, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
+			...(hasDashed
+				? [verticalGradient(fadedGradientId, throughputColor, AREA_FILL_PARTIAL, AREA_FILL_END)]
+				: []),
 		],
 		marks: [
 			band(solid, gradientId, false),
@@ -237,10 +245,10 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 
 /** `errorRateCeiling`: the worst bucket plus 20% headroom, never below 1% nor above 100%. */
 const errorRateCeiling = (rows: ReadonlyArray<Record<string, unknown>>): number => {
-	const dataMax = rows.reduce((max, row) => {
+	const dataMax = Arr.reduce(rows, 0, (max, row) => {
 		const value = row.errorRate
 		return typeof value === "number" && Number.isFinite(value) && value > max ? value : max
-	}, 0)
+	})
 	return Math.min(1, Math.max(dataMax * 1.2, 0.01))
 }
 
@@ -281,7 +289,9 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, color),
-			...(hasDashed ? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
+			...(hasDashed
+				? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)]
+				: []),
 		],
 		marks: [
 			band(solid, gradientId),
@@ -329,11 +339,11 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	const focus = tooltipFocusCapture()
 	const { plotRows } = model
 	const chrome = chromeOf(spec)
-	const series = (spec.latencySeries ?? LATENCY_SERIES).map((entry) => ({
+	const series = Arr.map(spec.latencySeries ?? LATENCY_SERIES, (entry) => ({
 		...entry,
 		color: colorOf(spec, entry.key),
 	}))
-	const keys = series.map((entry) => entry.key)
+	const keys = Arr.map(series, (entry) => entry.key)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
 	const line = (
 		slice: ReadonlyArray<TimeseriesRow>,
@@ -350,11 +360,11 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 			strokeWidth: STROKE_WIDTH,
 			strokeDasharray: dash ? partialDash : undefined,
 		})
-	const runs = series.map((entry) => ({ entry, ...seriesRuns(plotRows, gapValueOf(entry.key), at) }))
+	const runs = Arr.map(series, (entry) => ({ entry, ...seriesRuns(plotRows, gapValueOf(entry.key), at) }))
 	// The in-flight boundary comes from the whole window: a run's own readings can sit buckets apart,
 	// which would read as a wider bucket and mark closed readings in flight.
 	const partialFromMs = plotRows[findFirstPartialIndex(plotRows, model.trimOptions)]?.date.getTime() ?? null
-	const lines = runs.flatMap(({ entry, runs: entryRuns }) =>
+	const lines = Arr.flatMap(runs, ({ entry, runs: entryRuns }) =>
 		entryRuns.flatMap((run, index) => {
 			const { solid, dashed } = splitRunAt(run, partialFromMs)
 			return [
@@ -366,11 +376,11 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	const definition = defineChart({
 		margin: marginOf(spec),
 		marks: [
-			...runs.map(({ entry, silences }) =>
+			...Arr.map(runs, ({ entry, silences }) =>
 				silenceBridges(`${entry.key}-silence`, silences, at, gapValueOf(entry.key), entry.color),
 			),
 			...lines,
-			...runs.map(({ entry, lone }) =>
+			...Arr.map(runs, ({ entry, lone }) =>
 				dot(lone, {
 					x: at,
 					y: gapValueOf(entry.key),
@@ -378,7 +388,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 					fill: entry.color,
 				}),
 			),
-			...series.map((entry) => focusDot(plotRows, at, gapValueOf(entry.key), entry.color, chrome)),
+			...Arr.map(series, (entry) => focusDot(plotRows, at, gapValueOf(entry.key), entry.color, chrome)),
 			focusCrosshair(chrome),
 		],
 		scales: {
@@ -389,7 +399,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 		focusRing: false,
 		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>(focus.anchor) : false,
 	})
-	const tooltipSeries = series.map((entry) => ({
+	const tooltipSeries = Arr.map(series, (entry) => ({
 		label: entry.label,
 		color: entry.color,
 		value: read(entry.key),
@@ -440,7 +450,9 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 		margin: marginOf(spec),
 		gradients: [
 			verticalGradient(gradientId, color),
-			...(hasDashed ? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
+			...(hasDashed
+				? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)]
+				: []),
 		],
 		marks: [
 			band(solid, gradientId),

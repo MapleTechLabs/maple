@@ -9,7 +9,7 @@ import {
 	type KeyType,
 } from "../../../components/settings/keys-table"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
@@ -114,24 +114,27 @@ const apiRow = (
 			: []),
 	]
 	return h.div(
-		[h.Key(row.id), h.Class(cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken active:bg-surface-sunken"))],
+		[
+			h.Key(row.id),
+			h.Class(
+				cn(ROW_CLASS, isDead ? "opacity-60" : "hover:bg-surface-sunken active:bg-surface-sunken"),
+			),
+		],
 		[
 			h.div(
 				[h.Class(cn(COL.name, vstackClass({ gap: "1" })))],
 				[
-					hstack(h, { gap: "2", shrink: true },
-						[
-							truncatedText(h, {
-								text: key.name,
-								className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
-							}),
-							h.span(
-								[h.Class("text-muted-foreground shrink-0 font-mono text-2xs")],
-								[key.key_prefix],
-							),
-							typeBadge(h, row.type),
-						],
-					),
+					hstack(h, { gap: "2", shrink: true }, [
+						truncatedText(h, {
+							text: key.name,
+							className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
+						}),
+						h.span(
+							[h.Class("text-muted-foreground shrink-0 font-mono text-2xs")],
+							[key.key_prefix],
+						),
+						typeBadge(h, row.type),
+					]),
 					...(key.description
 						? [
 								truncatedText(h, {
@@ -207,7 +210,7 @@ export const keysTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, input
 			columnHead(h, { label: "Expires", width: COL.expires }),
 			h.span([h.Class(COL.menu)], []),
 		],
-		rows.map((row) => apiRow(h, model, row, inputs, formatDate)),
+		Arr.map(rows, (row) => apiRow(h, model, row, inputs, formatDate)),
 	)
 }
 
@@ -246,7 +249,10 @@ const deviceRow = (
 			h.div(
 				[h.Class(cn(DEVICE_COL.name, hstackClass({ gap: "2", shrink: true })))],
 				[
-					truncatedText(h, { text: key.name, className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }) }),
+					truncatedText(h, {
+						text: key.name,
+						className: typographyClass({ size: "sm", tone: "foreground", weight: "medium" }),
+					}),
 					h.span([h.Class("text-muted-foreground shrink-0 font-mono text-2xs")], [key.key_prefix]),
 				],
 			),
@@ -255,11 +261,25 @@ const deviceRow = (
 				className: cn(DEVICE_COL.owner, "text-foreground-soft text-2xs"),
 			}),
 			h.span(
-				[h.Class(cn(DEVICE_COL.created, typographyClass({ size: "2xs", tone: "muted", truncate: true })))],
+				[
+					h.Class(
+						cn(
+							DEVICE_COL.created,
+							typographyClass({ size: "2xs", tone: "muted", truncate: true }),
+						),
+					),
+				],
 				[formatDate(key.created_at)],
 			),
 			h.span(
-				[h.Class(cn(DEVICE_COL.lastUsed, typographyClass({ size: "2xs", tone: "muted", truncate: true })))],
+				[
+					h.Class(
+						cn(
+							DEVICE_COL.lastUsed,
+							typographyClass({ size: "2xs", tone: "muted", truncate: true }),
+						),
+					),
+				],
 				[
 					key.last_used_at
 						? relativeTime(h, {
@@ -272,7 +292,14 @@ const deviceRow = (
 				],
 			),
 			h.span(
-				[h.Class(cn(DEVICE_COL.expires, typographyClass({ size: "2xs", tone: "muted", truncate: true })))],
+				[
+					h.Class(
+						cn(
+							DEVICE_COL.expires,
+							typographyClass({ size: "2xs", tone: "muted", truncate: true }),
+						),
+					),
+				],
 				[key.expires_at ? formatDate(key.expires_at) : "Never"],
 			),
 			h.div(
@@ -299,14 +326,18 @@ export const devicesTable = (h: H, model: Model, rows: ReadonlyArray<KeyRow>, in
 			columnHead(h, { label: "Expires", width: DEVICE_COL.expires }),
 			h.span([h.Class(DEVICE_COL.menu)], []),
 		],
-		rows.map((row) => deviceRow(h, model, row, inputs, formatDate)),
+		Arr.map(rows, (row) => deviceRow(h, model, row, inputs, formatDate)),
 	)
 }
 
 export const keysEmpty = (h: H, model: Model): Html => {
-	const needle = model.search.trim()
+	const needle = Str.trim(model.search)
 	if (needle.length > 0)
-		return filteredEmpty(h, { noun: "keys", description: `Nothing matches "${needle}".`, className: "py-8" })
+		return filteredEmpty(h, {
+			noun: "keys",
+			description: `Nothing matches "${needle}".`,
+			className: "py-8",
+		})
 	return empty(
 		h,
 		[
@@ -314,7 +345,7 @@ export const keysEmpty = (h: H, model: Model): Html => {
 				emptyMedia(h, { variant: "icon" }, [icon(h, "KeyIcon")]),
 				emptyTitle(h, ["No keys here"]),
 				emptyDescription(h, [
-					`There are no ${STATUS_LABELS[model.statusFilter].toLowerCase()} keys of this type.`,
+					`There are no ${Str.toLowerCase(STATUS_LABELS[model.statusFilter])} keys of this type.`,
 				]),
 			]),
 		],

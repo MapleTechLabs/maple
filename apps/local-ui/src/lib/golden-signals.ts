@@ -1,4 +1,5 @@
 import type { ChartWindow } from "./time"
+import { Array as Arr } from "effect"
 
 /** One warehouse bucket of a service's entry-span signals. */
 export interface GoldenSignalRow {
@@ -34,7 +35,7 @@ export function fillGoldenSignals(
 	rows: ReadonlyArray<GoldenSignalRow>,
 	window: ChartWindow,
 ): ReadonlyArray<GoldenSignalPoint> {
-	const byBucket = new Map(rows.map((row) => [row.bucketMs, row] as const))
+	const byBucket = new Map(Arr.map(rows, (row) => [row.bucketMs, row] as const))
 	const stepMs = window.bucketSeconds * 1000
 	const firstMs = Math.floor(window.startMs / stepMs) * stepMs
 	const count = Math.max(0, Math.floor((window.endMs - firstMs) / stepMs) + 1)

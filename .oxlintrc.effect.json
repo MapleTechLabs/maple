@@ -55,6 +55,7 @@
 		"effecttsgo/yield-in-call-argument": "error",
 		"effecttsgo/schema-sync-in-effect": "error",
 		"effecttsgo/unsafe-effect-type-assertion": "error",
+		"typescript/await-thenable": "error",
 		"typescript/no-floating-promises": "error",
 		"typescript/restrict-template-expressions": "error",
 		"typescript/require-array-sort-compare": "error"
@@ -131,6 +132,7 @@
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
-		"lib/thinking-orbs/**"
+		"lib/thinking-orbs/**",
+		"scripts/oxlint-plugins/anti-slop/**"
 	]
 }

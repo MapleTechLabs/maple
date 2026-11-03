@@ -2,7 +2,7 @@ import { formatLatency, formatNumber } from "@maple/ui/lib/format"
 import { type BoxDatum, boxY, type ChartPoint, type ChartValue, defineChart } from "@tanstack/charts"
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { scaleLog } from "d3-scale"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { ChartTooltip } from "@maple/views/charts/chart-spec"
 import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import { cursorTooltip } from "@maple/views/charts/definitions/plot-constants"
@@ -36,7 +36,9 @@ const nextState = (state: number): number => (Math.imul(state, 1_664_525) + 1_01
 
 /** `makeRows`: two uniforms per sample through Box-Muller, in operation order. */
 const makeRows = (): ReadonlyArray<BoxPlotRow> =>
-	OPERATIONS.flatMap((operation) => Array.from({ length: SAMPLES_PER_OPERATION }, () => operation)).reduce<{
+	Arr.flatMap(OPERATIONS, (operation) =>
+		Array.from({ length: SAMPLES_PER_OPERATION }, () => operation),
+	).reduce<{
 		state: number
 		rows: ReadonlyArray<BoxPlotRow>
 	}>(
@@ -81,7 +83,7 @@ const tooltipOf = (
 export const buildBoxPlotSpike = (spec: SpikeSpec): BuiltChart<Datum, ChartValue, number> => {
 	const rows = makeRows()
 	const color = spec.colors["--chart-1"] ?? ""
-	const durations = rows.map((row) => row.durationMs)
+	const durations = Arr.map(rows, (row) => row.durationMs)
 	const definition = defineChart({
 		marks: [
 			boxY(rows, {
@@ -98,7 +100,7 @@ export const buildBoxPlotSpike = (spec: SpikeSpec): BuiltChart<Datum, ChartValue
 		scales: {
 			x: {
 				scale: scaleBand<string>(
-					OPERATIONS.map((operation) => operation.name),
+					Arr.map(OPERATIONS, (operation) => operation.name),
 					[0, 1],
 				).paddingInner(0.55),
 				axis: {

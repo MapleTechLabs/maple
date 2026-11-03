@@ -1,5 +1,6 @@
 import { parseWhereClause, normalizeKey } from "@maple/domain/where-clause"
 import { TRACE_LIST_MV_ATTR_MAP, TRACE_LIST_MV_RESOURCE_MAP } from "@maple/query-engine/traces-shared"
+import { Array as Arr, String as Str } from "effect"
 
 export interface PerformanceHint {
 	key: string
@@ -17,11 +18,11 @@ const FAST_GROUP_BY_KEYS = new Set(["service.name", "span.name", "status.code", 
  * meaning it's fast when root_only is enabled.
  */
 function hasMvMapping(normalizedKey: string): boolean {
-	if (normalizedKey.startsWith("attr.")) {
-		return normalizedKey.slice(5) in TRACE_LIST_MV_ATTR_MAP
+	if (Str.startsWith("attr.")(normalizedKey)) {
+		return Str.slice(5)(normalizedKey) in TRACE_LIST_MV_ATTR_MAP
 	}
-	if (normalizedKey.startsWith("resource.")) {
-		return normalizedKey.slice(9) in TRACE_LIST_MV_RESOURCE_MAP
+	if (Str.startsWith("resource.")(normalizedKey)) {
+		return Str.slice(9)(normalizedKey) in TRACE_LIST_MV_RESOURCE_MAP
 	}
 	if (normalizedKey === "deployment.environment") {
 		return "deployment.environment" in TRACE_LIST_MV_RESOURCE_MAP
@@ -35,7 +36,7 @@ export function getPerformanceHints(whereClause: string, groupByKeys: string[]):
 	const { clauses } = parseWhereClause(whereClause)
 	for (const clause of clauses) {
 		const key = normalizeKey(clause.key)
-		if (key.startsWith("attr.") || key.startsWith("resource.")) {
+		if (Str.startsWith("attr.")(key) || Str.startsWith("resource.")(key)) {
 			hints.push({
 				key: clause.key,
 				location: "filter",
@@ -60,10 +61,10 @@ export function getPerformanceHints(whereClause: string, groupByKeys: string[]):
 	}
 
 	for (const raw of groupByKeys) {
-		const token = raw.trim().toLowerCase()
+		const token = Str.toLowerCase(Str.trim(raw))
 		if (!token) continue
 
-		if (token.startsWith("attr.")) {
+		if (Str.startsWith("attr.")(token)) {
 			hints.push({
 				key: raw,
 				location: "groupBy",
@@ -100,7 +101,7 @@ export function getListPerformanceHints(
 
 	// When rootOnly is on, attr filters that have MV columns are actually fast.
 	// Only warn about truly slow filters.
-	const slowFilters = filterHints.filter((h) => h.speed === "slow")
+	const slowFilters = Arr.filter(filterHints, (h) => h.speed === "slow")
 	const trulySlowFilters: string[] = []
 	const mvAcceleratedFilters: string[] = []
 
@@ -114,7 +115,7 @@ export function getListPerformanceHints(
 	}
 
 	if (trulySlowFilters.length > 0) {
-		const keys = trulySlowFilters.join(", ")
+		const keys = Arr.join(trulySlowFilters, ", ")
 		hints.push({
 			key: "_slow_filters",
 			location: "filter",
@@ -130,11 +131,11 @@ export function getListPerformanceHints(
 			key: "_mv_accelerated",
 			location: "filter",
 			speed: "fast",
-			reason: `${mvAcceleratedFilters.join(", ")}: accelerated by materialized view`,
+			reason: `${Arr.join(mvAcceleratedFilters, ", ")}: accelerated by materialized view`,
 		})
 	}
 
-	if (!whereClause.trim()) {
+	if (!Str.trim(whereClause)) {
 		hints.push({
 			key: "_no_filters",
 			location: "filter",
@@ -165,12 +166,15 @@ export function getListPerformanceHints(
 }
 
 export function hasSlowHints(hints: PerformanceHint[]): boolean {
-	return hints.some((h) => h.speed === "slow")
+	return Arr.some(hints, (h) => h.speed === "slow")
 }
 
 export function slowHintsSummary(hints: PerformanceHint[]): string {
-	const slow = hints.filter((h) => h.speed === "slow")
+	const slow = Arr.filter(hints, (h) => h.speed === "slow")
 	if (slow.length === 0) return ""
-	const keys = slow.map((h) => h.key).join(", ")
+	const keys = Arr.join(
+		Arr.map(slow, (h) => h.key),
+		", ",
+	)
 	return `Slow Map column access: ${keys}. These filters/groups scan the full attributes Map for every row.`
 }

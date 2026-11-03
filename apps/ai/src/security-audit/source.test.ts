@@ -1,4 +1,4 @@
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	auditToolHandlers,
@@ -36,9 +36,13 @@ const fake: SourceReaderApi = {
 	nearby: (path, basename) =>
 		Effect.sync(() => {
 			calls.push({ tool: "nearby", args: [path, basename] })
-			const text = TRACKED.filter(
-				(file) => file.startsWith(`${path}/`) || file.endsWith(`/${basename}`),
-			).join("\n")
+			const text = Arr.join(
+				Arr.filter(
+					TRACKED,
+					(file) => Str.startsWith(`${path}/`)(file) || Str.endsWith(`/${basename}`)(file),
+				),
+				"\n",
+			)
 			return { text, truncated: false }
 		}),
 }
@@ -59,13 +63,13 @@ describe("audit tool handlers", () => {
 		calls.length = 0
 		await run(handlers.list_files({ path: "." }))
 		await run(handlers.git_log({ path: "./" }))
-		expect(calls.map((c) => c.args[0])).toEqual([undefined, undefined])
+		expect(Arr.map(calls, (c) => c.args[0])).toEqual([undefined, undefined])
 	})
 
 	it("tells the model when output was cut and when a read found nothing", async () => {
 		const grep = await run(handlers.grep({ pattern: "x" }))
 		const list = await run(handlers.list_files({ path: "src" }))
-		expect([grep, list].map((r) => (r._tag === "Success" ? r.success : undefined))).toEqual([
+		expect(Arr.map([grep, list], (r) => (r._tag === "Success" ? r.success : undefined))).toEqual([
 			"a.ts:1:x\n[output truncated: narrow the path or pattern]",
 			"(no output)",
 		])
@@ -98,9 +102,9 @@ describe("audit tool handlers", () => {
 describe("normalizePath", () => {
 	it("reads ./, leading slashes, backslashes and inner .. as the same repository path", () => {
 		expect(
-			["./src/a.ts", "/src/a.ts", "src\\a.ts", "src/x/../a.ts", "src//./a.ts"].map(normalizePath),
+			Arr.map(["./src/a.ts", "/src/a.ts", "src\\a.ts", "src/x/../a.ts", "src//./a.ts"], normalizePath),
 		).toEqual(["src/a.ts", "src/a.ts", "src/a.ts", "src/a.ts", "src/a.ts"])
-		expect(["../etc/passwd", "src/../../x", "./", "/"].map(normalizePath)).toEqual([
+		expect(Arr.map(["../etc/passwd", "src/../../x", "./", "/"], normalizePath)).toEqual([
 			undefined,
 			undefined,
 			"",
@@ -133,13 +137,13 @@ describe("read_file on a path that missed", () => {
 		const result = await run(handlers.read_file({ path: "src/" }))
 		const listing = result._tag === "Success" ? result.success : ""
 		expect(listing).toContain("src is a directory")
-		expect(listing.split("\n").slice(1)).toEqual(["src/a.ts", "src/b.ts"])
+		expect(Str.split("\n")(listing).slice(1)).toEqual(["src/a.ts", "src/b.ts"])
 	})
 
 	it("answers a skill reference file as method text, without listing the repository", async () => {
 		calls.length = 0
 		const result = await run(handlers.read_file({ path: "packages/ai/../skill/RECURSION.md" }))
 		expect(failureOf(result)).toContain("RECURSION.md is the audit's own method text")
-		expect(calls.map((c) => c.tool)).toEqual(["read"])
+		expect(Arr.map(calls, (c) => c.tool)).toEqual(["read"])
 	})
 })

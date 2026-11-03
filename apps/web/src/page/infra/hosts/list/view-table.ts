@@ -21,6 +21,7 @@ import type { HostRow } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `HostTable` / `HostTableLoading`, generic over the host's Message: /infra/hosts sorts through its Model,
 // `/lab/worst-case` through its own.
@@ -151,5 +152,5 @@ export const hostTable = <M>(
 		columns(h, inputs.sort, inputs.onSort),
 		hosts.length === 0
 			? [dataTableEmpty(h, ["No hosts match your search"])]
-			: hosts.map((host) => hostRow(h, host, inputs)),
+			: Arr.map(hosts, (host) => hostRow(h, host, inputs)),
 	)

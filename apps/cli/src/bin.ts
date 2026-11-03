@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { BunRuntime } from "@effect/platform-bun"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Cause, Console, Effect, Exit, Layer, Logger, Metric, Runtime } from "effect"
+import { Cause, Console, Effect, Exit, Layer, Logger, Metric, Runtime, Array as Arr } from "effect"
 import * as CliOutput from "effect/cli/CliOutput"
 import * as Command from "effect/cli/Command"
 import { FetchHttpClient } from "effect/http"
@@ -131,19 +131,19 @@ if (checkpointProbeDataDir !== undefined) {
 		// already-running guard alone). `maple.cli.outcome` still records them.
 		Effect.catchIf(isExpectedFailure, recoverExpected),
 		Effect.ensuring(Effect.sync(help.flush)),
-		Effect.withSpan("maple", { attributes: { "cli.argv": process.argv.slice(2).join(" ") } }),
+		Effect.withSpan("maple", { attributes: { "cli.argv": Arr.join(process.argv.slice(2), " ") } }),
 		Effect.provide(MainLayer),
 		Effect.provide(TelemetryLayer),
 		// Genuine failures reach here after closing the root span `Error`, each
 		// under its own tag (see `commands/server-errors.ts`). They still print
 		// one `error:` line; the cause and stack are behind `--debug`.
-		Effect.catchCause((cause) =>
-			Cause.hasInterruptsOnly(cause)
-				? Effect.failCause(cause)
-				: Effect.sync(() => {
-						process.stderr.write(renderUnexpected(cause, debugEnabled()))
-						markFailedExit()
-					}),
+		Effect.catchCauseIf(
+			(cause) => !Cause.hasInterruptsOnly(cause),
+			(cause) =>
+				Effect.sync(() => {
+					process.stderr.write(renderUnexpected(cause, debugEnabled()))
+					markFailedExit()
+				}),
 		),
 		// Logs are diagnostics, never results: keep them off stdout.
 		Effect.provideService(Logger.LogToStderr, true),

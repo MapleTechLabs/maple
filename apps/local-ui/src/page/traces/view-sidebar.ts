@@ -5,7 +5,7 @@ import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
 import { formatValue } from "@maple/views/ui/filters/range-format"
 import { type RangePreset, rangeFilterSection } from "@maple/views/ui/filters/range-filter-section"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TraceFilters } from "./filters"
@@ -141,7 +141,7 @@ export const sidebar = (
 		...filterSidebarBody(
 			h,
 			"traces-filters",
-			sections.filter((section) => section !== null),
+			Arr.filter(sections, (section) => section !== null),
 		),
 	])
 }

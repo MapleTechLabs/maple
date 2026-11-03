@@ -6,6 +6,7 @@ import * as Select from "@maple/views/ui/select"
 import { QueryChange } from "./change"
 import { Message, type Model, OutMessage } from "./panel-message"
 import { type PanelInputs, whereStep } from "./where"
+import { Array as Arr, String as Str } from "effect"
 
 export * from "./panel-message"
 export type { PanelInputs } from "./where"
@@ -13,7 +14,7 @@ export type { PanelInputs } from "./where"
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 const toggled = (list: ReadonlyArray<string>, value: string): ReadonlyArray<string> =>
-	list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
+	list.includes(value) ? Arr.filter(list, (item) => item !== value) : [...list, value]
 
 const changed = (
 	model: Model,
@@ -55,7 +56,7 @@ const selectStep = (model: Model, id: string, message: Select.Message): Return =
 		Message.GotSelectMessage({ id, message: inner }),
 	)
 	if (next.outMessage === undefined) return { model: lifted, commands }
-	const [field = "", queryId = ""] = id.split(":")
+	const [field, queryId = ""] = Str.split(":")(id)
 	const change = selectChange(field, next.outMessage.value)
 	return change === null ? { model: lifted, commands } : changed(lifted, queryId, change, commands)
 }
@@ -133,5 +134,6 @@ export const update = (model: Model, message: Message, inputs?: PanelInputs): Re
 		ToggledAddOn: ({ queryId, key }) => changed(model, queryId, QueryChange.ToggledAddOn({ key })),
 		ClickedClone: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedClone({ queryId }) }),
 		ClickedRemove: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedRemove({ queryId }) }),
-		GotWhereField: ({ message: inner }) => (inputs === undefined ? { model } : whereStep(model, inner, inputs)),
+		GotWhereField: ({ message: inner }) =>
+			inputs === undefined ? { model } : whereStep(model, inner, inputs),
 	})

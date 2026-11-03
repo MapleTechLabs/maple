@@ -1,4 +1,4 @@
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { Base64Url } from "effect/encoding"
 import { V2CursorInvalid } from "@maple/domain/http/v2"
 import { parseUtc } from "@maple/query-engine"
@@ -38,8 +38,8 @@ const decodeCursorParts = Schema.decodeUnknownResult(CursorPartsJson)
 export const decodeKeysetCursor = (value: string | undefined, prefix: string, length: number) => {
 	const invalid = Effect.fail(V2CursorInvalid.make(undefined, { param: "cursor" }))
 	if (value === undefined) return Effect.succeed<ReadonlyArray<string> | undefined>(undefined)
-	if (!value.startsWith(`${prefix}_`)) return invalid
-	const decoded = Base64Url.decodeString(value.slice(prefix.length + 1))
+	if (!Str.startsWith(`${prefix}_`)(value)) return invalid
+	const decoded = Base64Url.decodeString(Str.slice(prefix.length + 1)(value))
 	if (Result.isFailure(decoded)) return invalid
 	const parsed = decodeCursorParts(decoded.success)
 	if (Result.isFailure(parsed)) return invalid

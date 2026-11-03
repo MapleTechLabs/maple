@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import {
 	buildSessionTurns,
@@ -53,7 +53,7 @@ const decodeWrapped = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Struct({ result: Schema.String })),
 )
 const unwrapResult = (text: string): string =>
-	text.trimStart().startsWith('{"result"')
+	Str.startsWith('{"result"')(Str.trimStart(text))
 		? Option.getOrElse(decodeWrapped(text), () => ({ result: text })).result
 		: text
 
@@ -61,11 +61,12 @@ const payloadText = (payload: TranscriptPayload | undefined, chars: number): str
 	if (payload === undefined) return undefined
 	if (payload.text === "")
 		return payload.truncatedByEmitter ? "(cut by the emitter before capture)" : undefined
-	const text = clipPayload(unwrapResult(payload.text).replace(/\s+/g, " ").trim(), chars)
+	const text = clipPayload(Str.trim(Str.replace(/\s+/g, " ")(unwrapResult(payload.text))), chars)
 	return payload.truncatedByEmitter ? `${text} (cut by the emitter)` : text
 }
 
-const clip = (text: string, chars: number): string => clipPayload(text.replace(/\s+/g, " ").trim(), chars)
+const clip = (text: string, chars: number): string =>
+	clipPayload(Str.trim(Str.replace(/\s+/g, " ")(text)), chars)
 
 /** The span fields every span row carries. */
 const spanFields = (span: AiSessionSpan, startMs: number, sessionStartMs: number) => ({
@@ -197,11 +198,12 @@ function toRow(
 				kind: "parallel",
 				offsetMs: Math.max(0, row.startMs - sessionStartMs),
 				durationMs: row.endMs - row.startMs,
-				lanes: row.lanes.map((lane) => lane.agentName),
+				lanes: Arr.map(row.lanes, (lane) => lane.agentName),
 			}
 		case "parallel-turns": {
 			// The run that encloses the cluster is the parent of the others, not one of them.
-			const lanes = row.turns.filter(
+			const lanes = Arr.filter(
+				row.turns,
 				(ref) =>
 					!(ref.turn.startMs <= row.startMs && ref.turn.endMs >= row.endMs && row.turns.length > 2),
 			)
@@ -211,7 +213,8 @@ function toRow(
 				kind: "parallel",
 				offsetMs: Math.max(0, row.startMs - sessionStartMs),
 				durationMs: row.endMs - row.startMs,
-				lanes: lanes.map(
+				lanes: Arr.map(
+					lanes,
 					(ref) => `turn ${ref.turn.index}${ref.turn.agentName ? ` (${ref.turn.agentName})` : ""}`,
 				),
 			}
@@ -273,8 +276,13 @@ function turnsOfRows(
 
 /** Rows that matter to a failure read: every failed row, under the header of its turn. */
 function failedOnly(rows: ReadonlyArray<Row>): ReadonlyArray<Row> {
-	const failedTurns = new Set(rows.filter((row) => row.failed === true).map((row) => row.turn))
-	return rows.filter((row) => (row.kind === "turn" ? failedTurns.has(row.turn) : row.failed === true))
+	const failedTurns = new Set(
+		Arr.map(
+			Arr.filter(rows, (row) => row.failed === true),
+			(row) => row.turn,
+		),
+	)
+	return Arr.filter(rows, (row) => (row.kind === "turn" ? failedTurns.has(row.turn) : row.failed === true))
 }
 
 /** When a run stopped, from the session's start: the end of its turn. */
@@ -286,9 +294,10 @@ const stoppedAtMs = (row: Row): number => (row.offsetMs ?? 0) + (row.durationMs 
 export function failureTimeline(rows: ReadonlyArray<Row>): ReadonlyArray<Row> {
 	const at = failedAtMs
 	return (
-		rows
-			.filter((row) => row.kind !== "turn" || row.failed === true)
-			.map((row) => ({ ...row, depth: 0 }))
+		Arr.map(
+			Arr.filter(rows, (row) => row.kind !== "turn" || row.failed === true),
+			(row) => ({ ...row, depth: 0 }),
+		)
 			// On a tie a run's stop follows the steps that stopped it.
 			.toSorted((a, b) => at(a) - at(b) || Number(a.kind === "turn") - Number(b.kind === "turn"))
 	)
@@ -299,13 +308,11 @@ const failedAtMs = (row: Row): number => (row.kind === "turn" ? stoppedAtMs(row)
 
 /** The selection's earliest failure in time, across every page: the span a reader opens first. */
 export function earliestFailure(rows: ReadonlyArray<Row>): Output["firstFailure"] {
-	const first = rows
-		.filter((row) => row.failed === true)
-		.reduce<Row | undefined>(
-			(earliest, row) =>
-				earliest === undefined || failedAtMs(row) < failedAtMs(earliest) ? row : earliest,
-			undefined,
-		)
+	const first = Arr.filter(rows, (row) => row.failed === true).reduce<Row | undefined>(
+		(earliest, row) =>
+			earliest === undefined || failedAtMs(row) < failedAtMs(earliest) ? row : earliest,
+		undefined,
+	)
 	return first?.spanId === undefined || first.traceId === undefined || first.timestamp === undefined
 		? undefined
 		: { traceId: first.traceId, spanId: first.spanId, timestamp: first.timestamp }
@@ -314,22 +321,23 @@ export function earliestFailure(rows: ReadonlyArray<Row>): Output["firstFailure"
 /** Rows whose text mentions `needle`, under the header of their turn. A header that matches
  *  (its prompt, its stop reason) keeps its turn's header alone. */
 function searchRows(rows: ReadonlyArray<Row>, needle: string): ReadonlyArray<Row> {
-	const lower = needle.toLowerCase()
+	const lower = Str.toLowerCase(needle)
 	const hit = (row: Row) =>
-		[row.text, row.reason, row.meta, row.toolName, row.args, row.result, row.agentName].some(
-			(value) => value !== undefined && value.toLowerCase().includes(lower),
+		Arr.some(
+			[row.text, row.reason, row.meta, row.toolName, row.args, row.result, row.agentName],
+			(value) => value !== undefined && Str.includes(lower)(Str.toLowerCase(value)),
 		)
-	const turnsWithHits = new Set(rows.filter(hit).map((row) => row.turn))
-	return rows.filter((row) => (row.kind === "turn" ? turnsWithHits.has(row.turn) : hit(row)))
+	const turnsWithHits = new Set(Arr.map(Arr.filter(rows, hit), (row) => row.turn))
+	return Arr.filter(rows, (row) => (row.kind === "turn" ? turnsWithHits.has(row.turn) : hit(row)))
 }
 
 /** The rows of one page: up to `limit`, and no more than {@link PAGE_CHARS} of rendered text, but
  *  always at least one so a page never stalls. */
 function pageRows(rows: ReadonlyArray<Row>, offset: number, limit: number): ReadonlyArray<Row> {
 	const candidates = rows.slice(offset, offset + limit)
-	const sizes = candidates.map((row) => (row.kind === "turn" ? 120 : rowLine(row).length + 1))
+	const sizes = Arr.map(candidates, (row) => (row.kind === "turn" ? 120 : rowLine(row).length + 1))
 	const running = sizes.reduce<ReadonlyArray<number>>((acc, size) => [...acc, (acc.at(-1) ?? 0) + size], [])
-	return candidates.slice(0, Math.max(1, running.filter((total) => total <= PAGE_CHARS).length))
+	return candidates.slice(0, Math.max(1, Arr.filter(running, (total) => total <= PAGE_CHARS).length))
 }
 
 /** Characters of shared opening below which stripping it would leave too little context. */
@@ -338,13 +346,13 @@ const SHARED_OPENING_MIN = 20
 /** The longest prefix every text shares, cut back to a word boundary. */
 function sharedPrefix(texts: ReadonlyArray<string>): string {
 	const [first = "", ...rest] = texts
-	const length = rest.reduce((shared, text) => {
+	const length = Arr.reduce(rest, first.length, (shared, text) => {
 		const limit = Math.min(shared, text.length)
 		const differsAt = Array.from({ length: limit }, (_, i) => i).find((i) => text[i] !== first[i])
 		return differsAt ?? limit
-	}, first.length)
-	const cut = first.slice(0, length)
-	return cut.slice(0, Math.max(0, cut.lastIndexOf(" ") + 1))
+	})
+	const cut = Str.slice(0, length)(first)
+	return Str.slice(0, Math.max(0, cut.lastIndexOf(" ") + 1))(cut)
 }
 
 /**
@@ -357,16 +365,17 @@ export function distinguishingOpenings(
 	turns: ReadonlyArray<Output["turns"][number]>,
 	rows: ReadonlyArray<Row>,
 ): ReadonlyMap<number, string> {
-	const openings = turns.flatMap((turn) => {
+	const openings = Arr.flatMap(turns, (turn) => {
 		const prompt = rows.find((row) => row.turn === turn.turn && row.kind === "user")?.text
 		const text = (prompt ?? turn.label)?.replace(/… \(\d+ bytes total\)$/, "…")
 		return text === undefined ? [] : [{ turn: turn.turn, agent: turn.agentName ?? "", text }]
 	})
 	return new Map(
-		openings.map((opening) => {
-			const siblings = openings.filter((sibling) => sibling.agent === opening.agent)
-			const shared = siblings.length > 1 ? sharedPrefix(siblings.map((sibling) => sibling.text)) : ""
-			const rest = opening.text.slice(shared.length).trim()
+		Arr.map(openings, (opening) => {
+			const siblings = Arr.filter(openings, (sibling) => sibling.agent === opening.agent)
+			const shared =
+				siblings.length > 1 ? sharedPrefix(Arr.map(siblings, (sibling) => sibling.text)) : ""
+			const rest = Str.trim(Str.slice(shared.length)(opening.text))
 			return [
 				opening.turn,
 				shared.length >= SHARED_OPENING_MIN && rest !== "" ? `…${rest}` : opening.text,
@@ -442,11 +451,12 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 				}
 
 				const turns = buildSessionTurns(loaded.spans)
-				const sessionStartMs = Math.min(...turns.map((turn) => turn.startMs))
-				const turnIndex = turns.map((turn) => turnSummary(turn, sessionStartMs))
+				const sessionStartMs = Math.min(...Arr.map(turns, (turn) => turn.startMs))
+				const turnIndex = Arr.map(turns, (turn) => turnSummary(turn, sessionStartMs))
 
 				const wanted = params.turn
-				const selected = wanted === undefined ? turns : turns.filter((turn) => turn.index === wanted)
+				const selected =
+					wanted === undefined ? turns : Arr.filter(turns, (turn) => turn.index === wanted)
 				if (selected.length === 0) {
 					return yield* new McpInvalidInputError({
 						message: `Invalid turn: ${wanted}. This session has ${turns.length} turn${turns.length === 1 ? "" : "s"}, numbered 1 to ${turns.length}.`,
@@ -466,7 +476,7 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 				})
 
 				const rowTurns = turnsOfRows(transcript, selected)
-				const allRows = transcript.flatMap((row, index) => {
+				const allRows = Arr.flatMap(transcript, (row, index) => {
 					const mapped = toRow(row, rowTurns[index] ?? 1, sessionStartMs, payloadChars)
 					return mapped === undefined ? [] : [mapped]
 				})
@@ -485,8 +495,12 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 				const firstFailure = earliestFailure(rows)
 				const hasMore = offset + page.length < rows.length
 
-				const llmSpans = selected.flatMap((turn) => turn.spans).filter(isLlmCall)
-				const capturedCalls = llmSpans.filter(
+				const llmSpans = Arr.filter(
+					Arr.flatMap(selected, (turn) => turn.spans),
+					isLlmCall,
+				)
+				const capturedCalls = Arr.filter(
+					llmSpans,
 					(span) =>
 						// A `null` an emitter wrote decodes as `null`, not a missing key, and captured nothing.
 						(span.genAi.inputMessages ?? undefined) !== undefined ||
@@ -499,7 +513,7 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 						? undefined
 						: { window: { start: loaded.window.startTime, end: loaded.window.endTime } }),
 					load: loadSummary(loaded),
-					turns: turnIndex.map((turn) => {
+					turns: Arr.map(turnIndex, (turn) => {
 						const opening = openings.get(turn.turn)
 						return opening === undefined ? turn : { ...turn, label: opening }
 					}),
@@ -540,7 +554,7 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 /* -------------------------------------------------------------------------- */
 
 const at = (row: Row): string => (row.offsetMs === undefined ? "" : `[${offsetLabel(row.offsetMs)}] `)
-const indent = (row: Row): string => "  ".repeat(row.depth)
+const indent = (row: Row): string => Str.repeat(row.depth)("  ")
 const spanRef = (row: Row): string => (row.spanId === undefined ? "" : ` · span ${row.spanId}`)
 const oneLine = (text: string, chars = 2_000): string => tableCell(text, chars)
 
@@ -577,7 +591,7 @@ function rowLine(row: Row): string {
 		case "lane-close":
 			return `${lead}◀ ${row.agentName ?? ""} finished after ${formatDurationFromMs(row.durationMs ?? 0)} · ${row.llmCalls ?? 0} model calls, ${row.toolCalls ?? 0} tool calls${row.result === undefined ? "" : ` → returned: ${oneLine(row.result)}`}`
 		case "parallel":
-			return `${lead}‖ ran in parallel: ${(row.lanes ?? []).join(", ")}`
+			return `${lead}‖ ran in parallel: ${Arr.join(row.lanes ?? [], ", ")}`
 		case "structure":
 			return `${lead}${row.meta ?? "span"}${row.failed === true ? " FAILED" : ""} (no content captured)${row.text ? `: ${oneLine(row.text)}` : ""}${spanRef(row)}`
 		case "note":
@@ -610,11 +624,11 @@ function renderTranscript(output: Output): ToolDoc {
 		blocks.push(doc.heading(`Turns (${output.turns.length})`))
 		// Sub-agents of one fan-out open with the same brief; the column only earns its width
 		// when the openings tell the turns apart.
-		const distinctLabels = new Set(output.turns.map((turn) => turn.label)).size > 1
+		const distinctLabels = new Set(Arr.map(output.turns, (turn) => turn.label)).size > 1
 		blocks.push(
 			doc.table(
 				["Turn", "Agent", "Start", "Duration", "Outcome", ...(distinctLabels ? ["Opened with"] : [])],
-				output.turns.map((turn) => [
+				Arr.map(output.turns, (turn) => [
 					String(turn.turn),
 					turn.agentName ?? "—",
 					offsetLabel(turn.offsetMs),
@@ -634,13 +648,14 @@ function renderTranscript(output: Output): ToolDoc {
 		blocks.push(
 			doc.code(
 				"text",
-				output.rows
-					.map((row) =>
+				Arr.join(
+					Arr.map(output.rows, (row) =>
 						row.kind === "turn"
 							? `[${offsetLabel(stoppedAtMs(row))}] turn ${row.turn}${row.agentName ? ` (${row.agentName})` : ""} stopped: ${oneLine(row.reason ?? "failed")}${spanRef(row)}`
 							: `turn ${row.turn} · ${rowLine(row)}`,
-					)
-					.join("\n"),
+					),
+					"\n",
+				),
 			),
 		)
 	}
@@ -670,11 +685,11 @@ function renderTranscript(output: Output): ToolDoc {
 	for (const section of sections) {
 		if (section.header !== undefined)
 			blocks.push(doc.heading(turnHeading(section.header, output.turns.length)))
-		if (section.lines.length > 0) blocks.push(doc.code("text", section.lines.join("\n")))
+		if (section.lines.length > 0) blocks.push(doc.code("text", Arr.join(section.lines, "\n")))
 	}
 
 	const traceIds = [
-		...new Set(output.rows.flatMap((row) => (row.traceId === undefined ? [] : [row.traceId]))),
+		...new Set(Arr.flatMap(output.rows, (row) => (row.traceId === undefined ? [] : [row.traceId]))),
 	]
 	const firstFailed = output.firstFailure
 	const windowArgs =
@@ -700,7 +715,7 @@ function renderTranscript(output: Output): ToolDoc {
 			),
 		)
 	}
-	if (output.selection.failedOnly !== true && output.rows.some((row) => row.failed === true)) {
+	if (output.selection.failedOnly !== true && Arr.some(output.rows, (row) => row.failed === true)) {
 		next.push(
 			doc.next(
 				"get_agent_session_transcript",

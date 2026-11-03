@@ -21,6 +21,7 @@ import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `AnomalyLinkIssueDialog`: a command
 // dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.
@@ -30,19 +31,23 @@ type H = HtmlBuilder<Message>
 const toCombobox = (message: Combobox.Message) => Message.GotLinkComboboxMessage({ message })
 
 const filteredOf = (model: Model, incident: AnomalyIncidentDocument): ReadonlyArray<ErrorIssueDocument> => {
-	const issues = AsyncData.getOrElse(model.linkIssues.data, () => []).map(errorIssueFromV2)
-	const q = model.linkCombobox.inputValue.trim().toLowerCase()
+	const issues = Arr.map(
+		AsyncData.getOrElse(model.linkIssues.data, () => []),
+		errorIssueFromV2,
+	)
+	const q = Str.toLowerCase(Str.trim(model.linkCombobox.inputValue))
 	const matches =
 		q.length === 0
 			? issues
-			: issues.filter(
+			: Arr.filter(
+					issues,
 					(issue) =>
-						issue.exceptionType.toLowerCase().includes(q) ||
-						issue.exceptionMessage.toLowerCase().includes(q) ||
-						issue.serviceName.toLowerCase().includes(q) ||
-						shortIssueId(issue.id).toLowerCase().includes(q),
+						Str.includes(q)(Str.toLowerCase(issue.exceptionType)) ||
+						Str.includes(q)(Str.toLowerCase(issue.exceptionMessage)) ||
+						Str.includes(q)(Str.toLowerCase(issue.serviceName)) ||
+						Str.includes(q)(Str.toLowerCase(shortIssueId(issue.id))),
 				)
-	return matches.filter((issue) => issue.id !== incident.errorIssueId)
+	return Arr.filter(matches, (issue) => issue.id !== incident.errorIssueId)
 }
 
 const item = (h: H, model: Model, issue: ErrorIssueDocument, index: number, timeZone: string): Html =>
@@ -119,7 +124,7 @@ const listBody = (
 		commandGroup(
 			h,
 			{ labelId, label: model.linkAllServices ? "All services" : incident.serviceName },
-			filtered.map((issue, index) => item(h, model, issue, index, timeZone)),
+			Arr.map(filtered, (issue, index) => item(h, model, issue, index, timeZone)),
 		),
 	]
 }
@@ -152,7 +157,7 @@ export const linkIssueDialog = (
 									groups: [
 										{
 											label: "",
-											items: filteredOf(model, incident).map((issue) => ({
+											items: Arr.map(filteredOf(model, incident), (issue) => ({
 												title: String(issue.id),
 											})),
 										},

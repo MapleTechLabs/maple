@@ -24,6 +24,7 @@ import { historyTab } from "./view-history"
 import { overviewTab } from "./view-overview"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The rule detail page through `ResultPage` and `DetailHeader`.
 
@@ -34,21 +35,22 @@ type Tab = (typeof TABS)[number]
 const activeTabOf = (model: Model): Tab => (model.search.tab === "history" ? "history" : "overview")
 
 export const ruleSubtitle = (rule: AlertRuleDocument): string => {
-	const tiers = rule.thresholds
-		.map((tier) =>
+	const tiers = Arr.join(
+		Arr.map(rule.thresholds, (tier) =>
 			rule.thresholds.length > 1
 				? `${tier.severity} ${formatSignalValue(rule.signalType, tier.value)}`
 				: formatSignalValue(rule.signalType, tier.value),
-		)
-		.join(", ")
-	return `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${tiers} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.environments?.length > 0 ? ` in ${rule.environments.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
+		),
+		", ",
+	)
+	return `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${tiers} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${Arr.join(rule.serviceNames, ", ")}` : ""}${rule.environments?.length > 0 ? ` in ${Arr.join(rule.environments, ", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${Arr.join(rule.excludeServiceNames, ", ")})` : ""}`
 }
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
 /** `DetailHeader` (kind eyebrow, title, meta row) with the time controls and Edit rule. */
 const header = (h: H, model: Model, rule: AlertRuleDocument) => {
-	const openIncidents = ruleIncidentsOf(model).filter((i) => i.status === "open")
+	const openIncidents = Arr.filter(ruleIncidentsOf(model), (i) => i.status === "open")
 	const isFiring = openIncidents.length > 0
 	return {
 		titleContent: h.div(
@@ -59,11 +61,11 @@ const header = (h: H, model: Model, rule: AlertRuleDocument) => {
 				]),
 				pageTitle(h, { title: rule.name }, [rule.name]),
 				hstack(h, { gap: "2", wrap: true }, [
-					...rule.thresholds.map((tier) => severityBadge(h, tier.severity)),
+					...Arr.map(rule.thresholds, (tier) => severityBadge(h, tier.severity)),
 					isFiring
 						? alertStatusBadge(
 								h,
-								openIncidents.every((i) => i.holdReason != null) ? "held" : "firing",
+								Arr.every(openIncidents, (i) => i.holdReason != null) ? "held" : "firing",
 							)
 						: alertStatusBadge(h, rule.enabled ? "ok" : "disabled"),
 					typography(h, { size: "sm", tone: "muted" }, [ruleSubtitle(rule)]),
@@ -106,7 +108,7 @@ const tabStrip = (h: H, model: Model): Html => {
 	return linkTabStrip(
 		h,
 		"Rule sections",
-		TABS.map((tab) => ({
+		Arr.map(TABS, (tab) => ({
 			key: tab,
 			// `search={(prev) => ({ ...prev, tab })}`: the time range rides along.
 			href: ruleHref(model.ruleId, { ...model.search, tab }),

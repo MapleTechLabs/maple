@@ -25,6 +25,7 @@ import {
 	parsePatch,
 } from "./diff"
 import { escapeRegExp, referencesFor, type ReferenceSource } from "./references"
+import { Array as Arr, String as Str } from "effect"
 
 /** One production operation over the catalog window. */
 export interface CatalogOperation {
@@ -81,7 +82,7 @@ const COST_NOTE_MIN_GB = 0.1
 const GENERIC_BASENAME =
 	/^(index|main|app|server|worker|handler|handlers|utils?|helpers?|mod|lib|types|routes?|api|client|service|init|__init__)$/i
 
-const stripExtension = (name: string) => name.replace(/\.[^.]+$/, "")
+const stripExtension = (name: string) => Str.replace(/\.[^.]+$/, "")(name)
 
 /**
  * A changed file that at least this many, and this share, of one service's open issues point at by
@@ -102,8 +103,8 @@ export const frameMatchesPath = (frame: string, path: string): boolean =>
 
 /** How a top frame names a changed file: with its directory, by its name alone, or not at all. */
 const frameMatchOf = (frame: string, path: string): "directory" | "name" | undefined => {
-	const haystack = frame.toLowerCase().replace(/\\/g, "/")
-	const segments = path.toLowerCase().split("/")
+	const haystack = Str.replace(/\\/g, "/")(Str.toLowerCase(frame))
+	const segments = Str.split("/")(Str.toLowerCase(path))
 	const name = stripExtension(segments.at(-1) ?? "")
 	if (name.length === 0) return undefined
 	const dir = segments.at(-2)
@@ -136,10 +137,11 @@ const perDay = (count: number, windowDays: number) => Math.round(count / Math.ma
 
 /** The operations a literal names: a span name exactly, or a route (`/checkout`) inside `POST /checkout`. */
 const operationsNamed = (value: string, operations: ReadonlyArray<CatalogOperation>) =>
-	operations.filter(
+	Arr.filter(
+		operations,
 		(operation) =>
 			operation.spanName === value ||
-			(value.startsWith("/") && value.length > 1 && operation.spanName.endsWith(` ${value}`)),
+			(Str.startsWith("/")(value) && value.length > 1 && Str.endsWith(` ${value}`)(operation.spanName)),
 	)
 
 export interface AnalyzeTelemetryInput {
@@ -172,9 +174,13 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 				? catalog.attributeKeys.get(value)
 				: catalog.metricNames.get(value)
 
-	const files = input.files
-		.filter((file) => isRuntimeSource(file.path) && !isMockData(file.path) && file.patch !== null)
-		.map((file) => ({ path: file.path, lines: parsePatch(file.patch) }))
+	const files = Arr.map(
+		Arr.filter(
+			input.files,
+			(file) => isRuntimeSource(file.path) && !isMockData(file.path) && file.patch !== null,
+		),
+		(file) => ({ path: file.path, lines: parsePatch(file.patch) }),
+	)
 
 	// A name added anywhere in the pull request is moved, not removed. A comment or a log message
 	// that merely quotes it emits nothing, so it does not count as adding it back.
@@ -199,7 +205,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 	// Only a name the removed line handed to the telemetry API, as the kind production knows it by:
 	// `method: "POST"` matches the span name `POST` but emits nothing.
 	for (const file of files) {
-		file.lines.forEach((line, index) => {
+		Arr.forEach(file.lines, (line, index) => {
 			if (line.kind !== "del" || isCommentLine(line.text)) return
 			for (const emitted of emittedNames(line.text, oldNearbyText(file.lines, index))) {
 				const name = emitted.value
@@ -248,8 +254,9 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 				}
 			}
 		}
-		const traffic = [...operations.values()]
-			.map(
+		const traffic = Arr.filter(
+			Arr.map(
+				[...operations.values()],
 				(operation) =>
 					new PrReviewOperationTraffic({
 						service: operation.service,
@@ -258,10 +265,10 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 						errorRate: operation.count === 0 ? 0 : operation.errorCount / operation.count,
 						p95Ms: Math.round(operation.p95Ms),
 					}),
-			)
-			.filter((operation) => operation.perDay > 0)
-			.sort((a, b) => b.perDay - a.perDay)
-		const filePerDay = traffic.reduce((sum, operation) => sum + operation.perDay, 0)
+			),
+			(operation) => operation.perDay > 0,
+		).sort((a, b) => b.perDay - a.perDay)
+		const filePerDay = Arr.reduce(traffic, 0, (sum, operation) => sum + operation.perDay)
 		if (traffic.length > 0) {
 			hotFiles.push(
 				new PrReviewHotFile({
@@ -272,7 +279,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 			)
 		}
 
-		file.lines.forEach((line, index) => {
+		Arr.forEach(file.lines, (line, index) => {
 			if (line.kind !== "add") return
 			const nearby = nearbyText(file.lines, index)
 			for (const name of emittedNames(line.text, nearby)) {
@@ -315,7 +322,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 	}
 
 	// A file the frame names with its directory wins over one it names only by the same file name.
-	const matched = input.issues.map((issue) => {
+	const matched = Arr.map(input.issues, (issue) => {
 		const byDirectory = files.find(
 			(candidate) => frameMatchOf(issue.topFrame, candidate.path) === "directory",
 		)
@@ -338,29 +345,30 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		)
 	}
 
-	const linkedIssues = matched
-		.flatMap(({ issue, file, byName }) =>
-			file === undefined || (byName && isCatchAll(issue.service, file.path))
-				? []
-				: [
-						new PrReviewLinkedIssue({
-							issueId: issue.id,
-							fingerprintHash: issue.fingerprintHash,
-							title: issue.title,
-							service: issue.service,
-							path: file.path,
-							topFrame: issue.topFrame,
-							occurrences: issue.occurrences,
-							lastSeenAt: issue.lastSeenAt,
-						}),
-					],
-		)
+	const linkedIssues = Arr.flatMap(matched, ({ issue, file, byName }) =>
+		file === undefined || (byName && isCatchAll(issue.service, file.path))
+			? []
+			: [
+					new PrReviewLinkedIssue({
+						issueId: issue.id,
+						fingerprintHash: issue.fingerprintHash,
+						title: issue.title,
+						service: issue.service,
+						path: file.path,
+						topFrame: issue.topFrame,
+						occurrences: issue.occurrences,
+						lastSeenAt: issue.lastSeenAt,
+					}),
+				],
+	)
 		.sort((a, b) => b.occurrences - a.occurrences)
 		.slice(0, MAX_ISSUES)
 
 	hotFiles.sort((a, b) => b.perDay - a.perDay)
 	const services = [
-		...new Set(hotFiles.flatMap((file) => file.operations.map((operation) => operation.service))),
+		...new Set(
+			Arr.flatMap(hotFiles, (file) => Arr.map(file.operations, (operation) => operation.service)),
+		),
 	].slice(0, 10)
 
 	return new PrReviewTelemetry({
@@ -370,8 +378,8 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 		contractBreaks: breaks
 			.sort(
 				(a, b) =>
-					Number(b.references.some((ref) => ref.kind === "alert")) -
-						Number(a.references.some((ref) => ref.kind === "alert")) ||
+					Number(Arr.some(b.references, (ref) => ref.kind === "alert")) -
+						Number(Arr.some(a.references, (ref) => ref.kind === "alert")) ||
 					(b.perDay ?? 0) - (a.perDay ?? 0),
 			)
 			.slice(0, MAX_BREAKS),
@@ -389,26 +397,30 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 }
 
 const nearbyText = (lines: ReadonlyArray<DiffLine>, index: number) =>
-	lines
-		.slice(Math.max(0, index - 4), index)
-		.filter((line) => line.kind !== "del")
-		.map((line) => line.text)
-		.join("\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(lines.slice(Math.max(0, index - 4), index), (line) => line.kind !== "del"),
+			(line) => line.text,
+		),
+		"\n",
+	)
 
 /** The old side's lines above a removed one, so a removed attribute object is still recognized. */
 const oldNearbyText = (lines: ReadonlyArray<DiffLine>, index: number) =>
-	lines
-		.slice(Math.max(0, index - 4), index)
-		.filter((line) => line.kind !== "add")
-		.map((line) => line.text)
-		.join("\n")
+	Arr.join(
+		Arr.map(
+			Arr.filter(lines.slice(Math.max(0, index - 4), index), (line) => line.kind !== "add"),
+			(line) => line.text,
+		),
+		"\n",
+	)
 
 const templatedSpanNote = (path: string, line: number, value: string) =>
 	new PrReviewCostNote({
 		path,
 		line,
 		kind: "span_name",
-		note: `The span name \`${value.slice(0, 80)}\` is built from a runtime value, so every value becomes its own operation: grouping, rollups and alerts by span name stop working. Keep the name fixed and put the value in an attribute.`,
+		note: `The span name \`${Str.slice(0, 80)(value)}\` is built from a runtime value, so every value becomes its own operation: grouping, rollups and alerts by span name stop working. Keep the name fixed and put the value in an attribute.`,
 	})
 
 export const formatCount = (value: number): string =>

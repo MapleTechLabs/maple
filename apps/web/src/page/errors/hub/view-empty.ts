@@ -10,6 +10,7 @@ import { hasErrorFilters, severityOf, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
+import { String as Str } from "effect"
 
 // The hub's empty state: what an empty view says, and what it offers.
 
@@ -39,8 +40,7 @@ const ERRORS_PURPOSE = "Group failed spans and exceptions into issues you can tr
 
 const SEVERITY_FILTER_LABEL = { all: "All severities", ...SEVERITY_LABEL, unset: "Unset" } as const
 
-const iconMedia = (h: H, name: IconName): Html =>
-	emptyMedia(h, { variant: "icon" }, [icon(h, name)])
+const iconMedia = (h: H, name: IconName): Html => emptyMedia(h, { variant: "icon" }, [icon(h, name)])
 
 const actions = (h: H, children: ReadonlyArray<Html>): Html =>
 	hstack(h, { gap: "2", justify: "center", wrap: true }, children)
@@ -106,7 +106,7 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 	}
 	if (isNarrowedBySidebar && !isFiltered)
 		return filteredEmpty(h, {
-			noun: view === "all" ? "errors" : `${VIEW_LABEL[view].toLowerCase()} errors`,
+			noun: view === "all" ? "errors" : `${Str.toLowerCase(VIEW_LABEL[view])} errors`,
 			description: "Everything in this view was excluded by the sidebar filters.",
 			className: "py-12",
 			// Open and Closed also offer the All tab, beside the kit's Clear filters.
@@ -126,7 +126,7 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 		? copy.title
 		: view === "all"
 			? "No errors found"
-			: `No ${VIEW_LABEL[view].toLowerCase()} errors`
+			: `No ${Str.toLowerCase(VIEW_LABEL[view])} errors`
 	const description = isUnknown ? ERRORS_PURPOSE : copy.description
 	return empty(
 		h,
@@ -134,7 +134,7 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 			emptyHeader(h, [
 				iconMedia(h, iconName),
 				emptyTitle(h, [
-					isFiltered ? `No ${SEVERITY_FILTER_LABEL[severity].toLowerCase()} errors here` : title,
+					isFiltered ? `No ${Str.toLowerCase(SEVERITY_FILTER_LABEL[severity])} errors here` : title,
 				]),
 				emptyDescription(h, [
 					isFiltered

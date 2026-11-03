@@ -6,7 +6,8 @@ import {
 } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { Clock, Duration, Effect, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -128,12 +129,13 @@ export const FetchBreakdown = Command.define("FetchMetricBreakdown", {
 				}),
 				// `BreakdownBars`: names stringified, values numbers, blank names dropped.
 				(response) =>
-					response.data
-						.map((row) => ({
+					Arr.filter(
+						Arr.map(response.data, (row) => ({
 							name: String(row.name ?? ""),
 							value: typeof row.value === "number" ? row.value : Number(row.value ?? 0),
-						}))
-						.filter((row) => row.name.length > 0),
+						})),
+						(row) => row.name.length > 0,
+					),
 			),
 		).pipe(Effect.map((result) => Message.CompletedFetchBreakdown({ key, result }))),
 })
@@ -141,10 +143,15 @@ export const FetchBreakdown = Command.define("FetchMetricBreakdown", {
 /** `encodeAlertChartToSearchParam` (lib/alerts/widget-chart-param.ts imports `@/` modules) over `toBase64Url`. */
 const MAX_ENCODED_LENGTH = 12_000
 const toBase64Url = (input: string): string =>
-	btoa(String.fromCharCode(...new TextEncoder().encode(input)))
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.replace(/=+$/, "")
+	Str.replace(
+		/=+$/,
+		"",
+	)(
+		Str.replace(
+			/\//g,
+			"_",
+		)(Str.replace(/\+/g, "-")(btoa(String.fromCharCode(...new TextEncoder().encode(input))))),
+	)
 
 /**
  * `MetricGraduationActions`' Create alert: the current query as a chart widget snapshot in the
@@ -154,17 +161,20 @@ export const BuildAlertLink = Command.define("BuildMetricAlertLink", {
 	args: { query: MetricsQueryDraftSchema, title: Schema.String },
 	messages: [Message.BuiltAlertLink],
 	execute: ({ query, title }) =>
-		Effect.sync(() => {
+		Effect.gen(function* () {
+			const random = yield* SecureRandom.SecureRandom
+			const widgetId = yield* random.uuidV4()
+			const queryId = yield* random.uuidV4()
 			const chart = toBase64Url(
 				encodeJson({
 					dashboardId: "metrics-explorer",
 					widget: {
-						id: crypto.randomUUID(),
+						id: widgetId,
 						visualization: "chart",
 						dataSource: {
 							kind: "query",
 							resultShape: "timeseries",
-							queries: [{ ...query, id: crypto.randomUUID() }],
+							queries: [{ ...query, id: queryId }],
 						},
 						display: { title },
 					},
@@ -234,7 +244,7 @@ export const FetchAttributeValues = Command.define("FetchMetricAttributeValues",
 	execute: ({ key, input }) =>
 		settle(
 			Effect.map(getMetricAttributeValues({ data: input }), (response) =>
-				response.data.map((row) => row.attributeValue),
+				Arr.map(response.data, (row) => row.attributeValue),
 			),
 		).pipe(Effect.map((result) => Message.CompletedFetchAttributeValues({ key, result }))),
 })

@@ -2,6 +2,7 @@
 import { MapleBrowser } from "@maple-dev/browser"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import type { Island } from "../foldkit-island/island"
+import { Array as Arr } from "effect"
 
 // The header reads the publishable key when its module loads, so the modules load after the stub.
 let NavBar: Island
@@ -31,7 +32,10 @@ const stubClerk = (userId: string | null) => {
 	window.Clerk = {
 		load,
 		addListener: (listener) => {
-			listener({ session: userId === null ? null : { status: "active" }, user: userId === null ? null : { id: userId } })
+			listener({
+				session: userId === null ? null : { status: "active" },
+				user: userId === null ? null : { id: userId },
+			})
 			return () => undefined
 		},
 	}
@@ -39,7 +43,7 @@ const stubClerk = (userId: string | null) => {
 }
 
 afterEach(() => {
-	mounted.splice(0).forEach((element) => element.dispatchEvent(new Event("astro:unmount")))
+	Arr.forEach(mounted.splice(0), (element) => element.dispatchEvent(new Event("astro:unmount")))
 	document.body.innerHTML = ""
 	document.cookie = "__client_uat=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
 	window.Clerk = undefined
@@ -62,7 +66,9 @@ describe("NavBar island", () => {
 		const load = stubClerk("user_1")
 		const identify = vi.spyOn(MapleBrowser, "identify").mockImplementation(() => undefined)
 		const heard: Array<unknown> = []
-		document.addEventListener("maple:signed-in", (event) => heard.push(event instanceof CustomEvent && event.detail))
+		document.addEventListener("maple:signed-in", (event) =>
+			heard.push(event instanceof CustomEvent && event.detail),
+		)
 		await mount()
 		await vi.waitFor(() => expect(navCta()?.textContent).toBe("Dashboard"))
 		expect(navCta()?.getAttribute("href")).toBe("https://app.maple.dev")
@@ -88,7 +94,9 @@ describe("NavBar island", () => {
 		expect(open).toBeInstanceOf(HTMLButtonElement)
 		open?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
 		await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
-		const pricing = [...document.querySelectorAll('[role="dialog"] a')].find((a) => a.textContent === "Pricing")
+		const pricing = [...document.querySelectorAll('[role="dialog"] a')].find(
+			(a) => a.textContent === "Pricing",
+		)
 		expect(pricing?.getAttribute("href")).toBe("/pricing")
 		pricing?.addEventListener("click", (event) => event.preventDefault())
 		pricing?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
@@ -97,10 +105,13 @@ describe("NavBar island", () => {
 
 	it("clicking Product opens the mega-menu with every section", async () => {
 		await mount()
-		const product = [...document.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Product"))
+		const product = [...document.querySelectorAll("button")].find((b) =>
+			b.textContent?.startsWith("Product"),
+		)
 		product?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
 		await vi.waitFor(() => expect(product?.getAttribute("aria-expanded")).toBe("true"))
 		const text = document.body.textContent ?? ""
-		for (const section of ["Features", "Use Cases", "Integrations", "Compare", "Maple vs Honeycomb"]) expect(text).toContain(section)
+		for (const section of ["Features", "Use Cases", "Integrations", "Compare", "Maple vs Honeycomb"])
+			expect(text).toContain(section)
 	})
 })

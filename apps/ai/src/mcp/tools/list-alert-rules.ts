@@ -1,6 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ListAlertRulesOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -42,10 +42,11 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 
 			const services =
 				params.services !== undefined && params.services.length > 0 ? params.services : undefined
-			const rules = result.rules.filter(
+			const rules = Arr.filter(
+				result.rules,
 				(r) =>
 					(services === undefined ||
-						services.some((service) => ruleServiceMatch(r, service) !== undefined)) &&
+						Arr.some(services, (service) => ruleServiceMatch(r, service) !== undefined)) &&
 					(params.signal_type === undefined || r.signalType === params.signal_type) &&
 					(params.severity === undefined || r.severity === params.severity) &&
 					(params.enabled_only !== true || r.enabled),
@@ -59,7 +60,7 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 			})
 
 			return {
-				rules: rules.map(toAlertRuleRow),
+				rules: Arr.map(rules, toAlertRuleRow),
 				total: rules.length,
 				...(services === undefined ? undefined : { services: [...services] }),
 				...(params.signal_type === undefined ? undefined : { signalType: params.signal_type }),
@@ -108,13 +109,13 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 									"Enabled",
 									"Destinations",
 								],
-								output.rules.map((r) => [
+								Arr.map(output.rules, (r) => [
 									r.id,
 									r.name,
 									r.signalType === "raw_query"
 										? "(raw SQL)"
 										: r.serviceNames.length > 0
-											? r.serviceNames.join(", ")
+											? Arr.join(r.serviceNames, ", ")
 											: "all",
 									r.severity,
 									r.signalType,
@@ -125,11 +126,9 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 							),
 						],
 			next: [
-				...output.rules
-					.slice(0, 1)
-					.map((r) =>
-						doc.next("get_alert_rule", { rule_id: r.id }, `full configuration of "${r.name}"`),
-					),
+				...Arr.map(output.rules.slice(0, 1), (r) =>
+					doc.next("get_alert_rule", { rule_id: r.id }, `full configuration of "${r.name}"`),
+				),
 				doc.next("list_alert_incidents", {}, "see triggered alerts"),
 				doc.next(
 					"list_alert_destinations",

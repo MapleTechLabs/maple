@@ -12,6 +12,7 @@ import { externalLink } from "./view-gcp-configure-parts"
 import { copyOf, SMALL } from "./view-gcp-parts"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpValue` and `GcpManualSteps`.
 
@@ -22,7 +23,7 @@ export const gcpValue = (h: H, model: Model, value: GcpStepField["value"], copy 
 	if (typeof value !== "string")
 		return h.span(
 			[h.Class("flex flex-wrap gap-x-2 gap-y-1")],
-			value.map((one) => gcpValue(h, model, one, copy)),
+			Arr.map(value, (one) => gcpValue(h, model, one, copy)),
 		)
 	if (!copy) return h.span([h.Class("text-foreground")], [value])
 	return h.span(
@@ -83,7 +84,7 @@ const manualStepBody = (h: H, model: Model, step: GcpManualStep): Html =>
 						"grid grid-cols-1 items-baseline gap-x-4 gap-y-1 text-xs/5 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-y-2",
 					),
 				],
-				step.fields.map((field) =>
+				Arr.map(step.fields, (field) =>
 					h.div(
 						[h.Key(field.label), h.Class("contents")],
 						[
@@ -102,7 +103,7 @@ const manualStepBody = (h: H, model: Model, step: GcpManualStep): Html =>
 									"flex list-disc flex-col gap-1 pl-4 text-xs/5 text-pretty text-muted-foreground",
 								),
 							],
-							step.notes.map((note) => h.li([h.Key(note)], [note])),
+							Arr.map(step.notes, (note) => h.li([h.Key(note)], [note])),
 						),
 					]),
 		],
@@ -122,78 +123,70 @@ export const manualSteps = (
 ): Html => {
 	const firstTitle = options.steps[0]?.title ?? null
 	const open = configure.isManualTouched ? configure.manualOpen : firstTitle
-	return vstack(h, { gap: "3", as: "section" },
-		[
-			hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1" },
-				[
-					vstack(h, { gap: "0.5" },
-						[
-							heading(h, { level: 3, variant: "subsection" }, [options.heading]),
-							h.p([h.Class(SMALL)], [options.detail]),
-						],
-					),
-					h.span(
-						[h.Class("text-xs/5")],
-						[externalLink(h, options.docsHref, "Full guide in the docs")],
-					),
-				],
-			),
-			h.ol(
-				[h.Class("divide-y divide-border-subtle rounded-md border")],
-				options.steps.map((step, index) => {
-					const expanded = open === step.title
-					return h.li(
-						[h.Key(step.title)],
-						[
-							hstack(h, { gap: "3", className: "px-4 py-3" },
+	return vstack(h, { gap: "3", as: "section" }, [
+		hstack(h, { align: "baseline", justify: "between", wrap: true, className: "gap-x-4 gap-y-1" }, [
+			vstack(h, { gap: "0.5" }, [
+				heading(h, { level: 3, variant: "subsection" }, [options.heading]),
+				h.p([h.Class(SMALL)], [options.detail]),
+			]),
+			h.span([h.Class("text-xs/5")], [externalLink(h, options.docsHref, "Full guide in the docs")]),
+		]),
+		h.ol(
+			[h.Class("divide-y divide-border-subtle rounded-md border")],
+			Arr.map(options.steps, (step, index) => {
+				const expanded = open === step.title
+				return h.li(
+					[h.Key(step.title)],
+					[
+						hstack(h, { gap: "3", className: "px-4 py-3" }, [
+							h.span(
 								[
-									h.span(
-										[
-											h.AriaHidden(true),
-											h.Class(
-												"flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs font-medium text-muted-foreground",
-											),
-										],
-										[String(index + 1)],
-									),
-									pressable(
-										h,
-										{
-											onClick: Message.ClickedGcpManualStep({ title: step.title, firstTitle }),
-											className:
-												"flex min-w-0 flex-1 items-center gap-3 text-left text-sm font-medium outline-none focus-visible:underline focus-visible:ring-0",
-											attributes: [h.AriaExpanded(expanded)],
-										},
-										[
-											h.span([h.Class("min-w-0 flex-1")], [step.title]),
-											...(expanded
-												? []
-												: [
-														h.span(
-															[
-																h.Class(
-																	"max-w-1/2 min-w-0 truncate font-mono text-xs font-normal text-muted-foreground",
-																),
-															],
-															[step.summary],
-														),
-													]),
-											icon(h, "ChevronDownIcon", {
-												size: 14,
-												className: cn(
-													typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }),
-													expanded && "rotate-180",
-												),
-											}),
-										],
+									h.AriaHidden(true),
+									h.Class(
+										"flex size-5 shrink-0 items-center justify-center rounded-full border text-2xs font-medium text-muted-foreground",
 									),
 								],
+								[String(index + 1)],
 							),
-							...(expanded ? [manualStepBody(h, model, step)] : []),
-						],
-					)
-				}),
-			),
-		],
-	)
+							pressable(
+								h,
+								{
+									onClick: Message.ClickedGcpManualStep({ title: step.title, firstTitle }),
+									className:
+										"flex min-w-0 flex-1 items-center gap-3 text-left text-sm font-medium outline-none focus-visible:underline focus-visible:ring-0",
+									attributes: [h.AriaExpanded(expanded)],
+								},
+								[
+									h.span([h.Class("min-w-0 flex-1")], [step.title]),
+									...(expanded
+										? []
+										: [
+												h.span(
+													[
+														h.Class(
+															"max-w-1/2 min-w-0 truncate font-mono text-xs font-normal text-muted-foreground",
+														),
+													],
+													[step.summary],
+												),
+											]),
+									icon(h, "ChevronDownIcon", {
+										size: 14,
+										className: cn(
+											typographyClass({
+												tone: "muted",
+												className: "shrink-0 transition-transform",
+											}),
+											expanded && "rotate-180",
+										),
+									}),
+								],
+							),
+						]),
+						...(expanded ? [manualStepBody(h, model, step)] : []),
+					],
+				)
+			}),
+		),
+	])
 }

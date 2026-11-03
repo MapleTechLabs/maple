@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { V2ApiKey } from "@maple/domain/http/v2"
 import { buildDeviceKeyRows, buildKeyRows, filterKeyRows, keyAccessSummary, type KeyRow } from "./keys-table"
+import { Array as Arr } from "effect"
 
 const NOW = Date.parse("2026-10-17T12:00:00Z")
 const inDays = (days: number) => new Date(NOW + days * 86_400_000).toISOString()
@@ -25,7 +26,7 @@ const apiKey = (overrides: Omit<Partial<V2ApiKey>, "id"> & { id?: string }): V2A
 	}) as V2ApiKey
 
 const allFilter = { type: "all", status: "active", search: "" } as const
-const ids = (rows: ReadonlyArray<KeyRow>) => rows.map((row) => row.id)
+const ids = (rows: ReadonlyArray<KeyRow>) => Arr.map(rows, (row) => row.id)
 
 describe("buildKeyRows", () => {
 	it("drops device keys and types MCP keys", () => {
@@ -38,7 +39,7 @@ describe("buildKeyRows", () => {
 			now: NOW,
 		})
 		expect(ids(rows)).toEqual(["key_a", "key_m"])
-		expect(rows.map((row) => row.type)).toEqual(["api", "mcp"])
+		expect(Arr.map(rows, (row) => row.type)).toEqual(["api", "mcp"])
 	})
 })
 

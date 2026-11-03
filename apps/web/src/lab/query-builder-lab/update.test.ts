@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { createFormulaDraft, createQueryDraft } from "@maple/query-engine/query-builder"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Select from "@maple/views/ui/select"
@@ -28,9 +28,12 @@ type Step = Readonly<{
 	commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
 }>
 
-const names = (step: Step) => (step.commands ?? []).map((command) => command.name)
+const names = (step: Step) => Arr.map(step.commands ?? [], (command) => command.name)
 const argsOf = (step: Step, name: string) =>
-	(step.commands ?? []).filter((command) => command.name === name).map((command) => command.args)
+	Arr.map(
+		Arr.filter(step.commands ?? [], (command) => command.name === name),
+		(command) => command.args,
+	)
 
 const signedIn = (search?: Flags["search"]): Model =>
 	update(init(flags(search)).model, Message.SucceededCheckSession({ orgId })).model
@@ -137,13 +140,13 @@ describe("query builder lab", () => {
 
 	test("clone appends a copy under a new id and relabels; remove relabels and keeps the last query", () => {
 		const cloned = update(signedIn(), Message.CreatedCloneId({ queryId: "q0", id: "q9" })).model
-		expect(cloned.queries.map((query) => [query.id, query.name])).toEqual([
+		expect(Arr.map(cloned.queries, (query) => [query.id, query.name])).toEqual([
 			["q0", "A"],
 			["q1", "B"],
 			["q9", "C"],
 		])
 		const removed = update(cloned, Message.ClickedRemoveQuery({ queryId: "q0" })).model
-		expect(removed.queries.map((query) => [query.id, query.name])).toEqual([
+		expect(Arr.map(removed.queries, (query) => [query.id, query.name])).toEqual([
 			["q1", "A"],
 			["q9", "B"],
 		])

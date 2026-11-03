@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * The unit vocabulary a widget's `display.unit` may name.
  *
@@ -66,7 +67,7 @@ export const WIDGET_UNITS: ReadonlyArray<WidgetUnitMeta> = [
 	{ token: "short", label: "Short", expects: "any number; rendered like `number`" },
 ]
 
-export const WIDGET_UNIT_TOKENS: ReadonlyArray<string> = WIDGET_UNITS.map((unit) => unit.token)
+export const WIDGET_UNIT_TOKENS: ReadonlyArray<string> = Arr.map(WIDGET_UNITS, (unit) => unit.token)
 
 const WIDGET_UNIT_TOKEN_SET: ReadonlySet<string> = new Set(WIDGET_UNIT_TOKENS)
 
@@ -117,4 +118,4 @@ const UNIT_SUGGESTIONS = new Map<string, string>([
 
 /** The catalog token an unrecognised unit most likely meant, if any. */
 export const suggestWidgetUnit = (value: string): string | undefined =>
-	UNIT_SUGGESTIONS.get(value.trim().toLowerCase())
+	UNIT_SUGGESTIONS.get(Str.toLowerCase(Str.trim(value)))

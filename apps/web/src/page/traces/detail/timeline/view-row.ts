@@ -13,6 +13,7 @@ import type { Bar } from "./layout"
 import { Message } from "./message"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
 // TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and pointer-following) is not
@@ -115,7 +116,16 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 				? [
 						h.span(
 							[
-								attr(h, typographyClass({ size: "3xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" })),
+								attr(
+									h,
+									typographyClass({
+										size: "3xs",
+										tone: "muted",
+										mono: true,
+										numeric: true,
+										className: "shrink-0",
+									}),
+								),
 								h.Title(`Depth ${bar.depth}`),
 							],
 							["L", String(bar.depth)],
@@ -131,7 +141,8 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 							// The native title carries the shortcut hint, so no tooltip trigger per row.
 							hasTooltip: false,
 							// No coarse-pointer hit area: it would cover the span label beside it.
-							className: "text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
+							className:
+								"text-muted-foreground hover:text-foreground active:text-foreground pointer-coarse:after:hidden",
 							attributes: [
 								h.Tabindex(-1),
 								h.Title(`${verb} — ⌥ for the whole subtree`),
@@ -158,7 +169,8 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 						cn(
 							"truncate font-mono font-medium text-foreground-soft",
 							bar.isError && TONE_TEXT.crit,
-							bar.span.isMissing === true && typographyClass({ tone: "muted", className: "italic" }),
+							bar.span.isMissing === true &&
+								typographyClass({ tone: "muted", className: "italic" }),
 						),
 					),
 				],
@@ -195,10 +207,7 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 				? [
 						h.span(
 							[
-								attr(
-									h,
-									"flex items-center gap-0.5 shrink-0 text-4xs text-foreground-subtle",
-								),
+								attr(h, "flex items-center gap-0.5 shrink-0 text-4xs text-foreground-subtle"),
 								h.Title(countLabel(bar.childCount, "hidden span")),
 							],
 							[icon(h, "UiLayersIcon", { size: 9 }), String(bar.childCount)],
@@ -222,7 +231,7 @@ const eventMarkers = (h: H, bar: Bar, state: RowState, events: ReadonlyArray<Tim
 			attr(h, "pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2"),
 			h.Style({ height: `${ROW_HEIGHT - 8}px` }),
 		],
-		spanEventMarkers(events, bar.offsetStartMs, bar.span.durationMs).map((marker, index) =>
+		Arr.map(spanEventMarkers(events, bar.offsetStartMs, bar.span.durationMs), (marker, index) =>
 			h.span(
 				[
 					h.AriaLabel(eventLabel(marker)),
@@ -335,7 +344,11 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 							...(isLabelLeft ? [h.DataAttribute("side", "left")] : []),
 							...(isOffscreen ? [h.Style({ visibility: "hidden" })] : []),
 						],
-						[h.span([attr(h, "text-foreground-soft")], [bar.span.spanName]), " · ", durationLabel],
+						[
+							h.span([attr(h, "text-foreground-soft")], [bar.span.spanName]),
+							" · ",
+							durationLabel,
+						],
 					),
 				],
 			),

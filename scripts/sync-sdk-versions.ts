@@ -5,7 +5,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 const SDK_PACKAGES = ["packages/effect-sdk", "packages/browser"]
 const literal = /export const SDK_VERSION = "[^"]*"/
@@ -13,7 +13,7 @@ const decodeManifest = Schema.decodeUnknownSync(
 	Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
 )
 
-SDK_PACKAGES.forEach((dir) => {
+Arr.forEach(SDK_PACKAGES, (dir) => {
 	const root = resolve(import.meta.dir, "..", dir)
 	const { version } = decodeManifest(readFileSync(resolve(root, "package.json"), "utf8"))
 	const file = resolve(root, "src/version.ts")
@@ -22,5 +22,5 @@ SDK_PACKAGES.forEach((dir) => {
 		console.error(`sync-sdk-versions: SDK_VERSION literal not found in ${dir}/src/version.ts`)
 		process.exit(1)
 	}
-	writeFileSync(file, source.replace(literal, `export const SDK_VERSION = "${version}"`))
+	writeFileSync(file, Str.replace(literal, `export const SDK_VERSION = "${version}"`)(source))
 })

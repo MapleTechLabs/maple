@@ -8,7 +8,7 @@
  * a shared second, the line that opens a step of the next step's kind is what moves them on.
  */
 import type { WorkflowJobJob } from "@maple/domain/http"
-import { Stream } from "effect"
+import { Stream, Array as Arr, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import {
 	type OtlpKeyValue,
@@ -66,9 +66,9 @@ const RUN_STEP_HEADER =
 type StepKind = "setup" | "run" | "post" | "complete"
 
 const headerKind = (text: string): StepKind | undefined => {
-	if (text.startsWith("Current runner version")) return "setup"
-	if (text.startsWith("Post job cleanup.")) return "post"
-	if (text.startsWith("Cleaning up orphan processes")) return "complete"
+	if (Str.startsWith("Current runner version")(text)) return "setup"
+	if (Str.startsWith("Post job cleanup.")(text)) return "post"
+	if (Str.startsWith("Cleaning up orphan processes")(text)) return "complete"
 	return RUN_STEP_HEADER.test(text) ? "run" : undefined
 }
 
@@ -93,8 +93,8 @@ interface Stamp {
 const stampOf = (date: string, fraction: string | undefined): Stamp | undefined => {
 	const seconds = timestampMs(`${date}Z`) / 1000
 	if (!Number.isFinite(seconds)) return undefined
-	const nanos = (fraction ?? "").padEnd(9, "0")
-	return { unixNano: `${seconds}${nanos}`, ms: seconds * 1000 + Number(nanos.slice(0, 3)) }
+	const nanos = Str.padEnd(9, "0")(fraction ?? "")
+	return { unixNano: `${seconds}${nanos}`, ms: seconds * 1000 + Number(Str.slice(0, 3)(nanos)) }
 }
 
 interface ReaderState {
@@ -124,17 +124,19 @@ export const jobLogRecords = <E, R>(
 	const traceId = ciTraceId(job)
 	const jobSpan = jobSpanId(job)
 	// The runner names a post step after its step, so "Post …" alone is not one.
-	const stepNames = new Set(job.steps.map((step) => step.name))
+	const stepNames = new Set(Arr.map(job.steps, (step) => step.name))
 	const stepKind = (name: string): StepKind => {
 		if (name === "Set up job") return "setup"
 		if (name === "Complete job") return "complete"
-		return name.startsWith("Post ") && stepNames.has(name.slice(5)) ? "post" : "run"
+		return Str.startsWith("Post ")(name) && stepNames.has(Str.slice(5)(name)) ? "post" : "run"
 	}
 	// A skipped step prints nothing, though the API stamps it with the next step's start.
-	const steps = job.steps
-		.filter((step) => step.conclusion !== "skipped")
-		.toSorted((a, b) => a.number - b.number)
-		.map((step) => ({ step, spanId: stepSpanId(job, step), kind: stepKind(step.name) }))
+	const steps = Arr.map(
+		Arr.filter(job.steps, (step) => step.conclusion !== "skipped").toSorted(
+			(a, b) => a.number - b.number,
+		),
+		(step) => ({ step, spanId: stepSpanId(job, step), kind: stepKind(step.name) }),
+	)
 	const shared = {
 		"cicd.pipeline.name": job.workflowName,
 		"cicd.pipeline.run.id": job.runId,
@@ -191,15 +193,15 @@ export const jobLogRecords = <E, R>(
 	}
 
 	const read = (state: ReaderState, raw: string): readonly [ReaderState, ReadonlyArray<Entry>] => {
-		const stamped = STAMPED_LINE.exec(raw.replace(/^﻿/, ""))
+		const stamped = STAMPED_LINE.exec(Str.replace(/^﻿/, "")(raw))
 		const stamp = (stamped === null ? undefined : stampOf(stamped[1] ?? "", stamped[2])) ?? state.stamp
-		const text = (stamped === null ? raw : (stamped[3] ?? "")).replace(ANSI_ESCAPE, "").trimEnd()
+		const text = Str.trimEnd(Str.replace(ANSI_ESCAPE, "")(stamped === null ? raw : (stamped[3] ?? "")))
 		if (text === "" || text === "##[endgroup]") return [{ ...state, stamp }, []]
 		const step = stepOf(state, stamp, text)
 		const stepLines = step === state.step ? state.stepLines + 1 : 1
 		const marker = MARKER.exec(text)
-		const body = marker === null ? text : text.slice(marker[0].length)
-		const clipped = body.length > MAX_LINE_CHARS ? `${body.slice(0, MAX_LINE_CHARS)}...` : body
+		const body = marker === null ? text : Str.slice(marker[0].length)(text)
+		const clipped = body.length > MAX_LINE_CHARS ? `${Str.slice(0, MAX_LINE_CHARS)(body)}...` : body
 		const chars = state.chars + clipped.length
 		if (chars > MAX_JOB_LOG_CHARS) {
 			const notice = recordAt(

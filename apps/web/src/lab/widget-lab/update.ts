@@ -1,4 +1,4 @@
-import { Clock, Effect, Option } from "effect"
+import { Clock, Effect, Option, Array as Arr } from "effect"
 import { Command, Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -40,7 +40,8 @@ export const init = (flags: WidgetLabFlags): Return => {
 			orgId: Option.getOrNull(flags.maybeOrgId),
 		},
 		commands: [
-			...(shell.commands ?? []).map(
+			...Arr.map(
+				shell.commands ?? [],
 				Command.mapMessage((message) => Message.GotShellMessage({ message })),
 			),
 			ReadClock(),
@@ -138,4 +139,3 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 export const isEditMode = (model: Model): boolean => model.mode.values.includes("edit")
-

@@ -32,6 +32,7 @@ import {
 	WaitSearchDebounce,
 } from "./model"
 import type { PresetValue } from "../../kit/time-controls"
+import { Array as Arr } from "effect"
 
 export type Search = typeof CodeReviewIssuesSearch.Type
 type Return = PageReturn<Model, Message>
@@ -44,7 +45,7 @@ const FRAME_ID = "code-review-issues"
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewIssues({ search }))
 
 const navigate = (model: Model, patch: Partial<Search>): Return => {
-	const isFilter = Object.keys(patch).some((key) => key !== "review")
+	const isFilter = Arr.some(Object.keys(patch), (key) => key !== "review")
 	return {
 		model: isFilter ? { ...model, limit: PAGE } : model,
 		outMessage: PageOutMessage.RequestedNavigation({

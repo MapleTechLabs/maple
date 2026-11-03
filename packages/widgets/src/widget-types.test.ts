@@ -10,6 +10,7 @@ import {
 	widgetTypeByVisualization,
 	WIDGET_VISUALIZATIONS,
 } from "./widget-types"
+import { Array as Arr } from "effect"
 
 describe("defaultWidgetLayout", () => {
 	it("falls back to the chart slot for anything unknown", () => {
@@ -91,7 +92,7 @@ describe("widgetTypeByPersesKind", () => {
 
 describe("MCP_VISUALIZATIONS", () => {
 	it("collapses line/bar/area into one chart entry", () => {
-		expect(MCP_VISUALIZATIONS.filter((viz) => viz === "chart")).toHaveLength(1)
+		expect(Arr.filter(MCP_VISUALIZATIONS, (viz) => viz === "chart")).toHaveLength(1)
 	})
 })
 
@@ -103,7 +104,7 @@ describe("MCP_VISUALIZATIONS", () => {
 describe("WIDGET_VISUALIZATIONS", () => {
 	it("is exactly the set the widget type table claims", () => {
 		expect([...WIDGET_VISUALIZATIONS].sort()).toEqual(
-			[...new Set(PANEL_TYPES.map((meta) => meta.visualization))].sort(),
+			[...new Set(Arr.map(PANEL_TYPES, (meta) => meta.visualization))].sort(),
 		)
 	})
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { InspectInfraOutput, ListInfraOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
 import { installFakeWarehouse, restoreWarehouse } from "../../__evals__/fake-warehouse"
@@ -41,7 +41,7 @@ describe("list_infra provider kinds", () => {
 	it("reads status=hot on a traffic kind as an error rate, counted against the whole fleet", async () => {
 		const result = await call("list_infra", { kind: "cloudflare_zones", status: "hot" })
 		const section = decode(ListInfraOutput, result).sections[0]
-		expect(section?.rows.map((row) => row.name)).toEqual([PROVIDER_WORLD.failingZone])
+		expect(Arr.map(section?.rows, (row) => row.name)).toEqual([PROVIDER_WORLD.failingZone])
 		expect(section?.summary?.total).toBe(3)
 	})
 
@@ -51,13 +51,13 @@ describe("list_infra provider kinds", () => {
 			await call("list_infra", { kind: "railway_services", environment: "staging" }),
 		)
 		const rows = output.sections[0]?.rows ?? []
-		expect(rows.map((row) => [row.name, row.environment])).toEqual([["api", "staging"]])
+		expect(Arr.map(rows, (row) => [row.name, row.environment])).toEqual([["api", "staging"]])
 		expect(rows[0]?.cpuPeak).toBeCloseTo(0.1, 3)
 	})
 
 	it("leaves provider kinds out of the overview when no integration is connected", async () => {
 		const output = decode(ListInfraOutput, await call("list_infra", {}))
-		expect(output.sections.some((section) => section.kind.startsWith("cloudflare"))).toBe(false)
+		expect(Arr.some(output.sections, (section) => Str.startsWith("cloudflare")(section.kind))).toBe(false)
 		expect(output.reporting).not.toContain("railway_services")
 	})
 })
@@ -117,7 +117,7 @@ describe("inspect_infra provider kinds", () => {
 			await call("inspect_infra", { kind: "planetscale_database", name: PROVIDER_WORLD.fullDatabase }),
 		)
 		expect(output.entity?.disk).toBeCloseTo(0.785, 3)
-		const storage = output.series.find((s) => s.label.startsWith("storage used"))
+		const storage = output.series.find((s) => Str.startsWith("storage used")(s.label))
 		expect(storage?.max).toBeLessThan(1)
 	})
 

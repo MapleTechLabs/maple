@@ -21,6 +21,7 @@ import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The session checks: the verdict, what needs attention, the rest.
 // Headlines and actions are sentences, so they read in the prose face; codes and values stay mono.
@@ -40,9 +41,9 @@ const ROW_GRID = "grid grid-cols-[0.75rem_9.5rem_minmax(0,1fr)] items-baseline g
 
 /** `withCode`: backticked spans as code, an odd backtick count left as text. */
 const withCode = (h: H, text: string): ReadonlyArray<Html | string> => {
-	const parts = text.split(/`([^`]+)`/)
+	const parts = Str.split(/`([^`]+)`/)(text)
 	if (parts.length === 1 || (text.match(/`/g)?.length ?? 0) % 2 === 1) return [text]
-	return parts.map((part, index) =>
+	return Arr.map(parts, (part, index) =>
 		index % 2 === 1 ? inlineCode(h, { variant: "plain", className: "text-inherit" }, [part]) : part,
 	)
 }
@@ -56,25 +57,23 @@ const verdict = (h: H, model: Model, report: SessionChecksReport): Html => {
 	return h.section(
 		[h.Class("flex flex-wrap items-start justify-between gap-x-6 gap-y-3")],
 		[
-			vstack(h, { gap: "1", shrink: true },
-				[
-					h.p(
-						[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base")],
-						[
-							// The outcome only: failing checks carry their own severity under Needs attention.
-							statusDot(h, {
-								size: "lg",
-								tone: failed ? "crit" : "ok",
-								className: "self-center",
-							}),
-							h.span(
-								[h.Class(failed ? TONE_TEXT.crit : "text-foreground")],
-								[failed ? "Failed" : "Completed"],
-							),
-						],
-					),
-				],
-			),
+			vstack(h, { gap: "1", shrink: true }, [
+				h.p(
+					[h.Class("flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-base")],
+					[
+						// The outcome only: failing checks carry their own severity under Needs attention.
+						statusDot(h, {
+							size: "lg",
+							tone: failed ? "crit" : "ok",
+							className: "self-center",
+						}),
+						h.span(
+							[h.Class(failed ? TONE_TEXT.crit : "text-foreground")],
+							[failed ? "Failed" : "Completed"],
+						),
+					],
+				),
+			]),
 			...(failingSpanId === undefined
 				? []
 				: [
@@ -151,44 +150,42 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 		[
 			checkDot(h, check.status),
 			h.span([h.Class("truncate font-semibold text-ui")], [check.name]),
-			vstack(h, { gap: "1", shrink: true },
-				[
-					h.p([h.Class("font-prose text-ui leading-relaxed")], withCode(h, check.headline)),
-					...(check.id === "tool-errors"
-						? [
-								actionLine([
-									"Check the",
-									" ",
-									button(
-										h,
-										{
-											variant: "link",
-											size: "xs",
-											className:
-												"h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground active:decoration-muted-foreground",
-											attributes: [h.OnClick(Message.ClickedOpenTools())],
-										},
-										["Tools section"],
-									),
-									" ",
-									"at the bottom of this page for details.",
-								]),
-							]
-						: check.action === undefined
-							? []
-							: [actionLine(withCode(h, check.action))]),
-					...(check.findings.length > 0
-						? [
-								h.div(
-									[h.Class("-ml-1.5 mt-0.5 flex flex-col")],
-									check.findings.map((finding) =>
-										evidenceRow(h, model, finding, check.status),
-									),
+			vstack(h, { gap: "1", shrink: true }, [
+				h.p([h.Class("font-prose text-ui leading-relaxed")], withCode(h, check.headline)),
+				...(check.id === "tool-errors"
+					? [
+							actionLine([
+								"Check the",
+								" ",
+								button(
+									h,
+									{
+										variant: "link",
+										size: "xs",
+										className:
+											"h-auto p-0 align-baseline text-xs text-muted-foreground underline decoration-muted-foreground/40 hover:decoration-muted-foreground active:decoration-muted-foreground",
+										attributes: [h.OnClick(Message.ClickedOpenTools())],
+									},
+									["Tools section"],
 								),
-							]
-						: []),
-				],
-			),
+								" ",
+								"at the bottom of this page for details.",
+							]),
+						]
+					: check.action === undefined
+						? []
+						: [actionLine(withCode(h, check.action))]),
+				...(check.findings.length > 0
+					? [
+							h.div(
+								[h.Class("-ml-1.5 mt-0.5 flex flex-col")],
+								Arr.map(check.findings, (finding) =>
+									evidenceRow(h, model, finding, check.status),
+								),
+							),
+						]
+					: []),
+			]),
 		],
 	)
 }
@@ -230,24 +227,22 @@ const disclosure = (
 				!isDisclosable && "invisible",
 			),
 		}),
-		hstack(h, { gap: "2", align: "baseline", as: "span" },
-			[
-				h.span(
-					[
-						h.Class(
-							cn(
-								"font-semibold text-ui",
-								isDisclosable ? STATUS_TEXT[options.status] : "text-muted-foreground",
-							),
+		hstack(h, { gap: "2", align: "baseline", as: "span" }, [
+			h.span(
+				[
+					h.Class(
+						cn(
+							"font-semibold text-ui",
+							isDisclosable ? STATUS_TEXT[options.status] : "text-muted-foreground",
 						),
-					],
-					[options.title],
-				),
-				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true },
-					[String(options.checks.length)],
-				),
-			],
-		),
+					),
+				],
+				[options.title],
+			),
+			typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+				String(options.checks.length),
+			]),
+		]),
 		// Wraps so every collapsed check name stays readable.
 		h.span(
 			[h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")],
@@ -256,7 +251,10 @@ const disclosure = (
 					? options.emptySummary
 					: isExpanded
 						? ""
-						: options.checks.map((check) => check.name).join(" · "),
+						: Arr.join(
+								Arr.map(options.checks, (check) => check.name),
+								" · ",
+							),
 			],
 		),
 	]
@@ -268,7 +266,10 @@ const disclosure = (
 				h,
 				{
 					onClick: Message.ToggledChecks({ which: options.which, isOpen: !isExpanded }),
-					className: cn(ROW_GRID, "w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken"),
+					className: cn(
+						ROW_GRID,
+						"w-full py-2.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+					),
 					attributes: [h.AriaExpanded(isExpanded)],
 				},
 				head,
@@ -277,7 +278,7 @@ const disclosure = (
 				? [
 						h.div(
 							[h.Class(cn("pt-0.5 pb-3", vstackClass({ gap: "1.5" })))],
-							options.checks.map((check) => checkFact(h, check)),
+							Arr.map(options.checks, (check) => checkFact(h, check)),
 						),
 					]
 				: []),
@@ -374,7 +375,7 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 			h.span([h.Class("text-muted-foreground")], ["Captured"]),
 			h.span(
 				[h.Class("flex flex-wrap gap-x-4 gap-y-1")],
-				coverageSignals(coverage).map((signal) => {
+				Arr.map(coverageSignals(coverage), (signal) => {
 					const mark = SIGNAL_MARK[signal.state]
 					return h.span(
 						[
@@ -405,69 +406,68 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 	)
 
 export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): Html => {
-	const attention = report.checks.filter((check) => check.status === "failed" || check.status === "warning")
-	const passed = report.checks.filter((check) => check.status === "passed")
-	const skipped = report.checks.filter((check) => check.status === "skipped")
-	const isClean = attention.length === 0
-	return vstack(h, { gap: "5" },
-		[
-			verdict(h, model, report),
-			vstack(h, { gap: "2", as: "section" },
-				[
-					sectionHeading(h, {
-						variant: "eyebrow",
-						as: "h3",
-						title: "Needs attention",
-						className: "mb-0",
-					}),
-					isClean
-						? h.p(
-								[h.Class("flex items-center gap-2 py-2 font-prose text-ui")],
-								[
-									icon(h, "CheckIcon", {
-										size: 14,
-										className: "shrink-0 text-severity-info",
-										attributes: [h.AriaHidden(true)],
-									}),
-									skipped.length === 0
-										? "Nothing to fix. Every check below carries what it measured."
-										: `Nothing to fix in what could be checked; ${skipped.length === 1 ? "one check" : `${skipped.length} checks`} had no signal to read.`,
-								],
-							)
-						: h.div(
-								[h.Class("flex flex-col divide-y divide-border border-border border-y")],
-								attention.map((check) => checkBlock(h, model, check)),
-							),
-				],
-			),
-			h.div(
-				[h.Class("flex flex-col divide-y divide-border border-border border-y")],
-				[
-					disclosure(h, {
-						which: "passed",
-						title: "Passed",
-						status: "passed",
-						checks: passed,
-						isOpenByDefault: isClean,
-						choice: model.checksChoice.passed,
-						emptySummary: "Nothing passed",
-					}),
-					...(skipped.length > 0
-						? [
-								disclosure(h, {
-									which: "skipped",
-									title: "Not checked",
-									status: "skipped",
-									checks: skipped,
-									isOpenByDefault: isClean,
-									choice: model.checksChoice.skipped,
-									emptySummary: "Every check had the signal it needed",
-								}),
-							]
-						: []),
-				],
-			),
-			coverageLine(h, report.coverage),
-		],
+	const attention = Arr.filter(
+		report.checks,
+		(check) => check.status === "failed" || check.status === "warning",
 	)
+	const passed = Arr.filter(report.checks, (check) => check.status === "passed")
+	const skipped = Arr.filter(report.checks, (check) => check.status === "skipped")
+	const isClean = attention.length === 0
+	return vstack(h, { gap: "5" }, [
+		verdict(h, model, report),
+		vstack(h, { gap: "2", as: "section" }, [
+			sectionHeading(h, {
+				variant: "eyebrow",
+				as: "h3",
+				title: "Needs attention",
+				className: "mb-0",
+			}),
+			isClean
+				? h.p(
+						[h.Class("flex items-center gap-2 py-2 font-prose text-ui")],
+						[
+							icon(h, "CheckIcon", {
+								size: 14,
+								className: "shrink-0 text-severity-info",
+								attributes: [h.AriaHidden(true)],
+							}),
+							skipped.length === 0
+								? "Nothing to fix. Every check below carries what it measured."
+								: `Nothing to fix in what could be checked; ${skipped.length === 1 ? "one check" : `${skipped.length} checks`} had no signal to read.`,
+						],
+					)
+				: h.div(
+						[h.Class("flex flex-col divide-y divide-border border-border border-y")],
+						Arr.map(attention, (check) => checkBlock(h, model, check)),
+					),
+		]),
+		h.div(
+			[h.Class("flex flex-col divide-y divide-border border-border border-y")],
+			[
+				disclosure(h, {
+					which: "passed",
+					title: "Passed",
+					status: "passed",
+					checks: passed,
+					isOpenByDefault: isClean,
+					choice: model.checksChoice.passed,
+					emptySummary: "Nothing passed",
+				}),
+				...(skipped.length > 0
+					? [
+							disclosure(h, {
+								which: "skipped",
+								title: "Not checked",
+								status: "skipped",
+								checks: skipped,
+								isOpenByDefault: isClean,
+								choice: model.checksChoice.skipped,
+								emptySummary: "Every check had the signal it needed",
+							}),
+						]
+					: []),
+			],
+		),
+		coverageLine(h, report.coverage),
+	])
 }

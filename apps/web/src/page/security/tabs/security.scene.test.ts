@@ -8,7 +8,18 @@ import {
 	SecurityAuditTargetExistsError,
 } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Cause, Effect, Fiber, Option, Result, Schema, Stream } from "effect"
+import {
+	Cause,
+	Effect,
+	Fiber,
+	Option,
+	Result,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -55,29 +66,35 @@ const NOW = Date.UTC(2026, 9, 23, 14, 32)
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const overview = AppRoute.SecurityCode()
 
 /** Targets, runs and GitHub status answered, the clock read. */
 const withTargets = (route: Parameters<typeof init>[0] = overview) => {
 	const entered = init(route, context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchTargets({
-			key: entered.targets.key ?? "",
-			result: Result.succeed(targetsOf(NOW)),
-		}),
-		Message.CompletedFetchRuns({ key: entered.runs.key ?? "", result: Result.succeed(runsOf(NOW)) }),
-		Message.CompletedFetchGithubStatus({
-			key: entered.githubStatus.key ?? "",
-			result: Result.succeed(githubStatusOf()),
-		}),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchTargets({
+				key: entered.targets.key ?? "",
+				result: Result.succeed(targetsOf(NOW)),
+			}),
+			Message.CompletedFetchRuns({ key: entered.runs.key ?? "", result: Result.succeed(runsOf(NOW)) }),
+			Message.CompletedFetchGithubStatus({
+				key: entered.githubStatus.key ?? "",
+				result: Result.succeed(githubStatusOf()),
+			}),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 /** Every target's findings answered. */
 const loaded = (route: Parameters<typeof init>[0] = overview): Model =>
-	Object.values(TARGET_IDS).reduce(
+	Arr.reduce(
+		Rec.values(TARGET_IDS),
+		withTargets(route),
 		(model, targetId) =>
 			pageUpdate(
 				model,
@@ -87,7 +104,6 @@ const loaded = (route: Parameters<typeof init>[0] = overview): Model =>
 					result: Result.succeed(findingsOf(NOW, targetId)),
 				}),
 			).model,
-		withTargets(route),
 	)
 
 describe("security tabs", () => {
@@ -116,9 +132,9 @@ describe("security tabs", () => {
 			}),
 		)
 		const sent = names(targets.commands)
-		expect(sent.filter((name) => name === "SecurityApiListFindings")).toHaveLength(4)
-		expect(sent.filter((name) => name === "SecurityApiListTargetRuns")).toHaveLength(4)
-		expect(sent.filter((name) => name === "SecurityApiGetLatestRun")).toHaveLength(4)
+		expect(Arr.filter(sent, (name) => name === "SecurityApiListFindings")).toHaveLength(4)
+		expect(Arr.filter(sent, (name) => name === "SecurityApiListTargetRuns")).toHaveLength(4)
+		expect(Arr.filter(sent, (name) => name === "SecurityApiGetLatestRun")).toHaveLength(4)
 	})
 
 	test("a tab change keeps the instance and reads nothing again", () => {
@@ -129,7 +145,7 @@ describe("security tabs", () => {
 
 	test("a run that finishes re-reads its target's findings", () => {
 		const model = loaded()
-		const finished = runsOf(NOW).runs.map((run) =>
+		const finished = Arr.map(runsOf(NOW).runs, (run) =>
 			run.id === RUN_IDS.dashboard ? { ...run, status: "complete" as const, finishedAt: NOW } : run,
 		)
 		const polled = pageUpdate(model, Message.TickedPoll({ nowMs: NOW + 15_000 }))
@@ -148,7 +164,7 @@ describe("security tabs", () => {
 
 	test("a target's own runs do not go stale: the polled list's newer copy wins and new runs show", () => {
 		const targetId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard)
-		const ownRuns = runsOf(NOW).runs.filter((run) => run.targetId === TARGET_IDS.dashboard)
+		const ownRuns = Arr.filter(runsOf(NOW).runs, (run) => run.targetId === TARGET_IDS.dashboard)
 		const withOwn = pageUpdate(
 			loaded(),
 			Message.CompletedFetchTargetRuns({
@@ -179,27 +195,27 @@ describe("security tabs", () => {
 					runs: [
 						next,
 						finished,
-						...runsOf(NOW).runs.filter((run) => run.targetId !== TARGET_IDS.dashboard),
+						...Arr.filter(runsOf(NOW).runs, (run) => run.targetId !== TARGET_IDS.dashboard),
 					],
 				}),
 			}),
 		)
 		// The own list still says live; the merge shows the new run and the old one as finished.
 		expect(latestRunFor(answered.model, TARGET_IDS.dashboard)?.id).toBe("run_next_0001")
-		expect(runningRuns(answered.model).map((run) => run.id)).toEqual(["run_next_0001"])
+		expect(Arr.map(runningRuns(answered.model), (run) => run.id)).toEqual(["run_next_0001"])
 		expect(names(answered.commands)).toContain("SecurityApiListTargetRuns")
 	})
 
 	test("polling continues while a target's own list holds a live run the global list dropped", () => {
 		const targetId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard)
-		const ownRuns = runsOf(NOW).runs.filter((run) => run.targetId === TARGET_IDS.dashboard)
+		const ownRuns = Arr.filter(runsOf(NOW).runs, (run) => run.targetId === TARGET_IDS.dashboard)
 		const base = loaded()
 		const withoutGlobal = pageUpdate(
 			base,
 			Message.CompletedFetchRuns({
 				key: base.runs.key ?? "",
 				result: Result.succeed({
-					runs: runsOf(NOW).runs.filter((run) => run.targetId !== TARGET_IDS.dashboard),
+					runs: Arr.filter(runsOf(NOW).runs, (run) => run.targetId !== TARGET_IDS.dashboard),
 				}),
 			}),
 		).model
@@ -235,7 +251,9 @@ describe("security tabs", () => {
 	})
 
 	test("a member's findings are gated, the targets still show", () => {
-		const gated = Object.values(TARGET_IDS).reduce(
+		const gated = Arr.reduce(
+			Rec.values(TARGET_IDS),
+			withTargets(),
 			(model, targetId) =>
 				pageUpdate(
 					model,
@@ -247,7 +265,6 @@ describe("security tabs", () => {
 						),
 					}),
 				).model,
-			withTargets(),
 		)
 		expect(findingsStateOf(gated)).toEqual({ _tag: "Gated", gate: "forbidden" })
 		scene(
@@ -262,7 +279,8 @@ describe("security tabs", () => {
 		const state = findingsStateOf(loaded())
 		const findings = state._tag === "Ready" ? state.findings : []
 		const sectionsFor = (rejected: boolean) =>
-			sectionsOf(filteredFindings(findings, rejected ? { rejected } : {}, "")).map(
+			Arr.map(
+				sectionsOf(filteredFindings(findings, rejected ? { rejected } : {}, "")),
 				(entry) => entry.bucket,
 			)
 		// Both leads carry an estimate, so they sit under their severity, not in a group of their own.
@@ -274,11 +292,14 @@ describe("security tabs", () => {
 		const state = findingsStateOf(loaded())
 		const findings = state._tag === "Ready" ? state.findings : []
 		expect(
-			filteredFindings(findings, { status: "dismissed" }, "").map((finding) => finding.fingerprint),
+			Arr.map(
+				filteredFindings(findings, { status: "dismissed" }, ""),
+				(finding) => finding.fingerprint,
+			),
 		).toEqual(["ratelimit-xff-3a19"])
-		expect(filteredFindings(findings, {}, "exports.ts").map((finding) => finding.fingerprint)).toEqual([
-			"exports-tenant-body-8b9e",
-		])
+		expect(
+			Arr.map(filteredFindings(findings, {}, "exports.ts"), (finding) => finding.fingerprint),
+		).toEqual(["exports-tenant-body-8b9e"])
 	})
 
 	test("coverage reads as unknown, not unmapped, until the latest runs are in", () => {
@@ -291,7 +312,7 @@ describe("security tabs", () => {
 	})
 
 	test("Covered sums every target's latest run, and says not mapped only once no run has", () => {
-		const answered = Object.values(TARGET_IDS).reduce((model, targetId) => {
+		const answered = Arr.reduce(Rec.values(TARGET_IDS), loaded(), (model, targetId) => {
 			const run = latestRunFor(model, targetId)
 			if (run === undefined) return model
 			return pageUpdate(
@@ -302,7 +323,7 @@ describe("security tabs", () => {
 					result: Result.succeed(runDetailOf(NOW, run.id)),
 				}),
 			).model
-		}, loaded())
+		})
 		scene(
 			{ update: pageUpdate, view },
 			given(answered),
@@ -312,14 +333,21 @@ describe("security tabs", () => {
 		)
 
 		const entered = init(overview, context).model
-		const noRuns = [
-			Message.ReadClock({ nowMs: NOW }),
-			Message.CompletedFetchTargets({
-				key: entered.targets.key ?? "",
-				result: Result.succeed(targetsOf(NOW)),
-			}),
-			Message.CompletedFetchRuns({ key: entered.runs.key ?? "", result: Result.succeed({ runs: [] }) }),
-		].reduce((model, message) => pageUpdate(model, message).model, entered)
+		const noRuns = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.CompletedFetchTargets({
+					key: entered.targets.key ?? "",
+					result: Result.succeed(targetsOf(NOW)),
+				}),
+				Message.CompletedFetchRuns({
+					key: entered.runs.key ?? "",
+					result: Result.succeed({ runs: [] }),
+				}),
+			],
+			entered,
+			(model, message) => pageUpdate(model, message).model,
+		)
 		scene({ update: pageUpdate, view }, given(noRuns), expectView(text("Not mapped")).toExist())
 	})
 
@@ -358,11 +386,14 @@ describe("security tabs", () => {
 	})
 
 	test("this month's spend says which runs it leaves out", () => {
-		const withTargetRuns = Object.values(TARGET_IDS).reduce((model, targetId) => {
-			const own = runsOf(NOW).runs.filter((run) => run.targetId === targetId)
+		const withTargetRuns = Arr.reduce(Rec.values(TARGET_IDS), loaded(), (model, targetId) => {
+			const own = Arr.filter(runsOf(NOW).runs, (run) => run.targetId === targetId)
 			const capped =
 				targetId === TARGET_IDS.gateway
-					? Array.from({ length: 50 }, () => own[0]).filter((run) => run !== undefined)
+					? Arr.filter(
+							Array.from({ length: 50 }, () => own[0]),
+							(run) => run !== undefined,
+						)
 					: own
 			return pageUpdate(
 				model,
@@ -373,7 +404,7 @@ describe("security tabs", () => {
 					result: Result.succeed({
 						runs:
 							targetId === TARGET_IDS.terraform
-								? capped.flatMap((run) => [
+								? Arr.flatMap(capped, (run) => [
 										run,
 										{
 											...run,
@@ -386,7 +417,7 @@ describe("security tabs", () => {
 					}),
 				}),
 			).model
-		}, loaded())
+		})
 		const spend = spendThisMonth(withTargetRuns)
 		expect(spend.isPartial).toBe(true)
 		expect(spend.unpriced).toBe(1)
@@ -399,14 +430,21 @@ describe("security tabs", () => {
 
 	test("with no target, Findings hides its filters and Runs offers Add target", () => {
 		const entered = init(AppRoute.SecurityCodeFindings({ search: {} }), context).model
-		const noTargets = [
-			Message.ReadClock({ nowMs: NOW }),
-			Message.CompletedFetchTargets({
-				key: entered.targets.key ?? "",
-				result: Result.succeed({ targets: [] }),
-			}),
-			Message.CompletedFetchRuns({ key: entered.runs.key ?? "", result: Result.succeed({ runs: [] }) }),
-		].reduce((model, message) => pageUpdate(model, message).model, entered)
+		const noTargets = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.CompletedFetchTargets({
+					key: entered.targets.key ?? "",
+					result: Result.succeed({ targets: [] }),
+				}),
+				Message.CompletedFetchRuns({
+					key: entered.runs.key ?? "",
+					result: Result.succeed({ runs: [] }),
+				}),
+			],
+			entered,
+			(model, message) => pageUpdate(model, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(noTargets),
@@ -544,14 +582,14 @@ describe("security tabs", () => {
 
 	test("a run only its target's own list holds re-reads the findings once it finishes", () => {
 		const targetId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard)
-		const ownRuns = runsOf(NOW).runs.filter((run) => run.targetId === TARGET_IDS.dashboard)
+		const ownRuns = Arr.filter(runsOf(NOW).runs, (run) => run.targetId === TARGET_IDS.dashboard)
 		const base = loaded()
 		const withoutGlobal = pageUpdate(
 			base,
 			Message.CompletedFetchRuns({
 				key: base.runs.key ?? "",
 				result: Result.succeed({
-					runs: runsOf(NOW).runs.filter((run) => run.targetId !== TARGET_IDS.dashboard),
+					runs: Arr.filter(runsOf(NOW).runs, (run) => run.targetId !== TARGET_IDS.dashboard),
 				}),
 			}),
 		).model
@@ -582,7 +620,11 @@ describe("security tabs", () => {
 				targetId,
 				key: polled.model.targetRuns[TARGET_IDS.dashboard]?.key ?? "",
 				result: Result.succeed({
-					runs: ownRuns.map((run) => ({ ...run, status: "complete" as const, finishedAt: NOW })),
+					runs: Arr.map(ownRuns, (run) => ({
+						...run,
+						status: "complete" as const,
+						finishedAt: NOW,
+					})),
 				}),
 			}),
 		)
@@ -593,7 +635,7 @@ describe("security tabs", () => {
 	})
 
 	test("with no run live the clock still moves, so this month's spend rolls over", async () => {
-		const finished = runsOf(NOW).runs.map((run) => ({
+		const finished = Arr.map(runsOf(NOW).runs, (run) => ({
 			...run,
 			status: "complete" as const,
 			finishedAt: NOW,
@@ -651,7 +693,7 @@ describe("spend and models", () => {
 		const state = findingsStateOf(model)
 		const leads = state._tag === "Ready" ? openLeads(state.findings) : []
 		expect(
-			leads.map((finding) =>
+			Arr.map(leads, (finding) =>
 				finding.verdict === "confirmed"
 					? finding.overallSeverity
 					: `${finding.estimatedSeverity ?? "no"} estimate`,
@@ -985,7 +1027,11 @@ describe("add target", () => {
 		const unsafe = AddTarget.update(AddTarget.init(), typed("GotScopeMessage", "../etc"), []).model
 		expect(AddTarget.errorsOf(unsafe).scope).toBeDefined()
 		expect(AddTarget.update(unsafe, AddTarget.Message.AddedScopePath(), []).model.scopePaths).toEqual([])
-		const long = AddTarget.update(AddTarget.init(), typed("GotScopeMessage", "a".repeat(513)), []).model
+		const long = AddTarget.update(
+			AddTarget.init(),
+			typed("GotScopeMessage", Str.repeat(513)("a")),
+			[],
+		).model
 		expect(AddTarget.errorsOf(long).scope).toBe("Keep each path under 512 characters.")
 	})
 

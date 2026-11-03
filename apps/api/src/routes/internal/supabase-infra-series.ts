@@ -2,7 +2,7 @@ import type {
 	SupabaseProjectGaugeSeriesOutput,
 	SupabaseProjectRateSeriesOutput,
 } from "@maple/query-engine-integrations"
-import { DateTime } from "effect"
+import { DateTime, Array as Arr } from "effect"
 
 // /infra/supabase/$ref: the gauge and counter-rate reads, joined on their bucket.
 
@@ -44,10 +44,10 @@ export const mergeSupabaseSeries = (
 	gauges: ReadonlyArray<SupabaseProjectGaugeSeriesOutput>,
 	rates: ReadonlyArray<SupabaseProjectRateSeriesOutput>,
 ): Array<SupabaseSeriesRow> => {
-	const gaugeByBucket = new Map(gauges.map(({ bucket, ...row }) => [DateTime.formatIso(bucket), row]))
-	const rateByBucket = new Map(rates.map(({ bucket, ...row }) => [DateTime.formatIso(bucket), row]))
+	const gaugeByBucket = new Map(Arr.map(gauges, ({ bucket, ...row }) => [DateTime.formatIso(bucket), row]))
+	const rateByBucket = new Map(Arr.map(rates, ({ bucket, ...row }) => [DateTime.formatIso(bucket), row]))
 	const buckets = [...new Set([...gaugeByBucket.keys(), ...rateByBucket.keys()])].sort()
-	return buckets.map((bucket) => ({
+	return Arr.map(buckets, (bucket) => ({
 		...GAUGE_ZEROS,
 		...gaugeByBucket.get(bucket),
 		...RATE_ZEROS,

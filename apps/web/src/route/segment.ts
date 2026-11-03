@@ -1,4 +1,13 @@
-import { Array as Arr, Effect, pipe, Record, Schema, SchemaIssue, SchemaTransformation } from "effect"
+import {
+	Array as Arr,
+	Effect,
+	pipe,
+	Record,
+	Schema,
+	SchemaIssue,
+	SchemaTransformation,
+	String as Str,
+} from "effect"
 import {
 	literal,
 	ParseError,
@@ -31,7 +40,7 @@ export const segment = <K extends string>(name: K): Biparser<Record<K, string>> 
 
 /** `literal` segments joined by `slash`: `path("infra", "kubernetes")`. */
 export const path = (first: string, ...rest: ReadonlyArray<string>): Biparser<{}> =>
-	rest.reduce((parser, next) => pipe(parser, slash(literal(next))), literal(first))
+	Arr.reduce(rest, literal(first), (parser, next) => pipe(parser, slash(literal(next))))
 
 /** A decoded path param that must be non-empty and at most `maxLength` long; else the route does not match. */
 export const boundedSegment = <K extends string>(name: K, maxLength: number): Biparser<Record<K, string>> =>
@@ -47,7 +56,7 @@ export const restSegments = <K extends string>(name: K): TerminalParser<Record<K
 		Arr.isReadonlyArrayNonEmpty(segments)
 			? Effect.try({
 					try: (): ParseResult<Record<K, string>> => [
-						Record.singleton(name, segments.map(decodeURIComponent).join("/")),
+						Record.singleton(name, Arr.join(Arr.map(segments, decodeURIComponent), "/")),
 						[],
 					],
 					catch: () => new ParseError({ message: `Malformed percent-encoding in ${name}` }),
@@ -56,6 +65,6 @@ export const restSegments = <K extends string>(name: K): TerminalParser<Record<K
 	print: (value, state) =>
 		Effect.succeed({
 			...state,
-			segments: [...state.segments, ...value[name].split("/").map(encodeURIComponent)],
+			segments: [...state.segments, ...Arr.map(Str.split("/")(value[name]), encodeURIComponent)],
 		}),
 })

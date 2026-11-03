@@ -8,7 +8,7 @@
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { computeFingerprintInputs, FINGERPRINT_HASH_SALT } from "@maple/domain/tinybird/fingerprint"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import fc from "fast-check"
 import { msToDate } from "../../platform/time"
 import {
@@ -25,10 +25,7 @@ const RUNS = 2000
 const SEED = Number(process.env.FINGERPRINT_FUZZ_SEED || Date.now() % 2 ** 31)
 
 /** Now-relative: the tables enforce a TTL at insert time. */
-const SEED_TS = msToDate(Date.now() - 60 * 60 * 1000)
-	.toISOString()
-	.replace("T", " ")
-	.slice(0, 19)
+const SEED_TS = Str.slice(0, 19)(Str.replace("T", " ")(msToDate(Date.now() - 60 * 60 * 1000).toISOString()))
 
 const chars = (alphabet: string, minLength: number, maxLength: number) =>
 	fc.string({ unit: fc.constantFrom(...Array.from(alphabet)), minLength, maxLength })
@@ -175,18 +172,27 @@ const jsonMessage = fc.oneof(
 			),
 			{ minLength: 1, maxLength: 4 },
 		)
-		.map((entries) => `{ ${entries.map(([k, v]) => `${k} : ${v}`).join(" , ")} }`),
+		.map(
+			(entries) =>
+				`{ ${Arr.join(
+					Arr.map(entries, ([k, v]) => `${k} : ${v}`),
+					" , ",
+				)} }`,
+		),
 )
 
 const Case = fc.record({
 	type: fc.oneof(fc.constantFrom("", "Error", "HttpServerError", "@acme/http/errors/Upstream"), hostile),
-	stack: fc.array(frameLine, { maxLength: 14 }).map((lines) => lines.join("\n")),
+	stack: fc.array(frameLine, { maxLength: 14 }).map((lines) => Arr.join(lines, "\n")),
 	message: fc.oneof(
-		{ arbitrary: fc.array(messagePart, { maxLength: 40 }).map((parts) => parts.join(" ")), weight: 3 },
+		{
+			arbitrary: fc.array(messagePart, { maxLength: 40 }).map((parts) => Arr.join(parts, " ")),
+			weight: 3,
+		},
 		{
 			arbitrary: fc
 				.array(messagePart, { minLength: 30, maxLength: 120 })
-				.map((parts) => parts.join("")),
+				.map((parts) => Arr.join(parts, "")),
 			weight: 1,
 		},
 		{ arbitrary: jsonMessage, weight: 2 },
@@ -197,7 +203,7 @@ type Case = typeof Case extends fc.Arbitrary<infer A> ? A : never
 
 /** ClickHouse treats every input as UTF-8 bytes; a lone surrogate has no such encoding. */
 const wellFormed = (c: Case) => c.type.isWellFormed() && c.stack.isWellFormed() && c.message.isWellFormed()
-const CASES = fc.sample(Case, { numRuns: RUNS, seed: SEED }).filter(wellFormed)
+const CASES = Arr.filter(fc.sample(Case, { numRuns: RUNS, seed: SEED }), wellFormed)
 
 /**
  * With an exception event the MV reads type and stack from it and the message from
@@ -265,7 +271,10 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 		await clickhouseExec(`CREATE DATABASE IF NOT EXISTS ${database}`)
 		await applyRealMigrations(database)
 		await clickhouseExec(
-			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SpanAttributes, ResourceAttributes, EventsTimestamp, EventsName, EventsAttributes) FORMAT JSONEachRow\n${CASES.map((c, i) => traceRow(c, `case-${i}`)).join("\n")}`,
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SpanAttributes, ResourceAttributes, EventsTimestamp, EventsName, EventsAttributes) FORMAT JSONEachRow\n${Arr.join(
+				Arr.map(CASES, (c, i) => traceRow(c, `case-${i}`)),
+				"\n",
+			)}`,
 			database,
 		)
 		await clickhouseExec(
@@ -273,13 +282,16 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			database,
 		)
 		await clickhouseExec(
-			`INSERT INTO fingerprint_mirror FORMAT JSONEachRow\n${CASES.map((c, i) => mirrorRow(c, `case-${i}`)).join("\n")}`,
+			`INSERT INTO fingerprint_mirror FORMAT JSONEachRow\n${Arr.join(
+				Arr.map(CASES, (c, i) => mirrorRow(c, `case-${i}`)),
+				"\n",
+			)}`,
 			database,
 		)
 		materialized = Number(
-			(
-				await clickhouseExec(`SELECT count() FROM error_events WHERE OrgId = '${ORG_ID}'`, database)
-			).trim(),
+			Str.trim(
+				await clickhouseExec(`SELECT count() FROM error_events WHERE OrgId = '${ORG_ID}'`, database),
+			),
 		)
 		const body = await clickhouseExec(
 			`SELECT e.SpanId AS SpanId, e.TopFrame AS TopFrame, m.TopFrame AS MirrorTopFrame,
@@ -290,10 +302,10 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			 FORMAT JSONEachRow`,
 			database,
 		)
-		mismatches = body
-			.split("\n")
-			.filter((line) => line.trim().length > 0)
-			.map(decodeMismatch)
+		mismatches = Arr.map(
+			Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0),
+			decodeMismatch,
+		)
 	}, 180_000)
 
 	afterAll(async () => {
@@ -305,8 +317,10 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 	})
 
 	it("hashes, labels and picks the top frame exactly as the TS mirror does", () => {
-		const shortest = [...mismatches]
-			.map((m) => ({ ...m, input: CASES[Number(m.SpanId.slice("case-".length))] }))
+		const shortest = Arr.map([...mismatches], (m) => ({
+			...m,
+			input: CASES[Number(Str.slice("case-".length)(m.SpanId))],
+		}))
 			.sort((a, b) => JSON.stringify(a.input).length - JSON.stringify(b.input).length)
 			.slice(0, 3)
 		assert.deepStrictEqual(

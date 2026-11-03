@@ -3,7 +3,7 @@
  * terminal states: every artifact written with both validators passing (`complete`), or
  * `incomplete` with its reasons recorded and disclosed in the report.
  */
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Array as Arr } from "effect"
 import type { EstimatedSeverity, Finding } from "../schema"
 import { findingsErrors, ledgerErrors } from "../validators"
 import type { LedgerUnit } from "./ledger"
@@ -41,14 +41,15 @@ const metadata = (input: AuditRunInput, status: RunStatus, reasons: ReadonlyArra
 		prior_runs: input.prior === null ? [] : [input.prior.runId],
 		run_status: status,
 	}
-	return reasons.length === 0 ? base : { ...base, incomplete_reason: reasons.join("; ") }
+	return reasons.length === 0 ? base : { ...base, incomplete_reason: Arr.join(reasons, "; ") }
 }
 
 /** Final records: decided findings plus unchanged prior rejections a hunter re-raised. */
 const assembleFindings = (s: EngineState): ReadonlyArray<Finding> => {
 	const decided = finalFindings(s)
-	const raised = new Set(s.ledger.flatMap((unit) => unit.result_fingerprints))
-	const suppressed = [...s.suppressed.values()].filter(
+	const raised = new Set(Arr.flatMap(s.ledger, (unit) => unit.result_fingerprints))
+	const suppressed = Arr.filter(
+		[...s.suppressed.values()],
 		(record) => raised.has(record.fingerprint) && !s.findings.has(record.fingerprint),
 	)
 	return [...decided, ...suppressed].sort((a, b) => (a.fingerprint < b.fingerprint ? -1 : 1))
@@ -70,17 +71,20 @@ export const runAudit = (input: AuditRunInput) =>
 		const findingErrors = findingsErrors(findings)
 		const ledgerProblems = ledgerErrors(s.ledger)
 		if (findingErrors.length > 0)
-			yield* engine.fail(`findings_failed_validation: ${findingErrors.slice(0, 3).join("; ")}`)
+			yield* engine.fail(`findings_failed_validation: ${Arr.join(findingErrors.slice(0, 3), "; ")}`)
 		if (ledgerProblems.length > 0)
-			yield* engine.fail(`ledger_failed_validation: ${ledgerProblems.slice(0, 3).join("; ")}`)
+			yield* engine.fail(`ledger_failed_validation: ${Arr.join(ledgerProblems.slice(0, 3), "; ")}`)
 
 		// Each record that passes on its own is stored; the rest are withheld and disclosed.
-		const valid = findings.filter((record) => findingsErrors([record]).length === 0)
+		const valid = Arr.filter(findings, (record) => findingsErrors([record]).length === 0)
 		const stored = findingsErrors(valid).length === 0 ? valid : []
-		const withheld = findings.filter((record) => !stored.includes(record))
+		const withheld = Arr.filter(findings, (record) => !stored.includes(record))
 		if (withheld.length > 0)
 			yield* engine.gap(
-				`${withheld.length} records withheld from findings.json after failing validation: ${withheld.map((r) => r.fingerprint).join(", ")}`,
+				`${withheld.length} records withheld from findings.json after failing validation: ${Arr.join(
+					Arr.map(withheld, (r) => r.fingerprint),
+					", ",
+				)}`,
 			)
 
 		yield* engine.persist
@@ -88,7 +92,7 @@ export const runAudit = (input: AuditRunInput) =>
 		const status = final.incomplete.length === 0 ? "complete" : "incomplete"
 		const reports = buildReports(input, final, findings, status)
 		const estimates = new Map(
-			findings.flatMap((record) => {
+			Arr.flatMap(findings, (record) => {
 				const estimate = final.estimates.get(record.fingerprint)
 				return record.verdict === "needs_validation" && estimate !== undefined
 					? [[record.fingerprint, estimate] as const]

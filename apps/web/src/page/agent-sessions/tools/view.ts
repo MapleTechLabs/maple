@@ -6,7 +6,7 @@ import {
 	scopeSummary,
 	toolSeriesColors,
 } from "@maple/web-data/lib/tool-analytics"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors, resolveColor } from "@maple/views/charts/theme-colors"
@@ -56,16 +56,17 @@ const toolLanes = (
 	isModels: boolean,
 	percentile: Parameters<typeof metricSpark>[2],
 ) => {
-	const keys = [...new Set(series.map((point) => point.seriesKey))]
+	const keys = [...new Set(Arr.map(series, (point) => point.seriesKey))]
 	const sparks = new Map(
 		isModels
 			? []
-			: keys.map(
+			: Arr.map(
+					keys,
 					(key) =>
 						[
 							key,
 							metricSpark(
-								series.filter((point) => point.seriesKey === key),
+								Arr.filter(series, (point) => point.seriesKey === key),
 								"calls",
 								percentile,
 							),
@@ -173,7 +174,7 @@ const loadedView = (h: H, model: Model, options: BodyOptions): Html => {
 							],
 							summary: scopeSummary(
 								totals.current,
-								rows.reduce((sum, row) => sum + row.calls, 0),
+								Arr.reduce(rows, 0, (sum, row) => sum + row.calls),
 							),
 							onRemove: (chip) => Message.RemovedScopeChip({ kind: chip.kind }),
 							onClearAll: Message.ClickedClearScope(),

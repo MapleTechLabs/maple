@@ -25,6 +25,7 @@ import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import { requiredPlain } from "../env.ts"
 import type { AwsRegionName } from "./stage.ts"
+import { Array as Arr, String as Str } from "effect"
 
 /** ACM fills `ResourceRecord` in asynchronously; matches alchemy's `waitForValidationRecords`. */
 const RECORD_POLL = Schedule.max([Schedule.fixed("2 seconds"), Schedule.recurs(60)])
@@ -105,7 +106,7 @@ const describe = (certificateArn: string, region: AwsRegionName) =>
 	)
 
 /** ACM returns validation record names fully qualified with a trailing dot; DNS APIs do not want it. */
-const stripTrailingDot = (name: string): string => name.replace(/\.$/, "")
+const stripTrailingDot = (name: string): string => Str.replace(/\.$/, "")(name)
 
 export const AcmValidationRecordProvider = () =>
 	Provider.succeed(AcmValidationRecord, {
@@ -119,7 +120,7 @@ export const AcmValidationRecordProvider = () =>
 			const found = yield* describe(news.certificateArn, news.region).pipe(
 				Effect.flatMap((detail) => {
 					const options = detail?.DomainValidationOptions ?? []
-					const records = options.flatMap((option) =>
+					const records = Arr.flatMap(options, (option) =>
 						option.ResourceRecord?.Name && option.ResourceRecord.Value
 							? [{ name: option.ResourceRecord.Name, value: option.ResourceRecord.Value }]
 							: [],
@@ -135,14 +136,14 @@ export const AcmValidationRecordProvider = () =>
 					}
 					// SANs often share one record. Distinct records are not modeled: publishing
 					// only the first would stall short of ISSUED with no reason given.
-					const distinct = new Map(records.map((record) => [record.name, record]))
+					const distinct = new Map(Arr.map(records, (record) => [record.name, record]))
 					const [first] = [...distinct.values()]
 					if (distinct.size > 1 || first === undefined) {
 						// oxlint-disable-next-line maple/no-effect-die -- unsupported stack shape, see above
 						return Effect.die(
 							new AcmValidationError({
 								certificateArn: news.certificateArn,
-								message: `certificate needs ${distinct.size} distinct validation records (${[...distinct.keys()].join(", ")}); this resource publishes one`,
+								message: `certificate needs ${distinct.size} distinct validation records (${Arr.join([...distinct.keys()], ", ")}); this resource publishes one`,
 							}),
 						)
 					}

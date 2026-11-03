@@ -7,9 +7,10 @@ import {
 	resolveSearchQuery,
 	scoreChannelName,
 } from "./channel-search"
+import { Array as Arr } from "effect"
 
 const channel = (name: string, is_member = true) => ({ name, is_member })
-const names = (list: ReadonlyArray<{ name: string }>) => list.map((c) => c.name)
+const names = (list: ReadonlyArray<{ name: string }>) => Arr.map(list, (c) => c.name)
 
 describe("scoreChannelName", () => {
 	it("orders exact > prefix > word-boundary > substring > subsequence", () => {
@@ -20,7 +21,7 @@ describe("scoreChannelName", () => {
 			scoreChannelName("stalerts", "alerts"),
 			scoreChannelName("a-long-eventful-run-tests", "alerts"),
 		] as Array<number>
-		expect(scores.every((s) => s !== null)).toBe(true)
+		expect(Arr.every(scores, (s) => s !== null)).toBe(true)
 		for (let i = 1; i < scores.length; i++) expect(scores[i]!).toBeLessThan(scores[i - 1]!)
 	})
 
@@ -157,13 +158,13 @@ describe("channelPickerView", () => {
 	it("leaves a filtered view honest — the selection is not forced into search results", () => {
 		const channels = [...many(60), pickable("C-sel", "totally-unrelated")]
 		const view = channelPickerView(channels, "chan-1", "C-sel", 50)
-		expect(view.visible.some((c) => c.id === "C-sel")).toBe(false)
+		expect(Arr.some(view.visible, (c) => c.id === "C-sel")).toBe(false)
 	})
 
 	it("doesn't duplicate a selection that already ranks", () => {
 		const channels = many(10)
 		const view = channelPickerView(channels, "", "C3", 50)
-		expect(view.visible.filter((c) => c.id === "C3").length).toBe(1)
+		expect(Arr.filter(view.visible, (c) => c.id === "C3").length).toBe(1)
 		expect(view.visible.length).toBe(10)
 	})
 })

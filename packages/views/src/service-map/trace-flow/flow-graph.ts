@@ -1,6 +1,7 @@
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
 import { describeSpan } from "./span-category"
+import { Array as Arr, String as Str } from "effect"
 
 // copied: packages/ui/src/components/traces/flow-utils.ts. It reaches React icon components
 // through describeSpan; the node and edge types are local instead of React Flow's.
@@ -147,11 +148,14 @@ function getCombinedNodeId(spans: SpanNode[]): string {
 	if (spans.length === 1) {
 		return spans[0].spanId
 	}
-	return `combined-${spans.map((s) => s.spanId).join("-")}`
+	return `combined-${Arr.join(
+		Arr.map(spans, (s) => s.spanId),
+		"-",
+	)}`
 }
 
 function hasAnyError(spans: SpanNode[]): boolean {
-	return spans.some((s) => s.statusCode === "Error")
+	return Arr.some(spans, (s) => s.statusCode === "Error")
 }
 
 const NODE_WIDTH = 280
@@ -178,7 +182,7 @@ export function transformSpansToFlow(
 		const count = spans.length
 		const aggregatedDuration = calculateAggregatedDuration(spans)
 
-		const isSelected = spans.some((s) => s.spanId === selectedSpanId)
+		const isSelected = Arr.some(spans, (s) => s.spanId === selectedSpanId)
 
 		nodes.push({
 			id: nodeId,
@@ -248,7 +252,10 @@ function buildLayoutTree(nodes: FlowNode[], edges: FlowEdge[]): LayoutNode[] {
 		hasParent.add(edge.target)
 	}
 
-	const rootIds = nodes.filter((n) => !hasParent.has(n.id)).map((n) => n.id)
+	const rootIds = Arr.map(
+		Arr.filter(nodes, (n) => !hasParent.has(n.id)),
+		(n) => n.id,
+	)
 
 	// Build tree recursively. Guard against cycles and depth blowups; both can
 	// happen when telemetry contains malformed parent_span_id chains.
@@ -261,11 +268,11 @@ function buildLayoutTree(nodes: FlowNode[], edges: FlowEdge[]): LayoutNode[] {
 		const childIds = childrenMap.get(id) || []
 		return {
 			id,
-			children: childIds.map((childId) => buildNode(childId, depth + 1)),
+			children: Arr.map(childIds, (childId) => buildNode(childId, depth + 1)),
 		}
 	}
 
-	return rootIds.map((id) => buildNode(id, 0))
+	return Arr.map(rootIds, (id) => buildNode(id, 0))
 }
 
 /** Positions flow nodes in a top-to-bottom tree. */
@@ -286,9 +293,10 @@ export function getLayoutedElements(
 		if (node.children.length === 0) {
 			value = NODE_WIDTH
 		} else {
-			const childrenWidth = node.children.reduce(
-				(sum, child) => sum + getSubtreeWidth(child) + HORIZONTAL_SPACING,
+			const childrenWidth = Arr.reduce(
+				node.children,
 				-HORIZONTAL_SPACING,
+				(sum, child) => sum + getSubtreeWidth(child) + HORIZONTAL_SPACING,
 			)
 			value = Math.max(NODE_WIDTH, childrenWidth)
 		}
@@ -320,7 +328,7 @@ export function getLayoutedElements(
 		currentX += getSubtreeWidth(root) + HORIZONTAL_SPACING * 2
 	}
 
-	const layoutedNodes = nodes.map((node) => {
+	const layoutedNodes = Arr.map(nodes, (node) => {
 		const position = nodePositions.get(node.id) || { x: 0, y: 0 }
 		return {
 			...node,
@@ -334,8 +342,8 @@ export function getLayoutedElements(
 /** Finds a span by regular or combined flow-node ID. */
 export function findSpanById(rootSpans: ReadonlyArray<SpanNode>, spanId: string): SpanNode | undefined {
 	let searchId = spanId
-	if (spanId.startsWith("combined-")) {
-		const parts = spanId.slice("combined-".length).split("-")
+	if (Str.startsWith("combined-")(spanId)) {
+		const parts = Str.split("-")(Str.slice("combined-".length)(spanId))
 		if (parts.length > 0) {
 			searchId = parts[0]
 		}

@@ -23,6 +23,7 @@ import {
 	type CloudflareFilterOpts,
 	type CloudflareMetricsAccessor,
 } from "./cloudflare-infra-filters"
+import { Array as Arr, Record as Rec } from "effect"
 
 export type CloudflareBreakdownDimension =
 	| "path"
@@ -86,7 +87,7 @@ const BREAKDOWNS: Record<CloudflareBreakdownDimension, BreakdownSpec> = {
 	},
 } satisfies Record<CloudflareBreakdownDimension, BreakdownSpec>
 
-export const CLOUDFLARE_BREAKDOWN_DIMENSIONS = Object.keys(
+export const CLOUDFLARE_BREAKDOWN_DIMENSIONS = Rec.keys(
 	BREAKDOWNS,
 ) as ReadonlyArray<CloudflareBreakdownDimension>
 
@@ -113,7 +114,8 @@ export const cloudflareBreakdownMetrics = (
 	dimension: CloudflareBreakdownDimension,
 ): ReadonlyArray<string> => {
 	const spec = BREAKDOWNS[dimension]
-	return [spec.requestsMetric, spec.errorsMetric, spec.bytesMetric].filter(
+	return Arr.filter(
+		[spec.requestsMetric, spec.errorsMetric, spec.bytesMetric],
 		(name): name is string => name !== undefined,
 	)
 }

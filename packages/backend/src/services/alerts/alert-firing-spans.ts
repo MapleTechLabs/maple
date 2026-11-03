@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 
 import {
 	planAlertLifecycle,
@@ -61,7 +61,7 @@ export const simulateFiringSpans = (
 			breachWindow,
 			consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
 			renotifyIntervalMinutes: Number.MAX_SAFE_INTEGER,
-			severities: rule.thresholds.map((tier) => tier.severity),
+			severities: Arr.map(rule.thresholds, (tier) => tier.severity),
 		}
 		const initial: ReplayState = {
 			state: null,
@@ -73,7 +73,7 @@ export const simulateFiringSpans = (
 		}
 
 		const final = yield* Effect.reduce(
-			evaluations.filter((tick) => tick.provisional !== true),
+			Arr.filter(evaluations, (tick) => tick.provisional !== true),
 			() => initial,
 			(acc, { bucketMs, evaluation }) =>
 				planAlertLifecycle({

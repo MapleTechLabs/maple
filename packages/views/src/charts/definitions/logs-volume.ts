@@ -5,7 +5,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { barY, defineChart, rect, stack } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"
@@ -28,18 +28,18 @@ const numberOrNull = (value: unknown): number | null => (typeof value === "numbe
 
 export const buildLogsVolume = (spec: VolumeSpec): BuiltChart<SeverityCell, Date, number> => {
 	const { seriesKeys, selection } = spec
-	const chartData: ReadonlyArray<Row> = spec.buckets.map((bucket) => ({
+	const chartData: ReadonlyArray<Row> = Arr.map(spec.buckets, (bucket) => ({
 		bucket: bucket.bucket,
 		...bucket.counts,
 	}))
 	const color = (key: string) => spec.colors[key] ?? spec.border
 	const axis = makeBucketAxis(
-		chartData.map((row) => row.bucket),
+		Arr.map(chartData, (row) => row.bucket),
 		spec.timeZone,
 	)
 	const yDomain = niceLinearDomain(linearYDomain({ rows: chartData, keys: [...seriesKeys], stacked: true }))
-	const cells: Array<SeverityCell> = chartData.flatMap((row) =>
-		seriesKeys.map((severity) => ({
+	const cells: Array<SeverityCell> = Arr.flatMap(chartData, (row) =>
+		Arr.map(seriesKeys, (severity) => ({
 			row,
 			bucket: row.bucket,
 			date: bucketDate(row.bucket),
@@ -95,13 +95,13 @@ export const buildLogsVolume = (spec: VolumeSpec): BuiltChart<SeverityCell, Date
 			Option.map(Option.fromNullishOr(points[0]?.datum), (cell) =>
 				ChartTooltip.Bucket({
 					heading: axis.heading(cell.bucket),
-					rows: seriesKeys.flatMap((key) => {
+					rows: Arr.flatMap(seriesKeys, (key) => {
 						const value = numberOrNull(cell.row[key])
 						return value === null
 							? []
 							: [
 									{
-										label: key.toUpperCase(),
+										label: Str.toUpperCase(key),
 										color: color(key),
 										dashed: false,
 										value: formatNumber(value),

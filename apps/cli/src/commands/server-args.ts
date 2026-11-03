@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { homedir } from "node:os"
 import { join, resolve, sep } from "node:path"
 import { DEFAULT_LOCAL_PORT, normalizeHost, resolveBindHost } from "@maple/local-server/local-address"
@@ -28,11 +28,11 @@ export const defaultDataDir = (): string => join(homedir(), ".maple", "data")
  * pasted into destructive recovery hints.
  */
 export const prettyPath = (p: string, home: string = homedir()): string =>
-	p === home || p.startsWith(`${home}${sep}`) ? `~${p.slice(home.length)}` : p
+	p === home || Str.startsWith(`${home}${sep}`)(p) ? `~${Str.slice(home.length)(p)}` : p
 
 /** Quote a value for a pasteable shell command; plain words stay bare. */
 export const shellWord = (value: string): string =>
-	/^[\w@%+=:,./~-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
+	/^[\w@%+=:,./~-]+$/.test(value) ? value : `'${Str.replaceAll("'", "'\\''")(value)}'`
 
 /**
  * The non-default target flags of the invocation that printed a hint. Every
@@ -71,14 +71,14 @@ const SCOPE_FLAGS = {
 } satisfies Record<string, ReadonlyArray<keyof CommandScope>>
 
 const acceptedScopeFlags = (subcommand: string): ReadonlyArray<keyof CommandScope> =>
-	Object.entries(SCOPE_FLAGS).find(([name]) => name === subcommand)?.[1] ?? []
+	Rec.toEntries(SCOPE_FLAGS).find(([name]) => name === subcommand)?.[1] ?? []
 
 const dataDirWord = (dataDir: string): string =>
 	shellWord(prettyPath(dataDir)) === prettyPath(dataDir) ? prettyPath(dataDir) : shellWord(dataDir)
 
 /** `maple <args>` plus the scope flags that subcommand accepts. */
 export const mapleCommand = (args: string, scope: CommandScope): string => {
-	const accepted = acceptedScopeFlags(args.split(" ")[0] ?? "")
+	const accepted = acceptedScopeFlags(Str.split(" ")(args)[0] ?? "")
 	const flags = [
 		...(accepted.includes("dataDir") && scope.dataDir !== undefined
 			? [`--data-dir ${dataDirWord(scope.dataDir)}`]
@@ -86,7 +86,7 @@ export const mapleCommand = (args: string, scope: CommandScope): string => {
 		...(accepted.includes("port") && scope.port !== undefined ? [`--port ${scope.port}`] : []),
 		...(accepted.includes("host") && scope.host !== undefined ? [`--host ${shellWord(scope.host)}`] : []),
 	]
-	return ["maple", args, ...flags].join(" ")
+	return Arr.join(["maple", args, ...flags], " ")
 }
 
 /** Env var through which a `start -d` parent hands its PID-file claim to the
@@ -139,7 +139,7 @@ export interface DetachedChildArgs {
 /** Build the foreground child argv without forwarding compiled-Bun virtual
  * entrypoints or the background flag that caused the re-exec. */
 export const buildDetachedChildArgs = (options: DetachedChildArgs): string[] => {
-	const runtimeArgs = options.entry && !options.entry.startsWith("/$bunfs") ? [options.entry] : []
+	const runtimeArgs = options.entry && !Str.startsWith("/$bunfs")(options.entry) ? [options.entry] : []
 	return [
 		...runtimeArgs,
 		"start",
@@ -164,7 +164,7 @@ export const buildDetachedChildArgs = (options: DetachedChildArgs): string[] => 
 			: []),
 		...(options.reset ? ["--reset"] : []),
 		...(options.offline ? ["--offline"] : []),
-		...(options.projectorModules ?? []).flatMap((path) => ["--projector-module", path]),
+		...Arr.flatMap(options.projectorModules ?? [], (path) => ["--projector-module", path]),
 	]
 }
 
@@ -184,7 +184,7 @@ export const buildCheckpointChildArgs = (options: {
 	readonly port: number
 	readonly dataDir: string
 }): string[] => [
-	...(options.entry && !options.entry.startsWith("/$bunfs") ? [options.entry] : []),
+	...(options.entry && !Str.startsWith("/$bunfs")(options.entry) ? [options.entry] : []),
 	"checkpoint",
 	"--host",
 	options.host,

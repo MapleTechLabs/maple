@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { ROW_LINE_CHARS, ROW_WRAPPED_CHARS, textWindow } from "../../lib/display-text"
@@ -30,7 +30,6 @@ export interface RowEvents<Message> {
 	readonly clickedCopyJson: (index: number) => Message
 	readonly gotPanelMessage: (index: number, message: AttributesPanel.Message) => Message
 }
-
 
 /** Per-row state; every field is a primitive or a stable reference so a keyed lazy can skip the row. */
 export interface RowState {
@@ -257,7 +256,7 @@ export const logRow = <Message>(
 							h.span([rowClass(h, "truncate")], [row.serviceName]),
 						],
 					),
-					...row.pinned.map((cell) => pinnedCell(h, cell)),
+					...Arr.map(row.pinned, (cell) => pinnedCell(h, cell)),
 					messageLane(h, events, row, index, state),
 				],
 			),
@@ -405,9 +404,9 @@ const messageLane = <Message>(
 							],
 							// The lane is as wide as its chips, so the message gets the rest of the row.
 							[
-								...row.chips
-									.slice(0, ROW_CHIP_LIMIT)
-									.map((chip) => chipButton(h, events, index, chip)),
+								...Arr.map(row.chips.slice(0, ROW_CHIP_LIMIT), (chip) =>
+									chipButton(h, events, index, chip),
+								),
 								...(row.chips.length > ROW_CHIP_LIMIT
 									? [
 											h.span(
@@ -421,10 +420,13 @@ const messageLane = <Message>(
 														),
 													),
 													h.Title(
-														row.chips
-															.slice(ROW_CHIP_LIMIT)
-															.map((chip) => `${chip.key}=${chip.value}`)
-															.join("\n"),
+														Arr.join(
+															Arr.map(
+																row.chips.slice(ROW_CHIP_LIMIT),
+																(chip) => `${chip.key}=${chip.value}`,
+															),
+															"\n",
+														),
 													),
 												],
 												[`+${row.chips.length - ROW_CHIP_LIMIT}`],

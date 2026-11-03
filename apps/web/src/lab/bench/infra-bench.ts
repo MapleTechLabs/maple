@@ -25,7 +25,7 @@ const makeRows = (seriesNames: ReadonlyArray<string>, scale: number, offset: num
 	Arr.makeBy(BUCKET_COUNT, (index) => {
 		const bucket = new Date(END_TIME_MS - (BUCKET_COUNT - 1 - index) * BUCKET_MS).toISOString()
 		const phase = (index / (BUCKET_COUNT - 1)) * Math.PI * 6
-		return seriesNames.map((attributeValue, s) => ({
+		return Arr.map(seriesNames, (attributeValue, s) => ({
 			bucket,
 			attributeValue,
 			value: Math.max(0, (0.25 + 0.2 * Math.sin(phase + s * 1.3 + offset)) * scale),

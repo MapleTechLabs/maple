@@ -5,7 +5,17 @@ import {
 	getServiceOverview,
 	type GetServiceOverviewInput,
 } from "@maple/web-data/warehouse/services"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Queue,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -76,7 +86,7 @@ export const FetchOverview = Command.define("FetchServiceOverview", {
 			{ key, refresh, idleTtlMs: IdleTtl.serviceOverview, schema: Schema.Array(ServiceRow) },
 			// Maple's own services (uptime checks) stay off the list.
 			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) =>
-				response.data.filter((row) => !isMapleService(row)),
+				Arr.filter(response.data, (row) => !isMapleService(row)),
 			),
 		).pipe(
 			Effect.mapError(toLoadFailure),
@@ -92,12 +102,12 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.serviceSparklines, schema: Sparklines },
 			Effect.map(getCustomChartServiceSparklines({ data: toWarehouseInput(input) }), (response) =>
-				Object.fromEntries(
-					Object.entries(response.data).map(([service, points]) => [
+				Rec.fromEntries(
+					Arr.map(Rec.toEntries(response.data), ([service, points]) => [
 						service,
 						{
-							throughput: points.map((point) => point.throughput),
-							errorRate: points.map((point) => point.errorRate),
+							throughput: Arr.map(points, (point) => point.throughput),
+							errorRate: Arr.map(points, (point) => point.errorRate),
 						},
 					]),
 				),
@@ -118,7 +128,10 @@ export const FetchFacets = Command.define("FetchServicesFacets", {
 			Effect.mapBoth({
 				onSuccess: ({ data }) => ({
 					environments: data.environments,
-					namespaces: data.namespaces.filter((facet) => facet.name !== MAPLE_SERVICES_NAMESPACE),
+					namespaces: Arr.filter(
+						data.namespaces,
+						(facet) => facet.name !== MAPLE_SERVICES_NAMESPACE,
+					),
 					commitShas: data.commitShas,
 				}),
 				onFailure: toLoadFailure,
@@ -172,8 +185,8 @@ export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 	execute: ({ key, shas }) =>
 		Effect.gen(function* () {
 			const response = yield* readCommitDetails(key, shas)
-			return Object.fromEntries(
-				response.commits.map((commit) => [commit.sha, firstLine(commit.message)]),
+			return Rec.fromEntries(
+				Arr.map(response.commits, (commit) => [commit.sha, firstLine(commit.message)]),
 			)
 		}).pipe(
 			Effect.mapError(toLoadFailure),
@@ -203,7 +216,7 @@ export const FetchCommitDetail = Command.define("FetchServicesCommitDetail", {
 // The first line of a commit message.
 const firstLine = (message: string): string => {
 	const index = message.indexOf("\n")
-	return (index === -1 ? message : message.slice(0, index)).trim()
+	return Str.trim(index === -1 ? message : Str.slice(0, index)(message))
 }
 
 /** Where a click in the table goes: a service link is the link's alone (the row ignores it). */

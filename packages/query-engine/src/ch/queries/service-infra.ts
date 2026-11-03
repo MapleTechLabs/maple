@@ -24,7 +24,7 @@
 // Built with the ClickHouse query-builder DSL (a `fromQuery(...).leftJoinQuery`
 // over two grouped subqueries), then compiled to SQL — no hand-written SQL.
 
-import { Schema, Effect } from "effect"
+import { Schema, Effect, Array as Arr } from "effect"
 import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "../raw-sql"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -288,7 +288,7 @@ export function serviceRuntimesSQL(
 			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
-			CH.inList($.ServiceName, opts.services.flatMap(runtimeMetricServiceNames)),
+			CH.inList($.ServiceName, Arr.flatMap(opts.services, runtimeMetricServiceNames)),
 			CH.inList($.MetricName, SERVICE_RUNTIME_MARKERS),
 		])
 		.groupBy(
@@ -332,14 +332,14 @@ export const serviceRuntimeResources = (
 	requested: ReadonlyArray<string>,
 ): ReadonlyArray<ServiceRuntimeResource> => {
 	const isRequested = new Set(requested)
-	const resources = rows.flatMap((row) => {
+	const resources = Arr.flatMap(rows, (row) => {
 		const kind = serviceRuntimeKindOfMarker(row.metricName)
 		const serviceName = tracedServiceOfRuntime(row.metricServiceName)
 		if (kind === null || !isRequested.has(serviceName)) return []
 		const key =
 			kind === "railway"
-				? ["railway", serviceName, row.railwayServiceId, row.railwayEnvironmentId].join("|")
-				: [kind, row.metricServiceName, row.account, row.region, row.cluster].join("|")
+				? Arr.join(["railway", serviceName, row.railwayServiceId, row.railwayEnvironmentId], "|")
+				: Arr.join([kind, row.metricServiceName, row.account, row.region, row.cluster], "|")
 		const resource: ServiceRuntimeResource = {
 			serviceName,
 			kind,

@@ -1,5 +1,5 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { currentWindow, TimeWindow } from "../data/time-range"
@@ -148,7 +148,7 @@ export const FetchOverview = Command.define("FetchConnectOverview", {
 				Message.SucceededLoadOverview({
 					orgId,
 					request,
-					services: response.data.map((row) => ({
+					services: Arr.map(response.data, (row) => ({
 						serviceName: String(row.serviceName),
 						spanCount: row.spanCount ?? 0,
 					})),
@@ -286,4 +286,4 @@ export const isPolling = (model: Model): boolean => model.popover.isOpen && mode
 
 /** The org's own services: the seeded `demo-` ones do not count as a connection. */
 export const realServices = (model: Model): ReadonlyArray<typeof ServiceRow.Type> =>
-	model.services.filter((row) => !row.serviceName.startsWith("demo-"))
+	Arr.filter(model.services, (row) => !Str.startsWith("demo-")(row.serviceName))

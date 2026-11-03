@@ -1,4 +1,4 @@
-import { Array as Arr, Context, Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bindings"
 
 // ReplayBlobStore — reads rrweb chunk payloads out of R2.
@@ -27,7 +27,7 @@ import { type ObjectStore, ReplayBlobBucket } from "@maple/backend/platform/bind
  * recording is empty", so the shared shape is asserted in both test suites.
  */
 export const replayObjectKey = (orgId: string, sessionId: string, chunkSeq: number): string =>
-	`v1/${orgId}/${sessionId}/${String(chunkSeq).padStart(8, "0")}.json.gz`
+	`v1/${orgId}/${sessionId}/${Str.padStart(8, "0")(String(chunkSeq))}.json.gz`
 
 /** The subset of a `session_replay_events` row hydration needs. */
 export interface HydratableChunk {
@@ -75,7 +75,7 @@ const makeHydrate =
 			chunks,
 			(chunk) => {
 				// Pre-cutover row: the payload is already in hand.
-				if (chunk.events !== "") return Effect.succeed(Option.some(chunk))
+				if (chunk.events !== "") return Effect.succeedSome(chunk)
 				const key = replayObjectKey(orgId, sessionId, chunk.chunkSeq)
 				return bucket.getBytes(key).pipe(
 					Effect.flatMap(

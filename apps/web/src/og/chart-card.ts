@@ -41,6 +41,7 @@ import {
 	type PlotLabel,
 	type TimeLabel,
 } from "@maple/widgets/chart/static-chart"
+import { Array as Arr, String as Str } from "effect"
 
 /** Registered by `render.ts`; the chart cards are monospace throughout. */
 const MONO_FONT = "Geist Mono"
@@ -170,7 +171,7 @@ const legendChip = (entry: LegendEntry): LegendChip => {
 	const full = `${entry.name} ${entry.latest}`
 	return {
 		color: entry.color,
-		text: full.length <= LEGEND_MAX_CHARS ? full : `${full.slice(0, LEGEND_MAX_CHARS - 1)}…`,
+		text: full.length <= LEGEND_MAX_CHARS ? full : `${Str.slice(0, LEGEND_MAX_CHARS - 1)(full)}…`,
 	}
 }
 
@@ -235,7 +236,7 @@ export const yAxisGutter = (labels: ReadonlyArray<PlotLabel>, limit: PlotLabel |
 	const clear = (tick: PlotLabel): boolean =>
 		limit === null || Math.abs(plotY(tick.yFraction) - plotY(limit.yFraction)) >= AXIS_MIN_SEPARATION
 	const drawn = [
-		...labels.filter(clear).map((tick) => ({ tick, color: COLOR.muted })),
+		...Arr.map(Arr.filter(labels, clear), (tick) => ({ tick, color: COLOR.muted })),
 		// The limit is a value on this scale, so it belongs on the scale, at the
 		// height of the rule the plot drew for it. In the rule's own colour, since
 		// a red number level with a red dashed line needs no further caption.
@@ -243,7 +244,7 @@ export const yAxisGutter = (labels: ReadonlyArray<PlotLabel>, limit: PlotLabel |
 	]
 	return container({
 		style: { display: "flex", position: "relative", width: AXIS_WIDTH, height: PLOT_HEIGHT },
-		children: drawn.map(({ tick, color }) =>
+		children: Arr.map(drawn, ({ tick, color }) =>
 			container({
 				style: {
 					display: "flex",
@@ -270,7 +271,7 @@ export const yAxisGutter = (labels: ReadonlyArray<PlotLabel>, limit: PlotLabel |
 export const xAxisRow = (labels: ReadonlyArray<TimeLabel>): Node =>
 	container({
 		style: { display: "flex", position: "relative", width: PLOT_WIDTH, height: SMALL_ROW },
-		children: labels.map((tick) => {
+		children: Arr.map(labels, (tick) => {
 			const width = tick.text.length * MONO_CHAR
 			const centred = plotX(tick.xFraction) - width / 2
 			return container({
@@ -298,7 +299,7 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 	// single answer. The renderer drops them too, and asking the question on
 	// either side of that would let a two-series spec with one empty series take
 	// the solo layout in the palette's colour.
-	const series = spec.series.filter((entry) => entry.points.length > 0)
+	const series = Arr.filter(spec.series, (entry) => entry.points.length > 0)
 
 	// A chart about one measured quantity takes that unit's semantic colour —
 	// latency amber, error-rate red — rather than "the first slot in the
@@ -315,7 +316,7 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 	// its name is the title. Its value goes where the legend would have been
 	// read from — beside the title, in the same weight.
 	const solo = plot.legend.length === 1 ? plot.legend[0] : undefined
-	const entries = solo === undefined ? plot.legend.map(legendChip) : []
+	const entries = solo === undefined ? Arr.map(plot.legend, legendChip) : []
 	const rows = solo === undefined ? legendRows(entries) : 0
 
 	// Padding, the title, the plot, the time axis, and a legend when there is
@@ -381,7 +382,7 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 								columnGap: LEGEND_COLUMN_GAP,
 								rowGap: LEGEND_ROW_GAP,
 							},
-							children: entries.map(legendEntry),
+							children: Arr.map(entries, legendEntry),
 						}),
 					]
 				: []),
@@ -419,7 +420,7 @@ export interface RankedCard {
 export const rankedCard = (card: RankedCard): ChartCard => {
 	const color = unitColor(card.unit)
 	// A ranking of zeroes still draws its labels; the bars are simply hairlines.
-	const largest = Math.max(...card.points.map((point) => Math.abs(point.value)), 0)
+	const largest = Math.max(...Arr.map(card.points, (point) => Math.abs(point.value)), 0)
 	const barWidth = (value: number): number =>
 		largest === 0 ? 2 : Math.max(2, Math.round((Math.abs(value) / largest) * BAR_MAX))
 
@@ -444,7 +445,7 @@ export const rankedCard = (card: RankedCard): ChartCard => {
 			label(card.title, 17, COLOR.ink, 600),
 			container({
 				style: { display: "flex", flexDirection: "column", gap: RANKED_ROW_GAP },
-				children: card.points.map((point) =>
+				children: Arr.map(card.points, (point) =>
 					container({
 						style: {
 							display: "flex",

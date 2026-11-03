@@ -241,9 +241,7 @@ export const hasRepeatedVariableGroup = (pattern: string): boolean => {
 }
 
 /** Splits a leading `(?i)` off a pattern; both engines treat it as case-insensitive. */
-export const splitRegexFlags = (
-	pattern: string,
-): { readonly source: string; readonly ignoreCase: boolean } =>
+export const splitRegexFlags = (pattern: string): { readonly source: string; readonly ignoreCase: boolean } =>
 	pattern.startsWith("(?i)")
 		? { source: pattern.slice(4), ignoreCase: true }
 		: { source: pattern, ignoreCase: false }
@@ -463,7 +461,7 @@ const repetitions = (branch: string): Array<Repetition> => {
 /** Characters tried against atoms to decide whether two of them can match the same text. */
 const PROBES = [
 	...Array.from({ length: 95 }, (_, index) => String.fromCharCode(32 + index)),
-	..."\t\n\r  \u0085éßжΣſKİ日٣²😀́‍",
+	...Array.from("\t\n\r  \u0085éßжΣſKİ日٣²😀́‍"),
 ]
 
 /**

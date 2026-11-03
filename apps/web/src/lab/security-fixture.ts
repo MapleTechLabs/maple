@@ -8,7 +8,7 @@ import {
 	SecurityAuditTargetsResponse,
 	SecurityAuditUnitsResponse,
 } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 
 // Security Center fixtures for `/lab/security` and the page scene tests: four targets, one run in
 // each state, findings of every verdict. Built relative to `now` so relative times read the same.
@@ -250,8 +250,8 @@ export const settingsOf = (now: number) => {
 
 /** Per run, what its snapshot holds, as the API counts it for admins. */
 const findingCountsOf = (now: number, runIds: ReadonlyArray<string>) =>
-	Object.fromEntries(
-		runIds.map((runId) => {
+	Rec.fromEntries(
+		Arr.map(runIds, (runId) => {
 			const findings = runFindingsOf(now, runId).findings
 			const severityOf = (finding: (typeof findings)[number]) =>
 				finding.verdict === "confirmed"
@@ -260,7 +260,7 @@ const findingCountsOf = (now: number, runIds: ReadonlyArray<string>) =>
 						? finding.estimatedSeverity
 						: null
 			const at = (severity: string) =>
-				findings.filter((finding) => severityOf(finding) === severity).length
+				Arr.filter(findings, (finding) => severityOf(finding) === severity).length
 			return [
 				runId,
 				{
@@ -269,27 +269,29 @@ const findingCountsOf = (now: number, runIds: ReadonlyArray<string>) =>
 					medium: at("medium"),
 					low: at("low"),
 					informational: at("informational"),
-					unverified: findings.filter(
+					unverified: Arr.filter(
+						findings,
 						(finding) =>
 							finding.verdict === "needs_validation" && finding.estimatedSeverity !== null,
 					).length,
-					needsValidation: findings.filter(
+					needsValidation: Arr.filter(
+						findings,
 						(finding) =>
 							finding.verdict === "needs_validation" && finding.estimatedSeverity === null,
 					).length,
-					rejected: findings.filter((finding) => finding.verdict === "rejected").length,
+					rejected: Arr.filter(findings, (finding) => finding.verdict === "rejected").length,
 				},
 			]
 		}),
 	)
 
 export const runsOf = (now: number) => {
-	const runs = runSeeds(now).map(run)
+	const runs = Arr.map(runSeeds(now), run)
 	return Schema.decodeUnknownSync(SecurityAuditRunsResponse)({
 		runs,
 		findingCounts: findingCountsOf(
 			now,
-			runs.map((entry) => entry.id),
+			Arr.map(runs, (entry) => entry.id),
 		),
 	})
 }
@@ -344,7 +346,7 @@ export const runDetailOf = (now: number, runId: string) => {
 						],
 					},
 		unitCounts: counts,
-		unitTotal: Object.values(counts).reduce((sum, count) => sum + count, 0),
+		unitTotal: Arr.reduce(Rec.values(counts), 0, (sum, count) => sum + count),
 	})
 }
 
@@ -598,7 +600,7 @@ const EVENTS_BY_RUN = new Map<string, ReadonlyArray<EventSeed>>([
 
 export const eventsOf = (now: number, runId: string) =>
 	Schema.decodeSync(SecurityAuditEventsResponse)({
-		events: (EVENTS_BY_RUN.get(runId) ?? []).map((event, index) => ({
+		events: Arr.map(EVENTS_BY_RUN.get(runId) ?? [], (event, index) => ({
 			id: `${runId}_evt_${index}`,
 			at: now - event.ago * MINUTE,
 			kind: event.kind,
@@ -1189,17 +1191,22 @@ const findingOf = (seed: FindingSeed, now: number) => ({
 
 export const findingsOf = (now: number, targetId: string) =>
 	Schema.decodeUnknownSync(SecurityAuditFindingsResponse)({
-		findings: [...FINDINGS, ...DEEP_FINDINGS]
-			.filter((seed) => seed.targetId === targetId)
-			.map((seed) => findingOf(seed, now)),
+		findings: Arr.map(
+			Arr.filter([...FINDINGS, ...DEEP_FINDINGS], (seed) => seed.targetId === targetId),
+			(seed) => findingOf(seed, now),
+		),
 	})
 
 /** What one run reported: every seed it saw, the earlier run included for carried findings. */
 export const runFindingsOf = (now: number, runId: string) =>
 	Schema.decodeUnknownSync(SecurityAuditFindingsResponse)({
-		findings: [...FINDINGS, ...DEEP_FINDINGS]
-			.filter((seed) => seed.runId === runId || seed.firstRunId === runId)
-			.map((seed) => findingOf(seed, now)),
+		findings: Arr.map(
+			Arr.filter(
+				[...FINDINGS, ...DEEP_FINDINGS],
+				(seed) => seed.runId === runId || seed.firstRunId === runId,
+			),
+			(seed) => findingOf(seed, now),
+		),
 	})
 
 export const githubStatusOf = (connected = true) =>
@@ -1212,7 +1219,7 @@ export const githubStatusOf = (connected = true) =>
 		ciTracesEnabled: true,
 		repositoryDiscovery: null,
 		repositories: connected
-			? ["payments-api", "api-gateway", "web-dashboard", "billing-service"].map((name, index) => ({
+			? Arr.map(["payments-api", "api-gateway", "web-dashboard", "billing-service"], (name, index) => ({
 					id: `00000c01-0000-4000-8000-00000000000${index + 1}`,
 					fullName: `acme/${name}`,
 					htmlUrl: `https://github.com/acme/${name}`,

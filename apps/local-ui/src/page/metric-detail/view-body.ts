@@ -15,7 +15,7 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { serviceDot } from "@maple/views/ui/values"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { heading } from "@maple/views/ui/heading"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -135,7 +135,7 @@ const breakdownSection = (h: H, model: Model, entry: MetricEntry): Html => {
 					]),
 					tableBody(
 						h,
-						rows.map((row) => breakdownRow(h, row, chartUnit, showSum)),
+						Arr.map(rows, (row) => breakdownRow(h, row, chartUnit, showSum)),
 					),
 				]),
 			],

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	lastDays,
@@ -43,7 +43,7 @@ export const makeDays = (
 	overrides: Readonly<Record<number, StatusPageDayState>> = {},
 	count: number = STATUS_PAGE_WINDOW_DAYS,
 ): ReadonlyArray<EncodedDay> =>
-	lastDays(nowMs, count).map((day, index) => ({
+	Arr.map(lastDays(nowMs, count), (day, index) => ({
 		day,
 		...DAY_COUNTS[overrides[index] ?? "ok"],
 	}))

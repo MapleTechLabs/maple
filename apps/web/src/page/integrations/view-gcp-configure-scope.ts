@@ -17,6 +17,7 @@ import type { Model } from "./model"
 import { Message } from "./message"
 import { gcpCommand, SMALL } from "./view-gcp-parts"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `ScopeFields`: what kind of thing to connect, and its ID.
 
@@ -39,8 +40,8 @@ export const scopeFields = (
 ): ReadonlyArray<Html> => {
 	const scope = SCOPES[configure.scopeType]
 	const aggregated = configure.scopeType !== "project"
-	const scopeId = configure.scopeId.value.trim()
-	const hostProjectId = configure.hostProjectId.value.trim()
+	const scopeId = Str.trim(configure.scopeId.value)
+	const hostProjectId = Str.trim(configure.hostProjectId.value)
 	const scopeIdInvalid =
 		configure.scopeId.isTouched &&
 		scopeId.length > 0 &&
@@ -57,7 +58,7 @@ export const scopeFields = (
 			ToggleGroup.view(h, {
 				model: configure.scopeGroup,
 				toParentMessage: (message) => Message.GotGcpScopeTypeMessage({ message }),
-				items: SCOPE_TYPES.map((scopeType) => ({
+				items: Arr.map(SCOPE_TYPES, (scopeType) => ({
 					value: scopeType,
 					label: GCP_SCOPE_NAMES[scopeType],
 				})),
@@ -89,7 +90,7 @@ export const scopeFields = (
 						label: "Host project ID",
 						description: [
 							"Holds Maple's Pub/Sub topic and read-only service account. A project inside the ",
-							GCP_SCOPE_NAMES[configure.scopeType].toLowerCase(),
+							Str.toLowerCase(GCP_SCOPE_NAMES[configure.scopeType]),
 							" with billing enabled that won't be deleted.",
 						],
 						placeholder: "acme-observability",

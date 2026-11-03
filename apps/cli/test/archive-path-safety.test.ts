@@ -21,6 +21,7 @@ import { rebuildCatalog, listActiveGenerations } from "@maple/local-server/archi
 import { type ArchiveGenerationManifest } from "@maple/local-server/archives/manifest"
 import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
+import { Array as Arr, String as Str } from "effect"
 
 // External-sentinel tests proving archive-root path escapes are closed (C-1).
 // These mirror the reviewer's deterministic probes: a symlinked descendant must
@@ -45,7 +46,7 @@ const manifest = (
 	generationId: string,
 	signal = "traces",
 	rowCount = 10,
-	shardSha = "a".repeat(64),
+	shardSha = Str.repeat(64)("a"),
 	shardBytes = 4096,
 ): ArchiveGenerationManifest => ({
 	formatVersion: 3,
@@ -209,7 +210,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 			strictEqual(listing.active[0]!.rangeStart, "2026-06-01")
 			ok(listing.errors.length >= 1, "malformed pointer surfaced as error")
 			ok(
-				listing.errors.some((e) => e.rangeStart === "2026-06-02"),
+				Arr.some(listing.errors, (e) => e.rangeStart === "2026-06-02"),
 				"the corrupt range is named",
 			)
 		})
@@ -225,7 +226,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 			)
 			const listing = listActiveGenerations(archiveDir)
 			strictEqual(listing.active.length, 0)
-			ok(listing.errors.some((e) => e.rangeStart === "2026-06-01" && /mismatch/.test(e.error)))
+			ok(Arr.some(listing.errors, (e) => e.rangeStart === "2026-06-01" && /mismatch/.test(e.error)))
 		})
 	})
 })
@@ -276,7 +277,7 @@ describe("archive path safety — read-side symlink escapes (HIGH-1/HIGH-2)", ()
 			// The symlinked shard must not appear in active paths.
 			strictEqual(listing.active.length, 0)
 			ok(
-				listing.errors.some((e) => /shard path/.test(e.error)),
+				Arr.some(listing.errors, (e) => /shard path/.test(e.error)),
 				"symlinked shard surfaced as error",
 			)
 		})

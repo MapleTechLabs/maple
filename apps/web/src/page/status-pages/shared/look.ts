@@ -9,6 +9,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { cardButton } from "@maple/views/ui/card-button"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The theme presets as small cards, shared by the builder's Look and the Settings appearance.
 
@@ -54,7 +55,7 @@ const miniPage = <M>(h: HtmlBuilder<M>, scheme: Scheme, tokens: ResolvedStatusPa
 						borderRadius: radius,
 					}),
 				],
-				[scheme.ok, scheme.ok, scheme.ok, scheme.degraded, scheme.ok, scheme.ok].map((color) =>
+				Arr.map([scheme.ok, scheme.ok, scheme.ok, scheme.degraded, scheme.ok, scheme.ok], (color) =>
 					h.span([h.Class("h-2 flex-1 rounded-2xs"), h.Style({ backgroundColor: color })], []),
 				),
 			),
@@ -107,5 +108,5 @@ export const presetCards = <M>(
 ): Html =>
 	h.div(
 		[h.Role("group"), h.AriaLabel("Preset"), h.Class("grid grid-cols-2 gap-2 sm:grid-cols-3")],
-		PRESETS.map((preset) => presetCard(h, preset, options)),
+		Arr.map(PRESETS, (preset) => presetCard(h, preset, options)),
 	)

@@ -1,5 +1,6 @@
 import type { SpanEvent } from "@maple/query-engine"
 import { formatDurationAtStep } from "@maple/ui/lib/format"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** OTel semconv attribute keys on an `exception` span event. */
 const EXCEPTION_KEYS = ["exception.type", "exception.message", "exception.stacktrace"] as const
@@ -20,8 +21,9 @@ const nonEmpty = (value: string | undefined) => (value ? value : undefined)
 /** Splits an `exception` event's semconv fields from the rest of its attributes. */
 export function describeSpanEvent(event: SpanEvent): DescribedSpanEvent {
 	if (event.name !== "exception") return { kind: "event", attributes: event.attributes }
-	const attributes = Object.fromEntries(
-		Object.entries(event.attributes).filter(
+	const attributes = Rec.fromEntries(
+		Arr.filter(
+			Rec.toEntries(event.attributes),
 			([key]) => !(EXCEPTION_KEYS as readonly string[]).includes(key),
 		),
 	)
@@ -39,6 +41,6 @@ export function formatEventOffset(offsetMs: number): string {
 	const sign = offsetMs < 0 ? "-" : "+"
 	const magnitude = Math.abs(offsetMs)
 	// Past a second the shared formatter rounds to the millisecond; keep the microseconds.
-	if (magnitude >= 1000) return `${sign}${(magnitude / 1000).toFixed(6).replace(/0{1,3}$/, "")}s`
+	if (magnitude >= 1000) return `${sign}${Str.replace(/0{1,3}$/, "")((magnitude / 1000).toFixed(6))}s`
 	return `${sign}${formatDurationAtStep(magnitude, 0.001)}`
 }

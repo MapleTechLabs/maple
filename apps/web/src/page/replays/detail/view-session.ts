@@ -21,6 +21,7 @@ import type { Model, ReplayDetail } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The rail's Session tab.
 
@@ -177,7 +178,7 @@ const summary = (h: H, session: ReplayDetail): Html => {
 }
 
 const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null => {
-	const traits = Object.entries(parseAttributes(session.userTraits))
+	const traits = Rec.toEntries(parseAttributes(session.userTraits))
 	const userId = session.userId ?? ""
 	const { userName, userEmail, groupName, groupId } = session
 	if (!userName && !userEmail && !userId && !groupName && !groupId && traits.length === 0) return null
@@ -219,7 +220,7 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 							icon: "TagIcon",
 							label: "Group",
 							hint: groupName && groupId ? groupId : undefined,
-							title: [groupName, groupId].filter(Boolean).join(" · "),
+							title: Arr.join(Arr.filter([groupName, groupId], Boolean), " · "),
 						},
 						[
 							groupName
@@ -240,7 +241,7 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 					detailRailField(h, { label: "Traits" }, [
 						h.div(
 							[h.Class("flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground")],
-							traits.map(([key, text]) =>
+							Arr.map(traits, ([key, text]) =>
 								truncatedText(h, { text: `${key}: ${text}`, className: "max-w-full" }, [
 									key,
 									"=",
@@ -327,9 +328,16 @@ const acquisition = (h: H, session: ReplayDetail): Html | null =>
 				...(session.utmSource
 					? [
 							row(h, { icon: "PaperPlaneIcon", label: "Source" }, [
-								value(h, [session.utmSource, session.utmMedium].filter(Boolean).join(" / "), {
-									className: "truncate",
-								}),
+								value(
+									h,
+									Arr.join(
+										Arr.filter([session.utmSource, session.utmMedium], Boolean),
+										" / ",
+									),
+									{
+										className: "truncate",
+									},
+								),
 							]),
 						]
 					: []),
@@ -395,51 +403,64 @@ export const sessionTab = (h: H, model: SessionView, session: ReplayDetail): Htm
 	scrollRegion(
 		h,
 		{},
-		[
-			summary(h, session),
-			identity(h, model, session),
-			session.visitorId
-				? detailRailGroup(h, "Visitor", [
-						row(h, { icon: "FingerprintIcon", label: "Visitor ID", title: session.visitorId }, [
-							link(
+		Arr.filter(
+			[
+				summary(h, session),
+				identity(h, model, session),
+				session.visitorId
+					? detailRailGroup(h, "Visitor", [
+							row(
 								h,
-								hrefOf(AppRoute.Replays({ search: { visitorId: session.visitorId } })),
-								shortId(session.visitorId, "generic", { ellipsis: true }),
-								"truncate font-mono text-xs text-primary underline-offset-2 hover:underline active:underline",
-								"All sessions from this visitor",
+								{ icon: "FingerprintIcon", label: "Visitor ID", title: session.visitorId },
+								[
+									link(
+										h,
+										hrefOf(
+											AppRoute.Replays({ search: { visitorId: session.visitorId } }),
+										),
+										shortId(session.visitorId, "generic", { ellipsis: true }),
+										"truncate font-mono text-xs text-primary underline-offset-2 hover:underline active:underline",
+										"All sessions from this visitor",
+									),
+								],
 							),
-						]),
-						row(h, { icon: "UserIcon", label: "Visitor" }, [
-							value(h, session.visitorIsNew ? "New" : "Returning"),
-						]),
-					])
-				: null,
-			acquisition(h, session),
-			detailRailGroup(h, "Environment", [
-				h.div(
-					[h.Class("grid grid-cols-2 gap-x-3 gap-y-2 pt-0.5")],
-					[
-						envFact(h, {
-							icon: browserIconFor(session.browserName),
-							label: "Browser",
-							value: session.browserName,
-						}),
-						envFact(h, { icon: "CubeIcon", label: "Operating system", value: session.osName }),
-						envFact(h, {
-							icon: deviceIconFor(session.deviceType),
-							label: "Device",
-							value: session.deviceType,
-							className: "capitalize",
-						}),
-						envFact(h, {
-							icon: "GlobeIcon",
-							glyph: session.country ? countryFlag(session.country) : undefined,
-							label: "Country",
-							value: session.country ? countryName(session.country) : "",
-						}),
-					],
-				),
-			]),
-			context(h, model, session),
-		].filter((node): node is Html => node !== null),
+							row(h, { icon: "UserIcon", label: "Visitor" }, [
+								value(h, session.visitorIsNew ? "New" : "Returning"),
+							]),
+						])
+					: null,
+				acquisition(h, session),
+				detailRailGroup(h, "Environment", [
+					h.div(
+						[h.Class("grid grid-cols-2 gap-x-3 gap-y-2 pt-0.5")],
+						[
+							envFact(h, {
+								icon: browserIconFor(session.browserName),
+								label: "Browser",
+								value: session.browserName,
+							}),
+							envFact(h, {
+								icon: "CubeIcon",
+								label: "Operating system",
+								value: session.osName,
+							}),
+							envFact(h, {
+								icon: deviceIconFor(session.deviceType),
+								label: "Device",
+								value: session.deviceType,
+								className: "capitalize",
+							}),
+							envFact(h, {
+								icon: "GlobeIcon",
+								glyph: session.country ? countryFlag(session.country) : undefined,
+								label: "Country",
+								value: session.country ? countryName(session.country) : "",
+							}),
+						],
+					),
+				]),
+				context(h, model, session),
+			],
+			(node): node is Html => node !== null,
+		),
 	)

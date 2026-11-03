@@ -4,7 +4,7 @@ import {
 } from "../../../lib/dashboard-controls/search-params"
 import { behindToast } from "../kit/store"
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -89,7 +89,11 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		history: initHistory(),
 		sharing: initSharing(),
 		orgTags: [],
-		pickerTabs: Tabs.init({ idBase: 300, values: PICKER_TABS.map((tab) => tab.id), selected: "all" }),
+		pickerTabs: Tabs.init({
+			idBase: 300,
+			values: Arr.map(PICKER_TABS, (tab) => tab.id),
+			selected: "all",
+		}),
 		gesture: null,
 		keyboardMove: null,
 		gridAnnouncement: "",
@@ -122,8 +126,8 @@ export const init = (route: Route, _context: PageContext): Return => ({
 })
 
 const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean =>
-	Object.keys(a).length === Object.keys(b).length &&
-	Object.entries(a).every(([key, value]) => b[key] === value)
+	Rec.keys(a).length === Rec.keys(b).length &&
+	Arr.every(Rec.toEntries(a), ([key, value]) => b[key] === value)
 
 /** A `var-*` change re-plans the tiles that read the variable (their request keys move). */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
@@ -481,7 +485,7 @@ const titleSubmit = (model: Model, context: PageContext): Return => {
 	const name = model.document?.name ?? ""
 	const closed = { ...model, titleDraft: null }
 	if (draft === null) return { model: closed }
-	const trimmed = draft.trim()
+	const trimmed = Str.trim(draft)
 	return trimmed !== "" && trimmed !== name
 		? {
 				model: closed,

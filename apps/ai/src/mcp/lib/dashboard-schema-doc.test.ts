@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	DashboardWidgetSchema,
 	PANEL_TYPES,
@@ -17,12 +17,15 @@ const decodeDataSource = Schema.decodeUnknownSync(WidgetDataSourceSchema)
 const decodeWidget = Schema.decodeUnknownSync(DashboardWidgetSchema)
 
 const allSections = () =>
-	[renderDashboardSchemaIndex(), ...DASHBOARD_SCHEMA_SECTIONS.map(renderDashboardSchemaSection)].join("\n")
+	Arr.join(
+		[renderDashboardSchemaIndex(), ...Arr.map(DASHBOARD_SCHEMA_SECTIONS, renderDashboardSchemaSection)],
+		"\n",
+	)
 
 /** Every ```json fence in the generated doc. */
 const jsonExamples = (markdown: string): ReadonlyArray<unknown> => {
 	const blocks = markdown.matchAll(/```json\n([\s\S]*?)\n```/g)
-	return [...blocks].map(([, body]) => JSON.parse(body!))
+	return Arr.map([...blocks], ([, body]) => JSON.parse(body!))
 }
 
 describe("generated JSON examples decode", () => {
@@ -46,7 +49,7 @@ describe("generated JSON examples decode", () => {
 		// all take an assembled widget. Every agent in the documentation A/B
 		// inferred that envelope correctly but reported it as a guess.
 		const examples = jsonExamples(renderDashboardSchemaSection("data_sources"))
-		const widgets = examples.filter((example) => Object.hasOwn(example as object, "dataSource"))
+		const widgets = Arr.filter(examples, (example) => Object.hasOwn(example as object, "dataSource"))
 		// The generic widget and the product-event funnel widget, whose data source
 		// is derived from `display.funnel` and so only makes sense shown whole.
 		expect(widgets).toHaveLength(2)
@@ -79,7 +82,7 @@ describe("generated JSON examples decode", () => {
 describe("coverage", () => {
 	it("documents every MCP-exposed panel type", () => {
 		const doc = renderDashboardSchemaSection("panel_types")
-		for (const meta of PANEL_TYPES.filter((panel) => panel.mcpExposed)) {
+		for (const meta of Arr.filter(PANEL_TYPES, (panel) => panel.mcpExposed)) {
 			expect(doc).toContain(`\`${meta.panelType}\``)
 		}
 	})

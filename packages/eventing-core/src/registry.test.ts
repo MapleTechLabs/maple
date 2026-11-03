@@ -1,4 +1,4 @@
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	CompiledProjectionRegistry,
@@ -183,7 +183,7 @@ describe("CompiledProjectionRegistry", () => {
 		)
 		const result = Result.getOrThrow(registry.evaluate(signal(), acceptedAt))
 		expect(result.failures).toEqual([])
-		expect(result.events.map(({ projectionid }) => projectionid)).toEqual([
+		expect(Arr.map(result.events, ({ projectionid }) => projectionid)).toEqual([
 			"example-record-observed",
 			"example-record-observed-audit",
 		])
@@ -260,13 +260,13 @@ describe("CompiledProjectionRegistry", () => {
 					dataSchema: "urn:maple:event-schema:oversized:v1",
 					decodeOutput: decodeJsonOutput,
 					decodeConfig: () => ({}),
-					project: () => ({ data: { payload: "x".repeat(MAX_CLOUD_EVENT_BYTES) } }),
+					project: () => ({ data: { payload: Str.repeat(MAX_CLOUD_EVENT_BYTES)("x") } }),
 				}),
 			).register({
 				id: "invalid-envelope",
 				version: 1,
 				sourceKinds: ["otel.log"],
-				outputType: "x".repeat(257),
+				outputType: Str.repeat(257)("x"),
 				dataSchema: "urn:maple:event-schema:invalid-envelope:v1",
 				decodeOutput: decodeJsonOutput,
 				decodeConfig: () => ({}),
@@ -291,7 +291,9 @@ describe("CompiledProjectionRegistry", () => {
 			),
 		)
 		const result = Result.getOrThrow(registry.evaluate(signal(), acceptedAt))
-		expect(result.events.map(({ projectionid }) => projectionid)).toEqual(["example-record-observed"])
+		expect(Arr.map(result.events, ({ projectionid }) => projectionid)).toEqual([
+			"example-record-observed",
+		])
 		expect(result.failures).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -319,17 +321,23 @@ describe("CompiledProjectionRegistry", () => {
 			),
 		)
 		expect(
-			Result.getOrThrow(
-				registry.evaluate(signal({ observedAt: "1999-01-01T00:00:00Z" }), acceptedAt),
-			).events.map(({ projectionid }) => projectionid),
+			Arr.map(
+				Result.getOrThrow(
+					registry.evaluate(signal({ observedAt: "1999-01-01T00:00:00Z" }), acceptedAt),
+				).events,
+				({ projectionid }) => projectionid,
+			),
 		).toEqual(["example-record-observed"])
 		expect(
 			Result.getOrThrow(registry.evaluate(signal({ sourceKind: "otel.span" }), acceptedAt)).events,
 		).toEqual([])
 		expect(
-			Result.getOrThrow(
-				registry.evaluate(signal({ observedAt: "2099-01-01T00:00:00Z" }), "2026-08-07T00:00:00Z"),
-			).events.map(({ projectionid }) => projectionid),
+			Arr.map(
+				Result.getOrThrow(
+					registry.evaluate(signal({ observedAt: "2099-01-01T00:00:00Z" }), "2026-08-07T00:00:00Z"),
+				).events,
+				({ projectionid }) => projectionid,
+			),
 		).toEqual(["example-record-observed"])
 	})
 

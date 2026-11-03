@@ -23,7 +23,7 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
@@ -155,7 +155,10 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		const tenant = yield* resolveTenant(orgId, input)
 		const surface = approver.kind === "app" ? "chat" : "bot"
 		const result = yield* executor.execute(tenant, input.tool, input.input, surface)
-		const content = result.content.map((entry) => entry.text).join("\n")
+		const content = Arr.join(
+			Arr.map(result.content, (entry) => entry.text),
+			"\n",
+		)
 		const refused = result.isError === true
 		yield* Effect.annotateCurrentSpan("maple.chat.apply", refused ? "refused" : "applied")
 		return {

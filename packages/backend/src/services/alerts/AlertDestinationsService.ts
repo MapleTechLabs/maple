@@ -26,7 +26,7 @@ import {
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, AlertLinearIssues, AlertRules, type AlertDestinationRow } from "@maple/db/tables"
-import { Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
+import { Context, Effect, Layer, Match, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -83,7 +83,7 @@ const normalizeOptionalString = (value: string | null | undefined) => {
 
 const validateDestinationUrl = (rawUrl: string, field: string): Effect.Effect<string, AlertValidationError> =>
 	validateExternalUrl(rawUrl).pipe(
-		Effect.as(rawUrl.trim()),
+		Effect.as(Str.trim(rawUrl)),
 		Effect.mapError((error) => makeValidationError(`${field}: ${error.message}`, [], error)),
 	)
 
@@ -97,12 +97,12 @@ const summarizeMembers = (members: ReadonlyArray<OrgMember>): string => {
 const emailPublicConfig = (members: ReadonlyArray<OrgMember>): DestinationPublicConfig => ({
 	summary: summarizeMembers(members),
 	channelLabel: members[0]?.email ?? null,
-	memberUserIds: members.map((member) => member.userId),
+	memberUserIds: Arr.map(members, (member) => member.userId),
 })
 
 const emailSecretConfig = (members: ReadonlyArray<OrgMember>): DestinationSecretConfig => ({
 	type: "email",
-	members: members.map((member) => ({
+	members: Arr.map(members, (member) => ({
 		userId: member.userId,
 		email: member.email,
 		name: member.name,
@@ -170,7 +170,7 @@ const validateGoogleChatWebhookUrl = (rawUrl: string): Effect.Effect<string, Ale
 			)
 
 /** A chat id is not a secret, but it is also not a name — label it as what it is. */
-const telegramSummary = (chatId: string) => `Chat ${chatId.trim()}`
+const telegramSummary = (chatId: string) => `Chat ${Str.trim(chatId)}`
 
 /**
  * The workspace's name is the summary, and the connector rides in the public config so the
@@ -199,7 +199,7 @@ const buildPublicConfig = (
 			// browser, so nothing secret may appear here. It rides in
 			// `channelLabel` as well as the summary so the edit form can prefill it
 			// — without that, renaming a destination would demand retyping the id.
-			telegram: (r) => ({ summary: telegramSummary(r.chatId), channelLabel: r.chatId.trim() }),
+			telegram: (r) => ({ summary: telegramSummary(r.chatId), channelLabel: Str.trim(r.chatId) }),
 			"google-chat": (r) => ({ summary: googleChatSummary(r.webhookUrl), channelLabel: null }),
 		}),
 	)
@@ -209,19 +209,19 @@ const buildSecretConfig = (
 ): DestinationSecretConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
-			pagerduty: (r) => ({ type: "pagerduty" as const, integrationKey: r.integrationKey.trim() }),
+			pagerduty: (r) => ({ type: "pagerduty" as const, integrationKey: Str.trim(r.integrationKey) }),
 			webhook: (r) => ({
 				type: "webhook" as const,
-				url: r.url.trim(),
+				url: Str.trim(r.url),
 				signingSecret: normalizeOptionalString(r.signingSecret),
 			}),
-			discord: (r) => ({ type: "discord" as const, webhookUrl: r.webhookUrl.trim() }),
+			discord: (r) => ({ type: "discord" as const, webhookUrl: Str.trim(r.webhookUrl) }),
 			telegram: (r) => ({
 				type: "telegram" as const,
-				botToken: r.botToken.trim(),
-				chatId: r.chatId.trim(),
+				botToken: Str.trim(r.botToken),
+				chatId: Str.trim(r.chatId),
 			}),
-			"google-chat": (r) => ({ type: "google-chat" as const, webhookUrl: r.webhookUrl.trim() }),
+			"google-chat": (r) => ({ type: "google-chat" as const, webhookUrl: Str.trim(r.webhookUrl) }),
 		}),
 	)
 
@@ -387,12 +387,10 @@ export class AlertDestinationsService extends Context.Service<
 			roles: ReadonlyArray<RoleName>,
 		) {
 			if (roles.some((role) => adminRoles.includes(role))) return
-			return yield* Effect.fail(
-				new AlertForbiddenError({
-					message: "Only org admins can manage alerts",
-					...(roles.length > 0 ? { roles: [...roles] } : undefined),
-				}),
-			)
+			return yield* new AlertForbiddenError({
+				message: "Only org admins can manage alerts",
+				...(roles.length > 0 ? { roles: [...roles] } : undefined),
+			})
 		})
 
 		const requireDestinationRow = Effect.fn("AlertDestinationsService.requireDestinationRow")(function* (
@@ -408,24 +406,19 @@ export class AlertDestinationsService extends Context.Service<
 				),
 			)
 			if (rows[0]) return rows[0]
-			return yield* Effect.fail(
-				new AlertDestinationNotFoundError({
-					message: "Alert destination not found",
-					destinationId,
-				}),
-			)
+			return yield* new AlertDestinationNotFoundError({
+				message: "Alert destination not found",
+				destinationId,
+			})
 		})
 
 		const resolveEmailMembers = (orgId: OrgId, memberUserIds: ReadonlyArray<UserId>) =>
-			orgMembers
-				.resolveMembers(orgId, memberUserIds)
-				.pipe(
-					Effect.flatMap((members) =>
-						members.length === 0
-							? Effect.fail(makeValidationError("At least one workspace member is required"))
-							: Effect.succeed(members),
-					),
-				)
+			orgMembers.resolveMembers(orgId, memberUserIds).pipe(
+				Effect.filterOrFail(
+					(members) => members.length > 0,
+					() => makeValidationError("At least one workspace member is required"),
+				),
+			)
 
 		/** The team must be one the org's connected Linear workspace lists; its key and name come from there. */
 		const resolveLinearTeam = Effect.fn("AlertDestinationsService.resolveLinearTeam")(function* (
@@ -434,9 +427,7 @@ export class AlertDestinationsService extends Context.Service<
 		) {
 			const team = yield* linearOAuth.getTeam(orgId, teamId)
 			if (team === null) {
-				return yield* Effect.fail(
-					makeValidationError("That team is not in the connected Linear workspace"),
-				)
+				return yield* makeValidationError("That team is not in the connected Linear workspace")
 			}
 			return team
 		})
@@ -488,10 +479,8 @@ export class AlertDestinationsService extends Context.Service<
 			integrationKey: string,
 		) {
 			if (!PAGERDUTY_ROUTING_KEY_PATTERN.test(integrationKey)) {
-				return yield* Effect.fail(
-					makeValidationError(
-						"PagerDuty integration key must be a 32-character Events API v2 routing key — a REST API token won't work.",
-					),
+				return yield* makeValidationError(
+					"PagerDuty integration key must be a 32-character Events API v2 routing key — a REST API token won't work.",
 				)
 			}
 			const result = yield* verifyPagerDutyRoutingKey(
@@ -500,16 +489,14 @@ export class AlertDestinationsService extends Context.Service<
 				`maple-keycheck-${runtime.makeUuid()}`,
 			).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 			if (result.status === "invalid") {
-				return yield* Effect.fail(
-					makeValidationError(`PagerDuty rejected this routing key: ${result.reason}`),
-				)
+				return yield* makeValidationError(`PagerDuty rejected this routing key: ${result.reason}`)
 			}
 		})
 
 		const validateTelegramCredentials = Effect.fn("AlertDestinationsService.validateTelegramCredentials")(
 			function* (botToken: string, chatId: string) {
 				if (!TELEGRAM_BOT_TOKEN_PATTERN.test(botToken)) {
-					return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
+					return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
 				}
 				const result = yield* verifyTelegramCredentials(
 					botToken,
@@ -517,7 +504,7 @@ export class AlertDestinationsService extends Context.Service<
 					runtime.deliveryTimeoutMs(),
 				).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 				if (result.status === "invalid") {
-					return yield* Effect.fail(makeValidationError(result.reason))
+					return yield* makeValidationError(result.reason)
 				}
 			},
 		)
@@ -531,12 +518,12 @@ export class AlertDestinationsService extends Context.Service<
 			yield* requireAdmin(roles)
 			const trimmed = botToken.trim()
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
-				return yield* Effect.fail(makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE))
+				return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
 			}
 			const result = yield* fetchTelegramChats(trimmed, runtime.deliveryTimeoutMs()).pipe(
 				Effect.provideService(HttpClient.HttpClient, httpClient),
 			)
-			if (result.status === "invalid") return yield* Effect.fail(makeValidationError(result.reason))
+			if (result.status === "invalid") return yield* makeValidationError(result.reason)
 			return result.chats
 		})
 
@@ -620,7 +607,7 @@ export class AlertDestinationsService extends Context.Service<
 			yield* requireAdmin(roles)
 			const existing = yield* requireDestinationRow(orgId, destinationId)
 			if (existing.type !== request.type) {
-				return yield* Effect.fail(makeValidationError("Destination type cannot be changed"))
+				return yield* makeValidationError("Destination type cannot be changed")
 			}
 			const hydrated = yield* delivery.hydrateDestination(existing)
 			if (request.type === "webhook" && request.url != null && request.url.trim().length > 0) {
@@ -924,14 +911,12 @@ export class AlertDestinationsService extends Context.Service<
 			if (referencedByRules.length > 0) {
 				const ruleIds = referencedByRules.map(({ row }) => decodeAlertRuleIdSync(row.id))
 				const ruleNames = referencedByRules.map(({ row }) => row.name)
-				return yield* Effect.fail(
-					new AlertDestinationInUseError({
-						message: `Destination is still used by alert rules: ${ruleNames.join(", ")}`,
-						destinationId,
-						ruleIds,
-						ruleNames,
-					}),
-				)
+				return yield* new AlertDestinationInUseError({
+					message: `Destination is still used by alert rules: ${ruleNames.join(", ")}`,
+					destinationId,
+					ruleIds,
+					ruleNames,
+				})
 			}
 			// The scan above is the rich-message UX path; this transaction is the
 			// correctness gate. Rule writes validate destinations under the same
@@ -963,16 +948,14 @@ export class AlertDestinationsService extends Context.Service<
 				),
 			)
 			if (deleteResult.referencedBy.length > 0) {
-				return yield* Effect.fail(
-					new AlertDestinationInUseError({
-						message: `Destination is still used by alert rules: ${deleteResult.referencedBy
-							.map((rule) => rule.name)
-							.join(", ")}`,
-						destinationId,
-						ruleIds: deleteResult.referencedBy.map((rule) => decodeAlertRuleIdSync(rule.id)),
-						ruleNames: deleteResult.referencedBy.map((rule) => rule.name),
-					}),
-				)
+				return yield* new AlertDestinationInUseError({
+					message: `Destination is still used by alert rules: ${deleteResult.referencedBy
+						.map((rule) => rule.name)
+						.join(", ")}`,
+					destinationId,
+					ruleIds: deleteResult.referencedBy.map((rule) => decodeAlertRuleIdSync(rule.id)),
+					ruleNames: deleteResult.referencedBy.map((rule) => rule.name),
+				})
 			}
 			const txid = readTxid(deleteResult.deleted)
 			return new AlertDestinationDeleteResponse({

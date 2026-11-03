@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr } from "effect"
 import { errorDetail } from "./error-detail"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
@@ -78,7 +78,7 @@ describe("errorDetail", () => {
 				),
 			)
 
-			const logs = captured.pipeCalls.filter((c) => c.pipe === "list_logs")
+			const logs = Arr.filter(captured.pipeCalls, (c) => c.pipe === "list_logs")
 			assert.lengthOf(logs, 1)
 			// Without an explicit range, pipe-dispatch falls back to an all-time
 			// sentinel window (2023→2099) and the lookup scans full retention.
@@ -96,7 +96,7 @@ describe("errorDetail", () => {
 				timeRange,
 			}).pipe(Effect.provide(makeLayer(makeMockExecutor(captured, [traceRow("t1", "not-a-date")]))))
 
-			const logs = captured.pipeCalls.filter((c) => c.pipe === "list_logs")
+			const logs = Arr.filter(captured.pipeCalls, (c) => c.pipe === "list_logs")
 			assert.lengthOf(logs, 1)
 			assert.strictEqual(logs[0]!.params.start_time, timeRange.startTime)
 			assert.strictEqual(logs[0]!.params.end_time, timeRange.endTime)
@@ -232,7 +232,7 @@ describe("errorDetail", () => {
 			)
 			assert.strictEqual(result.error?.label, "GET 404 /api/org")
 			assert.deepStrictEqual(
-				result.traces[0]!.logs.map((l) => l.body),
+				Arr.map(result.traces[0]!.logs, (l) => l.body),
 				["lookup failed", "Tool completed"],
 			)
 			assert.strictEqual(result.traces[0]!.errorSpan?.attributes["http.response.status_code"], "404")

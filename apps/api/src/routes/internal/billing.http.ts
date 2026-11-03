@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { EdgeCacheService } from "@maple/cache"
 import {
 	AttachResult,
@@ -97,8 +97,8 @@ export const sumDailySpend = (
 	new DailySpendResponse({
 		cycleStart: first.cycleStart,
 		cycleEnd: first.cycleEnd,
-		days: first.days.map((day, index) =>
-			rest.reduce((sum, other) => {
+		days: Arr.map(first.days, (day, index) =>
+			Arr.reduce(rest, day, (sum, other) => {
 				const next = other.days[index]
 				return next === undefined || next.date !== day.date
 					? sum
@@ -110,18 +110,18 @@ export const sumDailySpend = (
 							browserSessions: sum.browserSessions + next.browserSessions,
 							productEvents: (sum.productEvents ?? 0) + (next.productEvents ?? 0),
 						})
-			}, day),
+			}),
 		),
 	})
 
 const orgUsageTotals = (orgId: OrgId, spend: DailySpendResponse) =>
 	new BillingAccountOrgUsage({
 		orgId,
-		logsGB: spend.days.reduce((sum, day) => sum + day.logsGB, 0),
-		tracesGB: spend.days.reduce((sum, day) => sum + day.tracesGB, 0),
-		metricsGB: spend.days.reduce((sum, day) => sum + day.metricsGB, 0),
-		browserSessions: spend.days.reduce((sum, day) => sum + day.browserSessions, 0),
-		productEvents: spend.days.reduce((sum, day) => sum + (day.productEvents ?? 0), 0),
+		logsGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.logsGB),
+		tracesGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.tracesGB),
+		metricsGB: Arr.reduce(spend.days, 0, (sum, day) => sum + day.metricsGB),
+		browserSessions: Arr.reduce(spend.days, 0, (sum, day) => sum + day.browserSessions),
+		productEvents: Arr.reduce(spend.days, 0, (sum, day) => sum + (day.productEvents ?? 0)),
 	})
 
 export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing", (handlers) =>
@@ -168,13 +168,13 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						? autumn.updateCustomerName(customerId, org.name).pipe(
 								// No customer yet (a 404 from the update): create it already named,
 								// or attach would create it unnamed.
-								Effect.flatMap((result) =>
-									result.statusCode === 404
-										? autumn.getOrCreateCustomer(customerId, {
-												expand: [],
-												customerData: { name: org.name },
-											})
-										: Effect.succeed(result),
+								Effect.filterOrElse(
+									(result) => result.statusCode !== 404,
+									() =>
+										autumn.getOrCreateCustomer(customerId, {
+											expand: [],
+											customerData: { name: org.name },
+										}),
 								),
 								Effect.flatMap(ensureOk),
 							)
@@ -525,7 +525,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							"maple.billing.member_count": members.length,
 						})
 						const orgs = yield* Effect.forEach(
-							[tenant, ...members.map((member) => systemTenant(member.orgId))],
+							[tenant, ...Arr.map(members, (member) => systemTenant(member.orgId))],
 							(orgTenant) =>
 								dailySpend
 									.get(orgTenant, cycle)

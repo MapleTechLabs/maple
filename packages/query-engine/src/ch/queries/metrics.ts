@@ -23,6 +23,7 @@ import { resolveMetricTable, metricsSelectExprs, timeseriesBucket, wholeRangeEnd
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
+import { Array as Arr } from "effect"
 
 /**
  * WHERE conditions for `resourceAttributeFilters` — predicates on the
@@ -33,14 +34,14 @@ import { finalizeTimeseries } from "./series-cap"
 function resourceFilterConditions(
 	filters: readonly AttributeFilter[] | undefined,
 ): ReadonlyArray<CH.Condition> {
-	return (filters ?? []).map((rf) => buildAttrFilterCondition(rf, "ResourceAttributes"))
+	return Arr.map(filters ?? [], (rf) => buildAttrFilterCondition(rf, "ResourceAttributes"))
 }
 
 /** WHERE conditions for `attributeFilters`: any mode or negation on the datapoint Attributes map. */
 function datapointFilterConditions(
 	filters: readonly AttributeFilter[] | undefined,
 ): ReadonlyArray<CH.Condition> {
-	return (filters ?? []).map((af) => buildAttrFilterCondition(af, "Attributes"))
+	return Arr.map(filters ?? [], (af) => buildAttrFilterCondition(af, "Attributes"))
 }
 
 // Shared options & output types

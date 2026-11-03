@@ -7,7 +7,7 @@ import {
 	parseMergeStepTicks,
 	type PullRequestFile,
 } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	buildChecklist,
@@ -34,25 +34,28 @@ const file = (
 })
 
 const names = (files: ReadonlyArray<PullRequestFile>) =>
-	detectMergeSteps(files).names.map((candidate) => `${candidate.kind}:${candidate.name}`)
+	Arr.map(detectMergeSteps(files).names, (candidate) => `${candidate.kind}:${candidate.name}`)
 
 describe("detectMergeSteps", () => {
 	it("reads secrets and env vars from config helpers and runtime reads, with head line numbers", () => {
 		const detected = detectMergeSteps([
 			file(
 				"packages/infra/src/env.ts",
-				[
-					"@@ -10,2 +10,5 @@",
-					" const a = 1",
-					'+\toptionalSecret("STRIPE_WEBHOOK_SECRET"),',
-					'+\toptionalPlain("STRIPE_REGION"),',
-					'+const url = process.env.BILLING_URL ?? Config.redacted("BILLING_SIGNING")',
-					" const b = 2",
-				].join("\n"),
+				Arr.join(
+					[
+						"@@ -10,2 +10,5 @@",
+						" const a = 1",
+						'+\toptionalSecret("STRIPE_WEBHOOK_SECRET"),',
+						'+\toptionalPlain("STRIPE_REGION"),',
+						'+const url = process.env.BILLING_URL ?? Config.redacted("BILLING_SIGNING")',
+						" const b = 2",
+					],
+					"\n",
+				),
 			),
 		])
 		assert.deepEqual(
-			detected.names.map((candidate) => [candidate.kind, candidate.name, candidate.line]),
+			Arr.map(detected.names, (candidate) => [candidate.kind, candidate.name, candidate.line]),
 			[
 				["secret", "STRIPE_WEBHOOK_SECRET", 11],
 				["env", "STRIPE_REGION", 12],
@@ -67,13 +70,16 @@ describe("detectMergeSteps", () => {
 			names([
 				file(
 					"packages/chat-platform/src/connectors/slack/api.ts",
-					[
-						"@@ -1 +1,4 @@",
-						'+export const CLIENT_ID_CONFIG = "MAPLE_SLACK_CLIENT_ID"',
-						'+export const SIGNING_SECRET_CONFIG: string = "MAPLE_SLACK_SIGNING_SECRET"',
-						'+const BOT_TOKEN = "MAPLE_SLACK_BOT"',
-						'+export const DEFAULT_LABEL = "READY_TO_SHIP"',
-					].join("\n"),
+					Arr.join(
+						[
+							"@@ -1 +1,4 @@",
+							'+export const CLIENT_ID_CONFIG = "MAPLE_SLACK_CLIENT_ID"',
+							'+export const SIGNING_SECRET_CONFIG: string = "MAPLE_SLACK_SIGNING_SECRET"',
+							'+const BOT_TOKEN = "MAPLE_SLACK_BOT"',
+							'+export const DEFAULT_LABEL = "READY_TO_SHIP"',
+						],
+						"\n",
+					),
 				),
 			]),
 			["env:MAPLE_SLACK_CLIENT_ID", "secret:MAPLE_SLACK_SIGNING_SECRET", "secret:MAPLE_SLACK_BOT"],
@@ -101,7 +107,7 @@ describe("detectMergeSteps", () => {
 			file(".env.example", "@@ -1 +1,2 @@\n+RESEND_API_KEY=\n+APP_NAME=maple"),
 		])
 		assert.deepEqual(
-			detected.names.map((candidate) => [candidate.kind, candidate.name, candidate.ci]),
+			Arr.map(detected.names, (candidate) => [candidate.kind, candidate.name, candidate.ci]),
 			[
 				["secret", "DEPLOY_TOKEN", true],
 				["env", "DEPLOY_REGION", true],
@@ -124,7 +130,7 @@ describe("detectMergeSteps", () => {
 			file("old/Dockerfile", null, "removed"),
 		])
 		assert.deepEqual(
-			steps.map((step) => step.kind),
+			Arr.map(steps, (step) => step.kind),
 			["migration", "warehouse", "infra"],
 		)
 	})
@@ -138,7 +144,7 @@ const checklistOf = (
 ) =>
 	buildChecklist({
 		detected: detectMergeSteps(files),
-		verdicts: new Map(Object.entries(verdicts)),
+		verdicts: new Map(Rec.toEntries(verdicts)),
 		reviewer,
 		isIgnored: (path) => ignored.includes(path),
 	})
@@ -162,7 +168,7 @@ describe("buildChecklist", () => {
 	it("drops names the default branch reads and keeps new and unverified ones, secrets first", () => {
 		const { steps, trace } = checklistOf([wrangler, envFile], { STRIPE_KEY: "new", STRIPE_URL: "exists" })
 		assert.deepEqual(
-			steps.map((step) => [step.kind, step.subject]),
+			Arr.map(steps, (step) => [step.kind, step.subject]),
 			[
 				["secret", "STRIPE_KEY"],
 				["env", "STRIPE_REGION"],
@@ -190,7 +196,7 @@ describe("buildChecklist", () => {
 		assert.deepEqual(trace.replaced, ["STRIPE_KEY"])
 		// The replacement keeps the secret's identity, so its tick carries and it still sorts first.
 		assert.deepEqual(
-			steps.map((step) => [step.source, step.kind, step.subject]),
+			Arr.map(steps, (step) => [step.source, step.kind, step.subject]),
 			[
 				["reviewer", "secret", "STRIPE_KEY"],
 				["diff", "env", "STRIPE_REGION"],
@@ -235,13 +241,13 @@ describe("the Before merge section", () => {
 		const body = renderSummaryComment("<!-- m -->", {
 			report,
 			partial: false,
-			headSha: Schema.decodeSync(GitCommitSha)("a".repeat(40)),
+			headSha: Schema.decodeSync(GitCommitSha)(Str.repeat(40)("a")),
 			repositoryUrl: "https://github.com/acme/shop",
 		})
 		assert.include(body, "### Before merge")
 		assert.include(
 			body,
-			`- [ ] **Secret** · Add secret \`STRIPE_KEY\` to every environment · [\`src/env.ts:1\`](https://github.com/acme/shop/blob/${"a".repeat(40)}/src/env.ts#L1)`,
+			`- [ ] **Secret** · Add secret \`STRIPE_KEY\` to every environment · [\`src/env.ts:1\`](https://github.com/acme/shop/blob/${Str.repeat(40)("a")}/src/env.ts#L1)`,
 		)
 		assert.isBelow(body.indexOf("Adds Stripe webhooks."), body.indexOf("### Before merge"))
 	})
@@ -267,7 +273,7 @@ describe("reconcileMergeSteps", () => {
 			stored("env:SHIPPED", "done", { kind: "env" }),
 		])
 		assert.deepEqual(
-			result.steps.map((step) => [step.key, step.done, step.doneBy]),
+			Arr.map(result.steps, (step) => [step.key, step.done, step.doneBy]),
 			[["secret:STRIPE_KEY", true, "christo"]],
 		)
 		// A done step is never taken back, even when the head stops producing it.
@@ -284,7 +290,7 @@ describe("reconcileMergeSteps", () => {
 			[stored(mergeStepKey(manual(backfill)), "done", { title: backfill, doneBy: "david" })],
 		)
 		assert.deepEqual(
-			result.steps.map((step) => step.done === true),
+			Arr.map(result.steps, (step) => step.done === true),
 			[true, false],
 		)
 		assert.equal(result.steps[0]?.key, mergeStepKey(manual(backfill)))
@@ -304,14 +310,17 @@ describe("reconcileMergeSteps", () => {
 describe("mergeStepKey", () => {
 	it("never gives two different manual titles one key", () => {
 		const long = "Run the backfill for issues_v3 in every region after the deploy is live and then"
-		const keys = [
-			`${long} verify`,
-			`${long} confirm`,
-			"Créer le drapeau",
-			"Vérifier le drapeau",
-			"中文步骤一",
-			"中文步骤二",
-		].map((title) => mergeStepKey(manual(title)))
+		const keys = Arr.map(
+			[
+				`${long} verify`,
+				`${long} confirm`,
+				"Créer le drapeau",
+				"Vérifier le drapeau",
+				"中文步骤一",
+				"中文步骤二",
+			],
+			(title) => mergeStepKey(manual(title)),
+		)
 		assert.strictEqual(new Set(keys).size, keys.length)
 		for (const key of keys) assert.match(key, /^manual:[a-z0-9-]+$/)
 		// A short ASCII title keeps its readable slug.
@@ -333,7 +342,7 @@ describe("ticks on the comment", () => {
 				beforeMerge,
 			}),
 			partial: false,
-			headSha: Schema.decodeSync(GitCommitSha)("a".repeat(40)),
+			headSha: Schema.decodeSync(GitCommitSha)(Str.repeat(40)("a")),
 			repositoryUrl: "https://github.com/acme/shop",
 		})
 
@@ -352,10 +361,10 @@ describe("ticks on the comment", () => {
 			manual("Create the flag"),
 			new PrReviewMergeStep({ ...manual("Set X"), key: "env:X" }),
 		])
-		const after = before.replace(
+		const after = Str.replace(
 			"- [ ] **Manual** · Create the flag",
 			"- [x] **Manual** · Create the flag",
-		)
+		)(before)
 		assert.deepEqual(mergeStepTickChanges(before, after), [{ key: "manual:create-the-flag", done: true }])
 		assert.deepEqual(mergeStepTickChanges(after, before), [
 			{ key: "manual:create-the-flag", done: false },

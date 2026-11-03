@@ -5,7 +5,7 @@ import {
 	formatBucketSecondsShort,
 	resolveTimeRangeWindow,
 } from "@maple/query-engine"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -157,9 +157,11 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 
 /** FNV-1a over a string: a short, pure revision tag. */
 const revisionOf = (text: string): string =>
-	Array.from(text)
-		.reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261)
-		.toString(36)
+	Arr.reduce(
+		Array.from(text),
+		2166136261,
+		(hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0,
+	).toString(36)
 
 /**
  * The list builds its engine query from a fresh `createQueryDraft(0)` each time the preview
@@ -199,7 +201,7 @@ const planWidgetPreview = (model: Model, context: PageContext): Return => {
 	const definitions = model.document?.variables ?? []
 	const options = planOptionRequests(context.orgId, definitions, model.variableOptions, window, "Load")
 	const variables = planVariablesOf(context.orgId, definitions, {}, options.slots, window)
-	const optionCommands = options.requests.map((request) => FetchVariableOptions(request))
+	const optionCommands = Arr.map(options.requests, (request) => FetchVariableOptions(request))
 	const planned = planWidgetGates(
 		{ ...model, variableOptions: options.slots },
 		context,

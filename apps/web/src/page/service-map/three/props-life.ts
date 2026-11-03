@@ -1,6 +1,7 @@
 import type { MachineKind } from "../../../components/service-map/three/palette"
 import { type Child, inkLines, type Scope, type Vec3 } from "./kit"
 import { inkParts, type MapleFinish, type Part, range, variant } from "./props-kit"
+import { Array as Arr } from "effect"
 
 /** A little sugar-bush worker in a plaid shirt and toque, holding a wrench or shouldering a log. */
 export function worker(
@@ -75,7 +76,7 @@ export function boardedWindow(
 ): Child {
 	const [x, y, z] = center
 	return inkParts(scope, {
-		parts: [-0.45, 0.45].map((lean, i): Part => ({
+		parts: Arr.map([-0.45, 0.45], (lean, i): Part => ({
 			box: [0.44, 0.06, 0.02],
 			at: [x, y, z + 0.035 + i * 0.02],
 			turn: [0, 0, lean],
@@ -88,8 +89,8 @@ export function boardedWindow(
 /** Rope-and-lantern border round a selected pad, open at the midlines where belts come in. */
 function lanternRing(scope: Scope, { finish }: { finish: MapleFinish }): Child {
 	const [edge, near, rope] = [1.15, 0.7, 0.2]
-	const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sz) => [sx * edge, sz * edge] as const))
-	const posts = corners.flatMap(([cx, cz]) => [
+	const corners = Arr.flatMap([-1, 1], (sx) => Arr.map([-1, 1], (sz) => [sx * edge, sz * edge] as const))
+	const posts = Arr.flatMap(corners, ([cx, cz]) => [
 		[cx, cz] as const,
 		[Math.sign(cx) * near, cz] as const,
 		[cx, Math.sign(cz) * near] as const,
@@ -99,18 +100,18 @@ function lanternRing(scope: Scope, { finish }: { finish: MapleFinish }): Child {
 		const mid = [(a[0] + b[0]) / 2, rope - 0.06, (a[1] + b[1]) / 2]
 		return [a[0], rope, a[1], ...mid, ...mid, b[0], rope, b[1]]
 	}
-	const ropes = corners.flatMap(([cx, cz]) => [
+	const ropes = Arr.flatMap(corners, ([cx, cz]) => [
 		...span([cx, cz], [Math.sign(cx) * near, cz]),
 		...span([cx, cz], [cx, Math.sign(cz) * near]),
 	])
 	return [
 		inkParts(scope, {
-			parts: posts.map(([x, z]): Part => ({ box: [0.05, 0.24, 0.05], at: [x, 0.12, z] })),
+			parts: Arr.map(posts, ([x, z]): Part => ({ box: [0.05, 0.24, 0.05], at: [x, 0.12, z] })),
 			color: finish.timber,
 			ink: finish.ink,
 		}),
 		inkParts(scope, {
-			parts: posts.map(([x, z]): Part => ({ box: [0.08, 0.09, 0.08], at: [x, 0.285, z] })),
+			parts: Arr.map(posts, ([x, z]): Part => ({ box: [0.08, 0.09, 0.08], at: [x, 0.285, z] })),
 			color: finish.glow,
 			ink: finish.ink,
 		}),
@@ -172,8 +173,8 @@ const YARD_PROPS: ReadonlyArray<() => Bit[]> = [
 	// Vegetable patch: a soil bed with three rows of greens.
 	() => [
 		box("soil", [0.5, 0.04, 0.3], [0, 0.02, 0]),
-		...[-0.09, 0, 0.09].flatMap((b) =>
-			[-0.18, -0.06, 0.06, 0.18].map((a) => box("moss", [0.06, 0.06, 0.06], [a, 0.07, b])),
+		...Arr.flatMap([-0.09, 0, 0.09], (b) =>
+			Arr.map([-0.18, -0.06, 0.06, 0.18], (a) => box("moss", [0.06, 0.06, 0.06], [a, 0.07, b])),
 		),
 	],
 	// Woodpile: two logs with one on top.
@@ -282,10 +283,10 @@ export function yard(scope: Scope, { kind, finish }: { kind: MachineKind; finish
 	const spots: readonly Spot[] = YARD_SPOTS[kind]
 	const count = Math.min(spots.length, 1 + variant(finish.seed, 20, 2))
 	const first = variant(finish.seed, 21, spots.length)
-	const bits = range(count).flatMap((i) => {
+	const bits = Arr.flatMap(range(count), (i) => {
 		const spot = spots[(first + i * (spots.length > 2 ? 2 : 1)) % spots.length]
 		const make = YARD_PROPS[variant(finish.seed, 22 + i, YARD_PROPS.length)]
-		return spot && make ? make().map((bit) => ({ tone: bit.tone, part: placeBit(bit, spot) })) : []
+		return spot && make ? Arr.map(make(), (bit) => ({ tone: bit.tone, part: placeBit(bit, spot) })) : []
 	})
 	const tones = {
 		timber: finish.timber,
@@ -298,9 +299,12 @@ export function yard(scope: Scope, { kind, finish }: { kind: MachineKind; finish
 		linen: finish.tape,
 		paint: finish.gifts[0] ?? finish.signal,
 	} satisfies Record<Tone, string>
-	return TONES.map((tone) =>
+	return Arr.map(TONES, (tone) =>
 		inkParts(scope, {
-			parts: bits.filter((bit) => bit.tone === tone).map((bit) => bit.part),
+			parts: Arr.map(
+				Arr.filter(bits, (bit) => bit.tone === tone),
+				(bit) => bit.part,
+			),
 			color: tones[tone],
 			ink: finish.ink,
 		}),
@@ -340,7 +344,7 @@ export function flowerBox(
 			color: finish.timber,
 			ink: finish.ink,
 		}),
-		[-0.14, 0, 0.14].map((dx, i) =>
+		Arr.map([-0.14, 0, 0.14], (dx, i) =>
 			inkParts(scope, {
 				parts: [{ box: [0.08, 0.08, 0.08], at: [x + dx, y + 0.1, z + 0.06] }],
 				color: finish.gifts[(i + 1) % finish.gifts.length] ?? finish.face,

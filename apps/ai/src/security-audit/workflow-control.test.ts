@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, Effect } from "effect"
+import { Cause, Effect, Array as Arr, String as Str } from "effect"
 import { type AuditWorkflowHandle, securityAuditWorkflowControl } from "./workflow-control"
 
 /** Rejects the way alchemy's handle does: the binding's throw, wrapped by `tryPromise`, as a defect. */
@@ -66,7 +66,7 @@ describe("securityAuditWorkflowControl.cancel", () => {
 				cancel,
 			)
 			assert.deepStrictEqual(
-				exits.map((exit) => exit._tag),
+				Arr.map(exits, (exit) => exit._tag),
 				["Success", "Failure", "Failure"],
 			)
 		}),
@@ -85,7 +85,7 @@ describe("securityAuditWorkflowControl.cancel", () => {
 				),
 			)
 			assert.deepStrictEqual(
-				[error._tag, error.message.includes("internal error"), lookup._tag],
+				[error._tag, Str.includes("internal error")(error.message), lookup._tag],
 				[
 					"@maple/backend/platform/WorkflowCancelError",
 					true,

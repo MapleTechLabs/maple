@@ -23,6 +23,7 @@ import {
 	type StepSpec,
 } from "./step-executor"
 import type { StateDispositionEntry } from "../local-store-migration-module"
+import { Array as Arr } from "effect"
 
 /** Rebuilds the facet rollup from every retained root span; the truncate makes a resumed step converge. */
 const TRACE_FACETS_HOURLY_BACKFILL = [
@@ -1425,7 +1426,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		to: 36,
 		description: "Align raw-timestamp TTLs to their daily partitions",
 		clonedBefore: "any DDL runs",
-		beforeBootstrap: ALIGNED_TTLS.map(([table, ttl]) => modifyTtl(table, ttl)),
+		beforeBootstrap: Arr.map(ALIGNED_TTLS, ([table, ttl]) => modifyTtl(table, ttl)),
 		plan: [
 			[
 				"align-ttls",
@@ -1433,7 +1434,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			],
 		],
 		verifies: "Verify the v36 physical schema and the retained raw telemetry counts",
-		dispositions: ALIGNED_TTLS.map(([name]) => ({
+		dispositions: Arr.map(ALIGNED_TTLS, ([name]) => ({
 			name,
 			classification: "derived",
 			disposition: "preserve-exact",

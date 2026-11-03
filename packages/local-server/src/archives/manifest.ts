@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 import type { ArchiveTuningRecord } from "./config"
 import { NonNegativeSafeInt, Sha256Lower } from "./schemas"
 import { KNOWN_COMPLEX_DIGEST_ALGORITHMS } from "./export"
@@ -111,7 +111,7 @@ export interface ArchiveActivePointer {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const MANIFEST_KEYS = new Set([
 	"formatVersion",
@@ -148,7 +148,7 @@ const assertExactOwnKeys = (record: Record<string, unknown>, keys: ReadonlySet<s
 			throw new Error(`invalid archive manifest ${location}field: ${key} (required in formatVersion 3)`)
 		}
 	}
-	for (const key of Object.keys(record)) {
+	for (const key of Rec.keys(record)) {
 		if (!keys.has(key)) throw new Error(`unknown archive manifest ${location}field: ${key}`)
 	}
 }
@@ -198,7 +198,7 @@ const parseTuningConfig = (value: unknown): TuningConfigIdentity | null => {
 		throw new Error("invalid archive manifest field: tuningConfig (must be null or a record)")
 	}
 	const knownKeys = new Set(["formatVersion", "configName", "sha256"])
-	for (const key of Object.keys(value)) {
+	for (const key of Rec.keys(value)) {
 		if (!knownKeys.has(key)) {
 			throw new Error(`unknown archive manifest tuningConfig field: ${key}`)
 		}
@@ -295,10 +295,10 @@ const parseShardRecord = (
 	const name = requiredString(value, "name")
 	if (!/^[0-9a-z._-]+\.parquet$/i.test(name)) throw new Error(`invalid archive shard name: ${name}`)
 	const columnsRaw = value.columns
-	if (!Array.isArray(columnsRaw) || columnsRaw.length === 0) {
+	if (!Arr.isArray(columnsRaw) || columnsRaw.length === 0) {
 		throw new Error("invalid archive shard record field: columns (must be a nonempty array)")
 	}
-	const columns = columnsRaw.map((c) => {
+	const columns = Arr.map(columnsRaw, (c) => {
 		if (typeof c !== "string" || c.length === 0) throw new Error("invalid archive shard column name")
 		return c
 	})
@@ -329,7 +329,7 @@ const parseShardRecord = (
 	if (!KNOWN_COMPLEX_DIGEST_ALGORITHMS.has(complexDigestAlgorithm)) {
 		throw new Error(
 			`invalid archive shard complexDigestAlgorithm: ${complexDigestAlgorithm} ` +
-				`(known: ${[...KNOWN_COMPLEX_DIGEST_ALGORITHMS].join(", ")}); the manifest is preserved as-is`,
+				`(known: ${Arr.join([...KNOWN_COMPLEX_DIGEST_ALGORITHMS], ", ")}); the manifest is preserved as-is`,
 		)
 	}
 	const complexDigest = requiredString(value, "complexDigest")
@@ -404,8 +404,8 @@ export const parseArchiveGenerationManifest = (
 		)
 	}
 	const shardsRaw = value.shards
-	if (!Array.isArray(shardsRaw)) throw new Error("invalid archive manifest field: shards")
-	const shards = shardsRaw.map((s) => parseShardRecord(s, rangeStart, rangeEndExclusive))
+	if (!Arr.isArray(shardsRaw)) throw new Error("invalid archive manifest field: shards")
+	const shards = Arr.map(shardsRaw, (s) => parseShardRecord(s, rangeStart, rangeEndExclusive))
 	// Cross-field validation (H-7): unique shard names, shard-row sum equals
 	// archivedRowCount, source count equals archived count.
 	const shardNames = new Set<string>()

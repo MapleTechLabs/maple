@@ -1,5 +1,5 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -13,7 +13,7 @@ const FILTERED_SCAN = 500
 
 function formatTimestamp(iso: string | null): string | undefined {
 	if (!iso) return undefined
-	return iso.slice(0, 19).replace("T", " ")
+	return Str.replace("T", " ")(Str.slice(0, 19)(iso))
 }
 
 export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
@@ -21,7 +21,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 		name: "get_incident_timeline",
 		title: "Incident Timeline",
 		description:
-			"Incidents for one alert rule (or all rules) with first and last trigger, last notification and resolution timestamps: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
+			"Alert-rule incidents (not error-issue incidents) for one rule or all, with first and last trigger, last notification and resolution timestamps: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
 		parameters: Schema.Struct({
 			rule_id: P.optionalResourceId(
 				"alertRule",
@@ -58,7 +58,8 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					),
 				)
 
-			const matching = result.incidents.filter(
+			const matching = Arr.filter(
+				result.incidents,
 				(i) =>
 					(params.severity === undefined || i.severity === params.severity) &&
 					(params.group_key === undefined || i.groupKey === params.group_key),
@@ -66,7 +67,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 			const incidents = matching.slice(0, params.limit)
 
 			return {
-				incidents: incidents.map((i) => ({
+				incidents: Arr.map(incidents, (i) => ({
 					id: i.id,
 					ruleId: i.ruleId,
 					ruleName: i.ruleName,
@@ -83,8 +84,8 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					lastNotifiedAt: i.lastNotifiedAt,
 				})),
 				total: incidents.length,
-				openCount: incidents.filter((i) => i.status === "open").length,
-				resolvedCount: incidents.filter((i) => i.status === "resolved").length,
+				openCount: Arr.filter(incidents, (i) => i.status === "open").length,
+				resolvedCount: Arr.filter(incidents, (i) => i.status === "resolved").length,
 				...(params.rule_id === undefined ? undefined : { ruleId: params.rule_id }),
 				...(params.status === undefined ? undefined : { status: params.status }),
 				...(params.severity === undefined ? undefined : { severity: params.severity }),
@@ -125,9 +126,9 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 				)
 			}
 
-			const open = output.incidents.filter((inc) => inc.status === "open")
+			const open = Arr.filter(output.incidents, (inc) => inc.status === "open")
 			const openGroups = [
-				...new Set(open.flatMap((inc) => (inc.groupKey ? [inc.groupKey] : []))),
+				...new Set(Arr.flatMap(open, (inc) => (inc.groupKey ? [inc.groupKey] : []))),
 			].slice(0, 3)
 			const limit = output.limit ?? 0
 			const scanNotice =
@@ -183,7 +184,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 						}
 					: undefined),
 				next: [
-					...openGroups.map((groupKey) =>
+					...Arr.map(openGroups, (groupKey) =>
 						doc.next(
 							"list_alert_incidents",
 							{ group_key: groupKey },
@@ -196,7 +197,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					...(open.length === 0
 						? [doc.next("list_alert_rules", {}, "review alert configuration")]
 						: []),
-					...(output.incidents.some((i) => i.signalType === "uptime")
+					...(Arr.some(output.incidents, (i) => i.signalType === "uptime")
 						? [doc.next("list_uptime_monitors", {}, "the uptime monitors behind these incidents")]
 						: []),
 				],

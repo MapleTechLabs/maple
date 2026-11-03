@@ -2,7 +2,7 @@ import type { UptimeMonitorId } from "@maple/domain"
 import type { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { buildDestinationUpdateParamsV2, destinationToFormState } from "@maple/web-data/alerts/form-utils"
 import { rowToAlertDestinationDocument, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
-import { Array, Option, Result } from "effect"
+import { Array, Option, Result, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Command } from "foldkit"
 import { Command as FoldkitCommand } from "foldkit"
@@ -186,7 +186,7 @@ const errorToast = (title: string, failure: LoadFailure): PageOutMessage =>
 	toast("error", title, failure.message)
 
 const withoutId = <A extends string>(ids: ReadonlyArray<A>, id: A): ReadonlyArray<A> =>
-	ids.filter((existing) => existing !== id)
+	Array.filter(ids, (existing) => existing !== id)
 
 const destinationById = (model: Model, id: AlertDestinationId) =>
 	Option.flatMap(
@@ -343,11 +343,11 @@ const updateNewRuleMenu = (model: Model, message: Menu.Message): Return => {
 }
 
 const pickedFromMenu = (model: Model, menuId: string, value: string): Return => {
-	const [kind, ...rest] = menuId.split(":")
-	const target = rest.join(":")
+	const [kind, ...rest] = Str.split(":")(menuId)
+	const target = Array.join(rest, ":")
 	if (kind === "monitor") return pickedMonitorAction(model, target, value)
 	if (kind === "rule") {
-		const id = target.split("@")[0]
+		const id = Str.split("@")(target)[0]
 		const rule = Option.map(
 			Array.findFirst(model.rules ?? [], (row) => row.id === id),
 			(row) => rowToAlertRuleDocument(row, new Map()),
@@ -523,7 +523,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedToggleMonitor: ({ monitorId, result }) => {
 			const settled = {
 				...model,
-				togglingMonitorIds: model.togglingMonitorIds.filter((id) => id !== monitorId),
+				togglingMonitorIds: Array.filter(model.togglingMonitorIds, (id) => id !== monitorId),
 			}
 			return Result.match(result, {
 				onSuccess: (monitor): Return => ({

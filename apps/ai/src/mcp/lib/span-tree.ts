@@ -1,4 +1,5 @@
 import type { SpanNode } from "@maple/query-engine/observability"
+import { Array as Arr } from "effect"
 
 /**
  * A trace can contain thousands of spans (the underlying SQL fetches up to
@@ -47,7 +48,7 @@ function forEachNode(
 	roots: ReadonlyArray<SpanNode>,
 	visit: (node: SpanNode, parent: SpanNode | null) => void,
 ): void {
-	const stack: Array<{ node: SpanNode; parent: SpanNode | null }> = roots.map((node) => ({
+	const stack: Array<{ node: SpanNode; parent: SpanNode | null }> = Arr.map(roots, (node) => ({
 		node,
 		parent: null,
 	}))
@@ -146,7 +147,10 @@ export function selectOverviewSpans(
 		return { ...node, children: keptChildren }
 	}
 
-	const prunedRoots = roots.filter((r) => selected.has(key(r))).map(rebuild)
+	const prunedRoots = Arr.map(
+		Arr.filter(roots, (r) => selected.has(key(r))),
+		rebuild,
+	)
 
 	return {
 		roots: prunedRoots,

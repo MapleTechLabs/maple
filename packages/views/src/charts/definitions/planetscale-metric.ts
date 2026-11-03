@@ -6,7 +6,7 @@ import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { curveMonotoneX } from "d3-shape"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
@@ -29,18 +29,21 @@ const isPercentMetric = (metric: PlanetScaleMetric) =>
 export const buildPlanetScaleMetric = (
 	spec: PlanetScaleSpec,
 ): BuiltChart<MetricPoint, ChartValue, number> => {
-	const data: ReadonlyArray<MetricPoint> = spec.points.map((point) => ({
+	const data: ReadonlyArray<MetricPoint> = Arr.map(spec.points, (point) => ({
 		bucket: point.bucket,
 		date: bucketDate(point.bucket),
 		value: point.value,
 	}))
-	const buckets = spec.points.map((point) => point.bucket)
+	const buckets = Arr.map(spec.points, (point) => point.bucket)
 	const axis = makeBucketAxis(buckets, spec.timeZone)
 	const placed = placeMarkersInWindow(spec.markers, buckets)
 	const yDomain: [number, number] = isPercentMetric(spec.metric)
 		? [0, 100]
 		: niceLinearDomain(
-				linearYDomain({ rows: data.map((point) => ({ value: point.value ?? 0 })), keys: ["value"] }),
+				linearYDomain({
+					rows: Arr.map(data, (point) => ({ value: point.value ?? 0 })),
+					keys: ["value"],
+				}),
 			)
 	const color = spec.colors[spec.metric] ?? spec.colors.border ?? ""
 	const chrome = { border: spec.colors.border ?? "", background: spec.colors.background ?? "" }
@@ -51,7 +54,7 @@ export const buildPlanetScaleMetric = (
 		marks: [
 			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
 			silenceBridges("value-silence", silences, at, value, color),
-			...runs.map((run, index) =>
+			...Arr.map(runs, (run, index) =>
 				lineY(run, {
 					id: `value:${index}`,
 					x: at,

@@ -4,7 +4,7 @@
  */
 import { OrgId, UserId } from "@maple/domain"
 import { inProcessCodeExecutorLayer } from "@yielded/agent-testing/code-executor-substitute"
-import { Effect, Exit, Layer, Schema, Stream } from "effect"
+import { Effect, Exit, Layer, Schema, Stream, Array as Arr } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
@@ -51,7 +51,7 @@ const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEn
 	const offered: Array<ReadonlyArray<string>> = []
 	const respond = (options: LanguageModel.ProviderOptions) => {
 		prompts.push(options.prompt)
-		offered.push(options.tools.map((tool) => tool.name))
+		offered.push(Arr.map(options.tools, (tool) => tool.name))
 		return script[prompts.length - 1] ?? answer("(script ran out)")
 	}
 	const model: ResolvedModel = {
@@ -116,7 +116,7 @@ const run = (input: {
 	)
 
 const toolResults = (prompt: Prompt.Prompt) =>
-	prompt.content.flatMap((message) => (message.role === "tool" ? message.content : []))
+	Arr.flatMap(prompt.content, (message) => (message.role === "tool" ? message.content : []))
 
 describe("run_code", () => {
 	it("runs a program's batched reads through the Maple tools in one model turn", async () => {
@@ -162,7 +162,7 @@ describe("run_code", () => {
 			append: (event) => events.push(event),
 		})
 
-		const calls = events.flatMap((event) =>
+		const calls = Arr.flatMap(events, (event) =>
 			event.type === "tool-call" || event.type === "tool-result"
 				? [`${event.type} ${event.callId}`]
 				: [],
@@ -360,7 +360,7 @@ describe("run_code", () => {
 			// ...and billed with them: four calls of one input token each.
 			assert.strictEqual(usage.input, 4)
 			assert.strictEqual(
-				usage.charges.reduce((sum, charge) => sum + charge.inputTokens, 0),
+				Arr.reduce(usage.charges, 0, (sum, charge) => sum + charge.inputTokens),
 				4,
 			)
 		},
@@ -394,8 +394,9 @@ describe("run_code", () => {
 	})
 
 	it("lists only registered, read-only tools", () => {
-		const registered = new Set(mapleToolCatalog.map((definition) => definition.name))
-		const unknown = [...CODE_MODE_TOOLS].filter(
+		const registered = new Set(Arr.map(mapleToolCatalog, (definition) => definition.name))
+		const unknown = Arr.filter(
+			[...CODE_MODE_TOOLS],
 			(name) => !registered.has(name) || MUTATING_TOOL_NAMES.has(name),
 		)
 		assert.deepEqual(unknown, [])

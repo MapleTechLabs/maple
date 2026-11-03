@@ -10,6 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../panel"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // "Errors and warnings": the project's recurring WARN+ log messages.
 
@@ -20,7 +21,9 @@ const issueRow = (h: H, issue: SupabaseLogIssue, timeZone: string): Html => {
 	return h.li(
 		[
 			h.Key(`${issue.source}:${issue.message}`),
-			h.Class("flex items-center gap-4 border-t border-border-subtle px-4 py-2 text-xs first:border-t-0"),
+			h.Class(
+				"flex items-center gap-4 border-t border-border-subtle px-4 py-2 text-xs first:border-t-0",
+			),
 		],
 		[
 			h.span(
@@ -39,9 +42,9 @@ const issueRow = (h: H, issue: SupabaseLogIssue, timeZone: string): Html => {
 				[h.Class("min-w-0 flex-1 truncate font-mono text-foreground"), h.Title(issue.message)],
 				[issue.message],
 			),
-			typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
-				[`${formatNumber(issue.count)}×`],
-			),
+			typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" }, [
+				`${formatNumber(issue.count)}×`,
+			]),
 		],
 	)
 }
@@ -67,7 +70,7 @@ export const issuesPanel = (
 					response.issues.length > 0
 						? h.ul(
 								[h.AriaLabel("Errors and warnings")],
-								response.issues.map((issue) => issueRow(h, issue, options.timeZone)),
+								Arr.map(response.issues, (issue) => issueRow(h, issue, options.timeZone)),
 							)
 						: options.isLogsEnabled
 							? panelEmpty(h, ["No warnings or errors in this window"])

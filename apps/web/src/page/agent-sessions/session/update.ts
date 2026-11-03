@@ -1,7 +1,7 @@
 import { buildSessionSummary, buildSessionTurns, resolveWindow } from "@maple/agent-sessions"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -79,7 +79,7 @@ const nothingLoaded = (key: string): Model["more"] => ({
 export const searchStrOf = (sessionId: string, search: Search): string => {
 	const href = hrefOf(AppRoute.AgentSession({ sessionId, search }))
 	const at = href.indexOf("?")
-	return at === -1 ? "" : href.slice(at)
+	return at === -1 ? "" : Str.slice(at)(href)
 }
 
 /** The first page for the link's window (or the id across retention without one). */
@@ -108,7 +108,15 @@ const nextPage = (model: Model): Commands => {
 	const agentCursor = lastAgent === undefined ? first.nextCursor : lastAgent.nextCursor
 	const window = windowOf(model.search)
 	const fetch = (scope: "ai" | "app", after: NonNullable<SpansPage["nextCursor"]>) => [
-		FetchMorePage({ key, sessionId: model.sessionId, window, scope, after, limit: model.more.limit, index: landedCount(model.more) }),
+		FetchMorePage({
+			key,
+			sessionId: model.sessionId,
+			window,
+			scope,
+			after,
+			limit: model.more.limit,
+			index: landedCount(model.more),
+		}),
 	]
 	if (agentCursor !== null) return fetch("ai", agentCursor)
 	const appCursor = lastApp === undefined ? first.nextCursor : lastApp.nextCursor
@@ -151,7 +159,7 @@ const follow =
 			view === "overview" || view === "trace"
 				? missingDetection(
 						model.detections,
-						summary.models.map((usage) => usage.model),
+						Arr.map(summary.models, (usage) => usage.model),
 					)
 				: Option.none()
 		const detections = Option.match(detectKey, {
@@ -199,7 +207,7 @@ const navigate = (model: Model, search: Search, isReplace: boolean): Return => (
 const isFlowOpen = (model: Model): boolean => viewOf(model.search.view) === "flow"
 
 const toggledIn = (values: ReadonlyArray<string>, value: string): ReadonlyArray<string> =>
-	values.includes(value) ? values.filter((candidate) => candidate !== value) : [...values, value]
+	values.includes(value) ? Arr.filter(values, (candidate) => candidate !== value) : [...values, value]
 
 export const init = (
 	route: { readonly sessionId: string; readonly search: Search },
@@ -313,9 +321,10 @@ const followMarkdown = (result: Return): Return => {
 	]
 	const missing = [
 		...new Map(
-			texts
-				.map((text) => [textHash(text), text] as const)
-				.filter(([hash]) => !(hash in model.markdown)),
+			Arr.filter(
+				Arr.map(texts, (text) => [textHash(text), text] as const),
+				([hash]) => !(hash in model.markdown),
+			),
 		),
 	]
 	if (missing.length === 0) return result
@@ -323,9 +332,12 @@ const followMarkdown = (result: Return): Return => {
 		...result,
 		model: {
 			...model,
-			markdown: { ...model.markdown, ...Object.fromEntries(missing.map(([hash]) => [hash, null])) },
+			markdown: { ...model.markdown, ...Rec.fromEntries(Arr.map(missing, ([hash]) => [hash, null])) },
 		},
-		commands: [...(result.commands ?? []), ParseMarkdown({ texts: missing.map(([, text]) => text) })],
+		commands: [
+			...(result.commands ?? []),
+			ParseMarkdown({ texts: Arr.map(missing, ([, text]) => text) }),
+		],
 	}
 }
 
@@ -352,7 +364,9 @@ const stepSpanPanel = (model: Model, message: SpanPanelMessage): Return => {
 	const step = SpanPanel.updateState(model.spanPanel, message)
 	return {
 		model: { ...model, spanPanel: step.model },
-		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotSpanPanelMessage({ message: inner })),
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotSpanPanelMessage({ message: inner }),
+		),
 	}
 }
 
@@ -449,14 +463,18 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ToggledRow: ({ key }) => ({ model: { ...model, openRows: toggledIn(model.openRows, key) } }),
 		ClickedSpan: ({ spanId }) => selectSpan(model, spanId),
 		ClickedWaterfallSpan: ({ spanId }) =>
-			selectSpan({ ...model, focusedSpanId: spanId }, model.search.span === spanId ? undefined : spanId),
+			selectSpan(
+				{ ...model, focusedSpanId: spanId },
+				model.search.span === spanId ? undefined : spanId,
+			),
 		PressedSpanKey: ({ key }) => pressedSpanKey(model, key),
 		GotSpanDialogMessage: ({ message: inner }) => stepSpanDialog(model, inner),
 		GotSpanPanelMessage: ({ message: inner }) => stepSpanPanel(model, inner),
 		PickedSpanTab: ({ tab }) => (tab === null ? { model } : { model: { ...model, spanTab: tab } }),
 		ClickedCloseSpan: () => selectSpan(model, undefined),
 		GotCloseTooltipMessage: ({ message: inner }) => stepCloseTooltip(model, inner),
-		CheckedCloseFocus: ({ triggerId, isFocusVisible }) => checkedCloseFocus(model, triggerId, isFocusVisible),
+		CheckedCloseFocus: ({ triggerId, isFocusVisible }) =>
+			checkedCloseFocus(model, triggerId, isFocusVisible),
 		ClickedOpenInTraceView: () => {
 			const search = { ...model.search, span: undefined }
 			return navigate(
@@ -490,8 +508,8 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 				query: model.query,
 				agentSpansOnly: model.options.agentSpansOnly,
 			})
-			const positions = lanes.flatMap((lane) =>
-				lane.nodes.map((node) => ({ id: node.key, position: { x: node.x, y: node.y } })),
+			const positions = Arr.flatMap(lanes, (lane) =>
+				Arr.map(lane.nodes, (node) => ({ id: node.key, position: { x: node.x, y: node.y } })),
 			)
 			return { model: { ...model, flowCanvas: Canvas.update(model.flowCanvas, inner, positions) } }
 		},
@@ -503,7 +521,10 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		CompletedCodeAction: ({ code, isCopied }) => {
 			if (!isCopied) return { model }
 			const generation = model.codeCopy.generation + 1
-			return { model: { ...model, codeCopy: { code, generation } }, commands: [WaitCodeCopied({ generation })] }
+			return {
+				model: { ...model, codeCopy: { code, generation } },
+				commands: [WaitCodeCopied({ generation })],
+			}
 		},
 		ElapsedCodeCopied: ({ generation }) =>
 			generation === model.codeCopy.generation
@@ -526,7 +547,9 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 				...model,
 				markdown: {
 					...model.markdown,
-					...Object.fromEntries(parsed.map(({ text, document }) => [textHash(text), { document }])),
+					...Rec.fromEntries(
+						Arr.map(parsed, ({ text, document }) => [textHash(text), { document }]),
+					),
 				},
 			},
 		}),

@@ -1,9 +1,14 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
-import { AlertDeliveryError, AlertDeliveryRejectedError } from "@maple/domain/http"
+import {
+	AlertDeliveryError,
+	AlertDeliveryRejectedError,
+	ChatAlertDestinationConfig,
+	WebhookAlertDestinationConfig,
+} from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Clock, Duration, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Layer, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	type AlertDestinationId,
@@ -37,6 +42,10 @@ import {
 	okFetch,
 	insertDeliveryEventRow,
 } from "./alerts-service-test-support"
+
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
 
 const trackedDbs: TestDb[] = []
 
@@ -135,7 +144,7 @@ describe("AlertsService delivery drain across destinations", () => {
 		let virtualNow = fixedTime
 		const delivered: Array<string> = []
 		const fetchImpl = (async (input: RequestInfo | URL) => {
-			const url = String(input)
+			const url = String(input instanceof Request ? input.url : input)
 			if (url === "https://example.com/maple-alerts") virtualNow += 15_000
 			delivered.push(url)
 			return new Response("ok", { status: 200 })
@@ -147,13 +156,18 @@ describe("AlertsService delivery drain across destinations", () => {
 			const orgId = asOrgId("org_drain_fairness")
 			const userId = asUserId("user_drain_fairness")
 			const slow = yield* createWebhookDestination(alerts, orgId, userId)
-			const fast = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "webhook",
-				name: "Fast webhook",
-				enabled: true,
-				url: "https://example.com/fast",
-				signingSecret: "webhook-secret",
-			})
+			const fast = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new WebhookAlertDestinationConfig({
+					type: "webhook",
+					name: "Fast webhook",
+					enabled: true,
+					url: "https://example.com/fast",
+					signingSecret: "webhook-secret",
+				}),
+			)
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, slow.id)
 			// Break the rule's stored query so the tick queues nothing of its own.
 			yield* Effect.promise(() =>
@@ -202,7 +216,7 @@ describe("AlertsService delivery drain across destinations", () => {
 			)
 			assert.include(delivered, "https://example.com/fast")
 			assert.deepStrictEqual(
-				statuses.rows.map((row) => [row.deliveryKey, row.status]),
+				Arr.map(statuses.rows, (row) => [row.deliveryKey, row.status]),
 				[
 					["fast-1", "success"],
 					["slow-1", "success"],
@@ -292,7 +306,7 @@ describe("AlertsService tick isolation", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: string[] = []
 		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-			sent.push(String(init?.body ?? ""))
+			sent.push(requestBodyText(init?.body))
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 
@@ -387,7 +401,7 @@ describe("AlertsService delivery drain", () => {
 			yield* Effect.forEach(Arr.range(1, 60), (n) =>
 				Effect.promise(() =>
 					insertDeliveryEventRow(testDb, {
-						id: `00000000-0000-4000-8000-${String(500 + n).padStart(12, "0")}`,
+						id: `00000000-0000-4000-8000-${Str.padStart(12, "0")(String(500 + n))}`,
 						orgId,
 						incidentId: null,
 						ruleId: rule.id,
@@ -466,17 +480,22 @@ describe("AlertsService chat digests", () => {
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_chat_digest")
 			const userId = asUserId("user_chat_digest")
-			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "chat",
-				name: "Incidents",
-				workspaceId,
-				channelId: "channel-1",
-			})
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new ChatAlertDestinationConfig({
+					type: "chat",
+					name: "Incidents",
+					workspaceId,
+					channelId: "channel-1",
+				}),
+			)
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 			yield* Effect.forEach(Arr.range(1, count), (n) =>
 				Effect.promise(() =>
 					insertDeliveryEventRow(testDb, {
-						id: `00000000-0000-4000-8000-${String(900 + n).padStart(12, "0")}`,
+						id: `00000000-0000-4000-8000-${Str.padStart(12, "0")(String(900 + n))}`,
 						orgId,
 						incidentId: null,
 						ruleId: rule.id,
@@ -527,7 +546,7 @@ describe("AlertsService chat digests", () => {
 		Effect.gen(function* () {
 			const { posts, queue } = yield* runBurst(5, "posted")
 			assert.deepStrictEqual(posts, ["\u{1F514} 5 alert notifications"])
-			assert.strictEqual(queue, Array(5).fill("success@1").join(","))
+			assert.strictEqual(queue, Arr.join(Array(5).fill("success@1"), ","))
 		}),
 	)
 
@@ -535,7 +554,7 @@ describe("AlertsService chat digests", () => {
 		Effect.gen(function* () {
 			const { posts, queue } = yield* runBurst(2, "posted")
 			assert.lengthOf(posts, 2)
-			assert.notInclude(posts.join(","), "alert notifications")
+			assert.notInclude(Arr.join(posts, ","), "alert notifications")
 			assert.strictEqual(queue, "success@1,success@1")
 		}),
 	)
@@ -544,7 +563,7 @@ describe("AlertsService chat digests", () => {
 		Effect.gen(function* () {
 			const { posts, queue, health } = yield* runBurst(4, "rejected")
 			assert.lengthOf(posts, 1)
-			assert.strictEqual(queue, Array(4).fill("failed@1").join(","))
+			assert.strictEqual(queue, Arr.join(Array(4).fill("failed@1"), ","))
 			assert.strictEqual(health?.failures, 1)
 			assert.isTrue(health?.enabled)
 		}),
@@ -556,7 +575,10 @@ describe("AlertsService chat digests", () => {
 			const { queue } = yield* runBurst(4, "rate_limited", (n) =>
 				n === 1 ? "not-an-event-type" : "trigger",
 			)
-			assert.strictEqual(queue, [...Array(4).fill("failed@1"), ...Array(3).fill("queued@2")].join(","))
+			assert.strictEqual(
+				queue,
+				Arr.join([...Array(4).fill("failed@1"), ...Array(3).fill("queued@2")], ","),
+			)
 		}),
 	)
 
@@ -573,7 +595,10 @@ describe("AlertsService chat digests", () => {
 		Effect.gen(function* () {
 			const { posts, queue } = yield* runBurst(5, "rate_limited")
 			assert.lengthOf(posts, 1)
-			assert.strictEqual(queue, [...Array(5).fill("failed@1"), ...Array(5).fill("queued@2")].join(","))
+			assert.strictEqual(
+				queue,
+				Arr.join([...Array(5).fill("failed@1"), ...Array(5).fill("queued@2")], ","),
+			)
 		}),
 	)
 })
@@ -645,7 +670,7 @@ describe("AlertsService held incidents", () => {
 	/** The `startTime` literal of a compiled liveness query, as epoch ms. */
 	const probeWindowStartMs = (sql: string): number | null => {
 		const match = />= '(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'/.exec(sql)
-		return match?.[1] === undefined ? null : Date.parse(`${match[1].replace(" ", "T")}Z`)
+		return match?.[1] === undefined ? null : Date.parse(`${Str.replace(" ", "T")(match[1])}Z`)
 	}
 
 	/**
@@ -692,7 +717,9 @@ describe("AlertsService held incidents", () => {
 		const rowsForQuery = (sql: string) => {
 			const scoped = /ServiceName (?:= '([^']+)'|IN \('([^']+)'\))/.exec(sql)
 			const service = scoped?.[1] ?? scoped?.[2]
-			return service === undefined ? state.rows : state.rows.filter((row) => row.groupName === service)
+			return service === undefined
+				? state.rows
+				: Arr.filter(state.rows, (row) => row.groupName === service)
 		}
 		return {
 			...makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
@@ -704,7 +731,7 @@ describe("AlertsService held incidents", () => {
 					const query = compiledQueryOf(compiled)
 					// The org-wide pulse (a rule with no service scope): same counts,
 					// union shape.
-					if (query.sql.includes("service_overview_spans")) {
+					if (Str.includes("service_overview_spans")(query.sql)) {
 						const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
 						return yield* query
 							.decodeRows([
@@ -721,13 +748,14 @@ describe("AlertsService held incidents", () => {
 			compiledQueryFirst: (_tenant, compiled) =>
 				Effect.gen(function* () {
 					const query = compiledQueryOf(compiled)
-					if (!query.sql.includes("service_operations_minutely")) {
+					if (!Str.includes("service_operations_minutely")(query.sql)) {
 						return yield* query.decodeFirstRow(state.rows).pipe(Effect.orDie)
 					}
 					if (state.liveness.failProbe) {
-						return yield* Effect.fail(
-							new WarehouseQueryError({ message: "probe failed", pipeName: "liveness" }),
-						)
+						return yield* new WarehouseQueryError({
+							message: "probe failed",
+							pipeName: "liveness",
+						})
 					}
 					const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
 					const service = /ServiceName = '([^']+)'/.exec(query.sql)?.[1]
@@ -822,7 +850,7 @@ describe("AlertsService held incidents", () => {
 			assert.strictEqual(held.resolvedAt, null)
 			const eventsWhileHeld = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				eventsWhileHeld.events.map((e) => e.eventType),
+				Arr.map(eventsWhileHeld.events, (e) => e.eventType),
 				["trigger", "trigger"],
 				"a hold must not notify",
 			)
@@ -845,7 +873,10 @@ describe("AlertsService held incidents", () => {
 			// other event in the meantime.
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				events.events.map((e) => e.eventType).filter((type) => type !== "renotify"),
+				Arr.filter(
+					Arr.map(events.events, (e) => e.eventType),
+					(type) => type !== "renotify",
+				),
 				["resolve", "trigger", "trigger"],
 			)
 
@@ -944,14 +975,15 @@ describe("AlertsService held incidents", () => {
 			state.rows = [breaching("checkout")]
 			yield* tickAfter(state, alerts, 1)
 
-			const payments = (yield* alerts.listIncidents(orgId)).incidents.filter(
+			const payments = Arr.filter(
+				(yield* alerts.listIncidents(orgId)).incidents,
 				(incident) => incident.groupKey === "payments",
 			)
 			assert.lengthOf(payments, 2)
-			assert.isTrue(payments.every((incident) => incident.status === "resolved"))
+			assert.isTrue(Arr.every(payments, (incident) => incident.status === "resolved"))
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				events.events.map((event: { eventType: string }) => event.eventType).sort(),
+				Arr.map(events.events, (event: { eventType: string }) => event.eventType).sort(),
 				["resolve", "trigger", "trigger"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
@@ -1047,7 +1079,7 @@ describe("AlertsService held incidents", () => {
 			assert.strictEqual(resolved.holdReason, null)
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				events.events.map((e) => e.eventType),
+				Arr.map(events.events, (e) => e.eventType),
 				["resolve", "trigger", "trigger"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))

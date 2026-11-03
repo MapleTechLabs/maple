@@ -27,6 +27,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { Array as Arr } from "effect"
 
 // The issue incidents and occurrences tables.
 
@@ -84,7 +85,11 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 			[relativeTime(h, { value: incident.lastTriggeredAt, ...clock, tooltip: "title" })],
 			"tabular-nums",
 		),
-		tableCell(h, [formatNumber(incident.occurrenceCount)], typographyClass({ mono: true, numeric: true, className: "text-right" })),
+		tableCell(
+			h,
+			[formatNumber(incident.occurrenceCount)],
+			typographyClass({ mono: true, numeric: true, className: "text-right" }),
+		),
 	])
 }
 
@@ -114,7 +119,7 @@ export const incidentsTable = <M>(
 				]),
 				tableBody(
 					h,
-					incidents.map((incident) => incidentRow(h, incident, clock)),
+					Arr.map(incidents, (incident) => incidentRow(h, incident, clock)),
 				),
 			])
 
@@ -126,21 +131,16 @@ const occurrenceRow = <M>(h: HtmlBuilder<M>, trace: ErrorIssueSampleTrace, clock
 			typographyClass({ tone: "muted", numeric: true }),
 		),
 		tableCell(h, [
-			hstack(h, { gap: "1.5", inline: true, as: "span" },
-				[
-					serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
-					h.span([], [trace.serviceName]),
-				],
-			),
+			hstack(h, { gap: "1.5", inline: true, as: "span" }, [
+				serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
+				h.span([], [trace.serviceName]),
+			]),
 		]),
-		truncatedTableCell(
-			h,
-			[
-				truncatedText(h, { text: trace.exceptionMessage }, [
-					trace.exceptionMessage.split("\n", 1)[0] ?? "",
-				]),
-			],
-		),
+		truncatedTableCell(h, [
+			truncatedText(h, { text: trace.exceptionMessage }, [
+				trace.exceptionMessage.split("\n", 1)[0] ?? "",
+			]),
+		]),
 		tableCell(h, [
 			h.a(
 				[
@@ -185,6 +185,6 @@ export const occurrencesTable = <M>(
 				]),
 				tableBody(
 					h,
-					traces.map((trace) => occurrenceRow(h, trace, clock)),
+					Arr.map(traces, (trace) => occurrenceRow(h, trace, clock)),
 				),
 			])

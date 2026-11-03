@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import type { DatabaseList } from "../data"
@@ -14,7 +14,7 @@ const route = { dbName: "acme-prod", search: {} }
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const inventory: DatabaseList = {
 	object: "planetscale_integration.database_list",
@@ -40,7 +40,10 @@ const inventory: DatabaseList = {
 const LOCAL = { startMs: 1_790_000_000_000, endMs: 1_790_003_600_000 }
 
 const windowed = () =>
-	pageUpdate(init(route, context).model, Message.CompletedResolveWindow({ window, localWindow: LOCAL, nowMs: 0, mode: "Load" }))
+	pageUpdate(
+		init(route, context).model,
+		Message.CompletedResolveWindow({ window, localWindow: LOCAL, nowMs: 0, mode: "Load" }),
+	)
 
 describe("planetscale database", () => {
 	test("after a Reload a branch change reads under the kept window; only a new preset re-resolves", () => {
@@ -48,8 +51,15 @@ describe("planetscale database", () => {
 		const scoped = routeChanged(reloaded, { ...route, search: { branch: "dev" } }, context)
 		expect(names(scoped.commands)).not.toContain("ResolvePlanetscaleDatabaseWindow")
 		expect(scoped.model.window).toEqual(window)
-		const moved = routeChanged(scoped.model, { ...route, search: { branch: "dev", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual(["ResolvePlanetscaleDatabaseWindow", "Refresh"])
+		const moved = routeChanged(
+			scoped.model,
+			{ ...route, search: { branch: "dev", timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual([
+			"ResolvePlanetscaleDatabaseWindow",
+			"Refresh",
+		])
 	})
 
 	test("entry asks for status and inventory; the window brings the branch stats and the scoped reads", () => {

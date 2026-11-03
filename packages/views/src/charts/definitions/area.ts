@@ -6,16 +6,9 @@ import {
 	trimEmptyTrailingBuckets,
 } from "@maple/ui/components/plot/partial-buckets"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import {
-	areaY,
-	d3Curve,
-	defineChart,
-	dot,
-	lineY,
-	type ChartValue,
-} from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, dot, lineY, type ChartValue } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { thresholdMarks } from "./threshold-marks"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import {
@@ -29,7 +22,13 @@ import {
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import type { BuiltChart } from "./built-chart"
-import { AREA_FILL_END, AREA_FILL_PARTIAL, roundCapDasharray, SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
+import {
+	AREA_FILL_END,
+	AREA_FILL_PARTIAL,
+	roundCapDasharray,
+	SERIES_STROKE_WIDTH,
+	verticalGradient,
+} from "./fixed-metric-axes"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
 // Port of `QueryBuilderAreaChart` and `QueryBuilderLineChart` (packages/ui/src/components/charts/area/,
@@ -56,13 +55,15 @@ const stackBases = (
 	visible: ReadonlyArray<Series>,
 ): ReadonlyMap<TimeseriesRow, Readonly<Record<string, number>>> =>
 	new Map(
-		rows.map((row) => {
-			const perKey = Object.fromEntries(
-				visible.map((entry, index) => [
+		Arr.map(rows, (row) => {
+			const perKey = Rec.fromEntries(
+				Arr.map(visible, (entry, index) => [
 					entry.key,
-					visible
-						.slice(0, index)
-						.reduce((total, below) => total + asFiniteNumber(row[below.key]), 0),
+					Arr.reduce(
+						visible.slice(0, index),
+						0,
+						(total, below) => total + asFiniteNumber(row[below.key]),
+					),
 				]),
 			)
 			return [row, perKey]
@@ -74,17 +75,18 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 	const isStacked = !isLine && spec.stacked === true
 	const { definitions } = seriesDefinitionsOf(spec.data)
 	const unit = spec.unit ?? undefined
-	const keys = definitions.map((definition) => definition.chartKey)
+	const keys = Arr.map(definitions, (definition) => definition.chartKey)
 	const normalised = normaliseRows(spec.data, definitions)
 	const rows = scaleRates(normalised, keys, unit, bucketSecondsOf(normalised))
-	const visible: ReadonlyArray<Series> = definitions
-		.filter((definition) => !spec.hidden.includes(definition.chartKey))
-		.map((definition) => ({
+	const visible: ReadonlyArray<Series> = Arr.map(
+		Arr.filter(definitions, (definition) => !spec.hidden.includes(definition.chartKey)),
+		(definition) => ({
 			key: definition.chartKey,
 			label: definition.rawKey,
 			color: spec.colors[definition.chartKey] ?? spec.fallbackColor,
-		}))
-	const visibleKeys = visible.map((entry) => entry.key)
+		}),
+	)
+	const visibleKeys = Arr.map(visible, (entry) => entry.key)
 	const axisContext = axisContextOf(rows, spec.timeZone ?? undefined)
 	const chrome = spec.chrome
 
@@ -117,7 +119,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 	const dotIndexes: ReadonlyMap<string, ReadonlySet<number>> = spec.showPoints === false
 		? new Map()
 		: spec.showPoints === true || pointsFit(spec.containerWidth, plotRows.length)
-			? new Map(visibleKeys.map((key) => [key, new Set(plotRows.map((_, index) => index))]))
+			? new Map(Arr.map(visibleKeys, (key) => [key, new Set(Arr.map(plotRows, (_, index) => index))]))
 			: isolatedPointIndexes(plotRows, visibleKeys)
 
 	const { solid, dashed } = splitAtFirstPartial(plotRows, visibleKeys, { now: spec.nowMs })
@@ -156,11 +158,11 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		isLine || isStacked
 			? []
 			: [
-					...visible.map((entry) =>
+					...Arr.map(visible, (entry) =>
 						verticalGradient(gradientIdFor(entry.key, false), entry.color),
 					),
 					...(hasDashed
-						? visible.map((entry) =>
+						? Arr.map(visible, (entry) =>
 								verticalGradient(
 									gradientIdFor(entry.key, true),
 									entry.color,
@@ -172,14 +174,14 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 
 	const paths = isLine
 		? [
-				...visible.map((entry) => edge(solid, entry, false)),
-				...(hasDashed ? visible.map((entry) => edge(dashed, entry, true)) : []),
+				...Arr.map(visible, (entry) => edge(solid, entry, false)),
+				...(hasDashed ? Arr.map(visible, (entry) => edge(dashed, entry, true)) : []),
 			]
 		: [
-				...visible.map((entry) => band(solid, entry, false)),
-				...(hasDashed ? visible.map((entry) => band(dashed, entry, true)) : []),
-				...(isStacked ? [] : visible.map((entry) => edge(solid, entry, false))),
-				...(hasDashed ? visible.map((entry) => edge(dashed, entry, true)) : []),
+				...Arr.map(visible, (entry) => band(solid, entry, false)),
+				...(hasDashed ? Arr.map(visible, (entry) => band(dashed, entry, true)) : []),
+				...(isStacked ? [] : Arr.map(visible, (entry) => edge(solid, entry, false))),
+				...(hasDashed ? Arr.map(visible, (entry) => edge(dashed, entry, true)) : []),
 			]
 
 	const definition = defineChart({
@@ -187,10 +189,10 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		marks: [
 			...thresholdMarks(axis?.thresholds ?? [], plotRows.at(-1)?.date),
 			...paths,
-			...visible.flatMap((entry) => {
+			...Arr.flatMap(visible, (entry) => {
 				const indexes = dotIndexes.get(entry.key)
 				if (!indexes || indexes.size === 0) return []
-				const points = solid.filter((_, index) => indexes.has(index))
+				const points = Arr.filter(solid, (_, index) => indexes.has(index))
 				return [
 					dot(points, {
 						x: (row: TimeseriesRow) => row.date,
@@ -200,7 +202,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 					}),
 				]
 			}),
-			...visible.map((entry) =>
+			...Arr.map(visible, (entry) =>
 				focusDot(
 					plotRows,
 					(row: TimeseriesRow) => row.date,
@@ -225,7 +227,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 			Option.map(Option.fromNullishOr(points[0]?.datum), (datum) =>
 				ChartTooltip.Bucket({
 					heading: formatBucketLabel(datum.bucket, axisContext, "tooltip"),
-					rows: visible.map((entry) => ({
+					rows: Arr.map(visible, (entry) => ({
 						label: entry.label,
 						color: entry.color,
 						dashed: false,

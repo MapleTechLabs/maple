@@ -1,7 +1,7 @@
 import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AsyncData } from "foldkit"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { input } from "@maple/views/ui/input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
@@ -44,7 +44,7 @@ const suggestionsOf = (model: Model, lookup: SuggestionLookup): ReadonlyArray<Su
 		),
 		"keys",
 	)
-	return names.map((name) => ({ name, count: null, field: null }))
+	return Arr.map(names, (name) => ({ name, count: null, field: null }))
 }
 
 const FUNNEL_ADD_ONS = [
@@ -55,7 +55,7 @@ const FUNNEL_ADD_ONS = [
 
 export const funnelPanel = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
 	const funnel = state.funnel
-	const hasAddOn = Object.values(funnel.addOns).some(Boolean)
+	const hasAddOn = Arr.some(Rec.values(funnel.addOns), Boolean)
 	return [
 		panelShell(h, model, "funnel-source", FUNNEL_SOURCES, [
 			h.div(
@@ -120,7 +120,7 @@ const DEPTH_OPTIONS = Array.from({ length: PATHS_MAX_DEPTH }, (_, index) => ({
 	value: String(index + 1),
 	label: String(index + 1),
 }))
-const BRANCH_OPTIONS = [3, 4, 6, PATHS_MAX_BRANCHES].map((value) => ({
+const BRANCH_OPTIONS = Arr.map([3, 4, 6, PATHS_MAX_BRANCHES], (value) => ({
 	value: String(value),
 	label: String(value),
 }))
@@ -189,7 +189,7 @@ const pathsAddOns = (h: H, model: Model, paths: EditorState["paths"]): ReadonlyA
 
 export const pathsPanel = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
 	const paths = state.paths
-	const hasAddOn = Object.values(paths.addOns).some(Boolean)
+	const hasAddOn = Arr.some(Rec.values(paths.addOns), Boolean)
 	return [
 		panelShell(
 			h,

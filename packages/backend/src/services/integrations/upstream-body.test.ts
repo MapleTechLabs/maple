@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { isIngestRefusal, summarizeUpstreamBody } from "./upstream-body"
+import { Array as Arr, String as Str } from "effect"
 
 describe("summarizeUpstreamBody", () => {
 	it("reduces an HTML challenge page to its title and ray id", () => {
@@ -26,9 +27,9 @@ describe("summarizeUpstreamBody", () => {
 
 	it("keeps a short text body and truncates a long one", () => {
 		expect(summarizeUpstreamBody('{"error":"invalid key"}', {})).toBe('{"error":"invalid key"}')
-		const summary = summarizeUpstreamBody("x".repeat(5000), {})
+		const summary = summarizeUpstreamBody(Str.repeat(5000)("x"), {})
 		expect(summary.length).toBeLessThan(200)
-		expect(summary.endsWith("...")).toBe(true)
+		expect(Str.endsWith("...")(summary)).toBe(true)
 	})
 
 	it("names an empty body", () => {
@@ -38,7 +39,7 @@ describe("summarizeUpstreamBody", () => {
 
 describe("isIngestRefusal", () => {
 	it("treats billing and key refusals as refusals, not transient errors", () => {
-		expect([401, 402, 403].every(isIngestRefusal)).toBe(true)
-		expect([400, 429, 500, 503].some(isIngestRefusal)).toBe(false)
+		expect(Arr.every([401, 402, 403], isIngestRefusal)).toBe(true)
+		expect(Arr.some([400, 429, 500, 503], isIngestRefusal)).toBe(false)
 	})
 })

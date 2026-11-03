@@ -31,7 +31,7 @@
 
 import { spawnSync } from "node:child_process"
 import { join } from "node:path"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { fetchPreviewState, hasActivePreviewRun, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
@@ -80,14 +80,13 @@ interface NeonBranch {
 const cfRequest = async (
 	token: string,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<{ ok: boolean; status: number; result: unknown; errors: unknown }> => {
 	const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
 		...init,
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"Content-Type": "application/json",
-			...init?.headers,
 		},
 	})
 	const body = (await response.json().catch(() => ({}))) as {
@@ -106,14 +105,13 @@ const cfRequest = async (
 const neonRequest = async (
 	apiKey: string,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<{ ok: boolean; status: number; body: unknown }> => {
 	const response = await fetch(`https://console.neon.tech/api/v2${path}`, {
 		...init,
 		headers: {
 			Authorization: `Bearer ${apiKey}`,
 			Accept: "application/json",
-			...init?.headers,
 		},
 	})
 	const body: unknown = await response.json().catch(() => ({}))
@@ -134,7 +132,7 @@ const listPreviewWorkers = async (token: string, accountId: string, candidates: 
 	}
 	// A success response whose `result` isn't an array means the API shape
 	// changed under us: fail loudly rather than green-no-op'ing the safety net.
-	if (!Array.isArray(listed.result)) {
+	if (!Arr.isArray(listed.result)) {
 		fail(`Unexpected Worker list response shape (result is ${typeof listed.result}, expected array)`)
 	}
 	const scripts = listed.result as ReadonlyArray<WorkerScript>
@@ -157,7 +155,7 @@ const listReplayBuckets = async (token: string, accountId: string, candidates: C
 		fail(`Could not list R2 buckets (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
 	const buckets = (listed.result as { buckets?: unknown } | undefined)?.buckets
-	if (!Array.isArray(buckets)) {
+	if (!Arr.isArray(buckets)) {
 		fail(`Unexpected R2 bucket list response shape (result.buckets is ${typeof buckets}, expected array)`)
 	}
 	let matched = 0
@@ -180,7 +178,7 @@ const listNeonBranches = async (
 		fail(`Could not list Neon branches (HTTP ${listed.status}): ${showJson(listed.body)}`)
 	}
 	const branches = (listed.body as { branches?: ReadonlyArray<NeonBranch> }).branches
-	if (!Array.isArray(branches)) {
+	if (!Arr.isArray(branches)) {
 		fail(`Unexpected Neon branch list response shape (branches is ${typeof branches}, expected array)`)
 	}
 	// PR number → branch id, for the delete after destroy.
@@ -238,15 +236,16 @@ const emptyAndDeleteBucket = async (token: string, accountId: string, bucket: st
 	for (let page = 0; page < 10_000; page++) {
 		const listed = await cfRequest(token, `${objectsPath}?per_page=1000`)
 		if (listed.status === 404) return true
-		if (!listed.ok || !Array.isArray(listed.result)) {
+		if (!listed.ok || !Arr.isArray(listed.result)) {
 			console.log(
 				`✗ could not list objects in ${bucket} (HTTP ${listed.status}): ${showJson(listed.errors)}`,
 			)
 			return false
 		}
-		const keys = (listed.result as ReadonlyArray<R2Object>)
-			.map((object) => object.key ?? "")
-			.filter((key) => key.length > 0)
+		const keys = Arr.filter(
+			Arr.map(listed.result as ReadonlyArray<R2Object>, (object) => object.key ?? ""),
+			(key) => key.length > 0,
+		)
 		if (keys.length === 0) break
 		const removed = await cfRequest(token, objectsPath, { method: "DELETE", body: showJson(keys) })
 		if (!removed.ok) {
@@ -291,7 +290,14 @@ const main = async (): Promise<void> => {
 	}
 
 	const prNumbers = [...candidates.keys()].sort((a, b) => Number(a) - Number(b))
-	console.log(`Candidate preview stage(s): ${prNumbers.map((n) => `pr-${n}`).join(", ") || "none"}`)
+	console.log(
+		`Candidate preview stage(s): ${
+			Arr.join(
+				Arr.map(prNumbers, (n) => `pr-${n}`),
+				", ",
+			) || "none"
+		}`,
+	)
 
 	const failures: string[] = []
 	for (const prNumber of prNumbers) {
@@ -316,7 +322,7 @@ const main = async (): Promise<void> => {
 		const bucket = markers.find((marker) => REPLAY_BUCKET_PATTERN.test(marker))
 		const branchId = neonBranchIdByPr.get(prNumber)
 		console.log(
-			`… tearing down ${stage} (PR #${prNumber} is closed or unlabelled; found ${markers.join(", ")})`,
+			`… tearing down ${stage} (PR #${prNumber} is closed or unlabelled; found ${Arr.join(markers, ", ")})`,
 		)
 		if (DRY_RUN) {
 			console.log(
@@ -344,7 +350,7 @@ const main = async (): Promise<void> => {
 	}
 
 	if (failures.length > 0) {
-		fail(`Failed to tear down orphan preview stage(s): ${failures.join(", ")}`)
+		fail(`Failed to tear down orphan preview stage(s): ${Arr.join(failures, ", ")}`)
 	}
 	console.log(DRY_RUN ? "✓ Dry run complete" : "✓ Sweep complete")
 }

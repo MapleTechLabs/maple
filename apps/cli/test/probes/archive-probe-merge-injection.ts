@@ -10,6 +10,7 @@ import { join } from "node:path"
 import { ArchiveProbe, readRows } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
+import { Array as Arr } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -31,14 +32,15 @@ try {
 		`INSERT INTO traces SELECT 'org1', toDateTime64('2026-06-29 12:00:00', 9, 'UTC'), 't'||toString(number), 's'||toString(number) FROM numbers(4)`,
 	)
 
-	const sourceSet = readRows(
-		db.query(
-			`SELECT TraceId FROM traces WHERE toHour(Timestamp,'UTC')=12 ORDER BY TraceId`,
-			"JSONEachRow",
+	const sourceSet = Arr.map(
+		readRows(
+			db.query(
+				`SELECT TraceId FROM traces WHERE toHour(Timestamp,'UTC')=12 ORDER BY TraceId`,
+				"JSONEachRow",
+			),
 		),
-	)
-		.map((r) => String(r.TraceId))
-		.sort()
+		(r) => String(r.TraceId),
+	).sort()
 
 	let blocked = 0
 	let leaked = 0
@@ -63,8 +65,11 @@ try {
 			archived.push(String(r.TraceId))
 	}
 	archived.sort()
-	if (archived.join(",") !== sourceSet.join(",")) h.fail(`source [${sourceSet}] != archived [${archived}]`)
-	h.ok(`injected OPTIMIZE blocked ${blocked}x; exact set archived [${archived}] (${written.length} shards)`)
+	if (Arr.join(archived, ",") !== Arr.join(sourceSet, ","))
+		h.fail(`source [${Arr.join(sourceSet, ",")}] != archived [${Arr.join(archived, ",")}]`)
+	h.ok(
+		`injected OPTIMIZE blocked ${blocked}x; exact set archived [${Arr.join(archived, ",")}] (${written.length} shards)`,
+	)
 } catch (e) {
 	h.fail(e instanceof Error ? e.message : String(e))
 }

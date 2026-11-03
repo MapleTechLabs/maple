@@ -80,8 +80,8 @@ export const resolveChatWorkspace = Effect.fn("ChatWorkspaceRows.resolveChatWork
 		})
 	}
 	if (encryptionKey === null) {
-		return yield* Effect.fail(
-			unreadable("This chat workspace stores a credential and this deployment has no key for it"),
+		return yield* unreadable(
+			"This chat workspace stores a credential and this deployment has no key for it",
 		)
 	}
 	const credentials = yield* openChatWorkspaceCredentials(

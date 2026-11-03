@@ -23,6 +23,7 @@ import {
 	orgIdParam,
 	utcSecondsParam,
 } from "@maple/query-engine/ch/tables"
+import { Array as Arr, String as Str } from "effect"
 
 /** Both metrics tables declare the columns read here alike. */
 type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsGauge.columns>
@@ -30,10 +31,10 @@ type MetricsAccessor = ColumnAccessor<typeof MetricsSum.columns> | ColumnAccesso
 /** A row's identity values, then its region and account: `AWS_INFRA_RESOURCE_KEYS`. */
 const resourceKeys = ($: MetricsAccessor, kind: AwsInfraKindId) =>
 	CH.arrayOf(
-		...AWS_INFRA_KINDS[kind].identity.map(([, dimension]) =>
+		...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) =>
 			$.Attributes.get(awsDimensionAttribute(dimension)),
 		),
-		...AWS_INFRA_RESOURCE_KEYS.map((attribute) => $.ResourceAttributes.get(attribute)),
+		...Arr.map(AWS_INFRA_RESOURCE_KEYS, (attribute) => $.ResourceAttributes.get(attribute)),
 	)
 
 /** The kind's points in the window, from one table, at exactly the kind's dimension set. */
@@ -46,14 +47,19 @@ const kindPoints = (
 	[
 		$.OrgId.eq(orgIdParam),
 		CH.inList($.MetricName, [
-			...new Set(metrics.filter((metric) => metric.table === table).map((metric) => metric.name)),
+			...new Set(
+				Arr.map(
+					Arr.filter(metrics, (metric) => metric.table === table),
+					(metric) => metric.name,
+				),
+			),
 		]),
 		$.TimeUnix.gte(param.dateTime("startTime")),
 		$.TimeUnix.lte(param.dateTime("endTime")),
-		...AWS_INFRA_KINDS[kind].identity.map(([, dimension]) =>
+		...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) =>
 			$.Attributes.get(awsDimensionAttribute(dimension)).neq(""),
 		),
-		...AWS_INFRA_KINDS[kind].excluded.map((dimension) =>
+		...Arr.map(AWS_INFRA_KINDS[kind].excluded, (dimension) =>
 			$.Attributes.get(awsDimensionAttribute(dimension)).eq(""),
 		),
 	] as const
@@ -99,7 +105,9 @@ export function awsInfraMetricsSQL(kind: AwsInfraKindId) {
 /** How many buckets a window spans, counting the partial ones at either end. */
 export const awsInfraBucketCount = (startTime: string, endTime: string, bucketSeconds: number) => {
 	const seconds =
-		(Date.parse(`${endTime.replace(" ", "T")}Z`) - Date.parse(`${startTime.replace(" ", "T")}Z`)) / 1000
+		(Date.parse(`${Str.replace(" ", "T")(endTime)}Z`) -
+			Date.parse(`${Str.replace(" ", "T")(startTime)}Z`)) /
+		1000
 	return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds / bucketSeconds) + 1 : 1
 }
 
@@ -109,7 +117,7 @@ export const awsInfraBucketCount = (startTime: string, endTime: string, bucketSe
  */
 export function awsInfraSparklinesSQL(kind: AwsInfraKindId, buckets: number) {
 	const definition = AWS_INFRA_KINDS[kind]
-	const metrics = definition.metrics.filter((metric) => metric.key === definition.sparkline)
+	const metrics = Arr.filter(definition.metrics, (metric) => metric.key === definition.sparkline)
 	const point = ($: MetricsAccessor) => ({
 		keys: resourceKeys($, kind),
 		t: $.TimeUnix,
@@ -151,10 +159,10 @@ export function awsInfraTimeseriesSQL(kind: AwsInfraKindId, keys: ReadonlyArray<
 	const ofResource = ($: MetricsAccessor, table: AwsInfraMetric["table"]) =>
 		[
 			...kindPoints($, kind, table, definition.metrics),
-			...definition.identity.map(([, dimension], index) =>
+			...Arr.map(definition.identity, ([, dimension], index) =>
 				$.Attributes.get(awsDimensionAttribute(dimension)).eq(keys[index] ?? ""),
 			),
-			...AWS_INFRA_RESOURCE_KEYS.map((attribute, index) =>
+			...Arr.map(AWS_INFRA_RESOURCE_KEYS, (attribute, index) =>
 				$.ResourceAttributes.get(attribute).eq(keys[identity + index] ?? ""),
 			),
 		] as const
@@ -189,7 +197,9 @@ export function awsInfraPresenceSQL() {
 			$.OrgId.eq(orgIdParam),
 			CH.inList($.MetricName, [
 				...new Set(
-					AWS_INFRA_KIND_IDS.flatMap((kind) => AWS_INFRA_KINDS[kind].metrics.map((m) => m.name)),
+					Arr.flatMap(AWS_INFRA_KIND_IDS, (kind) =>
+						Arr.map(AWS_INFRA_KINDS[kind].metrics, (m) => m.name),
+					),
 				),
 			]),
 			// `Hour` is hour-truncated: floor the start so a mid-hour range keeps its first bucket.

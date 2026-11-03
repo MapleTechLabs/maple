@@ -55,19 +55,15 @@ export class EmailService extends Context.Service<EmailService, EmailServiceApi>
 				yield* Effect.annotateCurrentSpan("maple.email.provider", "cloudflare")
 
 				if (Option.isNone(sender)) {
-					return yield* Effect.fail(
-						new EmailDeliveryError({
-							message: "Email not configured: EMAIL binding is missing",
-						}),
-					)
+					return yield* new EmailDeliveryError({
+						message: "Email not configured: EMAIL binding is missing",
+					})
 				}
 
 				if (!emailAllowed) {
-					return yield* Effect.fail(
-						new EmailDeliveryError({
-							message: `Email suppressed: sends are disabled in ${env.MAPLE_ENVIRONMENT} (set MAPLE_EMAIL_ALLOW_NONPROD=true to override)`,
-						}),
-					)
+					return yield* new EmailDeliveryError({
+						message: `Email suppressed: sends are disabled in ${env.MAPLE_ENVIRONMENT} (set MAPLE_EMAIL_ALLOW_NONPROD=true to override)`,
+					})
 				}
 
 				const result = yield* sender.value

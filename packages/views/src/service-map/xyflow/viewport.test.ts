@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { PlacedNode, Viewport } from "./geometry"
 import { fitViewport } from "./viewport"
+import { Array as Arr } from "effect"
 
 const card = (id: string, x: number, y: number): PlacedNode => ({
 	id,
@@ -22,14 +23,14 @@ describe("fitViewport with a readable floor", () => {
 		const viewport = fitViewport(nodes, pane, options)
 		expect(viewport).toBeDefined()
 		if (viewport === undefined) return
-		nodes.forEach((node) => {
+		Arr.forEach(nodes, (node) => {
 			expect(screenX(node, viewport)).toBeGreaterThanOrEqual(0)
 			expect(screenX(node, viewport) + 270 * viewport.zoom).toBeLessThanOrEqual(pane.width)
 		})
 	})
 
 	const cutAtRightEdge = (nodes: ReadonlyArray<PlacedNode>, viewport: Viewport) =>
-		nodes.filter((node) => {
+		Arr.filter(nodes, (node) => {
 			const left = screenX(node, viewport)
 			return left < pane.width && left + 270 * viewport.zoom > pane.width
 		})
@@ -64,6 +65,6 @@ describe("fitViewport with a readable floor", () => {
 		const viewport = fitViewport(nodes, pane, { padding: 0.2, minZoom: 0.1, maxZoom: 1.5 })
 		expect(viewport).toBeDefined()
 		if (viewport === undefined) return
-		nodes.forEach((node) => expect(isOnScreen(node, viewport)).toBe(true))
+		Arr.forEach(nodes, (node) => expect(isOnScreen(node, viewport)).toBe(true))
 	})
 })

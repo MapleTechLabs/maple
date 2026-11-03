@@ -1,5 +1,5 @@
 import * as XYSystem from "@xyflow/system"
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Effect, Option, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./canvas"
 import type { HandleBounds, MeasuredNode, Viewport, XY } from "./geometry"
@@ -29,8 +29,8 @@ export const animationAttribute = (animation: {
  */
 export const readViewport = (renderer: Element): Viewport | undefined => {
 	const leaf = renderer.querySelector(".react-flow__viewport-portal")
-	const parts = (leaf?.getAttribute(VIEWPORT_ATTRIBUTE) ?? "").split(",").map(Number)
-	return parts.length === 3 && parts.every(Number.isFinite)
+	const parts = Arr.map(Str.split(",")(leaf?.getAttribute(VIEWPORT_ATTRIBUTE) ?? ""), Number)
+	return parts.length === 3 && Arr.every(parts, Number.isFinite)
 		? { x: parts[0], y: parts[1], zoom: parts[2] }
 		: undefined
 }
@@ -59,7 +59,8 @@ const measureNode = (node: HTMLElement, zoom: number): MeasuredNode | undefined 
 	const id = node.getAttribute("data-id")
 	if (id === null || node.offsetWidth === 0 || node.offsetHeight === 0) return undefined
 	const nodeRect = node.getBoundingClientRect()
-	const handles = Array.from(node.querySelectorAll<HTMLElement>(".react-flow__handle")).flatMap(
+	const handles = Arr.flatMap(
+		Array.from(node.querySelectorAll<HTMLElement>(".react-flow__handle")),
 		(handle): ReadonlyArray<HandleBounds> => {
 			const position = handle.getAttribute("data-handlepos")
 			if (!isSide(position)) return []
@@ -84,7 +85,10 @@ const sameMeasurement = (a: MeasuredNode | undefined, b: MeasuredNode): boolean 
 	a.width === b.width &&
 	a.height === b.height &&
 	a.handles.length === b.handles.length &&
-	a.handles.every((handle, index) => handle.x === b.handles[index].x && handle.y === b.handles[index].y)
+	Arr.every(
+		a.handles,
+		(handle, index) => handle.x === b.handles[index].x && handle.y === b.handles[index].y,
+	)
 
 /** Measures nodes as they appear or resize, batching each observer callback into one Message. */
 const observeNodes = (renderer: HTMLElement, emit: (message: MountMessage) => void) => {
@@ -95,7 +99,7 @@ const observeNodes = (renderer: HTMLElement, emit: (message: MountMessage) => vo
 		return viewport === null ? 1 : new DOMMatrixReadOnly(getComputedStyle(viewport).transform).m22
 	}
 	const measure = (nodes: Iterable<HTMLElement>) => {
-		const changed = Array.from(nodes).flatMap((node): ReadonlyArray<MeasuredNode> => {
+		const changed = Arr.flatMap(Array.from(nodes), (node): ReadonlyArray<MeasuredNode> => {
 			const measured = measureNode(node, zoomNow())
 			if (measured === undefined || sameMeasurement(last.get(measured.id), measured)) return []
 			last.set(measured.id, measured)
@@ -104,7 +108,7 @@ const observeNodes = (renderer: HTMLElement, emit: (message: MountMessage) => vo
 		if (changed.length > 0) emit(Message.MeasuredNodes({ nodes: changed }))
 	}
 	const resizes = new ResizeObserver((entries) =>
-		measure(entries.flatMap((entry) => (entry.target instanceof HTMLElement ? [entry.target] : []))),
+		measure(Arr.flatMap(entries, (entry) => (entry.target instanceof HTMLElement ? [entry.target] : []))),
 	)
 	const observed = new WeakSet<Element>()
 	const observeNew = () => {
@@ -154,7 +158,11 @@ export const DEFAULT_GESTURES: FlowGestures = {
 /** The zoom limits and gestures, live props on `<ReactFlow>`: the renderer carries them as JSON. */
 export const LIMITS_ATTRIBUTE = "data-flow-limits"
 
-export const FlowLimits = Schema.Struct({ minZoom: Schema.Number, maxZoom: Schema.Number, gestures: FlowGestures })
+export const FlowLimits = Schema.Struct({
+	minZoom: Schema.Number,
+	maxZoom: Schema.Number,
+	gestures: FlowGestures,
+})
 export type FlowLimits = typeof FlowLimits.Type
 
 const FlowLimitsJson = Schema.fromJsonString(FlowLimits)
@@ -162,7 +170,11 @@ const FlowLimitsJson = Schema.fromJsonString(FlowLimits)
 export const limitsAttribute = (limits: FlowLimits): string => Schema.encodeSync(FlowLimitsJson)(limits)
 
 /** Applies the renderer's limits when they differ from the last applied value; returns the applied value. */
-export const followLimits = (raw: string | null, applied: string, apply: (limits: FlowLimits) => void): string =>
+export const followLimits = (
+	raw: string | null,
+	applied: string,
+	apply: (limits: FlowLimits) => void,
+): string =>
 	raw === null || raw === applied
 		? applied
 		: Option.match(Schema.decodeUnknownOption(FlowLimitsJson)(raw), {
@@ -196,25 +208,26 @@ const attachPanZoom = (
 		onDraggingChange: () => {},
 		onPanZoomEnd: () => emit(Message.EndedViewportMove()),
 	})
-	const updateGestures = (gestures: FlowGestures) => panZoom.update({
-		noWheelClassName: "nowheel",
-		noPanClassName: "nopan",
-		preventScrolling: gestures.preventScrolling,
-		panOnScroll: gestures.panOnScroll,
-		panOnDrag: true,
-		panOnScrollMode: system.PanOnScrollMode.Free,
-		panOnScrollSpeed: 0.5,
-		userSelectionActive: false,
-		zoomOnPinch: true,
-		zoomOnScroll: gestures.zoomOnScroll,
-		zoomOnDoubleClick: gestures.zoomOnDoubleClick,
-		zoomActivationKeyPressed: false,
-		lib: "react",
-		connectionInProgress: false,
-		paneClickDistance: 1,
-		selectionOnDrag: false,
-		onTransformChange: ([x, y, zoom]) => emit(Message.ChangedViewport({ viewport: { x, y, zoom } })),
-	})
+	const updateGestures = (gestures: FlowGestures) =>
+		panZoom.update({
+			noWheelClassName: "nowheel",
+			noPanClassName: "nopan",
+			preventScrolling: gestures.preventScrolling,
+			panOnScroll: gestures.panOnScroll,
+			panOnDrag: true,
+			panOnScrollMode: system.PanOnScrollMode.Free,
+			panOnScrollSpeed: 0.5,
+			userSelectionActive: false,
+			zoomOnPinch: true,
+			zoomOnScroll: gestures.zoomOnScroll,
+			zoomOnDoubleClick: gestures.zoomOnDoubleClick,
+			zoomActivationKeyPressed: false,
+			lib: "react",
+			connectionInProgress: false,
+			paneClickDistance: 1,
+			selectionOnDrag: false,
+			onTransformChange: ([x, y, zoom]) => emit(Message.ChangedViewport({ viewport: { x, y, zoom } })),
+		})
 	updateGestures(limits.gestures)
 	// React Flow re-applies these props on every change; follow the renderer's attribute.
 	const applied = { value: limitsAttribute(limits) }
@@ -232,13 +245,13 @@ const attachPanZoom = (
 		if (viewport !== undefined) panZoom.syncViewport(viewport)
 	}
 	const gestureEvents = ["wheel", "mousedown", "touchstart", "dblclick"] as const
-	gestureEvents.forEach((type) => renderer.addEventListener(type, sync, { capture: true }))
+	Arr.forEach(gestureEvents, (type) => renderer.addEventListener(type, sync, { capture: true }))
 	// An animated fit runs as React Flow's does: one d3 transition, every frame back as a Message.
 	const started = { seq: Number.NaN }
 	const animations = new MutationObserver(() => {
 		const leaf = renderer.querySelector(".react-flow__viewport-portal")
-		const parts = (leaf?.getAttribute(ANIMATION_ATTRIBUTE) ?? "").split(",").map(Number)
-		if (parts.length !== 5 || !parts.every(Number.isFinite) || parts[0] === started.seq) return
+		const parts = Arr.map(Str.split(",")(leaf?.getAttribute(ANIMATION_ATTRIBUTE) ?? ""), Number)
+		if (parts.length !== 5 || !Arr.every(parts, Number.isFinite) || parts[0] === started.seq) return
 		started.seq = parts[0]
 		sync()
 		void panZoom.setViewport({ x: parts[1], y: parts[2], zoom: parts[3] }, { duration: parts[4] })
@@ -247,7 +260,7 @@ const attachPanZoom = (
 	return () => {
 		animations.disconnect()
 		limitChanges.disconnect()
-		gestureEvents.forEach((type) => renderer.removeEventListener(type, sync, { capture: true }))
+		Arr.forEach(gestureEvents, (type) => renderer.removeEventListener(type, sync, { capture: true }))
 		panZoom.destroy()
 	}
 }
@@ -392,7 +405,7 @@ export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 							attachPanZoom(system, element, { minZoom, maxZoom, gestures }, emit),
 							attachNodeDrag(element, emit),
 						]
-						return () => releases.forEach((release) => release())
+						return () => Arr.forEach(releases, (release) => release())
 					}),
 				),
 				(release) => Effect.sync(release),

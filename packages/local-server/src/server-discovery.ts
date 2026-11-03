@@ -20,7 +20,7 @@ const decodeDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerD
 export const readDiscovery = (path: string): Effect.Effect<Option.Option<ServerDiscovery>> =>
 	Effect.try({
 		try: () => readFileSync(path, "utf8"),
-		catch: (error) => error,
+		catch: stateFileError(path, "read"),
 	}).pipe(
 		Effect.map(decodeDiscovery),
 		Effect.orElseSucceed(() => Option.none<ServerDiscovery>()),

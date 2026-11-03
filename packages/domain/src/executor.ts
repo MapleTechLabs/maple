@@ -5,7 +5,7 @@
  * then each agent command runs inside the executor's isolation (no network, its own uid, a bounded
  * scratch, resource limits). Everything crosses a service binding as JSON, so it is data only.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { SandboxCheckout } from "./sandbox"
 
 export const EXECUTOR_PREPARE_PATH = "/internal/executor/prepare"
@@ -31,16 +31,19 @@ export const EXECUTOR_LIMITS = {
 const mib = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MiB`
 
 export const executorLimitsText = (): string =>
-	[
-		"no network (loopback only)",
-		`${mib(EXECUTOR_LIMITS.memoryBytes)} memory`,
-		`${EXECUTOR_LIMITS.processes} processes`,
-		`${mib(EXECUTOR_LIMITS.fileSizeBytes)} per written file`,
-		`${mib(EXECUTOR_LIMITS.scratchBytes)} scratch`,
-		`${EXECUTOR_LIMITS.maxTimeoutMs / 1000}s wall clock per command`,
-		"the checkout and its installed dependencies are read-only; only your scratch is writable",
-		`up to ${EXECUTOR_LIMITS.promotedFiles} promoted scratch files per command, ${EXECUTOR_LIMITS.promotedFileBytes / 1024} KiB each, ${EXECUTOR_LIMITS.promotedTotalBytes / 1024} KiB in total`,
-	].join("; ")
+	Arr.join(
+		[
+			"no network (loopback only)",
+			`${mib(EXECUTOR_LIMITS.memoryBytes)} memory`,
+			`${EXECUTOR_LIMITS.processes} processes`,
+			`${mib(EXECUTOR_LIMITS.fileSizeBytes)} per written file`,
+			`${mib(EXECUTOR_LIMITS.scratchBytes)} scratch`,
+			`${EXECUTOR_LIMITS.maxTimeoutMs / 1000}s wall clock per command`,
+			"the checkout and its installed dependencies are read-only; only your scratch is writable",
+			`up to ${EXECUTOR_LIMITS.promotedFiles} promoted scratch files per command, ${EXECUTOR_LIMITS.promotedFileBytes / 1024} KiB each, ${EXECUTOR_LIMITS.promotedTotalBytes / 1024} KiB in total`,
+		],
+		"; ",
+	)
 
 const Bounded = (max: number) => Schema.String.check(Schema.isMaxLength(max))
 const Message = Bounded(4 * 1024)
@@ -68,10 +71,10 @@ export const ExecutorScratchPath = Schema.String.check(
 	Schema.isMaxLength(512),
 	Schema.makeFilter(
 		(value: string) =>
-			!value.startsWith("/") &&
+			!Str.startsWith("/")(value) &&
 			// eslint-disable-next-line no-control-regex
 			!/[\u0000-\u001f]/u.test(value) &&
-			value.split("/").every((part) => part !== "" && part !== "." && part !== ".."),
+			Arr.every(Str.split("/")(value), (part) => part !== "" && part !== "." && part !== ".."),
 		{ title: "executorScratchPath", expected: "a scratch-relative path with no empty, `.` or `..` part" },
 	),
 )

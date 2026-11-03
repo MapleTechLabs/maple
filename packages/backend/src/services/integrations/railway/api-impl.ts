@@ -155,42 +155,44 @@ export interface RailwayDiscovery {
  * (`apiToken` answers for account and workspace tokens alike). PR environments are skipped:
  * each costs a `metrics` call per tick against a small per-token rate limit.
  */
-export const discover = (httpClient: HttpClient.HttpClient, token: string) =>
-	Effect.gen(function* () {
-		const workspaces = yield* run(httpClient, token, tokenWorkspaces())
-		const pages = yield* Effect.forEach(
-			workspaces,
-			(workspace) => run(httpClient, token, workspaceProjects(workspace.id)),
-			{ concurrency: 2 },
-		)
-		const projects = pages.flat()
-		// First occurrence wins: a project listed by two workspaces is discovered once.
-		const environments = Arr.dedupeWith(
-			projects.flatMap((project) => {
-				const services = Object.fromEntries(
-					project.services.map((service) => [service.id, service.name] as const),
-				)
-				return project.environments
-					.filter((environment) => environment.isEphemeral !== true)
-					.map((environment): RailwayDiscoveredEnvironment => ({
-						projectId: project.id,
-						projectName: project.name,
-						environmentId: environment.id,
-						environmentName: environment.name,
-						services,
-					}))
-			}),
-			(a, b) => a.environmentId === b.environmentId,
-		)
-		const truncatedProjectIds = projects
-			.filter((project) => project.environments.length >= NESTED_PAGE_SIZE)
-			.map((project) => project.id)
-		return {
-			workspaceNames: workspaces.map((workspace) => workspace.name).sort(),
-			environments,
-			truncatedProjectIds,
-		} satisfies RailwayDiscovery
-	}).pipe(Effect.withSpan("RailwayApi.discover"))
+export const discover = Effect.fn("RailwayApi.discover")(function* (
+	httpClient: HttpClient.HttpClient,
+	token: string,
+) {
+	const workspaces = yield* run(httpClient, token, tokenWorkspaces())
+	const pages = yield* Effect.forEach(
+		workspaces,
+		(workspace) => run(httpClient, token, workspaceProjects(workspace.id)),
+		{ concurrency: 2 },
+	)
+	const projects = pages.flat()
+	// First occurrence wins: a project listed by two workspaces is discovered once.
+	const environments = Arr.dedupeWith(
+		projects.flatMap((project) => {
+			const services = Object.fromEntries(
+				project.services.map((service) => [service.id, service.name] as const),
+			)
+			return project.environments
+				.filter((environment) => environment.isEphemeral !== true)
+				.map((environment): RailwayDiscoveredEnvironment => ({
+					projectId: project.id,
+					projectName: project.name,
+					environmentId: environment.id,
+					environmentName: environment.name,
+					services,
+				}))
+		}),
+		(a, b) => a.environmentId === b.environmentId,
+	)
+	const truncatedProjectIds = projects
+		.filter((project) => project.environments.length >= NESTED_PAGE_SIZE)
+		.map((project) => project.id)
+	return {
+		workspaceNames: workspaces.map((workspace) => workspace.name).sort(),
+		environments,
+		truncatedProjectIds,
+	} satisfies RailwayDiscovery
+})
 
 // ---------------------------------------------------------------------------
 // Metrics

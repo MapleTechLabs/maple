@@ -7,7 +7,7 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { msToDate } from "@maple/backend/platform/time"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -94,7 +94,7 @@ describe("AlertRulesService", () => {
 
 			const listed = yield* rules.listRules(ORG)
 			assert.deepStrictEqual(
-				listed.rules.map((rule) => rule.id),
+				Arr.map(listed.rules, (rule) => rule.id),
 				[RULE],
 			)
 			assert.deepStrictEqual((yield* rules.listRules(OTHER_ORG)).rules, [])

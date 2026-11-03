@@ -4,6 +4,7 @@
  */
 import type { GcpCloudSqlSettings } from "@maple/domain/http"
 import type { GcpSqlInstanceData } from "./api"
+import { Array as Arr } from "effect"
 
 /** Memory and vCPUs of a tier, for the tiers whose name says so. Shared-core tiers have no whole vCPU. */
 const tierSize = (tier: string): { readonly cpus: number | null; readonly memoryGb: number } | undefined => {
@@ -48,12 +49,12 @@ export const gcpSqlSettings = (
 	instances: ReadonlyArray<{ readonly name: string; readonly data: GcpSqlInstanceData }>,
 ): Array<readonly [name: string, settings: GcpCloudSqlSettings]> => {
 	const memoryOf = new Map(
-		instances.map(({ data }) => [
+		Arr.map(instances, ({ data }) => [
 			`${data.project}:${data.name}`,
 			tierSize(data.settings?.tier ?? "")?.memoryGb,
 		]),
 	)
-	return instances.map(({ name, data }) => {
+	return Arr.map(instances, ({ name, data }) => {
 		const settings = data.settings
 		const size = tierSize(settings?.tier ?? "")
 		const flag = numberOrNull(

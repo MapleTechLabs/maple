@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { attributeIndexMode, logBodySearchMode } from "../capabilities"
 import { managedWarehouseCapabilities } from "./managed-capabilities"
+import { Array as Arr, String as Str } from "effect"
 
 describe("managed warehouse capabilities", () => {
 	/**
@@ -35,7 +36,7 @@ describe("managed warehouse capabilities", () => {
 		// Columns come from the same parse, and index lines must not leak in.
 		expect(capabilities.columns.has("logs.Body")).toBe(true)
 		expect(capabilities.columns.has("traces.SpanAttributes")).toBe(true)
-		expect([...capabilities.columns].some((key) => key.includes("INDEX"))).toBe(false)
+		expect(Arr.some([...capabilities.columns], (key) => Str.includes("INDEX")(key))).toBe(false)
 	})
 
 	it("keeps full-text search unavailable — managed backends reject setting overrides", () => {

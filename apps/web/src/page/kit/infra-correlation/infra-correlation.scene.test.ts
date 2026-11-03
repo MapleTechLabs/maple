@@ -1,4 +1,4 @@
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr, Record as Rec } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
@@ -8,7 +8,11 @@ import { init, update } from "./update"
 import { view as panelView, type ViewInputs } from "./view"
 import { anchoredWindow, MountInfraCorrelation } from "./window"
 
-const POD = { "k8s.pod.name": "payment-svc-7f9c-p0", "k8s.namespace.name": "shop", "k8s.node.name": "ip-10-0-12-84" }
+const POD = {
+	"k8s.pod.name": "payment-svc-7f9c-p0",
+	"k8s.namespace.name": "shop",
+	"k8s.node.name": "ip-10-0-12-84",
+}
 const window = { startTime: "2026-10-01 11:45:00", endTime: "2026-10-01 12:15:00" }
 const inputs = (resourceAttributes: ViewInputs["resourceAttributes"]): ViewInputs => ({
 	resourceAttributes,
@@ -35,10 +39,10 @@ describe("infra correlation panel", () => {
 	})
 
 	test("a pod record reads the pod's and its node's three charts, then loads the chart library", () => {
-		const names = (resolved().commands ?? []).map(({ name }) => name)
-		expect(names.filter((name) => name === "FetchInfraCorrelationSeries")).toHaveLength(6)
+		const names = Arr.map(resolved().commands ?? [], ({ name }) => name)
+		expect(Arr.filter(names, (name) => name === "FetchInfraCorrelationSeries")).toHaveLength(6)
 		expect(names.at(-1)).toBe("LoadChartRuntime")
-		expect(Object.keys(resolved().model.series)).toEqual([
+		expect(Rec.keys(resolved().model.series)).toEqual([
 			"pod-cpu_usage",
 			"pod-cpu_limit",
 			"pod-memory_limit",
@@ -52,7 +56,11 @@ describe("infra correlation panel", () => {
 		const model = resolved().model
 		const late = update(
 			model,
-			Message.CompletedFetchSeries({ chartId: "pod-cpu_usage", key: "stale", result: Result.succeed({ rows: [], unit: "cores" }) }),
+			Message.CompletedFetchSeries({
+				chartId: "pod-cpu_usage",
+				key: "stale",
+				result: Result.succeed({ rows: [], unit: "cores" }),
+			}),
 		)
 		expect(late.model.series["pod-cpu_usage"]).toEqual(model.series["pod-cpu_usage"])
 	})

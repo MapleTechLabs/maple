@@ -25,7 +25,7 @@ import {
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
@@ -77,17 +77,17 @@ const decodeRows = <I, A>(rows: ReadonlyArray<I>, decode: (row: I) => Effect.Eff
 const encodeCursor = (createdAtMs: number, id: string) => `${createdAtMs}_${id}`
 const decodeCursor = (cursor: string) => {
 	const at = cursor.indexOf("_")
-	return { createdAt: Number(cursor.slice(0, at)), id: cursor.slice(at + 1) }
+	return { createdAt: Number(Str.slice(0, at)(cursor)), id: Str.slice(at + 1)(cursor) }
 }
 /** A sorted list's cursor: `<value>:` (`n` for none) ahead of the row's `encodeCursor`. */
 const encodeSortedCursor = (value: number | null, createdAtMs: number, id: string) =>
 	`${value === null ? "n" : String(value)}:${encodeCursor(createdAtMs, id)}`
 const decodeSortedCursor = (cursor: string) => {
 	const colon = cursor.indexOf(":")
-	const head = colon === -1 ? undefined : cursor.slice(0, colon)
+	const head = colon === -1 ? undefined : Str.slice(0, colon)(cursor)
 	return {
 		value: head === undefined || head === "n" ? null : Number(head),
-		...decodeCursor(cursor.slice(colon + 1)),
+		...decodeCursor(Str.slice(colon + 1)(cursor)),
 	}
 }
 

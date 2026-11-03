@@ -8,7 +8,15 @@ import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import * as Menu from "@maple/views/ui/menu"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow, truncatedTableCell } from "@maple/views/ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	truncatedTableCell,
+} from "@maple/views/ui/table"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/section"
@@ -17,6 +25,7 @@ import type { AccountPasskey, AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ timeZone: string }>
@@ -33,23 +42,18 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 	return tableRow(
 		h,
 		[
-			truncatedTableCell(
-				h,
-				[
-					hstack(h, { gap: "2.5" },
-						[
-							icon(h, "FingerprintIcon", {
-								size: 16,
-								className: "shrink-0 text-muted-foreground",
-							}),
-							truncatedText(h, {
-								text: passkey.name || "Unnamed passkey",
-								className: typographyClass({ size: "xs", weight: "medium" }),
-							}),
-						],
-					),
-				],
-			),
+			truncatedTableCell(h, [
+				hstack(h, { gap: "2.5" }, [
+					icon(h, "FingerprintIcon", {
+						size: 16,
+						className: "shrink-0 text-muted-foreground",
+					}),
+					truncatedText(h, {
+						text: passkey.name || "Unnamed passkey",
+						className: typographyClass({ size: "xs", weight: "medium" }),
+					}),
+				]),
+			]),
 			tableCell(h, [formatDate(passkey.createdAtMs)], typographyClass({ size: "xs", tone: "muted" })),
 			tableCell(
 				h,
@@ -90,11 +94,9 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 const body = (h: H, model: Model, user: AccountUser, inputs: Inputs): ReadonlyArray<Html> => {
 	if (!model.isSupported)
 		return [
-			typography(h, { size: "sm", tone: "muted", as: "p" },
-				[
-					"This browser does not support passkeys. Open Maple in a recent version of Chrome, Safari, Edge or Firefox over HTTPS to register one.",
-				],
-			),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"This browser does not support passkeys. Open Maple in a recent version of Chrome, Safari, Edge or Firefox over HTTPS to register one.",
+			]),
 		]
 	if (user.passkeys.length === 0)
 		return [
@@ -119,7 +121,7 @@ const body = (h: H, model: Model, user: AccountUser, inputs: Inputs): ReadonlyAr
 			]),
 			tableBody(
 				h,
-				user.passkeys.map((passkey) => passkeyRow(h, model, passkey, inputs)),
+				Arr.map(user.passkeys, (passkey) => passkeyRow(h, model, passkey, inputs)),
 			),
 		]),
 	]

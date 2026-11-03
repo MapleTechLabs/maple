@@ -5,7 +5,7 @@
 // versioned edge — each one ending in an unchecked cast at the point where an
 // external process hands us bytes. The shape is declared once here and the
 // rows are decoded, not asserted.
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { decodeJsonSync } from "./json"
 
 /**
@@ -20,11 +20,13 @@ export const decodeJsonEachRow = <S extends Schema.Codec<unknown, unknown, never
 ): ((value: string) => Array<S["Type"]>) => {
 	const decodeRow = Schema.decodeUnknownSync(rowSchema)
 	return (value) =>
-		value
-			.split("\n")
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0)
-			.map((line) => decodeRow(decodeJsonSync(line)))
+		Arr.map(
+			Arr.filter(
+				Arr.map(Str.split("\n")(value), (line) => Str.trim(line)),
+				(line) => line.length > 0,
+			),
+			(line) => decodeRow(decodeJsonSync(line)),
+		)
 }
 
 /**

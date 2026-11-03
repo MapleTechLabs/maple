@@ -14,6 +14,7 @@ import {
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { severityBadge } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
+import { String as Str } from "effect"
 
 // Marks and states the Security Center's pages share.
 
@@ -110,8 +111,8 @@ export const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string, className
 	return h.span(
 		[h.Class(cn("truncate", className)), h.Title(fullName)],
 		[
-			h.span([h.Class("text-muted-foreground")], [fullName.slice(0, slash + 1)]),
-			fullName.slice(slash + 1),
+			h.span([h.Class("text-muted-foreground")], [Str.slice(0, slash + 1)(fullName)]),
+			Str.slice(slash + 1)(fullName),
 		],
 	)
 }

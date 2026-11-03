@@ -24,6 +24,7 @@ import {
 import { MODE_LABELS, SIGNALS } from "./shared"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `RulesFields` and `AttributeRows`.
 
@@ -65,7 +66,9 @@ const signalCard = <P>(
 			// A card: the kit label's centring and medium weight stay off.
 			className: cn(
 				"flex cursor-pointer items-start gap-2.5 rounded-md border p-3 font-normal transition-colors",
-				isChecked ? "border-primary-a4 bg-primary-a1" : "hover:bg-surface-sunken active:bg-surface-sunken",
+				isChecked
+					? "border-primary-a4 bg-primary-a1"
+					: "hover:bg-surface-sunken active:bg-surface-sunken",
 			),
 			attributes: [h.Key(signal.value), h.Id(Checkbox.labelId(inputId))],
 		},
@@ -78,12 +81,10 @@ const signalCard = <P>(
 				inputId,
 				className: "mt-0.5",
 			}),
-			vstack(h, { gap: "0.5", as: "span" },
-				[
-					h.span([h.Class(cn("text-sm", !isChecked && "text-muted-foreground"))], [signal.label]),
-					typography(h, { size: "2xs", tone: "muted", mono: true }, [signal.hint]),
-				],
-			),
+			vstack(h, { gap: "0.5", as: "span" }, [
+				h.span([h.Class(cn("text-sm", !isChecked && "text-muted-foreground"))], [signal.label]),
+				typography(h, { size: "2xs", tone: "muted", mono: true }, [signal.hint]),
+			]),
 		],
 	)
 }
@@ -131,7 +132,11 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 				h,
 				{
 					label: "Remove attribute",
-					className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
+					className: typographyClass({
+						tone: "muted",
+						hoverTone: "foreground",
+						className: "shrink-0",
+					}),
 					attributes: [h.OnClick(toParentMessage(Message.ClickedRemoveAttribute({ rowId })))],
 				},
 				[icon(h, "XmarkIcon")],
@@ -144,36 +149,32 @@ const attributeRow = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, attribut
 const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => {
 	const { attributeProblem } = rulesOutcome(config.model)
 	const isDisabled = config.model.attributes.length >= MAX_ATTRIBUTES
-	return vstack(h, { gap: "2" },
-		[
-			...config.model.attributes.map((attribute) => attributeRow(h, config, attribute)),
-			hstack(h, { gap: "3" },
+	return vstack(h, { gap: "2" }, [
+		...Arr.map(config.model.attributes, (attribute) => attributeRow(h, config, attribute)),
+		hstack(h, { gap: "3" }, [
+			button(
+				h,
+				{
+					variant: "ghost",
+					size: "sm",
+					className: "text-primary -ml-2",
+					isDisabled,
+					attributes: [h.OnClick(config.toParentMessage(Message.ClickedAddAttribute()))],
+				},
 				[
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "sm",
-							className: "text-primary -ml-2",
-							isDisabled,
-							attributes: [h.OnClick(config.toParentMessage(Message.ClickedAddAttribute()))],
-						},
-						[
-							icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-							"Add attribute",
-						],
-					),
-					...(attributeProblem === null
-						? []
-						: [
-								typography(h, { size: "xs", tone: "destructive", attributes: [h.Role("alert")] },
-									[attributeProblem],
-								),
-							]),
+					icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+					"Add attribute",
 				],
 			),
-		],
-	)
+			...(attributeProblem === null
+				? []
+				: [
+						typography(h, { size: "xs", tone: "destructive", attributes: [h.Role("alert")] }, [
+							attributeProblem,
+						]),
+					]),
+		]),
+	])
 }
 
 /** Signals, rate limit, expiry and resource attributes for a push source. */
@@ -193,7 +194,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 				fieldLabel(h, { ids: signalsIds, state: STATIC }, "Signals"),
 				h.div(
 					[h.Class("grid gap-2 sm:grid-cols-2")],
-					SIGNALS.map((signal) => signalCard(h, config, signal)),
+					Arr.map(SIGNALS, (signal) => signalCard(h, config, signal)),
 				),
 				fieldDescription(
 					h,
@@ -231,13 +232,13 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 				ToggleGroup.view(h, {
 					model: toggleModel(
 						"Expires",
-						choices.map((choice) => choice.value),
+						Arr.map(choices, (choice) => choice.value),
 						model.expiry,
 					),
 					toParentMessage: (message) => toParentMessage(Message.GotExpiryMessage({ message })),
 					variant: "outline",
 					size: "sm",
-					items: choices.map((choice) => ({ value: choice.value, label: choice.label })),
+					items: Arr.map(choices, (choice) => ({ value: choice.value, label: choice.label })),
 				}),
 				...(existing !== null && existing.expires_at !== null && model.expiry === "keep"
 					? [

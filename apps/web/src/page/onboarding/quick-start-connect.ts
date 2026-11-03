@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, Subscription } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { baseKey } from "@maple/views/data/keyed"
@@ -23,7 +23,7 @@ const STATUS_PROVIDERS = ["cloudflare", "railway", "supabase", "planetscale"] as
 type StatusProvider = (typeof STATUS_PROVIDERS)[number]
 
 const isStatusProvider = (platform: StackPlatform): platform is StatusProvider =>
-	STATUS_PROVIDERS.some((provider) => provider === platform)
+	Arr.some(STATUS_PROVIDERS, (provider) => provider === platform)
 
 const Keys = Schema.Union([
 	Schema.TaggedStruct("Pending", {}),
@@ -107,7 +107,7 @@ const LoadConnected = Command.define("LoadOnboardingConnectedProviders", {
 			const [entries, maybeSources] = yield* Effect.all(
 				[
 					Effect.forEach(
-						platforms.filter(isStatusProvider),
+						Arr.filter(platforms, isStatusProvider),
 						(provider) =>
 							read(provider).pipe(
 								Effect.map((isConnected): ReadonlyArray<readonly [string, boolean]> => [
@@ -121,11 +121,11 @@ const LoadConnected = Command.define("LoadOnboardingConnectedProviders", {
 				],
 				{ concurrency: "unbounded" },
 			)
-			const byStatus: Readonly<Record<string, boolean>> = Object.fromEntries(entries.flat())
-			const connected = Object.fromEntries(
-				platforms.flatMap((platform): ReadonlyArray<readonly [string, boolean]> => {
+			const byStatus: Readonly<Record<string, boolean>> = Rec.fromEntries(entries.flat())
+			const connected = Rec.fromEntries(
+				Arr.flatMap(platforms, (platform): ReadonlyArray<readonly [string, boolean]> => {
 					const hasSource = Option.map(maybeSources, (sources) =>
-						sources.some((source) => source.platform === platform),
+						Arr.some(sources, (source) => source.platform === platform),
 					)
 					const status = byStatus[platform]
 					return status === undefined && Option.isNone(hasSource)
@@ -183,11 +183,14 @@ export const updateConnect = (
 		LoadedConnected: ({ connected }) => ({
 			connect: {
 				...connect,
-				connected: Object.fromEntries(
-					Object.entries({ ...connect.connected, ...connected }).map(([platform, isConnected]) => [
-						platform,
-						isConnected || connect.connected[platform] === true,
-					]),
+				connected: Rec.fromEntries(
+					Arr.map(
+						Rec.toEntries({ ...connect.connected, ...connected }),
+						([platform, isConnected]) => [
+							platform,
+							isConnected || connect.connected[platform] === true,
+						],
+					),
 				),
 			},
 			commands: [],

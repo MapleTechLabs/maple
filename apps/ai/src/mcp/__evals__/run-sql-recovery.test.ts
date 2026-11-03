@@ -3,7 +3,7 @@
  * names it fixes by itself and the internal SQL it keeps out of the error.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { RunSqlOutput } from "@maple/domain/mcp-outputs"
 import { makeEvalRuntime, runToolDirect, markdown, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, restoreWarehouse } from "./fake-warehouse"
@@ -36,23 +36,23 @@ beforeAll(() => {
 			rows: [],
 		},
 		{
-			match: (sql) => sql.includes(FALLBACK_ID) && sql.includes("FROM trace_index"),
+			match: (sql) => Str.includes(FALLBACK_ID)(sql) && Str.includes("FROM trace_index")(sql),
 			failure: unknown("ServiceName"),
 		},
-		{ match: (sql) => sql.includes(FALLBACK_ID), rows: [{ n: 1 }] },
+		{ match: (sql) => Str.includes(FALLBACK_ID)(sql), rows: [{ n: 1 }] },
 		{
-			match: (sql) => sql.includes("FROM product_events"),
+			match: (sql) => Str.includes("FROM product_events")(sql),
 			rows: Array.from({ length: 1000 }, (_, i) => ({ n: i })),
 		},
-		{ match: (sql) => sql.includes("service.name"), failure: unknown("service.name") },
-		{ match: (sql) => sql.includes("FROM alert_checks"), failure: GATEWAY_WRAPPED },
+		{ match: (sql) => Str.includes("service.name")(sql), failure: unknown("service.name") },
+		{ match: (sql) => Str.includes("FROM alert_checks")(sql), failure: GATEWAY_WRAPPED },
 		{ match: (sql) => /\bbogus\b/.test(sql), failure: unknown("bogus") },
 		// Every pass fixes one name and the warehouse names the next one.
-		{ match: (sql) => sql.includes("trace_id"), failure: unknown("trace_id") },
-		{ match: (sql) => sql.includes("span_id"), failure: unknown("span_id") },
-		{ match: (sql) => sql.includes("span_name"), failure: unknown("span_name") },
-		{ match: (sql) => sql.includes("status_code"), failure: unknown("status_code") },
-		{ match: (sql) => sql.includes("ServiceName"), rows: [{ ServiceName: "checkout", c: 3 }] },
+		{ match: (sql) => Str.includes("trace_id")(sql), failure: unknown("trace_id") },
+		{ match: (sql) => Str.includes("span_id")(sql), failure: unknown("span_id") },
+		{ match: (sql) => Str.includes("span_name")(sql), failure: unknown("span_name") },
+		{ match: (sql) => Str.includes("status_code")(sql), failure: unknown("status_code") },
+		{ match: (sql) => Str.includes("ServiceName")(sql), rows: [{ ServiceName: "checkout", c: 3 }] },
 	])
 	rt = makeEvalRuntime()
 })
@@ -151,7 +151,7 @@ describe("run_sql recovery", () => {
 		})
 		expect(result.isError).not.toBe(true)
 		expect(Schema.decodeUnknownSync(RunSqlOutput)(result.structuredContent).rows).toEqual([{ n: 1 }])
-		const lookups = issued.filter((sql) => sql.includes(FALLBACK_ID))
+		const lookups = Arr.filter(issued, (sql) => Str.includes(FALLBACK_ID)(sql))
 		expect(lookups).toHaveLength(2)
 		expect(lookups[0]).toContain("FROM trace_index")
 		expect(lookups[1]).not.toContain("FROM trace_index")

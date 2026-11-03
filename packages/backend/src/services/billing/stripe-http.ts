@@ -1,5 +1,15 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -74,10 +84,10 @@ const JsonBody = Schema.fromJsonString(Schema.Unknown)
 const decodeJson = Schema.decodeEffect(JsonBody)
 const parseJsonOption = Schema.decodeUnknownOption(JsonBody)
 
-const trimTrailingSlash = (url: string) => url.replace(/\/+$/, "")
+const trimTrailingSlash = (url: string) => Str.replace(/\/+$/, "")(url)
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 		? (value as Record<string, unknown>)
 		: undefined
 
@@ -119,11 +129,11 @@ export const encodeForm = (fields: {
 			out.push([prefix, value])
 			return
 		}
-		for (const [key, child] of Object.entries(value)) {
+		for (const [key, child] of Rec.toEntries(value)) {
 			walk(`${prefix}[${key}]`, child)
 		}
 	}
-	for (const [key, value] of Object.entries(fields)) walk(key, value)
+	for (const [key, value] of Rec.toEntries(fields)) walk(key, value)
 	return out
 }
 

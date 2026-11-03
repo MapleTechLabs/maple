@@ -11,65 +11,59 @@ import { analyticsPanel } from "../kit/analytics-panel"
 import { authorLabel } from "../kit/author"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
 
 type Row = Readonly<{ key: string; name: string; value: number }>
 
 export const repositoryList = <M>(h: HtmlBuilder<M>, title: string, rows: ReadonlyArray<Row>): Html =>
-	vstack(h, { gap: "2" },
-		[
-			typography(h, { size: "xs", tone: "muted" }, [title]),
-			rows.length === 0
-				? h.span(
-						[h.Class("py-1 text-sm text-foreground-subtle")],
-						["No repositories in this window"],
-					)
-				: h.ul(
-						[h.Class("flex flex-col")],
-						rows.map((row) =>
-							h.li(
-								[h.Key(row.key), h.Class("flex items-center gap-2.5 py-1.5 text-sm")],
-								[
-									icon(h, "GithubIcon", {
-										size: 16,
-										className: "shrink-0 text-muted-foreground",
-									}),
-									typography(h, { truncate: true, className: "min-w-0 flex-1" }, [row.name]),
-									typography(h, { tone: "muted", numeric: true },
-										[formatNumber(row.value)],
-									),
-								],
-							),
+	vstack(h, { gap: "2" }, [
+		typography(h, { size: "xs", tone: "muted" }, [title]),
+		rows.length === 0
+			? h.span([h.Class("py-1 text-sm text-foreground-subtle")], ["No repositories in this window"])
+			: h.ul(
+					[h.Class("flex flex-col")],
+					Arr.map(rows, (row) =>
+						h.li(
+							[h.Key(row.key), h.Class("flex items-center gap-2.5 py-1.5 text-sm")],
+							[
+								icon(h, "GithubIcon", {
+									size: 16,
+									className: "shrink-0 text-muted-foreground",
+								}),
+								typography(h, { truncate: true, className: "min-w-0 flex-1" }, [row.name]),
+								typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
+							],
 						),
 					),
-		],
-	)
+				),
+	])
 
 type Bar = Readonly<{ key: string; label: string; value: number; tone?: string }>
 
 const barList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<Bar>, emptyLabel: string): Html => {
-	const max = Math.max(...rows.map((row) => row.value), 1)
+	const max = Math.max(...Arr.map(rows, (row) => row.value), 1)
 	if (rows.length === 0) return emptyMessage(h, {}, [emptyLabel])
-	return vstack(h, { gap: "2.5", as: "ul" },
-		rows.map((row) =>
-			vstack(h, { gap: "1", as: "li", attributes: [h.Key(row.key)] },
-				[
-					h.span(
-						[h.Class("flex items-center justify-between gap-2 text-sm")],
-						[
-							h.span([h.Class("truncate")], [row.label]),
-							typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
-						],
-					),
-					meter(h, {
-						value: row.value,
-						max,
-						className: "h-1.5 bg-muted",
-						fillClassName: row.tone ?? "bg-primary",
-					}),
-				],
-			),
+	return vstack(
+		h,
+		{ gap: "2.5", as: "ul" },
+		Arr.map(rows, (row) =>
+			vstack(h, { gap: "1", as: "li", attributes: [h.Key(row.key)] }, [
+				h.span(
+					[h.Class("flex items-center justify-between gap-2 text-sm")],
+					[
+						h.span([h.Class("truncate")], [row.label]),
+						typography(h, { tone: "muted", numeric: true }, [formatNumber(row.value)]),
+					],
+				),
+				meter(h, {
+					value: row.value,
+					max,
+					className: "h-1.5 bg-muted",
+					fillClassName: row.tone ?? "bg-primary",
+				}),
+			]),
 		),
 	)
 }
@@ -78,7 +72,7 @@ export const categoriesCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalyt
 	analyticsPanel(h, { title: "Issues by category" }, [
 		barList(
 			h,
-			analytics.categories.map((row) => ({
+			Arr.map(analytics.categories, (row) => ({
 				key: row.category,
 				label: CATEGORY_LABELS[row.category],
 				value: row.findings,
@@ -107,7 +101,7 @@ export const outcomesCard = <M>(
 	return analyticsPanel(h, { title: "Review outcomes" }, [
 		barList(
 			h,
-			rows.filter((row) => row.value > 0),
+			Arr.filter(rows, (row) => row.value > 0),
 			"No reviews in this window",
 		),
 	])
@@ -127,7 +121,7 @@ export const authorsCard = <M>(h: HtmlBuilder<M>, analytics: CodeReviewAnalytics
 					]),
 					tableBody(
 						h,
-						analytics.authors.map((row) =>
+						Arr.map(analytics.authors, (row) =>
 							tableRow(
 								h,
 								[

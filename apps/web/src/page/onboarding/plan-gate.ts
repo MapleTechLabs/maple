@@ -4,7 +4,7 @@ import { hasSelectedPlan, type PlanAccess, resolvePlanAccess } from "../../lib/b
 import { hasMultipleRegions, regionAppUrl } from "../../lib/region"
 import { writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { ClerkOrganization } from "../../platform/clerk"
 import { AppRoute, hrefOf, type Redirect } from "../../route"
@@ -54,16 +54,18 @@ export class SelectedPlanReadError extends Schema.TaggedError<SelectedPlanReadEr
 /** Every org's remembered flag (Atom.kvs writes JSON), read once before the first render. */
 export const readKnownToRenderApp: Effect.Effect<Record<string, boolean>> = Effect.try({
 	try: () =>
-		Object.fromEntries(
-			Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-				.filter((key): key is string => key !== null && key.startsWith(SELECTED_PLAN_KEY_PREFIX))
-				.map(
-					(key) =>
-						[
-							key.slice(SELECTED_PLAN_KEY_PREFIX.length),
-							localStorage.getItem(key) === "true",
-						] as const,
+		Rec.fromEntries(
+			Arr.map(
+				Arr.filter(
+					Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)),
+					(key): key is string => key !== null && Str.startsWith(SELECTED_PLAN_KEY_PREFIX)(key),
 				),
+				(key) =>
+					[
+						Str.slice(SELECTED_PLAN_KEY_PREFIX.length)(key),
+						localStorage.getItem(key) === "true",
+					] as const,
+			),
 		),
 	catch: (cause) => new SelectedPlanReadError({ message: "localStorage is not readable", cause }),
 }).pipe(Effect.orElseSucceed(() => ({})))
@@ -117,7 +119,7 @@ export const leaveTargetOf = (
 	appUrlOf: (region: MapleRegion) => string | undefined = regionAppUrl,
 ): string | null => {
 	const url = appUrlOf(region)
-	const hasOrgHere = memberships.some((org) => org.isServedHere || org.isRegionOpen)
+	const hasOrgHere = Arr.some(memberships, (org) => org.isServedHere || org.isRegionOpen)
 	return url === undefined || hasOrgHere ? null : `${url}${href}`
 }
 

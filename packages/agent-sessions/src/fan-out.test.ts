@@ -6,6 +6,7 @@ import { buildTranscript } from "./session-transcript"
 import { buildSessionTurns } from "./session-turns"
 import { sessionToolResults } from "./span-detail"
 import { agentSpan, llmSpan, makeSpan, toolSpan, userMessages } from "./span-test-support"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const SECOND = 1000
 const RUN_STATUS = "<run-status>turn 1/100 · tool-calls 0/100 · elapsed 0s/240s</run-status>"
@@ -148,7 +149,7 @@ describe("a sub-agent fan-out", () => {
 	const report = buildSessionChecks(turns, summary)
 
 	it("gives every worker its own turn, holding its own spans", () => {
-		expect(turns.map((turn) => turn.agentName)).toEqual([
+		expect(Arr.map(turns, (turn) => turn.agentName)).toEqual([
 			"pr-review",
 			"pr-review-worker",
 			"pr-review-worker",
@@ -158,16 +159,18 @@ describe("a sub-agent fan-out", () => {
 		for (const n of [1, 2, 3, 4]) {
 			const turn = turns.find((candidate) => candidate.anchor.spanId === `worker-${n}`)
 			expect(turn, `worker-${n}`).toBeDefined()
-			const ids = turn!.spans.map((span) => span.spanId)
+			const ids = Arr.map(turn!.spans, (span) => span.spanId)
 			expect(ids).toContain(`worker-${n}-chat`)
 			expect(ids).toContain(`worker-${n}-read`)
 			// No other worker's work landed here.
-			expect(ids.filter((id) => id.startsWith("worker-") && !id.startsWith(`worker-${n}`))).toEqual([])
+			expect(
+				Arr.filter(ids, (id) => Str.startsWith("worker-")(id) && !Str.startsWith(`worker-${n}`)(id)),
+			).toEqual([])
 		}
 	})
 
 	it("fails the turns whose run was stopped", () => {
-		const failed = Object.fromEntries(turns.map((turn) => [turn.anchor.spanId, turn.failed]))
+		const failed = Rec.fromEntries(Arr.map(turns, (turn) => [turn.anchor.spanId, turn.failed]))
 		expect(failed).toEqual({
 			orchestrator: false,
 			"worker-1": true,
@@ -205,7 +208,8 @@ describe("a sub-agent fan-out, read closely", () => {
 	const turns = buildSessionTurns(spans)
 	const summary = buildSessionSummary({ spans, turns })
 	const report = buildSessionChecks(turns, summary)
-	const turnOf = (spanId: string) => turns.find((turn) => turn.spans.some((span) => span.spanId === spanId))
+	const turnOf = (spanId: string) =>
+		turns.find((turn) => Arr.some(turn.spans, (span) => span.spanId === spanId))
 
 	it("counts every stopped run, though the runtime's wrapper restates the failure", () => {
 		const duration = report.checks
@@ -235,7 +239,10 @@ describe("a sub-agent fan-out, read closely", () => {
 			hasMore: false,
 			collapsedTurns: new Set(),
 		})
-		const kinds = rows.map((row) => row.kind).filter((kind) => kind === "user" || kind === "tool")
+		const kinds = Arr.filter(
+			Arr.map(rows, (row) => row.kind),
+			(kind) => kind === "user" || kind === "tool",
+		)
 		expect(kinds[0]).toBe("user")
 		const user = rows.find((row) => row.kind === "user")
 		expect(user?.kind === "user" ? user.text : "").toBe("Review files batch 1")

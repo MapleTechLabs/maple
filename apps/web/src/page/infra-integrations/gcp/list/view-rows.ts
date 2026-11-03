@@ -17,6 +17,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr, String as Str } from "effect"
 
 // The shared parts of the Google Cloud list rows.
 
@@ -117,7 +118,7 @@ export const spark = (
 ): Html =>
 	values === undefined || values.length < 2 || ctx.theme === null || !ctx.isChartReady
 		? h.div([h.Class("h-5 min-w-0 flex-1")])
-		: values.every((value) => value === 0)
+		: Arr.every(values, (value) => value === 0)
 			? // All zeros is no traffic, not a flat line of data: a muted dash keeps the slot.
 				h.div(
 					[h.Class("flex h-5 min-w-0 flex-1 items-center")],
@@ -147,7 +148,7 @@ export const spark = (
 
 /** `VolumeCell`: a count and its sparkline. */
 /** "880K" over "880.0K": a trailing ".0" carries nothing, so the column drops it. */
-const formatVolume = (value: number): string => formatNumber(value).replace(/\.0(?=[KMBT]$)/, "")
+const formatVolume = (value: number): string => Str.replace(/\.0(?=[KMBT]$)/, "")(formatNumber(value))
 
 const VOLUME_CELL = "flex w-44 items-center gap-3"
 const VOLUME_NUMBER_SLOT = "w-[56px] shrink-0"
@@ -191,4 +192,4 @@ export const volumeCell = (
 	)
 
 export const rowSlot = (prefix: string, keys: ReadonlyArray<string>) =>
-	`${prefix}-${gcpWorkloadId(keys).replaceAll("\u0000", "~")}`
+	`${prefix}-${Str.replaceAll("\u0000", "~")(gcpWorkloadId(keys))}`

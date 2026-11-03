@@ -13,15 +13,16 @@
 import { readdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { Array as Arr, String as Str } from "effect"
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const SOURCE = join(PACKAGE_ROOT, "icons")
 const OUT = join(PACKAGE_ROOT, "..", "..", "apps", "landing", "public", "email", "icons")
 const PX = "48"
 
-const names = (await readdir(SOURCE)).filter((file) => file.endsWith(".svg")).sort()
+const names = Arr.filter(await readdir(SOURCE), (file) => Str.endsWith(".svg")(file)).sort()
 for (const file of names) {
-	const out = join(OUT, file.replace(/\.svg$/, ".png"))
+	const out = join(OUT, Str.replace(/\.svg$/, ".png")(file))
 	const proc = Bun.spawnSync(["rsvg-convert", "-w", PX, "-h", PX, "-o", out, join(SOURCE, file)])
 	if (proc.exitCode !== 0) {
 		console.error(`✗ ${file}: ${proc.stderr.toString()}`)

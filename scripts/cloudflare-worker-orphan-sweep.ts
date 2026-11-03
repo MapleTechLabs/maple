@@ -50,7 +50,7 @@
  * GITHUB_TOKEN/GH_TOKEN for the PR-state gate.
  */
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { fetchPreviewState, hasPrStateCredentials, type PreviewState } from "./lib/pr-state.ts"
 
 const FAILURE = 1
@@ -93,14 +93,13 @@ const PR_RESOURCE_PATTERN = /^maple-((?:(?!-dev-).)+)-pr-(\d+)$/
 const cfRequest = async (
 	token: string,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<{ ok: boolean; status: number; result: unknown; errors: unknown }> => {
 	const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
 		...init,
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"Content-Type": "application/json",
-			...init?.headers,
 		},
 	})
 	const body = (await response.json().catch(() => ({}))) as {
@@ -148,22 +147,26 @@ const main = async (): Promise<void> => {
 	}
 	// A success response whose `result` isn't an array means the API shape
 	// changed under us — fail loudly rather than green-no-op'ing the safety net.
-	if (!Array.isArray(listedQueues.result)) {
+	if (!Arr.isArray(listedQueues.result)) {
 		fail(`Unexpected Queue list response shape (result is ${typeof listedQueues.result}, expected array)`)
 	}
 	const queues = listedQueues.result as ReadonlyArray<QueueInfo>
-	const queueCandidates = queues
-		.map((queue) => ({
+	const queueCandidates = Arr.filter(
+		Arr.map(queues, (queue) => ({
 			id: queue.queue_id ?? "",
 			name: queue.queue_name ?? "",
 			match: PR_RESOURCE_PATTERN.exec(queue.queue_name ?? ""),
-		}))
-		.filter(
-			(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
-				entry.match !== null && entry.id.length > 0,
-		)
+		})),
+		(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
+			entry.match !== null && entry.id.length > 0,
+	)
 	console.log(
-		`Found ${queues.length} Queue(s), ${queueCandidates.length} maple-*-pr-*: ${queueCandidates.map((c) => c.name).join(", ") || "—"}`,
+		`Found ${queues.length} Queue(s), ${queueCandidates.length} maple-*-pr-*: ${
+			Arr.join(
+				Arr.map(queueCandidates, (c) => c.name),
+				", ",
+			) || "—"
+		}`,
 	)
 	const queuesToDelete: Array<{ id: string; name: string }> = []
 	for (const { id, name, match } of queueCandidates) {
@@ -179,7 +182,7 @@ const main = async (): Promise<void> => {
 		}
 		queuesToDelete.push({ id, name })
 		const consumers = await cfRequest(token, `/accounts/${accountId}/queues/${id}/consumers`)
-		if (!consumers.ok || !Array.isArray(consumers.result)) {
+		if (!consumers.ok || !Arr.isArray(consumers.result)) {
 			console.log(
 				`✗ could not list consumers of ${name} (HTTP ${consumers.status}): ${showJson(consumers.errors)}`,
 			)
@@ -215,21 +218,25 @@ const main = async (): Promise<void> => {
 	if (!listed.ok) {
 		fail(`Could not list Worker scripts (HTTP ${listed.status}): ${showJson(listed.errors)}`)
 	}
-	if (!Array.isArray(listed.result)) {
+	if (!Arr.isArray(listed.result)) {
 		fail(`Unexpected Worker list response shape (result is ${typeof listed.result}, expected array)`)
 	}
 	const scripts = listed.result as ReadonlyArray<WorkerScript>
-	const candidates = scripts
-		.map((script) => ({
+	const candidates = Arr.filter(
+		Arr.map(scripts, (script) => ({
 			name: script.id ?? "",
 			match: PR_RESOURCE_PATTERN.exec(script.id ?? ""),
-		}))
-		.filter(
-			(entry): entry is { name: string; match: RegExpExecArray } =>
-				entry.match !== null && entry.name.length > 0,
-		)
+		})),
+		(entry): entry is { name: string; match: RegExpExecArray } =>
+			entry.match !== null && entry.name.length > 0,
+	)
 	console.log(
-		`Found ${scripts.length} Worker script(s), ${candidates.length} maple-*-pr-*: ${candidates.map((c) => c.name).join(", ") || "—"}`,
+		`Found ${scripts.length} Worker script(s), ${candidates.length} maple-*-pr-*: ${
+			Arr.join(
+				Arr.map(candidates, (c) => c.name),
+				", ",
+			) || "—"
+		}`,
 	)
 	for (const { name, match } of candidates) {
 		const prNumber = match[2] as string
@@ -265,7 +272,7 @@ const main = async (): Promise<void> => {
 	}
 
 	if (failures.length > 0) {
-		fail(`Failed to sweep orphan Queue(s)/Worker(s): ${failures.join(", ")}`)
+		fail(`Failed to sweep orphan Queue(s)/Worker(s): ${Arr.join(failures, ", ")}`)
 	}
 	console.log("✓ Sweep complete")
 }

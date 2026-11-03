@@ -7,7 +7,7 @@ import { writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { isDeepStrictEqual, parseArgs } from "node:util"
-import { Arbitrary, Effect, Option, Ref, Schema } from "effect"
+import { Arbitrary, Effect, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
 import { isJsonObject, member, runCase, type FixtureCase } from "../src/conformance"
 import { fuzzCase } from "../src/fuzz-arbitraries"
 
@@ -38,7 +38,7 @@ const oracle = spawn(oraclePath, { stdio: ["pipe", "pipe", "inherit"] })
 async function* lines(stream: AsyncIterable<string>) {
 	let pending = ""
 	for await (const chunk of stream) {
-		const parts = (pending + chunk).split("\n")
+		const parts = Str.split("\n")(pending + chunk)
 		pending = parts.pop() ?? ""
 		yield* parts
 	}
@@ -64,7 +64,7 @@ const clip = (value: Schema.Json | undefined, at = 0) => {
 		typeof value === "string" ? value : Option.getOrElse(encodeJsonOption(value), () => "undefined")
 	return text.length <= 160
 		? text
-		: `…${text.slice(Math.max(0, at - 60), at + 100)}… (${text.length} chars)`
+		: `…${Str.slice(Math.max(0, at - 60), at + 100)(text)}… (${text.length} chars)`
 }
 
 /** The first path where the two outcomes differ, with both sides clipped around it. */
@@ -75,14 +75,15 @@ const firstDifference = (
 ): string | null => {
 	if (isDeepStrictEqual(ts, rust)) return null
 	if (typeof ts === "string" && typeof rust === "string") {
-		const at = [...ts].findIndex((char, index) => char !== [...rust][index])
+		const rustChars = Array.from(rust)
+		const at = Array.from(ts).findIndex((char, index) => char !== rustChars[index])
 		return `${path} at char ${at}\n  ts:   ${clip(ts, at)}\n  rust: ${clip(rust, at)}`
 	}
 	if (isJsonObject(ts) && isJsonObject(rust)) {
 		const keys = [...new Set([...Object.keys(ts), ...Object.keys(rust)])]
-		const nested = keys
-			.map((key) => firstDifference(member(ts, key), member(rust, key), `${path}.${key}`))
-			.find((difference) => difference !== null)
+		const nested = Arr.map(keys, (key) =>
+			firstDifference(member(ts, key), member(rust, key), `${path}.${key}`),
+		).find((difference) => difference !== null)
 		if (nested !== undefined) return nested
 	}
 	return `${path}\n  ts:   ${clip(ts)}\n  rust: ${clip(rust)}`
@@ -95,7 +96,9 @@ const exercised = (fixture: FixtureCase, outcome: Schema.Json): Exercised => {
 	const input = encodeJson(fixture.input)
 	const output = encodeJson(outcome)
 	if (member(outcome, "dropped") === true) return "dropped"
-	return output.includes("REDACTED") || output.includes("hash:") || output.length < input.length - 60
+	return Str.includes("REDACTED")(output) ||
+		Str.includes("hash:")(output) ||
+		output.length < input.length - 60
 		? "redacted"
 		: "untouched"
 }

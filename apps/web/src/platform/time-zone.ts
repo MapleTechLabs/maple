@@ -1,5 +1,5 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 
 // The stored time zone preference.
 export const TIMEZONE_STORAGE_KEY = "maple.preferences.timezone"
@@ -15,10 +15,10 @@ export class TimeZoneError extends Schema.TaggedError<TimeZoneError>()("@maple/w
 }) {}
 
 const isValidZone = (zone: string): Effect.Effect<boolean> =>
-	zone.trim().length === 0
+	Str.trim(zone).length === 0
 		? Effect.succeed(false)
 		: Effect.try({
-				try: () => new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date()),
+				try: () => new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(0),
 				catch: (cause) => new TimeZoneError({ message: `Unknown time zone ${zone}`, cause }),
 			}).pipe(
 				Effect.as(true),

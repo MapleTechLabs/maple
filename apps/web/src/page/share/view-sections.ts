@@ -7,6 +7,7 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { Message } from "./message"
 import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `DashboardSectionView` with `readOnly`: the chevron, the title and the tabs, no editing; the classes are
 // the editable header's.
@@ -16,7 +17,7 @@ type H = HtmlBuilder<Message>
 const tabBar = (h: H, section: DashboardSection, activeTabId: string): Html =>
 	h.div(
 		[h.Class("flex min-w-0 items-center gap-1 overflow-x-auto"), h.Role("tablist")],
-		section.tabs.map((tab) => {
+		Arr.map(section.tabs, (tab) => {
 			const isActive = tab.id === activeTabId
 			return h.keyed("div")(
 				tab.id,
@@ -38,7 +39,12 @@ const tabBar = (h: H, section: DashboardSection, activeTabId: string): Html =>
 							className: "min-w-0 max-w-48 font-medium outline-none",
 							attributes: [h.Role("tab"), h.AriaSelected(isActive)],
 						},
-						[h.span([h.Class("block truncate text-xs font-medium"), h.Title(tab.title)], [tab.title])],
+						[
+							h.span(
+								[h.Class("block truncate text-xs font-medium"), h.Title(tab.title)],
+								[tab.title],
+							),
+						],
 					),
 				],
 			)
@@ -54,7 +60,10 @@ export type SharedSectionInputs = Readonly<{
 }>
 
 /** One group of a shared board: a collapsed one draws its header only, so its tiles never fetch. */
-export const sharedSection = (h: H, { section, activeTabId, isCollapsed, grid }: SharedSectionInputs): Html => {
+export const sharedSection = (
+	h: H,
+	{ section, activeTabId, isCollapsed, grid }: SharedSectionInputs,
+): Html => {
 	const hasTabs = section.tabs.length >= 2
 	return h.keyed("section")(
 		section.id,
@@ -68,20 +77,33 @@ export const sharedSection = (h: H, { section, activeTabId, isCollapsed, grid }:
 								h,
 								{
 									size: "icon-xs",
-									label: isCollapsed ? `Expand ${section.title}` : `Collapse ${section.title}`,
+									label: isCollapsed
+										? `Expand ${section.title}`
+										: `Collapse ${section.title}`,
 									attributes: [
 										h.AriaExpanded(!isCollapsed),
-										h.OnClick(Message.ClickedSectionChevron({ sectionId: section.id, collapsed: !isCollapsed })),
+										h.OnClick(
+											Message.ClickedSectionChevron({
+												sectionId: section.id,
+												collapsed: !isCollapsed,
+											}),
+										),
 									],
 								},
 								[
 									icon(h, "ChevronDownIcon", {
-										className: cn("transition-transform duration-150", isCollapsed && "-rotate-90"),
+										className: cn(
+											"transition-transform duration-150",
+											isCollapsed && "-rotate-90",
+										),
 									}),
 								],
 							)
 						: h.div([h.Class("size-6 shrink-0"), h.AriaHidden(true)]),
-					h.span([h.Class("min-w-0 truncate text-sm font-semibold"), h.Title(section.title)], [section.title]),
+					h.span(
+						[h.Class("min-w-0 truncate text-sm font-semibold"), h.Title(section.title)],
+						[section.title],
+					),
 					...(hasTabs && !isCollapsed
 						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, section, activeTabId)])]
 						: []),

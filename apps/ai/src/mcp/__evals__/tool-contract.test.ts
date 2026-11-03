@@ -4,7 +4,7 @@
  * and the rendered text.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { FindErrorsOutput } from "@maple/domain/mcp-outputs"
 import { makeEvalRuntime, runToolDirect, markdown, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
@@ -76,7 +76,7 @@ describe("a tool declared with define", () => {
 
 	it("accepts a retired parameter name and filters by it", async () => {
 		await call("find_errors", { service_name: "checkout" })
-		expect(issuedSql.join("\n")).toContain("checkout")
+		expect(Arr.join(issuedSql, "\n")).toContain("checkout")
 	})
 
 	it("tells the model which keys it ignored, and what it probably meant", async () => {

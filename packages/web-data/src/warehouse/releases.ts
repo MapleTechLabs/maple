@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import {
 	CommitSha,
@@ -109,8 +109,8 @@ const getReleasesEffect = Effect.fn("QueryEngine.getReleases")(function* ({
 	)
 
 	return {
-		releases: result.releases.map(toRelease),
-		timeline: result.timeline.map(toTimelineBucket),
+		releases: Arr.map(result.releases, toRelease),
+		timeline: Arr.map(result.timeline, toTimelineBucket),
 		truncated: result.truncated,
 		startTime: toIsoBucket(startTime),
 		endTime: toIsoBucket(endTime),
@@ -201,8 +201,8 @@ const getReleaseDetailEffect = Effect.fn("QueryEngine.getReleaseDetail")(functio
 	)
 
 	return {
-		versions: result.versions.map(toRelease),
-		timeline: result.timeline.map(toTimelineBucket),
+		versions: Arr.map(result.versions, toRelease),
+		timeline: Arr.map(result.timeline, toTimelineBucket),
 		points: buildServiceDetailPoints(result.timeseries, startTime, endTime, bucketSeconds, nowMs),
 		baselinePoints: buildServiceDetailPoints(
 			result.baselineTimeseries,
@@ -211,7 +211,7 @@ const getReleaseDetailEffect = Effect.fn("QueryEngine.getReleaseDetail")(functio
 			bucketSeconds,
 			nowMs,
 		),
-		errorFingerprints: result.errorFingerprints.map((row) => ({
+		errorFingerprints: Arr.map(result.errorFingerprints, (row) => ({
 			fingerprintHash: row.fingerprintHash,
 			count: row.count,
 			firstSeen: toIsoBucket(row.firstSeen),

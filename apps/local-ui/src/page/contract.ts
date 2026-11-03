@@ -1,5 +1,5 @@
 import { isRangeKey } from "../lib/time"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import type { LocalEnv } from "../env"
 import type { TimeFormat } from "./kit/local-time"
@@ -51,7 +51,7 @@ export type ParamUpdates = Readonly<Record<string, string | ReadonlyArray<string
 /** `setParams` (lib/router.ts `useQueryParams`): same path, keys set or (empty) removed. */
 export const withParams = (location: Location, updates: ParamUpdates): string => {
 	const next = queryOf(location)
-	Object.entries(updates).forEach(([key, value]) => {
+	Arr.forEach(Rec.toEntries(updates), ([key, value]) => {
 		next.delete(key)
 		if (typeof value === "string") {
 			if (value !== "") next.set(key, value)

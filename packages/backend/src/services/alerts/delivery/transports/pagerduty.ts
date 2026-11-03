@@ -1,4 +1,4 @@
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { AlertSeverity } from "@maple/domain/http"
 import { displayGroupKey, formatAlertHeadline, truncate, uptimeSummaryLine } from "../../alert-formatting"
@@ -177,7 +177,7 @@ export const verifyPagerDutyRoutingKey = (
 			if (response.status === 400) {
 				return Effect.orElseSucceed(response.text, () => "").pipe(
 					Effect.map((body): PagerDutyKeyVerification => {
-						const reason = truncate(body.trim().replace(/\s+/g, " "), 500)
+						const reason = truncate(Str.replace(/\s+/g, " ")(Str.trim(body)), 500)
 						return { status: "invalid", reason: reason || "Invalid routing key" }
 					}),
 				)

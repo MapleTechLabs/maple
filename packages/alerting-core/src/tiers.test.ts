@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { foldObservation, type HysteresisRow } from "./hysteresis"
 import {
@@ -56,14 +56,14 @@ const replay = (
 		incident: null as AlertLifecycleIncident | null,
 		plans: [] as ReadonlyArray<AlertLifecyclePlan>,
 	}
-	const final = values.reduce((acc, value, tick) => {
+	const final = Arr.reduce(values, initial, (acc, value, tick) => {
 		const next = plan({
 			policy: {
 				consecutiveBreachesRequired: policy.n,
 				breachWindow: policy.m ?? policy.n,
 				consecutiveHealthyRequired: policy.r,
 				renotifyIntervalMinutes: 60,
-				severities: tiers.map((tier) => tier.severity),
+				severities: Arr.map(tiers, (tier) => tier.severity),
 			},
 			evaluation: evaluate(tiers, value),
 			state: acc.state,
@@ -80,8 +80,8 @@ const replay = (
 						lastDeliveredEventType: "trigger",
 					}
 		return { state: next.state, incident, plans: [...acc.plans, next] }
-	}, initial)
-	return { plans: final.plans, severities: final.plans.map((p) => p.severity) }
+	})
+	return { plans: final.plans, severities: Arr.map(final.plans, (p) => p.severity) }
 }
 
 describe("severity tiers", () => {
@@ -90,7 +90,7 @@ describe("severity tiers", () => {
 			n: 2,
 			r: 2,
 		})
-		expect(plans.map((p) => p.transition)).toEqual([
+		expect(Arr.map(plans, (p) => p.transition)).toEqual([
 			"none",
 			"opened",
 			// One critical breach is not N = 2 of them yet: still a warning incident.
@@ -125,7 +125,7 @@ describe("severity tiers", () => {
 	it("holds an incident open inside the recovery band", () => {
 		// Trigger above 10, clear only at or below 8: 9 is the dead band.
 		const { plans } = replay([warnAt(10, 8)], [12, 12, 9, 9, 9, 7, 7], { n: 2, r: 2 })
-		expect(plans.map((p) => p.transition)).toEqual([
+		expect(Arr.map(plans, (p) => p.transition)).toEqual([
 			"none",
 			"opened",
 			"none",
@@ -138,31 +138,31 @@ describe("severity tiers", () => {
 
 	it("does not count a recovery-band check as healthy in the audit counters", () => {
 		const { plans } = replay([warnAt(10, 8)], [12, 12, 9, 7], { n: 2, r: 2 })
-		expect(plans.map((p) => p.state.consecutiveHealthy)).toEqual([0, 0, 0, 1])
+		expect(Arr.map(plans, (p) => p.state.consecutiveHealthy)).toEqual([0, 0, 0, 1])
 	})
 
 	it("does not re-open from inside the recovery band", () => {
 		const { plans } = replay([warnAt(10, 8)], [9, 9, 9], { n: 1, r: 1 })
-		expect(plans.every((p) => p.transition === "none")).toBe(true)
+		expect(Arr.every(plans, (p) => p.transition === "none")).toBe(true)
 	})
 
 	it("opens on N breaches within the last M checks, not when they are spread wider", () => {
 		const within = replay([warnAt(10)], [15, 5, 15, 5, 15], { n: 3, m: 5, r: 2 })
-		expect(within.plans.map((p) => p.transition)).toEqual(["none", "none", "none", "none", "opened"])
+		expect(Arr.map(within.plans, (p) => p.transition)).toEqual(["none", "none", "none", "none", "opened"])
 
 		const spread = replay([warnAt(10)], [15, 5, 5, 5, 15, 5, 5, 15], { n: 3, m: 5, r: 2 })
-		expect(spread.plans.some((p) => p.transition === "opened")).toBe(false)
+		expect(Arr.some(spread.plans, (p) => p.transition === "opened")).toBe(false)
 	})
 
 	it("never opens on a tick that is not itself breaching", () => {
 		// 2 of the last 3 are breaches once the third tick lands, but that tick is clear.
 		const { plans } = replay([warnAt(10)], [15, 15, 5], { n: 3, m: 3, r: 1 })
-		expect(plans.map((p) => p.transition)).toEqual(["none", "none", "none"])
+		expect(Arr.map(plans, (p) => p.transition)).toEqual(["none", "none", "none"])
 	})
 
 	it("ignores skipped checks: they neither count toward nor reset a run", () => {
 		const { plans } = replay([warnAt(10)], [15, null, 15], { n: 2, r: 2 })
-		expect(plans.map((p) => p.transition)).toEqual(["none", "none", "opened"])
+		expect(Arr.map(plans, (p) => p.transition)).toEqual(["none", "none", "opened"])
 	})
 
 	it("escalates, not resolves, when its rule's only tier changes severity", () => {
@@ -190,11 +190,11 @@ describe("severity tiers", () => {
 
 	it("leaves a steady group's history byte-identical, so the state upsert can be skipped", () => {
 		const healthy = replay([warnAt(10), critAt(20)], [1, 1, 1, 1, 1, 1], { n: 2, m: 4, r: 3 })
-		const histories = healthy.plans.map((p) => JSON.stringify(p.state.history))
+		const histories = Arr.map(healthy.plans, (p) => JSON.stringify(p.state.history))
 		expect(histories.at(-1)).toEqual(histories.at(-2))
 
 		const firing = replay([warnAt(10)], [15, 15, 15, 15, 15, 15], { n: 2, m: 4, r: 3 })
-		const firingHistories = firing.plans.map((p) => JSON.stringify(p.state.history))
+		const firingHistories = Arr.map(firing.plans, (p) => JSON.stringify(p.state.history))
 		expect(firingHistories.at(-1)).toEqual(firingHistories.at(-2))
 	})
 })
@@ -217,12 +217,26 @@ describe("single-tier rules behave exactly as the consecutive-count machine did"
 		const rolls = lcg(seed)(300)
 		const n = 1 + Math.floor(rolls[0]! * 3)
 		const r = 1 + Math.floor(rolls[1]! * 3)
-		const values = rolls.slice(2).map((roll) => (roll < 0.1 ? null : roll < 0.55 ? 15 : 5))
+		const values = Arr.map(rolls.slice(2), (roll) => (roll < 0.1 ? null : roll < 0.55 ? 15 : 5))
 
 		const tiered = replay([warnAt(10)], values, { n, r })
 
 		const config = { breachesToOpen: n, healthyToResolve: r, cooldownMs: 0 }
-		const legacy = values.reduce(
+		const legacy = Arr.reduce(
+			values,
+			{
+				row: {
+					consecutiveBreaches: 0,
+					consecutiveHealthy: 0,
+					incidentOpen: false,
+					lastResolvedAtMs: null,
+				} as HysteresisRow,
+				outcomes: [] as ReadonlyArray<{
+					transition: string
+					consecutiveBreaches: number
+					consecutiveHealthy: number
+				}>,
+			},
 			(acc, value, tick) => {
 				const status = value === null ? "skipped" : value > 10 ? "breached" : "healthy"
 				const outcome = Effect.runSync(foldObservation(acc.row, status, config, tick * 60_000))
@@ -239,31 +253,18 @@ describe("single-tier rules behave exactly as the consecutive-count machine did"
 				}
 				return { row, outcomes: [...acc.outcomes, outcome] }
 			},
-			{
-				row: {
-					consecutiveBreaches: 0,
-					consecutiveHealthy: 0,
-					incidentOpen: false,
-					lastResolvedAtMs: null,
-				} as HysteresisRow,
-				outcomes: [] as ReadonlyArray<{
-					transition: string
-					consecutiveBreaches: number
-					consecutiveHealthy: number
-				}>,
-			},
 		).outcomes
 
 		const asLegacy = (transition: string) =>
 			transition === "opened" ? "open" : transition === "resolved" ? "resolve" : "other"
-		expect(tiered.plans.map((p) => asLegacy(p.transition))).toEqual(
-			legacy.map((o) =>
+		expect(Arr.map(tiered.plans, (p) => asLegacy(p.transition))).toEqual(
+			Arr.map(legacy, (o) =>
 				o.transition === "open" || o.transition === "resolve" ? o.transition : "other",
 			),
 		)
-		expect(tiered.plans.map((p) => [p.state.consecutiveBreaches, p.state.consecutiveHealthy])).toEqual(
-			legacy.map((o) => [o.consecutiveBreaches, o.consecutiveHealthy]),
-		)
+		expect(
+			Arr.map(tiered.plans, (p) => [p.state.consecutiveBreaches, p.state.consecutiveHealthy]),
+		).toEqual(Arr.map(legacy, (o) => [o.consecutiveBreaches, o.consecutiveHealthy]))
 	})
 
 	it("replays a pre-history state row from its counters", () => {

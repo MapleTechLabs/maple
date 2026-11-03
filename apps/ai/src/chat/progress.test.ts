@@ -1,6 +1,6 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { INVESTIGATION_PROGRESS_STEPS, type InvestigationProgress } from "@maple/domain/http"
-import { Duration, Effect, Fiber, Ref } from "effect"
+import { Duration, Effect, Fiber, Ref, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 
 import {
@@ -38,10 +38,10 @@ describe("stepLabel", () => {
 
 	it("keeps a long argument to one clamped line", () => {
 		const label = stepLabel("sandbox_grep", {
-			pattern: "a".repeat(80),
+			pattern: Str.repeat(80)("a"),
 		})
 		expect(label.length).toBeLessThan(60)
-		expect(label.endsWith("…")).toBe(true)
+		expect(Str.endsWith("…")(label)).toBe(true)
 	})
 
 	it("keeps acronyms upper case", () => {
@@ -74,7 +74,7 @@ describe("makeProgressFeed", () => {
 			yield* settle
 			assert.lengthOf(writes, 1)
 			assert.deepEqual(
-				writes[0]!.steps.map((step) => step.label),
+				Arr.map(writes[0]!.steps, (step) => step.label),
 				["Search logs"],
 			)
 		}),

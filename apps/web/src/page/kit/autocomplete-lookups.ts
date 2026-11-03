@@ -7,7 +7,7 @@ import {
 	getTracesFacets,
 } from "@maple/web-data/warehouse/traces"
 import type { MapleInternalHttp, WarehouseExecutor } from "@maple/web-data/warehouse/warehouse-services"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import type { TimeWindow } from "../../data/time-range"
 
 // The autocomplete lookups a
@@ -32,11 +32,13 @@ export type LookupNames = typeof LookupNames.Type
 
 /** `toNames`: trimmed, non-empty, each once. */
 const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): ReadonlyArray<string> =>
-	(rows ?? [])
-		.map((row) => row.name.trim())
-		.filter((name, index, all) => name !== "" && all.indexOf(name) === index)
-const keysOf = (response: { readonly data: ReadonlyArray<{ readonly attributeKey: string }> }): LookupNames => ({
-	keys: response.data.map((row) => row.attributeKey),
+	Arr.map(rows ?? [], (row) => Str.trim(row.name)).filter(
+		(name, index, all) => name !== "" && all.indexOf(name) === index,
+	)
+const keysOf = (response: {
+	readonly data: ReadonlyArray<{ readonly attributeKey: string }>
+}): LookupNames => ({
+	keys: Arr.map(response.data, (row) => row.attributeKey),
 })
 
 /** One field of a lookup's answer, or none. */
@@ -70,7 +72,7 @@ export const autocompleteLookup = (
 			return Effect.map(getMetricAttributeKeys({ data: window }), keysOf)
 		case "productEventNames":
 			return Effect.map(getProductEventNames({ data: { ...window, limit: 200 } }), (response) => ({
-				keys: response.data.map((row) => row.eventName),
+				keys: Arr.map(response.data, (row) => row.eventName),
 			}))
 		case "productEventAttributeKeys":
 			return Effect.map(getProductEventAttributeKeys({ data: window }), keysOf)

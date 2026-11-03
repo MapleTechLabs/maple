@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { redactText } from "./evidence-input"
+import { String as Str } from "effect"
 
 describe("redactText", () => {
 	it("takes out addresses, links and long tokens", () => {
@@ -13,7 +14,7 @@ describe("redactText", () => {
 
 	it("drops a word the length cut split, so half an address never gets through unscrubbed", () => {
 		// Cut at 20 characters: the address starts at 18 and would survive as "ad".
-		const text = redactText(`${"word ".repeat(3)}xyz ada@acme.test and more text`, 10)
+		const text = redactText(`${Str.repeat(3)("word ")}xyz ada@acme.test and more text`, 10)
 		expect(text).not.toContain("ad")
 		expect(text).toBe("word word ")
 	})

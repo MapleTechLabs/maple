@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { decodeLogKey, encodeLogKey } from "./log-key"
+import { String as Str } from "effect"
 
 describe("log-key", () => {
 	// The key carries the stored nanosecond literal, which the log lookup matches exactly.
@@ -40,8 +41,8 @@ describe("log-key", () => {
 		const token = encodeLogKey({
 			exactTimestamp: "2026-05-19 12:54:36.999999",
 			serviceName: "svc/with+chars",
-			traceId: "ff".repeat(16),
-			spanId: "ee".repeat(8),
+			traceId: Str.repeat(16)("ff"),
+			spanId: Str.repeat(8)("ee"),
 		})
 		expect(token).not.toMatch(/[+/=]/)
 	})
@@ -62,10 +63,10 @@ describe("log-key", () => {
 		// sanity: the valid token decodes
 		expect(decodeLogKey(validToken)).not.toBeNull()
 		// a token whose payload is a 2-tuple is rejected
-		const shortTuple = btoa(JSON.stringify(["a", "b"]))
-			.replace(/\+/g, "-")
-			.replace(/\//g, "_")
-			.replace(/=+$/, "")
+		const shortTuple = Str.replace(
+			/=+$/,
+			"",
+		)(Str.replace(/\//g, "_")(Str.replace(/\+/g, "-")(btoa(JSON.stringify(["a", "b"])))))
 		expect(decodeLogKey(shortTuple)).toBeNull()
 	})
 

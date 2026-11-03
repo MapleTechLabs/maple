@@ -10,6 +10,7 @@ import {
 	type PrReviewFinding,
 	type PrReviewFindingSubmission,
 } from "@maple/domain/http"
+import { Array as Arr, String as Str } from "effect"
 
 export interface ChildFindings {
 	/** One child's answer, as the parent received it. */
@@ -28,15 +29,15 @@ export const makeChildFindings = (): ChildFindings => {
 }
 
 /** Repo-relative, so `./src/a.ts`, `/src/a.ts` and `src/a.ts` compare equal. */
-const canonicalPath = (path: string) => path.trim().replace(/^(\.\/|\/)+/, "")
+const canonicalPath = (path: string) => Str.replace(/^(\.\/|\/)+/, "")(Str.trim(path))
 
 /** `path:line` once a list bullet and backticks are gone; a path never holds whitespace. */
 const ANCHOR = /^(\S+):(\d+)$/
 
 /** The severity the review would post: anything but a note or a critical is a warning. */
 const severityOf = (raw: string): "critical" | "warn" | "info" => {
-	const word = raw.toLowerCase().replace(/[^a-z]/g, "")
-	return word.startsWith("crit") ? "critical" : word === "info" || word === "note" ? "info" : "warn"
+	const word = Str.replace(/[^a-z]/g, "")(Str.toLowerCase(raw))
+	return Str.startsWith("crit")(word) ? "critical" : word === "info" || word === "note" ? "info" : "warn"
 }
 
 /**
@@ -44,9 +45,9 @@ const severityOf = (raw: string): "critical" | "warn" | "info" => {
  * line each, as `PR_REVIEW_WORKER_PROMPT` asks. Lines in any other shape are skipped.
  */
 export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindingSubmission> =>
-	answer.split("\n").flatMap((line) => {
-		const parts = line.split("|").map((part) => part.trim())
-		const anchor = ANCHOR.exec((parts[0] ?? "").replace(/^[-*]\s+/, "").replaceAll("`", ""))
+	Arr.flatMap(Str.split("\n")(answer), (line) => {
+		const parts = Arr.map(Str.split("|")(line), (part) => Str.trim(part))
+		const anchor = ANCHOR.exec(Str.replaceAll("`", "")(Str.replace(/^[-*]\s+/, "")(parts[0] ?? "")))
 		if (parts.length < 6 || anchor === null) return []
 		const [, severity, category, title, why, fix, check] = parts
 		return [
@@ -54,7 +55,7 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 				path: canonicalPath(anchor[1]!),
 				line: Number(anchor[2]),
 				severity: severityOf(severity!),
-				category: category!.toLowerCase(),
+				category: Str.toLowerCase(category!),
 				title: title!,
 				body: why!,
 				...(fix ? { suggestion: fix } : undefined),
@@ -81,8 +82,8 @@ export const unaccountedChildFindings = (
 	// One filed finding or dismissal accounts for one child warning, so two nearby ones need two. A
 	// note does not: downgrading a child's warning is a dismissal, said with its reason.
 	const claimed = new Set<PrReviewFinding | PrReviewChildDismissal>()
-	const accounts = [...filed.filter((finding) => finding.severity !== "info"), ...dismissed]
-	return children.filter((child) => {
+	const accounts = [...Arr.filter(filed, (finding) => finding.severity !== "info"), ...dismissed]
+	return Arr.filter(children, (child) => {
 		if (child.severity === "info") return false
 		const match = accounts.find((entry) => !claimed.has(entry) && near(entry, child))
 		if (match !== undefined) claimed.add(match)
@@ -97,7 +98,7 @@ export const unaccountedChildFindings = (
 export const childFindingsToFile = (
 	unaccounted: ReadonlyArray<PrReviewFindingSubmission>,
 ): ReadonlyArray<PrReviewFinding> =>
-	unaccounted.flatMap((raw) => {
+	Arr.flatMap(unaccounted, (raw) => {
 		const finding =
 			normalizePrReviewFinding(raw) ??
 			normalizePrReviewFinding({ ...raw, category: "correctness", checkId: null })
@@ -118,11 +119,15 @@ export const closeOutFindings = (
 
 /** The one-time refusal `submit_review` answers with while a child's warning is unaccounted for. */
 export const childFindingsRefusal = (unaccounted: ReadonlyArray<PrReviewFindingSubmission>): string =>
-	[
-		`Your child reviewers reported ${unaccounted.length === 1 ? "a finding" : `${unaccounted.length} findings`} this review neither files nor dismisses:`,
-		...unaccounted.map(
-			(finding) => `- ${finding.path}:${finding.line} (${finding.severity}) ${finding.title}`,
-		),
-		"File each one that holds, or list it in childDismissals with its path, line and the reason it does not hold, " +
-			"then call submit_review again. Any still unaccounted for on that call is filed as the child reported it.",
-	].join("\n")
+	Arr.join(
+		[
+			`Your child reviewers reported ${unaccounted.length === 1 ? "a finding" : `${unaccounted.length} findings`} this review neither files nor dismisses:`,
+			...Arr.map(
+				unaccounted,
+				(finding) => `- ${finding.path}:${finding.line} (${finding.severity}) ${finding.title}`,
+			),
+			"File each one that holds, or list it in childDismissals with its path, line and the reason it does not hold, " +
+				"then call submit_review again. Any still unaccounted for on that call is filed as the child reported it.",
+		],
+		"\n",
+	)

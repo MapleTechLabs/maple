@@ -7,6 +7,7 @@ import { dirname, join } from "node:path"
 import { checkpointQuarantineRoot, restoreTransactionPath } from "@maple/local-server/checkpoints"
 import { migrationJournalPath, migrationRootPath } from "@maple/local-server/local-store-migration-journal"
 import { listRetainedLeftovers, pruneRetainedLeftovers } from "../src/server/retained-leftovers"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const withParent = async (run: (dataDir: string) => Promise<void>): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-retained-"))
@@ -21,7 +22,7 @@ const withParent = async (run: (dataDir: string) => Promise<void>): Promise<void
 
 const dir = (path: string, file = "payload"): string => {
 	mkdirSync(path, { recursive: true })
-	writeFileSync(join(path, file), "x".repeat(10))
+	writeFileSync(join(path, file), Str.repeat(10)("x"))
 	return path
 }
 
@@ -71,7 +72,7 @@ describe("retained leftovers", () => {
 
 			const inventory = await listRetainedLeftovers(dataDir)
 
-			deepStrictEqual(inventory.leftovers.map((item) => item.kind).sort(), [
+			deepStrictEqual(Arr.map(inventory.leftovers, (item) => item.kind).sort(), [
 				"checkpoint-quarantine",
 				"maintenance-lock",
 				"migration-abandoned-journal",
@@ -81,7 +82,7 @@ describe("retained leftovers", () => {
 				"restore-replaced-store",
 				"restore-transaction",
 			])
-			ok(inventory.leftovers.every((item) => item.bytes > 0))
+			ok(Arr.every(inventory.leftovers, (item) => item.bytes > 0))
 			strictEqual(
 				inventory.leftovers.find((item) => item.kind === "migration-source")?.path,
 				dirname(expected.source),
@@ -91,7 +92,7 @@ describe("retained leftovers", () => {
 			const removed = await pruneRetainedLeftovers(dataDir, randomUUID())
 
 			strictEqual(removed.length, 8)
-			for (const path of [...Object.values(expected), record, abandonedJournal])
+			for (const path of [...Rec.values(expected), record, abandonedJournal])
 				ok(!existsSync(path), path)
 			for (const path of kept) ok(existsSync(path), path)
 			ok(existsSync(join(migrationRootPath(dataDir, "local-migration-a"), "journal.json")))

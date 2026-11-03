@@ -1,7 +1,7 @@
 import type { MarkdownDocument } from "@foldkit/markdown"
 import { highlightCode } from "@maple/views/lib/highlight"
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -30,18 +30,17 @@ export type ClampedRendering = "text" | "json" | "md"
 /** The prefix of `text` a clamped body mounts: 72 lines or 8000 characters, whichever ends first. */
 export const previewOf = (text: string): string => {
 	const limit = Math.min(text.length, PREVIEW_CHARS)
-	const breaks = text.slice(0, limit).split("\n")
-	if (breaks.length <= PREVIEW_LINES) return limit === text.length ? text : text.slice(0, limit)
-	return breaks.slice(0, PREVIEW_LINES).join("\n")
+	const breaks = Str.split("\n")(Str.slice(0, limit)(text))
+	if (breaks.length <= PREVIEW_LINES) return limit === text.length ? text : Str.slice(0, limit)(text)
+	return Arr.join(breaks.slice(0, PREVIEW_LINES), "\n")
 }
 
 const exceedsLines = (text: string, lines: number): boolean => text.split("\n", lines + 1).length > lines
 
 /** The first non-blank line, trimmed: a collapsed disclosure's preview. */
 export const firstLine = (text: string): string =>
-	text
-		.split("\n")
-		.find((line) => line.trim() !== "")
+	Str.split("\n")(text)
+		.find((line) => Str.trim(line) !== "")
 		?.trim() ?? ""
 
 const ClampMessage = defineMessageUnion({ MeasuredClamp: { isClamped: Schema.Boolean } })

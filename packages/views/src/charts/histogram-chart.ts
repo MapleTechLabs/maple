@@ -1,5 +1,6 @@
+import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Message, Model } from "./chart"
@@ -36,16 +37,15 @@ const asFiniteNumber = (value: unknown): number => {
 
 const isPrebucketed = (rows: ReadonlyArray<Record<string, unknown>>): boolean =>
 	rows.length > 0 &&
-	rows.every((row) => typeof row.name === "string" && typeof row.value === "number") &&
+	Arr.every(rows, (row) => typeof row.name === "string" && typeof row.value === "number") &&
 	rows.length <= 200
 
 const pickValueField = (rows: ReadonlyArray<Record<string, unknown>>): string => {
 	const first = rows[0]
 	if (first === undefined) return "value"
 	return (
-		Object.keys(first).find(
-			(key) => key !== "name" && key !== "bucket" && typeof first[key] === "number",
-		) ?? "value"
+		Rec.keys(first).find((key) => key !== "name" && key !== "bucket" && typeof first[key] === "number") ??
+		"value"
 	)
 }
 
@@ -56,9 +56,10 @@ const numericBins = (
 	binWidth: number | undefined,
 ): ReadonlyArray<NumericBin> => {
 	const valueField = pickValueField(source)
-	const values = source
-		.map((row) => row[valueField])
-		.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+	const values = Arr.filter(
+		Arr.map(source, (row) => row[valueField]),
+		(value): value is number => typeof value === "number" && Number.isFinite(value),
+	)
 	if (values.length === 0) return []
 	const min = Math.min(...values)
 	const max = Math.max(...values)
@@ -88,24 +89,26 @@ export const countTooltipBody = (
 		[h.Class("grid min-w-[9rem] items-start gap-1.5"), portal],
 		[
 			h.div(
-				[h.Class("border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight")],
-				[heading],
-			),
-			hstack(h, { gap: "2", className: "w-full" },
 				[
-					h.span([h.Class("size-2.5 shrink-0 rounded-xs"), h.Style({ "background-color": color })]),
-					h.div(
-						[h.Class("flex flex-1 items-center justify-between gap-3 leading-none")],
-						[
-							h.span([h.Class("text-muted-foreground")], ["Count"]),
-							h.span(
-								[h.Class("font-mono font-semibold text-foreground tabular-nums")],
-								[formatNumber(count)],
-							),
-						],
+					h.Class(
+						"border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight",
 					),
 				],
+				[heading],
 			),
+			hstack(h, { gap: "2", className: "w-full" }, [
+				h.span([h.Class("size-2.5 shrink-0 rounded-xs"), h.Style({ "background-color": color })]),
+				h.div(
+					[h.Class("flex flex-1 items-center justify-between gap-3 leading-none")],
+					[
+						h.span([h.Class("text-muted-foreground")], ["Count"]),
+						h.span(
+							[h.Class("font-mono font-semibold text-foreground tabular-nums")],
+							[formatNumber(count)],
+						),
+					],
+				),
+			]),
 		],
 	)
 
@@ -152,8 +155,8 @@ export const view = Submodel.defineView<Model, Message, HistogramChartInputs>((m
 		})
 
 	if (isPrebucketed(source)) {
-		const bins: ReadonlyArray<CategoricalBin> = source.map((row) => ({
-			name: String(row.name ?? EMPTY_VALUE),
+		const bins: ReadonlyArray<CategoricalBin> = Arr.map(source, (row) => ({
+			name: cellText(row.name, EMPTY_VALUE),
 			value: asFiniteNumber(row.value),
 		}))
 		return frame(ChartSpec.CategoricalHistogram({ bins, color, useLogY, showTooltip }))

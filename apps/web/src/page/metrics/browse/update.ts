@@ -1,5 +1,5 @@
 import { toQueryBuilderMetricType } from "@maple/query-model"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
@@ -83,8 +83,8 @@ const requestSparklines = (model: Model, context: PageContext, mode: RequestMode
 	}
 	const { window } = model
 	const pages = gridPages(toEntries(catalog.value), model.visiblePages)
-	const steps = pages.flatMap((entries) =>
-		SPARKLINE_METRIC_TYPES.flatMap((metricType) => {
+	const steps = Arr.flatMap(pages, (entries) =>
+		Arr.flatMap(SPARKLINE_METRIC_TYPES, (metricType) => {
 			const metricNames = namesOfType(entries, metricType)
 			if (metricNames.length === 0) return []
 			const { key: slotKey, input } = sparklineRequest(context.orgId, window, metricType, metricNames)
@@ -99,10 +99,10 @@ const requestSparklines = (model: Model, context: PageContext, mode: RequestMode
 			...model,
 			sparklines: {
 				...model.sparklines,
-				...Object.fromEntries(steps.map((step) => [step.slotKey, step.slot])),
+				...Rec.fromEntries(Arr.map(steps, (step) => [step.slotKey, step.slot])),
 			},
 		},
-		commands: steps.flatMap((step) => step.commands),
+		commands: Arr.flatMap(steps, (step) => step.commands),
 	}
 }
 
@@ -219,7 +219,10 @@ export const routeChanged = (
 		typeSelect: { ...model.typeSelect, value: typeSelectValue(route.search) },
 	}
 	const next: Model = isOutsideQuery ? { ...base, searchInput: query, lastSentQuery: query } : base
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	// A filter or view change reads its new keys under the kept window; only a moved window re-resolves.
 	return routeWindowStep(model.search, route.search, {
 		resolve,
@@ -319,7 +322,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedSearchDebounce: ({ generation }) => {
 			if (generation !== model.searchGeneration) return { model }
-			const trimmed = model.searchInput.trim()
+			const trimmed = Str.trim(model.searchInput)
 			return patchSearch(
 				{ ...model, lastSentQuery: trimmed },
 				{ ...model.search, q: trimmed === "" ? undefined : trimmed },

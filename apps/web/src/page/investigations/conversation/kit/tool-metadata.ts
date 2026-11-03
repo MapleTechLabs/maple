@@ -1,10 +1,11 @@
 import { humanize } from "../../../../lib/humanize"
 import type { IconName } from "@maple/views/ui/icon"
+import { Array as Arr, String as Str } from "effect"
 
 // A tool's label, icon and live activity.
 
 /** Strips the `mcp__<server>__` prefix MCP tools arrive with. */
-export const normalizeToolName = (toolName: string): string => toolName.replace(/^mcp__.+?__/, "")
+export const normalizeToolName = (toolName: string): string => Str.replace(/^mcp__.+?__/, "")(toolName)
 
 const TOOL_LABELS = new Map<string, string>([
 	// observability / diagnostics
@@ -193,16 +194,18 @@ const IRREGULAR_PARTICIPLE = new Map([
 ])
 
 const participle = (verb: string): string =>
-	IRREGULAR_PARTICIPLE.get(verb) ?? (verb.endsWith("e") ? `${verb.slice(0, -1)}ing` : `${verb}ing`)
+	IRREGULAR_PARTICIPLE.get(verb) ??
+	(Str.endsWith("e")(verb) ? `${Str.slice(0, -1)(verb)}ing` : `${verb}ing`)
 
 /** A title-cased word lowered for sentence case; acronyms (`SQL`, `CI`) keep their capitals. */
 const lowerWord = (word: string): string =>
-	word.length > 1 && word === word.toUpperCase() ? word : word.toLowerCase()
+	word.length > 1 && word === Str.toUpperCase(word) ? word : Str.toLowerCase(word)
 
 /** What a running call is doing, in sentence case: `Searching traces`, `Checking system health`. */
 export const toolActivity = (toolName: string): string => {
 	const label = toolLabel(toolName)
-	const [first = "", ...rest] = label.split(" ")
-	if (!LABEL_VERBS.has(first)) return ["Checking", ...label.split(" ").map(lowerWord)].join(" ")
-	return [participle(first), ...rest.map(lowerWord)].join(" ")
+	const [first, ...rest] = Str.split(" ")(label)
+	if (!LABEL_VERBS.has(first))
+		return Arr.join(["Checking", ...Arr.map(Str.split(" ")(label), lowerWord)], " ")
+	return Arr.join([participle(first), ...Arr.map(rest, lowerWord)], " ")
 }

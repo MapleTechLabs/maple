@@ -20,6 +20,7 @@ import { Message } from "./model"
 import type { Trigger } from "./view-charts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The Activity feed and Top queries sections of `PlanetScaleDatabaseData`.
 
@@ -69,7 +70,11 @@ const activityRow = (h: H, event: EventEntry, clock: Clock, trigger: Trigger): H
 							[
 								h.AriaLabel("Open in PlanetScale"),
 								h.Class(
-									typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
+									typographyClass({
+										tone: "muted",
+										hoverTone: "foreground",
+										className: "shrink-0",
+									}),
 								),
 								h.Href(event.url),
 								h.Rel("noreferrer"),
@@ -111,9 +116,9 @@ export const activitySection = (
 		AsyncData.isIdle(slot) || AsyncData.isLoading(slot)
 			? activityLoading(h)
 			: AsyncData.isFailure(slot) || AsyncData.isStale(slot)
-				? typography(h, { size: "xs", tone: "muted", as: "p", className: "py-2" },
-						["Couldn't load the deploy timeline for this window."],
-					)
+				? typography(h, { size: "xs", tone: "muted", as: "p", className: "py-2" }, [
+						"Couldn't load the deploy timeline for this window.",
+					])
 				: events.length === 0
 					? h.p(
 							[h.Class("py-3 text-xs text-muted-foreground")],
@@ -124,16 +129,14 @@ export const activitySection = (
 								h.Class(cn("flex flex-col", refreshingClass(isWaiting))),
 								...(isWaiting ? [h.AriaBusy(true)] : []),
 							],
-							events.map((event) => activityRow(h, event, clock, trigger)),
+							Arr.map(events, (event) => activityRow(h, event, clock, trigger)),
 						)
 	return h.section(
 		[h.Class("space-y-2")],
 		[
 			sectionHeading(h, {
- title: "Activity",
-				actions: typography(h, { size: "2xs", tone: "muted", mono: true },
-					[String(events.length)],
-				),
+				title: "Activity",
+				actions: typography(h, { size: "2xs", tone: "muted", mono: true }, [String(events.length)]),
 			}),
 			body,
 		],
@@ -192,34 +195,30 @@ const insightsList = (
 	}
 	return h.div(
 		[h.Class("space-y-1.5")],
-		response.rows.map((row) =>
+		Arr.map(response.rows, (row) =>
 			panel(h, { className: "px-2.5 py-2" }, [
-				hstack(h, { gap: "2", align: "start", justify: "between" },
-					[
-						h.p(
-							[
-								h.Class(
-									"min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground",
+				hstack(h, { gap: "2", align: "start", justify: "between" }, [
+					h.p(
+						[
+							h.Class("min-w-0 flex-1 truncate font-mono text-2xs font-medium text-foreground"),
+							h.Title(row.normalizedSql),
+						],
+						[row.normalizedSql],
+					),
+					h.span(
+						[
+							h.Class(
+								cn(
+									"shrink-0 font-mono text-3xs tabular-nums",
+									errorRateLevel(row.errorRate) === "neutral"
+										? "text-muted-foreground"
+										: errorRateClass(row.errorRate),
 								),
-								h.Title(row.normalizedSql),
-							],
-							[row.normalizedSql],
-						),
-						h.span(
-							[
-								h.Class(
-									cn(
-										"shrink-0 font-mono text-3xs tabular-nums",
-										errorRateLevel(row.errorRate) === "neutral"
-											? "text-muted-foreground"
-											: errorRateClass(row.errorRate),
-									),
-								),
-							],
-							[formatErrorRate(row.errorRate)],
-						),
-					],
-				),
+							),
+						],
+						[formatErrorRate(row.errorRate)],
+					),
+				]),
 				h.div(
 					[
 						h.Class(
@@ -227,30 +226,30 @@ const insightsList = (
 						),
 					],
 					[
-						typography(h, { mono: true, numeric: true }, [formatNumber(row.queryCount), " calls"]),
-						typography(h, { mono: true, numeric: true },
-							[
-								"p50 ",
-								latencyValue(h, {
-									ms: row.p50LatencyMillis,
-									scale: "p50",
-									className: "text-3xs",
-								}),
-							],
-						),
-						typography(h, { mono: true, numeric: true },
-							[
-								"p99 ",
-								latencyValue(h, {
-									ms: row.p99LatencyMillis,
-									scale: "p99",
-									className: "text-3xs",
-								}),
-							],
-						),
-						typography(h, { mono: true, numeric: true },
-							[formatNumber(row.rowsReadPerQuery), " rows read/query"],
-						),
+						typography(h, { mono: true, numeric: true }, [
+							formatNumber(row.queryCount),
+							" calls",
+						]),
+						typography(h, { mono: true, numeric: true }, [
+							"p50 ",
+							latencyValue(h, {
+								ms: row.p50LatencyMillis,
+								scale: "p50",
+								className: "text-3xs",
+							}),
+						]),
+						typography(h, { mono: true, numeric: true }, [
+							"p99 ",
+							latencyValue(h, {
+								ms: row.p99LatencyMillis,
+								scale: "p99",
+								className: "text-3xs",
+							}),
+						]),
+						typography(h, { mono: true, numeric: true }, [
+							formatNumber(row.rowsReadPerQuery),
+							" rows read/query",
+						]),
 						...(row.statementType ? [h.span([h.Class("uppercase")], [row.statementType])] : []),
 						...(row.lastRunAt === null
 							? []

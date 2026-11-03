@@ -5,7 +5,7 @@ import {
 	DashboardVariableSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
-import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { createQueryDraft } from "@maple/query-engine/query-builder"
 import { makeQueryDataSource } from "@maple/widgets/dashboard"
@@ -78,7 +78,7 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
 			const shares = yield* client.dashboards.listShares({ params: { id } })
-			return shares.map((share) => ({
+			return Arr.map(shares, (share) => ({
 				widgetId: share.widgetId ?? null,
 				mode: share.mode,
 				token: share.token,
@@ -363,13 +363,13 @@ export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 					}
 					measure(element.getBoundingClientRect().width)
 					const resizes = new ResizeObserver((entries) =>
-						entries.forEach((entry) => measure(entry.contentRect.width)),
+						Arr.forEach(entries, (entry) => measure(entry.contentRect.width)),
 					)
 					resizes.observe(element)
 					const reveal = { timer: 0, isShown: false }
 					const intersections = new IntersectionObserver(
 						(entries) => {
-							const isIntersecting = entries.some((entry) => entry.isIntersecting)
+							const isIntersecting = Arr.some(entries, (entry) => entry.isIntersecting)
 							if (isIntersecting && !reveal.isShown && reveal.timer === 0) {
 								reveal.timer = window.setTimeout(() => {
 									reveal.timer = 0

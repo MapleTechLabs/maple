@@ -9,7 +9,7 @@ import {
 	HEALTH_LABEL,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as ServiceMap from "@maple/views/service-map/map/service-map"
@@ -177,7 +177,7 @@ const nodeLabels = <M>(
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Html> => {
 	const related = connectedIds(topology, selectedId)
-	return topology.nodes.map((node) => {
+	return Arr.map(topology.nodes, (node) => {
 		const badge = machineBadge(node)
 		const isSelected = selectedId === node.id
 		return pressable(
@@ -191,7 +191,9 @@ const nodeLabels = <M>(
 					h.Key(node.id),
 					h.Attribute(LABEL, node.id),
 					h.Title(badge ? `${node.label} · ${badge.label}` : node.label),
-					h.Style(nodeSignStyle(palette, node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1)),
+					h.Style(
+						nodeSignStyle(palette, node.dimmed || (related && !related.has(node.id)) ? 0.4 : 1),
+					),
 				],
 			},
 			[middleTruncate(h, { text: node.label, tail: 10 })],
@@ -208,12 +210,15 @@ const linkTags = <M>(
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Html> => {
 	const labelOf = (id: string) => topology.nodes.find((node) => node.id === id)?.label
-	return links
-		.filter((link) => !link.edge.relation)
-		.filter((link) =>
-			selectedId ? link.edge.source === selectedId || link.edge.target === selectedId : link.prominent,
-		)
-		.map((link) => {
+	return Arr.map(
+		Arr.filter(
+			Arr.filter(links, (link) => !link.edge.relation),
+			(link) =>
+				selectedId
+					? link.edge.source === selectedId || link.edge.target === selectedId
+					: link.prominent,
+		),
+		(link) => {
 			const rate = formatRate(link.edge.callsPerSecond, link.edge.hasSampling)
 			return pressable(
 				h,
@@ -232,7 +237,8 @@ const linkTags = <M>(
 				},
 				[rate],
 			)
-		})
+		},
+	)
 }
 
 const districtPlanks = <M>(
@@ -241,7 +247,7 @@ const districtPlanks = <M>(
 	perspective: string,
 	palette: Palette,
 ): ReadonlyArray<Html> =>
-	districts.map((district) =>
+	Arr.map(districts, (district) =>
 		h.span(
 			[
 				h.Key(`${perspective}:${district.id}`),
@@ -327,7 +333,9 @@ const overlays = <M>(
 				h.Class(`pointer-events-none absolute top-4 left-4 px-3 py-2 ${PANEL_CLASS}`),
 			],
 			[
-				heading(h, { level: 2, variant: "section", className: "font-display text-current" }, [copy.title]),
+				heading(h, { level: 2, variant: "section", className: "font-display text-current" }, [
+					copy.title,
+				]),
 				h.p([h.Class(`mt-1 text-2xs opacity-75`)], [copy.description]),
 			],
 		),
@@ -338,16 +346,14 @@ const overlays = <M>(
 					`pointer-events-none absolute right-4 bottom-4 flex flex-wrap gap-3 px-3 py-2 text-3xs ${PANEL_CLASS}`,
 				),
 			],
-			(["healthy", "elevated", "degraded"] as const).map((status) =>
-				hstack(h, { gap: "1.5", as: "span" },
-					[
-						statusDot(h, {
-							tone: "custom",
-							attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
-						}),
-						HEALTH_LABEL[status],
-					],
-				),
+			Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
+				hstack(h, { gap: "1.5", as: "span" }, [
+					statusDot(h, {
+						tone: "custom",
+						attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
+					}),
+					HEALTH_LABEL[status],
+				]),
 			),
 		),
 		h.fieldset(
@@ -428,22 +434,18 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 						},
 						[],
 					),
-					layer(
-						h,
-						{ clip: true, attributes: [h.AriaLabel("Map nodes")] },
-						[
-							...nodeLabels(h, topology, selectedId, palette, toMessage),
-							...linkTags(
-								h,
-								topology,
-								linkLabels(topology, layout),
-								selectedId,
-								palette,
-								toMessage,
-							),
-							...districtPlanks(h, layout.districts, model.perspective, palette),
-						],
-					),
+					layer(h, { clip: true, attributes: [h.AriaLabel("Map nodes")] }, [
+						...nodeLabels(h, topology, selectedId, palette, toMessage),
+						...linkTags(
+							h,
+							topology,
+							linkLabels(topology, layout),
+							selectedId,
+							palette,
+							toMessage,
+						),
+						...districtPlanks(h, layout.districts, model.perspective, palette),
+					]),
 					...overlays(h, model, toMessage),
 				],
 			),

@@ -1,7 +1,7 @@
 import { CH } from "@maple/query-engine"
 import type { TimeBounds } from "../../lib/time"
 import { isMetricType } from "../../lib/units"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr } from "effect"
 import { localParams, queryRows } from "../../data/local-query"
 import { foldCatalogRows } from "./catalog"
 
@@ -23,7 +23,10 @@ export const SparklinePoint = Schema.Struct({
 export type SparklinePoint = typeof SparklinePoint.Type
 
 /** The batched previews, by metric name in arrival order (`ReadonlyMap` as data). */
-export const MetricSparkline = Schema.Struct({ metricName: Schema.String, points: Schema.Array(SparklinePoint) })
+export const MetricSparkline = Schema.Struct({
+	metricName: Schema.String,
+	points: Schema.Array(SparklinePoint),
+})
 export type MetricSparkline = typeof MetricSparkline.Type
 
 /** One sparkline query per metric type: `[metricType, metricNames]`, sorted by type. */
@@ -52,7 +55,11 @@ export const fetchMetricsSummary = (service: string | undefined, bounds: TimeBou
 	Effect.map(
 		queryRows(CH.compile(CH.metricsSummaryQuery({ serviceName: service }), localParams(bounds)), apiBase),
 		(rows): ReadonlyArray<SummaryRow> =>
-			rows.map((r) => ({ metricType: r.metricType, metricCount: r.metricCount, dataPointCount: r.dataPointCount })),
+			Arr.map(rows, (r) => ({
+				metricType: r.metricType,
+				metricCount: r.metricCount,
+				dataPointCount: r.dataPointCount,
+			})),
 	)
 
 /** Sparklines: one query per metric type, folded into points by metric. */
@@ -65,13 +72,21 @@ export const fetchSparklines = (
 	Effect.gen(function* () {
 		const params = { ...localParams(bounds), bucketSeconds }
 		const results = yield* Effect.forEach(
-			groups.flatMap(([metricType, metricNames]) => (isMetricType(metricType) ? [{ metricType, metricNames }] : [])),
+			Arr.flatMap(groups, ([metricType, metricNames]) =>
+				isMetricType(metricType) ? [{ metricType, metricNames }] : [],
+			),
 			({ metricType, metricNames }) =>
-				queryRows(CH.compile(CH.metricsSparklinesQuery({ metricType, metricNames: [...metricNames] }), params), apiBase),
+				queryRows(
+					CH.compile(
+						CH.metricsSparklinesQuery({ metricType, metricNames: [...metricNames] }),
+						params,
+					),
+					apiBase,
+				),
 			{ concurrency: "unbounded" },
 		)
 		const points = new Map<string, Array<SparklinePoint>>()
-		results.flat().forEach((row) => {
+		Arr.forEach(results.flat(), (row) => {
 			const point = {
 				bucket: DateTime.formatIso(row.bucket),
 				avgValue: row.avgValue,
@@ -82,5 +97,8 @@ export const fetchSparklines = (
 			if (list) list.push(point)
 			else points.set(row.metricName, [point])
 		})
-		return [...points.entries()].map(([metricName, list]): MetricSparkline => ({ metricName, points: list }))
+		return Arr.map([...points.entries()], ([metricName, list]): MetricSparkline => ({
+			metricName,
+			points: list,
+		}))
 	})

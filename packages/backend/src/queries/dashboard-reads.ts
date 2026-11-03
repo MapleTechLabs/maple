@@ -16,7 +16,7 @@ import {
 } from "@maple/query-engine"
 import { makeDirectRouteCachePolicy, type QueryEngineDirectError } from "@maple/query-engine/runtime"
 import { Queries, type QueryDefinition } from "@maple/query-engine/registry"
-import { Cause, Clock, DateTime, type Duration, Effect, Option, Schema } from "effect"
+import { Cause, Clock, DateTime, type Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { partitionWindowAround } from "@maple/backend/queries/query-helpers"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
@@ -79,14 +79,13 @@ export const makeRollupFallback =
 		annotate: SpanAnnotator = annotateCurrent,
 	): Effect.Effect<A, E, R> =>
 		rollup(tenant, payload).pipe(
-			Effect.catch((error) => {
-				if (!detect(error)) return Effect.fail(error)
-				return Effect.gen(function* () {
+			Effect.catchIf(detect, () =>
+				Effect.gen(function* () {
 					yield* Effect.logWarning(warning).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
 					yield* annotate("query.rollup.fallback", true)
 					return yield* raw(tenant, payload)
-				})
-			}),
+				}),
+			),
 		)
 
 /**
@@ -179,7 +178,9 @@ export const operationsSparklineBucketSeconds = (startTime: string, endTime: str
 const lastSpanEndMs = (
 	rows: ReadonlyArray<{ readonly startTime: DateTime.Utc; readonly durationMs: number }>,
 ): number =>
-	rows.reduce((latest, row) => Math.max(latest, DateTime.toEpochMillis(row.startTime) + row.durationMs), 0)
+	Arr.reduce(rows, 0, (latest, row) =>
+		Math.max(latest, DateTime.toEpochMillis(row.startTime) + row.durationMs),
+	)
 
 export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 	const { queryEngine } = deps
@@ -233,9 +234,9 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 				sparkline,
 			})
 
-			if (!queries.sparklines) return summaryRows.map((row) => toRow(row, []))
+			if (!queries.sparklines) return Arr.map(summaryRows, (row) => toRow(row, []))
 
-			const spanNames = summaryRows.map((row) => row.spanName)
+			const spanNames = Arr.map(summaryRows, (row) => row.spanName)
 			// The rollup is minute-grain, so every sparkline interval must be a whole-minute multiple.
 			const requestedBucketSeconds = "bucketSeconds" in payload ? payload.bucketSeconds : undefined
 			const bucketSeconds =
@@ -254,13 +255,13 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 				annotate,
 			)
 
-			const sparklines = timeseriesRows.reduce((map, row) => {
+			const sparklines = Arr.reduce(timeseriesRows, new Map<string, SparklinePoint[]>(), (map, row) => {
 				const points = map.get(row.spanName) ?? []
 				points.push({ bucket: DateTime.formatIso(row.bucket), count: toNumber(row.count) })
 				return map.set(row.spanName, points)
-			}, new Map<string, SparklinePoint[]>())
+			})
 
-			return summaryRows.map((row) => toRow(row, sparklines.get(row.spanName) ?? []))
+			return Arr.map(summaryRows, (row) => toRow(row, sparklines.get(row.spanName) ?? []))
 		})
 
 	const operationsQueries = {
@@ -319,7 +320,7 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 					annotate,
 				).pipe(
 					Effect.map((rows) =>
-						rows.map((row) => ({
+						Arr.map(rows, (row) => ({
 							spanName: row.spanName,
 							spanCount: row.spanCount,
 							estimatedSpanCount: row.estimatedSpanCount,

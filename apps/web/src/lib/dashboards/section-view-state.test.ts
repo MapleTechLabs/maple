@@ -10,6 +10,7 @@ import {
 	withSectionCollapsed,
 } from "./section-view-state"
 import type { DashboardSection, SectionMembership } from "@maple/widgets/dashboard"
+import { Array as Arr } from "effect"
 
 const section = (
 	id: string,
@@ -19,12 +20,15 @@ const section = (
 	id,
 	title: id,
 	...(collapsed !== undefined ? { collapsed } : undefined),
-	tabs: tabIds.map((tabId) => ({ id: tabId, title: tabId })),
+	tabs: Arr.map(tabIds, (tabId) => ({ id: tabId, title: tabId })),
 })
 
-const widget = (id: string, membership?: { sectionId: string; tabId: string }): { id: string } & SectionMembership => ({
+const widget = (
+	id: string,
+	membership?: { sectionId: string; tabId: string },
+): { id: string } & SectionMembership => ({
 	id,
-	...(membership ?? {}),
+	...membership,
 })
 
 describe("parseIdList", () => {

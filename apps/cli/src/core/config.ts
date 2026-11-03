@@ -1,4 +1,4 @@
-import { Clock, Config, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import { Config, Context, DateTime, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
@@ -73,7 +73,7 @@ interface ConfigFile {
 
 const readConfig = (fs: FileSystem, configPath: string): Effect.Effect<ConfigFile, ConfigFileError> =>
 	fs.readFileString(configPath).pipe(
-		Effect.map(Option.some),
+		Effect.asSome,
 		Effect.catchTag("PlatformError", (error) =>
 			error.reason._tag === "NotFound"
 				? Effect.succeed(Option.none<string>())
@@ -292,8 +292,7 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 				}),
 			recordUpdateCheck: (latestTag) =>
 				Effect.gen(function* () {
-					const nowMs = yield* Clock.currentTimeMillis
-					const nowIso = new Date(nowMs).toISOString()
+					const nowIso = yield* Effect.map(DateTime.now, DateTime.formatIso)
 					yield* writeMerged(fs, (cur) => ({
 						...cur,
 						lastUpdateCheck: nowIso,

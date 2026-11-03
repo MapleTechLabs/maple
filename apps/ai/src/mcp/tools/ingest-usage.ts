@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { IngestUsageOutput } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -46,17 +46,8 @@ const toUsageRow = (row: CH.ServiceUsageOutput): UsageRow => ({
 })
 
 const sumRows = (rows: ReadonlyArray<UsageRow>): UsageRow =>
-	rows.reduce(
-		(acc, row) => ({
-			service: acc.service,
-			traceCount: acc.traceCount + row.traceCount,
-			logCount: acc.logCount + row.logCount,
-			metricCount: acc.metricCount + row.metricCount,
-			traceBytes: acc.traceBytes + row.traceBytes,
-			logBytes: acc.logBytes + row.logBytes,
-			metricBytes: acc.metricBytes + row.metricBytes,
-			totalBytes: acc.totalBytes + row.totalBytes,
-		}),
+	Arr.reduce(
+		rows,
 		{
 			service: "(all)",
 			traceCount: 0,
@@ -67,6 +58,16 @@ const sumRows = (rows: ReadonlyArray<UsageRow>): UsageRow =>
 			metricBytes: 0,
 			totalBytes: 0,
 		},
+		(acc, row) => ({
+			service: acc.service,
+			traceCount: acc.traceCount + row.traceCount,
+			logCount: acc.logCount + row.logCount,
+			metricCount: acc.metricCount + row.metricCount,
+			traceBytes: acc.traceBytes + row.traceBytes,
+			logBytes: acc.logBytes + row.logBytes,
+			metricBytes: acc.metricBytes + row.metricBytes,
+			totalBytes: acc.totalBytes + row.totalBytes,
+		}),
 	)
 
 export function registerIngestUsageTool(server: McpToolRegistrar) {
@@ -107,7 +108,7 @@ export function registerIngestUsageTool(server: McpToolRegistrar) {
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 
-			const services = rows.map(toUsageRow)
+			const services = Arr.map(rows, toUsageRow)
 			return {
 				timeRange: { start: st, end: et },
 				...(params.service === undefined ? undefined : { service: params.service }),
@@ -144,7 +145,10 @@ export function registerIngestUsageTool(server: McpToolRegistrar) {
 						: [
 								doc.table(
 									["Service", "Spans", "Log records", "Metric datapoints", "Size"],
-									[...services.map(cells), ...(services.length > 1 ? [cells(totals)] : [])],
+									[
+										...Arr.map(services, cells),
+										...(services.length > 1 ? [cells(totals)] : []),
+									],
 								),
 							],
 				next: [doc.next("ingest_freshness", {}, "check whether data is still arriving")],

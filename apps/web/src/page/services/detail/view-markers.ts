@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { PlotGeometry } from "@maple/views/charts/chart"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import type { MarkerLayout } from "./derive-markers"
+import { Array as Arr } from "effect"
 
 // Commit markers over a chart, idle.
 // TODO(marker-cards): hovering a dash or label (active styling, the commit card after 1.5 s / 400 ms)
@@ -28,12 +29,12 @@ export const markersOverlay = <M>(
 					h.DataAttribute("commit-markers", ""),
 					h.Class(cn("absolute inset-0", "pointer-events-none")),
 				],
-				layout.groups.flatMap((group) => {
+				Arr.flatMap(layout.groups, (group) => {
 					const labelTop = plot.y - LABEL_HEIGHT - labelGap
 					const dashTop = layout.labeled ? plot.y - labelGap : plot.y
 					const dashHeight = layout.labeled ? Math.max(plot.height + labelGap, 0) : plot.height
 					const badge = group.commits.length - 1
-					const dashes = group.dashXs.map((x, index) =>
+					const dashes = Arr.map(group.dashXs, (x, index) =>
 						h.div(
 							[
 								h.Key(`${group.key}-dash-${index}`),

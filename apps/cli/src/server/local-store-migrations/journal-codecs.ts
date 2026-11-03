@@ -1,6 +1,6 @@
 // Shared helpers for the local-store migration steps: journal decoding, the
 // raw-telemetry row counts every step preserves, and the clone into staging.
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { cp, mkdir, rm } from "node:fs/promises"
 import { dirname, join, sep } from "node:path"
 import { RAW_TELEMETRY_TTL_COLUMNS, type Chdb } from "@maple/local-server/chdb"
@@ -11,7 +11,7 @@ import {
 	type LocalSchemaManifest,
 } from "@maple/local-server/schema-manifest"
 
-const RAW_TABLES_INTERNAL = RAW_TELEMETRY_TTL_COLUMNS.map(([table]) => table)
+const RAW_TABLES_INTERNAL = Arr.map(RAW_TELEMETRY_TTL_COLUMNS, ([table]) => table)
 
 /**
  * Unsigned decimal string.
@@ -42,14 +42,17 @@ export const RAW_TABLES: ReadonlyArray<string> = RAW_TABLES_INTERNAL
  * guarantee every step makes: a structural DDL change moves no telemetry.
  */
 export const rawRowCounts = (db: Pick<Chdb, "query" | "exec">): Readonly<Record<string, string>> => {
-	const quotedTables = RAW_TABLES_INTERNAL.map((table) => `'${table}'`).join(", ")
+	const quotedTables = Arr.join(
+		Arr.map(RAW_TABLES_INTERNAL, (table) => `'${table}'`),
+		", ",
+	)
 	const rows = decodeTableRowCounts(
 		db.query(
 			`SELECT table, toString(sum(rows)) AS rowCount FROM system.parts WHERE database = 'default' AND active = 1 AND table IN (${quotedTables}) GROUP BY table`,
 		),
 	)
-	const byTable = new Map(rows.map((row) => [row.table, row.rowCount]))
-	return Object.fromEntries(RAW_TABLES_INTERNAL.map((table) => [table, byTable.get(table) ?? "0"]))
+	const byTable = new Map(Arr.map(rows, (row) => [row.table, row.rowCount]))
+	return Rec.fromEntries(Arr.map(RAW_TABLES_INTERNAL, (table) => [table, byTable.get(table) ?? "0"]))
 }
 
 /** A counted row must be at least this many days from its TTL on the count day. */
@@ -66,8 +69,8 @@ export const retainedRawRowCounts = (
 	manifest: LocalSchemaManifest,
 	countedOn: string,
 ): Readonly<Record<string, string>> =>
-	Object.fromEntries(
-		RAW_TELEMETRY_TTL_COLUMNS.map(([table, column]) => {
+	Rec.fromEntries(
+		Arr.map(RAW_TELEMETRY_TTL_COLUMNS, ([table, column]) => {
 			const ttl = manifest.objects.find((object) => object.name === table)?.ttl
 			const days = ttl === undefined ? null : ttlDaysFromDefinition(`TTL ${ttl}`)
 			const retained =
@@ -111,6 +114,6 @@ export const cloneStoreForStaging = async (source: string, target: string): Prom
 	await cp(source, target, {
 		recursive: true,
 		preserveTimestamps: true,
-		filter: (src) => src !== checkpointRoot && !src.startsWith(`${checkpointRoot}${sep}`),
+		filter: (src) => src !== checkpointRoot && !Str.startsWith(`${checkpointRoot}${sep}`)(src),
 	})
 }

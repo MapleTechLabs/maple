@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import { highlightsOf, metricOf, scorecardRows, teamMedian } from "./derive"
 import { teamScores } from "./score"
 import { member } from "./team-member.fixture"
+import { Array as Arr } from "effect"
 
 const ada = member("ada", {
 	pullRequests: 8,
@@ -27,7 +28,7 @@ const team = [ada, lin, sam, ci]
 
 const scores = teamScores(team)
 
-const logins = (rows: ReturnType<typeof scorecardRows>) => rows.map((row) => row.member.login)
+const logins = (rows: ReturnType<typeof scorecardRows>) => Arr.map(rows, (row) => row.member.login)
 
 describe("metricOf", () => {
 	test("fix rate counts findings fixed against the ones that shipped open", () => {
@@ -53,7 +54,7 @@ describe("scorecardRows", () => {
 	test("unranked by person: everyone, by login whatever the case", () => {
 		const rows = scorecardRows(team, "person", false, scores)
 		expect(logins(rows)).toEqual(["ada", "bea", "Lin", "sam"])
-		expect(rows.every((row) => row.rank === null)).toBe(true)
+		expect(Arr.every(rows, (row) => row.rank === null)).toBe(true)
 	})
 
 	test("a column reads best first: fastest merge first, unmeasured people last", () => {
@@ -68,7 +69,7 @@ describe("scorecardRows", () => {
 
 	test("ranked leaves out people under five pull requests and numbers the rest", () => {
 		const rows = scorecardRows(team, "fixRate", true, scores)
-		expect(rows.map((row) => [row.member.login, row.rank])).toEqual([
+		expect(Arr.map(rows, (row) => [row.member.login, row.rank])).toEqual([
 			["ada", 1],
 			["Lin", 2],
 		])
@@ -85,7 +86,7 @@ describe("scorecardRows", () => {
 	test("equal values share a rank", () => {
 		const twin = member("zed", { pullRequests: 5, resolvedFindings: 9, openAtMergeFindings: 1 })
 		const rows = scorecardRows([lin, ada, twin], "fixRate", true, teamScores([lin, ada, twin]))
-		expect(rows.map((row) => [row.member.login, row.rank])).toEqual([
+		expect(Arr.map(rows, (row) => [row.member.login, row.rank])).toEqual([
 			["ada", 1],
 			["zed", 1],
 			["Lin", 3],
@@ -95,7 +96,7 @@ describe("scorecardRows", () => {
 
 describe("highlightsOf", () => {
 	test("calls out who fixed most, the steadiest CI and the quickest merge, each with enough to judge", () => {
-		expect(highlightsOf(team).map((item) => [item.key, item.login, item.value])).toEqual([
+		expect(Arr.map(highlightsOf(team), (item) => [item.key, item.login, item.value])).toEqual([
 			["fixed", "ada", 9],
 			["steady", "ada", 0.95],
 			["fast", "Lin", 3_600],

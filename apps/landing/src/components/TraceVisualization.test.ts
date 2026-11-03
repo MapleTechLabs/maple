@@ -1,13 +1,13 @@
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Flamegraph from "@maple/views/traces/flamegraph"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import renderer from "../foldkit-island/server"
 import { init, TraceVisualization, update } from "./TraceVisualization"
 import { Message, type Model } from "./trace-explorer/model"
 
 const run = (messages: ReadonlyArray<Message>): Model =>
-	messages.reduce((model, message) => update(model, message).model, init())
+	Arr.reduce(messages, init(), (model, message) => update(model, message).model)
 const clickNode = (nodeId: string) =>
 	Message.GotFlowMessage({ message: TraceFlow.Message.ClickedSpanNode({ nodeId }) })
 const flame = (message: Flamegraph.Message) => Message.GotFlameMessage({ message })
@@ -15,7 +15,7 @@ const flame = (message: Flamegraph.Message) => Message.GotFlameMessage({ message
 describe("TraceVisualization island", () => {
 	it("renders the frame, the tabs and the flow pane on the server", async () => {
 		const { html } = await renderer.renderToStaticMarkup(TraceVisualization, {})
-		const text = html.replace(/<[^>]+>/g, " ")
+		const text = Str.replace(/<[^>]+>/g, " ")(html)
 		for (const label of [
 			"/traces",
 			"a3f8c1d2e5b7f901",
@@ -54,9 +54,10 @@ describe("TraceVisualization island", () => {
 		])
 		expect(zoomed.flame.focusedSpanId).toEqual(Option.some("span-3"))
 		expect(zoomed.selectedSpanId).toEqual(Option.none())
-		const back = [Message.ClickedTab({ tab: "flow" }), Message.ClickedTab({ tab: "flamegraph" })].reduce(
-			(model, message) => update(model, message).model,
+		const back = Arr.reduce(
+			[Message.ClickedTab({ tab: "flow" }), Message.ClickedTab({ tab: "flamegraph" })],
 			zoomed,
+			(model, message) => update(model, message).model,
 		)
 		expect(back.flame.focusedSpanId).toEqual(Option.none())
 	})

@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { click, Command, expect, given, Mount, role, Subscription, scene, text } from "foldkit/scene"
 import { expect as assert, describe, test } from "vitest"
 import { requestKey } from "@maple/views/data/request-key"
@@ -34,7 +34,7 @@ const refresh = role("button", { name: "Refresh" })
 
 /** Entry: init asks for the session; the session asks for the window; the window for the facets. */
 const named = (commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> | undefined) =>
-	(commands ?? []).map(({ name, args }) => ({ name, args }))
+	Arr.map(commands ?? [], ({ name, args }) => ({ name, args }))
 
 const entered = () => {
 	const { model, commands } = init()

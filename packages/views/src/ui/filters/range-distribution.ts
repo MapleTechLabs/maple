@@ -1,6 +1,7 @@
 import { formatValue, type RangeUnit } from "./range-format"
 import type { RangePreset } from "./range-filter-section"
 import type { RangeBucket } from "./range-histogram"
+import { Array as Arr } from "effect"
 
 /** One non-empty log bucket as the warehouse counts it: its floor, in the control's unit. */
 export interface LogBucketCount {
@@ -17,9 +18,10 @@ export const toLogBuckets = (
 	stepsPerOctave: number,
 ): ReadonlyArray<RangeBucket> => {
 	const counts = new Map(
-		raw
-			.filter((item) => Number.isFinite(item.floor) && item.floor > 0)
-			.map((item) => [Math.round(Math.log2(item.floor) * stepsPerOctave), item.count] as const),
+		Arr.map(
+			Arr.filter(raw, (item) => Number.isFinite(item.floor) && item.floor > 0),
+			(item) => [Math.round(Math.log2(item.floor) * stepsPerOctave), item.count] as const,
+		),
 	)
 	if (counts.size === 0) return []
 	const steps = [...counts.keys()]
@@ -32,15 +34,16 @@ export const toLogBuckets = (
 			count: counts.get(low + offset) ?? 0,
 		}),
 	)
-	const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0)
+	const total = Arr.reduce(buckets, 0, (sum, bucket) => sum + bucket.count)
 	if (total === 0) return buckets
 	const covering = buckets.findIndex(
 		(_, index) =>
-			buckets.slice(0, index + 1).reduce((sum, bucket) => sum + bucket.count, 0) >= total * AXIS_COVERAGE,
+			Arr.reduce(buckets.slice(0, index + 1), 0, (sum, bucket) => sum + bucket.count) >=
+			total * AXIS_COVERAGE,
 	)
 	if (covering === -1) return buckets
 	const tail = buckets.slice(covering + 1)
-	const tailCount = tail.reduce((sum, bucket) => sum + bucket.count, 0)
+	const tailCount = Arr.reduce(tail, 0, (sum, bucket) => sum + bucket.count)
 	const head = buckets.slice(0, covering + 1)
 	const firstTail = tail[0]
 	return tailCount === 0 || firstTail === undefined
@@ -65,7 +68,7 @@ export const percentilePresets = (p50: number, p95: number, unit: RangeUnit): Re
 		] as const
 	).reduce<ReadonlyArray<RangePreset>>((presets, [key, value]) => {
 		const threshold = roundThreshold(value, unit)
-		return threshold < MIN_THRESHOLD[unit] || presets.some((preset) => preset.min === threshold)
+		return threshold < MIN_THRESHOLD[unit] || Arr.some(presets, (preset) => preset.min === threshold)
 			? presets
 			: [...presets, { key, label: `> ${key}`, value: formatValue(threshold, unit), min: threshold }]
 	}, [])

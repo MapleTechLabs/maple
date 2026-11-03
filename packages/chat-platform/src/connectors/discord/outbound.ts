@@ -31,6 +31,7 @@ import {
 	Ref,
 	Schema,
 	Semaphore,
+	String as Str,
 } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
@@ -192,7 +193,7 @@ const DEFAULT_THREAD_NAME = "Maple"
  * turn the thread into a 400 and the answer into no answer at all.
  */
 const threadName = (title: string): string => {
-	const trimmed = title.trim().slice(0, MAX_THREAD_NAME_CHARS)
+	const trimmed = Str.slice(0, MAX_THREAD_NAME_CHARS)(Str.trim(title))
 	return trimmed.length === 0 ? DEFAULT_THREAD_NAME : trimmed
 }
 
@@ -528,14 +529,17 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 						failed("destinations", "Discord did not answer with a list of channels", { cause }),
 					),
 				)
-				return Arr.sort(
-					channels.filter((channel) => POSTABLE_CHANNEL_TYPES.has(channel.type)),
-					byPosition,
-				).map((channel): ChatDestination => ({
-					id: channel.id,
-					name: channel.name ?? channel.id,
-					private: false,
-				}))
+				return Arr.map(
+					Arr.sort(
+						Arr.filter(channels, (channel) => POSTABLE_CHANNEL_TYPES.has(channel.type)),
+						byPosition,
+					),
+					(channel): ChatDestination => ({
+						id: channel.id,
+						name: channel.name ?? channel.id,
+						private: false,
+					}),
+				)
 			}),
 
 			/**

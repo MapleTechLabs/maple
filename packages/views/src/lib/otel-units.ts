@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 // OTel metric units are UCUM codes (`By`, `s`, `1`, `{request}`); the chart formatter
 // (`formatValueByUnit` in @maple/ui/lib/format) has its own unit vocabulary.
 
@@ -26,7 +27,7 @@ const DIRECT = new Map([
  * bucket by the bucket width, which would shrink a value already per second).
  */
 export const chartUnitFromOtel = (unit: string, metricName = ""): string | undefined => {
-	const trimmed = unit.trim()
+	const trimmed = Str.trim(unit)
 	if (trimmed === "1")
 		return PERCENT_100_METRICS.has(metricName)
 			? "percent_100"

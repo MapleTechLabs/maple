@@ -8,7 +8,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { iconNode } from "@maple/views/ui/icon"
 import * as NavigationMenu from "@maple/views/ui/navigation-menu"
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -37,14 +37,14 @@ const localized = (locale: string, path: string): string => (locale === "en" ? p
 // From the registries, so adding a feature cannot leave the nav pointing at seven of eight.
 // Labels stay thunks: Paraglide resolves the locale per call, at render.
 const featureLinks = (locale: string): ReadonlyArray<MenuLink> =>
-	features.map((feature) => ({
+	Arr.map(features, (feature) => ({
 		href: featurePath(locale, feature.slug),
 		label: feature.navLabel,
 		desc: feature.navDesc,
 	}))
 
 const useCaseLinks = (locale: string): ReadonlyArray<MenuLink> =>
-	useCases.map((useCase) => ({
+	Arr.map(useCases, (useCase) => ({
 		href: useCasePath(locale, useCase.slug),
 		label: useCase.navLabel,
 		desc: useCase.navDesc,
@@ -56,9 +56,21 @@ const integrationLinks = (locale: string): ReadonlyArray<MenuLink> => [
 		label: () => m.nav_all_integrations(),
 		desc: () => m.nav_desc_all_integrations(),
 	},
-	{ href: localized(locale, "/integrations/nextjs"), label: () => m.nav_nextjs(), desc: () => m.nav_desc_nextjs() },
-	{ href: localized(locale, "/integrations/python"), label: () => m.nav_python(), desc: () => m.nav_desc_python() },
-	{ href: localized(locale, "/integrations/nodejs"), label: () => m.nav_nodejs(), desc: () => m.nav_desc_nodejs() },
+	{
+		href: localized(locale, "/integrations/nextjs"),
+		label: () => m.nav_nextjs(),
+		desc: () => m.nav_desc_nextjs(),
+	},
+	{
+		href: localized(locale, "/integrations/python"),
+		label: () => m.nav_python(),
+		desc: () => m.nav_desc_python(),
+	},
+	{
+		href: localized(locale, "/integrations/nodejs"),
+		label: () => m.nav_nodejs(),
+		desc: () => m.nav_desc_nodejs(),
+	},
 ]
 
 const compare = (locale: string, slug: string, label: () => string, desc: () => string): MenuLink => ({
@@ -68,14 +80,54 @@ const compare = (locale: string, slug: string, label: () => string, desc: () => 
 })
 
 const compareLinks = (locale: string): ReadonlyArray<MenuLink> => [
-	compare(locale, "datadog", () => m.nav_vs_datadog(), () => m.nav_desc_vs_datadog()),
-	compare(locale, "grafana", () => m.nav_vs_grafana(), () => m.nav_desc_vs_grafana()),
-	compare(locale, "new-relic", () => m.nav_vs_new_relic(), () => m.nav_desc_vs_new_relic()),
-	compare(locale, "dash0", () => m.nav_vs_dash0(), () => m.nav_desc_vs_dash0()),
-	compare(locale, "signoz", () => m.nav_vs_signoz(), () => m.nav_desc_vs_signoz()),
-	compare(locale, "axiom", () => m.nav_vs_axiom(), () => m.nav_desc_vs_axiom()),
-	compare(locale, "better-stack", () => m.nav_vs_better_stack(), () => m.nav_desc_vs_better_stack()),
-	compare(locale, "honeycomb", () => m.nav_vs_honeycomb(), () => m.nav_desc_vs_honeycomb()),
+	compare(
+		locale,
+		"datadog",
+		() => m.nav_vs_datadog(),
+		() => m.nav_desc_vs_datadog(),
+	),
+	compare(
+		locale,
+		"grafana",
+		() => m.nav_vs_grafana(),
+		() => m.nav_desc_vs_grafana(),
+	),
+	compare(
+		locale,
+		"new-relic",
+		() => m.nav_vs_new_relic(),
+		() => m.nav_desc_vs_new_relic(),
+	),
+	compare(
+		locale,
+		"dash0",
+		() => m.nav_vs_dash0(),
+		() => m.nav_desc_vs_dash0(),
+	),
+	compare(
+		locale,
+		"signoz",
+		() => m.nav_vs_signoz(),
+		() => m.nav_desc_vs_signoz(),
+	),
+	compare(
+		locale,
+		"axiom",
+		() => m.nav_vs_axiom(),
+		() => m.nav_desc_vs_axiom(),
+	),
+	compare(
+		locale,
+		"better-stack",
+		() => m.nav_vs_better_stack(),
+		() => m.nav_desc_vs_better_stack(),
+	),
+	compare(
+		locale,
+		"honeycomb",
+		() => m.nav_vs_honeycomb(),
+		() => m.nav_desc_vs_honeycomb(),
+	),
 ]
 
 /** The plain links beside the Product menu, in the header and the sheet. */
@@ -227,7 +279,9 @@ type UpdateReturn = Update.Return<Model, Message>
 
 const toMenu = Command.mapMessage((message: NavigationMenu.Message) => Message.GotMenuMessage({ message }))
 const toSheet = Command.mapMessage((message: Dialog.Message) => Message.GotSheetMessage({ message }))
-const toLogoMenu = Command.mapMessage((message: ContextMenu.Message) => Message.GotLogoMenuMessage({ message }))
+const toLogoMenu = Command.mapMessage((message: ContextMenu.Message) =>
+	Message.GotLogoMenuMessage({ message }),
+)
 
 /** The logo menu: each item and what picking it does (`null` draws the separator). */
 const LOGO_MENU: ReadonlyArray<Readonly<{ label: string; pick: () => Command.Command<Message> }> | null> = [
@@ -244,20 +298,23 @@ const logoMenuStep = (model: Model, child: ContextMenu.Message): UpdateReturn =>
 		next.outMessage?._tag === "SelectedItem" ? LOGO_MENU[next.outMessage.index]?.pick() : undefined
 	return {
 		model: { ...model, logoMenu: next.model },
-		commands: [...(next.commands ?? []).map(toLogoMenu), ...(picked === undefined ? [] : [picked])],
+		commands: [...Arr.map(next.commands ?? [], toLogoMenu), ...(picked === undefined ? [] : [picked])],
 	}
 }
 
 const sheetStep = (
 	model: Model,
 	next: Update.ReturnWithOutMessage<Dialog.Model, Dialog.Message, Dialog.OutMessage>,
-): UpdateReturn => ({ model: { ...model, sheet: next.model }, commands: (next.commands ?? []).map(toSheet) })
+): UpdateReturn => ({
+	model: { ...model, sheet: next.model },
+	commands: Arr.map(next.commands ?? [], toSheet),
+})
 
 const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		GotMenuMessage: ({ message: child }) => {
 			const next = NavigationMenu.update(model.menu, child)
-			return { model: { ...model, menu: next.model }, commands: (next.commands ?? []).map(toMenu) }
+			return { model: { ...model, menu: next.model }, commands: Arr.map(next.commands ?? [], toMenu) }
 		},
 		GotSheetMessage: ({ message: child }) => sheetStep(model, Dialog.update(model.sheet, child)),
 		GotLogoMenuMessage: ({ message: child }) => logoMenuStep(model, child),
@@ -267,7 +324,10 @@ const update = (model: Model, message: Message): UpdateReturn =>
 		ChangedSignedInUser: ({ userId }) =>
 			model.isAnnounced && userId === model.userId
 				? { model }
-				: { model: { ...model, userId, isAnnounced: true }, commands: [AnnounceSignedInUser({ userId })] },
+				: {
+						model: { ...model, userId, isAnnounced: true },
+						commands: [AnnounceSignedInUser({ userId })],
+					},
 		ChangedCtaCollapsed: ({ isCollapsed }) => ({ model: { ...model, isCtaCollapsed: isCollapsed } }),
 		CompletedSideEffect: () => ({ model }),
 	})
@@ -282,7 +342,12 @@ const LOGO_MENU_ID = "site-logo-menu"
 
 const octocat = (h: H, className: string): Html =>
 	h.svg(
-		[h.Class(className), h.Attribute("viewBox", "0 0 24 24"), h.Attribute("fill", "currentColor"), h.AriaHidden(true)],
+		[
+			h.Class(className),
+			h.Attribute("viewBox", "0 0 24 24"),
+			h.Attribute("fill", "currentColor"),
+			h.AriaHidden(true),
+		],
 		[h.path([h.Attribute("d", OCTOCAT_PATH)], [])],
 	)
 
@@ -312,7 +377,11 @@ const starButton = (h: H, stars: number | null, className: string): Html =>
 				[
 					h.span([h.Class("flex items-center px-2.5")], [octocat(h, "w-4 h-4")]),
 					h.span(
-						[h.Class("flex items-center border-l border-border px-2.5 text-xs font-medium tabular-nums")],
+						[
+							h.Class(
+								"flex items-center border-l border-border px-2.5 text-xs font-medium tabular-nums",
+							),
+						],
 						[formatStars(stars)],
 					),
 				],
@@ -369,7 +438,13 @@ const megaLink = (h: H, link: MenuLink): Html =>
 const megaColumn = (h: H, title: string, links: ReadonlyArray<MenuLink>): Html =>
 	h.div(
 		[h.Class("col-span-3 border-l border-border pl-2")],
-		[eyebrow(h, title), h.div([h.Class("mt-2 flex flex-col gap-0.5")], links.map((link) => megaLink(h, link)))],
+		[
+			eyebrow(h, title),
+			h.div(
+				[h.Class("mt-2 flex flex-col gap-0.5")],
+				Arr.map(links, (link) => megaLink(h, link)),
+			),
+		],
 	)
 
 /** Features (2x4), use cases and integrations; the compare row; the footer strip. */
@@ -386,7 +461,7 @@ const productMenu = (h: H, locale: string): ReadonlyArray<Html> => [
 							eyebrow(h, m.nav_features()),
 							h.div(
 								[h.Class("mt-2 grid grid-cols-2 gap-0.5")],
-								featureLinks(locale).map((link) => megaLink(h, link)),
+								Arr.map(featureLinks(locale), (link) => megaLink(h, link)),
 							),
 						],
 					),
@@ -400,7 +475,7 @@ const productMenu = (h: H, locale: string): ReadonlyArray<Html> => [
 					eyebrow(h, m.nav_compare()),
 					h.div(
 						[h.Class("mt-2 grid grid-cols-4 gap-0.5")],
-						compareLinks(locale).map((link) => megaLink(h, link)),
+						Arr.map(compareLinks(locale), (link) => megaLink(h, link)),
 					),
 				],
 			),
@@ -447,7 +522,7 @@ const desktopMenu = (h: H, model: Model): Html =>
 							contentClassName: "p-0",
 							content: productMenu(h, model.locale),
 						},
-						...pageLinks(model.locale).map((link): NavigationMenu.NavigationMenuItem => ({
+						...Arr.map(pageLinks(model.locale), (link): NavigationMenu.NavigationMenuItem => ({
 							_tag: "Item",
 							content: [h.a([h.Href(link.href), h.Class(PAGE_LINK_CLASS)], [link.label])],
 						})),
@@ -467,7 +542,7 @@ const sheetGroup = (h: H, title: string, links: ReadonlyArray<MenuLink>): Html =
 			h.span([h.Class("text-[10px] text-fg-muted uppercase tracking-wider")], [title]),
 			h.div(
 				[h.Class("mt-1.5 flex flex-col gap-1")],
-				links.map((link) =>
+				Arr.map(links, (link) =>
 					h.a(
 						[
 							h.Href(link.href),
@@ -498,7 +573,10 @@ const sheetContent = (h: H, model: Model, isSignedIn: boolean): ReadonlyArray<Ht
 			h.div(
 				[h.Class("py-4 border-b border-border")],
 				[
-					h.span([h.Class("text-[11px] text-primary uppercase tracking-wider font-medium")], [m.nav_product()]),
+					h.span(
+						[h.Class("text-[11px] text-primary uppercase tracking-wider font-medium")],
+						[m.nav_product()],
+					),
 					h.div(
 						[h.Class("mt-3 flex flex-col gap-5")],
 						[
@@ -512,7 +590,7 @@ const sheetContent = (h: H, model: Model, isSignedIn: boolean): ReadonlyArray<Ht
 			),
 			h.div(
 				[h.Class("py-4 border-b border-border flex flex-col gap-1")],
-				pageLinks(model.locale).map((link) =>
+				Arr.map(pageLinks(model.locale), (link) =>
 					h.a(
 						[
 							h.Href(link.href),
@@ -531,11 +609,15 @@ const sheetContent = (h: H, model: Model, isSignedIn: boolean): ReadonlyArray<Ht
 							h.Href(GITHUB_REPO_URL),
 							h.Target("_blank"),
 							h.Rel("noopener noreferrer"),
-							h.Class("flex items-center justify-between text-xs text-fg-muted hover:text-fg transition-colors"),
+							h.Class(
+								"flex items-center justify-between text-xs text-fg-muted hover:text-fg transition-colors",
+							),
 						],
 						[
 							h.span([h.Class("flex items-center gap-2")], [octocat(h, "w-4 h-4"), "GitHub"]),
-							...(model.stars === null ? [] : [h.span([h.Class("tabular-nums")], [formatStars(model.stars)])]),
+							...(model.stars === null
+								? []
+								: [h.span([h.Class("tabular-nums")], [formatStars(model.stars)])]),
 						],
 					),
 					ctaButton(h, { isSignedIn, location: "nav_mobile" }),
@@ -578,7 +660,7 @@ const mobileMenu = (h: H, model: Model, isSignedIn: boolean): Html =>
 										h.Attribute("stroke-width", "2"),
 										h.Attribute("stroke-linecap", "square"),
 									],
-									MENU_ICON_LINES.map((y) =>
+									Arr.map(MENU_ICON_LINES, (y) =>
 										h.line(
 											[
 												h.Attribute("x1", "4"),
@@ -609,7 +691,7 @@ const logo = (h: H, model: Model): Html =>
 		viewInputs: {
 			className: "w-56 p-1",
 			triggerClassName: "flex items-center",
-			entries: LOGO_MENU.map((item): ContextMenuView.Entry =>
+			entries: Arr.map(LOGO_MENU, (item): ContextMenuView.Entry =>
 				item === null ? { _tag: "Separator" } : { _tag: "Item", label: item.label },
 			),
 			triggerContent: [

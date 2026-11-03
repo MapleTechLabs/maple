@@ -8,6 +8,7 @@ import {
 	scrollBarStyles,
 } from "@maple/ui/styles/ui/scroll-area"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 /** Base UI hides the viewport's native scrollbar with this class and an injected rule (styles.css). */
 const DISABLE_SCROLLBAR = "base-ui-disable-scrollbar"
@@ -56,10 +57,10 @@ export const trackScrollbar = (viewport: HTMLElement): (() => void) => {
 	const hover = (event: PointerEvent) => {
 		const isOver = event.target instanceof Node && root?.contains(event.target) === true
 		const targets = [root, scrollbar]
-		targets.forEach((element) => element?.toggleAttribute("data-hovering", isOver))
+		Arr.forEach(targets, (element) => element?.toggleAttribute("data-hovering", isOver))
 	}
 	const leave = () => {
-		[root, scrollbar].forEach((element) => element?.removeAttribute("data-hovering"))
+		Arr.forEach([root, scrollbar], (element) => element?.removeAttribute("data-hovering"))
 	}
 	measure()
 	const observer = new ResizeObserver(measure)

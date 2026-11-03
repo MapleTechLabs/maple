@@ -1,8 +1,12 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
-import { AlertValidationError, WarehouseQuotaExceededError } from "@maple/domain/http"
+import {
+	AlertValidationError,
+	WarehouseQuotaExceededError,
+	WebhookAlertDestinationConfig,
+} from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Duration, Effect, Layer, Logger, Schema } from "effect"
+import { Array as Arr, Duration, Effect, Layer, Logger, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	type AlertDestinationId,
@@ -165,7 +169,7 @@ describe("AlertsService evaluation error persistence", () => {
 				rulesWhileFailing.rules[0]?.lastEvaluationError,
 				"Unknown column FooBar in traces",
 			)
-			const errorChecks = state.ingested.filter((row) => row.Status === "error")
+			const errorChecks = Arr.filter(state.ingested, (row) => row.Status === "error")
 			assert.lengthOf(errorChecks, 1)
 			assert.strictEqual(errorChecks[0]?.ErrorMessage, "Unknown column FooBar in traces")
 			assert.strictEqual(errorChecks[0]?.ErrorCategory, "warehouse_query_failed")
@@ -239,21 +243,21 @@ describe("AlertsService evaluation error persistence", () => {
 			assert.strictEqual(tick.evaluationFailureCount, 0)
 			assert.strictEqual(tick.warehouseUnavailableSkipCount, 2)
 			assert.lengthOf(
-				logs.filter((log) => log.message.includes("Alert rule evaluation failed")),
+				Arr.filter(logs, (log) => Str.includes("Alert rule evaluation failed")(log.message)),
 				0,
 			)
-			const outageWarnings = logs.filter((log) =>
-				log.message.includes("Alert rule evaluations skipped: warehouse unavailable"),
+			const outageWarnings = Arr.filter(logs, (log) =>
+				Str.includes("Alert rule evaluations skipped: warehouse unavailable")(log.message),
 			)
 			assert.lengthOf(outageWarnings, 1)
 			assert.strictEqual(outageWarnings[0]?.level, "Warn")
 			// The check history still shows the gap, labelled as an outage.
-			const checks = state.ingested.filter((row) => row.Status === "error")
+			const checks = Arr.filter(state.ingested, (row) => row.Status === "error")
 			assert.lengthOf(checks, 2)
-			assert.isTrue(checks.every((row) => row.ErrorCategory === "warehouse_unavailable"))
+			assert.isTrue(Arr.every(checks, (row) => row.ErrorCategory === "warehouse_unavailable"))
 			const rules = yield* alerts.listRules(orgId)
 			// Not the rule's fault, so the rule is not flagged as failing.
-			assert.isTrue(rules.rules.every((rule) => rule.lastEvaluationError === null))
+			assert.isTrue(Arr.every(rules.rules, (rule) => rule.lastEvaluationError === null))
 		}).pipe(
 			Effect.provide(
 				Layer.merge(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch }), captureLogs),
@@ -371,7 +375,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 			yield* alerts.runSchedulerTick()
 
-			const breached = state.ingested.filter((row) => row.Status === "breached")
+			const breached = Arr.filter(state.ingested, (row) => row.Status === "breached")
 			assert.lengthOf(breached, 1)
 			assert.isNull(breached[0]?.ObservedValue)
 			assert.strictEqual(breached[0]?.IncidentTransition, "opened")
@@ -416,7 +420,7 @@ describe("AlertsService evaluation error persistence", () => {
 			assert.strictEqual(throughput.noDataBehavior, "alert")
 			yield* alerts.runSchedulerTick()
 			assert.lengthOf(
-				state.ingested.filter((row) => row.Status === "breached" && row.ObservedValue === null),
+				Arr.filter(state.ingested, (row) => row.Status === "breached" && row.ObservedValue === null),
 				1,
 			)
 
@@ -446,7 +450,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 			yield* alerts.runSchedulerTick()
 
-			const skipped = state.ingested.filter((row) => row.Status === "skipped")
+			const skipped = Arr.filter(state.ingested, (row) => row.Status === "skipped")
 			assert.lengthOf(skipped, 1)
 			assert.strictEqual(skipped[0]?.SkipReason, "no_data")
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
@@ -703,7 +707,7 @@ describe("AlertsService.previewRule", () => {
 			assert.isAbove(preview.series.length, 0)
 			const points = preview.series[0]?.points ?? []
 			assert.isAbove(points.length, 0)
-			assert.isTrue(points.some((p) => p.value === 42))
+			assert.isTrue(Arr.some(points, (p) => p.value === 42))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
@@ -767,7 +771,10 @@ describe("AlertsService.previewRule", () => {
 			return {
 				...stub,
 				rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
-					Effect.andThen(args[1].includes("1970-01-01") ? probe : chart, stub.rawSqlQuery(...args)),
+					Effect.andThen(
+						Str.includes("1970-01-01")(args[1]) ? probe : chart,
+						stub.rawSqlQuery(...args),
+					),
 			} satisfies WarehouseQueryServiceApi
 		}
 
@@ -914,7 +921,7 @@ describe("AlertsService.previewRule", () => {
 			assert.lengthOf(preview.series, 1)
 			const points = preview.series[0]?.points ?? []
 			assert.lengthOf(points, 6)
-			assert.isTrue(points.every((p) => p.status === "skipped" && p.skipReason === "no_data"))
+			assert.isTrue(Arr.every(points, (p) => p.status === "skipped" && p.skipReason === "no_data"))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
@@ -948,17 +955,17 @@ describe("AlertsService.previewRule", () => {
 			})
 
 			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_grouped"), adminRoles, request)
-			const byGroup = new Map(preview.series.map((series) => [series.groupKey, series.points]))
+			const byGroup = new Map(Arr.map(preview.series, (series) => [series.groupKey, series.points]))
 			// A group missing from a tick is not evaluated by the scheduler, so it never breaches.
 			const a = byGroup.get("a") ?? []
-			assert.isTrue(a.slice(2).every((p) => p.status === "skipped" && p.skipReason === "no_data"))
+			assert.isTrue(Arr.every(a.slice(2), (p) => p.status === "skipped" && p.skipReason === "no_data"))
 			// Ticks where nothing reported at all breach under the empty-result key.
 			const empty = byGroup.get("all") ?? []
 			assert.deepStrictEqual(
-				empty.map((p) => p.status),
+				Arr.map(empty, (p) => p.status),
 				["healthy", "healthy", "breached", "breached", "breached", "breached"],
 			)
-			assert.isTrue(preview.wouldFire.every((span) => span.groupKey === "all"))
+			assert.isTrue(Arr.every(preview.wouldFire, (span) => span.groupKey === "all"))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
@@ -972,13 +979,18 @@ describe("AlertsService.previewRule", () => {
 			const orgId = asOrgId("org_dedupe")
 			const userId = asUserId("user_dedupe")
 			const first = yield* createWebhookDestination(alerts, orgId, userId)
-			const second = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "webhook",
-				name: "Secondary webhook",
-				enabled: true,
-				url: "https://example.com/maple-alerts-2",
-				signingSecret: "webhook-secret-2",
-			})
+			const second = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new WebhookAlertDestinationConfig({
+					type: "webhook",
+					name: "Secondary webhook",
+					enabled: true,
+					url: "https://example.com/maple-alerts-2",
+					signingSecret: "webhook-secret-2",
+				}),
+			)
 
 			const rule = yield* alerts.createRule(
 				orgId,
@@ -1134,13 +1146,13 @@ describe("AlertsService.previewRule", () => {
 
 			yield* alerts.runSchedulerTick()
 			const afterFirst = yield* alerts.listIncidents(orgId)
-			const openAfterFirst = afterFirst.incidents.filter((i) => i.status === "open")
+			const openAfterFirst = Arr.filter(afterFirst.incidents, (i) => i.status === "open")
 
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 			const afterSecond = yield* alerts.listIncidents(orgId)
-			const openAfterSecond = afterSecond.incidents.filter((i) => i.status === "open")
-			const resolvedAfterSecond = afterSecond.incidents.filter((i) => i.status === "resolved")
+			const openAfterSecond = Arr.filter(afterSecond.incidents, (i) => i.status === "open")
+			const resolvedAfterSecond = Arr.filter(afterSecond.incidents, (i) => i.status === "resolved")
 
 			// Still breaching on the second tick, so nothing may have been resolved.
 			assert.strictEqual(

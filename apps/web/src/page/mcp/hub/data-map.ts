@@ -6,6 +6,7 @@ import type {
 } from "@maple/domain/http"
 import type { ToolSeriesPoint } from "../../agent-sessions/tools-kit/model"
 import type { McpCoverageRow, McpFailureKind, McpServerOverview, McpServerRow, McpToolDetail } from "../data"
+import { Array as Arr } from "effect"
 
 // The hub's reads in the shapes the MCP views draw. Counts arrive raw; the words are here.
 
@@ -21,20 +22,20 @@ export const serverRows = (response: McpServersResponse): ReadonlyArray<McpServe
 
 /** The failure panel: tool errors, server-side JSON-RPC errors, and the caller mistakes the spec exempts. */
 export const failureKinds = (failures: Overview["failures"]): ReadonlyArray<McpFailureKind> => {
-	const toolErrors = failures.filter((row) => row.errorType === "tool_error")
-	const rpc = failures.filter((row) => row.errorType !== "tool_error")
+	const toolErrors = Arr.filter(failures, (row) => row.errorType === "tool_error")
+	const rpc = Arr.filter(failures, (row) => row.errorType !== "tool_error")
 	return [
 		{
 			label: "Tool errors",
 			codes: ["error.type = tool_error"],
 			detail: "The tool answered with isError: true.",
-			count: toolErrors.reduce((sum, row) => sum + row.count, 0),
+			count: Arr.reduce(toolErrors, 0, (sum, row) => sum + row.count),
 		},
 		{
 			label: "JSON-RPC errors",
-			codes: rpc.length === 0 ? ["-32603"] : rpc.map((row) => row.errorType),
+			codes: rpc.length === 0 ? ["-32603"] : Arr.map(rpc, (row) => row.errorType),
 			detail: "The server failed to answer the request.",
-			count: rpc.reduce((sum, row) => sum + row.count, 0),
+			count: Arr.reduce(rpc, 0, (sum, row) => sum + row.count),
 		},
 		{
 			label: "Caller mistakes",
@@ -109,7 +110,7 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 		{
 			isPresent: coverage.errorsWithMessage > 0,
 			label: "Why a tool failed",
-			attributes: ["exception", "gen_ai.tool.call.result"],
+			attributes: ["error.message", "exception"],
 			detail:
 				coverage.errorsWithMessage > 0
 					? `${coverage.errorsWithMessage.toLocaleString()} of ${plural(coverage.toolErrors, "failed call")} say why.`
@@ -121,7 +122,8 @@ export const coverageRows = (coverage: Overview["coverage"]): ReadonlyArray<McpC
 /** What the clientInfo counts are: handshakes while every one came on `initialize`, else requests. */
 export const clientInfoUnit = (
 	entries: ReadonlyArray<Readonly<{ count: number; connects: number }>>,
-): "connect" | "request" => (entries.every((entry) => entry.count === entry.connects) ? "connect" : "request")
+): "connect" | "request" =>
+	Arr.every(entries, (entry) => entry.count === entry.connects) ? "connect" : "request"
 
 export const overviewOf = (response: Overview, nowMs: number): McpServerOverview => ({
 	service: response.service,
@@ -129,8 +131,8 @@ export const overviewOf = (response: Overview, nowMs: number): McpServerOverview
 	transport: response.transport === "tcp" ? "HTTP" : response.transport,
 	firstSpanMs: response.firstSpanMs,
 	nowMs,
-	series: response.series.map(point),
-	clientSeries: response.clientSeries.map(point),
+	series: Arr.map(response.series, point),
+	clientSeries: Arr.map(response.clientSeries, point),
 	totals: response.totals,
 	tools: response.tools,
 	clients: response.clients,
@@ -148,8 +150,8 @@ export const toolOf = (response: Tool): McpToolDetail => ({
 	clients: response.clients,
 	firstCallMs: response.firstCallMs,
 	lastCallMs: response.lastCallMs,
-	series: response.series.map(point),
-	clientSeries: response.clientSeries.map(point),
+	series: Arr.map(response.series, point),
+	clientSeries: Arr.map(response.clientSeries, point),
 	errorGroups: response.errorGroups,
 	slowest: response.slowest,
 	failed: response.failed,

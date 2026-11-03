@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { calendarChevronStyles, calendarClassNames, calendarStyles } from "@maple/ui/styles/ui/calendar"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import * as Calendar from "foldkit/calendar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineView } from "foldkit/submodel"
@@ -78,12 +78,15 @@ interface DayFlags {
 
 /** react-day-picker joins the day class with each active modifier's class, in modifier order. */
 const dayCellClass = (flags: DayFlags): string =>
-	[
-		calendarClassNames.day,
-		...(flags.isOutside ? [calendarClassNames.outside] : []),
-		...(flags.isToday ? [calendarClassNames.today] : []),
-		...(flags.isSelected ? ["rdp-selected"] : []),
-	].join(" ")
+	Arr.join(
+		[
+			calendarClassNames.day,
+			...(flags.isOutside ? [calendarClassNames.outside] : []),
+			...(flags.isToday ? [calendarClassNames.today] : []),
+			...(flags.isSelected ? ["rdp-selected"] : []),
+		],
+		" ",
+	)
 
 const dayCell = (h: HtmlBuilder<Message>, date: CalendarDate, flags: DayFlags): Html =>
 	h.td(
@@ -92,7 +95,10 @@ const dayCell = (h: HtmlBuilder<Message>, date: CalendarDate, flags: DayFlags): 
 			h.Attribute("class", dayCellClass(flags)),
 			h.DataAttribute("day", isoDay(date)),
 			...(flags.isOutside
-				? [h.DataAttribute("month", isoDay(date).slice(0, 7)), h.DataAttribute("outside", "true")]
+				? [
+						h.DataAttribute("month", Str.slice(0, 7)(isoDay(date))),
+						h.DataAttribute("outside", "true"),
+					]
 				: []),
 			...(flags.isSelected ? [h.DataAttribute("selected", "true")] : []),
 			...(flags.isToday ? [h.DataAttribute("today", "true")] : []),
@@ -116,7 +122,7 @@ const dayCell = (h: HtmlBuilder<Message>, date: CalendarDate, flags: DayFlags): 
 const weekdayHeader = (h: HtmlBuilder<Message>, name: string): Html =>
 	h.th(
 		[h.AriaLabel(name), h.Attribute("class", calendarClassNames.weekday), h.Scope("col")],
-		[name.slice(0, 2)],
+		[Str.slice(0, 2)(name)],
 	)
 
 export const view = defineView<Model, Message, CalendarViewInputs>((model, inputs, h) => {
@@ -172,16 +178,16 @@ export const view = defineView<Model, Message, CalendarViewInputs>((model, input
 										[
 											h.tr(
 												[h.Class("rdp-weekdays")],
-												DAY_NAMES.map((name) => weekdayHeader(h, name)),
+												Arr.map(DAY_NAMES, (name) => weekdayHeader(h, name)),
 											),
 										],
 									),
 									h.tbody(
 										[h.Class("rdp-weeks")],
-										gridWeeks(model).map((week) =>
+										Arr.map(gridWeeks(model), (week) =>
 											h.tr(
 												[h.Class("rdp-week")],
-												week.map((date) => dayCell(h, date, flagsOf(date))),
+												Arr.map(week, (date) => dayCell(h, date, flagsOf(date))),
 											),
 										),
 									),

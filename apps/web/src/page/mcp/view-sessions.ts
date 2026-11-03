@@ -39,6 +39,7 @@ import {
 	sectionTitle,
 	RESULT_LANE,
 } from "./view-kit"
+import { Array as Arr } from "effect"
 
 // `/mcp-servers/:service/sessions` and one session: a server's requests grouped by `mcp.session.id`,
 // each session its requests in order, linked to the Agent Session whose trace made them.
@@ -156,7 +157,7 @@ const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): Reado
 
 /** The median of the listed sessions' lengths; `undefined` for none. */
 export const medianLengthMs = (sessions: ReadonlyArray<McpSessionItem>): number | undefined => {
-	const lengths = sessions.map((row) => row.lastSeenMs - row.firstSeenMs).toSorted((a, b) => a - b)
+	const lengths = Arr.map(sessions, (row) => row.lastSeenMs - row.firstSeenMs).toSorted((a, b) => a - b)
 	const middle = Math.floor(lengths.length / 2)
 	return lengths.length === 0
 		? undefined
@@ -201,7 +202,7 @@ const sessionsOverview = <M>(
 		mcpPlot(h, options.env, {
 			chartId: "mcp-sessions-activity",
 			title: "Active sessions and users",
-			rows: data.activity.map((point) => ({
+			rows: Arr.map(data.activity, (point) => ({
 				bucket: formatWarehouseDateTime(point.bucket),
 				sessions: point.sessions,
 				users: point.users,
@@ -281,7 +282,7 @@ export const sessionsBody = <M>(
 											className: "py-10 md:py-12",
 										}),
 									]
-								: data.sessions.map((row) => sessionRow(h, row, options)),
+								: Arr.map(data.sessions, (row) => sessionRow(h, row, options)),
 							{ isWaiting: options.isWaiting },
 						),
 					]),
@@ -308,7 +309,7 @@ export type SessionBodyOptions<M> = Readonly<{
 /** The session's tool calls, its other requests (`initialize`, `tools/list`) left out. */
 export const sessionCalls = (
 	requests: ReadonlyArray<McpSessionRequestItem>,
-): ReadonlyArray<McpSessionRequestItem> => requests.filter((row) => row.method === "tools/call")
+): ReadonlyArray<McpSessionRequestItem> => Arr.filter(requests, (row) => row.method === "tools/call")
 
 /** First request to last, as the sessions list measures it. */
 export const sessionLengthMs = (requests: ReadonlyArray<McpSessionRequestItem>): number =>
@@ -319,13 +320,13 @@ export const linkedAgentSessions = (
 	requests: ReadonlyArray<McpSessionRequestItem>,
 ): ReadonlyArray<Readonly<{ sessionId: string; requests: number }>> => {
 	const counts = new Map<string, number>()
-	requests.forEach((row) => {
+	Arr.forEach(requests, (row) => {
 		if (row.agentSessionId !== null)
 			counts.set(row.agentSessionId, (counts.get(row.agentSessionId) ?? 0) + 1)
 	})
-	return [...counts]
-		.map(([sessionId, count]) => ({ sessionId, requests: count }))
-		.sort((a, b) => b.requests - a.requests)
+	return Arr.map([...counts], ([sessionId, count]) => ({ sessionId, requests: count })).sort(
+		(a, b) => b.requests - a.requests,
+	)
 }
 
 /** Per tool across the session's calls: calls, failures and the time spent in it. `null` is a call naming no tool. */
@@ -333,7 +334,7 @@ export const sessionToolsOf = (
 	requests: ReadonlyArray<McpSessionRequestItem>,
 ): ReadonlyArray<Readonly<{ tool: string | null; calls: number; errors: number; durationNs: number }>> => {
 	const tools = new Map<string | null, { calls: number; errors: number; durationNs: number }>()
-	sessionCalls(requests).forEach((row) => {
+	Arr.forEach(sessionCalls(requests), (row) => {
 		const entry = tools.get(row.tool) ?? { calls: 0, errors: 0, durationNs: 0 }
 		tools.set(row.tool, {
 			calls: entry.calls + 1,
@@ -341,7 +342,7 @@ export const sessionToolsOf = (
 			durationNs: entry.durationNs + row.durationNs,
 		})
 	})
-	return [...tools].map(([tool, entry]) => ({ tool, ...entry })).sort((a, b) => b.calls - a.calls)
+	return Arr.map([...tools], ([tool, entry]) => ({ tool, ...entry })).sort((a, b) => b.calls - a.calls)
 }
 
 /** `+1.2s` from the session's first request; the first reads `start`. */
@@ -406,7 +407,7 @@ const agentSessionsPanel = <M>(
 					)
 				: h.div(
 						[h.Class("flex flex-wrap gap-2")],
-						linked.map((entry) =>
+						Arr.map(linked, (entry) =>
 							pressable(
 								h,
 								{
@@ -480,7 +481,7 @@ const toolRow = <M>(
 
 const toolsPanel = <M>(h: HtmlBuilder<M>, data: McpSessionResponse, options: SessionBodyOptions<M>): Html => {
 	const tools = sessionToolsOf(data.requests)
-	const max = Math.max(...tools.map((tool) => tool.calls), 1)
+	const max = Math.max(...Arr.map(tools, (tool) => tool.calls), 1)
 	return h.section(
 		[h.AriaLabel("Tools"), h.Class("@container/panel min-w-0 px-6 pt-6")],
 		[
@@ -501,7 +502,7 @@ const toolsPanel = <M>(h: HtmlBuilder<M>, data: McpSessionResponse, options: Ses
 									"No tool calls in this session",
 								]),
 							]
-						: tools.map((tool) => toolRow(h, tool, max, options)),
+						: Arr.map(tools, (tool) => toolRow(h, tool, max, options)),
 				),
 			]),
 		],
@@ -514,7 +515,7 @@ const requestsPanel = <M>(
 	options: SessionBodyOptions<M>,
 ): Html => {
 	const startMs = data.requests[0]?.timeMs ?? 0
-	const max = Math.max(...data.requests.map((row) => row.durationNs), 1)
+	const max = Math.max(...Arr.map(data.requests, (row) => row.durationNs), 1)
 	return h.section(
 		[h.AriaLabel("Requests"), h.Class("@container/panel min-w-0 px-6 pt-6 pb-6")],
 		[
@@ -540,7 +541,7 @@ const requestsPanel = <M>(
 				]),
 				toolTableBody(
 					h,
-					data.requests.map((row) => requestRow(h, row, { startMs, max, options })),
+					Arr.map(data.requests, (row) => requestRow(h, row, { startMs, max, options })),
 				),
 			]),
 			toolTableFooter(
@@ -558,8 +559,8 @@ const requestsPanel = <M>(
 
 const sessionStats = <M>(h: HtmlBuilder<M>, data: McpSessionResponse): Html => {
 	const calls = sessionCalls(data.requests)
-	const failed = calls.filter((row) => row.errorType !== null).length
-	const callTime = calls.reduce((sum, row) => sum + row.durationNs, 0)
+	const failed = Arr.filter(calls, (row) => row.errorType !== null).length
+	const callTime = Arr.reduce(calls, 0, (sum, row) => sum + row.durationNs)
 	const requests = `${data.isTruncated ? "the first " : ""}${formatNumber(data.requests.length)} ${pluralize(data.requests.length, "request")}`
 	return statRail(h, { columns: 4, isFlush: true }, [
 		statRailItem(h, {

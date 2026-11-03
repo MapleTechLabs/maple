@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { refreshButton } from "@maple/views/ui/refresh-button"
+import { Array as Arr, String as Str } from "effect"
 
 // The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 
@@ -12,7 +13,7 @@ export const LONG_RANGE_PRESET_VALUES = [...PRESET_VALUES, "3mo", "6mo", "12mo"]
 export type PresetValue = (typeof LONG_RANGE_PRESET_VALUES)[number]
 
 export const isPresetValue = (value: string): value is PresetValue =>
-	LONG_RANGE_PRESET_VALUES.some((preset) => preset === value)
+	Arr.some(LONG_RANGE_PRESET_VALUES, (preset) => preset === value)
 
 // `PRESET_OPTIONS` labels and `presetLabel`.
 const PRESET_LABELS = new Map<string, string>([
@@ -42,7 +43,7 @@ export const presetLabel = (shorthand: string): string => {
 	if (shorthand === "12mo") return "Last 1 year"
 	const known = PRESET_LABELS.get(shorthand)
 	if (known !== undefined) return known
-	const trimmed = shorthand.trim().toLowerCase()
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	if (trimmed === "today") return "Today"
 	const match = trimmed.match(/^(\d+)(mo|m|h|d|w)$/)
 	if (match === null) return shorthand
@@ -55,9 +56,9 @@ export const presetLabel = (shorthand: string): string => {
 export const presetSpanLabel = (shorthand: string): string => {
 	const label = presetLabel(shorthand)
 	if (label === "Today") return "day"
-	if (!label.startsWith("Last ")) return label
-	const span = label.slice("Last ".length)
-	return span.startsWith("1 ") ? span.slice(2) : span
+	if (!Str.startsWith("Last ")(label)) return label
+	const span = Str.slice("Last ".length)(label)
+	return Str.startsWith("1 ")(span) ? Str.slice(2)(span) : span
 }
 
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

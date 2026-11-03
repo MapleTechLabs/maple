@@ -12,6 +12,7 @@ import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { getSmoothStepPath, Position } from "@xyflow/system"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { XY } from "../xyflow/geometry"
+import { Array as Arr, String as Str } from "effect"
 
 // `ServiceMapEdge` (packages/ui `service-map/service-map-edge.tsx`): filter-free SVG tubes.
 
@@ -21,7 +22,7 @@ const endpointColor = (nodeId: string): string => {
 		return getDbNodeColor(dbSystem, dbNamespace)
 	}
 	if (isNsAggregateId(nodeId)) {
-		const ns = decodeURIComponent(nodeId.slice(NS_AGGREGATE_PREFIX.length))
+		const ns = decodeURIComponent(Str.slice(NS_AGGREGATE_PREFIX.length)(nodeId))
 		return `oklch(0.66 0.12 ${getValueHue(ns) ?? 0})`
 	}
 	return getServiceColor(nodeId)
@@ -95,7 +96,7 @@ const tubePath = <M>(
 	h.path([
 		h.Attribute("d", d),
 		h.Attribute("fill", "none"),
-		...attributes.map(([name, value]) => h.Attribute(name, value)),
+		...Arr.map(attributes, ([name, value]) => h.Attribute(name, value)),
 	])
 
 const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: number, y: number): Html => {
@@ -174,7 +175,7 @@ export const serviceMapEdge = <M>(
 	const i = dimmed ? 0 : edgeIntensity(data?.callsPerSecond ?? 0)
 	const dim = dimmed ? 0.18 : 1
 	const sw = geometry.strokeWidth
-	const gradientId = `grad-${edge.id}-${index}`.replace(/[^a-zA-Z0-9-_]/g, "_")
+	const gradientId = Str.replace(/[^a-zA-Z0-9-_]/g, "_")(`grad-${edge.id}-${index}`)
 	const stroke = `url(#${gradientId})`
 	const defs = gradient(h, gradientId, source, target, geometry.sourceColor, targetColor)
 	if (data?.relation !== undefined) {

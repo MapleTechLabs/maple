@@ -1,6 +1,6 @@
 import type { GithubRepoSummary } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -94,7 +94,7 @@ const repositoryField = (
 	repositories: ReadonlyArray<GithubRepoSummary>,
 	error?: string,
 ): Html => {
-	const entries: ReadonlyArray<SelectView.SelectEntry> = repositories.map((repo) => ({
+	const entries: ReadonlyArray<SelectView.SelectEntry> = Arr.map(repositories, (repo) => ({
 		_tag: "Item",
 		item: { value: repo.fullName, label: repo.fullName },
 	}))
@@ -164,7 +164,7 @@ const profileField = (h: H, model: Model): Html => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: model.profile,
 		toParentMessage: (message) => Message.GotProfileMessage({ message }),
-		items: PROFILES.map((profile) => ({
+		items: Arr.map(PROFILES, (profile) => ({
 			value: profile.value,
 			id: `${DIALOG_ID}-profile-${profile.value}`,
 			inputId: `${DIALOG_ID}-profile-${profile.value}-input`,
@@ -177,7 +177,7 @@ const profileField = (h: H, model: Model): Html => {
 		RadioGroup.radioGroup(
 			h,
 			{ label: "Profile", className: gridClass({ cols: 2, gap: "2" }) },
-			PROFILES.map((profile) => {
+			Arr.map(PROFILES, (profile) => {
 				const isChecked = Option.contains(model.profile.maybeValue, profile.value)
 				return label(
 					h,
@@ -263,7 +263,7 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 								hstack(
 									h,
 									{ gap: "1.5", align: "stretch", wrap: true },
-									model.scopePaths.map((path) => scopeChip(h, path)),
+									Arr.map(model.scopePaths, (path) => scopeChip(h, path)),
 								),
 							]),
 					Field.input(h, {

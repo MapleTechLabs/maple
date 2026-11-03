@@ -1,7 +1,7 @@
 import type { ActorDocument } from "@maple/domain/http"
 import { formatCountdown } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { panel } from "@maple/views/ui/panel"
@@ -26,7 +26,7 @@ const ringCircle = <M>(h: HtmlBuilder<M>, attributes: ReadonlyArray<readonly [st
 		h.Attribute("cx", CENTER),
 		h.Attribute("cy", CENTER),
 		h.Attribute("r", String(RING_RADIUS)),
-		...attributes.map(([name, value]) => h.Attribute(name, value)),
+		...Arr.map(attributes, ([name, value]) => h.Attribute(name, value)),
 	])
 
 export const leaseHud = <M>(

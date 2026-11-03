@@ -15,7 +15,7 @@
  * else: the path they are requested at, the operation that resolves them, and
  * how long the answer may be cached. {@link CHART_KINDS} is those three facts.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { chartCard, rankedCard, type ChartCard } from "./chart-card"
 import { renderNode, type AssetFetcher } from "./render"
 import type { ShareChartResponse } from "@maple/domain/http"
@@ -69,11 +69,11 @@ export const CHART_KINDS: ReadonlyArray<ChartKind> = [
 export const chartRequestFromPath = (
 	pathname: string,
 ): { readonly kind: ChartKind; readonly chartId: string } | undefined => {
-	if (!pathname.endsWith(CHART_SUFFIX)) return undefined
-	const kind = CHART_KINDS.find((candidate) => pathname.startsWith(candidate.pathPrefix))
+	if (!Str.endsWith(CHART_SUFFIX)(pathname)) return undefined
+	const kind = CHART_KINDS.find((candidate) => Str.startsWith(candidate.pathPrefix)(pathname))
 	if (kind === undefined) return undefined
 
-	const encoded = pathname.slice(kind.pathPrefix.length, pathname.length - CHART_SUFFIX.length)
+	const encoded = Str.slice(kind.pathPrefix.length, pathname.length - CHART_SUFFIX.length)(pathname)
 	let chartId: string
 	try {
 		chartId = decodeURIComponent(encoded)
@@ -83,7 +83,7 @@ export const chartRequestFromPath = (
 		// whose whole posture is that every bad request looks the same.
 		return undefined
 	}
-	return chartId.length === 0 || chartId.includes("/") ? undefined : { kind, chartId }
+	return chartId.length === 0 || Str.includes("/")(chartId) ? undefined : { kind, chartId }
 }
 
 /** The card to draw, or `undefined` for a chart with nothing in it. */
@@ -91,7 +91,7 @@ const cardFor = (chart: ShareChartResponse): ChartCard | undefined => {
 	if (chart.kind === "ranked") {
 		return chart.points.length === 0 ? undefined : rankedCard(chart)
 	}
-	return chart.series.some((entry) => entry.points.length > 0)
+	return Arr.some(chart.series, (entry) => entry.points.length > 0)
 		? chartCard(chart.title, {
 				kind: chart.kind,
 				unit: chart.unit,

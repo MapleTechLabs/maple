@@ -1,5 +1,5 @@
 import type { Lang as Supported, Theme } from "@pierre/highlights"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { DISPLAY_MAX_CHARS } from "./display-text"
 
 /** A language name or alias (`json`, `shell`), or a file name whose extension names one. */
@@ -82,16 +82,16 @@ export const isHighlighterReady = (): boolean => highlights !== null
 
 /** The supported language `label` names: itself, else a file name's extension, else plain text. */
 const resolveLang = (module: Highlights, label: Lang): Supported => {
-	const name = label.trim().toLowerCase()
+	const name = Str.toLowerCase(Str.trim(label))
 	if (module.isSupportedLanguage(name)) return name
-	const extension = name.slice(name.lastIndexOf(".") + 1)
-	return name.includes(".") && module.isSupportedLanguage(extension) ? extension : "text"
+	const extension = Str.slice(name.lastIndexOf(".") + 1)(name)
+	return Str.includes(".")(name) && module.isSupportedLanguage(extension) ? extension : "text"
 }
 
 const escapeHtml = (text: string): string =>
-	text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+	Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(text)))
 
-const escapeAttribute = (text: string): string => escapeHtml(text).replace(/"/g, "&quot;")
+const escapeAttribute = (text: string): string => Str.replace(/"/g, "&quot;")(escapeHtml(text))
 
 /**
  * Highlighted HTML for `code` (token spans only, for the caller's own `<code>`). Past the display
@@ -105,7 +105,7 @@ export const highlightCode = (code: string, lang: Lang): string => {
 		return `<span ${PENDING}="${escapeAttribute(lang)}">${escapeHtml(code)}</span>`
 	}
 	const html = decoder.decode(highlights.codeToHtml(code, { lang: resolveLang(highlights, lang), theme }))
-	return html.slice(html.indexOf("<code>") + "<code>".length, html.lastIndexOf("</code>"))
+	return Str.slice(html.indexOf("<code>") + "<code>".length, html.lastIndexOf("</code>"))(html)
 }
 
 const SLOT = /^var\(--sh-([\w-]+)\)$/
@@ -119,11 +119,13 @@ export const highlightTokens = (
 	lang: Lang,
 ): ReadonlyArray<ReadonlyArray<{ readonly content: string; readonly slot: string }>> =>
 	highlights === null
-		? code.split("\n").map((line) => (line === "" ? [] : [{ content: line, slot: "foreground" }]))
-		: highlights
-				.codeToTokens(code, { lang: resolveLang(highlights, lang), theme })
-				.tokens.map((line) =>
-					line.flatMap((token) =>
+		? Arr.map(Str.split("\n")(code), (line) =>
+				line === "" ? [] : [{ content: line, slot: "foreground" }],
+			)
+		: Arr.map(
+				highlights.codeToTokens(code, { lang: resolveLang(highlights, lang), theme }).tokens,
+				(line) =>
+					Arr.flatMap(line, (token) =>
 						token.content === ""
 							? []
 							: [
@@ -133,4 +135,4 @@ export const highlightTokens = (
 									},
 								],
 					),
-				)
+			)

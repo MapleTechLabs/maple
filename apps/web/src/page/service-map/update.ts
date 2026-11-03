@@ -1,5 +1,5 @@
 import { DB_NODE_PREFIX } from "@maple/ui/components/service-map/service-map-utils"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -90,7 +90,7 @@ const merge = (result: Return, next: Return): Return => ({
 })
 
 const panelKind = (selectedId: Option.Option<string>) =>
-	Option.map(selectedId, (id) => (id.startsWith(DB_NODE_PREFIX) ? "database" : "service"))
+	Option.map(selectedId, (id) => (Str.startsWith(DB_NODE_PREFIX)(id) ? "database" : "service"))
 
 /**
  * What the host does after the map moved: the focus goes to the URL (replace), prefs and drags
@@ -212,7 +212,10 @@ export const routeChanged = (
 	const isEntering3d = route.search.view === "3d" && model.search.view !== "3d"
 	const next = { ...model, search: route.search, scene3d: isEntering3d ? Scene3d.init() : model.scene3d }
 	const requested = routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: (mode) => requestAll(next, context, mode),
 	})
 	return applyUrlFocus(requested, context)
@@ -291,7 +294,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedResolveWindow: ({ window, timeZone, facetsWindow, nowMs, mode }) =>
 			// The facets window is minted once per visit and kept.
 			requestAll(
-				{ ...model, window, windowZone: timeZone, facetsWindow: model.facetsWindow ?? facetsWindow, nowMs },
+				{
+					...model,
+					window,
+					windowZone: timeZone,
+					facetsWindow: model.facetsWindow ?? facetsWindow,
+					nowMs,
+				},
 				context,
 				mode,
 			),

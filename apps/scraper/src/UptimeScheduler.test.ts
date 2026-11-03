@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Clock, Duration, Effect, Layer, Redacted } from "effect"
+import { Clock, Duration, Effect, Layer, Redacted, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { UptimeCheckReport, type UptimeProbeTarget } from "@maple/domain/uptime"
 import { ApiClient, ApiRequestError } from "./ApiClient"
@@ -99,7 +99,10 @@ const startScheduler = Effect.gen(function* () {
 })
 
 const checksOf = (harness: Harness, id: string) =>
-	harness.checked.filter((entry) => entry.target.id === id).map((entry) => entry.at / 1000)
+	Arr.map(
+		Arr.filter(harness.checked, (entry) => entry.target.id === id),
+		(entry) => entry.at / 1000,
+	)
 
 describe("UptimeScheduler", () => {
 	it.effect("a failing monitor keeps its start-to-start cadence, with no backoff", () =>
@@ -118,14 +121,14 @@ describe("UptimeScheduler", () => {
 			yield* TestClock.adjust(Duration.seconds(15_000))
 			const checks = checksOf(harness, MONITOR_A)
 			assert.strictEqual(checks.length, 501)
-			assert.isTrue(checks.every((at, index) => at === index * 30))
+			assert.isTrue(Arr.every(checks, (at, index) => at === index * 30))
 
 			// The t=15060 reconcile drops it; no check runs after that.
 			harness.targets = []
 			yield* TestClock.adjust(Duration.seconds(300))
 			const after = checksOf(harness, MONITOR_A)
 			assert.isAtMost(after.length, 503)
-			assert.isTrue(after.every((at) => at <= 15_060))
+			assert.isTrue(Arr.every(after, (at) => at <= 15_060))
 		}),
 	)
 
@@ -186,11 +189,11 @@ describe("UptimeScheduler", () => {
 			yield* TestClock.adjust(REPORT_INTERVAL)
 			const delivered = harness.reported.flat()
 			assert.sameMembers(
-				delivered.map((report) => report.monitorId),
+				Arr.map(delivered, (report) => report.monitorId),
 				[MONITOR_A, MONITOR_B],
 			)
 			assert.isAtMost(harness.reported.length, 2)
-			assert.isTrue(delivered.every((report) => report.error === "Status 503, expected 2xx"))
+			assert.isTrue(Arr.every(delivered, (report) => report.error === "Status 503, expected 2xx"))
 		}),
 	)
 })

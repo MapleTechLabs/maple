@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { typography } from "@maple/views/ui/typography"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
@@ -31,8 +31,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const query = queryOf(context.location)
 	const filters = errorsFiltersOf(query)
 	const range = rangeOf(context)
-	const activeFilterCount = [filters.service, filters.env, filters.rootOnly].filter(Boolean).length
-	const stats = Option.getOrNull(Option.flatMap(AsyncData.getData(model.summary.data), Option.fromNullishOr))
+	const activeFilterCount = Arr.filter([filters.service, filters.env, filters.rootOnly], Boolean).length
+	const stats = Option.getOrNull(
+		Option.flatMap(AsyncData.getData(model.summary.data), Option.fromNullishOr),
+	)
 	const rows = Option.getOrElse(AsyncData.getData(model.byType.data), () => [])
 	const tracesPresence = inputs.presenceOf("traces")
 	const content = (): Html => {
@@ -40,7 +42,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		const failure = failureWithoutData(model.byType)
 		if (Option.isSome(failure))
 			return errorState(h, {
-				failure: failure.value, title: "Couldn’t load errors",
+				failure: failure.value,
+				title: "Couldn’t load errors",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (rows.length === 0)
@@ -48,8 +51,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				? emptyNotice(h, {
 						icon: icon(h, "CircleWarningIcon"),
 						title: "No errors in this range",
-						hint:
-							"Errors appear when spans arrive with an Error status. None did in the selected window.",
+						hint: "Errors appear when spans arrive with an Error status. None did in the selected window.",
 					})
 				: signalEmptyState(h, {
 						signal: "traces",
@@ -60,11 +62,24 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						onWidenRange: Message.ClickedWidenRange(),
 						presence: tracesPresence,
 						nowMs: inputs.presenceNowMs,
-						guide: { id: "errors-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+						guide: {
+							id: "errors-empty",
+							endpoint: context.env.otlpEndpoint,
+							copies: model.copies,
+							toCopyMessage: toCopy,
+						},
 					})
 		return h.div(
 			[h.Class(cn("space-y-2 p-4", model.byType.retained === true && "opacity-60 transition-opacity"))],
-			rows.map((row) => errorTypeCard(h, row, cardOf(model, row.fingerprintHash), query, Math.max(model.nowMs, inputs.clockMs))),
+			Arr.map(rows, (row) =>
+				errorTypeCard(
+					h,
+					row,
+					cardOf(model, row.fingerprintHash),
+					query,
+					Math.max(model.nowMs, inputs.clockMs),
+				),
+			),
 		)
 	}
 	return pageShell(
@@ -76,10 +91,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				toolbarStats(
 					h,
 					[
-						toolbarStat(h, { value: Math.round(stats?.totalErrors ?? 0), label: "errors", isDanger: true }),
-						toolbarStat(h, { value: Math.round(stats?.affectedTracesCount ?? 0), label: "affected traces" }),
+						toolbarStat(h, {
+							value: Math.round(stats?.totalErrors ?? 0),
+							label: "errors",
+							isDanger: true,
+						}),
+						toolbarStat(h, {
+							value: Math.round(stats?.affectedTracesCount ?? 0),
+							label: "affected traces",
+						}),
 						typography(h, { size: "sm", tone: "muted", className: "whitespace-nowrap" }, [
-							typography(h, { tone: "foreground", weight: "medium", numeric: true }, [formatErrorRate(stats?.errorRate ?? 0)]),
+							typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+								formatErrorRate(stats?.errorRate ?? 0),
+							]),
 							" ",
 							"error rate",
 						]),

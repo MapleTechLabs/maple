@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import type { InspectSpanOutput } from "@maple/domain/mcp-outputs"
 import type { SpanDetailResult } from "@maple/query-engine/observability"
 import { renderToolDoc } from "../../lib/tool-doc"
@@ -123,7 +123,7 @@ describe("inspect_span", () => {
 		const span = base.span === undefined ? expect.unreachable("fixture has a span") : base.span
 		const { output, text } = inspect({ ...base, span: { ...span, statusCode, statusMessage } })
 		expect(output.statusCode).toBe(statusCode)
-		expect(text.split("\n")).toContain(line)
+		expect(Str.split("\n")(text)).toContain(line)
 	})
 
 	it("summarizes a non-Cloudflare FaaS span from OpenTelemetry semantics", () => {

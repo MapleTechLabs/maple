@@ -16,6 +16,7 @@ import { sidebarTrigger } from "@maple/views/ui/sidebar"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type SourceLink, sourceLinkButton } from "./source-link"
+import { Array as Arr } from "effect"
 
 // The top bar's breadcrumbs.
 
@@ -89,7 +90,7 @@ export const topbar = (
 					h,
 					isTitleOnly(breadcrumbs) ? "sr-only" : "flex-nowrap",
 					// Phones keep only the page's own crumb; its heading below names the rest.
-					breadcrumbs.flatMap((entry, index) => {
+					Arr.flatMap(breadcrumbs, (entry, index) => {
 						const isEarlier = index < breadcrumbs.length - 1
 						return [
 							...(index > 0 ? [breadcrumbSeparator(h, "shrink-0 max-sm:hidden")] : []),

@@ -2,7 +2,7 @@ import { AWS_METRICS_OFF } from "@maple/domain/aws"
 import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration } from "@maple/domain/http/v2"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
@@ -97,7 +97,7 @@ const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html =>
 }
 
 export const roleName = (connection: V2AwsConnection) =>
-	connection.role_arn.split("/").at(-1) ?? connection.role_arn
+	Str.split("/")(connection.role_arn).at(-1) ?? connection.role_arn
 
 type StepState = "done" | "current" | "warn" | "crit" | "todo"
 
@@ -141,7 +141,7 @@ const stepGlyph = (h: H, state: StepState, index: number): Html =>
 const stepList = (h: H, steps: ReadonlyArray<Step>): Html =>
 	h.ol(
 		[h.Class("flex w-full flex-col gap-2.5"), h.AriaLabel("Connection status")],
-		steps.map((step, index) =>
+		Arr.map(steps, (step, index) =>
 			h.li(
 				[h.Class("flex gap-2.5"), h.DataAttribute("step-state", step.state)],
 				[
@@ -226,7 +226,7 @@ const roleStep = (h: H, model: Model, connection: V2AwsConnection, timeZone: str
 const streamStep = (connection: V2AwsConnection): Step => {
 	const stream = connection.metric_stream
 	if (stream !== null) {
-		const scope = `${stream.regions.join(", ")} · ${countLabel(stream.namespaces.length, "namespace")}`
+		const scope = `${Arr.join(stream.regions, ", ")} · ${countLabel(stream.namespaces.length, "namespace")}`
 		// Asked for is not deployed: the setup script deploys each region's stack with the role.
 		return connection.verified_at === null
 			? {
@@ -332,9 +332,10 @@ const ingestBody = (
 	if (ingest.groups.length === 0) {
 		return [h.p([h.Class(SMALL)], ["Nothing stored in the last hour."])]
 	}
-	const namespaces = new Set(ingest.groups.map((group) => group.namespace)).size
-	const silentRegions = (connection.metric_stream?.regions ?? []).filter(
-		(region) => !ingest.groups.some((group) => group.region === region),
+	const namespaces = new Set(Arr.map(ingest.groups, (group) => group.namespace)).size
+	const silentRegions = Arr.filter(
+		connection.metric_stream?.regions ?? [],
+		(region) => !Arr.some(ingest.groups, (group) => group.region === region),
 	)
 	return [
 		h.p(
@@ -363,7 +364,7 @@ const ingestBody = (
 						[
 							tableRow(
 								h,
-								INGEST_COLUMNS.map((column) =>
+								Arr.map(INGEST_COLUMNS, (column) =>
 									tableHead(
 										h,
 										[column],
@@ -379,7 +380,7 @@ const ingestBody = (
 					),
 					tableBody(
 						h,
-						ingest.groups.map((group) =>
+						Arr.map(ingest.groups, (group) =>
 							tableRow(
 								h,
 								[
@@ -405,7 +406,7 @@ const ingestBody = (
 											h.span(
 												[h.Class("text-muted-foreground")],
 												[
-													` · ${group.sample_resources.join(", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
+													` · ${Arr.join(group.sample_resources, ", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
 												],
 											),
 										],
@@ -431,7 +432,7 @@ const ingestBody = (
 				]),
 			],
 		),
-		...silentRegions.map((region) =>
+		...Arr.map(silentRegions, (region) =>
 			typography(h, { size: "xs", tone: "warning", as: "p" }, [
 				`Nothing from ${region} in the last hour. If its resources publish metrics, its stack may not be deployed: run the setup script again.`,
 			]),
@@ -474,7 +475,7 @@ export const ingestPanel = (
 
 const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone: string): Html => {
 	const condition = awsConditionOf(connection, model.nowMs)
-	const isChecking = model.awsCard.checking.some((entry) => entry.id === connection.id)
+	const isChecking = Arr.some(model.awsCard.checking, (entry) => entry.id === connection.id)
 	const isOpen = model.awsCard.setupId === connection.id
 	const isEditing = model.awsCard.metricsId === connection.id
 	const action = (
@@ -579,9 +580,9 @@ const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 
 /** Each stack a disconnect left in AWS, with the script that deletes it, until dismissed. */
 const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray<Html> =>
-	model.awsCard.removed
-		.filter((stack) => focusId === null || stack.connectionId === focusId)
-		.map((stack) =>
+	Arr.map(
+		Arr.filter(model.awsCard.removed, (stack) => focusId === null || stack.connectionId === focusId),
+		(stack) =>
 			h.div(
 				[h.Class("flex flex-col gap-3 rounded-md border p-4")],
 				[
@@ -627,7 +628,7 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 					),
 				],
 			),
-		)
+	)
 
 /** Mounted once: by the card on the integrations page, by the header on a source page. */
 export const awsDisconnectDialog = (h: H, model: Model): Html => {
@@ -652,10 +653,13 @@ const connectedView = (
 	timeZone: string,
 	focusId: string | null,
 ): Html => {
-	const shown = status.connections.filter((connection) => focusId === null || connection.id === focusId)
+	const shown = Arr.filter(
+		status.connections,
+		(connection) => focusId === null || connection.id === focusId,
+	)
 	return vstack(h, { gap: "3" }, [
 		...removedPanel(h, model, focusId),
-		...shown.map((connection) => connectionRow(h, model, connection, timeZone)),
+		...Arr.map(shown, (connection) => connectionRow(h, model, connection, timeZone)),
 		...(focusId !== null || !status.available
 			? []
 			: [
@@ -696,7 +700,7 @@ const byStatus = (
 	timeZone: string,
 	focusId: string | null,
 ): Html =>
-	status.connections.some((connection) => focusId === null || connection.id === focusId)
+	Arr.some(status.connections, (connection) => focusId === null || connection.id === focusId)
 		? connectedView(h, model, status, timeZone, focusId)
 		: vstack(h, { gap: "3" }, [...removedPanel(h, model, focusId), reconnectLink(h)])
 

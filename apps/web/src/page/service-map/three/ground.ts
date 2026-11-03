@@ -15,6 +15,7 @@ import {
 	type Vec3,
 } from "./kit"
 import { linkSeed } from "./transport"
+import { Array as Arr } from "effect"
 
 // The zone and path drawing: stone terraces, meadow mats, worn paths, terrace steps and their
 // helpers.
@@ -90,19 +91,23 @@ function meadowOutline({ id, width, depth }: District) {
 	const ring = rounded.getSpacedPoints(samples).slice(0, samples)
 	const salt = zoneSeed(id)
 	// Whole-number frequencies keep the noise periodic, so the outline closes cleanly.
-	const waves = [
-		{ k: 2, a: 0.45 },
-		{ k: 5, a: 0.35 },
-		{ k: Math.max(7, Math.round(perimeter / 1.6)), a: 0.2 },
-	].map((wave, i) => ({ ...wave, phase: ((salt * (i + 3)) % 360) * (Math.PI / 180) }))
-	const outline = ring.map((point, i) => {
+	const waves = Arr.map(
+		[
+			{ k: 2, a: 0.45 },
+			{ k: 5, a: 0.35 },
+			{ k: Math.max(7, Math.round(perimeter / 1.6)), a: 0.2 },
+		],
+		(wave, i) => ({ ...wave, phase: ((salt * (i + 3)) % 360) * (Math.PI / 180) }),
+	)
+	const outline = Arr.map(ring, (point, i) => {
 		const t = i / samples
 		const next = ring[(i + 1) % samples] ?? point,
 			previous = ring[(i + samples - 1) % samples] ?? point
 		const tangent = next.clone().sub(previous).normalize()
-		const noise = waves.reduce(
-			(sum, { k, a, phase }) => sum + a * Math.sin(2 * Math.PI * k * t + phase),
+		const noise = Arr.reduce(
+			waves,
 			0,
+			(sum, { k, a, phase }) => sum + a * Math.sin(2 * Math.PI * k * t + phase),
 		)
 		return point.clone().addScaledVector(new THREE.Vector2(tangent.y, -tangent.x), 0.09 + 0.2 * noise)
 	})
@@ -164,7 +169,7 @@ function meadowTufts(edge: THREE.Shape, x: number, top: number, z: number, seed:
 	const ring = edge.extractPoints(1).shape
 	const salt = zoneSeed(seed)
 	const points: number[] = []
-	ring.forEach((point, i) => {
+	Arr.forEach(ring, (point, i) => {
 		if ((i + salt) % 5 !== 0) return
 		const next = ring[(i + 1) % ring.length] ?? point
 		const tangent = next.clone().sub(point).normalize()
@@ -247,7 +252,7 @@ export function terraceSteps(
 	{ districts, palette }: { districts: ReadonlyArray<District>; palette: InkPalette },
 ): Child {
 	const tiers = districts.toSorted((a, b) => a.position[0] - b.position[0])
-	return tiers.slice(1).flatMap((lower, i) => {
+	return Arr.flatMap(tiers.slice(1), (lower, i) => {
 		const upper = tiers[i]
 		if (!upper) return []
 		const from = upper.position[0] + upper.width / 2,

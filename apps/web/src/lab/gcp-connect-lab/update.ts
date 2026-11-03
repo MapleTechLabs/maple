@@ -9,6 +9,7 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type GcpLabFlags, hubOf, hubStep } from "../gcp-host"
 import { fixturesAt, LAB_STATES, type LabState, type MethodApplyState } from "./fixture"
 import { Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 export type Return = Update.Return<Model, Message, Resources>
 
@@ -145,7 +146,7 @@ const hubMessage = (model: Model, message: IntegrationsMessage): Return => {
 	const commands =
 		pinned === null
 			? next.commands
-			: next.commands.filter((command) => command.name !== "LoadGcpConfigureScripts")
+			: Arr.filter(next.commands, (command) => command.name !== "LoadGcpConfigureScripts")
 	return { model: { ...model, hub }, commands: Command.mapMessages(commands, toHub) }
 }
 

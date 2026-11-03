@@ -3,7 +3,7 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon, type IconName } from "@maple/views/ui/icon"
@@ -33,13 +33,12 @@ export const asUtcInstant = (iso: string): string => (/(Z|[+-]\d{2}:?\d{2})$/.te
 
 /** An argument key for display: `RuleId`, `rule_id` and `ruleId` all read "Rule id". */
 const argumentLabel = (key: string): string => {
-	const words = key
-		.replace(/([a-z\d])([A-Z])/g, "$1 $2")
-		.split(/[-_\s]+/)
-		.filter(Boolean)
-		.map((word) => word.toLowerCase())
-	const sentence = words.join(" ")
-	return sentence.charAt(0).toUpperCase() + sentence.slice(1)
+	const words = Arr.map(
+		Arr.filter(Str.split(/[-_\s]+/)(Str.replace(/([a-z\d])([A-Z])/g, "$1 $2")(key)), Boolean),
+		(word) => Str.toLowerCase(word),
+	)
+	const sentence = Arr.join(words, " ")
+	return Str.toUpperCase(sentence.charAt(0)) + Str.slice(1)(sentence)
 }
 
 const formatValue = (value: unknown, timeZone: string): Formatted => {
@@ -66,7 +65,8 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 	Option.match(inputRecord(input), {
 		onNone: () => h.pre([h.Class(RAW_CLASS)], [stringify(input)]),
 		onSome: (record) => {
-			const entries = Object.entries(record).filter(
+			const entries = Arr.filter(
+				Rec.toEntries(record),
 				([, value]) => value !== undefined && value !== null && value !== "",
 			)
 			if (entries.length === 0)
@@ -74,15 +74,17 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 			return keyValueList(
 				h,
 				{ layout: "grid", className: "gap-x-2 gap-y-1" },
-				entries.map(([key, value]) => {
+				Arr.map(entries, ([key, value]) => {
 					const formatted = formatValue(value, timeZone)
 					const label = argumentLabel(key)
 					return keyValue(h, { label, labelContent: h.span([h.Class("font-prose")], [label]) }, [
 						formatted.kind === "scalar"
 							? h.span([h.Class("font-medium")], [formatted.text])
-							: typography(h, { tone: "muted", className: "italic" },
-									["JSON · ", String(formatted.chars), " chars"],
-								),
+							: typography(h, { tone: "muted", className: "italic" }, [
+									"JSON · ",
+									String(formatted.chars),
+									" chars",
+								]),
 					])
 				}),
 			)
@@ -91,10 +93,12 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 
 /** "Update Alert Rule" reads "Update alert rule"; acronyms like "SQL" keep their case. */
 const sentenceCase = (label: string): string =>
-	label
-		.split(" ")
-		.map((word, index) => (index > 0 && /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word))
-		.join(" ")
+	Arr.join(
+		Arr.map(Str.split(" ")(label), (word, index) =>
+			index > 0 && /^[A-Z][a-z]+$/.test(word) ? Str.toLowerCase(word) : word,
+		),
+		" ",
+	)
 
 export type ApprovalCardOptions<M> = Readonly<{
 	toolName: string
@@ -206,6 +210,6 @@ const AGENTS = new Map<string, AgentPresentation>([
 /** `agentPresentation`: a sub-agent's label and look. */
 export const agentPresentation = (agent: string): AgentPresentation =>
 	AGENTS.get(agent) ??
-	(agent.startsWith("hypothesis-")
+	(Str.startsWith("hypothesis-")(agent)
 		? { label: "Hypothesis", activity: "Testing", icon: "CompassIcon" }
 		: { label: humanize(agent), activity: "Working", icon: "FaceRobotIcon" })

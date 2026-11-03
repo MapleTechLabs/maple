@@ -6,7 +6,8 @@ import {
 } from "@maple/domain/http/v2"
 import { getTracesFacets } from "@maple/web-data/warehouse/traces"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { Clock, Effect, Exit, Schema } from "effect"
+import { Clock, Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpClientError } from "effect/http"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -20,7 +21,9 @@ import { Message } from "./message"
 
 export const GenerateDraftId = Command.define("GenerateAlertDraftId", {
 	messages: [Message.GeneratedDraftId],
-	execute: Effect.sync(() => Message.GeneratedDraftId({ id: crypto.randomUUID() })),
+	execute: Effect.flatMap(Effect.service(SecureRandom.SecureRandom), (random) =>
+		Effect.map(random.uuidV4(), (id) => Message.GeneratedDraftId({ id })),
+	),
 })
 
 export const ReadEditorClock = Command.define("ReadAlertEditorClock", {
@@ -55,11 +58,11 @@ export const FetchTraceFacets = Command.define("FetchAlertEditorTraceFacets", {
 		getTracesFacets({ data: window }).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) => ({
-					services: response.data.services.map((row) => row.name),
-					environments: response.data.deploymentEnvs.map((row) => row.name),
-					spanNames: response.data.spanNames.map((row) => row.name),
-					httpMethods: response.data.httpMethods.map((row) => row.name),
-					httpStatusCodes: response.data.httpStatusCodes.map((row) => row.name),
+					services: Arr.map(response.data.services, (row) => row.name),
+					environments: Arr.map(response.data.deploymentEnvs, (row) => row.name),
+					spanNames: Arr.map(response.data.spanNames, (row) => row.name),
+					httpMethods: Arr.map(response.data.httpMethods, (row) => row.name),
+					httpStatusCodes: Arr.map(response.data.httpStatusCodes, (row) => row.name),
 				}),
 				onFailure: toLoadFailure,
 			}),
@@ -126,7 +129,7 @@ export const InsertSqlToken = Command.define("InsertAlertSqlToken", {
 			const start = textarea?.selectionStart ?? sql.length
 			const end = textarea?.selectionEnd ?? start
 			return Message.CompletedInsertSqlToken({
-				sql: sql.slice(0, start) + token + sql.slice(end),
+				sql: Str.slice(0, start)(sql) + token + Str.slice(end)(sql),
 				caret: start + token.length,
 			})
 		}),

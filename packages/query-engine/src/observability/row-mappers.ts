@@ -6,7 +6,7 @@
 // missing column becomes an error. Coercing again downstream only hid which
 // layer was responsible.
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Record as Rec } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import type { ListLogsOutput, ListTracesOutput, ErrorsByTypeOutput } from "@maple/domain/tinybird"
 import type { SpanResult, LogEntry, ErrorSummary } from "./types"
@@ -21,7 +21,7 @@ export const parseProjectedAttributes = (raw: string): Record<string, string> =>
 	const out: Record<string, string> = {}
 	const parsed = raw.length === 0 ? Option.none() : decodeAttributeMap(raw)
 	if (Option.isNone(parsed)) return out
-	for (const [key, value] of Object.entries(parsed.value)) {
+	for (const [key, value] of Rec.toEntries(parsed.value)) {
 		if (typeof value === "string" && value.length > 0) out[key] = value
 	}
 	return out

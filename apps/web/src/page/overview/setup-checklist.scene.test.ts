@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
@@ -25,7 +25,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const setup = (message: SetupMessage) => Message.GotSetupMessage({ message })
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 /** Entered in Clerk mode with the clock and the stored quick-start state read. */
 const entered = (isClerk: boolean, state = DEFAULT_QUICK_START_STATE) => {
@@ -44,7 +44,7 @@ const withServices = (model: Model, services: ReadonlyArray<string>): Model =>
 		setup(
 			SetupMessage.SucceededLoadOverview({
 				window: model.setup?.window ?? { startTime: "", endTime: "" },
-				services: services.map((serviceName) => ({ serviceName, spanCount: 10 })),
+				services: Arr.map(services, (serviceName) => ({ serviceName, spanCount: 10 })),
 			}),
 		),
 	).model

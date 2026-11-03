@@ -1,4 +1,14 @@
-import { Duration, Effect, Option, Queue, Schema, Stream } from "effect"
+import {
+	Duration,
+	Effect,
+	Option,
+	Queue,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -108,7 +118,7 @@ const remember = (model: Model, triggerId: string, shown: Shown): Model => {
 		...model,
 		isEngaged: true,
 		tooltip: { ...model.tooltip, requestedSide: shown.side },
-		shown: Object.fromEntries(kept),
+		shown: Rec.fromEntries(kept),
 	}
 }
 
@@ -212,7 +222,7 @@ const openableTrigger = (target: EventTarget | null): Option.Option<HTMLElement>
 /** The trigger's id to anchor to, assigned once when the view gave it none. */
 const anchorIdOf = (trigger: HTMLElement): string => {
 	if (trigger.id === "")
-		trigger.id = `${ID_PREFIX}${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+		trigger.id = `${ID_PREFIX}${Date.now().toString(36)}-${Str.slice(2)(Math.random().toString(36))}`
 	return trigger.id
 }
 
@@ -303,9 +313,13 @@ const escapes: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 /** The triggers in a removed subtree that have an id to match; a moved node is still connected. */
 const removedTriggerIds = (node: Node): ReadonlyArray<string> =>
 	node instanceof Element && !node.isConnected
-		? [node, ...node.querySelectorAll(`[${CONTENT_ATTRIBUTE}]`)]
-				.filter((element) => element.matches(`[${CONTENT_ATTRIBUTE}]`) && element.id !== "")
-				.map((element) => element.id)
+		? Arr.map(
+				Arr.filter(
+					[node, ...node.querySelectorAll(`[${CONTENT_ATTRIBUTE}]`)],
+					(element) => element.matches(`[${CONTENT_ATTRIBUTE}]`) && element.id !== "",
+				),
+				(element) => element.id,
+			)
 		: []
 
 /** Trigger text changes and removals; the update keeps only the shown trigger's. */
@@ -313,10 +327,10 @@ const triggerMutations: Stream.Stream<Message> = Stream.callback<Message>((queue
 	Effect.acquireRelease(
 		Effect.sync(() => {
 			const observer = new MutationObserver((records) =>
-				records.forEach((record) => {
+				Arr.forEach(records, (record) => {
 					if (record.type === "childList") {
 						record.removedNodes.forEach((node) =>
-							removedTriggerIds(node).forEach((triggerId) =>
+							Arr.forEach(removedTriggerIds(node), (triggerId) =>
 								Queue.offerUnsafe(queue, Message.RemovedTrigger({ triggerId })),
 							),
 						)

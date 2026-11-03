@@ -29,6 +29,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
 
@@ -149,7 +150,7 @@ const installation = (h: H, model: Model, status: GithubIntegrationStatus): Html
 			: [
 					foundChips(
 						h,
-						repos.map((repo) => ({ label: repo.fullName })),
+						Arr.map(repos, (repo) => ({ label: repo.fullName })),
 					),
 				]),
 	])
@@ -236,9 +237,9 @@ const syncRow = (
 	if (discovery?._tag === "Failed")
 		return { state: "failed", title: "Repository discovery failed", detail: discovery.message }
 	const total = repos.length
-	const synced = repos.filter((repo) => repo.syncStatus === "ready").length
-	const failed = repos.filter((repo) => repo.syncStatus === "error")
-	const syncing = repos.filter((repo) => repo.syncStatus === "backfilling").length
+	const synced = Arr.filter(repos, (repo) => repo.syncStatus === "ready").length
+	const failed = Arr.filter(repos, (repo) => repo.syncStatus === "error")
+	const syncing = Arr.filter(repos, (repo) => repo.syncStatus === "backfilling").length
 	if (total === 0)
 		return {
 			state: "failed",
@@ -293,7 +294,7 @@ const repoTable = (h: H, repos: ReadonlyArray<GithubRepoSummary>): Html =>
 		],
 		repos.length === 0
 			? [dataTableEmpty(h, ["No repositories granted yet"])]
-			: repos.map((repo) => {
+			: Arr.map(repos, (repo) => {
 					const presentation = SYNC_PRESENTATION[repo.syncStatus]
 					return hstack(
 						h,
@@ -344,7 +345,7 @@ const liveStep = (h: H, model: Model): Html => {
 		!isDiscovering &&
 		!discoveryFailed &&
 		repos.length > 0 &&
-		repos.every((repo) => repo.syncStatus === "ready")
+		Arr.every(repos, (repo) => repo.syncStatus === "ready")
 	return flowColumns(
 		h,
 		[

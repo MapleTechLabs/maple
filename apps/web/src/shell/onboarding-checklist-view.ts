@@ -1,7 +1,7 @@
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
 import { formatCountdown } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -197,7 +197,7 @@ export const checklistPanel = (h: H, model: Model, checklist: V2OnboardingCheckl
 				),
 				h.ol(
 					[h.Class("space-y-0.5 p-2")],
-					checklist.steps.map((step) => stepRow(h, step)),
+					Arr.map(checklist.steps, (step) => stepRow(h, step)),
 				),
 				h.div(
 					[h.Class("flex items-center justify-between gap-3 border-t px-4 py-3 text-xs")],

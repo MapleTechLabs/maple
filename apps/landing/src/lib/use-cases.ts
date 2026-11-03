@@ -14,6 +14,7 @@
  */
 import * as m from "../paraglide/messages.js"
 import type { UseCase } from "./page-registry"
+import { Array as Arr } from "effect"
 
 export const useCases: UseCase[] = [
 	{
@@ -242,6 +243,6 @@ export const useCases: UseCase[] = [
 	},
 ]
 
-export const useCaseSlugs = useCases.map((useCase) => useCase.slug)
+export const useCaseSlugs = Arr.map(useCases, (useCase) => useCase.slug)
 
 export const useCaseBySlug = (slug: string) => useCases.find((useCase) => useCase.slug === slug)

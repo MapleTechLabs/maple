@@ -7,7 +7,14 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyMessage,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -26,6 +33,7 @@ import type { Model, RecommendationTab } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
 
 // `RecommendedMappingsSection` and `AttributeMappingsSection`.
 
@@ -180,9 +188,9 @@ export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> 
 	if (!AsyncData.isSuccess(model.recommendations) && !AsyncData.isRefreshing(model.recommendations))
 		return []
 	const issues = AsyncData.getOrElse(model.recommendations, () => [])
-	if (!issues.some((issue) => issue.status === "open" || issue.status === "dismissed")) return []
-	const open = issues.filter((issue) => issue.status === "open")
-	const closed = issues.filter((issue) => issue.status !== "open")
+	if (!Arr.some(issues, (issue) => issue.status === "open" || issue.status === "dismissed")) return []
+	const open = Arr.filter(issues, (issue) => issue.status === "open")
+	const closed = Arr.filter(issues, (issue) => issue.status !== "open")
 	const rows = model.recommendationTab === "open" ? open : closed
 	return [
 		settingsSection(
@@ -218,7 +226,7 @@ export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> 
 						])
 					: h.div(
 							[h.Class("divide-y")],
-							rows.map((issue) => recommendationRow(h, model, issue)),
+							Arr.map(rows, (issue) => recommendationRow(h, model, issue)),
 						),
 			],
 		),
@@ -336,7 +344,7 @@ const mappingsTable = (h: H, model: Model, mappings: ReadonlyArray<V2AttributeMa
 					...(model.isAdmin ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
 				],
 			),
-			...mappings.map((mapping) => mappingRow(h, model, mapping)),
+			...Arr.map(mappings, (mapping) => mappingRow(h, model, mapping)),
 		],
 	)
 

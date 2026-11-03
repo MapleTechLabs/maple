@@ -2,7 +2,7 @@
  * Identifiers and states of the scheduled security audit: a target (one repository branch the org
  * audits), its runs, and the findings followed across runs.
  */
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 export { executionModeLine, type ExecutionProfile } from "@maple/security-audit/ecosystems"
 
@@ -109,12 +109,17 @@ export const SECURITY_AUDIT_MODELS = [
 export type SecurityAuditModelOption = (typeof SECURITY_AUDIT_MODELS)[number]
 
 /** A model that hunts: any in the catalogue. */
-export const SecurityAuditDiscoveryModel = Schema.Literals(SECURITY_AUDIT_MODELS.map((model) => model.id))
+export const SecurityAuditDiscoveryModel = Schema.Literals(
+	Arr.map(SECURITY_AUDIT_MODELS, (model) => model.id),
+)
 export type SecurityAuditDiscoveryModel = typeof SecurityAuditDiscoveryModel.Type
 
 /** A model that verifies: one that answered verifier prompts in the eval. */
 export const SecurityAuditValidationModel = Schema.Literals(
-	SECURITY_AUDIT_MODELS.filter((model) => model.verifies).map((model) => model.id),
+	Arr.map(
+		Arr.filter(SECURITY_AUDIT_MODELS, (model) => model.verifies),
+		(model) => model.id,
+	),
 )
 export type SecurityAuditValidationModel = typeof SecurityAuditValidationModel.Type
 
@@ -132,19 +137,18 @@ const WINDOWS_RESERVED_COMPONENT =
  */
 export const isSafeScopePath = (value: string): boolean =>
 	value.length > 0 &&
-	value.trim() === value &&
+	Str.trim(value) === value &&
 	!PATH_FORBIDDEN_CHARACTER.test(value) &&
-	!value.includes("\\") &&
-	!value.includes(":") &&
-	!value.startsWith("/") &&
-	!value.startsWith("~") &&
-	value
-		.split("/")
-		.every(
-			(segment) =>
-				segment !== "" &&
-				segment !== "." &&
-				segment !== ".." &&
-				!/[ .]$/u.test(segment) &&
-				!WINDOWS_RESERVED_COMPONENT.test(segment),
-		)
+	!Str.includes("\\")(value) &&
+	!Str.includes(":")(value) &&
+	!Str.startsWith("/")(value) &&
+	!Str.startsWith("~")(value) &&
+	Arr.every(
+		Str.split("/")(value),
+		(segment) =>
+			segment !== "" &&
+			segment !== "." &&
+			segment !== ".." &&
+			!/[ .]$/u.test(segment) &&
+			!WINDOWS_RESERVED_COMPONENT.test(segment),
+	)

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Fiber, Layer } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, Record as Rec } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -64,7 +64,7 @@ const withFetch = async (
 		const text =
 			init?.body === undefined || init.body === null ? "" : await new Response(init.body).text()
 		captured = {
-			url: String(input),
+			url: String(input instanceof Request ? input.url : input),
 			method: String(init?.method),
 			headers: new Headers(init?.headers),
 			body: text,
@@ -116,7 +116,7 @@ describe("StripeClient request construction", () => {
 		assert.strictEqual(captured?.method, "GET")
 		const url = new URL(captured?.url ?? "")
 		assert.strictEqual(`${url.origin}${url.pathname}`, `${API_URL}/v1/subscriptions`)
-		assert.deepStrictEqual(Object.fromEntries(url.searchParams), {
+		assert.deepStrictEqual(Rec.fromEntries(url.searchParams), {
 			customer: CUS,
 			status: "all",
 			limit: "100",
@@ -129,7 +129,7 @@ describe("StripeClient request construction", () => {
 		assert.strictEqual(captured?.method, "GET")
 		const url = new URL(captured?.url ?? "")
 		assert.strictEqual(`${url.origin}${url.pathname}`, `${API_URL}/v1/charges`)
-		assert.deepStrictEqual(Object.fromEntries(url.searchParams), { customer: CUS, limit: "20" })
+		assert.deepStrictEqual(Rec.fromEntries(url.searchParams), { customer: CUS, limit: "20" })
 	})
 
 	it("updateCustomer POSTs form-encoded name + nested address", async () => {

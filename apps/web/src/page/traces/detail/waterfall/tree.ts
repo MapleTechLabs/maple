@@ -1,4 +1,5 @@
 import type { SpanNodeData } from "@maple/views/traces/trace-data"
+import { Array as Arr } from "effect"
 
 // Pure tree walks over the Model's span tree for `SpanHierarchy`.
 
@@ -22,7 +23,7 @@ const flattenTree = (
 		rails: ReadonlyArray<boolean>,
 		parent: SpanNodeData | null,
 	): void =>
-		siblings.forEach((node, index) => {
+		Arr.forEach(siblings, (node, index) => {
 			const isLast = index === siblings.length - 1
 			rows.push({ node, rails, isLast, parent })
 			if (expanded.has(node.spanId) && node.children.length > 0)
@@ -49,7 +50,14 @@ export const flatTreeOf = (
 	if (cached !== undefined && cached.ids === expandedIds) return cached.flat
 	const expanded = new Set(expandedIds)
 	const rows = flattenTree(rootSpans, expanded)
-	const flat = { rows, expanded, keys: rows.map((row) => row.node.spanId).join(" ") }
+	const flat = {
+		rows,
+		expanded,
+		keys: Arr.join(
+			Arr.map(rows, (row) => row.node.spanId),
+			" ",
+		),
+	}
 	flatCache.set(rootSpans, { ids: expandedIds, flat })
 	return flat
 }
@@ -59,7 +67,7 @@ export const treeLevel = (row: TreeRow): number => (row.parent === null ? 0 : ro
 
 /** Every span in the tree, the header's "N of total". */
 export const countSpans = (nodes: ReadonlyArray<SpanNodeData>): number =>
-	nodes.reduce((sum, node) => sum + 1 + countSpans(node.children), 0)
+	Arr.reduce(nodes, 0, (sum, node) => sum + 1 + countSpans(node.children))
 
 /** `countDescendants` for the collapsed `+N` badge. */
 export const countDescendants = (node: SpanNodeData): number => countSpans(node.children)
@@ -72,8 +80,8 @@ export const collectParentIdsByLevel = (rootSpans: ReadonlyArray<SpanNodeData>):
 		const level = byLevel.get(node.depth) ?? new Set<string>()
 		level.add(node.spanId)
 		byLevel.set(node.depth, level)
-		node.children.forEach(visit)
+		Arr.forEach(node.children, visit)
 	}
-	rootSpans.forEach(visit)
+	Arr.forEach(rootSpans, visit)
 	return byLevel
 }

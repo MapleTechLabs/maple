@@ -1,5 +1,5 @@
 import { tokenFallback } from "@maple/ui/lib/colors"
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
@@ -17,9 +17,10 @@ export type ThemeMessage = typeof ThemeMessage.Type
 
 /** The custom property a token names, or `undefined` for a literal colour (`resolvePlotColor`'s unwrap). */
 export const tokenProperty = (token: string): string | undefined => {
-	const inner = token.startsWith("var(") && token.endsWith(")") ? token.slice(4, -1).trim() : token
-	const name = inner.includes(",") ? token : inner
-	return name.startsWith("--") ? name : undefined
+	const inner =
+		Str.startsWith("var(")(token) && Str.endsWith(")")(token) ? Str.trim(Str.slice(4, -1)(token)) : token
+	const name = Str.includes(",")(inner) ? token : inner
+	return Str.startsWith("--")(name) ? name : undefined
 }
 
 /** `resolvePlotColor` (packages/ui/src/components/plot/theme.ts) against a resolved snapshot. */
@@ -36,10 +37,10 @@ export const resolveColor = (
 
 const readTokens = (element: Element, tokens: ReadonlyArray<string>): ThemeColors => {
 	const style = getComputedStyle(element)
-	return Object.fromEntries(
-		tokens.flatMap((token) => {
+	return Rec.fromEntries(
+		Arr.flatMap(tokens, (token) => {
 			const property = tokenProperty(token)
-			return property === undefined ? [] : [[property, style.getPropertyValue(property).trim()]]
+			return property === undefined ? [] : [[property, Str.trim(style.getPropertyValue(property))]]
 		}),
 	)
 }

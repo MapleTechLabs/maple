@@ -29,9 +29,11 @@ const secret = fc.stringMatching(/^[A-Za-z0-9]{12,40}$/)
 
 /** Upper/lower-cased letter by letter: parameter names match case-insensitively. */
 const anyCase = (name: string) =>
-	fc
-		.array(fc.boolean(), { minLength: name.length, maxLength: name.length })
-		.map((upper) => [...name].map((ch, i) => (upper[i] ? ch.toUpperCase() : ch.toLowerCase())).join(""))
+	fc.array(fc.boolean(), { minLength: name.length, maxLength: name.length }).map((upper) =>
+		Array.from(name)
+			.map((ch, i) => (upper[i] ? ch.toUpperCase() : ch.toLowerCase()))
+			.join(""),
+	)
 
 const credentialName = fc.constantFrom(...CREDENTIAL_PARAMS).chain(anyCase)
 
@@ -117,7 +119,9 @@ describe("redactUrl", () => {
 	it("redacts a credential name however it is percent-encoded", () => {
 		fc.assert(
 			fc.property(fc.constantFrom(...CREDENTIAL_PARAMS), secret, (name, value) => {
-				const encoded = [...name].map((ch) => `%${ch.charCodeAt(0).toString(16)}`).join("")
+				const encoded = Array.from(name)
+					.map((ch) => `%${ch.charCodeAt(0).toString(16)}`)
+					.join("")
 				expect(redactUrl(`https://app.test/?${encoded}=${value}`)).not.toContain(value)
 			}),
 		)

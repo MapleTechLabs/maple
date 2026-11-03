@@ -19,6 +19,7 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { type HostMetric, Message } from "./message"
 import type { HostSummary, Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `HostMetadataPanel`, and the Metrics panel of `HostDetailPage` with its `MetricStrip`s.
 
@@ -157,7 +158,7 @@ export const metricsPanel = (h: H, model: Model, timeZone: string): Html =>
 		}),
 		h.div(
 			[h.Class("px-4"), h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())],
-			METRIC_STRIPS.map((strip) => metricStrip(h, model, strip, timeZone)),
+			Arr.map(METRIC_STRIPS, (strip) => metricStrip(h, model, strip, timeZone)),
 		),
 	])
 
@@ -166,7 +167,7 @@ export const hostSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeri
 	seriesLegend(h, {
 		className: "px-3 py-2",
 		maxItems: 8,
-		items: info.series.map((name) => {
+		items: Arr.map(info.series, (name) => {
 			const value = info.lastValues[name]
 			const label = info.labelFor(name)
 			return {

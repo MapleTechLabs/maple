@@ -12,6 +12,7 @@ import { COLUMNS, columnHeader, type SessionsListOptions } from "./sessions-part
 import { KEYS_ATTRIBUTE, keysValue, type VirtualWindow } from "./virtualize"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr, String as Str } from "effect"
 
 // The sessions list. Rows render in flow: the virtualizer's
 // absolute rows stack to the same offsets once every row is in view.
@@ -45,12 +46,12 @@ const quietRunRow = <M>(
 			),
 			h.span(
 				[h.Class("flex min-w-0 items-center gap-3 overflow-hidden"), h.Title(item.summary)],
-				item.tiers.map(({ tag, count }) =>
+				Arr.map(item.tiers, ({ tag, count }) =>
 					hstack(h, { gap: "1.5", as: "span", className: "shrink-0" }, [
 						statusDot(h, { tone: "custom", className: SESSION_TAG_DOTS[tag] }),
 						h.span([h.Class("tabular-nums")], [String(count)]),
 						" ",
-						pluralize(count, SESSION_TAG_LABELS[tag].toLowerCase()),
+						pluralize(count, Str.toLowerCase(SESSION_TAG_LABELS[tag])),
 					]),
 				),
 			),
@@ -82,11 +83,11 @@ export const sessionsList = <M>(
 			h.div(
 				[
 					h.Class("relative w-full"),
-					h.DataAttribute(KEYS_ATTRIBUTE, keysValue(options.items.map(itemKey))),
+					h.DataAttribute(KEYS_ATTRIBUTE, keysValue(Arr.map(options.items, itemKey))),
 					h.Style({ height: `${virtual.window.totalSize}px` }),
 					virtual.mount,
 				],
-				virtual.window.rows.flatMap((row) => {
+				Arr.flatMap(virtual.window.rows, (row) => {
 					const item = options.items[row.index]
 					if (item === undefined) return []
 					return [

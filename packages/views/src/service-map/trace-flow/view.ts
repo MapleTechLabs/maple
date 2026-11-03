@@ -1,5 +1,5 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { flowIcon } from "./flow-icon"
@@ -48,11 +48,11 @@ const renderNodes = <M>(
 	toMessage: (message: Message) => M,
 ): Html => {
 	const placed = new Map(
-		graph.nodes.map((node) => [node.id, { ...node, measured: model.canvas.measured[node.id] }]),
+		Arr.map(graph.nodes, (node) => [node.id, { ...node, measured: model.canvas.measured[node.id] }]),
 	)
 	return nodesLayer(
 		h,
-		graph.nodes.flatMap((node) => {
+		Arr.flatMap(graph.nodes, (node) => {
 			const at = placed.get(node.id)
 			if (at === undefined || !visible(at, model.canvas.viewport, model.canvas.pane)) return []
 			return [
@@ -76,11 +76,11 @@ const renderEdges = <M>(
 	toMessage: (message: Message) => M,
 ): Html => {
 	const placed = new Map(
-		graph.nodes.map((node) => [node.id, { ...node, measured: model.canvas.measured[node.id] }]),
+		Arr.map(graph.nodes, (node) => [node.id, { ...node, measured: model.canvas.measured[node.id] }]),
 	)
 	return edgesLayer(
 		h,
-		graph.edges.flatMap((edge) => {
+		Arr.flatMap(graph.edges, (edge) => {
 			const source = placed.get(edge.source)
 			const target = placed.get(edge.target)
 			if (source === undefined || target === undefined) return []
@@ -116,7 +116,7 @@ const nodesSlot = createLazy()
 const edgesSlot = createLazy()
 
 const minimapColor = (graph: FlowGraph) => {
-	const byId = new Map(graph.nodes.map((node) => [node.id, node.data.span]))
+	const byId = new Map(Arr.map(graph.nodes, (node) => [node.id, node.data.span]))
 	return (id: string): string => {
 		const span = byId.get(id)
 		if (span === undefined) return ""
@@ -160,7 +160,7 @@ export const view = <M>(
 		)
 	}
 	const toCanvas = (message: Canvas.Message) => toMessage(Message.GotCanvasMessage({ message }))
-	const placed = graph.nodes.map((node) => ({ ...node, measured: model.canvas.measured[node.id] }))
+	const placed = Arr.map(graph.nodes, (node) => ({ ...node, measured: model.canvas.measured[node.id] }))
 	return h.div(
 		[h.Class("flex flex-col h-full overflow-hidden")],
 		[

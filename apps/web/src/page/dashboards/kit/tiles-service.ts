@@ -10,6 +10,7 @@ import {
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import type { LegendItem } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The fixed-metric registry entries inside a widget (`LatencyLineChart`, `ThroughputAreaChart`,
 // `ApdexAreaChart`, `ErrorRateAreaChart`): their own series, hoisted into the card header.
@@ -38,12 +39,17 @@ export const SERVICE_CHART_TOKENS: ReadonlyArray<string> = [
 ]
 
 const colorsOf = (kind: Kind, theme: ThemeColors): Readonly<Record<string, string>> => {
-	const chrome = { border: resolveColor(theme, "--border"), background: resolveColor(theme, "--background") }
+	const chrome = {
+		border: resolveColor(theme, "--border"),
+		background: resolveColor(theme, "--background"),
+	}
 	switch (kind) {
 		case "Latency":
 			return {
 				...chrome,
-				...Object.fromEntries(LATENCY_SERIES.map((entry) => [entry.key, resolveColor(theme, entry.token)])),
+				...Rec.fromEntries(
+					Arr.map(LATENCY_SERIES, (entry) => [entry.key, resolveColor(theme, entry.token)]),
+				),
 			}
 		case "Throughput":
 			return {
@@ -59,10 +65,13 @@ const colorsOf = (kind: Kind, theme: ThemeColors): Readonly<Record<string, strin
 }
 
 const toRows = (data: ReadonlyArray<Record<string, unknown>>): ReadonlyArray<FixedMetricRow> =>
-	data.map((row) =>
-		Object.fromEntries(
-			Object.entries(row).flatMap(([key, value]) =>
-				typeof value === "number" || typeof value === "string" || typeof value === "boolean" || value === null
+	Arr.map(data, (row) =>
+		Rec.fromEntries(
+			Arr.flatMap(Rec.toEntries(row), ([key, value]) =>
+				typeof value === "number" ||
+				typeof value === "string" ||
+				typeof value === "boolean" ||
+				value === null
 					? [[key, value] as const]
 					: [],
 			),
@@ -81,7 +90,7 @@ export const serviceLegend = (
 	if (entry === undefined) return []
 	switch (entry.kind) {
 		case "Latency":
-			return LATENCY_SERIES.map((series) => ({
+			return Arr.map(LATENCY_SERIES, (series) => ({
 				key: series.key,
 				label: series.label,
 				color: resolveColor(theme, series.token),
@@ -106,7 +115,11 @@ export const serviceChart = <M>(
 	nowMs: number,
 	className: string,
 ): Html => {
-	const entry = KINDS.get(chartId) ?? { kind: "Latency", ariaLabel: "Latency percentiles", gradientPrefix: "latency" }
+	const entry = KINDS.get(chartId) ?? {
+		kind: "Latency",
+		ariaLabel: "Latency percentiles",
+		gradientPrefix: "latency",
+	}
 	return h.submodel({
 		slotId: `chart-${widget.id}`,
 		model: ctx.chart,

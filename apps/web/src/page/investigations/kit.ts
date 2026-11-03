@@ -10,6 +10,7 @@ import { badge } from "@maple/views/ui/display"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The investigation status badge and confidence meter.
 
@@ -108,7 +109,7 @@ export const confidenceMeter = <M>(
 		[
 			h.span(
 				[h.Class("flex items-end gap-px"), h.AriaHidden(true)],
-				BAR_HEIGHT.map((height, index) =>
+				Arr.map(BAR_HEIGHT, (height, index) =>
 					h.span([
 						h.Key(height),
 						h.Class(
@@ -168,10 +169,10 @@ export const investigateBar = <M>(
 					size: "sm",
 					// Primary once there is something to send, so an actionable button never reads as disabled.
 					variant:
-						options.isAccent === true || options.value.trim() !== "" ? "default" : "secondary",
+						options.isAccent === true || Str.trim(options.value) !== "" ? "default" : "secondary",
 					className: "h-6.5 shrink-0 px-3 text-xs",
 					isLoading: options.isBusy,
-					isDisabled: options.value.trim() === "",
+					isDisabled: Str.trim(options.value) === "",
 				},
 				["Investigate"],
 			),

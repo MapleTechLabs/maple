@@ -20,6 +20,7 @@
  */
 import * as m from "../paraglide/messages.js"
 import type { Feature } from "./page-registry"
+import { Array as Arr } from "effect"
 
 export const features: Feature[] = [
 	{
@@ -724,6 +725,6 @@ export const features: Feature[] = [
 	},
 ]
 
-export const featureSlugs = features.map((feature) => feature.slug)
+export const featureSlugs = Arr.map(features, (feature) => feature.slug)
 
 export const featureBySlug = (slug: string) => features.find((feature) => feature.slug === slug)

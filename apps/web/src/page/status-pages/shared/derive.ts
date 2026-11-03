@@ -17,7 +17,7 @@ import {
 	worstStatus,
 } from "@maple/domain/status-page"
 import type { Tone } from "@maple/ui/lib/tone"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 // Pure reads of status pages shared by the hub's tab and the editor.
 
@@ -94,14 +94,16 @@ export const componentStatus = (
 	deriveComponentStatus({
 		monitorStatus: monitors.find((monitor) => monitor.id === component.monitor_id)?.state.status ?? null,
 		manualStatus: component.manual_status,
-		incidentStatuses: incidents
-			.filter(
+		incidentStatuses: Arr.map(
+			Arr.filter(
+				incidents,
 				(incident) =>
 					incident.published &&
 					isActiveIncident(incident) &&
 					incident.component_ids.includes(component.id),
-			)
-			.map(incidentComponentStatus),
+			),
+			incidentComponentStatus,
+		),
 	})
 
 export const summarizePage = (input: {
@@ -112,10 +114,10 @@ export const summarizePage = (input: {
 }): StatusPageSummary => ({
 	page: input.page,
 	overall: worstStatus(
-		input.components.map((component) => componentStatus(component, input.monitors, input.incidents)),
+		Arr.map(input.components, (component) => componentStatus(component, input.monitors, input.incidents)),
 	),
 	componentCount: input.components.length,
-	openIncidents: input.incidents.filter(isOpenIncident).length,
+	openIncidents: Arr.filter(input.incidents, isOpenIncident).length,
 })
 
 /** Whether visitors see an older revision than the page has now. */

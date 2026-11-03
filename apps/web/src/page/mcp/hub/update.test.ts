@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
@@ -15,7 +15,10 @@ const context: PageContext = {
 
 const window = (days: number) => ({
 	startTime: "2026-08-01 00:00:00",
-	endTime: new Date(Date.UTC(2026, 7, 1) + days * 86_400_000).toISOString().replace("T", " ").slice(0, 19),
+	endTime: Str.slice(
+		0,
+		19,
+	)(Str.replace("T", " ")(new Date(Date.UTC(2026, 7, 1) + days * 86_400_000).toISOString())),
 })
 
 /** Where a step navigates, or undefined when it stays put. */

@@ -1,5 +1,5 @@
 import { QueryEngineExecuteRequest, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { ListMetricsRequest, MetricName, MetricsSummaryRequest, ServiceName } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
 import {
@@ -8,6 +8,7 @@ import {
 	executeQueryEngine,
 	extractAttributeValues,
 	runWarehouseQuery,
+	wireString,
 } from "./effect-utils"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 
@@ -41,14 +42,14 @@ export interface Metric {
 
 function transformMetric(raw: Record<string, unknown>): Metric {
 	return {
-		metricName: String(raw.metricName ?? ""),
-		metricType: String(raw.metricType ?? ""),
-		serviceName: String(raw.serviceName ?? ""),
-		metricDescription: String(raw.metricDescription ?? ""),
-		metricUnit: String(raw.metricUnit ?? ""),
+		metricName: wireString(raw.metricName),
+		metricType: wireString(raw.metricType),
+		serviceName: wireString(raw.serviceName),
+		metricDescription: wireString(raw.metricDescription),
+		metricUnit: wireString(raw.metricUnit),
 		dataPointCount: Number(raw.dataPointCount ?? 0),
-		firstSeen: String(raw.firstSeen ?? ""),
-		lastSeen: String(raw.lastSeen ?? ""),
+		firstSeen: wireString(raw.firstSeen),
+		lastSeen: wireString(raw.lastSeen),
 		isMonotonic: Boolean(raw.isMonotonic),
 	}
 }
@@ -84,7 +85,7 @@ const listMetricsEffect = Effect.fn("QueryEngine.listMetrics")(function* ({
 	)
 
 	return {
-		data: result.data.map(transformMetric),
+		data: Arr.map(result.data, transformMetric),
 	}
 })
 
@@ -142,9 +143,9 @@ const getMetricSparklinesEffect = Effect.fn("QueryEngine.getMetricSparklines")(f
 	if (result.kind !== "sparklines") return { data: [] }
 
 	return {
-		data: result.data.map((series) => ({
+		data: Arr.map(result.data, (series) => ({
 			metricName: series.metricName,
-			points: series.points.map((point) => ({
+			points: Arr.map(series.points, (point) => ({
 				bucket: point.bucket,
 				avgValue: point.avgValue,
 				sumValue: point.sumValue,
@@ -189,7 +190,7 @@ const getMetricsSummaryEffect = Effect.fn("QueryEngine.getMetricsSummary")(funct
 	)
 
 	return {
-		data: result.data.map((raw) => ({
+		data: Arr.map(result.data, (raw) => ({
 			metricType: raw.metricType,
 			metricCount: raw.metricCount,
 			dataPointCount: raw.dataPointCount,
@@ -240,7 +241,7 @@ const getMetricAttributeKeysEffect = Effect.fn("QueryEngine.getMetricAttributeKe
 	if (result.kind !== "attributeKeys") return { data: [] }
 
 	return {
-		data: result.data.map((row) => ({
+		data: Arr.map(result.data, (row) => ({
 			attributeKey: row.key,
 			usageCount: Number(row.count),
 		})),
@@ -300,7 +301,7 @@ const getMetricAttributeValuesEffect = Effect.fn("QueryEngine.getMetricAttribute
 	)
 
 	return {
-		data: extractAttributeValues(response).map((row) => ({
+		data: Arr.map(extractAttributeValues(response), (row) => ({
 			attributeValue: row.value,
 			usageCount: Number(row.count),
 		})),

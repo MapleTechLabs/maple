@@ -1,6 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { GetAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -61,7 +61,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 			const destinations =
 				known === undefined
 					? undefined
-					: rule.destinationIds.map((id) => {
+					: Arr.map(rule.destinationIds, (id) => {
 							const match = known.find((d) => d.id === id)
 							return {
 								id,
@@ -119,19 +119,21 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				doc.fields([
 					[
 						"Service Names",
-						rule.serviceNames.length > 0 ? rule.serviceNames.join(", ") : "All services",
+						rule.serviceNames.length > 0 ? Arr.join(rule.serviceNames, ", ") : "All services",
 					],
 					[
 						"Exclude",
-						rule.excludeServiceNames.length > 0 ? rule.excludeServiceNames.join(", ") : undefined,
+						rule.excludeServiceNames.length > 0
+							? Arr.join(rule.excludeServiceNames, ", ")
+							: undefined,
 					],
 					[
 						"Environments",
-						rule.environments.length > 0 ? rule.environments.join(", ") : "All environments",
+						rule.environments.length > 0 ? Arr.join(rule.environments, ", ") : "All environments",
 					],
 					[
 						"Group By",
-						rule.groupBy && rule.groupBy.length > 0 ? rule.groupBy.join(", ") : undefined,
+						rule.groupBy && rule.groupBy.length > 0 ? Arr.join(rule.groupBy, ", ") : undefined,
 					],
 				]),
 				doc.heading("Evaluation"),
@@ -172,10 +174,10 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				rule.destinationIds.length === 0
 					? doc.text("No notification destinations configured.")
 					: rule.destinations === undefined
-						? doc.text(`Destination IDs: ${rule.destinationIds.join(", ")}`)
+						? doc.text(`Destination IDs: ${Arr.join(rule.destinationIds, ", ")}`)
 						: doc.table(
 								["Destination", "Type", "Enabled", "ID"],
-								rule.destinations.map((d) => [
+								Arr.map(rule.destinations, (d) => [
 									d.name ?? "(deleted destination)",
 									d.type ?? "-",
 									d.name === null ? "-" : d.enabled ? "Yes" : "No",

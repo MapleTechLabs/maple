@@ -3,12 +3,13 @@ import { countLabel } from "@maple/ui/lib/format"
 import type { FlowSpec, LiveHealth } from "./flow"
 import type { Model } from "./model"
 import { githubStatusOf } from "./update-github"
+import { Array as Arr } from "effect"
 
 // GitHub's place in the connect flow: install the app, then Go live. Repositories are picked on
 // GitHub during install, so there is no Choose data step.
 
 export const activeRepos = (status: GithubIntegrationStatus): ReadonlyArray<GithubRepoSummary> =>
-	status.repositories.filter((repo) => repo.status === "active")
+	Arr.filter(status.repositories, (repo) => repo.status === "active")
 
 /** Where the app is installed: "Installed on acme". */
 export const githubReach = (status: GithubIntegrationStatus): string =>
@@ -23,9 +24,9 @@ const liveOf = (status: GithubIntegrationStatus | null): LiveHealth => {
 	if (status.state === "suspended" || status.state === "disconnected") return "attention"
 	if (!status.connected) return "pending"
 	const repos = activeRepos(status)
-	return repos.length === 0 || repos.some((repo) => repo.syncStatus === "error")
+	return repos.length === 0 || Arr.some(repos, (repo) => repo.syncStatus === "error")
 		? "attention"
-		: repos.every((repo) => repo.syncStatus === "ready")
+		: Arr.every(repos, (repo) => repo.syncStatus === "ready")
 			? "healthy"
 			: "pending"
 }

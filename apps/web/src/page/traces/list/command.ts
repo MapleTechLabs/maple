@@ -4,7 +4,7 @@ import {
 	type ListTracesInput,
 	type Trace,
 } from "@maple/web-data/warehouse/traces"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -121,7 +121,7 @@ const fetchPage = (search: Search, window: TimeWindow, pinnedNamespace: string |
 	listTraces({ data: listInput(search, window, pinnedNamespace, offset) }).pipe(
 		Effect.mapBoth({
 			onSuccess: (response): TracesPage => ({
-				rows: response.data.map(toRow),
+				rows: Arr.map(response.data, toRow),
 				scannedCount: response.meta.scannedCount,
 				hiddenCount: response.meta.hiddenCount,
 			}),
@@ -326,7 +326,7 @@ export const MountWhereEditor = Mount.defineStream("MountTracesWhereEditor", {
 							},
 						],
 					]
-					listeners.forEach(([type, listener]) => textarea.addEventListener(type, listener))
+					Arr.forEach(listeners, ([type, listener]) => textarea.addEventListener(type, listener))
 					if (document.activeElement === textarea)
 						send(Message.FocusedAdvanced({ cursor: caret() }))
 					return { textarea, listeners }

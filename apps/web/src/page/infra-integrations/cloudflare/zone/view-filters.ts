@@ -4,7 +4,7 @@ import {
 	type CloudflareFilters,
 	hasActiveFilters,
 } from "../../../../components/infra/cloudflare/filters"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { sectionOf } from "./derive"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -40,7 +40,7 @@ export const filterChips = (h: H, model: Model, filters: CloudflareFilters): Htm
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const colorFrom = (map: Readonly<Record<string, string>>) => (name: string) =>
-	Object.hasOwn(map, name) ? map[name] : undefined
+	Rec.has(map, name) ? map[name] : undefined
 
 type SectionSpec = Readonly<{
 	title: string
@@ -56,7 +56,7 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 	const body = (response: ZoneFacets, isWaiting: boolean): Html => {
 		const f = response.data
 		const hasFilters = hasActiveFilters(filters)
-		if (!hasFilters && Object.values(f).every((options) => options.length === 0))
+		if (!hasFilters && Arr.every(Rec.values(f), (options) => options.length === 0))
 			return filterSidebarEmpty(h)
 		const sections: ReadonlyArray<SectionSpec> = [
 			{ title: "Path", key: "paths", options: f.paths, isSearchable: true, defaultOpen: true },
@@ -95,7 +95,7 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 			...filterSidebarBody(
 				h,
 				"cloudflare-zone-filters",
-				sections.flatMap((spec) => {
+				Arr.flatMap(sections, (spec) => {
 					const section = filterSection(h, {
 						title: spec.title,
 						options: spec.options,

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { encodeJson } from "./json"
 import { normalizedSchemaSql } from "./store-version"
+import { Array as Arr, String as Str } from "effect"
 
 export type LocalSchemaObjectKind = "table" | "materialized_view" | "view"
 
@@ -51,9 +52,9 @@ export interface PhysicalSchemaMismatch {
 	readonly reason: string
 }
 
-const normalize = (value: string): string => value.replace(/\s+/g, " ").trim()
+const normalize = (value: string): string => Str.trim(Str.replace(/\s+/g, " ")(value))
 
-const stripTrailingComma = (value: string): string => value.trim().replace(/,\s*$/, "")
+const stripTrailingComma = (value: string): string => Str.replace(/,\s*$/, "")(Str.trim(value))
 
 const matchingParen = (value: string, open: number): number => {
 	let depth = 0
@@ -93,41 +94,42 @@ const topLevelKeyword = (declaration: string, keywords: ReadonlyArray<string>): 
 		if (char === "(") depth += 1
 		if (char === ")") depth -= 1
 		if (depth !== 0 || !/\s/.test(char)) continue
-		const rest = declaration.slice(i).trimStart()
+		const rest = Str.trimStart(Str.slice(i)(declaration))
 		const hit = keywords.find((keyword) => new RegExp(`^${keyword}\\b`, "i").test(rest))
-		if (hit !== undefined) return i + (declaration.slice(i).length - rest.length)
+		if (hit !== undefined) return i + (Str.slice(i)(declaration).length - rest.length)
 	}
 	return -1
 }
 
 const parseColumn = (line: string): LocalSchemaColumn | undefined => {
-	const trimmed = line.trim()
+	const trimmed = Str.trim(line)
 	if (/^INDEX\b/i.test(trimmed)) return undefined
 	const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/)
 	if (!match) return undefined
 	const name = match[1]!
 	const declaration = stripTrailingComma(match[2]!)
 	const stop = topLevelKeyword(declaration, ["DEFAULT", "MATERIALIZED", "ALIAS", "CODEC", "COMMENT"])
-	const type = normalize(stop === -1 ? declaration : declaration.slice(0, stop))
+	const type = normalize(stop === -1 ? declaration : Str.slice(0, stop)(declaration))
 	if (type.length === 0) return undefined
-	const attributes = stop === -1 ? "" : declaration.slice(stop).trim()
+	const attributes = stop === -1 ? "" : Str.trim(Str.slice(stop)(declaration))
 	const codecOffset = topLevelKeyword(attributes, ["CODEC"])
 	const commentOffset = topLevelKeyword(attributes, ["COMMENT"])
-	const defaultEnd = [codecOffset, commentOffset, attributes.length]
-		.filter((offset) => offset >= 0)
-		.sort((a, b) => a - b)[0]!
-	const defaultClause = attributes.slice(0, defaultEnd).trim()
+	const defaultEnd = Arr.filter(
+		[codecOffset, commentOffset, attributes.length],
+		(offset) => offset >= 0,
+	).sort((a, b) => a - b)[0]!
+	const defaultClause = Str.trim(Str.slice(0, defaultEnd)(attributes))
 	const defaultMatch = defaultClause.match(/^(DEFAULT|MATERIALIZED|ALIAS)\s+(.+)$/i)
 	const codecClause =
 		codecOffset === -1
 			? undefined
-			: attributes.slice(codecOffset, commentOffset === -1 ? undefined : commentOffset).trim()
+			: Str.trim(Str.slice(codecOffset, commentOffset === -1 ? undefined : commentOffset)(attributes))
 	return {
 		name,
 		type,
 		...(!(defaultMatch === null)
 			? {
-					defaultKind: defaultMatch[1]!.toUpperCase(),
+					defaultKind: Str.toUpperCase(defaultMatch[1]!),
 					defaultExpression: normalize(defaultMatch[2]!),
 				}
 			: undefined),
@@ -144,7 +146,7 @@ const splitStatements = (sql: string): ReadonlyArray<string> => {
 		/^(?:\s*--[^\n]*\n)*\s*CREATE\s+(?:TABLE|MATERIALIZED\s+VIEW|VIEW)\b/i.test(value)
 	let current = ""
 	let quote: "'" | '"' | "`" | null = null
-	for (const line of sql.split("\n")) {
+	for (const line of Str.split("\n")(sql)) {
 		current += `${line}\n`
 		for (let i = 0; i < line.length; i += 1) {
 			const char = line[i]
@@ -159,25 +161,25 @@ const splitStatements = (sql: string): ReadonlyArray<string> => {
 			if (char === "-" && line[i + 1] === "-") break
 			if (char === "'" || char === '"' || char === "`") quote = char
 		}
-		if (quote === null && /^\s*$/.test(line) && current.trim().length > 0) {
-			const candidate = current.trim()
+		if (quote === null && /^\s*$/.test(line) && Str.trim(current).length > 0) {
+			const candidate = Str.trim(current)
 			if (beginsCreate(candidate)) {
-				statements.push(candidate.replace(/;\s*$/, ""))
+				statements.push(Str.replace(/;\s*$/, "")(candidate))
 				current = ""
 			}
 		}
 	}
-	if (current.trim().length > 0) {
-		const candidate = current.trim()
+	if (Str.trim(current).length > 0) {
+		const candidate = Str.trim(current)
 		if (beginsCreate(candidate)) {
-			statements.push(candidate.replace(/;\s*$/, ""))
+			statements.push(Str.replace(/;\s*$/, "")(candidate))
 		}
 	}
 	return statements
 }
 
 const parseStatement = (raw: string): LocalSchemaObject | undefined => {
-	const statement = raw.replace(/--[^\n]*/g, "").trim()
+	const statement = Str.trim(Str.replace(/--[^\n]*/g, "")(raw))
 	const table = statement.match(/^CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/i)
 	const materialized = statement.match(
 		/^CREATE\s+MATERIALIZED\s+VIEW\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)/i,
@@ -191,20 +193,20 @@ const parseStatement = (raw: string): LocalSchemaObject | undefined => {
 	const close = open === -1 ? -1 : matchingParen(statement, open)
 	const columns =
 		table && open !== -1 && close !== -1
-			? statement
-					.slice(open + 1, close)
-					.split("\n")
-					.map(parseColumn)
-					.filter((column): column is LocalSchemaColumn => column !== undefined)
+			? Arr.filter(
+					Arr.map(Str.split("\n")(Str.slice(open + 1, close)(statement)), parseColumn),
+					(column): column is LocalSchemaColumn => column !== undefined,
+				)
 			: []
-	const clause = close === -1 ? statement : statement.slice(close + 1)
+	const clause = close === -1 ? statement : Str.slice(close + 1)(statement)
 	const engine = clause.match(/\bENGINE\s*=\s*([A-Za-z_][A-Za-z0-9_]*)/i)?.[1]
 	const partitionBy = clause.match(
 		/\bPARTITION\s+BY\s+(.+?)(?=\bORDER\s+BY\b|\bPRIMARY\s+KEY\b|\bTTL\b|\bSETTINGS\b|$)/is,
 	)?.[1]
 	const orderBy = clause.match(/\bORDER\s+BY\s+(.+?)(?=\bPRIMARY\s+KEY\b|\bTTL\b|\bSETTINGS\b|$)/is)?.[1]
 	const ttl = clause.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)?.[1]
-	const indexes = [...statement.matchAll(/^\s*INDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gim)].map(
+	const indexes = Arr.map(
+		[...statement.matchAll(/^\s*INDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gim)],
 		(match) => match[1]!,
 	)
 	return {
@@ -221,10 +223,10 @@ const parseStatement = (raw: string): LocalSchemaObject | undefined => {
 }
 
 export const buildLocalSchemaManifest = (schemaSql: string): LocalSchemaManifest => {
-	const objects = splitStatements(schemaSql)
-		.map(parseStatement)
-		.filter((object): object is LocalSchemaObject => object !== undefined)
-		.sort((a, b) => a.name.localeCompare(b.name))
+	const objects = Arr.filter(
+		Arr.map(splitStatements(schemaSql), parseStatement),
+		(object): object is LocalSchemaObject => object !== undefined,
+	).sort((a, b) => Str.localeCompare(b.name)(a.name))
 	const stable = encodeJson(objects)
 	return {
 		objects,
@@ -248,7 +250,7 @@ export const withRawTelemetryRetentionFloor = (
 	const floored = new Set(tables)
 	return {
 		...manifest,
-		objects: manifest.objects.map((object) => {
+		objects: Arr.map(manifest.objects, (object) => {
 			if (!floored.has(object.name) || object.ttl === undefined) return object
 			const raised = object.ttl.replace(/\bINTERVAL\s+(\d+)\s+DAY\b/i, (match, value: string) =>
 				Number(value) >= days ? match : `INTERVAL ${days} DAY`,
@@ -260,7 +262,7 @@ export const withRawTelemetryRetentionFloor = (
 
 export const normalizedDefinition = (value: string): string => normalizedSchemaSql(value)
 
-const normalizeType = (value: string): string => normalize(value).replace(/\s*,\s*/g, ", ")
+const normalizeType = (value: string): string => Str.replace(/\s*,\s*/g, ", ")(normalize(value))
 
 const compareColumnAttribute = (actual: string | undefined, expected: string | undefined): boolean =>
 	actual === undefined && expected === undefined
@@ -271,13 +273,26 @@ const normalizeComparable = (value: string | undefined): string | undefined =>
 	value === undefined
 		? undefined
 		: (() => {
-				const normalized = normalize(value)
-					.replace(/\s*,\s*/g, ", ")
-					.replace(/\btoIntervalDay\((\d+)\)/g, "INTERVAL $1 DAY")
-					.replace(/\btoIntervalMonth\((\d+)\)/g, "INTERVAL $1 MONTH")
-					.replace(/\btoIntervalHour\((\d+)\)/g, "INTERVAL $1 HOUR")
-				if (normalized.length >= 2 && normalized.startsWith("(") && normalized.endsWith(")")) {
-					return normalized.slice(1, -1).trim()
+				const normalized = Str.replace(
+					/\btoIntervalHour\((\d+)\)/g,
+					"INTERVAL $1 HOUR",
+				)(
+					Str.replace(
+						/\btoIntervalMonth\((\d+)\)/g,
+						"INTERVAL $1 MONTH",
+					)(
+						Str.replace(
+							/\btoIntervalDay\((\d+)\)/g,
+							"INTERVAL $1 DAY",
+						)(Str.replace(/\s*,\s*/g, ", ")(normalize(value))),
+					),
+				)
+				if (
+					normalized.length >= 2 &&
+					Str.startsWith("(")(normalized) &&
+					Str.endsWith(")")(normalized)
+				) {
+					return Str.trim(Str.slice(1, -1)(normalized))
 				}
 				return normalized
 			})()
@@ -305,7 +320,7 @@ const compareExpression = (
  * be compared across the two representations. */
 export const viewBody = (definition: string): string | undefined => {
 	const match = definition.match(/\bAS\s+(?=WITH\b|SELECT\b|\()/i)
-	return match?.index === undefined ? undefined : definition.slice(match.index + match[0].length)
+	return match?.index === undefined ? undefined : Str.slice(match.index + match[0].length)(definition)
 }
 
 /** Compare a bundled structural manifest with an inspected chDB schema. This
@@ -321,7 +336,7 @@ export const comparePhysicalSchema = (
 	actual: PhysicalSchema,
 	normalizeSql?: (sql: string) => string | undefined,
 ): ReadonlyArray<PhysicalSchemaMismatch> => {
-	const actualByName = new Map(actual.objects.map((object) => [object.name, object]))
+	const actualByName = new Map(Arr.map(actual.objects, (object) => [object.name, object]))
 	const mismatches: PhysicalSchemaMismatch[] = []
 	for (const desired of expected.objects) {
 		const found = actualByName.get(desired.name)
@@ -334,7 +349,7 @@ export const comparePhysicalSchema = (
 			continue
 		}
 		if (desired.kind === "table") {
-			const foundColumns = new Map(found.columns.map((column) => [column.name, column.type]))
+			const foundColumns = new Map(Arr.map(found.columns, (column) => [column.name, column.type]))
 			for (const column of desired.columns) {
 				const actualType = foundColumns.get(column.name)
 				if (actualType === undefined) {
@@ -365,7 +380,7 @@ export const comparePhysicalSchema = (
 					mismatches.push({ object: desired.name, reason: `column ${column.name} codec differs` })
 				}
 			}
-			const desiredColumns = new Set(desired.columns.map((column) => column.name))
+			const desiredColumns = new Set(Arr.map(desired.columns, (column) => column.name))
 			for (const column of found.columns) {
 				if (!desiredColumns.has(column.name)) {
 					mismatches.push({ object: desired.name, reason: `unexpected column ${column.name}` })
@@ -413,7 +428,7 @@ export const comparePhysicalSchema = (
 				} else if (normalizeSql === undefined) {
 					// No parser available: fall back to whitespace-normalized containment,
 					// which only catches gross drift.
-					if (!normalizedDefinition(actualBody).includes(normalizedDefinition(expectedBody)))
+					if (!Str.includes(normalizedDefinition(expectedBody))(normalizedDefinition(actualBody)))
 						mismatches.push({
 							object: desired.name,
 							reason: "materialized-view definition differs",
@@ -436,7 +451,7 @@ export const comparePhysicalSchema = (
 			}
 		}
 	}
-	const expectedNames = new Set(expected.objects.map((object) => object.name))
+	const expectedNames = new Set(Arr.map(expected.objects, (object) => object.name))
 	for (const object of actual.objects) {
 		if (!expectedNames.has(object.name)) {
 			mismatches.push({ object: object.name, reason: `unexpected ${object.kind}` })

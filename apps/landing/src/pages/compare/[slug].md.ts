@@ -24,9 +24,10 @@ import {
 	vendorCaveat,
 	vendorConfigs,
 } from "../../lib/vendor-pricing"
+import { Array as Arr, String as Str } from "effect"
 
 export const getStaticPaths: GetStaticPaths = () =>
-	competitors.map((competitor) => ({ params: { slug: competitor.slug }, props: { competitor } }))
+	Arr.map(competitors, (competitor) => ({ params: { slug: competitor.slug }, props: { competitor } }))
 
 const monthLabel = (checked: string) =>
 	new Date(`${checked}-15T00:00:00Z`).toLocaleDateString("en-US", {
@@ -38,7 +39,7 @@ const monthLabel = (checked: string) =>
 const dollars = (amount: number) => formatLineAmount(amount)
 
 /** Pipes inside a cell would break the row. */
-const cell = (text: string) => text.replaceAll("\\", "\\\\").replaceAll("|", "\\|")
+const cell = (text: string) => Str.replaceAll("|", "\\|")(Str.replaceAll("\\", "\\\\")(text))
 
 export const GET: APIRoute = ({ props, site }) => {
 	const { competitor } = props as { competitor: Competitor }
@@ -48,14 +49,17 @@ export const GET: APIRoute = ({ props, site }) => {
 		edge === "maple" ? "Maple" : edge === "competitor" ? name : m.cmp_diff_edge_even()
 
 	const rowsFor = (edge: "differ" | "ahead") =>
-		competitor.differences
-			.filter((row) => (edge === "ahead" ? row.edge === "competitor" : row.edge !== "competitor"))
-			.map((row) => [
+		Arr.map(
+			Arr.filter(competitor.differences, (row) =>
+				edge === "ahead" ? row.edge === "competitor" : row.edge !== "competitor",
+			),
+			(row) => [
 				cell(row.topic()),
 				cell(row.maple()),
 				cell(row.competitor()) + (row.source !== undefined ? ` [${row.source + 1}]` : ""),
 				edgeLabel(row.edge),
-			])
+			],
+		)
 
 	const differences = blocks(
 		`## ${m.cmp_diff_title({ name })}`,
@@ -66,7 +70,10 @@ export const GET: APIRoute = ({ props, site }) => {
 		rowsFor("ahead").length > 0
 			? table([m.cmp_diff_col_topic(), "Maple", name, m.cmp_diff_col_edge()], rowsFor("ahead"))
 			: undefined,
-		`**${m.cmp_parity_label()}:** ${competitor.parity.map((item) => item()).join(" · ")}`,
+		`**${m.cmp_parity_label()}:** ${Arr.join(
+			Arr.map(competitor.parity, (item) => item()),
+			" · ",
+		)}`,
 	)
 
 	// The Surfaces section, where the page has one: the same four rows, with
@@ -75,12 +82,13 @@ export const GET: APIRoute = ({ props, site }) => {
 		? blocks(
 				`## ${m.cmp_surfaces_title({ name })}`,
 				competitor.surfaces.lede(),
-				competitor.surfaces.rows
-					.map((row) => {
+				Arr.join(
+					Arr.map(competitor.surfaces.rows, (row) => {
 						const surface = MAPLE_SURFACES[row.surface]
 						return `- **${surface.name()}**: ${surface.body()} ${m.cmp_surfaces_instead_label({ name })} ${row.instead()}`
-					})
-					.join("\n"),
+					}),
+					"\n",
+				),
 			)
 		: undefined
 
@@ -93,7 +101,7 @@ export const GET: APIRoute = ({ props, site }) => {
 		table(
 			[label, "Amount"],
 			[
-				...estimate.breakdown.map((item) => [
+				...Arr.map(estimate.breakdown, (item) => [
 					`${item.label}: ${item.detail}`,
 					item.value === 0 ? m.cmp_price_free() : dollars(item.value),
 				]),
@@ -117,32 +125,40 @@ export const GET: APIRoute = ({ props, site }) => {
 	const migration = blocks(
 		`## ${m.cmp_migration_title({ name })}`,
 		m.cmp_migration_lede(),
-		competitor.migration.map((step, i) => `${i + 1}. **${step.title()}** ${step.body()}`).join("\n"),
+		Arr.join(
+			Arr.map(competitor.migration, (step, i) => `${i + 1}. **${step.title()}** ${step.body()}`),
+			"\n",
+		),
 		`\`\`\`yaml\n# otel-collector.yaml. ${m.cmp_migration_diff_caption()}\n${competitor.migrationDiff}\n\`\`\``,
 	)
 
 	const faq = blocks(
 		`## ${m.faq_heading()}`,
-		...competitor.faqs.map((f) => `### ${f.question()}\n\n${f.answer()}`),
+		...Arr.map(competitor.faqs, (f) => `### ${f.question()}\n\n${f.answer()}`),
 	)
 
 	const sources = blocks(
 		`## ${m.cmp_sources_title({ name })}`,
 		m.cmp_sources_lede(),
-		competitor.sources
-			.map(
+		Arr.join(
+			Arr.map(
+				competitor.sources,
 				(s, i) =>
 					`${i + 1}. [${s.label}](${s.url}), ${m.cmp_sources_checked({ date: monthLabel(s.checked) })}`,
-			)
-			.join("\n"),
+			),
+			"\n",
+		),
 	)
 
 	const related = blocks(
 		`## ${m.cmp_related_title()}`,
-		competitors
-			.filter((entry) => entry.slug !== competitor.slug)
-			.map((entry) => `- [${entry.navLabel()}](${absolute(site, `/compare/${entry.slug}.md`)})`)
-			.join("\n"),
+		Arr.join(
+			Arr.map(
+				Arr.filter(competitors, (entry) => entry.slug !== competitor.slug),
+				(entry) => `- [${entry.navLabel()}](${absolute(site, `/compare/${entry.slug}.md`)})`,
+			),
+			"\n",
+		),
 	)
 
 	return markdown(

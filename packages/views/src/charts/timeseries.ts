@@ -19,6 +19,7 @@ import {
 	type TimeseriesRow,
 } from "./timeseries-rows"
 import { resolveColor, type ThemeColors } from "./theme-colors"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The React-free half of `Timeseries` (packages/ui/src/components/plot/timeseries.tsx): row
 // normalisation, series keys and colour tokens, and the shared x and y axes. Copied, as that
@@ -36,13 +37,16 @@ export interface SeriesDefinition {
 export const seriesDefinitionsOf = (data: ReadonlyArray<Readonly<Record<string, unknown>>>) => {
 	const rawKeys = [
 		...new Set(
-			data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket" && key !== "partial")),
+			Arr.flatMap(data, (row) =>
+				Arr.filter(Rec.keys(row), (key) => key !== "bucket" && key !== "partial"),
+			),
 		),
 	]
 	return {
-		definitions: rawKeys
-			.slice(0, HARD_SERIES_LIMIT)
-			.map((rawKey, index): SeriesDefinition => ({ rawKey, chartKey: `s${index + 1}` })),
+		definitions: Arr.map(rawKeys.slice(0, HARD_SERIES_LIMIT), (rawKey, index): SeriesDefinition => ({
+			rawKey,
+			chartKey: `s${index + 1}`,
+		})),
 		totalSeriesCount: rawKeys.length,
 	}
 }
@@ -52,13 +56,13 @@ export const normaliseRows = (
 	data: ReadonlyArray<Readonly<Record<string, unknown>>>,
 	definitions: ReadonlyArray<SeriesDefinition>,
 ): Array<TimeseriesRow> =>
-	data.flatMap((row): Array<TimeseriesRow> => {
+	Arr.flatMap(data, (row): Array<TimeseriesRow> => {
 		const bucket = typeof row.bucket === "string" ? row.bucket : ""
 		const epochMs = parseBucketMs(bucket)
 		if (epochMs == null) return []
 		const next: TimeseriesRow = { bucket, date: new Date(epochMs) }
 		if (row.partial === true) next.partial = true
-		definitions.forEach((definition) => {
+		Arr.forEach(definitions, (definition) => {
 			next[definition.chartKey] = asFiniteNumber(row[definition.rawKey])
 		})
 		return [next]
@@ -72,10 +76,10 @@ export const scaleRates = (
 	bucketSeconds: number | undefined,
 ): Array<TimeseriesRow> => {
 	if (unit !== "requests_per_sec" || !bucketSeconds) return rows
-	return rows.map((row) => {
+	return Arr.map(rows, (row) => {
 		const next: TimeseriesRow = { bucket: row.bucket, date: row.date }
 		if (row.partial) next.partial = true
-		keys.forEach((key) => {
+		Arr.forEach(keys, (key) => {
 			next[key] = asFiniteNumber(row[key]) / bucketSeconds
 		})
 		return next
@@ -86,9 +90,9 @@ export const scaleRates = (
 export const seriesColorTokens = (
 	definitions: ReadonlyArray<SeriesDefinition>,
 ): ReadonlyMap<string, string> => {
-	const byRawKey = resolveSeriesColors(definitions.map((definition) => definition.rawKey))
+	const byRawKey = resolveSeriesColors(Arr.map(definitions, (definition) => definition.rawKey))
 	return new Map(
-		definitions.map((definition) => [
+		Arr.map(definitions, (definition) => [
 			definition.chartKey,
 			byRawKey.get(definition.rawKey) ?? SERIES_FALLBACK_COLOR,
 		]),
@@ -102,7 +106,7 @@ export const hoistedSeries = (
 ): ReadonlyArray<{ readonly key: string; readonly label: string; readonly color: string }> => {
 	const { definitions } = seriesDefinitionsOf(data)
 	const tokens = seriesColorTokens(definitions)
-	return definitions.map((definition) => ({
+	return Arr.map(definitions, (definition) => ({
 		key: definition.chartKey,
 		label: definition.rawKey,
 		color: resolveColor(

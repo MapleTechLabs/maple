@@ -40,6 +40,7 @@ import { isLimitsDirty, limitsDraftOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { gridClass } from "@maple/views/ui/grid"
+import { String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -162,7 +163,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 						type: "submit",
 						size: "sm",
 						isLoading: model.isSavingKey,
-						isDisabled: model.keyDraft.value.trim() === "",
+						isDisabled: Str.trim(model.keyDraft.value) === "",
 					},
 					["Save key"],
 				),

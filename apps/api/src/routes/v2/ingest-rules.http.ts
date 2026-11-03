@@ -10,7 +10,7 @@ import {
 	V2ParameterInvalid,
 	type V2IngestRule,
 } from "@maple/domain/http/v2"
-import { Clock, Effect } from "effect"
+import { Clock, Effect, Array as Arr } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -62,7 +62,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const rules = yield* service.list(tenant.orgId)
-					const page = yield* paginateArray(rules.map(toV2IngestRule), query)
+					const page = yield* paginateArray(Arr.map(rules, toV2IngestRule), query)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -76,13 +76,11 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 					const startMs =
 						query.start_time === undefined ? endMs - DAY_MS : timestampMs(query.start_time)
 					if (!(startMs < endMs) || endMs - startMs > MAX_STATS_WINDOW_MS) {
-						return yield* Effect.fail(
-							V2ParameterInvalid.make(
-								"start_time must be before end_time, at most 62 days apart.",
-								{
-									param: "start_time",
-								},
-							),
+						return yield* V2ParameterInvalid.make(
+							"start_time must be before end_time, at most 62 days apart.",
+							{
+								param: "start_time",
+							},
 						)
 					}
 					const stats = yield* service.stats(tenant.orgId, startMs, endMs)
@@ -101,13 +99,13 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 						object: "ingest_rule_stats" as const,
 						start_time: isoTimestamp(startMs),
 						end_time: isoTimestamp(endMs),
-						rules: stats.rules.map((row) => ({ id: row.ruleId, ...counts(row) })),
-						signals: stats.signals.flatMap((row) =>
+						rules: Arr.map(stats.rules, (row) => ({ id: row.ruleId, ...counts(row) })),
+						signals: Arr.flatMap(stats.signals, (row) =>
 							row.signal === "traces" || row.signal === "logs" || row.signal === "metrics"
 								? [{ signal: row.signal, ...counts(row) }]
 								: [],
 						),
-						hourly: stats.hourly.map((row) => ({
+						hourly: Arr.map(stats.hourly, (row) => ({
 							id: row.ruleId,
 							bucket: isoTimestamp(row.bucket),
 							matched: row.matched,
@@ -129,7 +127,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 							}),
 						{ discard: true },
 					)
-					return { object: "list" as const, data: rules.map(toV2IngestRule) }
+					return { object: "list" as const, data: Arr.map(rules, toV2IngestRule) }
 				}),
 			)
 			.handle("retrieve", ({ params }) =>

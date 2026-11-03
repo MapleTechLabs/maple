@@ -4,7 +4,7 @@ import {
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
 } from "../../../components/code-review/code-review-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { empty, emptyDescription, emptyFrameClass, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
@@ -36,7 +36,7 @@ const entries = (
 	options: ReadonlyArray<readonly [string, string]>,
 ): ReadonlyArray<SelectEntry> => [
 	{ _tag: "Item", item: { value: ALL, label: allLabel } },
-	...options.map(([value, label]): SelectEntry => ({ _tag: "Item", item: { value, label } })),
+	...Arr.map(options, ([value, label]): SelectEntry => ({ _tag: "Item", item: { value, label } })),
 ]
 
 const FILTERS: ReadonlyArray<{
@@ -51,7 +51,7 @@ const FILTERS: ReadonlyArray<{
 		field: "severitySelect",
 		entries: entries(
 			"All severities",
-			PrReviewSeverity.literals.map((value) => [value, SEVERITY_LABELS[value]]),
+			Arr.map(PrReviewSeverity.literals, (value) => [value, SEVERITY_LABELS[value]]),
 		),
 	},
 	{
@@ -60,7 +60,7 @@ const FILTERS: ReadonlyArray<{
 		field: "categorySelect",
 		entries: entries(
 			"All categories",
-			PrReviewCategory.literals.map((value) => [value, CATEGORY_LABELS[value]]),
+			Arr.map(PrReviewCategory.literals, (value) => [value, CATEGORY_LABELS[value]]),
 		),
 	},
 	{
@@ -69,13 +69,13 @@ const FILTERS: ReadonlyArray<{
 		field: "stateSelect",
 		entries: entries(
 			"All states",
-			PrReviewFindingStatus.literals.map((value) => [value, FINDING_STATUS_LABELS[value]]),
+			Arr.map(PrReviewFindingStatus.literals, (value) => [value, FINDING_STATUS_LABELS[value]]),
 		),
 	},
 ]
 
 const filterSelects = (h: H, model: Model): ReadonlyArray<Html> =>
-	FILTERS.map(({ filter, label, field, entries: options }) =>
+	Arr.map(FILTERS, ({ filter, label, field, entries: options }) =>
 		h.submodel({
 			slotId: model[field].id,
 			model: model[field],
@@ -122,7 +122,9 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 					[
 						emptyHeader(h, [
 							emptyTitle(h, ["No issues in this window"]),
-							emptyDescription(h, ["Issues the reviewer posts on pull requests are listed here."]),
+							emptyDescription(h, [
+								"Issues the reviewer posts on pull requests are listed here.",
+							]),
 						]),
 					],
 					emptyFrameClass("dashed"),
@@ -139,16 +141,17 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 							isLoading: AsyncData.isRefreshing(model.findings.data),
 							onLoadMore: Message.ClickedLoadMore(),
 						})
-			return vstack(h, { gap: "3" },
-				[findingsList(h, model, response.findings, timeZone), ...(footer === null ? [] : [footer])],
-			)
+			return vstack(h, { gap: "3" }, [
+				findingsList(h, model, response.findings, timeZone),
+				...(footer === null ? [] : [footer]),
+			])
 		},
 	})
 
 const authorsOf = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.authors.data), {
 		onNone: () => [],
-		onSome: (analytics) => analytics.authors.map((row) => row.author),
+		onSome: (analytics) => Arr.map(analytics.authors, (row) => row.author),
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

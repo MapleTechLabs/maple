@@ -4,6 +4,7 @@
 import type { AttributeFilter } from "@maple/domain/query-engine"
 import { MAX_RAW_BREAKDOWN_SPANS, MIN_SPAN_ESTIMATE_RANGE_SECONDS, formatRangeSeconds } from "../limits"
 import { inclusionValues, soleValue } from "../ch/queries/query-helpers"
+import { Array as Arr, String as Str } from "effect"
 
 export interface SpanBudgetFilter {
 	readonly serviceName?: string
@@ -20,6 +21,8 @@ export interface SpanBudgetVerdict {
 	readonly exceeded?: {
 		readonly message: string
 		readonly details: ReadonlyArray<string>
+		/** The widest window that fits, in whole hours; absent when not even an hour does. */
+		readonly fittingRangeSeconds?: number
 	}
 }
 
@@ -31,7 +34,8 @@ const SECONDS_PER_HOUR = 3600
  */
 export function spanBudgetApplies(filter: SpanBudgetFilter, rangeSeconds: number): boolean {
 	if (rangeSeconds <= MIN_SPAN_ESTIMATE_RANGE_SECONDS) return false
-	return ![...(filter.attributeFilters ?? []), ...(filter.resourceAttributeFilters ?? [])].some(
+	return !Arr.some(
+		[...(filter.attributeFilters ?? []), ...(filter.resourceAttributeFilters ?? [])],
 		(f) => !f.or?.length && !f.negated && f.mode === "equals" && (f.value ?? "") !== "",
 	)
 }
@@ -46,7 +50,9 @@ const serviceMatcher = (filter: SpanBudgetFilter): ((name: string) => boolean) =
 	const excluded = new Set(filter.excludedServiceNames ?? [])
 	const included = (name: string) =>
 		values === undefined ||
-		(needle !== undefined ? name.toLowerCase().includes(needle.toLowerCase()) : values.includes(name))
+		(needle !== undefined
+			? Str.includes(Str.toLowerCase(needle))(Str.toLowerCase(name))
+			: values.includes(name))
 	return (name) => !excluded.has(name) && included(name)
 }
 
@@ -84,9 +90,8 @@ export function rawBreakdownSpanVerdict(
 ): SpanBudgetVerdict {
 	const matches = serviceMatcher(filter)
 	const estimatedSpans = Math.round(
-		rows.reduce(
-			(total, row) => (matches(row.serviceName) ? total + spansInWindow(row, window) : total),
-			0,
+		Arr.reduce(rows, 0, (total, row) =>
+			matches(row.serviceName) ? total + spansInWindow(row, window) : total,
 		),
 	)
 	const rangeSeconds = (window.endMs - window.startMs) / 1000
@@ -106,6 +111,7 @@ export function rawBreakdownSpanVerdict(
 				`This window holds about ${compactCount(estimatedSpans)} spans for the selected services; a breakdown over raw spans can aggregate about ${compactCount(budget)} before it times out`,
 				`${narrower}, or filter to fewer services`,
 			],
+			...(fittingHours >= 1 ? { fittingRangeSeconds: fittingHours * SECONDS_PER_HOUR } : undefined),
 		},
 	}
 }

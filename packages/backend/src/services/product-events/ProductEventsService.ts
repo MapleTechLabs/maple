@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema, Record as Rec, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 
@@ -74,7 +74,7 @@ const MAX_ATTRIBUTE_VALUE = 1024
 const REQUEST_TIMEOUT = "2500 millis"
 const RETRIES = 1
 
-const trimTrailingSlash = (url: string) => url.replace(/\/+$/, "")
+const trimTrailingSlash = (url: string) => Str.replace(/\/+$/, "")(url)
 
 const sanitizeAttributes = (
 	attributes: Readonly<Record<string, string>> | undefined,
@@ -82,11 +82,11 @@ const sanitizeAttributes = (
 	if (attributes === undefined) return undefined
 	const out: Record<string, string> = {}
 	let count = 0
-	for (const [key, value] of Object.entries(attributes)) {
+	for (const [key, value] of Rec.toEntries(attributes)) {
 		if (count >= MAX_ATTRIBUTES) break
 		if (key.length === 0 || key.length > MAX_ATTRIBUTE_KEY) continue
 		if (typeof value !== "string" || value.length === 0) continue
-		out[key] = value.length > MAX_ATTRIBUTE_VALUE ? value.slice(0, MAX_ATTRIBUTE_VALUE) : value
+		out[key] = value.length > MAX_ATTRIBUTE_VALUE ? Str.slice(0, MAX_ATTRIBUTE_VALUE)(value) : value
 		count += 1
 	}
 	return count === 0 ? undefined : out
@@ -96,7 +96,7 @@ const sanitizeAttributes = (
 export const toProductEventLine = (event: ProductEventInput, nowMs: number): ProductEventLine => {
 	const attributes = sanitizeAttributes(event.attributes)
 	return {
-		name: event.name.slice(0, MAX_NAME_LENGTH),
+		name: Str.slice(0, MAX_NAME_LENGTH)(event.name),
 		timestamp: new Date(event.timestamp ?? nowMs).toISOString(),
 		source: "server",
 		service_name: "maple-api",

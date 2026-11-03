@@ -7,7 +7,7 @@ import { areaY, type ChartValue, d3Curve, defineChart, lineY, rect, ruleY, text 
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
@@ -28,7 +28,7 @@ const THRESHOLD_LABEL_DY = -6
 
 /** `thresholdRules` with resolved colours: one dashed `ruleY`, labels anchored at `labelX`. */
 const thresholdRules = (thresholds: ReadonlyArray<Threshold>, labelX: Date | undefined) => {
-	const valid = thresholds.filter((threshold) => Number.isFinite(threshold.value))
+	const valid = Arr.filter(thresholds, (threshold) => Number.isFinite(threshold.value))
 	if (valid.length === 0) return []
 	const rules = ruleY(valid, {
 		y: (threshold: Threshold) => threshold.value,
@@ -67,7 +67,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 		formatSignalValue(spec.signalType, Number.isFinite(value) ? value : 0)
 	const data = sortedSignal(spec.points)
 	const axis = makeBucketAxis(
-		data.map((point) => point.bucket),
+		Arr.map(data, (point) => point.bucket),
 		spec.timeZone,
 	)
 
@@ -80,9 +80,8 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 	const x2 = x2Raw === undefined || x1 === undefined || toEpochMs(x2Raw) < toEpochMs(x1) ? x1 : x2Raw
 	const window = x1 === undefined || x2 === undefined ? null : { x1: bucketDate(x1), x2: bucketDate(x2) }
 
-	const maxVal = data.reduce(
-		(max, point) => Math.max(max, point.value),
-		Math.max(spec.thresholdValue, spec.baselineMedian),
+	const maxVal = Arr.reduce(data, Math.max(spec.thresholdValue, spec.baselineMedian), (max, point) =>
+		Math.max(max, point.value),
 	)
 	const yDomain: [number, number] = [0, maxVal * 1.15]
 	const at = (point: SignalPoint) => bucketDate(point.bucket)
@@ -124,7 +123,13 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 					stroke: "none",
 					curve: d3Curve(curveMonotoneX),
 				}),
-				lineY(data, { x: at, y: value, stroke, strokeWidth: SERIES_STROKE_WIDTH, curve: d3Curve(curveMonotoneX) }),
+				lineY(data, {
+					x: at,
+					y: value,
+					stroke,
+					strokeWidth: SERIES_STROKE_WIDTH,
+					curve: d3Curve(curveMonotoneX),
+				}),
 				focusDot(data, at, value, stroke, chrome),
 				focusCrosshair(chrome),
 			],

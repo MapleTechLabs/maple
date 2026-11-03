@@ -1,5 +1,5 @@
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { FlowContext, FlowSpec, LiveHealth } from "./flow"
 import type { Model } from "./model"
@@ -41,8 +41,8 @@ export const probeStateOf = (model: Model, target: V2ScrapeTarget | null): Probe
 export const isChoiceSaved = (model: Model, target: V2ScrapeTarget): boolean => {
 	const form = model.prometheusCard.form
 	return (
-		form.name.value.trim() === target.name &&
-		form.serviceName.value.trim() === (target.service_name ?? "") &&
+		Str.trim(form.name.value) === target.name &&
+		Str.trim(form.serviceName.value) === (target.service_name ?? "") &&
 		parsedInterval(form) === target.scrape_interval_seconds
 	)
 }

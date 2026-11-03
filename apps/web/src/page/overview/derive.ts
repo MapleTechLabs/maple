@@ -8,7 +8,7 @@ import {
 	type ServiceHealth,
 	type ServiceHealthCause,
 } from "../../components/dashboard/service-health"
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { isPresetValue, type PresetValue } from "../kit/time-controls"
 import type { FacetsHint, HealthSnapshot, Incident, Model } from "./model"
@@ -24,7 +24,11 @@ export const defaultPreset = (model: Model): PresetValue =>
 	Option.match(AsyncData.getData(model.facets.data), {
 		onNone: () => (isPresetValue(model.hint.preset) ? model.hint.preset : "24h"),
 		onSome: ({ services }) =>
-			services.length === 0 ? "24h" : services.every((name) => name.startsWith("demo-")) ? "6h" : "24h",
+			services.length === 0
+				? "24h"
+				: Arr.every(services, (name) => Str.startsWith("demo-")(name))
+					? "6h"
+					: "24h",
 	})
 
 export const timePresetOf = (model: Model): string => model.search.timePreset ?? defaultPreset(model)
@@ -62,7 +66,7 @@ export const selectedEnvironment = (model: Model): string =>
 
 export const environmentItems = (model: Model): ReadonlyArray<{ value: string; label: string }> => [
 	{ value: ALL_ENVIRONMENTS, label: "All environments" },
-	...environmentsOf(model).map((name) => ({ value: name, label: name })),
+	...Arr.map(environmentsOf(model), (name) => ({ value: name, label: name })),
 ]
 
 /** The hint `FacetsHintPersister` writes once facets are ready. */
@@ -112,39 +116,42 @@ export const enrichServices = (
 	anomalies: ReadonlyArray<V2AnomalyServiceCount>,
 	nowMs: number,
 ): Array<EnrichedService> =>
-	services
-		.map((service) => {
-			const alertCauses: Array<ServiceHealthCause> = incidents
-				.filter((incident) => incident.status === "open" && incident.groupKey === service.serviceName)
-				.map((incident) => ({
-					severity: incident.severity,
-					label: alertIncidentCauseLabel(incident.signalType),
-				}))
-			const anomalyCauses: Array<ServiceHealthCause> = anomalies
-				.filter(
-					(row) =>
-						affectsHealth(row, nowMs) &&
-						row.service_name === service.serviceName &&
-						(row.deployment_env || "unknown") === service.environment,
-				)
-				.map((row) => ({
-					severity: row.severity,
-					label: ANOMALY_LABEL.get(row.signal_type) ?? "",
-					metric: ANOMALY_METRIC.get(row.signal_type),
-					direction: anomalyDirection(row.signal_type),
-				}))
-			const causes = [...alertCauses, ...anomalyCauses].sort((a, b) =>
-				a.severity === b.severity ? 0 : a.severity === "critical" ? -1 : 1,
-			)
-			return { service, causes, health: deriveServiceHealthFromCauses(causes) }
-		})
-		.sort(
-			(a, b) =>
-				healthRank(b.health) - healthRank(a.health) || b.service.errorRate - a.service.errorRate,
+	Arr.map(services, (service) => {
+		const alertCauses: Array<ServiceHealthCause> = Arr.map(
+			Arr.filter(
+				incidents,
+				(incident) => incident.status === "open" && incident.groupKey === service.serviceName,
+			),
+			(incident) => ({
+				severity: incident.severity,
+				label: alertIncidentCauseLabel(incident.signalType),
+			}),
 		)
+		const anomalyCauses: Array<ServiceHealthCause> = Arr.map(
+			Arr.filter(
+				anomalies,
+				(row) =>
+					affectsHealth(row, nowMs) &&
+					row.service_name === service.serviceName &&
+					(row.deployment_env || "unknown") === service.environment,
+			),
+			(row) => ({
+				severity: row.severity,
+				label: ANOMALY_LABEL.get(row.signal_type) ?? "",
+				metric: ANOMALY_METRIC.get(row.signal_type),
+				direction: anomalyDirection(row.signal_type),
+			}),
+		)
+		const causes = [...alertCauses, ...anomalyCauses].sort((a, b) =>
+			a.severity === b.severity ? 0 : a.severity === "critical" ? -1 : 1,
+		)
+		return { service, causes, health: deriveServiceHealthFromCauses(causes) }
+	}).sort(
+		(a, b) => healthRank(b.health) - healthRank(a.health) || b.service.errorRate - a.service.errorRate,
+	)
 
 export const countByHealth = (services: ReadonlyArray<EnrichedService>): Record<ServiceHealth, number> => ({
-	healthy: services.filter((entry) => entry.health === "healthy").length,
-	degraded: services.filter((entry) => entry.health === "degraded").length,
-	unhealthy: services.filter((entry) => entry.health === "unhealthy").length,
+	healthy: Arr.filter(services, (entry) => entry.health === "healthy").length,
+	degraded: Arr.filter(services, (entry) => entry.health === "degraded").length,
+	unhealthy: Arr.filter(services, (entry) => entry.health === "unhealthy").length,
 })

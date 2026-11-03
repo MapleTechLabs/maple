@@ -9,6 +9,7 @@ import { escapeHtml } from "./escape"
 import { IMPACT_LABEL, INCIDENT_STATUS_LABEL } from "./format"
 import { activeIncidents, upcomingMaintenance } from "./select"
 import { manageStyles } from "./styles"
+import { Array as Arr } from "effect"
 
 /** Form field names, shared with the Worker that parses the POST. */
 export const MANAGE_FIELDS = {
@@ -48,10 +49,13 @@ const followTargetKind = (targetField: string, statusField: string): string =>
 
 /** Statuses grouped by lifecycle: posting one to the other kind is rejected, so the form says which is which. */
 const statusGroup = (kind: StatusPageIncidentKind, label: string): string =>
-	`<optgroup label="${label}" data-kind="${kind}">${StatusPageIncidentStatus.literals
-		.filter((status) => statusFitsKind(kind, status))
-		.map((status) => option(status, INCIDENT_STATUS_LABEL[status]))
-		.join("")}</optgroup>`
+	`<optgroup label="${label}" data-kind="${kind}">${Arr.join(
+		Arr.map(
+			Arr.filter(StatusPageIncidentStatus.literals, (status) => statusFitsKind(kind, status)),
+			(status) => option(status, INCIDENT_STATUS_LABEL[status]),
+		),
+		"",
+	)}</optgroup>`
 
 /** Break-glass form: post an incident update straight to the edge while Maple is down. */
 export const renderManagePage = (
@@ -68,27 +72,44 @@ export const renderManagePage = (
 	const components =
 		snapshot.components.length === 0
 			? ""
-			: `<fieldset><legend>Affected components</legend>${snapshot.components
-					.map(
+			: `<fieldset><legend>Affected components</legend>${Arr.join(
+					Arr.map(
+						snapshot.components,
 						(component) =>
 							`<label class="check"><input type="checkbox" name="${f.componentIds}" value="${escapeHtml(component.id)}">${escapeHtml(component.name)}</label>`,
-					)
-					.join("")}</fieldset>`
-	const body = [
-		renderHeader(snapshot, options),
-		notice,
-		`<section><h2>Post an update</h2><p class="meta">For use while Maple is unreachable. The update shows on the page at once and is imported into Maple when it recovers.</p>`,
-		`<form method="post" action="${pageHref(options, "/_manage")}" class="card">`,
-		`<label>Break-glass token<input type="password" name="${f.token}" autocomplete="off" required></label>`,
-		`<label>Incident<select name="${f.incidentId}">${targetOption(NEW_INCIDENT, "New incident", "incident")}${incidents.map((incident) => targetOption(incident.id, incident.kind === "maintenance" ? `Maintenance: ${incident.title}` : incident.title, incident.kind)).join("")}</select></label>`,
-		`<label>Title (new incidents)<input type="text" name="${f.title}" maxlength="200"></label>`,
-		`<label>Status<select name="${f.status}">${option(NO_CHANGE, "No change (new incidents: Investigating)", true)}${statusGroup("incident", "For incidents")}${statusGroup("maintenance", "For maintenance")}</select></label>`,
-		`<label>Impact<select name="${f.impact}">${option(NO_CHANGE, "No change (new incidents: Major)", true)}${StatusPageIncidentImpact.literals.map((impact) => option(impact, IMPACT_LABEL[impact])).join("")}</select></label>`,
-		components,
-		`<label>Message<textarea name="${f.body}" maxlength="5000" required></textarea></label>`,
-		`<button type="submit">Post update</button></form></section>`,
-		`<footer><a href="${pageHref(options, "/")}">Back to the status page</a></footer>`,
-	].join("")
+					),
+					"",
+				)}</fieldset>`
+	const body = Arr.join(
+		[
+			renderHeader(snapshot, options),
+			notice,
+			`<section><h2>Post an update</h2><p class="meta">For use while Maple is unreachable. The update shows on the page at once and is imported into Maple when it recovers.</p>`,
+			`<form method="post" action="${pageHref(options, "/_manage")}" class="card">`,
+			`<label>Break-glass token<input type="password" name="${f.token}" autocomplete="off" required></label>`,
+			`<label>Incident<select name="${f.incidentId}">${targetOption(NEW_INCIDENT, "New incident", "incident")}${Arr.join(
+				Arr.map(incidents, (incident) =>
+					targetOption(
+						incident.id,
+						incident.kind === "maintenance" ? `Maintenance: ${incident.title}` : incident.title,
+						incident.kind,
+					),
+				),
+				"",
+			)}</select></label>`,
+			`<label>Title (new incidents)<input type="text" name="${f.title}" maxlength="200"></label>`,
+			`<label>Status<select name="${f.status}">${option(NO_CHANGE, "No change (new incidents: Investigating)", true)}${statusGroup("incident", "For incidents")}${statusGroup("maintenance", "For maintenance")}</select></label>`,
+			`<label>Impact<select name="${f.impact}">${option(NO_CHANGE, "No change (new incidents: Major)", true)}${Arr.join(
+				Arr.map(StatusPageIncidentImpact.literals, (impact) => option(impact, IMPACT_LABEL[impact])),
+				"",
+			)}</select></label>`,
+			components,
+			`<label>Message<textarea name="${f.body}" maxlength="5000" required></textarea></label>`,
+			`<button type="submit">Post update</button></form></section>`,
+			`<footer><a href="${pageHref(options, "/")}">Back to the status page</a></footer>`,
+		],
+		"",
+	)
 	return renderDocument({
 		snapshot,
 		options,

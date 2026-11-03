@@ -1,6 +1,6 @@
 import { CH } from "@maple/query-engine"
 import { parseClickHouseDateTime, type TimeBounds } from "../../lib/time"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr } from "effect"
 import { localParams, queryRows } from "../../data/local-query"
 import { toCatalogEntry } from "../services/fetch"
 import type { GoldenSignalRow, OperationRow, Overview, SeriesPoint } from "./model"
@@ -30,10 +30,13 @@ export const fetchOverview = (serviceName: string, bounds: TimeBounds, apiBase: 
 
 export const fetchOperations = (serviceName: string, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
-		queryRows(CH.compile(CH.serviceOperationsSummaryQuery({ serviceName, limit: 25 }), localParams(bounds)), apiBase),
+		queryRows(
+			CH.compile(CH.serviceOperationsSummaryQuery({ serviceName, limit: 25 }), localParams(bounds)),
+			apiBase,
+		),
 		// A null average renders as legacy's null does: the empty value (`formatLatency`, `formatErrorRate`).
 		(rows): ReadonlyArray<OperationRow> =>
-			rows.map((row) => ({
+			Arr.map(rows, (row) => ({
 				...row,
 				errorRate: row.errorRate ?? Number.NaN,
 				avgDurationMs: row.avgDurationMs ?? Number.NaN,
@@ -57,11 +60,20 @@ export const fetchOperationsTimeseries = (
 			apiBase,
 		),
 		(rows): ReadonlyArray<SeriesPoint> =>
-			rows.map((row) => ({ bucket: DateTime.formatIso(row.bucket), series: row.spanName, value: row.count })),
+			Arr.map(rows, (row) => ({
+				bucket: DateTime.formatIso(row.bucket),
+				series: row.spanName,
+				value: row.count,
+			})),
 	)
 
 /** Latency, throughput, error rate and Apdex from the service's entry spans (`rootOnly`). */
-export const fetchGoldenSignals = (serviceName: string, bucketSeconds: number, bounds: TimeBounds, apiBase: string) =>
+export const fetchGoldenSignals = (
+	serviceName: string,
+	bucketSeconds: number,
+	bounds: TimeBounds,
+	apiBase: string,
+) =>
 	Effect.map(
 		queryRows(
 			CH.compile(
@@ -78,7 +90,7 @@ export const fetchGoldenSignals = (serviceName: string, bucketSeconds: number, b
 			apiBase,
 		),
 		(rows): ReadonlyArray<GoldenSignalRow> =>
-			rows.map((row) => ({
+			Arr.map(rows, (row) => ({
 				bucketMs: DateTime.toEpochMillis(row.bucket),
 				count: row.count,
 				errorRate: row.errorRate,

@@ -11,7 +11,7 @@
  */
 import { appendFileSync, writeFileSync } from "node:fs"
 import { afterAll, beforeAll, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { RoleName } from "@maple/domain/primitives"
 import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
 import {
@@ -27,7 +27,7 @@ import { inputSchemaOf, mapleToolCatalog } from "@/mcp/tools/registry"
 
 const env = process.env
 const out = env.PLAYGROUND_OUT ?? "/tmp/maple-tool-playground.txt"
-const publicTools = mapleToolCatalog.filter((entry) => entry.audience === "public")
+const publicTools = Arr.filter(mapleToolCatalog, (entry) => entry.audience === "public")
 
 let rt: EvalRuntime | undefined
 beforeAll(async () => {
@@ -69,7 +69,13 @@ it("playground", async () => {
 	const tool = env.PLAYGROUND_TOOL ?? ""
 	switch (env.PLAYGROUND_CMD) {
 		case "catalog":
-			return writeFileSync(out, publicTools.map((e) => `- ${e.name}: ${e.description}`).join("\n\n"))
+			return writeFileSync(
+				out,
+				Arr.join(
+					Arr.map(publicTools, (e) => `- ${e.name}: ${e.description}`),
+					"\n\n",
+				),
+			)
 		case "schema": {
 			const entry = publicTools.find((candidate) => candidate.name === tool)
 			return writeFileSync(

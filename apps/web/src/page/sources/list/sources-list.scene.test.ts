@@ -6,7 +6,7 @@ import {
 	V2Source,
 	V2SourceUsageSummary,
 } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { SourceId } from "@maple/domain/primitives"
@@ -28,7 +28,7 @@ const view = withViewInputs(pageView, { context })()
 const NOW = Date.UTC(2026, 9, 1, 12)
 const encodeSourceId = Schema.encodeSync(SourcePublicId)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const source = (index: number, fields: Readonly<Record<string, unknown>> = {}) =>
 	Schema.decodeUnknownSync(V2Source)({
@@ -66,10 +66,14 @@ const defaultSource = source(1, {
 
 const loaded = (rows: ReadonlyArray<V2Source>): Model => {
 	const entered = init({ _tag: "Sources" }, context).model
-	return [
-		Message.ReadClock({ nowMs: NOW }),
-		Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.succeed(rows) }),
-	].reduce((model, message) => pageUpdate(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.succeed(rows) }),
+		],
+		entered,
+		(model, message) => pageUpdate(model, message).model,
+	)
 }
 
 describe("sources list", () => {
@@ -81,7 +85,10 @@ describe("sources list", () => {
 
 	test("the default source is listed before the sources added ahead of it", () => {
 		const added = source(2, { name: "Checkout" })
-		expect(orderSources([added, defaultSource]).map(({ name }) => name)).toEqual(["Default", "Checkout"])
+		expect(Arr.map(orderSources([added, defaultSource]), ({ name }) => name)).toEqual([
+			"Default",
+			"Checkout",
+		])
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([added, defaultSource])),
@@ -129,13 +136,17 @@ describe("sources list", () => {
 			Message.CompletedFetchList({ key: "other", result: Result.succeed([]) }),
 		).model
 		expect(stale.list).toEqual(entered.list)
-		const failed = [
-			Message.ReadClock({ nowMs: NOW }),
-			Message.CompletedFetchList({
-				key: entered.list.key ?? "",
-				result: Result.fail(toLoadFailure(new Error("boom"))),
-			}),
-		].reduce((model, message) => pageUpdate(model, message).model, entered)
+		const failed = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.CompletedFetchList({
+					key: entered.list.key ?? "",
+					result: Result.fail(toLoadFailure(new Error("boom"))),
+				}),
+			],
+			entered,
+			(model, message) => pageUpdate(model, message).model,
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
@@ -253,7 +264,7 @@ describe("integrations on the sources list", () => {
 			},
 		})
 		const all = [...rows, cloudflare]
-		expect(orderSources(all).map((row) => row.name)[1]).toBe("Cloudflare acme")
+		expect(Arr.map(orderSources(all), (row) => row.name)[1]).toBe("Cloudflare acme")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(all)),

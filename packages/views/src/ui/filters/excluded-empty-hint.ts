@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
+import { Array as Arr } from "effect"
 
 // Port of `ExcludedEmptyHint` (packages/ui/src/components/filters/excluded-empty-hint.tsx): why an
 // empty list under an exclusion is empty, and the way out.
@@ -14,7 +15,7 @@ export const excludedEmptyHint = <M>(
 ): Html | null => {
 	const { excluded } = options
 	if (excluded.length === 0) return null
-	const named = excluded.slice(0, MAX_NAMED_VALUES).join(", ")
+	const named = Arr.join(excluded.slice(0, MAX_NAMED_VALUES), ", ")
 	const rest = excluded.length - MAX_NAMED_VALUES
 	const summary = rest > 0 ? `${named} +${rest} more` : named
 	return h.div(

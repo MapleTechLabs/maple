@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { fetchLogsPage, fetchPatterns, fetchServices, fetchSeverities } from "./fetch"
@@ -16,11 +16,14 @@ const sqlOf = (fetch: Effect.Effect<unknown, unknown, HttpClient.HttpClient>): P
 			Effect.provideService(
 				HttpClient.HttpClient,
 				HttpClient.make((request) => {
-					if (request.body._tag === "Uint8Array") sent.push(decodeBody(new TextDecoder().decode(request.body.body)).sql)
-					return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("[]", { status: 200 })))
+					if (request.body._tag === "Uint8Array")
+						sent.push(decodeBody(new TextDecoder().decode(request.body.body)).sql)
+					return Effect.succeed(
+						HttpClientResponse.fromWeb(request, new Response("[]", { status: 200 })),
+					)
 				}),
 			),
-			Effect.andThen(Effect.sync(() => sent.join("\n"))),
+			Effect.andThen(Effect.sync(() => Arr.join(sent, "\n"))),
 		),
 	)
 }

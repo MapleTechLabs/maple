@@ -1,4 +1,5 @@
 import type { ChatConnector } from "./connector"
+import { Array as Arr } from "effect"
 
 export * from "./action-token"
 export * from "./config"
@@ -14,4 +15,4 @@ export * from "./render"
 export const isConnectorConfigured = <R>(
 	connector: ChatConnector<R>,
 	config: ReadonlyMap<string, unknown>,
-): boolean => connector.install.requiredConfig.every((key) => config.has(key.name))
+): boolean => Arr.every(connector.install.requiredConfig, (key) => config.has(key.name))

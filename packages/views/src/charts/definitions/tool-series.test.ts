@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { tooltipFormatOf } from "./tool-series"
+import { String as Str } from "effect"
 
 describe("tool series tooltip", () => {
 	it("reads a whole count exactly, not compacted", () => {
 		const text = tooltipFormatOf("number")(12_480)
 		expect(text).not.toContain("K")
-		expect(text.replace(/\D/g, "")).toBe("12480")
-		expect(tooltipFormatOf("calls")(1_234_567).replace(/\D/g, "")).toBe("1234567")
+		expect(Str.replace(/\D/g, "")(text)).toBe("12480")
+		expect(Str.replace(/\D/g, "")(tooltipFormatOf("calls")(1_234_567))).toBe("1234567")
 	})
 
 	it("keeps the decimals of a fractional value", () => {

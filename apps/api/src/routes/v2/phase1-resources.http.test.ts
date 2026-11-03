@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Ref, Schema } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Ref,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import {
@@ -342,7 +352,7 @@ const warehouseStub = makeWarehouseServiceStub({
 	// Replay payload reads go through the bounded variant (they carry an explicit
 	// response-byte ceiling), so the stub has to answer it too.
 	compiledQueryBounded: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
-	compiledQueryFirst: () => Effect.succeed(Option.none()),
+	compiledQueryFirst: () => Effect.succeedNone,
 	// Handlers warm the org route before fanning out; the real one resolves
 	// route + capabilities, which this stub has nothing to resolve.
 	warmRoute: () => Effect.void,
@@ -545,14 +555,12 @@ const makeHarness = (
 					const current = yield* requireStoredIssue(issueId)
 					// `wontfix` stands in for a move the workflow refuses.
 					if (toState === "wontfix") {
-						return yield* Effect.fail(
-							new ErrorIssueTransitionError({
-								message: `Cannot move from ${current.workflowState} to ${toState}`,
-								issueId,
-								fromState: current.workflowState,
-								toState,
-							}),
-						)
+						return yield* new ErrorIssueTransitionError({
+							message: `Cannot move from ${current.workflowState} to ${toState}`,
+							issueId,
+							fromState: current.workflowState,
+							toState,
+						})
 					}
 					issueActions.push({ action: "transition", actorId, opts })
 					return yield* updateStoredIssue({ workflowState: toState, notes: opts?.note ?? null })
@@ -1106,7 +1114,7 @@ describe("v2 investigations over HTTP", () => {
 					body: { subject: { type: "freeform", title: "t", prompt: "p", context_refs: [] } },
 				}),
 				harness.request("POST", `/v2/investigations/${INV_ID}/restart`, { token }),
-			]).then((responses) => responses.map((response) => response.status))
+			]).then((responses) => Arr.map(responses, (response) => response.status))
 
 		const narrow = await harness.bootstrapKey(["investigations:write"])
 		expect(await start(narrow.secret)).toEqual([403, 403])
@@ -1118,21 +1126,24 @@ describe("v2 investigations over HTTP", () => {
 		])
 		expect(await start(telemetryOnly.secret)).toEqual([403, 403])
 
-		const reads = [
-			"traces",
-			"logs",
-			"metrics",
-			"services",
-			"service_map",
-			"error_issues",
-			"session_replays",
-			"alerts",
-			"anomalies",
-			"dashboards",
-			"sources",
-			"instrumentation",
-			"integrations",
-		].map((family) => `${family}:read`)
+		const reads = Arr.map(
+			[
+				"traces",
+				"logs",
+				"metrics",
+				"services",
+				"service_map",
+				"error_issues",
+				"session_replays",
+				"alerts",
+				"anomalies",
+				"dashboards",
+				"sources",
+				"instrumentation",
+				"integrations",
+			],
+			(family) => `${family}:read`,
+		)
 		const covered = await harness.bootstrapKey(["investigations:write", ...reads])
 		const unscoped = await harness.bootstrapKey()
 		const session = await harness.bootstrapSession()
@@ -1376,7 +1387,7 @@ describe("v2 session_replays over HTTP", () => {
 
 	it("paginates transcripts beyond the query engine's old 100-row default", async () => {
 		const transcriptRows = Array.from({ length: 105 }, (_, seq) => ({
-			timestamp: `2026-07-15T09:12:${String(seq % 60).padStart(2, "0")}.000Z`,
+			timestamp: `2026-07-15T09:12:${Str.padStart(2, "0")(String(seq % 60))}.000Z`,
 			seq,
 			type: seq % 2 === 0 ? "navigation" : "network",
 			url: "https://example.com",
@@ -1490,9 +1501,10 @@ describe("v2 session_replays over HTTP", () => {
 				const to = Number(/ChunkSeq <= (\d+)/.exec(sql)?.[1] ?? Number.MAX_SAFE_INTEGER)
 				const limit = Number(/LIMIT\s+(\d+)/i.exec(sql)?.[1] ?? chunkRows.length)
 				const offset = Number(/OFFSET\s+(\d+)/i.exec(sql)?.[1] ?? 0)
-				return chunkRows
-					.filter((row) => row.chunkSeq >= from && row.chunkSeq <= to)
-					.slice(offset, offset + limit)
+				return Arr.filter(chunkRows, (row) => row.chunkSeq >= from && row.chunkSeq <= to).slice(
+					offset,
+					offset + limit,
+				)
 			}
 			return {
 				...warehouseStub,
@@ -1568,7 +1580,7 @@ describe("v2 session_replays over HTTP", () => {
 			// The SDK's over-cap buffer guard drops the batch holding the opening
 			// snapshot, so some existing recordings have no checkpoint anywhere.
 			// The manifest must still describe them — the client anchors on chunk 0.
-			const legacyRows = chunkRows.map((row) => ({ ...row, isCheckpoint: 0 }))
+			const legacyRows = Arr.map(chunkRows, (row) => ({ ...row, isCheckpoint: 0 }))
 			const harness = makeHarness({
 				...warehouseStub,
 				compiledQuery: (_tenant, compiled) =>
@@ -1592,7 +1604,7 @@ describe("v2 session_replays over HTTP", () => {
 			// Backends that refuse `output_format_json_quote_64bit_integers=0` return
 			// UInt64s as strings. Schema.Number rejects those, which would surface as
 			// a bodyless 500 — hence the Number() coercion in both handlers.
-			const quotedRows = chunkRows.slice(0, 2).map((row) => ({
+			const quotedRows = Arr.map(chunkRows.slice(0, 2), (row) => ({
 				...row,
 				byteSize: String(row.byteSize) as number,
 				eventCount: String(row.eventCount) as number,
@@ -1669,7 +1681,7 @@ describe("v2 session_replays over HTTP", () => {
 			// nothing and would wave this through. `byteSize` is the uncompressed
 			// payload size and is right there in the index, so the range is refused
 			// without fetching a single object.
-			const hugeBlobRows = chunkRows.slice(0, 4).map((row) => ({
+			const hugeBlobRows = Arr.map(chunkRows.slice(0, 4), (row) => ({
 				...row,
 				events: "",
 				byteSize: 5_000_000,
@@ -1693,7 +1705,11 @@ describe("v2 session_replays over HTTP", () => {
 		})
 
 		it("serves a blob-backed range that fits the budget", async () => {
-			const blobRows = chunkRows.slice(0, 4).map((row) => ({ ...row, events: "", byteSize: 100_000 }))
+			const blobRows = Arr.map(chunkRows.slice(0, 4), (row) => ({
+				...row,
+				events: "",
+				byteSize: 100_000,
+			}))
 			const harness = makeHarness({
 				...warehouseStub,
 				compiledQueryBounded: (_tenant, compiled) =>

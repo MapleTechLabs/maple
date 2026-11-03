@@ -10,6 +10,7 @@ import { copyButton, statusOf } from "./copy"
 import { Message } from "./message"
 import type { PanelState as Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `ErrorSection` (packages/ui/src/components/error-section.tsx), with a "Copy as prompt" payload.
 
@@ -31,7 +32,7 @@ const BODY_ID = "error-body"
 export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html => {
 	const { message } = input
 	const body = parseErrorBody(message)
-	const isLong = body.full.split("\n").length > COLLAPSED_LINES || message.length > 160
+	const isLong = Str.split("\n")(body.full).length > COLLAPSED_LINES || message.length > 160
 	const isClamped = isLong && !model.isErrorExpanded
 	const status = statusOf(model, BODY_ID)
 	return h.div(
@@ -114,10 +115,10 @@ export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html
 								: []),
 						],
 						body.format === "json"
-							? tokenizeJson(body.full).map((token) =>
+							? Arr.map(tokenizeJson(body.full), (token) =>
 									h.span([h.Style({ color: JSON_TOKEN_COLOR[token.type] })], [token.text]),
 								)
-							: splitErrorText(body.full).map((line) =>
+							: Arr.map(splitErrorText(body.full), (line) =>
 									h.span(
 										[h.Class(cn("block", line.frame && "text-foreground-subtle"))],
 										[line.text === "" ? " " : line.text],

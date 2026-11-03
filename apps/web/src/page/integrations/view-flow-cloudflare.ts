@@ -33,6 +33,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // Cloudflare in the connect flow: approve Maple on Cloudflare's consent screen, then watch the
 // poller find zones and Workers and fill in the first data.
@@ -100,31 +101,33 @@ const connectButton = (h: H, model: Model, label: string, variant?: "outline"): 
 const accountList = (h: H, accounts: ReadonlyArray<ConnectedAccountEntry>): Html =>
 	h.ul(
 		[h.Class("flex flex-col rounded-md border border-border"), h.AriaLabel("Cloudflare accounts")],
-		accounts.map((account) =>
+		Arr.map(accounts, (account) =>
 			h.li(
-				[h.Class("flex items-center gap-3 border-t border-border-subtle px-3.5 py-2.5 first:border-t-0")],
+				[
+					h.Class(
+						"flex items-center gap-3 border-t border-border-subtle px-3.5 py-2.5 first:border-t-0",
+					),
+				],
 				[
 					icon(h, account.revoked ? "CircleWarningIcon" : "CircleCheckIcon", {
 						size: 14,
-						className: account.revoked ? "shrink-0 text-severity-error" : "shrink-0 text-severity-info",
+						className: account.revoked
+							? "shrink-0 text-severity-error"
+							: "shrink-0 text-severity-info",
 					}),
-					vstack(h, { shrink: true, grow: true },
-						[
-							truncatedText(h, {
-								text: account.accountName ?? account.accountId,
-								className: "text-sm",
-							}),
-							typography(h, { size: "xs", tone: "muted" },
-								[
-									account.revoked
-										? "Access revoked"
-										: account.analyticsCapable
-											? countLabel(account.zoneCount, "zone")
-											: `${countLabel(account.zoneCount, "zone")}, analytics access missing`,
-								],
-							),
-						],
-					),
+					vstack(h, { shrink: true, grow: true }, [
+						truncatedText(h, {
+							text: account.accountName ?? account.accountId,
+							className: "text-sm",
+						}),
+						typography(h, { size: "xs", tone: "muted" }, [
+							account.revoked
+								? "Access revoked"
+								: account.analyticsCapable
+									? countLabel(account.zoneCount, "zone")
+									: `${countLabel(account.zoneCount, "zone")}, analytics access missing`,
+						]),
+					]),
 					truncatedText(h, {
 						text: account.accountId,
 						mono: true,
@@ -144,7 +147,7 @@ const foundLine = (status: CloudflareIntegrationStatus, usage: CloudflareUsageRe
 		countLabel(status.zones.length, "zone"),
 		...(workers > 0 ? [countLabel(workers, "Worker")] : []),
 	]
-	return parts.length === 3 ? `${parts[0]}, ${parts[1]} and ${parts[2]}` : parts.join(" and ")
+	return parts.length === 3 ? `${parts[0]}, ${parts[1]} and ${parts[2]}` : Arr.join(parts, " and ")
 }
 
 const connectStep = (h: H, model: Model): Html => {
@@ -165,25 +168,21 @@ const connectStep = (h: H, model: Model): Html => {
 				},
 				isConnected
 					? [
-							typography(h, { size: "sm", tone: "muted", as: "p" },
-								["Maple can read these accounts. Zones and Workers are found on their own."],
-							),
+							typography(h, { size: "sm", tone: "muted", as: "p" }, [
+								"Maple can read these accounts. Zones and Workers are found on their own.",
+							]),
 							accountList(h, connectedAccountsOf(status)),
-							hstack(h, { gap: "3", wrap: true },
-								[
-									connectButton(h, model, "Authorize again", "outline"),
-									typography(h, { size: "xs", tone: "muted" },
-										["Missing an account? Authorize again and tick it in Cloudflare."],
-									),
-								],
-							),
+							hstack(h, { gap: "3", wrap: true }, [
+								connectButton(h, model, "Authorize again", "outline"),
+								typography(h, { size: "xs", tone: "muted" }, [
+									"Missing an account? Authorize again and tick it in Cloudflare.",
+								]),
+							]),
 						]
 					: [
-							typography(h, { size: "sm", tone: "muted", as: "p" },
-								[
-									"Cloudflare opens in a new window. Sign in, pick the accounts Maple may read and approve.",
-								],
-							),
+							typography(h, { size: "sm", tone: "muted", as: "p" }, [
+								"Cloudflare opens in a new window. Sign in, pick the accounts Maple may read and approve.",
+							]),
 							connectButton(h, model, "Connect Cloudflare"),
 						],
 			),
@@ -243,7 +242,7 @@ const resourceRows = (
 						detail: describeCloudflareIngestPhase({ kind: "discovering" }).description,
 					},
 		]
-	const enabled = status.zones.filter((zone) => zone.enabled && zone.watched !== false).length
+	const enabled = Arr.filter(status.zones, (zone) => zone.enabled && zone.watched !== false).length
 	const workers = workerServicesOf(usage).length
 	return [
 		{

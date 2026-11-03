@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { IngestFreshnessOutput } from "@maple/domain/mcp-outputs"
 import { CH, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -74,7 +74,7 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Ingest Freshness",
 		description:
-			"Newest received timestamp per signal (traces, logs, metrics) for the whole org, with the lag behind end_time and the last hour that had data. Use it before reading silence as an outage: one service gone quiet while its signals keep arriving is the service, every signal stalled at once is ingest. Timestamps in the last hour of the window are exact for logs and metrics and minute-grained for traces; older activity is hour-grained.",
+			"Newest received timestamp per signal (traces, logs, metrics) for the whole org, with the lag behind end_time and the last hour that had data. Use it before reading silence as an outage: one service gone quiet while its signals keep arriving is the service, every signal stalled at once is ingest. Timestamps in the last hour of the window are exact for logs and metrics and minute-grained for traces; older activity is hour-grained. Which source stopped: list_sources; whether the setup is configured correctly: audit_setup.",
 		parameters: Schema.Struct({ ...WINDOW.fields }),
 		output: IngestFreshnessOutput,
 		hints: { readOnly: true },
@@ -122,7 +122,7 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 			return {
 				timeRange: { start: st, end: et },
 				probeWindow: { start: probeStart, end: et },
-				signals: SIGNALS.map((signal) =>
+				signals: Arr.map(SIGNALS, (signal) =>
 					freshnessRow(
 						signal,
 						endMs,
@@ -133,8 +133,8 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 			}
 		}),
 		render: (output) => {
-			const stalled = output.signals.filter((s) => s.status === "stalled")
-			const live = output.signals.filter((s) => s.status === "receiving" || s.status === "delayed")
+			const stalled = Arr.filter(output.signals, (s) => s.status === "stalled")
+			const live = Arr.filter(output.signals, (s) => s.status === "receiving" || s.status === "delayed")
 			return {
 				title: "Ingest Freshness",
 				scope: [
@@ -151,7 +151,7 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 							"Last hour with data",
 							"Events in window",
 						],
-						output.signals.map((s) => [
+						Arr.map(output.signals, (s) => [
 							s.signal,
 							STATUS_TEXT[s.status],
 							s.lastSeen ?? "",
@@ -169,7 +169,13 @@ export function registerIngestFreshnessTool(server: McpToolRegistrar) {
 						: stalled.length > 0
 							? [
 									doc.text(
-										`${stalled.map((s) => s.signal).join(", ")} stopped while ${live.map((s) => s.signal).join(", ")} kept arriving: check that signal's exporter.`,
+										`${Arr.join(
+											Arr.map(stalled, (s) => s.signal),
+											", ",
+										)} stopped while ${Arr.join(
+											Arr.map(live, (s) => s.signal),
+											", ",
+										)} kept arriving: check that signal's exporter.`,
 									),
 								]
 							: []),

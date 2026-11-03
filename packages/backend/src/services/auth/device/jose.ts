@@ -4,7 +4,7 @@
  * Maple deploys to has).
  */
 import { createHash } from "node:crypto"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 
 /** Internal: a JOSE object did not parse or verify. Callers map it to their public error. */
 export class JoseError extends Schema.TaggedError<JoseError>()("@maple/backend/auth/device/JoseError", {
@@ -43,7 +43,7 @@ export const fromBase64url = (value: string): Uint8Array => new Uint8Array(Buffe
 
 export const sha256 = (...parts: ReadonlyArray<Uint8Array | string>): Uint8Array => {
 	const hash = createHash("sha256")
-	parts.forEach((part) => hash.update(part))
+	Arr.forEach(parts, (part) => hash.update(part))
 	return new Uint8Array(hash.digest())
 }
 
@@ -89,7 +89,7 @@ const parseJsonSegment = (segment: string): Option.Option<unknown> =>
 
 /** Split and decode a compact JWS. Verifies nothing. */
 export const parseCompactJws = (token: string): Effect.Effect<CompactJws, JoseError> => {
-	const parts = token.split(".")
+	const parts = Str.split(".")(token)
 	const [headerPart, payloadPart, signaturePart] = parts
 	if (
 		parts.length !== 3 ||

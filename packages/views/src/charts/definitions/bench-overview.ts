@@ -12,7 +12,7 @@ import {
 import { areaY, type ChartValue, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scalePoint } from "@tanstack/charts-scales/point"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
@@ -127,14 +127,14 @@ const seriesOf = (spec: BenchSpec, rateLabel: string): ReadonlyArray<Series> => 
 const rowsOf = (spec: BenchSpec, bucketSeconds: number | undefined): ReadonlyArray<Row> =>
 	spec.chart !== "Throughput"
 		? spec.rows
-		: spec.rows.map((row) => {
+		: Arr.map(spec.rows, (row) => {
 				const throughput = numberOf(row, "throughput") / (bucketSeconds || 1)
 				return { ...row, throughput, errorThroughput: throughput * numberOf(row, "errorRate") }
 			})
 
 /** The y domain and tick format: throughput and latency from 0 to the peak, nice; error rate clamped. */
 const yOf = (spec: BenchSpec, rows: ReadonlyArray<Row>, rateLabel: string) => {
-	const peak = (key: string) => rows.reduce((max, row) => Math.max(max, numberOf(row, key)), 0)
+	const peak = (key: string) => Arr.reduce(rows, 0, (max, row) => Math.max(max, numberOf(row, key)))
 	switch (spec.chart) {
 		case "Throughput":
 			return yScale([0, peak("throughput")], (value) => formatThroughput(value, rateLabel), true)
@@ -150,9 +150,9 @@ const yOf = (spec: BenchSpec, rows: ReadonlyArray<Row>, rateLabel: string) => {
 }
 
 export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue, number> => {
-	const bucketSeconds = inferBucketSeconds(spec.rows.map((row) => ({ bucket: bucketOf(row) })))
+	const bucketSeconds = inferBucketSeconds(Arr.map(spec.rows, (row) => ({ bucket: bucketOf(row) })))
 	const axisContext = {
-		rangeMs: inferRangeMs(spec.rows.map((row) => ({ bucket: bucketOf(row) }))),
+		rangeMs: inferRangeMs(Arr.map(spec.rows, (row) => ({ bucket: bucketOf(row) }))),
 		bucketSeconds,
 	}
 	const rateLabel = "/s"
@@ -176,7 +176,7 @@ export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue,
 					}),
 				]
 			: []),
-		...series.map((entry) =>
+		...Arr.map(series, (entry) =>
 			entry.dashed
 				? lineY(rows, {
 						id: entry.key,
@@ -188,7 +188,7 @@ export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue,
 					})
 				: lineY(rows, { id: entry.key, x, y: y(entry.key), stroke: entry.color, strokeWidth: 2 }),
 		),
-		...series.map((entry) => focusDot(rows, x, y(entry.key), entry.color, chrome)),
+		...Arr.map(series, (entry) => focusDot(rows, x, y(entry.key), entry.color, chrome)),
 		focusCrosshair(chrome),
 	]
 	return {
@@ -207,7 +207,7 @@ export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue,
 			Option.map(Option.fromNullishOr(points[0]), ({ datum }) =>
 				ChartTooltip.Bucket({
 					heading: formatBucketLabel(bucketOf(datum), axisContext, "tooltip"),
-					rows: series.map((entry) => ({
+					rows: Arr.map(series, (entry) => ({
 						label: entry.label,
 						color: entry.color,
 						dashed: entry.dashed,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { GcpLogRuntime } from "@maple/domain/primitives"
 import {
 	GCP_LOG_RUNTIMES,
@@ -316,12 +316,10 @@ describe("gcpPendingChanges", () => {
 	})
 
 	const LOGS_START = "Log forwarding starts once the log sink exists in Google Cloud."
-	const LOGS_STOP =
-		"Google Cloud keeps forwarding logs, billed by Google, until the log sink is removed."
+	const LOGS_STOP = "Google Cloud keeps forwarding logs, billed by Google, until the log sink is removed."
 	const METRICS_START =
 		"Metrics and resources start once the read-only service account exists in Google Cloud."
-	const METRICS_STOP =
-		"The read-only service account stays in Google Cloud until it is removed."
+	const METRICS_STOP = "The read-only service account stays in Google Cloud until it is removed."
 
 	it("says what goes on until a re-run removes and creates", () => {
 		expect(changes({ logs_enabled: false })).toEqual([LOGS_STOP])
@@ -725,7 +723,7 @@ describe("gcpApplicationLogsLine", () => {
 	})
 
 	it("has a name for every runtime the API takes", () => {
-		expect(GCP_LOG_RUNTIMES.map(({ value }) => value)).toEqual([...GcpLogRuntime.literals])
+		expect(Arr.map(GCP_LOG_RUNTIMES, ({ value }) => value)).toEqual([...GcpLogRuntime.literals])
 	})
 })
 

@@ -7,6 +7,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { skeleton } from "./skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "./table"
+import { Array as Arr } from "effect"
 
 // Port of packages/ui/src/components/ui/table-skeleton.tsx: the loading placeholder for row tables.
 
@@ -36,7 +37,7 @@ export const tableSkeleton = <M>(h: HtmlBuilder<M>, options: TableSkeletonOption
 	const header = tableHeader(h, [
 		tableRow(
 			h,
-			columns.map((column) =>
+			Arr.map(columns, (column) =>
 				tableHead(
 					h,
 					column.header === undefined ? [] : [column.header],
@@ -56,7 +57,7 @@ export const tableSkeleton = <M>(h: HtmlBuilder<M>, options: TableSkeletonOption
 	const rows = Array.from({ length: options.rows ?? 8 }, () =>
 		tableRow(
 			h,
-			columns.map((column) =>
+			Arr.map(columns, (column) =>
 				tableCell(
 					h,
 					column.skeleton === null

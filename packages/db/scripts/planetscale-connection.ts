@@ -15,7 +15,7 @@
  */
 import { spawnSync } from "node:child_process"
 import * as Predicate from "effect/Predicate"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { DB_ACCESS_ROLES, type DbAccess } from "../src/roles"
 
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
@@ -47,9 +47,9 @@ export const runPscale = (args: string[], opts?: { secret?: boolean }): CliResul
 	if (proc.error) {
 		fail(`Failed to invoke \`pscale\` — is the PlanetScale CLI installed? (${proc.error.message})`)
 	}
-	const stdout = (proc.stdout ?? "").trim()
-	const stderr = (proc.stderr ?? "").trim()
-	console.log(`$ pscale ${args.join(" ")}`)
+	const stdout = Str.trim(proc.stdout ?? "")
+	const stderr = Str.trim(proc.stderr ?? "")
+	console.log(`$ pscale ${Arr.join(args, " ")}`)
 	// `secret` suppresses stdout — credential JSON must never reach the log.
 	if (!opts?.secret) {
 		if (stdout) console.log(stdout)
@@ -81,7 +81,7 @@ interface Credential {
  */
 const createCredential = (database: string, branch: string, access: DbAccess): Credential => {
 	const name = `migrate-${branch}-${process.pid}`
-	const inheritedRoles = DB_ACCESS_ROLES[access].join(",")
+	const inheritedRoles = Arr.join(DB_ACCESS_ROLES[access], ",")
 	const ttl = process.env.PLANETSCALE_MIGRATE_TTL?.trim() || "1h"
 	const result = runPscale(
 		[
@@ -126,7 +126,7 @@ const createCredential = (database: string, branch: string, access: DbAccess): C
 		}
 	}
 	if (!url || !password) {
-		return fail(`role JSON missing connection fields (keys: ${Object.keys(parsed).join(", ")})`)
+		return fail(`role JSON missing connection fields (keys: ${Arr.join(Rec.keys(parsed), ", ")})`)
 	}
 	return { id, url, password }
 }

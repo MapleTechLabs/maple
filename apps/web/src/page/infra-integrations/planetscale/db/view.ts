@@ -62,6 +62,7 @@ import { absenceReason } from "../../../../components/infra/planetscale/branch-s
 import { removableChip } from "@maple/views/ui/removable-chip"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
@@ -80,24 +81,27 @@ const CHART_METRIC_IDS = [
 
 /** Every tooltip on the page: scope chips, event times, query last-run times. */
 const tooltipIds = (model: Model): ReadonlyArray<string> => [
-	...CHART_METRIC_IDS.flatMap((metric) => [`ps-chart-${metric}-all`, `ps-chart-${metric}-fallback`]),
+	...Arr.flatMap(CHART_METRIC_IDS, (metric) => [`ps-chart-${metric}-all`, `ps-chart-${metric}-fallback`]),
 	"ps-insights-all",
 	"ps-insights-fallback",
-	...AsyncData.getOrElse(model.events.data, () => []).map(eventTriggerId),
+	...Arr.map(
+		AsyncData.getOrElse(model.events.data, () => []),
+		eventTriggerId,
+	),
 	...AsyncData.match(model.insights.data, {
 		onIdle: () => [],
 		onLoading: () => [],
 		onFailure: () => [],
 		onStale: () => [],
-		onRefreshing: (data) => data.rows.map((row) => insightTriggerId(row.fingerprint)),
-		onSuccess: (data) => data.rows.map((row) => insightTriggerId(row.fingerprint)),
+		onRefreshing: (data) => Arr.map(data.rows, (row) => insightTriggerId(row.fingerprint)),
+		onSuccess: (data) => Arr.map(data.rows, (row) => insightTriggerId(row.fingerprint)),
 	}),
 ]
 
 const tooltipContent = (model: Model, clock: Clock, id: string): ReadonlyArray<string> => {
-	if (id.endsWith("-all")) return [CHART_SCOPE_EXPLANATION]
+	if (Str.endsWith("-all")(id)) return [CHART_SCOPE_EXPLANATION]
 	if (id === "ps-insights-fallback") return [FALLBACK_EXPLANATION.insights]
-	if (id.endsWith("-fallback")) return [FALLBACK_EXPLANATION.chart]
+	if (Str.endsWith("-fallback")(id)) return [FALLBACK_EXPLANATION.chart]
 	const event = AsyncData.getOrElse(model.events.data, () => []).find(
 		(entry) => eventTriggerId(entry) === id,
 	)
@@ -242,9 +246,7 @@ const dataSections = (
 									}),
 								],
 							),
-							typography(h, { size: "2xs", tone: "muted" },
-								["PlanetScale Query Insights"],
-							),
+							typography(h, { size: "2xs", tone: "muted" }, ["PlanetScale Query Insights"]),
 						],
 					),
 					topQueries(h, model.insights.data, model.dbName, clock, trigger),
@@ -258,26 +260,24 @@ const filterChipRail = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model))
 	if (chips.length === 0) return []
 	return [
-		hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] },
-			[
-				...chips.slice(0, 6).map((chip) =>
-					removableChip(h, {
-						label: chip.label,
-						onRemove: Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
-					}),
-				),
-				textLink(
-					h,
-					{
-						tone: "muted",
-						isMono: true,
-						className: "ml-1 text-3xs",
-						onClick: Message.ClickedClearFilters(),
-					},
-					["Clear all"],
-				),
-			],
-		),
+		hstack(h, { gap: "1.5", wrap: true, attributes: [h.AriaLabel("Active filters")] }, [
+			...Arr.map(chips.slice(0, 6), (chip) =>
+				removableChip(h, {
+					label: chip.label,
+					onRemove: Message.RemovedFilterChip({ key: chip.key, value: chip.value }),
+				}),
+			),
+			textLink(
+				h,
+				{
+					tone: "muted",
+					isMono: true,
+					className: "ml-1 text-3xs",
+					onClick: Message.ClickedClearFilters(),
+				},
+				["Clear all"],
+			),
+		]),
 	]
 }
 
@@ -291,7 +291,7 @@ const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 		view: selectView,
 		toParentMessage: (message) => Message.GotBranchSelectMessage({ message }),
 		viewInputs: {
-			entries: candidates.map((candidate): SelectEntry => ({
+			entries: Arr.map(candidates, (candidate): SelectEntry => ({
 				_tag: "Item",
 				item: { value: candidate.name, label: candidate.name },
 			})),
@@ -304,8 +304,7 @@ const branchSelect = (h: H, model: Model, timeControls: Html): Html => {
 					? [" · production"]
 					: []),
 			],
-			toView: (parts) =>
-				hstack(h, { gap: "2", wrap: true }, [...parts, timeControls]),
+			toView: (parts) => hstack(h, { gap: "2", wrap: true }, [...parts, timeControls]),
 		},
 	})
 }
@@ -386,8 +385,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					toContent: (id) => tooltipContent(model, clock, id),
 					// `ScopeChip`'s `TooltipContent className="max-w-[32ch]"`.
 					className:
-						model.tooltip.triggerId.startsWith("ps-chart-") ||
-						model.tooltip.triggerId.startsWith("ps-insights-")
+						Str.startsWith("ps-chart-")(model.tooltip.triggerId) ||
+						Str.startsWith("ps-insights-")(model.tooltip.triggerId)
 							? "max-w-[32ch]"
 							: undefined,
 					toView: ({ trigger, portal }) =>
@@ -406,9 +405,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								actions:
 									heroActions.length === 0
 										? branchSelect(h, model, timeControls)
-										: hstack(h, { gap: "2", wrap: true },
-												[...heroActions, branchSelect(h, model, timeControls)],
-											),
+										: hstack(h, { gap: "2", wrap: true }, [
+												...heroActions,
+												branchSelect(h, model, timeControls),
+											]),
 								// TODO(alert-menu): see the note at the top of this file.
 							},
 							[hero.body, ...body(trigger), ...(portal === null ? [] : [portal])],

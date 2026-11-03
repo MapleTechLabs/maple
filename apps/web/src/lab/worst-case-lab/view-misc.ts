@@ -17,6 +17,7 @@ import { PINNED_COLUMNS, rulesOverview } from "./fixture"
 import { Message, type Model } from "./model"
 import { type H, narrow, wcSection } from "./view-parts"
 import { releaseNarrow } from "./view-sections"
+import { Array as Arr } from "effect"
 
 // `TablesSection` and `MiscSection`.
 
@@ -76,7 +77,7 @@ export const miscSection = (h: H, model: Model): Html => {
 	return wcSection(h, "wc-misc", "Misc: severity, log body, attributes, tool header", [
 		h.div(
 			[h.Class("flex items-center gap-2")],
-			severities.map((severity) => severityBadge(h, { severity })),
+			Arr.map(severities, (severity) => severityBadge(h, { severity })),
 		),
 		h.div(
 			[h.Class("flex h-[260px] flex-col rounded-md border")],
@@ -116,7 +117,7 @@ export const miscSection = (h: H, model: Model): Html => {
 		]),
 		narrow(
 			h,
-			toolParts(toolName, service).map((part) => toolStandalone(h, part, host)),
+			Arr.map(toolParts(toolName, service), (part) => toolStandalone(h, part, host)),
 		),
 	])
 }

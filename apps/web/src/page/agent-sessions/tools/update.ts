@@ -1,5 +1,5 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -245,7 +245,12 @@ export const routeChanged = (
 	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
 	return isSameTime(model.search, route.search)
 		? requestAll(next, context, "Load")
-		: { model: next, commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+		: {
+				model: next,
+				commands: [
+					resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh"),
+				],
+			}
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => ({
@@ -311,7 +316,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ElapsedSearchDebounce: ({ version }) => {
 			if (version !== model.searchVersion) return { model }
-			const trimmed = model.searchInput.trim()
+			const trimmed = Str.trim(model.searchInput)
 			const q = trimmed === "" ? undefined : trimmed
 			return navigate({ ...model, lastSentQuery: q ?? "" }, { ...model.search, q })
 		},

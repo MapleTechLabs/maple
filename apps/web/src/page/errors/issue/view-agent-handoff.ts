@@ -14,6 +14,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `GetItFixed`: the two ways to a fix, the user's own coding agent and Maple's investigation.
 
@@ -29,7 +30,7 @@ const AGENTS: ReadonlyArray<readonly [string, IconName]> = [
 const agentGlyphs = (h: H): Html =>
 	h.div(
 		[h.Class("flex shrink-0 -space-x-1"), h.AriaHidden(true)],
-		AGENTS.map(([name, glyph]) =>
+		Arr.map(AGENTS, ([name, glyph]) =>
 			h.span(
 				[
 					h.Key(name),
@@ -107,7 +108,7 @@ const agentLane = (h: H, model: Model, prompt: string): Html =>
 		],
 	})
 
-const sentenceCase = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
+const sentenceCase = (text: string): string => Str.toUpperCase(text.charAt(0)) + Str.slice(1)(text)
 
 const investigationSummary = (investigation: V2Investigation): string =>
 	investigation.report?.suspectedCause ??

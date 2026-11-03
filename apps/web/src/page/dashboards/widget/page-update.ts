@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
@@ -49,7 +49,7 @@ import {
 
 /** `emitAttribute`: only a non-empty key becomes a breakdown. */
 const breakdownValueOf = (key: string): string | null =>
-	key.trim() === "" ? null : `attribute:${key.trim()}`
+	Str.trim(key) === "" ? null : `attribute:${Str.trim(key)}`
 
 /** The SQL draft taken as the opened one, so a discarded or saved draft no longer reads as dirty. */
 const savedSql = (model: Model): Model["rawSql"] =>
@@ -140,7 +140,10 @@ const isEngineList = (model: Model, state: EditorState): boolean =>
 const withListQueryId = (state: EditorState, id: string | null): EditorState =>
 	id === null
 		? state
-		: { ...state, queries: state.queries.map((query, index) => (index === 0 ? { ...query, id } : query)) }
+		: {
+				...state,
+				queries: Arr.map(state.queries, (query, index) => (index === 0 ? { ...query, id } : query)),
+			}
 
 /**
  * `applyChanges`: an invalid query set, or a save in flight, leaves Apply a no-op. An engine list
@@ -267,14 +270,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledFormulaVisible: ({ formulaId }) =>
 			edit(model, context, (state) => ({
 				...state,
-				formulas: state.formulas.map((formula) =>
+				formulas: Arr.map(state.formulas, (formula) =>
 					formula.id === formulaId ? { ...formula, hidden: !formula.hidden } : formula,
 				),
 			})),
 		ChangedFormulaText: ({ formulaId, field, value }) =>
 			edit(model, context, (state) => ({
 				...state,
-				formulas: state.formulas.map((formula) =>
+				formulas: Arr.map(state.formulas, (formula) =>
 					formula.id === formulaId ? { ...formula, [field]: value } : formula,
 				),
 			})),
@@ -341,7 +344,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedThresholdValue: ({ index, value }) =>
 			edit(model, context, (state) => ({
 				...state,
-				thresholds: state.thresholds.map((threshold, i) =>
+				thresholds: Arr.map(state.thresholds, (threshold, i) =>
 					i === index
 						? { ...threshold, value: Number.isFinite(Number(value)) ? Number(value) : 0 }
 						: threshold,
@@ -350,14 +353,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedThresholdColor: ({ index, color }) =>
 			edit(model, context, (state) => ({
 				...state,
-				thresholds: state.thresholds.map((threshold, i) =>
+				thresholds: Arr.map(state.thresholds, (threshold, i) =>
 					i === index ? { ...threshold, color } : threshold,
 				),
 			})),
 		ClickedRemoveThreshold: ({ index }) =>
 			edit(model, context, (state) => ({
 				...state,
-				thresholds: state.thresholds.filter((_, i) => i !== index),
+				thresholds: Arr.filter(state.thresholds, (_, i) => i !== index),
 			})),
 		ChangedUnit: ({ unit }) => edit(model, context, (state) => ({ ...state, unit })),
 		ToggledSparkline: () =>
@@ -439,7 +442,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: {
 						model: {
 							...model,
-							metricKeysRequested: model.metricKeysRequested.filter((key) => key !== metric),
+							metricKeysRequested: Arr.filter(
+								model.metricKeysRequested,
+								(key) => key !== metric,
+							),
 						},
 					},
 		CompletedFetchMetricOptions: ({ search, result }) => {
@@ -448,7 +454,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const listed = { ...model, metricOptions: { search, ...result.success } }
 			// A metrics query without a metric yet takes the first one listed.
 			return listed.state !== null &&
-				listed.state.queries.some(
+				Arr.some(
+					listed.state.queries,
 					(query) => query.dataSource === "metrics" && query.metricName === "",
 				)
 				? edit(listed, context, (state) => withDefaultMetric(state, result.success.options))

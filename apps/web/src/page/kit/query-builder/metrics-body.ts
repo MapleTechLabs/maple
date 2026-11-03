@@ -7,6 +7,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import type { QueryDraft } from "./draft"
 import { Message, metricBreakdownIdOf, metricPickerIdOf, type Model } from "./panel"
 import { panelSelect, textInput, whereClauseEditor } from "./parts"
+import { Array as Arr, String as Str } from "effect"
 
 // `MetricsBody`: the metric picker, the where clause, and the two aggregation rows
 // with the one-field breakdown.
@@ -31,7 +32,7 @@ const comboOf = (stored: Combobox.Model | undefined, id: string, value: string):
 
 /** The fetched page, with the draft's metric kept selectable when the page lacks it. */
 const optionsWith = (query: MetricsQuery, value: string, options: ReadonlyArray<MetricOption>) =>
-	value === "" || options.some((option) => option.value === value)
+	value === "" || Arr.some(options, (option) => option.value === value)
 		? options
 		: [
 				{ value, label: `${query.metricName} (${query.metricType})`, isMonotonic: query.isMonotonic },
@@ -47,14 +48,14 @@ const picker = (
 ): Html => {
 	const value = query.metricName === "" ? "" : `${query.metricName}::${query.metricType}`
 	const listed = optionsWith(query, value, options)
-	const term = searchTerm.trim()
+	const term = Str.trim(searchTerm)
 	return h.submodel({
 		slotId: `${model.slotPrefix}-metric-${query.id}`,
 		model: comboOf(model.metricPickers[query.id], metricPickerIdOf(query.id), value),
 		view: ComboboxView.view,
 		toParentMessage: (message) => Message.GotMetricMessage({ queryId: query.id, value, message }),
 		viewInputs: {
-			items: listed.map((option) => option.value),
+			items: Arr.map(listed, (option) => option.value),
 			placeholder: "Search metrics…",
 			// `MetricOptionsEmpty` replaces the list only when nothing is listed.
 			emptyText:
@@ -91,7 +92,7 @@ const breakdown = (h: H, model: Model, query: MetricsQuery, keys: ReadonlyArray<
 		view: ComboboxView.view,
 		toParentMessage: (message) => Message.GotMetricBreakdownMessage({ queryId: query.id, message }),
 		viewInputs: {
-			items: [NONE, "service.name", ...keys.map((key) => `attr.${key}`)],
+			items: [NONE, "service.name", ...Arr.map(keys, (key) => `attr.${key}`)],
 			placeholder: "Search fields…",
 			emptyText: "",
 			highlightsSelected: true,

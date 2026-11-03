@@ -4,7 +4,7 @@ import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { hasAiSignal, renderAiSpan } from "../lib/render-ai-span"
 import { InspectSpanOutput } from "@maple/domain/mcp-outputs"
 import { detectPlatform, type PlatformSummary } from "@maple/domain/cloud-platform"
@@ -89,9 +89,10 @@ const platformBlocks = (platform: PlatformSummary | undefined): Array<DocBlock> 
 					["Region", platform.region],
 					[
 						"Location",
-						[platform.city, platform.countryCode]
-							.filter((part) => part !== undefined)
-							.join(", ") || undefined,
+						Arr.join(
+							Arr.filter([platform.city, platform.countryCode], (part) => part !== undefined),
+							", ",
+						) || undefined,
 					],
 					["CPU time", millis(platform.cpuTimeMs)],
 					["Wall time", millis(platform.wallTimeMs)],
@@ -130,11 +131,11 @@ const WORKERS_LIMITS =
 	"missing downstream span does not prove the call did not happen."
 
 const attributeBlocks = (label: string, attrs: Output["attributes"]): Array<DocBlock> => {
-	const entries = Object.entries(attrs).sort(([a], [b]) => a.localeCompare(b))
+	const entries = Rec.toEntries(attrs).sort(([a], [b]) => Str.localeCompare(b)(a))
 	if (entries.length === 0) return []
 	return [
 		doc.heading(`${label} (${entries.length})`),
-		doc.list(entries.map(([k, v]) => `\`${k}\`: ${truncate(v, 500)}`)),
+		doc.list(Arr.map(entries, ([k, v]) => `\`${k}\`: ${truncate(v, 500)}`)),
 	]
 }
 
@@ -167,7 +168,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 			trace_id: P.text("The trace ID the span belongs to"),
 			span_id: P.text("The span ID to inspect (from `inspect_trace` output)"),
 			timestamp: P.optionalTimestamp(
-				"Timestamp of the span (e.g. from search_traces). Narrows the scan to ±1h and saves an AI span the lookup that resolves its trace's bounds",
+				"Timestamp of the span (from search_traces or inspect_trace). Reads the hour around it and skips the lookup of the trace's bounds",
 			),
 			payload_chars: P.limit({
 				default: 2_000,
@@ -245,8 +246,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				}
 			}
 			const noAttributes =
-				Object.keys(output.attributes).length === 0 &&
-				Object.keys(output.resourceAttributes).length === 0
+				Rec.keys(output.attributes).length === 0 && Rec.keys(output.resourceAttributes).length === 0
 			const ai = output.ai
 			return {
 				title,
@@ -372,7 +372,7 @@ const decodeAiSpan = Effect.fn("McpInspectSpan.decodeAiSpan")(
 		return {
 			_tag: "decoded" as const,
 			// The leading blank line kept the section apart in the old line-joined text.
-			markdown: decoded.lines.join("\n").trim(),
+			markdown: Str.trim(Arr.join(decoded.lines, "\n")),
 			...(decoded.sessionId === undefined ? undefined : { sessionId: decoded.sessionId }),
 		}
 	},

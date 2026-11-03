@@ -16,6 +16,7 @@ import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
 import { typeSettings } from "./view-rail-types"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `WidgetSettingsBar` and the `WidgetSettings` fields the timeseries panels compose.
 
@@ -160,7 +161,7 @@ const timeRangeField = (h: H, model: Model, state: EditorState, timeZone: string
 const typePicker = (h: H, state: EditorState): Html =>
 	railSetting(h, "type", "Type", false, [
 		segmentedSelect(h, {
-			options: PANEL_TYPES.map((meta) => ({ value: meta.panelType, label: meta.label })),
+			options: Arr.map(PANEL_TYPES, (meta) => ({ value: meta.panelType, label: meta.label })),
 			value: toPanelType(state.visualization, state.chartId),
 			onChange: (panel) => Message.ClickedPanelType({ panel }),
 			size: "sm",
@@ -170,10 +171,13 @@ const typePicker = (h: H, state: EditorState): Html =>
 	])
 
 const UNIT_OPTIONS = [
-	...WIDGET_UNITS.filter((unit) => !unit.token.startsWith("duration_")).map((unit) => ({
-		value: unit.token,
-		label: unit.label,
-	})),
+	...Arr.map(
+		Arr.filter(WIDGET_UNITS, (unit) => !Str.startsWith("duration_")(unit.token)),
+		(unit) => ({
+			value: unit.token,
+			label: unit.label,
+		}),
+	),
 	{ value: "duration", label: "Duration" },
 ]
 
@@ -186,7 +190,7 @@ const DURATION_SCALES = [
 
 /** `Unit`: the duration tokens collapse into one entry with a scale under it. */
 export const unitField = (h: H, model: Model, state: EditorState, label = "Y-Axis Unit"): Html => {
-	const isDuration = state.unit.startsWith("duration_")
+	const isDuration = Str.startsWith("duration_")(state.unit)
 	return pageSelect(h, model, "unit", isDuration ? "duration" : state.unit, UNIT_OPTIONS, {
 		className: "w-full",
 		ariaLabel: label,

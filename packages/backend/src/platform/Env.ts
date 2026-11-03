@@ -5,7 +5,7 @@ import {
 	type ConnectorConfig,
 } from "@maple/chat-platform"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
-import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Config, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 
 /** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
@@ -377,7 +377,7 @@ const envConfig = Config.all({
 const makeEnv = Effect.gen(function* () {
 	const env: EnvConfig = yield* envConfig
 
-	if (env.MAPLE_DEFAULT_ORG_ID.trim().length === 0) {
+	if (Str.trim(env.MAPLE_DEFAULT_ORG_ID).length === 0) {
 		return yield* new EnvValidationError({ message: "MAPLE_DEFAULT_ORG_ID cannot be empty" })
 	}
 
@@ -415,7 +415,7 @@ const makeEnv = Effect.gen(function* () {
 		)
 	}
 
-	const authMode = env.MAPLE_AUTH_MODE.toLowerCase()
+	const authMode = Str.toLowerCase(env.MAPLE_AUTH_MODE)
 
 	if (authMode !== "clerk" && Option.isNone(env.MAPLE_ROOT_PASSWORD)) {
 		return yield* new EnvValidationError({
@@ -431,7 +431,7 @@ const makeEnv = Effect.gen(function* () {
 
 	if (
 		Option.isSome(env.MAPLE_ROOT_PASSWORD) &&
-		Redacted.value(env.MAPLE_ROOT_PASSWORD.value).trim().length === 0
+		Str.trim(Redacted.value(env.MAPLE_ROOT_PASSWORD.value)).length === 0
 	) {
 		return yield* new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" })
 	}

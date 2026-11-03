@@ -3,7 +3,7 @@
  * a fake warehouse (routed by the compiled SQL) and a PGlite database seeded with issues.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { ErrorDetailOutput, FindErrorsOutput, ListErrorIssuesOutput } from "@maple/domain/mcp-outputs"
 import { executeSql } from "@maple/backend/platform/test-pglite"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
@@ -58,10 +58,10 @@ const isErrorEventsByTime = (sql: string) => /\bFROM error_events_by_time\b/.tes
 
 // First match wins.
 const rules: FixtureRule[] = [
-	{ match: (sql) => isErrorEvents(sql) && sql.includes("noExceptionCount"), rows: [summaryRow] },
-	{ match: (sql) => sql.includes("occurrenceSpanId"), rows: [traceRow] },
+	{ match: (sql) => isErrorEvents(sql) && Str.includes("noExceptionCount")(sql), rows: [summaryRow] },
+	{ match: (sql) => Str.includes("occurrenceSpanId")(sql), rows: [traceRow] },
 	{
-		match: (sql) => isErrorEventsByTime(sql) && sql.includes("TraceId IN"),
+		match: (sql) => isErrorEventsByTime(sql) && Str.includes("TraceId IN")(sql),
 		rows: [
 			{
 				fingerprintHash: CAUSE_FINGERPRINT,
@@ -73,11 +73,11 @@ const rules: FixtureRule[] = [
 		],
 	},
 	{
-		match: (sql) => isErrorEventsByTime(sql) && sql.includes("AS distinctErrorCount"),
+		match: (sql) => isErrorEventsByTime(sql) && Str.includes("AS distinctErrorCount")(sql),
 		rows: [{ occurrences: 237_000, distinctErrorCount: 40, noExceptionCount: 231_000 }],
 	},
 	{
-		match: (sql) => sql.includes("sampleMessage"),
+		match: (sql) => Str.includes("sampleMessage")(sql),
 		rows: [
 			{
 				fingerprintHash: UNKNOWN_FINGERPRINT,
@@ -92,11 +92,11 @@ const rules: FixtureRule[] = [
 		],
 	},
 	{
-		match: (sql) => isErrorEvents(sql) && sql.includes("AS spanId"),
+		match: (sql) => isErrorEvents(sql) && Str.includes("AS spanId")(sql),
 		rows: [{ fingerprintHash: UNKNOWN_FINGERPRINT, traceId: "t-landing", spanId: "s-landing" }],
 	},
 	{
-		match: (sql) => readsTraceSpans(sql) && sql.includes("AS httpStatus"),
+		match: (sql) => readsTraceSpans(sql) && Str.includes("AS httpStatus")(sql),
 		rows: [
 			{
 				spanId: "s-landing",
@@ -287,11 +287,11 @@ describe("list_error_issues", () => {
 		const byType = Schema.decodeUnknownSync(ListErrorIssuesOutput)(
 			(await call("list_error_issues", { exception_type: "ScrapeAttemptFailed" })).structuredContent,
 		)
-		expect(byType.issues.map((i) => i.id)).toEqual([ERROR_ISSUE])
+		expect(Arr.map(byType.issues, (i) => i.id)).toEqual([ERROR_ISSUE])
 		const bySearch = Schema.decodeUnknownSync(ListErrorIssuesOutput)(
 			(await call("list_error_issues", { search: "landing" })).structuredContent,
 		)
-		expect(bySearch.issues.map((i) => i.id)).toEqual([UNKNOWN_ISSUE])
+		expect(Arr.map(bySearch.issues, (i) => i.id)).toEqual([UNKNOWN_ISSUE])
 	})
 
 	it("rejects a cursor it did not issue", async () => {

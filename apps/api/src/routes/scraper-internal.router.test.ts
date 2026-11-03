@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, Ref, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Ref, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import {
 	IngestKeysResponse,
@@ -96,7 +96,7 @@ const makeHarness = Effect.fnUntraced(function* (rowCount: number) {
 					Ref.update(keyBatches, (count) => count + 1).pipe(
 						Effect.as(
 							new Map(
-								orgIds.map((orgId) => [
+								Arr.map(orgIds, (orgId) => [
 									orgId,
 									new IngestKeysResponse({
 										publicKey: `maple_pk_${orgId}`,
@@ -158,8 +158,8 @@ describe("GET /api/internal/scrape-targets", () => {
 			assert.strictEqual(yield* Ref.get(harness.maxInFlight), 4)
 			assert.strictEqual(yield* Ref.get(harness.keyBatches), 1)
 			assert.deepStrictEqual(
-				response.body.map((target) => target.id),
-				harness.rows.map((row) => row.id),
+				Arr.map(response.body, (target) => target.id),
+				Arr.map(harness.rows, (row) => row.id),
 			)
 			assert.strictEqual(response.body[1]?.ingestKey, "maple_pk_org_1")
 			assert.strictEqual(response.body[0]?.sourceId, publicSourceId(FIRST_SOURCE))

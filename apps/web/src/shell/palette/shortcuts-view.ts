@@ -14,6 +14,7 @@ import { MeasureCommandList } from "@maple/views/ui/command"
 import { displayAlternates, type Platform, SHORTCUT_GROUPS, SHORTCUTS, type ShortcutDef } from "./shortcuts"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The keyboard shortcuts dialog.
 
@@ -27,12 +28,12 @@ const row = <M>(h: HtmlBuilder<M>, def: ShortcutDef, platform: Platform): Html =
 			hstack(
 				h,
 				{ gap: "1.5", as: "span", className: "shrink-0" },
-				displayAlternates(def, platform).flatMap((tokens, index) => [
+				Arr.flatMap(displayAlternates(def, platform), (tokens, index) => [
 					...(index > 0 ? [typography(h, { size: "xs", tone: "muted" }, ["or"])] : []),
 					kbdGroup(
 						h,
 						undefined,
-						tokens.map((token) => kbd(h, undefined, [token])),
+						Arr.map(tokens, (token) => kbd(h, undefined, [token])),
 					),
 				]),
 			),
@@ -40,8 +41,8 @@ const row = <M>(h: HtmlBuilder<M>, def: ShortcutDef, platform: Platform): Html =
 	)
 
 const groups = <M>(h: HtmlBuilder<M>, platform: Platform): ReadonlyArray<Html> =>
-	SHORTCUT_GROUPS.flatMap((group) => {
-		const defs = SHORTCUTS.filter((def) => def.group === group)
+	Arr.flatMap(SHORTCUT_GROUPS, (group) => {
+		const defs = Arr.filter(SHORTCUTS, (def) => def.group === group)
 		return defs.length === 0
 			? []
 			: [
@@ -51,7 +52,7 @@ const groups = <M>(h: HtmlBuilder<M>, platform: Platform): ReadonlyArray<Html> =
 							eyebrow(h, { variant: "label", className: "mb-1", as: "h3" }, [group]),
 							h.div(
 								[h.Class("divide-y divide-border-subtle")],
-								defs.map((def) => row(h, def, platform)),
+								Arr.map(defs, (def) => row(h, def, platform)),
 							),
 						],
 					),

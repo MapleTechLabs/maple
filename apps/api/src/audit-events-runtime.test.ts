@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
 import { WarehouseUpstreamError } from "@maple/domain/http"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { processAuditEventsBatch } from "./audit-events-runtime"
 import { makeWarehouseServiceStub } from "@/routes/v2/v2-test-support"
 import { AuditLogEvent, encodeAuditLogEventSync } from "@maple/backend/services/audit/audit-event"
@@ -40,7 +40,7 @@ const message = (body: unknown, attempts: number) => {
 }
 
 const batchOf = (...messages: ReadonlyArray<{ readonly message: unknown }>) =>
-	({ messages: messages.map((entry) => entry.message) }) as never
+	({ messages: Arr.map(messages, (entry) => entry.message) }) as never
 
 /** A warehouse whose `ingest` is interrupted — a deploy tearing the isolate down. */
 const interruptedWarehouse = Layer.succeed(
@@ -92,14 +92,15 @@ describe("processAuditEventsBatch", () => {
 			expect(first.calls).toEqual(["ack"])
 			expect(second.calls).toEqual(["ack"])
 			expect(other.calls).toEqual(["ack"])
-			expect(store.written.map((write) => [write.orgId, write.rows.length]).sort()).toEqual([
+			expect(Arr.map(store.written, (write) => [write.orgId, write.rows.length]).sort()).toEqual([
 				[OTHER_ORG, 1],
 				[ORG, 2],
 			])
 			expect(
-				store.written
-					.flatMap((write) => write.rows)
-					.every((row) => row.Action === "dashboard.created"),
+				Arr.every(
+					Arr.flatMap(store.written, (write) => write.rows),
+					(row) => row.Action === "dashboard.created",
+				),
 			).toBe(true)
 		}),
 	)

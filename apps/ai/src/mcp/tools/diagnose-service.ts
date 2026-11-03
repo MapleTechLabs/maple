@@ -4,7 +4,7 @@ import { formatDurationFromMs, formatPercent, formatNumber, truncate } from "../
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { DiagnoseServiceOutput } from "@maple/domain/mcp-outputs"
 import { diagnoseService } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -53,7 +53,9 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 			// Platform lookups cost a fleet rollup each, so only connected providers are read.
 			const connected = yield* IntegrationInventoryService.pipe(
 				Effect.flatMap((inventory) => inventory.list(tenant.orgId)),
-				Effect.map((inventory) => new Set<string>(inventory.integrations.map((i) => i.provider))),
+				Effect.map(
+					(inventory) => new Set<string>(Arr.map(inventory.integrations, (i) => i.provider)),
+				),
 				Effect.orElseSucceed(() => new Set<string>()),
 			)
 
@@ -86,12 +88,12 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 				serviceName: params.service,
 				timeRange: { start: st, end: et },
 				health: { ...result.health },
-				topErrors: result.topErrors.map((e) => ({
+				topErrors: Arr.map(result.topErrors, (e) => ({
 					fingerprintHash: e.fingerprintHash,
 					label: e.label,
 					count: e.count,
 				})),
-				recentTraces: result.recentTraces.map((t) => ({
+				recentTraces: Arr.map(result.recentTraces, (t) => ({
 					traceId: t.traceId,
 					rootSpanName: t.rootSpanName,
 					durationMs: t.durationMs,
@@ -99,7 +101,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					services: [],
 					hasError: t.hasError,
 				})),
-				recentLogs: result.recentLogs.map((l) => ({
+				recentLogs: Arr.map(result.recentLogs, (l) => ({
 					timestamp: l.timestamp,
 					severityText: l.severityText,
 					serviceName: l.serviceName,
@@ -144,7 +146,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					? doc.text("No errors found for this service.")
 					: doc.table(
 							["Error", "Count", "Fingerprint"],
-							output.topErrors.map((e) => [
+							Arr.map(output.topErrors, (e) => [
 								truncate(e.label, 80),
 								formatNumber(e.count),
 								e.fingerprintHash,
@@ -156,7 +158,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					doc.heading("Recent Traces"),
 					doc.table(
 						["Trace", "Root Span", "Duration", "Error"],
-						output.recentTraces.map((t) => [
+						Arr.map(output.recentTraces, (t) => [
 							t.traceId,
 							truncate(t.rootSpanName, 60),
 							formatDurationFromMs(t.durationMs),
@@ -170,8 +172,8 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					doc.heading("Recent Logs"),
 					doc.table(
 						["Time", "Severity", "Body"],
-						output.recentLogs.map((log) => [
-							log.timestamp.split(" ")[1] ?? log.timestamp,
+						Arr.map(output.recentLogs, (log) => [
+							Str.split(" ")(log.timestamp)[1] ?? log.timestamp,
 							log.severityText,
 							truncate(log.body, 100),
 						]),
@@ -184,7 +186,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					doc.heading("Infrastructure"),
 					doc.table(
 						["Workload", "Namespace", "Pods", "CPU of limit", "Memory of limit"],
-						infra.workloads.map((w) => [
+						Arr.map(infra.workloads, (w) => [
 							`${w.kind}/${w.name}`,
 							w.namespace,
 							formatNumber(w.podCount),
@@ -205,12 +207,12 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 			if (output.platform !== undefined) {
 				blocks.push(
 					doc.heading("Platform"),
-					...output.platform.flatMap((section) => [
+					...Arr.flatMap(output.platform, (section) => [
 						...(section.rows.length === 0 ? [] : [kindTable(section)]),
 						...(section.truncated
 							? [
 									doc.text(
-										`Only part of the ${section.kind.replace("_", " ")} fleet was read, so a match may be missing; inspect_infra by name checks one directly.`,
+										`Only part of the ${Str.replace("_", " ")(section.kind)} fleet was read, so a match may be missing; inspect_infra by name checks one directly.`,
 									),
 								]
 							: []),
@@ -219,8 +221,8 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 			} else if (output.platformError !== undefined) {
 				blocks.push(doc.text(`Platform lookup failed: ${output.platformError}`))
 			}
-			const platformNext = (output.platform ?? []).flatMap((section) =>
-				section.rows.slice(0, 1).map((row) =>
+			const platformNext = Arr.flatMap(output.platform ?? [], (section) =>
+				Arr.map(section.rows.slice(0, 1), (row) =>
 					doc.next(
 						"inspect_infra",
 						{
@@ -248,12 +250,9 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 					...(h.p95Ms > 500
 						? [doc.next("find_slow_traces", { service: output.serviceName }, "find slow traces")]
 						: []),
-					...output.recentTraces
-						.filter((t) => t.hasError)
-						.slice(0, 2)
-						.map((t) =>
-							doc.next("inspect_trace", { trace_id: t.traceId }, "inspect error trace"),
-						),
+					...Arr.map(Arr.filter(output.recentTraces, (t) => t.hasError).slice(0, 2), (t) =>
+						doc.next("inspect_trace", { trace_id: t.traceId }, "inspect error trace"),
+					),
 					...(hotPod === undefined
 						? []
 						: [

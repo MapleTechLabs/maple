@@ -4,6 +4,7 @@ import * as List from "../../page/infra-integrations/cloudflare/list/model"
 import * as Zone from "../../page/infra-integrations/cloudflare/zone/model"
 import { Message } from "./model"
 import { init, update } from "./update"
+import { Array as Arr } from "effect"
 
 const opened = () => init({ timeZone: "UTC" })
 
@@ -11,7 +12,7 @@ describe("cloudflare lab", () => {
 	test("boots on the zone list, sending only the chart runtime and UI Commands", () => {
 		const { model, commands } = opened()
 		expect([model.page, model.list.search.view]).toEqual(["zones", "zones"])
-		expect((commands ?? []).filter((command) => /Cloudflare/.test(command.name))).toEqual([])
+		expect(Arr.filter(commands ?? [], (command) => /Cloudflare/.test(command.name))).toEqual([])
 	})
 
 	test("the list's view tabs move the lab pivot, and the pivot moves the list", () => {
@@ -32,6 +33,6 @@ describe("cloudflare lab", () => {
 		)
 		expect(next.model.zone.dimension).toBe("country")
 		expect(AsyncData.isSuccess(next.model.zone.breakdown.data)).toBe(true)
-		expect((next.commands ?? []).map((command) => command.name)).toEqual([])
+		expect(Arr.map(next.commands ?? [], (command) => command.name)).toEqual([])
 	})
 })

@@ -13,6 +13,7 @@ import { formatVcpu, groupedRows, type RailwayRowView, type RailwaySync, rowKey 
 import { Message } from "./message"
 import type { SortKey } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `RailwayServiceTable` and `RailwayServiceTableLoading`.
 
@@ -38,21 +39,23 @@ const COLUMNS: ReadonlyArray<{
 ]
 
 const columns = (h: H, showLimits: boolean, sort: Sort<SortKey> | undefined): ReadonlyArray<Html> =>
-	COLUMNS.filter((column) => showLimits || column.limitsOnly !== true).map((column) =>
-		columnHead(h, {
-			label: column.label,
-			width: column.width,
-			align: column.align,
-			hidden: column.hidden,
-			sort:
-				sort === undefined
-					? { isActive: false, dir: "desc" }
-					: {
-							onSort: Message.ClickedSort({ key: column.key }),
-							isActive: sort.key === column.key,
-							dir: sort.dir,
-						},
-		}),
+	Arr.map(
+		Arr.filter(COLUMNS, (column) => showLimits || column.limitsOnly !== true),
+		(column) =>
+			columnHead(h, {
+				label: column.label,
+				width: column.width,
+				align: column.align,
+				hidden: column.hidden,
+				sort:
+					sort === undefined
+						? { isActive: false, dir: "desc" }
+						: {
+								onSort: Message.ClickedSort({ key: column.key }),
+								isActive: sort.key === column.key,
+								dir: sort.dir,
+							},
+			}),
 	)
 
 export const railwayTableLoading = (h: H): Html =>
@@ -212,36 +215,41 @@ export const railwayTable = (h: H, inputs: RailwayTableInputs): Html =>
 		h,
 		{ ariaLabel: "Railway services" },
 		columns(h, inputs.showLimits, inputs.sort),
-		groupedRows(inputs.services, inputs.environments, inputs.authFailed, inputs.sort).flatMap((group) => [
-			h.div(
-				[
-					h.Class(
-						"flex items-center gap-2.5 border-b border-border-subtle bg-surface-sunken px-4 py-2 font-mono text-2xs",
-					),
-				],
-				[
-					typography(h, { tone: "foreground", weight: "medium" }, [group.projectName]),
-					h.span([h.Class("text-muted-foreground")], ["/ ", group.environmentName]),
-					h.span(
-						[h.Class("ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground")],
-						[
-							h.span(
-								[h.Class("shrink-0")],
-								[
-									String(group.services.length),
-									" ",
-									pluralize(group.services.length, "service"),
-									" ·",
-									" ",
-									formatBytes(group.memoryAvg),
-									" ·",
-								],
-							),
-							syncNote(h, group.sync, inputs.clock),
-						],
-					),
-				],
-			),
-			...group.services.map((view) => row(h, view, inputs.showLimits, inputs.clock, inputs.trigger)),
-		]),
+		Arr.flatMap(
+			groupedRows(inputs.services, inputs.environments, inputs.authFailed, inputs.sort),
+			(group) => [
+				h.div(
+					[
+						h.Class(
+							"flex items-center gap-2.5 border-b border-border-subtle bg-surface-sunken px-4 py-2 font-mono text-2xs",
+						),
+					],
+					[
+						typography(h, { tone: "foreground", weight: "medium" }, [group.projectName]),
+						h.span([h.Class("text-muted-foreground")], ["/ ", group.environmentName]),
+						h.span(
+							[h.Class("ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground")],
+							[
+								h.span(
+									[h.Class("shrink-0")],
+									[
+										String(group.services.length),
+										" ",
+										pluralize(group.services.length, "service"),
+										" ·",
+										" ",
+										formatBytes(group.memoryAvg),
+										" ·",
+									],
+								),
+								syncNote(h, group.sync, inputs.clock),
+							],
+						),
+					],
+				),
+				...Arr.map(group.services, (view) =>
+					row(h, view, inputs.showLimits, inputs.clock, inputs.trigger),
+				),
+			],
+		),
 	)

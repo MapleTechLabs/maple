@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 // Backfill SQL and the custom steps that `steps.ts` references. Each projection
 // is frozen byte-for-byte to the view body its snapshot installs, so backfilled and live rows agree.
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { applyRawTelemetryRetentionFloor, type Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow, decodeRowCounts } from "@maple/local-server/chdb-rows"
 import { localSchemaSnapshot } from "../schema-snapshots"
@@ -39,25 +39,28 @@ export const PRODUCT_EVENTS_BROWSER_BACKFILL = [
 	`INSERT INTO identity_links (OrgId, VisitorId, UserId, FirstSeen) SELECT OrgId, VisitorId, UserId, StartTime AS FirstSeen FROM session_replays WHERE ${IDENTITY_LINKS_SOURCE_FILTER}`,
 ] as const
 
-const PRODUCT_EVENTS_TRACE_COLUMNS = [
-	"OrgId",
-	"Timestamp",
-	"Source",
-	"SessionId",
-	"Seq",
-	"VisitorId",
-	"UserId",
-	"GroupId",
-	"Kind",
-	"EventName",
-	"Host",
-	"PagePath",
-	"Url",
-	"ServiceName",
-	"Attributes",
-	"TraceId",
-	"SpanId",
-].join(", ")
+const PRODUCT_EVENTS_TRACE_COLUMNS = Arr.join(
+	[
+		"OrgId",
+		"Timestamp",
+		"Source",
+		"SessionId",
+		"Seq",
+		"VisitorId",
+		"UserId",
+		"GroupId",
+		"Kind",
+		"EventName",
+		"Host",
+		"PagePath",
+		"Url",
+		"ServiceName",
+		"Attributes",
+		"TraceId",
+		"SpanId",
+	],
+	", ",
+)
 
 /** v17 -> v18: migration 0028's trace projection, byte-for-byte. */
 const PRODUCT_EVENTS_TRACE_PROJECTION_SQL = `OrgId,
@@ -176,9 +179,15 @@ const rekeyStagingDdl = (rekey: SortKeyRekey, ttl: string): string => {
 	)?.[0]
 	if (ddl === undefined)
 		return rekeyFailure(rekey, `found no ${rekey.table} DDL in the v${rekey.version} snapshot`)
-	return ddl
-		.replace(`CREATE TABLE IF NOT EXISTS ${rekey.table} (`, `CREATE TABLE ${rekeyStaging(rekey)} (`)
-		.replace(/\nTTL [^;\n]*;$/, `\nTTL ${ttl}`)
+	return Str.replace(
+		/\nTTL [^;\n]*;$/,
+		`\nTTL ${ttl}`,
+	)(
+		Str.replace(
+			`CREATE TABLE IF NOT EXISTS ${rekey.table} (`,
+			`CREATE TABLE ${rekeyStaging(rekey)} (`,
+		)(ddl),
+	)
 }
 
 /**

@@ -1,6 +1,6 @@
 import { DashboardWidgetSchema } from "@maple/domain/http"
 import { mutateDashboard } from "./page/dashboards/kit/store"
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
 import { Message } from "./message"
@@ -37,8 +37,9 @@ export const RestoreDashboardWidgets = Command.define("RestoreDashboardWidgets",
 	messages: [Message.CompletedRestoreDashboardWidgets],
 	execute: ({ orgId, dashboardId, widgets }) =>
 		mutateDashboard(orgId, dashboardId, (document, nowIso) => {
-			const missing = widgets.filter(
-				(widget) => !document.widgets.some((existing) => existing.id === widget.id),
+			const missing = Arr.filter(
+				widgets,
+				(widget) => !Arr.some(document.widgets, (existing) => existing.id === widget.id),
 			)
 			return missing.length === 0
 				? document

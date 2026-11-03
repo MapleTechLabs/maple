@@ -10,6 +10,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { Message } from "./model"
 import type { H } from "./view-rows"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpProjectMenu`: with two or more projects the title's chip picks one of them, or all.
 
@@ -75,7 +76,7 @@ export const projectMenu = (
 				{ _tag: "Separator" },
 				{
 					_tag: "RadioGroup",
-					items: options.projects.map((project) => ({
+					items: Arr.map(options.projects, (project) => ({
 						value: project,
 						label: project,
 						isChecked: value === project,

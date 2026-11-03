@@ -11,7 +11,7 @@ import {
 } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
@@ -113,7 +113,7 @@ export const hyperdriveSection = (h: H, configs: ReadonlyArray<HyperdriveNodeInf
 			),
 			h.div(
 				[h.Class("space-y-1.5")],
-				configs.map((config) =>
+				Arr.map(configs, (config) =>
 					panel(h, { className: "px-2.5 py-2 text-xs" }, [
 						hstack(h, { gap: "2", justify: "between" }, [
 							hstack(h, { gap: "1.5", shrink: true }, [
@@ -188,15 +188,15 @@ const branchRows = (h: H, model: Model, planetscale: PlanetScaleNodeMetrics): Re
 		onNone: () => [],
 		onSome: (stats) => stats.value.branches,
 	})
-	const infoByName = new Map(planetscale.branches.map((branch) => [branch.name, branch]))
-	const statNames = new Set(branchStats.map((row) => row.branch))
-	const idle = planetscale.branches.filter((branch) => !statNames.has(branch.name))
+	const infoByName = new Map(Arr.map(planetscale.branches, (branch) => [branch.name, branch]))
+	const statNames = new Set(Arr.map(branchStats, (row) => row.branch))
+	const idle = Arr.filter(planetscale.branches, (branch) => !statNames.has(branch.name))
 	if (branchStats.length === 0 && idle.length === 0) return []
 	return [
 		h.div(
 			[h.Class("space-y-1.5")],
 			[
-				...branchStats.map((row) =>
+				...Arr.map(branchStats, (row) =>
 					panel(
 						h,
 						{ className: "flex-row items-center justify-between gap-2 px-2.5 py-2 text-xs" },
@@ -231,7 +231,7 @@ const branchRows = (h: H, model: Model, planetscale: PlanetScaleNodeMetrics): Re
 						],
 					),
 				),
-				...idle.map((branch) =>
+				...Arr.map(idle, (branch) =>
 					panel(
 						h,
 						{
@@ -318,9 +318,9 @@ export const queryActivity = (
 
 /** `formatQueryLabel`: whitespace collapsed, long statements cut in the middle. */
 const formatQueryLabel = (value: string): string => {
-	const collapsed = value.replace(/\s+/g, " ").trim()
+	const collapsed = Str.trim(Str.replace(/\s+/g, " ")(value))
 	if (collapsed.length <= 96) return collapsed || "unknown query"
-	return `${collapsed.slice(0, 78)}…${collapsed.slice(-16)}`
+	return `${Str.slice(0, 78)(collapsed)}…${Str.slice(-16)(collapsed)}`
 }
 
 export const topQueries = (h: H, response: SummaryResponse | null): ReadonlyArray<Html> =>
@@ -334,7 +334,7 @@ export const topQueries = (h: H, response: SummaryResponse | null): ReadonlyArra
 						eyebrow(h, { as: "h4" }, ["Top query shapes"]),
 						h.div(
 							[h.Class("space-y-1.5")],
-							response.topQueries.map((query) =>
+							Arr.map(response.topQueries, (query) =>
 								panel(h, { className: "px-2.5 py-2" }, [
 									hstack(h, { gap: "2", align: "start", justify: "between" }, [
 										h.p(

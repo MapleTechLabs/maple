@@ -20,6 +20,7 @@ import type { Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
+import { Array as Arr, String as Str } from "effect"
 
 // `DashboardHistoryPanel`, `VersionListItem` and `PreviewBanner`: the version history panel.
 
@@ -112,7 +113,7 @@ const versionItem = (
 													"grid size-3.5 place-items-center rounded-full bg-muted text-4xs font-semibold uppercase text-muted-foreground",
 												),
 											],
-											[actorInitials(version.createdBy).slice(0, 1)],
+											[Str.slice(0, 1)(actorInitials(version.createdBy))],
 										),
 										h.span([], ["v", String(version.versionNumber)]),
 										dot(h),
@@ -134,7 +135,7 @@ const versionItem = (
 const loading = (h: H): Html =>
 	h.div(
 		[h.Role("status"), h.AriaLabel("Loading history"), h.Class("flex flex-col gap-4 px-4 py-4")],
-		[0, 1, 2, 3].map(() =>
+		Arr.map([0, 1, 2, 3], () =>
 			vstack(h, { gap: "1.5" }, [skeleton(h, "h-3 w-32"), skeleton(h, "h-2.5 w-48 opacity-60")]),
 		),
 	)
@@ -167,7 +168,7 @@ const list = (h: H, model: Model, versions: ReadonlyArray<VersionRow>, clock: Cl
 				[h.Class("relative")],
 				[
 					h.span([h.AriaHidden(true), h.Class("absolute left-4 top-3 bottom-3 w-px bg-border")]),
-					...versions.map((version) =>
+					...Arr.map(versions, (version) =>
 						versionItem(
 							h,
 							version,

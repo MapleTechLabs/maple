@@ -77,7 +77,7 @@ import {
 	type CHUnionQuery,
 } from "@maple-dev/effect-orm/clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
-import { Array as Arr, type DateTime, Option, Schema } from "effect"
+import { Array as Arr, type DateTime, Option, Schema, Record as Rec } from "effect"
 import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import {
 	AiTraceIndex,
@@ -563,8 +563,9 @@ export function aiToolsTotalsQuery(
 		firstSeen: CH.lit(""),
 		lastSeen: CH.lit(""),
 	}))
-	const branches = AI_TOOLS_TOTALS_PERIODS.filter((period) => periods.includes(period)).map((period) =>
-		period === "window" ? allSessions : branch(period, period),
+	const branches = Arr.map(
+		Arr.filter(AI_TOOLS_TOTALS_PERIODS, (period) => periods.includes(period)),
+		(period) => (period === "window" ? allSessions : branch(period, period)),
 	)
 	const [first, ...rest] = branches
 	if (first === undefined) {
@@ -1046,12 +1047,12 @@ export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiTool
 			$.Timestamp.gte(param.dateTime("sliceStart")),
 			$.Timestamp.lte(param.dateTime("sliceEnd")),
 			inTraces(
-				(id) => CH.inList(id, [...new Set(calls.map((call) => call.traceId))]),
+				(id) => CH.inList(id, [...new Set(Arr.map(calls, (call) => call.traceId))]),
 				paramTraceWindow("sliceStart", "sliceEnd"),
 			),
 			CH.inExprList(
 				traceSpanKey,
-				calls.map((call) =>
+				Arr.map(calls, (call) =>
 					CH.compileFnCall<string>("tuple", CH.lit(call.traceId), CH.lit(call.spanId)),
 				),
 			),
@@ -1086,7 +1087,7 @@ const payloadText = (value: unknown): string =>
 const truncatePayload = (text: string): string =>
 	text.length <= AI_TOOL_ERROR_PAYLOAD_MAX
 		? text
-		: Array.from(text).slice(0, AI_TOOL_ERROR_PAYLOAD_MAX).join("")
+		: Arr.join(Array.from(text).slice(0, AI_TOOL_ERROR_PAYLOAD_MAX), "")
 
 /** One {@link aiToolErrorPayloadsQuery} row as the modal shows it: the payloads
  *  the session page decodes for the same span, cut to
@@ -1098,7 +1099,7 @@ export const aiToolErrorPayload = (row: AiToolErrorPayloadsRow): AiToolErrorPayl
 	const args = payloadText(payload.arguments)
 	const result = payloadText(payload.result)
 	const bytes = (text: string): number =>
-		Object.entries(row.cutAttributeBytes).find(([key]) => row.spanAttributes[key] === text)?.[1] ??
+		Rec.toEntries(row.cutAttributeBytes).find(([key]) => row.spanAttributes[key] === text)?.[1] ??
 		utf8.encode(text).length
 	return {
 		traceId: row.traceId,
@@ -1122,7 +1123,7 @@ export interface AiToolErrorPayloadSlice {
 export function aiToolErrorPayloadSlice(
 	calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>,
 ): AiToolErrorPayloadSlice {
-	const timestamps = calls.map((call) => call.timestamp)
+	const timestamps = Arr.map(calls, (call) => call.timestamp)
 	return {
 		sliceStart: timestamps.reduce((min, ts) => (ts < min ? ts : min)),
 		sliceEnd: timestamps.reduce((max, ts) => (ts > max ? ts : max)),

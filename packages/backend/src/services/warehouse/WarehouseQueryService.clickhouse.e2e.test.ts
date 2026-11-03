@@ -1,5 +1,5 @@
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { clickHouseVersionAtLeast } from "@maple/domain/clickhouse"
 import { OrgId, RawSqlValidationError, UserId } from "@maple/domain/http"
@@ -27,15 +27,15 @@ const database = uniqueDatabase("maple_raw_sql_e2e")
 const orgId = "org_raw_sql_e2e"
 
 const assertSearchSchemaApplied = async (): Promise<void> => {
-	const migrationRevision = (
+	const migrationRevision = Str.trim(
 		await clickhouseExec(
 			"SELECT count() FROM _maple_schema_migrations WHERE version = 10 FORMAT TabSeparated",
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(migrationRevision, "1", "performance migration 10 was not recorded")
 
-	const portableIndexCount = (
+	const portableIndexCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM system.data_skipping_indices
@@ -51,11 +51,11 @@ WHERE database = currentDatabase()
   )
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(portableIndexCount, "9", "portable search indexes are incomplete")
 
-	const computedColumnCount = (
+	const computedColumnCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM system.columns
@@ -67,22 +67,22 @@ WHERE database = currentDatabase()
   )
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(computedColumnCount, "6", "computed search columns are incomplete")
 
-	const serverVersion = (await clickhouseExec("SELECT version() FORMAT TabSeparated", database)).trim()
+	const serverVersion = Str.trim(await clickhouseExec("SELECT version() FORMAT TabSeparated", database))
 	if (!clickHouseVersionAtLeast(serverVersion, "26.2.0")) return
 
-	const textFeatureRevision = (
+	const textFeatureRevision = Str.trim(
 		await clickhouseExec(
 			"SELECT max(revision) FROM _maple_schema_features WHERE id = 'search_text_v1' FORMAT TabSeparated",
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(textFeatureRevision, "1", "text search feature was not recorded")
 
-	const textIndexCount = (
+	const textIndexCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM system.data_skipping_indices
@@ -93,8 +93,8 @@ WHERE database = currentDatabase()
   )
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(textIndexCount, "7", "text search indexes are incomplete")
 
 	await clickhouseExec(
@@ -111,16 +111,16 @@ FORMAT TabSeparated`,
 )`,
 		database,
 	)
-	const scanCount = (
+	const scanCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM logs
 WHERE OrgId = '${orgId}' AND Body ILIKE '%connection timeout%'
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
-	const indexedCount = (
+		),
+	)
+	const indexedCount = Str.trim(
 		await clickhouseExec(
 			`SELECT count()
 FROM logs
@@ -128,8 +128,8 @@ WHERE OrgId = '${orgId}' AND hasAllTokens(lower(Body), 'connection timeout')
 SETTINGS enable_full_text_index = 1
 FORMAT TabSeparated`,
 			database,
-		)
-	).trim()
+		),
+	)
 	assert.strictEqual(indexedCount, scanCount, "indexed and fallback log search disagree")
 
 	const explain = await clickhouseExec(

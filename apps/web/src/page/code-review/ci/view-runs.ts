@@ -3,7 +3,7 @@ import { externalUrl, pullRequestUrl } from "../../../components/code-review/ci/
 import { formatDuration } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
@@ -86,7 +86,7 @@ const failedJobs = (h: H, run: CodeReviewCiRun): ReadonlyArray<Html> => {
 		h.ul(
 			[h.Class("mt-1 flex flex-col gap-0.5 text-xs")],
 			[
-				...failed.map((job) => {
+				...Arr.map(failed, (job) => {
 					const jobUrl = externalUrl(job.url)
 					return h.li(
 						[h.Key(job.job), h.Class("flex min-w-0 gap-1.5")],
@@ -246,7 +246,7 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 					className: emptyFrameClass("dashed"),
 					onClear: canClear ? Message.ClickedClearRunFilters() : undefined,
 				})
-			const rows = [...response.runs, ...model.cursors.flatMap((cursor) => runsOf(model, cursor))]
+			const rows = [...response.runs, ...Arr.flatMap(model.cursors, (cursor) => runsOf(model, cursor))]
 			const more = footer(h, model, response.nextCursor)
 			return panel(h, {}, [
 				table(h, { size: "sm", className: "table-fixed" }, [
@@ -277,7 +277,7 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 					),
 					tableBody(
 						h,
-						rows.map((run) => runRow(h, run, time)),
+						Arr.map(rows, (run) => runRow(h, run, time)),
 					),
 				]),
 				...(more === null ? [] : [more]),

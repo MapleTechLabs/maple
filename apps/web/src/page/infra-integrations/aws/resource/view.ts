@@ -36,6 +36,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `/infra/aws/$kind/$name`: one resource's CloudWatch metrics, and the service it runs as.
 
@@ -152,8 +153,8 @@ const tilesOf = (
 
 /** The resource's health from the same rules as its list row. */
 const judgementOf = (kind: AwsInfraKindId, rows: ReadonlyArray<BucketRow>): Judgement => {
-	const readings = Object.fromEntries(
-		AWS_INFRA_KINDS[kind].metrics.flatMap((metric) => {
+	const readings = Rec.fromEntries(
+		Arr.flatMap(AWS_INFRA_KINDS[kind].metrics, (metric) => {
 			const figure = figureOf(kind, rows, metric.key)
 			return figure === null ? [] : [[metric.key, { value: figure.value, peak: figure.peak }] as const]
 		}),
@@ -186,7 +187,7 @@ const consoleHref = (
 		// A load balancer opens by its ARN, which its name and account make; without one, a search.
 		case "loadBalancers":
 			return account === undefined
-				? `${base}/ec2/home?${q}#LoadBalancers:search=${encodeURIComponent(name.split("/")[1] ?? name)}`
+				? `${base}/ec2/home?${q}#LoadBalancers:search=${encodeURIComponent(Str.split("/")(name)[1] ?? name)}`
 				: `${base}/ec2/home?${q}#LoadBalancer:loadBalancerArn=${encodeURIComponent(`arn:aws:elasticloadbalancing:${region}:${account}:loadbalancer/${name}`)}`
 		case "rds":
 			return `${base}/rds/home?${q}#database:id=${id}`
@@ -285,7 +286,7 @@ const body = (
 			statRail(
 				h,
 				{ columns: tiles.length === 2 ? 2 : tiles.length === 3 ? 3 : 4 },
-				tiles.map((tile) =>
+				Arr.map(tiles, (tile) =>
 					statRailItem(h, {
 						eyebrow: tile.eyebrow,
 						value: tile.value,
@@ -379,12 +380,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			judgement === null
 				? []
 				: [badge(h, { variant: BADGE[judgement.health] }, [judgement.reason ?? "Healthy"])],
-		description: [
-			kind === null ? "Unknown resource" : AWS_INFRA_KINDS[kind].label,
-			...(cluster === "" ? [] : [`${cluster} cluster`]),
-			...(region === "" ? [] : [region]),
-			...(model.search.account === undefined ? [] : [model.search.account]),
-		].join(" · "),
+		description: Arr.join(
+			[
+				kind === null ? "Unknown resource" : AWS_INFRA_KINDS[kind].label,
+				...(cluster === "" ? [] : [`${cluster} cluster`]),
+				...(region === "" ? [] : [region]),
+				...(model.search.account === undefined ? [] : [model.search.account]),
+			],
+			" · ",
+		),
 	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],

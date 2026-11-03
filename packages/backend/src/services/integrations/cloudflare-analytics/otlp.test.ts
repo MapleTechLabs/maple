@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import type { MetricGaugeRow, MetricSumRow } from "@maple/backend/services/warehouse/metric-rows"
 import { metricRowsToOtlp } from "./otlp"
+import { Array as Arr } from "effect"
 
 const baseGauge = (over: Partial<MetricGaugeRow>): MetricGaugeRow => ({
 	timestamp: "2026-07-02 11:35:00.000",
@@ -89,7 +90,8 @@ describe("metricRowsToOtlp", () => {
 			{ sourceId: "src_cf" },
 		)
 		assert.strictEqual(payload.resourceMetrics.length, 2)
-		const stamped = payload.resourceMetrics.map(
+		const stamped = Arr.map(
+			payload.resourceMetrics,
 			(resource) =>
 				resource.resource.attributes.find((a) => a.key === "maple_source_id")?.value.stringValue,
 		)
@@ -127,7 +129,7 @@ describe("metricRowsToOtlp", () => {
 
 		assert.strictEqual(payload.resourceMetrics.length, 2)
 		const zone = payload.resourceMetrics.find((r) =>
-			r.resource.attributes.some((a) => a.value.stringValue === "cloudflare/example.com"),
+			Arr.some(r.resource.attributes, (a) => a.value.stringValue === "cloudflare/example.com"),
 		)!
 		const requests = zone.scopeMetrics[0]!.metrics.find((m) => m.name === "cloudflare.http.requests")!
 		// Two datapoints (hit + miss) merged under one metric.

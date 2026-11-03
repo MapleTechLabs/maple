@@ -3,7 +3,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { filterSection } from "@maple/views/ui/filters/filter-section"
 import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
@@ -69,10 +69,13 @@ const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: ServicesFilters
 			...filterSidebarBody(
 				h,
 				"services-filters",
-				[
-					facet("Environment", "env", envFacets, filters.env),
-					facet("Namespace", "ns", nsFacets, filters.ns),
-				].filter((section) => section !== null),
+				Arr.filter(
+					[
+						facet("Environment", "env", envFacets, filters.env),
+						facet("Namespace", "ns", nsFacets, filters.ns),
+					],
+					(section) => section !== null,
+				),
 			),
 		],
 	)
@@ -116,7 +119,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const filters = filtersOf(query)
 	const count = activeFilterCount(filters)
 	const entries = visibleEntries(model, filters)
-	const totalErrorCount = entries.reduce((sum, entry) => sum + entry.errorCount, 0)
+	const totalErrorCount = Arr.reduce(entries, 0, (sum, entry) => sum + entry.errorCount)
 	const content = (): Html => {
 		if (isAwaitingFirstData(model.catalog)) return servicesSkeleton(h)
 		const failure = failureWithoutData(model.catalog)

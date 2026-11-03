@@ -31,6 +31,7 @@ import { cleanState, findingsSection, productionHint, readEverything } from "./v
 import { paneTabs, scopeSwitcher } from "./view-pane"
 import { advisoryDot, repositoriesPanel, severityTally } from "./view-repositories"
 import { firstScan } from "./view-states"
+import { Array as Arr, String as Str } from "effect"
 
 // Every repository at once: each vulnerable package a row and the riskiest repositories a column,
 // a dot where the package is open; the rest are counted. A row opens to every repository it is in.
@@ -38,7 +39,7 @@ import { firstScan } from "./view-states"
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-const shortName = (fullName: string): string => fullName.slice(fullName.indexOf("/") + 1)
+const shortName = (fullName: string): string => Str.slice(fullName.indexOf("/") + 1)(fullName)
 
 /** Production can only fade a dot when some service reports the commit it runs. */
 const isReachKnown = (production: DependencyProductionCoverage): boolean =>
@@ -48,15 +49,18 @@ const advisoryCount = (step: UpgradeStep): string =>
 	countLabel(step.fixes.length + step.unfixed.length, "advisory", "advisories")
 
 const reachOf = (step: UpgradeStep): string =>
-	step.services.length === 0 ? "not seen running" : `runs in ${step.services.join(", ")}`
+	step.services.length === 0 ? "not seen running" : `runs in ${Arr.join(step.services, ", ")}`
 
 const cellLabel = (row: PackageRow, repository: DependencyScanRepository, step: UpgradeStep): string =>
-	[
-		`${row.packageName} in ${repository.fullName}`,
-		SEVERITY_LABEL[step.severity],
-		advisoryCount(step),
-		reachOf(step),
-	].join(", ")
+	Arr.join(
+		[
+			`${row.packageName} in ${repository.fullName}`,
+			SEVERITY_LABEL[step.severity],
+			advisoryCount(step),
+			reachOf(step),
+		],
+		", ",
+	)
 
 const dotOf = (h: H, step: UpgradeStep, reachKnown: boolean): Html =>
 	advisoryDot(h, step.severity, cn(reachKnown && step.productionSpans === 0 && "opacity-40"))
@@ -130,7 +134,7 @@ const expansion = (
 				[
 					h.ul(
 						[h.Class("flex w-0 min-w-full flex-col gap-1.5 py-1 pl-5")],
-						shown.map((step) =>
+						Arr.map(shown, (step) =>
 							h.li(
 								[
 									h.Key(step.key),
@@ -148,8 +152,8 @@ const expansion = (
 									),
 									typography(h, { mono: true, numeric: true, tone: "muted" }, [
 										step.target === null
-											? `${step.installed.join(", ")}, no fix yet`
-											: `${step.installed.join(", ")} → ${step.target}`,
+											? `${Arr.join(step.installed, ", ")}, no fix yet`
+											: `${Arr.join(step.installed, ", ")} → ${step.target}`,
 									]),
 									typography(h, { tone: "muted" }, [
 										`${advisoryCount(step)} · ${reachOf(step)}`,
@@ -196,7 +200,7 @@ const countCell = (h: H, count: number): Html =>
 	)
 
 const runningCount = (row: PackageRow): number =>
-	[...row.steps.values()].filter((step) => step.productionSpans > 0).length
+	Arr.filter([...row.steps.values()], (step) => step.productionSpans > 0).length
 
 const columnHead = (h: H, repository: DependencyScanRepository): Html =>
 	tableHead(
@@ -218,7 +222,7 @@ const columnHead = (h: H, repository: DependencyScanRepository): Html =>
 
 const matrixTable = (h: H, model: Model, digest: Digest, reachKnown: boolean): Html => {
 	const columns = digest.affected.slice(0, MATRIX_COLUMNS)
-	const byId = new Map(digest.repositories.map((repository) => [repository.id, repository] as const))
+	const byId = new Map(Arr.map(digest.repositories, (repository) => [repository.id, repository] as const))
 	const span = columns.length + (reachKnown ? 4 : 3)
 	return table(h, { variant: "bare", ariaLabel: "Vulnerable packages by repository" }, [
 		tableHeader(h, [
@@ -233,12 +237,12 @@ const matrixTable = (h: H, model: Model, digest: Digest, reachKnown: boolean): H
 							]),
 						]
 					: []),
-				...columns.map((repository) => columnHead(h, repository)),
+				...Arr.map(columns, (repository) => columnHead(h, repository)),
 			]),
 		]),
 		tableBody(
 			h,
-			digest.packages.flatMap((row) => {
+			Arr.flatMap(digest.packages, (row) => {
 				const isExpanded = model.expandedPackages.includes(row.key)
 				return [
 					tableRow(
@@ -258,7 +262,7 @@ const matrixTable = (h: H, model: Model, digest: Digest, reachKnown: boolean): H
 							),
 							countCell(h, row.steps.size),
 							...(reachKnown ? [countCell(h, runningCount(row))] : []),
-							...columns.map((repository) => cell(h, row, repository, reachKnown)),
+							...Arr.map(columns, (repository) => cell(h, row, repository, reachKnown)),
 						],
 						undefined,
 						[h.Key(row.key)],
@@ -289,14 +293,14 @@ const legend = (h: H, reachKnown: boolean, rest: number): ReadonlyArray<Html> =>
 		? []
 		: [
 				typography(h, { size: "xs", tone: "muted", as: "p", className: stripClass("foot") }, [
-					parts.join(" "),
+					Arr.join(parts, " "),
 				]),
 			]
 }
 
 const matrixPanel = (h: H, model: Model, digest: Digest, production: DependencyProductionCoverage): Html => {
 	if (digest.packages.length === 0)
-		return digest.repositories.every(readEverything)
+		return Arr.every(digest.repositories, readEverything)
 			? cleanState(h, digest.repositories)
 			: panel(h, {}, [emptyMessage(h, {}, ["No open advisories in the latest scans"])])
 	const reachKnown = isReachKnown(production)
@@ -314,13 +318,13 @@ const hasScanProblem = (repository: DependencyScanRepository): boolean => {
 		scan !== null &&
 		(scan.error !== null ||
 			scan.status === "failed" ||
-			scan.lockfiles.some((lockfile) => lockfile.status !== "parsed"))
+			Arr.some(scan.lockfiles, (lockfile) => lockfile.status !== "parsed"))
 	)
 }
 
 /** One line however many there are; the Repositories tab names them. */
 const scanProblems = (h: H, repositories: ReadonlyArray<DependencyScanRepository>): ReadonlyArray<Html> => {
-	const count = repositories.filter(hasScanProblem).length
+	const count = Arr.filter(repositories, hasScanProblem).length
 	return count === 0
 		? []
 		: [

@@ -11,6 +11,7 @@ import {
 	type ChatEventInput,
 } from "./chat-session"
 import { makeChatTranscript } from "./chat-transcript"
+import { Array as Arr } from "effect"
 
 /** Through the real codec, so the fold sees exactly what a stored or streamed event decodes to. */
 const event = (seq: number, input: ChatEventInput): ChatEvent =>
@@ -120,7 +121,7 @@ describe("makeChatTranscript", () => {
 			},
 			{ type: "turn-end", messageId: "a1", reason: "aborted" },
 		]
-		calls.forEach((input, index) => transcript.add(event(index + 1, input), 10))
+		Arr.forEach(calls, (input, index) => transcript.add(event(index + 1, input), 10))
 
 		const [running, proposal, delegated] = transcript.messages[0]?.toolCalls ?? []
 		assert.isTrue(running?.stopped)

@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { REPLAY_BLOCK_CLASS } from "../../../components/common/replay-privacy"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -103,7 +103,9 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 						: []),
 				],
 			),
-			hstack(h, { gap: "1.5", className: "shrink-0" },
+			hstack(
+				h,
+				{ gap: "1.5", className: "shrink-0" },
 				// Nothing to copy, reveal or rotate while the key is unknown.
 				isUnknown
 					? []
@@ -145,7 +147,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 											h,
 											{
 												variant: "outline",
-												label: `Regenerate ${label.toLowerCase()}`,
+												label: `Regenerate ${Str.toLowerCase(label)}`,
 												isDisabled: disabled,
 												attributes: [h.OnClick(options.onRegenerate)],
 											},
@@ -202,7 +204,13 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			}),
 		]
 	return [
-		row("public", "Public key", "Client", "text-severity-debug", "For browser and client-side telemetry SDKs"),
+		row(
+			"public",
+			"Public key",
+			"Client",
+			"text-severity-debug",
+			"For browser and client-side telemetry SDKs",
+		),
 		row(
 			"private",
 			"Private key",

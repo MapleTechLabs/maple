@@ -1,5 +1,6 @@
 import { auditResourceLabel } from "@maple/domain/audit-actions"
 import { decodePublicId, PublicIdPrefixes, type V2AuditLogEntry } from "@maple/domain/http/v2"
+import { String as Str } from "effect"
 
 type AuditEntryResource = Pick<
 	V2AuditLogEntry,
@@ -31,8 +32,8 @@ const stringField = (metadata: Record<string, unknown> | null, key: string): str
 /** `alrt_YofPTrK9782DWwcnXhpcCw` -> `alrt_YofP`: enough to tell rows apart; the detail has the rest. */
 export function shortPublicId(id: string): string {
 	const separator = id.indexOf("_")
-	if (separator === -1) return id.length > 8 ? id.slice(0, 8) : id
-	return id.slice(0, separator + 5)
+	if (separator === -1) return id.length > 8 ? Str.slice(0, 8)(id) : id
+	return Str.slice(0, separator + 5)(id)
 }
 
 function resourceName(entry: AuditEntryResource, id: string | null): string | null {
@@ -51,7 +52,7 @@ const decoded = (prefix: (typeof PublicIdPrefixes)[keyof typeof PublicIdPrefixes
 
 function resourceLink(entry: AuditEntryResource): AuditResourceLink | null {
 	// A deleted resource has no page left to open.
-	if (entry.action.endsWith(".deleted") || entry.action.endsWith(".removed")) return null
+	if (Str.endsWith(".deleted")(entry.action) || Str.endsWith(".removed")(entry.action)) return null
 	const id = entry.resource_id
 	switch (entry.resource_type) {
 		case "alert_rule": {

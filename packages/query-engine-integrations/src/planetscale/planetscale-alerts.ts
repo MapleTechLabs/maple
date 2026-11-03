@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * Raw-SQL bodies for the PlanetScale alert templates.
  *
@@ -16,7 +17,7 @@
  */
 
 /** The `used %` phrasing validated in planetscale-map.ts, as raw SQL. */
-export const PLANETSCALE_STORAGE_USED_SQL = `
+export const PLANETSCALE_STORAGE_USED_SQL = Str.trim(`
 SELECT
   concat(db, '/', br) AS \`group\`,
   max(used_pct) AS value,
@@ -37,7 +38,7 @@ FROM (
   HAVING n > 0
 )
 GROUP BY db, br
-`.trim()
+`)
 
 /**
  * Days until a branch's volume fills, from the slope of its free-space series.
@@ -55,7 +56,7 @@ GROUP BY db, br
  * gapped free-space series still biases the slope. Do not promote a rule built
  * from this to critical without a gap check.
  */
-export const PLANETSCALE_STORAGE_RUNWAY_SQL = `
+export const PLANETSCALE_STORAGE_RUNWAY_SQL = Str.trim(`
 SELECT
   concat(db, '/', br) AS \`group\`,
   if(slope < 0, avail_last / (-slope) / 86400, 3650) AS value,
@@ -74,4 +75,4 @@ FROM (
   GROUP BY db, br
   HAVING samples >= 60
 )
-`.trim()
+`)

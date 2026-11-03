@@ -1,6 +1,6 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { describe, it } from "@effect/vitest"
-import { Deferred, Effect } from "effect"
+import { Deferred, Effect, Array as Arr, String as Str } from "effect"
 import { beforeEach, expect, vi } from "vitest"
 import { mockedWarehouse } from "./testing"
 
@@ -21,10 +21,10 @@ describe("tinybird traces attribute filter params", () => {
 	beforeEach(() => {
 		executeQueryEngineMock.mockReset()
 		executeQueryEngineMock.mockImplementation((operation: string) => {
-			if (operation.includes("Facets")) {
+			if (Str.includes("Facets")(operation)) {
 				return Effect.succeed({ result: { kind: "facets", source: "traces", data: [] } })
 			}
-			if (operation.includes("DurationStats") || operation.includes("Stats")) {
+			if (Str.includes("DurationStats")(operation) || Str.includes("Stats")(operation)) {
 				return Effect.succeed({
 					result: {
 						kind: "stats",
@@ -81,7 +81,7 @@ describe("tinybird traces attribute filter params", () => {
 				},
 			})
 
-			expect(executeQueryEngineMock.mock.calls.map(([operation]) => operation).sort()).toEqual([
+			expect(Arr.map(executeQueryEngineMock.mock.calls, ([operation]) => operation).sort()).toEqual([
 				"queryEngine.getTracesDurationStats",
 				"queryEngine.getTracesFacets",
 			])

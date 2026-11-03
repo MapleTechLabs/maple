@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * The intent step asks which of Maple's surfaces the user came for. Each entry
  * is one thing the sidebar actually has — named the way the sidebar names it —
@@ -56,6 +57,6 @@ const SETUP_HINTS = {
 export function getOnboardingSetupHint(intents: readonly OnboardingIntent[]): string {
 	if (intents.length === 0) return "Drop in the snippet and we'll auto-detect your first traces."
 	if (intents.length === 1) return SETUP_HINTS[intents[0]].hint
-	const focuses = intents.map((intent) => SETUP_HINTS[intent].focus)
+	const focuses = Arr.map(intents, (intent) => SETUP_HINTS[intent].focus)
 	return `Connect your app to explore ${new Intl.ListFormat("en", { type: "conjunction" }).format(focuses)}.`
 }

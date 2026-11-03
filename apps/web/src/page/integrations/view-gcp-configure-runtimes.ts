@@ -14,6 +14,7 @@ import { Message } from "./message"
 import { externalLink } from "./view-gcp-configure-parts"
 import { GCP_LINK } from "./view-gcp-parts"
 import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `RuntimeFields`: the runtimes whose application output Google Cloud forwards.
 
@@ -21,7 +22,13 @@ type H = HtmlBuilder<Message>
 
 const FORWARD_ID = "gcp-forward"
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 
 const runtimeRow = (
 	h: H,
@@ -48,7 +55,9 @@ const runtimeRow = (
 				inputId,
 			}),
 			fieldLabel(h, { ids, state: IDLE, className: "sm:text-sm/5" }, [label]),
-			fieldDescription(h, { ids, state: IDLE, className: "col-start-2 text-pretty sm:col-start-3" }, [hint]),
+			fieldDescription(h, { ids, state: IDLE, className: "col-start-2 text-pretty sm:col-start-3" }, [
+				hint,
+			]),
 		],
 	)
 }
@@ -75,7 +84,13 @@ export const runtimeFields = (
 							variant: "link",
 							size: "xs",
 							className: cn(
-								typographyClass({ size: "xs", tone: "muted", weight: "normal", hoverTone: "foreground", className: "h-auto p-0" }),
+								typographyClass({
+									size: "xs",
+									tone: "muted",
+									weight: "normal",
+									hoverTone: "foreground",
+									className: "h-auto p-0",
+								}),
 								GCP_LINK,
 							),
 							attributes: [h.OnClick(Message.ClickedGcpUseOpenTelemetry())],
@@ -84,8 +99,10 @@ export const runtimeFields = (
 					),
 				],
 			),
-			dividedList(h, { as: "div" },
-				GCP_LOG_RUNTIMES.map(({ value, label, hint }) =>
+			dividedList(
+				h,
+				{ as: "div" },
+				Arr.map(GCP_LOG_RUNTIMES, ({ value, label, hint }) =>
 					runtimeRow(h, forwardId, value, label, hint, runtimes.includes(value)),
 				),
 			),

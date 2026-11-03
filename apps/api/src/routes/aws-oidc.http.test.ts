@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Layer, Schema } from "effect"
+import { ConfigProvider, Layer, Schema, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { MAPLE_TEST_OIDC_KEY } from "@maple/backend/services/integrations/aws/fake-aws"
@@ -72,7 +72,7 @@ describe("AwsOidcRouter", () => {
 			["verify"],
 		)
 		const spki = Buffer.from(await crypto.subtle.exportKey("spki", published)).toString("base64")
-		expect(MAPLE_TEST_OIDC_KEY.publicKey.replace(/-----[A-Z ]+-----|\s/gu, "")).toBe(spki)
+		expect(Str.replace(/-----[A-Z ]+-----|\s/gu, "")(MAPLE_TEST_OIDC_KEY.publicKey)).toBe(spki)
 	})
 
 	it("is absent without a signing key", async () => {

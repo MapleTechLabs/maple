@@ -14,6 +14,7 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 import { gcpMetricsState } from "../../integrations/gcp-connector-state"
+import { Array as Arr, String as Str } from "effect"
 
 /** One metric and label value of one workload: `total` over `samples` points. */
 export interface GcpMetricValue {
@@ -201,14 +202,17 @@ export const GCP_INFRA_COLUMNS: Record<GcpInfraServiceId, ReadonlyArray<GcpColum
 /** Reads values that hold each metric and label value once. */
 export const gcpMetricReader = (points: ReadonlyArray<GcpMetricValue>): GcpMetricReader => {
 	const matching = (metric: string, label?: string) =>
-		points.filter((point) => point.metric === metric && (label === undefined || point.label === label))
+		Arr.filter(
+			points,
+			(point) => point.metric === metric && (label === undefined || point.label === label),
+		)
 	return {
-		total: (metric, label) => matching(metric, label).reduce((sum, point) => sum + point.total, 0),
+		total: (metric, label) => Arr.reduce(matching(metric, label), 0, (sum, point) => sum + point.total),
 		mean: (metric, label) => {
 			const matched = matching(metric, label)
 			return matched.length === 0
 				? undefined
-				: matched.reduce((sum, point) => sum + point.total / point.samples, 0)
+				: Arr.reduce(matched, 0, (sum, point) => sum + point.total / point.samples)
 		},
 	}
 }
@@ -235,9 +239,9 @@ export function gcpWorkload(
 ): GcpWorkload {
 	const read = gcpMetricReader(points)
 	const columns = GCP_INFRA_COLUMNS[service]
-	const values = columns.map((spec) => spec.value(read))
+	const values = Arr.map(columns, (spec) => spec.value(read))
 	const worst = (counts: (spec: GcpColumn) => boolean) =>
-		Math.max(0, ...columns.flatMap((spec, index) => (counts(spec) ? [values[index] ?? 0] : [])))
+		Math.max(0, ...Arr.flatMap(columns, (spec, index) => (counts(spec) ? [values[index] ?? 0] : [])))
 	return {
 		keys,
 		values,
@@ -249,7 +253,7 @@ export function gcpWorkload(
 }
 
 /** A workload's identity values as one string: a map key, a render key. */
-export const gcpWorkloadId = (keys: ReadonlyArray<string>): string => keys.join("\u0000")
+export const gcpWorkloadId = (keys: ReadonlyArray<string>): string => Arr.join(keys, "\u0000")
 
 /** Points that carry their workload's `keys`, grouped by workload in the order they first appear. */
 export function gcpWorkloadPoints<P extends { readonly keys: ReadonlyArray<string> }>(
@@ -270,7 +274,7 @@ export const gcpWorkloads = (
 	service: GcpInfraServiceId,
 	points: ReadonlyArray<GcpMetricPoint>,
 ): ReadonlyArray<GcpWorkload> =>
-	gcpWorkloadPoints(points).map((workload) => gcpWorkload(service, workload.keys, workload.points))
+	Arr.map(gcpWorkloadPoints(points), (workload) => gcpWorkload(service, workload.keys, workload.points))
 
 /** One reporting service of the fleet read: see `getGcpInfraFleet`. */
 export interface GcpFleetService {
@@ -289,7 +293,7 @@ export const gcpFleet = (
 		readonly failed: boolean
 	}>,
 ): ReadonlyArray<GcpFleetService> =>
-	services.map(({ service, points, failed }) => ({
+	Arr.map(services, ({ service, points, failed }) => ({
 		service,
 		workloads: gcpWorkloads(service, points),
 		truncated: points.length >= GCP_INFRA_ROW_LIMIT,
@@ -337,9 +341,9 @@ const GCP_WORKLOAD_PARAMS = [
 type GcpWorkloadSearch = Partial<Record<(typeof GCP_WORKLOAD_PARAMS)[number], string>>
 
 const workloadParams = (service: GcpInfraServiceId) =>
-	GCP_INFRA_SERVICES[service].identity
-		.slice(1)
-		.flatMap(([label]) => GCP_WORKLOAD_PARAMS.filter((name) => name === label.toLowerCase()))
+	Arr.flatMap(GCP_INFRA_SERVICES[service].identity.slice(1), ([label]) =>
+		Arr.filter(GCP_WORKLOAD_PARAMS, (name) => name === Str.toLowerCase(label)),
+	)
 
 /** The search params of a workload's page. */
 export function gcpWorkloadSearch(
@@ -356,19 +360,19 @@ export const gcpWorkloadKeys = (
 	service: GcpInfraServiceId,
 	name: string,
 	search: GcpWorkloadSearch,
-): ReadonlyArray<string> => [name, ...workloadParams(service).map((param) => search[param] ?? "")]
+): ReadonlyArray<string> => [name, ...Arr.map(workloadParams(service), (param) => search[param] ?? "")]
 
 /** What to call a workload: its name, without the project Cloud Monitoring puts before a Cloud SQL instance. */
 export const gcpWorkloadName = (service: GcpInfraServiceId, keys: ReadonlyArray<string>): string =>
-	service === "cloudSql" ? keys[0].slice(keys[0].indexOf(":") + 1) : keys[0]
+	service === "cloudSql" ? Str.slice(keys[0].indexOf(":") + 1)(keys[0]) : keys[0]
 
 /** Whether a service's workloads run in a region or zone; a subscription and a URL map are global. */
 export const gcpHasRegion = (service: GcpInfraServiceId): boolean =>
-	GCP_INFRA_SERVICES[service].identity.some(([label]) => REGION_LABELS.includes(label))
+	Arr.some(GCP_INFRA_SERVICES[service].identity, ([label]) => REGION_LABELS.includes(label))
 
 /** What one row of a tab is, in running text: "container", "URL map". */
 export const gcpWorkloadNoun = (service: GcpInfraServiceId): string =>
-	GCP_INFRA_SERVICES[service].identity[0][0].replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())
+	GCP_INFRA_SERVICES[service].identity[0][0].replace(/^[A-Z](?=[a-z])/, (letter) => Str.toLowerCase(letter))
 
 export const GCP_RESOURCES_TAB = "resources"
 
@@ -418,7 +422,7 @@ type MetricsFields = Parameters<typeof gcpMetricsState>[0]
 
 /** No connection has run its setup script with metrics on: nothing to show but the next step. */
 export const gcpInfraSetupPending = (connectors: ReadonlyArray<MetricsFields>, nowMs: number): boolean =>
-	connectors.every((connector) => gcpMetricsState(connector, nowMs).kind === "setup-pending")
+	Arr.every(connectors, (connector) => gcpMetricsState(connector, nowMs).kind === "setup-pending")
 
 /**
  * What to say above the lists, given the connectors that collect metrics: none when metrics are
@@ -430,12 +434,12 @@ export function gcpInfraNotice(
 	nowMs: number,
 ): GcpInfraNotice | null {
 	if (connectors.length === 0) return { kind: "off" }
-	const states = connectors.map((connector) => gcpMetricsState(connector, nowMs))
+	const states = Arr.map(connectors, (connector) => gcpMetricsState(connector, nowMs))
 	const broken =
 		states.find((state) => state.kind === "failing") ??
 		states.find((state) => state.kind === "incomplete")
 	if (broken !== undefined) return { kind: broken.kind, error: broken.error }
-	const has = (kind: (typeof states)[number]["kind"]) => states.some((state) => state.kind === kind)
+	const has = (kind: (typeof states)[number]["kind"]) => Arr.some(states, (state) => state.kind === kind)
 	if (has("stalled")) return { kind: "stalled" }
 	if (reporting) return null
 	if (has("receiving")) return { kind: "quiet" }
@@ -470,10 +474,10 @@ export const gcpAssetTypeLabel = (assetType: string): string => ASSET_TYPE_LABEL
 
 /** "RUNNING" and "PENDING_CREATE" as Google reports them, in sentence case. */
 export const gcpStateLabel = (state: string) =>
-	(state.charAt(0) + state.slice(1).toLowerCase()).replaceAll("_", " ")
+	Str.replaceAll("_", " ")(state.charAt(0) + Str.toLowerCase(Str.slice(1)(state)))
 
 /** What to call a resource: its display name, else the last segment of its full name. */
 export const gcpResourceName = (resource: {
 	readonly name: string
 	readonly displayName: string | null
-}): string => resource.displayName || (resource.name.split("/").at(-1) ?? resource.name)
+}): string => resource.displayName || (Str.split("/")(resource.name).at(-1) ?? resource.name)

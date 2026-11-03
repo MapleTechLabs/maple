@@ -3,6 +3,7 @@ import {
 	encodeLogAttributeFilter,
 	type LogAttributeFilter,
 } from "@maple/views/lib/log-attribute-filters"
+import { Array as Arr } from "effect"
 
 // The Logs page's filters, mode and pinned columns from the hash query.
 
@@ -26,7 +27,8 @@ export const filtersOf = (query: URLSearchParams): LogFilters => ({
 	attrs: query.getAll("attrs"),
 })
 
-export const modeOf = (query: URLSearchParams): LogsMode => (query.get("mode") === "patterns" ? "patterns" : "list")
+export const modeOf = (query: URLSearchParams): LogsMode =>
+	query.get("mode") === "patterns" ? "patterns" : "list"
 
 /** The attribute keys pinned as stream columns, in pin order. */
 export const columnsOf = (query: URLSearchParams): ReadonlyArray<string> => query.getAll("columns")
@@ -41,14 +43,18 @@ export const attributeFiltersOf = (filters: LogFilters): ReadonlyArray<LogAttrib
 	)
 
 /** The `attrs` entries without `removed`, compared decoded so any spelling of it goes. */
-export const withoutAttributeFilter = (filters: LogFilters, removed: LogAttributeFilter): ReadonlyArray<string> =>
-	attributeFiltersOf(filters)
-		.filter((filter) => !sameFilter(filter, removed))
-		.map(encodeLogAttributeFilter)
+export const withoutAttributeFilter = (
+	filters: LogFilters,
+	removed: LogAttributeFilter,
+): ReadonlyArray<string> =>
+	Arr.map(
+		Arr.filter(attributeFiltersOf(filters), (filter) => !sameFilter(filter, removed)),
+		encodeLogAttributeFilter,
+	)
 
 /** The rail's filters (service and severity), counted on the small-screen Filters button. */
 export const activeFilterCount = (filters: LogFilters): number =>
-	[filters.service, filters.severity].filter(Boolean).length
+	Arr.filter([filters.service, filters.severity], Boolean).length
 
 /** Anything narrows the list: a rail filter, an attribute filter or a search. */
 export const isFiltered = (filters: LogFilters): boolean =>

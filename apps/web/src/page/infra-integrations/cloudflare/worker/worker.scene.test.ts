@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../../contract"
 import { type Release, Status, type WorkerRow } from "../data"
@@ -15,7 +15,7 @@ const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const worker = (accountId: string): WorkerRow => ({
 	serviceName: "cloudflare-worker/edge-router",
@@ -46,19 +46,36 @@ const windowed = (search: Model["search"] = {}) =>
 	)
 
 const loaded = (model: Model, workers: ReadonlyArray<WorkerRow>, releases: ReadonlyArray<Release>) =>
-	[
-		Message.CompletedFetchWorkers({ key: model.workers.key ?? "", result: Result.succeed(workers) }),
-		Message.CompletedFetchReleases({ key: model.releases.key ?? "", result: Result.succeed(releases) }),
-	].reduce((next, message) => pageUpdate(next, message).model, model)
+	Arr.reduce(
+		[
+			Message.CompletedFetchWorkers({ key: model.workers.key ?? "", result: Result.succeed(workers) }),
+			Message.CompletedFetchReleases({
+				key: model.releases.key ?? "",
+				result: Result.succeed(releases),
+			}),
+		],
+		model,
+		(next, message) => pageUpdate(next, message).model,
+	)
 
 describe("cloudflare worker", () => {
 	test("after a Reload an account change reads under the kept window; only a new preset re-resolves", () => {
 		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
-		const scoped = routeChanged(reloaded, { scriptName: "edge-router", search: { account: "acct_b" } }, context)
+		const scoped = routeChanged(
+			reloaded,
+			{ scriptName: "edge-router", search: { account: "acct_b" } },
+			context,
+		)
 		expect(names(scoped.commands)).not.toContain("ResolveCloudflareWorkerWindow")
 		expect(scoped.model.window).toEqual(window)
-		const moved = routeChanged(scoped.model, { scriptName: "edge-router", search: { account: "acct_b", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveCloudflareWorkerWindow", "Refresh"]])
+		const moved = routeChanged(
+			scoped.model,
+			{ scriptName: "edge-router", search: { account: "acct_b", timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveCloudflareWorkerWindow", "Refresh"],
+		])
 	})
 
 	test("the window asks for the detail, the list rollups and the releases of the script", () => {
@@ -84,7 +101,7 @@ describe("cloudflare worker", () => {
 			),
 		)
 		expect(data.traced).toEqual({ service: "edge-router", spans: 20, errors: 4 })
-		expect(data.markers.map((marker) => marker.label)).toEqual(["bbbbbbb"])
+		expect(Arr.map(data.markers, (marker) => marker.label)).toEqual(["bbbbbbb"])
 		expect(data.currentVersion).toBe("bbbbbbb2222")
 	})
 

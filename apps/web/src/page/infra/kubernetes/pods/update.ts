@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { podKey } from "../../../../components/infra/pod-restarts"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -81,7 +81,7 @@ export const sortOf = (search: Search) => {
 const resetKeyOf = (model: Model) =>
 	encodeJson({
 		filters: filtersOf(model.search),
-		q: model.debouncedQuery.trim(),
+		q: Str.trim(model.debouncedQuery),
 		scope: model.search.scope,
 		...sortOf(model.search),
 	})
@@ -92,7 +92,7 @@ export const pageIndexOf = (model: Model) =>
 /** "Ended" swaps the fleet on screen (lifecycle); the other scopes narrow the live one. */
 export const podsInput = (model: Model, window: TimeWindow): PodsInput => {
 	const scope = model.search.scope
-	const query = model.debouncedQuery.trim()
+	const query = Str.trim(model.debouncedQuery)
 	return {
 		startTime: window.startTime,
 		endTime: window.endTime,
@@ -167,7 +167,7 @@ const followRestarts = (context: PageContext, result: Return): Return => {
 	const input = {
 		startTime: window.startTime,
 		endTime: window.endTime,
-		podNames: pods.data.map((pod) => pod.podName),
+		podNames: Arr.map(pods.data, (pod) => pod.podName),
 		limit: PAGE_RESTARTS_LIMIT,
 	}
 	const step: Step<Model, Message> = keyed(

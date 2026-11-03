@@ -8,6 +8,7 @@ import {
 	resume,
 	type RetryBudget,
 } from "./auto-retry-budget"
+import { Array as Arr } from "effect"
 
 const MID = 0.5
 
@@ -26,7 +27,7 @@ const outage = (start: number): ReadonlyArray<number> => {
 describe("auto-retry budget", () => {
 	test("a remount after each failed retry still backs off and stops", () => {
 		const fired = outage(0)
-		const gaps = fired.map((at, index) => at - (fired[index - 1] ?? 0))
+		const gaps = Arr.map(fired, (at, index) => at - (fired[index - 1] ?? 0))
 		expect(gaps).toEqual([5_000, 10_000, 20_000, 30_000, 30_000, 30_000])
 	})
 
@@ -49,9 +50,8 @@ describe("auto-retry budget", () => {
 			resume(undefined, 0, MID),
 		)
 		const lastProbe = spent.touchedAt
-		const remounted = [10_000, 30_000, 50_000].reduce(
-			(budget, offset) => resume(budget, lastProbe + offset, MID),
-			spent,
+		const remounted = Arr.reduce([10_000, 30_000, 50_000], spent, (budget, offset) =>
+			resume(budget, lastProbe + offset, MID),
 		)
 		expect(isExhausted(remounted)).toBe(true)
 		expect(isExhausted(resume(remounted, lastProbe + RESUME_WINDOW_MS, MID))).toBe(false)

@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./chart"
 import { swatch } from "../ui/swatch"
@@ -69,7 +69,7 @@ const legendItem = (h: HtmlBuilder<Message>, state: PlotLegendState, entry: Plot
 }
 
 const items = (h: HtmlBuilder<Message>, state: PlotLegendState): ReadonlyArray<Html> =>
-	state.series.map((entry) => legendItem(h, state, entry))
+	Arr.map(state.series, (entry) => legendItem(h, state, entry))
 
 /** `PlotLegend.Row` + `Items`. */
 export const legendRow = (h: HtmlBuilder<Message>, state: PlotLegendState, className?: string): Html =>

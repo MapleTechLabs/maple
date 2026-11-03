@@ -8,12 +8,19 @@ import {
 } from "../../components/analytics/ai/ai-traffic-model"
 import { DEFAULT_TRAFFIC, hasActiveFilters } from "../../components/analytics/filters"
 import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta } from "@maple/views/ui/delta"
 import { errorState } from "@maple/views/ui/error-state"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
@@ -62,13 +69,13 @@ const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A 
 
 /** The crawled-pages card (one dimension), shared with the expand dialog. */
 export const crawledPagesCard = (model: Model, crawlers: AiCrawlers): BreakdownCard => {
-	const isMultiSite = new Set(crawlers.pages.map((page) => page.host)).size > 1
+	const isMultiSite = new Set(Arr.map(crawlers.pages, (page) => page.host)).size > 1
 	return {
 		id: "ai-pages",
 		dimensions: [
 			{
 				tab: "Pages read by AI crawlers",
-				rows: crawlers.pages.map((page) => ({
+				rows: Arr.map(crawlers.pages, (page) => ({
 					name: page.path,
 					count: page.requests,
 					secondary: page.host,
@@ -123,13 +130,13 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 	const crawlers = dataOf(model.aiCrawlers)
 	const crawls = crawlers === undefined ? undefined : summarizeCrawls(crawlers.crawlers)
 	const isVisitorFiltered =
-		VISITOR_ONLY_FILTERS.some((key) => filters[key] !== undefined) ||
+		Arr.some(VISITOR_ONLY_FILTERS, (key) => filters[key] !== undefined) ||
 		(filters.traffic !== undefined && filters.traffic !== DEFAULT_TRAFFIC)
 	const isNoAiTraffic =
 		referrals !== undefined &&
 		crawlers !== undefined &&
-		[...referrals.values()].every((summary) => summary.visits === 0) &&
-		crawlers.crawlers.every((row) => row.requests === 0)
+		Arr.every([...referrals.values()], (summary) => summary.visits === 0) &&
+		Arr.every(crawlers.crawlers, (row) => row.requests === 0)
 	if (isNoAiTraffic && !hasActiveFilters(filters)) return noAiTraffic(h)
 	const clock = { nowMs: model.nowMs, timeZone }
 	return h.div(
@@ -140,7 +147,7 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 				onEmpty: () =>
 					h.div(
 						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
-						CARD_PRODUCTS.map(() => skeleton(h, "h-[148px] w-full")),
+						Arr.map(CARD_PRODUCTS, () => skeleton(h, "h-[148px] w-full")),
 					),
 				onFailure: (failure) =>
 					errorState(h, {
@@ -151,7 +158,7 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 				onData: () =>
 					h.div(
 						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
-						CARD_PRODUCTS.map((product, index) =>
+						Arr.map(CARD_PRODUCTS, (product, index) =>
 							aiProductCard(
 								h,
 								product,
@@ -234,8 +241,8 @@ const crawlersPanel = (
 	data: AiCrawlers,
 	clock: Readonly<{ nowMs: number; timeZone: string }>,
 ): Html => {
-	const requests = data.crawlers.reduce((sum, row) => sum + row.requests, 0)
-	const failed = data.crawlers.reduce((sum, row) => sum + row.failedRequests, 0)
+	const requests = Arr.reduce(data.crawlers, 0, (sum, row) => sum + row.requests)
+	const failed = Arr.reduce(data.crawlers, 0, (sum, row) => sum + row.failedRequests)
 	const options = {
 		title: "AI crawlers",
 		hint: "Pages served to each crawler. Error responses are not counted as reads.",
@@ -302,14 +309,16 @@ const aiKpis = (
 	crawlers: AiCrawlers | undefined,
 ): Html => {
 	const summaries = referrals === undefined ? [] : [...referrals.values()]
-	const visits = summaries.reduce((sum, summary) => sum + summary.visits, 0)
-	const products = summaries.filter((summary) => summary.visits > 0).length
+	const visits = Arr.reduce(summaries, 0, (sum, summary) => sum + summary.visits)
+	const products = Arr.filter(summaries, (summary) => summary.visits > 0).length
 	const spark = summaries.reduce<ReadonlyArray<number>>(
-		(total, summary) => summary.spark.map((value, i) => value + (total[i] ?? 0)),
+		(total, summary) => Arr.map(summary.spark, (value, i) => value + (total[i] ?? 0)),
 		[],
 	)
 	const previousVisits =
-		previousTotals === undefined ? undefined : [...previousTotals.values()].reduce((a, b) => a + b, 0)
+		previousTotals === undefined
+			? undefined
+			: Arr.reduce([...previousTotals.values()], 0, (a, b) => a + b)
 	const change =
 		previousVisits !== undefined && previousVisits > 0 ? (visits - previousVisits) / previousVisits : null
 	const sessions = dataOf(model.summary)?.sessions

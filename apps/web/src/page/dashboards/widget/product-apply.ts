@@ -8,6 +8,7 @@ import { applyAnchorEdit, applyStepEdit, type StepEdit, type StepScope } from ".
 import type { EditorState, FunnelDraft, ListColumn, PathsDraft } from "./editor-state"
 import { DEFAULT_LIST_COLUMNS } from "./lowering-list"
 import { ProductEdit } from "./product-edit"
+import { Array as Arr, String as Str } from "effect"
 
 // What each `ProductEdit` does to the editor state: `ListConfigPanel`'s `onChange`, the
 // `FunnelStepBuilder`'s `onChange`, and `updateFunnel` / `updatePaths`.
@@ -16,12 +17,12 @@ import { ProductEdit } from "./product-edit"
 const move = <T>(items: ReadonlyArray<T>, from: number, to: number): ReadonlyArray<T> => {
 	const item = items[from]
 	if (to < 0 || to >= items.length || item === undefined) return items
-	const rest = items.filter((_, index) => index !== from)
+	const rest = Arr.filter(items, (_, index) => index !== from)
 	return [...rest.slice(0, to), item, ...rest.slice(to)]
 }
 
 const updateAt = <T>(items: ReadonlyArray<T>, index: number, update: (item: T) => T): ReadonlyArray<T> =>
-	items.map((item, position) => (position === index ? update(item) : item))
+	Arr.map(items, (item, position) => (position === index ? update(item) : item))
 
 /** A step builder edit on the funnel's steps, or on the paths anchor (never a session step). */
 const editSteps = (state: EditorState, scope: StepScope, edit: StepEdit): EditorState => {
@@ -86,8 +87,8 @@ const togglePathsAddOn = (current: PathsDraft, key: keyof PathsDraft["addOns"]):
 const withBreakdown = (current: FunnelDraft, value: string | null): FunnelDraft => {
 	const { breakdownBy: _previous, ...rest } = current
 	if (value === null) return rest
-	if (value.startsWith("attribute:") && value.length > "attribute:".length)
-		return { ...rest, breakdownBy: `attribute:${value.slice("attribute:".length)}` }
+	if (Str.startsWith("attribute:")(value) && value.length > "attribute:".length)
+		return { ...rest, breakdownBy: `attribute:${Str.slice("attribute:".length)(value)}` }
 	const dimension = FUNNEL_SESSION_DIMENSIONS.find((candidate) => candidate === value)
 	return dimension === undefined ? rest : { ...rest, breakdownBy: dimension }
 }
@@ -99,7 +100,7 @@ export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorS
 			...state,
 			listDataSource: source,
 			listWhereClause: "",
-			listColumns: DEFAULT_LIST_COLUMNS[source].map((column) => ({ ...column })),
+			listColumns: Arr.map(DEFAULT_LIST_COLUMNS[source], (column) => ({ ...column })),
 		}),
 		ToggledListRootOnly: () => ({ ...state, listRootOnly: !state.listRootOnly }),
 		ChangedListWhere: ({ value }) => ({ ...state, listWhereClause: value }),
@@ -111,7 +112,7 @@ export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorS
 				updateAt(list, index, (column) => ({
 					...column,
 					field,
-					header: field.split(".").pop() ?? field,
+					header: Str.split(".")(field).pop() ?? field,
 				})),
 			),
 		SetListColumnUnit: ({ index, unit }) =>
@@ -124,7 +125,7 @@ export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorS
 		SetListColumnAlign: ({ index, align }) =>
 			columns(state, (list) => updateAt(list, index, (column) => ({ ...column, align }))),
 		RemovedListColumn: ({ index }) =>
-			columns(state, (list) => list.filter((_, position) => position !== index)),
+			columns(state, (list) => Arr.filter(list, (_, position) => position !== index)),
 		AddedListColumn: () => columns(state, (list) => [...list, { field: "", header: "" }]),
 		MovedListColumn: ({ index, delta }) =>
 			columns(state, (list) =>

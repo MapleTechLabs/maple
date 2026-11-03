@@ -14,6 +14,7 @@ import {
 import { chartError, chartLoading } from "@maple/views/ui/chart-state"
 import type { SeriesSlot } from "./series"
 import { seriesLegend } from "../../kit/series-legend"
+import { Array as Arr } from "effect"
 
 // `K8sMetricChartView` and the detail-chart wrappers around it: one metric at a time, 280 tall, series legend,
 // in a `ChartCard`.
@@ -24,7 +25,7 @@ export const K8S_CHART_HEIGHT = 280
 const k8sSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo, className = "mb-3"): Html =>
 	seriesLegend(h, {
 		className: cn("justify-start", className),
-		items: info.series.map((name) => {
+		items: Arr.map(info.series, (name) => {
 			const value = info.lastValues[name]
 			return {
 				key: name,

@@ -1,5 +1,5 @@
 import { SIDEBAR_WIDTH_NARROW_MIN } from "@maple/ui/components/traces/trace-timeline-types"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
@@ -62,11 +62,11 @@ const body = (
 	matches: ReadonlySet<string>,
 	ticks: ReadonlyArray<number>,
 ): Html => {
-	const isSearchActive = model.searchQuery.trim().length > 0
+	const isSearchActive = Str.trim(model.searchQuery).length > 0
 	const visible = model.viewport.endMs - model.viewport.startMs
 	const vp0 = model.viewport.startMs - model.traceStartMs
 	const k = 100 / visible
-	const rows = virtualRange(bars.length, model.scrollTop, model.scrollerHeight).flatMap((index) => {
+	const rows = Arr.flatMap(virtualRange(bars.length, model.scrollTop, model.scrollerHeight), (index) => {
 		const bar = bars[index]
 		if (bar === undefined) return []
 		const spanId = bar.span.spanId
@@ -115,7 +115,7 @@ const body = (
 									h.Class("pointer-events-none absolute inset-y-0 right-0 z-0"),
 									h.Style({ left: "var(--sidebar-w)" }),
 								],
-								ticks.map((offset) =>
+								Arr.map(ticks, (offset) =>
 									h.span(
 										[
 											h.Attribute(
@@ -181,7 +181,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.Style({ "--sidebar-w": `${sidebarWidth}px` }),
 			h.Tabindex(0),
 			h.OnKeyDownSelfPreventDefault((key, modifiers) =>
-				TIMELINE_KEYS.has(key.toLowerCase())
+				TIMELINE_KEYS.has(Str.toLowerCase(key))
 					? Option.some(Message.PressedTimelineKey({ key, isShift: modifiers.shiftKey }))
 					: Option.none(),
 			),

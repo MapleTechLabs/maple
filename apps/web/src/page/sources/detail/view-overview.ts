@@ -1,6 +1,6 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as BarChart from "@maple/views/charts/bar-chart"
@@ -181,7 +181,7 @@ const rulesSummary = (h: H, source: V2Source, nowMs: number): Html =>
 				? h.span([h.Class("text-muted-foreground")], ["None"])
 				: h.div(
 						[h.Class("space-y-1 font-mono text-xs")],
-						source.resource_attributes.map((attribute) =>
+						Arr.map(source.resource_attributes, (attribute) =>
 							h.keyed("div")(
 								attribute.key,
 								[h.Class("flex flex-wrap gap-x-3")],
@@ -189,7 +189,7 @@ const rulesSummary = (h: H, source: V2Source, nowMs: number): Html =>
 									h.span([h.Class("break-all")], [attribute.key, " = ", attribute.value]),
 									h.span(
 										[h.Class("text-muted-foreground")],
-										[MODE_LABELS[attribute.mode].toLowerCase()],
+										[Str.toLowerCase(MODE_LABELS[attribute.mode])],
 									),
 								],
 							),
@@ -210,8 +210,11 @@ const storedSignals = (model: Model): string | null =>
 		onNone: () => (AsyncData.isFailure(model.usage.data) ? "Unavailable right now" : null),
 		onSome: (usage) => {
 			const totals = usageTotals(usage)
-			const names = SIGNAL_NAMES.filter(([key]) => totals[key] > 0).map(([, label]) => label)
-			return names.length === 0 ? "None in the last 24 hours" : names.join(", ")
+			const names = Arr.map(
+				Arr.filter(SIGNAL_NAMES, ([key]) => totals[key] > 0),
+				([, label]) => label,
+			)
+			return names.length === 0 ? "None in the last 24 hours" : Arr.join(names, ", ")
 		},
 	})
 

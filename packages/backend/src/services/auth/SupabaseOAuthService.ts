@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthAuthStates } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -36,7 +36,7 @@ const SUPABASE_PROVIDER = "supabase"
 /** Where Supabase redirects after consent; registered on the Supabase OAuth app. */
 export const SUPABASE_CALLBACK_PATH = "/api/integrations/supabase/callback"
 
-const apiBaseOf = (env: EnvConfig) => env.MAPLE_SUPABASE_API_BASE_URL.replace(/\/$/, "")
+const apiBaseOf = (env: EnvConfig) => Str.replace(/\/$/, "")(env.MAPLE_SUPABASE_API_BASE_URL)
 
 /** Whether the OAuth app credentials are set; without them the integration reads as not configured. */
 const isSupabaseConfigured = (env: EnvConfig) =>

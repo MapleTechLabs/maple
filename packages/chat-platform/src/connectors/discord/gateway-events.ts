@@ -6,7 +6,7 @@
  * losing a guild unlinks a workspace. Everything else the intents deliver is
  * dropped here rather than carried further.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ConnectorRequest, InboundEvent } from "../../ingress.ts"
 import { API_BASE } from "./api.ts"
 import {
@@ -35,7 +35,12 @@ const NOTHING: DispatchResult = { events: [], requests: [] }
  * pattern somebody else chose.
  */
 const stripMention = (text: string, botUserId: string): string =>
-	text.split(`<@${botUserId}>`).join(" ").split(`<@!${botUserId}>`).join(" ").replace(/\s+/gu, " ").trim()
+	Str.trim(
+		Str.replace(
+			/\s+/gu,
+			" ",
+		)(Arr.join(Str.split(`<@!${botUserId}>`)(Arr.join(Str.split(`<@${botUserId}>`)(text), " ")), " ")),
+	)
 
 /**
  * Acknowledge a component click.
@@ -84,8 +89,8 @@ const messageCreate = (data: unknown, botUserId: string | undefined): DispatchRe
 	const message = decoded.value
 	if (message.guild_id === undefined) return NOTHING
 	if (message.author.bot === true || message.webhook_id !== undefined) return NOTHING
-	const mentionsBot = message.mentions.some((user) => user.id === botUserId)
-	if (!mentionsBot && message.content.trim() === "") return NOTHING
+	const mentionsBot = Arr.some(message.mentions, (user) => user.id === botUserId)
+	if (!mentionsBot && Str.trim(message.content) === "") return NOTHING
 	return {
 		events: [
 			{

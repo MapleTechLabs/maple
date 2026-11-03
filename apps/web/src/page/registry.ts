@@ -1,4 +1,4 @@
-import { Array, Option, Predicate, Schema } from "effect"
+import { Array, Option, Predicate, Schema, Record as Rec } from "effect"
 import { Subscription } from "foldkit"
 import type { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -188,10 +188,10 @@ const BARE_PAGE_ROUTES: ReadonlyArray<AppRoute["_tag"]> = ["Share"]
 
 export const isBarePageRoute = (route: AppRoute): boolean => BARE_PAGE_ROUTES.includes(route._tag)
 
-export const PageSlot = Schema.Union(pages.map((page) => page.Slot))
+export const PageSlot = Schema.Union(Array.map(pages, (page) => page.Slot))
 export type PageSlot = typeof PageSlot.Type
 
-export const PageMessage = Schema.Union(pages.map((page) => page.Wrapped))
+export const PageMessage = Schema.Union(Array.map(pages, (page) => page.Wrapped))
 export type PageMessage = typeof PageMessage.Type
 
 /** The page slot after a transition, with the Commands and OutMessage that came with it. */
@@ -260,13 +260,13 @@ const ASYNC_DATA_TAGS: ReadonlyArray<string> = [
 
 /** Some `AsyncData` in the Model is in flight; its answer would be dropped while parked. */
 const hasLoadInFlight = (value: unknown): boolean => {
-	if (Array.isArray(value)) return value.some(hasLoadInFlight)
+	if (Array.isArray(value)) return Array.some(value, hasLoadInFlight)
 	if (!Predicate.isReadonlyObject(value)) return false
 	const tag = value["_tag"]
 	// An `AsyncData`'s own data holds no requests: rows are not walked.
 	if (Predicate.isString(tag) && ASYNC_DATA_TAGS.includes(tag))
 		return tag === "Loading" || tag === "Refreshing"
-	return Object.values(value).some(hasLoadInFlight)
+	return Array.some(Rec.values(value), hasLoadInFlight)
 }
 
 /** How many left pages are kept to revive; each holds its last data. */
@@ -284,12 +284,14 @@ export const parkPages = (
 		Array.some(pages, (page) => page.id === left._tag && page.isRevivable) &&
 		!hasLoadInFlight(left.model)
 	const sameSlot = (a: PageSlotBase, b: PageSlotBase) => a._tag === b._tag && a.key === b.key
-	const next = [...(isLeft ? [left] : []), ...parked]
-		.filter((slot) => entered === null || (slot.orgId === entered.orgId && !sameSlot(slot, entered)))
+	const next = Array.filter(
+		[...(isLeft ? [left] : []), ...parked],
+		(slot) => entered === null || (slot.orgId === entered.orgId && !sameSlot(slot, entered)),
+	)
 		.filter((slot, index, all) => all.findIndex((other) => sameSlot(other, slot)) === index)
 		.slice(0, PARKED_PAGES_MAX)
 	// Nothing parked or taken out: the same array, so the root Model can stay the same reference.
-	return next.length === parked.length && next.every((slot, index) => slot === parked[index])
+	return next.length === parked.length && Array.every(next, (slot, index) => slot === parked[index])
 		? parked
 		: next
 }
@@ -377,7 +379,7 @@ export const pageHasSource = (slot: PageSlotBase): boolean =>
 	Option.match(pageById(slot._tag), { onNone: () => false, onSome: (page) => page.hasSource })
 
 export const pageSubscriptions = Subscription.aggregate<PageHost, PageMessage, Resources>()(
-	...pages.map((page) => page.subscriptions),
+	...Array.map(pages, (page) => page.subscriptions),
 )
 
 /** The page's view boundary: a new instance (another org on the same route, too) mounts afresh. */

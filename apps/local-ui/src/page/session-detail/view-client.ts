@@ -8,7 +8,7 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { isAwaitingFirstData } from "@maple/views/data/keyed"
 import { revealIcon } from "@maple/views/ui/reveal-icon"
@@ -19,29 +19,47 @@ import { card } from "./view-bits"
 
 // The Client and Correlated traces cards of `SessionDetailView`.
 
-const text = <M>(h: HtmlBuilder<M>, value: string, shown: string): Html => truncatedText(h, { text: value }, [shown])
+const text = <M>(h: HtmlBuilder<M>, value: string, shown: string): Html =>
+	truncatedText(h, { text: value }, [shown])
 
 export const clientCard = <M>(h: HtmlBuilder<M>, session: SessionDetail, label: string): Html =>
 	card(h, "Client", [
-		keyValueList(h, { layout: "stacked", className: "grid-cols-2 gap-x-4 gap-y-3 text-sm [&_dt]:text-xs" }, [
-			keyValue(h, { label: "User" }, [text(h, label, label || "-")]),
-			keyValue(h, { label: "Browser" }, [text(h, session.browserName, session.browserName || "-")]),
-			keyValue(h, { label: "OS" }, [text(h, session.osName, session.osName || "-")]),
-			keyValue(h, { label: "Device" }, [text(h, session.deviceType, session.deviceType || "-")]),
-			keyValue(h, { label: "Service" }, [
-				session.serviceName
-					? h.a(
-							[
-								h.Href(hrefFor(`/services/${encodeURIComponent(session.serviceName)}`)),
-								h.Class(hstackClass({ gap: "1.5", shrink: true, className: "hover:underline active:underline" })),
-							],
-							[serviceDot(h, { serviceName: session.serviceName, size: "sm" }), text(h, session.serviceName, session.serviceName)],
-						)
-					: EMPTY_VALUE,
-			]),
-			keyValue(h, { label: "Entry URL", className: "col-span-2" }, [text(h, session.urlInitial, hostFromUrl(session.urlInitial) || "-")]),
-			keyValue(h, { label: "User agent", className: "col-span-2" }, [text(h, session.userAgent, session.userAgent || "-")]),
-		]),
+		keyValueList(
+			h,
+			{ layout: "stacked", className: "grid-cols-2 gap-x-4 gap-y-3 text-sm [&_dt]:text-xs" },
+			[
+				keyValue(h, { label: "User" }, [text(h, label, label || "-")]),
+				keyValue(h, { label: "Browser" }, [text(h, session.browserName, session.browserName || "-")]),
+				keyValue(h, { label: "OS" }, [text(h, session.osName, session.osName || "-")]),
+				keyValue(h, { label: "Device" }, [text(h, session.deviceType, session.deviceType || "-")]),
+				keyValue(h, { label: "Service" }, [
+					session.serviceName
+						? h.a(
+								[
+									h.Href(hrefFor(`/services/${encodeURIComponent(session.serviceName)}`)),
+									h.Class(
+										hstackClass({
+											gap: "1.5",
+											shrink: true,
+											className: "hover:underline active:underline",
+										}),
+									),
+								],
+								[
+									serviceDot(h, { serviceName: session.serviceName, size: "sm" }),
+									text(h, session.serviceName, session.serviceName),
+								],
+							)
+						: EMPTY_VALUE,
+				]),
+				keyValue(h, { label: "Entry URL", className: "col-span-2" }, [
+					text(h, session.urlInitial, hostFromUrl(session.urlInitial) || "-"),
+				]),
+				keyValue(h, { label: "User agent", className: "col-span-2" }, [
+					text(h, session.userAgent, session.userAgent || "-"),
+				]),
+			],
+		),
 	])
 
 const traceItem = <M>(h: HtmlBuilder<M>, trace: SessionTrace): Html =>
@@ -60,18 +78,50 @@ const traceItem = <M>(h: HtmlBuilder<M>, trace: SessionTrace): Html =>
 					),
 				],
 				[
-					h.span([h.Class(cn("size-1.5 shrink-0 rounded-full", trace.hasError ? "bg-severity-error" : "bg-muted-foreground/40"))], []),
+					h.span(
+						[
+							h.Class(
+								cn(
+									"size-1.5 shrink-0 rounded-full",
+									trace.hasError ? "bg-severity-error" : "bg-muted-foreground/40",
+								),
+							),
+						],
+						[],
+					),
 					h.span(
 						[h.Class("min-w-0 flex-1")],
 						[
-							typography(h, { size: "sm", truncate: true, className: "block" }, [trace.rootSpanName || shortId(trace.traceId, "trace", { length: 12 })]),
-							hstack(h, { as: "span", gap: "1.5", shrink: true, className: typographyClass({ size: "xs", tone: "muted" }) }, [
-								...(trace.rootServiceName ? [serviceDot(h, { serviceName: trace.rootServiceName, size: "sm" })] : []),
-								typography(h, { truncate: true }, [trace.rootServiceName || "unknown", " ·", " ", countLabel(trace.spanCount, "span")]),
+							typography(h, { size: "sm", truncate: true, className: "block" }, [
+								trace.rootSpanName || shortId(trace.traceId, "trace", { length: 12 }),
 							]),
+							hstack(
+								h,
+								{
+									as: "span",
+									gap: "1.5",
+									shrink: true,
+									className: typographyClass({ size: "xs", tone: "muted" }),
+								},
+								[
+									...(trace.rootServiceName
+										? [serviceDot(h, { serviceName: trace.rootServiceName, size: "sm" })]
+										: []),
+									typography(h, { truncate: true }, [
+										trace.rootServiceName || "unknown",
+										" ·",
+										" ",
+										countLabel(trace.spanCount, "span"),
+									]),
+								],
+							),
 						],
 					),
-					typography(h, { size: "xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" }, [formatDuration(trace.durationMs)]),
+					typography(
+						h,
+						{ size: "xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
+						[formatDuration(trace.durationMs)],
+					),
 					revealIcon(h, "ArrowRightIcon"),
 				],
 			),
@@ -86,6 +136,9 @@ export const tracesCard = <M>(h: HtmlBuilder<M>, model: Model, traceIds: Readonl
 				? spinner(h, "size-4")
 				: h.ul(
 						[h.Class("space-y-1.5")],
-						Option.getOrElse(AsyncData.getData(model.traces.data), () => []).map((trace) => traceItem(h, trace)),
+						Arr.map(
+							Option.getOrElse(AsyncData.getData(model.traces.data), () => []),
+							(trace) => traceItem(h, trace),
+						),
 					),
 	])

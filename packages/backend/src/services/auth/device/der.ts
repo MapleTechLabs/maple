@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * Just enough DER and X.509 to verify an App Attest chain: TLV walking, OIDs, times, SPKI,
  * extensions, and ECDSA signature conversion. Every reader returns `undefined` on malformed
@@ -87,7 +88,7 @@ export const decodeTime = (bytes: Uint8Array, tlv: Tlv): number | undefined => {
 	if (tlv.tag !== TAG.utcTime && tlv.tag !== TAG.generalizedTime) return undefined
 	const match = TIME.exec(new TextDecoder().decode(value(bytes, tlv)))
 	if (match === null) return undefined
-	const [year, month, day, hour, minute, second] = match.slice(1).map(Number)
+	const [year, month, day, hour, minute, second] = Arr.map(match.slice(1), Number)
 	if (
 		year === undefined ||
 		month === undefined ||
@@ -138,8 +139,8 @@ const parseExtensions = (der: Uint8Array, wrapper: Tlv | undefined): Map<string,
 	const [list] = children(der, wrapper) ?? []
 	const entries = list === undefined ? undefined : children(der, list)
 	if (entries === undefined) return undefined
-	const parsed = entries.map((entry) => parseExtension(der, entry))
-	return parsed.every((entry) => entry !== undefined) ? new Map(parsed) : undefined
+	const parsed = Arr.map(entries, (entry) => parseExtension(der, entry))
+	return Arr.every(parsed, (entry) => entry !== undefined) ? new Map(parsed) : undefined
 }
 
 const BASIC_CONSTRAINTS = "2.5.29.19"

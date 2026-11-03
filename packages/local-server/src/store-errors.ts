@@ -17,6 +17,18 @@ export const stateFileError =
 	(error: unknown): ServerStateFileError =>
 		new ServerStateFileError({ path, message: `could not ${action} ${path}: ${describeError(error)}` })
 
+/** A raw syscall failure, kept whole so callers can still read its errno code from `cause`. */
+export class StoreSyscallError extends Schema.TaggedError<StoreSyscallError>()(
+	"@maple/cli/StoreSyscallError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
+export const syscallError = (cause: unknown): StoreSyscallError =>
+	new StoreSyscallError({ message: describeError(cause), cause })
+
 /**
  * A refused command whose precondition simply wasn't met: the server is already
  * running, isn't running at all, or a destructive command was not confirmed.

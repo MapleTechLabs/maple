@@ -1,5 +1,5 @@
 import { makeCloudEvent } from "./event"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import type {
 	JsonValue,
 	MapleCloudEvent,
@@ -152,9 +152,10 @@ export class CompiledProjectionRegistry {
 					return yield* Result.fail(
 						new ProjectionInvalid({
 							projectionId: spec.id,
-							message: `invalid projection ${spec.id}@${spec.revision}: ${issues
-								.map(({ path, message }) => `${path}: ${message}`)
-								.join("; ")}`,
+							message: `invalid projection ${spec.id}@${spec.revision}: ${Arr.join(
+								Arr.map(issues, ({ path, message }) => `${path}: ${message}`),
+								"; ",
+							)}`,
 						}),
 					)
 				const revisionKey = `${spec.tenantId}:${spec.id}@${spec.revision}`

@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * Tokenizer for where-clause syntax highlighting. Mirrors the grammar in
  * `@maple/domain/where-clause`: `key operator value` clauses joined by a
@@ -48,7 +49,7 @@ export function tokenizeWhereClause(expression: string): WhereClauseToken[] {
 		} else {
 			tokens.push({ text, type })
 		}
-		if (type !== "plain" || text.trim().length > 0) {
+		if (type !== "plain" || Str.trim(text).length > 0) {
 			lastSignificant = type
 		}
 	}

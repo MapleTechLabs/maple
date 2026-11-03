@@ -7,6 +7,7 @@ import type {
 } from "@tanstack/charts"
 import { findNearestSeriesKey } from "@maple/ui/components/charts/_shared/nearest-series"
 import { tooltip } from "@tanstack/charts/tooltip"
+import { Array as Arr, Record as Rec } from "effect"
 
 // Copied from React modules of packages/ui/src/components/plot (plot-tooltip.tsx, plot-legend.tsx,
 // plot-frame.tsx) so this file stays React-free. Phase 1 moves them to a shared module.
@@ -65,12 +66,12 @@ export const tooltipFocusCapture = () => {
 	): string | undefined => {
 		const { pointerY, mapY } = cell.current
 		if (plotted.length <= 1 || mapY === null || pointerY === null) return undefined
-		const yByLabel = Object.fromEntries(
-			plotted.flatMap(([label, y]) => (y === null ? [] : [[label, mapY(y)] as const])),
+		const yByLabel = Rec.fromEntries(
+			Arr.flatMap(plotted, ([label, y]) => (y === null ? [] : [[label, mapY(y)] as const])),
 		)
 		return findNearestSeriesKey(
 			yByLabel,
-			plotted.map(([label]) => label),
+			Arr.map(plotted, ([label]) => label),
 			pointerY,
 			HIGHLIGHT_MAX_DISTANCE_PX,
 		)

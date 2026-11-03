@@ -2,7 +2,7 @@
  * The infra tools' `kind` parameters. list_infra lists kinds (plural) and inspect_infra names one
  * entity (singular); each accepts the other spelling, since models carry one over to the other.
  */
-import { Schema, SchemaTransformation } from "effect"
+import { Schema, SchemaTransformation, Array as Arr } from "effect"
 
 export const INFRA_KINDS = [
 	"hosts",
@@ -40,7 +40,7 @@ export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 export type CollectorKind = Exclude<(typeof INFRA_KINDS)[number], ProviderKind>
 
 export const isProviderKind = (kind: string): kind is ProviderKind =>
-	PROVIDER_KINDS.some((provider) => provider === kind)
+	Arr.some(PROVIDER_KINDS, (provider) => provider === kind)
 
 type InfraKind = (typeof INFRA_KINDS)[number]
 type EntityKind = (typeof ENTITY_KINDS)[number]

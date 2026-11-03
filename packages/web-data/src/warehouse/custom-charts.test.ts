@@ -1,6 +1,6 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { strict as assert } from "node:assert"
 import { beforeEach, expect, vi } from "vitest"
 import { mockedWarehouse } from "./testing"
@@ -23,7 +23,7 @@ import {
 import type { ServiceDetailTimeSeriesPoint } from "./services"
 
 const spanMetricsCallsOf = () =>
-	executeQueryEngineMock.mock.calls.filter((call) => call[0] === "queryEngine.spanMetricsCalls")
+	Arr.filter(executeQueryEngineMock.mock.calls, (call) => call[0] === "queryEngine.spanMetricsCalls")
 
 describe("getCustomChartServiceDetail", () => {
 	beforeEach(() => {
@@ -43,7 +43,7 @@ describe("getCustomChartServiceDetail", () => {
 				},
 			})
 
-			const operations = executeQueryEngineMock.mock.calls.map((call) => call[0])
+			const operations = Arr.map(executeQueryEngineMock.mock.calls, (call) => call[0])
 			expect(operations).toContain("queryEngine.serviceDetail.allMetrics")
 			// The slow exact-throughput query must NOT fire from the primary effect.
 			assert.strictEqual(spanMetricsCallsOf().length, 0)
@@ -165,7 +165,7 @@ describe("fillServiceDetailPoints", () => {
 
 		// Non-empty, evenly spaced 120s buckets (no empty/flat fallthrough).
 		expect(result.length).toBeGreaterThan(1)
-		const deltas = result.slice(1).map((p, i) => Date.parse(p.bucket) - Date.parse(result[i].bucket))
+		const deltas = Arr.map(result.slice(1), (p, i) => Date.parse(p.bucket) - Date.parse(result[i].bucket))
 		expect([...new Set(deltas)]).toEqual([120_000])
 
 		// The final bucket ends at ~now → still settling → flagged; an early bucket isn't.
@@ -181,6 +181,6 @@ describe("fillServiceDetailPoints", () => {
 		const result = fillServiceDetailPoints([], start, end, 120, nowMs)
 
 		expect(result.length).toBeGreaterThan(1)
-		expect(result.every((p) => p.partial === false)).toBe(true)
+		expect(Arr.every(result, (p) => p.partial === false)).toBe(true)
 	})
 })

@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { AiSessionSpan } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, type Command, Submodel } from "foldkit"
 import { fromString } from "foldkit/url"
 import type { PageContext, PageOutMessage } from "../page/contract"
@@ -43,7 +43,7 @@ export const toWire = (
 	spans: ReadonlyArray<AiSessionSpan>,
 	sessionId: string,
 ): ReadonlyArray<AiSessionSpan> =>
-	spans.flatMap((span) => Option.toArray(decodeSpan(encodeJson({ ...span, sessionId }))))
+	Arr.flatMap(spans, (span) => Option.toArray(decodeSpan(encodeJson({ ...span, sessionId }))))
 
 /**
  * The page's navigations land as the route change the shell would deliver: only the view and the
@@ -71,7 +71,7 @@ const followNavigation = (
 }
 
 const withoutReads = (commands: SessionCommands | undefined): SessionCommands =>
-	(commands ?? []).filter((command) => !READS.has(command.name))
+	Arr.filter(commands ?? [], (command) => !READS.has(command.name))
 
 /** The page's step, with its navigations folded back in and its reads dropped. */
 export const stepSession = (

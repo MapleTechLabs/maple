@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -67,12 +67,12 @@ describe("AgentFeedbackService", () => {
 
 				const all = yield* service.list(ORG, { limit: 10, offset: 0 })
 				assert.deepStrictEqual(
-					all.map((row) => row.summary),
+					Arr.map(all, (row) => row.summary),
 					["second", "first"],
 				)
 				const page = yield* service.list(ORG, { limit: 1, offset: 1 })
 				assert.deepStrictEqual(
-					page.map((row) => row.summary),
+					Arr.map(page, (row) => row.summary),
 					["first"],
 				)
 			}),

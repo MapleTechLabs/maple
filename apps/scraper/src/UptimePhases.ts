@@ -1,4 +1,4 @@
-import { Context, Effect } from "effect"
+import { Context, Effect, Array as Arr, Record as Rec } from "effect"
 
 /** Where an HTTP check spent its time, in ms; null for a phase that never happened (TLS on http://). */
 export interface PhaseTimings {
@@ -30,7 +30,7 @@ export const addPhases = (total: PhaseTimings, hop: Partial<PhaseTimings>): Phas
 })
 
 export const hasPhases = (timings: PhaseTimings): boolean =>
-	Object.values(timings).some((value) => value !== null)
+	Arr.some(Rec.values(timings), (value) => value !== null)
 
 /**
  * Where the resolver and the transport report a hop's phases. The HTTP probe provides one per

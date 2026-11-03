@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isRecord, isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
 import { decodeJson } from "../internal/decode.ts"
 import { readPackageJsons } from "../internal/manifests.ts"
@@ -31,26 +31,27 @@ const NODE_MODULES = "node_modules/"
 /** v2/v3: `packages` keyed by install path; roots are "" and workspace dirs (no node_modules segment). */
 const fromPackagesMap = (packages: Readonly<Record<string, PackageEntry>>): ReadonlyArray<LockedPackage> => {
 	const rootDeps = new Map(
-		Object.entries(packages)
-			.filter(([path]) => !path.includes(NODE_MODULES))
-			.map(([path, entry]) => [
+		Arr.map(
+			Arr.filter(Rec.toEntries(packages), ([path]) => !Str.includes(NODE_MODULES)(path)),
+			([path, entry]) => [
 				path,
 				new Set([
-					...Object.keys(entry.dependencies ?? {}),
-					...Object.keys(entry.optionalDependencies ?? {}),
-					...Object.keys(entry.peerDependencies ?? {}),
+					...Rec.keys(entry.dependencies ?? {}),
+					...Rec.keys(entry.optionalDependencies ?? {}),
+					...Rec.keys(entry.peerDependencies ?? {}),
 				]),
-			]),
+			],
+		),
 	)
 	// Workspaces hoist their dependencies into the root node_modules, so the root answers for all of them.
-	const hoisted = new Set([...rootDeps.values()].flatMap((names) => [...names]))
-	return Object.entries(packages).flatMap(([path, entry]) => {
+	const hoisted = new Set(Arr.flatMap([...rootDeps.values()], (names) => [...names]))
+	return Arr.flatMap(Rec.toEntries(packages), ([path, entry]) => {
 		const at = path.lastIndexOf(NODE_MODULES)
 		if (at === -1 || entry.link === true || entry.version === undefined) return []
-		const installName = path.slice(at + NODE_MODULES.length)
+		const installName = Str.slice(at + NODE_MODULES.length)(path)
 		const name = entry.name ?? installName
 		if (!isRegistryVersion(entry.version)) return []
-		const parent = path.slice(0, Math.max(at - 1, 0))
+		const parent = Str.slice(0, Math.max(at - 1, 0))(path)
 		const isDirect = (parent === "" ? hoisted : rootDeps.get(parent))?.has(installName) === true
 		const relation: Relation = isDirect
 			? "direct"
@@ -67,14 +68,16 @@ const fromDependencyTree = (
 	directNames: ReadonlySet<string> | undefined,
 	topLevel: boolean,
 ): ReadonlyArray<LockedPackage> =>
-	Object.entries(deps).flatMap(([name, node]): ReadonlyArray<LockedPackage> => {
+	Arr.flatMap(Rec.toEntries(deps), ([name, node]): ReadonlyArray<LockedPackage> => {
 		if (!isRecord(node)) return []
 		const recorded = typeof node.version === "string" ? node.version : ""
 		const nested = isRecord(node.dependencies)
 			? fromDependencyTree(node.dependencies, directNames, false)
 			: []
 		// An `npm:` alias records the real package as `version: "npm:real@1.0.0"`.
-		const alias = recorded.startsWith("npm:") ? splitNameAt(recorded.slice("npm:".length)) : undefined
+		const alias = Str.startsWith("npm:")(recorded)
+			? splitNameAt(Str.slice("npm:".length)(recorded))
+			: undefined
 		const realName = alias?.name ?? name
 		const version = alias?.rest ?? recorded
 		if (!isRegistryVersion(version)) return nested
@@ -91,7 +94,7 @@ const fromDependencyTree = (
 
 export const parsePackageLock = Effect.fn("lockfiles.parsePackageLock")(function* (input: LockfileInput) {
 	const lock = yield* decodeJson(PackageLock, input.path, input.content)
-	if (lock.packages !== undefined && Object.keys(lock.packages).length > 0) {
+	if (lock.packages !== undefined && Rec.keys(lock.packages).length > 0) {
 		const output: ParserOutput = {
 			kind: "package-lock",
 			packages: fromPackagesMap(lock.packages),

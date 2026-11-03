@@ -7,6 +7,7 @@
 // union that neither the KPI row nor the coverage figure could attribute.
 
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
+import { Array as Arr, Record as Rec } from "effect"
 
 export interface AnalyticsFilters {
 	host?: string
@@ -86,7 +87,7 @@ export const FILTER_SECTION_LABEL: Record<AnalyticsFilterKey, string> = {
 	eventName: "Event",
 } satisfies Record<AnalyticsFilterKey, string>
 
-const FILTER_KEYS = Object.keys(FILTER_CHIP_LABEL) as ReadonlyArray<AnalyticsFilterKey>
+const FILTER_KEYS = Rec.keys(FILTER_CHIP_LABEL) as ReadonlyArray<AnalyticsFilterKey>
 
 /** Pull just the filter fields out of the route's search object. */
 export const filtersFromSearch = (search: Record<string, unknown>): AnalyticsFilters => {
@@ -137,7 +138,7 @@ const chipValue = (key: AnalyticsFilterKey, value: string): string => {
  * get a chip.
  */
 export const activeFilterChips = (filters: AnalyticsFilters): ReadonlyArray<ActiveFilterChip> =>
-	FILTER_KEYS.flatMap((key) => {
+	Arr.flatMap(FILTER_KEYS, (key) => {
 		const value = filters[key]
 		if (!value || (key === "traffic" && value === DEFAULT_TRAFFIC)) return []
 		return [{ key, value, label: `${FILTER_CHIP_LABEL[key]}:${chipValue(key, value)}` }]

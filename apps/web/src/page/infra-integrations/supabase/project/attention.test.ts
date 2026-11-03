@@ -1,5 +1,5 @@
 import { SupabaseLogIssue, SupabaseProjectInsights } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
 import { MAX_ATTENTION_ITEMS, needsAttention } from "./attention"
 
@@ -8,7 +8,7 @@ const lint = (advisor: "security" | "performance", level: "ERROR" | "WARN" | "IN
 	name: title,
 	title,
 	level,
-	categories: [advisor.toUpperCase()],
+	categories: [Str.toUpperCase(advisor)],
 	description: "",
 	detail: "Table `public.invoices` is exposed",
 	remediation: "https://supabase.com/docs",
@@ -49,7 +49,7 @@ describe("needsAttention", () => {
 			issues: [issue("deadlock detected", 17), issue("slow checkpoint", 13)],
 			connections: { peak: 57, limit: 60 },
 		})
-		expect(items.map((item) => [item.label, item.title])).toEqual([
+		expect(Arr.map(items, (item) => [item.label, item.title])).toEqual([
 			["Security", "RLS disabled in public"],
 			["Errors", "deadlock detected (14×)"],
 			["Saturation", "Connections hit 57 / 60"],
@@ -60,15 +60,13 @@ describe("needsAttention", () => {
 	})
 
 	test("the panel budget applies after ranking, so error logs are never hidden behind an advisor warning", () => {
-		const errorLogs = ["a", "b", "c", "d", "e"].map((message) => issue(message, 17))
+		const errorLogs = Arr.map(["a", "b", "c", "d", "e"], (message) => issue(message, 17))
 		const warnOnly = Schema.decodeUnknownSync(SupabaseProjectInsights)({
 			...Schema.encodeSync(SupabaseProjectInsights)(insights),
 			advisors: { error: [], warn: insights.advisors.warn, info: [] },
 		})
 		const shown = (inputs: Parameters<typeof needsAttention>[0]) =>
-			needsAttention(inputs)
-				.slice(0, MAX_ATTENTION_ITEMS)
-				.map((item) => item.title)
+			Arr.map(needsAttention(inputs).slice(0, MAX_ATTENTION_ITEMS), (item) => item.title)
 		expect(shown({ insights: warnOnly, issues: errorLogs, connections: null })).toEqual([
 			"a (14×)",
 			"b (14×)",
@@ -89,7 +87,7 @@ describe("needsAttention", () => {
 
 	test("connections under 90% of the limit, or without a known limit, are not saturation", () => {
 		const labels = (connections: { peak: number; limit: number | null }) =>
-			needsAttention({ insights: null, issues: [], connections }).map((item) => item.label)
+			Arr.map(needsAttention({ insights: null, issues: [], connections }), (item) => item.label)
 		expect(labels({ peak: 53, limit: 60 })).toEqual([])
 		expect(labels({ peak: 540, limit: null })).toEqual([])
 		expect(labels({ peak: 54, limit: 60 })).toEqual(["Saturation"])

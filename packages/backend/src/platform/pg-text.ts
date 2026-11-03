@@ -1,4 +1,4 @@
-import { Schema, SchemaGetter } from "effect"
+import { Schema, SchemaGetter, String as Str } from "effect"
 
 /**
  * Bound on a warehouse-sourced string bound for a Postgres `text` column.
@@ -10,9 +10,9 @@ import { Schema, SchemaGetter } from "effect"
 export const PG_TEXT_MAX_CHARS = 4_000
 
 const sanitize = (maxChars: number) => (value: string) => {
-	const clean = value.replaceAll("\u0000", "")
+	const clean = Str.replaceAll("\u0000", "")(value)
 	if (clean.length <= maxChars) return clean
-	return `${clean.slice(0, maxChars)}…[truncated ${clean.length - maxChars} chars]`
+	return `${Str.slice(0, maxChars)(clean)}…[truncated ${clean.length - maxChars} chars]`
 }
 
 /**

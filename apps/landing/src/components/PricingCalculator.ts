@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -53,7 +53,12 @@ export const initModel = (competitor: Competitor, isCompact: boolean): Model => 
 
 export const Message = defineMessageUnion({
 	ChangedSlider: { key: Schema.String, value: Schema.Finite },
-	SettledSlider: { version: Schema.Finite, competitor: Competitor, key: Schema.String, value: Schema.Finite },
+	SettledSlider: {
+		version: Schema.Finite,
+		competitor: Competitor,
+		key: Schema.String,
+		value: Schema.Finite,
+	},
 	ReportedCalculatorChange: {},
 	SelectedCompetitor: { competitor: Competitor },
 })
@@ -86,7 +91,9 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 			const settleVersion = model.settleVersion + 1
 			return {
 				model: { ...model, values: { ...model.values, [key]: value }, settleVersion },
-				commands: [WaitForSliderSettle({ version: settleVersion, competitor: model.competitor, key, value })],
+				commands: [
+					WaitForSliderSettle({ version: settleVersion, competitor: model.competitor, key, value }),
+				],
 			}
 		},
 		SettledSlider: ({ version, competitor, key, value }) =>
@@ -129,7 +136,10 @@ const slider = (h: H, competitor: Competitor, config: SliderConfig, value: numbe
 				[h.Class("relative h-8 flex items-center")],
 				[
 					h.div([h.Class("absolute inset-x-0 h-[2px] bg-border rounded-full")], []),
-					h.div([h.Class("absolute h-[2px] bg-primary rounded-full"), h.Style({ width: `${pct}%` })], []),
+					h.div(
+						[h.Class("absolute h-[2px] bg-primary rounded-full"), h.Style({ width: `${pct}%` })],
+						[],
+					),
 					h.input([
 						h.Id(inputId),
 						h.Type("range"),
@@ -158,14 +168,21 @@ const breakdownCard = (
 	h.div(
 		[h.Class("bg-bg-elevated p-6 md:p-8")],
 		[
-			h.div([h.Class("mb-4")], [h.span([h.Class(`text-[10px] uppercase tracking-wider ${card.nameClass}`)], [card.name])]),
 			h.div(
-				[h.Class(`mb-4 font-mono text-3xl font-medium tabular-nums tracking-[-0.02em] ${card.totalClass} md:text-4xl`)],
+				[h.Class("mb-4")],
+				[h.span([h.Class(`text-[10px] uppercase tracking-wider ${card.nameClass}`)], [card.name])],
+			),
+			h.div(
+				[
+					h.Class(
+						`mb-4 font-mono text-3xl font-medium tabular-nums tracking-[-0.02em] ${card.totalClass} md:text-4xl`,
+					),
+				],
 				[formatCurrency(card.estimate.total), perMonth(h, "text-sm font-normal text-fg-muted")],
 			),
 			h.div(
 				[h.Class("space-y-2")],
-				card.estimate.breakdown.map((item) =>
+				Arr.map(card.estimate.breakdown, (item) =>
 					h.div(
 						[h.Key(item.label), h.Class("flex items-center justify-between text-xs")],
 						[
@@ -180,7 +197,7 @@ const breakdownCard = (
 			),
 			h.div(
 				[h.Class("mt-3 space-y-1")],
-				card.estimate.breakdown.map((item) =>
+				Arr.map(card.estimate.breakdown, (item) =>
 					h.div([h.Key(`${item.label}-d`), h.Class("text-[10px] text-fg-muted/80")], [item.detail]),
 				),
 			),
@@ -191,15 +208,28 @@ const compactTotal = (h: H, label: string, labelClass: string, totalClass: strin
 	h.div(
 		[h.Class("bg-bg-elevated px-6 py-5 md:px-8")],
 		[
-			h.dt([h.Class(`font-mono text-[10px] font-medium uppercase tracking-[0.14em] ${labelClass}`)], [label]),
+			h.dt(
+				[h.Class(`font-mono text-[10px] font-medium uppercase tracking-[0.14em] ${labelClass}`)],
+				[label],
+			),
 			h.dd(
-				[h.Class(`mt-2 font-mono text-2xl font-medium tabular-nums tracking-[-0.02em] ${totalClass} md:text-3xl`)],
+				[
+					h.Class(
+						`mt-2 font-mono text-2xl font-medium tabular-nums tracking-[-0.02em] ${totalClass} md:text-3xl`,
+					),
+				],
 				[formatCurrency(total), perMonth(h, "ml-1 text-xs font-normal text-fg-muted")],
 			),
 		],
 	)
 
-const compactView = (h: H, model: Model, sliders: ReadonlyArray<Html>, maple: Estimate, vendor: Estimate): Html => {
+const compactView = (
+	h: H,
+	model: Model,
+	sliders: ReadonlyArray<Html>,
+	maple: Estimate,
+	vendor: Estimate,
+): Html => {
 	const savings = vendor.total - maple.total
 	const savingsPct = vendor.total > 0 ? Math.round((savings / vendor.total) * 100) : 0
 	return h.div(
@@ -210,12 +240,22 @@ const compactView = (h: H, model: Model, sliders: ReadonlyArray<Html>, maple: Es
 				[h.Class("grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-3")],
 				[
 					compactTotal(h, "Maple", "text-primary", "text-primary", maple.total),
-					compactTotal(h, vendorConfigs[model.competitor].name, "text-fg-muted", "text-fg", vendor.total),
+					compactTotal(
+						h,
+						vendorConfigs[model.competitor].name,
+						"text-fg-muted",
+						"text-fg",
+						vendor.total,
+					),
 					h.div(
 						[h.Class("col-span-2 bg-bg-elevated px-6 py-5 sm:col-span-1 md:px-8")],
 						[
 							h.dt(
-								[h.Class("font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted")],
+								[
+									h.Class(
+										"font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted",
+									),
+								],
 								["Difference"],
 							),
 							h.dd(
@@ -251,7 +291,11 @@ const savingsCallout = (h: H, name: string, savings: number, savingsPct: number)
 						[],
 						[
 							h.div(
-								[h.Class("font-mono text-2xl font-medium tabular-nums tracking-[-0.02em] text-primary md:text-3xl")],
+								[
+									h.Class(
+										"font-mono text-2xl font-medium tabular-nums tracking-[-0.02em] text-primary md:text-3xl",
+									),
+								],
 								[`Save ${formatCurrency(savings)}/month`],
 							),
 							h.p(
@@ -259,7 +303,10 @@ const savingsCallout = (h: H, name: string, savings: number, savingsPct: number)
 								[
 									h.span([h.Class("font-semibold text-primary")], [`${savingsPct}% less`]),
 									` than ${name}, or `,
-									h.span([h.Class("font-semibold text-primary")], [`${formatCurrency(savings * 12)}/year`]),
+									h.span(
+										[h.Class("font-semibold text-primary")],
+										[`${formatCurrency(savings * 12)}/year`],
+									),
 									" over twelve months.",
 								],
 							),
@@ -284,7 +331,7 @@ export const calculatorView = (model: Model, h: H): Html => {
 	const config = vendorConfigs[competitor]
 	const vendor = estimateVendor(competitor, model.values)
 	const maple = estimateMaple(competitor, model.values)
-	const sliders = config.sliders.map((s) => slider(h, competitor, s, model.values[s.key] ?? s.default))
+	const sliders = Arr.map(config.sliders, (s) => slider(h, competitor, s, model.values[s.key] ?? s.default))
 	if (model.isCompact) return compactView(h, model, sliders, maple, vendor)
 	const savings = vendor.total - maple.total
 	const savingsPct = vendor.total > 0 ? Math.round((savings / vendor.total) * 100) : 0
@@ -293,13 +340,29 @@ export const calculatorView = (model: Model, h: H): Html => {
 		[
 			h.div(
 				[h.Class("space-y-5 p-6 md:p-8")],
-				[h.div([h.Class("text-[10px] uppercase tracking-wider text-fg-muted")], ["Adjust your usage"]), ...sliders],
+				[
+					h.div(
+						[h.Class("text-[10px] uppercase tracking-wider text-fg-muted")],
+						["Adjust your usage"],
+					),
+					...sliders,
+				],
 			),
 			h.div(
 				[h.Class("grid grid-cols-1 gap-px border-t border-border bg-border md:grid-cols-2")],
 				[
-					breakdownCard(h, { name: "Maple", nameClass: "text-primary", totalClass: "text-primary", estimate: maple }),
-					breakdownCard(h, { name: config.name, nameClass: "text-fg-muted", totalClass: "text-fg", estimate: vendor }),
+					breakdownCard(h, {
+						name: "Maple",
+						nameClass: "text-primary",
+						totalClass: "text-primary",
+						estimate: maple,
+					}),
+					breakdownCard(h, {
+						name: config.name,
+						nameClass: "text-fg-muted",
+						totalClass: "text-fg",
+						estimate: vendor,
+					}),
 				],
 			),
 			...(savings > 0 ? [savingsCallout(h, config.name, savings, savingsPct)] : []),

@@ -2,7 +2,7 @@ import { pickValueField } from "@maple/ui/components/charts/_shared/breakdown-ro
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../ui/eyebrow"
@@ -40,7 +40,10 @@ const tipRow = (
 	h.div(
 		[h.Class("flex items-center justify-between gap-3 py-px tabular-nums")],
 		[
-			hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [glyph, label]),
+			hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [
+				glyph,
+				label,
+			]),
 			h.span(
 				[h.Class("flex items-baseline gap-1.5 truncate")],
 				[
@@ -59,26 +62,29 @@ const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 					icon(h, "ArrowDownIcon", { size: 10, className: TONE_TEXT.crit }),
 					"Dropped here went to",
 				]),
-				...leaverRows(hovered.leavers, hovered.dropped).map((entry) =>
+				...Arr.map(leaverRows(hovered.leavers, hovered.dropped), (entry) =>
 					h.div(
 						[h.Class("my-0.5")],
 						[
-							hstack(h, { gap: "2" },
-								[
-									h.span(
-										[
-											h.Class(
-												cn(
-													typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
-													entry.ended ? "text-muted-foreground" : "text-foreground-soft",
-												),
+							hstack(h, { gap: "2" }, [
+								h.span(
+									[
+										h.Class(
+											cn(
+												typographyClass({
+													truncate: true,
+													className: "min-w-0 flex-1",
+												}),
+												entry.ended
+													? "text-muted-foreground"
+													: "text-foreground-soft",
 											),
-										],
-										[entry.name],
-									),
-									typography(h, { tone: "muted", numeric: true }, [formatPercent(entry.share)]),
-								],
-							),
+										),
+									],
+									[entry.name],
+								),
+								typography(h, { tone: "muted", numeric: true }, [formatPercent(entry.share)]),
+							]),
 							h.div(
 								[h.Class("relative mt-0.5 h-1 rounded-sm bg-foreground/5")],
 								[
@@ -120,7 +126,10 @@ const tooltip = (h: H, hovered: Step, prev: Step, left: number, unit: string | u
 			h.div(
 				[h.Class("mb-1.5 flex h-1.5 gap-px overflow-hidden rounded-sm")],
 				[
-					h.div([h.Class("bg-severity-info"), h.Style({ width: `${(hovered.ofPrev ?? 0) * 100}%` })]),
+					h.div([
+						h.Class("bg-severity-info"),
+						h.Style({ width: `${(hovered.ofPrev ?? 0) * 100}%` }),
+					]),
 					h.div([h.Class("flex-1 bg-severity-error/70")]),
 				],
 			),
@@ -170,12 +179,15 @@ type ColumnContext = Readonly<{
 const groupBars = (h: H, ctx: ColumnContext, step: Step, index: number): Html =>
 	h.div(
 		[h.Class("flex h-full items-end gap-0.5")],
-		step.groups.map((group) => {
+		Arr.map(step.groups, (group) => {
 			const max = ctx.steps[0]?.value ?? 1
 			const height = group.value / max
 			const capH = Math.max(0, (group.prev - group.value) / max)
 			return h.div(
-				[h.Class("relative h-full flex-1"), h.Title(`${group.name} · ${fmtValue(group.value, ctx.unit)}`)],
+				[
+					h.Class("relative h-full flex-1"),
+					h.Title(`${group.name} · ${fmtValue(group.value, ctx.unit)}`),
+				],
 				[
 					...(index > 0 && capH > 0
 						? [
@@ -241,7 +253,10 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 				? [
 						h.span(
 							[h.Class("flex items-center gap-1 text-foreground-soft")],
-							[icon(h, "ArrowDownIcon", { size: 12, className: TONE_TEXT.crit }), formatPercent(lostShare)],
+							[
+								icon(h, "ArrowDownIcon", { size: 12, className: TONE_TEXT.crit }),
+								formatPercent(lostShare),
+							],
 						),
 					]
 				: []),
@@ -261,7 +276,15 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 	const prev = ctx.visible[index - 1]
 	const fade = ctx.hover !== null && ctx.hover !== index ? 0.6 : 1
 	const isLast = index === ctx.steps.length - 1
-	return vstack(h, { shrink: true, attributes: [h.OnMouseEnter(Message.EnteredLegendItem({ key: String(index) })), h.DataAttribute("slot", "funnel-dropoff-step")] },
+	return vstack(
+		h,
+		{
+			shrink: true,
+			attributes: [
+				h.OnMouseEnter(Message.EnteredLegendItem({ key: String(index) })),
+				h.DataAttribute("slot", "funnel-dropoff-step"),
+			],
+		},
 		[
 			h.div(
 				[h.Class("flex flex-col gap-1 leading-none")],
@@ -271,7 +294,9 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 							h.Class(
 								cn(
 									"truncate text-2xs font-medium",
-									step.unnamed ? typographyClass({ tone: "muted", className: "italic" }) : "text-foreground-soft",
+									step.unnamed
+										? typographyClass({ tone: "muted", className: "italic" })
+										: "text-foreground-soft",
 								),
 							),
 							h.Title(step.name),
@@ -310,7 +335,13 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 	)
 }
 
-const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: string; color: string }>, showPercent: boolean, unit: string | undefined): Html => {
+const header = (
+	h: H,
+	steps: ReadonlyArray<Step>,
+	legend: ReadonlyArray<{ name: string; color: string }>,
+	showPercent: boolean,
+	unit: string | undefined,
+): Html => {
 	const first = steps[0]
 	const last = steps[steps.length - 1]
 	return h.div(
@@ -318,8 +349,12 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 		[
 			legend.length > 0
 				? h.div(
-						[h.Class("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground")],
-						legend.map((entry) =>
+						[
+							h.Class(
+								"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground",
+							),
+						],
+						Arr.map(legend, (entry) =>
 							h.span(
 								[h.Class("flex min-w-0 items-center gap-1"), h.Title(entry.name)],
 								[
@@ -334,11 +369,16 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 				? [
 						h.span(
 							[
-								h.Class("flex shrink-0 items-baseline gap-1.5 tabular-nums whitespace-nowrap"),
+								h.Class(
+									"flex shrink-0 items-baseline gap-1.5 tabular-nums whitespace-nowrap",
+								),
 								h.DataAttribute("slot", "funnel-dropoff-summary"),
 							],
 							[
-								h.span([h.Class("text-muted-foreground")], [showPercent ? "Conversion rate" : "Converted"]),
+								h.span(
+									[h.Class("text-muted-foreground")],
+									[showPercent ? "Conversion rate" : "Converted"],
+								),
 								h.span(
 									[h.Class("text-2xs font-semibold text-foreground")],
 									[
@@ -389,7 +429,9 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 	}
 	return h.div(
 		[
-			h.Class(cn("relative flex h-full w-full flex-col overflow-hidden px-1 select-none", inputs.className)),
+			h.Class(
+				cn("relative flex h-full w-full flex-col overflow-hidden px-1 select-none", inputs.className),
+			),
 			h.OnMount(MeasureChartContainer()),
 			h.OnMouseLeave(Message.LeftChart()),
 			h.DataAttribute("slot", "funnel-dropoff"),
@@ -404,10 +446,15 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 						"column-gap": `${STEP_GAP}px`,
 					}),
 				],
-				visible.map((step, index) => column(h, ctx, step, index)),
+				Arr.map(visible, (step, index) => column(h, ctx, step, index)),
 			),
 			...(hidden > 0
-				? [h.div([h.Class("shrink-0 pt-1 text-3xs leading-none text-muted-foreground")], [`+${hidden} more`])]
+				? [
+						h.div(
+							[h.Class("shrink-0 pt-1 text-3xs leading-none text-muted-foreground")],
+							[`+${hidden} more`],
+						),
+					]
 				: []),
 			...(hovered !== undefined && hoveredPrev !== undefined && !isGrouped
 				? [tooltip(h, hovered, hoveredPrev, tipLeft, inputs.unit)]

@@ -1,4 +1,5 @@
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
+import { String as Str } from "effect"
 
 // Framework-free half of `service-map-db.tsx`: colors, labels and an icon KEY per
 // db system. The React module maps keys to icon components; other renderers
@@ -76,7 +77,7 @@ function categoryOf(system: string): DbCategory {
  * category label always agree.
  */
 export function getDbStyle(system: string | undefined): DbStyle {
-	const s = (system ?? "").trim().toLowerCase()
+	const s = Str.toLowerCase(Str.trim(system ?? ""))
 
 	switch (s) {
 		case "postgresql":
@@ -217,5 +218,5 @@ export function resolvePlanetScaleDbStyle(
 
 /** Append an alpha channel to an `oklch(L C H)` color string. */
 export function withAlpha(color: string, alpha: number): string {
-	return color.replace(/\)\s*$/, ` / ${alpha})`)
+	return Str.replace(/\)\s*$/, ` / ${alpha})`)(color)
 }

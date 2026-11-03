@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compile, from, param } from "@maple-dev/effect-orm/clickhouse"
 import { defineDatasource, engine, t } from "@maple-dev/effect-orm/tinybird"
@@ -58,7 +58,7 @@ describe("wrapped utcDateTime64 columns", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ exemplars: ["2026-10-07 10:00:00.123456789", "2026-10-07 10:00:01.000000000"] },
 			])
-			expect(row!.exemplars.map(DateTime.formatIso)).toEqual([
+			expect(Arr.map(row!.exemplars, DateTime.formatIso)).toEqual([
 				"2026-10-07T10:00:00.123Z",
 				"2026-10-07T10:00:01.000Z",
 			])

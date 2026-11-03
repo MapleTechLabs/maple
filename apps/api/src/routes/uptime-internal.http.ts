@@ -1,5 +1,5 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Effect, Option, Redacted, Schema } from "effect"
+import { Effect, Option, Redacted, Schema, Array as Arr } from "effect"
 import { UserId } from "@maple/domain/http"
 import { UptimeIntervalSeconds } from "@maple/domain/primitives"
 import { UptimeCheckReportList, UptimeProbeTarget } from "@maple/domain/uptime"
@@ -52,7 +52,7 @@ export const UptimeInternalRouter = HttpRouter.use((router) =>
 				const rows = yield* service.listProbeTargets()
 				// Check spans go into each org's own traces, sent with its public ingest key.
 				const keysByOrg = yield* ingestKeys.getOrCreateMany(
-					rows.map((row) => row.orgId),
+					Arr.map(rows, (row) => row.orgId),
 					UPTIME_SYSTEM_USER,
 				)
 				const perRow = yield* Effect.forEach(rows, (row) => {

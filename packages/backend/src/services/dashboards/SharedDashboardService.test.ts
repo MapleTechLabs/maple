@@ -23,8 +23,8 @@
  */
 import type { PGlite } from "@electric-sql/pglite"
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect"
-import { DashboardId, OrgId, UserId } from "@maple/domain/http"
+import { ConfigProvider, Effect, Exit, Layer, ManagedRuntime, Schema, String as Str } from "effect"
+import { OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -97,21 +97,25 @@ const makeRuntime = (
 }
 
 const createDashboard = (
-	runtime: ManagedRuntime.ManagedRuntime<never, never>,
+	runtime: ReturnType<typeof makeRuntime>["runtime"],
 	orgId: OrgId = ORG,
 	userId: UserId = USER,
 ) =>
 	runtime.runPromise(
 		Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const dashboard = yield* persistence.create(orgId, userId, {
-				name: "Ops",
-				timeRange: { type: "relative", value: "12h" },
-				widgets: [],
-				variables: [],
-			})
+			const dashboard = yield* persistence.create(
+				orgId,
+				userId,
+				new PortableDashboardDocument({
+					name: "Ops",
+					timeRange: { type: "relative", value: "12h" },
+					widgets: [],
+					variables: [],
+				}),
+			)
 			return dashboard.id
-		}) as Effect.Effect<DashboardId, never, never>,
+		}),
 	)
 
 describe("SharedDashboardService", () => {
@@ -364,7 +368,7 @@ describe("SharedDashboardService isolation", () => {
 	it("does not change the mode of a link revoked between the read and the write", async () => {
 		// Lands a revoke right before upsert's mode UPDATE, after its live-share read.
 		const { runtime, testDb } = makeRuntime("maple-test-share-secret", async (sql, run) => {
-			if (/^update "dashboard_shares" set "mode"/i.test(sql.trimStart())) {
+			if (/^update "dashboard_shares" set "mode"/i.test(Str.trimStart(sql))) {
 				await run("UPDATE dashboard_shares SET revoked_at = now() WHERE revoked_at IS NULL")
 			}
 		})

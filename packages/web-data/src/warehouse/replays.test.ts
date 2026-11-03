@@ -2,7 +2,7 @@
 // request encoding and response decoding run.
 import { describe, expect, it } from "@effect/vitest"
 import { beforeEach, vi } from "vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { HttpApiClient, OpenApi } from "effect/http-api"
 import {
@@ -40,6 +40,10 @@ const page = (data: readonly unknown[], next: string | null = null) => ({
 	next_cursor: next,
 })
 
+/** The URL a fetch was called with, whichever `RequestInfo | URL` form it took. */
+const requestUrl = (input: RequestInfo | URL): string =>
+	typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+
 beforeEach(() => mocks.fetch.mockReset())
 
 describe("replay v2 HTTP adapters", () => {
@@ -58,7 +62,7 @@ describe("replay v2 HTTP adapters", () => {
 				},
 			})
 			const [url, init] = mocks.fetch.mock.calls[0]!
-			expect(String(url)).toBe("https://maple.test/v2/session_replays/search")
+			expect(requestUrl(url)).toBe("https://maple.test/v2/session_replays/search")
 			expect(yield* Effect.promise(() => new Response(init?.body).json())).toMatchObject({
 				start_time: "2026-09-01T00:00:00.000Z",
 				end_time: "2026-09-02T00:00:00.000Z",
@@ -91,7 +95,7 @@ describe("replay v2 HTTP adapters", () => {
 			const result = yield* getReplay({
 				data: { sessionId, windowStart: window.startTime, windowEnd: window.endTime },
 			})
-			const url = new URL(String(mocks.fetch.mock.calls[0]![0]))
+			const url = new URL(requestUrl(mocks.fetch.mock.calls[0]![0]))
 			expect(url.pathname).toBe(`/v2/session_replays/${publicId}`)
 			expect(url.searchParams.get("window_start")).toBe("2026-09-01T00:00:00.000Z")
 			expect(result.data).toMatchObject({
@@ -144,9 +148,9 @@ describe("replay v2 HTTP adapters", () => {
 				.mockResolvedValueOnce(json(page([event], "next-events")))
 				.mockResolvedValueOnce(json(page([{ ...event, seq: 2 }])))
 			const result = yield* getSessionTranscript({ data: { sessionId, windowStart: window.startTime } })
-			expect(result.data.map((event) => event.seq)).toEqual([1, 2])
+			expect(Arr.map(result.data, (event) => event.seq)).toEqual([1, 2])
 			expect(result.data[0]).toMatchObject({ attributes: '{"plan":"pro"}', level: "", netStatus: 0 })
-			const url = new URL(String(mocks.fetch.mock.calls[1]![0]))
+			const url = new URL(requestUrl(mocks.fetch.mock.calls[1]![0]))
 			expect(url.pathname).toBe(`/v2/session_replays/${publicId}/transcript`)
 			expect(url.searchParams.get("cursor")).toBe("next-events")
 			expect(url.searchParams.get("limit")).toBe("1000")
@@ -170,7 +174,7 @@ describe("replay v2 HTTP adapters", () => {
 			expect(result.data).toHaveLength(2)
 			expect(result.data[0].sessionId).toBe(sessionId)
 			const [url, init] = mocks.fetch.mock.calls[1]!
-			expect(String(url)).toBe("https://maple.test/v2/session_replays/for_trace")
+			expect(requestUrl(url)).toBe("https://maple.test/v2/session_replays/for_trace")
 			expect(yield* Effect.promise(() => new Response(init?.body).json())).toMatchObject({
 				trace_id: traceId,
 				cursor: "next-replays",

@@ -3,6 +3,7 @@ import { Drain, type FullSearchStrategy } from "./drain"
 import { LogCluster } from "./log-cluster"
 import { LruCache } from "./lru-cache"
 import { LogMasker, MaskingInstruction } from "./masking"
+import { Array as Arr, String as Str } from "effect"
 
 export interface ExtractedParameter {
 	value: string
@@ -30,7 +31,8 @@ export class TemplateMiner {
 		const cfg = config ?? new TemplateMinerConfig()
 		const paramStr = cfg.maskPrefix + "*" + cfg.maskSuffix
 
-		const maskingInstructions = cfg.maskingInstructions.map(
+		const maskingInstructions = Arr.map(
+			cfg.maskingInstructions,
 			(mi) => new MaskingInstruction(mi.pattern, mi.maskWith),
 		)
 
@@ -74,7 +76,7 @@ export class TemplateMiner {
 	): ExtractedParameter[] | null {
 		let message = logMessage
 		for (const delimiter of this.extraDelimiters) {
-			message = message.split(delimiter).join(" ")
+			message = Arr.join(Str.split(delimiter)(message), " ")
 		}
 
 		const { regex: templateRegex, paramMap } = this.getTemplateParameterExtractionRegex(
@@ -142,18 +144,18 @@ export class TemplateMiner {
 				paramNameCounter++
 				paramMap.set(paramGroupName, maskName)
 
-				const joined = allowedPatterns.join("|")
+				const joined = Arr.join(allowedPatterns, "|")
 				const captureRegex = `(?<${paramGroupName}>${joined})`
 
-				if (templateRegex.includes(searchStr)) {
-					templateRegex = templateRegex.replace(searchStr, captureRegex)
+				if (Str.includes(searchStr)(templateRegex)) {
+					templateRegex = Str.replace(searchStr, captureRegex)(templateRegex)
 				} else {
 					break
 				}
 			}
 		}
 
-		templateRegex = templateRegex.replace(/\\ /g, "\\s+")
+		templateRegex = Str.replace(/\\ /g, "\\s+")(templateRegex)
 		templateRegex = `^${templateRegex}$`
 
 		const result = { regex: templateRegex, paramMap }
@@ -163,7 +165,7 @@ export class TemplateMiner {
 }
 
 function escapeRegex(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")
+	return Str.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")(s)
 }
 
 function simpleHash(s: string): number {

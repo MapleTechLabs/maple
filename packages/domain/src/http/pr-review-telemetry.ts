@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 /**
  * What a review learned from the organization's own telemetry, computed by the service rather than
@@ -107,7 +107,7 @@ export class PrReviewTelemetry extends Schema.Class<PrReviewTelemetry>("PrReview
 
 /** Breaks the reviewer did not disprove: the ones that block a merge when the repository asks. */
 export const openContractBreaks = (telemetry: PrReviewTelemetry | undefined) =>
-	(telemetry?.contractBreaks ?? []).filter((item) => item.dismissed === undefined)
+	Arr.filter(telemetry?.contractBreaks ?? [], (item) => item.dismissed === undefined)
 
 /** One operation before and after the deploy that shipped the pull request. */
 export class PrReviewPostMergeOperation extends Schema.Class<PrReviewPostMergeOperation>(

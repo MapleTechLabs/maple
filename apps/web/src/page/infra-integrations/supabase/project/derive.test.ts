@@ -4,6 +4,7 @@ import type { SupabaseProjectTimeseriesRow } from "../model"
 import { CONNECTIONS_CHART, TRANSACTIONS_CHART } from "./charts"
 import { callerMixText, healthStrip, rollbackShare, trafficShares } from "./derive"
 import { metricChartRows } from "../../kit/metric-charts"
+import { Array as Arr } from "effect"
 
 const mix = (overrides: Partial<SupabaseCallerMix>) =>
 	new SupabaseCallerMix({
@@ -80,7 +81,7 @@ describe("trafficShares", () => {
 				status5xx: 2,
 			}),
 		]
-		expect(trafficShares(buckets).map(({ status, share }) => [status, share])).toEqual([
+		expect(Arr.map(trafficShares(buckets), ({ status, share }) => [status, share])).toEqual([
 			["2xx", 0.9],
 			["3xx", 0],
 			["4xx", 0.06],
@@ -132,7 +133,7 @@ describe("postgres charts", () => {
 			bucket("2026-10-01T10:00:00Z", { maxConnections: 90 }),
 			bucket("2026-10-01T10:05:00Z", { maxConnections: null }),
 		])
-		expect(rows.filter((entry) => entry.attributeValue === "Limit")).toEqual([
+		expect(Arr.filter(rows, (entry) => entry.attributeValue === "Limit")).toEqual([
 			{ bucket: "2026-10-01T10:00:00Z", attributeValue: "Limit", value: 90 },
 		])
 	})
@@ -142,7 +143,10 @@ describe("postgres charts", () => {
 			bucket("2026-10-01T10:00:00Z", { commitsPerSecond: null, rollbacksPerSecond: null }),
 			bucket("2026-10-01T10:05:00Z"),
 		])
-		expect(rows.map((entry) => entry.bucket)).toEqual(["2026-10-01T10:05:00Z", "2026-10-01T10:05:00Z"])
+		expect(Arr.map(rows, (entry) => entry.bucket)).toEqual([
+			"2026-10-01T10:05:00Z",
+			"2026-10-01T10:05:00Z",
+		])
 	})
 
 	test("rollback share over the window, none without transactions", () => {

@@ -12,7 +12,7 @@
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, relative } from "node:path"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
 
@@ -30,7 +30,8 @@ function* walk(dir: string, isExempt: (path: string) => boolean): Generator<stri
 	for (const entry of readdirSync(dir)) {
 		const path = join(dir, entry)
 		if (statSync(path).isDirectory()) yield* walk(path, isExempt)
-		else if (path.endsWith(".ts") && !isExempt(path) && !/\.(test|generated)\.ts$/.test(path)) yield path
+		else if (Str.endsWith(".ts")(path) && !isExempt(path) && !/\.(test|generated)\.ts$/.test(path))
+			yield path
 	}
 }
 
@@ -40,15 +41,15 @@ const TYPE = /^(?:text|font|leading|tracking|truncate|uppercase|tabular|italic)/
 
 /** A class string's pattern key, or undefined when it is not a pattern candidate. */
 const patternOf = (raw: string): string | undefined => {
-	const tokens = [...new Set(raw.trim().split(/\s+/).filter(Boolean))]
-	if (tokens.length < 2 || !tokens.every((token) => UTILITY.test(token))) return undefined
-	const typeOnly = tokens.every((token) => TYPE.test(token.replace(/^(?:[a-z0-9-]+:)*/, "")))
+	const tokens = [...new Set(Arr.filter(Str.split(/\s+/)(Str.trim(raw)), Boolean))]
+	if (tokens.length < 2 || !Arr.every(tokens, (token) => UTILITY.test(token))) return undefined
+	const typeOnly = Arr.every(tokens, (token) => TYPE.test(Str.replace(/^(?:[a-z0-9-]+:)*/, "")(token)))
 	if (tokens.length < 3 && !typeOnly) return undefined
-	return tokens.sort().join(" ")
+	return Arr.join(tokens.sort(), " ")
 }
 
 const filesByPattern = new Map<string, Set<string>>()
-const pageFiles = SOURCES.flatMap(({ dir, exempt }) => [
+const pageFiles = Arr.flatMap(SOURCES, ({ dir, exempt }) => [
 	...walk(dir, (path) => exempt.test(relative(dir, path))),
 ])
 for (const file of pageFiles) {
@@ -62,33 +63,36 @@ for (const file of pageFiles) {
 	}
 }
 const current = new Map(
-	[...filesByPattern]
-		.filter(([, files]) => files.size >= MIN_FILES)
-		.map(([pattern, files]) => [pattern, files.size]),
+	Arr.map(
+		Arr.filter([...filesByPattern], ([, files]) => files.size >= MIN_FILES),
+		([pattern, files]) => [pattern, files.size],
+	),
 )
 
 const Baseline = Schema.Record(Schema.String, Schema.Number)
 const previous = new Map(
-	Object.entries(
+	Rec.toEntries(
 		Schema.decodeUnknownSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8")),
 	),
 )
 
 const hint = (pattern: string) =>
-	pattern.split(" ").every((token) => TYPE.test(token.replace(/^(?:[a-z0-9-]+:)*/, "")))
+	Arr.every(Str.split(" ")(pattern), (token) => TYPE.test(Str.replace(/^(?:[a-z0-9-]+:)*/, "")(token)))
 		? "`typography` (ui/typography)"
-		: pattern.split(" ").includes("flex-col")
+		: Str.split(" ")(pattern).includes("flex-col")
 			? "`vstack` (ui/stack)"
-			: pattern.split(" ").includes("flex") || pattern.split(" ").includes("inline-flex")
+			: Str.split(" ")(pattern).includes("flex") || Str.split(" ")(pattern).includes("inline-flex")
 				? "`hstack` (ui/stack)"
 				: "a kit component that owns this look"
 
-const grew = [...current]
-	.filter(([pattern, count]) => count > (previous.get(pattern) ?? MIN_FILES - 1))
-	.map(([pattern, count]) => ({ pattern, count, was: previous.get(pattern) ?? 0 }))
-const shrank = [...previous]
-	.filter(([pattern, count]) => (current.get(pattern) ?? 0) < count)
-	.map(([pattern, count]) => ({ pattern, count: current.get(pattern) ?? 0, was: count }))
+const grew = Arr.map(
+	Arr.filter([...current], ([pattern, count]) => count > (previous.get(pattern) ?? MIN_FILES - 1)),
+	([pattern, count]) => ({ pattern, count, was: previous.get(pattern) ?? 0 }),
+)
+const shrank = Arr.map(
+	Arr.filter([...previous], ([pattern, count]) => (current.get(pattern) ?? 0) < count),
+	([pattern, count]) => ({ pattern, count: current.get(pattern) ?? 0, was: count }),
+)
 
 const report = (title: string, rows: ReadonlyArray<{ pattern: string; count: number; was: number }>) => {
 	console.error(title)
@@ -118,9 +122,9 @@ if (process.argv.includes("--check")) {
 	}
 	console.log(`ui-class-patterns: OK (${current.size} patterns)`)
 } else {
-	const sorted = Object.fromEntries([...current].sort(([a], [b]) => a.localeCompare(b)))
+	const sorted = Rec.fromEntries([...current].sort(([a], [b]) => Str.localeCompare(b)(a)))
 	writeFileSync(baselineFile, `${encodeJsonTabbed(sorted)}\n`)
-	const total = (counts: Iterable<number>) => [...counts].reduce((sum, count) => sum + count, 0)
+	const total = (counts: Iterable<number>) => Arr.reduce([...counts], 0, (sum, count) => sum + count)
 	console.log(
 		`ui-class-patterns: ${previous.size} -> ${current.size} patterns, ${total(previous.values())} -> ${total(current.values())} file uses`,
 	)

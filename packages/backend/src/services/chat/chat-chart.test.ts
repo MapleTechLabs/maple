@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { ShareChartResponse } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/primitives"
 import { ChatMessage } from "@maple/domain/chat-session"
@@ -31,7 +31,7 @@ const claims = (chartIndex: number, overrides?: { readonly sessionId?: string })
 		),
 	)
 
-const fence = (body: string) => ["```chart", body, "```"].join("\n")
+const fence = (body: string) => Arr.join(["```chart", body, "```"], "\n")
 
 const reply = (text: string, overrides?: { readonly role?: "user" | "assistant"; readonly id?: string }) =>
 	new ChatMessage({
@@ -166,7 +166,7 @@ describe("chatChartResponse", () => {
 		if (chart.kind === "ranked") throw new Error("expected a timeseries chart")
 
 		expect(chart.unit).toBe("duration_ms")
-		expect(chart.series.map((series) => series.name)).toEqual(["checkout-api", "cart-api"])
+		expect(Arr.map(chart.series, (series) => series.name)).toEqual(["checkout-api", "cart-api"])
 		expect(chart.series[0]?.points).toEqual([
 			[Date.parse("2026-09-11T10:00:00Z"), 142],
 			[Date.parse("2026-09-11T10:01:00Z"), 388],
@@ -237,9 +237,7 @@ describe("chatChartResponse", () => {
 					data: [
 						{
 							bucket: "2026-09-11T10:00:00Z",
-							series: Object.fromEntries(
-								Array.from({ length: 200 }, (_, i) => [`svc-${i}`, i]),
-							),
+							series: Rec.fromEntries(Array.from({ length: 200 }, (_, i) => [`svc-${i}`, i])),
 						},
 					],
 				}),

@@ -1,6 +1,6 @@
 import { OrgId, UserId } from "@maple/domain"
 import { BillingCustomer } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, test, vi } from "vitest"
 
 // Clerk mode is read at import; the shell's favorites listener targets `window` at import too.
@@ -63,7 +63,7 @@ const snapshot: ClerkSnapshot = {
 
 const isSplash = (model: Model) => Option.exists(planGateOf(model), (gate) => gate.isSplash)
 const namesOf = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
-	(result.commands ?? []).map(({ name }) => name)
+	Arr.map(result.commands ?? [], ({ name }) => name)
 
 describe("plan gate splash on a slow customer read", () => {
 	test("a first visit holds the splash only until the grace elapses, then the page mounts", () => {
@@ -98,7 +98,9 @@ describe("plan gate splash on a slow customer read", () => {
 		const customer = new BillingCustomer({ id: orgId, subscriptions: [] })
 		const settled = update(elapsed.model, Message.SucceededLoadCustomer({ orgId, customer }))
 		const redirect = Option.flatMap(planGateOf(settled.model), (gate) => gate.redirect)
-		expect(Option.map(redirect, ({ url }) => url.startsWith("/quick-start"))).toEqual(Option.some(true))
+		expect(Option.map(redirect, ({ url }) => Str.startsWith("/quick-start")(url))).toEqual(
+			Option.some(true),
+		)
 	})
 })
 

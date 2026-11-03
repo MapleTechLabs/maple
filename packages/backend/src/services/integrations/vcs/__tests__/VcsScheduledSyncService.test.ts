@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { VcsQueueError, type OrgId, type VcsSyncJob } from "@maple/domain/http"
-import { Effect, Exit, Layer } from "effect"
+import { Effect, Exit, Layer, Schema, Array as Arr } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
@@ -66,10 +66,10 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			assert.strictEqual(result.skipped, 0)
 			assert.strictEqual(sent.length, 2)
 			assert.ok(
-				sent.every((j) => j.kind === "installation-sync" && j.reason === "scheduled"),
+				Arr.every(sent, (j) => j.kind === "installation-sync" && j.reason === "scheduled"),
 				"every job is a scheduled installation-sync",
 			)
-			assert.deepStrictEqual(sent.map((j) => j.externalInstallationId).sort(), ["1", "2"])
+			assert.deepStrictEqual(Arr.map(sent, (j) => j.externalInstallationId).sort(), ["1", "2"])
 		}).pipe(Effect.provide(schedulerLayer(testDb, sent)))
 	})
 
@@ -116,7 +116,7 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			yield* seedInstallation(repo, asOrgId("org_a"), "1")
 			const exit = yield* Effect.exit(svc.runScheduledSync())
 			assert.ok(Exit.isFailure(exit), "the tick surfaces the queue failure")
-			assert.ok(findError(exit) instanceof VcsQueueError)
+			assert.ok(Schema.is(VcsQueueError)(findError(exit)))
 		}).pipe(Effect.provide(schedulerLayer(testDb, sent, { failQueue: true })))
 	})
 })

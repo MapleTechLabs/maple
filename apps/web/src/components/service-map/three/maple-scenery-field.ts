@@ -1,6 +1,7 @@
 import type { FactoryLink } from "./factory-routing"
 import { hash } from "./maple-scenery-sketch"
 import type { District } from "./spatial-layout"
+import { Array as Arr } from "effect"
 
 /** Zone rectangles on the ground plane: centre and half extents. */
 export interface Zone {
@@ -11,21 +12,21 @@ export interface Zone {
 }
 
 export const zonesOf = (districts: ReadonlyArray<District>): Zone[] =>
-	districts.map((d) => ({ cx: d.position[0], cz: d.position[2], hw: d.width / 2, hd: d.depth / 2 }))
+	Arr.map(districts, (d) => ({ cx: d.position[0], cz: d.position[2], hw: d.width / 2, hd: d.depth / 2 }))
 
 /** Signed distance to the nearest zone rectangle: positive outside, negative inside. */
 export function zoneGap(zones: ReadonlyArray<Zone>, x: number, z: number) {
-	return zones.reduce((gap, zone) => {
+	return Arr.reduce(zones, Infinity, (gap, zone) => {
 		const dx = Math.abs(x - zone.cx) - zone.hw,
 			dz = Math.abs(z - zone.cz) - zone.hd
 		const signed = Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dz), 0)
 		return Math.min(gap, signed)
-	}, Infinity)
+	})
 }
 
 /** Belt curves flattened to ground points about every 0.4 units, as [x, z] pairs. */
 export function beltPoints(belts: ReadonlyArray<FactoryLink>) {
-	return belts.flatMap((belt) => {
+	return Arr.flatMap(belts, (belt) => {
 		const count = Math.max(2, Math.ceil(belt.curve.getLength() / 0.4))
 		// getPointAt only accepts t in [0, 1].
 		return Array.from({ length: count + 1 }, (_, i) => {
@@ -38,7 +39,7 @@ export function beltPoints(belts: ReadonlyArray<FactoryLink>) {
 export type BeltPoints = ReturnType<typeof beltPoints>
 
 export const beltGap = (points: BeltPoints, x: number, z: number) =>
-	points.reduce((gap, [px, pz]) => Math.min(gap, Math.hypot(x - px, z - pz)), Infinity)
+	Arr.reduce(points, Infinity, (gap, [px, pz]) => Math.min(gap, Math.hypot(x - px, z - pz)))
 
 /** Smooth value noise in [0, 1], seeded so a layout always grows the same land. */
 export function noise(x: number, z: number) {
@@ -70,7 +71,8 @@ export function soften(values: number[], passes: number, wrap = true) {
 	const index = (i: number) => (wrap ? (i + n) % n : Math.min(Math.max(i, 0), n - 1))
 	return Array.from({ length: passes }).reduce<number[]>(
 		(current) =>
-			current.map(
+			Arr.map(
+				current,
 				(value, i) =>
 					((current[index(i - 1)] ?? value) + value * 2 + (current[index(i + 1)] ?? value)) / 4,
 			),
@@ -98,11 +100,12 @@ const bump = (theta: number, at: number, width: number) => {
 /** The meadow: a blobby outline round the zones, 3 to 7 units out depending on the noise.
  * Polar around the zones' centre, so every zone sits inside however the lobes fall. */
 export function meadowOf(zones: ReadonlyArray<Zone>) {
-	const xs = zones.flatMap((z) => [z.cx - z.hw, z.cx + z.hw]),
-		zs = zones.flatMap((z) => [z.cz - z.hd, z.cz + z.hd])
+	const xs = Arr.flatMap(zones, (z) => [z.cx - z.hw, z.cx + z.hw]),
+		zs = Arr.flatMap(zones, (z) => [z.cz - z.hd, z.cz + z.hd])
 	const cx = (Math.min(...xs) + Math.max(...xs)) / 2,
 		cz = (Math.min(...zs) + Math.max(...zs)) / 2
-	const reach = Math.max(...xs.map((x) => Math.abs(x - cx)), ...zs.map((z) => Math.abs(z - cz))) * 1.5 + 9
+	const reach =
+		Math.max(...Arr.map(xs, (x) => Math.abs(x - cx)), ...Arr.map(zs, (z) => Math.abs(z - cz))) * 1.5 + 9
 	const count = 120
 	const raw = Array.from({ length: count }, (_, k) => {
 		const theta = (k / count) * Math.PI * 2
@@ -118,12 +121,13 @@ export function meadowOf(zones: ReadonlyArray<Zone>) {
 				3.2 * bump(theta, bay, 0.55),
 		)
 		// The furthest point along the ray that is still within this margin of some zone.
-		return Array.from({ length: Math.ceil(reach / 0.25) }, (_, i) => i * 0.25).reduce(
+		return Arr.reduce(
+			Array.from({ length: Math.ceil(reach / 0.25) }, (_, i) => i * 0.25),
+			0,
 			(radius, step) =>
 				zoneGap(zones, cx + Math.cos(theta) * step, cz + Math.sin(theta) * step) <= margin
 					? step
 					: radius,
-			0,
 		)
 	})
 	const radii = soften(raw, 3)
@@ -158,7 +162,7 @@ export function creekPath(zones: ReadonlyArray<Zone>, belts: BeltPoints, meadow:
 	const source = Math.hypot(lake.cx - meadow.cx, lake.cz - meadow.cz)
 	const thetas = Array.from({ length: steps + 1 }, (_, k) => from + ((to - from) * k) / steps)
 	const insets = soften(
-		thetas.map((theta, k) => {
+		Arr.map(thetas, (theta, k) => {
 			const meander = 1.5 + Math.sin(theta * 9 + 1.3) * 0.45 + (fbm(theta * 2.3, 4.1) - 0.5) * 1.2
 			return meander - 4.5 * (1 - smoothstep(0, 0.14, (steps - k) / steps))
 		}),
@@ -167,7 +171,7 @@ export function creekPath(zones: ReadonlyArray<Zone>, belts: BeltPoints, meadow:
 	)
 	const safe = (x: number, z: number) =>
 		zoneGap(zones, x, z) >= 0.9 + CREEK_WIDEST && beltGap(belts, x, z) >= 0.75 + CREEK_WIDEST
-	const pushed = thetas.map((theta, k) => {
+	const pushed = Arr.map(thetas, (theta, k) => {
 		// Near its source the creek leaves the lake's centre and eases out to the edge track.
 		const track = meadow.radiusAt(theta) - (insets[k] ?? 0)
 		const start = source + (track - source) * smoothstep(0, 0.16, k / steps)
@@ -178,8 +182,9 @@ export function creekPath(zones: ReadonlyArray<Zone>, belts: BeltPoints, meadow:
 		)
 	})
 	// Soften the pushes, then keep whichever radius is further out so the clearance still holds.
-	const radii = soften(pushed, 3, false).map((r, k) => Math.max(r, pushed[k] ?? r))
-	const line = thetas.map(
+	const radii = Arr.map(soften(pushed, 3, false), (r, k) => Math.max(r, pushed[k] ?? r))
+	const line = Arr.map(
+		thetas,
 		(theta, k) =>
 			[
 				meadow.cx + Math.cos(theta) * (radii[k] ?? 0),
@@ -270,7 +275,7 @@ export function blob(
 		2,
 	)
 	// Pull in any part that would overhang the shape below, so no step floats.
-	const radii = soft.map((r, k) => {
+	const radii = Arr.map(soft, (r, k) => {
 		const theta = (k / count) * Math.PI * 2
 		const fits = (q: number) =>
 			!within || within.rim(cx + Math.cos(theta) * q, cz + Math.sin(theta) * q) >= 0.03
@@ -283,7 +288,8 @@ export function blob(
 			b = radii[(i + 1) % count] ?? a
 		return a + (b - a) * (f - Math.floor(f))
 	}
-	const outline = radii.map(
+	const outline = Arr.map(
+		radii,
 		(r, k) =>
 			[
 				cx + Math.cos((k / count) * Math.PI * 2) * r,
@@ -316,7 +322,7 @@ export function seat(
 ) {
 	const at = (r: number) => [meadow.cx + Math.cos(theta) * r, meadow.cz + Math.sin(theta) * r] as const
 	const radii = Array.from({ length: Math.ceil((meadow.reach + 10) / 0.2) }, (_, i) => i * 0.2)
-	const past = radii.reduce((last, r) => (zoneGap(zones, ...at(r)) < radius + 0.9 ? r : last), 0)
+	const past = Arr.reduce(radii, 0, (last, r) => (zoneGap(zones, ...at(r)) < radius + 0.9 ? r : last))
 	const found = radii.find(
 		(r) => r > past && zoneGap(zones, ...at(r)) >= radius + 1 && beltGap(belts, ...at(r)) >= radius + 0.9,
 	)

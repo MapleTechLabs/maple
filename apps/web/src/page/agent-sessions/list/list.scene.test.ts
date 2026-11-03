@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -32,7 +32,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const session = (sessionId: string, overrides: Partial<SessionRow> = {}): SessionRow => ({
 	sessionId,
@@ -87,7 +87,7 @@ const loaded = (rows: ReadonlyArray<SessionRow>, search: Model["search"] = {}): 
 		}),
 		Message.CompletedFetchFacets({ key: base.facets.key ?? "", result: Result.succeed(facets) }),
 	]
-	return steps.reduce((model, message) => pageUpdate(model, message).model, base)
+	return Arr.reduce(steps, base, (model, message) => pageUpdate(model, message).model)
 }
 
 /** Loaded, painted, its details already asked for. */
@@ -186,7 +186,11 @@ describe("agent sessions list", () => {
 		const reached = pageUpdate(loaded(rows), Message.ReachedListEnd()).model
 		const key = reached.morePages.filterKey
 		const more = Array.from({ length: 50 }, (_, index) => session(`more_${index}`))
-		const answer = Message.CompletedFetchNextPage({ key, offset: 50, result: Result.succeed({ data: more, ranked: 50 }) })
+		const answer = Message.CompletedFetchNextPage({
+			key,
+			offset: 50,
+			result: Result.succeed({ data: more, ranked: 50 }),
+		})
 		const once = pageUpdate(reached, answer).model
 		const twice = pageUpdate(once, answer).model
 		expect(pageRows(twice, key)).toHaveLength(100)
@@ -297,7 +301,9 @@ describe("agent sessions list", () => {
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
 			Mount.resolve(MountRowClicks, Message.ClickedSessionRow({ url: "/agent-sessions/conv_a" })),
-			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/agent-sessions/conv_a", isReplace: false })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({ url: "/agent-sessions/conv_a", isReplace: false }),
+			),
 		)
 	})
 })

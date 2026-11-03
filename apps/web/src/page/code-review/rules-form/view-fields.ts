@@ -11,6 +11,7 @@ import { ALL_CATEGORIES } from "./state"
 import { RULES_COPY } from "./copy"
 import { typography } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The form's text fields and lenses (`ReviewRulesForm`).
 
@@ -145,7 +146,8 @@ export const lenses = (h: H, model: Model): Html => {
 								label(
 									h,
 									{
-										className: "flex text-xs font-normal text-muted-foreground sm:text-xs",
+										className:
+											"flex text-xs font-normal text-muted-foreground sm:text-xs",
 										attributes: [h.Id(`${model.id}-inherit-lenses-label`)],
 									},
 									[
@@ -166,12 +168,13 @@ export const lenses = (h: H, model: Model): Html => {
 			),
 			h.div(
 				[h.Class("grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3")],
-				ALL_CATEGORIES.map((category) => {
+				Arr.map(ALL_CATEGORIES, (category) => {
 					const inputId = `${model.id}-lens-${category}`
 					return label(
 						h,
 						{
-							className: "flex text-sm font-normal has-disabled:text-muted-foreground sm:text-sm",
+							className:
+								"flex text-sm font-normal has-disabled:text-muted-foreground sm:text-sm",
 							attributes: [h.Key(category), h.Id(Checkbox.labelId(inputId))],
 						},
 						[

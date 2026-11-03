@@ -19,7 +19,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
-import { Stream } from "effect"
+import { Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -65,7 +65,7 @@ const tickAnchor = (index: number, ticks: ReadonlyArray<AxisTick>): string => {
 }
 
 const axisGrid = (h: H, ticks: ReadonlyArray<AxisTick>): ReadonlyArray<Html> =>
-	ticks.map((tick) =>
+	Arr.map(ticks, (tick) =>
 		h.span(
 			[
 				h.Key(String(tick.fraction)),
@@ -78,18 +78,21 @@ const axisGrid = (h: H, ticks: ReadonlyArray<AxisTick>): ReadonlyArray<Html> =>
 	)
 
 const tokenCell = (h: H, tokens: SessionTokenTotals | undefined, locale: string, isErrored = false): Html => {
-	const drawn = tokens === undefined ? [] : TOKEN_BUCKETS.filter((bucket) => tokens[bucket.key] > 0)
+	const drawn = tokens === undefined ? [] : Arr.filter(TOKEN_BUCKETS, (bucket) => tokens[bucket.key] > 0)
 	if (tokens === undefined || tokens.total === 0 || drawn.length === 0)
 		return h.span([h.Class(cn(COL_TOKENS, isErrored && "text-severity-error"))], [EMPTY_VALUE])
-	const title = [
-		`${formatNumber(tokens.total)} tokens`,
-		...drawn.map((bucket) => `${bucket.label}: ${tokens[bucket.key].toLocaleString(locale)}`),
-	].join("\n")
+	const title = Arr.join(
+		[
+			`${formatNumber(tokens.total)} tokens`,
+			...Arr.map(drawn, (bucket) => `${bucket.label}: ${tokens[bucket.key].toLocaleString(locale)}`),
+		],
+		"\n",
+	)
 	return h.span(
 		[h.Class(COL_TOKENS_SPLIT), h.Title(title)],
 		[
 			segmentedBar(h, {
-				segments: drawn.map((bucket) => ({
+				segments: Arr.map(drawn, (bucket) => ({
 					key: bucket.key,
 					value: tokens[bucket.key],
 					className: bucket.fill,
@@ -399,7 +402,7 @@ const ruler = (
 					h.span(
 						[h.Class(cn(COL_AXIS, "flex items-center"))],
 						[
-							...axis.ticks.map((tick, index) =>
+							...Arr.map(axis.ticks, (tick, index) =>
 								h.span(
 									[
 										h.Key(String(tick.fraction)),
@@ -414,7 +417,7 @@ const ruler = (
 									[tick.label],
 								),
 							),
-							...gapStarts.map((gap) =>
+							...Arr.map(gapStarts, (gap) =>
 								h.span(
 									[
 										h.Key(gap.id),
@@ -454,8 +457,8 @@ const ruler = (
 export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 	const { turns, summary } = data
 	const detect = detectLookup(model.detections)
-	const spans = turns.flatMap((turn) => turn.spans)
-	const spansById = new Map(spans.map((span) => [span.spanId, span]))
+	const spans = Arr.flatMap(turns, (turn) => turn.spans)
+	const spansById = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const gaps = model.options.collapseIdle ? summary.idleGaps : []
 	const axis = buildSessionAxis({ startMs: summary.startMs, endMs: summary.endMs, collapsedGaps: gaps })
 	const rows = waterfallRowsOf(model, data)
@@ -479,8 +482,8 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 				[
 					...virtualAttributes(
 						h,
-						rows.map((row) => row.key),
-						rows.map(rowHeight),
+						Arr.map(rows, (row) => row.key),
+						Arr.map(rows, rowHeight),
 						model.scroll ?? undefined,
 					),
 					h.OnMount(VirtualizeWaterfall()),
@@ -490,7 +493,7 @@ export const waterfall = (h: H, model: Model, data: SessionData): Html => {
 						? emptyMessage(h, {}, ["No spans match this filter"])
 						: h.div(
 								[h.Class("relative w-full"), h.Style({ height: `${totalSize}px` })],
-								items.flatMap((item) => {
+								Arr.flatMap(items, (item) => {
 									const row = rows[item.index]
 									if (row === undefined) return []
 									return [

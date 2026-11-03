@@ -29,6 +29,7 @@ import {
 import { Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { Array as Arr } from "effect"
 
 // The Findings tab, as Linear lists issues: severity tabs, a filter toolbar, then one dense line
 // per finding under collapsible severity groups.
@@ -93,7 +94,7 @@ const toolbar = (
 			selectSubmodel(
 				h,
 				model.statusSelect,
-				STATUS_TABS.map((tab) =>
+				Arr.map(STATUS_TABS, (tab) =>
 					item(tab, `${STATUS_TAB_LABEL[tab]} (${countForTab(findings, tab)})`),
 				),
 				"Status",
@@ -109,7 +110,7 @@ const toolbar = (
 							model.targetSelect,
 							[
 								item("all", "All targets"),
-								...targets.map((target) => item(target.id, target.repository)),
+								...Arr.map(targets, (target) => item(target.id, target.repository)),
 							],
 							"Target",
 							targetLabel,
@@ -246,7 +247,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 							[h.Class("p-4")],
 							[
 								// Clearing keeps the status, so the status alone is not a filter.
-								Object.keys(model.findingsSearch).some((key) => key !== "status")
+								Arr.some(Object.keys(model.findingsSearch), (key) => key !== "status")
 									? filteredEmpty(h, {
 											noun: "findings",
 											className: emptyFrameClass("dashed"),
@@ -261,7 +262,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 							],
 						)
 					: findingsList(h, model, rows, targets, clock)
-	const shown = rows.filter((finding) => finding.verdict !== "rejected").length
+	const shown = Arr.filter(rows, (finding) => finding.verdict !== "rejected").length
 	return [
 		findingsIntro(h),
 		borderedBox(

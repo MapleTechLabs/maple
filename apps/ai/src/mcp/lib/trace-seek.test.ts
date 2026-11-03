@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { MAX_RAW_SQL_LENGTH } from "@maple/domain/raw-sql"
 import { withTraceIndexSeek } from "./trace-seek"
+import { String as Str } from "effect"
 
 const ID = "2ea98b74a6330960b2828c8e2edfee38"
 const SEEK = `(ServiceName, toStartOfFiveMinutes(Timestamp), TraceId) IN (SELECT ServiceName, Bucket, TraceId FROM trace_index WHERE $__orgFilter AND TraceId IN ('${ID}'))`
@@ -58,7 +59,7 @@ describe("withTraceIndexSeek", () => {
 
 	it("leaves a statement alone when the seek would push it past the length limit", () => {
 		const base = `SELECT SpanName FROM traces WHERE $__orgFilter AND TraceId = '${ID}' AND SpanName != ''`
-		const sql = `${base}${" ".repeat(MAX_RAW_SQL_LENGTH - base.length - 10)}`
+		const sql = `${base}${Str.repeat(MAX_RAW_SQL_LENGTH - base.length - 10)(" ")}`
 		expect(withTraceIndexSeek(sql)).toBeUndefined()
 	})
 })

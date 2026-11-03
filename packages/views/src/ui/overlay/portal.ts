@@ -18,7 +18,8 @@ const INERT_MARKER = "data-base-ui-inert"
 const ancestry = (node: Node | null): ReadonlyArray<Node> =>
 	node === null ? [] : [node, ...ancestry(node.parentNode)]
 
-const keepSet = (targets: ReadonlyArray<Element>): ReadonlySet<Node> => new Set(targets.flatMap(ancestry))
+const keepSet = (targets: ReadonlyArray<Element>): ReadonlySet<Node> =>
+	new Set(Array.flatMap(targets, ancestry))
 
 /** A portal still in the page, about to move to `<body>`: neither outside nor kept. */
 const isLeavingPortal = (element: Element) =>
@@ -31,7 +32,7 @@ const outsideOf = (targets: ReadonlyArray<Element>): ReadonlyArray<Element> => {
 	const walk = (parent: Element): ReadonlyArray<Element> =>
 		stop.has(parent)
 			? []
-			: Array.fromIterable(parent.children).flatMap((child) =>
+			: Array.flatMap(Array.fromIterable(parent.children), (child) =>
 					child.tagName === "SCRIPT" || isLeavingPortal(child)
 						? []
 						: keep.has(child)
@@ -42,10 +43,13 @@ const outsideOf = (targets: ReadonlyArray<Element>): ReadonlyArray<Element> => {
 }
 
 const setUntil = (elements: ReadonlyArray<Element>, name: string, value: string) =>
-	Array.filter(elements, (element) => !element.hasAttribute(name)).map((element) => {
-		element.setAttribute(name, value)
-		return { element, name }
-	})
+	Array.map(
+		Array.filter(elements, (element) => !element.hasAttribute(name)),
+		(element) => {
+			element.setAttribute(name, value)
+			return { element, name }
+		},
+	)
 
 /**
  * Base UI's `markOthers` (floating-ui-react/utils/markOthers.mjs): what lies outside the popup
@@ -64,7 +68,7 @@ export const markOutside = (
 				const kept = [
 					element,
 					...Array.getSomes(
-						(options.keep ?? []).map((s) => Option.fromNullishOr(document.querySelector(s))),
+						Array.map(options.keep ?? [], (s) => Option.fromNullishOr(document.querySelector(s))),
 					),
 				]
 				// A live region in a portal still on its way to <body> will not be under the marked page.
@@ -84,7 +88,9 @@ export const markOutside = (
 			}),
 		),
 		(changed) =>
-			Effect.sync(() => changed.forEach(({ element: other, name }) => other.removeAttribute(name))),
+			Effect.sync(() =>
+				Array.forEach(changed, ({ element: other, name }) => other.removeAttribute(name)),
+			),
 	).pipe(Effect.asVoid)
 
 /**

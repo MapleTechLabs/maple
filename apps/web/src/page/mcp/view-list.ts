@@ -28,6 +28,7 @@ import {
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `/mcp`: every service that answers MCP requests, one row each.
 
@@ -141,9 +142,9 @@ export const listBody = <M>(
 	rows: ReadonlyArray<McpServerRow>,
 	options: ListBodyOptions<M>,
 ): Html => {
-	const maxRate = Math.max(...rows.map(errorRate), 0.0001)
-	const calls = rows.reduce((sum, row) => sum + row.calls, 0)
-	const errors = rows.reduce((sum, row) => sum + row.errors, 0)
+	const maxRate = Math.max(...Arr.map(rows, errorRate), 0.0001)
+	const calls = Arr.reduce(rows, 0, (sum, row) => sum + row.calls)
+	const errors = Arr.reduce(rows, 0, (sum, row) => sum + row.errors)
 	return h.section(
 		[h.AriaLabel("Servers"), h.Class("@container/panel min-w-0 border-t border-border px-6 pt-5 pb-6")],
 		[
@@ -188,7 +189,7 @@ export const listBody = <M>(
 				]),
 				toolTableBody(
 					h,
-					rows.map((row) => serverRow(h, row, maxRate, options)),
+					Arr.map(rows, (row) => serverRow(h, row, maxRate, options)),
 				),
 			]),
 			toolTableFooter(

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 // A product-event funnel definition, as every surface that stores one keeps
 // it: the /analytics URL, a dashboard funnel widget, an MCP tool call, and the
@@ -161,8 +161,8 @@ export const funnelWidgetRows = (
 	steps: ReadonlyArray<FunnelStep>,
 	rows: ReadonlyArray<{ readonly step: number; readonly count: number }>,
 ): ReadonlyArray<FunnelWidgetRow> => {
-	const countByStep = new Map(rows.map((row) => [row.step, row.count]))
-	return steps.map((step, index) => ({
+	const countByStep = new Map(Arr.map(rows, (row) => [row.step, row.count]))
+	return Arr.map(steps, (step, index) => ({
 		name: funnelStepLabel(step),
 		value: countByStep.get(index + 1) ?? 0,
 	}))
@@ -191,12 +191,14 @@ export const funnelWidgetBreakdownRows = (
 	}
 	// Rank by step-1 count, descending, so the first group is the biggest.
 	// Ties keep arrival order.
-	const ranked = groups
-		.map((group, index) => ({ group, index, first: countByGroupStep.get(group)?.get(1) ?? 0 }))
-		.sort((a, b) => b.first - a.first || a.index - b.index)
-	const labels = steps.map(funnelStepLabel)
-	return ranked.flatMap(({ group }) =>
-		labels.map((name, index) => ({
+	const ranked = Arr.map(groups, (group, index) => ({
+		group,
+		index,
+		first: countByGroupStep.get(group)?.get(1) ?? 0,
+	})).sort((a, b) => b.first - a.first || a.index - b.index)
+	const labels = Arr.map(steps, funnelStepLabel)
+	return Arr.flatMap(ranked, ({ group }) =>
+		Arr.map(labels, (name, index) => ({
 			name,
 			value: countByGroupStep.get(group)?.get(index + 1) ?? 0,
 			group: group === "" ? FUNNEL_EMPTY_GROUP_LABEL : group,
@@ -256,7 +258,7 @@ export const funnelWidgetRowsWithDetails = (
 	rows: ReadonlyArray<{ readonly step: number; readonly count: number }>,
 	details: ReadonlyMap<number, FunnelStepDetails>,
 ): ReadonlyArray<FunnelWidgetRow> =>
-	funnelWidgetRows(steps, rows).map((row, index) => ({ ...row, ...details.get(index + 1) }))
+	Arr.map(funnelWidgetRows(steps, rows), (row, index) => ({ ...row, ...details.get(index + 1) }))
 
 // Paths
 //

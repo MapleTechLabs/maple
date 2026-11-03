@@ -14,6 +14,7 @@
  */
 import type { ShareOgCardTile } from "@maple/domain/http"
 import type { RedactedDashboard, RedactedWidget } from "@maple/widgets/dashboard"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Tiles the card draws, at most.
@@ -39,11 +40,11 @@ const MAX_TITLE_LENGTH = 120
 const MAX_DESCRIPTION_LENGTH = 150
 
 const truncate = (value: string, max: number): string =>
-	value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`
+	value.length <= max ? value : `${Str.trimEnd(Str.slice(0, max - 1)(value))}…`
 
 const clean = (value: unknown): string | undefined => {
 	if (typeof value !== "string") return undefined
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	return trimmed.length === 0 ? undefined : trimmed
 }
 
@@ -56,8 +57,8 @@ const findWidget = (dashboard: RedactedDashboard, widgetId: string | undefined) 
 const pluralize = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`
 
 const sections = (dashboard: RedactedDashboard): ReadonlyArray<{ id: string; title?: string }> =>
-	Array.isArray(dashboard.sections)
-		? dashboard.sections.flatMap((section) => {
+	Arr.isArray(dashboard.sections)
+		? Arr.flatMap(dashboard.sections, (section) => {
 				const record = section as { readonly id?: unknown; readonly title?: unknown }
 				return typeof record.id === "string" ? [{ id: record.id, title: clean(record.title) }] : []
 			})
@@ -94,7 +95,7 @@ export const ogSubtitle = (dashboard: RedactedDashboard, widgetId: string | unde
 	const sectionCount = sections(dashboard).length
 	const parts = ["Shared dashboard", pluralize(dashboard.widgets.length, "widget")]
 	if (sectionCount > 0) parts.push(pluralize(sectionCount, "section"))
-	return parts.join(" · ")
+	return Arr.join(parts, " · ")
 }
 
 /** The board's description, for the card's own second line. */
@@ -151,7 +152,7 @@ const paneKey = (widget: RedactedWidget): string => `${widget.sectionId ?? ""}::
  * defaulted: a tile at 0,0 with no size is worse than one tile fewer.
  */
 export const ogTiles = (dashboard: RedactedDashboard): ReadonlyArray<ShareOgCardTile> => {
-	const sectionTitles = new Map(sections(dashboard).map((section) => [section.id, section.title]))
+	const sectionTitles = new Map(Arr.map(sections(dashboard), (section) => [section.id, section.title]))
 	const panes = new Map<string, Array<RedactedWidget>>()
 	// First tab id seen per section — the one the section opens on.
 	const openTab = new Map<string, string>()

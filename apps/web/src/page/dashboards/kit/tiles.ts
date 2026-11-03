@@ -4,7 +4,7 @@ import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { dataSourceTransform } from "@maple/widgets/dashboard"
-import { Schema } from "effect"
+import { Formatter, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
 import type { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -13,7 +13,15 @@ import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import { sortButton, table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	sortButton,
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import type { WidgetDataState } from "./data-state"
 import { renderMarkdown } from "./markdown"
 import { widgetEmptyState, widgetFrame, widgetShell } from "./tile-shell"
@@ -72,17 +80,25 @@ export type TileContext<M> = Readonly<{
 
 // VALUES
 
+/** A cell as text: primitives as themselves, objects and arrays as JSON-like text. */
+const cellText = (value: unknown): string =>
+	typeof value === "string"
+		? value
+		: typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
+			? String(value)
+			: Formatter.format(value)
+
 /** `formatCellValue`: units format numbers; unitless cells stay raw. */
 export const formatCell = (value: unknown, unit?: string): string => {
 	if (value === null || value === undefined) return EMPTY_VALUE
 	const num = Number(value)
-	if (Number.isNaN(num) || unit === undefined || unit === "") return String(value)
+	if (Number.isNaN(num) || unit === undefined || unit === "") return cellText(value)
 	return formatValueByUnit(num, unit)
 }
 
 const isNumericCell = (value: unknown): boolean =>
 	typeof value === "number" ||
-	(typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)))
+	(typeof value === "string" && Str.trim(value) !== "" && Number.isFinite(Number(value)))
 
 const COLUMN_VISIBILITY = [
 	"",
@@ -118,10 +134,11 @@ const columnsOf = (
 	const base =
 		configured.length > 0
 			? configured
-			: Object.keys(rows[0] ?? {})
-					.filter((key) => keep(rows[0]?.[key]))
-					.map((key): Column => ({ field: key, header: key }))
-	return base.filter((column) => column.hidden !== true)
+			: Arr.map(
+					Arr.filter(Rec.keys(rows[0] ?? {}), (key) => keep(rows[0]?.[key])),
+					(key): Column => ({ field: key, header: key }),
+				)
+	return Arr.filter(base, (column) => column.hidden !== true)
 }
 
 /** `compareValues` (use-table-sort.ts). */
@@ -135,7 +152,7 @@ const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
 		const cmp = an < bn ? -1 : an > bn ? 1 : 0
 		return dir === "asc" ? cmp : -cmp
 	}
-	return dir === "asc" ? String(a).localeCompare(String(b)) : String(b).localeCompare(String(a))
+	return dir === "asc" ? Str.localeCompare(String(b))(String(a)) : Str.localeCompare(String(a))(String(b))
 }
 
 // TILES
@@ -172,7 +189,7 @@ const tableTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 		if (rows.length === 0) return [widgetEmptyState(h)]
 		const columns = columnsOf(widget, rows, () => true)
 		const sort = ctx.tableSort
-		const textFields = Object.keys(rows[0] ?? {}).filter((field) => !isNumericCell(rows[0]?.[field]))
+		const textFields = Arr.filter(Rec.keys(rows[0] ?? {}), (field) => !isNumericCell(rows[0]?.[field]))
 		const sortKey = sort.key
 		const sorted =
 			sortKey === null ? rows : rows.toSorted((a, b) => compareValues(a[sortKey], b[sortKey], sort.dir))
@@ -181,7 +198,7 @@ const tableTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 				tableHeader(h, [
 					tableRow(
 						h,
-						columns.map((column, index) =>
+						Arr.map(columns, (column, index) =>
 							tableHead(
 								h,
 								[sortableHeader(h, ctx, column, textFields.includes(column.field))],
@@ -202,10 +219,10 @@ const tableTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 				]),
 				tableBody(
 					h,
-					sorted.map((row) =>
+					Arr.map(sorted, (row) =>
 						tableRow(
 							h,
-							columns.map((column, index) => {
+							Arr.map(columns, (column, index) => {
 								const value = row[column.field]
 								const color = thresholdColor(value, column.thresholds)
 								return tableCell(
@@ -235,22 +252,22 @@ const KNOWN_MAP_FIELDS = ["rootSpan.attributes", "logAttributes", "resourceAttri
 /** One property of an untyped row value, by name. */
 const property = (value: unknown, key: string): unknown =>
 	value !== null && typeof value === "object"
-		? Object.entries(value).find(([name]) => name === key)?.[1]
+		? Rec.toEntries(value).find(([name]) => name === key)?.[1]
 		: undefined
 
 const nested = (value: unknown, parts: ReadonlyArray<string>): unknown =>
 	parts.reduce<unknown>((current, part) => property(current, part), value)
 
 const resolveFieldPath = (row: Row, path: string): unknown => {
-	const mapField = KNOWN_MAP_FIELDS.find((field) => path.startsWith(`${field}.`))
-	if (mapField === undefined) return nested(row, path.split("."))
-	const map = nested(row, mapField.split("."))
-	return property(map, path.slice(mapField.length + 1))
+	const mapField = KNOWN_MAP_FIELDS.find((field) => Str.startsWith(`${field}.`)(path))
+	if (mapField === undefined) return nested(row, Str.split(".")(path))
+	const map = nested(row, Str.split(".")(mapField))
+	return property(map, Str.slice(mapField.length + 1)(path))
 }
 
 const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row): Html => {
 	const value = resolveFieldPath(row, column.field)
-	const display = Array.isArray(value) ? value.join(", ") : formatCell(value, column.unit)
+	const display = Arr.isArray(value) ? value.join(", ") : formatCell(value, column.unit)
 	const className = cn("text-xs", columnVisibilityClass(index))
 	const content: Html | string =
 		column.field === "traceId" && typeof value === "string" && value !== ""
@@ -298,14 +315,14 @@ const listTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Ht
 			widget,
 			rows,
 			(value) =>
-				value === null || value === undefined || typeof value !== "object" || Array.isArray(value),
+				value === null || value === undefined || typeof value !== "object" || Arr.isArray(value),
 		)
 		return [
 			table(h, {}, [
 				tableHeader(h, [
 					tableRow(
 						h,
-						columns.map((column, index) =>
+						Arr.map(columns, (column, index) =>
 							tableHead(h, [column.header], cn("text-xs", columnVisibilityClass(index)), [
 								cellStyle(h, column),
 							]),
@@ -314,10 +331,10 @@ const listTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Ht
 				]),
 				tableBody(
 					h,
-					rows.map((row) =>
+					Arr.map(rows, (row) =>
 						tableRow(
 							h,
-							columns.map((column, index) => listCell(h, column, index, row)),
+							Arr.map(columns, (column, index) => listCell(h, column, index, row)),
 						),
 					),
 				),
@@ -342,7 +359,7 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 			contentClassName: "flex-1 min-h-0 overflow-auto p-2 @min-[220px]/widget:p-3",
 		},
 		[
-			content.trim() === ""
+			Str.trim(content) === ""
 				? h.div(
 						[h.Class("text-xs text-muted-foreground italic")],
 						["Empty note. Edit to add markdown content."],

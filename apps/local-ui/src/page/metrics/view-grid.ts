@@ -25,6 +25,7 @@ import { MeasureGrid } from "./command"
 import { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The Metrics page's grid of metric preview cards.
 
@@ -164,7 +165,7 @@ export const metricGrid = (h: H, inputs: GridInputs): Html => {
 		[
 			h.div(
 				[h.Class("relative m-4"), h.Style({ height: `${rowCount * CARD_ROW_HEIGHT}px` })],
-				visibleRows(rowCount, inputs.viewport).map((index) =>
+				Arr.map(visibleRows(rowCount, inputs.viewport), (index) =>
 					h.div(
 						[
 							h.Key(`row-${index}`),
@@ -174,9 +175,9 @@ export const metricGrid = (h: H, inputs: GridInputs): Html => {
 								"grid-template-columns": `repeat(${columns}, minmax(0, 1fr))`,
 							}),
 						],
-						inputs.entries
-							.slice(index * columns, index * columns + columns)
-							.map((entry) => previewCard(h, inputs, entry)),
+						Arr.map(inputs.entries.slice(index * columns, index * columns + columns), (entry) =>
+							previewCard(h, inputs, entry),
+						),
 					),
 				),
 			),

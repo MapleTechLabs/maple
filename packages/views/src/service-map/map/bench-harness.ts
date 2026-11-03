@@ -1,4 +1,4 @@
-import { Effect, Queue, Stream } from "effect"
+import { Effect, Queue, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { readViewport } from "../xyflow/attach"
@@ -31,7 +31,7 @@ const isReady = (root: Element) => {
 	return (
 		root.querySelector('[data-elk-status="ready"]') !== null &&
 		nodes.length > 0 &&
-		Array.from(nodes).every((node) => node.style.visibility === "visible") &&
+		Arr.every(Array.from(nodes), (node) => node.style.visibility === "visible") &&
 		root.querySelectorAll(".react-flow__edge").length > 0
 	)
 }
@@ -94,9 +94,13 @@ const runFrames = (
 				fps: samples.length / (elapsed / 1000),
 				frameP50: percentile(sorted, 50),
 				frameP95: percentile(sorted, 95),
-				droppedFrames: samples.filter((d) => d > native * 1.5).length,
+				droppedFrames: Arr.filter(samples, (d) => d > native * 1.5).length,
 				longTasks: longTasks.length,
-				totalBlockingMs: longTasks.reduce((sum, entry) => sum + Math.max(0, entry.duration - 50), 0),
+				totalBlockingMs: Arr.reduce(
+					longTasks,
+					0,
+					(sum, entry) => sum + Math.max(0, entry.duration - 50),
+				),
 			})
 		}
 		requestAnimationFrame(tick)

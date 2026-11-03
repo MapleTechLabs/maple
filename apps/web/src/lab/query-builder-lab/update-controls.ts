@@ -7,6 +7,7 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Select from "@maple/views/ui/select"
 import { parseMetricSelection } from "./derive"
 import { Message, type Model } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 // The lab's selects (`<field>:<query id>`) and group-by comboboxes, each kept by id.
 
@@ -18,7 +19,7 @@ export const updateQuery = (
 	updater: (query: QueryDraft) => QueryDraft,
 ): Model => ({
 	...model,
-	queries: model.queries.map((query) => (query.id === queryId ? updater(query) : query)),
+	queries: Arr.map(model.queries, (query) => (query.id === queryId ? updater(query) : query)),
 })
 
 /** A select's value as the edit its `onValueChange` makes. */
@@ -59,7 +60,7 @@ export const selectStep = (model: Model, id: string, message: Select.Message): R
 		Message.GotSelectMessage({ id, message: inner }),
 	)
 	if (next.outMessage === undefined) return { model: lifted, commands }
-	const [field = "", queryId = ""] = id.split(":")
+	const [field, queryId = ""] = Str.split(":")(id)
 	const edit = selectEdit(field, next.outMessage.value)
 	return { model: edit === null ? lifted : updateQuery(lifted, queryId, edit), commands }
 }

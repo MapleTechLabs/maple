@@ -1,11 +1,17 @@
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Submodel } from "foldkit"
 import { button } from "@maple/views/ui/button"
 import { menuPopup } from "@maple/views/ui/dropdown-menu"
 import { pageLayoutRoot } from "@maple/views/ui/page-layout"
 import { hstack } from "@maple/views/ui/stack"
-import { sidebarContent, sidebarDesktop, sidebarInset, sidebarMobile, sidebarWrapper } from "@maple/views/ui/sidebar"
+import {
+	sidebarContent,
+	sidebarDesktop,
+	sidebarInset,
+	sidebarMobile,
+	sidebarWrapper,
+} from "@maple/views/ui/sidebar"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { typography } from "@maple/views/ui/typography"
 import { placementOf, popupIdOf, triggerIdOf } from "./menus"
@@ -51,7 +57,7 @@ const RAIL_TIP_PREFIX = "shell-rail-tip-"
 /** The rows that carry a rail tooltip: Search, the nav rows this org is shown, the footer links. */
 const railTipTitles = (clerk: ShellClerk | null): ReadonlyArray<string> => [
 	"Search",
-	...shellNavGroups(clerk).flatMap((group) => group.items.map((item) => item.title)),
+	...Arr.flatMap(shellNavGroups(clerk), (group) => Arr.map(group.items, (item) => item.title)),
 	"Sources",
 	"Settings",
 ]
@@ -90,8 +96,8 @@ const desktopSidebar = (
 					undefined,
 					isInstant,
 				),
-			toContent: (triggerId) => [triggerId.slice(RAIL_TIP_PREFIX.length)],
-			triggerIds: railTipTitles(clerk).map((title) => `${RAIL_TIP_PREFIX}${title}`),
+			toContent: (triggerId) => [Str.slice(RAIL_TIP_PREFIX.length)(triggerId)],
+			triggerIds: Arr.map(railTipTitles(clerk), (title) => `${RAIL_TIP_PREFIX}${title}`),
 		},
 		toParentMessage: (message) => Message.GotRailTooltipMessage({ message }),
 	})
@@ -285,8 +291,8 @@ export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInput
 						model.palette,
 						{
 							context: paletteContextOf(model),
-							visibleFlagged: shellNavGroups(inputs.clerk ?? null).flatMap((group) =>
-								group.items.flatMap((item) =>
+							visibleFlagged: Arr.flatMap(shellNavGroups(inputs.clerk ?? null), (group) =>
+								Arr.flatMap(group.items, (item) =>
 									FLAGGED_HREFS.has(item.href) ? [item.href] : [],
 								),
 							),

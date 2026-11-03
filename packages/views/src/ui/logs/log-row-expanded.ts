@@ -1,6 +1,6 @@
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AttributesPanel from "../attributes/attributes-panel"
 import { capForDisplay, prettyJson } from "../../lib/display-text"
@@ -53,7 +53,7 @@ export const logRowExpanded = <Message>(
 	const body = stripAnsi(log.body)
 	const formatted = Option.getOrElse(prettyJson(body), () => body)
 	const { shown, omitted } = capForDisplay(formatted)
-	const lines = shown.split("\n")
+	const lines = Str.split("\n")(shown)
 	return h.div(
 		[h.Class("border-t border-border-subtle bg-surface-faint px-3 py-3 pl-9 font-mono")],
 		[
@@ -101,7 +101,7 @@ export const logRowExpanded = <Message>(
 										"whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground",
 									),
 								],
-								lines.map((line, index) =>
+								Arr.map(lines, (line, index) =>
 									h.span(FRAME.test(line) ? [h.Class("text-muted-foreground")] : [], [
 										...highlightedText(h, line, highlight),
 										...(index < lines.length - 1 ? ["\n"] : []),

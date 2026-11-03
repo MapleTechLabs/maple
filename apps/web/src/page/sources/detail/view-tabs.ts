@@ -19,6 +19,7 @@ import { isSettingsDirty } from "./update"
 import type { Model, RevealedToken, SettingsForm } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { String as Str } from "effect"
 
 // `SourceSetupTab` and `SourceSettings`.
 
@@ -78,37 +79,35 @@ const generalSection = (h: H, form: SettingsForm, source: V2Source): Html => {
 	const nameState = stateOf(form.name, source.name)
 	const descriptionState = stateOf(form.description, source.description ?? "")
 	return settingsSection(h, { id: "source-settings-general", title: "General" }, [
-		vstack(h, { gap: "4" },
-			[
-				field(h, { state: nameState }, [
-					fieldLabel(h, { ids: NAME_IDS, state: nameState }, "Name"),
-					input(h, {
-						ids: NAME_IDS,
-						state: nameState,
-						attributes: [
-							h.Value(form.name),
-							h.Attribute("maxlength", "100"),
-							h.OnInput((value) => Message.ChangedSettingsName({ value })),
-						],
-					}),
+		vstack(h, { gap: "4" }, [
+			field(h, { state: nameState }, [
+				fieldLabel(h, { ids: NAME_IDS, state: nameState }, "Name"),
+				input(h, {
+					ids: NAME_IDS,
+					state: nameState,
+					attributes: [
+						h.Value(form.name),
+						h.Attribute("maxlength", "100"),
+						h.OnInput((value) => Message.ChangedSettingsName({ value })),
+					],
+				}),
+			]),
+			field(h, { state: descriptionState }, [
+				fieldLabel(h, { ids: DESCRIPTION_IDS, state: descriptionState }, [
+					"Description",
+					" ",
+					typography(h, { tone: "muted", weight: "normal" }, ["(optional)"]),
 				]),
-				field(h, { state: descriptionState }, [
-					fieldLabel(h, { ids: DESCRIPTION_IDS, state: descriptionState }, [
-						"Description",
-						" ",
-						typography(h, { tone: "muted", weight: "normal" }, ["(optional)"]),
-					]),
-					textarea(h, {
-						id: DESCRIPTION_IDS.control,
-						attributes: [
-							h.Value(form.description),
-							h.Attribute("maxlength", "500"),
-							h.OnInput((value) => Message.ChangedSettingsDescription({ value })),
-						],
-					}),
-				]),
-			],
-		),
+				textarea(h, {
+					id: DESCRIPTION_IDS.control,
+					attributes: [
+						h.Value(form.description),
+						h.Attribute("maxlength", "500"),
+						h.OnInput((value) => Message.ChangedSettingsDescription({ value })),
+					],
+				}),
+			]),
+		]),
 	])
 }
 
@@ -144,39 +143,35 @@ const ingestionSection = (h: H, model: Model, source: V2Source): Html => {
 			],
 		},
 		[
-			hstack(h, { gap: "4", justify: "between" },
-				[
-					vstack(h, { gap: "1", shrink: true },
-						[
-							sourceStatusBadge(h, source, { nowMs: model.nowMs ?? 0, showTime: false }),
-							typography(h, { size: "xs", tone: "muted" },
-								[isPaused ? pausedLabel(source) : "Collected and stored as it arrives"],
-							),
-						],
-					),
-					isPaused
-						? button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									isLoading: model.busy === "resume",
-									attributes: [h.OnClick(Message.ClickedResume())],
-								},
-								["Resume"],
-							)
-						: button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									isLoading: model.busy === "pause",
-									attributes: [h.OnClick(Message.ClickedPauseUntilResumed())],
-								},
-								["Pause"],
-							),
-				],
-			),
+			hstack(h, { gap: "4", justify: "between" }, [
+				vstack(h, { gap: "1", shrink: true }, [
+					sourceStatusBadge(h, source, { nowMs: model.nowMs ?? 0, showTime: false }),
+					typography(h, { size: "xs", tone: "muted" }, [
+						isPaused ? pausedLabel(source) : "Collected and stored as it arrives",
+					]),
+				]),
+				isPaused
+					? button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isLoading: model.busy === "resume",
+								attributes: [h.OnClick(Message.ClickedResume())],
+							},
+							["Resume"],
+						)
+					: button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isLoading: model.busy === "pause",
+								attributes: [h.OnClick(Message.ClickedPauseUntilResumed())],
+							},
+							["Pause"],
+						),
+			]),
 		],
 	)
 }
@@ -193,7 +188,11 @@ const deleteSection = (h: H, source: V2Source): Html =>
 			],
 			action: button(
 				h,
-				{ variant: "destructive-outline", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
+				{
+					variant: "destructive-outline",
+					size: "sm",
+					attributes: [h.OnClick(Message.ClickedDelete())],
+				},
 				["Delete source"],
 			),
 		}),
@@ -204,7 +203,7 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 	const form = model.settings
 	if (form === null) return h.empty
 	const isToken = hasToken(source)
-	const isValid = form.name.trim().length > 0 && (!isToken || rulesOutcome(form.rules).valid)
+	const isValid = Str.trim(form.name).length > 0 && (!isToken || rulesOutcome(form.rules).valid)
 	const save = saveBar(h, {
 		isDirty: isSettingsDirty(form),
 		isPending: form.isSaving,

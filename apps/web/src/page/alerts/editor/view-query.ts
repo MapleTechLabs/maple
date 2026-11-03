@@ -24,6 +24,7 @@ import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@m
 import { rawQueryEditor, REDUCER_SELECT_ID, type SqlView } from "./view-sql"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `RuleQuerySection`: Built-in, the query builder's
 // `QueryPanel`, or SQL, over the same draft.
@@ -70,7 +71,7 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(form.signalType),
 		toParentMessage: (message) => Message.GotRadioMessage({ group: "signal", message }),
-		items: BUILTIN_SIGNALS.map((signal) => ({
+		items: Arr.map(BUILTIN_SIGNALS, (signal) => ({
 			value: signal.value,
 			id: `rule-signal-${signal.value}`,
 			inputId: `rule-signal-${signal.value}-input`,
@@ -82,7 +83,7 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 			h.Class("grid grid-cols-2 border-b sm:grid-cols-5"),
 			h.Role("radiogroup"),
 		],
-		BUILTIN_SIGNALS.flatMap((signal) =>
+		Arr.flatMap(BUILTIN_SIGNALS, (signal) =>
 			RadioGroup.radio(h, config, signal.value, SIGNAL_CLASS, {
 				children: [
 					h.span(
@@ -141,8 +142,11 @@ const chipsPicker = (
 /** `GroupByMultiSelect` over traces: the built-in dimensions and the span attributes as `attr.*`. */
 const groupByItems = (model: QueryView): ReadonlyArray<string> => [
 	...new Set([
-		...GROUP_BY_OPTIONS.traces.filter((option) => option.value !== "none").map((option) => option.value),
-		...spanAttributeKeysOf(model).map((key) => `attr.${key}`),
+		...Arr.map(
+			Arr.filter(GROUP_BY_OPTIONS.traces, (option) => option.value !== "none"),
+			(option) => option.value,
+		),
+		...Arr.map(spanAttributeKeysOf(model), (key) => `attr.${key}`),
 	]),
 ]
 

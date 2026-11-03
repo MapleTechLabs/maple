@@ -2,6 +2,7 @@ import { TONE_BORDER, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartSkeleton, type ChartSkeletonVariant } from "./chart-skeleton"
+import { Array as Arr, Record as Rec } from "effect"
 
 // Port of `ChartLoading`, `ChartEmpty` and `ChartError` (packages/ui/src/components/charts/_shared/
 // chart-state.tsx), standalone (no `ChartPlotArea`): an explicit height, else the parent owns it.
@@ -22,7 +23,7 @@ const stateBox = <M>(
 	)
 
 const svgAttrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
-	Object.entries(entries).map(([name, value]) => h.Attribute(name, value))
+	Arr.map(Rec.toEntries(entries), ([name, value]) => h.Attribute(name, value))
 
 /** `EmptyAxes`: three gridlines and a dashed baseline, masked out behind the message. */
 const emptyAxes = <M>(h: HtmlBuilder<M>): Html =>
@@ -34,7 +35,7 @@ const emptyAxes = <M>(h: HtmlBuilder<M>): Html =>
 			class: "text-current pointer-events-none absolute inset-0 h-full w-full [mask-image:radial-gradient(ellipse_at_center,transparent_25%,black_75%)]",
 		}),
 		[
-			...[20, 44, 68].map((y) =>
+			...Arr.map([20, 44, 68], (y) =>
 				h.line(
 					svgAttrs(h, {
 						x1: "0",

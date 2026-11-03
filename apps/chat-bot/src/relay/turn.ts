@@ -37,7 +37,7 @@ import {
 } from "@maple/domain/chat-session"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { Clock, Duration, Effect, Exit, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Exit, Option, Schema, Array as Arr, String as Str } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { settledMessageBlocks } from "./approval.ts"
 import {
@@ -151,21 +151,23 @@ const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more.
  * which is where a session is.
  */
 const linkNotice = (connector: ChatConnectorId, appBaseUrl: string, refused: "ask" | "approve") => {
-	const platform = connector.charAt(0).toUpperCase() + connector.slice(1)
+	const platform = Str.toUpperCase(connector.charAt(0)) + Str.slice(1)(connector)
 	const link = `[Link your account](${appBaseUrl}/integrations)`
 	return [
 		{
 			kind: "prose" as const,
-			markdown: (refused === "ask"
-				? [
-						`**Link your ${platform} account to Maple to ask it questions.**`,
-						`Maple answers as your Maple user, with your permissions, so it has to know which user you are. ${link}, then ask again.`,
-					]
-				: [
-						`**Link your ${platform} account to Maple to approve this.**`,
-						`A change you approve runs as your Maple user, with your permissions and your name on it, so Maple has to know which user you are. ${link}, then press the button again.`,
-					]
-			).join("\n"),
+			markdown: Arr.join(
+				refused === "ask"
+					? [
+							`**Link your ${platform} account to Maple to ask it questions.**`,
+							`Maple answers as your Maple user, with your permissions, so it has to know which user you are. ${link}, then ask again.`,
+						]
+					: [
+							`**Link your ${platform} account to Maple to approve this.**`,
+							`A change you approve runs as your Maple user, with your permissions and your name on it, so Maple has to know which user you are. ${link}, then press the button again.`,
+						],
+				"\n",
+			),
 		},
 	]
 }
@@ -350,7 +352,9 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 	// The follow-up window is measured from the last thing the BOT said, which is not always the
 	// last thing in the transcript: a turn evicted after its question was recorded leaves the
 	// conversation with an unanswered message in it rather than a recent answer.
-	const repliedAt = transcript.reduce((at, entry) => (entry.role === "assistant" ? entry.createdAt : at), 0)
+	const repliedAt = Arr.reduce(transcript, 0, (at, entry) =>
+		entry.role === "assistant" ? entry.createdAt : at,
+	)
 	const now = yield* Clock.currentTimeMillis
 
 	// The half of the follow-up rule that needed the session: it has spoken here, and recently.
@@ -591,7 +595,7 @@ const showDecision = Effect.fn("ChatBotRelay.showDecision")(function* <R>(
 	)
 	// The session just settled this call, so its message is there.
 	const message = history.find((candidate) =>
-		candidate.toolCalls.some((call) => call.id === request.toolCallId),
+		Arr.some(candidate.toolCalls, (call) => call.id === request.toolCallId),
 	)
 	if (message === undefined) return
 	const transport = yield* ports.outbound.transport

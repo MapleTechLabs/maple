@@ -1,4 +1,5 @@
 import { formatDuration } from "@maple/ui/lib/format"
+import { Array as Arr, String as Str } from "effect"
 
 // copied: the parsing and formatting half of packages/ui/src/components/filters/range-filter-section.tsx
 // (the React module also holds the component).
@@ -28,10 +29,7 @@ const COUNT_MULTIPLIERS = new Map([
 
 /** A bare number in the control's unit, a suffixed duration, a scaled count or a dollar amount. */
 export const parseRange = (text: string, unit: RangeUnit): number | undefined => {
-	const trimmed = text
-		.trim()
-		.toLowerCase()
-		.replace(/^\$\s*/, unit === "usd" ? "" : "$")
+	const trimmed = Str.replace(/^\$\s*/, unit === "usd" ? "" : "$")(Str.toLowerCase(Str.trim(text)))
 	if (trimmed === "") return undefined
 	if (/^\d+(\.\d+)?$/.test(trimmed)) {
 		const bare = Number(trimmed)
@@ -45,9 +43,10 @@ export const parseRange = (text: string, unit: RangeUnit): number | undefined =>
 		return Math.round(Number(scaled[1]) * (COUNT_MULTIPLIERS.get(scaled[2] ?? "") ?? 1))
 	}
 	if (!/^(\d+(\.\d+)?\s*(ms|s|m|h)\s*)+$/.test(trimmed)) return undefined
-	const totalMs = [...trimmed.matchAll(/(\d+(?:\.\d+)?)\s*(ms|s|m|h)/g)].reduce(
-		(sum, [, amount, suffix]) => sum + Number(amount) * (UNIT_MS.get(suffix ?? "") ?? 0),
+	const totalMs = Arr.reduce(
+		[...trimmed.matchAll(/(\d+(?:\.\d+)?)\s*(ms|s|m|h)/g)],
 		0,
+		(sum, [, amount, suffix]) => sum + Number(amount) * (UNIT_MS.get(suffix ?? "") ?? 0),
 	)
 	return unit === "ms" ? totalMs : totalMs / 1000
 }

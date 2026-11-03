@@ -15,6 +15,7 @@ import { runtimeFields } from "./view-gcp-configure-runtimes"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
+import { Array as Arr } from "effect"
 
 // `LogFilter` and `GcpLogFilterField`: the filter the script gives the log sink.
 
@@ -23,9 +24,13 @@ type H = HtmlBuilder<Message>
 const PANEL_ID = "gcp-log-filter-panel"
 
 export const runtimeLabels = (runtimes: ReadonlyArray<GcpLogRuntime>): string =>
-	GCP_LOG_RUNTIMES.filter(({ value }) => runtimes.includes(value))
-		.map(({ label }) => label)
-		.join(", ")
+	Arr.join(
+		Arr.map(
+			Arr.filter(GCP_LOG_RUNTIMES, ({ value }) => runtimes.includes(value)),
+			({ label }) => label,
+		),
+		", ",
+	)
 
 /** The log filter's choice in a few words: the closed disclosure and the run summary. */
 export const filterShort = (choice: ReturnType<typeof gcpLogFilterChoice>): string =>
@@ -123,27 +128,25 @@ export const filterField = (
 					"Log filter",
 				)
 	const newFilter = vstack(h, { gap: "2.5" }, [
-		dividedList(h, { as: "dl" },
-			[
-				summaryRow(
-					h,
-					icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
-					"Platform logs",
-					"Requests, audit, deploys, crashes, scaling",
-				),
-				summaryRow(
-					h,
-					// Off reads as off: a cross, not an ambiguous dash; ticked runtimes get a check.
-					choice.runtimes.length === 0
-						? icon(h, "XmarkIcon", { size: 14 })
-						: icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
-					"Application output",
-					choice.runtimes.length === 0
-						? "Not collected: stdout and stderr stay in Google Cloud"
-						: `stdout and stderr, from ${runtimeLabels(choice.runtimes)} only`,
-				),
-			],
-		),
+		dividedList(h, { as: "dl" }, [
+			summaryRow(
+				h,
+				icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
+				"Platform logs",
+				"Requests, audit, deploys, crashes, scaling",
+			),
+			summaryRow(
+				h,
+				// Off reads as off: a cross, not an ambiguous dash; ticked runtimes get a check.
+				choice.runtimes.length === 0
+					? icon(h, "XmarkIcon", { size: 14 })
+					: icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
+				"Application output",
+				choice.runtimes.length === 0
+					? "Not collected: stdout and stderr stay in Google Cloud"
+					: `stdout and stderr, from ${runtimeLabels(choice.runtimes)} only`,
+			),
+		]),
 		h.p(
 			[
 				h.Class(

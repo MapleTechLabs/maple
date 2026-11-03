@@ -1,7 +1,7 @@
 import { formatCores } from "../../../../components/infra/format"
 import { shareOfLimit } from "../../../../components/infra/railway/format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
@@ -146,7 +146,7 @@ const chartsView = (h: H, model: Model, timeZone: string): Html => {
 const tracedChip = (h: H, model: Model, service: RailwayServiceRow): Html => {
 	const traced = AsyncData.getOrElse(model.traced.data, () => null)
 	if (traced === null) return null
-	return traced.some((row) => row.serviceName === service.serviceName)
+	return Arr.some(traced, (row) => row.serviceName === service.serviceName)
 		? h.a(
 				[
 					h.Href(

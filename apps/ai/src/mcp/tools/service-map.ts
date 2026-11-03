@@ -4,7 +4,7 @@ import { formatNumber, formatDurationFromMs, formatPercent } from "../lib/format
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ServiceMapOutput } from "@maple/domain/mcp-outputs"
 import { serviceMap } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -54,15 +54,16 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 			const edges =
 				params.service === undefined
 					? allEdges
-					: allEdges.filter(
+					: Arr.filter(
+							allEdges,
 							(e) => e.sourceService === params.service || e.targetService === params.service,
 						)
 
-			const serviceCount = new Set(edges.flatMap((e) => [e.sourceService, e.targetService])).size
+			const serviceCount = new Set(Arr.flatMap(edges, (e) => [e.sourceService, e.targetService])).size
 
 			return {
 				timeRange: { start: st, end: et },
-				edges: edges.map((e) => ({
+				edges: Arr.map(edges, (e) => ({
 					sourceService: e.sourceService,
 					targetService: e.targetService,
 					callCount: e.callCount,
@@ -76,9 +77,10 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 			}
 		}),
 		render: (output) => {
-			const errorTargets = output.edges
-				.map((e) => ({ service: e.targetService, errorRate: errorRateOf(e) }))
-				.filter((e) => e.errorRate > 0.01)
+			const errorTargets = Arr.filter(
+				Arr.map(output.edges, (e) => ({ service: e.targetService, errorRate: errorRateOf(e) })),
+				(e) => e.errorRate > 0.01,
+			)
 				.sort((a, b) => b.errorRate - a.errorRate)
 				.slice(0, 2)
 			return {
@@ -113,7 +115,7 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 										"Avg Duration",
 										"Max Duration",
 									],
-									output.edges.map((e) => [
+									Arr.map(output.edges, (e) => [
 										`${e.sourceService} → ${e.targetService}`,
 										formatNumber(e.callCount),
 										formatNumber(e.errorCount),
@@ -125,7 +127,7 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 							],
 				next:
 					errorTargets.length > 0
-						? errorTargets.map((e) =>
+						? Arr.map(errorTargets, (e) =>
 								doc.next(
 									"diagnose_service",
 									{ service: e.service },

@@ -1,6 +1,6 @@
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -159,7 +159,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 				[
 					h.dl(
 						[h.Class("divide-y divide-border-subtle rounded-lg border border-border-subtle")],
-						rowsOf(model).map((row) =>
+						Arr.map(rowsOf(model), (row) =>
 							h.div(
 								[
 									h.Key(row.label),

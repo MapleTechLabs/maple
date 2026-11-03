@@ -11,6 +11,7 @@ import { join } from "node:path"
 import { ArchiveProbe, firstRow, readRows } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
+import { Array as Arr, String as Str } from "effect"
 
 const SCHEMA = `
 CREATE DATABASE IF NOT EXISTS default;
@@ -43,17 +44,18 @@ try {
 
 	// Every source row across the whole day must be archived exactly once, and
 	// each shard must contain only its own hour (no cross-hour bleed).
-	const sourceSet = readRows(
-		db.query(
-			`SELECT TraceId FROM traces WHERE toDate(Timestamp,'UTC')='2026-06-29' ORDER BY TraceId`,
-			"JSONEachRow",
+	const sourceSet = Arr.map(
+		readRows(
+			db.query(
+				`SELECT TraceId FROM traces WHERE toDate(Timestamp,'UTC')='2026-06-29' ORDER BY TraceId`,
+				"JSONEachRow",
+			),
 		),
-	)
-		.map((r) => String(r.TraceId))
-		.sort()
+		(r) => String(r.TraceId),
+	).sort()
 	const archived: Array<{ id: string; hour: number }> = []
 	for (const s of written) {
-		const shardHour = Number(s.name.slice(0, 2))
+		const shardHour = Number(Str.slice(0, 2)(s.name))
 		for (const r of readRows(
 			db.query(
 				`SELECT TraceId, toHour(Timestamp,'UTC') h FROM file('${s.path}', Parquet)`,
@@ -61,16 +63,18 @@ try {
 			),
 		)) {
 			if (Number(r.h) !== shardHour)
-				h.fail(`shard ${s.name} (hour ${shardHour}) contains hour-${r.h} row ${r.TraceId}`)
+				h.fail(
+					`shard ${s.name} (hour ${shardHour}) contains hour-${String(r.h)} row ${String(r.TraceId)}`,
+				)
 			archived.push({ id: String(r.TraceId), hour: Number(r.h) })
 		}
 	}
-	const archivedSet = archived.map((a) => a.id).sort()
-	if (archivedSet.join(",") !== sourceSet.join(","))
-		h.fail(`source [${sourceSet}] != archived [${archivedSet}]`)
+	const archivedSet = Arr.map(archived, (a) => a.id).sort()
+	if (Arr.join(archivedSet, ",") !== Arr.join(sourceSet, ","))
+		h.fail(`source [${Arr.join(sourceSet, ",")}] != archived [${Arr.join(archivedSet, ",")}]`)
 	if (new Set(archivedSet).size !== archivedSet.length) h.fail(`duplicate rows in archive`)
 
-	const hour12 = written.find((s) => s.name.startsWith("12-"))
+	const hour12 = written.find((s) => Str.startsWith("12-")(s.name))
 	if (!hour12) h.fail("no hour-12 shard produced")
 	void firstRow
 	h.ok(

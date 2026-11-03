@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 // The registry the shortcuts dialog renders, with the display tokens
 // of `@tanstack/hotkeys` (`parseHotkey`, `MODIFIER_ORDER`, the symbol tables) for its few combos.
@@ -82,13 +82,13 @@ export const displayAlternates = (
 ): ReadonlyArray<ReadonlyArray<string>> =>
 	def.display !== undefined
 		? [def.display]
-		: [def.combo, ...(def.aliases ?? [])].map((combo) => comboTokens(combo, platform))
+		: Arr.map([def.combo, ...(def.aliases ?? [])], (combo) => comboTokens(combo, platform))
 
 /** `detectPlatform` (`@tanstack/hotkeys`), read once at boot. */
 export const detectPlatform = (): Platform => {
-	const platform = navigator.platform.toLowerCase()
-	const userAgent = navigator.userAgent.toLowerCase()
-	if (platform.includes("mac") || userAgent.includes("mac")) return "mac"
-	if (platform.includes("win") || userAgent.includes("win")) return "windows"
+	const platform = Str.toLowerCase(navigator.platform)
+	const userAgent = Str.toLowerCase(navigator.userAgent)
+	if (Str.includes("mac")(platform) || Str.includes("mac")(userAgent)) return "mac"
+	if (Str.includes("win")(platform) || Str.includes("win")(userAgent)) return "windows"
 	return "linux"
 }

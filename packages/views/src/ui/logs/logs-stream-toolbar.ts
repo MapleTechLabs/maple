@@ -11,6 +11,7 @@ import { toggle } from "../toggle"
 import * as Tooltip from "../tooltip"
 import { typography } from "../typography"
 import type { Density } from "./viewer"
+import { Array as Arr } from "effect"
 
 // The logs stream's toolbar: the Columns picker,
 // wrap and density, under one `TooltipProvider delay={250}`.
@@ -58,9 +59,10 @@ const columnsContent = <M>(h: HtmlBuilder<M>, options: LogsStreamToolbarOptions<
 	const offered = options.columnOptions
 	const all = [
 		...offered,
-		...options.pinnedColumns
-			.filter((key) => !offered.some((option) => option.name === key))
-			.map((name) => ({ name, count: 0 })),
+		...Arr.map(
+			Arr.filter(options.pinnedColumns, (key) => !Arr.some(offered, (option) => option.name === key)),
+			(name) => ({ name, count: 0 }),
+		),
 	]
 	if (all.length === 0)
 		return [
@@ -112,9 +114,15 @@ const columnsPicker = <M>(h: HtmlBuilder<M>, options: LogsStreamToolbarOptions<M
 								"Columns",
 								...(options.pinnedColumns.length > 0
 									? [
-											badge(h, { variant: "secondary", size: "sm", className: "tabular-nums" }, [
-												String(options.pinnedColumns.length),
-											]),
+											badge(
+												h,
+												{
+													variant: "secondary",
+													size: "sm",
+													className: "tabular-nums",
+												},
+												[String(options.pinnedColumns.length)],
+											),
 										]
 									: []),
 							],
@@ -143,7 +151,11 @@ const viewToggle = <M>(
 			size: "sm",
 			isPressed: options.isPressed,
 			onClick: options.onClick,
-			attributes: [h.AriaLabel(options.label), ...tip(options.id), h.DataAttribute("slot", "tooltip-trigger")],
+			attributes: [
+				h.AriaLabel(options.label),
+				...tip(options.id),
+				h.DataAttribute("slot", "tooltip-trigger"),
+			],
 		},
 		[icon(h, options.iconName, { size: 14 })],
 	)

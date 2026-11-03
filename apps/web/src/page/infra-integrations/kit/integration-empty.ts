@@ -7,6 +7,7 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { typography } from "@maple/views/ui/typography"
 import { vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
 
@@ -73,7 +74,7 @@ export const integrationEmptyFeatures = <M>(
 ): Html =>
 	h.ul(
 		[h.Class("grid grid-cols-1 gap-3 text-left @2xl/page:grid-cols-3")],
-		features.map((feature, index) =>
+		Arr.map(features, (feature, index) =>
 			h.li(
 				[
 					h.Class(

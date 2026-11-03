@@ -1,4 +1,4 @@
-import { Match, pipe } from "effect"
+import { Match, pipe, Array as Arr, String as Str } from "effect"
 
 import { toEpochMs } from "./time-format"
 
@@ -195,9 +195,10 @@ export function parseBucketMs(value: unknown): number | null {
  * Infer the total time range in milliseconds from an array of data points with a `bucket` key.
  */
 export function inferRangeMs(data: ReadonlyArray<Record<string, unknown>>): number {
-	const bucketTimes = data
-		.map((row) => parseBucketMs(row.bucket))
-		.filter((value): value is number => value != null)
+	const bucketTimes = Arr.filter(
+		Arr.map(data, (row) => parseBucketMs(row.bucket)),
+		(value): value is number => value != null,
+	)
 
 	if (bucketTimes.length < 2) return 0
 	return Math.max(...bucketTimes) - Math.min(...bucketTimes)
@@ -254,25 +255,31 @@ export function formatBucketLabel(
 		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60 || isZonedMidnight(date, timeZone)) {
 			return date.toLocaleDateString(locale, { timeZone, month: "short", day: "numeric" })
 		}
-		return date
-			.toLocaleString(locale, {
+		return Str.replace(
+			/ 24:/,
+			" 00:",
+		)(
+			date.toLocaleString(locale, {
 				timeZone,
 				month: "short",
 				day: "numeric",
 				hour: "2-digit",
 				minute: "2-digit",
-			})
-			.replace(/ 24:/, " 00:")
+			}),
+		)
 	}
 
-	return date
-		.toLocaleTimeString(locale, {
+	return Str.replace(
+		/^24:/,
+		"00:",
+	)(
+		date.toLocaleTimeString(locale, {
 			timeZone,
 			hour: "2-digit",
 			minute: "2-digit",
 			second: includeSeconds ? "2-digit" : undefined,
-		})
-		.replace(/^24:/, "00:")
+		}),
+	)
 }
 
 const bucketLabelMap: Record<number, string> = {
@@ -459,7 +466,7 @@ export function axisTickFormatter(
 		// The unit follows the largest tick drawn, not the domain top, so an axis that stops
 		// under 1s reads in ms ("0, 250ms, 500ms").
 		const ticks = axisTickValues(domain, count, options)
-		const largest = Math.max(...ticks.map((t) => Math.abs(t))) * toMs
+		const largest = Math.max(...Arr.map(ticks, (t) => Math.abs(t))) * toMs
 		const axisUnit = DURATION_AXIS_UNITS.find((u) => largest < u.below) ?? DURATION_AXIS_UNITS[4]
 		const decimals = stepDecimals((step * toMs) / axisUnit.ms, 3)
 		return (value) =>

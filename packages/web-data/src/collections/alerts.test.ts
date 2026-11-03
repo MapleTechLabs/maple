@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 
 import {
 	type AlertDestinationRow,
@@ -111,7 +111,7 @@ describe("rowToAlertRuleDocument", () => {
 		assert.deepStrictEqual(doc.serviceNames, ["checkout", "api"])
 		assert.deepStrictEqual(doc.excludeServiceNames, [])
 		assert.deepStrictEqual(doc.tags, ["prod"])
-		assert.deepStrictEqual(doc.destinationIds.map(String), [DEST_ID])
+		assert.deepStrictEqual(Arr.map(doc.destinationIds, String), [DEST_ID])
 		assert.strictEqual(doc.groupBy, null)
 		assert.strictEqual(doc.rawQueryReducer, null) // signal_type !== "raw_query"
 		assert.strictEqual(doc.notificationTemplate, null)
@@ -170,7 +170,7 @@ describe("rowToAlertRuleDocument", () => {
 			new Map(),
 		)
 		assert.deepStrictEqual(
-			doc.thresholds.map((tier) => [tier.severity, tier.value, tier.recoveryValue]),
+			Arr.map(doc.thresholds, (tier) => [tier.severity, tier.value, tier.recoveryValue]),
 			[
 				["warning", 0.05, null],
 				["critical", 0.2, 0.1],
@@ -299,7 +299,7 @@ describe("rowToAlertDestinationDocument", () => {
 		assert.isTrue(Option.isNone(rowToAlertDestinationDocument(retired)))
 		const docs = rowsToAlertDestinationDocuments([retired, base])
 		assert.deepStrictEqual(
-			docs.map((doc) => doc.id),
+			Arr.map(docs, (doc) => doc.id),
 			[DEST_ID],
 		)
 	})

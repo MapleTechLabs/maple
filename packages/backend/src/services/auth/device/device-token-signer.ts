@@ -3,7 +3,7 @@
  * (`MAPLE_DEVICE_TOKEN_SIGNING_KEY`, PKCS#8 PEM), ES256, `kid` = RFC 7638 thumbprint. Built like
  * the AWS OIDC signer, but a sibling key: different audience, and no customer trusts it.
  */
-import { Effect, Option, Redacted, Schema } from "effect"
+import { Effect, Option, Redacted, Schema, String as Str } from "effect"
 import {
 	ES256_IMPORT,
 	EcPublicJwk,
@@ -59,7 +59,10 @@ export interface DeviceTokenSigner {
 }
 
 const pemBody = (pem: string) =>
-	Buffer.from(pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/gu, "").replace(/\s+/gu, ""), "base64")
+	Buffer.from(
+		Str.replace(/\s+/gu, "")(Str.replace(/-----(BEGIN|END) PRIVATE KEY-----/gu, "")(pem)),
+		"base64",
+	)
 
 export const makeDeviceTokenSigner = Effect.fn("makeDeviceTokenSigner")(function* (
 	issuer: string,

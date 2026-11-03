@@ -12,6 +12,7 @@ import { avatarFallback } from "@maple/views/ui/display"
 import { scrollArea } from "@maple/views/ui/scroll-area"
 import { switchControl } from "@maple/views/ui/switch"
 import { kitRow, kitSection } from "./kit-layout"
+import { Array as Arr, String as Str } from "effect"
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 const LONG_URL =
@@ -27,7 +28,7 @@ const BUBBLE_VARIANTS: ReadonlyArray<BubbleVariant> = [
 ]
 const SCROLL_ROWS = Array.from(
 	{ length: 12 },
-	(_, index) => `span-${String(index + 1).padStart(2, "0")} GET /api/cart`,
+	(_, index) => `span-${Str.padStart(2, "0")(String(index + 1))} GET /api/cart`,
 )
 
 /** The chat transcript's user bubble shape (page/investigations/conversation/kit/view-transcript.ts). */
@@ -65,7 +66,7 @@ export const conversationSection = <M>(h: HtmlBuilder<M>): Html =>
 		kitRow(
 			h,
 			undefined,
-			BUBBLE_VARIANTS.map((variant) =>
+			Arr.map(BUBBLE_VARIANTS, (variant) =>
 				bubble(h, { variant }, [bubbleContent(h, [variant], "rounded-lg")]),
 			),
 		),
@@ -177,7 +178,7 @@ export const scrollAreaSection = <M>(h: HtmlBuilder<M>): Html =>
 			[
 				h.div(
 					[h.Class("flex flex-col p-2 font-mono text-xs")],
-					SCROLL_ROWS.map((row) => h.span([h.Class("py-1")], [row])),
+					Arr.map(SCROLL_ROWS, (row) => h.span([h.Class("py-1")], [row])),
 				),
 			],
 		),

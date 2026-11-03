@@ -9,6 +9,7 @@ import { SATURATION } from "../health"
 import type { HealthStrip } from "./derive"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
+import { String as Str } from "effect"
 
 // The health strip: six tiles, each value over a line spark of the window and a caption.
 
@@ -66,7 +67,7 @@ export const healthStripView = (h: H, strip: HealthStrip, window: SparkWindow, t
 				caption:
 					cpu.peak === null
 						? ""
-						: `peak ${formatPercent(cpu.peak.cpu)} at ${formatClockInTimezone(cpu.peak.bucket, { timeZone }).slice(0, 5)}`,
+						: `peak ${formatPercent(cpu.peak.cpu)} at ${Str.slice(0, 5)(formatClockInTimezone(cpu.peak.bucket, { timeZone }))}`,
 			}),
 			tile(h, window, {
 				label: "Memory",

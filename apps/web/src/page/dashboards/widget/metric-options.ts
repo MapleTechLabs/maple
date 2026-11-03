@@ -1,6 +1,6 @@
 import { QUERY_BUILDER_METRIC_TYPES, toQueryBuilderMetricType } from "@maple/query-model"
 import { getMetricAttributeKeys, listMetrics } from "@maple/web-data/warehouse/metrics"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { applyQueryChange, QueryChange } from "../../kit/query-builder/change"
@@ -22,21 +22,24 @@ export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions
 		listMetrics({ data: { limit: 100, ...(search === "" ? undefined : { search }) } }).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) => ({
-					options: response.data
-						.filter((row) => toQueryBuilderMetricType(row.metricType) !== undefined)
-						.map((row) => ({
+					options: Arr.map(
+						Arr.filter(
+							response.data,
+							(row) => toQueryBuilderMetricType(row.metricType) !== undefined,
+						),
+						(row) => ({
 							value: `${row.metricName}::${row.metricType}`,
 							label: `${row.metricName} (${row.metricType})`,
 							isMonotonic: row.isMonotonic,
-						}))
-						.filter(
-							(option, index, all) =>
-								all.findIndex((other) => other.value === option.value) === index,
-						),
+						}),
+					).filter(
+						(option, index, all) =>
+							all.findIndex((other) => other.value === option.value) === index,
+					),
 					// `toNames`: trimmed, non-empty, each once.
-					services: response.data
-						.map((row) => row.serviceName.trim())
-						.filter((name, index, all) => name !== "" && all.indexOf(name) === index),
+					services: Arr.map(response.data, (row) => Str.trim(row.serviceName)).filter(
+						(name, index, all) => name !== "" && all.indexOf(name) === index,
+					),
 				}),
 				onFailure: toLoadFailure,
 			}),
@@ -52,7 +55,7 @@ export const FetchMetricKeys = Command.define("FetchWidgetEditorMetricKeys", {
 	execute: ({ metricName, metricType }) =>
 		getMetricAttributeKeys({ data: { metricName, metricType } }).pipe(
 			Effect.mapBoth({
-				onSuccess: (response) => response.data.map((row) => row.attributeKey),
+				onSuccess: (response) => Arr.map(response.data, (row) => row.attributeKey),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,
@@ -63,7 +66,7 @@ export const FetchMetricKeys = Command.define("FetchWidgetEditorMetricKeys", {
 })
 
 const metricsQueriesOf = (state: EditorState | null) =>
-	(state?.queries ?? []).flatMap((query) => (query.dataSource === "metrics" ? [query] : []))
+	Arr.flatMap(state?.queries ?? [], (query) => (query.dataSource === "metrics" ? [query] : []))
 
 type Asked = Readonly<{
 	model: Model
@@ -78,33 +81,32 @@ export const askMetricOptions = (model: Model): Asked => {
 		model.metricRequested === model.metricSearch
 			? []
 			: [FetchMetricOptions({ search: model.metricSearch })]
-	const missing = queries
-		.filter((query) => query.metricName !== "")
-		.map((query) => ({ metricName: query.metricName, metricType: query.metricType }))
-		.filter(
-			(metric, index, all) =>
-				!model.metricKeysRequested.includes(`${metric.metricName}::${metric.metricType}`) &&
-				all.findIndex(
-					(other) =>
-						other.metricName === metric.metricName && other.metricType === metric.metricType,
-				) === index,
-		)
+	const missing = Arr.map(
+		Arr.filter(queries, (query) => query.metricName !== ""),
+		(query) => ({ metricName: query.metricName, metricType: query.metricType }),
+	).filter(
+		(metric, index, all) =>
+			!model.metricKeysRequested.includes(`${metric.metricName}::${metric.metricType}`) &&
+			all.findIndex(
+				(other) => other.metricName === metric.metricName && other.metricType === metric.metricType,
+			) === index,
+	)
 	return {
 		model: {
 			...model,
 			metricRequested: model.metricSearch,
 			metricKeysRequested: [
 				...model.metricKeysRequested,
-				...missing.map((metric) => `${metric.metricName}::${metric.metricType}`),
+				...Arr.map(missing, (metric) => `${metric.metricName}::${metric.metricType}`),
 			],
 		},
-		commands: [...list, ...missing.map((metric) => FetchMetricKeys(metric))],
+		commands: [...list, ...Arr.map(missing, (metric) => FetchMetricKeys(metric))],
 	}
 }
 
 /** `parseMetricSelection`: `name::type` back into the metric it names. */
 export const pickedMetric = (value: string, options: ReadonlyArray<MetricOption>): QueryChange | null => {
-	const [metricName = "", rawType = ""] = value.split("::")
+	const [metricName, rawType = ""] = Str.split("::")(value)
 	const metricType = QUERY_BUILDER_METRIC_TYPES.find((type) => type === rawType)
 	if (metricName === "" || metricType === undefined) return null
 	const isMonotonic = options.find((option) => option.value === value)?.isMonotonic ?? metricType === "sum"
@@ -121,7 +123,7 @@ export const withDefaultMetric = (state: EditorState, options: ReadonlyArray<Met
 	if (change === null || change._tag !== "SetMetric") return state
 	return {
 		...state,
-		queries: state.queries.map((query) =>
+		queries: Arr.map(state.queries, (query) =>
 			query.dataSource === "metrics" && query.metricName === ""
 				? applyQueryChange(query, change)
 				: query,

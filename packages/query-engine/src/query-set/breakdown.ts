@@ -6,7 +6,7 @@
  * `runBreakdownQuerySet`.
  */
 
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr } from "effect"
 import type { QuerySet } from "@maple/query-model"
 import { buildBreakdownQuerySpec } from "../query-builder/model"
 import { type BreakdownQueryResult, mergeBreakdownResults } from "./breakdown-merge"
@@ -49,7 +49,10 @@ export const runBreakdownQuerySet = Effect.fnUntraced(function* <E>(
 ) {
 	// Hidden breakdown queries feed no formulas, so — unlike timeseries — there is
 	// nothing to run them for.
-	const enabledQueries = input.querySet.queries.filter((query) => query.enabled !== false && !query.hidden)
+	const enabledQueries = Arr.filter(
+		input.querySet.queries,
+		(query) => query.enabled !== false && !query.hidden,
+	)
 	if (enabledQueries.length === 0) {
 		return yield* new QuerySetInputError({
 			operation: OPERATION,
@@ -113,14 +116,14 @@ export const runBreakdownQuerySet = Effect.fnUntraced(function* <E>(
 					// error_rate arrives from the query engine as a 0–1 ratio — the
 					// canonical unit everywhere (the "percent" display unit multiplies
 					// by 100 when formatting). No rescaling here.
-					data: result.data.map((item) => ({ name: item.name, value: item.value })),
+					data: Arr.map(result.data, (item) => ({ name: item.name, value: item.value })),
 				} satisfies BreakdownQueryResult
 			}),
 		{ concurrency: Math.max(enabledQueries.length, 1) },
 	)
 
-	if (!results.some((r) => r.status === "success" && r.data.length > 0)) {
-		const details = results.flatMap((r) =>
+	if (!Arr.some(results, (r) => r.status === "success" && r.data.length > 0)) {
+		const details = Arr.flatMap(results, (r) =>
 			typeof r.error === "string" && r.error.length > 0 ? [r.error] : [],
 		)
 		return yield* new QuerySetNoDataError({

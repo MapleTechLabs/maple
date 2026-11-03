@@ -1,4 +1,5 @@
 import type { BackfillSpec } from "../backfill"
+import { Array as Arr } from "effect"
 
 /**
  * Coordinated backfill for the 30 days still present in the
@@ -99,7 +100,8 @@ export const migration_0009_one_year_service_history = {
 	description:
 		"Add annual service overview/operation rollups and extend summarized alert/service retention",
 	statements: [
-		...annualTtlTables.map(
+		...Arr.map(
+			annualTtlTables,
 			([table, timestamp]) => `ALTER TABLE ${table} MODIFY TTL ${timestamp} + INTERVAL 365 DAY`,
 		),
 		`CREATE TABLE IF NOT EXISTS service_overview_hourly (

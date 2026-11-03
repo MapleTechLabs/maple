@@ -1,12 +1,20 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { button } from "@maple/views/ui/button"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { metricStripLoading } from "../agent-sessions/tools-kit/metric-strip"
 import { SEMCONV_MCP_URL } from "./view-kit"
+import { Array as Arr } from "effect"
 
 // The MCP pages' empty, loading, error and quiet-window states.
 
@@ -34,7 +42,7 @@ const spanExample = <M>(h: HtmlBuilder<M>): Html =>
 					h.span([h.Class("ml-3 text-foreground-subtle")], ["kind SERVER"]),
 				],
 			),
-			...SPAN_EXAMPLE.map(([key, value, comment]) =>
+			...Arr.map(SPAN_EXAMPLE, ([key, value, comment]) =>
 				h.div(
 					[h.Class("flex gap-3 pl-3")],
 					[
@@ -142,7 +150,9 @@ const widenAction = <M>(h: HtmlBuilder<M>, widen: Widen<M> | undefined): Readonl
 
 /** `executor`, `executor and Claude`, `executor, Claude and 2 more`. */
 export const connectedText = (names: ReadonlyArray<string>): string =>
-	names.length <= 2 ? names.join(" and ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
+	names.length <= 2
+		? Arr.join(names, " and ")
+		: `${Arr.join(names.slice(0, 2), ", ")} and ${names.length - 2} more`
 
 /** The server answered nothing in the window; `lastCall` when the page knows when it last did. */
 export const quietWindow = <M>(

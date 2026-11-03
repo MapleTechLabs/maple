@@ -5,7 +5,7 @@ import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { IssueSeverity } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -97,7 +97,7 @@ const issuesReady = (h: H, issues: ReadonlyArray<Issue>, clock: Clock, isLimited
 			? emptyMessage(h, {}, ["No open issues for this service"])
 			: h.div(
 					[h.Class("space-y-px p-2")],
-					issues.map((issue) => issueLine(h, issue, clock)),
+					Arr.map(issues, (issue) => issueLine(h, issue, clock)),
 				),
 	])
 
@@ -186,7 +186,7 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 	const isNotConnected =
 		commit !== undefined &&
 		AsyncData.isFailure(commit) &&
-		commit.error.tag.endsWith("IntegrationsNotConnectedError")
+		Str.endsWith("IntegrationsNotConnectedError")(commit.error.tag)
 	return isNotConnected
 		? [
 				h.div(
@@ -235,7 +235,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 					h.div(
 						[h.Class(cn("space-y-px p-2", isExpanded && "max-h-96 overflow-y-auto"))],
 						[
-							...visible.map((deploy) => deployRow(h, model, deploy, clock)),
+							...Arr.map(visible, (deploy) => deployRow(h, model, deploy, clock)),
 							...(isExpanded && hiddenCount > 0
 								? [
 										h.div(
@@ -295,7 +295,7 @@ const commitAvatar = (h: H, url: string | null, name: string): Html =>
 						"size-5 flex shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
 					),
 				],
-				[name.slice(0, 2)],
+				[Str.slice(0, 2)(name)],
 			)
 		: h.img([
 				h.Src(url),

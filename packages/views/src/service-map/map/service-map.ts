@@ -5,7 +5,16 @@ import {
 	isNsAggregateId,
 	NS_AGGREGATE_PREFIX,
 } from "@maple/ui/components/service-map/service-map-utils"
-import { Duration, Effect, Option, Schema, type Stream } from "effect"
+import {
+	Duration,
+	Effect,
+	Option,
+	Schema,
+	type Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
@@ -154,14 +163,14 @@ export const RunElkLayout = Command.define("RunElkLayout", {
 						[...graph.edges],
 						{ ...DEFAULT_LAYOUT_CONFIG },
 						Option.getOrUndefined(
-							Option.map(previous, (positions) => new Map(Object.entries(positions))),
+							Option.map(previous, (positions) => new Map(Rec.toEntries(positions))),
 						),
 					),
 				),
 			catch: (cause) => new ElkLayoutError({ message: "The ELK layout failed", cause }),
 		}).pipe(
 			Effect.map((result) =>
-				Message.SucceededElkLayout({ signature, positions: Object.fromEntries(result.positions) }),
+				Message.SucceededElkLayout({ signature, positions: Rec.fromEntries(result.positions) }),
 			),
 			Effect.orElseSucceed(() => Message.FailedElkLayout({ signature })),
 		),
@@ -235,11 +244,11 @@ const withPositions = (model: Model): Model => {
 }
 
 export const placedNodes = (model: Model) =>
-	model.graph.nodes.map((node) => ({ id: node.id, position: positionOf(model.positions, node) }))
+	Arr.map(model.graph.nodes, (node) => ({ id: node.id, position: positionOf(model.positions, node) }))
 
 /** The namespace boxes as React Flow nodes: `fitView` frames them with the services. */
 const boxTargets = (model: Model) => (canvas: Canvas.Model) =>
-	namespaceBoxRects(model.graph, model.positions, canvas.measured).map((rect) => ({
+	Arr.map(namespaceBoxRects(model.graph, model.positions, canvas.measured), (rect) => ({
 		id: rect.id,
 		position: rect.position,
 		measured: { id: rect.id, width: rect.width, height: rect.height, handles: [] },
@@ -263,7 +272,7 @@ const FIT_DURATION_MS = 300
  * 0,0,1. Later layouts mount their boxes while bridged, so fit.
  */
 export const hasNamespaceBoxes = (graph: EffectiveGraph): boolean =>
-	graph.nodes.some((node) => !node.id.startsWith(DB_NODE_PREFIX) && Boolean(node.data.namespace))
+	Arr.some(graph.nodes, (node) => !Str.startsWith(DB_NODE_PREFIX)(node.id) && Boolean(node.data.namespace))
 
 /** The automatic fit of a new layout: skipped for a saved camera and for the first boxed reveal. */
 const autoFit = (model: Model, isFirstReveal: boolean): Model => {
@@ -276,12 +285,12 @@ const autoFit = (model: Model, isFirstReveal: boolean): Model => {
 
 /** The synchronous layered layout (`computeNodePositions`), anchored on what is on screen. */
 const fallbackPositions = (graph: EffectiveGraph, anchor: Positions): Positions =>
-	Object.fromEntries(
+	Rec.fromEntries(
 		computeNodePositions(
 			[...graph.nodes],
 			[...graph.edges],
 			{ ...DEFAULT_LAYOUT_CONFIG },
-			Object.keys(anchor).length === 0 ? undefined : new Map(Object.entries(anchor)),
+			Rec.keys(anchor).length === 0 ? undefined : new Map(Rec.toEntries(anchor)),
 		),
 	)
 
@@ -352,7 +361,7 @@ const applyGraph = (model: Model, graph: EffectiveGraph): Return => {
 			RunElkLayout({
 				signature: graph.signature,
 				graph,
-				previous: Object.keys(anchor).length === 0 ? Option.none() : Option.some(anchor),
+				previous: Rec.keys(anchor).length === 0 ? Option.none() : Option.some(anchor),
 			}),
 			WaitLayoutGrace({ signature: graph.signature }),
 		],
@@ -372,7 +381,7 @@ const redeclutter = (model: Model): Return => {
 	const graph = unfocused === model ? first : graphOf(unfocused)
 	const isSelectionGone = Option.match(unfocused.selectedId, {
 		onNone: () => false,
-		onSome: (id) => !graph.nodes.some((node) => node.id === id),
+		onSome: (id) => !Arr.some(graph.nodes, (node) => node.id === id),
 	})
 	if (!isSelectionGone) return applyGraph(unfocused, graph)
 	const deselected = withSelection(unfocused, Option.none())
@@ -459,10 +468,10 @@ const toggleSelection = (model: Model, nodeId: string): Return =>
 /** A node click: a collapsed namespace expands back into its services, anything else toggles selection. */
 const clickedNode = (model: Model, nodeId: string): Return => {
 	if (!isNsAggregateId(nodeId)) return toggleSelection(model, nodeId)
-	const namespace = decodeURIComponent(nodeId.slice(NS_AGGREGATE_PREFIX.length))
+	const namespace = decodeURIComponent(Str.slice(NS_AGGREGATE_PREFIX.length)(nodeId))
 	return redeclutter({
 		...model,
-		collapsedNamespaces: model.collapsedNamespaces.filter((name) => name !== namespace),
+		collapsedNamespaces: Arr.filter(model.collapsedNamespaces, (name) => name !== namespace),
 	})
 }
 
@@ -508,7 +517,7 @@ const canvasMessage = (model: Model, message: Canvas.Message): Return =>
 /** Once every node of the bridge is measured, wait for the frame that paints it. */
 const awaitBridgePaint = (model: Model): Return => {
 	if (Option.isNone(model.bridge) || model.bridge.value.isAwaitingPaint) return { model }
-	const isMeasured = model.graph.nodes.every((node) => model.canvas.measured[node.id] !== undefined)
+	const isMeasured = Arr.every(model.graph.nodes, (node) => model.canvas.measured[node.id] !== undefined)
 	if (!isMeasured) return { model }
 	const { signature } = model.bridge.value
 	return {
@@ -608,7 +617,7 @@ const step = (model: Model, message: Message): Return =>
 			const reset = withPositions({
 				...model,
 				hasSavedCamera: false,
-				snapshots: model.snapshots.filter((s) => s.signature !== model.graph.signature),
+				snapshots: Arr.filter(model.snapshots, (s) => s.signature !== model.graph.signature),
 			})
 			return { model: requestMapFit(reset, true) }
 		},

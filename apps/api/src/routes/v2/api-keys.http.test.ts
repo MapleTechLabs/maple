@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -126,7 +126,7 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
 				return yield* service.create(ORG, options.userId ?? USER, {
-					name: scopes === undefined ? "root-key" : `scoped:${scopes.join(",")}`,
+					name: scopes === undefined ? "root-key" : `scoped:${Arr.join(scopes, ",")}`,
 					scopes,
 					kind,
 					...(options.metadataJson !== undefined
@@ -663,7 +663,7 @@ describe("v2 api_keys over HTTP", () => {
 		expect(rolled.status).toBe(200)
 
 		const entries = await harness.auditEntries("api_key.rolled")
-		expect(entries.map((entry) => [entry.resourceId, entry.apiKeyId, entry.outcome])).toEqual([
+		expect(Arr.map(entries, (entry) => [entry.resourceId, entry.apiKeyId, entry.outcome])).toEqual([
 			[rolled.body.id, root.id, "allowed"],
 		])
 		await harness.dispose()
@@ -684,7 +684,7 @@ describe("v2 api_keys over HTTP", () => {
 		expect(revoked.status).toBe(200)
 
 		const entries = await harness.auditEntries("api_key.revoked")
-		expect(entries.map((entry) => [entry.resourceId, entry.apiKeyId, entry.outcome])).toEqual([
+		expect(Arr.map(entries, (entry) => [entry.resourceId, entry.apiKeyId, entry.outcome])).toEqual([
 			[created.body.id, root.id, "allowed"],
 		])
 		await harness.dispose()

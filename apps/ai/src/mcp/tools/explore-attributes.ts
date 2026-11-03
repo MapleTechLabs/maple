@@ -5,7 +5,7 @@ import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock, type NextCall, type ToolDoc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { ExploreAttributesOutput } from "@maple/domain/mcp-outputs"
 import { exploreAttributeKeys, exploreAttributeValues } from "@maple/query-engine/observability"
 import { MetricType } from "@maple/query-engine"
@@ -74,7 +74,7 @@ const renderValues = (output: Output, key: string): ToolDoc => {
 				: [
 						doc.table(
 							["Value", "Count"],
-							values.map((v) => [v.value, formatNumber(v.count)]),
+							Arr.map(values, (v) => [v.value, formatNumber(v.count)]),
 						),
 					],
 		next: [next],
@@ -90,7 +90,7 @@ const renderServices = (output: Output): ToolDoc => {
 			doc.heading("Environments"),
 			doc.table(
 				["Environment", "Span Count"],
-				environments.map((r) => [r.name, formatNumber(r.count)]),
+				Arr.map(environments, (r) => [r.name, formatNumber(r.count)]),
 			),
 		)
 	}
@@ -99,7 +99,7 @@ const renderServices = (output: Output): ToolDoc => {
 			doc.heading("Commit SHAs"),
 			doc.table(
 				["Commit SHA", "Span Count"],
-				commitShas.map((r) => [r.name, formatNumber(r.count)]),
+				Arr.map(commitShas, (r) => [r.name, formatNumber(r.count)]),
 			),
 		)
 	}
@@ -111,11 +111,9 @@ const renderServices = (output: Output): ToolDoc => {
 			: undefined),
 		blocks,
 		next: [
-			...environments
-				.slice(0, 1)
-				.map((env) =>
-					doc.next("list_services", { environment: env.name }, "see services in this environment"),
-				),
+			...Arr.map(environments.slice(0, 1), (env) =>
+				doc.next("list_services", { environment: env.name }, "see services in this environment"),
+			),
 			...(commitShas.length > 1
 				? [doc.next("compare_periods", {}, "compare performance between deploys")]
 				: []),
@@ -155,14 +153,14 @@ const renderKeys = (output: Output): ToolDoc => {
 				: [
 						doc.table(
 							["Key", "Count"],
-							keys.map((k) => [k.key, formatNumber(k.count)]),
+							Arr.map(keys, (k) => [k.key, formatNumber(k.count)]),
 						),
 						...(output.service !== undefined && output.source === "traces"
 							? [doc.text("Counts are from a sample of up to 20,000 of this service's spans.")]
 							: []),
 					]),
 		],
-		next: keys.slice(0, 3).map((k) =>
+		next: Arr.map(keys.slice(0, 3), (k) =>
 			doc.next(
 				"explore_attributes",
 				{
@@ -256,7 +254,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 					...scopeField,
 					key: params.key,
 					timeRange,
-					values: values.map((v) => ({ value: v.value, count: v.count })),
+					values: Arr.map(values, (v) => ({ value: v.value, count: v.count })),
 					...serviceField,
 					...metricField,
 				}
@@ -269,17 +267,18 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 					end_time: et,
 				})
 				const facet = (type: string) =>
-					result.data
-						.filter((r) => r.facetType === type)
-						.map((r) => ({ name: r.name, count: Number(r.count ?? 0) }))
+					Arr.map(
+						Arr.filter(result.data, (r) => r.facetType === type),
+						(r) => ({ name: r.name, count: Number(r.count ?? 0) }),
+					)
 				const environments = facet("environment")
 				const commitShas = facet("commit_sha")
 				return {
 					source: "services",
 					timeRange,
 					keys: [
-						...environments.map((r) => ({ key: `environment:${r.name}`, count: r.count })),
-						...commitShas.map((r) => ({ key: `commit_sha:${r.name}`, count: r.count })),
+						...Arr.map(environments, (r) => ({ key: `environment:${r.name}`, count: r.count })),
+						...Arr.map(commitShas, (r) => ({ key: `commit_sha:${r.name}`, count: r.count })),
 					],
 					environments,
 					commitShas,
@@ -294,7 +293,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				source: params.source,
 				...scopeField,
 				timeRange,
-				keys: keys.map((k) => ({ key: k.key, count: k.count })),
+				keys: Arr.map(keys, (k) => ({ key: k.key, count: k.count })),
 				...serviceField,
 				...metricField,
 			}

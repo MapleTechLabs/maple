@@ -6,7 +6,7 @@ import {
 	getErrorsSpark,
 	getErrorsSummary,
 } from "@maple/web-data/warehouse/errors"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
@@ -83,7 +83,7 @@ export const FetchEnvironments = Command.define("FetchErrorsEnvironments", {
 	execute: ({ key, window }) =>
 		getErrorsFacets({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
 			Effect.mapBoth({
-				onSuccess: (response) => response.data.deploymentEnvs.map((env) => env.name),
+				onSuccess: (response) => Arr.map(response.data.deploymentEnvs, (env) => env.name),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,
@@ -98,7 +98,7 @@ export const FetchRanking = Command.define("FetchErrorsRanking", {
 	execute: ({ key, filters, limit }) =>
 		getErrorsByType({ data: { ...warehouseData(filters), limit } }).pipe(
 			Effect.mapBoth({
-				onSuccess: (response) => response.data.map((row) => row.fingerprintHash),
+				onSuccess: (response) => Arr.map(response.data, (row) => row.fingerprintHash),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,

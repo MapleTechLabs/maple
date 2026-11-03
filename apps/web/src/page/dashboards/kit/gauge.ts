@@ -1,4 +1,5 @@
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
+import { Array as Arr, String as Str } from "effect"
 
 // The gauge widget's geometry: a 270 degree segmented
 // dial whose viewBox is fitted to what is drawn. The view is in ./tiles-gauge.ts.
@@ -36,7 +37,9 @@ const RAMP: ReadonlyArray<readonly [number, number, number, number]> = [
 
 const rampColor = (fraction: number): string => {
 	const x = fraction < 0 ? 0 : fraction > 1 ? 1 : fraction
-	const index = RAMP.findIndex((stop, i) => i < RAMP.length - 1 && x >= stop[0] && x <= (RAMP[i + 1]?.[0] ?? 1))
+	const index = RAMP.findIndex(
+		(stop, i) => i < RAMP.length - 1 && x >= stop[0] && x <= (RAMP[i + 1]?.[0] ?? 1),
+	)
 	const lo = RAMP[index === -1 ? 0 : index] ?? [0, 0, 0, 0]
 	const hi = RAMP[index === -1 ? RAMP.length - 1 : index + 1] ?? lo
 	const t = (x - lo[0]) / (hi[0] - lo[0] || 1)
@@ -64,7 +67,7 @@ const toNumber = (value: unknown): number | null => {
 }
 
 const scaleLabel = (value: number, unit: string | undefined): string =>
-	formatValueByUnit(value, unit).replace(/\.0(?=\D*$)/, "")
+	Str.replace(/\.0(?=\D*$)/, "")(formatValueByUnit(value, unit))
 
 const textWidth = (text: string, fontSize: number) => text.length * fontSize * MONO_ADVANCE
 
@@ -109,12 +112,14 @@ const arcs = (value: number | null, fraction: number) => {
 /** Ticks for the bounds and every in-range threshold; labels only where they clear their neighbours. */
 const scale = (min: number, max: number, span: number, options: GaugeOptions) => {
 	const angleFor = (tickValue: number) => START_ANGLE + ((tickValue - min) / span) * SWEEP
-	const ticks = [min, max, ...(options.thresholds ?? []).map((threshold) => threshold.value)]
-		.filter(
-			(tickValue, index, all) => tickValue >= min && tickValue <= max && all.indexOf(tickValue) === index,
-		)
-		.map((tickValue) => ({ value: tickValue, angle: angleFor(tickValue) }))
-	const boundLabels: ReadonlyArray<GaugeLabel> = [min, max].map((boundValue, index) => {
+	const ticks = Arr.map(
+		[min, max, ...Arr.map(options.thresholds ?? [], (threshold) => threshold.value)].filter(
+			(tickValue, index, all) =>
+				tickValue >= min && tickValue <= max && all.indexOf(tickValue) === index,
+		),
+		(tickValue) => ({ value: tickValue, angle: angleFor(tickValue) }),
+	)
+	const boundLabels: ReadonlyArray<GaugeLabel> = Arr.map([min, max], (boundValue, index) => {
 		const end = polar((R_INNER + R_OUTER) / 2, index === 0 ? START_ANGLE : END_ANGLE)
 		return {
 			value: boundValue,
@@ -123,21 +128,24 @@ const scale = (min: number, max: number, span: number, options: GaugeOptions) =>
 			y: end.y + BOUND_LABEL_DROP,
 		}
 	})
-	const labels = ticks
-		.filter((tick) => tick.value !== min && tick.value !== max)
-		.reduce<ReadonlyArray<{ value: number; angle: number }>>(
+	const labels = Arr.map(
+		Arr.filter(ticks, (tick) => tick.value !== min && tick.value !== max).reduce<
+			ReadonlyArray<{ value: number; angle: number }>
+		>(
 			(placed, tick) =>
-				[START_ANGLE, END_ANGLE, ...placed.map((p) => p.angle)].some(
+				Arr.some(
+					[START_ANGLE, END_ANGLE, ...Arr.map(placed, (p) => p.angle)],
 					(angle) => Math.abs(angle - tick.angle) < MIN_LABEL_GAP_DEG,
 				)
 					? placed
 					: [...placed, tick],
 			[],
-		)
-		.map((tick): GaugeLabel => {
+		),
+		(tick): GaugeLabel => {
 			const point = polar(R_LABEL, tick.angle)
 			return { value: tick.value, text: scaleLabel(tick.value, options.unit), x: point.x, y: point.y }
-		})
+		},
+	)
 	return { ticks, boundLabels, labels }
 }
 
@@ -152,15 +160,11 @@ export const gaugeGeometry = (rawValue: unknown, options: GaugeOptions) => {
 		value !== null
 			? `${options.prefix ?? ""}${formatValueByUnit(value, options.unit)}${options.suffix ?? ""}`
 			: EMPTY_VALUE
-	const valueFontSize = Math.min(
-		VALUE_FONT_SIZE,
-		VALUE_MAX_WIDTH / (formattedValue.length * MONO_ADVANCE),
-	)
+	const valueFontSize = Math.min(VALUE_FONT_SIZE, VALUE_MAX_WIDTH / (formattedValue.length * MONO_ADVANCE))
 	const { segments, rim } = arcs(value, fraction)
 	const { ticks, boundLabels, labels } = scale(min, max, span, options)
-	const widestLabel = labels.reduce(
-		(width, label) => Math.max(width, textWidth(label.text, LABEL_FONT_SIZE)),
-		0,
+	const widestLabel = Arr.reduce(labels, 0, (width, label) =>
+		Math.max(width, textWidth(label.text, LABEL_FONT_SIZE)),
 	)
 	const halfWidth = Math.max(
 		R_TICK_OUTER,

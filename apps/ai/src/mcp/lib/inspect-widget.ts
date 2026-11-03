@@ -1,4 +1,14 @@
-import { Clock, Effect, Exit, Option, Result, Schema } from "effect"
+import {
+	Clock,
+	Effect,
+	Exit,
+	Option,
+	Result,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	WarehouseQueryService,
@@ -13,7 +23,11 @@ import {
 	type FormulaDraft,
 	type QueryRunResult,
 } from "@maple/query-engine/formula-results"
-import { QueryBuilderFormulaSchema, QueryBuilderQueryDraftSchema } from "@maple/domain/http"
+import {
+	QueryBuilderFormulaSchema,
+	QueryBuilderQueryDraftSchema,
+	WarehouseQueryRequest,
+} from "@maple/domain/http"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import {
 	computeBreakdownStats,
@@ -103,7 +117,7 @@ export const collectBlockingBuilderWarnings = Effect.fn("McpInspectWidget.collec
 		const decoded = yield* Effect.result(decodeQueryBuilderParams({ queries: querySet.queries }))
 		if (Result.isFailure(decoded)) return [] as string[]
 
-		const drafts = decoded.success.queries.filter((q) => q.enabled !== false)
+		const drafts = Arr.filter(decoded.success.queries, (q) => q.enabled !== false)
 		const warnings: string[] = []
 		for (const draft of drafts) {
 			const buildResult = isTimeseries
@@ -111,7 +125,7 @@ export const collectBlockingBuilderWarnings = Effect.fn("McpInspectWidget.collec
 				: buildBreakdownQuerySpec(draft)
 			for (const w of buildResult.warnings ?? []) {
 				// Non-scoping fallback — auto bucket size is a fine default.
-				if (w.toLowerCase().includes("step interval")) continue
+				if (Str.includes("step interval")(Str.toLowerCase(w))) continue
 				warnings.push(w)
 			}
 		}
@@ -125,7 +139,7 @@ export const collectBlockingBuilderWarnings = Effect.fn("McpInspectWidget.collec
 function firstNumericField(result: QueryEngineResult): string | null {
 	if (result.kind === "timeseries") {
 		for (const point of result.data) {
-			for (const [name, v] of Object.entries(point.series)) {
+			for (const [name, v] of Rec.toEntries(point.series)) {
 				if (typeof v === "number" && !Number.isNaN(v)) return name
 			}
 		}
@@ -186,9 +200,9 @@ function applyReduceToValue(
 
 	switch (aggregate) {
 		case "sum":
-			return { value: values.reduce((a, b) => a + b, 0) }
+			return { value: Arr.reduce(values, 0, (a, b) => a + b) }
 		case "avg":
-			return { value: values.reduce((a, b) => a + b, 0) / values.length }
+			return { value: Arr.reduce(values, 0, (a, b) => a + b) / values.length }
 		case "min":
 			return { value: Math.min(...values) }
 		case "max":
@@ -208,7 +222,7 @@ function statsToData(stats: QueryStats): InspectChartQueryStats {
 		seriesCount: stats.seriesCount,
 		...(stats.firstBucket !== undefined ? { firstBucket: stats.firstBucket } : undefined),
 		...(stats.lastBucket !== undefined ? { lastBucket: stats.lastBucket } : undefined),
-		seriesStats: stats.seriesStats.map((s): InspectChartSeriesStat => ({
+		seriesStats: Arr.map(stats.seriesStats, (s): InspectChartSeriesStat => ({
 			name: s.name,
 			min: s.min,
 			max: s.max,
@@ -217,7 +231,7 @@ function statsToData(stats: QueryStats): InspectChartQueryStats {
 			nullCount: s.nullCount,
 			zeroCount: s.zeroCount,
 			negativeCount: s.negativeCount,
-			samples: s.samples.map((sample) => ({
+			samples: Arr.map(s.samples, (sample) => ({
 				...(sample.bucket !== undefined ? { bucket: sample.bucket } : undefined),
 				value: sample.value,
 			})),
@@ -241,8 +255,8 @@ export function isGroupByRequested(draft: {
 	groupBy?: readonly string[]
 }): boolean {
 	if (!draft.addOns?.groupBy) return false
-	return (draft.groupBy ?? []).some((g) => {
-		const t = g.trim().toLowerCase()
+	return Arr.some(draft.groupBy ?? [], (g) => {
+		const t = Str.toLowerCase(Str.trim(g))
 		return t.length > 0 && t !== "none" && t !== "all"
 	})
 }
@@ -254,7 +268,7 @@ function isSingleAllGroup(result: QueryEngineResult): boolean {
 	if (result.kind === "timeseries") {
 		const names = new Set<string>()
 		for (const point of result.data) {
-			for (const name of Object.keys(point.series)) names.add(name)
+			for (const name of Rec.keys(point.series)) names.add(name)
 		}
 		return names.size === 1 && names.has("all")
 	}
@@ -278,20 +292,24 @@ const metricExistsInCatalog = Effect.fn("McpInspectWidget.metricExistsInCatalog"
 ) {
 	const warehouse = yield* WarehouseQueryService
 	return yield* warehouse
-		.query(tenant, {
-			pipeName: "list_metrics",
-			params: {
-				start_time: startTime,
-				end_time: endTime,
-				search: metricName,
-				...(metricType ? { metric_type: metricType } : undefined),
-				limit: 200,
-				offset: 0,
-			},
-		})
+		.query(
+			tenant,
+			new WarehouseQueryRequest({
+				pipeName: "list_metrics",
+				params: {
+					start_time: startTime,
+					end_time: endTime,
+					search: metricName,
+					...(metricType ? { metric_type: metricType } : undefined),
+					limit: 200,
+					offset: 0,
+				},
+			}),
+		)
 		.pipe(
 			Effect.map((resp) =>
-				(resp.data as ReadonlyArray<{ metricName?: string }>).some(
+				Arr.some(
+					resp.data as ReadonlyArray<{ metricName?: string }>,
 					(m) => m.metricName === metricName,
 				),
 			),
@@ -503,7 +521,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		}
 		const decodedParams = decodedParamsResult.success
 
-		const enabledRawDrafts = decodedParams.queries.filter((q) => q.enabled !== false)
+		const enabledRawDrafts = Arr.filter(decodedParams.queries, (q) => q.enabled !== false)
 		if (enabledRawDrafts.length === 0) {
 			return {
 				kind: "skipped",
@@ -524,7 +542,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		const transformObj = dataSourceTransform(widget.dataSource)
 		const reduceToValue = transformObj?.reduceToValue
 		const hasUnsupportedTransform =
-			transformObj !== undefined && Object.keys(transformObj).some((k) => k !== "reduceToValue")
+			transformObj !== undefined && Arr.some(Object.keys(transformObj), (k) => k !== "reduceToValue")
 
 		const queryEngine = yield* QueryEngineService
 
@@ -637,7 +655,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 					// `computeFlags`, or the ambiguous low-side percent check fires on
 					// exactly the queries it was meant to skip.
 					const numericAggregation =
-						((draft as { valueField?: string }).valueField ?? "").trim().length > 0
+						Str.trim((draft as { valueField?: string }).valueField ?? "").length > 0
 
 					const flagContext = {
 						metric: draft.aggregation,
@@ -679,7 +697,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 							)
 							if (!exists) {
 								flags = [
-									...baseFlags.filter((f) => f !== "EMPTY" && f !== "ALL_NULLS"),
+									...Arr.filter(baseFlags, (f) => f !== "EMPTY" && f !== "ALL_NULLS"),
 									"METRIC_NOT_FOUND",
 								]
 							}
@@ -694,7 +712,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 							status: "success",
 							error: null,
 							warnings: [],
-							data: result.data.map((p) => ({
+							data: Arr.map(result.data, (p) => ({
 								bucket: p.bucket,
 								series: { ...p.series },
 							})),
@@ -722,7 +740,8 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		if (formulaEvaluated) {
 			// No per-field narrowing: `QueryBuilderFormulaSchema` already guarantees
 			// all four strings, and `FormulaDraft` asks for exactly them.
-			const formulaDrafts: FormulaDraft[] = formulas.map(
+			const formulaDrafts: FormulaDraft[] = Arr.map(
+				formulas,
 				({ id, name, expression, legend }): FormulaDraft => ({ id, name, expression, legend }),
 			)
 
@@ -769,7 +788,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 			}
 		}
 
-		const allFlags = queryResults.flatMap((r) => r.flags)
+		const allFlags = Arr.flatMap(queryResults, (r) => r.flags)
 		const verdict = verdictFromFlags(allFlags)
 
 		const notes: string[] = []
@@ -836,16 +855,14 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 		// The percent-scale note is the one note that tells the caller what to
 		// change, so it rides along on the mutation-tool summary rather than only
 		// appearing in a full `inspect_chart_data` response.
-		const actionableNote = outcome.data.notes.find((note) => note.startsWith('unit "percent'))
+		const actionableNote = outcome.data.notes.find((note) => Str.startsWith('unit "percent')(note))
 		// A breakdown's groups are its rows. The largest query, not the sum, so hidden
 		// operands and the formula built from them are not counted twice.
 		const isBreakdown = dataSourceQuerySet(widget.dataSource)?.resultShape === "breakdown"
-		const seriesCount = outcome.data.queries.reduce(
-			(largest, query) =>
-				query.status === "ok"
-					? Math.max(largest, isBreakdown ? query.stats.rowCount : query.stats.seriesCount)
-					: largest,
-			0,
+		const seriesCount = Arr.reduce(outcome.data.queries, 0, (largest, query) =>
+			query.status === "ok"
+				? Math.max(largest, isBreakdown ? query.stats.rowCount : query.stats.seriesCount)
+				: largest,
 		)
 		return {
 			widgetId: widget.id,
@@ -1014,12 +1031,12 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 			{ concurrency: maxConcurrent },
 		)
 
-		const inspected: WidgetInspectionEntry[] = toInspect.map((widget, i) =>
+		const inspected: WidgetInspectionEntry[] = Arr.map(toInspect, (widget, i) =>
 			summarizeOutcome(widget, outcomes[i]),
 		)
 
 		const countVerdict = (verdict: WidgetInspectionEntry["verdict"]) =>
-			inspected.filter((entry) => entry.verdict === verdict).length
+			Arr.filter(inspected, (entry) => entry.verdict === verdict).length
 		const healthyCount = countVerdict("looks_healthy")
 		const suspiciousCount = countVerdict("suspicious")
 		const brokenCount = countVerdict("broken")
@@ -1054,20 +1071,22 @@ export function validationDoc(
 ): { readonly blocks: ReadonlyArray<DocBlock>; readonly next: ReadonlyArray<NextCall> } {
 	if (!summary.ran) return { blocks: [], next: [] }
 
-	const next = summary.inspected
-		.filter((entry) => entry.verdict === "suspicious" || entry.verdict === "broken")
-		.slice(0, 3)
-		.map((entry) =>
+	const next = Arr.map(
+		Arr.filter(
+			summary.inspected,
+			(entry) => entry.verdict === "suspicious" || entry.verdict === "broken",
+		).slice(0, 3),
+		(entry) =>
 			doc.next(
 				"inspect_chart_data",
 				{ dashboard_id: options.dashboardId, widget_id: entry.widgetId },
 				`re-check "${entry.title ?? entry.widgetId}" after fixing it with update_dashboard_widget`,
 			),
-		)
+	)
 
 	const single = options.single && summary.inspected.length === 1 ? summary.inspected[0] : undefined
 	if (single !== undefined) {
-		const flagPart = single.flags.length > 0 ? `  (${single.flags.join(", ")})` : ""
+		const flagPart = single.flags.length > 0 ? `  (${Arr.join(single.flags, ", ")})` : ""
 		const seriesPart = single.seriesCount !== undefined ? `, ${single.seriesCount} series` : ""
 		const lines = [
 			`${verdictIcon(single.verdict)} "${single.title ?? single.widgetId}": ${single.verdict}${seriesPart}${flagPart}`,
@@ -1079,7 +1098,10 @@ export function validationDoc(
 			)
 		}
 		return {
-			blocks: [doc.heading(`Validation: ${single.verdict.toUpperCase()}`), doc.text(lines.join("\n"))],
+			blocks: [
+				doc.heading(`Validation: ${Str.toUpperCase(single.verdict)}`),
+				doc.text(Arr.join(lines, "\n")),
+			],
 			next,
 		}
 	}
@@ -1098,8 +1120,8 @@ export function validationDoc(
 	}
 	blocks.push(
 		doc.list(
-			summary.inspected.map((entry) => {
-				const flagPart = entry.flags.length > 0 ? `  (${entry.flags.join(", ")})` : ""
+			Arr.map(summary.inspected, (entry) => {
+				const flagPart = entry.flags.length > 0 ? `  (${Arr.join(entry.flags, ", ")})` : ""
 				const seriesPart = entry.seriesCount !== undefined ? `, ${entry.seriesCount} series` : ""
 				const notePart = entry.note ? `: ${entry.note}` : ""
 				return `${verdictIcon(entry.verdict)} ${entry.widgetId} "${entry.title ?? ""}": ${entry.verdict}${seriesPart}${flagPart}${notePart}`
@@ -1117,7 +1139,7 @@ export function validationDoc(
 			"Fix suspicious/broken widgets via update_dashboard_widget. Skipped widgets use predefined endpoints; verify with query_data if needed.",
 		)
 	}
-	if (notes.length > 0) blocks.push(doc.text(notes.join("\n")))
+	if (notes.length > 0) blocks.push(doc.text(Arr.join(notes, "\n")))
 	return { blocks, next }
 }
 

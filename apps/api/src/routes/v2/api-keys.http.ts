@@ -10,7 +10,7 @@ import {
 	scopeAllows,
 } from "@maple/domain/http/v2"
 import type { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -32,9 +32,9 @@ const withinCallerScopes = (
 ): boolean => {
 	if (caller === undefined) return true
 	if (granted == null || granted.length === 0) return false
-	return granted.every((scope) => {
+	return Arr.every(granted, (scope) => {
 		if (scope === "*") return caller.includes("*")
-		const [family, access] = scope.split(":")
+		const [family, access] = Str.split(":")(scope)
 		return (
 			family !== undefined &&
 			(access === "read" || access === "write") &&
@@ -98,7 +98,7 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* apiKeysService.list(tenant.orgId)
-					const page = yield* paginateArray(response.keys.map(toV2ApiKey), query)
+					const page = yield* paginateArray(Arr.map(response.keys, toV2ApiKey), query)
 					return { object: "list" as const, ...page }
 				}),
 			)

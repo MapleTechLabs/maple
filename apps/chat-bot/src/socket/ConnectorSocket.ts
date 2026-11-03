@@ -39,7 +39,7 @@ import { connectors } from "@maple/chat-platform/connectors"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
@@ -415,11 +415,14 @@ export class ConnectorSocket {
 
 	/** The earliest thing the object is waiting for, never sooner than `MIN_ALARM_MS`. */
 	private async armAlarm(now: number): Promise<void> {
-		const pending = [
-			now + WATCHDOG_MS,
-			await this.ctx.storage.get<number>(KEY.heartbeatAt),
-			this.socket === undefined ? await this.ctx.storage.get<number>(KEY.reconnectAt) : undefined,
-		].filter((at): at is number => at !== undefined)
+		const pending = Arr.filter(
+			[
+				now + WATCHDOG_MS,
+				await this.ctx.storage.get<number>(KEY.heartbeatAt),
+				this.socket === undefined ? await this.ctx.storage.get<number>(KEY.reconnectAt) : undefined,
+			],
+			(at): at is number => at !== undefined,
+		)
 		await this.ctx.storage.setAlarm(Math.max(Math.min(...pending), now + MIN_ALARM_MS))
 	}
 

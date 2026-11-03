@@ -45,6 +45,7 @@ import { appWaitCallout, figure, topQueries } from "./view-sql"
 import { queryPeekSheet } from "./view-sql-peek"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpWorkloadPage`.
 
@@ -76,28 +77,31 @@ const header = (h: H, model: Model, data: PageData) => {
 	const keys = data.keys
 	const engine = gcpSqlEngine(data.databaseVersion ?? null)
 	const services = data.traceSide?.services
-	const machine = [
-		keys[2] || undefined,
-		data.instance === undefined ? undefined : gcpSqlSize(data.instance),
-		data.instance?.availabilityType === "REGIONAL" ? "HA" : undefined,
-	].filter((part): part is string => part !== undefined)
+	const machine = Arr.filter(
+		[
+			keys[2] || undefined,
+			data.instance === undefined ? undefined : gcpSqlSize(data.instance),
+			data.instance?.availabilityType === "REGIONAL" ? "HA" : undefined,
+		],
+		(part): part is string => part !== undefined,
+	)
 	const meta = data.isCloudSql
 		? [
 				heroChip(h, engine ?? SERVICE_KIND.cloudSql),
 				...(services === undefined || services === 0
 					? []
 					: [heroChip(h, `queried by ${services} ${services === 1 ? "service" : "services"}`)]),
-				...(machine.length === 0 ? [] : [heroChip(h, machine.join(" · "))]),
+				...(machine.length === 0 ? [] : [heroChip(h, Arr.join(machine, " · "))]),
 			]
 		: [
 				heroChip(h, SERVICE_KIND[service]),
-				...GCP_INFRA_SERVICES[service].identity.slice(1).flatMap(([label], index) => {
+				...Arr.flatMap(GCP_INFRA_SERVICES[service].identity.slice(1), ([label], index) => {
 					const value = keys[index + 1]
 					if (!value || RAIL_IDENTITY.includes(label)) return []
 					return [
 						heroChip(
 							h,
-							BARE_IDENTITY.includes(label) ? value : `${label.toLowerCase()} ${value}`,
+							BARE_IDENTITY.includes(label) ? value : `${Str.toLowerCase(label)} ${value}`,
 						),
 					]
 				}),
@@ -237,7 +241,7 @@ const loadingGrid = (h: H, service: GcpInfraServiceId): Html =>
 	grid(
 		h,
 		{ cols: 1, lg: 2, gap: "4" },
-		GCP_INFRA_CHARTS[service].map(() => chartLoading(h, { variant: "line", height: CHART_HEIGHT })),
+		Arr.map(GCP_INFRA_CHARTS[service], () => chartLoading(h, { variant: "line", height: CHART_HEIGHT })),
 	)
 
 /** The metrics read failed with nothing to show: the body's Try again is the page's one retry. */

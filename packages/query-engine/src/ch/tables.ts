@@ -5,7 +5,7 @@
 // column declared with `utcDateTime()`/`utcDateTime64()` decodes as a
 // `DateTime.Utc`; the rest still decode as the strings ClickHouse sends.
 
-import { DateTime, Option, Schema, SchemaGetter } from "effect"
+import { DateTime, Option, Schema, SchemaGetter, String as Str } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as Datasources from "@maple/domain/tinybird/datasources"
@@ -42,7 +42,7 @@ const FlooredSecondsString = Schema.String.pipe(
 		encode: SchemaGetter.transform((value: string) =>
 			Option.match(parseUtc(value), {
 				onNone: () => value,
-				onSome: (utc) => DateTime.formatIso(utc).slice(0, 19).replace("T", " "),
+				onSome: (utc) => Str.replace("T", " ")(Str.slice(0, 19)(DateTime.formatIso(utc))),
 			}),
 		),
 	}),
@@ -104,7 +104,7 @@ export const utcTraceWindow = (start: DateTime.Utc, end: DateTime.Utc): TraceWin
 
 const utcDateTime64Literal = (value: DateTime.Utc): CH.Expr<DateTime.Utc> =>
 	CH.makeExpr(
-		CH.toFragment(CH.lit(DateTime.formatIso(value).replace("T", " ").replace("Z", ""))),
+		CH.toFragment(CH.lit(Str.replace("Z", "")(Str.replace("T", " ")(DateTime.formatIso(value))))),
 		T.dateTime64.schema,
 	)
 

@@ -16,7 +16,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgIngestAttributeMappings, type OrgIngestAttributeMappingRow } from "@maple/db/tables"
-import { Array, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Array, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
@@ -78,8 +78,8 @@ const validateRule = Effect.fnUntraced(function* (rule: {
 	sourceKey: string
 	targetKey: string
 }) {
-	const sourceKey = rule.sourceKey.trim()
-	const targetKey = rule.targetKey.trim()
+	const sourceKey = Str.trim(rule.sourceKey)
+	const targetKey = Str.trim(rule.targetKey)
 	if (sourceKey.length === 0) {
 		return yield* new IngestAttributeMappingValidationError({ message: "Source key must not be empty" })
 	}

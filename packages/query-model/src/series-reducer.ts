@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 /**
  * How a series of buckets collapses to the single number a consumer needs.
  *
@@ -31,16 +32,18 @@ export type SeriesReducer = (typeof REDUCER_TABLE)[number]["series"]
 export type AlertReducer = Exclude<(typeof REDUCER_TABLE)[number]["alert"], null>
 
 /** Widget spelling. Ordered so `"first"` leads — it is the runtime default. */
-export const SERIES_REDUCERS = REDUCER_TABLE.map((entry) => entry.series) as ReadonlyArray<SeriesReducer>
+export const SERIES_REDUCERS = Arr.map(REDUCER_TABLE, (entry) => entry.series) as ReadonlyArray<SeriesReducer>
 
 /** Alert-rule spelling. */
-export const ALERT_REDUCERS = REDUCER_TABLE.flatMap((entry) =>
+export const ALERT_REDUCERS = Arr.flatMap(REDUCER_TABLE, (entry) =>
 	entry.alert === null ? [] : [entry.alert],
 ) as ReadonlyArray<AlertReducer>
 
 /** Total by construction: every alert reducer has a series counterpart. */
-export const ALERT_REDUCER_TO_SERIES_REDUCER = Object.fromEntries(
-	REDUCER_TABLE.flatMap((entry) => (entry.alert === null ? [] : [[entry.alert, entry.series] as const])),
+export const ALERT_REDUCER_TO_SERIES_REDUCER = Rec.fromEntries(
+	Arr.flatMap(REDUCER_TABLE, (entry) =>
+		entry.alert === null ? [] : [[entry.alert, entry.series] as const],
+	),
 ) as Record<AlertReducer, SeriesReducer>
 
 /**
@@ -50,6 +53,8 @@ export const ALERT_REDUCER_TO_SERIES_REDUCER = Object.fromEntries(
  * than a default. A chart reducer that silently became `identity` is the bug
  * this exists to fix; a caller that gets `undefined` is expected to say so.
  */
-export const SERIES_REDUCER_TO_ALERT_REDUCER = Object.fromEntries(
-	REDUCER_TABLE.flatMap((entry) => (entry.alert === null ? [] : [[entry.series, entry.alert] as const])),
+export const SERIES_REDUCER_TO_ALERT_REDUCER = Rec.fromEntries(
+	Arr.flatMap(REDUCER_TABLE, (entry) =>
+		entry.alert === null ? [] : [[entry.series, entry.alert] as const],
+	),
 ) as Partial<Record<SeriesReducer, AlertReducer>>

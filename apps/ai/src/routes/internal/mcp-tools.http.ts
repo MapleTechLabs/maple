@@ -1,11 +1,11 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { MapleAiApi, type McpToolCatalogResponse } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { mapleToolCatalogFor } from "../../mcp/tools/registry"
 
 /** What the public MCP transport lists, so the settings page can never show a tool clients cannot call. */
 export const publicMcpToolCatalog = (): McpToolCatalogResponse => ({
-	tools: mapleToolCatalogFor("mcp").map((tool) => ({
+	tools: Arr.map(mapleToolCatalogFor("mcp"), (tool) => ({
 		name: tool.name,
 		title: tool.title,
 		description: tool.description,

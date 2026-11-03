@@ -6,6 +6,7 @@ import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { Release, ReleaseTimelineBucket } from "@maple/web-data/warehouse/releases"
 import { shortId } from "@maple/ui/lib/ids"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Health, worst first. A single band per release so the sidebar facet and the
@@ -252,19 +253,18 @@ export function groupReleases(impacts: ReadonlyArray<ReleaseServiceImpact>): Rel
 	const groups: ReleaseGroup[] = []
 	for (const [commitSha, services] of bySha) {
 		const sorted = services.toSorted((a, b) => b.spanCount - a.spanCount)
-		const spanCount = sorted.reduce((sum, s) => sum + s.spanCount, 0)
-		const errorCount = sorted.reduce((sum, s) => sum + s.errorCount, 0)
+		const spanCount = Arr.reduce(sorted, 0, (sum, s) => sum + s.spanCount)
+		const errorCount = Arr.reduce(sorted, 0, (sum, s) => sum + s.errorCount)
 		groups.push({
 			commitSha,
-			firstSeen: sorted.reduce(
-				(min, s) => (s.firstSeen < min ? s.firstSeen : min),
-				sorted[0]!.firstSeen,
+			firstSeen: Arr.reduce(sorted, sorted[0]!.firstSeen, (min, s) =>
+				s.firstSeen < min ? s.firstSeen : min,
 			),
 			services: sorted,
 			spanCount,
 			errorCount,
 			errorRate: rate(errorCount, spanCount),
-			health: worstHealth(sorted.map((s) => s.health)),
+			health: worstHealth(Arr.map(sorted, (s) => s.health)),
 		})
 	}
 	return groups.toSorted((a, b) => (a.firstSeen < b.firstSeen ? 1 : a.firstSeen > b.firstSeen ? -1 : 0))
@@ -290,9 +290,9 @@ export function releaseFacetCounts(groups: ReadonlyArray<ReleaseGroup>): Release
 		}
 	}
 	const toSorted = (map: Map<string, number>) =>
-		[...map.entries()]
-			.map(([name, count]) => ({ name, count }))
-			.toSorted((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+		Arr.map([...map.entries()], ([name, count]) => ({ name, count })).toSorted(
+			(a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name),
+		)
 	return { health, services: toSorted(services), environments: toSorted(environments) }
 }
 
@@ -391,7 +391,7 @@ export function countIssues<T extends IntroducedIssue>(
 	attributed: ReadonlyMap<string, ReleaseIssues<T>>,
 ): Map<string, ReleaseIssueCounts> {
 	return new Map(
-		[...attributed].map(([sha, issues]) => [
+		Arr.map([...attributed], ([sha, issues]) => [
 			sha,
 			{ fresh: issues.fresh.length, regressed: issues.regressed.length },
 		]),
@@ -419,19 +419,20 @@ export function liveVersions(
 	const live = new Map<string, { commitSha: string; share: number }>()
 	for (const [key, share] of shares) {
 		const split = key.lastIndexOf(" ")
-		const serviceName = key.slice(0, split)
-		const commitSha = key.slice(split + 1)
+		const serviceName = Str.slice(0, split)(key)
+		const commitSha = Str.slice(split + 1)(key)
 		const current = live.get(serviceName)
 		if (current === undefined || share > current.share) live.set(serviceName, { commitSha, share })
 	}
-	const groupBySha = new Map(groups.map((group) => [group.commitSha, group]))
+	const groupBySha = new Map(Arr.map(groups, (group) => [group.commitSha, group]))
 	const result: LiveVersion[] = []
 	for (const [serviceName, { commitSha, share }] of live) {
 		const liveGroup = groupBySha.get(commitSha)
 		const siblings = new Set(
-			(liveGroup?.services ?? [])
-				.map((impact) => impact.serviceName)
-				.filter((name) => name !== serviceName),
+			Arr.filter(
+				Arr.map(liveGroup?.services ?? [], (impact) => impact.serviceName),
+				(name) => name !== serviceName,
+			),
 		)
 		// Only releases some sibling is already serving count: one still rolling
 		// out elsewhere would otherwise mark every service behind for minutes.
@@ -443,16 +444,17 @@ export function liveVersions(
 		const behind =
 			liveGroup === undefined || siblings.size === 0
 				? 0
-				: groups.filter(
+				: Arr.filter(
+						groups,
 						(group) =>
 							group.firstSeen > liveGroup.firstSeen &&
 							group.firstSeen <= siblingsNewest &&
-							!group.services.some((impact) => impact.serviceName === serviceName) &&
-							group.services.some((impact) => siblings.has(impact.serviceName)),
+							!Arr.some(group.services, (impact) => impact.serviceName === serviceName) &&
+							Arr.some(group.services, (impact) => siblings.has(impact.serviceName)),
 					).length
 		result.push({ serviceName, commitSha, share, behind })
 	}
-	return result.toSorted((a, b) => b.behind - a.behind || a.serviceName.localeCompare(b.serviceName))
+	return result.toSorted((a, b) => b.behind - a.behind || Str.localeCompare(b.serviceName)(a.serviceName))
 }
 
 /**

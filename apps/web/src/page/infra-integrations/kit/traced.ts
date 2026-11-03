@@ -1,5 +1,5 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 
@@ -19,7 +19,7 @@ export const loadTraced = (window: TimeWindow) =>
 	getServiceOverview({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
 		Effect.mapBoth({
 			onSuccess: (response): ReadonlyArray<TracedService> =>
-				response.data.map((row) => ({
+				Arr.map(response.data, (row) => ({
 					serviceName: row.serviceName,
 					errorRate: row.errorRate,
 					throughput: row.throughput,

@@ -1,4 +1,4 @@
-import { Option, Record } from "effect"
+import { Option, Record, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Tabs from "../../ui/tabs"
 import type { SpanNodeData } from "../trace-data"
@@ -29,7 +29,13 @@ export const logsKeyOf = (span: SpanNodeData): string => `span-logs:${span.trace
 const fetches = (span: SpanNodeData, readsCache: boolean): Commands => [
 	FetchSpanLogs({
 		key: logsKeyOf(span),
-		request: { traceId: span.traceId, spanId: span.spanId, startTime: span.startTime, durationMs: span.durationMs, limit: LOG_LIMIT },
+		request: {
+			traceId: span.traceId,
+			spanId: span.spanId,
+			startTime: span.startTime,
+			durationMs: span.durationMs,
+			limit: LOG_LIMIT,
+		},
 		readsCache,
 	}),
 	...(span.isMissing === true
@@ -38,7 +44,10 @@ const fetches = (span: SpanNodeData, readsCache: boolean): Commands => [
 				FetchSpanDetail({
 					key: detailKeyOf(span),
 					request: { traceId: span.traceId, spanId: span.spanId, timestamp: span.startTime },
-					fallback: { spanAttributes: span.spanAttributes, resourceAttributes: span.resourceAttributes },
+					fallback: {
+						spanAttributes: span.spanAttributes,
+						resourceAttributes: span.resourceAttributes,
+					},
 					readsCache,
 				}),
 			]),
@@ -52,7 +61,8 @@ export const init = (input: InitInput): Return => {
 			span,
 			traceStartTime: input.traceStartTime,
 			totalDurationMs: input.totalDurationMs,
-			detail: span.isMissing === true ? idleRead() : { key: detailKeyOf(span), data: AsyncData.Loading() },
+			detail:
+				span.isMissing === true ? idleRead() : { key: detailKeyOf(span), data: AsyncData.Loading() },
 			logs: { key: logsKeyOf(span), data: AsyncData.Loading() },
 			tabs: Tabs.init({ idBase: 32, values: TAB_VALUES, selected: "details" }),
 			copies: {},
@@ -64,7 +74,9 @@ export const init = (input: InitInput): Return => {
 }
 
 const revalidate = <A>(read: Read<A>): Read<A> =>
-	read.key === null ? read : { ...read, data: Option.getOrElse(AsyncData.revalidateOrLoad(read.data), () => read.data) }
+	read.key === null
+		? read
+		: { ...read, data: Option.getOrElse(AsyncData.revalidateOrLoad(read.data), () => read.data) }
 
 /** The reader refreshed: ask the source again past any cache, the current data staying up. */
 export const refresh = (model: Model): Return => ({
@@ -74,7 +86,9 @@ export const refresh = (model: Model): Return => ({
 
 /** A cached answer for the read's key: shown at once, revalidating unless fresh. */
 const fromCache = <A>(read: Read<A>, key: string, data: A, isFresh: boolean): Read<A> =>
-	read.key !== key ? read : { key, data: isFresh ? AsyncData.Success({ data }) : AsyncData.Refreshing({ data }) }
+	read.key !== key
+		? read
+		: { key, data: isFresh ? AsyncData.Success({ data }) : AsyncData.Refreshing({ data }) }
 
 const copyStatus = <S extends PanelState>(
 	model: S,
@@ -90,7 +104,7 @@ const copyStatus = <S extends PanelState>(
 		: { model }
 
 const toggled = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> =>
-	ids.includes(id) ? ids.filter((open) => open !== id) : [...ids, id]
+	ids.includes(id) ? Arr.filter(ids, (open) => open !== id) : [...ids, id]
 
 /** The panel's reads, copies and disclosures over any model holding them (the session popover's too). */
 export const updateState = <S extends PanelState>(model: S, message: Message): StateReturn<S> =>
@@ -103,11 +117,17 @@ export const updateState = <S extends PanelState>(model: S, message: Message): S
 		}),
 		FoundCachedDetail: ({ fetch, detail, isFresh }) => ({
 			model: { ...model, detail: fromCache(model.detail, fetch.key, detail, isFresh) },
-			commands: isFresh || model.detail.key !== fetch.key ? [] : [FetchSpanDetail({ ...fetch, readsCache: false })],
+			commands:
+				isFresh || model.detail.key !== fetch.key
+					? []
+					: [FetchSpanDetail({ ...fetch, readsCache: false })],
 		}),
 		FoundCachedLogs: ({ fetch, logs, isFresh }) => ({
 			model: { ...model, logs: fromCache(model.logs, fetch.key, logs, isFresh) },
-			commands: isFresh || model.logs.key !== fetch.key ? [] : [FetchSpanLogs({ ...fetch, readsCache: false })],
+			commands:
+				isFresh || model.logs.key !== fetch.key
+					? []
+					: [FetchSpanLogs({ ...fetch, readsCache: false })],
 		}),
 		ClickedClose: () => ({ model, outMessage: OutMessage.Closed() }),
 		ClickedParentSpan: ({ spanId }) => ({ model, outMessage: OutMessage.SelectedSpanId({ spanId }) }),

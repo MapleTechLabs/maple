@@ -16,6 +16,7 @@ import {
 import type { DestinationForm } from "./form"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `EmailMemberPicker`'s `MultiSelectCombobox` (packages/ui/src/components/multi-select-combobox.tsx)
 // in chips mode: each chip and row shows the member's avatar and name, never the user id.
@@ -64,7 +65,7 @@ export const emailFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const isTooMany = form.memberUserIds.length > MAX_EMAIL_MEMBER_RECIPIENTS
 	const isLoaded = !AsyncData.isLoading(model.members) && !AsyncData.isIdle(model.members)
 	const options = AsyncData.getOrElse(model.members, () => [])
-	const byId = new Map(options.map((option) => [option.userId, option] as const))
+	const byId = new Map(Arr.map(options, (option) => [option.userId, option] as const))
 	const items = visibleIds(options, model.combobox.inputValue)
 	return field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 		fieldLabel(h, { ids: IDS, className: "text-xs", state: IDLE }, "Recipients"),

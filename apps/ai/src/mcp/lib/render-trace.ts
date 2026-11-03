@@ -3,6 +3,7 @@ import type { InspectTraceOutput, TraceSpanOutput } from "@maple/domain/mcp-outp
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "./format"
 import { selectOverviewSpans, type OverviewOptions } from "./span-tree"
 import { doc, type DocBlock, type ToolDoc } from "./tool-doc"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 export interface TraceOverviewLog {
 	readonly timestamp: string
@@ -55,12 +56,12 @@ export function rollupSpanNames(roots: ReadonlyArray<SpanNode>): Array<Rollup> {
 /** The tree as a flat pre-order list with depths, so the output's JSON nesting is constant. */
 export function flattenSpanTree(roots: ReadonlyArray<SpanNode>): Array<TraceSpanOutput> {
 	const out: Array<TraceSpanOutput> = []
-	const stack = roots.map((node) => ({ node, depth: 0 })).reverse()
+	const stack = Arr.map(roots, (node) => ({ node, depth: 0 })).reverse()
 	for (let entry = stack.pop(); entry !== undefined; entry = stack.pop()) {
 		const { children, ...span } = entry.node
 		out.push({ ...span, depth: entry.depth })
 		const depth = entry.depth + 1
-		stack.push(...children.map((node) => ({ node, depth })).reverse())
+		stack.push(...Arr.map(children, (node) => ({ node, depth })).reverse())
 	}
 	return out
 }
@@ -101,7 +102,7 @@ export function buildTraceOverview(input: TraceOverviewInput): Output {
 		totalSpanCount: overview.totalCount,
 		truncated: overview.truncated,
 		logs: input.logs,
-		omitted: [...overview.omittedByParent].map(([parentSpanId, omitted]) => ({
+		omitted: Arr.map([...overview.omittedByParent], ([parentSpanId, omitted]) => ({
 			parentSpanId,
 			...omitted,
 		})),
@@ -113,7 +114,7 @@ export function buildTraceOverview(input: TraceOverviewInput): Output {
 }
 
 const renderTree = (output: Output): string => {
-	const omittedByParent = new Map(output.omitted.map((entry) => [entry.parentSpanId, entry]))
+	const omittedByParent = new Map(Arr.map(output.omitted, (entry) => [entry.parentSpanId, entry]))
 	const lines: Array<string> = []
 	// Resource attributes are per service; print them once, on its first span.
 	const servicesWithResource = new Set<string>()
@@ -132,25 +133,33 @@ const renderTree = (output: Output): string => {
 			...(node.rawSpanName === undefined ? [] : [`span_name="${node.rawSpanName}"`]),
 			...(node.durationMs === 0 && children.length > 0 ? ["duration not recorded"] : []),
 		]
-		if (notes.length > 0) lines.push(`${detailPrefix}    ${notes.join(", ")}`)
+		if (notes.length > 0) lines.push(`${detailPrefix}    ${Arr.join(notes, ", ")}`)
 		if (node.statusCode === "Error" && node.statusMessage) {
 			lines.push(`${detailPrefix}    Status: "${truncate(node.statusMessage, 100)}"`)
 		}
-		const attrs = Object.entries(node.attributes).slice(0, 5)
+		const attrs = Rec.toEntries(node.attributes).slice(0, 5)
 		if (attrs.length > 0) {
-			lines.push(`${detailPrefix}    {${attrs.map(([k, v]) => `${k}=${truncate(v, 60)}`).join(", ")}}`)
+			lines.push(
+				`${detailPrefix}    {${Arr.join(
+					Arr.map(attrs, ([k, v]) => `${k}=${truncate(v, 60)}`),
+					", ",
+				)}}`,
+			)
 		}
 		const resourceAttrs = servicesWithResource.has(node.serviceName)
 			? []
-			: Object.entries(node.resourceAttributes).slice(0, 5)
+			: Rec.toEntries(node.resourceAttributes).slice(0, 5)
 		if (resourceAttrs.length > 0) {
 			servicesWithResource.add(node.serviceName)
 			lines.push(
-				`${detailPrefix}    resource: {${resourceAttrs.map(([k, v]) => `${k}=${truncate(v, 60)}`).join(", ")}}`,
+				`${detailPrefix}    resource: {${Arr.join(
+					Arr.map(resourceAttrs, ([k, v]) => `${k}=${truncate(v, 60)}`),
+					", ",
+				)}}`,
 			)
 		}
 		const omitted = omittedByParent.get(node.spanId)
-		children.forEach((child, i) => {
+		Arr.forEach(children, (child, i) => {
 			renderNode(child, detailPrefix, i === children.length - 1 && omitted === undefined)
 		})
 		if (omitted !== undefined) {
@@ -161,21 +170,24 @@ const renderTree = (output: Output): string => {
 			)
 		}
 	}
-	spanTreeOf(output.spans).forEach((root) => renderNode(root, "", true))
-	return lines.join("\n")
+	Arr.forEach(spanTreeOf(output.spans), (root) => renderNode(root, "", true))
+	return Arr.join(lines, "\n")
 }
 
 const renderLogs = (logs: Output["logs"]): string =>
-	[
-		`Related Logs (${logs.length}):`,
-		...logs.map((log) => {
-			const time = log.timestamp.split(" ")[1] ?? log.timestamp
-			const sevUpper = log.severityText.toUpperCase()
-			const marker = sevUpper === "ERROR" || sevUpper === "FATAL" ? "●" : " "
-			const spanRef = log.spanId ? ` span=${log.spanId}` : ""
-			return `${marker} ${time} [${log.severityText.padEnd(5)}] ${log.serviceName}: ${truncate(log.body, 100)}${spanRef}`
-		}),
-	].join("\n")
+	Arr.join(
+		[
+			`Related Logs (${logs.length}):`,
+			...Arr.map(logs, (log) => {
+				const time = Str.split(" ")(log.timestamp)[1] ?? log.timestamp
+				const sevUpper = Str.toUpperCase(log.severityText)
+				const marker = sevUpper === "ERROR" || sevUpper === "FATAL" ? "●" : " "
+				const spanRef = log.spanId ? ` span=${log.spanId}` : ""
+				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${truncate(log.body, 100)}${spanRef}`
+			}),
+		],
+		"\n",
+	)
 
 const isErrorSpan = (span: TraceSpanOutput): boolean => span.statusCode === "Error"
 
@@ -219,7 +231,7 @@ export function renderTraceOverview(output: Output): ToolDoc {
 			doc.heading(`Span names across all ${output.spanCount} spans (by total time)`),
 			doc.table(
 				["Span Name", "Service", "Count", "Total", "Max", "Errors"],
-				output.rollup.map((r) => [
+				Arr.map(output.rollup, (r) => [
 					r.spanName,
 					r.serviceName,
 					String(r.count),
@@ -231,7 +243,7 @@ export function renderTraceOverview(output: Output): ToolDoc {
 		)
 	}
 	if (output.logs.length > 0) blocks.push(doc.text(renderLogs(output.logs)))
-	const services = [...new Set(output.spans.map((span) => span.serviceName))]
+	const services = [...new Set(Arr.map(output.spans, (span) => span.serviceName))]
 	const focus = output.spans.find(isErrorSpan) ?? output.spans[0]
 	return {
 		title: `Trace ${output.traceId} (${output.serviceCount} services, ${output.spanCount} spans, ${formatDurationFromMs(output.rootDurationMs)})`,
@@ -273,12 +285,12 @@ export function renderTraceOverview(output: Output): ToolDoc {
 								: "every attribute of the root span",
 						),
 					]),
-			...(output.spans.some(isErrorSpan)
+			...(Arr.some(output.spans, isErrorSpan)
 				? [doc.next("search_logs", { trace_id: output.traceId }, "see all logs for this trace")]
 				: []),
-			...services
-				.slice(0, 2)
-				.map((service) => doc.next("diagnose_service", { service }, "investigate this service")),
+			...Arr.map(services.slice(0, 2), (service) =>
+				doc.next("diagnose_service", { service }, "investigate this service"),
+			),
 		],
 	}
 }

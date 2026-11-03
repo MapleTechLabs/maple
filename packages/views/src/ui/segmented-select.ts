@@ -9,6 +9,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 import { segmentItemHeight, togglePrimitive } from "./toggle"
+import { Array as Arr } from "effect"
 
 export type MultiSegmentedOption<T extends string> = Readonly<{
 	value: T
@@ -53,7 +54,7 @@ export const multiSegmentedSelect = <T extends string, M>(
 			h.DataAttribute("variant", "outline"),
 			h.Role("group"),
 		],
-		config.options.map((option, index) => {
+		Arr.map(config.options, (option, index) => {
 			const isSelected = config.value.includes(option.value)
 			const isOptionDisabled = isDisabled || (option.isDisabled ?? false)
 			return togglePrimitive(
@@ -147,7 +148,7 @@ export const segmentedSelect = <T extends string, M>(
 			h.DataAttribute("slot", "toggle-group"),
 			h.DataAttribute("variant", "outline"),
 		],
-		config.options.map((option) => {
+		Arr.map(config.options, (option) => {
 			const isSelected = option.value === config.value
 			return togglePrimitive(
 				h,

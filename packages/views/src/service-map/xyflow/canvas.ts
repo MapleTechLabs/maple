@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { INITIAL_VIEWPORT, MeasuredNode, type PlacedNode, Point, Viewport } from "./geometry"
@@ -103,12 +103,12 @@ export const placed = (
 		readonly id: string
 		readonly position: { readonly x: number; readonly y: number }
 	}>,
-): ReadonlyArray<PlacedNode> => nodes.map((node) => ({ ...node, measured: model.measured[node.id] }))
+): ReadonlyArray<PlacedNode> => Arr.map(nodes, (node) => ({ ...node, measured: model.measured[node.id] }))
 
 /** Runs `request` now if every node is measured and the pane has a size, else keeps it queued. */
 export const requestFit = (model: Model, nodes: ReadonlyArray<PlacedNode>, request: FitRequest): Model => {
 	const ready =
-		model.pane.width > 0 && nodes.length > 0 && nodes.every((node) => node.measured !== undefined)
+		model.pane.width > 0 && nodes.length > 0 && Arr.every(nodes, (node) => node.measured !== undefined)
 	if (!ready) return modifyFields(model, { pendingFit: () => Option.some(request) })
 	const viewport = fitViewport(nodes, model.pane, request)
 	const duration = request.duration ?? 0

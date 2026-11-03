@@ -13,6 +13,7 @@ import { DETECTOR_LABELS } from "./summary"
 import { clause, type H } from "./view-form"
 import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The "then ..." half of the sentence: drop with a keep share, or redact.
 
@@ -95,7 +96,7 @@ const redactControls = (h: H, model: Model): ReadonlyArray<Html> => {
 				h.legend([h.Class("mb-1 text-sm font-medium")], ["Detect"]),
 				h.div(
 					[h.Class("grid gap-2 sm:grid-cols-2")],
-					IngestRuleDetector.literals.map((detector) =>
+					Arr.map(IngestRuleDetector.literals, (detector) =>
 						checkboxRow(
 							h,
 							`ingest-rule-detector-${detector}`,
@@ -129,7 +130,7 @@ const redactControls = (h: H, model: Model): ReadonlyArray<Html> => {
 				h.legend([h.Class("mb-1 text-sm font-medium")], ["Look in"]),
 				h.div(
 					[h.Class("grid gap-2 sm:grid-cols-2")],
-					IngestRuleScope.literals.map((scope) =>
+					Arr.map(IngestRuleScope.literals, (scope) =>
 						checkboxRow(
 							h,
 							`ingest-rule-scope-${scope}`,
@@ -148,7 +149,7 @@ const redactControls = (h: H, model: Model): ReadonlyArray<Html> => {
 				ariaLabel: "Redaction method",
 				value: draft.method,
 				onChange: (method) => Message.PickedMethod({ method }),
-				options: IngestRuleRedactMethod.literals.map((method) => ({
+				options: Arr.map(IngestRuleRedactMethod.literals, (method) => ({
 					value: method,
 					label: METHOD_LABELS[method],
 				})),

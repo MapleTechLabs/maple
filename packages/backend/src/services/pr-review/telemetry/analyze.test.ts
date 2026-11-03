@@ -3,6 +3,7 @@ import { assert, describe, it } from "vitest"
 import { analyzeTelemetry, EMPTY_CATALOG, frameMatchesPath, type TelemetryCatalog } from "./analyze"
 import { emittedNames, parsePatch } from "./diff"
 import { referencesFor, textsOf, type ReferenceSource } from "./references"
+import { Array as Arr } from "effect"
 
 const file = (path: string, patch: string): PullRequestFile => ({
 	path,
@@ -44,7 +45,7 @@ describe("parsePatch", () => {
 	it("numbers added lines on the new side and anchors removals where they happened", () => {
 		const lines = parsePatch("@@ -10,3 +20,3 @@\n a\n-b\n+c\n d")
 		assert.deepStrictEqual(
-			lines.map((line) => [line.kind, line.newLine]),
+			Arr.map(lines, (line) => [line.kind, line.newLine]),
 			[
 				["ctx", 20],
 				["del", 21],
@@ -58,7 +59,8 @@ describe("parsePatch", () => {
 describe("emittedNames", () => {
 	it("classifies span, metric and attribute names by the call they are in", () => {
 		assert.deepStrictEqual(
-			emittedNames(`Effect.withSpan("Payments.charge"), Metric.counter("payments.charged")`, "").map(
+			Arr.map(
+				emittedNames(`Effect.withSpan("Payments.charge"), Metric.counter("payments.charged")`, ""),
 				(name) => [name.kind, name.value],
 			),
 			[
@@ -67,7 +69,8 @@ describe("emittedNames", () => {
 			],
 		)
 		assert.deepStrictEqual(
-			emittedNames(`	"payment.provider": provider,`, "yield* Effect.annotateCurrentSpan({").map(
+			Arr.map(
+				emittedNames(`	"payment.provider": provider,`, "yield* Effect.annotateCurrentSpan({"),
 				(name) => name.value,
 			),
 			["payment.provider"],
@@ -128,15 +131,15 @@ describe("analyzeTelemetry", () => {
 			issues: [],
 		})
 		assert.deepStrictEqual(
-			telemetry.contractBreaks.map((item) => [item.name, item.kind, item.line, item.perDay]),
+			Arr.map(telemetry.contractBreaks, (item) => [item.name, item.kind, item.line, item.perDay]),
 			[["payment.provider", "attribute", 2, 1_000]],
 		)
 		assert.deepStrictEqual(
-			telemetry.contractBreaks[0]?.references.map((ref) => ref.id),
+			Arr.map(telemetry.contractBreaks[0]?.references, (ref) => ref.id),
 			["rule-1"],
 		)
 		assert.deepStrictEqual(
-			telemetry.added.map((item) => item.name),
+			Arr.map(telemetry.added, (item) => item.name),
 			[],
 		)
 	})
@@ -185,33 +188,36 @@ describe("analyzeTelemetry", () => {
 		name: "High error rate",
 		texts: ["service.name = 'api' AND http.response.status_code >= 500"],
 	}
-	const otlpPayloadPatch = [
-		"@@ -123,24 +121,0 @@ export const SaveFramework = Command.define(",
-		"-const testEventPayload = (now: number, traceId: string, spanId: string) => ({",
-		"-\tresourceSpans: [",
-		"-\t\t{",
-		"-\t\t\tresource: {",
-		"-\t\t\t\tattributes: [",
-		'-\t\t\t\t\t{ key: "service.name", value: { stringValue: "maple-onboarding-test" } },',
-		'-\t\t\t\t\t{ key: "deployment.environment", value: { stringValue: "development" } },',
-		"-\t\t\t\t],",
-		"-\t\t\t},",
-		"-\t\t\tscopeSpans: [",
-		"-\t\t\t\t{",
-		"-\t\t\t\t\tspans: [",
-		"-\t\t\t\t\t\t{",
-		"-\t\t\t\t\t\t\tattributes: [",
-		'-\t\t\t\t\t\t\t\t{ key: "http.route", value: { stringValue: "/maple/test-event" } },',
-		'-\t\t\t\t\t\t\t\t{ key: "http.response.status_code", value: { intValue: 200 } },',
-		"-\t\t\t\t\t\t\t],",
-		"-\t\t\t\t\t\t},",
-		"-\t\t\t\t\t],",
-		"-\t\t\t\t},",
-		"-\t\t\t],",
-		"-\t\t},",
-		"-\t],",
-		"-})",
-	].join("\n")
+	const otlpPayloadPatch = Arr.join(
+		[
+			"@@ -123,24 +121,0 @@ export const SaveFramework = Command.define(",
+			"-const testEventPayload = (now: number, traceId: string, spanId: string) => ({",
+			"-\tresourceSpans: [",
+			"-\t\t{",
+			"-\t\t\tresource: {",
+			"-\t\t\t\tattributes: [",
+			'-\t\t\t\t\t{ key: "service.name", value: { stringValue: "maple-onboarding-test" } },',
+			'-\t\t\t\t\t{ key: "deployment.environment", value: { stringValue: "development" } },',
+			"-\t\t\t\t],",
+			"-\t\t\t},",
+			"-\t\t\tscopeSpans: [",
+			"-\t\t\t\t{",
+			"-\t\t\t\t\tspans: [",
+			"-\t\t\t\t\t\t{",
+			"-\t\t\t\t\t\t\tattributes: [",
+			'-\t\t\t\t\t\t\t\t{ key: "http.route", value: { stringValue: "/maple/test-event" } },',
+			'-\t\t\t\t\t\t\t\t{ key: "http.response.status_code", value: { intValue: 200 } },',
+			"-\t\t\t\t\t\t\t],",
+			"-\t\t\t\t\t\t},",
+			"-\t\t\t\t\t],",
+			"-\t\t\t\t},",
+			"-\t\t\t],",
+			"-\t\t},",
+			"-\t],",
+			"-})",
+		],
+		"\n",
+	)
 
 	it("ignores attribute keys inside a removed OTLP payload literal", () => {
 		const telemetry = analyzeTelemetry({
@@ -252,7 +258,7 @@ describe("analyzeTelemetry", () => {
 			issues: [],
 		})
 		assert.deepStrictEqual(
-			telemetry.contractBreaks.map((item) => [item.name, item.kind]),
+			Arr.map(telemetry.contractBreaks, (item) => [item.name, item.kind]),
 			[["http.response.status_code", "attribute"]],
 		)
 	})
@@ -265,7 +271,7 @@ describe("analyzeTelemetry", () => {
 			issues: [],
 		})
 		assert.deepStrictEqual(
-			telemetry.contractBreaks.map((item) => item.name),
+			Arr.map(telemetry.contractBreaks, (item) => item.name),
 			["service.namespace"],
 		)
 	})
@@ -294,7 +300,7 @@ describe("analyzeTelemetry", () => {
 			issues: [],
 		})
 		assert.deepStrictEqual(
-			telemetry.contractBreaks.map((item) => [item.name, item.kind]),
+			Arr.map(telemetry.contractBreaks, (item) => [item.name, item.kind]),
 			[["Payments.charge", "span"]],
 		)
 	})
@@ -326,7 +332,7 @@ describe("analyzeTelemetry", () => {
 			issues: [],
 		})
 		assert.deepStrictEqual(
-			telemetry.contractBreaks.map((item) => item.name),
+			Arr.map(telemetry.contractBreaks, (item) => item.name),
 			["payment.provider"],
 		)
 	})
@@ -354,12 +360,12 @@ describe("analyzeTelemetry", () => {
 			issues: [],
 		})
 		assert.deepStrictEqual(
-			telemetry.hotFiles.map((hot) => [hot.path, hot.perDay]),
+			Arr.map(telemetry.hotFiles, (hot) => [hot.path, hot.perDay]),
 			[["src/routes/checkout.ts", 10_000]],
 		)
 		assert.deepStrictEqual(telemetry.services, ["api"])
 		assert.deepStrictEqual(
-			telemetry.costNotes.map((note) => [note.kind, note.gbPerMonth]),
+			Arr.map(telemetry.costNotes, (note) => [note.kind, note.gbPerMonth]),
 			[["log", 0.3]],
 		)
 	})
@@ -372,7 +378,7 @@ describe("analyzeTelemetry", () => {
 			issues: [],
 		})
 		assert.deepStrictEqual(
-			telemetry.costNotes.map((note) => note.kind),
+			Arr.map(telemetry.costNotes, (note) => note.kind),
 			["span_name"],
 		)
 	})
@@ -395,7 +401,7 @@ describe("analyzeTelemetry", () => {
 			],
 		})
 		assert.deepStrictEqual(
-			telemetry.linkedIssues.map((issue) => [issue.issueId, issue.path]),
+			Arr.map(telemetry.linkedIssues, (issue) => [issue.issueId, issue.path]),
 			[["issue-1", "src/payments/charge.ts"]],
 		)
 	})
@@ -418,34 +424,37 @@ describe("analyzeTelemetry", () => {
 			catalog,
 			sources: [],
 			issues: [
-				...["a", "b", "c", "d", "e", "f"].map((id) =>
+				...Arr.map(["a", "b", "c", "d", "e", "f"], (id) =>
 					issue(id, "api-v2", "at Object.fetch (worker-app.js:1:52311)"),
 				),
 				issue("charge", "payments", "at charge (/app/payments/charge.js)"),
 			],
 		})
 		assert.deepStrictEqual(
-			telemetry.linkedIssues.map((linked) => [linked.issueId, linked.path]),
+			Arr.map(telemetry.linkedIssues, (linked) => [linked.issueId, linked.path]),
 			[["charge", "src/payments/charge.ts"]],
 		)
 	})
 
 	it("matches a frame's whole directory segment and prefers it over a name-only match", () => {
 		const linked = (files: ReadonlyArray<string>, topFrame: string) =>
-			analyzeTelemetry({
-				files: files.map((path) => file(path, "@@ -1,1 +1,1 @@\n-a\n+b")),
-				catalog,
-				sources: [],
-				issues: ["a", "b", "c", "d", "e"].map((id) => ({
-					id,
-					fingerprintHash: id,
-					title: `Error ${id}`,
-					service: "shop",
-					topFrame,
-					occurrences: 10,
-					lastSeenAt: 1,
-				})),
-			}).linkedIssues.map((issue) => issue.path)
+			Arr.map(
+				analyzeTelemetry({
+					files: Arr.map(files, (path) => file(path, "@@ -1,1 +1,1 @@\n-a\n+b")),
+					catalog,
+					sources: [],
+					issues: Arr.map(["a", "b", "c", "d", "e"], (id) => ({
+						id,
+						fingerprintHash: id,
+						title: `Error ${id}`,
+						service: "shop",
+						topFrame,
+						occurrences: 10,
+						lastSeenAt: 1,
+					})),
+				}).linkedIssues,
+				(issue) => issue.path,
+			)
 		// Matched by name only, `public-api` not being `api`: the bundle entry, so unlinked.
 		assert.deepStrictEqual(
 			linked(["src/api/worker-app.ts"], "at f (/dist/public-api/worker-app.js:1:9)"),
@@ -466,7 +475,7 @@ describe("analyzeTelemetry", () => {
 			files: [file("src/orders/checkout.ts", "@@ -1,1 +1,1 @@\n-a\n+b")],
 			catalog,
 			sources: [],
-			issues: ["a", "b", "c", "d", "e"].map((id, i) => ({
+			issues: Arr.map(["a", "b", "c", "d", "e"], (id, i) => ({
 				id,
 				fingerprintHash: id,
 				title: `Error ${id}`,

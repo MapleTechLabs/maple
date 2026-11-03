@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { FetchWidget } from "./command"
@@ -14,7 +14,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const fetches = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).filter(({ name }) => name === FetchWidget.name).length
+	Arr.filter(commands ?? [], ({ name }) => name === FetchWidget.name).length
 
 const stat = (id: string, endpoint: string) => ({
 	id,
@@ -62,7 +62,7 @@ const boardOf = (widgets: ReadonlyArray<unknown>) =>
 	})
 
 const run = (model: Model, messages: ReadonlyArray<Message>): Model =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 const ready = (widgets: ReadonlyArray<unknown>): Model =>
 	run(init({ dashboardId: "dash_platform", search: {} }, context).model, [
@@ -74,7 +74,7 @@ const ready = (widgets: ReadonlyArray<unknown>): Model =>
 const answered = (model: Model): Model =>
 	run(
 		model,
-		Object.keys(model.requests).map((key) =>
+		Arr.map(Rec.keys(model.requests), (key) =>
 			Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [{ value: 1 }] }) }),
 		),
 	)

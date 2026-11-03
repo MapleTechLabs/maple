@@ -1,6 +1,6 @@
 import type { SpanNode } from "@maple/ui/lib/types"
 import { SpanId, TraceId } from "@maple/domain"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 
 // The trace the detail page shows, as Model data: `getSpanHierarchy`'s response with the span tree
 // kept as a recursive Schema, so every view reads one tree instead of rebuilding it per render.
@@ -72,6 +72,5 @@ export const toSpanNode = (node: SpanNodeData): SpanNode => ({
 	...node,
 	spanAttributes: { ...node.spanAttributes },
 	resourceAttributes: { ...node.resourceAttributes },
-	children: node.children.map(toSpanNode),
+	children: Arr.map(node.children, toSpanNode),
 })
-

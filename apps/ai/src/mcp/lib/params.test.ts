@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Schema } from "effect"
+import { Effect, Exit, Schema, Array as Arr } from "effect"
 import { toInputSchema } from "../tools/registry"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import * as P from "./params"
@@ -79,7 +79,7 @@ describe("MCP parameter vocabulary", () => {
 					.pipe(Effect.provideService(CurrentWindowNotes, notes)),
 			)
 			expect(range).toEqual({ st: "2026-09-02 00:00:00", et: "2026-09-03 00:00:00" })
-			expect(notes.notices.join()).toContain("`search_traces` covers at most 1 day")
+			expect(Arr.join(notes.notices, ",")).toContain("`search_traces` covers at most 1 day")
 			const rendered = notes.decorate({ title: "T", scope: [["Time range", "x"]], blocks: [] })
 			expect(rendered.scope?.at(-1)?.[0]).toBe("Now (UTC)")
 		})

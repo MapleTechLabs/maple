@@ -5,7 +5,16 @@ import { Worker } from "node:worker_threads"
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { lstat, mkdir, readFile, readdir, rm, rmdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { Duration, Effect, Option, Schema } from "effect"
+import {
+	DateTime,
+	Duration,
+	Effect,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "./version"
@@ -56,11 +65,11 @@ const CheckpointUuid = Schema.String.check(Schema.isPattern(CHECKPOINT_ID))
 // rather than the branded checkpoint schema types above.
 const validateId = (value: string, kind: string): string => {
 	if (!CHECKPOINT_ID.test(value)) throw new Error(`invalid ${kind} ID: ${value}`)
-	return value.toLowerCase()
+	return Str.toLowerCase(value)
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const requiredString = (record: Record<string, unknown>, key: string): string => {
 	const value = record[key]
@@ -443,7 +452,7 @@ const assertContained = (root: string, candidate: string, label: string): string
 	const absoluteRoot = resolve(root)
 	const absoluteCandidate = resolve(candidate)
 	const rel = relative(absoluteRoot, absoluteCandidate)
-	if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+	if (rel === "" || rel === ".." || Str.startsWith(`..${sep}`)(rel) || isAbsolute(rel)) {
 		throw new Error(`${label} escapes configured root`)
 	}
 	return absoluteCandidate
@@ -461,7 +470,7 @@ const assertNoSymlink = async (root: string, candidate: string): Promise<void> =
 	}
 	const rel = relative(absoluteRoot, absoluteCandidate)
 	let current = absoluteRoot
-	for (const part of rel.split(sep)) {
+	for (const part of Str.split(sep)(rel)) {
 		current = join(current, part)
 		try {
 			if ((await lstat(current)).isSymbolicLink()) {
@@ -503,16 +512,19 @@ const assertCheckpointInfrastructureSafe = async (dataDir: string): Promise<void
 }
 
 const xmlEscape = (value: string): string =>
-	value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&apos;")
+	Str.replace(
+		/'/g,
+		"&apos;",
+	)(
+		Str.replace(
+			/"/g,
+			"&quot;",
+		)(Str.replace(/>/g, "&gt;")(Str.replace(/</g, "&lt;")(Str.replace(/&/g, "&amp;")(value)))),
+	)
 
 const dataDirWithSlash = (dataDir: string): string => {
 	const abs = resolve(dataDir)
-	return abs.endsWith(sep) ? abs : `${abs}${sep}`
+	return Str.endsWith(sep)(abs) ? abs : `${abs}${sep}`
 }
 
 export const writeBackupConfig = (path: string, sourceDataDir?: string): void => {
@@ -568,7 +580,7 @@ export const postCheckpointBackup = (
 	const url = `${serverUrl(host, port)}/local/checkpoint/backup`
 	return Effect.gen(function* () {
 		const token = yield* Effect.try({
-			try: () => readFileSync(`${resolve(dataDir)}.maintenance-token`, "utf8").trim(),
+			try: () => Str.trim(readFileSync(`${resolve(dataDir)}.maintenance-token`, "utf8")),
 			catch: (error) => localQueryError(0, `failed to read maintenance token: ${errorMessage(error)}`),
 		})
 		const client = yield* HttpClient.HttpClient
@@ -601,20 +613,19 @@ export const postCheckpointBackup = (
 }
 
 export const isMissingBackupConfigurationError = (error: unknown): boolean => {
-	const detail =
-		error instanceof LocalQueryError
-			? error.detail
-			: error instanceof Error
-				? error.message
-				: String(error)
-	const lower = detail.toLowerCase()
+	const detail = Schema.is(LocalQueryError)(error)
+		? error.detail
+		: error instanceof Error
+			? error.message
+			: String(error)
+	const lower = Str.toLowerCase(detail)
 	const backupSpecific =
-		lower.includes("backups.allowed_disk") ||
-		lower.includes("backups.allowed_path") ||
-		(lower.includes("backup") &&
-			(lower.includes("not allowed") ||
-				lower.includes("unknown disk") ||
-				lower.includes("allowed disk")))
+		Str.includes("backups.allowed_disk")(lower) ||
+		Str.includes("backups.allowed_path")(lower) ||
+		(Str.includes("backup")(lower) &&
+			(Str.includes("not allowed")(lower) ||
+				Str.includes("unknown disk")(lower) ||
+				Str.includes("allowed disk")(lower)))
 	return backupSpecific
 }
 
@@ -622,17 +633,19 @@ const JsonRow = Schema.Record(Schema.String, Schema.Unknown)
 const decodeJsonRow = Schema.decodeUnknownSync(JsonRow)
 
 const readJsonRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
-	text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.map((line) => {
+	Arr.map(
+		Arr.filter(
+			Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+			(line) => line.length > 0,
+		),
+		(line) => {
 			try {
 				return decodeJsonRow(decodeJsonSync(line))
 			} catch (error) {
 				throw new Error(`invalid JSONEachRow result: ${errorMessage(error)}`)
 			}
-		})
+		},
+	)
 
 const countFrom = (rows: ReadonlyArray<Record<string, unknown>>): number => {
 	const row = rows[0]
@@ -664,15 +677,22 @@ const decodeTableDefinitionRow = Schema.decodeUnknownSync(TableDefinitionRowSche
 /** Rows per UTC day and each table's TTL, so two measurements taken on different
  * days can still be compared on the days neither side's TTL could have touched. */
 const measureRetainedDays = (db: Chdb, countedOn: string): RetainedDays => {
-	const quoted = RAW_TELEMETRY_TTL_COLUMNS.map(([table]) => `'${table}'`).join(", ")
+	const quoted = Arr.join(
+		Arr.map(RAW_TELEMETRY_TTL_COLUMNS, ([table]) => `'${table}'`),
+		", ",
+	)
 	const definitions = new Map(
-		readJsonRows(
-			db.query(
-				`SELECT name, engine_full FROM system.tables WHERE database = 'default' AND name IN (${quoted})`,
+		Arr.map(
+			Arr.map(
+				readJsonRows(
+					db.query(
+						`SELECT name, engine_full FROM system.tables WHERE database = 'default' AND name IN (${quoted})`,
+					),
+				),
+				(row) => decodeTableDefinitionRow(row),
 			),
-		)
-			.map((row) => decodeTableDefinitionRow(row))
-			.map((row) => [row.name, row.engine_full] as const),
+			(row) => [row.name, row.engine_full] as const,
+		),
 	)
 	const tables: Record<string, RetainedDays["tables"][string]> = {}
 	for (const [table, column] of RAW_TELEMETRY_TTL_COLUMNS) {
@@ -699,23 +719,30 @@ const VALIDATION_DAY_MS = 86_400_000
 export const retainedDaysMatch = (left: RetainedDays, right: RetainedDays): boolean => {
 	const comparedOn = left.countedOn > right.countedOn ? left.countedOn : right.countedOn
 	const comparedMs = Date.parse(`${comparedOn}T00:00:00Z`)
-	return RAW_TELEMETRY_TTL_COLUMNS.every(([table]) => {
+	return Arr.every(RAW_TELEMETRY_TTL_COLUMNS, ([table]) => {
 		const leftTable = left.tables[table]
 		const rightTable = right.tables[table]
 		if (leftTable === undefined || rightTable === undefined) return leftTable === rightTable
 		// The shorter TTL decides which days either side may already have dropped.
-		const knownTtls = [leftTable.ttlDays, rightTable.ttlDays].filter(
+		const knownTtls = Arr.filter(
+			[leftTable.ttlDays, rightTable.ttlDays],
 			(days): days is number => days !== null,
 		)
 		const ttlDays = knownTtls.length === 0 ? null : Math.min(...knownTtls)
 		const firstKept =
 			ttlDays === null
 				? null
-				: new Date(comparedMs - Math.max(ttlDays - RETAINED_MARGIN_DAYS, 0) * VALIDATION_DAY_MS)
-						.toISOString()
-						.slice(0, 10)
-		const days = new Set([...Object.keys(leftTable.days), ...Object.keys(rightTable.days)])
-		return [...days].every(
+				: Str.slice(
+						0,
+						10,
+					)(
+						new Date(
+							comparedMs - Math.max(ttlDays - RETAINED_MARGIN_DAYS, 0) * VALIDATION_DAY_MS,
+						).toISOString(),
+					)
+		const days = new Set([...Rec.keys(leftTable.days), ...Rec.keys(rightTable.days)])
+		return Arr.every(
+			[...days],
 			(day) =>
 				(firstKept !== null && day < firstKept) ||
 				(leftTable.days[day] ?? 0) === (rightTable.days[day] ?? 0),
@@ -735,7 +762,7 @@ const validateRestoredDatabase = (db: Chdb): CheckpointValidation => ({
 		db,
 		"SELECT count() FROM system.tables WHERE database = 'default' AND engine = 'MaterializedView'",
 	),
-	retained: measureRetainedDays(db, new Date().toISOString().slice(0, 10)),
+	retained: measureRetainedDays(db, Str.slice(0, 10)(new Date().toISOString())),
 })
 
 /** Open and validate a restored store in the current process. Production
@@ -811,7 +838,7 @@ const validateRestoredDatabaseInFreshProcess = (
 	expected: CheckpointValidation,
 ): CheckpointValidation => {
 	const entry = process.argv[1]
-	const childArgs = entry && !entry.startsWith("/$bunfs") ? [entry] : []
+	const childArgs = entry && !Str.startsWith("/$bunfs")(entry) ? [entry] : []
 	const child = spawnSync(process.execPath, childArgs, {
 		env: { ...process.env, [CHECKPOINT_REOPEN_PROBE_ENV]: resolve(dataDir) },
 		encoding: "utf8",
@@ -819,19 +846,19 @@ const validateRestoredDatabaseInFreshProcess = (
 		maxBuffer: 1024 * 1024,
 		stdio: ["ignore", "pipe", "pipe"],
 	})
-	const stderr = child.stderr.trim()
+	const stderr = Str.trim(child.stderr)
 	if (child.error) {
 		throw new Error(`fresh-process checkpoint reopen probe failed to run: ${child.error.message}`)
 	}
 	if (child.status !== 0) {
 		throw new Error(
 			`fresh-process checkpoint reopen probe failed${child.signal ? ` (${child.signal})` : ""}` +
-				(stderr ? `: ${stderr.slice(-4096)}` : ""),
+				(stderr ? `: ${Str.slice(-4096)(stderr)}` : ""),
 		)
 	}
 	let parsed: CheckpointValidation
 	try {
-		parsed = parseValidation(decodeJsonSync(child.stdout.trim()))
+		parsed = parseValidation(decodeJsonSync(Str.trim(child.stdout)))
 	} catch (error) {
 		throw new Error(
 			`fresh-process checkpoint reopen probe returned invalid output: ${error instanceof Error ? error.message : String(error)}`,
@@ -946,12 +973,13 @@ const checkpointLikePaths = async (dataDir: string): Promise<string[]> => {
 }
 
 const assertNoLegacyLayout = (dataDir: string): void => {
-	const legacy = ["building", "current", "previous"]
-		.map((name) => join(checkpointRoot(dataDir), name))
-		.filter(existsSync)
+	const legacy = Arr.filter(
+		Arr.map(["building", "current", "previous"], (name) => join(checkpointRoot(dataDir), name)),
+		existsSync,
+	)
 	if (legacy.length > 0) {
 		throw new Error(
-			`legacy preview checkpoint layout detected; refusing to infer or migrate state. Preserve and move aside after inspection: ${legacy.join(", ")}`,
+			`legacy preview checkpoint layout detected; refusing to infer or migrate state. Preserve and move aside after inspection: ${Arr.join(legacy, ", ")}`,
 		)
 	}
 }
@@ -964,7 +992,7 @@ export const readCheckpointState = async (dataDir: string): Promise<CheckpointSt
 		throw new Error(
 			paths.length === 0
 				? `checkpoint state not found at ${checkpointStatePath(dataDir)}`
-				: `checkpoint state missing while checkpoint data exists; refusing to infer selection: ${paths.join(", ")}`,
+				: `checkpoint state missing while checkpoint data exists; refusing to infer selection: ${Arr.join(paths, ", ")}`,
 		)
 	}
 	await resolveCheckpoint(dataDir, state.current, state)
@@ -1201,7 +1229,7 @@ export const withRestoredCheckpoint = async <A>(
 	const sourceRelation = relative(sourceDataDir, scratchRoot)
 	if (
 		scratchRoot === sourceDataDir ||
-		(sourceRelation !== "" && sourceRelation !== ".." && !sourceRelation.startsWith(`..${sep}`))
+		(sourceRelation !== "" && sourceRelation !== ".." && !Str.startsWith(`..${sep}`)(sourceRelation))
 	) {
 		throw new Error("scratch root must not be the live data directory or one of its descendants")
 	}
@@ -1217,8 +1245,8 @@ export const withRestoredCheckpoint = async <A>(
 	if (options.scratchSubdir !== undefined) {
 		if (
 			scratchParentName.length === 0 ||
-			scratchParentName.includes(sep) ||
-			scratchParentName.includes("/") ||
+			Str.includes(sep)(scratchParentName) ||
+			Str.includes("/")(scratchParentName) ||
 			scratchParentName === "." ||
 			scratchParentName === ".."
 		) {
@@ -1444,17 +1472,18 @@ export const reconcileCheckpointOperations = async (
 	if (entries.length === 0) return
 	if (entries.length !== 1) {
 		throw new Error(
-			`multiple checkpoint operations require operator inspection: ${entries
-				.map((entry) => join(operationsRoot, entry.name))
-				.join(", ")}`,
+			`multiple checkpoint operations require operator inspection: ${Arr.join(
+				Arr.map(entries, (entry) => join(operationsRoot, entry.name)),
+				", ",
+			)}`,
 		)
 	}
 	const entry = entries[0]!
-	if (!entry.isDirectory() || !entry.name.startsWith("checkpoint-")) {
+	if (!entry.isDirectory() || !Str.startsWith("checkpoint-")(entry.name)) {
 		throw new Error(`unrecognized checkpoint operation debris: ${join(operationsRoot, entry.name)}`)
 	}
 	const entryOperationId = validateOperationId(
-		entry.name.slice("checkpoint-".length),
+		Str.slice("checkpoint-".length)(entry.name),
 		"operation directory",
 	)
 	const entryDir = join(operationsRoot, entry.name)
@@ -1662,10 +1691,10 @@ export const assertCheckpointPinIdentity = async (
 	const pinDir = join(pinsRoot, validatedCheckpointId)
 	// The pin file must live directly under the named checkpoint's pin dir.
 	const resolvedPinPath = resolve(pinPath)
-	if (relative(pinDir, resolvedPinPath).startsWith(`..${sep}`)) {
+	if (Str.startsWith(`..${sep}`)(relative(pinDir, resolvedPinPath))) {
 		throw new Error(`pin path escapes checkpoint pin directory: ${pinPath}`)
 	}
-	if (!resolvedPinPath.endsWith(".json") || dirname(resolvedPinPath) !== resolve(pinDir)) {
+	if (!Str.endsWith(".json")(resolvedPinPath) || dirname(resolvedPinPath) !== resolve(pinDir)) {
 		throw new Error(`pin path is not a direct child of the checkpoint pin directory: ${pinPath}`)
 	}
 	const baseName = basename(resolvedPinPath, ".json")
@@ -1680,8 +1709,8 @@ export const assertCheckpointPinIdentity = async (
 	const expectedKeys = new Set(["formatVersion", "pinId", "checkpointId", "purpose", "createdAt"])
 	if (
 		!isRecord(parsed) ||
-		Object.keys(parsed).some((key) => !expectedKeys.has(key)) ||
-		[...expectedKeys].some((key) => !(key in parsed)) ||
+		Arr.some(Rec.keys(parsed), (key) => !expectedKeys.has(key)) ||
+		Arr.some([...expectedKeys], (key) => !(key in parsed)) ||
 		parsed.formatVersion !== 1 ||
 		validateId(requiredString(parsed, "pinId"), "pin") !== baseName ||
 		validateId(requiredString(parsed, "checkpointId"), "checkpoint") !== validatedCheckpointId ||
@@ -1958,7 +1987,7 @@ const removeSweepDebris = async (dataDir: string): Promise<void> => {
 	if (!existsSync(retiringRoot)) return
 	await assertRealDirectory(retiringRoot, "checkpoint retirement root")
 	for (const entry of await readdir(retiringRoot, { withFileTypes: true })) {
-		if (!entry.isDirectory() || !entry.name.startsWith(SWEEP_ENTRY_PREFIX)) continue
+		if (!entry.isDirectory() || !Str.startsWith(SWEEP_ENTRY_PREFIX)(entry.name)) continue
 		await rm(join(retiringRoot, entry.name), { recursive: true })
 	}
 	await syncDirectory(retiringRoot)
@@ -2050,9 +2079,13 @@ const snapshotIds = async (dataDir: string): Promise<ReadonlyArray<CheckpointId>
 	const root = checkpointSnapshotsRoot(dataDir)
 	if (!existsSync(root)) return []
 	await assertRealDirectory(root, "checkpoint snapshots")
-	return (await readdir(root, { withFileTypes: true }))
-		.filter((entry) => entry.isDirectory() && CHECKPOINT_ID.test(entry.name))
-		.map((entry) => validateCheckpointId(entry.name))
+	return Arr.map(
+		Arr.filter(
+			await readdir(root, { withFileTypes: true }),
+			(entry) => entry.isDirectory() && CHECKPOINT_ID.test(entry.name),
+		),
+		(entry) => validateCheckpointId(entry.name),
+	)
 }
 
 export interface PreservedCheckpointPin {
@@ -2076,10 +2109,10 @@ export const listPreservedCheckpointPins = async (
 		if (!dir.isDirectory() || !CHECKPOINT_ID.test(dir.name)) continue
 		const checkpointId = validateCheckpointId(dir.name)
 		for (const file of await readdir(join(pinsRoot, dir.name), { withFileTypes: true })) {
-			if (!file.isFile() || !file.name.endsWith(".json")) continue
+			if (!file.isFile() || !Str.endsWith(".json")(file.name)) continue
 			const pinPath = join(pinsRoot, dir.name, file.name)
 			const pin = await assertCheckpointPinIdentity(dataDir, checkpointId, pinPath)
-			if (!pin.purpose.startsWith(`${RESET_PRESERVED_PIN_PURPOSE}:`)) continue
+			if (!Str.startsWith(`${RESET_PRESERVED_PIN_PURPOSE}:`)(pin.purpose)) continue
 			pins.push({
 				checkpointId,
 				pinPath,
@@ -2124,7 +2157,7 @@ export const releasePreservedCheckpoints = (
 				catch: retainedError,
 			})
 			const retired = state === null ? [] : yield* sweepUnreferencedCheckpoints(dataDir, state)
-			return { released: [...new Set(pins.map((pin) => pin.checkpointId))], retired }
+			return { released: [...new Set(Arr.map(pins, (pin) => pin.checkpointId))], retired }
 		}),
 	)
 }
@@ -2153,14 +2186,14 @@ const readCheckpointFailures = (dataDir: string): Effect.Effect<CheckpointFailur
 	)
 
 const recordCheckpointFailure = (dataDir: string, message: string): Effect.Effect<void> =>
-	Effect.flatMap(readCheckpointFailures(dataDir), (previous) =>
+	Effect.flatMap(Effect.all([readCheckpointFailures(dataDir), DateTime.now]), ([previous, now]) =>
 		Effect.tryPromise({
 			try: () =>
 				durableJson(checkpointFailuresPath(dataDir), {
 					formatVersion: 1,
 					consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
-					lastFailureAt: new Date().toISOString(),
-					lastError: message.slice(0, 2048),
+					lastFailureAt: DateTime.formatIso(now),
+					lastError: Str.slice(0, 2048)(message),
 				} satisfies CheckpointFailures),
 			catch: checkpointFileError,
 		}),
@@ -2216,7 +2249,7 @@ export const formatCheckpointRefreshBackoff = (
 		: `checkpoint refresh failed ${backoff.consecutiveFailures} time(s) in a row` +
 			(backoff.lastError === null
 				? ""
-				: ` (last: ${backoff.lastError.split("\n")[0]?.slice(0, 200)})`) +
+				: ` (last: ${Str.split("\n")(backoff.lastError)[0]?.slice(0, 200)})`) +
 			`; next attempt in ${Duration.format(backoff.delay)}. Run \`${retryCommand}\` to retry now.`
 
 const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {
@@ -2447,7 +2480,10 @@ const parseResetTransaction = (value: unknown, expectedDataDir: string): ResetTr
 	if (!isAbsolute(dataDir) || resolve(dataDir) !== resolve(expectedDataDir)) {
 		throw new Error("reset transaction data directory does not match its configured owner")
 	}
-	if (new Set(targets).size !== targets.length || [...targets].sort().join("\0") !== targets.join("\0")) {
+	if (
+		new Set(targets).size !== targets.length ||
+		Arr.join([...targets].sort(), "\0") !== Arr.join(targets, "\0")
+	) {
 		throw new Error("reset transaction targets must be unique and sorted")
 	}
 	return transaction
@@ -2558,7 +2594,7 @@ const beginResetTransactionUnlocked = async (
 	}
 	if (unknown.length > 0) {
 		throw new Error(
-			`unrecognized data-directory entries were preserved; refusing reset: ${unknown.sort().join(", ")}`,
+			`unrecognized data-directory entries were preserved; refusing reset: ${Arr.join(unknown.sort(), ", ")}`,
 		)
 	}
 	const transaction: ResetTransaction = {
@@ -2700,16 +2736,18 @@ const reconcileRestoreTransactionUnlocked = async (
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return
 			throw error
 		}
-		const debris = names
-			.filter(
+		const debris = Arr.map(
+			Arr.filter(
+				names,
 				(name) =>
-					(name.startsWith(prefix) && !name.includes(".quarantine-")) ||
+					(Str.startsWith(prefix)(name) && !Str.includes(".quarantine-")(name)) ||
 					name === `${basename(resolve(dataDir))}.restore-transaction.json`,
-			)
-			.map((name) => join(parent, name))
+			),
+			(name) => join(parent, name),
+		)
 		if (debris.length > 0) {
 			throw new Error(
-				`restore-like paths exist without a valid transaction; refusing to infer ownership: ${debris.join(", ")}`,
+				`restore-like paths exist without a valid transaction; refusing to infer ownership: ${Arr.join(debris, ", ")}`,
 			)
 		}
 		return
@@ -3000,6 +3038,6 @@ export const resolveChdbConfigFile = (
 				else writeIngestConfig(path)
 				return path
 			},
-			catch: (error) => error,
+			catch: checkpointFileError,
 		}).pipe(Effect.orElseSucceed(() => undefined))
 	})

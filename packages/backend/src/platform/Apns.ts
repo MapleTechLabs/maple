@@ -1,4 +1,15 @@
-import { Clock, Context, Effect, Layer, Option, Redacted, Ref, Schema, Semaphore } from "effect"
+import {
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Ref,
+	Schema,
+	Semaphore,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { MobilePushEnvironment } from "@maple/domain/http"
 import { Env, type EnvConfig } from "./Env"
@@ -179,10 +190,10 @@ const base64UrlString = (value: string) => Buffer.from(value, "utf8").toString("
 const base64UrlBytes = (value: ArrayBuffer) => Buffer.from(value).toString("base64url")
 
 const pemToPkcs8 = (pem: string): ArrayBuffer => {
-	const body = pem
-		.replace(/-----BEGIN[^-]+-----/g, "")
-		.replace(/-----END[^-]+-----/g, "")
-		.replace(/\s+/g, "")
+	const body = Str.replace(
+		/\s+/g,
+		"",
+	)(Str.replace(/-----END[^-]+-----/g, "")(Str.replace(/-----BEGIN[^-]+-----/g, "")(pem)))
 	const buf = Buffer.from(body, "base64")
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 }

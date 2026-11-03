@@ -5,7 +5,7 @@ import {
 	AlertRuleId,
 	IsoDateTimeString,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { isoMs } from "./time"
 
@@ -49,7 +49,7 @@ export const fetchCheckSummary = (ruleId: AlertRuleId, since: IsoDateTimeString,
 		return {
 			bucketSeconds: summary.bucket_seconds,
 			totals: summary.totals,
-			points: summary.points.map((point) => ({
+			points: Arr.map(summary.points, (point) => ({
 				bucket: point.bucket,
 				groupKey: point.group_key,
 				totalCount: point.total_count,
@@ -69,7 +69,7 @@ export const summaryChecksOf = (
 	rule: AlertRuleDocument,
 	summary: CheckSummary,
 ): ReadonlyArray<AlertCheckDocument> =>
-	summary.points.map((point) => {
+	Arr.map(summary.points, (point) => {
 		const status: AlertCheckDocument["status"] =
 			point.errorCount > 0
 				? "error"
@@ -113,6 +113,6 @@ export const incidentChecksOf = (
 	incident: AlertIncidentDocument,
 ): ReadonlyArray<AlertCheckDocument> => {
 	if (incident.groupKey == null) return checks
-	const own = checks.filter((check) => check.groupKey === incident.groupKey)
+	const own = Arr.filter(checks, (check) => check.groupKey === incident.groupKey)
 	return own.length === 0 ? checks : own
 }

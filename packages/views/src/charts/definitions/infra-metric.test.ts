@@ -2,17 +2,22 @@ import { createChartScene, type SceneNode } from "@tanstack/charts"
 import { describe, expect, test } from "vitest"
 import { infraMetricSpec } from "../infra-metric-chart"
 import { buildInfraMetric } from "./infra-metric"
+import { Array as Arr } from "effect"
 
 const START = Date.UTC(2026, 11, 1, 12)
 const MINUTE = 60_000
 const bucket = (index: number) => new Date(START + index * MINUTE).toISOString()
 
 // 1-minute buckets; the workload reported in every bucket but the third.
-const rows = [0, 1, 3, 4].map((index) => ({ bucket: bucket(index), attributeValue: "", value: 10 + index }))
-const xDomain = [0, 1, 2, 3, 4].map(bucket)
+const rows = Arr.map([0, 1, 3, 4], (index) => ({
+	bucket: bucket(index),
+	attributeValue: "",
+	value: 10 + index,
+}))
+const xDomain = Arr.map([0, 1, 2, 3, 4], bucket)
 
 const flatten = (nodes: ReadonlyArray<SceneNode>): ReadonlyArray<SceneNode> =>
-	nodes.flatMap((node) => (node.kind === "group" ? flatten(node.children) : [node]))
+	Arr.flatMap(nodes, (node) => (node.kind === "group" ? flatten(node.children) : [node]))
 
 /** The point count of every drawn line segment. */
 const segments = (gaps: boolean) => {
@@ -30,7 +35,7 @@ const segments = (gaps: boolean) => {
 	const { tooltip: _tooltip, ...definition } = built.definition
 	const nodes =
 		"marks" in definition ? flatten(createChartScene(definition, { width: 600, height: 200 }).nodes) : []
-	return nodes.flatMap((node) => (node.kind === "polyline" ? [node.points.length] : []))
+	return Arr.flatMap(nodes, (node) => (node.kind === "polyline" ? [node.points.length] : []))
 }
 
 describe("infra metric lines with a silent minute", () => {

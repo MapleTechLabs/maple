@@ -1,5 +1,5 @@
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
-import { Option, type Result } from "effect"
+import { Option, type Result, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -89,7 +89,7 @@ const toggled = (
 	enabled: boolean,
 	command: ReturnType<typeof SetSupabaseMetrics | typeof SetSupabaseLogs | typeof SetSupabaseLogDrain>,
 ): Return =>
-	model.supabaseCard.pending.some((entry) => entry.ref === ref)
+	Arr.some(model.supabaseCard.pending, (entry) => entry.ref === ref)
 		? { model }
 		: {
 				model: withCard(model, {
@@ -108,12 +108,12 @@ const completed = (
 	if (failure !== null) {
 		// The switch reverts to the server's value.
 		const reverted = withCard(model, {
-			pending: model.supabaseCard.pending.filter((entry) => entry.ref !== ref),
+			pending: Arr.filter(model.supabaseCard.pending, (entry) => entry.ref !== ref),
 		})
 		return toast(reverted, "error", failedTitle, failure.message)
 	}
 	const saved = withCard(model, {
-		pending: model.supabaseCard.pending.map((entry) =>
+		pending: Arr.map(model.supabaseCard.pending, (entry) =>
 			entry.ref === ref ? { ...entry, isSaved: true } : entry,
 		),
 	})
@@ -124,7 +124,7 @@ const completed = (
 
 /** The status read that answers a saved write carries its value, so the pending flip retires. */
 export const settledStatus = (model: Model): Model =>
-	withCard(model, { pending: model.supabaseCard.pending.filter((entry) => !entry.isSaved) })
+	withCard(model, { pending: Arr.filter(model.supabaseCard.pending, (entry) => !entry.isSaved) })
 
 /** A superseding rows read: the window may equal the last one, and that read predates the write. */
 export const completedReadClock = (model: Model, context: PageContext, nowMs: number): Return =>

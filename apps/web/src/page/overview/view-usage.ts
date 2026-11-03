@@ -7,6 +7,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import type { Model, UsageTotals } from "./model"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The service usage cards.
 
@@ -32,7 +33,7 @@ export const usageCards = <M>(
 			statRail(
 				h,
 				{ columns: 3 },
-				CARDS.map((card) =>
+				Arr.map(CARDS, (card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
 						// The muted table empty glyph, not a bold value-sized dash.
@@ -50,7 +51,7 @@ export const usageCards = <M>(
 			statRail(
 				h,
 				{ columns: 3 },
-				CARDS.map((card) =>
+				Arr.map(CARDS, (card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
 						value: card.format(totals[card.key]),

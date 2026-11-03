@@ -12,7 +12,7 @@ import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -36,7 +36,7 @@ export const ACTIVITY_SPAN_MS = 365 * 86_400_000
 const FIRST_REVIEW_LOOKBACK_MS = 180 * 86_400_000
 
 /** GitHub Apps act as `<name>[bot]`; a team page is about people. */
-export const isBotLogin = (login: string) => login.endsWith("[bot]")
+export const isBotLogin = (login: string) => Str.endsWith("[bot]")(login)
 
 export const median = (values: ReadonlyArray<number>): number | null => {
 	if (values.length === 0) return null
@@ -153,15 +153,16 @@ export const buildActivity = (input: {
 		if (pr.mergedAt !== null && inWindow(pr.mergedAt))
 			cellOf(pr.mergedAt, pr.author, repository).merged += 1
 	}
-	return [...cells.values()]
-		.toSorted((a, b) =>
+	return Arr.map(
+		[...cells.values()].toSorted((a, b) =>
 			a.day === b.day
 				? a.login === b.login
-					? a.repository.localeCompare(b.repository)
-					: a.login.localeCompare(b.login)
-				: a.day.localeCompare(b.day),
-		)
-		.map((cell) => new CodeReviewTeamActivity(cell))
+					? Str.localeCompare(b.repository)(a.repository)
+					: Str.localeCompare(b.login)(a.login)
+				: Str.localeCompare(b.day)(a.day),
+		),
+		(cell) => new CodeReviewTeamActivity(cell),
+	)
 }
 
 /** The pull request authors and CI actors as one row per login, bots left out. */
@@ -184,8 +185,8 @@ export const buildTeam = (input: {
 		members.set(login, created)
 		return created
 	}
-	const findingsOf = new Map(input.findings.map((row) => [`${row.repositoryId}:${row.number}`, row]))
-	const people = input.pullRequests.filter((pr) => pr.author !== null && !isBotLogin(pr.author))
+	const findingsOf = new Map(Arr.map(input.findings, (row) => [`${row.repositoryId}:${row.number}`, row]))
+	const people = Arr.filter(input.pullRequests, (pr) => pr.author !== null && !isBotLogin(pr.author))
 
 	for (const pr of people) {
 		if (pr.author === null) continue
@@ -218,7 +219,7 @@ export const buildTeam = (input: {
 		member.runnerMs += row.runnerMs
 	}
 
-	const merged = people.flatMap((pr) => (pr.mergeSeconds === null ? [] : [pr.mergeSeconds]))
+	const merged = Arr.flatMap(people, (pr) => (pr.mergeSeconds === null ? [] : [pr.mergeSeconds]))
 	return new CodeReviewTeam({
 		startTime: input.startTime,
 		endTime: input.endTime,
@@ -227,22 +228,21 @@ export const buildTeam = (input: {
 			mergedPullRequests: merged.length,
 			medianMergeSeconds: median(merged),
 			medianFirstReviewSeconds: median(
-				people.flatMap((pr) => (pr.firstReviewSeconds === null ? [] : [pr.firstReviewSeconds])),
+				Arr.flatMap(people, (pr) => (pr.firstReviewSeconds === null ? [] : [pr.firstReviewSeconds])),
 			),
-			defaultBranchRuns: input.ci.reduce((sum, row) => sum + row.defaultBranchRuns, 0),
-			defaultBranchFailed: input.ci.reduce((sum, row) => sum + row.defaultBranchFailed, 0),
-			runnerMs: input.ci.reduce((sum, row) => sum + row.runnerMs, 0),
+			defaultBranchRuns: Arr.reduce(input.ci, 0, (sum, row) => sum + row.defaultBranchRuns),
+			defaultBranchFailed: Arr.reduce(input.ci, 0, (sum, row) => sum + row.defaultBranchFailed),
+			runnerMs: Arr.reduce(input.ci, 0, (sum, row) => sum + row.runnerMs),
 			p95QueueMs: input.p95QueueMs,
 		}),
-		members: [...members.values()]
-			.map(
-				(member) =>
-					new CodeReviewTeamMember({
-						...member,
-						medianMergeSeconds: median(mergeSeconds.get(member.login) ?? []),
-					}),
-			)
-			.toSorted((a, b) => a.login.localeCompare(b.login, "en", { sensitivity: "base" })),
+		members: Arr.map(
+			[...members.values()],
+			(member) =>
+				new CodeReviewTeamMember({
+					...member,
+					medianMergeSeconds: median(mergeSeconds.get(member.login) ?? []),
+				}),
+		).toSorted((a, b) => a.login.localeCompare(b.login, "en", { sensitivity: "base" })),
 		activityStartTime: input.activityStartTime,
 		activity: input.activity,
 	})

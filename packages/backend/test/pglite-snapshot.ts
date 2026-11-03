@@ -7,6 +7,7 @@ import { serialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
 import { listBundledMigrations, readBundledMigrationsSql, runMigrations } from "@maple/db/migrate"
 import { capturePgliteFixture } from "./pglite-fixture"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Migrate once, then cache the indexed filesystem for FixtureMemoryFS. Restoring
@@ -20,18 +21,25 @@ import { capturePgliteFixture } from "./pglite-fixture"
 
 // A snapshot is tied to the engine as well as the SQL. The runner's ledger keys
 // on migration directory names, so renaming one must invalidate it too.
-const snapshotKey = createHash("sha256")
-	.update("maple-pglite-snapshot-v4")
-	.update(process.versions.v8)
-	.update(
-		readFileSync(
-			join(dirname(createRequire(import.meta.url).resolve("@electric-sql/pglite")), "../package.json"),
-		),
-	)
-	.update(JSON.stringify(listBundledMigrations().map(({ name }) => name)))
-	.update(readBundledMigrationsSql())
-	.digest("hex")
-	.slice(0, 16)
+const snapshotKey = Str.slice(
+	0,
+	16,
+)(
+	createHash("sha256")
+		.update("maple-pglite-snapshot-v4")
+		.update(process.versions.v8)
+		.update(
+			readFileSync(
+				join(
+					dirname(createRequire(import.meta.url).resolve("@electric-sql/pglite")),
+					"../package.json",
+				),
+			),
+		)
+		.update(JSON.stringify(Arr.map(listBundledMigrations(), ({ name }) => name)))
+		.update(readBundledMigrationsSql())
+		.digest("hex"),
+)
 
 const CACHE_DIR = join(tmpdir(), "maple-pglite-snapshots")
 export const snapshotPath = join(CACHE_DIR, `schema-${snapshotKey}.bin`)

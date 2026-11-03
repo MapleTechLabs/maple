@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ReorderDashboardWidgetsOutput } from "@maple/domain/mcp-outputs"
 import { toDashboardRow, withDashboardMutation } from "../lib/dashboard-mutations"
 import * as P from "../lib/params"
@@ -89,29 +89,33 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 			const geometryErrors = validateLayoutGeometry(layouts)
 			if (geometryErrors.length > 0) {
 				return yield* new McpInvalidInputError({
-					message: `Invalid layout geometry:\n- ${geometryErrors.join("\n- ")}`,
+					message: `Invalid layout geometry:\n- ${Arr.join(geometryErrors, "\n- ")}`,
 					parameter: "layouts_json",
 				})
 			}
 
 			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) => {
-				const layoutById = new Map(layouts.map((entry) => [entry.widget_id, entry] as const))
+				const layoutById = new Map(Arr.map(layouts, (entry) => [entry.widget_id, entry] as const))
 
-				const unknownIds = layouts
-					.filter((entry) => !existingWidgets.some((w) => w.id === entry.widget_id))
-					.map((entry) => entry.widget_id)
+				const unknownIds = Arr.map(
+					Arr.filter(
+						layouts,
+						(entry) => !Arr.some(existingWidgets, (w) => w.id === entry.widget_id),
+					),
+					(entry) => entry.widget_id,
+				)
 
 				if (unknownIds.length > 0) {
 					return Effect.fail(
 						new McpInvalidInputError({
-							message: `Unknown widget ids in layouts_json: ${unknownIds.join(", ")}. Use get_dashboard to see existing widget ids.`,
+							message: `Unknown widget ids in layouts_json: ${Arr.join(unknownIds, ", ")}. Use get_dashboard to see existing widget ids.`,
 							parameter: "layouts_json",
 						}),
 					)
 				}
 
 				return Effect.succeed(
-					existingWidgets.map((widget) => {
+					Arr.map(existingWidgets, (widget) => {
 						const update = layoutById.get(widget.id)
 						if (!update) return widget
 						return {
@@ -133,7 +137,7 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 
 			return {
 				dashboard: toDashboardRow(dashboard),
-				updatedWidgetIds: layouts.map((entry) => entry.widget_id),
+				updatedWidgetIds: Arr.map(layouts, (entry) => entry.widget_id),
 			}
 		}),
 		render: (output) => ({
@@ -143,7 +147,7 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 					["Dashboard", `${output.dashboard.name} (${output.dashboard.id})`],
 					["Widgets updated", output.updatedWidgetIds.length],
 					["Total widgets", output.dashboard.widgetCount],
-					["Updated", output.dashboard.updatedAt.slice(0, 19)],
+					["Updated", Str.slice(0, 19)(output.dashboard.updatedAt)],
 				]),
 			],
 		}),

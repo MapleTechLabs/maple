@@ -16,6 +16,7 @@ import { type Access, boardShareOf, ShareMessage, shareUrl } from "./share"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
+import { Array as Arr } from "effect"
 
 // `ShareDashboardDialog` and `ShareLinkRow`: the share dialog and one link's row.
 
@@ -138,7 +139,7 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(model.sharing.pendingAccess ?? serverAccess),
 		toParentMessage: (message) => wrap(ShareMessage.GotAccessMessage({ message })),
-		items: ACCESS.map((option) => ({
+		items: Arr.map(ACCESS, (option) => ({
 			value: option.value,
 			id: `share-${option.value}-radio`,
 			inputId: `share-${option.value}`,
@@ -149,7 +150,7 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 		RadioGroup.radioGroup(
 			h,
 			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
-			ACCESS.map((option) => accessOption(h, config, option)),
+			Arr.map(ACCESS, (option) => accessOption(h, config, option)),
 		),
 		...(boardShare === undefined
 			? []
@@ -166,7 +167,10 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 							? "1 widget won't render for viewers"
 							: `${unsupported.length} widgets won't render for viewers`,
 						": ",
-						unsupported.map((widget) => widget.title).join(", "),
+						Arr.join(
+							Arr.map(unsupported, (widget) => widget.title),
+							", ",
+						),
 						". Shared views support",
 						" ",
 						SHAREABLE_WIDGET_KINDS,

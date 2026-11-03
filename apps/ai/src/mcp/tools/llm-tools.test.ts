@@ -7,7 +7,7 @@
  * tool failure the model can read rather than an authorization denial that ends the turn.
  */
 import { OrgId, UserId } from "@maple/domain"
-import { DateTime, Effect, Result, Schema, Scope } from "effect"
+import { DateTime, Effect, Result, Schema, Scope, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../dispatcher"
 import { noRepositoryWarmup } from "../../../test/chat/tool-executor"
@@ -195,7 +195,9 @@ describe("buildMapleToolkit", () => {
 			),
 		)
 
-		assert.isTrue(String(spans[0]?.attributes.get("gen_ai.tool.description")).endsWith(APPROVAL_NOTE))
+		assert.isTrue(
+			Str.endsWith(APPROVAL_NOTE)(String(spans[0]?.attributes.get("gen_ai.tool.description"))),
+		)
 	})
 
 	it("refuses the identical call once it has run three times", async () => {

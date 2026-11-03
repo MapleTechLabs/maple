@@ -24,7 +24,7 @@
 // wearing one name, and only the shape the fixture happens to select is ever
 // executed. `assertRouteCoverage` below fails when a route is never exercised.
 
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	DeploymentEnvironment,
@@ -485,7 +485,7 @@ const METRICS_FILTERS = {
 } as const
 
 export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
-	...(
+	...Arr.map(
 		[
 			"count",
 			"error_rate",
@@ -494,21 +494,22 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 			"p95_duration",
 			"p99_duration",
 			"apdex",
-		] as const
-	).map((metric): QuerySpecFixture => ({
-		label: `traces-timeseries-annual-single-${metric}`,
-		route: "traces_timeseries:annual",
-		query: {
-			kind: "timeseries",
-			source: "traces",
-			metric,
-			bucketSeconds: 300,
-			groupBy: ["service"],
-			filters: { rootSpansOnly: true },
-		},
-		startTime: SHORT_START_TIME,
-		endTime: SHORT_END_TIME,
-	})),
+		] as const,
+		(metric): QuerySpecFixture => ({
+			label: `traces-timeseries-annual-single-${metric}`,
+			route: "traces_timeseries:annual",
+			query: {
+				kind: "timeseries",
+				source: "traces",
+				metric,
+				bucketSeconds: 300,
+				groupBy: ["service"],
+				filters: { rootSpansOnly: true },
+			},
+			startTime: SHORT_START_TIME,
+			endTime: SHORT_END_TIME,
+		}),
+	),
 	{
 		label: "traces-timeseries-annual",
 		route: "traces_timeseries:annual",
@@ -1027,7 +1028,7 @@ export function collectQuerySpecCatalog(): ReadonlyArray<CatalogEntry> {
 				)
 			}
 
-			captured.forEach((capture, index) => {
+			Arr.forEach(captured, (capture, index) => {
 				const suffix = captured.length > 1 ? `#${index + 1}` : ""
 				entries.push({
 					id: `spec:${fixture.label}${suffix}:${variant.label}`,
@@ -1061,7 +1062,7 @@ export function collectBuilderCatalog(): ReadonlyArray<CatalogEntry> {
 		const compiled = fixture.compile()
 		// The executor dies on unresolved placeholders at runtime; a fixture with a
 		// missing compile param must fail HERE, in the unit test, not in the sweep.
-		if (compiled.sql.includes("__PARAM_")) {
+		if (Str.includes("__PARAM_")(compiled.sql)) {
 			throw new Error(
 				`SQL catalog: builder fixture ${fixture.module}/${fixture.name} (${fixture.label}) ` +
 					`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
@@ -1113,7 +1114,7 @@ export const suiteFromCatalog = (
 ): Effect.Effect<Suite, BenchmarkError> =>
 	validateSuite({
 		source: "maple-query-catalog",
-		samples: entries.map((entry) => ({
+		samples: Arr.map(entries, (entry) => ({
 			id: entry.id,
 			context: entry.name,
 			profile: "",
@@ -1201,7 +1202,7 @@ const SPLICE_CLOSE_RE = /\+ INTERVAL 1 (?:HOUR|MINUTE)\)/
 /** A `rollup-splice` boundary: the floored start, closed by its `+ INTERVAL 1` tail. */
 const hasSpliceBoundary = (sql: string): boolean => {
 	const open = SPLICE_OPEN_RE.exec(sql)
-	return open !== null && SPLICE_CLOSE_RE.test(sql.slice(open.index + open[0].length))
+	return open !== null && SPLICE_CLOSE_RE.test(Str.slice(open.index + open[0].length)(sql))
 }
 
 /**
@@ -1222,19 +1223,21 @@ const hasSpliceBoundary = (sql: string): boolean => {
  * something, not that the rule needs a hole.
  */
 export function unsplicedTwoTierQueries(entries: ReadonlyArray<CatalogEntry>): ReadonlyArray<string> {
-	return entries
-		.filter(
+	return Arr.map(
+		Arr.filter(
+			entries,
 			(entry) =>
 				ROLLUP_TABLE_RE.test(entry.sql) &&
 				RAW_TABLE_RE.test(entry.sql) &&
 				!hasSpliceBoundary(entry.sql),
-		)
-		.map((entry) => entry.id)
+		),
+		(entry) => entry.id,
+	)
 }
 
 export function uncoveredPipes(entries: ReadonlyArray<CatalogEntry>): ReadonlyArray<WarehouseQueryName> {
-	const covered = new Set(entries.map((entry) => entry.name))
-	return warehouseQueries.filter((name) => !covered.has(name))
+	const covered = new Set(Arr.map(entries, (entry) => entry.name))
+	return Arr.filter(warehouseQueries, (name) => !covered.has(name))
 }
 
 /**
@@ -1283,7 +1286,7 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 	// contains. If someone adds a one-sided fixture by hand, this is what notices.
 	for (const fixture of builderFixtures) {
 		if (fixture.module !== "web-analytics") continue
-		record("useProductEvents", fixture.label.endsWith("-rollup"))
+		record("useProductEvents", Str.endsWith("-rollup")(fixture.label))
 	}
 
 	return coverage
@@ -1302,7 +1305,9 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
  * forwarding the bucket width.
  */
 export function pipePathReachesAnnualRoute(): boolean {
-	return collectPipeCatalog().some(
-		(entry) => entry.name === "custom_traces_timeseries" && entry.sql.includes("service_overview_hourly"),
+	return Arr.some(
+		collectPipeCatalog(),
+		(entry) =>
+			entry.name === "custom_traces_timeseries" && Str.includes("service_overview_hourly")(entry.sql),
 	)
 }

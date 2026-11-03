@@ -9,6 +9,7 @@ import {
 	toolNamedBySchemaError,
 } from "./failure-text"
 import { llmSpan, toolSpan } from "./span-test-support"
+import { Array as Arr, String as Str } from "effect"
 
 describe("stripFailurePrefixes", () => {
 	it("drops every framework prefix and tag in front of the words", () => {
@@ -30,7 +31,10 @@ describe("stripFailurePrefixes", () => {
 	})
 
 	it("strips a tag chain of any length", () => {
-		const chain = Array.from({ length: 12 }, (_, index) => `@maple/errors/E${index}: `).join("")
+		const chain = Arr.join(
+			Array.from({ length: 12 }, (_, index) => `@maple/errors/E${index}: `),
+			"",
+		)
 		expect(stripFailurePrefixes(`${chain}real text`)).toBe("real text")
 	})
 
@@ -140,11 +144,11 @@ describe("rawFailureText / failureDetailText", () => {
 			startMs: 0,
 			durationMs: 1,
 			statusCode: "Error",
-			statusMessage: `${"x".repeat(200)}\n    at Object.<anonymous>`,
+			statusMessage: `${Str.repeat(200)("x")}\n    at Object.<anonymous>`,
 		})
 		const detail = failureDetailText(span)!
 		expect(detail).toHaveLength(140)
-		expect(detail.endsWith("…")).toBe(true)
-		expect(detail.includes("\n")).toBe(false)
+		expect(Str.endsWith("…")(detail)).toBe(true)
+		expect(Str.includes("\n")(detail)).toBe(false)
 	})
 })

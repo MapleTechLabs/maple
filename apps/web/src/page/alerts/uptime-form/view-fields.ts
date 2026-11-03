@@ -23,6 +23,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The form's inputs and the HTTP and schedule sections.
 
@@ -117,7 +118,7 @@ export const selectField = (
 					className: "w-full",
 					attributes: [h.Id(options.id), h.OnChange(options.onChange)],
 				},
-				options.entries.map((entry) => nativeOption(entry.value, entry.label)),
+				Arr.map(options.entries, (entry) => nativeOption(entry.value, entry.label)),
 			),
 		],
 	)
@@ -153,9 +154,9 @@ export const nameSection = (h: H, model: Model, placeholder: string): Html =>
 	])
 
 const isMethod = (value: string): value is typeof HttpMethod.Type =>
-	HttpMethod.literals.some((method) => method === value)
+	Arr.some(HttpMethod.literals, (method) => method === value)
 const isAssertionType = (value: string): value is AssertionType =>
-	AssertionType.literals.some((type) => type === value)
+	Arr.some(AssertionType.literals, (type) => type === value)
 
 /** Method and URL with the collapsible headers and body editor, then the name. */
 export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): ReadonlyArray<Html> => {
@@ -170,7 +171,7 @@ export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): Rea
 						label: "Method",
 						isLabelHidden: true,
 						value: form.method,
-						entries: HttpMethod.literals.map((method) => ({ value: method, label: method })),
+						entries: Arr.map(HttpMethod.literals, (method) => ({ value: method, label: method })),
 						onChange: (value) =>
 							Message.ChangedMethod({ method: isMethod(value) ? value : "GET" }),
 						className: "w-24 shrink-0",
@@ -343,7 +344,7 @@ export const assertionsSection = (h: H, model: Model): Html =>
 					vstack(
 						h,
 						{ gap: "2", as: "ul" },
-						model.form.assertions.map((row, index) => assertionRow(h, row, index)),
+						Arr.map(model.form.assertions, (row, index) => assertionRow(h, row, index)),
 					),
 				]),
 		h.div(
@@ -393,7 +394,7 @@ export const scheduleSection = (h: H, model: Model): Html =>
 			className: "w-fit",
 			value: String(model.form.intervalSeconds),
 			onChange: (value) => Message.PickedInterval({ seconds: Number(value) }),
-			options: INTERVALS.map((interval) => ({
+			options: Arr.map(INTERVALS, (interval) => ({
 				value: String(interval.seconds),
 				label: interval.label,
 			})),

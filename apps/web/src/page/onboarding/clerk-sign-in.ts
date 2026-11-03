@@ -1,5 +1,5 @@
 import { PreviewSignInRequest } from "@maple/domain/http"
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
@@ -60,12 +60,16 @@ export const RequestPreviewTicket = Command.define("RequestPreviewTicket", {
 	execute: ({ key }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
-			const result = yield* client.authPublic.previewSignIn({ payload: new PreviewSignInRequest({ key }) })
+			const result = yield* client.authPublic.previewSignIn({
+				payload: new PreviewSignInRequest({ key }),
+			})
 			return Message.SucceededRequestPreviewTicket({ ticket: result.ticket })
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(
-					Message.FailedRequestPreviewTicket({ message: endpointMessage(error, "Preview sign-in failed") }),
+					Message.FailedRequestPreviewTicket({
+						message: endpointMessage(error, "Preview sign-in failed"),
+					}),
 				),
 			),
 		),
@@ -116,7 +120,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				? { model }
 				: {
 						model: modifyFields(model, { isSubmitting: () => true, errorMessage: () => null }),
-						commands: [RequestPreviewTicket({ key: model.accessKey.trim() })],
+						commands: [RequestPreviewTicket({ key: Str.trim(model.accessKey) })],
 					},
 		SucceededRequestPreviewTicket: ({ ticket }) => ({
 			model,

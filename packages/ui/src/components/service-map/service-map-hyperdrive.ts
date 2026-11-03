@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Resolves what actually sits behind the service map's collapsed Hyperdrive node:
  * the org's polled Hyperdrive config inventory is matched against the PlanetScale
@@ -43,7 +44,7 @@ export const isPlanetScaleHost = (host: string | null): boolean =>
 
 /** "postgres" | "postgresql" ↔ "postgresql", "mysql" ↔ "mysql"; unknown schemes match nothing. */
 const kindForScheme = (scheme: string): string | null => {
-	const s = scheme.toLowerCase()
+	const s = Str.toLowerCase(scheme)
 	if (s === "mysql") return "mysql"
 	if (s === "postgres" || s === "postgresql") return "postgresql"
 	return null
@@ -60,8 +61,8 @@ export function matchHyperdriveConfigs(
 	configs: ReadonlyArray<HyperdriveConfigInput>,
 	planetscaleDatabases: ReadonlyMap<string, { name: string; kind: string }>,
 ): HyperdriveNodeInfo[] {
-	return configs.map((config) => {
-		const candidate = planetscaleDatabases.get(config.originDatabase.toLowerCase())
+	return Arr.map(configs, (config) => {
+		const candidate = planetscaleDatabases.get(Str.toLowerCase(config.originDatabase))
 		const expectedKind = kindForScheme(config.originScheme)
 		const matched =
 			candidate !== undefined && expectedKind !== null && candidate.kind === expectedKind

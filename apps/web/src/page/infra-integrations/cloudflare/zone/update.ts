@@ -33,6 +33,7 @@ import {
 import type { TopTraffic } from "../data"
 import { dimensionOf, filtersOf, inputsOf, needsBreakdown } from "./derive"
 import { type FilterKey, Message, type Model, type RequestMode } from "./model"
+import { String as Str } from "effect"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -59,7 +60,7 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(model, search), isReplace }),
 })
 
-const warehouseTimeToMs = (value: string) => new Date(`${value.replace(" ", "T")}Z`).getTime()
+const warehouseTimeToMs = (value: string) => new Date(`${Str.replace(" ", "T")(value)}Z`).getTime()
 
 /** Every read the page shows right now, keyed like the atoms. */
 const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
@@ -187,7 +188,10 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 	if (hrefOfSearch(model, model.search) === hrefOfSearch(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: (mode) => sync(next, context, mode),
 	})
 }
@@ -275,7 +279,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedBreakdownSearch: ({ value }) => ({
 			model: { ...model, breakdownSearch: value, liveQuery: null },
 		}),
-		ClickedSearchLive: () => sync({ ...model, liveQuery: model.breakdownSearch.trim() }, context, "Load"),
+		ClickedSearchLive: () =>
+			sync({ ...model, liveQuery: Str.trim(model.breakdownSearch) }, context, "Load"),
 		ClickedLeaveLive: () => ({ model: { ...model, liveQuery: null } }),
 		ClickedBreakdownSort: ({ key }) => ({
 			model: { ...model, breakdownSort: nextSort(model.breakdownSort, key, { stringKeys: ["key"] }) },

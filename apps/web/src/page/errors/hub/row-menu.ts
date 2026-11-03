@@ -12,6 +12,7 @@ import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { startHubWrite } from "./selection"
+import { Array as Arr } from "effect"
 
 // The issue context menu: a row's right-click menu.
 
@@ -48,7 +49,7 @@ export const rowMenuEntries = <M>(
 ): ReadonlyArray<ContextMenuView.Entry> => {
 	const targets = targetsOf(issue)
 	const current = issue.workflowState
-	return actionsOf(issue).map((action): ContextMenuView.Entry => {
+	return Arr.map(actionsOf(issue), (action): ContextMenuView.Entry => {
 		switch (action) {
 			case "separator":
 				return { _tag: "Separator" }
@@ -82,7 +83,7 @@ export const rowMenuEntries = <M>(
 										],
 									},
 								]
-							: targets.map((state) => ({
+							: Arr.map(targets, (state) => ({
 									_tag: "Item" as const,
 									label: WORKFLOW_LABEL[state],
 									content: [

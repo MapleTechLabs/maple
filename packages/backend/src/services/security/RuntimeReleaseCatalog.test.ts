@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService } from "@maple/cache"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { RuntimeReleaseCatalog } from "./RuntimeReleaseCatalog"
@@ -20,7 +20,7 @@ const endoflife = (requests: Array<string>) =>
 	HttpClient.make((request: HttpClientRequest.HttpClientRequest) =>
 		Effect.sync(() => {
 			requests.push(request.url)
-			const response = request.url.endsWith("/nodejs")
+			const response = Str.endsWith("/nodejs")(request.url)
 				? new Response(JSON.stringify(NODE_BODY), { status: 200 })
 				: new Response("unavailable", { status: 503 })
 			return HttpClientResponse.fromWeb(request, response)

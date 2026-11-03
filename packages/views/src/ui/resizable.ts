@@ -74,7 +74,7 @@ export const resize = (
 	if (before === undefined || after === undefined) return layout
 	const total = before + after
 	const next = precise(Number.clamp(before + delta, { minimum: 0, maximum: total }))
-	return layout.map((size, index) =>
+	return Array.map(layout, (size, index) =>
 		index === handleIndex ? next : index === handleIndex + 1 ? precise(total - next) : size,
 	)
 }
@@ -285,7 +285,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			}),
 			h.OnMount(MountResizeGroup({ orientation: model.orientation })),
 		],
-		panels.flatMap((content, index) =>
+		Array.flatMap(panels, (content, index) =>
 			index === panels.length - 1 ? [panel(content, index)] : [panel(content, index), handle(index)],
 		),
 	)

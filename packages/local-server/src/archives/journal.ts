@@ -12,7 +12,7 @@ import {
 	validateArchiveId,
 	validateRangeDate,
 } from "./paths"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { NonEmptyString, NonNegativeSafeInt, Sha256Lower } from "./schemas"
 import { parseArchiveActivePointer } from "./manifest"
 import { archiveSignal } from "./signals"
@@ -58,8 +58,8 @@ export const ARCHIVE_OPERATION_PHASES = [
 ] as const
 export type ArchiveOperationPhase = (typeof ARCHIVE_OPERATION_PHASES)[number]
 
-export const PHASE_ORDER: Readonly<Record<ArchiveOperationPhase, number>> = Object.fromEntries(
-	ARCHIVE_OPERATION_PHASES.map((phase, index) => [phase, index]),
+export const PHASE_ORDER: Readonly<Record<ArchiveOperationPhase, number>> = Rec.fromEntries(
+	Arr.map(ARCHIVE_OPERATION_PHASES, (phase, index) => [phase, index]),
 ) as Readonly<Record<ArchiveOperationPhase, number>>
 
 export const phaseAtLeast = (a: ArchiveOperationPhase, b: ArchiveOperationPhase): boolean =>
@@ -357,10 +357,10 @@ const parseGcIntent = (
 	const keepRaw = decodeCount(raw.keep, "keep")
 	const completedTargetsRaw = decodeCount(raw.completedTargets, "completedTargets")
 	const targetsRaw = raw.targets
-	if (!Array.isArray(targetsRaw)) {
+	if (!Arr.isArray(targetsRaw)) {
 		throw new Error("archive operation gc intent targets is not an array")
 	}
-	const targets: GcTarget[] = targetsRaw.map((t, i) => parseGcTarget(t, i))
+	const targets: GcTarget[] = Arr.map(targetsRaw, (t, i) => parseGcTarget(t, i))
 	if (completedTargetsRaw > targets.length) {
 		throw new Error(
 			`archive operation gc intent completedTargets ${completedTargetsRaw} exceeds targets ${targets.length}`,
@@ -721,10 +721,10 @@ export const listActiveOperationIds = (archiveDir: string): string[] => {
 			throw new Error(`unrecognized active operation debris: ${join(root, entry.name)}`)
 		}
 		const prefix = "archive-"
-		if (!entry.name.startsWith(prefix)) {
+		if (!Str.startsWith(prefix)(entry.name)) {
 			throw new Error(`unrecognized active operation entry: ${join(root, entry.name)}`)
 		}
-		ids.push(validateArchiveId(entry.name.slice(prefix.length), "operation"))
+		ids.push(validateArchiveId(Str.slice(prefix.length)(entry.name), "operation"))
 	}
 	return ids
 }

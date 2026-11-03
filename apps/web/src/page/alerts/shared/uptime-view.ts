@@ -13,6 +13,7 @@ import {
 	statusLabel,
 	type UptimeMonitor,
 } from "./uptime-derive"
+import { Array as Arr } from "effect"
 
 // The uptime marks: the status chip, the status square and the recent-checks strip.
 
@@ -28,10 +29,7 @@ export const uptimeStatusSquare = <M>(h: HtmlBuilder<M>, monitor: UptimeMonitor)
 		[
 			h.AriaHidden(true),
 			h.Class(
-				cn(
-					"inline-block size-2 shrink-0 rounded-xs",
-					TONE_FILL[STATUS_TONE[displayStatus(monitor)]],
-				),
+				cn("inline-block size-2 shrink-0 rounded-xs", TONE_FILL[STATUS_TONE[displayStatus(monitor)]]),
 			),
 		],
 		[],
@@ -60,9 +58,9 @@ export const recentChecksStrip = <M>(
 	const slots = options.slots ?? 40
 	const recent = options.recent.slice(-slots)
 	const padding = Math.max(0, slots - recent.length)
-	const passed = recent.filter((check) => check.ok).length
+	const passed = Arr.filter(recent, (check) => check.ok).length
 	const medianMs = medianOf(
-		recent.flatMap((check) => (check.duration_ms === null ? [] : [check.duration_ms])),
+		Arr.flatMap(recent, (check) => (check.duration_ms === null ? [] : [check.duration_ms])),
 	)
 	const label = recent.length === 0 ? "No checks yet" : `${passed} of ${recent.length} recent checks passed`
 	return h.div(
@@ -76,7 +74,7 @@ export const recentChecksStrip = <M>(
 			...Array.from({ length: padding }, (_, index) =>
 				h.span([h.Key(`pad-${index}`), h.Class("w-1 min-w-0 flex-1 rounded-2xs bg-muted")], []),
 			),
-			...recent.map((check, index) =>
+			...Arr.map(recent, (check, index) =>
 				h.span(
 					[
 						h.Key(`${check.at}-${index}`),

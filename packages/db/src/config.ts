@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { String as Str } from "effect"
 
 /**
  * Embedded-PGlite location for local dev and tests. `dataDir` is what the
@@ -26,7 +27,7 @@ export const resolveMapleDbConfig = (
 }
 
 export const ensureMapleDbDirectory = (config: MapleDbConfig = resolveMapleDbConfig()): MapleDbConfig => {
-	if (!config.dataDir.startsWith("memory://")) {
+	if (!Str.startsWith("memory://")(config.dataDir)) {
 		mkdirSync(config.dataDir, { recursive: true })
 	}
 

@@ -8,6 +8,7 @@ import { badge } from "./display"
 import { icon } from "./icon"
 import { tooltipTrigger } from "./tooltip-host"
 import { serviceDot } from "./values"
+import { Array as Arr } from "effect"
 
 // Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and
 // `ServicePills` (packages/ui/src/components/service-pills.tsx).
@@ -61,17 +62,15 @@ export const servicePills = <M>(
 					h.Class("flex min-w-0 flex-wrap gap-1"),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
 					h.DataAttribute("slot", "tooltip-trigger"),
-					...tooltipTrigger(h, tooltipServices.join("\n")),
+					...tooltipTrigger(h, Arr.join(tooltipServices, "\n")),
 				],
 				[
-					...services
-						.slice(0, VISIBLE_SERVICES)
-						.map((service) =>
-							badge(h, { variant: "outline", className: "max-w-full font-mono text-3xs" }, [
-								serviceDot(h, { serviceName: service, size: "sm" }),
-								h.span([h.Class("truncate")], [service]),
-							]),
-						),
+					...Arr.map(services.slice(0, VISIBLE_SERVICES), (service) =>
+						badge(h, { variant: "outline", className: "max-w-full font-mono text-3xs" }, [
+							serviceDot(h, { serviceName: service, size: "sm" }),
+							h.span([h.Class("truncate")], [service]),
+						]),
+					),
 					...(services.length > VISIBLE_SERVICES
 						? [
 								badge(h, { variant: "outline", className: "text-3xs" }, [

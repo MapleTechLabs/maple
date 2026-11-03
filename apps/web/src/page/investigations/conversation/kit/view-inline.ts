@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type {
 	AnnotationSegment,
 	InlineErrorData,
@@ -67,7 +67,7 @@ const metric = <M>(
 const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): ReadonlyArray<Html> => {
 	const shown = services.slice(0, 4)
 	return [
-		...shown.map((service) =>
+		...Arr.map(shown, (service) =>
 			h.span(
 				[
 					h.Class(
@@ -234,7 +234,7 @@ const inlineTrace = <M>(h: HtmlBuilder<M>, data: InlineTraceData): Html =>
 
 /** `SeverityBadge`: the severity's own colour on a 10% wash of it. */
 const severityBadge = <M>(h: HtmlBuilder<M>, severity: string): Html => {
-	const label = severity.trim() === "" ? "UNSET" : severity
+	const label = Str.trim(severity) === "" ? "UNSET" : severity
 	const color = getSeverityColor(label)
 	return badge(
 		h,

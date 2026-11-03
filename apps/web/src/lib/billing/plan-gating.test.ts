@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import type { BillingBalance, BillingCustomer, BillingSubscription, CatalogPlan } from "@maple/domain/http"
+import {
+	BillingBalance,
+	BillingCustomer,
+	BillingSubscription,
+	BillingSubscriptionPlan,
+	CatalogPlan,
+	CatalogPlanPrice,
+} from "@maple/domain/http"
 import {
 	getFeatureQuotas,
 	getLapsedPlan,
@@ -15,40 +22,38 @@ import {
 	resolvePlanAccess,
 } from "./plan-gating"
 
-// The mock builders construct only the consumed subset of each domain schema;
-// `as` casts keep them terse (all fields are optional in the schemas anyway).
 type Customer = BillingCustomer
 type Subscription = BillingSubscription
 type Balance = BillingBalance
 type Plan = CatalogPlan
 
 function buildBalance(_featureId: string, partial: Partial<Balance> = {}): Balance {
-	return {
+	return new BillingBalance({
 		granted: 50,
 		remaining: 50,
 		usage: 0,
 		unlimited: false,
 		overageAllowed: false,
 		...partial,
-	} as Balance
+	})
 }
 
 function buildCustomer(
 	subscriptions: Subscription[],
 	overrides: { flags?: Customer["flags"]; balances?: Customer["balances"] } = {},
 ): Customer {
-	return {
+	return new BillingCustomer({
 		id: "cus_1",
 		subscriptions,
 		balances: overrides.balances ?? {},
 		flags: overrides.flags ?? {},
-	} as Customer
+	})
 }
 
 function buildSubscription(partial: Partial<Subscription> = {}): Subscription {
-	return {
+	return new BillingSubscription({
 		planId: "starter",
-		plan: { name: "Starter", archived: false },
+		plan: new BillingSubscriptionPlan({ name: "Starter", archived: false }),
 		autoEnable: false,
 		addOn: false,
 		status: "active",
@@ -58,21 +63,21 @@ function buildSubscription(partial: Partial<Subscription> = {}): Subscription {
 		currentPeriodEnd: null,
 		quantity: 1,
 		...partial,
-	} as Subscription
+	})
 }
 
 function buildPlan(partial: Partial<Plan> = {}): Plan {
-	return {
+	return new CatalogPlan({
 		id: "startup",
 		name: "Startup",
 		description: null,
 		addOn: false,
 		autoEnable: false,
-		price: { amount: 39, interval: "month" },
+		price: new CatalogPlanPrice({ amount: 39, interval: "month" }),
 		items: [],
 		archived: false,
 		...partial,
-	} as Plan
+	})
 }
 
 describe("hasSelectedPlan", () => {
@@ -97,7 +102,7 @@ describe("hasSelectedPlan", () => {
 		const freeCustomer = buildCustomer([
 			buildSubscription({
 				planId: "free",
-				plan: { name: "Free", archived: false },
+				plan: new BillingSubscriptionPlan({ name: "Free", archived: false }),
 			}),
 		])
 		const addOnCustomer = buildCustomer([buildSubscription({ addOn: true })])
@@ -128,7 +133,7 @@ describe("getLapsedPlan / hasLapsedPlan", () => {
 					buildSubscription({
 						status: "expired",
 						planId: "free",
-						plan: { name: "Free", archived: false },
+						plan: new BillingSubscriptionPlan({ name: "Free", archived: false }),
 					}),
 				]),
 			),
@@ -416,7 +421,7 @@ describe("isLegacyPlan / getLegacyPlanInfo", () => {
 
 	it("falls back to planId for the name when the subscription has no plan object", () => {
 		// getOrCreateCustomer does not expand subscription.plan in practice.
-		const customer = buildCustomer([buildSubscription({ planId: "starter", plan: undefined })])
+		const customer = buildCustomer([buildSubscription({ planId: "starter", plan: null })])
 		expect(getLegacyPlanInfo(customer, catalog)).toEqual({ isLegacy: true, planName: "starter" })
 	})
 })

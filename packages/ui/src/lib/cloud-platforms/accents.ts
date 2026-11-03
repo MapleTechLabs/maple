@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 // Brand accents for the trace platform annotations. Kept free of React imports so the Foldkit
 // dashboard reads the same values as the React adapters instead of copying them.
 
@@ -26,4 +27,4 @@ const DB_SYSTEM_ACCENTS: ReadonlyMap<string, string> = new Map([
 ])
 
 export const dbSystemAccentClass = (system: string): string =>
-	DB_SYSTEM_ACCENTS.get(system.toLowerCase()) ?? "text-muted-foreground"
+	DB_SYSTEM_ACCENTS.get(Str.toLowerCase(system)) ?? "text-muted-foreground"

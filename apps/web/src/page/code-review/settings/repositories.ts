@@ -6,7 +6,7 @@ import {
 } from "../../../components/code-review/repository-filter"
 import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -41,7 +41,13 @@ export const pinOnce = (
 	repositories: ReadonlyArray<GithubRepoSummary>,
 ): RepoListState =>
 	state.pinned === null
-		? { ...state, pinned: repositories.filter((repo) => repo.prReviewEnabled).map((repo) => repo.id) }
+		? {
+				...state,
+				pinned: Arr.map(
+					Arr.filter(repositories, (repo) => repo.prReviewEnabled),
+					(repo) => repo.id,
+				),
+			}
 		: state
 
 const FILTER_LABELS = {
@@ -82,8 +88,8 @@ const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
 	return h.span(
 		[h.Class("truncate")],
 		[
-			typography(h, { tone: "muted", weight: "normal" }, [fullName.slice(0, slash + 1)]),
-			fullName.slice(slash + 1),
+			typography(h, { tone: "muted", weight: "normal" }, [Str.slice(0, slash + 1)(fullName)]),
+			Str.slice(slash + 1)(fullName),
 		],
 	)
 }
@@ -107,10 +113,7 @@ const repositoryRow = <M>(h: HtmlBuilder<M>, repo: GithubRepoSummary, options: R
 							h.Attribute("rel", "noreferrer"),
 							h.Attribute("target", "_blank"),
 						],
-						[
-							repositoryName(h, repo.fullName),
-							revealIcon(h, "ExternalLinkIcon", { size: 12 }),
-						],
+						[repositoryName(h, repo.fullName), revealIcon(h, "ExternalLinkIcon", { size: 12 })],
 					),
 					...(repo.isPrivate
 						? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Private"])]
@@ -165,7 +168,7 @@ const FOLD_ROWS = 11
 
 export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>): Html => {
 	const { repositories, state } = options
-	const enabled = repositories.filter((repo) => repo.prReviewEnabled).length
+	const enabled = Arr.filter(repositories, (repo) => repo.prReviewEnabled).length
 	const counts = { all: repositories.length, reviewed: enabled, off: repositories.length - enabled }
 	const showToolbar = repositories.length > SEARCH_THRESHOLD
 	const visible = visibleRepositories(repositories, {
@@ -173,7 +176,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 		filter: state.filter,
 		pinned: new Set(state.pinned ?? []),
 	})
-	const isSearching = showToolbar && state.search.trim().length > 0
+	const isSearching = showToolbar && Str.trim(state.search).length > 0
 	return panel(h, {}, [
 		panelHeader(h, {
 			className: "px-5 py-3 text-xs text-muted-foreground",
@@ -203,7 +206,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 								ariaLabel: "Review status",
 								value: state.filter,
 								onChange: options.onFilter,
-								options: (["all", "reviewed", "off"] as const).map((value) => ({
+								options: Arr.map(["all", "reviewed", "off"] as const, (value) => ({
 									value,
 									label: `${FILTER_LABELS[value]} · ${counts[value]}`,
 								})),
@@ -224,7 +227,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 							[],
 							[
 								isSearching
-									? `No repositories match “${state.search.trim()}”`
+									? `No repositories match “${Str.trim(state.search)}”`
 									: state.filter === "reviewed"
 										? "No repositories are reviewed yet"
 										: "Every repository is reviewed",
@@ -248,7 +251,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 							),
 						),
 					],
-					visible.map((repo) => repositoryRow(h, repo, options)),
+					Arr.map(visible, (repo) => repositoryRow(h, repo, options)),
 				),
 		...(visible.length > 0 && visible.length < repositories.length
 			? [

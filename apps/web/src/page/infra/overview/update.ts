@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { presenceKey } from "../../../data/infra-surfaces"
 import * as Keyed from "@maple/views/data/keyed"
@@ -37,11 +37,11 @@ const requestSources = (
 	const window = model.frame.window
 	const known = presentSources(surfacesOf(model, context))
 	if (window === null || known === null) return { model }
-	const sources = onlyNew ? known.filter((source) => model.sources[source].key === null) : known
+	const sources = onlyNew ? Arr.filter(known, (source) => model.sources[source].key === null) : known
 	const input = { startTime: window.startTime, endTime: window.endTime }
 	const requested = seriesSteps<SourceReading, LoadFailure, Message>(
 		model.sources,
-		sources.map((source) => ({
+		Arr.map(sources, (source) => ({
 			id: source,
 			key: requestKey(context.orgId, `infraOverview.${source}`, { data: input }),
 			fetch: (key: string) => FetchSource({ source, key, window }),

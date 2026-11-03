@@ -11,7 +11,7 @@ import {
 	type SupabaseTopQuery,
 } from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { send, SupabaseApiError } from "./api"
 
@@ -34,7 +34,10 @@ const INTERNAL_ROLES = [
 export const TOP_QUERIES_SQL =
 	`select s.queryid::text as query_id, left(s.query, ${QUERY_TEXT_CHARS}) as query, s.calls, s.total_exec_time, s.mean_exec_time, s.rows ` +
 	`from extensions.pg_stat_statements s join pg_roles r on r.oid = s.userid ` +
-	`where r.rolname not in (${INTERNAL_ROLES.map((role) => `'${role}'`).join(", ")}) and s.query not ilike '%pg_stat_statements%' ` +
+	`where r.rolname not in (${Arr.join(
+		Arr.map(INTERNAL_ROLES, (role) => `'${role}'`),
+		", ",
+	)}) and s.query not ilike '%pg_stat_statements%' ` +
 	`order by s.total_exec_time desc limit ${TOP_QUERIES_LIMIT}`
 
 const OptionalText = Schema.optionalKey(Schema.NullOr(Schema.String))
@@ -79,7 +82,7 @@ const decodeRowsBody = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.A
 
 /** A lint that does not decode is dropped; an advisor keeps the rest. */
 export const decodeLints = (kind: SupabaseAdvisorKind, raw: ReadonlyArray<unknown>) =>
-	raw.flatMap((item): Array<SupabaseAdvisorLint> =>
+	Arr.flatMap(raw, (item): Array<SupabaseAdvisorLint> =>
 		Option.match(decodeLint(item), {
 			onNone: () => [],
 			onSome: (lint) => [
@@ -102,7 +105,7 @@ export const decodeLints = (kind: SupabaseAdvisorKind, raw: ReadonlyArray<unknow
 	)
 
 export const decodeStatements = (raw: ReadonlyArray<unknown>) =>
-	raw.flatMap((item): Array<SupabaseTopQuery> =>
+	Arr.flatMap(raw, (item): Array<SupabaseTopQuery> =>
 		Option.match(decodeStatement(item), {
 			onNone: () => [],
 			onSome: (row) => [

@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema, String as Str } from "effect"
 import { UpdateDashboardOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -69,7 +69,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 			)
 
 			const nowMillis = yield* Clock.currentTimeMillis
-			const now = decodeIsoDateTimeString(new Date(nowMillis).toISOString())
+			const now = decodeIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe(nowMillis)))
 
 			const dashboard = yield* persistence
 				.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
@@ -130,7 +130,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 					["Name", output.dashboard.name],
 					["Description", output.dashboard.description],
 					["Widgets", output.dashboard.widgetCount],
-					["Updated", output.dashboard.updatedAt.slice(0, 19)],
+					["Updated", Str.slice(0, 19)(output.dashboard.updatedAt)],
 				]),
 				...(output.renderWarnings.length > 0
 					? [doc.heading("Render warnings (saved anyway)"), doc.list(output.renderWarnings)]

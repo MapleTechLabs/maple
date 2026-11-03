@@ -2,6 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { LEGEND_BLOCK_H } from "./heatmap-layout"
 import { formatScalar, rampPositionOf, roundTick, valueAtRampPosition } from "./heatmap-model"
 import type { SequentialScaleType } from "./sequential-domain"
+import { Array as Arr } from "effect"
 
 // `HeatmapLegend`: five stepped swatches with values read back through the ramp, a marker at the
 // hovered value, and insets that line the bar up with the plot's columns.
@@ -77,7 +78,7 @@ export const heatmapLegend = <M>(h: HtmlBuilder<M>, inputs: HeatmapLegendInputs)
 			),
 			h.div(
 				[h.Class("relative mt-1.5"), h.Style({ height: "12px" })],
-				ticks.map(({ t, anchor }) =>
+				Arr.map(ticks, ({ t, anchor }) =>
 					h.div(
 						[
 							h.Class("absolute tabular-nums text-muted-foreground"),
@@ -88,7 +89,12 @@ export const heatmapLegend = <M>(h: HtmlBuilder<M>, inputs: HeatmapLegendInputs)
 								"line-height": "1",
 							}),
 						],
-						[formatScalar(roundTick(valueAtRampPosition(t, domain, scaleType), domain[0], span), inputs.unit)],
+						[
+							formatScalar(
+								roundTick(valueAtRampPosition(t, domain, scaleType), domain[0], span),
+								inputs.unit,
+							),
+						],
 					),
 				),
 			),

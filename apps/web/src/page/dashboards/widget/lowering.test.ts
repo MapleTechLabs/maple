@@ -1,6 +1,6 @@
 import { DashboardDocument } from "@maple/domain/http"
 import { dataSourceTransform, makeRouteDataSource } from "@maple/widgets/dashboard"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { buildDataSource, buildDisplay, toInitialState, validationErrorOf, type Widget } from "./lowering"
 
@@ -41,12 +41,18 @@ describe("widget editor lowering", () => {
 		const widget = widgetOf("gauge", { title: "Budget", gauge: { min: 10, max: 20 } })
 		const state = toInitialState(widget)
 		expect([state.gaugeMin, state.gaugeMax]).toEqual(["10", "20"])
-		expect(buildDisplay(widget, { ...state, gaugeMin: "", gaugeMax: "500" }).gauge).toEqual({ min: 0, max: 500 })
+		expect(buildDisplay(widget, { ...state, gaugeMin: "", gaugeMax: "500" }).gauge).toEqual({
+			min: 0,
+			max: 500,
+		})
 	})
 
 	test("a breakdown type without a group-by blocks Apply", () => {
 		const state = toInitialState(widgetOf("pie", { title: "Share" }))
-		const ungrouped = { ...state, queries: state.queries.map((query) => ({ ...query, groupBy: [] })) }
+		const ungrouped = {
+			...state,
+			queries: Arr.map(state.queries, (query) => ({ ...query, groupBy: [] })),
+		}
 		expect(validationErrorOf(ungrouped)).toMatch(/group-by/)
 	})
 })

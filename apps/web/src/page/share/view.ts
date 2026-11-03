@@ -30,6 +30,7 @@ import { sharedSection } from "./view-sections"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `SharePage`: its own chrome outside the app shell.
 
@@ -135,7 +136,7 @@ const notEmbeddableCard = (h: H): Html =>
 const shareSkeleton = (h: H): Html =>
 	h.div(
 		[h.Class("grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3")],
-		[0, 1, 2, 3].map(() => skeleton(h, "h-64 rounded-md border")),
+		Arr.map([0, 1, 2, 3], () => skeleton(h, "h-64 rounded-md border")),
 	)
 
 const dataStateOf = (state: WidgetState | undefined): WidgetDataState => {
@@ -198,7 +199,7 @@ const gridOf = (
 		tier.cols,
 		tier.canonical ? "vertical" : "none",
 	)
-	const byId = new Map(layout.map((item) => [item.i, item]))
+	const byId = new Map(Arr.map(layout, (item) => [item.i, item]))
 	return h.div(
 		[
 			h.DataAttribute("dashboard-grid", ""),
@@ -212,7 +213,7 @@ const gridOf = (
 				"padding-block": `${tier.margin[1]}px`,
 			}),
 		],
-		widgets.flatMap((widget) => {
+		Arr.flatMap(widgets, (widget) => {
 			const item = byId.get(widget.id)
 			return item === undefined
 				? []
@@ -251,7 +252,7 @@ const board = (
 	timeZone: string,
 ): Html => {
 	const { widgets, sections } = share.dashboard
-	const root = widgets.filter((widget) => containerKeyOf(widget) === ROOT_CONTAINER_KEY)
+	const root = Arr.filter(widgets, (widget) => containerKeyOf(widget) === ROOT_CONTAINER_KEY)
 	const view = resolveSectionView(sections, widgets, model.sectionView)
 	const rootGrid = gridOf(h, model, root, variables, timeZone)
 	return h.div(
@@ -264,11 +265,14 @@ const board = (
 						...(rootGrid === null ? [] : [rootGrid]),
 						...(model.gridWidth <= 0
 							? []
-							: sections.map((section) => {
+							: Arr.map(sections, (section) => {
 									const activeTabId =
 										view.activeTabs.get(section.id) ?? section.tabs[0]?.id ?? section.id
 									const key = containerKeyFor({ sectionId: section.id, tabId: activeTabId })
-									const inTab = widgets.filter((widget) => containerKeyOf(widget) === key)
+									const inTab = Arr.filter(
+										widgets,
+										(widget) => containerKeyOf(widget) === key,
+									)
 									return sharedSection(h, {
 										section,
 										activeTabId,
@@ -294,7 +298,7 @@ const singleWidget = (
 ): Html =>
 	h.div(
 		[h.Class("h-full w-full")],
-		share.dashboard.widgets.map((widget) =>
+		Arr.map(share.dashboard.widgets, (widget) =>
 			h.div(
 				[
 					h.Key(widget.id),
@@ -315,8 +319,8 @@ const shareBody = (h: H, model: Model, share: SharedDashboard, isEmbed: boolean,
 			"Open the link with an explicit window (?from=…&to=…) instead.",
 		)
 	// Titles read "All" for an All selection, never the expansion, so no option list is needed.
-	const variables: VariableValues = Object.fromEntries(
-		Object.entries(model.variables).map(([name, value]) => [
+	const variables: VariableValues = Rec.fromEntries(
+		Arr.map(Rec.toEntries(model.variables), ([name, value]) => [
 			name,
 			{ value, isAll: value === ALL_VALUE, options: [] },
 		]),

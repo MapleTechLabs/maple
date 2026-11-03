@@ -11,6 +11,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { type Signal, exportBody } from "./payloads"
 import { burnCpu, environment, flag, list, numbers, summarize, type Summary, writeReport } from "./report"
+import { Array as Arr, String as Str } from "effect"
 
 const signals = list("signals", "traces,logs,metrics") as Signal[]
 const sizes = numbers("sizes", "1,50,500")
@@ -128,17 +129,19 @@ const main = async () => {
 					cells.push(cell)
 					const { p50, p95, max } = cell.latencyMs
 					console.log(
-						`${signal.padEnd(7)} ${String(records).padStart(4)}/export x${String(concurrency).padEnd(3)} ` +
-							`p50 ${p50.toFixed(1).padStart(7)} ms  p95 ${p95.toFixed(1).padStart(7)} ms  ` +
-							`max ${max.toFixed(1).padStart(7)} ms  ${String(cell.recordsPerSecond).padStart(7)} rec/s`,
+						`${Str.padEnd(7)(signal)} ${Str.padStart(4)(String(records))}/export x${Str.padEnd(3)(String(concurrency))} ` +
+							`p50 ${Str.padStart(7)(p50.toFixed(1))} ms  p95 ${Str.padStart(7)(p95.toFixed(1))} ms  ` +
+							`max ${Str.padStart(7)(max.toFixed(1))} ms  ${Str.padStart(7)(String(cell.recordsPerSecond))} rec/s`,
 					)
 				}
-		stalls.forEach((s) => console.log(`stall: ${s.signal} request at +${s.atSeconds}s took ${s.ms} ms`))
+		Arr.forEach(stalls, (s) =>
+			console.log(`stall: ${s.signal} request at +${s.atSeconds}s took ${s.ms} ms`),
+		)
 		return { bootMs, firstExportMs, cells, stalls }
 	}
 
 	const result = await run().finally(stop)
-	const out = writeReport(`local-ingest-http-${env.date.slice(0, 10)}.json`, {
+	const out = writeReport(`local-ingest-http-${Str.slice(0, 10)(env.date)}.json`, {
 		bench: "local-ingest-http",
 		environment: env,
 		options: { signals, sizes, concurrencies, exportsPerCell, warmup, burn },

@@ -234,7 +234,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				const row = yield* selectById(orgId, keyId)
 				if (Option.isSome(row)) return row.value
 
-				return yield* Effect.fail(new ApiKeyNotFoundError({ keyId, message: "API key not found" }))
+				return yield* new ApiKeyNotFoundError({ keyId, message: "API key not found" })
 			})
 
 			const get = Effect.fn("ApiKeysService.get")(function* (orgId: OrgId, keyId: ApiKeyId) {
@@ -578,9 +578,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 					// Lost the claim (or never had one): distinguish a key that does not
 					// exist from one that is revoked, expired or not rollable.
 					const row = yield* requireById(orgId, keyId)
-					return yield* Effect.fail(
-						new ApiKeyNotFoundError({ keyId, message: rollRefusal(row, now) }),
-					)
+					return yield* new ApiKeyNotFoundError({ keyId, message: rollRefusal(row, now) })
 				}
 
 				const txid = readTxid([rolled])

@@ -1,11 +1,12 @@
 import type { Edge3D, Node3D } from "./types"
+import { Array as Arr } from "effect"
 
 /** Collapse cycles first, then rank the resulting DAG by longest dependency path. */
 export function computeTiers(
 	nodes: ReadonlyArray<Pick<Node3D, "id">>,
 	edges: ReadonlyArray<Pick<Edge3D, "source" | "target">>,
 ): Map<string, number> {
-	const adjacency = new Map(nodes.map((node) => [node.id, [] as string[]]))
+	const adjacency = new Map(Arr.map(nodes, (node) => [node.id, [] as string[]]))
 	for (const edge of edges) {
 		if (adjacency.has(edge.target)) adjacency.get(edge.source)?.push(edge.target)
 	}
@@ -48,7 +49,7 @@ export function computeTiers(
 		outgoing[from]?.add(to)
 		indegree[to] = (indegree[to] ?? 0) + 1
 	}
-	const queue = indegree.flatMap((count, i) => (count === 0 ? [i] : []))
+	const queue = Arr.flatMap(indegree, (count, i) => (count === 0 ? [i] : []))
 	for (let i = 0; i < queue.length; i++) {
 		const from = queue[i]
 		if (from === undefined) continue
@@ -58,5 +59,5 @@ export function computeTiers(
 			if (indegree[to] === 0) queue.push(to)
 		}
 	}
-	return new Map(nodes.map((node) => [node.id, depth[component.get(node.id) ?? 0] ?? 0]))
+	return new Map(Arr.map(nodes, (node) => [node.id, depth[component.get(node.id) ?? 0] ?? 0]))
 }

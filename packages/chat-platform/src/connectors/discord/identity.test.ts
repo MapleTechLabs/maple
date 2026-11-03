@@ -6,7 +6,7 @@
  * is what a later button click is matched against.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Redacted, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { discord } from "./index"
 import { API_BASE, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
@@ -32,11 +32,11 @@ const discordFetch = (
 		input: Parameters<typeof globalThis.fetch>[0],
 		init?: RequestInit,
 	) => {
-		const url = String(input)
-		if (url.startsWith(TOKEN_URL)) {
+		const url = new Request(input).url
+		if (Str.startsWith(TOKEN_URL)(url)) {
 			return Promise.resolve(jsonResponse({ access_token: "at-1", token_type: "Bearer" }))
 		}
-		if (url.startsWith(USER_URL)) {
+		if (Str.startsWith(USER_URL)(url)) {
 			options.seen?.push(new Request(url, init).headers.get("authorization") ?? "")
 			return Promise.resolve(jsonResponse(user, options.userStatus ?? 200))
 		}

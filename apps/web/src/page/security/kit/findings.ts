@@ -1,5 +1,5 @@
 import type { SecurityAuditFinding, SecurityAuditRunFindingCounts } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 // Findings by what to fix first: a confirmed finding under its severity, a lead under its estimated
 // one, and an unscored lead or a disproved claim under its verdict.
@@ -18,7 +18,7 @@ export type SeverityBucket = typeof SeverityBucket.Type
 export const SEVERITY_BUCKETS: ReadonlyArray<SeverityBucket> = SeverityBucket.literals
 
 /** The buckets a tile or a count shows: every one but the disproved. */
-export const SCORED_BUCKETS = SEVERITY_BUCKETS.filter((bucket) => bucket !== "rejected")
+export const SCORED_BUCKETS = Arr.filter(SEVERITY_BUCKETS, (bucket) => bucket !== "rejected")
 
 export const BUCKET_LABEL = {
 	critical: "Critical",
@@ -79,14 +79,15 @@ export type FindingSection = Readonly<{
 /** Non-empty sections, most severe first; within one, proven before unverified, then the most
  * recently seen first. */
 export const sectionsOf = (findings: ReadonlyArray<SecurityAuditFinding>): ReadonlyArray<FindingSection> =>
-	SEVERITY_BUCKETS.map((bucket) => ({
-		bucket,
-		rows: findings
-			.filter((finding) => bucketOf(finding) === bucket)
-			.toSorted(
+	Arr.filter(
+		Arr.map(SEVERITY_BUCKETS, (bucket) => ({
+			bucket,
+			rows: Arr.filter(findings, (finding) => bucketOf(finding) === bucket).toSorted(
 				(a, b) =>
 					Number(isUnverified(a)) - Number(isUnverified(b)) ||
 					b.updatedAt - a.updatedAt ||
-					a.fingerprint.localeCompare(b.fingerprint),
+					Str.localeCompare(b.fingerprint)(a.fingerprint),
 			),
-	})).filter((section) => section.rows.length > 0)
+		})),
+		(section) => section.rows.length > 0,
+	)

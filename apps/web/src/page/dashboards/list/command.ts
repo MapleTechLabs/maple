@@ -1,5 +1,5 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Clock, Duration, Effect, Option, Result, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { Command, Dom } from "foldkit"
 import { File as FoldkitFile } from "foldkit/file"
 import { trackProduct } from "../../../data/analytics"
@@ -251,7 +251,7 @@ export const FetchDashboardsFallback = Command.define("FetchDashboardsFallback",
 			const documents = yield* Effect.forEach(dashboards, (dashboard) =>
 				Effect.option(documentOf(dashboard)),
 			)
-			return documents.flatMap((document) => Option.toArray(Option.map(document, toListDashboard)))
+			return Arr.flatMap(documents, (document) => Option.toArray(Option.map(document, toListDashboard)))
 		}).pipe(
 			// A hung snapshot read gives up too, so the list lands on its error state.
 			Effect.timeout(FALLBACK_TIMEOUT),

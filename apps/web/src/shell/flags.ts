@@ -1,5 +1,5 @@
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { readQuotaApproachingDismissed } from "./billing-banners"
 import { readDashboardFavorites } from "./favorites"
 import {
@@ -34,15 +34,16 @@ const readPrefixed = <A>(
 ): Effect.Effect<Record<string, A>> =>
 	Effect.try({
 		try: () =>
-			Object.fromEntries(
-				Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-					.filter((key): key is string => key !== null && key.startsWith(prefix))
-					.flatMap((key) =>
-						Option.match(Option.flatMap(readLocalStorage(key), decode), {
-							onNone: () => [],
-							onSome: (value) => [[key.slice(prefix.length), value] as const],
-						}),
-					),
+			Rec.fromEntries(
+				Arr.filter(
+					Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)),
+					(key): key is string => key !== null && Str.startsWith(prefix)(key),
+				).flatMap((key) =>
+					Option.match(Option.flatMap(readLocalStorage(key), decode), {
+						onNone: () => [],
+						onSome: (value) => [[key.slice(prefix.length), value] as const],
+					}),
+				),
 			),
 		catch: (cause) => new ShellStorageError({ message: `Could not read ${prefix} entries`, cause }),
 	}).pipe(Effect.orElseSucceed(() => ({})))

@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Scope } from "effect"
+import { Effect, Layer, Schema, Scope, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { afterEach, expect, vi } from "vitest"
 import { make, makeHandle, MapleEvents } from "./events.js"
@@ -26,10 +26,10 @@ const stubClient = (status = 200) => {
 			url: request.url,
 			headers: { ...request.headers },
 			contentType: body._tag === "Uint8Array" ? body.contentType : undefined,
-			lines: text
-				.split("\n")
-				.filter((line) => line.length > 0)
-				.map((line) => parseLine(line)),
+			lines: Arr.map(
+				Arr.filter(Str.split("\n")(text), (line) => line.length > 0),
+				(line) => parseLine(line),
+			),
 		})
 		return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status })))
 	})
@@ -131,7 +131,7 @@ describe("MapleEvents (server)", () => {
 					expect(posts).toHaveLength(0)
 					yield* events.flush
 					expect(posts).toHaveLength(1)
-					expect(posts[0]!.lines.map((line) => line.name)).toEqual(["a", "b", "c"])
+					expect(Arr.map(posts[0]!.lines, (line) => line.name)).toEqual(["a", "b", "c"])
 					yield* events.flush
 					expect(posts).toHaveLength(1)
 				}),
@@ -150,7 +150,7 @@ describe("MapleEvents (server)", () => {
 					yield* Effect.yieldNow
 					yield* Effect.yieldNow
 					expect(posts).toHaveLength(1)
-					expect(posts[0]!.lines.map((line) => line.name)).toEqual(["a", "b"])
+					expect(Arr.map(posts[0]!.lines, (line) => line.name)).toEqual(["a", "b"])
 				}),
 			)
 		}),
@@ -198,7 +198,7 @@ describe("MapleEvents (server)", () => {
 				}),
 			)
 			expect(posts).toHaveLength(0)
-			expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+			expect(Arr.map(warn.mock.calls, (call) => String(call[0]))).toEqual([
 				expect.stringContaining("non-empty event name"),
 				expect.stringContaining("no ingest key"),
 			])
@@ -235,14 +235,14 @@ describe("MapleEvents (server)", () => {
 			handle.track("signup_completed", { userId: "user_9" })
 			await handle.flush()
 			expect(bodies).toHaveLength(1)
-			expect(JSON.parse(bodies[0]!.trim())).toMatchObject({
+			expect(JSON.parse(Str.trim(bodies[0]!))).toMatchObject({
 				name: "signup_completed",
 				user_id: "user_9",
 			})
 			handle.track("last_one")
 			await handle.dispose()
 			expect(bodies).toHaveLength(2)
-			expect(JSON.parse(bodies[1]!.trim())).toMatchObject({ name: "last_one" })
+			expect(JSON.parse(Str.trim(bodies[1]!))).toMatchObject({ name: "last_one" })
 		} finally {
 			globalThis.fetch = original
 		}

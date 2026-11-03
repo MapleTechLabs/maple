@@ -1,6 +1,6 @@
 import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
 import { gzipSync } from "node:zlib"
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr, String as Str } from "effect"
 import { describe, it } from "vitest"
 import { EventingControlStoreError, OutboxEventRejected } from "@maple/local-server/eventing/control-store"
 import { normalizeOtlpLogs } from "@maple/local-server/eventing/otlp"
@@ -167,7 +167,7 @@ describe("Local eventing ingest seam", () => {
 					calls.push(`claim:${consumerId}:${limit}:${leaseSeconds}`)
 					return {
 						consumerId,
-						leaseToken: "a".repeat(64),
+						leaseToken: Str.repeat(64)("a"),
 						throughSequence: 7,
 						events: [{ sequence: 7, event: { id: "event-7" } }],
 					}
@@ -554,11 +554,12 @@ describe("Local eventing ingest seam", () => {
 		const result = await serveWith(
 			{
 				evaluateOtlp: (_signal: string, decoded: unknown) => {
-					const projected = run(normalizeOtlpLogs(decoded)).filter(
+					const projected = Arr.filter(
+						run(normalizeOtlpLogs(decoded)),
 						(signal) => signal.fields.get("signal:event.name")?.value === "project.me",
 					)
 					return Effect.succeed({
-						events: projected.map((_signal, index) => ({ id: `event-${index + 1}` })),
+						events: Arr.map(projected, (_signal, index) => ({ id: `event-${index + 1}` })),
 						recoveredEventIds: [],
 						failures: [],
 						typeMismatchFields: [],
@@ -567,7 +568,7 @@ describe("Local eventing ingest seam", () => {
 				persistFailures: () => Effect.void,
 				stage: (events: readonly { readonly id: string }[]) =>
 					Effect.sync(() => {
-						stagedIds = events.map(({ id }) => id)
+						stagedIds = Arr.map(events, ({ id }) => id)
 						return { inserted: events.length, deduplicated: 0, dropped: 0, eventIds: stagedIds }
 					}),
 				markReady: () => Effect.void,
@@ -578,7 +579,7 @@ describe("Local eventing ingest seam", () => {
 					isRetired: () => false,
 					filterBatch: (_datasource: string, ndjson: string) => ({
 						ndjson,
-						accepted: ndjson.trim().split("\n").length,
+						accepted: Str.split("\n")(Str.trim(ndjson)).length,
 						rejected: 0,
 					}),
 				} as never,

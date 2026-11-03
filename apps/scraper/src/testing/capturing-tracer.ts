@@ -1,4 +1,4 @@
-import { Layer, Option, type Exit, Tracer } from "effect"
+import { Layer, Option, type Exit, Tracer, Array as Arr } from "effect"
 
 export interface EndedSpan {
 	readonly name: string
@@ -57,4 +57,4 @@ export const makeCapturingTracer = () => {
 
 /** All recorded spans with the given name, in end order. */
 export const endedSpansNamed = (ended: ReadonlyArray<EndedSpan>, name: string) =>
-	ended.filter((span) => span.name === name)
+	Arr.filter(ended, (span) => span.name === name)

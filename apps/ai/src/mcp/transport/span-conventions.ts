@@ -5,7 +5,7 @@
  * transport wraps each message's tracer so the span is born with the spec name
  * and attributes instead, and takes its parent from `params._meta`.
  */
-import { Option, Predicate, Tracer } from "effect"
+import { Option, Predicate, Tracer, Array as Arr, String as Str } from "effect"
 import { Headers, HttpTraceContext } from "effect/http"
 import type { HttpServerRequest } from "effect/http"
 import type { FromClientEncoded } from "effect/rpc/RpcMessage"
@@ -98,9 +98,9 @@ export const mcpServerSpan = (
 	const clientName = stringField(clientInfo, "name")
 	const clientVersion = stringField(clientInfo, "version")
 	if (clientName !== undefined)
-		attributes.set("maple.mcp.client.name", clientName.slice(0, CLIENT_INFO_MAX))
+		attributes.set("maple.mcp.client.name", Str.slice(0, CLIENT_INFO_MAX)(clientName))
 	if (clientVersion !== undefined)
-		attributes.set("maple.mcp.client.version", clientVersion.slice(0, CLIENT_INFO_MAX))
+		attributes.set("maple.mcp.client.version", Str.slice(0, CLIENT_INFO_MAX)(clientVersion))
 
 	let target: string | undefined
 	switch (method) {
@@ -149,7 +149,8 @@ export const mcpMessageTracer = (
 			// already the parent.
 			const links = Option.match(spanOptions.parent, {
 				onNone: () => spanOptions.links,
-				onSome: (parent) => spanOptions.links.filter((link) => link.span.spanId !== parent.spanId),
+				onSome: (parent) =>
+					Arr.filter(spanOptions.links, (link) => link.span.spanId !== parent.spanId),
 			})
 			const span = base.span({ ...spanOptions, name: conventions.name, links })
 			conventions.attributes.forEach((value, key) => span.attribute(key, value))

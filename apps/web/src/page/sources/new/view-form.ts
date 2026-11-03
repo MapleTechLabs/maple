@@ -13,6 +13,7 @@ import type { FlowHost, Model } from "./model"
 import { flowFooter } from "./view-footer"
 import { howItWorksRail } from "./view-push-rail"
 import { typography } from "@maple/views/ui/typography"
+import { String as Str } from "effect"
 
 // `CreateSourceForm`: the Name step. Create submits; the token shows on Send data.
 
@@ -79,7 +80,7 @@ const advanced = (h: H, model: Model): Html =>
 	)
 
 export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatform, host: FlowHost): Html => {
-	const isValid = model.name.trim().length > 0 && rulesOutcome(model.rules).valid
+	const isValid = Str.trim(model.name).length > 0 && rulesOutcome(model.rules).valid
 	return h.form(
 		[h.Class("flex w-full flex-1 flex-col gap-4"), h.OnSubmit(Message.SubmittedForm())],
 		[

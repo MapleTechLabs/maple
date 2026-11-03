@@ -7,6 +7,7 @@ import { button } from "@maple/views/ui/button"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { LAB_STATES, STATES } from "./fixture"
 import { Message, type Model } from "./model"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -35,7 +36,7 @@ export const view = (model: Model, h: H): Html => {
 					ToggleGroup.view(h, {
 						model: model.stateGroup,
 						toParentMessage: (message) => Message.GotStateGroupMessage({ message }),
-						items: LAB_STATES.map((state) => ({ value: state, label: STATES[state].label })),
+						items: Arr.map(LAB_STATES, (state) => ({ value: state, label: STATES[state].label })),
 						variant: "outline",
 						isConnected: false,
 					}),

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { highlightCode } from "@maple/views/lib/highlight"
 import { highlight, highlightKey } from "../../page/investigations/conversation/kit/code-highlight"
@@ -54,7 +54,9 @@ export const codeSection = <M>(
 	kitSection(h, "Code", [
 		h.div(
 			[h.Class("grid gap-4 md:grid-cols-2")],
-			SNIPPETS.map(({ label, code }) => codeBlock(h, { code, language: label, copy, toCopyMessage })),
+			Arr.map(SNIPPETS, ({ label, code }) =>
+				codeBlock(h, { code, language: label, copy, toCopyMessage }),
+			),
 		),
 		fenceBlock(
 			h,

@@ -1,7 +1,7 @@
 import { pluralize } from "@maple/ui/lib/format"
 import { diffRuleForms } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
-import { Struct } from "effect"
+import { Struct, Array as Arr } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
@@ -39,7 +39,7 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 			toContent: () => [
 				h.ul(
 					[h.Class("space-y-0.5 text-xs")],
-					issues.map((issue) => h.li([h.Key(issue)], [`• ${issue}`])),
+					Arr.map(issues, (issue) => h.li([h.Key(issue)], [`• ${issue}`])),
 				),
 			],
 			toView: ({ trigger, portal }) =>
@@ -77,7 +77,7 @@ const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>):
 		)
 	const visible = issues.slice(0, MAX_VISIBLE_ISSUES)
 	const hiddenCount = issues.length - visible.length
-	const summary = visible.join(", ") + (hiddenCount > 0 ? ` +${hiddenCount} more` : "")
+	const summary = Arr.join(visible, ", ") + (hiddenCount > 0 ? ` +${hiddenCount} more` : "")
 	return h.span(
 		[h.Class(cn("flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground"))],
 		[

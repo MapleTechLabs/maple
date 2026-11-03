@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { GcpSqlInstanceData } from "./api"
 import { gcpSqlSettings } from "./cloud-sql"
+import { Array as Arr, String as Str } from "effect"
 
 const instance = (name: string, data: Partial<GcpSqlInstanceData> = {}) => ({
 	name: `//cloudsql.googleapis.com/projects/acme-prod/instances/${name}`,
@@ -50,13 +51,16 @@ describe("gcpSqlSettings", () => {
 
 	it("gives a small replica its larger primary's default", () => {
 		const settings = new Map(
-			gcpSqlSettings([
-				instance("orders-db", { settings: { tier: "db-custom-8-32768" } }),
-				instance("orders-db-replica", {
-					masterInstanceName: "acme-prod:orders-db",
-					settings: { tier: "db-custom-1-3840" },
-				}),
-			]).map(([name, value]) => [name.slice(name.lastIndexOf("/") + 1), value]),
+			Arr.map(
+				gcpSqlSettings([
+					instance("orders-db", { settings: { tier: "db-custom-8-32768" } }),
+					instance("orders-db-replica", {
+						masterInstanceName: "acme-prod:orders-db",
+						settings: { tier: "db-custom-1-3840" },
+					}),
+				]),
+				([name, value]) => [Str.slice(name.lastIndexOf("/") + 1)(name), value],
+			),
 		)
 		expect(settings.get("orders-db-replica")).toMatchObject({
 			primary: "acme-prod:orders-db",
@@ -66,10 +70,13 @@ describe("gcpSqlSettings", () => {
 	})
 
 	it("knows no limit for an unknown tier or another engine", () => {
-		const settings = gcpSqlSettings([
-			instance("custom", { settings: { tier: "db-unknown-2" } }),
-			instance("mysql", { databaseVersion: "MYSQL_8_0", settings: { tier: "db-custom-2-7680" } }),
-		]).map(([, value]) => [value.cpus, value.maxConnections, value.maxConnectionsSource])
+		const settings = Arr.map(
+			gcpSqlSettings([
+				instance("custom", { settings: { tier: "db-unknown-2" } }),
+				instance("mysql", { databaseVersion: "MYSQL_8_0", settings: { tier: "db-custom-2-7680" } }),
+			]),
+			([, value]) => [value.cpus, value.maxConnections, value.maxConnectionsSource],
+		)
 		expect(settings).toEqual([
 			[null, null, null],
 			[2, null, null],

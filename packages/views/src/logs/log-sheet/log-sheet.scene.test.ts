@@ -9,7 +9,7 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
-import { Result } from "effect"
+import { Result, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
@@ -65,7 +65,7 @@ describe("log detail sheet", () => {
 
 	test("a megabyte JSON body on an ERROR log builds only previews until expanded, then caps both", () => {
 		const body = JSON.stringify(
-			Object.fromEntries(Array.from({ length: 20_000 }, (_, i) => [`key${i}`, { status: 500 }])),
+			Rec.fromEntries(Array.from({ length: 20_000 }, (_, i) => [`key${i}`, { status: 500 }])),
 		)
 		const huge = open(init("log-detail"), { ...log, severityText: "ERROR", body }, scope).model
 		scene(
@@ -125,18 +125,22 @@ describe("log detail sheet", () => {
 		const after = { ...log, timestamp: "2026-10-01T12:00:01.000Z", exactTimestamp: "b", body: "after" }
 		const beforeKey = contextKeyOf(onContext.model, log, "before") ?? ""
 		const afterKey = contextKeyOf(onContext.model, log, "after") ?? ""
-		const answered = [
-			Message.CompletedFetchContext({
-				key: beforeKey,
-				side: "before",
-				result: Result.succeed([log, before]),
-			}),
-			Message.CompletedFetchContext({
-				key: afterKey,
-				side: "after",
-				result: Result.succeed([log, after]),
-			}),
-		].reduce((model, message) => update(model, message).model, onContext.model)
+		const answered = Arr.reduce(
+			[
+				Message.CompletedFetchContext({
+					key: beforeKey,
+					side: "before",
+					result: Result.succeed([log, before]),
+				}),
+				Message.CompletedFetchContext({
+					key: afterKey,
+					side: "after",
+					result: Result.succeed([log, after]),
+				}),
+			],
+			onContext.model,
+			(model, message) => update(model, message).model,
+		)
 		scene(
 			program,
 			given(answered),
@@ -145,7 +149,7 @@ describe("log detail sheet", () => {
 			expectView(text("Surrounding logs", { exact: false })).toExist(),
 			expectView(role("button", { name: /before/ })).toExist(),
 		)
-		expect(mergeLogContext(log, [log, before], [log, after]).map((row) => row.body)).toEqual([
+		expect(Arr.map(mergeLogContext(log, [log, before], [log, after]), (row) => row.body)).toEqual([
 			"before",
 			log.body,
 			"after",
@@ -172,12 +176,20 @@ describe("log detail sheet", () => {
 			program,
 			given(open(init("log-detail"), traced, scope).model),
 			...mounted,
-			expectView(role("link", { name: /trace:/ })).toHaveAttr("href", "/traces/4bf92f3577b34da6a3ce929d0e0e4736?span="),
+			expectView(role("link", { name: /trace:/ })).toHaveAttr(
+				"href",
+				"/traces/4bf92f3577b34da6a3ce929d0e0e4736?span=",
+			),
 		)
 	})
 
 	test("the time follows the app's clock and the Raw JSON keeps the stored timestamp", () => {
-		const clock24 = withViewInputs(view, { timeZone: "UTC", canFilter: true, traceHref, hourCycle: "h23" })()
+		const clock24 = withViewInputs(view, {
+			timeZone: "UTC",
+			canFilter: true,
+			traceHref,
+			hourCycle: "h23",
+		})()
 		scene(
 			{ update, view: clock24 },
 			given(opened()),
@@ -200,7 +212,10 @@ describe("log detail sheet", () => {
 			program,
 			given(withPage),
 			...mounted,
-			expectView(role("link", { name: "Open in full page" })).toHaveAttr("href", `/logs/${encodeLogKey(log)}`),
+			expectView(role("link", { name: "Open in full page" })).toHaveAttr(
+				"href",
+				`/logs/${encodeLogKey(log)}`,
+			),
 			expectView(role("button", { name: /Link to log/ })).toExist(),
 		)
 	})
@@ -227,7 +242,10 @@ describe("log detail sheet", () => {
 	test("a CRITICAL log gets the error banner too", () => {
 		scene(
 			program,
-			given(open(init("log-detail"), { ...log, severityText: "CRITICAL", body: "disk full" }, scope).model),
+			given(
+				open(init("log-detail"), { ...log, severityText: "CRITICAL", body: "disk full" }, scope)
+					.model,
+			),
 			...mounted,
 			expectView(role("button", { name: "Copy error message" })).toExist(),
 		)

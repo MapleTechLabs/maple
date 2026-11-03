@@ -6,7 +6,7 @@ import {
 	type ChatToolCall,
 	delegatedAgentOf,
 } from "@maple/domain/chat-session"
-import { Array, Option, Predicate, Schema } from "effect"
+import { Array, Option, Predicate, Schema, String as Str } from "effect"
 import {
 	type LeafPart,
 	type SubMessage,
@@ -39,7 +39,7 @@ const decodePrompt = Schema.decodeUnknownOption(PromptFields)
 const decodeAnswer = Schema.decodeUnknownOption(AnswerFields)
 
 const nonBlank = (value: unknown): Option.Option<string> =>
-	Predicate.isString(value) && value.trim() !== "" ? Option.some(value) : Option.none()
+	Predicate.isString(value) && Str.trim(value) !== "" ? Option.some(value) : Option.none()
 
 /** The question a delegation was given (`prompt`, or the older `description`). */
 export const taskPromptOf = (input: unknown): string =>
@@ -54,7 +54,7 @@ export const taskPromptOf = (input: unknown): string =>
 
 /** The answer a sub-agent returned, out of the delegation tool's result. */
 export const taskAnswerOf = (output: unknown): string | undefined => {
-	if (Predicate.isString(output)) return output.trim() || undefined
+	if (Predicate.isString(output)) return Str.trim(output) || undefined
 	return Option.getOrUndefined(
 		Option.flatMap(decodeAnswer(output), (fields) =>
 			nonBlank(Predicate.isString(fields.output) ? fields.output : fields.text),
@@ -125,7 +125,7 @@ const toolCallToPart = (call: ChatToolCall): UIMessagePart => {
 		status: taskStatusOf(call),
 		...withAnswer(call),
 		budgetExhausted: taskBudgetExhausted(call.output),
-		messages: (call.task?.messages ?? []).map((message): SubMessage => ({
+		messages: Array.map(call.task?.messages ?? [], (message): SubMessage => ({
 			id: message.id,
 			role: message.role,
 			parts: interleave(message.text, message.toolCalls, leafToolPart),
@@ -151,11 +151,11 @@ const interleave = <Call extends { readonly textOffset?: number }, Part>(
 	const seed: Interleaved<Part> = { parts: [], cursor: 0 }
 	const { parts, cursor } = Array.reduce(calls, seed, (acc, call) => {
 		const offset = Math.min(Math.max(call.textOffset ?? text.length, acc.cursor), text.length)
-		const chunk = text.slice(acc.cursor, offset)
+		const chunk = Str.slice(acc.cursor, offset)(text)
 		const prose = chunk === "" ? [] : [TextPart.make({ text: chunk, state: "done" })]
 		return { parts: [...acc.parts, ...prose, toPart(call)], cursor: offset }
 	})
-	const tail = text.slice(cursor)
+	const tail = Str.slice(cursor)(text)
 	return tail === "" ? parts : [...parts, TextPart.make({ text: tail, state: "done" })]
 }
 
@@ -177,12 +177,12 @@ export const historyMessageToUIMessage = (message: ChatMessage): UIMessage => ({
 type Messages = ReadonlyArray<UIMessage>
 
 const ensureAssistant = (messages: Messages, id: string, nowMs: number): Messages =>
-	messages.some((message) => message.id === id)
+	Array.some(messages, (message) => message.id === id)
 		? messages
 		: [...messages, { id, role: "assistant", parts: [], createdAt: nowMs }]
 
 const updateMessage = (messages: Messages, id: string, change: (message: UIMessage) => UIMessage): Messages =>
-	messages.map((message) => (message.id === id ? change(message) : message))
+	Array.map(messages, (message) => (message.id === id ? change(message) : message))
 
 const lastPart = (message: UIMessage): UIMessagePart | undefined => message.parts[message.parts.length - 1]
 
@@ -210,7 +210,7 @@ const stopLeaf = (part: LeafPart): LeafPart =>
 
 const stopUnfinished = (message: UIMessage): UIMessage => ({
 	...message,
-	parts: message.parts.map((part): UIMessagePart =>
+	parts: Array.map(message.parts, (part): UIMessagePart =>
 		part._tag !== "task"
 			? stopLeaf(part)
 			: part.status !== "running"
@@ -218,9 +218,9 @@ const stopUnfinished = (message: UIMessage): UIMessage => ({
 				: {
 						...part,
 						status: "aborted",
-						messages: part.messages.map((child) => ({
+						messages: Array.map(part.messages, (child) => ({
 							...child,
-							parts: child.parts.map(stopLeaf),
+							parts: Array.map(child.parts, stopLeaf),
 						})),
 					},
 	),
@@ -230,7 +230,7 @@ const stopUnfinished = (message: UIMessage): UIMessage => ({
 const retractText = (message: UIMessage, chars: number): UIMessage => {
 	const last = lastPart(message)
 	if (last === undefined || last._tag !== "text") return message
-	const text = last.text.slice(0, Math.max(0, last.text.length - chars))
+	const text = Str.slice(0, Math.max(0, last.text.length - chars))(last.text)
 	return { ...message, parts: [...message.parts.slice(0, -1), ...(text === "" ? [] : [{ ...last, text }])] }
 }
 
@@ -261,7 +261,7 @@ const addToolCall = (message: UIMessage, event: ToolCallEvent): UIMessage => {
 
 const settleToolCall = (message: UIMessage, event: ToolResultEvent): UIMessage => ({
 	...message,
-	parts: message.parts.map((part): UIMessagePart => {
+	parts: Array.map(message.parts, (part): UIMessagePart => {
 		if (part._tag !== "dynamic-tool" || part.toolCallId !== event.callId) return part
 		return event.isError === true
 			? ToolPart.make({
@@ -285,7 +285,7 @@ const settleToolCall = (message: UIMessage, event: ToolResultEvent): UIMessage =
 const settleTaskResult = (messages: Messages, event: ToolResultEvent): Messages =>
 	updateMessage(messages, event.messageId, (message) => ({
 		...message,
-		parts: message.parts.map((part): UIMessagePart => {
+		parts: Array.map(message.parts, (part): UIMessagePart => {
 			if (part._tag !== "task" || part.toolCallId !== event.callId) return part
 			if (event.isError === true)
 				return { ...part, status: "error", errorText: errorTextOf(event.output) }
@@ -323,7 +323,7 @@ const applyTaskEvent = (
 ): Messages =>
 	updateMessage(messages, task.parentMessageId, (message) => ({
 		...message,
-		parts: message.parts.map((part): UIMessagePart => {
+		parts: Array.map(message.parts, (part): UIMessagePart => {
 			if (part._tag !== "task" || part.toolCallId !== task.id) return part
 			// Untagged: still tagged, the inner fold routed it back to the parent and dropped it, so a
 			// card stayed empty until a reload.
@@ -331,7 +331,10 @@ const applyTaskEvent = (
 			return {
 				...part,
 				status: taskStatusAfter(event, part.status),
-				messages: nested.map((child) => ({ ...child, parts: child.parts.filter(isLeafPart) })),
+				messages: Array.map(nested, (child) => ({
+					...child,
+					parts: Array.filter(child.parts, isLeafPart),
+				})),
 			}
 		}),
 	}))

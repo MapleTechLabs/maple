@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { ApiKeyId } from "../../primitives"
 import { decodePublicId, encodePublicId, PublicId, PublicIdPrefixes } from "./public-id"
 
@@ -8,14 +8,14 @@ const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
 describe("encodePublicId / decodePublicId", () => {
 	it("round-trips a UUID internal ID", () => {
 		const publicId = encodePublicId("key", UUID)
-		expect(publicId.startsWith("key_")).toBe(true)
+		expect(Str.startsWith("key_")(publicId)).toBe(true)
 		expect(decodePublicId("key", publicId)).toBe(UUID)
 	})
 
 	it("round-trips a free-form string internal ID", () => {
 		const internal = "my-dashboard-2024"
 		const publicId = encodePublicId("dash", internal)
-		expect(publicId.startsWith("dash_")).toBe(true)
+		expect(Str.startsWith("dash_")(publicId)).toBe(true)
 		expect(decodePublicId("dash", publicId)).toBe(internal)
 	})
 
@@ -25,7 +25,7 @@ describe("encodePublicId / decodePublicId", () => {
 	})
 
 	it("normalizes UUID case on round-trip", () => {
-		expect(decodePublicId("key", encodePublicId("key", UUID.toUpperCase()))).toBe(UUID)
+		expect(decodePublicId("key", encodePublicId("key", Str.toUpperCase(UUID)))).toBe(UUID)
 	})
 
 	it("rejects a wrong prefix", () => {
@@ -57,7 +57,7 @@ describe("PublicId schema codec", () => {
 	})
 
 	it("decodes a raw UUID to the same internal ID as its public ID", () => {
-		expect(decode(UUID.toUpperCase())).toBe(decode(encodePublicId("key", UUID)))
+		expect(decode(Str.toUpperCase(UUID))).toBe(decode(encodePublicId("key", UUID)))
 	})
 
 	it("fails decode on a malformed wire ID", () => {

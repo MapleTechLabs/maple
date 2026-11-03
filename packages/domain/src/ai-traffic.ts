@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 // Catalog of AI products for the Web Analytics AI tab: which referrers and UTM
 // sources mean "a person sent here by this assistant", and which crawler user
 // agents mean "this assistant's fetcher read your page". Pure data, so the web
@@ -148,6 +149,6 @@ export const AI_CONTENT_FORMATS: ReadonlyArray<AiContentFormat> = ["markdown", "
 export const isAiContentFormat = (value: string): value is AiContentFormat =>
 	(AI_CONTENT_FORMATS as ReadonlyArray<string>).includes(value)
 
-const productsById = new Map(AI_PRODUCTS.map((product) => [product.id, product]))
+const productsById = new Map(Arr.map(AI_PRODUCTS, (product) => [product.id, product]))
 
 export const aiProductById = (id: string): AiProduct | undefined => productsById.get(id)

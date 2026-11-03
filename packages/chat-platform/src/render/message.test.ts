@@ -3,13 +3,15 @@ import {
 	encodeChatEventPayload,
 	makeChatSessionId,
 	type ChatEventInput,
-	type ChatMessage,
+	ChatMessage,
+	ChatToolCall,
 } from "@maple/domain/chat-session"
 import { chartFences, parseChartSpec } from "@maple/domain/chat-chart-spec"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import { assert, describe, expect, it } from "vitest"
 import type { ChatRenderContext } from "./blocks"
 import { renderChatMessage, summarizeToolInput } from "./message"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const sessionId = makeChatSessionId("org_1", "bot-42")
 
@@ -22,7 +24,7 @@ const context: ChatRenderContext = {
 /** The turn's assistant message, folded by the same code a live driver folds with. */
 const turn = (inputs: ReadonlyArray<ChatEventInput>): ChatMessage => {
 	const transcript = makeChatTranscript()
-	inputs.forEach((input, index) =>
+	Arr.forEach(inputs, (input, index) =>
 		transcript.add(decodeChatEventPayload(encodeChatEventPayload(input), index + 1), 0),
 	)
 	const message = transcript.messages.find((candidate) => candidate.role === "assistant")
@@ -46,7 +48,7 @@ describe("renderChatMessage", () => {
 			chartImageUrl: (ref) => `https://img.maple.dev/${ref.messageId}/${ref.chartIndex}.png`,
 		})
 
-		expect(blocks.map((block) => block.kind)).toEqual(["prose", "chart", "prose"])
+		expect(Arr.map(blocks, (block) => block.kind)).toEqual(["prose", "chart", "prose"])
 		expect(blocks[0]).toMatchObject({ markdown: "Before." })
 		expect(blocks[1]).toMatchObject({
 			kind: "chart",
@@ -228,17 +230,17 @@ describe("renderChatMessage", () => {
 		// `textOffset` is optional on the wire, and a conversation older than it renders
 		// prose-then-calls everywhere else. Defaulting it to 0 here would have declared the
 		// narration before a real call to be the answer.
-		const mixed: ChatMessage = {
+		const mixed = new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: "Narration first. The answer.",
 			toolCalls: [
-				{ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 16 },
-				{ id: "c2", name: "search_traces", input: {}, output: null },
+				new ChatToolCall({ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 16 }),
+				new ChatToolCall({ id: "c2", name: "search_traces", input: {}, output: null }),
 			],
 			createdAt: 0,
 			startSeq: 1,
-		}
+		})
 
 		expect(renderChatMessage(mixed, context)).toEqual([{ kind: "prose", markdown: "The answer." }])
 	})
@@ -246,17 +248,17 @@ describe("renderChatMessage", () => {
 	it("puts a blank line where a call interrupted the model, never running two segments together", () => {
 		// Offsets are not sorted, so a stale one can sit before a later call's and leave a boundary
 		// inside what is shown. Model text carries no separator of its own.
-		const interrupted: ChatMessage = {
+		const interrupted = new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: "Errors are up on checkout.The pool is saturated.",
 			toolCalls: [
-				{ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 26 },
-				{ id: "c2", name: "search_traces", input: {}, output: null, textOffset: 0 },
+				new ChatToolCall({ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 26 }),
+				new ChatToolCall({ id: "c2", name: "search_traces", input: {}, output: null, textOffset: 0 }),
 			],
 			createdAt: 0,
 			startSeq: 1,
-		}
+		})
 
 		expect(renderChatMessage(interrupted, context)).toEqual([
 			{ kind: "prose", markdown: "Errors are up on checkout.\n\nThe pool is saturated." },
@@ -266,19 +268,25 @@ describe("renderChatMessage", () => {
 	it("does not break a chart fence a boundary happens to land inside", () => {
 		// The blank line would stop the fence parsing and put its payload in the channel as JSON.
 		const body = `Latency climbed.\n\`\`\`chart\n${CHART}\n\`\`\`\ncheckout is the worst of them.`
-		const split: ChatMessage = {
+		const split = new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: body,
 			toolCalls: [
-				{ id: "c1", name: "query_data", input: {}, output: null, textOffset: body.indexOf(CHART) },
-				{ id: "c2", name: "find_errors", input: {}, output: null, textOffset: 0 },
+				new ChatToolCall({
+					id: "c1",
+					name: "query_data",
+					input: {},
+					output: null,
+					textOffset: body.indexOf(CHART),
+				}),
+				new ChatToolCall({ id: "c2", name: "find_errors", input: {}, output: null, textOffset: 0 }),
 			],
 			createdAt: 0,
 			startSeq: 1,
-		}
+		})
 
-		expect(renderChatMessage(split, context).map((block) => block.kind)).toEqual([
+		expect(Arr.map(renderChatMessage(split, context), (block) => block.kind)).toEqual([
 			"prose",
 			"chart",
 			"prose",
@@ -399,17 +407,20 @@ describe("renderChatMessage", () => {
 	})
 
 	it("says what a decided proposal did in a sentence, with a link, instead of the tool's report", () => {
-		const report = [
-			"Approved by Ada.",
-			"## Dashboard Created",
-			"ID: d_1",
-			"### Validation",
-			JSON.stringify({
-				__maple_ui: true,
-				tool: "create_dashboard",
-				data: { dashboard: { id: "d_1", name: "Checkout", widgetCount: 0 } },
-			}),
-		].join("\n")
+		const report = Arr.join(
+			[
+				"Approved by Ada.",
+				"## Dashboard Created",
+				"ID: d_1",
+				"### Validation",
+				JSON.stringify({
+					__maple_ui: true,
+					tool: "create_dashboard",
+					data: { dashboard: { id: "d_1", name: "Checkout", widgetCount: 0 } },
+				}),
+			],
+			"\n",
+		)
 		const decided = (output: string, isError?: true) =>
 			renderChatMessage(
 				turn([
@@ -502,8 +513,8 @@ describe("renderChatMessage", () => {
 
 describe("summarizeToolInput", () => {
 	it("stops after the arguments a reader can still take in", () => {
-		const input = Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`k${index}`, index]))
-		expect(summarizeToolInput(input).split(" · ")).toHaveLength(7)
+		const input = Rec.fromEntries(Array.from({ length: 9 }, (_, index) => [`k${index}`, index]))
+		expect(Str.split(" · ")(summarizeToolInput(input))).toHaveLength(7)
 	})
 
 	it("skips arguments that were not given", () => {
@@ -518,26 +529,32 @@ describe("summarizeToolInput", () => {
  */
 describe("chart index, against the endpoint that resolves it", () => {
 	const imageUrls = (body: string): ReadonlyArray<string> =>
-		renderChatMessage(text(body), {
-			...context,
-			chartImageUrl: (ref) => `${ref.chartIndex}`,
-		}).flatMap((block) => (block.kind === "chart" && block.imageUrl !== null ? [block.imageUrl] : []))
+		Arr.flatMap(
+			renderChatMessage(text(body), {
+				...context,
+				chartImageUrl: (ref) => `${ref.chartIndex}`,
+			}),
+			(block) => (block.kind === "chart" && block.imageUrl !== null ? [block.imageUrl] : []),
+		)
 
 	it("agrees with chartFences across a malformed fence and a fence that is not a chart", () => {
-		const body = [
-			"Latency climbed.",
-			"```chart",
-			"{ not json",
-			"```",
-			"Here is the query:",
-			"```sql",
-			"SELECT 1",
-			"```",
-			"And the shape of it:",
-			"```chart",
-			CHART,
-			"```",
-		].join("\n")
+		const body = Arr.join(
+			[
+				"Latency climbed.",
+				"```chart",
+				"{ not json",
+				"```",
+				"Here is the query:",
+				"```sql",
+				"SELECT 1",
+				"```",
+				"And the shape of it:",
+				"```chart",
+				CHART,
+				"```",
+			],
+			"\n",
+		)
 
 		// Two chart fences; the first does not parse, so only the second renders —
 		// and it must still be numbered 1, the position `chartFences` gives it.
@@ -547,7 +564,7 @@ describe("chart index, against the endpoint that resolves it", () => {
 	})
 
 	it("agrees when every fence is a chart", () => {
-		const body = ["```chart", CHART, "```", "text", "```chart", CHART, "```"].join("\n")
+		const body = Arr.join(["```chart", CHART, "```", "text", "```chart", CHART, "```"], "\n")
 
 		expect(imageUrls(body)).toEqual(["0", "1"])
 		expect(chartFences(body)).toHaveLength(2)

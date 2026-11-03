@@ -225,7 +225,7 @@ export const PR_REVIEW_MODELS = [
 	{ id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", eu: true },
 ] as const
 
-export const PrReviewModel = Schema.Literals(PR_REVIEW_MODELS.map((model) => model.id)).annotate({
+export const PrReviewModel = Schema.Literals(Arr.map(PR_REVIEW_MODELS, (model) => model.id)).annotate({
 	identifier: "@maple/PrReviewModel",
 	title: "Pull Request Review Model",
 })
@@ -292,9 +292,10 @@ export const mergePrReviewConfig = (
 	repository: PrReviewRepositoryConfig,
 ): PrReviewRepositoryConfig => {
 	if (defaults === undefined) return repository
-	const instructions = [defaults.instructions, repository.instructions]
-		.map((text) => text?.trim())
-		.filter((text): text is string => text !== undefined && text !== "")
+	const instructions = Arr.filter(
+		Arr.map([defaults.instructions, repository.instructions], (text) => text?.trim()),
+		(text): text is string => text !== undefined && text !== "",
+	)
 	const ignorePaths = [...new Set([...(defaults.ignorePaths ?? []), ...(repository.ignorePaths ?? [])])]
 	const pick = <K extends keyof PrReviewRepositoryConfig>(key: K) =>
 		repository[key] !== undefined
@@ -304,7 +305,7 @@ export const mergePrReviewConfig = (
 				: undefined
 	return new PrReviewRepositoryConfig(
 		{
-			...(instructions.length > 0 ? { instructions: instructions.join("\n\n") } : undefined),
+			...(instructions.length > 0 ? { instructions: Arr.join(instructions, "\n\n") } : undefined),
 			...(ignorePaths.length > 0 ? { ignorePaths } : undefined),
 			...pick("categories"),
 			...pick("minInlineSeverity"),
@@ -364,20 +365,23 @@ export type PrReviewMergeStepStatus = Schema.Schema.Type<typeof PrReviewMergeSte
 export const mergeStepKey = (step: Pick<PrReviewMergeStep, "kind" | "subject" | "title">): string => {
 	const about = step.subject ?? titleSlug(step.title)
 	// It is written into an HTML comment: no whitespace, no `--`, no `>`.
-	return `${step.kind}:${about.replace(/\s+/g, "_").replace(/-{2,}/g, "-").replace(/>/g, "")}`
+	return `${step.kind}:${Str.replace(/>/g, "")(Str.replace(/-{2,}/g, "-")(Str.replace(/\s+/g, "_")(about)))}`
 }
 
 const SLUG_MAX = 80
 
 /** FNV-1a of the text, as 8 hex digits: a stable tag for wording a slug cannot tell apart. */
 const fnv1a = (text: string): string =>
-	Arr.reduce(
-		Array.from(text),
-		0x811c9dc5,
-		(hash, char) => Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193) >>> 0,
+	Str.padStart(
+		8,
+		"0",
+	)(
+		Arr.reduce(
+			Array.from(text),
+			0x811c9dc5,
+			(hash, char) => Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193) >>> 0,
+		).toString(16),
 	)
-		.toString(16)
-		.padStart(8, "0")
 
 /**
  * A reviewer step's title as a key. Split and joined rather than trimmed with `^-+|-+$`, which
@@ -386,10 +390,10 @@ const fnv1a = (text: string): string =>
  * never share a key.
  */
 const titleSlug = (title: string): string => {
-	const slug = Arr.filter(title.toLowerCase().split(/[^a-z0-9]+/), Str.isNonEmpty).join("-")
-	if (slug.length === 0) return fnv1a(title.trim())
+	const slug = Arr.join(Arr.filter(Str.split(/[^a-z0-9]+/)(Str.toLowerCase(title)), Str.isNonEmpty), "-")
+	if (slug.length === 0) return fnv1a(Str.trim(title))
 	if (slug.length <= SLUG_MAX && !/[^\x00-\x7f]/.test(title)) return slug
-	return `${slug.slice(0, SLUG_MAX - 9)}-${fnv1a(title.trim())}`
+	return `${Str.slice(0, SLUG_MAX - 9)(slug)}-${fnv1a(Str.trim(title))}`
 }
 
 /** How every review comment starts: `<!-- maple-pr-review <reviewId> <attempt> -->`. */
@@ -404,7 +408,7 @@ const TICK_LINE = /^\s*[-*] \[([ xX])\] .*<!-- ms:(\S+) -->\s*$/
 export const parseMergeStepTicks = (body: string): ReadonlyMap<string, boolean> =>
 	new Map(
 		Arr.getSomes(
-			Arr.map(body.split("\n"), (line) =>
+			Arr.map(Str.split("\n")(body), (line) =>
 				Option.flatMap(Option.fromNullishOr(TICK_LINE.exec(line)), ([, box, key]) =>
 					key === undefined ? Option.none() : Option.some([key, box !== " "] as const),
 				),
@@ -553,12 +557,12 @@ const MAX_DISMISSALS = 20
 const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM|TEL)-(\d{1,2}|[A-Z]+)$/
 
 const toNumber = (value: number | string | null | undefined): number | undefined => {
-	const n = typeof value === "string" ? Number(value.trim()) : value
+	const n = typeof value === "string" ? Number(Str.trim(value)) : value
 	return n === undefined || n === null || !Number.isFinite(n) ? undefined : n
 }
 
 const toBoolean = (value: boolean | string | null | undefined): boolean =>
-	typeof value === "string" ? value.trim().toLowerCase() === "true" : value === true
+	typeof value === "string" ? Str.toLowerCase(Str.trim(value)) === "true" : value === true
 
 const decodeFindings = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Array(PrReviewFindingSubmission)),
@@ -580,18 +584,20 @@ const listOf = <A>(
 	decode: (text: string) => Option.Option<ReadonlyArray<A>>,
 ): ReadonlyArray<A> => (typeof value === "string" ? Option.getOrElse(decode(value), () => []) : (value ?? []))
 
-const clip = (value: string, max = MAX_TEXT) => (value.length > max ? `${value.slice(0, max)}…` : value)
+const clip = (value: string, max = MAX_TEXT) => (value.length > max ? `${Str.slice(0, max)(value)}…` : value)
 
 /** A bullet list as trimmed, non-empty lines; a leading `-` or `*` the model added is dropped. */
 const bulletsOf = (
 	value: ReadonlyArray<string> | string | null | undefined,
 	max: number,
 ): ReadonlyArray<string> =>
-	listOf(value, decodeHandles)
-		.map((item) => item.trim().replace(/^[-*]\s+/, ""))
-		.filter((item) => item !== "")
-		.slice(0, max)
-		.map((item) => clip(item, MAX_BULLET))
+	Arr.map(
+		Arr.filter(
+			Arr.map(listOf(value, decodeHandles), (item) => Str.replace(/^[-*]\s+/, "")(Str.trim(item))),
+			(item) => item !== "",
+		).slice(0, max),
+		(item) => clip(item, MAX_BULLET),
+	)
 
 /**
  * One submitted finding as a postable one, or `undefined` when it has no path and positive line,
@@ -609,7 +615,7 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		? raw.category
 		: checkId === undefined
 			? "correctness"
-			: checkId.startsWith("PII-")
+			: Str.startsWith("PII-")(checkId)
 				? "security"
 				: "observability"
 	if (category === "observability" && checkId === undefined) return undefined
@@ -630,10 +636,10 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		severity: isSeverity(raw.severity) ? raw.severity : "warn",
 		title: clip(raw.title?.trim() || "Review finding", 200),
 		body: clip(raw.body?.trim() || ""),
-		...(raw.suggestion?.trim() ? { suggestion: clip(raw.suggestion.trim()) } : undefined),
+		...(raw.suggestion?.trim() ? { suggestion: clip(Str.trim(raw.suggestion)) } : undefined),
 		// Indentation is part of the code a suggestion commits, so only trailing newlines go.
 		...(typeof raw.replacement === "string" && raw.replacement.length <= MAX_TEXT
-			? { replacement: raw.replacement.replace(/\n+$/, "") }
+			? { replacement: Str.replace(/\n+$/, "")(raw.replacement) }
 			: undefined),
 	})
 }
@@ -645,7 +651,8 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
  */
 export const PR_REVIEW_FINDING_WORDS = { body: 60, suggestion: 35 } as const
 
-const wordCount = (text: string | undefined) => (text ?? "").split(/\s+/).filter((word) => word !== "").length
+const wordCount = (text: string | undefined) =>
+	Arr.filter(Str.split(/\s+/)(text ?? ""), (word) => word !== "").length
 
 /** What the reviewer is told to cut, or `undefined` for a finding within {@link PR_REVIEW_FINDING_WORDS}. */
 export const overlongFinding = (finding: PrReviewFinding): string | undefined => {
@@ -661,7 +668,7 @@ export const overlongFinding = (finding: PrReviewFinding): string | undefined =>
 	]
 	return over.length === 0
 		? undefined
-		: `${finding.path}:${finding.line} "${finding.title}": ${over.join(", and ")}`
+		: `${finding.path}:${finding.line} "${finding.title}": ${Arr.join(over, ", and ")}`
 }
 
 /** Most findings one review keeps; the same cap applies to what `record_finding` saves. */
@@ -703,9 +710,10 @@ export interface PrReviewTelemetryDismissal {
  * otherwise the model's `not_applicable` survives and anything else reads as `clean`.
  */
 export const normalizePrReviewSubmission = (submission: PrReviewSubmission): NormalizedPrReviewSubmission => {
-	const filled = Object.entries(submission)
-		.filter(([, value]) => value !== undefined)
-		.map(([key]) => key)
+	const filled = Arr.map(
+		Arr.filter(Object.entries(submission), ([, value]) => value !== undefined),
+		([key]) => key,
+	)
 	const rawFindings = listOf(submission.findings, decodeFindings)
 	const findings: Array<PrReviewFinding> = []
 	for (const raw of rawFindings) {
@@ -730,7 +738,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 	}
 	// A retained warn or critical finding is an issue whatever the model called the verdict; the
 	// check run's conclusion and its inline comments must never disagree. The reverse holds too.
-	const hasIssues = findings.some((finding) => finding.severity !== "info")
+	const hasIssues = Arr.some(findings, (finding) => finding.severity !== "info")
 	const submittedVerdict = isVerdict(submission.verdict) ? submission.verdict : undefined
 	const verdict: PrReviewVerdict = hasIssues
 		? "issues"
@@ -739,11 +747,13 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			: submittedVerdict
 	const keyChanges = bulletsOf(submission.keyChanges, MAX_KEY_CHANGES)
 	const checked = bulletsOf(submission.checked, MAX_CHECKED)
-	const beforeMerge = bulletsOf(submission.beforeMerge, MAX_BEFORE_MERGE).map(
+	const beforeMerge = Arr.map(
+		bulletsOf(submission.beforeMerge, MAX_BEFORE_MERGE),
 		(title) => new PrReviewMergeStep({ kind: "manual", title, source: "reviewer" }),
 	)
-	const tests = typeof submission.tests === "string" ? submission.tests.trim().toLowerCase() : undefined
-	const risk = typeof submission.risk === "string" ? submission.risk.trim().toLowerCase() : undefined
+	const tests =
+		typeof submission.tests === "string" ? Str.toLowerCase(Str.trim(submission.tests)) : undefined
+	const risk = typeof submission.risk === "string" ? Str.toLowerCase(Str.trim(submission.risk)) : undefined
 	const rawConfidence = toNumber(submission.confidence)
 	const confidence =
 		rawConfidence === undefined
@@ -768,21 +778,23 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		droppedFindings: rawFindings.length - findings.length,
 		resolved: [
 			...new Set(
-				listOf(submission.resolved, decodeHandles)
-					.map((handle) => handle.trim().toUpperCase())
-					.filter((handle) => /^F\d{1,4}$/.test(handle)),
+				Arr.filter(
+					Arr.map(listOf(submission.resolved, decodeHandles), (handle) =>
+						Str.toUpperCase(Str.trim(handle)),
+					),
+					(handle) => /^F\d{1,4}$/.test(handle),
+				),
 			),
 		].slice(0, MAX_FINDINGS),
 		// Bounded and deduplicated: each one costs a file read at the head before it is accepted.
-		telemetryDismissals: listOf(submission.telemetryDismissals, decodeDismissals)
-			.flatMap((raw) => {
-				const name = raw.name?.trim()
-				const path = raw.path?.trim().replace(/^\/+/, "")
-				const line = toNumber(raw.line)
-				return name && path && line !== undefined && line >= 1
-					? [{ name, path, line: Math.round(line) }]
-					: []
-			})
+		telemetryDismissals: Arr.flatMap(listOf(submission.telemetryDismissals, decodeDismissals), (raw) => {
+			const name = raw.name?.trim()
+			const path = raw.path?.trim().replace(/^\/+/, "")
+			const line = toNumber(raw.line)
+			return name && path && line !== undefined && line >= 1
+				? [{ name, path, line: Math.round(line) }]
+				: []
+		})
 			.filter(
 				(item, i, all) =>
 					all.findIndex(
@@ -791,16 +803,14 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 					) === i,
 			)
 			.slice(0, MAX_DISMISSALS),
-		childDismissals: listOf(submission.childDismissals, decodeChildDismissals)
-			.flatMap((raw) => {
-				const path = raw.path?.trim().replace(/^\/+/, "")
-				const line = toNumber(raw.line)
-				const reason = raw.reason?.trim()
-				return path && reason && line !== undefined && line >= 1
-					? [{ path, line: Math.round(line), reason: clip(reason, MAX_BULLET) }]
-					: []
-			})
-			.slice(0, MAX_FINDINGS),
+		childDismissals: Arr.flatMap(listOf(submission.childDismissals, decodeChildDismissals), (raw) => {
+			const path = raw.path?.trim().replace(/^\/+/, "")
+			const line = toNumber(raw.line)
+			const reason = raw.reason?.trim()
+			return path && reason && line !== undefined && line >= 1
+				? [{ path, line: Math.round(line), reason: clip(reason, MAX_BULLET) }]
+				: []
+		}).slice(0, MAX_FINDINGS),
 	}
 }
 
@@ -822,11 +832,11 @@ export const scorePrReview = (
 	carriedOpen: ReadonlyArray<{ readonly severity: PrReviewSeverity }> = [],
 ): { readonly score: number; readonly grade: PrReviewGrade } => {
 	const all = [...report.findings, ...carriedOpen]
-	const penalty = all.reduce((sum, finding) => sum + PR_REVIEW_SCORE_PENALTY[finding.severity], 0)
+	const penalty = Arr.reduce(all, 0, (sum, finding) => sum + PR_REVIEW_SCORE_PENALTY[finding.severity])
 	const score = Math.max(0, 100 - penalty)
 	// A real issue is never "excellent", whatever the arithmetic says: the headline must agree
 	// with the verdict beside it.
-	const hasIssues = all.some((finding) => finding.severity !== "info")
+	const hasIssues = Arr.some(all, (finding) => finding.severity !== "info")
 	const grade: PrReviewGrade =
 		score >= 90 && !hasIssues ? "excellent" : score >= 75 ? "good" : score >= 50 ? "needs work" : "poor"
 	return { score, grade }
@@ -889,7 +899,7 @@ export const PR_REVIEW_CONFIDENCE_FLOOR = 5
 const CONFIDENCE_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const satisfies ReadonlyArray<PrReviewConfidence>
 
 const toConfidence = (value: number): PrReviewConfidence =>
-	CONFIDENCE_LEVELS.filter((level) => level <= value).at(-1) ?? 1
+	Arr.filter(CONFIDENCE_LEVELS, (level) => level <= value).at(-1) ?? 1
 
 const findingPhrase = (n: number, label: string) => `${n} ${label}${n === 1 ? "" : "s"}`
 
@@ -950,16 +960,19 @@ export const confidencePrReview = (
 	}
 	const all = [...report.findings, ...carriedOpen]
 	const count = (severity: PrReviewSeverity) =>
-		all.filter((finding) => finding.severity === severity).length
+		Arr.filter(all, (finding) => finding.severity === severity).length
 	const criticals = count("critical")
 	const warns = count("warn")
 	const notes = count("info")
-	const securityWarn = all.some((finding) => finding.severity === "warn" && finding.category === "security")
+	const securityWarn = Arr.some(
+		all,
+		(finding) => finding.severity === "warn" && finding.category === "security",
+	)
 	const defectWarn = all.find(
 		(finding) =>
 			finding.severity === "warn" && finding.category !== "security" && isPrReviewDefect(finding),
 	)
-	const unobservable = report.coverage.filter((unit) => !unit.instrumented).length
+	const unobservable = Arr.filter(report.coverage, (unit) => !unit.instrumented).length
 	const unread = report.unreviewed?.length ?? 0
 	const D = PR_REVIEW_CONFIDENCE_DEDUCTION
 	// A high-risk area costs a point only beside another signal: a clean, tested change there is a 10.
@@ -977,7 +990,7 @@ export const confidencePrReview = (
 		...(all.length === 0 ? [["no findings", 0] as const] : []),
 		...(report.tests === undefined
 			? []
-			: [[`tests ${report.tests.replace("_", " ")}`, D.tests[report.tests]] as const]),
+			: [[`tests ${Str.replace("_", " ")(report.tests)}`, D.tests[report.tests]] as const]),
 		...(report.risk === undefined ? [] : [[`risk ${report.risk}`, riskPoints] as const]),
 		...(report.coverage.length > 0
 			? [
@@ -989,7 +1002,7 @@ export const confidencePrReview = (
 			: []),
 	]
 	const factors = [
-		...deductions.map(([label, points]) => factor(label, points)),
+		...Arr.map(deductions, ([label, points]) => factor(label, points)),
 		...(unread > 0 ? [`${unread} ${unread === 1 ? "file" : "files"} not read`] : []),
 		...(uncheckedFixes > 0
 			? [
@@ -997,7 +1010,7 @@ export const confidencePrReview = (
 				]
 			: []),
 	]
-	const total = deductions.reduce((sum, [, points]) => sum + points, 0)
+	const total = Arr.reduce(deductions, 0, (sum, [, points]) => sum + points)
 
 	// Every cap that applies; the tightest is what the comment says held it down. A danger cap
 	// lifts the floor, so the number can read red.
@@ -1056,7 +1069,7 @@ export const confidencePrReview = (
 	)
 	const cap = binding?.at ?? PR_REVIEW_CONFIDENCE_MAX
 	// Ordinary warnings and soft signals say "needs attention" at worst; red is for the capped dangers.
-	const floor = caps.some((item) => item.danger === true) ? 1 : PR_REVIEW_CONFIDENCE_FLOOR
+	const floor = Arr.some(caps, (item) => item.danger === true) ? 1 : PR_REVIEW_CONFIDENCE_FLOOR
 	const computed = Math.max(floor, PR_REVIEW_CONFIDENCE_MAX - total)
 	const confidence = toConfidence(Math.min(cap, computed))
 	if (binding !== undefined && computed > cap) {
@@ -1160,9 +1173,9 @@ export const DEFAULT_REVIEWER_MENTION = "@maple"
  * so each install names its own App rather than someone else's account.
  */
 export const reviewerMention = (appSlug: string | undefined): string =>
-	appSlug === undefined || appSlug.trim() === "" ? DEFAULT_REVIEWER_MENTION : `@${appSlug.trim()}`
+	appSlug === undefined || Str.trim(appSlug) === "" ? DEFAULT_REVIEWER_MENTION : `@${Str.trim(appSlug)}`
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const escapeRegExp = (value: string) => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(value)
 
 /**
  * How a comment addresses the reviewer: `@maple`, the hosted App's login, or this install's own
@@ -1171,18 +1184,17 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\
 const mentionPattern = (mention: string | undefined): RegExp => {
 	const handles = ["maple", "maplelabsapp"]
 	const own = mention?.replace(/^@/, "")
-	if (own !== undefined && own !== "" && !handles.includes(own.toLowerCase()))
+	if (own !== undefined && own !== "" && !handles.includes(Str.toLowerCase(own)))
 		handles.push(escapeRegExp(own))
-	return new RegExp(`(^|[^\\w@./-])@(?:${handles.join("|")})(?![\\w-])`, "i")
+	return new RegExp(`(^|[^\\w@./-])@(?:${Arr.join(handles, "|")})(?![\\w-])`, "i")
 }
 
 /** The comment without quoted lines or fenced code: a quote-reply of `@maple fix` is not a new request. */
 const addressedText = (body: string): string =>
-	body
-		.replace(/```[\s\S]*?```/g, "")
-		.split("\n")
-		.filter((line) => !/^\s*>/.test(line))
-		.join("\n")
+	Arr.join(
+		Arr.filter(Str.split("\n")(Str.replace(/```[\s\S]*?```/g, "")(body)), (line) => !/^\s*>/.test(line)),
+		"\n",
+	)
 
 /** Whether a comment mentions the reviewer at all, outside quotes and code. */
 export const mentionsReviewer = (body: string, mention?: string): boolean =>
@@ -1199,10 +1211,12 @@ export const parseReplyCommand = (
 	const cleaned = addressedText(body)
 	const match = mentionPattern(mention).exec(cleaned)
 	const word =
-		match === null ? undefined : /^\s*([a-z]+)\b/i.exec(cleaned.slice(match.index + match[0].length))?.[1]
+		match === null
+			? undefined
+			: /^\s*([a-z]+)\b/i.exec(Str.slice(match.index + match[0].length)(cleaned))?.[1]
 	const command: PrReviewReplyCommand =
 		word?.toLowerCase() === "review" ? "review" : word?.toLowerCase() === "fix" ? "fix" : "ask"
-	return { command, text: body.trim() }
+	return { command, text: Str.trim(body) }
 }
 
 /** What `submit_reply` accepts: the answer, in GitHub markdown. Lenient like `submit_review`. */

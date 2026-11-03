@@ -12,6 +12,7 @@ import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
 import { whereEditor } from "./where-editor"
 import { whereSpecOf, whereTextareaId } from "./where"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
 
@@ -49,7 +50,7 @@ export const panelSelect = (
 		view: selectView,
 		toParentMessage: (message) => Message.GotSelectMessage({ id, message }),
 		viewInputs: {
-			entries: options.map((item) => ({ _tag: "Item" as const, item })),
+			entries: Arr.map(options, (item) => ({ _tag: "Item" as const, item })),
 			size: inputs.size,
 			className: inputs.className,
 			ariaLabel: inputs.ariaLabel,
@@ -93,7 +94,6 @@ export const whereClauseEditor = (
 		},
 	})
 
-
 /** A controlled `<Input>` that reports each keystroke. */
 export const textInput = <M>(
 	h: HtmlBuilder<M>,
@@ -119,7 +119,7 @@ export const addOnToggles = (
 ): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-1.5 pt-1 border-t border-dashed")],
-		keys.map(({ key, label }) =>
+		Arr.map(keys, ({ key, label }) =>
 			filterChip(
 				h,
 				{
@@ -144,9 +144,10 @@ const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 		view: chipsView,
 		toParentMessage: (message) => Message.GotGroupByMessage({ queryId: query.id, message }),
 		viewInputs: {
-			items: GROUP_BY_OPTIONS[query.dataSource]
-				.filter((option) => option.value !== "none")
-				.map((option) => option.value),
+			items: Arr.map(
+				Arr.filter(GROUP_BY_OPTIONS[query.dataSource], (option) => option.value !== "none"),
+				(option) => option.value,
+			),
 			placeholder: query.groupBy.length === 0 ? "service.name" : "",
 			emptyText: "No fields found",
 			className: "text-xs font-mono",
@@ -160,7 +161,7 @@ const row = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 
 /** `AddOnSections`: the inputs each enabled add-on reveals. */
 export const addOnSections = (h: H, model: Model, query: QueryDraft): ReadonlyArray<Html> => {
-	if (!Object.values(query.addOns).some(Boolean)) return []
+	if (!Arr.some(Rec.values(query.addOns), Boolean)) return []
 	const text = (field: "having" | "orderBy" | "limit" | "legend") => (value: string) =>
 		Message.ChangedText({ queryId: query.id, field, value })
 	return [

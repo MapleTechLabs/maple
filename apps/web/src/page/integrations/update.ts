@@ -1,4 +1,4 @@
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr, String as Str } from "effect"
 import { Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -154,7 +154,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		supabaseCard: initSupabaseCard(),
 	}
 	const loaded = chain(model, [
-		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
+		...Arr.map(STATUS_NAMES, (name) => (next: Model) => requestStatus(next, context, name, "Load")),
 		(next: Model) => requestCustomer(next, context),
 		(next: Model) => enterIntegration(next, context),
 		(next: Model) => handleChatCallback(next, false),
@@ -531,10 +531,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryFailedStatuses: () =>
 			chain(
 				model,
-				STATUS_NAMES.filter((name) => {
-					const tag = model.statuses[name].data._tag
-					return tag === "Failure" || tag === "Stale"
-				}).map((name) => (next: Model) => requestStatus(next, context, name, "Supersede")),
+				Arr.map(
+					Arr.filter(STATUS_NAMES, (name) => {
+						const tag = model.statuses[name].data._tag
+						return tag === "Failure" || tag === "Stale"
+					}),
+					(name) => (next: Model) => requestStatus(next, context, name, "Supersede"),
+				),
 			),
 		ClickedDisconnect: () => withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>
@@ -575,11 +578,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 			return chain(settled, [
 				(next) => ({ model: next, commands: closed.commands, outMessage: toast }),
-				...(failure === null ? spec.refresh : []).map(
+				...Arr.map(
+					failure === null ? spec.refresh : [],
 					(name) => (next: Model) => requestStatus(next, context, name, "Supersede"),
 				),
 				(next) =>
-					failure === null && integration.startsWith("cloudflare")
+					failure === null && Str.startsWith("cloudflare")(integration)
 						? CloudflareCard.requestUsage(next, context, "Refresh")
 						: { model: next },
 			])

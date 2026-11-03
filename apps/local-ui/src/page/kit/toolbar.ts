@@ -10,14 +10,19 @@ import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // packages/ui/src/components/toolbar.tsx.
 
 type Children = ReadonlyArray<Html | null>
-const present = (children: Children): ReadonlyArray<Html> => children.filter((child) => child !== null)
+const present = (children: Children): ReadonlyArray<Html> => Arr.filter(children, (child) => child !== null)
 
 export const toolbar = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
-	hstack(h, { justify: "between", gap: "3", wrap: true, className: cn("border-b px-4 py-3", className) }, present(children))
+	hstack(
+		h,
+		{ justify: "between", gap: "3", wrap: true, className: cn("border-b px-4 py-3", className) },
+		present(children),
+	)
 
 /** Right-hand cluster of `toolbarStat`s. */
 export const toolbarStats = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
@@ -25,7 +30,13 @@ export const toolbarStats = <M>(h: HtmlBuilder<M>, children: Children, className
 
 export const toolbarStat = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ value: number | string; label: string; hasDot?: boolean; isDanger?: boolean; tone?: Tone }>,
+	options: Readonly<{
+		value: number | string
+		label: string
+		hasDot?: boolean
+		isDanger?: boolean
+		tone?: Tone
+	}>,
 ): Html =>
 	hstack(
 		h,
@@ -59,33 +70,29 @@ export const refreshButton = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ isSpinning: boolean; hasNewData: boolean; onRefresh: M; className?: string }>,
 ): Html =>
-	hstack(
-		h,
-		{ as: "span", gap: "1", className: options.className },
-		[
-			...(options.hasNewData
-				? [
-						h.button(
-							[
-								h.Type("button"),
-								h.OnClick(options.onRefresh),
-								h.Class(
-									"inline-flex items-center gap-1.5 rounded-full border border-primary-a3 bg-primary-a2 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-primary hover:bg-primary-a3 active:bg-primary-a3",
-								),
-							],
-							[h.span([h.Class("size-1.5 rounded-full bg-primary")], []), "New data"],
-						),
-					]
-				: []),
-			kitRefreshButton(h, {
-				onRefresh: options.onRefresh,
-				isPending: options.isSpinning,
-				isIconOnly: true,
-				variant: "ghost",
-				label: "Reload",
-			}),
-		],
-	)
+	hstack(h, { as: "span", gap: "1", className: options.className }, [
+		...(options.hasNewData
+			? [
+					h.button(
+						[
+							h.Type("button"),
+							h.OnClick(options.onRefresh),
+							h.Class(
+								"inline-flex items-center gap-1.5 rounded-full border border-primary-a3 bg-primary-a2 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-primary hover:bg-primary-a3 active:bg-primary-a3",
+							),
+						],
+						[h.span([h.Class("size-1.5 rounded-full bg-primary")], []), "New data"],
+					),
+				]
+			: []),
+		kitRefreshButton(h, {
+			onRefresh: options.onRefresh,
+			isPending: options.isSpinning,
+			isIconOnly: true,
+			variant: "ghost",
+			label: "Reload",
+		}),
+	])
 
 const RANGE_LABELS: ReadonlyMap<string, string> = new Map([
 	["5m", "Last 5 minutes"],
@@ -101,26 +108,35 @@ const RANGE_LABELS: ReadonlyMap<string, string> = new Map([
 
 /** `TimeRangeSelect` bound to local mode's presets. */
 export const timeRangeSelect = <M>(h: HtmlBuilder<M>, value: string, onChange: (next: string) => M): Html =>
-	hstack(
-		h,
-		{ gap: "1.5" },
-		[
-			icon(h, "ClockIcon", {
-				className: "size-3.5 text-muted-foreground",
-				attributes: [h.Attribute("stroke-width", "2")],
-			}),
-			nativeSelect(
-				h,
-				{ size: "sm", defaultValue: value, attributes: [h.AriaLabel("Time range"), h.OnChange(onChange)] },
-				TIME_RANGES.map((range) => nativeOption(range.key, RANGE_LABELS.get(range.key) ?? range.label)),
+	hstack(h, { gap: "1.5" }, [
+		icon(h, "ClockIcon", {
+			className: "size-3.5 text-muted-foreground",
+			attributes: [h.Attribute("stroke-width", "2")],
+		}),
+		nativeSelect(
+			h,
+			{
+				size: "sm",
+				defaultValue: value,
+				attributes: [h.AriaLabel("Time range"), h.OnChange(onChange)],
+			},
+			Arr.map(TIME_RANGES, (range) =>
+				nativeOption(range.key, RANGE_LABELS.get(range.key) ?? range.label),
 			),
-		],
-	)
+		),
+	])
 
 /** `ToolbarSearch`: the draft lives in the page Model and commits after the page's debounce. */
 export const toolbarSearch = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ id: string; value: string; placeholder: string; onInput: (value: string) => M; onClear: M; className?: string }>,
+	options: Readonly<{
+		id: string
+		value: string
+		placeholder: string
+		onInput: (value: string) => M
+		onClear: M
+		className?: string
+	}>,
 ): Html =>
 	searchInput(h, {
 		id: options.id,

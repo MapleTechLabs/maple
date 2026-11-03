@@ -1,5 +1,5 @@
 import type { ReplayEngine, ReplayEngineFactory } from "../../../components/replays/engine/replay-engine"
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Effect, Option, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { deriveMeta, InactiveInterval } from "./replay-meta"
 import type { ReplayFormat } from "./replay-window"
 
@@ -70,9 +70,17 @@ export const runReplayEngine = <A>(
 					({ ENGINE_FACTORIES }) =>
 						Stream.callback<A>((queue) =>
 							Effect.acquireRelease(
-								Effect.sync(() => startEngine(element, args, handlers, ENGINE_FACTORIES[args.format], (message) => {
-									Queue.offerUnsafe(queue, message)
-								})),
+								Effect.sync(() =>
+									startEngine(
+										element,
+										args,
+										handlers,
+										ENGINE_FACTORIES[args.format],
+										(message) => {
+											Queue.offerUnsafe(queue, message)
+										},
+									),
+								),
 								(stop) => Effect.sync(stop),
 							).pipe(Effect.flatMap(() => Effect.never)),
 						),
@@ -167,7 +175,7 @@ const startEngine = <A>(
 		const value = mount.getAttribute(`data-${CONTROL_ATTRIBUTE}`)
 		if (value === null || value === state.lastControl) return
 		state.lastControl = value
-		const [, action, offset] = value.split("|")
+		const [, action, offset] = Str.split("|")(value)
 		const offsetMs = offset === undefined || offset === "" ? undefined : Number(offset)
 		const total = readNumber(mount, TOTAL_ATTRIBUTE, engine.totalTimeMs + shift)
 		if (action === "pause") {
@@ -191,20 +199,24 @@ const startEngine = <A>(
 		if (!isHeld && state.isPlaying && !state.isStarved) engine.play(engine.getCurrentTimeMs())
 	}
 	const attributes = new MutationObserver((records) => {
-		const changed = (attribute: string) => records.some((record) => record.attributeName === `data-${attribute}`)
+		const changed = (attribute: string) =>
+			Arr.some(records, (record) => record.attributeName === `data-${attribute}`)
 		if (changed(IDLE_ATTRIBUTE)) state.idle = readIdle(mount)
 		if (changed(CONTROL_ATTRIBUTE)) applyControl()
 		if (changed(SPEED_ATTRIBUTE) || changed(HOLD_ATTRIBUTE)) applyOptions()
 	})
 	attributes.observe(mount, {
 		attributes: true,
-		attributeFilter: [CONTROL_ATTRIBUTE, SPEED_ATTRIBUTE, HOLD_ATTRIBUTE, IDLE_ATTRIBUTE].map((name) => `data-${name}`),
+		attributeFilter: Arr.map(
+			[CONTROL_ATTRIBUTE, SPEED_ATTRIBUTE, HOLD_ATTRIBUTE, IDLE_ATTRIBUTE],
+			(name) => `data-${name}`,
+		),
 	})
 	const onEvents = (event: Event) => {
-		if (!(event instanceof CustomEvent) || !Array.isArray(event.detail)) return
+		if (!(event instanceof CustomEvent) || !Arr.isArray(event.detail)) return
 		event.preventDefault()
 		state.fed += 1
-		event.detail.forEach((item: unknown) => engine.addEvent(item))
+		Arr.forEach(event.detail, (item: unknown) => engine.addEvent(item))
 		if (!state.isStarved) return
 		// rrweb commits added events on a microtask; resume after they land.
 		setTimeout(() => {

@@ -14,7 +14,7 @@ import {
 	SPAN_KINDS,
 	SPAN_STATUSES,
 } from "@maple/domain/ingest-rules"
-import { Arbitrary, Schema } from "effect"
+import { Arbitrary, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { present, type FixtureCase } from "./conformance"
 
 type Json = Schema.Json
@@ -40,7 +40,7 @@ const subset = <A>(items: ReadonlyArray<A>, min = 0): Arbitrary.Arbitrary<Array<
 				minLength: items.length,
 				maxLength: items.length,
 			}),
-			(picks) => items.filter((_, index) => picks[index] === true),
+			(picks) => Arr.filter(items, (_, index) => picks[index] === true),
 		),
 		(picked) => picked.length >= min,
 	)
@@ -152,7 +152,7 @@ const shortText = Arbitrary.map(
 		Arbitrary.array(oneOf(element(PII), element(PLAIN)), { minLength: 0, maxLength: 4 }),
 		element(SEPARATORS),
 	]),
-	([parts, separator]) => parts.join(separator),
+	([parts, separator]) => Arr.join(parts, separator),
 )
 
 /** Text that straddles the scan cap, with multi-byte filler so byte and UTF-16 counts differ. */
@@ -160,13 +160,13 @@ const longText = Arbitrary.map(
 	Arbitrary.all([element(["a", "é", "日", "😀", "a b "]), int(-40, 40), element(PII)]),
 	([filler, offset, secret]) => {
 		const target = INGEST_RULE_LIMITS.scanBytes + offset
-		const head = [...filler.repeat(target)].slice(0, target).join("")
+		const head = Arr.join(Array.from(Str.repeat(target)(filler)).slice(0, target), "")
 		return `${head}${secret} tail`
 	},
 )
 
 /** OTLP strings are UTF-8, so lone surrogates never reach either engine. */
-const wellFormed = (value: string) => value.replace(/\p{Cs}/gu, "\ufffd")
+const wellFormed = (value: string) => Str.replace(/\p{Cs}/gu, "\ufffd")(value)
 
 export const text: Arbitrary.Arbitrary<string> = oneOf(
 	shortText,
@@ -195,13 +195,13 @@ const valueAt = (depth: number): Arbitrary.Arbitrary<Json> =>
 				Arbitrary.array(valueAt(depth - 1), { maxLength: 3 }),
 				Arbitrary.map(
 					Arbitrary.array(Arbitrary.all([element(KEYS), valueAt(depth - 1)]), { maxLength: 3 }),
-					(entries) => Object.fromEntries(entries),
+					(entries) => Rec.fromEntries(entries),
 				),
 			)
 
 const attributes = Arbitrary.map(
 	Arbitrary.array(Arbitrary.all([element(KEYS), valueAt(2)]), { maxLength: 5 }),
-	(entries) => Object.fromEntries(entries),
+	(entries) => Rec.fromEntries(entries),
 )
 
 const resource = Arbitrary.map(
@@ -209,18 +209,21 @@ const resource = Arbitrary.map(
 		element(SERVICES),
 		Arbitrary.array(Arbitrary.all([element(KEYS), scalar]), { maxLength: 3 }),
 	]),
-	([service, entries]) => ({ ...Object.fromEntries(entries), "service.name": service }),
+	([service, entries]) => ({ ...Rec.fromEntries(entries), "service.name": service }),
 )
 
 const traceId = oneOf(
 	Arbitrary.map(Arbitrary.array(int(0, 255), { minLength: 16, maxLength: 16 }), (bytes) =>
-		bytes.map((byte) => byte.toString(16).padStart(2, "0")).join(""),
+		Arr.join(
+			Arr.map(bytes, (byte) => Str.padStart(2, "0")(byte.toString(16))),
+			"",
+		),
 	),
 	Arbitrary.Constant("0AF7651916CD43DD8448EB211C80319C"),
 )
 
-const SEVERITIES = Object.entries(SEVERITY_LEVELS).map(([text, number]) => ({
-	text: text.toUpperCase(),
+const SEVERITIES = Arr.map(Rec.toEntries(SEVERITY_LEVELS), ([text, number]) => ({
+	text: Str.toUpperCase(text),
 	number,
 }))
 
@@ -356,7 +359,10 @@ export const pattern: Arbitrary.Arbitrary<string> = Arbitrary.filter(
 				element(["", "", "$"]),
 			]),
 			([lead, pieces, tail]) =>
-				`${lead}${pieces.map(([atom, quantifier]) => atom + quantifier).join("")}${tail}`,
+				`${lead}${Arr.join(
+					Arr.map(pieces, ([atom, quantifier]) => atom + quantifier),
+					"",
+				)}${tail}`,
 		),
 		// Two repetitions then a character the text lacks: the shape that backtracks for minutes.
 		Arbitrary.map(
@@ -388,15 +394,15 @@ const FIELDS: ReadonlyArray<IngestRuleField> = [
 const operand = (field: IngestRuleField): Arbitrary.Arbitrary<string> => {
 	if (field === "service_name") return element(SERVICES)
 	if (field === "name") return element(NAMES)
-	if (field === "severity") return element(Object.keys(SEVERITY_LEVELS))
+	if (field === "severity") return element(Rec.keys(SEVERITY_LEVELS))
 	if (field === "span_kind") return element(SPAN_KINDS)
 	if (field === "span_status") return element(SPAN_STATUSES)
 	return oneOf(element(PII), element(PLAIN), element(["a@", "4111", "sk_", "GET", "1", "true"]))
 }
 
 const conditionFor = (signals: ReadonlyArray<IngestRuleSignal>): Arbitrary.Arbitrary<IngestRuleCondition> => {
-	const fields = FIELDS.filter((field) =>
-		signals.every((signal) => signalsForField(field).includes(signal)),
+	const fields = Arr.filter(FIELDS, (field) =>
+		Arr.every(signals, (signal) => signalsForField(field).includes(signal)),
 	)
 	return Arbitrary.flatMap(element(fields), (field) =>
 		Arbitrary.flatMap(
@@ -460,12 +466,12 @@ export const ruleFor = (signal: IngestRuleSignal): Arbitrary.Arbitrary<IngestRul
 										? ["email"]
 										: detectors,
 								patterns,
-								scopes: scopes
-									.filter(
-										(scope) =>
-											(scope !== "body" || signals.includes("logs")) &&
-											(scope !== "events" || signals.includes("traces")),
-									)
+								scopes: Arr.filter(
+									scopes,
+									(scope) =>
+										(scope !== "body" || signals.includes("logs")) &&
+										(scope !== "events" || signals.includes("traces")),
+								)
 									.concat(["attributes"])
 									.filter((scope, index, all) => all.indexOf(scope) === index),
 								method,
@@ -506,7 +512,8 @@ const portable = (
 	rules: ReadonlyArray<IngestRuleSpec>,
 	input: { readonly [key: string]: Json },
 ): { readonly [key: string]: Json } => {
-	const samples = rules.some(
+	const samples = Arr.some(
+		rules,
 		(rule) => rule.action._tag === "drop" && rule.action.keepPercent > 0 && rule.action.keepPercent < 100,
 	)
 	return samples && input.traceId === undefined

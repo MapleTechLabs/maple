@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	COMMIT_PAGES_PER_INVOCATION,
@@ -50,7 +50,7 @@ const clientLayer = (responses: ReadonlyArray<Response>, requests: Array<string>
 }
 
 const commit = (index: number) => ({
-	sha: index.toString(16).padStart(40, "0"),
+	sha: Str.padStart(40, "0")(index.toString(16)),
 	html_url: `https://github.com/octo/shop/commit/${index}`,
 	commit: { message: `commit ${index}`, author: null },
 	author: null,
@@ -209,7 +209,7 @@ describe("GithubAppClient repository listings", () => {
 			const client = yield* GithubAppClient
 			const error = yield* Effect.flip(client.listBranches("42", "octo", "shop"))
 			assert.instanceOf(error, VcsRepositoryBlockedError)
-			assert.strictEqual(error instanceof VcsRepositoryBlockedError && error.status, 451)
+			assert.strictEqual(Schema.is(VcsRepositoryBlockedError)(error) && error.status, 451)
 		}).pipe(Effect.provide(layer))
 	})
 

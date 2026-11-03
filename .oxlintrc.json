@@ -51,11 +51,21 @@
 		"typescript/no-non-null-assertion": "error",
 		"no-alert": "error",
 		"no-loss-of-precision": "error",
+		"no-unused-vars": [
+			"error",
+			{ "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+		],
+		"no-extra-boolean-cast": "error",
 		"no-unsafe-optional-chaining": "error",
 		"no-unused-expressions": "error",
+		"no-useless-escape": "error",
 		"oxc/double-comparisons": "error",
 		"typescript/no-non-null-asserted-optional-chain": "error",
+		"typescript/prefer-as-const": "error",
+		"unicorn/no-new-array": "error",
 		"unicorn/no-thenable": "error",
+		"unicorn/no-useless-fallback-in-spread": "error",
+		"unicorn/prefer-string-starts-ends-with": "error",
 		"oxc/approx-constant": "warn",
 		"no-plusplus": "off",
 		"require-yield": "off"

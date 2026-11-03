@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { attributeFilterOperator, formatAttributeClause } from "../../../lib/traces/advanced-filter-sync"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
@@ -55,7 +55,7 @@ const attributeChipText = (prefix: string, entry: AttributeEntry): { label: stri
 
 const attributeChips = (search: Search, param: AttributeParam): ReadonlyArray<TraceFilterChip> => {
 	const prefix = param === "resourceAttributeFilters" ? "resource." : ""
-	return (search[param] ?? []).map((entry) => {
+	return Arr.map(search[param] ?? [], (entry) => {
 		const text = attributeChipText(prefix, entry)
 		const group = entry.or !== undefined && entry.or.length > 0 ? `:or:${encodeJson(entry.or)}` : ""
 		const mode = entry.matchMode === undefined ? "" : `:${entry.matchMode}`
@@ -65,7 +65,7 @@ const attributeChips = (search: Search, param: AttributeParam): ReadonlyArray<Tr
 			values: [text.value],
 			negated: entry.negated === true,
 			remove: (s: Search): Search => {
-				const rest = (s[param] ?? []).filter((other) => !sameEntry(other, entry))
+				const rest = Arr.filter(s[param] ?? [], (other) => !sameEntry(other, entry))
 				return { ...s, [param]: rest.length > 0 ? rest : undefined }
 			},
 		}
@@ -82,7 +82,7 @@ const facetChip = (
 /** Applied facet and attribute filters, sidebar order, exclusions first. */
 export const traceFilterChips = (search: Search): ReadonlyArray<TraceFilterChip> => {
 	const facetChips = (polarity: "include" | "exclude") =>
-		FACETS.flatMap((facet) => {
+		Arr.flatMap(FACETS, (facet) => {
 			const values = search[facet[polarity]]
 			return values === undefined || values.length === 0
 				? []
@@ -95,18 +95,18 @@ export const traceFilterChips = (search: Search): ReadonlyArray<TraceFilterChip>
 	return [
 		...facetChips("exclude"),
 		...facetChips("include"),
-		...attributes.filter((chip) => chip.negated),
-		...attributes.filter((chip) => !chip.negated),
+		...Arr.filter(attributes, (chip) => chip.negated),
+		...Arr.filter(attributes, (chip) => !chip.negated),
 	]
 }
 
 export const removeTraceFilterChips = (search: Search, chips: ReadonlyArray<TraceFilterChip>): Search =>
-	chips.reduce((acc, chip) => chip.remove(acc), search)
+	Arr.reduce(chips, search, (acc, chip) => chip.remove(acc))
 
 /** `TracesTable`'s `filtered`: any facet, attribute, where-clause or error/duration filter. */
 export const isFiltered = (search: Search): boolean =>
 	traceFilterChips(search).length > 0 ||
-	(search.whereClause ?? "").trim() !== "" ||
+	Str.trim(search.whereClause ?? "") !== "" ||
 	search.hasError === true ||
 	search.minDurationMs !== undefined ||
 	search.maxDurationMs !== undefined ||
@@ -114,7 +114,8 @@ export const isFiltered = (search: Search): boolean =>
 
 /** The sidebar's `hasActiveFilters`. */
 export const hasSidebarFilters = (search: Search): boolean =>
-	FACETS.some(
+	Arr.some(
+		FACETS,
 		(facet) => (search[facet.include]?.length ?? 0) > 0 || (search[facet.exclude]?.length ?? 0) > 0,
 	) ||
 	search.hasError !== undefined ||

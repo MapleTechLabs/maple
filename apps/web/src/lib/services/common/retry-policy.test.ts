@@ -1,4 +1,4 @@
-import { Effect, Option, Ref } from "effect"
+import { Effect, Ref } from "effect"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
@@ -130,7 +130,7 @@ describe("withUnauthorizedResign", () => {
 				),
 				HttpClientRequest.bearerToken("stale"),
 			),
-			{ shouldRetry: () => shouldRetry, freshToken: Effect.succeed(Option.some("fresh")) },
+			{ shouldRetry: () => shouldRetry, freshToken: Effect.succeedSome("fresh") },
 		)
 
 	it.live("resends a 401 read signed with a freshly fetched token", () =>

@@ -11,6 +11,7 @@ import {
 import { input } from "@maple/views/ui/input"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { textarea } from "@maple/views/ui/textarea"
+import { Array as Arr } from "effect"
 
 // The labelled inputs the status page forms share: label over control, hint or error under it.
 
@@ -38,7 +39,11 @@ const frame = <M>(h: HtmlBuilder<M>, options: Common<M>, control: Html): Html =>
 	}
 	const ids: FieldIds = { control: options.id, label: `${options.id}-label`, error: `${options.id}-error` }
 	return field(h, { state, className: cn("items-stretch gap-1.5", options.className) }, [
-		fieldLabel(h, { ids, state, className: options.isLabelHidden === true ? "sr-only" : undefined }, options.label),
+		fieldLabel(
+			h,
+			{ ids, state, className: options.isLabelHidden === true ? "sr-only" : undefined },
+			options.label,
+		),
 		control,
 		...(error !== null
 			? [fieldError(h, { ids, state }, error)]
@@ -119,6 +124,6 @@ export const selectField = <M>(
 					h.OnChange(options.onInput),
 				],
 			},
-			options.entries.map((entry) => nativeOption(entry.value, entry.label)),
+			Arr.map(options.entries, (entry) => nativeOption(entry.value, entry.label)),
 		),
 	)

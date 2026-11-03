@@ -4,7 +4,7 @@ import { CurrentTenant } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr } from "effect"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { TestClock } from "effect/testing"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
@@ -304,7 +304,7 @@ describe("AuditLogService.layerMemory", () => {
 			yield* seedThree
 
 			const rows = yield* audit.list(ORG, { limit: 10, offset: 0 })
-			expect(rows.map((row) => row.action)).toEqual([
+			expect(Arr.map(rows, (row) => row.action)).toEqual([
 				"error_issue.state_change",
 				"alert_rule.updated",
 				"dashboard.created",
@@ -338,15 +338,18 @@ describe("AuditLogService.layerMemory", () => {
 			})
 
 			const apiKeyRows = yield* audit.list(ORG, { actorType: "api_key", limit: 10, offset: 0 })
-			expect(apiKeyRows.map((row) => row.action)).toEqual(["alert_rule.updated"])
+			expect(Arr.map(apiKeyRows, (row) => row.action)).toEqual(["alert_rule.updated"])
 			expect(yield* audit.list(ORG, { actorType: "system", limit: 10, offset: 0 })).toEqual([])
 
 			const denied = yield* audit.list(ORG, { outcome: "denied", limit: 10, offset: 0 })
-			expect(denied.map((row) => row.action)).toEqual(["alert_rule.deleted"])
+			expect(Arr.map(denied, (row) => row.action)).toEqual(["alert_rule.deleted"])
 			expect(denied[0]!.denialReason).toBe("missing role: admin")
 
 			const secondPage = yield* audit.list(ORG, { limit: 2, offset: 2 })
-			expect(secondPage.map((row) => row.action)).toEqual(["alert_rule.updated", "dashboard.created"])
+			expect(Arr.map(secondPage, (row) => row.action)).toEqual([
+				"alert_rule.updated",
+				"dashboard.created",
+			])
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
@@ -363,7 +366,7 @@ describe("AuditLogService.layerMemory", () => {
 			})
 
 			const rows = yield* audit.list(ORG, { changedField: "name", limit: 10, offset: 0 })
-			expect(rows.map((row) => row.action)).toEqual(["dashboard.updated"])
+			expect(Arr.map(rows, (row) => row.action)).toEqual(["dashboard.updated"])
 			expect(rows[0]!.changedFields).toEqual(["name"])
 			expect(rows[0]!.changes).toEqual({
 				fields: ["name"],
@@ -396,7 +399,7 @@ describe("AuditLogService.layerMemory", () => {
 				limit: 2,
 				offset: 0,
 			})
-			expect(changes.map((row) => row.action)).toEqual([
+			expect(Arr.map(changes, (row) => row.action)).toEqual([
 				"error_issue.state_change",
 				"alert_rule.updated",
 			])

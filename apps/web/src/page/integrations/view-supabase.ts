@@ -2,7 +2,7 @@ import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -72,7 +72,7 @@ export const lastDataLabel = (
 				? ["logs waiting for first poll"]
 				: [`logs ${formatRelativeShortFrom(project.logsLastPolledAt, nowMs)}`]
 	const parts = [...metricsPart, ...logsPart]
-	return parts.length > 0 ? parts.join(" · ") : project.metricsEnabled ? "" : "not collected"
+	return parts.length > 0 ? Arr.join(parts, " · ") : project.metricsEnabled ? "" : "not collected"
 }
 
 const projectSwitch = (
@@ -177,7 +177,10 @@ export const supabaseProjectNotes = (h: H, project: Project): ReadonlyArray<Html
 		? [
 				noteLine(
 					h,
-					`Drains: ${project.logDrains.map((drain) => drainLabel(project, drain)).join(", ")}`,
+					`Drains: ${Arr.join(
+						Arr.map(project.logDrains, (drain) => drainLabel(project, drain)),
+						", ",
+					)}`,
 					"muted",
 				),
 			]
@@ -249,7 +252,7 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): H
 		],
 		status.projects.length === 0
 			? [dataTableEmpty(h, ["No projects in this organization yet. Sync after creating one."])]
-			: status.projects.map((project) => projectRow(h, model, project)),
+			: Arr.map(status.projects, (project) => projectRow(h, model, project)),
 	)
 
 export const SUPABASE_LOGS_NOTE =

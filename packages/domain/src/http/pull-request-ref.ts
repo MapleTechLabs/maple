@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 /**
  * Parsing the two string forms that tie a pull request to an issue: a PR URL
@@ -47,7 +47,7 @@ const GITHUB_PR_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/.*)?$/
  * event) rather than as something to report.
  */
 export const parsePullRequestUrl = (input: string): ParsedPullRequestUrl | null => {
-	const trimmed = input.trim()
+	const trimmed = Str.trim(input)
 	if (trimmed.length === 0) return null
 
 	const decoded = decodeUrl(trimmed)
@@ -55,7 +55,7 @@ export const parsePullRequestUrl = (input: string): ParsedPullRequestUrl | null 
 	const parsed = decoded.value
 
 	if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null
-	const host = parsed.hostname.toLowerCase()
+	const host = Str.toLowerCase(parsed.hostname)
 	if (host !== "github.com" && host !== "www.github.com") return null
 
 	const match = GITHUB_PR_PATH.exec(parsed.pathname)
@@ -69,7 +69,7 @@ export const parsePullRequestUrl = (input: string): ParsedPullRequestUrl | null 
 	if (!Number.isSafeInteger(number) || number <= 0) return null
 
 	// `.git` suffixes turn up when a URL is derived from a clone remote.
-	const cleanRepo = repo.endsWith(".git") ? repo.slice(0, -4) : repo
+	const cleanRepo = Str.endsWith(".git")(repo) ? Str.slice(0, -4)(repo) : repo
 	if (cleanRepo.length === 0) return null
 
 	return {
@@ -104,7 +104,7 @@ export const extractIssueIdsFromText = (text: string, appBaseUrl: string): Reado
 	// `issueLinkUrl` emits in every notification and what the issue page's
 	// copy-link control puts on the clipboard, so it is the form that actually
 	// shows up in PR bodies.
-	const appOrigin = Option.map(decodeUrl(appBaseUrl), (url) => url.origin.toLowerCase())
+	const appOrigin = Option.map(decodeUrl(appBaseUrl), (url) => Str.toLowerCase(url.origin))
 	if (Option.isSome(appOrigin)) {
 		const origin = appOrigin.value
 		const urlPattern = new RegExp(`https?://[^\\s<>"')\\]]*/errors/issues/(${uuid})`, "gi")
@@ -112,9 +112,9 @@ export const extractIssueIdsFromText = (text: string, appBaseUrl: string): Reado
 			const id = match[1]
 			if (id === undefined) continue
 			// The regex can match a URL on any host; only this deployment's counts.
-			const matchedOrigin = Option.map(decodeUrl(match[0]), (url) => url.origin.toLowerCase())
+			const matchedOrigin = Option.map(decodeUrl(match[0]), (url) => Str.toLowerCase(url.origin))
 			if (Option.isNone(matchedOrigin) || matchedOrigin.value !== origin) continue
-			found.add(id.toLowerCase())
+			found.add(Str.toLowerCase(id))
 		}
 	}
 
@@ -123,7 +123,7 @@ export const extractIssueIdsFromText = (text: string, appBaseUrl: string): Reado
 	const tokenPattern = new RegExp(`maple-issue:(${uuid})`, "gi")
 	for (const match of text.matchAll(tokenPattern)) {
 		const id = match[1]
-		if (id !== undefined) found.add(id.toLowerCase())
+		if (id !== undefined) found.add(Str.toLowerCase(id))
 	}
 
 	return Array.from(found)

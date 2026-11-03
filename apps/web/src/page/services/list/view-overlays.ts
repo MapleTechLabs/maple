@@ -12,6 +12,7 @@ import type { Model, ServiceRow } from "./model"
 import { overlayTriggerId } from "./update-overlays"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The row tooltips (rollout split, sampling estimate, `UnnamedServiceHint`) and `CommitShaHoverCard`.
 
@@ -29,12 +30,12 @@ export const rowIdOf = (service: ServiceRow, isMobile = false): string =>
 
 /** `isUnnamedService`: the SDK's `unknown_service[:runtime]` default, or no name at all. */
 export const isUnnamedService = (serviceName: string): boolean =>
-	serviceName === "" || serviceName.startsWith("unknown_service")
+	serviceName === "" || Str.startsWith("unknown_service")(serviceName)
 
 type Entry = Readonly<{ id: string; service: ServiceRow }>
 
 const entriesOf = (services: ReadonlyArray<ServiceRow>) => {
-	const rows = services.flatMap((service) => [
+	const rows = Arr.flatMap(services, (service) => [
 		{ rowId: rowIdOf(service), service, isMobile: false },
 		{ rowId: rowIdOf(service, true), service, isMobile: true },
 	])
@@ -42,9 +43,10 @@ const entriesOf = (services: ReadonlyArray<ServiceRow>) => {
 		kind: RowTooltip,
 		keep: (service: ServiceRow, isMobile: boolean) => boolean,
 	): ReadonlyArray<Entry> =>
-		rows
-			.filter((row) => keep(row.service, row.isMobile))
-			.map((row) => ({ id: overlayTriggerId(kind, row.rowId), service: row.service }))
+		Arr.map(
+			Arr.filter(rows, (row) => keep(row.service, row.isMobile)),
+			(row) => ({ id: overlayTriggerId(kind, row.rowId), service: row.service }),
+		)
 	const info = (service: ServiceRow) => deployInfo(service.commits)
 	return {
 		rollout: of(
@@ -53,7 +55,7 @@ const entriesOf = (services: ReadonlyArray<ServiceRow>) => {
 		),
 		sampling: of("sampling", (s, m) => !m && s.hasSampling),
 		unnamed: of("unnamed", (s) => isUnnamedService(s.serviceName)),
-		commit: rows.flatMap((row) => {
+		commit: Arr.flatMap(rows, (row) => {
 			const sha = info(row.service)?.sha ?? ""
 			return !row.isMobile && isResolvableSha(sha)
 				? [{ id: overlayTriggerId("commit", row.rowId, sha), sha, service: row.service }]
@@ -66,7 +68,7 @@ const rolloutContent = (h: H, service: ServiceRow): ReadonlyArray<Html> => [
 	vstack(
 		h,
 		{ gap: "1" },
-		(deployInfo(service.commits)?.rollout?.others ?? []).map((commit) =>
+		Arr.map(deployInfo(service.commits)?.rollout?.others ?? [], (commit) =>
 			h.div(
 				[
 					h.Key(commit.commitSha),
@@ -145,7 +147,7 @@ const tooltipLayer = (
 		view: Tooltip.view,
 		toParentMessage: (message) => Message.GotRowTooltipMessage({ tooltip: kind, message }),
 		viewInputs: {
-			triggerIds: entries.map((entry) => entry.id),
+			triggerIds: Arr.map(entries, (entry) => entry.id),
 			toContent: (triggerId) => contentOf(entries, triggerId, render),
 			className,
 			toView: ({ trigger, portal }) => inner((id) => trigger(id), [...portals, portal]),
@@ -196,10 +198,10 @@ export const withOverlays = (
 								view: HoverCard.view,
 								toParentMessage: (message) => Message.GotCommitCardMessage({ message }),
 								viewInputs: {
-									triggerIds: entries.commit.map((entry) => entry.id),
+									triggerIds: Arr.map(entries.commit, (entry) => entry.id),
 									className: "w-80 p-0",
 									toContent: (triggerId) => {
-										const sha = triggerId.slice(-40)
+										const sha = Str.slice(-40)(triggerId)
 										const owner = entries.commit.find((entry) => entry.id === triggerId)
 										return [
 											commitDetailBody(
@@ -224,7 +226,8 @@ export const withOverlays = (
 										}
 										return toView([
 											...inner(overlays),
-											...[...p3, portal].filter(
+											...Arr.filter(
+												[...p3, portal],
 												(portal): portal is Html => portal !== null,
 											),
 										])

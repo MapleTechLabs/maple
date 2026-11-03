@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as AddToDashboard from "./add-to-dashboard"
 import {
@@ -108,7 +108,7 @@ const LOOKUP_OPERATION = new Map<AutocompleteLookup, string>([
 
 /** `AutocompleteValuesProvider`'s lookups for the window, fired when it mounts with the page. */
 const requestAutocomplete = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode) => {
-	const steps = AutocompleteLookup.literals.map((lookup) => {
+	const steps = Arr.map(AutocompleteLookup.literals, (lookup) => {
 		const operation = LOOKUP_OPERATION.get(lookup) ?? lookup
 		const input = lookup === "productEventNames" ? { ...window, limit: 200 } : window
 		return {
@@ -124,9 +124,9 @@ const requestAutocomplete = (model: Model, context: PageContext, window: TimeWin
 	return {
 		autocomplete: {
 			...model.autocomplete,
-			...Object.fromEntries(steps.map((step) => [step.lookup, step.slot])),
+			...Rec.fromEntries(Arr.map(steps, (step) => [step.lookup, step.slot])),
 		},
-		commands: steps.flatMap((step) => step.commands),
+		commands: Arr.flatMap(steps, (step) => step.commands),
 	}
 }
 
@@ -320,7 +320,10 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 		whereInput: route.search.where ?? "",
 		stepInput: route.search.step ?? "",
 	})
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) => (next.window === null ? resolve() : requestContent(next, context, mode)),
@@ -455,7 +458,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		AppliedWhereSuggestion: ({ index }) => appliedSuggestion(model, index, context, summaryOf(model)),
 		CompletedPlaceWhereCaret: () => ({ model }),
 		PressedWhereTab: () =>
-			isWhereOpen(model) ? pressedTab(model, model.whereEditor.activeIndex, context, summaryOf(model)) : { model },
+			isWhereOpen(model)
+				? pressedTab(model, model.whereEditor.activeIndex, context, summaryOf(model))
+				: { model },
 		PressedWhereEnterOnList: () =>
 			isWhereOpen(model)
 				? appliedSuggestion(model, model.whereEditor.activeIndex, context, summaryOf(model))

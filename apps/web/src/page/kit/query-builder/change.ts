@@ -1,6 +1,6 @@
 import { resetAggregationForMetricType, resetQueryForDataSource } from "@maple/query-engine/query-builder"
 import { QUERY_BUILDER_DATA_SOURCES, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import type { QueryDraft } from "./draft"
 
@@ -8,7 +8,14 @@ import type { QueryDraft } from "./draft"
 // `onDataSourceChange` callbacks), as data the host applies.
 
 /** A query's free-text fields under the add-on toggles. */
-export const QueryTextField = Schema.Literals(["whereClause", "stepInterval", "having", "orderBy", "limit", "legend"])
+export const QueryTextField = Schema.Literals([
+	"whereClause",
+	"stepInterval",
+	"having",
+	"orderBy",
+	"limit",
+	"legend",
+])
 export type QueryTextField = typeof QueryTextField.Type
 
 export const AddOnKey = Schema.Literals(["groupBy", "having", "orderBy", "limit", "legend"])
@@ -40,11 +47,12 @@ const ROOT_ONLY_ALONE = /root_only\s*=\s*\w+/gi
 
 /** The All / Root Spans select: rewrites `root_only = true` in the where clause. */
 export const withRootOnly = (whereClause: string, isRootOnly: boolean): string => {
-	const stripped = whereClause
-		.replace(ROOT_ONLY, "")
-		.replace(ROOT_ONLY_LEADING, "")
-		.replace(ROOT_ONLY_ALONE, "")
-		.trim()
+	const stripped = Str.trim(
+		Str.replace(
+			ROOT_ONLY_ALONE,
+			"",
+		)(Str.replace(ROOT_ONLY_LEADING, "")(Str.replace(ROOT_ONLY, "")(whereClause))),
+	)
 	if (!isRootOnly) return stripped
 	return stripped === "" ? "root_only = true" : `${stripped} AND root_only = true`
 }
@@ -53,7 +61,10 @@ export const withRootOnly = (whereClause: string, isRootOnly: boolean): string =
 export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryDraft =>
 	QueryChange.match<QueryDraft>(change, {
 		SetSource: ({ source }) => resetQueryForDataSource(query, source),
-		SetRootOnly: ({ isRootOnly }) => ({ ...query, whereClause: withRootOnly(query.whereClause, isRootOnly) }),
+		SetRootOnly: ({ isRootOnly }) => ({
+			...query,
+			whereClause: withRootOnly(query.whereClause, isRootOnly),
+		}),
 		SetAggregation: ({ aggregation }) => ({ ...query, aggregation }),
 		SetOrderDirection: ({ direction }) => ({ ...query, orderByDirection: direction }),
 		SetText: ({ field, value }) => ({ ...query, [field]: value }),
@@ -68,7 +79,11 @@ export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryD
 						metricName,
 						metricType,
 						isMonotonic,
-						aggregation: resetAggregationForMetricType(query.aggregation, metricType, isMonotonic),
+						aggregation: resetAggregationForMetricType(
+							query.aggregation,
+							metricType,
+							isMonotonic,
+						),
 					},
 		SetMetricBreakdown: ({ value }) => ({
 			...query,

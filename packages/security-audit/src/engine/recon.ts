@@ -2,7 +2,7 @@
  * Phase 1: the strict budget gate, reconnaissance, synthesis into `architecture.md` and the seeded
  * ledger, and the prior-run rules that turn earlier ledgers and findings into current work.
  */
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Array as Arr, Record as Rec } from "effect"
 import { focusedReconPrompt, RECON_AGENTS, reconPrompt, synthesisPrompt } from "../prompts"
 import { SynthesisResult } from "../results"
 import type { CoverageUnit, Finding } from "../schema"
@@ -15,7 +15,7 @@ export const minimumInvocations = (profile: "quick" | "standard" | "deep"): numb
 	4 + 1 + 1 + (profile === "quick" ? 1 : 2) + 1
 
 const recordFiles = (record: Finding): ReadonlyArray<string> => [
-	...new Set([...record.trace.map((step) => step.file), ...record.evidence.map((e) => e.file)]),
+	...new Set([...Arr.map(record.trace, (step) => step.file), ...Arr.map(record.evidence, (e) => e.file)]),
 ]
 
 interface PriorPlan {
@@ -35,25 +35,25 @@ export const planFromPrior = (
 	prior: PriorRun,
 	changed: (paths: ReadonlyArray<string>) => boolean,
 ): PriorPlan => {
-	const byFingerprint = new Map(prior.findings.map((record) => [record.fingerprint, record]))
+	const byFingerprint = new Map(Arr.map(prior.findings, (record) => [record.fingerprint, record]))
 	const carried: Array<CarriedRecord> = []
-	const units = prior.ledger.map((unit): LedgerUnit => {
+	const units = Arr.map(prior.ledger, (unit): LedgerUnit => {
 		if (unit.status === "not_applicable") return unit
-		const linked = unit.result_fingerprints.flatMap((fp) => {
+		const linked = Arr.flatMap(unit.result_fingerprints, (fp) => {
 			const record = byFingerprint.get(fp)
 			return record === undefined ? [] : [record]
 		})
 		const unitChanged = changed([...unit.starting_paths, ...unit.reviewed_paths])
 		// Every open record the unit links is carried together, or none is: a unit is either re-verified
 		// (all its records unchanged) or re-hunted (any of them changed), never half of each.
-		const open = linked.filter((record) => record.verdict !== "rejected")
+		const open = Arr.filter(linked, (record) => record.verdict !== "rejected")
 		const strongest = open.find((record) => record.verdict === "confirmed") ?? open[0]
 		if (strongest !== undefined) {
 			const confirmed = strongest.verdict === "confirmed"
-			if (open.some((record) => changed(recordFiles(record)))) {
+			if (Arr.some(open, (record) => changed(recordFiles(record)))) {
 				return replan(unit, confirmed ? "prior_confirmed_changed_source" : "prior_needs_validation")
 			}
-			carried.push(...open.map((record) => ({ record, coverageId: unit.coverage_id })))
+			carried.push(...Arr.map(open, (record) => ({ record, coverageId: unit.coverage_id })))
 			return replan(
 				unit,
 				confirmed ? "prior_confirmed_same_source" : "prior_needs_validation",
@@ -65,14 +65,15 @@ export const planFromPrior = (
 			unit.status === "planned" ||
 			unit.status === "in_progress" ||
 			// A lead that never got an independent verdict is open work, not coverage.
-			(unit.status === "candidate" && unit.result_fingerprints.some((fp) => !byFingerprint.has(fp)))
+			(unit.status === "candidate" &&
+				Arr.some(unit.result_fingerprints, (fp) => !byFingerprint.has(fp)))
 				? "prior_deferred"
 				: unit.status === "blocked"
 					? "prior_blocked"
 					: unit.status === "out_of_scope"
 						? "prior_out_of_scope"
 						: unit.status === "candidate" &&
-							  linked.some((record) => record.verdict === "rejected") &&
+							  Arr.some(linked, (record) => record.verdict === "rejected") &&
 							  unitChanged
 							? "prior_rejected_claim_changed"
 							: unitChanged
@@ -81,21 +82,22 @@ export const planFromPrior = (
 		return replan(unit, status)
 	})
 	const suppressed = new Map(
-		prior.findings
-			.filter((record) => record.verdict === "rejected" && !changed(recordFiles(record)))
-			.map((record) => [record.fingerprint, record] as const),
+		Arr.map(
+			Arr.filter(
+				prior.findings,
+				(record) => record.verdict === "rejected" && !changed(recordFiles(record)),
+			),
+			(record) => [record.fingerprint, record] as const,
+		),
 	)
 	const counts = units.reduce<Record<string, number>>((acc, unit) => {
 		acc[unit.prior_status] = (acc[unit.prior_status] ?? 0) + 1
 		return acc
 	}, {})
-	const summary = `Prior run ${prior.runId} at ${prior.sourceRef}: ${prior.ledger.length} units (${Object.entries(
-		counts,
-	)
-		.map(([status, n]) => `${n} ${status}`)
-		.join(
-			", ",
-		)}), ${carried.length} records carried for re-verification, ${suppressed.size} unchanged rejected claims suppressed. Prior units stay visible as current work; none counts as covered in this run.`
+	const summary = `Prior run ${prior.runId} at ${prior.sourceRef}: ${prior.ledger.length} units (${Arr.join(
+		Arr.map(Rec.toEntries(counts), ([status, n]) => `${n} ${status}`),
+		", ",
+	)}), ${carried.length} records carried for re-verification, ${suppressed.size} unchanged rejected claims suppressed. Prior units stay visible as current work; none counts as covered in this run.`
 	return { units, carried, suppressed, summary }
 }
 
@@ -206,12 +208,15 @@ export const runReconnaissance = (engine: Engine) =>
 			// completion order, or a replay would spend differently.
 			{ concurrency: input.budget === null ? (input.concurrency ?? 4) : 1 },
 		)
-		const reconResults = [...baseline, ...focused].flatMap(({ agent, facts }) =>
+		const reconResults = Arr.flatMap([...baseline, ...focused], ({ agent, facts }) =>
 			facts === undefined ? [] : [{ agent, facts }],
 		)
-		const missing = [...baseline, ...focused].filter((r) => r.facts === undefined).map((r) => r.agent)
+		const missing = Arr.map(
+			Arr.filter([...baseline, ...focused], (r) => r.facts === undefined),
+			(r) => r.agent,
+		)
 		if (missing.length > 0)
-			yield* engine.gap(`reconnaissance returned nothing for: ${missing.join(", ")}`)
+			yield* engine.gap(`reconnaissance returned nothing for: ${Arr.join(missing, ", ")}`)
 
 		const synthesisInput = {
 			target: input.target,
@@ -235,32 +240,35 @@ export const runReconnaissance = (engine: Engine) =>
 		}
 
 		const priorStatus = input.prior === null ? "none" : "new"
-		const refusals = synthesis.units.flatMap((seed) => {
+		const refusals = Arr.flatMap(synthesis.units, (seed) => {
 			const reason = unitRefusal(seed)
 			return reason === undefined ? [] : [`${seed.surface} / ${seed.attack_class}: ${reason}`]
 		})
-		const seeds = synthesis.units
-			.filter((seed) => unitRefusal(seed) === undefined)
-			.map((seed) =>
+		const seeds = Arr.map(
+			Arr.filter(synthesis.units, (seed) => unitRefusal(seed) === undefined),
+			(seed) =>
 				seedUnit(seed, {
 					scope: input.scopePaths,
 					priorStatus,
 					priority: seed.priority,
 				}),
-			)
-		// Prior units first: their identity is the stable one across runs. They pass the same scope check.
-		const priorUnits = (prior?.units ?? []).map((unit) => scoped(unit, input.scopePaths))
-		const inScopeIds = new Set(
-			priorUnits.filter((u) => u.status !== "out_of_scope").map((u) => u.coverage_id),
 		)
-		const carried = (prior?.carried ?? []).filter((c) => inScopeIds.has(c.coverageId))
+		// Prior units first: their identity is the stable one across runs. They pass the same scope check.
+		const priorUnits = Arr.map(prior?.units ?? [], (unit) => scoped(unit, input.scopePaths))
+		const inScopeIds = new Set(
+			Arr.map(
+				Arr.filter(priorUnits, (u) => u.status !== "out_of_scope"),
+				(u) => u.coverage_id,
+			),
+		)
+		const carried = Arr.filter(prior?.carried ?? [], (c) => inScopeIds.has(c.coverageId))
 		// A seed the prior ledger already holds is that same unit (same canonical refs), not a refusal.
-		const priorIds = new Set(priorUnits.map((u) => u.coverage_id))
+		const priorIds = new Set(Arr.map(priorUnits, (u) => u.coverage_id))
 		const admitted = admitUnits(
 			admitUnits([], priorUnits).ledger,
-			seeds.filter((seed) => !priorIds.has(seed.coverage_id)),
+			Arr.filter(seeds, (seed) => !priorIds.has(seed.coverage_id)),
 		)
-		const refused = [...refusals, ...admitted.refused.map((r) => `${r.coverage_id}: ${r.reason}`)]
+		const refused = [...refusals, ...Arr.map(admitted.refused, (r) => `${r.coverage_id}: ${r.reason}`)]
 		yield* Effect.forEach(refused, (message) =>
 			engine.event({ _tag: "Note", message: `seed unit refused: ${message}` }),
 		)
@@ -282,7 +290,7 @@ export const runReconnaissance = (engine: Engine) =>
 		yield* engine.event({
 			_tag: "Phase",
 			phase: "ledger-seeded",
-			detail: `${seeded.ledger.length} units, ${seeded.ledger.filter((u) => u.status === "planned").length} planned`,
+			detail: `${seeded.ledger.length} units, ${Arr.filter(seeded.ledger, (u) => u.status === "planned").length} planned`,
 		})
 		return true
 	})

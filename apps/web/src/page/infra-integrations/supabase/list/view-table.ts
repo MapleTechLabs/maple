@@ -9,6 +9,7 @@ import { collectingLabel, healthPill, SATURATION } from "../health"
 import type { ProjectView } from "./derive"
 import type { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The project table and its loading state.
 
@@ -27,7 +28,7 @@ const COLUMNS: ReadonlyArray<{ label: string; width: string; align?: "right"; hi
 ]
 
 const columns = (h: H): ReadonlyArray<Html> =>
-	COLUMNS.map((column) =>
+	Arr.map(COLUMNS, (column) =>
 		columnHead(h, {
 			label: column.label,
 			width: column.width,
@@ -172,5 +173,5 @@ export const supabaseTable = (h: H, projects: ReadonlyArray<ProjectView>, isWait
 		h,
 		{ ariaLabel: "Supabase projects", isWaiting },
 		columns(h),
-		projects.map((view) => row(h, view)),
+		Arr.map(projects, (view) => row(h, view)),
 	)

@@ -1,6 +1,7 @@
 import { describe, it } from "@effect/vitest"
 import { strictEqual } from "node:assert"
 import { type AssetResolver, serveAsset } from "@maple/local-server/serve"
+import { Array as Arr, String as Str } from "effect"
 
 // The local server hands out the dashboard shell; it must not be frameable or run injected script.
 const assets: AssetResolver = (path) =>
@@ -11,7 +12,7 @@ const assets: AssetResolver = (path) =>
 			: undefined
 
 describe("serveAsset", () => {
-	;["/", "/assets/app.js", "/traces/abc"].forEach((path) =>
+	Arr.forEach(["/", "/assets/app.js", "/traces/abc"], (path) =>
 		it(`sends the security headers for ${path}`, () => {
 			const headers = serveAsset(assets, path).headers
 			strictEqual(headers.get("x-frame-options"), "DENY")
@@ -20,7 +21,7 @@ describe("serveAsset", () => {
 			const scriptSrc = headers
 				.get("content-security-policy")
 				?.split("; ")
-				.find((directive) => directive.startsWith("script-src "))
+				.find((directive) => Str.startsWith("script-src ")(directive))
 			// Same-origin scripts only, plus WebAssembly compilation for the code highlighter.
 			strictEqual(scriptSrc, "script-src 'self' 'wasm-unsafe-eval'")
 		}),

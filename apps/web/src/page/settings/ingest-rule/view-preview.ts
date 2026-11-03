@@ -23,6 +23,7 @@ import {
 import type { H } from "./view-form"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The right column: the draft run over recent records, plus the callouts that apply.
 
@@ -34,7 +35,7 @@ const percent = (part: number, total: number) =>
 const highlighted = (h: H, value: string): Html =>
 	h.span(
 		[h.Class("break-all")],
-		segmentsOf(value).map((segment) =>
+		Arr.map(segmentsOf(value), (segment) =>
 			segment.isReplacement
 				? h.mark([h.Class("bg-severity-info-a2 text-foreground rounded-sm px-0.5")], [segment.text])
 				: segment.text,
@@ -64,7 +65,10 @@ const recordLabel = (row: PreviewRow): string => {
 	const service = typeof record.resource["service.name"] === "string" ? record.resource["service.name"] : ""
 	const what =
 		record.signal === "logs" ? (typeof record.body === "string" ? record.body : "") : (record.name ?? "")
-	return [service, what].filter((part) => part !== "").join(" · ")
+	return Arr.join(
+		Arr.filter([service, what], (part) => part !== ""),
+		" · ",
+	)
 }
 
 const previewRow = (h: H, row: PreviewRow, index: number): Html =>
@@ -77,7 +81,7 @@ const previewRow = (h: H, row: PreviewRow, index: number): Html =>
 				]),
 				typography(h, { size: "xs", truncate: true }, [recordLabel(row)]),
 			]),
-			...(row._tag === "redacted" ? row.changes.map((change) => changeLine(h, change)) : []),
+			...(row._tag === "redacted" ? Arr.map(row.changes, (change) => changeLine(h, change)) : []),
 		],
 	)
 
@@ -112,7 +116,10 @@ const body = (h: H, model: Model): Html => {
 				return typography(h, { size: "sm", tone: "muted", as: "p", className: "px-4 py-3" }, [
 					"No records in the last hour to preview.",
 				])
-			if (draftProblems(model.draft).filter((problem) => problem !== "give the rule a name").length > 0)
+			if (
+				Arr.filter(draftProblems(model.draft), (problem) => problem !== "give the rule a name")
+					.length > 0
+			)
 				return typography(h, { size: "sm", tone: "muted", as: "p", className: "px-4 py-3" }, [
 					"Fix the rule to see its effect.",
 				])
@@ -137,7 +144,9 @@ const body = (h: H, model: Model): Html => {
 							)
 						: h.ul(
 								[h.AriaLabel("Preview"), h.Class("border-t")],
-								result.rows.slice(0, MAX_ROWS).map((row, index) => previewRow(h, row, index)),
+								Arr.map(result.rows.slice(0, MAX_ROWS), (row, index) =>
+									previewRow(h, row, index),
+								),
 							),
 				],
 			)
@@ -171,7 +180,7 @@ const controls = (h: H, model: Model): Html =>
 				},
 				[
 					nativeOption("", "All services"),
-					...model.services.map((service) => nativeOption(service, service)),
+					...Arr.map(model.services, (service) => nativeOption(service, service)),
 				],
 			),
 		],

@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -45,8 +45,10 @@ export const visibleOf = <T extends Readonly<{ label: string; keywords?: string 
 	items: ReadonlyArray<T>,
 	query: string,
 ): ReadonlyArray<T> => {
-	const needle = query.trim().toLowerCase()
-	return items.filter((item) => `${item.label} ${item.keywords ?? ""}`.toLowerCase().includes(needle))
+	const needle = Str.toLowerCase(Str.trim(query))
+	return Arr.filter(items, (item) =>
+		Str.includes(needle)(Str.toLowerCase(`${item.label} ${item.keywords ?? ""}`)),
+	)
 }
 
 // MESSAGE
@@ -205,7 +207,7 @@ const row = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>, item: QuickPickItem,
 const content = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>): ReadonlyArray<Html> => {
 	const { model, toMessage } = options
 	const visible = visibleOf(options.items, model.query)
-	const facts = options.items.map(({ value, label, shortcut, isDisabled, keywords }) => ({
+	const facts = Arr.map(options.items, ({ value, label, shortcut, isDisabled, keywords }) => ({
 		value,
 		label,
 		shortcut,
@@ -262,7 +264,7 @@ const content = <M>(h: HtmlBuilder<M>, options: ViewOptions<M>): ReadonlyArray<H
 						{ className: "not-empty:py-4 text-xs" },
 						visible.length === 0 ? ["No match"] : [],
 					),
-					...visible.map((item, index) => row(h, options, item, index)),
+					...Arr.map(visible, (item, index) => row(h, options, item, index)),
 				],
 			),
 		]),

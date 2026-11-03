@@ -1,6 +1,6 @@
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 export { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr, Record as Rec } from "effect"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
@@ -272,8 +272,8 @@ const v2GroupLayersExceptOnboardingChecklist = (
 					resolveBatch: (_orgId, document) =>
 						Effect.succeed({
 							results: [],
-							variables: Object.fromEntries(
-								(document.variables ?? []).map((variable) => [variable.name, ""]),
+							variables: Rec.fromEntries(
+								Arr.map(document.variables ?? [], (variable) => [variable.name, ""]),
 							),
 						}),
 				}),

@@ -8,6 +8,7 @@ import type { ZoneRow } from "../data"
 import type { ZoneRailDns } from "./derive"
 import { Message, type Model, type ZoneTab } from "./model"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `CloudflareZoneRail`.
 
@@ -36,35 +37,38 @@ export const zoneRail = (
 ): Html => {
 	const { zoneRow, dns, firewallEvents } = options
 	const hasLatency = zoneRow !== null && (zoneRow.ttfbP99Ms > 0 || zoneRow.originP99Ms > 0)
-	const rows = [
-		detailRailMetaRow(h, {
-			icon: "TagIcon",
-			label: "service",
-			value: options.serviceName,
-			copy: {
-				status: model.copyService.status,
-				onClick: Message.GotCopyServiceMessage({
-					message: CopyButton.Message.ClickedCopy({ text: options.serviceName }),
-				}),
-			},
-		}),
-		detailRailMetaRow(h, { icon: "UserIcon", label: "account", value: options.accountName }),
-		detailRailMetaRow(h, {
-			icon: "ArrowUpDownIcon",
-			label: "bandwidth",
-			value: zoneRow === null ? null : formatBytes(zoneRow.bytes),
-		}),
-		detailRailMetaRow(h, {
-			icon: "EyeIcon",
-			label: "visits",
-			value: zoneRow === null ? null : formatNumber(zoneRow.visits),
-		}),
-		detailRailMetaRow(h, {
-			icon: "StopwatchIcon",
-			label: "latency",
-			value: hasLatency ? "reported" : "not on this plan",
-		}),
-	].filter((row): row is Html => row !== null)
+	const rows = Arr.filter(
+		[
+			detailRailMetaRow(h, {
+				icon: "TagIcon",
+				label: "service",
+				value: options.serviceName,
+				copy: {
+					status: model.copyService.status,
+					onClick: Message.GotCopyServiceMessage({
+						message: CopyButton.Message.ClickedCopy({ text: options.serviceName }),
+					}),
+				},
+			}),
+			detailRailMetaRow(h, { icon: "UserIcon", label: "account", value: options.accountName }),
+			detailRailMetaRow(h, {
+				icon: "ArrowUpDownIcon",
+				label: "bandwidth",
+				value: zoneRow === null ? null : formatBytes(zoneRow.bytes),
+			}),
+			detailRailMetaRow(h, {
+				icon: "EyeIcon",
+				label: "visits",
+				value: zoneRow === null ? null : formatNumber(zoneRow.visits),
+			}),
+			detailRailMetaRow(h, {
+				icon: "StopwatchIcon",
+				label: "latency",
+				value: hasLatency ? "reported" : "not on this plan",
+			}),
+		],
+		(row): row is Html => row !== null,
+	)
 	return h.div(
 		[h.Class("flex flex-col")],
 		[

@@ -31,6 +31,7 @@ import { ciRunsSection, historySection, postMergeSection, productionSection } fr
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ReviewDetailContent`'s body.
 
@@ -135,7 +136,7 @@ const mergeSteps = (h: H, steps: ReadonlyArray<PrReviewMergeStep>): Html =>
 	vstack(
 		h,
 		{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
-		steps.map((step) => {
+		Arr.map(steps, (step) => {
 			const isDone = step.done === true
 			return hstack(h, { gap: "2", align: "start", as: "li" }, [
 				h.span(
@@ -167,7 +168,7 @@ const mergeSteps = (h: H, steps: ReadonlyArray<PrReviewMergeStep>): Html =>
 const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): ReadonlyArray<Html> => {
 	const report = detail.report
 	if (report === null) return []
-	const lifecycle = new Map(detail.findings.map((finding) => [finding.handle, finding]))
+	const lifecycle = new Map(Arr.map(detail.findings, (finding) => [finding.handle, finding]))
 	return [
 		section(h, "Summary", [
 			messageResponse(h, report.summary, "text-sm"),
@@ -187,7 +188,7 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 				: vstack(
 						h,
 						{ gap: "3", as: "ul" },
-						report.findings.map((finding) =>
+						Arr.map(report.findings, (finding) =>
 							findingCard(
 								h,
 								finding,
@@ -210,7 +211,7 @@ const reportSections = (h: H, detail: CodeReviewDetail, nowMs: number): Readonly
 									"flex flex-col gap-1 font-mono text-xs break-all text-muted-foreground",
 								),
 							],
-							report.unreviewed.map((path) => h.li([], [path])),
+							Arr.map(report.unreviewed, (path) => h.li([], [path])),
 						),
 					]),
 				]

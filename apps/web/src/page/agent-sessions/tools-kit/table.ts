@@ -7,6 +7,7 @@ import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { sortButton } from "@maple/views/ui/table"
+import { String as Str } from "effect"
 
 // The table chrome the tools pages share: open,
 // mono, uppercase heads and 38px rows, with client-side column sorting.
@@ -23,7 +24,7 @@ export const nextSort = (current: SortState, key: string, stringKeys: ReadonlyAr
 export type SortValue = string | number | undefined
 
 const isNumericString = (value: SortValue): value is string =>
-	typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))
+	typeof value === "string" && Str.trim(value) !== "" && Number.isFinite(Number(value))
 
 /** `compareValues`: numeric when both sides are numbers (or numeric strings), else text. */
 const compareValues = (av: SortValue, bv: SortValue, dir: SortDir): number => {
@@ -33,7 +34,9 @@ const compareValues = (av: SortValue, bv: SortValue, dir: SortDir): number => {
 		const cmp = Number(av) < Number(bv) ? -1 : Number(av) > Number(bv) ? 1 : 0
 		return dir === "asc" ? cmp : -cmp
 	}
-	return dir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
+	return dir === "asc"
+		? Str.localeCompare(String(bv))(String(av))
+		: Str.localeCompare(String(av))(String(bv))
 }
 
 export const sortRows = <Row>(

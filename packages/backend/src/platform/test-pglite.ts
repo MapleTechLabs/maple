@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
-import { Effect, Layer, Schema, Tracer } from "effect"
+import { Effect, Layer, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import { inject } from "vitest"
 
 import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
@@ -129,10 +129,12 @@ export const makeStatementRecorder = () => {
 		},
 	})
 	const verbs = () =>
-		spans
-			.filter((span) => span.attributes.get("db.system.name") === "postgresql")
-			.flatMap((span) => decodeQueryText(span.attributes.get("db.query.text")).split(";\n"))
-			.map((statement) => statement.trim().split(/\s+/)[0]?.toUpperCase() ?? "")
+		Arr.map(
+			Arr.filter(spans, (span) => span.attributes.get("db.system.name") === "postgresql").flatMap(
+				(span) => decodeQueryText(span.attributes.get("db.query.text")).split(";\n"),
+			),
+			(statement) => Str.split(/\s+/)(Str.trim(statement))[0]?.toUpperCase() ?? "",
+		)
 	return { tracer, verbs }
 }
 
@@ -153,7 +155,12 @@ export const executeSql = async (db: TestDb, sql: string, params: unknown[] = []
  */
 export const insertTestSource = async (
 	db: TestDb,
-	source: { readonly orgId: string; readonly platform: string; readonly name?: string; readonly id?: string },
+	source: {
+		readonly orgId: string
+		readonly platform: string
+		readonly name?: string
+		readonly id?: string
+	},
 ): Promise<string> => {
 	const id = source.id ?? crypto.randomUUID()
 	await db.pglite.query(

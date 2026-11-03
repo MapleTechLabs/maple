@@ -2,7 +2,7 @@ import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters
 import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
 import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
 import { listFooterText } from "@maple/views/ui/logs/viewer"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TimeFormat } from "../kit/local-time"
@@ -17,7 +17,7 @@ import { rowsOf } from "./update-stream"
 /** The applied attribute filters, each removable; nothing when none is set. */
 export const attributeFilterChips = (h: HtmlBuilder<Message>, filters: LogFilters): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(h, {
-		chips: attributeFiltersOf(filters).map((filter) => {
+		chips: Arr.map(attributeFiltersOf(filters), (filter) => {
 			const entry = encodeLogAttributeFilter(filter)
 			return {
 				id: entry,
@@ -69,7 +69,10 @@ export const logStream = (
 						shown: model.stream.rows.length,
 						noun: "logs",
 						capped: false,
-						hasMore: Option.exists(AsyncData.getData(model.logs.data), (data) => data.hasNextPage),
+						hasMore: Option.exists(
+							AsyncData.getData(model.logs.data),
+							(data) => data.hasNextPage,
+						),
 					}),
 					canFilter: true,
 					selectedIndex: selectedIndexOf(model),

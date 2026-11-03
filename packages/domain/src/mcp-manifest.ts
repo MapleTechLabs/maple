@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * The MCP registry `server.json` document for Maple's hosted MCP server.
  *
@@ -42,7 +43,7 @@ export interface MapleMcpManifestOptions {
 const trimTrailingSlash = (url: string) => {
 	let end = url.length
 	while (end > 0 && url[end - 1] === "/") end--
-	return url.slice(0, end)
+	return Str.slice(0, end)(url)
 }
 
 export const mapleMcpServerManifest = ({

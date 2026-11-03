@@ -15,7 +15,19 @@ import {
 } from "@maple/domain/executor"
 import type { OrgId } from "@maple/domain/http"
 import { SandboxCheckout } from "@maple/domain/sandbox"
-import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
+import {
+	Cause,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schedule,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type ExecutorTransport, SandboxClient } from "@maple/backend/sandbox/client"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 
@@ -58,17 +70,14 @@ export interface ExecutorServiceApi {
 
 /** A run's executor is named by the run. */
 export const executorKey = (runId: string): string =>
-	`run-${runId.toLowerCase().replace(/[^a-z0-9-]/gu, "-")}`.slice(0, 63)
+	Str.slice(0, 63)(`run-${Str.replace(/[^a-z0-9-]/gu, "-")(Str.toLowerCase(runId))}`)
 
 const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/u
 
 /** The engine's agent id in the skill's canonical form: lowercase, `[a-z0-9_-]`, never a device name. */
 export const executorAgentId = (agentId: string): string => {
-	const id = agentId
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]/gu, "-")
-		.slice(0, 64)
-	return /^[a-z0-9]/u.test(id) && !WINDOWS_DEVICE.test(id) ? id : `a${id}`.slice(0, 64)
+	const id = Str.slice(0, 64)(Str.replace(/[^a-z0-9_-]/gu, "-")(Str.toLowerCase(agentId)))
+	return /^[a-z0-9]/u.test(id) && !WINDOWS_DEVICE.test(id) ? id : Str.slice(0, 64)(`a${id}`)
 }
 
 export interface ExecutorDeps {
@@ -109,7 +118,7 @@ export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 				unavailable(
 					error.cause === undefined
 						? error.message
-						: `${error.message}: ${String(error.cause).slice(0, 300)}`,
+						: `${error.message}: ${Str.slice(0, 300)(summarizeCause(Cause.fail(error.cause)))}`,
 				),
 			),
 			Effect.flatMap(Option.match({ onNone: () => Effect.fail(noExecutor), onSome: Effect.succeed })),
@@ -149,9 +158,13 @@ export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 				case "ExecutorPrepared":
 					yield* Effect.annotateCurrentSpan(
 						"maple.executor.installs",
-						answer.installs
-							.map((install) => `${install.dir}:${install.manager}:${install.outcome}`)
-							.join(","),
+						Arr.join(
+							Arr.map(
+								answer.installs,
+								(install) => `${install.dir}:${install.manager}:${install.outcome}`,
+							),
+							",",
+						),
 					)
 					return answer.installs
 				case "ExecutorPrepareFailed":
@@ -187,7 +200,7 @@ export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 				Effect.mapError(
 					(error) =>
 						new ExecutorServiceError({
-							message: `the command was not run: ${error.message.slice(0, 300)}`,
+							message: `the command was not run: ${Str.slice(0, 300)(error.message)}`,
 							reason: "invalid_command",
 						}),
 				),

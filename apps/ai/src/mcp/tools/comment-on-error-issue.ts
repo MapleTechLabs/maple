@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { CommentOnErrorIssueOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
@@ -31,7 +31,7 @@ export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 		phrases: ["Commenting on an issue"],
 		handler: Effect.fn("McpTool.commentOnErrorIssue")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			if (params.body.trim().length === 0) {
+			if (Str.trim(params.body).length === 0) {
 				return yield* new McpInvalidInputError({
 					message: "Comment body must not be empty.",
 					parameter: "body",

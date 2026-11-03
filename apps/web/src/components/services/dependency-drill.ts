@@ -1,4 +1,5 @@
 import { quoteWhereValue } from "@maple/domain/where-clause"
+import { Array as Arr } from "effect"
 
 export type DependencyDrillKind = "service" | "database" | "messaging" | "rpc" | "http"
 
@@ -25,7 +26,7 @@ export function dependencyDrillWhereClause(
 ): string {
 	const value = quoteWhereValue(target)
 	const namedBySystem = system !== "" && system === target
-	const spans = (...clauses: string[]) => ["root_only = false", ...clauses].join(" AND ")
+	const spans = (...clauses: string[]) => Arr.join(["root_only = false", ...clauses], " AND ")
 	switch (kind) {
 		case "service":
 			return spans(`server.address contains ${value}`)

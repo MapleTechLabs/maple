@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 // The one severity vocabulary for status colour. Domain maps (alert severity,
 // anomaly kind, health, log level) key into `Tone` instead of each carrying
 // its own Tailwind classes, so "warning" is the same amber everywhere.
@@ -63,7 +64,7 @@ export const TONE_COLOR: Record<Tone, string> = {
 
 /** Maps any severity-ish word (log levels, alert severities, statuses) onto a tone. */
 export function severityTone(level: string | null | undefined): Tone {
-	switch ((level ?? "").toLowerCase()) {
+	switch (Str.toLowerCase(level ?? "")) {
 		case "fatal":
 		case "critical":
 		case "crit":

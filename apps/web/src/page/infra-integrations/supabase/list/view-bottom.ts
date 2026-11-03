@@ -15,6 +15,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The overview's bottom row: recurring log issues across projects, and advisor findings.
 
@@ -30,7 +31,13 @@ const listRow = (h: H, key: string, href: string | null, children: ReadonlyArray
 		[
 			href === null
 				? h.div([h.Class(className)], children)
-				: h.a([h.Href(href), h.Class(cn(className, "hover:bg-surface-sunken active:bg-surface-sunken"))], children),
+				: h.a(
+						[
+							h.Href(href),
+							h.Class(cn(className, "hover:bg-surface-sunken active:bg-surface-sunken")),
+						],
+						children,
+					),
 		],
 	)
 }
@@ -47,19 +54,23 @@ const issueRow = (
 		`${issue.projectRef}:${issue.source}:${issue.message}`,
 		supabaseLogsHref(search, issue.projectRef),
 		[
-			vstack(h, { gap: "0.5", shrink: true, grow: true },
-				[
-					typography(h, { size: "xs", tone: "foreground", mono: true, truncate: true, attributes: [h.Title(issue.message)] },
-						[issue.message],
-					),
-					typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true },
-						[
-							h.span([h.Class(TONE_TEXT[severity.tone])], [severity.label]),
-							` · ${names.get(issue.projectRef) ?? issue.projectRef} · ${logSourceLabel(issue.source)}`,
-						],
-					),
-				],
-			),
+			vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+				typography(
+					h,
+					{
+						size: "xs",
+						tone: "foreground",
+						mono: true,
+						truncate: true,
+						attributes: [h.Title(issue.message)],
+					},
+					[issue.message],
+				),
+				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+					h.span([h.Class(TONE_TEXT[severity.tone])], [severity.label]),
+					` · ${names.get(issue.projectRef) ?? issue.projectRef} · ${logSourceLabel(issue.source)}`,
+				]),
+			]),
 			panelMeta(h, `${formatNumber(issue.count)}×`, "shrink-0"),
 		],
 	)
@@ -85,9 +96,9 @@ export const issuesPanel = (
 					response.issues.length > 0
 						? h.ul(
 								[h.AriaLabel("Top errors across projects")],
-								response.issues
-									.slice(0, MAX_ROWS)
-									.map((issue) => issueRow(h, issue, options.names, model.search)),
+								Arr.map(response.issues.slice(0, MAX_ROWS), (issue) =>
+									issueRow(h, issue, options.names, model.search),
+								),
 							)
 						: options.hasLogs
 							? panelEmpty(h, ["No warnings or errors in this window"])
@@ -143,7 +154,7 @@ const findingsBody = (
 		findings.length > 0
 			? h.ul(
 					[h.AriaLabel("Advisor findings")],
-					findings.slice(0, MAX_ROWS).map((finding) => findingRow(h, finding)),
+					Arr.map(findings.slice(0, MAX_ROWS), (finding) => findingRow(h, finding)),
 				)
 			: advisorsChecked(fleet)
 				? panelEmpty(h, ["No security or performance findings"])
@@ -154,7 +165,7 @@ const findingsBody = (
 		[],
 		[
 			body,
-			...notes.map((note) =>
+			...Arr.map(notes, (note) =>
 				h.p(
 					[
 						h.Key(note),

@@ -6,10 +6,11 @@ import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import {
-	SELECTABLE_STATES,
+	TO_STATE_ALIASES,
 	issueIdParam,
 	issueNotFound,
 	leaseConflict,
+	optionalToStateParam,
 	persistenceFailed,
 	transitionRefused,
 } from "./error-issue-shared"
@@ -20,12 +21,13 @@ export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
 		name: "release_error_issue",
 		title: "Release Error Issue",
 		description:
-			"Give up the lease you hold on an error issue, optionally moving it to another workflow state. Without `transition_to`, an `in_progress` issue goes back to `todo` and any other state is kept. Fails if another agent holds the lease.",
+			"Give up the lease you hold on an error issue, optionally moving it to another workflow state. Without `to_state`, an `in_progress` issue goes back to `todo` and any other state is kept. Fails if another agent holds the lease.",
+		aliases: { transition_to: "to_state", ...TO_STATE_ALIASES },
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
-			transition_to: P.optionalOneOf(
-				SELECTABLE_STATES,
-				"Workflow state to leave the issue in. Default: `todo` if the issue is `in_progress`, otherwise unchanged",
+			to_state: optionalToStateParam(
+				"State to leave the issue in",
+				"Default: `todo` if the issue is `in_progress`, otherwise unchanged",
 			),
 			note: P.optionalText("Reasoning or context, stored on the release event"),
 		}),
@@ -38,14 +40,14 @@ export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
 			const workflow = yield* ErrorIssueWorkflowService
 			const issue = yield* workflow
 				.releaseIssue(tenant.orgId, actorId, params.issue_id, {
-					transitionTo: params.transition_to,
+					transitionTo: params.to_state,
 					note: params.note,
 				})
 				.pipe(
 					Effect.catchTags({
 						"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
 						"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
-						"@maple/http/errors/ErrorIssueTransitionError": transitionRefused("transition_to"),
+						"@maple/http/errors/ErrorIssueTransitionError": transitionRefused("to_state"),
 						"@maple/http/errors/ErrorPersistenceError": persistenceFailed("release_error_issue"),
 					}),
 				)

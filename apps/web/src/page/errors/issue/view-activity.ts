@@ -6,7 +6,7 @@ import type {
 import { countLabel } from "@maple/ui/lib/format"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge, kbd, kbdGroup } from "@maple/views/ui/display"
@@ -95,9 +95,13 @@ const ledgerRow = (
 	)
 
 const escalationRow = (h: H, escalation: IssueEscalationAttemptDocument, clock: Clock): Html => {
-	const destinations = escalation.deliveries
-		.map((delivery) => `${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`)
-		.join(", ")
+	const destinations = Arr.join(
+		Arr.map(
+			escalation.deliveries,
+			(delivery) => `${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`,
+		),
+		", ",
+	)
 	const body =
 		destinations ||
 		escalation.skipReason?.replaceAll("_", " ") ||
@@ -254,8 +258,8 @@ export const issueTimeline = (
 	isShowingEarlier: boolean,
 ): Html => {
 	const items: ReadonlyArray<Item> = [
-		...events.map((event): Item => ({ kind: "event", createdAt: event.createdAt, event })),
-		...escalations.map((escalation): Item => ({
+		...Arr.map(events, (event): Item => ({ kind: "event", createdAt: event.createdAt, event })),
+		...Arr.map(escalations, (escalation): Item => ({
 			kind: "escalation",
 			createdAt: escalation.createdAt,
 			escalation,
@@ -292,20 +296,18 @@ export const issueTimeline = (
 						),
 					]
 				: []),
-			...items
-				.slice(hiddenCount)
-				.map((item, offset) =>
-					item.kind === "escalation"
-						? escalationRow(h, item.escalation, clock)
-						: eventRow(h, item.event, items[hiddenCount + offset - 1], clock),
-				),
+			...Arr.map(items.slice(hiddenCount), (item, offset) =>
+				item.kind === "escalation"
+					? escalationRow(h, item.escalation, clock)
+					: eventRow(h, item.event, items[hiddenCount + offset - 1], clock),
+			),
 		],
 	)
 }
 
 const participantStrip = (h: H, participants: ReadonlyArray<ActorDocument>): ReadonlyArray<Html> => {
 	const seen = new Set<string>()
-	const identities = participants.flatMap((actor) => {
+	const identities = Arr.flatMap(participants, (actor) => {
 		if (seen.has(actor.id)) return []
 		seen.add(actor.id)
 		return [resolveActorIdentity(actor)]
@@ -313,14 +315,14 @@ const participantStrip = (h: H, participants: ReadonlyArray<ActorDocument>): Rea
 	if (identities.length === 0) return []
 	const shown = identities.slice(0, 5)
 	const overflow = identities.length - shown.length
-	const agentCount = identities.filter((identity) => identity.kind === "agent").length
+	const agentCount = Arr.filter(identities, (identity) => identity.kind === "agent").length
 	return [
 		h.div(
 			[h.Class("flex items-center gap-2 px-1 text-xs text-muted-foreground")],
 			[
 				h.span(
 					[h.Class("flex -space-x-1.5")],
-					shown.map((identity) => identityAvatar(h, identity, "sm", "ring-2 ring-background")),
+					Arr.map(shown, (identity) => identityAvatar(h, identity, "sm", "ring-2 ring-background")),
 				),
 				...(overflow > 0 ? [h.span([h.Class("tabular-nums")], [`+${overflow}`])] : []),
 				h.span(
@@ -340,7 +342,7 @@ export const commentComposer = (
 	h: H,
 	options: Readonly<{ draft: string; isPosting: boolean; participants: ReadonlyArray<ActorDocument> }>,
 ): Html => {
-	const canSubmit = !options.isPosting && options.draft.trim().length > 0
+	const canSubmit = !options.isPosting && Str.trim(options.draft).length > 0
 	return h.div(
 		[h.Class(cn("space-y-2", "mt-6"))],
 		[

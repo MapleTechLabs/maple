@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge, badgeClass } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
+import { Array as Arr } from "effect"
 
 // `HeroChip`.
 
@@ -12,8 +13,8 @@ export const heroChip = <M>(
 	title?: string,
 ): Html => {
 	const children = typeof content === "string" ? [content] : content
-	const texts = children.filter((child): child is string => typeof child === "string")
-	const derived = texts.length === children.length ? texts.join("") : undefined
+	const texts = Arr.filter(children, (child): child is string => typeof child === "string")
+	const derived = texts.length === children.length ? Arr.join(texts, "") : undefined
 	const resolvedTitle = title ?? derived
 	return badge(
 		h,
@@ -59,9 +60,7 @@ export const heroFieldChipParts = <M>(
 	const label = options.label === "" ? [] : [h.span([h.Class("shrink-0")], [options.label])]
 	return [
 		...(options.isValueFirst === true ? [value, ...label] : [...label, value]),
-		...(options.isPicker === true
-			? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0" })]
-			: []),
+		...(options.isPicker === true ? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0" })] : []),
 	]
 }
 

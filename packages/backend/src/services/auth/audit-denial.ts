@@ -1,4 +1,4 @@
-import { Clock, Effect } from "effect"
+import { Clock, Effect, String as Str } from "effect"
 import type { HttpServerRequest } from "effect/http"
 import type { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { httpRequestForensics, type AuditLogServiceApi } from "@maple/backend/services/audit/AuditLogService"
@@ -46,7 +46,7 @@ export interface ApiDenialInput {
 
 const requestPath = (url: string): string => {
 	const queryStart = url.indexOf("?")
-	return queryStart === -1 ? url : url.slice(0, queryStart)
+	return queryStart === -1 ? url : Str.slice(0, queryStart)(url)
 }
 
 /**

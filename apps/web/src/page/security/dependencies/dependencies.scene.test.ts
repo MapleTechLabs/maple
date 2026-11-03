@@ -4,7 +4,7 @@ import { DependencyScanForbiddenError, DependencyScanPersistenceError } from "@m
 import { VcsRepositoryId } from "@maple/domain/http"
 import type { DependencyFindingsResponse, DependencyScanRepositoriesResponse } from "@maple/domain/http"
 import { DependencyFindingId } from "@maple/domain/dependency-scan"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	click,
 	Command,
@@ -57,9 +57,9 @@ const route = AppRoute.SecurityDependencies({ search: {} })
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const apply = (model: Model, messages: ReadonlyArray<(model: Model) => Message>): Model =>
-	messages.reduce((current, toMessage) => pageUpdate(current, toMessage(current)).model, model)
+	Arr.reduce(messages, model, (current, toMessage) => pageUpdate(current, toMessage(current)).model)
 
 const loaded = (
 	repositories: DependencyScanRepositoriesResponse = repositoriesOf(NOW),
@@ -184,11 +184,11 @@ describe("security dependencies tab", () => {
 				at(
 					loaded(
 						{
-							repositories: repositories.repositories.map((repository) =>
+							repositories: Arr.map(repositories.repositories, (repository) =>
 								repository.id === PAYMENTS_ID
 									? {
 											...repository,
-											runningCommits: repository.runningCommits.map((commit) => ({
+											runningCommits: Arr.map(repository.runningCommits, (commit) => ({
 												...commit,
 												scanStatus: null,
 											})),
@@ -198,7 +198,7 @@ describe("security dependencies tab", () => {
 						},
 						{
 							...findingsOf(NOW),
-							findings: findingsOf(NOW).findings.map((finding) => ({
+							findings: Arr.map(findingsOf(NOW).findings, (finding) => ({
 								...finding,
 								production: [],
 							})),
@@ -221,11 +221,11 @@ describe("security dependencies tab", () => {
 				at(
 					loaded(
 						{
-							repositories: repositories.repositories.map((repository) =>
+							repositories: Arr.map(repositories.repositories, (repository) =>
 								repository.id === PAYMENTS_ID
 									? {
 											...repository,
-											runningCommits: repository.runningCommits.map((commit) => ({
+											runningCommits: Arr.map(repository.runningCommits, (commit) => ({
 												...commit,
 												scanStatus: "running" as const,
 											})),
@@ -235,7 +235,7 @@ describe("security dependencies tab", () => {
 						},
 						{
 							...findingsOf(NOW),
-							findings: findingsOf(NOW).findings.map((finding) => ({
+							findings: Arr.map(findingsOf(NOW).findings, (finding) => ({
 								...finding,
 								production: [],
 							})),
@@ -257,11 +257,11 @@ describe("security dependencies tab", () => {
 				at(
 					loaded(
 						{
-							repositories: repositories.repositories.map((repository) =>
+							repositories: Arr.map(repositories.repositories, (repository) =>
 								repository.id === PAYMENTS_ID
 									? {
 											...repository,
-											runningCommits: repository.runningCommits.map((commit) => ({
+											runningCommits: Arr.map(repository.runningCommits, (commit) => ({
 												...commit,
 												scanStatus: "failed" as const,
 											})),
@@ -271,7 +271,7 @@ describe("security dependencies tab", () => {
 						},
 						{
 							...findingsOf(NOW),
-							findings: findingsOf(NOW).findings.map((finding) => ({
+							findings: Arr.map(findingsOf(NOW).findings, (finding) => ({
 								...finding,
 								production: [],
 							})),
@@ -292,7 +292,7 @@ describe("security dependencies tab", () => {
 			given(
 				loaded(
 					{
-						repositories: repositories.repositories.map((repository) =>
+						repositories: Arr.map(repositories.repositories, (repository) =>
 							repository.latestScan === null
 								? repository
 								: {
@@ -315,7 +315,7 @@ describe("security dependencies tab", () => {
 			given(
 				loaded(
 					{
-						repositories: repositories.repositories.map((repository) =>
+						repositories: Arr.map(repositories.repositories, (repository) =>
 							repository.latestScan === null
 								? repository
 								: {
@@ -323,10 +323,13 @@ describe("security dependencies tab", () => {
 										latestScan: {
 											...repository.latestScan,
 											status: "completed" as const,
-											lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
-												...lockfile,
-												status: "too_large" as const,
-											})),
+											lockfiles: Arr.map(
+												repository.latestScan.lockfiles,
+												(lockfile) => ({
+													...lockfile,
+													status: "too_large" as const,
+												}),
+											),
 										},
 									},
 						),
@@ -345,7 +348,7 @@ describe("security dependencies tab", () => {
 			given(
 				loaded(
 					{
-						repositories: repositories.repositories.map((repository) =>
+						repositories: Arr.map(repositories.repositories, (repository) =>
 							repository.latestScan === null
 								? repository
 								: {
@@ -354,10 +357,13 @@ describe("security dependencies tab", () => {
 											...repository.latestScan,
 											status: "completed" as const,
 											error: "612 known vulnerabilities past the 500 a scan reads were left out",
-											lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
-												...lockfile,
-												status: "parsed" as const,
-											})),
+											lockfiles: Arr.map(
+												repository.latestScan.lockfiles,
+												(lockfile) => ({
+													...lockfile,
+													status: "parsed" as const,
+												}),
+											),
 										},
 									},
 						),
@@ -387,8 +393,8 @@ describe("security dependencies tab", () => {
 	})
 
 	test("caps a triage reason as the API does, untrimmed", () => {
-		expect(reasonErrorOf(" ".repeat(10) + "x".repeat(495))).not.toBeNull()
-		expect(reasonErrorOf("x".repeat(500))).toBeNull()
+		expect(reasonErrorOf(Str.repeat(10)(" ") + Str.repeat(495)("x"))).not.toBeNull()
+		expect(reasonErrorOf(Str.repeat(500)("x"))).toBeNull()
 		expect(reasonErrorOf("   ")).not.toBeNull()
 	})
 
@@ -399,7 +405,10 @@ describe("security dependencies tab", () => {
 				at(
 					loaded(repositoriesOf(NOW), {
 						...findingsOf(NOW),
-						findings: findingsOf(NOW).findings.map((finding) => ({ ...finding, production: [] })),
+						findings: Arr.map(findingsOf(NOW).findings, (finding) => ({
+							...finding,
+							production: [],
+						})),
 						production: {
 							available: true,
 							runningServices: 0,
@@ -419,14 +428,14 @@ describe("security dependencies tab", () => {
 	test("scanned with nothing open shows the calm clean state", () => {
 		// Clean needs every lockfile read; the fixture's unsupported and failed ones are not.
 		const allParsed = {
-			repositories: repositoriesOf(NOW).repositories.map((repository) =>
+			repositories: Arr.map(repositoriesOf(NOW).repositories, (repository) =>
 				repository.latestScan === null
 					? repository
 					: {
 							...repository,
 							latestScan: {
 								...repository.latestScan,
-								lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
+								lockfiles: Arr.map(repository.latestScan.lockfiles, (lockfile) => ({
 									...lockfile,
 									status: "parsed" as const,
 								})),
@@ -434,7 +443,7 @@ describe("security dependencies tab", () => {
 						},
 			),
 		}
-		const settled = findingsOf(NOW).findings.filter((finding) => finding.status !== "open")
+		const settled = Arr.filter(findingsOf(NOW).findings, (finding) => finding.status !== "open")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(allParsed, { ...findingsOf(NOW), findings: settled })),
@@ -576,26 +585,25 @@ describe("security dependencies tab", () => {
 		// Eight more repositories, each with the critical axios advisory.
 		const repositoryId = (index: number) =>
 			Schema.decodeSync(VcsRepositoryId)(`00000000-0000-4000-8000-00000000000${index}`)
-		const extra = repositoriesOf(NOW)
-			.repositories.slice(0, 1)
-			.flatMap((base) =>
-				Array.from({ length: 8 }, (_, index) => ({
-					...base,
-					id: repositoryId(index),
-					fullName: `acme/extra-${index}`,
-				})),
-			)
+		const extra = Arr.flatMap(repositoriesOf(NOW).repositories.slice(0, 1), (base) =>
+			Array.from({ length: 8 }, (_, index) => ({
+				...base,
+				id: repositoryId(index),
+				fullName: `acme/extra-${index}`,
+			})),
+		)
 		const findings = findingsOf(NOW)
-		const extraFindings = findings.findings
-			.filter((finding) => finding.id === FINDING_IDS.axios)
-			.flatMap((axios) =>
-				extra.map((repository, index) => ({
-					...axios,
-					id: Schema.decodeSync(DependencyFindingId)(`${"e".repeat(31)}${index}`),
-					repositoryId: repository.id,
-					repositoryFullName: repository.fullName,
-				})),
-			)
+		const extraFindings = Arr.filter(
+			findings.findings,
+			(finding) => finding.id === FINDING_IDS.axios,
+		).flatMap((axios) =>
+			extra.map((repository, index) => ({
+				...axios,
+				id: Schema.decodeSync(DependencyFindingId)(`${Str.repeat(31)("e")}${index}`),
+				repositoryId: repository.id,
+				repositoryFullName: repository.fullName,
+			})),
+		)
 		const model = loaded(
 			{ repositories: [...repositoriesOf(NOW).repositories, ...extra] },
 			{ ...findings, findings: [...findings.findings, ...extraFindings] },
@@ -649,7 +657,7 @@ describe("security dependencies tab", () => {
 	test("the plan bumps to the highest fix any lockfile needs for one advisory", () => {
 		const findings = findingsOf(NOW)
 		// The critical axios advisory again, in a lockfile whose line is fixed later.
-		const copies = findings.findings.flatMap((finding) =>
+		const copies = Arr.flatMap(findings.findings, (finding) =>
 			finding.id === FINDING_IDS.axios
 				? [
 						{
@@ -678,7 +686,7 @@ describe("security dependencies tab", () => {
 	test("the plan counts an advisory once however many lockfiles carry it", () => {
 		const findings = findingsOf(NOW)
 		// The critical axios advisory again, locked in a second lockfile.
-		const copies = findings.findings.flatMap((finding) =>
+		const copies = Arr.flatMap(findings.findings, (finding) =>
 			finding.id === FINDING_IDS.axios
 				? [{ ...finding, id: FINDING_IDS.jwt, lockfilePath: "apps/admin/pnpm-lock.yaml" }]
 				: [],
@@ -969,7 +977,7 @@ describe("security dependencies tab", () => {
 				opened(
 					loaded(repositoriesOf(NOW), {
 						...findings,
-						findings: findings.findings.map((finding) =>
+						findings: Arr.map(findings.findings, (finding) =>
 							finding.id === FINDING_IDS.axios ? { ...finding, updatedAt: triagedAt } : finding,
 						),
 					}),
@@ -1010,7 +1018,7 @@ describe("security dependencies tab", () => {
 	})
 
 	test("a reason at the cap with a trailing space is written without a length error", () => {
-		const reason = "x".repeat(500)
+		const reason = Str.repeat(500)("x")
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(loaded())),

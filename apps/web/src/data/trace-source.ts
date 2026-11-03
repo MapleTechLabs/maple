@@ -7,7 +7,7 @@ import {
 	MapleInternalHttp,
 	WarehouseExecutor,
 } from "@maple/web-data/warehouse/warehouse-services"
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option, Array as Arr } from "effect"
 
 // The trace views' reads over the API: `getSpanDetail` and `listLogs`, on the warehouse services.
 
@@ -40,7 +40,7 @@ export const TraceSourceLive = Layer.effect(
 				listLogs({ data: { traceId, spanId, limit } }).pipe(
 					Effect.mapBoth({
 						onSuccess: (response) =>
-							response.data.map((log, index) => ({
+							Arr.map(response.data, (log, index) => ({
 								key: `${index}:${log.timestamp}`,
 								timestamp: log.timestamp,
 								severityText: log.severityText,

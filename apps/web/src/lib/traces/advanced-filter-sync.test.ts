@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { applyWhereClause, parseWhereClause, toWhereClause } from "./advanced-filter-sync"
+import { Array as Arr } from "effect"
 
 describe("parseWhereClause", () => {
 	it("parses service.name", () => {
@@ -93,7 +94,7 @@ describe("parseWhereClause", () => {
 
 	it("keeps attribute key case as typed", () => {
 		const { filters } = parseWhereClause('attr.userId = "u1" AND tenantId != "t1"')
-		expect(filters.attributeFilters.map((f) => f.key)).toEqual(["userId", "tenantId"])
+		expect(Arr.map(filters.attributeFilters, (f) => f.key)).toEqual(["userId", "tenantId"])
 	})
 
 	it("lowers range operators on a bare attribute key to comparison filters", () => {
@@ -131,7 +132,10 @@ describe("parseWhereClause", () => {
 	})
 
 	it("caps attr.* filters at 5 and warns about the rest", () => {
-		const clause = Array.from({ length: 7 }, (_, i) => `attr.key${i} = "val${i}"`).join(" AND ")
+		const clause = Arr.join(
+			Array.from({ length: 7 }, (_, i) => `attr.key${i} = "val${i}"`),
+			" AND ",
+		)
 		const { filters, warnings } = parseWhereClause(clause)
 		expect(filters.attributeFilters).toHaveLength(5)
 		expect(filters.attributeFilters[4].key).toBe("key4")

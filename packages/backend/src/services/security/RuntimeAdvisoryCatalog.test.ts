@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService } from "@maple/cache"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Record as Rec } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { RuntimeAdvisoryCatalog } from "./RuntimeAdvisoryCatalog"
@@ -211,12 +211,12 @@ describe("RuntimeAdvisoryCatalog", () => {
 		return Effect.gen(function* () {
 			const catalog = yield* RuntimeAdvisoryCatalog
 			const first = yield* catalog.advisories(targets)
-			assert.strictEqual(Object.keys(first.advisories).length, 24)
+			assert.strictEqual(Rec.keys(first.advisories).length, 24)
 			assert.strictEqual(first.skipped.length, 2)
 			assert.strictEqual(requests.length, 24)
 			// The 24 now cached cost nothing, so the next request reads the two it skipped.
 			const second = yield* catalog.advisories(targets)
-			assert.strictEqual(Object.keys(second.advisories).length, 26)
+			assert.strictEqual(Rec.keys(second.advisories).length, 26)
 			assert.deepStrictEqual(second.skipped, [])
 			assert.strictEqual(requests.length, 26)
 		}).pipe(Effect.provide(catalogWith(requests)))

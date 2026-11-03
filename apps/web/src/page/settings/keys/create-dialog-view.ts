@@ -1,11 +1,18 @@
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { emptyMessage } from "@maple/views/ui/empty"
-import { field, fieldDescription, type FieldIds, fieldLabel, input, type FieldState } from "@maple/views/ui/field"
+import {
+	field,
+	fieldDescription,
+	type FieldIds,
+	fieldLabel,
+	input,
+	type FieldState,
+} from "@maple/views/ui/field"
 import * as Field from "@maple/views/ui/field"
 import { formDialogForm } from "@maple/views/ui/form-dialog"
 import { inlineCode } from "@maple/views/ui/inline-code"
@@ -86,7 +93,7 @@ const expirationField = (h: H, model: Model): Html => {
 		view: SelectView.view,
 		toParentMessage: (message) => Message.GotExpirationMessage({ message }),
 		viewInputs: {
-			entries: EXPIRATION_OPTIONS.map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+			entries: Arr.map(EXPIRATION_OPTIONS, (item): SelectView.SelectEntry => ({ _tag: "Item", item })),
 			className: "w-full",
 			// The accessible name matches the field label.
 			ariaLabel: "Expiration",
@@ -100,31 +107,30 @@ const expirationField = (h: H, model: Model): Html => {
 }
 
 const scopeRows = (h: H, model: Model): ReadonlyArray<Html> => {
-	const needle = model.scopeFilter.trim().toLowerCase()
-	const visible = SCOPE_FAMILIES.filter(
-		(family) => needle.length === 0 || family.label.toLowerCase().includes(needle),
+	const needle = Str.toLowerCase(Str.trim(model.scopeFilter))
+	const visible = Arr.filter(
+		SCOPE_FAMILIES,
+		(family) => needle.length === 0 || Str.includes(needle)(Str.toLowerCase(family.label)),
 	)
 	return [
 		...(visible.length === 0
 			? [
 					emptyMessage(h, { className: "py-2 text-left" }, [
-						`No resource family matches "${model.scopeFilter.trim()}".`,
+						`No resource family matches "${Str.trim(model.scopeFilter)}".`,
 					]),
 				]
 			: []),
-		...visible.map((family) =>
-			hstack(h, { gap: "3", justify: "between", attributes: [h.Key(family.id)] },
-				[
-					typography(h, { size: "sm", tone: "foreground" }, [family.label]),
-					segmentedSelect(h, {
-						ariaLabel: `${family.label} access`,
-						value: model.scopeLevels[family.id] ?? "none",
-						onChange: (level) => Message.ClickedScopeLevel({ family: family.id, level }),
-						size: "sm",
-						options: LEVEL_OPTIONS,
-					}),
-				],
-			),
+		...Arr.map(visible, (family) =>
+			hstack(h, { gap: "3", justify: "between", attributes: [h.Key(family.id)] }, [
+				typography(h, { size: "sm", tone: "foreground" }, [family.label]),
+				segmentedSelect(h, {
+					ariaLabel: `${family.label} access`,
+					value: model.scopeLevels[family.id] ?? "none",
+					onChange: (level) => Message.ClickedScopeLevel({ family: family.id, level }),
+					size: "sm",
+					options: LEVEL_OPTIONS,
+				}),
+			]),
 		),
 	]
 }
@@ -149,41 +155,42 @@ const accessField = (h: H, model: Model): Html => {
 			? h.div(
 					[h.Class("space-y-2 pt-1")],
 					[
-						hstack(h, { gap: "2", wrap: true },
-							[
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedAllScopes({ level: "read" }))],
-									},
-									["All read"],
-								),
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedAllScopes({ level: "write" }))],
-									},
-									["All write"],
-								),
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "sm",
-										isDisabled: count === 0,
-										attributes: [h.OnClick(Message.ClickedClearScopes())],
-									},
-									["Clear"],
-								),
-								typography(h, { size: "xs", tone: "muted" },
-									[String(count), " of ", String(SCOPE_FAMILIES.length), " selected"],
-								),
-							],
-						),
+						hstack(h, { gap: "2", wrap: true }, [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedAllScopes({ level: "read" }))],
+								},
+								["All read"],
+							),
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedAllScopes({ level: "write" }))],
+								},
+								["All write"],
+							),
+							button(
+								h,
+								{
+									variant: "ghost",
+									size: "sm",
+									isDisabled: count === 0,
+									attributes: [h.OnClick(Message.ClickedClearScopes())],
+								},
+								["Clear"],
+							),
+							typography(h, { size: "xs", tone: "muted" }, [
+								String(count),
+								" of ",
+								String(SCOPE_FAMILIES.length),
+								" selected",
+							]),
+						]),
 						searchInput(h, {
 							id: "api-key-scope-filter",
 							value: model.scopeFilter,
@@ -194,7 +201,9 @@ const accessField = (h: H, model: Model): Html => {
 							attributes: [
 								h.OnKeyDownPreventDefault((key) =>
 									key === "Enter"
-										? Option.some(Message.ChangedScopeFilter({ value: model.scopeFilter }))
+										? Option.some(
+												Message.ChangedScopeFilter({ value: model.scopeFilter }),
+											)
 										: Option.none(),
 								),
 							],
@@ -256,16 +265,10 @@ const formContent = (h: H, model: Model): ReadonlyArray<Html> => {
 		),
 		DialogView.dialogFooter(h, "dialog", [
 			...(reason === null ? [] : [DialogView.dialogFooterHint(h, reason)]),
-			button(
-				h,
-				{ variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] },
-				["Cancel"],
-			),
-			button(
-				h,
-				{ type: "submit", isLoading: model.isCreating, isDisabled: !canCreate(model) },
-				["Create key"],
-			),
+			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, ["Cancel"]),
+			button(h, { type: "submit", isLoading: model.isCreating, isDisabled: !canCreate(model) }, [
+				"Create key",
+			]),
 		]),
 	]
 }
@@ -293,18 +296,16 @@ const createdContent = (h: H, model: Model): ReadonlyArray<Html> => {
 			"dialog",
 			model.dialog.id,
 			[
-				hstack(h, { gap: "1.5", wrap: true },
-					[
-						typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [created.name]),
-						inlineCode(h, { variant: "plain", className: "text-2xs tracking-tight" }, [
-							created.key_prefix,
-							"…",
-						]),
-						...(created.scopes ?? []).map((scope) =>
-							badge(h, { variant: "outline", size: "sm", mono: true }, [scope]),
-						),
-					],
-				),
+				hstack(h, { gap: "1.5", wrap: true }, [
+					typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [created.name]),
+					inlineCode(h, { variant: "plain", className: "text-2xs tracking-tight" }, [
+						created.key_prefix,
+						"…",
+					]),
+					...Arr.map(created.scopes ?? [], (scope) =>
+						badge(h, { variant: "outline", size: "sm", mono: true }, [scope]),
+					),
+				]),
 				secretReveal(h, {
 					id: "api-key-created-secret",
 					secret: created.secret,

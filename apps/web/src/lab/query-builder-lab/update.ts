@@ -1,5 +1,5 @@
 import type { OrgId } from "@maple/domain"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -148,7 +148,7 @@ const reloaded = (model: Model): Return => {
 
 /** `runQueries`: the drafts and window as they are now, or the no-enabled-queries error. */
 const ran = (model: Model): Return => {
-	if (!model.queries.some((query) => query.enabled))
+	if (!Arr.some(model.queries, (query) => query.enabled))
 		return { model: { ...model, noQueriesError: NO_ENABLED_QUERIES, submitted: null } }
 	const submitted: SubmittedInput = {
 		startTime: model.window.startTime,
@@ -219,7 +219,7 @@ export const update = (model: Model, message: Message): Return =>
 			commands: [
 				CreateFormula({
 					index: model.formulas.length,
-					queryNames: model.queries.map((query) => query.name),
+					queryNames: Arr.map(model.queries, (query) => query.name),
 				}),
 			],
 		}),
@@ -230,7 +230,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedRemoveFormula: ({ formulaId }) => ({
 			model: {
 				...model,
-				formulas: relabelFormulas(model.formulas.filter((formula) => formula.id !== formulaId)),
+				formulas: relabelFormulas(Arr.filter(model.formulas, (formula) => formula.id !== formulaId)),
 			},
 		}),
 		ClickedRun: () => ran(model),
@@ -246,7 +246,7 @@ export const update = (model: Model, message: Message): Return =>
 		ChangedFormulaText: ({ formulaId, field, value }) => ({
 			model: {
 				...model,
-				formulas: model.formulas.map((formula) =>
+				formulas: Arr.map(model.formulas, (formula) =>
 					formula.id === formulaId ? { ...formula, [field]: value } : formula,
 				),
 			},
@@ -262,6 +262,6 @@ const removedQuery = (model: Model, queryId: string): Return =>
 		: {
 				model: {
 					...model,
-					queries: relabelQueries(model.queries.filter((query) => query.id !== queryId)),
+					queries: relabelQueries(Arr.filter(model.queries, (query) => query.id !== queryId)),
 				},
 			}

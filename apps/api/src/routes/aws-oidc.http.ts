@@ -21,7 +21,7 @@ export const AwsOidcRouter = HttpRouter.use((router) =>
 		const issuer = awsOidcIssuer(env.MAPLE_API_BASE_URL)
 		// No key, or one that does not load: the issuer is absent, as AWS sees it.
 		const signer = yield* Option.match(env.MAPLE_AWS_OIDC_SIGNING_KEY, {
-			onNone: () => Effect.succeed(Option.none()),
+			onNone: () => Effect.succeedNone,
 			onSome: (key) =>
 				makeAwsOidcSigner(issuer, key).pipe(
 					Effect.tapError((error) =>

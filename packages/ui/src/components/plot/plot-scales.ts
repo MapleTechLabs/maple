@@ -254,7 +254,7 @@ function fromWallClock(timeZone: string, wallClock: Date): Date {
  * and, because the renderer copies every scale before using it, `copy`.
  */
 function zoned(scale: TimeScale, timeZone: string): TimeScale {
-	const copy = scale.copy
+	const copy = scale.copy.bind(scale)
 	// d3 overloads `ticks` on a count or an interval; the wall-clock scale takes
 	// whichever it was handed.
 	scale.ticks = (count?: number | TickInterval) => {
@@ -285,7 +285,7 @@ function zoned(scale: TimeScale, timeZone: string): TimeScale {
 		}
 		return ticks
 	}
-	scale.copy = () => zoned(copy.call(scale), timeZone)
+	scale.copy = () => zoned(copy(), timeZone)
 	return scale
 }
 

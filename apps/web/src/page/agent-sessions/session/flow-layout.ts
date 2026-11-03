@@ -12,6 +12,7 @@ import {
 } from "@maple/agent-sessions"
 import { filterSpans, isDelegation, shortTarget } from "../../../lib/agent-sessions/span-filters"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { Array as Arr } from "effect"
 
 // The session flow's grid layout (`layoutLanes`, `flowSpans`, `assignColumns`, `nodeSubtitle`).
 
@@ -66,26 +67,28 @@ const ancestors = (
 
 /** The spans worth a node: the anchor, leaf work and real delegations, under their nearest drawn ancestor. */
 const flowSpans = (turn: SessionTurn, query: string, agentSpansOnly: boolean): ReadonlyArray<FlowGroup> => {
-	const byId = new Map(turn.spans.map((span) => [span.spanId, span]))
-	const candidates = filterSpans(turn.spans, query, agentSpansOnly).filter((span) => {
+	const byId = new Map(Arr.map(turn.spans, (span) => [span.spanId, span]))
+	const candidates = Arr.filter(filterSpans(turn.spans, query, agentSpansOnly), (span) => {
 		const category = classifyAiSpan(span)
 		if (category === "other") return false
 		if (span.spanId === turn.anchor.spanId) return true
 		return category === "agent" ? isDelegation(span, byId) : true
 	})
 	const wrappers = new Set(
-		candidates.flatMap((span) => {
+		Arr.flatMap(candidates, (span) => {
 			const category = classifyAiSpan(span)
-			return ancestors(span, byId)
-				.filter((ancestor) => classifyAiSpan(ancestor) === category)
-				.map((ancestor) => ancestor.spanId)
+			return Arr.map(
+				Arr.filter(ancestors(span, byId), (ancestor) => classifyAiSpan(ancestor) === category),
+				(ancestor) => ancestor.spanId,
+			)
 		}),
 	)
-	const survivors = candidates.filter(
+	const survivors = Arr.filter(
+		candidates,
 		(span) => classifyAiSpan(span) === "agent" || !wrappers.has(span.spanId),
 	)
-	const surviving = new Set(survivors.map((span) => span.spanId))
-	return survivors.map((span) => ({
+	const surviving = new Set(Arr.map(survivors, (span) => span.spanId))
+	return Arr.map(survivors, (span) => ({
 		spans: [span],
 		parentSpanId: ancestors(span, byId).find((ancestor) => surviving.has(ancestor.spanId))?.spanId,
 	}))
@@ -113,7 +116,7 @@ const groupStartMs = (group: FlowGroup): number => {
 	const first = group.spans[0]
 	return first === undefined ? 0 : spanStartMs(first)
 }
-const groupEndMs = (group: FlowGroup): number => Math.max(...group.spans.map(spanEndMs))
+const groupEndMs = (group: FlowGroup): number => Math.max(...Arr.map(group.spans, spanEndMs))
 
 /**
  * Columns from the parent relation: a group follows its parent's column; overlapping siblings
@@ -121,11 +124,13 @@ const groupEndMs = (group: FlowGroup): number => Math.max(...group.spans.map(spa
  */
 const assignColumns = (groups: ReadonlyArray<FlowGroup>): ReadonlyArray<ReadonlyArray<FlowGroup>> => {
 	const indexById = new Map(
-		groups.flatMap((group, index) => group.spans.map((member) => [member.spanId, index] as const)),
+		Arr.flatMap(groups, (group, index) =>
+			Arr.map(group.spans, (member) => [member.spanId, index] as const),
+		),
 	)
 	const open = new Map<number, { column: number; endMs: number }>()
 	const columns: Array<Array<FlowGroup>> = []
-	groups.forEach((group) => {
+	Arr.forEach(groups, (group) => {
 		const parent = group.parentSpanId === undefined ? -1 : (indexById.get(group.parentSpanId) ?? -1)
 		const sibling = open.get(parent)
 		const column = sibling === undefined ? undefined : columns[sibling.column]
@@ -158,12 +163,15 @@ const nodeSubtitle = (lead: AiSessionSpan, group: ReadonlyArray<AiSessionSpan>):
 		}
 		return lead.genAi.agentName === undefined ? [] : [lead.genAi.agentName]
 	})()
-	const failed = group.filter((member) => spanFailed(member)).length
-	return [
-		...head,
-		formatDuration(Math.max(...group.map(spanEndMs)) - Math.min(...group.map(spanStartMs))),
-		...(group.length > 1 && failed > 0 ? [`${failed} failed`] : []),
-	].join(" · ")
+	const failed = Arr.filter(group, (member) => spanFailed(member)).length
+	return Arr.join(
+		[
+			...head,
+			formatDuration(Math.max(...Arr.map(group, spanEndMs)) - Math.min(...Arr.map(group, spanStartMs))),
+			...(group.length > 1 && failed > 0 ? [`${failed} failed`] : []),
+		],
+		" · ",
+	)
 }
 
 type LaneOptions = Readonly<{ mergeRepeats: boolean; query: string; agentSpansOnly: boolean }>
@@ -180,12 +188,14 @@ const layoutLane = (turn: SessionTurn, laneTop: number, options: LaneOptions): F
 		next[row] = Math.max(heights[row] ?? 0, height)
 		return next
 	}, [])
-	const rowTops = rowHeights.map(
-		(_, row) => laneTop + rowHeights.slice(0, row).reduce((top, height) => top + height + WRAP_GAP, 0),
+	const rowTops = Arr.map(
+		rowHeights,
+		(_, row) =>
+			laneTop + Arr.reduce(rowHeights.slice(0, row), 0, (top, height) => top + height + WRAP_GAP),
 	)
 	const placed = new Map<string, { node: FlowNode; column: number }>()
-	const nodes = columns.flatMap((column, columnIndex) =>
-		column.flatMap((group, stackIndex) => {
+	const nodes = Arr.flatMap(columns, (column, columnIndex) =>
+		Arr.flatMap(column, (group, stackIndex) => {
 			const lead = group.spans.find((member) => spanFailed(member)) ?? group.spans[0]
 			if (lead === undefined) return []
 			const node: FlowNode = {
@@ -204,11 +214,11 @@ const layoutLane = (turn: SessionTurn, laneTop: number, options: LaneOptions): F
 					(rowTops[Math.floor(columnIndex / MAX_COLUMNS)] ?? laneTop) +
 					stackIndex * (NODE_HEIGHT + STACK_GAP),
 			}
-			group.spans.forEach((member) => placed.set(member.spanId, { node, column: columnIndex }))
+			Arr.forEach(group.spans, (member) => placed.set(member.spanId, { node, column: columnIndex }))
 			return [node]
 		}),
 	)
-	const edges = groups.flatMap((group): ReadonlyArray<readonly [FlowNode, FlowNode]> => {
+	const edges = Arr.flatMap(groups, (group): ReadonlyArray<readonly [FlowNode, FlowNode]> => {
 		const first = group.spans[0]
 		if (group.parentSpanId === undefined || first === undefined) return []
 		const from = placed.get(group.parentSpanId)
@@ -218,7 +228,8 @@ const layoutLane = (turn: SessionTurn, laneTop: number, options: LaneOptions): F
 		return [[from.node, to.node]]
 	})
 	const height =
-		rowHeights.reduce((total, rowHeight) => total + rowHeight, 0) + (rowHeights.length - 1) * WRAP_GAP
+		Arr.reduce(rowHeights, 0, (total, rowHeight) => total + rowHeight) +
+		(rowHeights.length - 1) * WRAP_GAP
 	return { turn, nodes, edges, height }
 }
 
@@ -241,9 +252,9 @@ export const layoutLanes = (
 export const translateExtentOf = (
 	lanes: ReadonlyArray<FlowLane>,
 ): readonly [readonly [number, number], readonly [number, number]] => {
-	const nodes = lanes.flatMap((lane) => lane.nodes)
-	const maxX = Math.max(0, ...nodes.map((node) => node.x + NODE_WIDTH))
-	const maxY = Math.max(0, ...nodes.map((node) => node.y + NODE_HEIGHT))
+	const nodes = Arr.flatMap(lanes, (lane) => lane.nodes)
+	const maxX = Math.max(0, ...Arr.map(nodes, (node) => node.x + NODE_WIDTH))
+	const maxY = Math.max(0, ...Arr.map(nodes, (node) => node.y + NODE_HEIGHT))
 	return [
 		[-PAN_MARGIN, -PAN_MARGIN],
 		[maxX + PAN_MARGIN, maxY + PAN_MARGIN],

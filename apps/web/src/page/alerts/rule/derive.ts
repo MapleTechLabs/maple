@@ -15,7 +15,7 @@ import {
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
 import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { type PresetValue, presetLabel } from "../../kit/time-controls"
 import { summaryChecksOf } from "../shared/check-summary"
@@ -44,20 +44,23 @@ export const ruleOf = (model: Model): AlertRuleDocument | null => {
 
 /** Every incident of this rule, latest trigger first. */
 export const ruleIncidentsOf = (model: Model): ReadonlyArray<AlertIncidentDocument> =>
-	(model.incidents ?? [])
-		.map(rowToAlertIncidentDocument)
-		.filter((incident) => incident.ruleId === model.ruleId)
-		.sort((a, b) => {
-			const dateA = a.lastTriggeredAt ? new Date(a.lastTriggeredAt).getTime() : 0
-			const dateB = b.lastTriggeredAt ? new Date(b.lastTriggeredAt).getTime() : 0
-			return dateB - dateA
-		})
+	Arr.filter(
+		Arr.map(model.incidents ?? [], rowToAlertIncidentDocument),
+		(incident) => incident.ruleId === model.ruleId,
+	).sort((a, b) => {
+		const dateA = a.lastTriggeredAt ? new Date(a.lastTriggeredAt).getTime() : 0
+		const dateB = b.lastTriggeredAt ? new Date(b.lastTriggeredAt).getTime() : 0
+		return dateB - dateA
+	})
 
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
 	rowsToAlertDestinationDocuments(model.destinations ?? [])
 
 export const ruleDeliveriesOf = (model: Model): ReadonlyArray<AlertDeliveryEventDocument> =>
-	AsyncData.getOrElse(model.deliveries.data, () => []).filter((event) => event.ruleId === model.ruleId)
+	Arr.filter(
+		AsyncData.getOrElse(model.deliveries.data, () => []),
+		(event) => event.ruleId === model.ruleId,
+	)
 
 export const checksPageOf = (model: Model): ChecksResponse | null =>
 	Option.getOrNull(AsyncData.getData(model.checks.data))

@@ -10,6 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `RuleTemplatesOverlay`: the first-touch picker.
 
@@ -43,7 +44,7 @@ const chevron = (h: H): Html =>
 	})
 
 const tiles = (h: H): ReadonlyArray<Html> => [
-	...ALERT_TEMPLATES.map((template) =>
+	...Arr.map(ALERT_TEMPLATES, (template) =>
 		cardButton(h, { onClick: Message.ClickedTemplate({ id: template.id }), className: TILE_LAYOUT }, [
 			tileHead(h, template.icon, template.title, template.description),
 			h.div(

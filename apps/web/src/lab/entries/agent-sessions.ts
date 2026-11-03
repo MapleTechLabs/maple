@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -65,14 +65,14 @@ const contextOf = (timeZone: string): PageContext => ({
 const toLab = (message: ListMessage) => Message.GotListMessage({ message })
 
 const rowsOf = (model: Model): ReadonlyArray<DisplayRow> =>
-	buildRows(model.list.nowMs).map((row) => ({ ...row, hasDetails: false }))
+	Arr.map(buildRows(model.list.nowMs), (row) => ({ ...row, hasDetails: false }))
 
 /** The rows' model marks, as the page asks for them. */
 const detect = (model: Model): Return =>
 	Option.match(
 		missingDetection(
 			model.list.detections,
-			rowsOf(model).flatMap((row) => row.models),
+			Arr.flatMap(rowsOf(model), (row) => row.models),
 		),
 		{
 			onNone: () => ({ model }),
@@ -226,7 +226,7 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 		[
 			h.div(
 				[h.Class("flex items-center gap-2")],
-				WIDTHS.map((option) =>
+				Arr.map(WIDTHS, (option) =>
 					labButton(
 						h,
 						option.label,

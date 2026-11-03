@@ -15,6 +15,7 @@ import { describeSpan } from "./span-category"
 import { typographyClass } from "../../ui/typography"
 import { toneBoxClass } from "../../ui/tone-box"
 import { hstack, vstack } from "../../ui/stack"
+import { Array as Arr } from "effect"
 
 // `FlowSpanNode` (packages/ui `traces/flow-node.tsx`).
 
@@ -65,7 +66,7 @@ const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size
 					h.Attribute("fill", "none"),
 					h.Class("shrink-0"),
 				],
-				REDIS_LAYERS.map(([d, opacity]) =>
+				Arr.map(REDIS_LAYERS, ([d, opacity]) =>
 					h.path([
 						h.Attribute("d", d),
 						h.Attribute("fill", "currentColor"),
@@ -200,7 +201,7 @@ export const flowSpanNode = <M>(
 	const { category, httpInfo, cacheInfo } = desc
 	const isError =
 		spanIsError(span.statusCode, httpInfo?.isError ?? false) ||
-		(isCombined && combinedSpans.some((s) => s.statusCode === "Error"))
+		(isCombined && Arr.some(combinedSpans, (s) => s.statusCode === "Error"))
 	const { main, tooltip } = formatCombinedDuration(isCombined, span.durationMs, aggregatedDuration)
 	const railDurationMs = isCombined ? aggregatedDuration.avg : span.durationMs
 	const costFraction =

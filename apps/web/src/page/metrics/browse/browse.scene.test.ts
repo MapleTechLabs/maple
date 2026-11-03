@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
@@ -32,7 +32,7 @@ const row = (metricName: string, metricType: string, serviceName = "checkout-api
 })
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const windowed = (search: Parameters<typeof init>[0]["search"] = {}): Model =>
 	pageUpdate(
@@ -48,9 +48,10 @@ const withCatalog = (model: Model, rows: ReadonlyArray<MetricRow>) =>
 
 /** Catalog, chart runtime and theme are in: the grid can paint. */
 const loaded = (rows: ReadonlyArray<MetricRow>): Model =>
-	[Message.CompletedLoadChartRuntime(), Message.ResolvedThemeColors({ colors: {} })].reduce(
-		(model, message) => pageUpdate(model, message).model,
+	Arr.reduce(
+		[Message.CompletedLoadChartRuntime(), Message.ResolvedThemeColors({ colors: {} })],
 		withCatalog(windowed(), rows).model,
+		(model, message) => pageUpdate(model, message).model,
 	)
 
 const themeResolved = () =>
@@ -100,14 +101,17 @@ describe("metrics explorer", () => {
 
 	test("the catalog asks one sparkline query per metric type, reused when the grid remounts", () => {
 		const catalog = withCatalog(windowed(), [row("a", "gauge"), row("b", "gauge"), row("c", "sum")])
-		expect(names(catalog.commands).filter((name) => name === "FetchMetricSparklines")).toHaveLength(2)
-		const answered = Object.keys(catalog.model.sparklines).reduce(
+		expect(Arr.filter(names(catalog.commands), (name) => name === "FetchMetricSparklines")).toHaveLength(
+			2,
+		)
+		const answered = Arr.reduce(
+			Rec.keys(catalog.model.sparklines),
+			catalog.model,
 			(model, key) =>
 				pageUpdate(
 					model,
 					Message.CompletedFetchSparklines({ slot: key, key, result: Result.succeed([]) }),
 				).model,
-			catalog.model,
 		)
 		const narrowed = routeChanged(answered, { search: { type: "sum" } }, context)
 		const remounted = withCatalog(narrowed.model, [row("c", "sum")])
@@ -120,7 +124,9 @@ describe("metrics explorer", () => {
 		expect(names(typed.commands)).toEqual(["FetchMetricsCatalog"])
 		expect(typed.model.window).toEqual(window)
 		const moved = routeChanged(typed.model, { search: { type: "sum", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveMetricsWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveMetricsWindow", "Refresh"],
+		])
 	})
 
 	test("a card shows its type and service, and opens the metric with its type", () => {
