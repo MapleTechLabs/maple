@@ -3,8 +3,8 @@ import { icon } from "@maple/views/ui/icon"
 import { hstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 
-// Mirrors the landing's `lib/compliance.ts`, which web cannot import. Only the DPA may read as
-// held: SOC 2 and ISO 27001 are audits in progress, not certifications.
+// The compliance footnote under the plan pickers (DPA available, SOC 2 and ISO 27001 in progress).
+// Mirrors the landing's `lib/compliance.ts`, which web cannot import. Only the DPA may read as held.
 export const COMPLIANCE_LINE = "DPA available · SOC 2 Type II and ISO 27001 in progress"
 export const DPA_REQUEST_URL = "mailto:privacy@maple.dev?subject=DPA%20request"
 
