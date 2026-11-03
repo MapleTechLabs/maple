@@ -1,11 +1,12 @@
 import { timingSafeEqual } from "node:crypto"
-import { Effect, Option, Redacted, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Redacted, Schema, String as Str } from "effect"
 import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Env } from "@maple/backend/platform/Env"
 import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
+import { INVESTIGATION_READ_FAMILIES, missingReadScopes, scopeAllows } from "@maple/domain/http/v2"
 import {
 	McpAuthInvalidError,
 	McpAuthMissingError,
@@ -88,6 +89,23 @@ const getBearerToken = (headers: Headers): string | undefined => {
 	const [scheme, token] = Str.split(" ")(header)
 	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
 	return token
+}
+
+/**
+ * What a scoped key may do over MCP. The toolset reads across the org (the same families an
+ * investigation reads), so a key must read all of them; it may change data only when it can
+ * also write all of them. `null` scopes are a legacy full-access key.
+ */
+export const mcpScopeAccess = (
+	scopes: ReadonlyArray<string> | null,
+): "full" | "read" | { readonly missing: ReadonlyArray<string> } => {
+	const missing = missingReadScopes(scopes, INVESTIGATION_READ_FAMILIES)
+	if (missing.length > 0) return { missing }
+	return Arr.every(INVESTIGATION_READ_FAMILIES, (family) =>
+		scopeAllows(scopes, { family, access: "write" }),
+	)
+		? "full"
+		: "read"
 }
 
 const MAPLE_API_KEY_PREFIX = "maple_ak_"
@@ -257,11 +275,13 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 					reason: "invalid_target",
 				})
 			}
-			// Manual MCP/API keys remain legacy full-access credentials. Scoped keys
-			// are accepted only when they are audience-bound MCP OAuth tokens.
-			if (!isMcpOAuthToken && resolved.scopes !== null) {
+			const scopeAccess = isMcpOAuthToken ? "full" : mcpScopeAccess(resolved.scopes)
+			if (typeof scopeAccess !== "string") {
 				return yield* new McpAuthInvalidError({
-					message: "Restricted API keys are not supported by the MCP server",
+					message: `This API key's scopes are too narrow for the MCP server, whose tools read across the org. Add ${Arr.join(
+						Arr.map(scopeAccess.missing, (family) => `"${family}:read"`),
+						", ",
+					)}, or use a full-access key.`,
 					reason: "insufficient_scope",
 				})
 			}
@@ -305,6 +325,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				authMode: "self_hosted",
 				rateLimitCredentialId: `key:${resolved.keyId}`,
 				...(actorId ? { actorId } : undefined),
+				...(scopeAccess === "read" ? { readOnly: true } : undefined),
 			} as McpAuthenticatedTenant
 		}
 

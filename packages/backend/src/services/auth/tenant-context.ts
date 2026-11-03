@@ -28,4 +28,9 @@ export interface TenantContext {
 	 * turn is the connector's agent — because the surface a call arrives on does not say who acted.
 	 */
 	turnOrigin?: ChatTurnOrigin
+	/**
+	 * Set for a scoped API key that grants read access only: MCP tools that change data refuse it.
+	 * Unset for full-access keys, OAuth tokens and sessions.
+	 */
+	readOnly?: true
 }

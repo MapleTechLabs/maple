@@ -87,8 +87,10 @@ import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
 import { registerPullRequestTools } from "./pull-request"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
 import {
 	audienceAdmits,
+	McpAuthInvalidError,
 	type McpToolAudience,
 	type McpToolError,
 	type McpToolHints,
@@ -634,6 +636,17 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 			toolName: name,
 			message: `Unknown MCP tool: ${name}`,
 		})
+	}
+
+	// A read-only key reaches every read tool; feedback stays open to it, as on v2.
+	if (!definition.hints.readOnly && definition.name !== "send_maple_feedback") {
+		const tenant = yield* CurrentMcpTenant
+		if (tenant.readOnly === true) {
+			return yield* new McpAuthInvalidError({
+				message: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+				reason: "insufficient_scope",
+			})
+		}
 	}
 
 	const nowMs = yield* Clock.currentTimeMillis

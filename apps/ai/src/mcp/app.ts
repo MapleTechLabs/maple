@@ -184,7 +184,7 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 							mcpChallenge(env.MAPLE_API_BASE_URL, false),
 						// A malformed bearer gets its specific fix; other reasons keep the generic text.
 						"@maple/mcp/errors/McpAuthInvalidError": (error) =>
-							error.reason === "malformed_token"
+							error.reason === "malformed_token" || error.reason === "insufficient_scope"
 								? mcpChallenge(env.MAPLE_API_BASE_URL, true, error.message)
 								: mcpChallenge(env.MAPLE_API_BASE_URL, true),
 						"@maple/mcp/errors/McpAuthUnavailableError": mcpUnavailable,
