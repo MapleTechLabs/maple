@@ -236,7 +236,7 @@ export const eventsTab = (h: H, model: Model): Html =>
 						panel(h, {}, [
 							panelHeader(h, {
 								title: "All events",
-								action: hstack(h, { gap: "2" }, [
+								action: hstack(h, { gap: "2", wrap: true }, [
 									segmentedSelect(h, {
 										options: KIND_FILTERS,
 										value: model.eventsKind,
@@ -250,7 +250,7 @@ export const eventsTab = (h: H, model: Model): Html =>
 										ariaLabel: "Filter events",
 										onInput: (value) => Message.ChangedEventsQuery({ value }),
 										onClear: Message.ChangedEventsQuery({ value: "" }),
-										className: "w-48",
+										className: "w-full sm:w-48",
 									}),
 								]),
 							}),
