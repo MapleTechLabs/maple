@@ -622,7 +622,7 @@ describe("auditWithAgents", () => {
 
 	describe("with an execution sandbox", () => {
 		/** An executor that records what it was asked, preparing with `prepared` (or failing). */
-		const recordingExecutor = (prepared: "installed" | "fails") => {
+		const recordingExecutor = (prepared: "installed" | "fails" | "unavailable") => {
 			const asked: Array<string> = []
 			const executor: ExecutorServiceApi = {
 				available: true,
@@ -636,14 +636,21 @@ describe("auditWithAgents", () => {
 										reason: "prepare_failed",
 									}),
 								)
-							: Effect.succeed([
-									new ExecutorInstall({
-										dir: ".",
-										manager: "npm",
-										outcome: "installed",
-										detail: "added 3",
-									}),
-								])
+							: prepared === "unavailable"
+								? Effect.fail(
+										new ExecutorServiceError({
+											message: "the executor could not start its container",
+											reason: "unavailable",
+										}),
+									)
+								: Effect.succeed([
+										new ExecutorInstall({
+											dir: ".",
+											manager: "npm",
+											outcome: "installed",
+											detail: "added 3",
+										}),
+									])
 					}),
 				run: () => Effect.die("no command runs in this test"),
 				destroy: (runId) => Effect.sync(() => void asked.push(`destroy ${runId}`)),
@@ -658,18 +665,16 @@ describe("auditWithAgents", () => {
 		}
 
 		/** Agents that record whether they were given execution, and every prompt. */
-		const watched =
-			(seen: Seen) =>
-			(_source: unknown, execution?: unknown) => {
-				seen.execution = execution !== undefined
-				const agents = scriptedAgents([])
-				return Effect.succeed<AuditAgentsApi>({
-					run: (invocation) => {
-						seen.prompts.push(invocation.prompt)
-						return agents.run(invocation)
-					},
-				})
-			}
+		const watched = (seen: Seen) => (_source: unknown, execution?: unknown) => {
+			seen.execution = execution !== undefined
+			const agents = scriptedAgents([])
+			return Effect.succeed<AuditAgentsApi>({
+				run: (invocation) => {
+					seen.prompts.push(invocation.prompt)
+					return agents.run(invocation)
+				},
+			})
+		}
 
 		it.effect("prepares a Node repository once, gives agents execution, and destroys it after", () =>
 			Effect.gen(function* () {
@@ -729,6 +734,29 @@ describe("auditWithAgents", () => {
 						"source_only",
 						"the execution sandbox could not prepare the repository: npm ci failed",
 					]),
+				)
+			}).pipe(Effect.provide(testLayer())),
+		)
+
+		it.effect("degrades to source-only, never a failed run, when the executor stays unavailable", () =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const { executor } = recordingExecutor("unavailable")
+				const seen: Seen = { execution: undefined, prompts: [] }
+				yield* auditWithAgents(payloadFor(run.id), watched(seen)).pipe(
+					Effect.provideService(
+						RepoSandboxService,
+						sandbox([], SMALL_REPO, { "package.json": "{}" }),
+					),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					Effect.provideService(ExecutorService, executor),
+				)
+				const row = yield* store.getRun(run.id)
+				assert.isFalse(seen.execution)
+				assert.deepStrictEqual(
+					Option.map(row, (r) => [r.status === "failed", r.executionProfile?.mode ?? "none"]),
+					Option.some([false, "source_only"]),
 				)
 			}).pipe(Effect.provide(testLayer())),
 		)
