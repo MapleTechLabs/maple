@@ -125,6 +125,7 @@ describe("integrationHealthOf", () => {
 				lastSuccessDaysBeforeCancel: null,
 				lastErrorDaysBeforeCancel: null,
 				errorClass: "auth",
+				resources: [],
 			},
 			{
 				kind: "nodejs",
@@ -132,6 +133,7 @@ describe("integrationHealthOf", () => {
 				lastSuccessDaysBeforeCancel: 1,
 				lastErrorDaysBeforeCancel: 0,
 				errorClass: "rate_limited",
+				resources: [],
 			},
 			{
 				kind: "github",
@@ -139,6 +141,7 @@ describe("integrationHealthOf", () => {
 				lastSuccessDaysBeforeCancel: 2,
 				lastErrorDaysBeforeCancel: null,
 				errorClass: null,
+				resources: [{ kind: "repository", count: 1 }],
 			},
 			{
 				kind: "gcp",
@@ -146,6 +149,7 @@ describe("integrationHealthOf", () => {
 				lastSuccessDaysBeforeCancel: 0,
 				lastErrorDaysBeforeCancel: null,
 				errorClass: "auth",
+				resources: [],
 			},
 		])
 	})
@@ -203,7 +207,44 @@ describe("integrationHealthOf", () => {
 				lastSuccessDaysBeforeCancel: 1,
 				lastErrorDaysBeforeCancel: null,
 				errorClass: null,
+				resources: [],
 			},
+		])
+	})
+
+	it("counts a chat integration's workspaces by connector", () => {
+		const workspace = (name: string, connector: string) => ({
+			kind: "workspace",
+			name,
+			status: "healthy" as const,
+			lastSuccessAt: null,
+			lastError: null,
+			note: connector,
+		})
+		const [chat] = integrationHealthOf(
+			inventory([
+				{
+					provider: "chat",
+					status: "healthy",
+					account: null,
+					connectedAt: AT - 40 * DAY_MS,
+					problem: null,
+					feeds: [],
+					resources: [
+						workspace("Acme", "slack"),
+						workspace("Acme Ops", "slack"),
+						workspace("Acme", "linear"),
+					],
+				},
+			]),
+			[],
+			[],
+			AT,
+			AT,
+		)
+		expect(chat?.resources).toEqual([
+			{ kind: "slack", count: 2 },
+			{ kind: "linear", count: 1 },
 		])
 	})
 })

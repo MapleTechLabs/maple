@@ -39,6 +39,8 @@ export const CancellationIntegrationHealth = Schema.Struct({
 	lastErrorDaysBeforeCancel: Schema.NullOr(Days),
 	/** Kind of the error behind a failing or disconnected `status`, or a GCP connector's current error; like `status`, as of now. Null when neither. */
 	errorClass: Schema.NullOr(CancellationErrorClass),
+	/** What it is connected to, counted by kind (`repository`, `zone`, `database`, a chat connector's `slack` or `discord`, ...); empty for an ingest source platform. */
+	resources: Schema.Array(Schema.Struct({ kind: Schema.String, count: Count })),
 })
 export type CancellationIntegrationHealth = Schema.Schema.Type<typeof CancellationIntegrationHealth>
 

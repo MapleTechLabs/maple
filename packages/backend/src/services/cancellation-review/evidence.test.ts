@@ -1,6 +1,6 @@
 import { DateTime, Effect, Exit, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { auditEntryOf, digestSession, stripeFeedbackOf } from "./evidence"
+import { auditEntryOf, digestSession, otherOrgsOf, stripeFeedbackOf } from "./evidence"
 
 const DAY_S = 86_400
 const CANCELLED_S = 1_760_000_000
@@ -162,5 +162,63 @@ describe("audit entries", () => {
 			actor: "user",
 			outcome: "allowed",
 		})
+	})
+})
+
+describe("otherOrgsOf", () => {
+	const AT = Date.parse("2026-10-09T10:00:00Z")
+	const DAY_MS = DAY_S * 1000
+	const org = (name: string, createdAtMs: number, sharedMembers: ReadonlyArray<string>) => ({
+		name,
+		createdAtMs,
+		membersCount: 3,
+		sharedMembers,
+		billing: { plan: "pro" },
+	})
+	const members = [
+		{ email: "jane.doe@acme.test", name: "Jane Doe" },
+		{ email: "ops@acme.test", name: null },
+	]
+
+	it("counts the shared members and withholds a name that holds a member's", () => {
+		expect(
+			otherOrgsOf(
+				AT,
+				[
+					org("Acme Platform", AT + DAY_MS, ["jane.doe@acme.test", "ops@acme.test"]),
+					org("Jane's Workspace", AT - 400 * DAY_MS, ["jane.doe@acme.test"]),
+				],
+				members,
+			),
+		).toEqual({
+			total: 2,
+			orgs: [
+				{
+					name: "Acme Platform",
+					nameIsPersonal: false,
+					createdDaysBeforeCancel: -1,
+					members: 3,
+					sharedMembers: 2,
+					billing: { plan: "pro" },
+				},
+				{
+					name: null,
+					nameIsPersonal: true,
+					createdDaysBeforeCancel: 400,
+					members: 3,
+					sharedMembers: 1,
+					billing: { plan: "pro" },
+				},
+			],
+		})
+	})
+
+	it("lists the newest eight and counts the rest", () => {
+		const orgs = Array.from({ length: 11 }, (_, index) =>
+			org(`Team ${index}`, AT - index * DAY_MS, ["ops@acme.test"]),
+		)
+		const read = otherOrgsOf(AT, orgs, members)
+		expect(read.total).toBe(11)
+		expect(read.orgs.map((entry) => entry.name)).toEqual(orgs.slice(0, 8).map((entry) => entry.name))
 	})
 })

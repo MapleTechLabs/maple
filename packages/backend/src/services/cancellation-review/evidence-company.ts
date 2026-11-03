@@ -81,6 +81,16 @@ const isReserved = (domain: string): boolean =>
 	RESERVED_SUFFIXES.some((suffix) => domain.endsWith(suffix)) ||
 	domain.split(".").includes("clerk")
 
+/** Maple's own staff, whose other orgs are the customers they help. */
+export const isMapleStaff = (email: string): boolean =>
+	inDomains(
+		MAPLE_DOMAINS,
+		email
+			.slice(email.lastIndexOf("@") + 1)
+			.trim()
+			.toLowerCase(),
+	)
+
 /** A listed free-mail domain or its subdomain, or a provider under any country ending (`yahoo.com.br`). */
 export const isFreeMail = (domain: string): boolean => {
 	const [provider = "", ...rest] = domain.split(".")
@@ -285,7 +295,7 @@ export const memberNameWords = (
 	return words
 }
 
-const holdsName = (value: string, nameWords: ReadonlySet<string>): boolean =>
+export const holdsName = (value: string, nameWords: ReadonlySet<string>): boolean =>
 	wordsOf(value).some((word) => nameWords.has(word))
 
 /** What is known of the members' names. */
