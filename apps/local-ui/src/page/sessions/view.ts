@@ -3,6 +3,7 @@ import { isLocalSessionLive } from "../../lib/session-liveness"
 import { cn } from "@maple/ui/lib/utils"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { listFooter } from "@maple/views/ui/list-footer"
+import { vstack } from "@maple/views/ui/stack"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
@@ -62,8 +63,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return h.div(
 			[h.Class(cn("p-4", model.sessions.retained === true && "opacity-60 transition-opacity"))],
 			[
-				h.div(
-					[h.Class("space-y-2")],
+				vstack(
+					h,
+					{ gap: "2" },
 					sessions.map((session) =>
 						sessionCard(h, session, hrefFor(`/sessions/${encodeURIComponent(session.sessionId)}`, query), model.nowMs, context.timeFormat),
 					),

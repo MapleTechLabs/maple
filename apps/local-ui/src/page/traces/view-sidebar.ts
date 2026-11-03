@@ -2,7 +2,7 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { button } from "@maple/views/ui/button"
 import { filterSection, singleCheckboxFilter } from "@maple/views/ui/filters/filter-section"
 import type * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
+import { filterSidebarBody, filterSidebarHeader } from "@maple/views/ui/filters/filter-sidebar"
 import { formatValue } from "@maple/views/ui/filters/range-format"
 import { type RangePreset, rangeFilterSection } from "@maple/views/ui/filters/range-filter-section"
 import { Option } from "effect"
@@ -11,6 +11,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TraceFilters } from "./filters"
 import { type FacetParam, Message } from "./message"
 import type { DurationStats, FacetOption, Model } from "./model"
+import { filterRailFrame } from "../kit/filter-rail"
+import { typography } from "@maple/views/ui/typography"
 
 // The filter rail of the traces list.
 
@@ -22,8 +24,12 @@ const durationPresets = (maybeStats: Option.Option<DurationStats>): ReadonlyArra
 	const p50 = Math.round(stats?.p50DurationMs ?? 0)
 	const p95 = Math.round(stats?.p95DurationMs ?? 0)
 	return [
-		...(stats !== null && stats.p50DurationMs > 0 ? [{ key: "p50", label: "> p50", value: formatValue(p50, "ms"), min: p50 }] : []),
-		...(stats !== null && stats.p95DurationMs > 0 ? [{ key: "p95", label: "> p95", value: formatValue(p95, "ms"), min: p95 }] : []),
+		...(stats !== null && stats.p50DurationMs > 0
+			? [{ key: "p50", label: "> p50", value: formatValue(p50, "ms"), min: p50 }]
+			: []),
+		...(stats !== null && stats.p95DurationMs > 0
+			? [{ key: "p95", label: "> p95", value: formatValue(p95, "ms"), min: p95 }]
+			: []),
 		{ key: "1s", label: "> 1s", min: 1000 },
 	]
 }
@@ -49,7 +55,12 @@ const facet = (
 		onToggle: (name) => Message.ToggledFacetOption({ param, name }),
 	})
 
-const durationSection = (h: HtmlBuilder<Message>, model: Model, filters: TraceFilters, maybeStats: Option.Option<DurationStats>) =>
+const durationSection = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	filters: TraceFilters,
+	maybeStats: Option.Option<DurationStats>,
+) =>
 	rangeFilterSection(h, {
 		title: "Duration",
 		unit: "ms",
@@ -67,13 +78,12 @@ const durationSection = (h: HtmlBuilder<Message>, model: Model, filters: TraceFi
 
 /** Span scope: facets are off, the only filter is "Errored spans only". */
 const spanScopeSidebar = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =>
-	filterSidebarFrame(h, { className: "w-56 shrink-0 px-4" }, [
+	filterRailFrame(h, {}, [
 		filterSidebarHeader(h, { title: "Span search", onClear: Message.ClickedClearFilters() }),
 		...filterSidebarBody(h, "traces-span-filters", [
-			h.p(
-				[h.Class("py-1 text-xs text-muted-foreground")],
-				["Matching any span in a trace, not only its root. Root-span facets are off in this mode."],
-			),
+			typography(h, { as: "p", size: "xs", tone: "muted", className: "py-1" }, [
+				"Matching any span in a trace, not only its root. Root-span facets are off in this mode.",
+			]),
 			singleCheckboxFilter(h, {
 				title: "Errored spans only",
 				isChecked: filters.errorsOnly === true,
@@ -81,13 +91,23 @@ const spanScopeSidebar = (h: HtmlBuilder<Message>, filters: TraceFilters): Html 
 			}),
 			button(
 				h,
-				{ variant: "outline", size: "sm", className: "mt-2 w-full", attributes: [h.OnClick(Message.ClickedExitSpanScope())] },
+				{
+					variant: "outline",
+					size: "sm",
+					className: "mt-2 w-full",
+					attributes: [h.OnClick(Message.ClickedExitSpanScope())],
+				},
 				["Filter root spans instead"],
 			),
 		]),
 	])
 
-export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: TraceFilters, activeFilterCount: number): Html => {
+export const sidebar = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	filters: TraceFilters,
+	activeFilterCount: number,
+): Html => {
 	if (filters.scope === "spans") return spanScopeSidebar(h, filters)
 	const maybeFacets = AsyncData.getData(model.facets.data)
 	const facets = Option.getOrNull(maybeFacets)
@@ -101,14 +121,22 @@ export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: TraceFil
 		}),
 		facet(h, model, "Environment", "env", facets?.deploymentEnvs ?? [], filters.env),
 		facet(h, model, "Namespace", "ns", facets?.namespaces ?? [], filters.ns, { isSearchable: true }),
-		facet(h, model, "Service", "service", services, filters.service, { isSearchable: true, colorOf: getServiceColor }),
+		facet(h, model, "Service", "service", services, filters.service, {
+			isSearchable: true,
+			colorOf: getServiceColor,
+		}),
 		facet(h, model, "Root span", "span", facets?.spanNames ?? [], filters.span, { isSearchable: true }),
-		durationSection(h, model, filters, Option.flatMap(maybeFacets, (loaded) => loaded.maybeDurationStats)),
+		durationSection(
+			h,
+			model,
+			filters,
+			Option.flatMap(maybeFacets, (loaded) => loaded.maybeDurationStats),
+		),
 		facet(h, model, "HTTP method", "method", facets?.httpMethods ?? [], filters.method),
 		facet(h, model, "Status code", "status", facets?.httpStatusCodes ?? [], filters.status),
 	]
 	const isFetching = AsyncData.isLoading(model.facets.data) || AsyncData.isRefreshing(model.facets.data)
-	return filterSidebarFrame(h, { className: "w-56 shrink-0 px-4", isWaiting: isFetching }, [
+	return filterRailFrame(h, { isWaiting: isFetching }, [
 		filterSidebarHeader(h, activeFilterCount > 0 ? { onClear: Message.ClickedClearFilters() } : {}),
 		...filterSidebarBody(
 			h,

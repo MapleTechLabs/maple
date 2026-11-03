@@ -1,7 +1,5 @@
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
-import { sidebarMobileHeaderStyles, sidebarMobileInnerStyles, sidebarMobileStyles } from "@maple/ui/styles/ui/sidebar"
 import { icon } from "@maple/views/ui/icon"
-import { leftSheet } from "@maple/views/ui/sheet"
+import { hstack } from "@maple/views/ui/stack"
 import {
 	sidebarContent,
 	sidebarDesktop,
@@ -13,6 +11,7 @@ import {
 	sidebarMenu,
 	sidebarMenuButton,
 	sidebarMenuItem,
+	sidebarMobile,
 	sidebarRail,
 	sidebarTrigger,
 } from "@maple/views/ui/sidebar"
@@ -24,9 +23,6 @@ import { connectButton } from "./connect"
 import { ingestStatus } from "./ingest-status"
 import { localLockup } from "./lockup"
 import { activeSection, NAV_GROUPS } from "./nav"
-
-/** Same selected-row rail as apps/web's sidebar: a 2px lane only the active row paints. */
-const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
 
 /** `AppSidebar`'s children, shared by the desktop rail and the mobile sheet. */
 const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): ReadonlyArray<Html> => {
@@ -48,7 +44,7 @@ const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSea
 									sidebarMenuButton(
 										h,
 										{
-											className: ACTIVE_RAIL,
+											rail: "active",
 											isActive: active === item.section,
 											href: hrefFor(`/${item.section}`, linkQuery),
 											hasTooltip: true,
@@ -65,8 +61,9 @@ const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSea
 		),
 		sidebarFooter(h, [
 			ingestStatus(h, model.maybeServer, model.env.port),
-			h.div(
-				[h.Class("flex items-center gap-1 group-data-[collapsible=icon]:flex-col")],
+			hstack(
+				h,
+				{ gap: "1", className: "group-data-[collapsible=icon]:flex-col" },
 				[
 					connectButton(h, model),
 					sidebarTrigger(h, {
@@ -85,23 +82,10 @@ const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSea
 export const appSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html =>
 	sidebarDesktop(h, model.isSidebarOpen ? "expanded" : "collapsed", sidebarRegions(h, model, linkQuery))
 
-/** `<Sidebar>` below `md`: the same children in `SheetPopup side="left"` (packages/ui sidebar.tsx). */
+/** `<Sidebar>` below `md`: the same children in the kit's left sheet. */
 export const mobileSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html =>
-	leftSheet(
+	sidebarMobile(
 		h,
-		{
-			id: "local-mobile-sidebar",
-			className: sidebarMobileStyles,
-			title: "Sidebar",
-			description: "Displays the mobile sidebar.",
-			headerClassName: sidebarMobileHeaderStyles,
-			slot: "sidebar",
-			popupAttributes: [
-				h.DataAttribute("mobile", "true"),
-				h.DataAttribute("sidebar", "sidebar"),
-				h.Style({ "--nested-dialogs": "0", "--sidebar-width": "18rem" }),
-			],
-			onDismiss: Message.DismissedMobileNav(),
-		},
-		[h.div([h.Class(sidebarMobileInnerStyles)], sidebarRegions(h, model, linkQuery))],
+		{ id: "local-mobile-sidebar", onDismiss: Message.DismissedMobileNav() },
+		sidebarRegions(h, model, linkQuery),
 	)

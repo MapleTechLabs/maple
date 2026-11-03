@@ -1,7 +1,7 @@
 /**
- * Kit-first rules for the dashboard (`apps/web`), wired into the `maple` plugin. Pages compose the
- * kit (`packages/views/src/ui`, `apps/web/src/page/kit`) instead of rebuilding controls from raw elements
- * or the kit's style exports; values come from tokens. See "Build from the kit" in
+ * Kit-first rules for the dashboard (`apps/web`) and Maple Local (`apps/local-ui`), wired into the
+ * `maple` plugin. Pages compose the kit (`packages/views/src/ui`, each app's `src/page/kit`) instead
+ * of rebuilding controls from raw elements or the kit's style exports; values come from tokens. See "Build from the kit" in
  * `docs/design-rules.md`.
  *
  * Every rule here is ratcheted by `ui-kit-baseline.json`: a file listed there may keep the count it

@@ -34,7 +34,8 @@ becomes its own kit component. After removing copies, run `bun run ui:patterns`.
 
 ## What lint enforces
 
-Outside `packages/views/src/ui`, `src/page/kit`, `src/lab` and tests:
+The same rules cover `apps/local-ui` (its kit is `apps/local-ui/src/page/kit`) and `packages/views`.
+Outside `packages/views/src/ui`, each app's `src/page/kit`, `src/lab` and tests:
 
 - `maple/no-raw-control`: no `h.button`, `h.input`, `h.textarea`, `h.select`, `h.table`,
   `h.dialog` or `h.label`; the message names the kit component to use. `pressable` is the click
@@ -43,7 +44,7 @@ Outside `packages/views/src/ui`, `src/page/kit`, `src/lab` and tests:
   `sectionHeading`, `pageTitle` or `detailTitle`.
 - `maple/no-kit-styles-in-pages`: no `@maple/ui/styles/ui/*` imports; call the wrapper.
 
-Everywhere in `src`, `packages/views/src` and `packages/ui/src`: `maple/no-raw-color` (no hex, `rgb()`, `oklch()` in
+Everywhere in `src`, `apps/local-ui/src`, `packages/views/src` and `packages/ui/src`: `maple/no-raw-color` (no hex, `rgb()`, `oklch()` in
 class values) and `maple/no-arbitrary-text-size` (no `text-[13px]`), plus the token rules in
 `docs/design-rules.md`.
 

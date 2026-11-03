@@ -1,6 +1,8 @@
 import { parseClickHouseDateTime, type WarehouseTime } from "../../lib/time"
 import { cn } from "@maple/ui/lib/utils"
 import { icon, type IconName } from "@maple/views/ui/icon"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { TranscriptEvent } from "./model"
 
@@ -40,7 +42,7 @@ const body = <M>(h: HtmlBuilder<M>, event: TranscriptEvent): Html => {
 	if (event.type === "console") return line(h, "break-words text-xs text-muted-foreground", [event.message])
 	if (event.type === "network")
 		return line(h, muted, [
-			h.span([h.Class("font-medium text-foreground")], [event.netMethod]),
+			typography(h, { tone: "foreground", weight: "medium" }, [event.netMethod]),
 			" ",
 			event.netUrl,
 			h.span(
@@ -56,7 +58,7 @@ const body = <M>(h: HtmlBuilder<M>, event: TranscriptEvent): Html => {
 				...(event.errorStack
 					? [
 							h.pre(
-								[h.Class("mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-1.5 font-mono text-[10px] text-muted-foreground")],
+								[h.Class("mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-1.5 font-mono text-3xs text-muted-foreground")],
 								[event.errorStack],
 							),
 						]
@@ -70,15 +72,16 @@ export const transcript = <M>(h: HtmlBuilder<M>, events: ReadonlyArray<Transcrip
 	h.ol(
 		[h.Class("space-y-3")],
 		events.map((event) =>
-			h.li(
-				[h.Key(`${event.seq}-${String(event.timestamp)}`), h.Class("flex gap-3")],
+			hstack(
+				h,
+				{ as: "li", gap: "3", align: "stretch", attributes: [h.Key(`${event.seq}-${String(event.timestamp)}`)] },
 				[
 					h.span(
 						[
 							h.Class(
 								cn(
 									"mt-0.5 grid size-6 shrink-0 place-items-center rounded-full",
-									isErrorEvent(event) ? "bg-severity-error/10 text-severity-error" : "bg-muted text-muted-foreground",
+									isErrorEvent(event) ? "bg-severity-error-a2 text-severity-error" : "bg-muted text-muted-foreground",
 								),
 							),
 						],
@@ -87,16 +90,12 @@ export const transcript = <M>(h: HtmlBuilder<M>, events: ReadonlyArray<Transcrip
 					h.div(
 						[h.Class("min-w-0 flex-1")],
 						[
-							h.div(
-								[h.Class("flex items-baseline justify-between gap-2")],
-								[
-									h.span([h.Class("text-xs font-medium capitalize")], [event.type]),
-									h.span(
-										[h.Class("shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground")],
-										[offsetLabel(startTime, event.timestamp)],
-									),
-								],
-							),
+							hstack(h, { gap: "2", align: "baseline", justify: "between" }, [
+								typography(h, { size: "xs", weight: "medium", className: "capitalize" }, [event.type]),
+								typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" }, [
+									offsetLabel(startTime, event.timestamp),
+								]),
+							]),
 							body(h, event),
 						],
 					),

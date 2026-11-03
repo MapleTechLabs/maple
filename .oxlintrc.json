@@ -55,9 +55,9 @@
 		"require-yield": "off"
 	},
 	"overrides": [
-		// The dashboard's design rules (docs/design-rules.md), on the app and its kit.
+		// The dashboard's design rules (docs/design-rules.md), on the apps and their kit.
 		{
-			"files": ["apps/web/src/**", "packages/views/src/**", "packages/ui/src/**"],
+			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**", "packages/ui/src/**"],
 			"rules": {
 				"maple/couldnt-copy": "error",
 				"maple/hover-needs-active": "error",
@@ -72,10 +72,10 @@
 				"maple/no-arbitrary-text-size": "error"
 			}
 		},
-		// Build from the kit (docs/design-rules.md): pages compose packages/views/src/ui and page/kit.
+		// Build from the kit (docs/design-rules.md): pages compose packages/views/src/ui and each app's page/kit.
 		// Existing sites are ratcheted per file by scripts/oxlint-plugins/ui-kit-baseline.json.
 		{
-			"files": ["apps/web/src/**", "packages/views/src/**"],
+			"files": ["apps/web/src/**", "apps/local-ui/src/**", "packages/views/src/**"],
 			"rules": {
 				"maple/no-kit-styles-in-pages": "error",
 				"maple/no-raw-control": "error",
@@ -84,7 +84,13 @@
 		},
 		// The kit itself, the lab that showcases it, and tests render raw elements.
 		{
-			"files": ["packages/views/src/ui/**", "apps/web/src/page/kit/**", "apps/web/src/lab/**", "**/*.test.ts"],
+			"files": [
+				"packages/views/src/ui/**",
+				"apps/web/src/page/kit/**",
+				"apps/local-ui/src/page/kit/**",
+				"apps/web/src/lab/**",
+				"**/*.test.ts"
+			],
 			"rules": {
 				"maple/no-kit-styles-in-pages": "off",
 				"maple/no-raw-control": "off",

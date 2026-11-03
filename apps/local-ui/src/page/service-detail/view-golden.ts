@@ -7,6 +7,7 @@ import { fixedMetricLegend, latencySeries } from "@maple/views/charts/fixed-metr
 import { LATENCY_SERIES } from "@maple/views/charts/fixed-metric-series"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
+import { heading } from "@maple/views/ui/heading"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./message"
 import type { GoldenSignalRow, Model } from "./model"
@@ -18,22 +19,61 @@ const GOLDEN_CHART_CLASS = "h-44 w-full"
 
 type Kind = "Latency" | "Throughput" | "Apdex" | "ErrorRate"
 
-const TILES: ReadonlyArray<Readonly<{ id: string; kind: Kind; title: string; ariaLabel: string; gradientPrefix: string }>> = [
-	{ id: "latency", kind: "Latency", title: "Latency", ariaLabel: "Latency percentiles", gradientPrefix: "latency" },
-	{ id: "throughput", kind: "Throughput", title: "Throughput", ariaLabel: "Throughput", gradientPrefix: "throughput" },
+const TILES: ReadonlyArray<
+	Readonly<{ id: string; kind: Kind; title: string; ariaLabel: string; gradientPrefix: string }>
+> = [
+	{
+		id: "latency",
+		kind: "Latency",
+		title: "Latency",
+		ariaLabel: "Latency percentiles",
+		gradientPrefix: "latency",
+	},
+	{
+		id: "throughput",
+		kind: "Throughput",
+		title: "Throughput",
+		ariaLabel: "Throughput",
+		gradientPrefix: "throughput",
+	},
 	{ id: "apdex", kind: "Apdex", title: "Apdex", ariaLabel: "Apdex score", gradientPrefix: "apdex" },
-	{ id: "error-rate", kind: "ErrorRate", title: "Error rate", ariaLabel: "Error rate", gradientPrefix: "errorRate" },
+	{
+		id: "error-rate",
+		kind: "ErrorRate",
+		title: "Error rate",
+		ariaLabel: "Error rate",
+		gradientPrefix: "errorRate",
+	},
 ]
 
 /** The tokens the golden charts and the operations chart read off the theme. */
-export const GOLDEN_TOKENS = ["--chart-throughput", "--chart-error", "--chart-apdex", "--chart-p99", "--chart-p95", "--chart-p50"]
+export const GOLDEN_TOKENS = [
+	"--chart-throughput",
+	"--chart-error",
+	"--chart-apdex",
+	"--chart-p99",
+	"--chart-p95",
+	"--chart-p50",
+]
 
 const colorsOf = (kind: Kind, theme: ThemeColors): Readonly<Record<string, string>> => {
-	const chrome = { border: resolveColor(theme, "--border"), background: resolveColor(theme, "--background") }
+	const chrome = {
+		border: resolveColor(theme, "--border"),
+		background: resolveColor(theme, "--background"),
+	}
 	if (kind === "Latency")
-		return { ...chrome, ...Object.fromEntries(LATENCY_SERIES.map((entry) => [entry.key, resolveColor(theme, entry.token)])) }
+		return {
+			...chrome,
+			...Object.fromEntries(
+				LATENCY_SERIES.map((entry) => [entry.key, resolveColor(theme, entry.token)]),
+			),
+		}
 	if (kind === "Throughput")
-		return { ...chrome, throughput: resolveColor(theme, "--chart-throughput"), error: resolveColor(theme, "--chart-error") }
+		return {
+			...chrome,
+			throughput: resolveColor(theme, "--chart-throughput"),
+			error: resolveColor(theme, "--chart-error"),
+		}
 	if (kind === "Apdex") return { ...chrome, apdexScore: resolveColor(theme, "--chart-apdex") }
 	return { ...chrome, errorRate: resolveColor(theme, "--chart-error") }
 }
@@ -86,7 +126,7 @@ export const goldenSignals = (
 			h.div(
 				[h.Key(tile.title), h.Class("space-y-2 rounded-md border p-3")],
 				[
-					h.h3([h.Class("text-sm font-medium")], [tile.title]),
+					heading(h, { level: 3, variant: "subsection" }, [tile.title]),
 					isPending || context === null
 						? chartSkeleton(h, "area", GOLDEN_CHART_CLASS)
 						: tileChart(h, model, tile, points, context),

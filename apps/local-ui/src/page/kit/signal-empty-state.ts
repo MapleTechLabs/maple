@@ -1,14 +1,14 @@
 import { resolveRange, WIDEST_RANGE } from "../../lib/time"
 import { button } from "@maple/views/ui/button"
 import type { PresenceState, TelemetrySignalKind } from "@maple/views/data/signal-presence"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { signalEmptyState as sharedSignalEmptyState } from "@maple/views/ui/signal-empty-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type ConnectGuideOptions, connectGuide } from "./connect-guide"
 
 // The shared `SignalEmptyState` with Maple Local's on-ramp: this server's OTLP endpoint to copy.
 
-const code = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.code([h.Class("rounded bg-muted px-1 font-mono text-[0.85em]")], [text])
+const code = <M>(h: HtmlBuilder<M>, text: string): Html => inlineCode(h, {}, [text])
 
 const sourceOf = <M>(h: HtmlBuilder<M>, signal: TelemetrySignalKind): ReadonlyArray<Html | string> => {
 	if (signal === "traces") return ["Traces come from an OpenTelemetry SDK in your app, exporting to this endpoint."]

@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
- * The repeated-class ratchet for the dashboard. A "pattern" is a class string (tokens sorted, so
- * order doesn't hide a copy) that appears in 3 or more apps/web page files outside the kit
- * (page/kit, lab; the rest of the kit lives in packages/views): 3+ utilities, or 2+ that are all type (`text-xs
- * text-muted-foreground`). Patterns are what the kit should own: `typography`, `hstack`/`vstack`,
+ * The repeated-class ratchet for the dashboard and Maple Local. A "pattern" is a class string (tokens
+ * sorted, so order doesn't hide a copy) that appears in 3 or more page files across apps/web,
+ * apps/local-ui and packages/views, outside the kits (packages/views/src/ui, each app's page/kit, the
+ * lab): 3+ utilities, or 2+ that are all type (`text-xs text-muted-foreground`). Patterns are what the kit should own: `typography`, `hstack`/`vstack`,
  * or a component of their own.
  *
  * scripts/ui-class-patterns.json holds each pattern's file count. `--check` (CI) fails when a
@@ -17,18 +17,20 @@ import { Schema } from "effect"
 const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
 
 const root = join(import.meta.dir, "..")
-const webSrc = join(root, "apps/web/src")
+/** Each scanned source root and the paths under it that are kit or fixtures, not pages. */
+const SOURCES = [
+	{ dir: join(root, "apps/web/src"), exempt: /^(page\/kit|lab)\// },
+	{ dir: join(root, "apps/local-ui/src"), exempt: /^page\/kit\// },
+	{ dir: join(root, "packages/views/src"), exempt: /^(ui|fixtures)\// },
+]
 const baselineFile = join(root, "scripts/ui-class-patterns.json")
 const MIN_FILES = 3
 
-const isKitOrExempt = (path: string) =>
-	/^(page\/kit|lab)\//.test(path) || /\.(test|generated)\.ts$/.test(path)
-
-function* walk(dir: string): Generator<string> {
+function* walk(dir: string, isExempt: (path: string) => boolean): Generator<string> {
 	for (const entry of readdirSync(dir)) {
 		const path = join(dir, entry)
-		if (statSync(path).isDirectory()) yield* walk(path)
-		else if (path.endsWith(".ts") && !isKitOrExempt(relative(webSrc, path))) yield path
+		if (statSync(path).isDirectory()) yield* walk(path, isExempt)
+		else if (path.endsWith(".ts") && !isExempt(path) && !/\.(test|generated)\.ts$/.test(path)) yield path
 	}
 }
 
@@ -46,7 +48,10 @@ const patternOf = (raw: string): string | undefined => {
 }
 
 const filesByPattern = new Map<string, Set<string>>()
-for (const file of walk(webSrc)) {
+const pageFiles = SOURCES.flatMap(({ dir, exempt }) => [
+	...walk(dir, (path) => exempt.test(relative(dir, path))),
+])
+for (const file of pageFiles) {
 	const path = relative(root, file)
 	for (const match of readFileSync(file, "utf8").matchAll(/"([^"\n]*)"|`([^`$\n]*)`/g)) {
 		const pattern = patternOf(match[1] ?? match[2] ?? "")

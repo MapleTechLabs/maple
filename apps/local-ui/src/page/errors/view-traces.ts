@@ -3,6 +3,8 @@ import { parseClickHouseDateTime } from "../../lib/time"
 import { formatDuration } from "@maple/ui/lib/format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { spinner } from "@maple/views/ui/spinner"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import type { DateTime } from "effect"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
@@ -38,12 +40,16 @@ const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, nowMs: numbe
 				[
 					h.Href(traceLinkHref(trace, query)),
 					h.Class(
-						"flex w-full items-center gap-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground",
+						hstackClass({
+							gap: "3",
+							className: "w-full py-2 text-left text-xs text-muted-foreground hover:text-foreground active:text-foreground",
+						}),
 					),
 				],
 				[
-					h.span(
-						[h.Class("min-w-0 flex-1 truncate font-mono")],
+					typography(
+						h,
+						{ mono: true, truncate: true, className: "min-w-0 flex-1" },
 						[
 							trace.errorSpanName || trace.rootSpanName || trace.traceId,
 							...(trace.errorServiceName
@@ -51,9 +57,9 @@ const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, nowMs: numbe
 								: []),
 						],
 					),
-					h.span([h.Class("shrink-0 tabular-nums")], [String(trace.spanCount), " spans"]),
-					h.span([h.Class("shrink-0 tabular-nums")], [formatDuration(trace.durationMicros / 1000)]),
-					h.span([h.Class("shrink-0 tabular-nums")], [relativeTime(trace.startTime, nowMs)]),
+					typography(h, { numeric: true, className: "shrink-0" }, [String(trace.spanCount), " spans"]),
+					typography(h, { numeric: true, className: "shrink-0" }, [formatDuration(trace.durationMicros / 1000)]),
+					typography(h, { numeric: true, className: "shrink-0" }, [relativeTime(trace.startTime, nowMs)]),
 				],
 			),
 		],
@@ -61,7 +67,7 @@ const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, nowMs: numbe
 
 export const cardTraces = (h: H, row: ErrorTypeRow, card: Card, query: URLSearchParams, nowMs: number): Html => {
 	if (isAwaitingFirstData(card.traces))
-		return h.div([h.Class("flex h-16 items-center justify-center")], [spinner(h, "size-4")])
+		return hstack(h, { justify: "center", className: "h-16" }, [spinner(h, "size-4")])
 	const failure = failureWithoutData(card.traces)
 	if (Option.isSome(failure))
 		return errorState(h, {
@@ -70,6 +76,6 @@ export const cardTraces = (h: H, row: ErrorTypeRow, card: Card, query: URLSearch
 		})
 	const traces = Option.getOrElse(AsyncData.getData(card.traces.data), () => [])
 	if (traces.length === 0)
-		return h.p([h.Class("py-2 text-xs text-muted-foreground")], ["No traces found for this error in the selected range."])
+		return typography(h, { as: "p", size: "xs", tone: "muted", className: "py-2" }, ["No traces found for this error in the selected range."])
 	return h.ul([h.Class("divide-y")], traces.map((trace) => traceItem(h, trace, query, nowMs)))
 }

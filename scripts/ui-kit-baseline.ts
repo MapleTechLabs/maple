@@ -33,6 +33,7 @@ const lint = Bun.spawnSync(
 		"--format",
 		"json",
 		"apps/web/src",
+		"apps/local-ui/src",
 		"packages/views/src",
 		"packages/ui/src",
 	],

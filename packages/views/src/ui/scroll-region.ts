@@ -19,3 +19,14 @@ export const scrollRegion = <M>(
 		[h.Class(cn("min-h-0 flex-1 overflow-y-auto", options.className)), ...(options.attributes ?? [])],
 		children,
 	)
+
+/** `fillRegion`: a non-scrolling box filling the rest of its flex column, the positioning context for what it holds. */
+export const fillRegion = <M>(
+	h: HtmlBuilder<M>,
+	options: ScrollRegionOptions<M>,
+	children: ReadonlyArray<Html | string>,
+): Html =>
+	h.div(
+		[h.Class(cn("relative min-h-0 flex-1", options.className)), ...(options.attributes ?? [])],
+		children,
+	)
