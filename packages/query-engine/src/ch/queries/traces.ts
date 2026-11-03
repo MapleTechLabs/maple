@@ -1918,7 +1918,7 @@ export interface TraceListPageOutput {
  * `traceListQuery`'s stage 1 as its own round trip: the page's trace ids in
  * list order, with the root timestamps (`ts`) the caller bounds stage 2 by.
  */
-export function traceListPageQuery(opts: TraceListOpts): CHQuery<any, TraceListPageOutput, {}> {
+export function traceListPageQuery(opts: TraceListOpts): CHQuery<ColumnDefs, TraceListPageOutput, {}> {
 	return traceListPage(opts).format("JSON")
 }
 

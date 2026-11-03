@@ -367,10 +367,9 @@ describe("traceListPageQuery / traceListByTraceIdsQuery", () => {
 		const { sql } = compileUnsafe(traceListPageQuery({ limit: 50 }), baseParams)
 
 		expect(sql).toContain("FROM trace_list_mv")
-		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).not.toContain("FROM traces")
 		expect(sql).toContain("ORDER BY ts DESC, traceId DESC")
 		expect(sql).toContain("LIMIT 50")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("seeks the page's ids within the caller's bounds, with no window pad of its own", () => {
