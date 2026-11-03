@@ -154,17 +154,21 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 // SUBSCRIPTION
 
-/** The trigger an event lands in: its own text, and for an overflow-only one, cut off. */
-const triggerOf = (target: EventTarget | null): Option.Option<HTMLElement> => {
+/** The trigger an event lands in, carrying its own text. */
+const closestTrigger = (target: EventTarget | null): Option.Option<HTMLElement> => {
 	if (!(target instanceof Element)) return Option.none()
 	const trigger = target.closest(`[${CONTENT_ATTRIBUTE}]`)
-	if (!(trigger instanceof HTMLElement) || trigger.getAttribute(CONTENT_ATTRIBUTE) === "")
-		return Option.none()
-	if (trigger.hasAttribute(OVERFLOW_ATTRIBUTE) && trigger.scrollWidth <= trigger.clientWidth) {
-		return Option.none()
-	}
-	return Option.some(trigger)
+	return trigger instanceof HTMLElement && trigger.getAttribute(CONTENT_ATTRIBUTE) !== ""
+		? Option.some(trigger)
+		: Option.none()
 }
+
+/** A trigger that may open now: an overflow-only one only while its text is cut off. */
+const openableTrigger = (target: EventTarget | null): Option.Option<HTMLElement> =>
+	Option.filter(
+		closestTrigger(target),
+		(trigger) => !trigger.hasAttribute(OVERFLOW_ATTRIBUTE) || trigger.scrollWidth > trigger.clientWidth,
+	)
 
 /** The trigger's id to anchor to, assigned once when the view gave it none. */
 const anchorIdOf = (trigger: HTMLElement): string => {
@@ -199,7 +203,7 @@ const triggerStreams: ReadonlyArray<Stream.Stream<Message>> = [
 		filterMapEvent: (event) =>
 			Option.map(
 				Option.filter(
-					triggerOf(event.target),
+					openableTrigger(event.target),
 					(trigger) => isHoverPointer(event) && !isInside(trigger, event.relatedTarget),
 				),
 				(trigger) => Message.EnteredTrigger(shownOf(trigger)),
@@ -210,7 +214,10 @@ const triggerStreams: ReadonlyArray<Stream.Stream<Message>> = [
 		type: "pointerout",
 		filterMapEvent: (event) =>
 			Option.map(
-				Option.filter(triggerOf(event.target), (trigger) => !isInside(trigger, event.relatedTarget)),
+				Option.filter(
+					closestTrigger(event.target),
+					(trigger) => !isInside(trigger, event.relatedTarget),
+				),
 				() => toTooltip(Tooltip.Message.LeftTrigger()),
 			),
 	}),
@@ -218,20 +225,23 @@ const triggerStreams: ReadonlyArray<Stream.Stream<Message>> = [
 		target: () => document,
 		type: "pointerdown",
 		filterMapEvent: (event) =>
-			Option.map(triggerOf(event.target), () => toTooltip(Tooltip.Message.PressedTrigger())),
+			Option.map(closestTrigger(event.target), () => toTooltip(Tooltip.Message.PressedTrigger())),
 	}),
 	Dom.streamFromEventFilterMap({
 		target: () => document,
 		type: "focusin",
 		filterMapEvent: (event) =>
-			Option.map(triggerOf(event.target), (trigger) => Message.FocusedTrigger(shownOf(trigger))),
+			Option.map(openableTrigger(event.target), (trigger) => Message.FocusedTrigger(shownOf(trigger))),
 	}),
 	Dom.streamFromEventFilterMap({
 		target: () => document,
 		type: "focusout",
 		filterMapEvent: (event) =>
 			Option.map(
-				Option.filter(triggerOf(event.target), (trigger) => !isInside(trigger, event.relatedTarget)),
+				Option.filter(
+					closestTrigger(event.target),
+					(trigger) => !isInside(trigger, event.relatedTarget),
+				),
 				() => toTooltip(Tooltip.Message.BlurredTrigger()),
 			),
 	}),

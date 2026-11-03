@@ -307,7 +307,7 @@ const coverageSignals = (
 			title: "Messages",
 			explains: {
 				captured:
-					"Each model call's prompts and replies were recorded. Refusals and Reply length read them.",
+					"At least one model call recorded its prompts and replies. Refusals and Reply length read them.",
 				missing:
 					"No model call recorded its prompts or replies. Refusals and Reply length go by status codes only.",
 				absent: NO_MODEL_CALL,
@@ -318,7 +318,7 @@ const coverageSignals = (
 			state: coverage.toolPayloads,
 			title: "Tool arguments and results",
 			explains: {
-				captured: "Each tool call's arguments and result were recorded. Tool errors reads them.",
+				captured: "At least one tool call recorded its arguments or result. Tool errors reads them.",
 				missing: "No tool call recorded its arguments or result. A failed call has only its status.",
 				absent: "No tool was called in this session.",
 			}[coverage.toolPayloads],
