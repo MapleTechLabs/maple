@@ -73,6 +73,7 @@
 		"@alchemy.run/domain": "catalog:alchemy",
 		"@alchemy.run/neon": "catalog:alchemy",
 		"@alchemy.run/planetscale": "catalog:alchemy",
+		"@alchemy.run/test": "catalog:alchemy",
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/platform-node": "catalog:effect",
 		"@effect/sql-pg": "4.1.2",
@@ -124,13 +125,14 @@
 	"catalogs": {
 		"alchemy": {
 			"@cloudflare/workers-types": "5.20261005.1",
-			"alchemy": "2.0.0-beta.84",
-			"@alchemy.run/aws": "2.0.0-beta.84",
-			"@alchemy.run/cloudflare": "2.0.0-beta.84",
-			"@alchemy.run/neon": "2.0.0-beta.84",
-			"@alchemy.run/planetscale": "2.0.0-beta.84",
-			"@alchemy.run/domain": "2.0.0-beta.84",
-			"@alchemy.run/cloudflare-runtime": "2.0.0-beta.84"
+			"alchemy": "2.0.0-beta.85",
+			"@alchemy.run/aws": "2.0.0-beta.85",
+			"@alchemy.run/cloudflare": "2.0.0-beta.85",
+			"@alchemy.run/neon": "2.0.0-beta.85",
+			"@alchemy.run/planetscale": "2.0.0-beta.85",
+			"@alchemy.run/domain": "2.0.0-beta.85",
+			"@alchemy.run/cloudflare-runtime": "2.0.0-beta.85",
+			"@alchemy.run/test": "2.0.0-beta.85"
 		},
 		"charts": {
 			"@tanstack/charts": "1.2.1",
@@ -170,8 +172,7 @@
 		"@effect/vitest@4.1.2": "patches/@effect%2Fvitest@4.1.2.patch",
 		"effect@4.1.2": "patches/effect@4.1.2.patch",
 		"@cloudflare/workers-types@5.20261005.1": "patches/@cloudflare%2Fworkers-types@5.20261005.1.patch",
-		"@alchemy.run/aws@2.0.0-beta.84": "patches/@alchemy.run%2Faws@2.0.0-beta.84.patch",
-		"alchemy@2.0.0-beta.84": "patches/alchemy@2.0.0-beta.84.patch",
-		"@alchemy.run/cloudflare@2.0.0-beta.84": "patches/@alchemy.run%2Fcloudflare@2.0.0-beta.84.patch"
+		"@alchemy.run/aws@2.0.0-beta.85": "patches/@alchemy.run%2Faws@2.0.0-beta.85.patch",
+		"@alchemy.run/cloudflare@2.0.0-beta.85": "patches/@alchemy.run%2Fcloudflare@2.0.0-beta.85.patch"
 	}
 }

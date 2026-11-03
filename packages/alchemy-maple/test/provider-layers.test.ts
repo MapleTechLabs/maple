@@ -1,4 +1,4 @@
-import type { ScopedPlanStatusSession } from "alchemy/Report"
+import { noopSession } from "alchemy/Report"
 import { ConfigProvider, Effect, Layer, Redacted } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, it } from "@effect/vitest"
@@ -14,11 +14,7 @@ const stackLayer = Layer.mergeAll(
 	Layer.succeed(Stage, "test"),
 )
 
-const session: ScopedPlanStatusSession = {
-	emit: () => Effect.void,
-	done: () => Effect.void,
-	note: () => Effect.void,
-}
+const session = noopSession
 
 const wireDashboard = {
 	id: "dash_override",
