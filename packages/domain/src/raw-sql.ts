@@ -315,7 +315,9 @@ const disallowedTableFunction = (sql: string): string | null => {
 		}
 		const after = tokens[i + 1]
 		if (after !== undefined && !after.ident && after.v === "(" && isReaderName(t.v)) return t.v
-		if (t.v === "from" || (t.v === "join" && (tokens[i - 1]?.v ?? "") !== "array")) {
+		// `WITH FILL FROM expr` and `ARRAY JOIN expr` take an expression, not a table.
+		const prev = tokens[i - 1]?.v ?? ""
+		if ((t.v === "from" && prev !== "fill") || (t.v === "join" && prev !== "array")) {
 			if (parenKind[parenKind.length - 1] !== "call") {
 				armed = true
 				fromListDepth = depth

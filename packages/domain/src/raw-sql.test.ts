@@ -162,6 +162,17 @@ describe("rawSqlIssue", () => {
 		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
 	})
 
+	it("accepts a function call as the start of WITH FILL", () => {
+		const sql =
+			"SELECT toStartOfInterval(Timestamp, INTERVAL 60 SECOND) AS bucket, count() AS c FROM logs WHERE $__orgFilter GROUP BY bucket ORDER BY bucket WITH FILL FROM toStartOfInterval(now() - INTERVAL 1 HOUR, INTERVAL 60 SECOND) TO now() STEP INTERVAL 60 SECOND"
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
+
+	it("still refuses a reader as the start of WITH FILL", () => {
+		const sql = "SELECT 1 AS b FROM logs WHERE $__orgFilter ORDER BY b WITH FILL FROM url('http://x/') TO 10"
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
 	it("names an exact-match table function in its message", () => {
 		expect(rawSqlIssue("SELECT * FROM url('http://x/') WHERE $__orgFilter")?.message).toContain(
 			"Table function 'url'",
