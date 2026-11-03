@@ -110,6 +110,7 @@ const SAMPLE_PATHS = [
 	"/replays/session_1",
 	"/share/token_1",
 	"/analytics",
+	"/product-analytics",
 ]
 
 const entered = (path: string): Model =>

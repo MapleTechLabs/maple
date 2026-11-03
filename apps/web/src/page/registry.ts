@@ -73,6 +73,7 @@ import * as LogsList from "./logs/list"
 import * as LogPage from "./logs/log"
 import * as MetricsBrowse from "./metrics/browse"
 import * as Analytics from "./analytics"
+import * as ProductAnalytics from "./product-analytics"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as Recommendation from "./recommendations"
@@ -181,6 +182,7 @@ export const pages = [
 	ReplayDetail.page,
 	Share.page,
 	Analytics.page,
+	ProductAnalytics.page,
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */

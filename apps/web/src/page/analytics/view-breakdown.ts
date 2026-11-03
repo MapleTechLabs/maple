@@ -1,6 +1,7 @@
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { linkButton } from "@maple/views/ui/button"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
@@ -38,7 +39,12 @@ export type BreakdownDimension = Readonly<{
 	countLabel?: string
 }>
 
-export type BreakdownCard = Readonly<{ id: string; dimensions: ReadonlyArray<BreakdownDimension> }>
+export type BreakdownCard = Readonly<{
+	id: string
+	dimensions: ReadonlyArray<BreakdownDimension>
+	/** A page that goes further with this card's data, beside its filter. */
+	link?: Readonly<{ label: string; href: string }>
+}>
 
 type ShareRow = BreakdownRow & Readonly<{ share: number }>
 
@@ -330,7 +336,23 @@ export const breakdownPanel = (
 			[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2")],
 			[
 				dimensionTabs(h, card.id, card.dimensions, view.activeTab),
-				panelFilterInput(h, card.id, state.query, dimension.nounPlural, "min-w-24 max-w-40 flex-1"),
+				hstack(h, { gap: "2", className: "min-w-24 flex-1 justify-end" }, [
+					...(card.link === undefined
+						? []
+						: [
+								linkButton(h, { variant: "ghost", size: "xs", href: card.link.href }, [
+									card.link.label,
+									icon(h, "ArrowRightIcon"),
+								]),
+							]),
+					panelFilterInput(
+						h,
+						card.id,
+						state.query,
+						dimension.nounPlural,
+						"min-w-24 max-w-40 flex-1",
+					),
+				]),
 			],
 		),
 		...(dimension.rows.length === 0
