@@ -74,8 +74,39 @@ const fixture = (): { readonly dir: string; readonly sha: string } => {
 		join(work, "tools/package.json"),
 		encodeJson({ name: "tools", private: true, dependencies: { "left-pad": "1.3.0" } }),
 	)
+	// A pnpm project whose pnpmfile runs code during install: prepare must not load it.
+	mkdirSync(join(work, "web"), { recursive: true })
+	writeFileSync(
+		join(work, "web/package.json"),
+		encodeJson({ name: "web", private: true, dependencies: { ms: "2.1.3" } }),
+	)
+	writeFileSync(
+		join(work, "web/.pnpmfile.cjs"),
+		`require("node:child_process").spawn("sh", ["-c", "touch /tmp/PWNED-BY-PNPMFILE; sleep 600"], { detached: true, stdio: "ignore" }).unref()\nmodule.exports = { hooks: {} }\n`,
+	)
 	sh("npm install --package-lock-only --ignore-scripts --no-audit --no-fund >/dev/null", work)
 	sh("bun install --lockfile-only >/dev/null 2>&1", join(work, "tools"))
+	execFileSync("docker", ["build", "--quiet", "--tag", IMAGE, `${import.meta.dirname}/../image`], {
+		stdio: ["ignore", "ignore", "inherit"],
+	})
+	execFileSync(
+		"docker",
+		[
+			"run",
+			"--rm",
+			"--volume",
+			`${join(work, "web")}:/web`,
+			"--workdir",
+			"/web",
+			"--entrypoint",
+			"pnpm",
+			IMAGE,
+			"install",
+			"--lockfile-only",
+			"--ignore-pnpmfile",
+		],
+		{ stdio: "ignore" },
+	)
 	sh(
 		"git init -q . && git add -A && git -c user.email=f@f -c user.name=f commit -qm fixture && git rev-parse HEAD",
 		work,
@@ -180,9 +211,6 @@ const refused = (name: string, ran: Ran, because: RegExp) =>
 		`exit ${ran.exitCode}: ${output(ran)}`,
 	)
 
-execFileSync("docker", ["build", "--quiet", "--tag", IMAGE, `${import.meta.dirname}/../image`], {
-	stdio: ["ignore", "ignore", "inherit"],
-})
 const { dir, sha } = fixture()
 start(dir)
 
@@ -202,6 +230,7 @@ const installs = status._tag === "ready" ? status.installs : []
 for (const [dirName, manager] of [
 	[".", "npm"],
 	["tools", "bun"],
+	["web", "pnpm"],
 ] as const) {
 	const install = installs.find((entry) => entry.dir === dirName)
 	check(
@@ -211,14 +240,27 @@ for (const [dirName, manager] of [
 	)
 }
 check(
-	"no install script ran during prepare",
-	exec("ls /tmp/PWNED-BY-PREPARE 2>/dev/null").status === 0 ? "an install script ran" : undefined,
+	"no install script or pnpmfile ran during prepare",
+	exec("ls /tmp/PWNED-BY-PREPARE /tmp/PWNED-BY-PNPMFILE 2>/dev/null").stdout.trim() === ""
+		? undefined
+		: "target code ran",
+)
+check(
+	"nothing prepare started is still running, and it left nothing in shared directories",
+	exec("pgrep -u 20000; find /tmp /var/tmp /run/lock -user 20000 2>/dev/null").stdout.trim() === ""
+		? undefined
+		: "a prepare process or file survived",
+	exec("pgrep -a -u 20000; find /tmp /var/tmp /run/lock -user 20000 2>/dev/null").stdout,
 )
 check(
 	"the checkout is root-owned and not writable by others",
-	exec(`find ${CHECKOUT_DIR} \\( ! -uid 0 -o -perm /022 \\) -print -quit`).stdout.trim() === ""
+	// A symlink's own mode is always 777 and means nothing; its owner and its target's mode do.
+	exec(
+		`find ${CHECKOUT_DIR} \\( ! -uid 0 -o \\( ! -type l -perm /022 \\) \\) -print -quit`,
+	).stdout.trim() === ""
 		? undefined
 		: "found a writable or foreign-owned file",
+	exec(`find ${CHECKOUT_DIR} \\( ! -uid 0 -o \\( ! -type l -perm /022 \\) \\) -print | head -5`).stdout,
 )
 check(
 	"repeated status stays ready",

@@ -172,22 +172,36 @@ export const run = (
 		const promotion =
 			request.promote.length === 0
 				? { promoted: [], rejected: [] }
-				: yield* host.exec(promoteScript(request.agentId, request.promote), PROMOTE_TIMEOUT_MS).pipe(
-						Effect.flatMap((answer) =>
-							decodePromotion(answer.stdout).pipe(
-								Effect.mapError(
-									() => `promotion answered unreadably: ${answer.stderr.slice(0, 300)}`,
+				: trailer.state === "unreaped"
+					? {
+							promoted: [],
+							rejected: request.promote.map(({ path }) => ({
+								path,
+								reason: "a process of the command could not be stopped, so scratch was not promoted",
+							})),
+						}
+					: yield* host
+							.exec(promoteScript(request.agentId, request.promote), PROMOTE_TIMEOUT_MS)
+							.pipe(
+								Effect.flatMap((answer) =>
+									decodePromotion(answer.stdout).pipe(
+										Effect.mapError(
+											() =>
+												`promotion answered unreadably: ${answer.stderr.slice(0, 300)}`,
+										),
+									),
 								),
-							),
-						),
-						// Step 11: a promotion that cannot run discards every entry, with why.
-						Effect.catch((error) =>
-							Effect.succeed({
-								promoted: [],
-								rejected: request.promote.map(({ path }) => ({ path, reason: error })),
-							}),
-						),
-					)
+								// Step 11: a promotion that cannot run discards every entry, with why.
+								Effect.catch((error) =>
+									Effect.succeed({
+										promoted: [],
+										rejected: request.promote.map(({ path }) => ({
+											path,
+											reason: error,
+										})),
+									}),
+								),
+							)
 		const stderr = result.stderr
 		yield* Effect.logInfo("executor command finished").pipe(
 			Effect.annotateLogs({

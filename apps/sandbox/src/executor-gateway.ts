@@ -158,8 +158,10 @@ export const gatewayFetch = (
 		if (target.rewriteRegistryUrls && json && response.ok) {
 			const length = Number(response.headers.get("content-length") ?? "0")
 			if (length > MAX_NPM_METADATA_BYTES) return refuse(502, "package metadata is too large")
-			const text = yield* attempt(() => response.text())
-			if (text.length > MAX_NPM_METADATA_BYTES) return refuse(502, "package metadata is too large")
+			// Capped while it streams: a missing or understated content-length cannot get it buffered whole.
+			const text = yield* attempt(() =>
+				new Response(capped(response.body, MAX_NPM_METADATA_BYTES)).text(),
+			)
 			return new Response(text.replaceAll(NPM_UPSTREAM, NPM_THROUGH_GATEWAY), {
 				status: response.status,
 				headers: responseHeaders,
