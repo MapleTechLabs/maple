@@ -15,6 +15,7 @@ import {
 import { makeEvalRuntime, runToolDirect, markdown, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, restoreWarehouse } from "./fake-warehouse"
 import type { McpToolResult } from "../tools/types"
+import { DASHBOARD_TEMPLATES } from "@maple/backend/dashboard-templates"
 
 let rt: EvalRuntime
 
@@ -187,6 +188,14 @@ describe("dashboard tools", () => {
 		const output = Schema.decodeUnknownSync(DescribeDashboardSchemaOutput)(result.structuredContent)
 		expect(output.section).toBe("units")
 		expect(markdown(result)).toMatch(/^## Units/)
+	})
+
+	it("lists every create_dashboard template in the templates section", async () => {
+		const result = await call("describe_dashboard_schema", { section: "templates" })
+		const output = Schema.decodeUnknownSync(DescribeDashboardSchemaOutput)(result.structuredContent)
+		expect(output.section).toBe("templates")
+		const missing = DASHBOARD_TEMPLATES.filter((t) => !output.markdown.includes(`\`${t.id}\``))
+		expect(missing.map((t) => t.id)).toEqual([])
 	})
 
 	it("inspects an unsupported widget by showing its stored data source", async () => {

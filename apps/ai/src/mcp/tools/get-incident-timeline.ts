@@ -21,7 +21,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 		name: "get_incident_timeline",
 		title: "Incident Timeline",
 		description:
-			"Incidents for one alert rule (or all rules) with first and last trigger, last notification and resolution timestamps: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
+			"Alert-rule incidents (not error-issue incidents) for one rule or all, with first and last trigger, last notification and resolution timestamps: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
 		parameters: Schema.Struct({
 			rule_id: P.optionalResourceId(
 				"alertRule",

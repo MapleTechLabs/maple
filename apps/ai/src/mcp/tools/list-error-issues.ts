@@ -184,7 +184,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 		name: "list_error_issues",
 		title: "List Error Issues",
 		description:
-			"List persistent error issues (one per exception fingerprint, plus alert and integration issues) with workflow state, counts, assignment and lease holder. An issue survives new occurrences, so its state, notes and assignee persist. The `Issue ID` is what the issue tools take; the `Fingerprint` column is what error_detail takes. A `regressed` issue was fixed before and started firing again: read its events before investigating it as new.",
+			"List tracked issues (one per error fingerprint, plus alert and integration issues) with workflow state, assignee, lease and regression history; state and notes persist across occurrences. For ad-hoc error counts in a window use find_errors. The `Issue ID` is what the issue tools take; the `Fingerprint` column is what error_detail takes. A `regressed` issue was fixed before and fired again: read its events before investigating it as new.",
 		parameters: Schema.Struct({
 			workflow_state: P.optionalOneOf(
 				WorkflowState.literals,
@@ -196,9 +196,9 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			),
 			kind: P.optionalOneOf(
 				IssueKind.literals,
-				"Filter by issue kind: error (fingerprint groups), alert (alert-rule incidents) or integration (third-party webhooks)",
+				"Filter by issue kind: error (fingerprint groups), alert (alert-rule breaches; see list_alert_incidents) or integration (third-party webhooks)",
 			),
-			service: P.service("Filter by service name"),
+			service: P.service(),
 			last_seen_after: P.optionalTimestamp(
 				'Only issues with an occurrence after this time, the way to ask "what fired recently" without paging the whole backlog',
 			),

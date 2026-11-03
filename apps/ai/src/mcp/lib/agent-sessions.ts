@@ -114,7 +114,7 @@ export interface SessionWindow {
  *  levels, without it the session's bounds cost a resolve round trip first. */
 export const sessionWindowParams = {
 	start_time: P.optionalTimestamp(
-		"Start of the session's window (both bounds or neither; pass them as the `get_agent_session` call suggested by `list_agent_sessions` carries them, which makes the read a seek rather than a lookup)",
+		"Start of the session's window. Copy start_time and end_time from the list_agent_sessions row (both or neither); it makes the read fast",
 	),
 	end_time: P.optionalTimestamp("End of the session's window (see start_time)"),
 }

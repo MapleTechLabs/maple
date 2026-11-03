@@ -45,9 +45,10 @@ it("historical replay reads its head but cannot read a future fix or execute git
 		expect((await call("sandbox_grep", { pattern: "historical", glob: "**/*.{ts,tsx}" })).isError).toBe(
 			true,
 		)
-		expect(JSON.stringify(await call("sandbox_read_file", { path: "code.ts", endLine: 3 }))).toContain(
-			"endLine",
-		)
+		// A camelCase spelling is read as the declared `end_line`, not dropped with a warning.
+		const camel = JSON.stringify(await call("sandbox_read_file", { path: "code.ts", endLine: 3 }))
+		expect(camel).toContain("historical bug")
+		expect(camel).not.toContain("is not a parameter")
 		const blocked = await call("sandbox_read_file", { path: "code.ts", ref: future })
 		expect(blocked.isError).toBe(true)
 		expect(JSON.stringify(blocked)).not.toContain("future fix")

@@ -78,7 +78,7 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 			"revoked grants, failing or stale pollers, repositories that do not sync, scrape targets that error. Each " +
 			"provider lists its resources (repositories, zones, Workers, Logpush jobs, Hyperdrive configs, Railway " +
 			"environments, databases, scrape targets) worst first. Answers 'what is connected' and 'why is my Cloudflare / " +
-			"Railway / PlanetScale data missing'. Read from Maple's own state, so it never calls the providers.",
+			"Railway / PlanetScale data missing'. Read from Maple's own state, so it never calls the providers. Which sender stopped sending: list_sources.",
 		parameters: Schema.Struct({
 			provider: P.optionalOneOf(
 				INTEGRATION_PROVIDERS,

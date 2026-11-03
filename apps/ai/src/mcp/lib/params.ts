@@ -313,15 +313,15 @@ export const timeWindow = (spec: TimeWindowSpec) => {
 	const cap =
 		spec.maxHours === undefined
 			? ""
-			: ` Covers at most ${formatHours(spec.maxHours)}: a wider window keeps end_time and is narrowed to the ${formatHours(spec.maxHours)} before it.`
+			: ` Covers at most ${formatHours(spec.maxHours)}; a wider window is narrowed to the ${formatHours(spec.maxHours)} before end_time.`
 	return {
 		spec,
 		fields: {
 			start_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: `Start of the window, ${TIMESTAMP_FORMAT}. Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
+				description: `Window start, ${TIMESTAMP_FORMAT}. Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
 			}),
 			end_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: `End of the window, ${TIMESTAMP_FORMAT}. Default: now; a future time is clamped to now.`,
+				description: "Window end, UTC, same format. Default: now.",
 			}),
 		},
 		resolve: (

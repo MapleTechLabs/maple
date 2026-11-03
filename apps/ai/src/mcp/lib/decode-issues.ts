@@ -10,6 +10,7 @@
  * keys at the parameter they were probably meant to be.
  */
 import { Schema, SchemaIssue } from "effect"
+import { parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { stringifyJson } from "./json"
 
 export interface NormalizedArguments {
@@ -18,6 +19,8 @@ export interface NormalizedArguments {
 	readonly renamed: ReadonlyArray<readonly [from: string, to: string]>
 	/** Keys the schema does not have, with the parameters each was probably meant to be. */
 	readonly unknown: ReadonlyArray<UnknownArgument>
+	/** How a relative `time_range` was read, for the result's warnings. */
+	readonly expanded?: ReadonlyArray<string>
 }
 
 export interface UnknownArgument {
@@ -149,19 +152,28 @@ export const normalizeArguments = (
 	known: ReadonlyArray<string>,
 	aliases: Readonly<Record<string, string>> = {},
 	enums: ReadonlyMap<string, ReadonlyArray<unknown>> = new Map(),
+	nowMs?: number,
 ): NormalizedArguments => {
 	if (!isPlainObject(input)) return { args: input, renamed: [], unknown: [] }
 	const knownSet = new Set(known)
 	const args: Record<string, unknown> = {}
 	const renamed: Array<readonly [string, string]> = []
 	const unknown: Array<UnknownArgument> = []
+	const expanded: Array<string> = []
+	const lookbacks: Array<readonly [key: string, value: unknown, ms: number]> = []
 	for (const [key, value] of Object.entries(input)) {
 		if (knownSet.has(key)) {
 			args[key] = canonicalEnumValue(value, enums.get(key))
 			continue
 		}
-		const target = aliases[key]
-		if (target !== undefined && knownSet.has(target)) {
+		// Before aliases: `since: "24h"` is a lookback, `since: "2026-11-01 00:00:00"` the alias.
+		const lookbackMs = nowMs === undefined ? undefined : lookbackDurationMs(key, value, knownSet)
+		if (lookbackMs !== undefined) {
+			lookbacks.push([key, value, lookbackMs])
+			continue
+		}
+		const target = aliasTarget(key, value, knownSet, aliases)
+		if (target !== undefined) {
 			// The current name wins when a caller sends both.
 			if (!(target in input)) args[target] = canonicalEnumValue(value, enums.get(target))
 			renamed.push([key, target])
@@ -169,18 +181,102 @@ export const normalizeArguments = (
 		}
 		unknown.push({ key, suggestions: suggestParameters(key, known) })
 	}
-	return { args, renamed, unknown }
+	// After every alias, so an explicit start wins and the lookback ends at the resolved end_time.
+	for (const [key, value, ms] of lookbacks) {
+		if (nowMs === undefined || args.start_time !== undefined) {
+			unknown.push({ key, suggestions: suggestParameters(key, known) })
+			continue
+		}
+		const end = typeof args.end_time === "string" ? warehouseTimeMs(args.end_time) : undefined
+		const start = warehouseDateTime((end ?? nowMs) - ms)
+		args.start_time = start
+		renamed.push([key, "start_time"])
+		expanded.push(
+			`\`${key}: ${stringifyJson(value)}\` was read as start_time=${start} (UTC), ${end === undefined ? "to now" : "before end_time"}.`,
+		)
+	}
+	return { args, renamed, unknown, ...(expanded.length === 0 ? undefined : { expanded }) }
+}
+
+const snakeCase = (key: string): string => key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()
+
+/**
+ * The declared parameter an undeclared key names: a published alias, the key in snake_case
+ * (`issueId`), or its singular/plural twin (`workflow_states`, `environment`). A list (or a
+ * comma list) never maps onto the singular twin, which takes one value.
+ */
+const aliasTarget = (
+	key: string,
+	value: unknown,
+	known: ReadonlySet<string>,
+	aliases: Readonly<Record<string, string>>,
+): string | undefined => {
+	const snake = snakeCase(key)
+	const isList = Array.isArray(value) || (typeof value === "string" && value.includes(","))
+	const twin = snake.endsWith("s") ? (isList ? undefined : snake.slice(0, -1)) : `${snake}s`
+	const candidates = [aliases[key], snake, aliases[snake], twin]
+	return candidates.find(
+		(candidate) => candidate !== undefined && candidate !== key && known.has(candidate),
+	)
+}
+
+const RELATIVE_UNITS_MS = new Map([
+	["m", 60_000],
+	["h", 3_600_000],
+	["d", 86_400_000],
+	["w", 604_800_000],
+])
+
+/** Keys that name a whole lookback. Not `window` or `duration`: `window_minutes`, `min_duration_ms`. */
+const LOOKBACK_KEYS: ReadonlySet<string> = new Set([
+	"time_range",
+	"timerange",
+	"time_frame",
+	"timeframe",
+	"time_window",
+	"timespan",
+	"lookback",
+	"since",
+	"period",
+	"last",
+	"range",
+])
+
+/** A wire timestamp (`YYYY-MM-DD HH:mm:ss` or ISO 8601, UTC) in epoch ms, when it parses. */
+const warehouseTimeMs = (value: string): number | undefined => {
+	const ms = parseWarehouseDateTime(value)
+	return Number.isNaN(ms) ? undefined : ms
+}
+
+/** `6h`, `30m`, `7 days`, `last 24 hours`: a lookback ending at end_time, else now. */
+const RELATIVE_DURATION =
+	/^(?:last\s+|past\s+)?(\d{1,4})\s*(m|min|mins|minutes?|h|hr|hrs|hours?|d|days?|w|weeks?)(?:\s+ago)?$/i
+
+/** Longest lookback read from a duration: past it the window is a typo, not a request. */
+const MAX_LOOKBACK_MS = 400 * 86_400_000
+
+/** A lookback key holding a relative duration (`6h`, `last 2 days`), in ms. */
+const lookbackDurationMs = (key: string, value: unknown, known: ReadonlySet<string>): number | undefined => {
+	if (!LOOKBACK_KEYS.has(snakeCase(key)) || !known.has("start_time") || typeof value !== "string")
+		return undefined
+	const match = RELATIVE_DURATION.exec(value.trim())
+	if (match === null) return undefined
+	const unit = RELATIVE_UNITS_MS.get((match[2] ?? "").toLowerCase().charAt(0))
+	const ms = unit === undefined ? 0 : Number(match[1]) * unit
+	return ms > 0 && ms <= MAX_LOOKBACK_MS ? ms : undefined
 }
 
 /**
  * Warnings for the result text, one per ignored key. The call still ran, so each says the result
  * is for the call without that key: a model that sent `time_range` otherwise reads a default window.
  */
-export const argumentWarnings = (normalized: NormalizedArguments, tool: string): ReadonlyArray<string> =>
-	normalized.unknown.map(
+export const argumentWarnings = (normalized: NormalizedArguments, tool: string): ReadonlyArray<string> => [
+	...(normalized.expanded ?? []),
+	...normalized.unknown.map(
 		({ key, suggestions }) =>
 			`\`${key}\` is not a parameter of \`${tool}\`. It was ignored, and this result is for the call without it.${didYouMean(suggestions)}`,
-	)
+	),
+]
 
 interface ParameterDoc {
 	readonly type: string

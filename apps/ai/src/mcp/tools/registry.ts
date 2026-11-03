@@ -1,7 +1,7 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Effect, Schema, type SchemaAST } from "effect"
+import { Clock, Effect, Schema, type SchemaAST } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
@@ -492,8 +492,8 @@ const parameterNames = (entry: MapleToolCatalogEntry): ReadonlyArray<string> => 
 }
 
 /** How a call's arguments are read before decoding: aliases applied, enum case fixed, unknowns dropped. */
-const normalizeFor = (entry: MapleToolCatalogEntry, input: unknown) =>
-	normalizeArguments(input, parameterNames(entry), entry.aliases, enumValues(inputSchemaOf(entry)))
+const normalizeFor = (entry: MapleToolCatalogEntry, input: unknown, nowMs?: number) =>
+	normalizeArguments(input, parameterNames(entry), entry.aliases, enumValues(inputSchemaOf(entry)), nowMs)
 
 const isArgumentRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null && !Array.isArray(value)
@@ -623,7 +623,8 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		})
 	}
 
-	const normalized = normalizeFor(definition, input ?? {})
+	const nowMs = yield* Clock.currentTimeMillis
+	const normalized = normalizeFor(definition, input ?? {}, nowMs)
 	yield* Effect.annotateCurrentSpan({
 		"maple.mcp.tool": definition.name,
 		"maple.mcp.tool.arguments": Object.keys(typeof input === "object" && input !== null ? input : {})

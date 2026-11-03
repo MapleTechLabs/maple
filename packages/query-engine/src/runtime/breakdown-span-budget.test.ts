@@ -54,11 +54,13 @@ describe("rawBreakdownSpanVerdict", () => {
 		// 1,000 spans over 10 days = 100/day; a 250 budget fits 2.5 days -> 60 hours.
 		const verdict = rawBreakdownSpanVerdict([row("ingest", 1_000)], {}, windowOf(240), 250)
 		expect(verdict.exceeded?.details.join("\n")).toContain("Narrow the time range to 60 hours or less")
+		expect(verdict.exceeded?.fittingRangeSeconds).toBe(60 * 3600)
 	})
 
 	it("suggests under an hour when even one hour is over budget", () => {
 		const verdict = rawBreakdownSpanVerdict([row("ingest", 1_000)], {}, windowOf(4), 100)
 		expect(verdict.exceeded?.details.join("\n")).toContain("under an hour")
+		expect(verdict.exceeded?.fittingRangeSeconds).toBeUndefined()
 	})
 })
 

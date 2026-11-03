@@ -49,10 +49,37 @@ let traceWindowReads = 0
 
 // Order matters — first match wins. Specific ids before the table fallbacks.
 const regressionFixtures: FixtureRule[] = [
+	// inspect_span without a timestamp first reads the trace's bounds off `trace_index` alone.
+	{
+		match: (sql) => /\bfrom\s+trace_index\b/i.test(sql) && !/\bfrom\s+traces\b/i.test(sql),
+		rows: (sql: string) => {
+			const traceId = /TraceId = '([^']+)'/.exec(sql)?.[1] ?? ""
+			return [{ traceId, timestamp: "2026-06-02 10:00:00", endTimestamp: "2026-06-02 10:00:05" }]
+		},
+	},
 	// inspect_span not-found: point lookup whose span id has no row.
 	{ match: (sql) => sql.includes(MISSING_SPAN_ID), rows: [] },
 	// inspect_span found: point lookup returns one fully-attributed row.
 	{ match: (sql) => sql.includes(SPAN_DETAIL_SPAN_ID), rows: makeSpanDetailRows() },
+	// A span_name breakdown over raw spans, once its window fits the span budget.
+	{
+		match: (sql) => /\bfrom\s+traces\b/i.test(sql) && sql.includes("AS apdexScore"),
+		rows: [
+			{
+				name: "checkout",
+				count: 5,
+				spanCount: 5,
+				avgDuration: 0,
+				p50Duration: 0,
+				p95Duration: 0,
+				p99Duration: 0,
+				errorRate: 0,
+				satisfiedCount: 0,
+				toleratingCount: 0,
+				apdexScore: 0,
+			},
+		],
+	},
 	// The trace's own bounds, which `inspect_span` resolves before the AI read
 	// when — and only when — the caller passed no timestamp. The one query over
 	// `traces` that counts the trace's spans, counted so the skip is testable.
@@ -94,6 +121,24 @@ const regressionFixtures: FixtureRule[] = [
 	{ match: (sql) => sql.includes(DEEP_TRACE_ID) && readsTraceSpans(sql), rows: makeDeepTraceSpans() },
 	// Large trace (> budget) → bounded overview. Fallback for any other span tree.
 	{ match: (sql) => readsTraceSpans(sql), rows: makeLargeTraceSpans() },
+	// The span budget's per-service volume: 100M spans an hour, so a raw-span breakdown fits 2 hours.
+	{
+		match: (sql) => sql.includes("firstHourSpanCount"),
+		rows: (sql: string) => {
+			const [start, end] = [...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)].map((m) =>
+				Date.parse(`${m[1]}Z`),
+			)
+			const hours = start === undefined || end === undefined ? 0 : (end - start) / 3_600_000
+			return [
+				{
+					serviceName: FIXTURES.service,
+					spanCount: hours * 100_000_000,
+					firstHourSpanCount: 0,
+					lastHourSpanCount: 0,
+				},
+			]
+		},
+	},
 	// search_logs' total, read alongside the page.
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql) && /\bAS\s+total\b/i.test(sql), rows: [{ total: 3 }] },
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql), rows: makeTraceLogs() },
@@ -431,6 +476,33 @@ describe("agent-recoverable error messages", () => {
 		expect(text).toContain('"service", "attribute", "resource_attribute"')
 		expect(text).toContain('kind="timeseries"')
 		expect(text).not.toContain("SchemaError")
+	})
+
+	it("narrows a raw-span breakdown to the widest window that fits instead of failing", async () => {
+		const result = await runToolDirect(rt, "query_data", {
+			source: "traces",
+			kind: "breakdown",
+			group_by: "span_name",
+			start_time: "2026-06-01 00:00:00",
+			end_time: "2026-06-02 00:00:00",
+		})
+		const text = markdown(result)
+		expect(result.isError).not.toBe(true)
+		expect(text).toContain("start_time: moved to 2026-06-01 22:00:00")
+	})
+
+	it("narrows an unfiltered week-long breakdown past the range cap and then the span budget", async () => {
+		const result = await runToolDirect(rt, "query_data", {
+			source: "traces",
+			kind: "breakdown",
+			group_by: "span_name",
+			start_time: "2026-05-26 00:00:00",
+			end_time: "2026-06-02 00:00:00",
+		})
+		const text = markdown(result)
+		expect(result.isError).not.toBe(true)
+		expect(text).toContain("start_time: moved to 2026-06-01 00:00:00")
+		expect(text).toContain("start_time: moved to 2026-06-01 22:00:00")
 	})
 
 	it("names the valid group_by values for the chosen source", async () => {

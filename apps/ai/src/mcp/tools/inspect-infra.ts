@@ -114,12 +114,10 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Inspect Infrastructure",
 		description:
-			"One host, Kubernetes pod/node/workload, or Docker container in depth: identity (OS, node, owner workload, image, QoS class; restart count for containers; per-mount disk use for hosts), " +
-			"CPU and memory over the window as min/avg/max/last with the time of the peak, and its busiest children (a node's or workload's pods, a host's containers). " +
-			"Also one Cloudflare zone (section=traffic: requests, 5xx, latency, status and cache mix; breakdown: top values of `dimension`; security: firewall events and top rules; dns: queries and top names), " +
-			"Cloudflare Worker (invocations by outcome, duration and CPU time), Railway service (CPU, memory, network, disk, replicas) or PlanetScale database (CPU, memory, connections, replica lag, storage) over the window. " +
-			"Use after list_infra, or to check whether a slow or failing service was starved of CPU or memory: compare the peak time with the incident. " +
-			"Same default window as list_infra (1 hour), so the numbers match; pass start_time to look further back.",
+			"One infrastructure entity in depth (host, Kubernetes pod/node/workload, container, Cloudflare zone or Worker, Railway service, PlanetScale database): " +
+			"identity, then CPU and memory (or the provider's traffic and resources) as min/avg/max/last with the peak time, and its busiest children. " +
+			"Use after list_infra, or to check whether a slow service was starved: compare the peak time with the incident. " +
+			"Same default window as list_infra (1 hour); pass start_time to look further back.",
 		parameters: Schema.Struct({
 			kind: entityKind("What `name` refers to"),
 			name: P.text(
@@ -136,7 +134,10 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 			environment: P.optionalText(
 				"Railway environment name, when the same service runs in several environments",
 			),
-			section: P.optionalOneOf(ZONE_SECTIONS, "Cloudflare zones only: which view (default traffic)"),
+			section: P.optionalOneOf(
+				ZONE_SECTIONS,
+				"Cloudflare zones only (default traffic): traffic is requests, 5xx, latency, status and cache mix; breakdown ranks by `dimension`; security is firewall events and top rules; dns is queries and top names",
+			),
 			dimension: P.optionalOneOf(
 				ZONE_DIMENSIONS,
 				"Cloudflare zones with section=breakdown: what to rank requests by (default path)",

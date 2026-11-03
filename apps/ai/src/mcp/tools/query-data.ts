@@ -3,7 +3,7 @@ import { describeInvalidQuerySpec, tokensFor } from "../lib/query-spec-tokens"
 import { Effect, Schema } from "effect"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { MetricType, QuerySpec } from "@maple/query-engine"
+import { MetricType, QuerySpec, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import { ProductEventKind } from "@maple/domain/query-engine"
 import { QueryDataOutput } from "@maple/domain/mcp-outputs"
@@ -84,7 +84,9 @@ const queryDataSchema = Schema.Struct({
 	attribute_key: P.optionalText(
 		"Attribute to filter on, or to group by with group_by=attribute. Span (or log/metric label) and resource attributes both work; the scope is resolved automatically",
 	),
-	attribute_value: P.optionalText("Exact value for attribute_key. Also applies when grouping by the same key"),
+	attribute_value: P.optionalText(
+		"Exact value for attribute_key. Also applies when grouping by the same key",
+	),
 	attribute_scope: P.optionalOneOf(
 		ATTRIBUTE_SCOPES,
 		"Where attribute_key lives: 'span' (span, log or metric-datapoint attributes) or 'resource' (deployment.environment, k8s.pod.name...). Resolved from the known keys when omitted",
@@ -98,7 +100,9 @@ type Params = typeof queryDataSchema.Type
 const queryDataDescription =
 	"Aggregate traces, logs, metrics or product events into a timeseries or a top-N breakdown. " +
 	"Start here for trends, comparisons and top-N; for errors prefer find_errors and error_detail; " +
-	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result."
+	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result. " +
+	"A traces breakdown by span_name or attribute reads raw spans: set `service` and keep the window short " +
+	"(a window too large is narrowed, with a note). For endpoint volume over days use route_usage."
 
 /** Default metric/group_by per source, as `[default, available]` for the decisions list. */
 const DEFAULT_METRIC = {
@@ -193,7 +197,8 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 			return withFilters({
 				...(params.service && { serviceName: params.service }),
 				...(params.span_name && { spanName: params.span_name }),
-				...(params.span_name && resolved.spanNameContains && { matchModes: { spanName: "contains" } }),
+				...(params.span_name &&
+					resolved.spanNameContains && { matchModes: { spanName: "contains" } }),
 				...(params.root_spans_only && { rootSpansOnly: true }),
 				...environmentsOf(params),
 				...(params.commit_shas &&
@@ -220,7 +225,9 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 				...(params.page_path && { pagePaths: [params.page_path] }),
 				...(params.service && { serviceNames: [params.service] }),
 				...(groupKey !== undefined && { groupByAttributeKey: groupKey }),
-				...(attributeFilterOf(params) !== undefined && { attributeFilters: [attributeFilterOf(params)] }),
+				...(attributeFilterOf(params) !== undefined && {
+					attributeFilters: [attributeFilterOf(params)],
+				}),
 			})
 		case "metrics":
 			return {
@@ -332,7 +339,8 @@ const nextCallsFor = (output: Output): ReadonlyArray<NextCall> => {
 	}
 }
 
-const isWeightedCount = (output: Output) => output.queryContext.source === "traces" && output.metric === "count"
+const isWeightedCount = (output: Output) =>
+	output.queryContext.source === "traces" && output.metric === "count"
 
 /** Trace counts are sample-weighted; latencies are not (tail sampling skews them). */
 const samplingNote = (output: Output): string | undefined => {
@@ -433,7 +441,10 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Querying telemetry", "Running a query", "Pulling the numbers"],
 		handler: Effect.fn("McpTool.queryData")(function* (params) {
-			const { st, et } = yield* WINDOW.resolve(params, "query_data")
+			const resolvedWindow = yield* WINDOW.resolve(params, "query_data")
+			const et = resolvedWindow.et
+			// Moved forward by `execute` when the window is past a breakdown limit.
+			let st = resolvedWindow.st
 
 			if (params.attribute_value !== undefined && params.attribute_key === undefined) {
 				return yield* new McpInvalidInputError({
@@ -557,32 +568,53 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							}),
 					),
 				)
-				const response = yield* queryEngine
-					.execute(tenant, { startTime: st, endTime: et, query })
-					.pipe(
-						Effect.catchTags({
-							"@maple/http/errors/QueryEngineValidationError": (error) =>
-								Effect.fail(
-									new McpInvalidInputError({
-										message:
-											error.details.length > 0
-												? `${error.message}\n${error.details.join("\n")}`
-												: error.message,
-									}),
-								),
-							"@maple/http/errors/QueryEngineTimeoutError": () =>
-								Effect.fail(
-									new McpQueryBudgetError({
-										message:
-											"The query ran past its time limit. Narrow start_time/end_time, add filters, or use a coarser bucket_seconds.",
-										pipeName: "query_data",
-										setting: "max_execution_time",
-									}),
-								),
-							// Shared exact warehouse table; the mapping appends the schema-apply hint for drift.
-							...warehouseReadToMcpHandlers("query_data"),
+				// Moves start_time forward when the window is past a breakdown limit: the range cap,
+				// then the span budget, so at most twice, and only ever to a narrower window.
+				const execute = (narrowings: number): ReturnType<typeof queryEngine.execute> =>
+					queryEngine.execute(tenant, { startTime: st, endTime: et, query }).pipe(
+						Effect.catchTag("@maple/http/errors/QueryEngineValidationError", (error) => {
+							const fitting = error.fittingRangeSeconds
+							const narrowedMs =
+								fitting === undefined
+									? undefined
+									: parseWarehouseDateTime(et) - fitting * 1000
+							if (
+								narrowedMs === undefined ||
+								narrowedMs <= parseWarehouseDateTime(st) ||
+								narrowings >= 2
+							)
+								return Effect.fail(error)
+							st = warehouseDateTime(narrowedMs)
+							decisions.push(
+								`start_time: moved to ${st}, the widest window this breakdown runs on (${error.details[0] ?? error.message}). Query the earlier part with its own end_time.`,
+							)
+							return execute(narrowings + 1)
 						}),
 					)
+				const response = yield* execute(0).pipe(
+					Effect.catchTags({
+						"@maple/http/errors/QueryEngineValidationError": (error) =>
+							Effect.fail(
+								new McpInvalidInputError({
+									message:
+										error.details.length > 0
+											? `${error.message}\n${error.details.join("\n")}`
+											: error.message,
+								}),
+							),
+						"@maple/http/errors/QueryEngineTimeoutError": () =>
+							Effect.fail(
+								new McpQueryBudgetError({
+									message:
+										"The query ran past its time limit. Narrow start_time/end_time, add filters, or use a coarser bucket_seconds.",
+									pipeName: "query_data",
+									setting: "max_execution_time",
+								}),
+							),
+						// Shared exact warehouse table; the mapping appends the schema-apply hint for drift.
+						...warehouseReadToMcpHandlers("query_data"),
+					}),
+				)
 				const result = response.result
 				const mapped: Output["result"] | undefined =
 					result.kind === "timeseries"
@@ -623,8 +655,10 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				? yield* emptyResultHints(
 						{
 							service: params.service,
-							environments: params.source === "product_events" ? undefined : params.environments,
-							attributeKey: params.source === "product_events" ? undefined : params.attribute_key,
+							environments:
+								params.source === "product_events" ? undefined : params.environments,
+							attributeKey:
+								params.source === "product_events" ? undefined : params.attribute_key,
 							spanName: params.source === "traces" ? params.span_name : undefined,
 						},
 						{ startTime: st, endTime: et },

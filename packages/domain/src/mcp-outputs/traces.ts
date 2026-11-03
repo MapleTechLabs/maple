@@ -39,6 +39,8 @@ export const SearchTracesFilters = Schema.Struct({
 
 export const SearchTracesOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
+	/** Set when the window before this time did not finish: only from here to the end was read. */
+	coveredFrom: Schema.optionalKey(Schema.String),
 	pagination: Schema.optionalKey(OutputPagination),
 	traces: Schema.Array(TraceSummaryRow),
 	filters: SearchTracesFilters,
@@ -198,6 +200,8 @@ export const LogSearchFilters = Schema.Struct({
 export const SearchLogsOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	totalCount: Schema.Number,
+	/** `totalCount` is only what the pages so far show: the exact count did not finish. */
+	totalIsLowerBound: Schema.optionalKey(Schema.Boolean),
 	pagination: Schema.optionalKey(OutputPagination),
 	logs: Schema.Array(LogEntryRow),
 	filters: Schema.optionalKey(LogSearchFilters),

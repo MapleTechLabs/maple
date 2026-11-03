@@ -55,9 +55,11 @@ const SimpleWidgetSpec = Schema.Struct({
 	metric: Schema.optionalKey(Schema.String),
 	metric_name: Schema.optionalKey(Schema.String),
 	metric_type: Schema.optionalKey(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
+	service: Schema.optionalKey(Schema.String),
+	/** Retired spelling of `service`, still accepted; `service` wins when both are set. */
 	service_name: Schema.optionalKey(Schema.String),
 	group_by: Schema.optionalKey(Schema.String),
-	/** A whereClause in the query-builder grammar, AND-ed with `service_name`. */
+	/** A whereClause in the query-builder grammar, AND-ed with `service`. */
 	where: Schema.optionalKey(Schema.String),
 	unit: Schema.optionalKey(Schema.Literals(WIDGET_UNIT_TOKENS)),
 })
@@ -144,11 +146,9 @@ function simpleSpecToWidget(
 	const metricType = spec.metric_type
 
 	const metric = spec.metric ?? (source === "metrics" ? "avg" : "count")
+	const service = spec.service ?? spec.service_name
 	const extraWhere = spec.where?.trim() ?? ""
-	const where = [
-		spec.service_name ? `service.name = ${quoteWhereValue(spec.service_name)}` : "",
-		extraWhere,
-	]
+	const where = [service ? `service.name = ${quoteWhereValue(service)}` : "", extraWhere]
 		.filter((clause) => clause !== "")
 		.join(" AND ")
 
@@ -203,14 +203,14 @@ function simpleSpecToWidget(
 
 	if (viz === "list") {
 		if (extraWhere !== "") {
-			return `Widget "${spec.title}": where is not supported on list widgets; use service_name, or a chart/table.`
+			return `Widget "${spec.title}": where is not supported on list widgets; use service, or a chart/table.`
 		}
 		if (source === "logs") {
 			return {
 				id,
 				visualization: viz,
 				dataSource: makeRouteDataSource("list_logs", {
-					...(spec.service_name ? { service: spec.service_name } : undefined),
+					...(service ? { service } : undefined),
 					limit: 10,
 				}),
 				display: { title: spec.title, listDataSource: "logs", listLimit: 10 },
@@ -221,7 +221,7 @@ function simpleSpecToWidget(
 			id,
 			visualization: viz,
 			dataSource: makeRouteDataSource("list_traces", {
-				...(spec.service_name ? { service: spec.service_name } : undefined),
+				...(service ? { service } : undefined),
 				limit: 10,
 			}),
 			display: { title: spec.title, listDataSource: "traces", listLimit: 10 },
@@ -323,9 +323,6 @@ const SIMPLE_WIDGETS_EXAMPLE =
 // Tool registration
 
 export function registerCreateDashboardTool(server: McpToolRegistrar) {
-	// The template descriptions are shared with the web template gallery
-	// (`listTemplateMetadata`); only the separator is this tool's.
-	const templateList = DASHBOARD_TEMPLATES.map((t) => `  ${t.id}: ${t.description}`).join("\n")
 	const groupByDoc = (source: keyof typeof VALID_GROUP_BY) =>
 		[
 			...(VALID_GROUP_BY[source] ?? []),
@@ -340,9 +337,8 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 		// modes to use, not a schema reference. The per-parameter descriptions carry
 		// the shapes, and `describe_dashboard_schema` carries the full vocabulary.
 		description:
-			"Create a dashboard one of three ways: a `template`, simplified `widgets` specs, or full `dashboard_json`.\n\n" +
-			"Templates:\n" +
-			templateList +
+			"Create a dashboard one of three ways: a `template`, simplified `widgets` specs, or full `dashboard_json`. " +
+			'Templates (service health, errors, HTTP, runtimes, databases, integrations) are listed by describe_dashboard_schema section "templates".' +
 			"\n\nTemplates chart one service or host at a time. To compare entities in one chart (CPU per host, memory per pod), " +
 			"use `widgets` on source=metrics with group_by `resource.host.name` / `resource.k8s.pod.name`; list_infra names the metrics." +
 			"\n\nCreated widgets are inspected (up to 12) and returned with a verdict " +
@@ -351,7 +347,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			name: P.text("Dashboard name"),
 			template: P.optionalOneOf(
 				TEMPLATE_IDS,
-				"Default service-health when neither widgets nor dashboard_json is given; dashboard_json alone selects custom.",
+				'Default service-health when neither widgets nor dashboard_json is given; dashboard_json alone selects custom. What each charts: describe_dashboard_schema section "templates".',
 			),
 			service: P.service("Scope template widgets to a specific service"),
 			time_range: P.optionalText(
@@ -367,8 +363,8 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			),
 			widgets: P.optionalJson(
 				Schema.Array(SimpleWidgetSpec),
-				`Simplified widget specs, one per widget: { title, visualization?: ${SIMPLE_SPEC_VISUALIZATIONS.join("|")}, source: ${QUERY_BUILDER_DATA_SOURCES.join("|")}, metric?, metric_name?, metric_type?, service_name?, group_by?, where?, unit?: ${WIDGET_UNIT_TOKENS.join("|")} }. ` +
-					`Not the query_data vocabulary: group_by is ${groupByDoc("traces")} for traces, ${groupByDoc("logs")} for logs, ${groupByDoc("metrics")} for metrics, ${groupByDoc("product_events")} for product_events. ` +
+				`Simplified widget specs, one per widget: { title, visualization?: ${SIMPLE_SPEC_VISUALIZATIONS.join("|")}, source: ${QUERY_BUILDER_DATA_SOURCES.join("|")}, metric?, metric_name?, metric_type?, service?, group_by?, where?, unit?: ${WIDGET_UNIT_TOKENS.join("|")} }. ` +
+					`group_by is ${groupByDoc("traces")} for traces, ${groupByDoc("logs")} for logs, ${groupByDoc("metrics")} for metrics, ${groupByDoc("product_events")} for product_events (query_data spellings like service, span_name also work). ` +
 					"table needs a group_by; list shows recent traces or logs. Charts default to group_by service.name. " +
 					'where is a whereClause (describe_dashboard_schema "queries"), e.g. attr.state = "idle" to read one state of a per-state metric like system.cpu.utilization (unscoped it averages to about 1/states). ' +
 					"unit percent expects a 0-1 fraction, percent_100 a 0-100 value.",
