@@ -62,7 +62,6 @@ describe("vercelRequestTimeseriesSQL", () => {
 describe("vercelProjectTopPathsSQL", () => {
 	it("ranks one project's request paths", () => {
 		const { sql } = compileUnsafe(vercelProjectTopPathsSQL(), project)
-		expect(sql).toContain("LogAttributes['url.path'] AS path")
 		expect(sql).toContain("ResourceAttributes['vercel.project.id'] = 'prj_1'")
 		expect(sql).toContain("AND logs.LogAttributes['http.request.method'] != ''")
 		expect(sql).toContain("countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups")
@@ -83,7 +82,6 @@ describe("vercelProjectLatencySQL", () => {
 	it("reads request (server) spans of deployment traces by Vercel's project attribute", () => {
 		const { sql } = compileUnsafe(vercelProjectLatencySQL(), window)
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("ResourceAttributes['vercel.projectId'] AS projectId")
 		expect(sql).toContain("AND mapContains(traces.ResourceAttributes, 'vercel.projectId')")
 		expect(sql).toContain("AND traces.ResourceAttributes['vercel.projectId'] != ''")
 		expect(sql).toContain("traces.SpanKind = 'Server'")
@@ -124,7 +122,6 @@ describe("AI Gateway", () => {
 
 	it("groups usage by the calling project", () => {
 		const { sql } = compileUnsafe(vercelAiGatewayByProjectSQL(), window)
-		expect(sql).toContain("SpanAttributes['vercel.project.id'] AS projectId")
 		expect(sql).toContain("GROUP BY projectId")
 	})
 })

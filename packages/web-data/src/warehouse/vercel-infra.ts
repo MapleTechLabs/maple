@@ -41,7 +41,8 @@ export const getVercelProjects = Effect.fn("QueryEngine.getVercelProjects")(func
 	data: VercelTimeRangeInput
 }) {
 	const input = yield* decodeInput(TimeRangeInputSchema, data, "getVercelProjects")
-	const range = resolveRange(input, yield* Clock.currentTimeMillis)
+	const nowMillis = yield* Clock.currentTimeMillis
+	const range = resolveRange(input, nowMillis)
 	return yield* runWarehouseQuery("vercelInfraProjects", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -65,7 +66,8 @@ export const getVercelRequestTimeseries = Effect.fn("QueryEngine.getVercelReques
 	data: VercelTimeseriesInput
 }) {
 	const input = yield* decodeInput(TimeseriesInputSchema, data, "getVercelRequestTimeseries")
-	const payload = timeseriesRequest(input, yield* Clock.currentTimeMillis)
+	const nowMillis = yield* Clock.currentTimeMillis
+	const payload = timeseriesRequest(input, nowMillis)
 	return yield* runWarehouseQuery("vercelInfraRequestTimeseries", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -80,7 +82,8 @@ export const getVercelProjectDetail = Effect.fn("QueryEngine.getVercelProjectDet
 	data: VercelProjectInput
 }) {
 	const input = yield* decodeInput(ProjectInputSchema, data, "getVercelProjectDetail")
-	const range = resolveRange(input, yield* Clock.currentTimeMillis)
+	const nowMillis = yield* Clock.currentTimeMillis
+	const range = resolveRange(input, nowMillis)
 	return yield* runWarehouseQuery("vercelInfraProjectDetail", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -97,7 +100,8 @@ export const getVercelAiGateway = Effect.fn("QueryEngine.getVercelAiGateway")(fu
 	data: VercelTimeseriesInput
 }) {
 	const input = yield* decodeInput(TimeseriesInputSchema, data, "getVercelAiGateway")
-	const payload = timeseriesRequest(input, yield* Clock.currentTimeMillis)
+	const nowMillis = yield* Clock.currentTimeMillis
+	const payload = timeseriesRequest(input, nowMillis)
 	return yield* runWarehouseQuery("vercelAiGateway", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
