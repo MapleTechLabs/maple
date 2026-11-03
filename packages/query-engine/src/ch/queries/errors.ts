@@ -25,6 +25,7 @@ import {
 	ErrorEvents,
 	ErrorEventsByTime,
 	ErrorFingerprintsMinutely,
+	ErrorFingerprintLineage,
 	ServiceUsage,
 	TraceFacetsHourly,
 	TraceIndex,
@@ -1278,6 +1279,27 @@ export function errorTickIssuesQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.Minute.gte(utcSecondsParam("startTime")),
 			$.Minute.lt(utcSecondsParam("endTime")),
+		])
+		.groupBy("fingerprintHash")
+		.format("JSON")
+}
+
+/**
+ * The previous-version hash of each given fingerprint seen in the window, for the
+ * ones a fingerprint version bump re-keyed. The tick asks only about the
+ * fingerprints it just scanned, so the read stays a key-prefix range.
+ */
+export function errorFingerprintLineageQuery(opts: { readonly fingerprintHashes: readonly string[] }) {
+	return from(ErrorFingerprintLineage)
+		.select(($) => ({
+			fingerprintHash: CH.toString_($.FingerprintHash),
+			previousFingerprintHash: CH.toString_(CH.any_($.PreviousFingerprintHash)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lt(utcSecondsParam("endTime")),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
 		])
 		.groupBy("fingerprintHash")
 		.format("JSON")
