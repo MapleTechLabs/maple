@@ -334,8 +334,7 @@ const toolCalls = <W extends AiToolsWindow>(
 		$.Timestamp.gte(startParam(window)),
 		$.Timestamp.lte(endParam(window)),
 		// The whole population, and the only predicate that is not a filter:
-		// `IsToolCall` is what the MV stamped on a span the vendor mapper
-		// classified as a tool call.
+		// `IsToolCall` is the ingest gateway's `maple_ai.tool_call` verdict.
 		$.IsToolCall.eq(1),
 		CH.when(opts.tool, (tool) => $.ToolName.eq(tool)),
 		CH.when(opts.service, (service) => $.ServiceName.eq(service)),
@@ -643,12 +642,6 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
  * `(TraceId, SpanId)` tuple `IN` of that page and by its own first and last
  * timestamps rather than the caller's window — so it opens the partitions those
  * calls actually landed in and no others.
- *
- * A failure materialized before 0032 carries fingerprint `0` and an empty
- * result and message. Those are one group of their own, `'0'`, which the page
- * names for what it is rather than merging into a group it may not belong to —
- * the same fill-forward edge 0031 left on the sessions list, until raw
- * retention ages it out.
  */
 
 /** How much of an argument or result payload one occurrence carries. Vendors put
@@ -1166,10 +1159,9 @@ export function aiToolDescriptionQuery() {
 			$.Timestamp.lte(param.dateTime("endTime")),
 			$.IsToolCall.eq(1),
 			$.ToolName.eq(param.string("toolName")),
-			// Rows materialized before 0032 carry '', and so does a call whose
-			// framework stamps no description. Excluding them here is what makes
-			// the `argMax` "the latest call that answered" rather than "the latest
-			// call", which on a tool instrumented last week would answer ''.
+			// A call whose framework sends no description carries ''. Excluding
+			// those here is what makes the `argMax` "the latest call that
+			// answered" rather than "the latest call".
 			$.ToolDescription.neq(""),
 		])
 		.format("JSON")

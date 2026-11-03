@@ -35,8 +35,8 @@ function firstTurn(): Spans {
 			model: "claude-opus-5",
 			genAi: {
 				conversationId: "t1",
-				usageInputTokens: 1000,
-				usageOutputTokens: 100,
+				mapleInputTokens: 1000,
+				mapleOutputTokens: 100,
 				responseFinishReasons: ["stop"],
 			},
 		}),
@@ -105,8 +105,8 @@ describe("buildSessionChecks", () => {
 				genAi: {
 					conversationId: "t2",
 					errorType: "context_length_exceeded",
-					usageInputTokens: 214832,
-					usageOutputTokens: 0,
+					mapleInputTokens: 214832,
+					mapleOutputTokens: 0,
 				},
 			}),
 		])
@@ -152,7 +152,7 @@ describe("buildSessionChecks", () => {
 				startMs: 5 * MINUTE + 3 * SECOND,
 				durationMs: SECOND,
 				model: "claude-opus-5",
-				genAi: { conversationId: "t2", usageInputTokens: 1200, usageOutputTokens: 80 },
+				genAi: { conversationId: "t2", mapleInputTokens: 1200, mapleOutputTokens: 80 },
 			}),
 		])
 
@@ -252,12 +252,12 @@ describe("buildSessionChecks", () => {
 				model: "claude-opus-5",
 				genAi: {
 					conversationId: "t1",
-					// Inclusive of the cache read, as the default convention counts it.
-					// No write reported: a Claude prompt this long that read nothing
-					// missed the cache, rather than being too short to cache.
-					usageInputTokens: 10_000,
+					// A 10K prompt. No write reported: a Claude prompt this long that
+					// read nothing missed the cache, rather than being too short to cache.
 					usageCacheReadInputTokens: cacheRead,
-					usageOutputTokens: 100,
+					mapleInputTokens: 10_000 - cacheRead,
+					mapleCacheReadTokens: cacheRead,
+					mapleOutputTokens: 100,
 				},
 			})
 		const cold = checks([
@@ -322,7 +322,7 @@ describe("buildSessionChecks", () => {
 				parentSpanId: "a1",
 				startMs,
 				durationMs: SECOND,
-				genAi: { conversationId: "t1", usageOutputTokens: 50, ...genAi },
+				genAi: { conversationId: "t1", mapleOutputTokens: 50, ...genAi },
 			})
 		const session = (genAi: (i: number) => AiSessionGenAiValues) =>
 			checks([
@@ -331,7 +331,7 @@ describe("buildSessionChecks", () => {
 			])
 
 		const short = byId(
-			session((i) => ({ usageInputTokens: 700 + 40 * i, usageCacheReadInputTokens: 0 })),
+			session((i) => ({ mapleInputTokens: 700 + 40 * i, usageCacheReadInputTokens: 0 })),
 			"prompt-cache",
 		)
 		expect(short.status).toBe("skipped")
@@ -354,7 +354,7 @@ describe("buildSessionChecks", () => {
 			const neverWritten = byId(
 				session((i) => ({
 					...claude,
-					usageInputTokens: 1_227 + 200 * i,
+					mapleInputTokens: 1_227 + 200 * i,
 					usageCacheReadInputTokens: 0,
 				})),
 				"prompt-cache",
@@ -370,13 +370,13 @@ describe("buildSessionChecks", () => {
 					? {
 							providerName: "openai",
 							requestModel: "gpt-4o-mini",
-							usageInputTokens: 2_000,
+							mapleInputTokens: 2_000,
 							usageCacheReadInputTokens: 0,
 						}
 					: {
 							providerName: "openrouter",
 							requestModel: "anthropic/claude-haiku-4.5",
-							usageInputTokens: 1_300,
+							mapleInputTokens: 1_300,
 							usageCacheReadInputTokens: 0,
 							usageCacheCreationInputTokens: 0,
 						},
@@ -392,7 +392,7 @@ describe("buildSessionChecks", () => {
 			const missed = byId(
 				session(() => ({
 					providerName: "openai",
-					usageInputTokens: 2_000,
+					mapleInputTokens: 2_000,
 					usageCacheReadInputTokens: 0,
 					usageCacheCreationInputTokens: write,
 				})),
@@ -407,8 +407,14 @@ describe("buildSessionChecks", () => {
 		const shortFirst = byId(
 			session((i) =>
 				i === 0
-					? { usageInputTokens: 300, usageCacheReadInputTokens: 0 }
-					: { usageInputTokens: 2_000, usageCacheReadInputTokens: i === 1 ? 0 : 1_000 },
+					? { mapleInputTokens: 300, usageCacheReadInputTokens: 0 }
+					: i === 1
+						? { mapleInputTokens: 2_000, usageCacheReadInputTokens: 0 }
+						: {
+								mapleInputTokens: 1_000,
+								mapleCacheReadTokens: 1_000,
+								usageCacheReadInputTokens: 1_000,
+							},
 			),
 			"prompt-cache",
 		)
@@ -430,7 +436,7 @@ describe("buildSessionChecks", () => {
 					spanName: "LLM Generation",
 					startMs: at,
 					durationMs: 4_842,
-					genAi: { usageInputTokens: 58_797, usageOutputTokens: 220, responseId: `gen-${n}` },
+					genAi: { mapleInputTokens: 58_797, mapleOutputTokens: 220, responseId: `gen-${n}` },
 				}),
 				llmSpan({
 					spanId: `${root}-attempt`,
@@ -506,8 +512,8 @@ describe("buildSessionChecks", () => {
 					durationMs: 2 * SECOND,
 					genAi: {
 						providerName: "openai",
-						usageInputTokens: 2_000,
-						usageOutputTokens: 50,
+						mapleInputTokens: 2_000,
+						mapleOutputTokens: 50,
 						responseId: `gen-${i}`,
 					},
 				}),
@@ -519,9 +525,10 @@ describe("buildSessionChecks", () => {
 					durationMs: 2 * SECOND,
 					genAi: {
 						providerName: "openai",
-						usageInputTokens: 2_000,
 						usageCacheReadInputTokens: i === 0 ? 0 : 1_500,
-						usageOutputTokens: 50,
+						mapleInputTokens: i === 0 ? 2_000 : 500,
+						mapleCacheReadTokens: i === 0 ? 0 : 1_500,
+						mapleOutputTokens: 50,
 						responseId: `gen-${i}`,
 					},
 				}),
@@ -534,11 +541,9 @@ describe("buildSessionChecks", () => {
 	// over `generate_content`, both with the same usage. The cache check read
 	// "over 15 calls" for a session of 8.
 	it("judges the prompt cache once per model call when a wrapper repeats the usage", () => {
-		const usage = (i: number): AiSessionGenAiValues => ({
+		const reported = (i: number): AiSessionGenAiValues => ({
 			requestModel: "openrouter/openai/gpt-4o-mini",
-			usageInputTokens: 2_000,
 			usageCacheReadInputTokens: i === 0 ? 0 : 1_536,
-			usageOutputTokens: 32,
 		})
 		const report = checks([
 			agentSpan({ spanId: "a1", startMs: 0, durationMs: MINUTE, agentName: "assistant" }),
@@ -549,7 +554,7 @@ describe("buildSessionChecks", () => {
 					spanName: "call_llm",
 					startMs: (i + 1) * SECOND,
 					durationMs: 2 * SECOND,
-					genAi: usage(i),
+					genAi: { ...reported(i), mapleLlmCall: 0 },
 				}),
 				llmSpan({
 					spanId: `gen-${i}`,
@@ -557,7 +562,13 @@ describe("buildSessionChecks", () => {
 					spanName: "generate_content",
 					startMs: (i + 1) * SECOND,
 					durationMs: 2 * SECOND,
-					genAi: { operationName: "generate_content", ...usage(i) },
+					genAi: {
+						operationName: "generate_content",
+						...reported(i),
+						mapleInputTokens: i === 0 ? 2_000 : 464,
+						mapleCacheReadTokens: i === 0 ? 0 : 1_536,
+						mapleOutputTokens: 32,
+					},
 				}),
 			]),
 		])
@@ -583,7 +594,7 @@ describe("buildSessionChecks", () => {
 				model: "claude-opus-5",
 				statusCode: "Error",
 				statusMessage,
-				genAi: { conversationId: "t2", errorType, usageInputTokens: 5000, usageOutputTokens: 0 },
+				genAi: { conversationId: "t2", errorType, mapleInputTokens: 5000, mapleOutputTokens: 0 },
 			}),
 			llmSpan({
 				spanId: `${spanId}-again`,
@@ -591,7 +602,7 @@ describe("buildSessionChecks", () => {
 				startMs: 5 * MINUTE + 3 * SECOND,
 				durationMs: SECOND,
 				model: "claude-opus-5",
-				genAi: { conversationId: "t2", usageInputTokens: 1200, usageOutputTokens: 80 },
+				genAi: { conversationId: "t2", mapleInputTokens: 1200, mapleOutputTokens: 80 },
 			}),
 		]
 

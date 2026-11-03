@@ -852,9 +852,8 @@ describe("aiToolDescriptionQuery", () => {
 		expect(compiled.sql).toContain(
 			"argMax(ai_trace_index.ToolDescription, ai_trace_index.Timestamp) AS description",
 		)
-		// Rows materialized before migration 0032 read '', and so does a call
-		// whose framework stamps nothing — without this the `argMax` would answer
-		// '' for a tool whose most recent call is one of them.
+		// A call whose framework sends no description reads '' — without this the
+		// `argMax` would answer '' for a tool whose most recent call is one.
 		expect(compiled.sql).toContain("ToolDescription != ''")
 		expect(decodeRows(compiled, [{ description: "Search traces." }])).toEqual([
 			{ description: "Search traces." },

@@ -1242,7 +1242,7 @@ export type TraceIndexRow = InferRow<typeof traceIndex>
  * agent and tool as stamped by the ingest gateway), and the per-span measures the
  * page ranks and filters on: whether the span is a model call, a tool call, a
  * failure, and the tokens and cost it reported, with `SpanId`/`ParentSpanId`
- * so a wrapper's roll-up of its children's usage can be taken off it. Every
+ * so a call observed at several levels is counted once. Every
  * one of those is a fact of the GenAI span itself, so the index can carry it
  * and the page can filter, sort and page on it without the fan-out. What the
  * index cannot carry is the trace's non-agent spans: the row's `spanCount`,

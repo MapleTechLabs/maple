@@ -1015,12 +1015,8 @@ describe("POST /internal/ai-sessions/summary", () => {
 		inputTokens: "0",
 		outputTokens: "0",
 		cacheReadTokens: "0",
-		llmInputTokens: "0",
-		llmOutputTokens: "0",
-		llmCacheReadTokens: "0",
 		costReporters: "0",
 		cost: "0",
-		llmCost: "0",
 		models: ["gpt-5"],
 		agentNames: ["slack-agent"],
 		...overrides,
@@ -1058,12 +1054,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 	it("reports the session's own row as the totals, and the turn rows beside it", async () => {
 		const { harness, sqls } = summaryHarness(
 			[
-				turnRow({
-					inputTokens: "300",
-					llmInputTokens: "150",
-					outputTokens: "60",
-					llmOutputTokens: "30",
-				}),
+				turnRow({ inputTokens: "150", outputTokens: "30" }),
 				turnRow({
 					turnKey: "turn_1",
 					conversationId: "turn_1",
@@ -1072,14 +1063,11 @@ describe("POST /internal/ai-sessions/summary", () => {
 					endTime: "2026-08-19 10:00:35.500000000",
 					errorSpanCount: "1",
 					inputTokens: "100",
-					llmInputTokens: "100",
 					models: ["gpt-5", "claude-opus-5"],
 					agentNames: [],
 				}),
 			],
 			[
-				// Usage reported per model call AND rolled up onto the agent span:
-				// the per-call figures are the total, the roll-up is not added on top.
 				totalsRow({
 					traceCount: "2",
 					spanCount: "80",
@@ -1089,13 +1077,10 @@ describe("POST /internal/ai-sessions/summary", () => {
 					errorSpanCount: "1",
 					endTime: "2026-08-19 10:00:35.500000000",
 					durationMs: "35500",
-					inputTokens: "400",
-					llmInputTokens: "250",
-					outputTokens: "60",
-					llmOutputTokens: "30",
+					inputTokens: "250",
+					outputTokens: "30",
 					costReporters: "4",
-					cost: "0.02",
-					llmCost: "0.01",
+					cost: "0.01",
 					models: ["gpt-5", "claude-opus-5"],
 				}),
 			],
@@ -1135,28 +1120,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 		}
 	})
 
-	// The rule is applied to the session's row, never to the turn rows summed:
-	// a turn span's roll-up and its model calls can land in different rows.
-	it("does not double usage split across a turn row and its trace's row", async () => {
-		const { harness } = summaryHarness(
-			[
-				turnRow({ inputTokens: "300", llmCalls: "0" }),
-				turnRow({ turnKey: TRACE_ID, conversationId: "", inputTokens: "300", llmInputTokens: "300" }),
-			],
-			[totalsRow({ inputTokens: "600", llmInputTokens: "300" })],
-		)
-		try {
-			const response = await harness.post("/internal/ai-sessions/summary", SPANS_BODY)
-			expect(response.body).toMatchObject({
-				tokens: { input: 300, output: 0, cacheRead: 0 },
-				tokenReporting: "per-call",
-			})
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("counts a roll-up when no model call reported usage", async () => {
+	it("reports no cost when nothing priced a call", async () => {
 		const { harness } = summaryHarness(
 			[turnRow({ inputTokens: "300", outputTokens: "60" })],
 			[totalsRow({ inputTokens: "300", outputTokens: "60" })],
@@ -1165,7 +1129,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 			const response = await harness.post("/internal/ai-sessions/summary", SPANS_BODY)
 			expect(response.body).toMatchObject({
 				tokens: { input: 300, output: 60, cacheRead: 0 },
-				tokenReporting: "roll-up",
+				tokenReporting: "per-call",
 			})
 			expect(response.body).not.toHaveProperty("cost")
 		} finally {

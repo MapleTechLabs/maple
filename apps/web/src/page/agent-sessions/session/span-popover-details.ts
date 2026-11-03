@@ -3,7 +3,6 @@ import {
 	classifyAiSpan,
 	formatCost,
 	payload,
-	spanCost,
 	spanFailed,
 	type SpanToolCall,
 	spanTtftMs,
@@ -242,7 +241,7 @@ const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((sta
 const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>(
 	(state, { span, timeZone }, p) => {
 		const ttftMs = spanTtftMs(span)
-		const cost = spanCost(span)
+		const cost = span.genAi.mapleCost
 		const pairs: ReadonlyArray<readonly [string, Html | string | number | undefined]> = [
 			["provider", span.genAi.providerName],
 			["started", formatTimestampInTimezone(span.timestamp, { timeZone, withMilliseconds: true })],

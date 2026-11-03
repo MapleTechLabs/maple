@@ -671,8 +671,8 @@ const reportsCache = (span: AiSessionSpan): boolean =>
 	span.genAi.mapleCacheWriteTokens !== undefined
 
 /**
- * One span per model call, so a call its framework also rolled up (ADK
- * `call_llm` over `generate_content`) is judged once — and, when the span
+ * One span per model call, so a call observed at several levels (OpenRouter's
+ * `LLM Generation` over its `generation`) is judged once — and, when the span
  * counted for it reported no cache usage, another observation of the same
  * response that did (an app span beside its gateway's mirror).
  */

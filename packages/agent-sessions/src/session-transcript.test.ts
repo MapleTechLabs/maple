@@ -869,7 +869,7 @@ describe("buildTranscript — structural fallback and notes", () => {
 				startMs: 0,
 				durationMs: 2 * SECOND,
 				model: "gpt-5",
-				genAi: { usageInputTokens: 1200, usageOutputTokens: 300 },
+				genAi: { mapleInputTokens: 1200, mapleOutputTokens: 300 },
 			}),
 			toolSpan({
 				spanId: "t1",
@@ -1599,7 +1599,7 @@ describe("buildTranscript — structure labels", () => {
 					startMs: 0,
 					durationMs: SECOND,
 					model: "text-embedding-3-large",
-					genAi: { operationName: "embeddings" },
+					genAi: { operationName: "embeddings", mapleLlmCall: 0 },
 				}),
 			],
 		})

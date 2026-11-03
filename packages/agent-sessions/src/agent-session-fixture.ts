@@ -167,13 +167,18 @@ function callAttributes(input: {
 	tool: string | undefined
 }) {
 	const history = 6_000 + input.turnIndex * 14_000 + input.callIndex * 2_500
+	const cacheRead = Math.round(history * 0.86)
+	const cacheWrite = input.callIndex === 0 ? 7_000 : 0
+	const reasoning = input.turnIndex % 3 === 0 ? 480 : 0
 	return {
-		usageInputTokens: history,
-		usageCacheReadInputTokens: Math.round(history * 0.86),
-		usageCacheCreationInputTokens: input.callIndex === 0 ? 7_000 : 0,
-		usageOutputTokens: 900 + input.callIndex * 220,
-		usageReasoningOutputTokens: input.turnIndex % 3 === 0 ? 480 : 0,
-		usageCost: 0.11 + input.turnIndex * 0.02 + input.callIndex * 0.04,
+		usageCacheReadInputTokens: cacheRead,
+		usageCacheCreationInputTokens: cacheWrite,
+		mapleInputTokens: Math.max(0, history - cacheRead - cacheWrite),
+		mapleCacheReadTokens: cacheRead,
+		mapleCacheWriteTokens: cacheWrite,
+		mapleOutputTokens: 900 + input.callIndex * 220 - reasoning,
+		mapleReasoningTokens: reasoning,
+		mapleCost: 0.11 + input.turnIndex * 0.02 + input.callIndex * 0.04,
 		errorType: input.failed ? "context_length_exceeded" : undefined,
 		inputMessages: input.prompt === undefined ? undefined : userMessages(input.prompt),
 		outputMessages: input.failed
@@ -304,7 +309,7 @@ export function buildCleanFixture(): readonly AiSessionSpan[] {
 	return Arr.map(
 		Arr.filter(buildAgentSessionFixture(), (span) => span.genAi.errorType !== "rate_limit"),
 		(span) => {
-			const { errorType: _errorType, ...genAi } = span.genAi
+			const { errorType: _errorType, mapleError: _mapleError, ...genAi } = span.genAi
 			const failedTool = span.genAi.errorType === "tool_error"
 			return {
 				...span,
@@ -502,13 +507,17 @@ const TRUNCATED_STATEMENT_RESULT = {
 	),
 }
 
+/** The gateway's buckets for a call that reported `input` prompt tokens, 80% of
+ *  them read from cache, and `output` completion tokens including `reasoning`. */
 function usage(input: number, output: number, cost: number, reasoning = 0) {
+	const cacheRead = Math.round(input * 0.8)
 	return {
-		usageInputTokens: input,
-		usageCacheReadInputTokens: Math.round(input * 0.8),
-		usageOutputTokens: output,
-		usageReasoningOutputTokens: reasoning,
-		usageCost: cost,
+		usageCacheReadInputTokens: cacheRead,
+		mapleInputTokens: input - cacheRead,
+		mapleCacheReadTokens: cacheRead,
+		mapleOutputTokens: output - reasoning,
+		mapleReasoningTokens: reasoning,
+		mapleCost: cost,
 	} satisfies AiSessionGenAiValues
 }
 
