@@ -14,7 +14,7 @@ export const migration_0055_error_fingerprint_v4 = {
 	description: "Fingerprint v4 (in-app frames) with a lineage table for re-keying issues across the bump",
 	requiredForIngest: false,
 	statements: [
-		"CREATE TABLE IF NOT EXISTS error_fingerprint_lineage (\n    OrgId LowCardinality(String),\n    Minute DateTime,\n    FingerprintHash UInt64,\n    PreviousFingerprintHash UInt64\n)\nENGINE = AggregatingMergeTree\nPARTITION BY toYYYYMM(Minute)\nORDER BY (OrgId, Minute, FingerprintHash, PreviousFingerprintHash)\nTTL toDate(Minute) + INTERVAL 30 DAY",
+		"CREATE TABLE IF NOT EXISTS error_fingerprint_lineage (\n    OrgId LowCardinality(String),\n    Minute DateTime,\n    FingerprintHash UInt64,\n    PreviousFingerprintHash UInt64\n)\nENGINE = AggregatingMergeTree\nPARTITION BY toDate(Minute)\nORDER BY (OrgId, Minute, FingerprintHash, PreviousFingerprintHash)\nTTL toDate(Minute) + INTERVAL 30 DAY",
 		"ALTER TABLE error_fingerprint_lineage MODIFY SETTING ttl_only_drop_parts = 1",
 		"DROP VIEW IF EXISTS error_events_mv",
 		"DROP VIEW IF EXISTS error_events_by_time_mv",

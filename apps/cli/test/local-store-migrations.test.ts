@@ -99,9 +99,9 @@ const [v10ToV11ProductEventsModule] = Arr.filter(
 describe("current local schema identity", () => {
 	it("matches the generated v47 revision and keeps the issue-297 identity frozen", () => {
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_FINGERPRINT).toBe("987e71fae7597294")
+		expect(SCHEMA_FINGERPRINT).toBe("17ce90209b63108e")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_DIGEST).toBe("987e71fae75972944592a40c5c3dd7bbce5268232c4a7a1d9d12e70d2589b02a")
+		expect(SCHEMA_DIGEST).toBe("17ce90209b63108ee1d33540826ef331aa64edf2379d1088935bdef9145daa2e")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- frozen identity that stores already on disk carry
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",

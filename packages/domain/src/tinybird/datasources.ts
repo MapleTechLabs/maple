@@ -1123,7 +1123,7 @@ export const errorFingerprintLineage = defineDatasource("error_fingerprint_linea
 	// Each (hash, previous hash) pair is its own key, so a bump that folds two old issues
 	// into one hash keeps both; repeats of a pair merge away.
 	engine: engine.aggregatingMergeTree({
-		partitionKey: "toYYYYMM(Minute)",
+		partitionKey: "toDate(Minute)",
 		sortingKey: ["OrgId", "Minute", "FingerprintHash", "PreviousFingerprintHash"],
 		ttl: "toDate(Minute) + INTERVAL 30 DAY",
 	}),
