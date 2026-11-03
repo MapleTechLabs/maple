@@ -155,6 +155,46 @@ describe("vercel card: connecting", () => {
 		expect(names(step(one, Message.SubmittedVercelConnect()).commands)).toEqual(["ConnectVercel"])
 	})
 
+	test("Back to the team step and a new pick keeps the settings, minus projects the new team lacks", () => {
+		const discovered = (forTeam: string, projects: typeof PROJECTS) =>
+			Message.CompletedVercelDiscover({
+				forTeam,
+				response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects }),
+				error: null,
+			})
+		const pick = (value: string) =>
+			Message.GotVercelTeamMessage({ message: RadioGroup.Message.SelectedRadio({ value }) })
+		const tuned = run(withStatus(NOT_CONNECTED).model, [
+			Message.ClickedVercelConfigure({ target: "connect" }),
+			typed("vc_token_0001"),
+			Message.SubmittedVercelToken(),
+			Message.CompletedVercelDiscover({
+				forTeam: null,
+				response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects: [] }),
+				error: null,
+			}),
+			pick("team_acme"),
+			Message.SubmittedVercelTeam(),
+			discovered("team_acme", PROJECTS),
+			Message.ChangedVercelScope({ scope: "some" }),
+			Message.ToggledVercelProject({ id: "prj_web" }),
+			Message.ToggledVercelProject({ id: "prj_docs" }),
+			Message.ChangedVercelSampling({ value: "0.1" }),
+			Message.ToggledVercelSignal({ signal: "logsEnabled" }),
+		])
+		const repicked = run(tuned, [
+			Message.ClickedVercelConfigureBack(),
+			pick("team_labs"),
+			Message.SubmittedVercelTeam(),
+			discovered("team_labs", [{ id: "prj_docs", name: "docs", framework: null }]),
+		])
+		expect(configureOf(repicked).draft).toEqual({
+			...configureOf(tuned).draft,
+			projectIds: ["prj_docs"],
+		})
+		expect(configureOf(repicked).draft.logsEnabled).toBe(false)
+	})
+
 	test("a refused token stays on the token step with Vercel's reason; a token seeing no team says why", () => {
 		const sent = run(withStatus(NOT_CONNECTED).model, [
 			Message.ClickedVercelConfigure({ target: "connect" }),

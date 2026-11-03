@@ -139,7 +139,7 @@ export const completedSync = (model: Model, context: PageContext, failure: LoadF
 	const settled = withVercelCard(model, { isSyncing: false })
 	return failure === null
 		? requestStatus(settled, context, "vercel", "Refresh")
-		: toast(settled, "error", "Failed to sync Vercel", failure.message)
+		: toast(settled, "error", "Couldn't sync Vercel", failure.message)
 }
 
 export const clickedReapply = (model: Model): Return =>
@@ -216,7 +216,10 @@ export const submittedToken = (model: Model): Return => {
 	})
 }
 
-/** A pick made for an earlier lookup never carries over: the team is the asked one, or the only one. */
+/**
+ * The team is the asked one, or the only one. A fresh token lookup starts from the default settings;
+ * re-picking a team after Back keeps them, minus projects the new team doesn't have.
+ */
 export const completedDiscover = (
 	model: Model,
 	forTeam: string | null,
@@ -227,6 +230,12 @@ export const completedDiscover = (
 		return { model: withConfigure(model, () => ({ isLookingUp: false, error })) }
 	const teams = response.teams
 	const team = forTeam ?? (teams.length === 1 ? (teams[0]?.id ?? null) : null)
+	const kept = forTeam === null ? null : model.vercelCard.configure?.draft
+	const draftFor = (found: VercelDiscoverResponse) => {
+		if (kept == null) return DEFAULT_VERCEL_DRAFT
+		const ids = new Set(found.projects.map((project) => project.id))
+		return { ...kept, projectIds: kept.projectIds.filter((id) => ids.has(id)) }
+	}
 	return {
 		model: withConfigure(model, () => ({
 			isLookingUp: false,
@@ -237,7 +246,7 @@ export const completedDiscover = (
 						projects: null,
 						error: teams.length === 0 ? "This token can't see any team. Create it with a team scope." : null,
 					}
-				: { projects: response.projects, draft: DEFAULT_VERCEL_DRAFT, projectQuery: "", error: null }),
+				: { projects: response.projects, draft: draftFor(response), projectQuery: "", error: null }),
 		})),
 	}
 }
@@ -406,7 +415,7 @@ export const completedSave = (
 					(next) => toast(next, "success", "Drains re-applied on Vercel"),
 					(next) => requestStatus(next, context, "vercel", "Refresh"),
 				])
-			: toast(settled, "error", "Failed to re-apply the drains", error)
+			: toast(settled, "error", "Couldn't re-apply the drains", error)
 	}
 	const configure = model.vercelCard.configure
 	if (error !== null && configure !== null)
