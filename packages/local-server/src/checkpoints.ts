@@ -2460,6 +2460,8 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 	)
 })
 
+const isCheckpointPreconditionError = Schema.is(CheckpointPreconditionError)
+
 /**
  * Create a checkpoint, or refuse with an expected outcome.
  *
@@ -2470,7 +2472,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 export const createCheckpoint = (options: CheckpointOptions) =>
 	createCheckpointTraced(options).pipe(
 		Effect.flatMap((outcome) =>
-			outcome instanceof CheckpointPreconditionError ? Effect.fail(outcome) : Effect.succeed(outcome),
+			isCheckpointPreconditionError(outcome) ? Effect.fail(outcome) : Effect.succeed(outcome),
 		),
 	)
 

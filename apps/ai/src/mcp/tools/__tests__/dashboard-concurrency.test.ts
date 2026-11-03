@@ -58,7 +58,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 const ORG = asOrgId("org_a")
 const USER = asUserId("user_a")
 const DASHBOARD = asDashboardId("dash-1")
-const NOW = asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString())
+const NOW = asIsoDateTimeString("2026-01-01T00:00:00.000Z")
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -138,9 +138,7 @@ describe("dashboard concurrency", () => {
 							USER,
 							seed({
 								name: "From writer A",
-								updatedAt: asIsoDateTimeString(
-									new Date("2026-01-01T00:00:01.000Z").toISOString(),
-								),
+								updatedAt: asIsoDateTimeString("2026-01-01T00:00:01.000Z"),
 							}),
 						),
 					),
@@ -150,9 +148,7 @@ describe("dashboard concurrency", () => {
 							USER,
 							seed({
 								name: "From writer B",
-								updatedAt: asIsoDateTimeString(
-									new Date("2026-01-01T00:00:02.000Z").toISOString(),
-								),
+								updatedAt: asIsoDateTimeString("2026-01-01T00:00:02.000Z"),
 							}),
 						),
 					),
@@ -201,9 +197,7 @@ describe("dashboard concurrency", () => {
 							USER,
 							seed({
 								name: "Writer A",
-								updatedAt: asIsoDateTimeString(
-									new Date("2026-01-01T00:00:01.000Z").toISOString(),
-								),
+								updatedAt: asIsoDateTimeString("2026-01-01T00:00:01.000Z"),
 							}),
 						),
 					),
@@ -213,9 +207,7 @@ describe("dashboard concurrency", () => {
 							USER,
 							seed({
 								name: "Writer B",
-								updatedAt: asIsoDateTimeString(
-									new Date("2026-01-01T00:00:02.000Z").toISOString(),
-								),
+								updatedAt: asIsoDateTimeString("2026-01-01T00:00:02.000Z"),
 							}),
 						),
 					),
@@ -235,7 +227,7 @@ describe("dashboard concurrency", () => {
 				new DashboardDocument({
 					...current,
 					name: "Recovered",
-					updatedAt: asIsoDateTimeString(new Date("2026-01-01T00:00:03.000Z").toISOString()),
+					updatedAt: asIsoDateTimeString("2026-01-01T00:00:03.000Z"),
 				}),
 			)
 

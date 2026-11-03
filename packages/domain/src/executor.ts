@@ -72,8 +72,7 @@ export const ExecutorScratchPath = Schema.String.check(
 	Schema.makeFilter(
 		(value: string) =>
 			!Str.startsWith("/")(value) &&
-			// eslint-disable-next-line no-control-regex
-			!/[\u0000-\u001f]/u.test(value) &&
+			!/\p{Cc}/u.test(value) &&
 			Arr.every(Str.split("/")(value), (part) => part !== "" && part !== "." && part !== ".."),
 		{ title: "executorScratchPath", expected: "a scratch-relative path with no empty, `.` or `..` part" },
 	),

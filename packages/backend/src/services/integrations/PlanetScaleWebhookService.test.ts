@@ -178,7 +178,7 @@ const connect = (orgId: string) =>
 		yield* (yield* PlanetScaleConnectionService).finalizeOrgSelection(asOrgId(orgId), {
 			organization: "acme",
 		})
-		yield* (yield* PlanetScaleService).pollAllOrgs()
+		yield* (yield* PlanetScaleService).pollAllOrgs
 		return yield* (yield* PlanetScaleConnectionService).loadConnection(asOrgId(orgId))
 	})
 
@@ -297,7 +297,7 @@ describe("PlanetScaleWebhookService", () => {
 					"UPDATE oauth_connections SET scope = 'read_databases write_databases' WHERE provider = 'planetscale'",
 				),
 			)
-			yield* (yield* PlanetScaleService).pollAllOrgs()
+			yield* (yield* PlanetScaleService).pollAllOrgs
 			assert.strictEqual(store.get("shop")?.length, 1)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})

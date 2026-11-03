@@ -60,7 +60,7 @@ const indicatorMeasured = () =>
 	)
 
 const created = (lastUsedAt: string | null = null) =>
-	Schema.decodeUnknownSync(V2SourceWithSecret)({
+	Schema.decodeSync(V2SourceWithSecret)({
 		id: encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000010"),
 		object: "source",
 		name: "Node.js",
@@ -314,7 +314,7 @@ describe("connect a source", () => {
 			IntegrationMessage.CompletedLoadAws({
 				key: entered.model.integrations.statuses.aws.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(V2AwsIntegration)({
+					Schema.decodeSync(V2AwsIntegration)({
 						object: "aws_integration",
 						available: true,
 						modules: [],
@@ -388,7 +388,7 @@ describe("connect a source", () => {
 	test("WarpStream finishes once a target is added in this visit, and links to the list", () => {
 		const entered = init(integrationRoute("warpstream"), context).model
 		expect(entered.hasAddedTarget).toBe(false)
-		const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
+		const target = Schema.decodeSync(V2ScrapeTarget)({
 			id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
 			object: "scrape_target",
 			name: "api.warpstream.com",

@@ -9,9 +9,7 @@ import type { McpToolRegistrar } from "../types"
 const renders = new Map<string, (output: Schema.Json) => string>()
 const registrar: McpToolRegistrar = {
 	define: (spec) => {
-		renders.set(spec.name, (output) =>
-			renderToolDoc(spec.render(Schema.decodeUnknownSync(spec.output)(output))),
-		)
+		renders.set(spec.name, (output) => renderToolDoc(spec.render(Schema.decodeSync(spec.output)(output))))
 	},
 }
 registerSearchTracesTool(registrar)

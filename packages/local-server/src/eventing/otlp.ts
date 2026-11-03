@@ -73,7 +73,7 @@ const LogsRequestSchema = Schema.Struct({
 const isOtlpFieldError = Schema.is(OtlpFieldError)
 
 const decodeLogsRequest = (request: unknown): Effect.Effect<typeof LogsRequestSchema.Type, OtlpFieldError> =>
-	Schema.decodeUnknownEffect(LogsRequestSchema)(request ?? {}).pipe(
+	Schema.decodeEffect(LogsRequestSchema)(request ?? {}).pipe(
 		Effect.mapError((error) => new OtlpFieldError({ message: `invalid OTLP logs: ${error.message}` })),
 	)
 

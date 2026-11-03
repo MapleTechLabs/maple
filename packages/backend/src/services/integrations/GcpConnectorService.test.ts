@@ -45,9 +45,9 @@ const makeLayer = (testDb: TestDb, mapleServiceAccount?: string) =>
 		),
 	)
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_gcp")
-const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_other")
-const userId = Schema.decodeUnknownSync(UserId)("user_1")
+const orgId = Schema.decodeSync(OrgId)("org_gcp")
+const otherOrgId = Schema.decodeSync(OrgId)("org_other")
+const userId = Schema.decodeSync(UserId)("user_1")
 const project = Schema.decodeUnknownSync(GcpProjectId)
 const number = Schema.decodeUnknownSync(GcpResourceNumber)
 

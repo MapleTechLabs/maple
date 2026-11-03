@@ -19,8 +19,8 @@ import {
 const database = uniqueDatabase("maple_alert_window_e2e")
 
 const tenant: TenantContext = {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_alert_window"),
-	userId: Schema.decodeUnknownSync(UserId)("user_alert_window"),
+	orgId: Schema.decodeSync(OrgId)("org_alert_window"),
+	userId: Schema.decodeSync(UserId)("user_alert_window"),
 	roles: [],
 	authMode: "self_hosted",
 }

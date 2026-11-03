@@ -21,7 +21,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 const step = (model: Model, message: Message) => update(model, message, options)
 
-const rename = Schema.decodeUnknownSync(V2Recommendation)({
+const rename = Schema.decodeSync(V2Recommendation)({
 	id: "rec_YofPTrK9782DWwcnXhpcCw",
 	object: "recommendation",
 	number: 7,
@@ -35,7 +35,7 @@ const rename = Schema.decodeUnknownSync(V2Recommendation)({
 	updated_at: "2026-07-15T09:12:00.000Z",
 	resolved_at: null,
 })
-const mapping = Schema.decodeUnknownSync(V2AttributeMapping)({
+const mapping = Schema.decodeSync(V2AttributeMapping)({
 	id: "amap_YofPTrK9782DWwcnXhpcCw",
 	object: "attribute_mapping",
 	name: "Promote team label",

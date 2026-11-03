@@ -14,7 +14,7 @@ import {
 } from "./merge-checklist-corpus"
 
 const DIR = join(import.meta.dirname, "__fixtures__", "merge-checklist")
-const labels = Schema.decodeUnknownSync(Schema.fromJsonString(MergeChecklistLabelFile))(
+const labels = Schema.decodeSync(Schema.fromJsonString(MergeChecklistLabelFile))(
 	readFileSync(join(DIR, "labels.json"), "utf8"),
 )
 const decodeCase = Schema.decodeUnknownSync(Schema.fromJsonString(MergeChecklistCase))

@@ -211,7 +211,7 @@ describe("hybrid minute coverage", () => {
 
 describe("row schemas (BYO-CH UInt64-as-string)", () => {
 	it("decodes numeric strings in summary rows", () => {
-		const decoded = Schema.decodeUnknownSync(serviceOperationsSummaryRowSchema)({
+		const decoded = Schema.decodeSync(serviceOperationsSummaryRowSchema)({
 			spanName: "GET /users",
 			spanCount: "1200",
 			estimatedSpanCount: 1200,
@@ -230,7 +230,7 @@ describe("row schemas (BYO-CH UInt64-as-string)", () => {
 	})
 
 	it("decodes numeric strings in timeseries rows", () => {
-		const decoded = Schema.decodeUnknownSync(serviceOperationsTimeseriesRowSchema)({
+		const decoded = Schema.decodeSync(serviceOperationsTimeseriesRowSchema)({
 			bucket: "2024-01-01 00:00:00",
 			spanName: "GET /users",
 			count: "17",

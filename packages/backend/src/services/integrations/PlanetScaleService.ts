@@ -144,7 +144,7 @@ export interface PlanetScaleListEventsOptions {
 }
 
 export interface PlanetScaleServiceApi {
-	readonly pollAllOrgs: () => Effect.Effect<PlanetScalePollSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<PlanetScalePollSummary, IntegrationsPersistenceError>
 	/** The org's (non-deleted) database inventory, for the API surface. */
 	readonly listDatabases: (
 		orgId: OrgId,
@@ -922,7 +922,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				),
 			)
 
-			const pollAllOrgs = Effect.fn("PlanetScaleService.pollAllOrgs")(function* () {
+			const pollAllOrgs = Effect.gen(function* () {
 				const connections = yield* dbExecute((db) =>
 					db.run(PG.from(PlanetscaleConnections).select()),
 				).pipe(
@@ -963,7 +963,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					failures: countOutcome("failed"),
 					deployEvents: results.reduce((sum, result) => sum + result.deployEvents, 0),
 				}
-			})
+			}).pipe(Effect.withSpan("PlanetScaleService.pollAllOrgs"))
 
 			const queryInsights = Effect.fn("PlanetScaleService.queryInsights")(function* (
 				orgId: OrgId,

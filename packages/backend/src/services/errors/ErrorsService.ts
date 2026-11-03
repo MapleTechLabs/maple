@@ -215,7 +215,7 @@ export interface ErrorsServiceApi {
 			readonly deploymentEnv: string
 		},
 	) => Effect.Effect<void, ErrorPersistenceError>
-	readonly runTick: () => Effect.Effect<
+	readonly runTick: Effect.Effect<
 		{
 			readonly orgsProcessed: number
 			readonly issuesTouched: number
@@ -1704,7 +1704,7 @@ const make: Effect.Effect<
 	// Align to the latest completed minute. Per-org cursor leases serialize
 	// overlapping cron invocations; the cursor advances atomically with issue,
 	// incident, audit-event, and notification-outbox writes.
-	const runTick: ErrorsServiceApi["runTick"] = Effect.fn("ErrorsService.runTick")(function* () {
+	const runTick: ErrorsServiceApi["runTick"] = Effect.gen(function* () {
 		const nowMs = yield* Clock.currentTimeMillis
 		const cutoffMs = Math.floor(nowMs / TICK_MINUTE_MS) * TICK_MINUTE_MS - TICK_INGESTION_LAG_MS
 
@@ -1862,7 +1862,7 @@ const make: Effect.Effect<
 			retentionRan,
 			investigationsAbandoned,
 		}
-	})
+	}).pipe(Effect.withSpan("ErrorsService.runTick"))
 
 	return ErrorsService.of({
 		transitionIssue,

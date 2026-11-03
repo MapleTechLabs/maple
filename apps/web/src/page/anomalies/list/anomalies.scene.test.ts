@@ -51,7 +51,7 @@ const withPresence = (model: Model, status: "present" | "absent"): Model =>
 const iso = (agoMs: number) => new Date(NOW - agoMs).toISOString()
 
 const incident = (index: number, severity: "critical" | "warning", resolved = false) =>
-	Schema.decodeUnknownSync(V2AnomalyIncident)({
+	Schema.decodeSync(V2AnomalyIncident)({
 		id: encodePublicId(PublicIdPrefixes.anomalyIncident, `0199a060-0000-7000-8000-00000000000${index}`),
 		object: "anomaly_incident",
 		detector_key: `latency_p95:payment-svc:production`,

@@ -168,7 +168,7 @@ const renderRule = (title: string, row: IngestRuleRow) => ({
 // PREVIEW
 
 const parseAttributes = (raw: string): Effect.Effect<Readonly<Record<string, string>>> =>
-	Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)))(raw).pipe(
+	Schema.decodeEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)))(raw).pipe(
 		Effect.orElseSucceed(() => ({})),
 	)
 
@@ -214,7 +214,7 @@ const sampleRecords = Effect.fnUntraced(function* (
 
 /** A changed value as transcript text: strings raw, maps and lists as JSON rather than `[object Object]`. */
 const valueText = (value: AttrValue): string =>
-	typeof value === "string" ? value : (stringifyJson(value) ?? String(value))
+	typeof value === "string" ? value : (stringifyJson(value) ?? "[unserializable value]")
 
 /** `key -> after` for every top-level value a rule changed; the value before stays out of the transcript. */
 const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<string> => {

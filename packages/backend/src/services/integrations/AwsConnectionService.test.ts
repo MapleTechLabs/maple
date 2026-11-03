@@ -43,10 +43,10 @@ const makeLayer = (testDb: TestDb, aws: FakeAws, config: Record<string, string> 
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfig, ...config }))),
 	)
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_aws")
-const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_other")
-const userId = Schema.decodeUnknownSync(UserId)("user_1")
-const account = Schema.decodeUnknownSync(AwsAccountId)("123456789012")
+const orgId = Schema.decodeSync(OrgId)("org_aws")
+const otherOrgId = Schema.decodeSync(OrgId)("org_other")
+const userId = Schema.decodeSync(UserId)("user_1")
+const account = Schema.decodeSync(AwsAccountId)("123456789012")
 
 interface SourceRow {
 	readonly platform: string
@@ -248,7 +248,7 @@ describe("AwsConnectionService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		const regions = Arr.map(["us-east-1", "eu-central-1"], (region) =>
-			Schema.decodeUnknownSync(AwsRegion)(region),
+			Schema.decodeSync(AwsRegion)(region),
 		)
 		const streamSecretHash = (id: string) =>
 			Effect.promise(() =>
@@ -320,7 +320,7 @@ describe("AwsConnectionService", () => {
 	it.effect("mints a stream secret once for a connection made before streams", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
-		const region = Schema.decodeUnknownSync(AwsRegion)("us-east-1")
+		const region = Schema.decodeSync(AwsRegion)("us-east-1")
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
@@ -353,7 +353,7 @@ describe("AwsConnectionService", () => {
 				service.create(orgId, userId, { accountId: account, modules: [] }),
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/AwsIntegrationUnavailableError")
-			assert.deepStrictEqual(yield* service.checkDue(), { due: 0, checked: 0, failures: 0 })
+			assert.deepStrictEqual(yield* service.checkDue, { due: 0, checked: 0, failures: 0 })
 		}).pipe(Effect.provide(makeLayer(testDb, aws, { MAPLE_AWS_OIDC_SIGNING_KEY: "not a key" })))
 	})
 
@@ -373,13 +373,13 @@ describe("AwsConnectionService", () => {
 				),
 			)
 
-			const first = yield* service.checkDue()
+			const first = yield* service.checkDue
 			assert.deepStrictEqual(first, { due: 1, checked: 1, failures: 0 })
 			const [checked] = (yield* service.status(orgId)).connections
 			assert.isNotNull(checked?.verifiedAt)
 
 			// Checked moments ago: nothing is due, and the paused one is never claimed.
-			const second = yield* service.checkDue()
+			const second = yield* service.checkDue
 			assert.deepStrictEqual(second, { due: 0, checked: 0, failures: 0 })
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
@@ -406,7 +406,7 @@ describe("AwsConnectionService", () => {
 			const service = yield* AwsConnectionService
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
 			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
-			const [a, b] = yield* Effect.all([service.checkDue(), service.checkDue()], { concurrency: 2 })
+			const [a, b] = yield* Effect.all([service.checkDue, service.checkDue], { concurrency: 2 })
 			assert.strictEqual((a?.checked ?? 0) + (b?.checked ?? 0), 1)
 			assert.strictEqual(
 				Arr.filter(aws.calls, (call) => call === "AssumeRoleWithWebIdentity").length,
@@ -459,21 +459,21 @@ describe("AwsConnectionService", () => {
 				Array.from({ length: 101 }, (_, index) => index),
 				(index) =>
 					service.create(orgId, userId, {
-						accountId: Schema.decodeUnknownSync(AwsAccountId)(String(100000000000 + index)),
+						accountId: Schema.decodeSync(AwsAccountId)(String(100000000000 + index)),
 						modules: [],
 					}),
 				{ concurrency: 10 },
 			)
-			const sweep = yield* service.checkDue()
+			const sweep = yield* service.checkDue
 			assert.deepStrictEqual(sweep, { due: 101, checked: 101, failures: 101 })
-			assert.deepStrictEqual(yield* service.checkDue(), { due: 0, checked: 0, failures: 0 })
+			assert.deepStrictEqual(yield* service.checkDue, { due: 0, checked: 0, failures: 0 })
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
 	it.effect("a sweep checks a never-checked connection ahead of stale ones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
-		const accountOf = (digits: string) => Schema.decodeUnknownSync(AwsAccountId)(digits)
+		const accountOf = (digits: string) => Schema.decodeSync(AwsAccountId)(digits)
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
 			const stale = yield* Effect.forEach(["111111111111", "222222222222"], (digits) =>
@@ -486,7 +486,7 @@ describe("AwsConnectionService", () => {
 				modules: [],
 			})
 			aws.assumed.length = 0
-			yield* service.checkDue()
+			yield* service.checkDue
 			// Two checks run at a time: the new connection is in the first pair, not behind both stale ones.
 			assert.include(aws.assumed.slice(0, 2), fresh.roleArn)
 			assert.lengthOf(aws.assumed, 3)
@@ -502,14 +502,14 @@ describe("AwsConnectionService", () => {
 				Array.from({ length: 80 }, (_, index) => index),
 				(index) =>
 					service.create(orgId, userId, {
-						accountId: Schema.decodeUnknownSync(AwsAccountId)(String(100000000000 + index)),
+						accountId: Schema.decodeSync(AwsAccountId)(String(100000000000 + index)),
 						modules: [],
 					}),
 				{ concurrency: 10 },
 			)
 			// Each check takes 9s, under the SDK's timers: 80 checks two at a time outlast the budget.
 			aws.beforeEachCall = TestClock.adjust("9 seconds")
-			const first = yield* service.checkDue()
+			const first = yield* service.checkDue
 			assert.strictEqual(first.due, 80)
 			assert.isAbove(first.checked, 0)
 			assert.isBelow(first.checked, 80)
@@ -517,7 +517,7 @@ describe("AwsConnectionService", () => {
 			assert.isAtMost(aws.assumed.length, first.checked)
 			aws.beforeEachCall = Effect.void
 			yield* TestClock.adjust("1 hour")
-			assert.strictEqual((yield* service.checkDue()).checked, 80)
+			assert.strictEqual((yield* service.checkDue).checked, 80)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 })

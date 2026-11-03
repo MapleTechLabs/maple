@@ -16,7 +16,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
 	Arr.reduce(messages, model, (current, message) => update(current, message, context).model)
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_range",
 	name: "Range",
 	timeRange: { type: "relative", value: "1h" },

@@ -13,9 +13,9 @@ import {
 	type GcpSetupScriptInput,
 } from "./setup-scripts"
 
-const connectorId = Schema.decodeUnknownSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
-const hostProject = Schema.decodeUnknownSync(GcpProjectId)("acme-host")
-const resourceNumber = Schema.decodeUnknownSync(GcpResourceNumber)("123456789012")
+const connectorId = Schema.decodeSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+const hostProject = Schema.decodeSync(GcpProjectId)("acme-host")
+const resourceNumber = Schema.decodeSync(GcpResourceNumber)("123456789012")
 const NAME = "maple-018f2b3c4d5e4f708192a3b4"
 const ACCOUNT = `${NAME}@acme-host.iam.gserviceaccount.com`
 const SECRET = "maple_gcp_s3cr3t-value"

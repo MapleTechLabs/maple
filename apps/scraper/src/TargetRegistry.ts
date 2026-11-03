@@ -42,7 +42,7 @@ export class TargetRegistry extends Context.Service<TargetRegistry, TargetRegist
 			const lastRefreshAt = yield* Ref.make<number | null>(null)
 
 			const refresh = Effect.gen(function* () {
-				const list = yield* api.listTargets()
+				const list = yield* api.listTargets
 				// Last row wins per sub-target: duplicate rows must never scrape twice.
 				const groups = groupTargets(list)
 				const distinct = Array.from(groups.values()).reduce((total, group) => total + group.length, 0)

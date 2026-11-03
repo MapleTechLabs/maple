@@ -58,7 +58,7 @@ type Verdict = "confirmed" | "needs_validation" | "rejected"
 
 const schemaBranch = (verdict: Verdict): string => {
 	const branch = reportSchema.items.oneOf.find((b) => b.properties.verdict.const === verdict)
-	return Option.getOrElse(encodePrettyOption(branch), () => String(branch))
+	return Option.getOrElse(encodePrettyOption(branch), () => `(no report schema branch for ${verdict})`)
 }
 
 /**

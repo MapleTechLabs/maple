@@ -18,7 +18,7 @@ const lint = (advisor: "security" | "performance", level: "ERROR" | "WARN" | "IN
 	cacheKey: `${advisor}-${title}`,
 })
 
-const insights = Schema.decodeUnknownSync(SupabaseProjectInsights)({
+const insights = Schema.decodeSync(SupabaseProjectInsights)({
 	projectRef: "abcdefghijklmnopqrst",
 	advisors: {
 		error: [lint("security", "ERROR", "RLS disabled in public")],
@@ -33,7 +33,7 @@ const insights = Schema.decodeUnknownSync(SupabaseProjectInsights)({
 })
 
 const issue = (message: string, maxSeverity: number) =>
-	Schema.decodeUnknownSync(SupabaseLogIssue)({
+	Schema.decodeSync(SupabaseLogIssue)({
 		projectRef: "abcdefghijklmnopqrst",
 		source: "postgres_logs",
 		message,
@@ -61,7 +61,7 @@ describe("needsAttention", () => {
 
 	test("the panel budget applies after ranking, so error logs are never hidden behind an advisor warning", () => {
 		const errorLogs = Arr.map(["a", "b", "c", "d", "e"], (message) => issue(message, 17))
-		const warnOnly = Schema.decodeUnknownSync(SupabaseProjectInsights)({
+		const warnOnly = Schema.decodeSync(SupabaseProjectInsights)({
 			...Schema.encodeSync(SupabaseProjectInsights)(insights),
 			advisors: { error: [], warn: insights.advisors.warn, info: [] },
 		})

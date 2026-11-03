@@ -867,7 +867,7 @@ describe("durable migration recovery", () => {
 		} as const
 		const makeFixtureModule = (
 			id: string,
-			from: typeof LEGACY_LOCAL_SCHEMA | typeof LOCAL_SCHEMA_V1,
+			from: typeof LOCAL_SCHEMA_V1,
 			to: typeof LOCAL_SCHEMA_V1 | typeof v2,
 			events: string[],
 		): LocalStoreMigration => ({

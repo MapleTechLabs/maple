@@ -40,8 +40,8 @@ import { SharedDashboardService } from "./SharedDashboardService"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_share_service")
-const USER = Schema.decodeUnknownSync(UserId)("user_share_service")
+const ORG = Schema.decodeSync(OrgId)("org_share_service")
+const USER = Schema.decodeSync(UserId)("user_share_service")
 
 const baseConfig = {
 	PORT: "3482",

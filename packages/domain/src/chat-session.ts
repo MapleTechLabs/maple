@@ -426,12 +426,16 @@ const ChatEventPayload = Schema.Union([
 ]).pipe(Schema.toTaggedUnion("type"))
 
 const encodePayload = Schema.encodeUnknownSync(Schema.fromJsonString(ChatEventPayload))
-const decodePayload = Schema.decodeUnknownSync(Schema.fromJsonString(ChatEventPayload))
+const parsePayload = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
+const decodeStoredEvent = Schema.decodeUnknownSync(ChatEvent)
 
 export const encodeChatEventPayload = (event: ChatEventInput): string => encodePayload(event)
 
+// The stored JSON is a `ChatEvent`'s encoded form minus `seq`, so it decodes to the event class.
 export const decodeChatEventPayload = (payload: string, seq: number): ChatEvent =>
-	({ ...decodePayload(payload), seq }) as ChatEvent
+	decodeStoredEvent({ ...parsePayload(payload), seq })
 
 // Turn identity
 

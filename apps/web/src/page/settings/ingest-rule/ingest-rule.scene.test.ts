@@ -125,7 +125,7 @@ describe("ingest rule editor", () => {
 				},
 			},
 		})
-		const saved = Schema.decodeUnknownSync(V2IngestRule)({
+		const saved = Schema.decodeSync(V2IngestRule)({
 			id: "irule_YofPTrK9782DWwcnXhpcCw",
 			object: "ingest_rule",
 			name: "Drop debug logs",

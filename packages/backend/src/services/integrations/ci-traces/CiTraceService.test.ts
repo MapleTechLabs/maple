@@ -36,7 +36,7 @@ import { MAX_JOB_LOG_CHARS } from "./logs"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_ci")
+const orgId = Schema.decodeSync(OrgId)("org_ci")
 
 const makeConfig = () =>
 	ConfigProvider.layer(
@@ -282,7 +282,7 @@ describe("CiTraceService", () => {
 				),
 			)
 			assert.strictEqual(source!.name, "GitHub octo")
-			const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+			const expected = publicSourceId(Schema.decodeSync(SourceId)(source!.id))
 			assert.strictEqual(
 				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "maple_source_id"),
 				expected,
@@ -624,7 +624,7 @@ describe("CiTraceService", () => {
 			yield* emitJob.pipe(Effect.provide(batch))
 			// The rotation runs in another graph with its own memo, as the HTTP route does.
 			const rotated = yield* OrgIngestKeysService.use((keys) =>
-				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+				keys.rerollPublic(orgId, Schema.decodeSync(UserId)("user_rotates")),
 			).pipe(Effect.provide(keysLayer(testDb)))
 			yield* emitJob.pipe(Effect.provide(batch))
 			assert.deepStrictEqual(
@@ -648,7 +648,7 @@ describe("CiTraceService", () => {
 			const emitJob = WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
 			yield* emitJob.pipe(Effect.provide(batch))
 			const rotated = yield* OrgIngestKeysService.use((keys) =>
-				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+				keys.rerollPublic(orgId, Schema.decodeSync(UserId)("user_rotates")),
 			).pipe(Effect.provide(keysLayer(testDb)))
 			yield* emitJob.pipe(Effect.provide(batch))
 			assert.deepStrictEqual(

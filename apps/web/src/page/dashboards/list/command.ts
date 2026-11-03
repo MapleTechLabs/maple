@@ -225,7 +225,10 @@ const listPages = (
 	cursor: string | null,
 	page: number,
 	read: ReadonlyArray<V2Dashboard>,
-): Effect.Effect<ReadonlyArray<V2Dashboard>, unknown> =>
+): Effect.Effect<
+	ReadonlyArray<V2Dashboard>,
+	Effect.Error<ReturnType<MapleApiV2Client["Service"]["dashboards"]["list"]>>
+> =>
 	Effect.flatMap(
 		client.dashboards.list({
 			query: cursor === null ? { limit: FALLBACK_PAGE_SIZE } : { limit: FALLBACK_PAGE_SIZE, cursor },

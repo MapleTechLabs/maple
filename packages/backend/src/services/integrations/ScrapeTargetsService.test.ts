@@ -1,7 +1,7 @@
 import { FetchHttpClient } from "effect/http"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	CreateScrapeTargetRequest,
@@ -228,7 +228,7 @@ describe("ScrapeTargetsService", () => {
 			yield* service.recordScrapeResults([{ targetId: target.id, scrapedAt, error: null }])
 
 			const updated = yield* service.get(orgId, target.id)
-			assert.strictEqual(updated.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.strictEqual(updated.lastScrapeAt, DateTime.formatIso(DateTime.makeUnsafe(scrapedAt)))
 			assert.isNull(updated.lastScrapeError)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -256,7 +256,7 @@ describe("ScrapeTargetsService", () => {
 			])
 
 			const updated = yield* service.get(orgId, target.id)
-			assert.strictEqual(updated.lastScrapeAt, new Date(goodScrapeAt).toISOString())
+			assert.strictEqual(updated.lastScrapeAt, DateTime.formatIso(DateTime.makeUnsafe(goodScrapeAt)))
 			assert.strictEqual(updated.lastScrapeError, "HTTP 503")
 
 			// A later success clears the error again.
@@ -264,7 +264,10 @@ describe("ScrapeTargetsService", () => {
 				{ targetId: target.id, scrapedAt: goodScrapeAt + 30_000, error: null },
 			])
 			const recovered = yield* service.get(orgId, target.id)
-			assert.strictEqual(recovered.lastScrapeAt, new Date(goodScrapeAt + 30_000).toISOString())
+			assert.strictEqual(
+				recovered.lastScrapeAt,
+				DateTime.formatIso(DateTime.makeUnsafe(goodScrapeAt + 30_000)),
+			)
 			assert.isNull(recovered.lastScrapeError)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -370,7 +373,7 @@ describe("ScrapeTargetsService", () => {
 				}),
 			)
 
-			const unknownId = Schema.decodeUnknownSync(ScrapeTargetId)("99999999-9999-4999-8999-999999999999")
+			const unknownId = Schema.decodeSync(ScrapeTargetId)("99999999-9999-4999-8999-999999999999")
 			const scrapedAt = 1750000000000
 			yield* service.recordScrapeResults([
 				{ targetId: unknownId, scrapedAt, error: null },
@@ -378,7 +381,7 @@ describe("ScrapeTargetsService", () => {
 			])
 
 			const updated = yield* service.get(orgId, target.id)
-			assert.strictEqual(updated.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.strictEqual(updated.lastScrapeAt, DateTime.formatIso(DateTime.makeUnsafe(scrapedAt)))
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -408,7 +411,7 @@ describe("ScrapeTargetsService", () => {
 									orgId,
 									name,
 									`https://${name}.example.com/metrics`,
-									new Date(0).toISOString(),
+									DateTime.formatIso(DateTime.makeUnsafe(0)),
 									sourceId,
 								],
 							),
@@ -421,7 +424,7 @@ describe("ScrapeTargetsService", () => {
 			// A newer write already landed on `stale`; the late batch must not touch it.
 			yield* Effect.promise(() =>
 				executeSql(testDb, "UPDATE scrape_targets SET updated_at = $1 WHERE id = $2", [
-					new Date(scrapedAt + 60_000).toISOString(),
+					DateTime.formatIso(DateTime.makeUnsafe(scrapedAt + 60_000)),
 					stale.id,
 				]),
 			)
@@ -447,10 +450,10 @@ describe("ScrapeTargetsService", () => {
 			])
 
 			const okRow = yield* service.get(orgId, ok.id)
-			assert.strictEqual(okRow.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.strictEqual(okRow.lastScrapeAt, DateTime.formatIso(DateTime.makeUnsafe(scrapedAt)))
 			assert.isNull(okRow.lastScrapeError)
 			const failingRow = yield* service.get(orgId, failing.id)
-			assert.strictEqual(failingRow.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.strictEqual(failingRow.lastScrapeAt, DateTime.formatIso(DateTime.makeUnsafe(scrapedAt)))
 			assert.strictEqual(failingRow.lastScrapeError, "HTTP 503")
 			const staleRow = yield* service.get(orgId, stale.id)
 			assert.isNull(staleRow.lastScrapeAt)
@@ -811,7 +814,9 @@ describe("ScrapeTargetsService", () => {
 			const after = yield* service.get(orgId, target.id)
 			assert.strictEqual(after.lastScrapeError, "later boom")
 			assert.strictEqual(
-				after.lastScrapeAt === null ? null : new Date(after.lastScrapeAt).getTime(),
+				after.lastScrapeAt === null
+					? null
+					: DateTime.toEpochMillis(DateTime.makeUnsafe(after.lastScrapeAt)),
 				now - 2000,
 			)
 			// Every result still gets its own check row.

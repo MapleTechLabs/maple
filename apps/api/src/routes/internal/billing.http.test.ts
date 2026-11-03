@@ -621,7 +621,7 @@ describe("billing writes over HTTP", () => {
 		.middleware(ApiUnexpectedErrors) {}
 
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
-	const PAYER_ORG = Schema.decodeUnknownSync(OrgId)("org_billing_payer")
+	const PAYER_ORG = Schema.decodeSync(OrgId)("org_billing_payer")
 	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
 		decodeTenant({ orgId: ORG, userId: "user_billing_test", roles, authMode: "self_hosted" })
 

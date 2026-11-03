@@ -58,7 +58,7 @@ describe("makePreviewSignIn", () => {
 	it.effect("reports disabled and refuses sign-in outside previews", () =>
 		Effect.gen(function* () {
 			const service = makePreviewSignIn(Option.none())
-			expect((yield* service.status()).enabled).toBe(false)
+			expect((yield* service.status).enabled).toBe(false)
 			const error = yield* Effect.flip(service.signIn("shared-key"))
 			expect(error._tag).toBe("@maple/http/errors/PreviewSignInDisabledError")
 		}),
@@ -78,7 +78,7 @@ describe("makePreviewSignIn", () => {
 		Effect.gen(function* () {
 			const { clerk, writes } = fakeClerk()
 			const service = makePreviewSignIn(Option.some({ key: "shared-key", clerk }))
-			expect((yield* service.status()).enabled).toBe(true)
+			expect((yield* service.status).enabled).toBe(true)
 			const { ticket } = yield* service.signIn("shared-key")
 			expect(ticket).toBe("ticket:user_new:120")
 			expect(writes).toEqual([

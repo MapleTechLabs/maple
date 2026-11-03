@@ -28,7 +28,7 @@ const entered = (search: Model["search"] = {}) => init({ search }, context).mode
 /** The Hazel chat connector, available and not yet installed. */
 const withHazelConnector = (search: Model["search"]): Model => {
 	const model = entered(search)
-	const connectors = Schema.decodeUnknownSync(V2ChatConnectorList)({
+	const connectors = Schema.decodeSync(V2ChatConnectorList)({
 		object: "chat_connector_list",
 		data: [
 			{
@@ -50,7 +50,7 @@ const withHazelConnector = (search: Model["search"]): Model => {
 }
 
 const linear = (state: "absent" | "connected" | "revoked") =>
-	Schema.decodeUnknownSync(LinearIntegrationStatus)({
+	Schema.decodeSync(LinearIntegrationStatus)({
 		connected: state !== "absent",
 		workspaceName: state === "absent" ? null : "Acme Eng",
 		connectedByUserId: null,
@@ -189,7 +189,7 @@ describe("integrations hub", () => {
 
 	test("every chat connector has a tile for every org, Discord included", () => {
 		const model = entered()
-		const discord = Schema.decodeUnknownSync(V2ChatConnectorList)({
+		const discord = Schema.decodeSync(V2ChatConnectorList)({
 			object: "chat_connector_list",
 			data: [
 				{
@@ -282,7 +282,7 @@ describe("linear card", () => {
 			Message.CompletedLoadLinear({
 				key: model.statuses.linear.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(LinearIntegrationStatus)({
+					Schema.decodeSync(LinearIntegrationStatus)({
 						connected: true,
 						workspaceName: "",
 						connectedByUserId: null,

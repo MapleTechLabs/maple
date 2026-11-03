@@ -34,7 +34,7 @@ export const parseProjectedAttributes = (raw: string): Record<string, string> =>
  */
 export const toSpanResult = (t: ListTracesOutput): SpanResult => ({
 	traceId: Schema.decodeSync(TraceId)(t.traceId),
-	spanId: Option.getOrNull(Schema.decodeUnknownOption(SpanId)(t.rootSpanId)),
+	spanId: Option.getOrNull(Schema.decodeOption(SpanId)(t.rootSpanId)),
 	spanName: t.rootSpanName,
 	serviceName: t.services[0] ?? "",
 	durationMs: t.durationMicros / 1000,

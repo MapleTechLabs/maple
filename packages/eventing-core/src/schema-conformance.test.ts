@@ -60,14 +60,14 @@ const timestampMismatches = (value: string, valid: boolean): ReadonlyArray<strin
 	const scalar = { type: "timestamp" as const, value }
 	const verdicts = {
 		scalarJson: scalarJson(scalar),
-		scalarSchema: Result.isSuccess(Schema.decodeUnknownResult(SignalScalarSchema)(scalar)),
+		scalarSchema: Result.isSuccess(Schema.decodeResult(SignalScalarSchema)(scalar)),
 		epochNanos: timestampToEpochNanos(value) !== null,
 		eventJson: eventJson(event(value)),
 		eventSchema: Result.isSuccess(Schema.decodeUnknownResult(MapleCloudEventSchema)(event(value))),
 		eventValidate: Result.isSuccess(validateMapleCloudEvent(event(value))),
 		projectionJson: projectionJson(projection(leaf, value)),
 		projectionSchema: Result.isSuccess(
-			Schema.decodeUnknownResult(SignalProjectionSpecSchema)(projection(leaf, value)),
+			Schema.decodeResult(SignalProjectionSpecSchema)(projection(leaf, value)),
 		),
 	}
 	return Arr.map(
@@ -97,12 +97,8 @@ describe("published scalar schema conformance", () => {
 					value: scalar,
 				}
 				expect(scalarJson(scalar), `${type}: ${value}`).toBe(valid)
-				expect(Result.isSuccess(Schema.decodeUnknownResult(SignalScalarSchema)(scalar)), value).toBe(
-					valid,
-				)
-				expect(Result.isSuccess(Schema.decodeUnknownResult(SignalLiteralSchema)(scalar)), value).toBe(
-					valid,
-				)
+				expect(Result.isSuccess(Schema.decodeResult(SignalScalarSchema)(scalar)), value).toBe(valid)
+				expect(Result.isSuccess(Schema.decodeResult(SignalLiteralSchema)(scalar)), value).toBe(valid)
 				expect(validateSignalScalar(scalar).length === 0, value).toBe(valid)
 				expect(projectionJson(projection(selector)), value).toBe(valid)
 			}
@@ -110,7 +106,7 @@ describe("published scalar schema conformance", () => {
 		for (const value of ["", "+1", "01", "-01", "1.0", "1e3", " 1", "1\n"]) {
 			expect(scalarJson({ type: "int64", value }), value).toBe(false)
 			expect(
-				Result.isSuccess(Schema.decodeUnknownResult(SignalScalarSchema)({ type: "int64", value })),
+				Result.isSuccess(Schema.decodeResult(SignalScalarSchema)({ type: "int64", value })),
 				value,
 			).toBe(false)
 		}
@@ -168,21 +164,21 @@ describe("predicate topology conformance", () => {
 	it("accepts reused subtrees just like their JSON representation", () => {
 		const branch: SignalPredicate = { op: "not", clause: leaf }
 		const shared: SignalPredicate = { op: "all", clauses: [branch, branch] }
-		const decoded = Schema.decodeUnknownSync(SignalPredicateSchema)(shared)
+		const decoded = Schema.decodeSync(SignalPredicateSchema)(shared)
 		expect(decoded).toEqual(
 			Schema.decodeUnknownSync(SignalPredicateSchema)(JSON.parse(JSON.stringify(shared))),
 		)
 		expect(projectionJson(projection(shared))).toBe(true)
-		expect(() => Schema.decodeUnknownSync(SignalProjectionSpecSchema)(projection(shared))).not.toThrow()
+		expect(() => Schema.decodeSync(SignalProjectionSpecSchema)(projection(shared))).not.toThrow()
 	})
 
 	it("counts every occurrence toward the 64-node limit", () => {
 		const atLimit: SignalPredicate = { op: "all", clauses: Array.from({ length: 63 }, () => leaf) }
 		const overLimit: SignalPredicate = { op: "all", clauses: Array.from({ length: 64 }, () => leaf) }
 		expect(predicateInputBudgetIssue(atLimit)).toBeUndefined()
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(atLimit)).not.toThrow()
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(atLimit)).not.toThrow()
 		expect(predicateInputBudgetIssue(overLimit)).toBe("predicate exceeds 64 nodes")
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(overLimit)).toThrow(/64 nodes/)
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(overLimit)).toThrow(/64 nodes/)
 		// Whole-tree budgets require the mandatory preflight described in the artifact.
 		expect(projectionJson(projection(overLimit))).toBe(true)
 	})
@@ -190,16 +186,16 @@ describe("predicate topology conformance", () => {
 	it("enforces root depth 1 through depth 8, and terminates actual cycles", () => {
 		let selector: SignalPredicate = leaf
 		for (let depth = 2; depth <= 8; depth++) selector = { op: "not", clause: selector }
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(selector)).not.toThrow()
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(selector)).not.toThrow()
 		selector = { op: "not", clause: selector }
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(selector)).toThrow(/depth exceeds 8/)
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(selector)).toThrow(/depth exceeds 8/)
 		expect(projectionJson(projection(selector))).toBe(true)
 		const cycle = { op: "not" }
 		Object.assign(cycle, { clause: cycle })
 		expect(predicateInputBudgetIssue(cycle)).toBe("predicate depth exceeds 8")
-		expect(() => Schema.decodeUnknownSync(SignalPredicateSchema)(cycle)).toThrow(/depth exceeds 8/)
+		expect(() => Schema.decodeSync(SignalPredicateSchema)(cycle)).toThrow(/depth exceeds 8/)
 		expect(() =>
-			Schema.decodeUnknownSync(SignalProjectionSpecSchema)({ ...projection(), selector: cycle }),
+			Schema.decodeSync(SignalProjectionSpecSchema)({ ...projection(), selector: cycle }),
 		).toThrow(/depth exceeds 8/)
 	})
 })

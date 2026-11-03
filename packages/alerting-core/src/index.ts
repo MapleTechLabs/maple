@@ -209,7 +209,7 @@ export const projectAlertLifecycleEvent = (
 	input: AlertLifecycleEventInput,
 ): Result.Result<MapleCloudEvent, CloudEventInvalid> =>
 	Result.gen(function* () {
-		const occurredAtMs = yield* Schema.decodeUnknownResult(
+		const occurredAtMs = yield* Schema.decodeResult(
 			Schema.Int.check(
 				Schema.isGreaterThanOrEqualTo(0),
 				Schema.isLessThanOrEqualTo(8_640_000_000_000_000),

@@ -1,5 +1,14 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Layer,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+	DateTime,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
@@ -184,7 +193,7 @@ const uidOf = (record: { attributes: ReadonlyArray<{ key: string; value: { strin
 	record.attributes.find((attribute) => attribute.key === "log.record.uid")?.value.stringValue
 
 /** `2026-10-21T17:55:00.000000`-style column text for an epoch ms. */
-const columnTime = (ms: number) => Str.replace("Z", "000")(new Date(ms).toISOString())
+const columnTime = (ms: number) => Str.replace("Z", "000")(DateTime.formatIso(DateTime.makeUnsafe(ms)))
 
 const row = (id: string, ms: number, overrides: Partial<FakeLogRow> = {}): FakeLogRow => ({
 	id,
@@ -222,7 +231,7 @@ describe("SupabaseLogsService", () => {
 				world,
 				Effect.gen(function* () {
 					yield* connectWithLogs(world)
-					const summary = yield* (yield* SupabaseLogsService).pollAllOrgs()
+					const summary = yield* (yield* SupabaseLogsService).pollAllOrgs
 					assert.deepStrictEqual(summary, { orgs: 1, rows: 1, failures: 0, skipped: 0 })
 
 					const [call] = logsCalls(world)
@@ -258,9 +267,7 @@ describe("SupabaseLogsService", () => {
 						"supabase.project.name": "app",
 						"supabase.project.region": "us-east-1",
 						"supabase.organization.slug": "jylmnjimcybytpydxgbu",
-						maple_source_id: publicSourceId(
-							Schema.decodeUnknownSync(SourceId)(sourceId!.source_id),
-						),
+						maple_source_id: publicSourceId(Schema.decodeSync(SourceId)(sourceId!.source_id)),
 					})
 					assert.match(world.ingest.authorizations[0] ?? "", /^Bearer /)
 
@@ -300,7 +307,7 @@ describe("SupabaseLogsService", () => {
 					yield* connectWithLogs(world)
 					const logs = yield* SupabaseLogsService
 
-					yield* logs.pollAllOrgs()
+					yield* logs.pollAllOrgs
 					// Three full pages in one tick, the rate-limit budget for a lagging project.
 					assert.strictEqual(logsCalls(world).length, 3)
 					const first = yield* logsRow(testDb)
@@ -308,7 +315,7 @@ describe("SupabaseLogsService", () => {
 					assert.deepStrictEqual(first.boundary, ["s-0"])
 
 					yield* TestClock.adjust(minute)
-					yield* logs.pollAllOrgs()
+					yield* logs.pollAllOrgs
 					const ids = Arr.map(sentRecords(world), uidOf)
 					assert.strictEqual(ids.length, 3002)
 					assert.strictEqual(new Set(ids).size, 3002)
@@ -330,7 +337,7 @@ describe("SupabaseLogsService", () => {
 			world,
 			Effect.gen(function* () {
 				yield* connectWithLogs(world)
-				const summary = yield* (yield* SupabaseLogsService).pollAllOrgs()
+				const summary = yield* (yield* SupabaseLogsService).pollAllOrgs
 				assert.strictEqual(summary.failures, 0)
 				const after = yield* logsRow(testDb)
 				assert.deepStrictEqual(
@@ -351,7 +358,7 @@ describe("SupabaseLogsService", () => {
 			world,
 			Effect.gen(function* () {
 				yield* connectWithLogs(world)
-				const summary = yield* (yield* SupabaseLogsService).pollAllOrgs()
+				const summary = yield* (yield* SupabaseLogsService).pollAllOrgs
 				assert.strictEqual(summary.failures, 1)
 				const after = yield* logsRow(testDb)
 				assert.strictEqual(after.watermark, ENABLED_FROM)
@@ -373,14 +380,14 @@ describe("SupabaseLogsService", () => {
 			Effect.gen(function* () {
 				yield* connectWithLogs(world)
 				const logs = yield* SupabaseLogsService
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				const failed = yield* logsRow(testDb)
 				assert.strictEqual(failed.watermark, ENABLED_FROM)
 				assert.match(failed.error ?? "", /Supabase logs ingest returned 503/)
 
 				world.ingest.status = 200
 				yield* TestClock.adjust(minute)
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				assert.deepStrictEqual(Arr.map(sentRecords(world), uidOf), ["a"])
 				const recovered = yield* logsRow(testDb)
 				assert.deepStrictEqual([recovered.watermark, recovered.error], [HORIZON + minute, null])
@@ -402,7 +409,7 @@ describe("SupabaseLogsService", () => {
 			Effect.gen(function* () {
 				yield* connectWithLogs(world)
 				const logs = yield* SupabaseLogsService
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				assert.strictEqual(sentRecords(world).length, 250)
 				const failed = yield* logsRow(testDb)
 				assert.strictEqual(failed.watermark, ENABLED_FROM + 83)
@@ -410,7 +417,7 @@ describe("SupabaseLogsService", () => {
 				assert.match(failed.error ?? "", /Supabase logs ingest returned 503/)
 
 				yield* TestClock.adjust(minute)
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				const ids = Arr.map(sentRecords(world), uidOf)
 				assert.strictEqual(ids.length, 600)
 				assert.strictEqual(new Set(ids).size, 600)
@@ -431,14 +438,14 @@ describe("SupabaseLogsService", () => {
 			Effect.gen(function* () {
 				yield* connectWithLogs(world)
 				const logs = yield* SupabaseLogsService
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				assert.strictEqual(logsCalls(world).length, 1)
 
 				world.ingest.status = 200
 				yield* logs.setLogsEnabled(ORG, asRef(REF_A), false)
 				yield* logs.setLogsEnabled(ORG, asRef(REF_A), true)
 				yield* TestClock.adjust(minute)
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				assert.strictEqual(logsCalls(world).length, 2)
 				assert.deepStrictEqual(Arr.map(sentRecords(world), uidOf), ["a"])
 			}),
@@ -456,18 +463,18 @@ describe("SupabaseLogsService", () => {
 			Effect.gen(function* () {
 				yield* connectWithLogs(world)
 				const logs = yield* SupabaseLogsService
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				assert.strictEqual(logsCalls(world).length, 1)
 
 				world.ingest.status = 200
 				yield* Effect.forEach([1, 2, 30, 59], (minutes) =>
-					TestClock.setTime(NOW + minutes * minute).pipe(Effect.andThen(logs.pollAllOrgs())),
+					TestClock.setTime(NOW + minutes * minute).pipe(Effect.andThen(logs.pollAllOrgs)),
 				)
 				assert.strictEqual(logsCalls(world).length, 1)
 				assert.strictEqual(world.ingest.bodies.length, 0)
 
 				yield* TestClock.setTime(NOW + 61 * minute)
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				assert.isAbove(logsCalls(world).length, 1)
 				assert.deepStrictEqual(Arr.map(sentRecords(world), uidOf), ["a"])
 			}),
@@ -487,10 +494,10 @@ describe("SupabaseLogsService", () => {
 					queryFirstRow(
 						testDb,
 						"UPDATE sources SET paused_at = $1 WHERE id = (SELECT source_id FROM supabase_connections WHERE org_id = $2) RETURNING id",
-						[new Date(NOW - minute), ORG],
+						[DateTime.formatIso(DateTime.makeUnsafe(NOW - minute)), ORG],
 					),
 				)
-				const summary = yield* (yield* SupabaseLogsService).pollAllOrgs()
+				const summary = yield* (yield* SupabaseLogsService).pollAllOrgs
 				assert.strictEqual(summary.skipped, 1)
 				assert.strictEqual(logsCalls(world).length, 0)
 				assert.strictEqual((yield* logsRow(testDb)).watermark, HORIZON)
@@ -510,14 +517,14 @@ describe("SupabaseLogsService", () => {
 					yield* connectWithLogs(world)
 					const logs = yield* SupabaseLogsService
 					assert.strictEqual((yield* logsRow(testDb)).watermark, ENABLED_FROM)
-					yield* logs.pollAllOrgs()
+					yield* logs.pollAllOrgs
 					yield* logs.setLogsEnabled(ORG, asRef(REF_A), true)
 					assert.strictEqual((yield* logsRow(testDb)).watermark, HORIZON)
 
 					yield* logs.setLogsEnabled(ORG, asRef(REF_A), false)
 					yield* TestClock.adjust(minute)
 					const calls = logsCalls(world).length
-					assert.deepStrictEqual(yield* logs.pollAllOrgs(), {
+					assert.deepStrictEqual(yield* logs.pollAllOrgs, {
 						orgs: 0,
 						rows: 0,
 						failures: 0,
@@ -620,7 +627,7 @@ describe("SupabaseLogsService", () => {
 				assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
 				yield* TestClock.adjust(minute)
 				const calls = logsCalls(world).length
-				yield* logs.pollAllOrgs()
+				yield* logs.pollAllOrgs
 				assert.strictEqual(logsCalls(world).length, calls)
 
 				// Drain off first, then polling on: the switch back works.

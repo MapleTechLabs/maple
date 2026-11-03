@@ -8,6 +8,7 @@ import {
 } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { ConfigProvider, DateTime, Effect, Layer, Schema } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -48,8 +49,8 @@ import { CancellationReviewService, type CancellationToReview } from "./Cancella
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_leaving")
-const OWN_ORG = Schema.decodeUnknownSync(OrgId)("org_maple")
+const ORG = Schema.decodeSync(OrgId)("org_leaving")
+const OWN_ORG = Schema.decodeSync(OrgId)("org_maple")
 const CANCELED_AT = Date.parse("2026-10-07T15:30:00Z")
 const DAY_MS = 86_400_000
 
@@ -368,6 +369,7 @@ const makeLayer = (world: World, testDb: TestDb) =>
 				OnboardingService.layer.pipe(Layer.provide(testDb.layer)),
 				IntegrationInventoryService.layer.pipe(Layer.provide(testDb.layer)),
 				testDb.layer,
+				SecureRandom.layerWebCrypto,
 			),
 		),
 		Layer.provide(Env.layer),
@@ -573,7 +575,7 @@ describe("CancellationReviewService", () => {
 			)
 			assert.deepStrictEqual(request?.sessions?.[0]?.problems, ["SSO is not available on your plan"])
 			assert.deepStrictEqual(request?.auditLog?.[0], {
-				at: new Date(CANCELED_AT - DAY_MS).toISOString(),
+				at: DateTime.formatIso(DateTime.makeUnsafe(CANCELED_AT - DAY_MS)),
 				daysBeforeCancel: 1,
 				action: "ingest_key.revoke",
 				actor: "user",

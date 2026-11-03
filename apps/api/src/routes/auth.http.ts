@@ -37,7 +37,7 @@ export const HttpAuthPublicLive = HttpApiBuilder.group(MapleApi, "authPublic", (
 				}),
 			)
 			.handle("cliDevicePoll", ({ payload }) => cliAuth.poll(payload.deviceCode))
-			.handle("previewSignInStatus", () => previewSignIn.status())
+			.handle("previewSignInStatus", () => previewSignIn.status)
 			.handle("previewSignIn", ({ payload }) => previewSignIn.signIn(payload.key))
 	}),
 )

@@ -40,7 +40,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			modelToDependencies: ({ model }) => ({ isCanvas: resolveView(model.search.view) === "page" }),
 			dependenciesToStream: ({ isCanvas }) =>
 				isCanvas
-					? previewSelections().pipe(
+					? previewSelections.pipe(
 							Stream.map((selection) => Message.ReceivedPreviewSelection(selection)),
 						)
 					: Stream.empty,

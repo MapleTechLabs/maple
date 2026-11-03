@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Clock, Duration, Effect, Layer, Schema, String as Str } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Layer, Schema, String as Str, DateTime } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	type AlertDestinationId,
@@ -438,7 +438,7 @@ describe("AlertsService delivery drain", () => {
 
 describe("AlertsService chat digests", () => {
 	const fixedTime = 1_710_000_900_000
-	const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("44444444-4444-4444-8444-444444444444")
+	const workspaceId = Schema.decodeSync(ChatWorkspaceId)("44444444-4444-4444-8444-444444444444")
 
 	/** Queues `count` trigger deliveries for one chat destination, runs a tick, and reads the queue. */
 	const runBurst = (
@@ -470,7 +470,7 @@ describe("AlertsService chat digests", () => {
 				}),
 			findChannel: () =>
 				Effect.succeed({
-					connector: Schema.decodeUnknownSync(ChatConnectorId)("testchat"),
+					connector: Schema.decodeSync(ChatConnectorId)("testchat"),
 					workspaceName: "Acme",
 					channelName: "incidents",
 				}),
@@ -733,14 +733,12 @@ describe("AlertsService held incidents", () => {
 					// union shape.
 					if (Str.includes("service_overview_spans")(query.sql)) {
 						const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
-						return yield* query
-							.decodeRows([
-								{ signal: "spans", count: probeCount(state.liveness, startMs), lastSeen: "" },
-							])
-							.pipe(Effect.orDie)
+						return yield* query.decodeRows([
+							{ signal: "spans", count: probeCount(state.liveness, startMs), lastSeen: "" },
+						])
 					}
-					return yield* query.decodeRows(rowsForQuery(query.sql)).pipe(Effect.orDie)
-				}),
+					return yield* query.decodeRows(rowsForQuery(query.sql))
+				}).pipe(Effect.orDie),
 			compiledQueryWithCapabilities: (_tenant, compile) => {
 				const query = Effect.runSync(compile(baselineWarehouseCapabilities()))
 				return query.decodeRows(rowsForQuery(query.sql)).pipe(Effect.orDie)
@@ -846,7 +844,10 @@ describe("AlertsService held incidents", () => {
 			const held = yield* paymentsIncident(alerts, orgId)
 			assert.strictEqual(held.status, "open")
 			assert.strictEqual(held.holdReason, "volume_collapsed")
-			assert.strictEqual(held.heldSince, new Date(DEFAULT_CLOCK_EPOCH_MS + 60_000).toISOString())
+			assert.strictEqual(
+				held.heldSince,
+				DateTime.formatIso(DateTime.makeUnsafe(DEFAULT_CLOCK_EPOCH_MS + 60_000)),
+			)
 			assert.strictEqual(held.resolvedAt, null)
 			const eventsWhileHeld = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
@@ -1027,7 +1028,10 @@ describe("AlertsService held incidents", () => {
 			yield* tickAfter(state, alerts, 25)
 			const secondHold = yield* paymentsIncident(alerts, orgId)
 			assert.strictEqual(secondHold.status, "open")
-			assert.strictEqual(secondHold.heldSince, new Date(state.liveness.nowMs).toISOString())
+			assert.strictEqual(
+				secondHold.heldSince,
+				DateTime.formatIso(DateTime.makeUnsafe(state.liveness.nowMs)),
+			)
 			yield* tickAfter(state, alerts, 5)
 			assert.strictEqual((yield* paymentsIncident(alerts, orgId)).status, "open")
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))

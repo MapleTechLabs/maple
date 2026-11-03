@@ -30,7 +30,7 @@ describe("HTTP request contract", () => {
 			const requests: Array<{ url: URL; init?: RequestInit }> = []
 			const request: typeof fetch = async (input, init) => {
 				requests.push({
-					url: new URL(String(input)),
+					url: new URL(input instanceof Request ? input.url : input),
 					init: { ...init, body: await new Response(init?.body).text() },
 				})
 				return response()
@@ -86,7 +86,7 @@ describe("HTTP request contract", () => {
 				assert.deepStrictEqual(ids, [a.queryId, b.queryId])
 			}),
 			async (input) => {
-				ids.push(new URL(String(input)).searchParams.get("query_id")!)
+				ids.push(new URL(input instanceof Request ? input.url : input).searchParams.get("query_id")!)
 				return response()
 			},
 		)

@@ -34,6 +34,7 @@
  * for the route graph.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Effect, FileSystem, Option, Path, Schema, Array as Arr, Record as Rec } from "effect"
 import {
 	ChatTurnOrigin as ChatTurnOriginSchema,
@@ -434,10 +435,7 @@ export class ChatSession {
 		const since = (position: number) => this.since(position)
 		const appends = () => this.appends
 		const waitForAppend = (seen: number, timeoutMs: number) => this.waitForAppend(seen, timeoutMs)
-		type PumpError =
-			| Effect.Error<ReturnType<typeof write>>
-			| Effect.Error<ReturnType<typeof waitForAppend>>
-		const pumpFrom = (position: number): Effect.Effect<void, PumpError> =>
+		const pumpFrom = (position: number): Effect.Effect<void, Effect.Error<ReturnType<typeof write>>> =>
 			Effect.gen(function* () {
 				const seen = appends()
 				const events = since(position)
@@ -491,7 +489,7 @@ export class ChatSession {
 		// the user message when opening the assistant one, so every text delta was appended to the
 		// user's own bubble — "Say PONG" came back as "Say PONGPING" — and the client folded it the
 		// same way, since it keys the optimistic user message on exactly this id.
-		const turnId = crypto.randomUUID()
+		const turnId = SecureRandom.uuidV4Unsafe()
 		const turn: TurnInput = {
 			sessionId: input.sessionId,
 			userMessageId: input.messageId,
@@ -682,7 +680,7 @@ export class ChatSession {
 		const resumes = row.running_resumes ?? 0
 		if (Option.isSome(turn) && resumable(turn.value) && resumes < MAX_TURN_RESUMES) {
 			this.append({ type: "turn-end", messageId, reason: "error", error: TURN_RESTARTED })
-			const turnId = crypto.randomUUID()
+			const turnId = SecureRandom.uuidV4Unsafe()
 			this.sql.exec(
 				"UPDATE session SET running_since = ?, running_message_id = ?, running_resumes = ? WHERE id = 1",
 				Date.now(),

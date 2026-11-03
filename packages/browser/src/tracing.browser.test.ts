@@ -239,8 +239,9 @@ describe("setupTracing unload flush", () => {
 		// A host that registered its own provider owns the globals; losing them
 		// (trace.disable) would break the host's tracing, not just ours.
 		const hostSpan: ApiSpan = trace.wrapSpanContext(INVALID_SPAN_CONTEXT)
+		const startSpan = vi.fn(() => hostSpan)
 		const hostTracer: Tracer = {
-			startSpan: vi.fn(() => hostSpan),
+			startSpan,
 			startActiveSpan: vi.fn(),
 		}
 		const hostProvider: TracerProvider = { getTracer: () => hostTracer }
@@ -250,7 +251,7 @@ describe("setupTracing unload flush", () => {
 		await teardown()
 
 		expect(trace.getTracer("host").startSpan("still-host")).toBeDefined()
-		expect(hostTracer.startSpan).toHaveBeenCalledWith("still-host")
+		expect(startSpan).toHaveBeenCalledWith("still-host")
 	})
 
 	it("exports a fetch span that settled just before pagehide", async () => {

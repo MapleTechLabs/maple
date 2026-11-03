@@ -1699,7 +1699,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const response = yield* authedSend(method, token, url(config), body, context)
 					if (!isOk(response)) return yield* failure(response, context, "repository")
 					const payloadJson = yield* parseJson(response, context)
-					return yield* Schema.decodeUnknownEffect(schema)(payloadJson).pipe(
+					return yield* Schema.decodeEffect(schema)(payloadJson).pipe(
 						Effect.mapError(
 							(cause) =>
 								new GithubAppError({ message: `Unexpected ${context} payload`, cause }),

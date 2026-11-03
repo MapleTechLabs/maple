@@ -214,7 +214,7 @@ describe("PrReviewPostMergeService.runTick", () => {
 			yield* seedDueReview
 			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
 			const service = yield* PrReviewPostMergeService
-			yield* Effect.all([service.runTick(), service.runTick()], { concurrency: 2 })
+			yield* Effect.all([service.runTick, service.runTick], { concurrency: 2 })
 			assert.lengthOf(posted, 1)
 			assert.include(posted[0] ?? "", "Shipped clean")
 			assert.equal((yield* rowState)?.status, "reported")
@@ -229,14 +229,14 @@ describe("PrReviewPostMergeService.runTick", () => {
 			const now = DEPLOYED_AT + 70 * 60_000
 			yield* TestClock.setTime(now)
 			const service = yield* PrReviewPostMergeService
-			const result = yield* service.runTick()
+			const result = yield* service.runTick
 			assert.equal(result.failedRows, 1)
 			assert.lengthOf(posted, 0)
 			assert.deepStrictEqual(yield* rowState, { status: "waiting", after: now + 30 * 60_000 })
 
 			// Still failing two days after the merge: given up as failed, never reported clean.
 			yield* TestClock.setTime(MERGED_AT + 49 * 3_600_000)
-			yield* service.runTick()
+			yield* service.runTick
 			assert.lengthOf(posted, 0)
 			assert.equal((yield* rowState)?.status, "failed")
 		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: true })))
@@ -256,7 +256,7 @@ describe("PrReviewPostMergeService.runTick, stored telemetry", () => {
 				]),
 			)
 			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
-			const result = yield* (yield* PrReviewPostMergeService).runTick()
+			const result = yield* (yield* PrReviewPostMergeService).runTick
 			assert.equal(result.examined, 1)
 			assert.equal(result.gaveUp, 1)
 			assert.lengthOf(posted, 0)
@@ -299,7 +299,7 @@ describe("PrReviewPostMergeService.runTick, lease", () => {
 			yield* seedDueReview
 			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
 			const service = yield* PrReviewPostMergeService
-			yield* service.runTick()
+			yield* service.runTick
 			assert.lengthOf(posted, 0)
 			assert.equal((yield* rowState)?.status, "waiting")
 		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: false }, racing)))

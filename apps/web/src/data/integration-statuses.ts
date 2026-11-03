@@ -22,22 +22,25 @@ export interface LoadOptions {
 	readonly orgId?: string
 }
 
-type Loader<A> = (options?: LoadOptions) => Effect.Effect<A, unknown>
-type Held<A> = Readonly<{ orgId: string | null; shared: Effect.Effect<A, unknown> }>
+type Loader<A, E> = (options?: LoadOptions) => Effect.Effect<A, E>
+type Held<A, E> = Readonly<{ orgId: string | null; shared: Effect.Effect<A, E> }>
+type Internal = MapleInternalApiClient["Service"]["integrations"]
+type V2 = MapleApiV2Client["Service"]
+type ErrorOf<F extends () => Effect.Effect<unknown, unknown>> = Effect.Error<ReturnType<F>>
 
 /**
  * One shared load per status and org: another org's
  * answer is never served. A failure is not kept: the next reader asks again.
  */
-export const sharedLoader = <A>(load: Effect.Effect<A, unknown>): Effect.Effect<Loader<A>> =>
-	Effect.map(SynchronizedRef.make(Option.none<Held<A>>()), (ref) => {
-		const forget = (failed: Effect.Effect<A, unknown>) =>
+export const sharedLoader = <A, E>(load: Effect.Effect<A, E>): Effect.Effect<Loader<A, E>> =>
+	Effect.map(SynchronizedRef.make(Option.none<Held<A, E>>()), (ref) => {
+		const forget = (failed: Effect.Effect<A, E>) =>
 			SynchronizedRef.update(ref, (held) =>
 				Option.isSome(held) && held.value.shared === failed ? Option.none() : held,
 			)
 		const start = (orgId: string | null) =>
-			Effect.map(Effect.cached(load), (memo): Held<A> => {
-				const shared: Effect.Effect<A, unknown> = Effect.tapError(memo, () => forget(shared))
+			Effect.map(Effect.cached(load), (memo): Held<A, E> => {
+				const shared: Effect.Effect<A, E> = Effect.tapError(memo, () => forget(shared))
 				return { orgId, shared }
 			})
 		return (options) => {
@@ -55,11 +58,11 @@ export const sharedLoader = <A>(load: Effect.Effect<A, unknown>): Effect.Effect<
 export class IntegrationStatuses extends Context.Service<
 	IntegrationStatuses,
 	{
-		readonly cloudflare: Loader<CloudflareIntegrationStatus>
-		readonly railway: Loader<RailwayIntegrationStatus>
-		readonly planetscale: Loader<PlanetscaleStatus>
-		readonly gcp: Loader<GcpStatus>
-		readonly supabase: Loader<SupabaseIntegrationStatus>
+		readonly cloudflare: Loader<CloudflareIntegrationStatus, ErrorOf<Internal["cloudflareStatus"]>>
+		readonly railway: Loader<RailwayIntegrationStatus, ErrorOf<Internal["railwayStatus"]>>
+		readonly planetscale: Loader<PlanetscaleStatus, ErrorOf<V2["planetscaleIntegration"]["status"]>>
+		readonly gcp: Loader<GcpStatus, ErrorOf<V2["gcpIntegration"]["status"]>>
+		readonly supabase: Loader<SupabaseIntegrationStatus, ErrorOf<Internal["supabaseStatus"]>>
 		/** The open org: readers that do not name one read under it. */
 		readonly scopeTo: (orgId: string) => Effect.Effect<void>
 	}
@@ -71,15 +74,15 @@ export class IntegrationStatuses extends Context.Service<
 			const v2 = yield* MapleApiV2Client
 			const openOrg = yield* Ref.make(Option.none<string>())
 			const inOrg =
-				<A>(loader: Loader<A>): Loader<A> =>
+				<A, E>(loader: Loader<A, E>): Loader<A, E> =>
 				(options) =>
 					Effect.flatMap(Ref.get(openOrg), (org) =>
 						loader({ ...options, orgId: options?.orgId ?? Option.getOrUndefined(org) }),
 					)
 			const cloudflare = yield* sharedLoader(internal.integrations.cloudflareStatus())
 			const railway = yield* sharedLoader(internal.integrations.railwayStatus())
-			const planetscale = yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status())
-			const gcp = yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status())
+			const planetscale = yield* sharedLoader(v2.planetscaleIntegration.status())
+			const gcp = yield* sharedLoader(v2.gcpIntegration.status())
 			const supabase = yield* sharedLoader(internal.integrations.supabaseStatus())
 			return {
 				cloudflare: inOrg(cloudflare),

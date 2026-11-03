@@ -15,6 +15,7 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Clock, Effect } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { handleRequest } from "./handler"
 import { nativeStorage } from "./storage"
@@ -68,7 +69,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 				const response = yield* handleRequest(web, {
 					storage,
 					nowMs,
-					randomId: () => crypto.randomUUID(),
+					randomId: () => SecureRandom.uuidV4Unsafe(),
 				})
 				yield* Effect.annotateCurrentSpan("http.response.status_code", response.status)
 				return HttpServerResponse.fromWeb(response)

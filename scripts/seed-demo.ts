@@ -335,7 +335,7 @@ const seed = Command.make(
 			onNone: () =>
 				flags.anchor === "now"
 					? Math.floor(Date.now() / (5 * MINUTE)) * 5 * MINUTE
-					: Option.match(Schema.decodeUnknownOption(Schema.DateTimeUtcFromString)(flags.anchor), {
+					: Option.match(Schema.decodeOption(Schema.DateTimeUtcFromString)(flags.anchor), {
 							onSome: DateTime.toEpochMillis,
 							onNone: () => Number.NaN,
 						}),
