@@ -160,6 +160,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 ) {
 	const executor = yield* WarehouseExecutor
 	yield* Effect.annotateCurrentSpan("maple.trace.id", traceId)
+	const decodedTraceId = yield* Schema.decodeEffect(TraceId)(traceId)
 
 	const nowMs = yield* Clock.currentTimeMillis
 	const rangeHours = options?.rangeHours ?? DEFAULT_RANGE_HOURS
@@ -211,9 +212,11 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 					): Effect.Effect<Option.Option<CH.TraceTimeProbeOutput>, WarehouseExecutorError> => {
 						const [head, ...rest] = windows
 						return head === undefined
-							? Effect.succeedNone
+							? Effect.succeed(Option.none())
 							: probeWindow(head).pipe(
-									Effect.filterOrElse(Option.isSome, () => probeTiers(rest)),
+									Effect.flatMap((found) =>
+										Option.isSome(found) ? Effect.succeed(found) : probeTiers(rest),
+									),
 								)
 					}
 					// The default lookback just read the last day in full, so the tiers start below it.
@@ -246,10 +249,9 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 			options?.includeAttributes === true,
 		)
 		const resourceAttributes = yield* parseJsonAttributes(span.resourceAttributes ?? "{}")
-		// A malformed id off the warehouse stays a defect, as the sync decode had it.
-		const spanId = yield* Schema.decodeEffect(SpanId)(span.spanId).pipe(Effect.orDie)
 		const node: MutableSpanNode = {
-			spanId,
+			// oxlint-disable-next-line effecttsgo/schema-sync-in-effect -- read back from the warehouse, which only stores valid span ids
+			spanId: Schema.decodeSync(SpanId)(span.spanId),
 			parentSpanId: span.parentSpanId,
 			spanName: span.spanName,
 			...(span.rawSpanName !== undefined && span.rawSpanName !== span.spanName
@@ -305,7 +307,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	yield* Effect.annotateCurrentSpan("result.serviceCount", serviceCount)
 
 	return {
-		traceId: yield* Schema.decodeEffect(TraceId)(traceId).pipe(Effect.orDie),
+		traceId: decodedTraceId,
 		serviceCount,
 		spanCount: spans.length,
 		rootDurationMs: roots[0]?.durationMs ?? 0,

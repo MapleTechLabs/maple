@@ -38,11 +38,6 @@ export const runsOf = (model: Model): ReadonlyArray<SecurityAuditRun> =>
 		onSome: (response) => [...response.runs].sort((a, b) => b.startedAt - a.startedAt),
 	})
 
-export const latestRunOf = (
-	runs: ReadonlyArray<SecurityAuditRun>,
-	targetId: string,
-): SecurityAuditRun | undefined => runs.find((run) => run.targetId === targetId)
-
 /** Live runs in either list: polling keeps going while any is. */
 export const runningRuns = (model: Model): ReadonlyArray<SecurityAuditRun> => allRuns(model).filter(isLive)
 

@@ -303,5 +303,3 @@ export const HUB_CATEGORIES: readonly HubCategory[] = [
 	},
 	{ id: "code", icon: "laptop", title: m.intg_cat_code_title, lede: m.intg_cat_code_lede, tiles: code },
 ]
-
-export const HUB_TILE_COUNT = HUB_CATEGORIES.reduce((n, c) => n + c.tiles.length, 0)

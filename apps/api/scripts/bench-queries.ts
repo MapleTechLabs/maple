@@ -416,7 +416,8 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 			}).pipe(
 				Effect.flatMap((value) =>
 					Effect.isEffect(value)
-						? (value as Effect.Effect<unknown, unknown>).pipe(
+						? // oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- a suite module's default export, checked by isEffect
+							(value as Effect.Effect<unknown, unknown>).pipe(
 								Effect.mapError(
 									(cause) =>
 										new BenchFileError({

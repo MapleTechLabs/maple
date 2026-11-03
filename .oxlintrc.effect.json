@@ -53,7 +53,11 @@
 		"effecttsgo/unnecessary-pipe-chain": "error",
 		"effecttsgo/unnecessary-typeof-type": "error",
 		"effecttsgo/yield-in-call-argument": "error",
+		"effecttsgo/schema-sync-in-effect": "error",
+		"effecttsgo/unsafe-effect-type-assertion": "error",
+		"typescript/await-thenable": "error",
 		"typescript/no-floating-promises": "error",
+		"typescript/restrict-template-expressions": "error",
 		"typescript/require-array-sort-compare": "error"
 	},
 	"overrides": [
@@ -109,9 +113,13 @@
 				"effecttsgo/new-promise": "off",
 				"effecttsgo/node-builtin-import": "off",
 				"effecttsgo/process-env": "off",
+				// Tests decode fixtures inline and cast partial layers on purpose.
+				"effecttsgo/schema-sync-in-effect": "off",
+				"effecttsgo/unsafe-effect-type-assertion": "off",
 				"effecttsgo/strict-effect-provide": "off",
 				// Tests sort ids and tuples to compare them as sets; the default order is fine there.
 				"typescript/require-array-sort-compare": "off",
+				"typescript/restrict-template-expressions": "off",
 				"effecttsgo/yield-in-call-argument": "off"
 			}
 		}
@@ -124,6 +132,7 @@
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
-		"lib/thinking-orbs/**"
+		"lib/thinking-orbs/**",
+		"scripts/oxlint-plugins/anti-slop/**"
 	]
 }

@@ -214,7 +214,7 @@ export function densifySpark(
 	const bucketCount = Math.ceil((window.endMs - window.startMs) / window.bucketMs)
 	if (bucketCount <= 0 || !Number.isFinite(bucketCount)) return []
 
-	const dense = new Array<number>(bucketCount).fill(0)
+	const dense = Array.from({ length: bucketCount }, () => 0)
 	for (const point of points) {
 		const ms = Date.parse(point.bucket)
 		if (!Number.isFinite(ms)) continue

@@ -150,7 +150,6 @@ export type Grades = typeof Grades.Type
 export type BugGrade = Grades["bugs"][number]
 
 export const decodeCaseFile = Schema.decodeUnknownSync(CaseFile)
-export const decodeEventLine = Schema.decodeUnknownSync(EventLine)
 const decodeEventJson = Schema.decodeUnknownOption(Schema.fromJsonString(EventLine))
 
 /** A run's `events.jsonl` text. A line that does not decode (a write in progress) is skipped. */

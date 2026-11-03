@@ -201,8 +201,10 @@ const DB_EDGES_BUDGET = Duration.seconds(12)
 /** Endpoint detail has no raw fallback: without migration 0048 the panel is empty. */
 const orEmptyWithoutEndpointDetails = <A, E, R>(effect: Effect.Effect<A, E, R>, empty: A) =>
 	effect.pipe(
-		Effect.catchIf(isMissingServiceEndpointDetails, () =>
-			Effect.as(Effect.annotateCurrentSpan("query.rollup.missing", true), empty),
+		Effect.catch((error) =>
+			isMissingServiceEndpointDetails(error)
+				? Effect.as(Effect.annotateCurrentSpan("query.rollup.missing", true), empty)
+				: Effect.fail(error),
 		),
 	)
 
@@ -1794,6 +1796,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("hostInfraTimeseries", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+
 						const spec = hostMetricSpec(payload.metric)
 
 						if (spec.isNetwork) {

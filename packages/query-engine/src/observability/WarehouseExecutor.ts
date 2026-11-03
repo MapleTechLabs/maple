@@ -17,7 +17,7 @@ export interface WarehouseExecutorApi {
 	/** The org ID for the current tenant — needed for raw SQL queries. */
 	readonly orgId: OrgId
 
-	readonly query: <T = any>(
+	readonly query: <T = unknown>(
 		pipe: WarehouseQueryName,
 		params: Record<string, unknown>,
 		options?: SqlQueryOptions,

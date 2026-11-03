@@ -28,6 +28,7 @@ const closure = (roots, edges) => {
 }
 
 const startup = closure(["worker.js"], staticImports)
+
 const mb = (n) => Math.round(n / 1e4) / 100
 const sum = (set) => mb([...set].reduce((a, f) => a + (src[f] ? size(f) : 0), 0))
 const registry = js.find((f) => f.startsWith("registry-"))

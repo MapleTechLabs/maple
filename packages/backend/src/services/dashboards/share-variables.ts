@@ -61,7 +61,7 @@ import { Array as Arr, Effect, Option } from "effect"
  * value that turns one predicate into two. Filter tokens do not contain spaces,
  * so excluding it costs nothing real and closes the whole class.
  */
-const TEXTBOX_ALLOWED = /^[A-Za-z0-9._:/@\-]{0,128}$/
+const TEXTBOX_ALLOWED = /^[A-Za-z0-9._:/@-]{0,128}$/
 
 export interface ShareVariableDefinition {
 	readonly name: string

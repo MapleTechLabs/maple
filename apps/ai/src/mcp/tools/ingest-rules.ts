@@ -40,6 +40,7 @@ import {
 	logSampleToRecord,
 	spanSampleToRecord,
 	type AttrMap,
+	type AttrValue,
 	type RuleRecord,
 } from "@maple/ingest-rules"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
@@ -211,9 +212,9 @@ const sampleRecords = Effect.fnUntraced(function* (
 	)
 })
 
-/** A rule value as the transcript shows it: strings as-is, anything structured as JSON. */
-const showValue = (value: unknown): string =>
-	typeof value === "string" ? value : (stringifyJson(value) ?? "")
+/** A changed value as transcript text: strings raw, maps and lists as JSON rather than `[object Object]`. */
+const valueText = (value: AttrValue): string =>
+	typeof value === "string" ? value : (stringifyJson(value) ?? String(value))
 
 /** `key -> after` for every top-level value a rule changed; the value before stays out of the transcript. */
 const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<string> => {
@@ -223,11 +224,11 @@ const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<str
 			if (next === undefined) return [`${scope}${key}: removed`]
 			return stringifyJson(next) === stringifyJson(value)
 				? []
-				: [`${scope}${key} -> ${truncate(showValue(next), 60)}`]
+				: [`${scope}${key} -> ${truncate(valueText(next), 60)}`]
 		})
 	const body =
 		before.body !== undefined && stringifyJson(before.body) !== stringifyJson(after.body)
-			? [`body: ${truncate(showValue(after.body), 120)}`]
+			? [`body: ${truncate(after.body === undefined ? "removed" : valueText(after.body), 120)}`]
 			: []
 	return [
 		...diff("", before.attributes, after.attributes),

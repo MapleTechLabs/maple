@@ -177,7 +177,7 @@ export const decodePublicId = (prefix: PublicIdPrefix, publicId: string): string
  * Decoding a malformed or wrong-prefix ID fails schema decode, which the v2
  * error middleware surfaces as an `invalid_request_error`.
  */
-export const PublicId = <S extends Schema.Codec<any, string>>(prefix: PublicIdPrefix, internal: S) => {
+export const PublicId = <S extends Schema.Codec<unknown, string>>(prefix: PublicIdPrefix, internal: S) => {
 	const example = encodePublicId(prefix, "018f2b3c-4d5e-6f70-8192-a3b4c5d6e7f8")
 	return (
 		// Annotate the *encoded* base string: the OpenAPI schema renders the wire

@@ -104,13 +104,6 @@ export const planRanges = (
 	return ranges
 }
 
-/** The planned range containing `chunkSeq`, or undefined if it is past the end. */
-export const rangeContaining = (
-	plan: ReadonlyArray<ReplayRange>,
-	chunkSeq: number,
-): ReplayRange | undefined =>
-	plan.find((range) => chunkSeq >= range.fromChunkSeq && chunkSeq <= range.toChunkSeq)
-
 /** Stable key for a range; must match `replayRangeInput`'s identity exactly. */
 export const rangeKey = (range: ReplayRange) => `${range.fromChunkSeq}:${range.toChunkSeq}`
 

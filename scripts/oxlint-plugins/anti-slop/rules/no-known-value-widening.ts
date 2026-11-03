@@ -121,7 +121,6 @@ function sourceKeyName(sourceCode: SourceCode, key: ESTree.PropertyKey): string 
 	return sourceCode.getText(key);
 }
 
-
 function isEmptyObjectExpression(expression: ESTree.Expression): boolean {
 	const unwrapped = unwrapExpression(expression);
 	return unwrapped.type === "ObjectExpression" && unwrapped.properties.length === 0;

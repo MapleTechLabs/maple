@@ -924,7 +924,7 @@ const annotateWarehouseError = <A, Error extends { readonly _tag: string; readon
 	)
 
 /** A query `compile` accepts, for helpers generic over its output. */
-type SelectQuery<Output extends object> = CH.CHQuery<any, Output> & CH.NeedsSelect<Output>
+type SelectQuery<Output extends object> = CH.CHQuery<CH.ColumnDefs, Output> & CH.NeedsSelect<Output>
 
 /**
  * Compile a CHQuery, execute it via the warehouse SQL executor, and return typed rows.

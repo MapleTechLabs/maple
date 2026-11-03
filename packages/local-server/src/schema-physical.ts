@@ -69,8 +69,8 @@ export const inspectPhysicalSchema = (db: Pick<Chdb, "query">): PhysicalSchema =
 		list.push({
 			name: column.name,
 			type: column.type,
-			...(!!column.default_kind ? { defaultKind: column.default_kind } : undefined),
-			...(!!column.default_expression ? { defaultExpression: column.default_expression } : undefined),
+			...(column.default_kind ? { defaultKind: column.default_kind } : undefined),
+			...(column.default_expression ? { defaultExpression: column.default_expression } : undefined),
 			...(!(!column.compression_codec || column.compression_codec === "NONE")
 				? {
 						codec: column.compression_codec,

@@ -68,7 +68,6 @@ import {
 	Result,
 	Schema,
 } from "effect"
-import { FetchHttpClient } from "effect/http"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
@@ -3448,7 +3447,6 @@ export class CloudflareAnalyticsService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				OrgClickHouseSettingsService.layer,

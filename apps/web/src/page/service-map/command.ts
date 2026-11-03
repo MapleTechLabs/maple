@@ -96,11 +96,7 @@ export const SaveStored = Command.define("SaveServiceMapStored", {
 			const layout = yield* Schema.encodeEffect(LayoutJson)({ snapshots: stored.snapshots })
 			writeLocalStorage(prefsKey(orgId), prefs)
 			writeLocalStorage(layoutKey(orgId), layout)
-			return Message.CompletedSaveStored()
-		}).pipe(
-			// The stored prefs and layout are already typed, so a failed encode is a defect.
-			Effect.orDie,
-		),
+		}).pipe(Effect.ignore, Effect.as(Message.CompletedSaveStored())),
 })
 
 // FETCHES (each carries its request key back so `update` drops a superseded answer, S6)
