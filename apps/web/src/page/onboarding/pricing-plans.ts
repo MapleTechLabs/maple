@@ -94,6 +94,18 @@ export const ENTERPRISE_DATA_FEATURES: ReadonlyArray<FeatureRow> = [
 	{ featureId: "product_events", label: "Product Events", value: "Custom", detail: null },
 ]
 
+/**
+ * The landing's `lib/compliance.ts`, which web cannot import. Only `Available` may read as held:
+ * SOC 2 and ISO 27001 are audits in progress, not certifications.
+ */
+export type ComplianceItem = Readonly<{ name: string; status: "Available" | "In progress"; href?: string }>
+
+export const COMPLIANCE_ITEMS: ReadonlyArray<ComplianceItem> = [
+	{ name: "DPA", status: "Available", href: "mailto:privacy@maple.dev?subject=DPA%20request" },
+	{ name: "SOC 2 Type II", status: "In progress" },
+	{ name: "ISO 27001", status: "In progress" },
+]
+
 export type Scenario = "new" | "active" | "scheduled" | "upgrade" | "downgrade"
 
 export const getScenario = (plan: CatalogPlan): Scenario => {

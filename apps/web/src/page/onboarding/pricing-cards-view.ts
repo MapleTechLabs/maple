@@ -12,8 +12,12 @@ import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { textLink } from "@maple/views/ui/text-link"
 import { Message, type Model } from "./pricing-cards"
 import {
+	COMPLIANCE_ITEMS,
+	type ComplianceItem,
 	ENTERPRISE_DATA_FEATURES,
 	FEATURE_ICONS,
 	type FeatureRow,
@@ -337,8 +341,42 @@ const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html 
 				Arr.filter(plans, (plan) => !plan.addOn && !plan.autoEnable),
 				model.loadingPlanId,
 			),
+			compliance(h),
 		],
 	)
+
+const complianceRow = (h: H, item: ComplianceItem): Html => {
+	const isHeld = item.status === "Available"
+	return h.li(
+		[h.Class("flex items-center justify-between gap-4 text-sm")],
+		[
+			hstack(h, { gap: "2.5" }, [
+				// Held is a filled dot, an audit in progress a hollow one, so the two never read as the same claim.
+				statusDot(h, {
+					tone: "custom",
+					className: isHeld ? "bg-foreground" : "border border-muted-foreground",
+				}),
+				item.href === undefined
+					? h.span([h.Class("text-foreground")], [item.name])
+					: textLink(h, { href: item.href, className: "font-normal text-foreground" }, [item.name]),
+			]),
+			h.span(
+				[h.Class(cn("font-mono text-xs", isHeld ? "text-foreground" : "text-muted-foreground"))],
+				[item.status],
+			),
+		],
+	)
+}
+
+/** `Compliance`: what a buyer can have today (the DPA) and the audits still in progress. */
+const compliance = (h: H): Html =>
+	panel(h, { className: "gap-3 px-5 py-4 sm:max-w-sm" }, [
+		eyebrow(h, { as: "h3" }, ["Compliance"]),
+		h.ul(
+			[h.Class("space-y-2")],
+			Arr.map(COMPLIANCE_ITEMS, (item) => complianceRow(h, item)),
+		),
+	])
 
 const dataIncluded = (h: H, rows: ReadonlyArray<FeatureRow>, isDetailed: boolean): Html =>
 	h.div(
