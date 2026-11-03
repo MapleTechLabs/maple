@@ -238,6 +238,9 @@ describe("argument normalization", () => {
 		const normalized = normalizeArguments({ services: ["api", "web"] }, ["service"])
 		expect(normalized.args).toEqual({})
 		expect(normalized.unknown.map((entry) => entry.key)).toEqual(["services"])
+		expect(
+			normalizeArguments({ services: "api,web" }, ["service"]).unknown.map((entry) => entry.key),
+		).toEqual(["services"])
 		expect(normalizeArguments({ services: "api" }, ["service"]).args).toEqual({ service: "api" })
 	})
 

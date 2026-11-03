@@ -202,8 +202,8 @@ const snakeCase = (key: string): string => key.replace(/([a-z0-9])([A-Z])/g, "$1
 
 /**
  * The declared parameter an undeclared key names: a published alias, the key in snake_case
- * (`issueId`), or its singular/plural twin (`workflow_states`, `environment`). A list never maps
- * onto the singular twin, which takes one value.
+ * (`issueId`), or its singular/plural twin (`workflow_states`, `environment`). A list (or a
+ * comma list) never maps onto the singular twin, which takes one value.
  */
 const aliasTarget = (
 	key: string,
@@ -212,7 +212,8 @@ const aliasTarget = (
 	aliases: Readonly<Record<string, string>>,
 ): string | undefined => {
 	const snake = snakeCase(key)
-	const twin = snake.endsWith("s") ? (Array.isArray(value) ? undefined : snake.slice(0, -1)) : `${snake}s`
+	const isList = Array.isArray(value) || (typeof value === "string" && value.includes(","))
+	const twin = snake.endsWith("s") ? (isList ? undefined : snake.slice(0, -1)) : `${snake}s`
 	const candidates = [aliases[key], snake, aliases[snake], twin]
 	return candidates.find(
 		(candidate) => candidate !== undefined && candidate !== key && known.has(candidate),
