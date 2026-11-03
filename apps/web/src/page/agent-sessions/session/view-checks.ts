@@ -390,6 +390,7 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 							),
 							h.DataAttribute("base-ui-tooltip-trigger", ""),
 							h.DataAttribute("slot", "tooltip-trigger"),
+							h.Tabindex(0),
 							...tooltipTrigger(h, `${signal.title}\n${signal.explains}`),
 						],
 						[

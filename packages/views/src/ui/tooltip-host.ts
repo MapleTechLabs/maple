@@ -74,6 +74,12 @@ export const Message = defineMessageUnion({
 	ChangedTriggerText: { triggerId: Schema.String, text: Schema.String },
 	/** A trigger left the page without a leave or blur: a re-render or a closing panel. */
 	RemovedTrigger: { triggerId: Schema.String },
+	/** Leave, press and blur name their trigger: another trigger's never closes this one. */
+	LeftTrigger: { triggerId: Schema.String },
+	PressedTrigger: { triggerId: Schema.String },
+	BlurredTrigger: { triggerId: Schema.String },
+	/** The press ended: a trigger that took no focus no longer holds its press. */
+	ReleasedPointer: {},
 	ElapsedWarmWindow: { generation: Schema.Number },
 	GotTooltipMessage: { message: Tooltip.Message },
 })
@@ -137,12 +143,9 @@ const leave = (model: Model): UpdateReturn => {
 	}
 }
 
-const DISENGAGING: ReadonlySet<Tooltip.Message["_tag"]> = new Set([
-	"LeftTrigger",
-	"PressedTrigger",
-	"BlurredTrigger",
-	"PressedEscape",
-])
+/** A dismissal for the trigger the tooltip belongs to, which also ends the engagement. */
+const dismiss = (model: Model, triggerId: string, step: (model: Model) => UpdateReturn): UpdateReturn =>
+	triggerId === model.tooltip.triggerId ? step({ ...model, isEngaged: false }) : { model }
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
@@ -168,12 +171,24 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				: { model },
 		ElapsedWarmWindow: ({ generation }) =>
 			generation === model.warmGeneration ? { model: { ...model, isWarm: false } } : { model },
-		GotTooltipMessage: ({ message: inner }) => {
-			const disengaged = DISENGAGING.has(inner._tag) ? { ...model, isEngaged: false } : model
-			return inner._tag === "LeftTrigger"
-				? leave(disengaged)
-				: lift(disengaged, Tooltip.update(model.tooltip, inner))
-		},
+		LeftTrigger: ({ triggerId }) => dismiss(model, triggerId, leave),
+		PressedTrigger: ({ triggerId }) =>
+			dismiss(model, triggerId, (next) =>
+				lift(next, Tooltip.update(next.tooltip, Tooltip.Message.PressedTrigger())),
+			),
+		BlurredTrigger: ({ triggerId }) =>
+			dismiss(model, triggerId, (next) =>
+				lift(next, Tooltip.update(next.tooltip, Tooltip.Message.BlurredTrigger())),
+			),
+		ReleasedPointer: () =>
+			model.tooltip.isPressingTrigger
+				? { model: { ...model, tooltip: { ...model.tooltip, isPressingTrigger: false } } }
+				: { model },
+		GotTooltipMessage: ({ message: inner }) =>
+			lift(
+				inner._tag === "PressedEscape" ? { ...model, isEngaged: false } : model,
+				Tooltip.update(model.tooltip, inner),
+			),
 	})
 
 // SUBSCRIPTION
@@ -242,14 +257,16 @@ const triggerStreams: ReadonlyArray<Stream.Stream<Message>> = [
 					closestTrigger(event.target),
 					(trigger) => !isInside(trigger, event.relatedTarget),
 				),
-				() => toTooltip(Tooltip.Message.LeftTrigger()),
+				(trigger) => Message.LeftTrigger({ triggerId: trigger.id }),
 			),
 	}),
 	Dom.streamFromEventFilterMap({
 		target: () => document,
 		type: "pointerdown",
 		filterMapEvent: (event) =>
-			Option.map(closestTrigger(event.target), () => toTooltip(Tooltip.Message.PressedTrigger())),
+			Option.map(closestTrigger(event.target), (trigger) =>
+				Message.PressedTrigger({ triggerId: trigger.id }),
+			),
 	}),
 	Dom.streamFromEventFilterMap({
 		target: () => document,
@@ -266,7 +283,7 @@ const triggerStreams: ReadonlyArray<Stream.Stream<Message>> = [
 					closestTrigger(event.target),
 					(trigger) => !isInside(trigger, event.relatedTarget),
 				),
-				() => toTooltip(Tooltip.Message.BlurredTrigger()),
+				(trigger) => Message.BlurredTrigger({ triggerId: trigger.id }),
 			),
 	}),
 ]
@@ -327,11 +344,20 @@ const triggerMutations: Stream.Stream<Message> = Stream.callback<Message>((queue
 	).pipe(Effect.flatMap(() => Effect.never)),
 )
 
-/** Escape, text changes and removal of the trigger; subscribe only while `isEngaged`. */
-export const whileEngaged: Stream.Stream<Message> = Stream.merge(escapes, triggerMutations)
+/** Escape, text changes, removal of the trigger and the end of a press; only while `isEngaged`. */
+const releases: Stream.Stream<Message> = Dom.streamFromEvent({
+	target: () => document,
+	type: "pointerup",
+	mapEvent: () => Message.ReleasedPointer(),
+})
+
+export const whileEngaged: Stream.Stream<Message> = Stream.mergeAll([escapes, triggerMutations, releases], {
+	concurrency: "unbounded",
+})
 
 /** A tooltip is pending or open, so its trigger is worth watching. */
-export const isEngaged = (model: Model): boolean => model.isEngaged || model.tooltip.isOpen
+export const isEngaged = (model: Model): boolean =>
+	model.isEngaged || model.tooltip.isOpen || model.tooltip.isPressingTrigger
 
 // VIEW
 

@@ -52,7 +52,7 @@ describe("tooltip host", () => {
 
 	test("sweeping to a neighbour (leave, then enter) opens it at once while the close is warm", () => {
 		const open = elapsed(entered(init(ID), "a", "First").model).model
-		const left = update(open, Message.GotTooltipMessage({ message: Tooltip.Message.LeftTrigger() }))
+		const left = update(open, Message.LeftTrigger({ triggerId: "a" }))
 		const next = entered(left.model, "b", "Second")
 		assert({
 			isOpen: next.model.tooltip.isOpen,
@@ -64,7 +64,7 @@ describe("tooltip host", () => {
 
 	test("once the warm window passes, the next trigger waits the delay again", () => {
 		const open = elapsed(entered(init(ID), "a", "First").model).model
-		const left = update(open, Message.GotTooltipMessage({ message: Tooltip.Message.LeftTrigger() })).model
+		const left = update(open, Message.LeftTrigger({ triggerId: "a" })).model
 		const cooled = update(left, Message.ElapsedWarmWindow({ generation: left.warmGeneration })).model
 		const next = entered(cooled, "b", "Second")
 		assert({
@@ -120,12 +120,43 @@ describe("tooltip host", () => {
 		})
 	})
 
+	test("leaving another trigger leaves a keyboard-opened tooltip open", () => {
+		const focused = update(
+			init(ID),
+			Message.FocusedTrigger({
+				triggerId: "a",
+				shown: { text: "First", isIconButton: false, side: "top" },
+			}),
+		).model
+		const open = update(
+			focused,
+			Message.GotTooltipMessage({
+				message: Tooltip.Message.CheckedFocusVisible({ triggerId: "a", isFocusVisible: true }),
+			}),
+		).model
+		const leftOther = update(open, Message.LeftTrigger({ triggerId: "b" })).model
+		assert({ isOpen: leftOther.tooltip.isOpen, anchor: leftOther.tooltip.triggerId }).toEqual({
+			isOpen: true,
+			anchor: "a",
+		})
+	})
+
+	test("a press on a trigger that takes no focus ends with the pointer, so keyboard focus opens again", () => {
+		const hovered = entered(init(ID), "strip", "Delivered").model
+		const pressed = update(hovered, Message.PressedTrigger({ triggerId: "strip" })).model
+		const released = update(pressed, Message.ReleasedPointer()).model
+		assert({
+			pressing: pressed.tooltip.isPressingTrigger,
+			after: released.tooltip.isPressingTrigger,
+		}).toEqual({
+			pressing: true,
+			after: false,
+		})
+	})
+
 	test("leaving before the delay ends drops the pending open", () => {
 		const hovered = entered(init(ID), "a", "First").model
-		const left = update(
-			hovered,
-			Message.GotTooltipMessage({ message: Tooltip.Message.LeftTrigger() }),
-		).model
+		const left = update(hovered, Message.LeftTrigger({ triggerId: "a" })).model
 		const stale = update(
 			left,
 			Message.GotTooltipMessage({
