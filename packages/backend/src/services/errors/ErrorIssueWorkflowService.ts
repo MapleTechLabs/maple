@@ -173,6 +173,11 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly payload?: StoredJsonRecord
 		},
 	) => ErrorIssueEventInsert
+	/** Every fingerprint the issue owns, its own first. */
+	readonly fingerprintHashesOf: (
+		orgId: OrgId,
+		row: ErrorIssueRow,
+	) => Effect.Effect<ReadonlyArray<string>, ErrorPersistenceError>
 	/** Mirror an actor-attributed issue event into the org audit log. Never fails. */
 	readonly recordEventAudit: (
 		orgId: OrgId,
@@ -949,6 +954,10 @@ const make: Effect.Effect<
 		hydrateIssue,
 		recordEvent,
 		buildEvent: buildEventInsert,
+		fingerprintHashesOf: (orgId, row) =>
+			dbExecute((db) => issueFingerprintHashes(db, orgId, [row])).pipe(
+				Effect.map((owned) => owned.get(row.id) ?? [row.fingerprintHash]),
+			),
 		recordEventAudit,
 		applyTransition,
 		heartbeatIssue,

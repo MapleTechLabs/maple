@@ -811,7 +811,9 @@ export const persistErrorTickWindow = (
 						(entry) =>
 							entry.prior !== undefined &&
 							entry.prior.archivedAt !== null &&
-							entry.prior.workflowState !== "done",
+							entry.prior.workflowState !== "done" &&
+							// A merged-away issue lives on in the one it was merged into.
+							entry.prior.mergedIntoIssueId === null,
 					),
 					(entry) => entry.issueId,
 				)

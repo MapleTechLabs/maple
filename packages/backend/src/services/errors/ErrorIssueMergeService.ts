@@ -1,5 +1,13 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ErrorIssueEvents, ErrorIssueFingerprints, ErrorIssues, type ErrorIssueRow } from "@maple/db/tables"
+import {
+	ErrorIncidents,
+	ErrorIssueEvents,
+	ErrorIssueFingerprints,
+	ErrorIssues,
+	ErrorIssueStates,
+	ErrorTickStates,
+	type ErrorIssueRow,
+} from "@maple/db/tables"
 import {
 	type ActorId,
 	type ErrorIssueDocument,
@@ -49,13 +57,28 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 		const workflow = yield* ErrorIssueWorkflowService
 		const dbExecute = makeErrorDatabaseExecute(database, "ErrorIssueMergeService")
 
+		/**
+		 * The org's tick cursor, then the issues in id order. Holding the cursor keeps the
+		 * errors tick from landing a window between our reads and writes, which could put a
+		 * merged issue's occurrences back on it; one ordered lock keeps overlapping merges
+		 * from deadlocking.
+		 */
 		const lockIssues = (db: MapleDb, orgId: OrgId, ids: ReadonlyArray<ErrorIssueId>) =>
-			db.run(
-				PG.from(ErrorIssues)
-					.select()
-					.where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)])
-					.forUpdate(),
-			)
+			Effect.gen(function* () {
+				yield* db.run(
+					PG.from(ErrorTickStates)
+						.select("orgId")
+						.where(($) => [$.orgId.eq(orgId)])
+						.forUpdate(),
+				)
+				return yield* db.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)])
+						.orderBy(["id", "asc"])
+						.forUpdate(),
+				)
+			})
 
 		/** Why `source` cannot be merged into `target`, or none. */
 		const mergeProblem = (target: ErrorIssueRow, source: ErrorIssueRow): string | undefined => {
@@ -123,11 +146,59 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 								})),
 							),
 						)
-						// Issues merged into a source earlier now point at the target too.
+						// Issues merged into a source earlier now point at the target directly, so
+						// the source keeps only its own share of the count: unmerging it later
+						// takes back what it brought and leaves its old children on the target.
+						const children = yield* db.run(
+							PG.from(ErrorIssues)
+								.select("mergedIntoIssueId", "occurrenceCount")
+								.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...sources)]),
+						)
 						yield* db.run(
 							PG.update(ErrorIssues)
 								.set({ mergedIntoIssueId: targetId, updatedAt: timestamp })
 								.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...sources)]),
+						)
+						yield* Effect.forEach(
+							Arr.filter(merged, (row) =>
+								children.some((child) => child.mergedIntoIssueId === row.id),
+							),
+							(row) =>
+								db.run(
+									PG.update(ErrorIssues)
+										.set({
+											occurrenceCount: Math.max(
+												0,
+												row.occurrenceCount -
+													Arr.reduce(
+														Arr.filter(
+															children,
+															(child) => child.mergedIntoIssueId === row.id,
+														),
+														0,
+														(sum, child) => sum + child.occurrenceCount,
+													),
+											),
+										})
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
+								),
+							{ discard: true },
+						)
+						// A merged issue's open incident would otherwise resolve on its own a
+						// half hour later and send a "resolved" for a bug that is still firing.
+						yield* db.run(
+							PG.update(ErrorIncidents)
+								.set({ status: "resolved", resolvedAt: timestamp, updatedAt: timestamp })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...sources),
+									$.status.eq("open"),
+								]),
+						)
+						yield* db.run(
+							PG.update(ErrorIssueStates)
+								.set({ openIncidentId: null, updatedAt: timestamp })
+								.where(($) => [$.orgId.eq(orgId), $.issueId.in_(...sources)]),
 						)
 						yield* db.run(
 							PG.update(ErrorIssues)
@@ -200,11 +271,23 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						const [issue] = yield* lockIssues(db, orgId, [issueId])
-						if (issue === undefined) return yield* ErrorIssueNotFoundError.forIssue(issueId)
-						const targetId = issue.mergedIntoIssueId
-						if (targetId === null) return yield* invalid("This issue is not merged into another.")
-						const [target] = yield* lockIssues(db, orgId, [targetId])
+						const [unlocked] = yield* db.run(
+							PG.from(ErrorIssues)
+								.select("mergedIntoIssueId")
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)]),
+						)
+						if (unlocked === undefined) return yield* ErrorIssueNotFoundError.forIssue(issueId)
+						if (unlocked.mergedIntoIssueId === null) {
+							return yield* invalid("This issue is not merged into another.")
+						}
+						const locked = yield* lockIssues(db, orgId, [issueId, unlocked.mergedIntoIssueId])
+						const issue = locked.find((row) => row.id === issueId)
+						const targetId = issue?.mergedIntoIssueId ?? null
+						// Re-read under the lock: a concurrent unmerge or merge may have moved it.
+						if (issue === undefined || targetId !== unlocked.mergedIntoIssueId) {
+							return yield* invalid("This issue changed while unmerging; try again.")
+						}
+						const target = locked.find((row) => row.id === targetId)
 
 						// Its own hash goes back to being its primary; any others it brought
 						// become its aliases again.

@@ -12,7 +12,7 @@ This is the flow both humans and agents are meant to follow. If you are changing
 | Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                  |
 | Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                       |
 | Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet worth a row of its own. |
-| **Issue**     | `error_issues`                                              | The durable, assignable record. Owns one fingerprint.   |
+| **Issue**     | `error_issues`                                              | The durable, assignable record. Owns its fingerprint.   |
 | Alias         | `error_issue_fingerprints`                                  | More fingerprints an issue owns, merged or re-keyed.    |
 | Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.               |
 | Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.          |
@@ -208,7 +208,9 @@ loop in verification without a human ever seeing it.
 - **Merging moves fingerprints, not history.** A merged issue is archived with
   `merged_into_issue_id`, and its hashes become aliases of the kept issue
   (`error_issue_fingerprints`), so the tick lands their next occurrences there. Its timeline, PRs
-  and investigations stay on it. Unmerge hands the hashes back.
+  and investigations stay on it, and its open incident is closed without a notification. Unmerge
+  hands the hashes back; the occurrences that landed on the kept issue meanwhile stay there. A
+  merged `wontfix` issue's hashes are no longer suppressed: they land on the kept issue.
 
 ## The files
 
