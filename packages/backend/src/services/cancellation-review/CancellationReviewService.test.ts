@@ -459,7 +459,7 @@ describe("CancellationReviewService", () => {
 			assert.strictEqual(post?.channel, "C_CANCELLATIONS")
 			assert.strictEqual(post?.text, "Acme Inc. cancelled the startup plan (Stopped sending telemetry)")
 			const blocks = String(post?.blocks)
-			assert.include(blocks, "down from 42 GB · last data 24 days ago")
+			assert.include(blocks, "42 GB · last data 24 days ago")
 			assert.include(blocks, "last visit 20 days ago")
 			assert.include(blocks, "founder@acme.test")
 			assert.include(blocks, "Access until Oct 19 (9d left)")

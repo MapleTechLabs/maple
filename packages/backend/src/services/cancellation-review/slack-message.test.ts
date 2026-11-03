@@ -42,10 +42,27 @@ type Message = ReturnType<typeof buildCancellationMessage>
 
 const text = (message: Message) => JSON.stringify(message.blocks)
 
-const fieldsOf = (message: Message) =>
-	message.blocks.flatMap((block) =>
-		Array.isArray(block.fields) ? block.fields.map((field: { text: string }) => field.text) : [],
-	)
+interface TableCell {
+	readonly text?: string
+	readonly elements?: ReadonlyArray<{ readonly elements: ReadonlyArray<{ text?: string; name?: string }> }>
+}
+
+/** The stats table as plain rows, an emoji cell part written as `:name:`. */
+const tableOf = (message: Message) =>
+	message.blocks
+		.filter((block) => block.type === "table")
+		.flatMap((block) =>
+			(block.rows as ReadonlyArray<ReadonlyArray<TableCell>>).map((row) =>
+				row.map(
+					(cell) =>
+						cell.text ??
+						(cell.elements ?? [])
+							.flatMap((section) => section.elements)
+							.map((part) => part.text ?? `:${part.name}:`)
+							.join(""),
+				),
+			),
+		)
 
 const withSubject = (base: CancellationReport, subject: Partial<CancellationReport["subject"]>) =>
 	buildCancellationMessage({ ...base, subject: { ...base.subject, ...subject } })
@@ -250,17 +267,20 @@ describe("buildCancellationMessage", () => {
 		expect(text(message)).not.toContain("Could not read")
 	})
 
-	it("puts each stat's number first, its change under it, and marks the worrying ones", () => {
-		expect(fieldsOf(buildCancellationMessage(report("pipeline-off")))).toEqual([
-			":red_circle: Telemetry, 30d\n*3.0 GB*\ndown from 42 GB · last data 24 days ago",
-			":red_circle: In the app, 30d\n*2 days*\ndown from 15 · peak 1 person a day · last visit 20 days ago",
-			"Members\n*5*",
-			"Last invoice\n*$39*\nsame as the month before",
-			"Set up\n*9 dashboards*\n14 alert rules",
+	it("tables each stat against the month before, worrying rows first", () => {
+		expect(tableOf(buildCancellationMessage(report("pipeline-off")))).toEqual([
+			["Last 30 days", "Now", "Month before"],
+			[":red_circle: Telemetry", "3.0 GB", "42 GB · last data 24 days ago"],
+			[":red_circle: Days in the app", "2", "15 · peak 1 person a day · last visit 20 days ago"],
+			["Members", "5", "—"],
+			["Last invoice", "$39", "$39"],
+			["Dashboards / alerts", "9 / 14", "—"],
 		])
-		expect(fieldsOf(buildCancellationMessage(report("healthy-team")))[0]).toBe(
-			":large_green_circle: Telemetry, 30d\n*38 GB*\nup from 35 GB",
-		)
+		expect(tableOf(buildCancellationMessage(report("healthy-team")))[1]).toEqual([
+			":large_green_circle: Telemetry",
+			"38 GB",
+			"35 GB",
+		])
 	})
 
 	it("lists what no stat covers, such as a past-due payment, under the reason", () => {
