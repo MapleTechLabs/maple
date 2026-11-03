@@ -30,6 +30,8 @@ export interface CodeReviewTeamServiceApi {
 
 /** Pull requests read per window: past this the oldest are left out, which a span annotation shows. */
 const MAX_PULL_REQUESTS = 20_000
+/** The activity calendar's reach, whatever the window: a year, as GitHub draws it. */
+export const ACTIVITY_SPAN_MS = 365 * 86_400_000
 /** How far back a pull request's earlier reviews are looked for, to tell a first review from a re-review. */
 const FIRST_REVIEW_LOOKBACK_MS = 180 * 86_400_000
 
@@ -48,9 +50,6 @@ export interface TeamPullRequest {
 	readonly repositoryId: string
 	readonly number: number
 	readonly author: string | null
-	/** Its first review, epoch ms. */
-	readonly firstCreatedAt: number | null
-	readonly mergedAt: number | null
 	readonly mergeSeconds: number | null
 	readonly firstReviewSeconds: number | null
 	readonly shippedClean: boolean
@@ -102,6 +101,15 @@ const emptyMember = (login: string): MemberCounts => ({
 	runnerMs: 0,
 })
 
+/** One pull request's first review and merge, for the activity calendar. */
+export interface ActivityPullRequest {
+	readonly repositoryId: string
+	readonly author: string | null
+	/** Epoch ms. */
+	readonly firstCreatedAt: number | null
+	readonly mergedAt: number | null
+}
+
 /** `YYYY-MM-DD` of an epoch ms in a zone. */
 const dayFormatter = (timeZone: string) => {
 	const format = new Intl.DateTimeFormat("en-CA", {
@@ -118,7 +126,7 @@ export const buildActivity = (input: {
 	readonly startTime: number
 	readonly endTime: number
 	readonly timeZone: string
-	readonly pullRequests: ReadonlyArray<TeamPullRequest>
+	readonly pullRequests: ReadonlyArray<ActivityPullRequest>
 	/** `owner/name` by repository id. */
 	readonly repositories: ReadonlyMap<string, string>
 }): ReadonlyArray<CodeReviewTeamActivity> => {
@@ -160,8 +168,8 @@ export const buildActivity = (input: {
 export const buildTeam = (input: {
 	readonly startTime: number
 	readonly endTime: number
-	readonly timeZone: string
-	readonly repositories: ReadonlyMap<string, string>
+	readonly activityStartTime: number
+	readonly activity: ReadonlyArray<CodeReviewTeamActivity>
 	readonly pullRequests: ReadonlyArray<TeamPullRequest>
 	readonly findings: ReadonlyArray<TeamFindingCounts>
 	readonly ci: ReadonlyArray<TeamCiActor>
@@ -235,7 +243,8 @@ export const buildTeam = (input: {
 					}),
 			)
 			.toSorted((a, b) => a.login.localeCompare(b.login, "en", { sensitivity: "base" })),
-		activity: buildActivity(input),
+		activityStartTime: input.activityStartTime,
+		activity: input.activity,
 	})
 }
 
@@ -274,8 +283,6 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 									number: $.number,
 									author: PG.sql(PG.nullable(PG.text))`max(${$.authorLogin})`,
 									lastCreatedAt: PG.max($.createdAt),
-									firstCreatedAt: PG.min($.createdAt),
-									mergedAt: PG.max($.mergedAt),
 									// First review to the merge.
 									mergeSeconds: PG.sql(
 										PG.nullable(PG.float8),
@@ -301,6 +308,36 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 									window.start,
 								),
 							])
+							.orderBy(["lastCreatedAt", "desc"])
+							.limit(MAX_PULL_REQUESTS),
+					),
+				)
+
+			/** A year of pull requests, first review and merge alone: the calendar's reach, not the window's. */
+			const readActivity = (
+				orgId: OrgId,
+				window: { readonly start: number; readonly end: number },
+				repositoryId: VcsRepositoryId | undefined,
+			) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(PrReviews)
+							.select(($) => ({
+								repositoryId: $.repositoryId,
+								number: $.number,
+								author: PG.sql(PG.nullable(PG.text))`max(${$.authorLogin})`,
+								lastCreatedAt: PG.max($.createdAt),
+								firstCreatedAt: PG.min($.createdAt),
+								mergedAt: PG.max($.mergedAt),
+							}))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								// Earlier reviews too, so a re-review is not read as the pull request opening.
+								$.createdAt.gte(window.start - FIRST_REVIEW_LOOKBACK_MS),
+								$.createdAt.lt(window.end),
+								repositoryId === undefined ? undefined : $.repositoryId.eq(repositoryId),
+							])
+							.groupBy("repositoryId", "number")
 							.orderBy(["lastCreatedAt", "desc"])
 							.limit(MAX_PULL_REQUESTS),
 					),
@@ -363,13 +400,14 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 				const repository = query.repositoryId === undefined ? undefined : scoped[0]
 				const timeZone = query.timeZone ?? "UTC"
 				const repositoryNames = new Map(scoped.map((repo) => [repo.id, `${repo.owner}/${repo.name}`]))
+				const activityStartTime = endTime - ACTIVITY_SPAN_MS
 				// An id that is not the org's reads as an empty team, never another org's runs.
 				if (query.repositoryId !== undefined && repository === undefined)
 					return buildTeam({
 						startTime,
 						endTime,
-						timeZone,
-						repositories: repositoryNames,
+						activityStartTime,
+						activity: [],
 						pullRequests: [],
 						findings: [],
 						ci: [],
@@ -389,9 +427,10 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 					endTime: formatWarehouseDateTime(endTime),
 				}
 				const window = { start: startTime, end: endTime }
-				const [pullRequests, findings, ci, queue] = yield* Effect.all(
+				const [pullRequests, activityPullRequests, findings, ci, queue] = yield* Effect.all(
 					[
 						readPullRequests(orgId, window, query.repositoryId),
+						readActivity(orgId, { start: activityStartTime, end: endTime }, query.repositoryId),
 						readFindings(orgId, window, query.repositoryId),
 						warehouse.compiledQuery(
 							tenant,
@@ -407,6 +446,7 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.code_review.pull_requests": pullRequests.length,
+					"maple.code_review.activity_pull_requests": activityPullRequests.length,
 					"maple.code_review.pull_requests_capped": pullRequests.length >= MAX_PULL_REQUESTS,
 					"maple.code_review.ci_actors": ci.length,
 				})
@@ -414,8 +454,14 @@ export class CodeReviewTeamService extends Context.Service<CodeReviewTeamService
 				return buildTeam({
 					startTime,
 					endTime,
-					timeZone,
-					repositories: repositoryNames,
+					activityStartTime,
+					activity: buildActivity({
+						startTime: activityStartTime,
+						endTime,
+						timeZone,
+						pullRequests: activityPullRequests,
+						repositories: repositoryNames,
+					}),
 					pullRequests,
 					findings,
 					ci,

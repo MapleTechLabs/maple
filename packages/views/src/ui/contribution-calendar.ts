@@ -28,9 +28,7 @@ const LEVEL_COLOR = {
 	4: "var(--heatmap-amber-4)",
 } as const satisfies Readonly<Record<ContributionLevel, string>>
 
-/** A short window gets bigger cells, so a month does not read as a smudge. */
-const cellSizeOf = (weeks: number) => (weeks <= 10 ? 20 : weeks <= 27 ? 16 : 12)
-const GAP_PX = 3
+const GAP_PX = 4
 
 const partsOf = (day: string) => {
 	const [year = 0, month = 1, date = 1] = day.split("-").map(Number)
@@ -42,9 +40,9 @@ export const contributionLevel = (count: number, max: number): ContributionLevel
 	count <= 0 || max <= 0 ? 0 : (Math.min(4, Math.max(1, Math.ceil((count / max) * 4))) as ContributionLevel)
 
 /**
- * A GitHub-style contribution calendar: one cell per day in a column per week (Sunday first),
- * month labels above, weekday labels beside and a Less/More legend below; the caller sets each
- * cell's level and attributes (a hover card trigger, a label).
+ * A GitHub-style contribution calendar: one square per day in a column per week (Sunday first),
+ * stretched to the full width, with month labels above, weekday labels beside and a Less/More
+ * legend below; the caller sets each cell's level and attributes (a hover card trigger, a label).
  */
 export const contributionCalendar = <M>(
 	h: HtmlBuilder<M>,
@@ -52,20 +50,19 @@ export const contributionCalendar = <M>(
 		/** Every day of the range, in order. */
 		days: ReadonlyArray<ContributionDay>
 		ariaLabel: string
+		/** Left of the legend: a summary line. */
+		summary?: Html | string
 		className?: string
 	}>,
 ): Html => {
 	const first = options.days[0]
 	const lead = first === undefined ? 0 : partsOf(first.day).weekday
 	const weeks = Math.ceil((lead + options.days.length) / 7)
-	const size = cellSizeOf(weeks)
-	const columns = { "grid-template-columns": `repeat(${weeks}, ${size}px)`, gap: `${GAP_PX}px` }
 	// A month's label sits over the first week that starts in it.
 	const monthLabels = options.days.flatMap((entry, index) => {
 		const parts = partsOf(entry.day)
 		const column = Math.floor((lead + index) / 7)
-		const isFirstLabel = index === 0
-		return parts.date === 1 || isFirstLabel
+		return parts.date === 1 || index === 0
 			? [{ column, label: MONTHS[parts.month - 1] ?? "", key: entry.day }]
 			: []
 	})
@@ -74,112 +71,94 @@ export const contributionCalendar = <M>(
 		const next = monthLabels[index + 1]
 		return next === undefined || next.column - label.column >= 3
 	})
-	const cells: ReadonlyArray<Html> = [
-		...Array.from({ length: lead }, (_, index) =>
-			h.div([h.Key(`lead-${index}`), h.AriaHidden(true)], []),
-		),
-		...options.days.map((entry) =>
-			h.div(
-				[
-					h.Key(entry.day),
-					h.Role("gridcell"),
-					h.AriaLabel(entry.label),
-					h.DataAttribute("level", String(entry.level)),
-					h.Class(
-						"rounded-xs outline-offset-1 hover:outline hover:outline-1 hover:outline-foreground/50 active:outline active:outline-1 active:outline-foreground/50 data-[popup-open]:outline data-[popup-open]:outline-1 data-[popup-open]:outline-foreground/70",
-					),
-					h.Style({
-						width: `${size}px`,
-						height: `${size}px`,
-						"background-color": LEVEL_COLOR[entry.level],
-					}),
-					...(entry.attributes ?? []),
-				],
-				[],
-			),
-		),
-	]
-	return vstack(
-		h,
-		{ gap: "2", align: "start", className: cn("w-fit max-w-full overflow-x-auto", options.className) },
-		[
-			hstack(h, { gap: "2", align: "start" }, [
-				// Weekday labels, lined up with the rows under the month strip.
+	const at = (column: number, row: number) =>
+		h.Style({ "grid-column-start": String(column + 2), "grid-row-start": String(row + 2) })
+	return vstack(h, { gap: "3", className: cn("w-full", options.className) }, [
+		h.div(
+			[h.Class("w-full overflow-x-auto")],
+			[
+				// One grid: weekday labels in the first column, a month strip in the first row.
 				h.div(
 					[
-						h.Class("grid shrink-0"),
+						h.Class("grid min-w-[44rem]"),
+						h.Role("grid"),
+						h.AriaLabel(options.ariaLabel),
 						h.Style({
-							"grid-template-rows": `14px repeat(7, ${size}px)`,
-							"row-gap": `${GAP_PX}px`,
+							"grid-template-columns": `auto repeat(${weeks}, minmax(0, 1fr))`,
+							gap: `${GAP_PX}px`,
 						}),
 					],
-					["", ...WEEKDAYS].map((label, index) =>
-						typography(
-							h,
-							{
-								size: "2xs",
-								tone: "muted",
-								className: "leading-none self-center",
-								attributes: [h.Key(`weekday-${index}`)],
-							},
-							[label],
-						),
-					),
-				),
-				vstack(
-					h,
-					{
-						gap: "0",
-						align: "start",
-						attributes: [h.Role("grid"), h.AriaLabel(options.ariaLabel)],
-					},
 					[
-						h.div(
-							[h.Class("grid h-[14px]"), h.Style(columns), h.AriaHidden(true)],
-							months.map((month) =>
-								typography(
-									h,
-									{
-										size: "2xs",
-										tone: "muted",
-										className: "leading-none whitespace-nowrap",
-										attributes: [
-											h.Key(month.key),
-											h.Style({ "grid-column-start": String(month.column + 1) }),
-										],
-									},
-									[month.label],
-								),
+						...months.map((month) =>
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "muted",
+									className: "whitespace-nowrap pb-1 leading-none",
+									attributes: [
+										h.Key(`month-${month.key}`),
+										h.AriaHidden(true),
+										at(month.column, -1),
+									],
+								},
+								[month.label],
 							),
 						),
-						h.div(
-							[
-								h.Class("grid grid-flow-col"),
-								h.Style({
-									...columns,
-									"grid-template-rows": `repeat(7, ${size}px)`,
-									"margin-top": `${GAP_PX}px`,
-								}),
-							],
-							cells,
+						...WEEKDAYS.map((label, row) =>
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "muted",
+									className: "self-center pr-2 leading-none",
+									attributes: [h.Key(`weekday-${row}`), h.AriaHidden(true), at(-1, row)],
+								},
+								[label],
+							),
+						),
+						...options.days.map((entry, index) =>
+							h.div(
+								[
+									h.Key(entry.day),
+									h.Role("gridcell"),
+									h.AriaLabel(entry.label),
+									h.DataAttribute("level", String(entry.level)),
+									h.Class(
+										"aspect-square w-full rounded-sm outline-offset-1 hover:outline hover:outline-2 hover:outline-foreground/50 active:outline active:outline-2 active:outline-foreground/50 data-[popup-open]:outline data-[popup-open]:outline-2 data-[popup-open]:outline-foreground/70",
+									),
+									h.Style({
+										"grid-column-start": String(Math.floor((lead + index) / 7) + 2),
+										"grid-row-start": String(((lead + index) % 7) + 2),
+										"background-color": LEVEL_COLOR[entry.level],
+									}),
+									...(entry.attributes ?? []),
+								],
+								[],
+							),
 						),
 					],
 				),
-			]),
-			hstack(h, { gap: "1", className: "self-end", attributes: [h.AriaHidden(true)] }, [
-				typography(h, { size: "2xs", tone: "muted", className: "mr-1" }, ["Less"]),
+			],
+		),
+		hstack(h, { gap: "4", justify: "between", wrap: true }, [
+			options.summary === undefined
+				? h.span([], [])
+				: typography(h, { size: "xs", tone: "muted" }, [options.summary]),
+			hstack(h, { gap: "1", attributes: [h.AriaHidden(true)] }, [
+				typography(h, { size: "xs", tone: "muted", className: "mr-1" }, ["Less"]),
 				...([0, 1, 2, 3, 4] as const).map((level) =>
 					h.div(
 						[
 							h.Key(`legend-${level}`),
-							h.Class("size-2.5 rounded-xs"),
+							h.Class("size-3 rounded-xs"),
 							h.Style({ "background-color": LEVEL_COLOR[level] }),
 						],
 						[],
 					),
 				),
-				typography(h, { size: "2xs", tone: "muted", className: "ml-1" }, ["More"]),
+				typography(h, { size: "xs", tone: "muted", className: "ml-1" }, ["More"]),
 			]),
-		],
-	)
+		]),
+	])
 }

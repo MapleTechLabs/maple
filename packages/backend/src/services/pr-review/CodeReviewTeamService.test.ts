@@ -275,21 +275,25 @@ describe("CodeReviewTeamService.team", () => {
 		),
 	)
 
-	it.effect("folds first reviews and merges by day in the asked zone, bots left out", () =>
+	it.effect("folds a year of first reviews and merges by day in the asked zone, bots left out", () =>
 		withService({}, (service) =>
 			Effect.gen(function* () {
 				const cells = (team: { readonly activity: ReadonlyArray<object> }) =>
 					team.activity.map((cell) => ({ ...cell }))
-				assert.deepStrictEqual(cells(yield* service.team(tenant, window)), [
-					{ day: "2026-10-01", login: "ada", repository: "acme/web", opened: 2, merged: 1 },
+				const utc = yield* service.team(tenant, window)
+				// A year back from the window's end, so #9, first reviewed before the window, is on it.
+				assert.strictEqual(utc.activityStartTime, window.endTime - 365 * 86_400_000)
+				assert.deepStrictEqual(cells(utc), [
+					{ day: "2026-09-30", login: "ada", repository: "acme/web", opened: 1, merged: 0 },
+					{ day: "2026-10-01", login: "ada", repository: "acme/web", opened: 2, merged: 2 },
 					{ day: "2026-10-02", login: "lin", repository: "acme/web", opened: 1, merged: 1 },
 				])
-				// Seven hours behind UTC: ada's first review falls on the last day of September.
+				// Seven hours behind UTC: ada's early hours fall on the last day of September.
 				assert.deepStrictEqual(
 					cells(yield* service.team(tenant, { ...window, timeZone: "America/Los_Angeles" })),
 					[
-						{ day: "2026-09-30", login: "ada", repository: "acme/web", opened: 1, merged: 0 },
-						{ day: "2026-10-01", login: "ada", repository: "acme/web", opened: 1, merged: 1 },
+						{ day: "2026-09-30", login: "ada", repository: "acme/web", opened: 2, merged: 0 },
+						{ day: "2026-10-01", login: "ada", repository: "acme/web", opened: 1, merged: 2 },
 						{ day: "2026-10-01", login: "lin", repository: "acme/web", opened: 1, merged: 0 },
 						{ day: "2026-10-02", login: "lin", repository: "acme/web", opened: 0, merged: 1 },
 					],

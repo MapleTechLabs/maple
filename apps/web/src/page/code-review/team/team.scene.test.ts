@@ -44,6 +44,7 @@ const teamOf = (
 	Schema.decodeUnknownSync(CodeReviewTeam)({
 		startTime: NOW - 30 * 86_400_000,
 		endTime: NOW,
+		activityStartTime: NOW - 365 * 86_400_000,
 		totals: {
 			pullRequests: 12,
 			mergedPullRequests: 10,
@@ -138,7 +139,7 @@ describe("code review team", () => {
 			),
 			expectView(role("grid", { name: "Pull requests opened and merged per day" })).toExist(),
 			expectView(role("gridcell", { name: /2 opened, 1 merged/ })).toExist(),
-			expectView(text("2 opened, 1 merged")).toExist(),
+			expectView(text("2 opened and 1 merged in the last 12 months")).toExist(),
 		)
 	})
 

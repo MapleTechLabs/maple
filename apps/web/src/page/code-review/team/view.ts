@@ -399,7 +399,7 @@ const topList = (
 		.slice(0, 5)
 	const max = ranked[0]?.[1] ?? 0
 	if (ranked.length === 0) return null
-	return vstack(h, { gap: "2.5", className: "min-w-0 max-w-sm flex-1 basis-56" }, [
+	return vstack(h, { gap: "2.5", className: "min-w-0" }, [
 		typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [title]),
 		...ranked.map(([key, total]) =>
 			vstack(h, { gap: "1", attributes: [h.Key(key)] }, [
@@ -429,7 +429,7 @@ const topList = (
 /** A GitHub-style calendar of the team's pull requests, a card per day naming who and where. */
 const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: string): Html => {
 	const byDay = activityByDay(team.activity)
-	const days = daysOf(team.startTime, team.endTime, timeZone)
+	const days = daysOf(team.activityStartTime, team.endTime, timeZone)
 	const max = Math.max(0, ...[...byDay.values()].map(totalOf))
 	const opened = team.activity.reduce((sum, row) => sum + row.opened, 0)
 	const merged = team.activity.reduce((sum, row) => sum + row.merged, 0)
@@ -466,15 +466,16 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 				panel(h, {}, [
 					panelHeader(h, {
 						title: "Activity",
-						action: typography(h, { size: "xs", tone: "muted", numeric: true }, [
-							opened + merged === 0
-								? "No pull requests"
-								: `${formatNumber(opened)} opened, ${formatNumber(merged)} merged`,
-						]),
+						action: typography(h, { size: "xs", tone: "muted" }, ["Last 12 months"]),
 					}),
-					hstack(h, { gap: "8", align: "start", wrap: true, className: "px-4 pt-3 pb-4" }, [
+					vstack(h, { gap: "0" }, [
 						contributionCalendar(h, {
 							ariaLabel: "Pull requests opened and merged per day",
+							className: "px-5 pt-5 pb-4",
+							summary:
+								opened + merged === 0
+									? "No pull requests in the last 12 months"
+									: `${formatNumber(opened)} opened and ${formatNumber(merged)} merged in the last 12 months`,
 							days: days.map((day) => {
 								const activity = byDay.get(day)
 								const total = activity === undefined ? 0 : totalOf(activity)
@@ -486,7 +487,9 @@ const activityPanel = (h: H, model: Model, team: CodeReviewTeam, timeZone: strin
 								}
 							}),
 						}),
-						...sides,
+						...(sides.length === 0
+							? []
+							: [h.div([h.Class("grid gap-8 border-t px-5 py-4 md:grid-cols-2")], sides)]),
 						...(portal === null ? [] : [portal]),
 					]),
 				]),

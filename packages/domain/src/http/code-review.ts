@@ -459,7 +459,9 @@ export class CodeReviewTeam extends Schema.Class<CodeReviewTeam>("CodeReviewTeam
 	totals: CodeReviewTeamTotals,
 	/** By login. */
 	members: Schema.Array(CodeReviewTeamMember),
-	/** By day, bots left out; days without a pull request are absent. */
+	/** Where the activity calendar starts: a year before `endTime`, whatever the window. */
+	activityStartTime: Schema.Number,
+	/** By day over the calendar's year, bots left out; days without a pull request are absent. */
 	activity: Schema.Array(CodeReviewTeamActivity),
 }) {}
 
