@@ -71,13 +71,17 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 const searchHref = (search: Search) => hrefOf(AppRoute.ProductAnalytics({ search }))
 
 /**
- * Goes to `search`, whose steps and anchor become the drafts. A pending typing pause is cancelled:
- * the URL now holds whatever the drafts were.
+ * Goes to `search`. A new definition (a row's Funnel) replaces the drafts; the drafts' own (a blank
+ * Page anchor the URL leaves out) keeps them. Either way a pending typing pause is cancelled.
  */
-const navigate = (model: Model, search: Search, isReplace = false): Return => ({
-	model: { ...model, ...draftsOf(search), typingVersion: model.typingVersion + 1 },
-	outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(search), isReplace }),
-})
+const navigate = (model: Model, search: Search, isReplace = false): Return => {
+	const committed = committedOf(search)
+	const drafts = committed === committedOf(withDrafts(model)) ? { committed } : draftsOf(search)
+	return {
+		model: { ...model, ...drafts, typingVersion: model.typingVersion + 1 },
+		outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(search), isReplace }),
+	}
+}
 
 const withRequests = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return =>
 	model.window === null ? { model } : requestSlots(model, context, model.window, mode)

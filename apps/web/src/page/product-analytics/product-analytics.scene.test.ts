@@ -170,6 +170,17 @@ describe("product analytics", () => {
 		).toEqual(SIGNUP)
 	})
 
+	test("a Page anchor with no path yet stays a Page anchor", () => {
+		const picked = pageUpdate(
+			resolved({ tab: "paths" }).model,
+			Message.ChangedStep({ scope: "paths", edit: StepEdit.SetKind({ index: 0, kind: "page" }) }),
+		)
+		expect(picked.model.anchor).toEqual({ kind: "page", pagePath: "" })
+		expect(routeChanged(picked.model, { search: { tab: "paths" } }, context).model.anchor.kind).toBe(
+			"page",
+		)
+	})
+
 	test("the rail's traffic and event keys do not apply here", () => {
 		const model = resolved().model
 		expect(
