@@ -20,6 +20,7 @@
 import * as m from "../paraglide/messages.js";
 import { APP_SIGN_UP_URL } from "../lib/app-urls";
 import PixelIcon from "./icons/PixelIcon.astro";
+import Compliance from "./Compliance.astro";
 import RegionChip from "./RegionChip.astro";
 import {
     getOffer,
@@ -254,7 +255,7 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
             {/* Wrapped so the page stylesheet's offer-card rule
                 (`.pricing-offer > div > div > .grid`) does not reach this grid. */}
             {variant === "page" && (
-                <div class="mt-4"><div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3">
+                <div class="mt-4"><div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2 lg:grid-cols-4">
                     <div class="bg-bg-elevated px-6 py-5">
                         <span class="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-fg-muted"><PixelIcon name="location" class="size-3.5" />{m.pricing_region_eyebrow()}</span>
                         <p class="mt-3 flex items-center gap-2 text-sm font-medium text-fg">
@@ -278,6 +279,8 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                             {m.pricing_region_link()} →
                         </a>
                     </div>
+                    {/* Sits with the region: both answer "can my company buy this". */}
+                    <Compliance class="bg-bg-elevated px-6 py-5" />
                 </div></div>
             )}
 

@@ -17,6 +17,7 @@ import FAQ from "../components/FAQ.astro";
 import Footer from "../components/Footer.astro";
 import PixelIcon from "../components/icons/PixelIcon.astro";
 import RegionChip from "../components/RegionChip.astro";
+import Compliance from "../components/Compliance.astro";
 import { APP_SIGN_UP_URL } from "../lib/app-urls";
 import { getOffer, money } from "../lib/pricing-offer";
 import { EU_APP_URL, EU_INGEST_URL, US_APP_URL, US_INGEST_URL, euFaqs } from "../lib/eu-region";
@@ -246,6 +247,7 @@ const faqs = euFaqs();
 						))
 					}
 				</ul>
+				<Compliance class="mt-4 rounded-xl border border-border px-6 py-5 md:max-w-sm" />
 				<p class="mt-8 max-w-2xl text-sm leading-relaxed text-fg-muted">
 					Need the data inside your own network instead? Maple's source is on GitHub and
 					<a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" class="text-fg underline underline-offset-4 transition-colors hover:text-primary">runs on your own infrastructure</a>.
