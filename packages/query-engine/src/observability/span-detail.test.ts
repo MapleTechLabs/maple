@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr, String as Str } from "effect"
 import { spanDetail } from "./span-detail"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
@@ -30,7 +30,7 @@ const probeRow = {
 	endTimestamp: "2026-03-20 08:00:03.000000000",
 }
 
-const isProbe = (sql: string) => sql.includes("FROM trace_index") && !sql.includes("FROM traces")
+const isProbe = (sql: string) => Str.includes("FROM trace_index")(sql) && !Str.includes("FROM traces")(sql)
 
 /**
  * A warehouse holding the span. A hinted (bounded) lookup misses unless `boundedHit`, as if the
@@ -47,7 +47,7 @@ const makeExecutor = (
 		sqls.push(query.sql)
 		if (isProbe(query.sql))
 			return query.decodeFirstRow(opts.indexed === false ? [] : [probeRow]).pipe(Effect.orDie)
-		const bounded = query.sql.includes("Timestamp >=")
+		const bounded = Str.includes("Timestamp >=")(query.sql)
 		return query
 			.decodeFirstRow(!bounded || opts.boundedHit === true ? [detailRow] : [])
 			.pipe(Effect.orDie)
@@ -72,7 +72,7 @@ describe("spanDetail", () => {
 			assert.isTrue(result.found)
 			assert.isTrue(result.widened)
 			assert.lengthOf(sqls, 2)
-			assert.isFalse(sqls.some(isProbe))
+			assert.isFalse(Arr.some(sqls, isProbe))
 			assert.deepStrictEqual(result.spanAttributes, { "http.route": "/orders" })
 		}),
 	)

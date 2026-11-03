@@ -3,7 +3,7 @@
  * text, and input problems reported against the parameter that caused them.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	CreateDashboardOutput,
 	DescribeDashboardSchemaOutput,
@@ -194,8 +194,8 @@ describe("dashboard tools", () => {
 		const result = await call("describe_dashboard_schema", { section: "templates" })
 		const output = Schema.decodeUnknownSync(DescribeDashboardSchemaOutput)(result.structuredContent)
 		expect(output.section).toBe("templates")
-		const missing = DASHBOARD_TEMPLATES.filter((t) => !output.markdown.includes(`\`${t.id}\``))
-		expect(missing.map((t) => t.id)).toEqual([])
+		const missing = Arr.filter(DASHBOARD_TEMPLATES, (t) => !Str.includes(`\`${t.id}\``)(output.markdown))
+		expect(Arr.map(missing, (t) => t.id)).toEqual([])
 	})
 
 	it("inspects an unsupported widget by showing its stored data source", async () => {

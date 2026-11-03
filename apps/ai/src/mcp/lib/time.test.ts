@@ -161,7 +161,7 @@ describe("resolveWindow", () => {
 			st: "2026-08-20 16:49:05",
 			et: "2026-08-20 17:04:05",
 		})
-		expect(result._tag === "Resolved" && result.notices.join()).toContain("ahead of server now")
+		expect(result._tag === "Resolved" && Arr.join(result.notices, ",")).toContain("ahead of server now")
 	})
 
 	it("rejects a start_time that is not in the past, naming server now", () => {

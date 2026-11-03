@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { failureGroupMessage } from "./server"
+import { String as Str } from "effect"
 
 describe("failureGroupMessage", () => {
 	it("masks the per-call values so one cause reads the same every time", () => {
@@ -36,6 +37,6 @@ describe("failureGroupMessage", () => {
 		expect(failureGroupMessage("Unavailable: GitHub is not connected.")).toBe(
 			"Unavailable: GitHub is not connected.",
 		)
-		expect(failureGroupMessage("x".repeat(1_000))).toHaveLength(300)
+		expect(failureGroupMessage(Str.repeat(1_000)("x"))).toHaveLength(300)
 	})
 })

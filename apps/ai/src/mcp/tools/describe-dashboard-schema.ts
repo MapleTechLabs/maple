@@ -17,22 +17,26 @@ const SECTIONS = [...DASHBOARD_SCHEMA_SECTIONS, "templates"] as const
 
 /** create_dashboard's templates, from the same definitions the web template gallery lists. */
 export const renderTemplatesSection = (): string =>
-	[
-		"# Dashboard templates",
-		"",
-		"Pass the id as create_dashboard `template`. `service`, `metric_name` and `metric_type` fill the parameters.",
-		"",
-		"| template | Charts | Required |",
-		"|---|---|---|",
-		...DASHBOARD_TEMPLATES.map((t) => {
-			const required = t.parameters
-				.filter((p) => p.required)
-				.map((p) => (p.key === "service_name" ? "service" : p.key))
-			return `| \`${t.id}\` | ${t.description} | ${required.join(", ") || "-"} |`
-		}),
-		"",
-		"`custom` takes `dashboard_json` instead.",
-	].join("\n")
+	Arr.join(
+		[
+			"# Dashboard templates",
+			"",
+			"Pass the id as create_dashboard `template`. `service`, `metric_name` and `metric_type` fill the parameters.",
+			"",
+			"| template | Charts | Required |",
+			"|---|---|---|",
+			...Arr.map(DASHBOARD_TEMPLATES, (t) => {
+				const required = Arr.map(
+					Arr.filter(t.parameters, (p) => p.required),
+					(p) => (p.key === "service_name" ? "service" : p.key),
+				)
+				return `| \`${t.id}\` | ${t.description} | ${Arr.join(required, ", ") || "-"} |`
+			}),
+			"",
+			"`custom` takes `dashboard_json` instead.",
+		],
+		"\n",
+	)
 
 const renderIndex = (): string =>
 	`${renderDashboardSchemaIndex()}\n\nAlso \`section: "templates"\`: the create_dashboard templates and what each charts.`

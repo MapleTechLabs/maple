@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { WarehouseQuotaExceededError } from "@maple/domain/http/warehouse-errors"
 import { searchTraces } from "./search-traces"
@@ -10,7 +10,7 @@ const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 
 const spanRow = (n: number, timestamp: string) => ({
 	traceId: TRACE_ID,
-	spanId: n.toString(16).padStart(16, "0"),
+	spanId: Str.padStart(16, "0")(n.toString(16)),
 	spanName: "checkout",
 	serviceName: "api",
 	durationMs: 5,
@@ -102,7 +102,7 @@ describe("searchTraces by span name", () => {
 				limit: 2,
 			})
 			assert.deepStrictEqual(
-				result.spans.map((span) => String(span.spanId)),
+				Arr.map(result.spans, (span) => String(span.spanId)),
 				["0000000000000001", "0000000000000002", "0000000000000003"],
 			)
 		}),
@@ -119,7 +119,7 @@ describe("searchTraces by span name", () => {
 				{ limit: 2, offset: 1 },
 			)
 			assert.deepStrictEqual(
-				result.spans.map((span) => String(span.spanId)),
+				Arr.map(result.spans, (span) => String(span.spanId)),
 				["0000000000000002", "0000000000000003"],
 			)
 		}),

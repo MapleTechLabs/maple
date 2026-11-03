@@ -5,7 +5,7 @@ import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { SearchTracesOutput } from "@maple/domain/mcp-outputs"
 import { searchTraces } from "@maple/query-engine/observability"
 import { resolveAttributeScope } from "../lib/attribute-scope"
@@ -132,7 +132,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 					...(hasMore ? { nextOffset: params.offset + spans.length } : undefined),
 				},
 				// No spanCount: these rows read one span per trace and cannot count the rest.
-				traces: spans.map((s) => ({
+				traces: Arr.map(spans, (s) => ({
 					traceId: s.traceId,
 					...(s.spanId ? { spanId: s.spanId } : undefined),
 					rootSpanName: s.spanName,
@@ -224,24 +224,24 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 									"Duration",
 									"Status",
 								],
-								output.traces.map((t) => [
+								Arr.map(output.traces, (t) => [
 									startCell(t.startTime),
 									t.traceId,
 									t.spanId ?? "",
 									truncate(t.rootSpanName, 40),
-									t.services.join(", "),
+									Arr.join(t.services, ", "),
 									formatDurationFromMs(t.durationMs),
 									t.hasError ? "Error" : "",
 								]),
 							)
 						: doc.table(
 								["Start", "Trace ID", "Root Span", "Duration", "Service", "Error"],
-								output.traces.map((t) => [
+								Arr.map(output.traces, (t) => [
 									startCell(t.startTime),
 									t.traceId,
 									truncate(t.rootSpanName, 30),
 									formatDurationFromMs(t.durationMs),
-									t.services.join(", "),
+									Arr.join(t.services, ", "),
 									t.hasError ? "Yes" : "",
 								]),
 							),
@@ -276,16 +276,14 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 							},
 						}),
 				next: [
-					...output.traces
-						.slice(0, 3)
-						.map((t) =>
-							doc.next(
-								"inspect_trace",
-								{ trace_id: t.traceId, timestamp: hintOf(t.startTime) },
-								"full span tree",
-							),
+					...Arr.map(output.traces.slice(0, 3), (t) =>
+						doc.next(
+							"inspect_trace",
+							{ trace_id: t.traceId, timestamp: hintOf(t.startTime) },
+							"full span tree",
 						),
-					...output.traces.slice(0, output.spanLevel ? 1 : 0).flatMap((t) =>
+					),
+					...Arr.flatMap(output.traces.slice(0, output.spanLevel ? 1 : 0), (t) =>
 						t.spanId === undefined
 							? []
 							: [

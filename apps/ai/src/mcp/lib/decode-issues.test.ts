@@ -153,7 +153,7 @@ describe("argument normalization", () => {
 			nowMs,
 		)
 		expect(normalized.args).toEqual({ start_time: "2026-08-20 11:04:05", service: "api" })
-		expect(argumentWarnings(normalized, "error_detail").join()).toContain(
+		expect(Arr.join(argumentWarnings(normalized, "error_detail"), ",")).toContain(
 			"start_time=2026-08-20 11:04:05",
 		)
 		expect(normalizeArguments({ lookback: "last 2 days" }, known, {}, new Map(), nowMs).args).toEqual({
@@ -190,7 +190,7 @@ describe("argument normalization", () => {
 		for (const key of ["min_duration", "window", "duration"]) {
 			const normalized = normalizeArguments({ [key]: "5m" }, known, {}, new Map(), nowMs)
 			expect(normalized.args).toEqual({})
-			expect(normalized.unknown.map((entry) => entry.key)).toEqual([key])
+			expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual([key])
 		}
 	})
 
@@ -232,16 +232,16 @@ describe("argument normalization", () => {
 		for (const value of ["0h", "99999999999w", "5000d"]) {
 			const normalized = normalizeArguments({ time_range: value }, ["start_time"], {}, new Map(), nowMs)
 			expect(normalized.args).toEqual({})
-			expect(normalized.unknown.map((entry) => entry.key)).toEqual(["time_range"])
+			expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual(["time_range"])
 		}
 	})
 
 	it("does not map a list onto a parameter that takes one value", () => {
 		const normalized = normalizeArguments({ services: ["api", "web"] }, ["service"])
 		expect(normalized.args).toEqual({})
-		expect(normalized.unknown.map((entry) => entry.key)).toEqual(["services"])
+		expect(Arr.map(normalized.unknown, (entry) => entry.key)).toEqual(["services"])
 		expect(
-			normalizeArguments({ services: "api,web" }, ["service"]).unknown.map((entry) => entry.key),
+			Arr.map(normalizeArguments({ services: "api,web" }, ["service"]).unknown, (entry) => entry.key),
 		).toEqual(["services"])
 		expect(normalizeArguments({ services: "api" }, ["service"]).args).toEqual({ service: "api" })
 	})

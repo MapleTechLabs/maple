@@ -125,8 +125,11 @@ const newestFirstSpanSearch = Effect.fnUntraced(function* (
 		}),
 	)
 	yield* Effect.annotateCurrentSpan("maple.query.older_slice_cut_off", older.cutOff)
-	const seen = new Set(recent.map((span) => `${span.traceId}:${span.spanId}`))
-	const merged = [...recent, ...older.spans.filter((span) => !seen.has(`${span.traceId}:${span.spanId}`))]
+	const seen = new Set(Arr.map(recent, (span) => `${span.traceId}:${span.spanId}`))
+	const merged = [
+		...recent,
+		...Arr.filter(older.spans, (span) => !seen.has(`${span.traceId}:${span.spanId}`)),
+	]
 	return result(merged.slice(offset, want), older.cutOff ? splitAt : undefined)
 })
 

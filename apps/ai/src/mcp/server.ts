@@ -1,5 +1,5 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
-import { Context, Effect, Layer, Array as Arr } from "effect"
+import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { McpToolExecutorLoader, McpToolsUnavailableError } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
@@ -30,13 +30,25 @@ const MAX_ERROR_MESSAGE_CHARS = 300
  * error group in the hub. The raw text stays on the dispatcher span.
  */
 export const failureGroupMessage = (text: string): string =>
-	text
-		.replace(/\d{4}-\d\d-\d\d[ T]\d\d:\d\d(?::\d\d(?:\.\d+)?)?Z?/g, "<time>")
-		.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "<id>")
-		.replace(/\b[a-z]{2,6}_(?=[A-Za-z_]*\d)[A-Za-z0-9]{10,}\b|\b[0-9a-f]{12,}\b/g, "<id>")
-		// An HTTP status names the cause, so it stays; other counts and limits vary per call.
-		.replace(/(?<!(?:HTTP|status|code) )\b\d{2,}(?:\.\d+)?/gi, "<n>")
-		.slice(0, MAX_ERROR_MESSAGE_CHARS)
+	Str.slice(
+		0,
+		MAX_ERROR_MESSAGE_CHARS,
+	)(
+		Str.replace(
+			/(?<!(?:HTTP|status|code) )\b\d{2,}(?:\.\d+)?/gi,
+			"<n>",
+		)(
+			Str.replace(
+				/\b[a-z]{2,6}_(?=[A-Za-z_]*\d)[A-Za-z0-9]{10,}\b|\b[0-9a-f]{12,}\b/g,
+				"<id>",
+			)(
+				Str.replace(
+					/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+					"<id>",
+				)(Str.replace(/\d{4}-\d\d-\d\d[ T]\d\d:\d\d(?::\d\d(?:\.\d+)?)?Z?/g, "<time>")(text)),
+			),
+		),
+	)
 
 /**
  * A failed call's reason on the `tools/call` span. `error.type` stays `tool_error` per the MCP

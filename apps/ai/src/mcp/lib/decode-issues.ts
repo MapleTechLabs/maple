@@ -9,7 +9,7 @@
  * the message here names each bad parameter with its type and description, and points unknown
  * keys at the parameter they were probably meant to be.
  */
-import { Schema, SchemaIssue } from "effect"
+import { Schema, SchemaIssue, Array as Arr, Record as Rec, String as Str } from "effect"
 import { parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { stringifyJson } from "./json"
 
@@ -30,7 +30,7 @@ export interface UnknownArgument {
 }
 
 const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 const editDistance = (a: string, b: string): number => {
 	const previous = Array.from({ length: b.length + 1 }, (_, index) => index)
@@ -51,10 +51,7 @@ const editDistance = (a: string, b: string): number => {
 }
 
 const words = (key: string): ReadonlyArray<string> =>
-	key
-		.toLowerCase()
-		.split(/[_\s-]+/)
-		.filter(Boolean)
+	Arr.filter(Str.split(/[_\s-]+/)(Str.toLowerCase(key)), Boolean)
 
 /** `cmd` for `command`, `start` for `start_time`: the key's letters, in order, from the same start. */
 const abbreviates = (key: string, name: string): boolean => {
@@ -66,12 +63,12 @@ const abbreviates = (key: string, name: string): boolean => {
 
 /** The known parameter an unknown key most plausibly meant, if any is close enough. */
 export const suggestParameter = (key: string, known: ReadonlyArray<string>): string | undefined => {
-	const lower = key.toLowerCase()
+	const lower = Str.toLowerCase(key)
 	let best: { readonly name: string; readonly score: number } | undefined
 	for (const name of known) {
-		const distance = editDistance(lower, name.toLowerCase())
-		const sharesWord = words(key).some((word) => word.length > 2 && words(name).includes(word))
-		const score = abbreviates(lower, name.toLowerCase())
+		const distance = editDistance(lower, Str.toLowerCase(name))
+		const sharesWord = Arr.some(words(key), (word) => word.length > 2 && words(name).includes(word))
+		const score = abbreviates(lower, Str.toLowerCase(name))
 			? 1
 			: sharesWord
 				? Math.min(distance, 2)
@@ -98,7 +95,7 @@ const WINDOW_WORDS: ReadonlySet<string> = new Set([
 ])
 
 const isWindowKey = (key: string): boolean =>
-	key.toLowerCase() === "time" || words(key).some((word) => WINDOW_WORDS.has(word))
+	Str.toLowerCase(key) === "time" || Arr.some(words(key), (word) => WINDOW_WORDS.has(word))
 
 const WINDOW_BOUNDS: ReadonlyArray<string> = ["start_time", "end_time"]
 
@@ -111,13 +108,18 @@ const suggestParameters = (key: string, known: ReadonlyArray<string>): ReadonlyA
 	const widens =
 		(suggestion === undefined || WINDOW_BOUNDS.includes(suggestion)) &&
 		isWindowKey(key) &&
-		WINDOW_BOUNDS.every((bound) => known.includes(bound))
+		Arr.every(WINDOW_BOUNDS, (bound) => known.includes(bound))
 	if (widens) return WINDOW_BOUNDS
 	return suggestion === undefined ? [] : [suggestion]
 }
 
 const didYouMean = (suggestions: ReadonlyArray<string>): string =>
-	suggestions.length === 0 ? "" : ` Did you mean ${suggestions.map((name) => `\`${name}\``).join("/")}?`
+	suggestions.length === 0
+		? ""
+		: ` Did you mean ${Arr.join(
+				Arr.map(suggestions, (name) => `\`${name}\``),
+				"/",
+			)}?`
 
 /**
  * Apply aliases and drop keys the schema does not declare. A dropped key is reported rather than
@@ -129,8 +131,9 @@ const didYouMean = (suggestions: ReadonlyArray<string>): string =>
  */
 const canonicalEnumValue = (value: unknown, allowed: ReadonlyArray<unknown> | undefined): unknown => {
 	if (typeof value !== "string" || allowed === undefined || allowed.includes(value)) return value
-	const matches = allowed.filter(
-		(candidate) => typeof candidate === "string" && candidate.toLowerCase() === value.toLowerCase(),
+	const matches = Arr.filter(
+		allowed,
+		(candidate) => typeof candidate === "string" && Str.toLowerCase(candidate) === Str.toLowerCase(value),
 	)
 	return matches.length === 1 ? matches[0] : value
 }
@@ -141,8 +144,8 @@ export const enumValues = (
 ): ReadonlyMap<string, ReadonlyArray<unknown>> => {
 	const properties = isPlainObject(inputSchema.properties) ? inputSchema.properties : {}
 	return new Map(
-		Object.entries(properties).flatMap(([name, property]) =>
-			isPlainObject(property) && Array.isArray(property.enum) ? [[name, property.enum] as const] : [],
+		Arr.flatMap(Rec.toEntries(properties), ([name, property]) =>
+			isPlainObject(property) && Arr.isArray(property.enum) ? [[name, property.enum] as const] : [],
 		),
 	)
 }
@@ -161,7 +164,7 @@ export const normalizeArguments = (
 	const unknown: Array<UnknownArgument> = []
 	const expanded: Array<string> = []
 	const lookbacks: Array<readonly [key: string, value: unknown, ms: number]> = []
-	for (const [key, value] of Object.entries(input)) {
+	for (const [key, value] of Rec.toEntries(input)) {
 		if (knownSet.has(key)) {
 			args[key] = canonicalEnumValue(value, enums.get(key))
 			continue
@@ -198,7 +201,7 @@ export const normalizeArguments = (
 	return { args, renamed, unknown, ...(expanded.length === 0 ? undefined : { expanded }) }
 }
 
-const snakeCase = (key: string): string => key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()
+const snakeCase = (key: string): string => Str.toLowerCase(Str.replace(/([a-z0-9])([A-Z])/g, "$1_$2")(key))
 
 /**
  * The declared parameter an undeclared key names: a published alias, the key in snake_case
@@ -212,8 +215,8 @@ const aliasTarget = (
 	aliases: Readonly<Record<string, string>>,
 ): string | undefined => {
 	const snake = snakeCase(key)
-	const isList = Array.isArray(value) || (typeof value === "string" && value.includes(","))
-	const twin = snake.endsWith("s") ? (isList ? undefined : snake.slice(0, -1)) : `${snake}s`
+	const isList = Arr.isArray(value) || (typeof value === "string" && Str.includes(",")(value))
+	const twin = Str.endsWith("s")(snake) ? (isList ? undefined : Str.slice(0, -1)(snake)) : `${snake}s`
 	const candidates = [aliases[key], snake, aliases[snake], twin]
 	return candidates.find(
 		(candidate) => candidate !== undefined && candidate !== key && known.has(candidate),
@@ -259,9 +262,9 @@ const MAX_LOOKBACK_MS = 400 * 86_400_000
 const lookbackDurationMs = (key: string, value: unknown, known: ReadonlySet<string>): number | undefined => {
 	if (!LOOKBACK_KEYS.has(snakeCase(key)) || !known.has("start_time") || typeof value !== "string")
 		return undefined
-	const match = RELATIVE_DURATION.exec(value.trim())
+	const match = RELATIVE_DURATION.exec(Str.trim(value))
 	if (match === null) return undefined
-	const unit = RELATIVE_UNITS_MS.get((match[2] ?? "").toLowerCase().charAt(0))
+	const unit = RELATIVE_UNITS_MS.get(Str.toLowerCase(match[2] ?? "").charAt(0))
 	const ms = unit === undefined ? 0 : Number(match[1]) * unit
 	return ms > 0 && ms <= MAX_LOOKBACK_MS ? ms : undefined
 }
@@ -272,7 +275,8 @@ const lookbackDurationMs = (key: string, value: unknown, known: ReadonlySet<stri
  */
 export const argumentWarnings = (normalized: NormalizedArguments, tool: string): ReadonlyArray<string> => [
 	...(normalized.expanded ?? []),
-	...normalized.unknown.map(
+	...Arr.map(
+		normalized.unknown,
 		({ key, suggestions }) =>
 			`\`${key}\` is not a parameter of \`${tool}\`. It was ignored, and this result is for the call without it.${didYouMean(suggestions)}`,
 	),
@@ -284,16 +288,12 @@ interface ParameterDoc {
 }
 
 const typeOf = (schema: Readonly<Record<string, unknown>>): string => {
-	if (Array.isArray(schema.enum))
+	if (Arr.isArray(schema.enum))
 		return `one of ${schema.enum.map((value) => stringifyJson(value)).join(", ")}`
 	if (typeof schema.type === "string") return schema.type === "array" ? "list" : schema.type
-	const branches = Array.isArray(schema.anyOf)
-		? schema.anyOf
-		: Array.isArray(schema.oneOf)
-			? schema.oneOf
-			: []
+	const branches = Arr.isArray(schema.anyOf) ? schema.anyOf : Arr.isArray(schema.oneOf) ? schema.oneOf : []
 	const types = new Set(
-		branches.flatMap((branch) =>
+		Arr.flatMap(branches, (branch) =>
 			isPlainObject(branch) && typeof branch.type === "string" ? [branch.type] : [],
 		),
 	)
@@ -301,7 +301,7 @@ const typeOf = (schema: Readonly<Record<string, unknown>>): string => {
 	if (types.has("number") || types.has("integer")) return "number"
 	if (types.has("boolean")) return "boolean"
 	if (types.has("array")) return "list"
-	return types.size === 0 ? "value" : [...types].join(" or ")
+	return types.size === 0 ? "value" : Arr.join([...types], " or ")
 }
 
 /** Each property's type and description, read off the published JSON Schema. */
@@ -310,7 +310,7 @@ export const parameterDocs = (
 ): ReadonlyMap<string, ParameterDoc> => {
 	const properties = isPlainObject(inputSchema.properties) ? inputSchema.properties : {}
 	return new Map(
-		Object.entries(properties).flatMap(([name, property]) =>
+		Arr.flatMap(Rec.toEntries(properties), ([name, property]) =>
 			isPlainObject(property)
 				? [
 						[
@@ -349,24 +349,28 @@ export const formatDecodeFailure = (
 	normalized: NormalizedArguments,
 ): string => {
 	const docs = parameterDocs(inputSchema)
-	const required = new Set(Array.isArray(inputSchema.required) ? inputSchema.required.map(String) : [])
-	const lines = formatter(error.issue).issues.map(({ path: rawPath, message }) => {
+	const required = new Set(Arr.isArray(inputSchema.required) ? Arr.map(inputSchema.required, String) : [])
+	const lines = Arr.map(formatter(error.issue).issues, ({ path: rawPath, message }) => {
 		const path = rawPath ?? []
 		const name = path.length === 0 ? undefined : segmentName(path[0])
 		if (name === undefined) return `- ${message}`
-		const nested = path.length > 1 ? ` at ${path.slice(1).map(segmentName).join(".")}` : ""
+		const nested = path.length > 1 ? ` at ${Arr.join(Arr.map(path.slice(1), segmentName), ".")}` : ""
 		return message === "Missing key"
 			? `- Missing required ${describeParameter(name, docs)}`
 			: `- \`${name}\`${nested}: ${message}`
 	})
-	const ignored = normalized.unknown.map(
+	const ignored = Arr.map(
+		normalized.unknown,
 		({ key, suggestions }) => `- \`${key}\` is not a parameter of this tool.${didYouMean(suggestions)}`,
 	)
-	const names = [...docs.keys()].map((name) => (required.has(name) ? `${name} (required)` : name))
-	return [
-		`Invalid parameters for \`${tool}\`:`,
-		...lines,
-		...ignored,
-		names.length === 0 ? "This tool takes no parameters." : `Parameters: ${names.join(", ")}.`,
-	].join("\n")
+	const names = Arr.map([...docs.keys()], (name) => (required.has(name) ? `${name} (required)` : name))
+	return Arr.join(
+		[
+			`Invalid parameters for \`${tool}\`:`,
+			...lines,
+			...ignored,
+			names.length === 0 ? "This tool takes no parameters." : `Parameters: ${Arr.join(names, ", ")}.`,
+		],
+		"\n",
+	)
 }

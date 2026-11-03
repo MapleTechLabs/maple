@@ -25,7 +25,7 @@ export const SELECTABLE_STATES = Arr.filter(
 	(state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state),
 )
 
-const STATE_LIST = SELECTABLE_STATES.join(", ")
+const STATE_LIST = Arr.join(SELECTABLE_STATES, ", ")
 
 /** The `to_state` parameter; the description lists the enum because agents guess names. */
 export const toStateParam = (prefix = "Target state") =>
