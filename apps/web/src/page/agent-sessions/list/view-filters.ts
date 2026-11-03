@@ -180,9 +180,10 @@ const singleCheckbox = (
 				{
 					className:
 						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal sm:text-xs",
-					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(title)],
+					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId))],
 				},
-				[h.span([h.Class("truncate")], [title]), filterDescriptionMark(h, title, description)],
+				// The title on the text only, so the info mark's tooltip is the one it shows.
+				[h.span([h.Class("truncate"), h.Title(title)], [title]), filterDescriptionMark(h, title, description)],
 			),
 		],
 	)

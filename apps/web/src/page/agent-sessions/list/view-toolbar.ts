@@ -72,11 +72,14 @@ export const toolbar = (
 								h.span(
 									[
 										h.Class("hidden sm:block"),
-										...triggerAttributes(
-											h,
-											"agent-sessions-count",
-											"Loaded so far; more load as you scroll",
-										),
+										// Only a partial count has more to load.
+										...(options.totalCount !== undefined && options.totalCount > options.sessionCount
+											? triggerAttributes(
+													h,
+													"agent-sessions-count",
+													"Loaded so far; more load as you scroll",
+												)
+											: []),
 									],
 									[count(h, options.sessionCount, options.totalCount)],
 								),

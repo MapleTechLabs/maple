@@ -72,7 +72,7 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 												),
 												h.DataAttribute("base-ui-tooltip-trigger", ""),
 												h.DataAttribute("slot", "tooltip-trigger"),
-												...tooltipTrigger(h, totals.description),
+												...tooltipTrigger(h, totals.description, { isOverflowOnly: true }),
 												h.Tabindex(0),
 											],
 											[totals.description],
