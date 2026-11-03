@@ -2700,7 +2700,7 @@ describe("ErrorsService.runTick", () => {
 				mergedIntoIssueId: owner,
 			})
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			assert.strictEqual((yield* loadIssueById(mergedAway)).archivedAt, TICK_MS - 1_000)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
