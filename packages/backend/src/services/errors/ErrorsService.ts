@@ -1500,13 +1500,20 @@ const make: Effect.Effect<
 								]),
 							),
 						)
-						// A purged issue's hashes stop landing on it; merged-away issues keep theirs pointed at their owner.
+						// A purged issue's hashes stop landing on it, so the issues merged into it own theirs again.
 						yield* dbExecute((db) =>
 							db.run(
 								PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
 									$.orgId.eq(orgId),
 									$.issueId.in_(...ids),
 								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.update(ErrorIssues)
+									.set({ mergedIntoIssueId: null, updatedAt: nowMs })
+									.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
 							),
 						)
 						yield* dbExecute((db) =>
