@@ -53,6 +53,19 @@ const frameLine = fc.oneof(
 	fc
 		.tuple(word, fc.nat(999), chars("0123456789abcdef", 1, 6))
 		.map(([file, line, pc]) => `\t/app/${file}.go:${line} +0x${pc}`),
+	// Dependency and stdlib frames, which the hash skips when the stack has its own.
+	fc
+		.tuple(word, word, fc.nat(999))
+		.map(([fn, file, line]) => `    at ${fn} (/app/node_modules/${file}/index.js:${line}:1)`),
+	fc
+		.tuple(word, word, fc.nat(999))
+		.map(
+			([fn, file, line]) =>
+				`  File "/usr/local/lib/python3.11/site-packages/${file}/core.py", line ${line}, in ${fn}`,
+		),
+	fc
+		.tuple(word, word, fc.nat(999))
+		.map(([fn, file, line]) => `\tat java.util.${file}.${fn}(${file}.java:${line})`),
 	fc
 		.tuple(fc.nat(30), word, chars("0123456789abcdef", 9, 12))
 		.map(([i, binary, address]) => `${i}   ${binary}   0x${address}   +0x1d0`),
@@ -277,6 +290,7 @@ const mirrorRow = (c: Case, spanId: string) => {
 		Signature: inputs.msgSignature,
 		Label: inputs.label,
 		HashInputs: inputs.hashInputs,
+		PreviousHashInputs: inputs.previousHashInputs,
 	})
 }
 
@@ -294,6 +308,9 @@ const decodeMismatch = Schema.decodeUnknownSync(Schema.fromJsonString(Mismatch))
 describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (ClickHouse e2e)", () => {
 	let materialized = 0
 	let mismatches: ReadonlyArray<typeof Mismatch.Type> = []
+	let strayLineage = -1
+	let missingLineage = -1
+	let rekeyed = 0
 
 	beforeAll(async () => {
 		await clickhouseExec(`CREATE DATABASE IF NOT EXISTS ${database}`)
@@ -306,7 +323,7 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			database,
 		)
 		await clickhouseExec(
-			"CREATE TABLE fingerprint_mirror (SpanId String, TopFrame String, Signature String, Label String, HashInputs Array(String)) ENGINE = Memory",
+			"CREATE TABLE fingerprint_mirror (SpanId String, TopFrame String, Signature String, Label String, HashInputs Array(String), PreviousHashInputs Array(String)) ENGINE = Memory",
 			database,
 		)
 		await clickhouseExec(
@@ -338,6 +355,27 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0),
 			decodeMismatch,
 		)
+		// The lineage view must pair each re-keyed hash with the v3 hash the mirror derives.
+		const hashOf = (column: string) => `if(
+			length(m.${column}) = 2,
+			cityHash64('${ORG_ID}', '${SERVICE}', m.${column}[1], m.${column}[2]),
+			cityHash64('${ORG_ID}', '${SERVICE}', m.${column}[1], m.${column}[2], m.${column}[3], m.${column}[4])
+		)`
+		const expected = `SELECT DISTINCT ${hashOf("HashInputs")} AS FingerprintHash, ${hashOf("PreviousHashInputs")} AS PreviousFingerprintHash
+			FROM fingerprint_mirror AS m WHERE FingerprintHash != PreviousFingerprintHash`
+		const actual = `SELECT DISTINCT FingerprintHash, PreviousFingerprintHash FROM error_fingerprint_lineage WHERE OrgId = '${ORG_ID}'`
+		strayLineage = Number(
+			Str.trim(await clickhouseExec(`SELECT count() FROM (${actual} EXCEPT ${expected})`, database)),
+		)
+		missingLineage = Number(
+			Str.trim(
+				await clickhouseExec(
+					`SELECT count() FROM (SELECT DISTINCT FingerprintHash FROM (${expected}) EXCEPT SELECT DISTINCT FingerprintHash FROM (${actual}))`,
+					database,
+				),
+			),
+		)
+		rekeyed = Number(Str.trim(await clickhouseExec(`SELECT count() FROM (${expected})`, database)))
 	}, 180_000)
 
 	afterAll(async () => {
@@ -346,6 +384,16 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 
 	it("materializes every case", () => {
 		assert.strictEqual(materialized, CASES.length)
+	})
+
+	it("records each re-keyed hash's previous hash exactly as the TS mirror does", () => {
+		// Library frames are generated, so some cases must re-key, or this proves nothing.
+		assert.isAbove(rekeyed, 0)
+		assert.deepStrictEqual(
+			{ strayLineage, missingLineage },
+			{ strayLineage: 0, missingLineage: 0 },
+			`replay with FINGERPRINT_FUZZ_SEED=${SEED}`,
+		)
 	})
 
 	it("hashes, labels and picks the top frame exactly as the TS mirror does", () => {

@@ -1541,6 +1541,14 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 	{
+		// ErrorsService tick: the v3 hash of each scanned fingerprint a version bump re-keyed.
+		module: "errors",
+		name: "errorFingerprintLineageQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorFingerprintLineageQuery({ fingerprintHashes: [FINGERPRINT] }), window),
+	},
+	{
 		module: "errors",
 		name: "errorsSparkQuery",
 		label: "default",

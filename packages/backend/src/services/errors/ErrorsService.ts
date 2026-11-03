@@ -1293,7 +1293,10 @@ const make: Effect.Effect<
 								}),
 								{
 									orgId,
-									startTime: DateTime.makeUnsafe(windowStartMs),
+									// Lineage rows are stamped with their minute; a window can start mid-minute.
+									startTime: DateTime.makeUnsafe(
+										windowStartMs - (windowStartMs % TICK_MINUTE_MS),
+									),
 									endTime: DateTime.makeUnsafe(windowEndMs),
 								},
 							),

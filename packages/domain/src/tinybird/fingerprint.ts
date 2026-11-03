@@ -42,6 +42,12 @@ export interface FingerprintInputs {
 	 * (`maple.fingerprint`) replaces the type, frames, message and salt.
 	 */
 	readonly hashInputs: ReadonlyArray<string>
+	/**
+	 * What the previous FINGERPRINT_VERSION hashed, for `PreviousFingerprintHash`: the
+	 * issue evaluator re-keys an issue across a bump through it. Equal to `hashInputs`
+	 * for a user key, which no bump touches.
+	 */
+	readonly previousHashInputs: ReadonlyArray<string>
 }
 
 /**
@@ -128,6 +134,20 @@ export const CUSTOM_FINGERPRINT_REDACTIONS: Redactions = [["^[ \\t\\n\\r]+|[ \\t
  */
 export const FRAME_LINE_PATTERN =
 	'^[ \\t]*at |^[ \\t]*File "|^[ \\t]+from [^ ]+:[0-9]+|^[^ \\t@{"\\[]+@[^ \\t]*:[0-9]+|^[ \\t]*[^ \\t@{"\\[]*@([a-z][a-z0-9+.-]*:)?/[^ \\t]*:[0-9]+|^[ \\t]+[^ \\t]+\\.(go|rs):[0-9]+|^[0-9]+ +\\S.* +0x[0-9a-fA-F]+'
+
+/**
+ * A frame in a dependency or a runtime's standard library, matched after
+ * `FRAME_REDACTIONS` has reduced install roots to `node_modules/` and the like.
+ * Those frames vary with the library's internals and version, so the hash keeps
+ * the application's own frames when it has any. Apple frames name only a binary,
+ * and a system binary cannot be told from the app's own, so they always count.
+ *   JS/Python/Ruby/Go deps: `node_modules/`, `site-packages/`, `dist-packages/`, `gems/`, `pkg/mod/`
+ *   stdlib:                 `/python#/`, `/ruby/#/`, Go's `/usr/local/go/src/`, Rust's `/rustc/`
+ *   Rust crates:            `.cargo/registry/`
+ *   JVM:                    `at java.`, `javax.`, `jdk.`, `sun.`, `kotlin.`, `kotlinx.`, `scala.`
+ */
+export const LIBRARY_FRAME_PATTERN =
+	'(^|[ \\t("@/])(node_modules|site-packages|dist-packages|gems|pkg/mod)/|/python#/|/ruby/#/|/usr/local/go/src/|/rustc/|\\.cargo/registry/|^[ \\t]*at (java|javax|jdk|sun|kotlin|kotlinx|scala)\\.'
 
 /**
  * Python prints the OUTERMOST frame first, so its first frames are the framework and
@@ -404,6 +424,7 @@ const SPAN_NAME_FRAME_RE = new RegExp(SPAN_NAME_FRAME_PATTERN, "u")
 export const INTERNAL_FRAME_PATTERN = "^[ \\t]*at ([^(]* \\()?(<anonymous>\\)?$|native(:|\\)|$)|node:|ext:)"
 const INTERNAL_FRAME_RE = new RegExp(INTERNAL_FRAME_PATTERN, "u")
 const PYTHON_FRAME_RE = new RegExp(PYTHON_FRAME_PATTERN, "u")
+const LIBRARY_FRAME_RE = new RegExp(LIBRARY_FRAME_PATTERN, "u")
 
 /** Display-only candidate keys for the human label (NOT used by the fingerprint). */
 export const JSON_LABEL_KEYS = ["title", "message", "error", "_tag", "reason", "name"] as const
@@ -652,17 +673,18 @@ export function computeFingerprintInputs(args: {
 	)
 	// Repeats collapse after normalizing (`at index.js` twice is two anonymous closures in
 	// one bundle, or recursion), so they do not use up the frames the hash keeps.
-	const topFrames = Arr.map(
+	const distinctFrames = Arr.map(
 		(PYTHON_FRAME_RE.test(frameLines[0] ?? "") ? [...frameLines].reverse() : frameLines).slice(
 			0,
 			MAX_NORMALIZED_FRAMES,
 		),
 		normalizeFrame,
-	)
-		.filter((frame, i, frames) => i === 0 || frame !== frames[i - 1])
-		.slice(0, maxFrames)
+	).filter((frame, i, frames) => i === 0 || frame !== frames[i - 1])
+	const appFrames = Arr.filter(distinctFrames, (frame) => !LIBRARY_FRAME_RE.test(frame))
+	const topFrames = (appFrames.length > 0 ? appFrames : distinctFrames).slice(0, maxFrames)
 	const topFrame = topFrames[0] ?? ""
 	const fpFrames = Arr.join(topFrames, "\n")
+	const previousFpFrames = Arr.join(distinctFrames.slice(0, maxFrames), "\n")
 
 	const label = args.exceptionType !== "" ? args.exceptionType : statusLabel(args.statusMessage)
 
@@ -674,19 +696,24 @@ export function computeFingerprintInputs(args: {
 		custom !== ""
 			? [CUSTOM_FINGERPRINT_ATTRIBUTE, custom]
 			: [args.exceptionType, fpFrames, msgSignature, FINGERPRINT_HASH_SALT]
+	const previousHashInputs =
+		custom !== ""
+			? hashInputs
+			: [args.exceptionType, previousFpFrames, msgSignature, PREVIOUS_FINGERPRINT_HASH_SALT]
 
-	return { topFrame, fpFrames, msgSignature, label, hashInputs }
+	return { topFrame, fpFrames, msgSignature, label, hashInputs, previousHashInputs }
 }
 
 /**
  * Version of the fingerprint algorithm above.
  *
- * Bumped whenever a change to frame matching, normalization, or the message
- * signature rotates hashes for errors that are still occurring. The evaluator
- * stamps it on every issue it writes, and retention archives issues carrying an
- * older version: after a bump the live bugs each get one clean issue and the
- * stale rows retire deterministically, instead of sitting in `triage` until the
- * 14-day auto-resolve window catches up.
+ * Bump it for ANY change that rotates hashes for errors still occurring, even one
+ * that re-keys only some stacks. A bump keeps issue state: while it settles the views
+ * also compute the previous version's hash (`previousHashInputs`) into
+ * `error_fingerprint_lineage`, and the evaluator re-keys each issue onto its new hash
+ * as a `rekey` alias, so its state, timeline and history carry over. The evaluator
+ * stamps the version on every issue it writes; retention retires an old-version issue
+ * only once it has gone a week without occurrences.
  *
  * That archive assumes a bump rotates EVERY hash, so since v3 the version itself
  * is hashed, as `FINGERPRINT_HASH_SALT`. Where an old hash is still produced
@@ -704,10 +731,9 @@ export function computeFingerprintInputs(args: {
  * Deliberately NOT a ClickHouse column. Old and new hashes cannot collide, so
  * the warehouse needs no discriminator — only the Postgres row does.
  *
- * Changing the view does NOT rewrite history: rows already in `error_events`
- * keep their old hashes for the rest of their 90-day TTL, so a new issue's
- * detail view, occurrence sparkline and sample traces all start empty and fill
- * from cutover forward. That is expected, not a regression.
+ * Changing the view does NOT rewrite history: rows already in `error_events` keep
+ * their old hashes for their 90-day TTL. A re-keyed issue owns both, so its detail
+ * view and sparkline stay whole across the cutover.
  *
  * v1 → v2: frame lines are matched by shape rather than by "contains a
  * colon-digit", and the message signature is always folded in and additionally
@@ -717,8 +743,14 @@ export function computeFingerprintInputs(args: {
  * dropped, frames lose package versions and `(index N)`, the message signature
  * cuts ClickHouse query echoes and redacts filesystem paths, prefixed ids and
  * ULIDs, JSON values lose UUIDs, and the version salt enters the hash.
+ *
+ * v3 → v4: the hash keeps the application's own frames (`LIBRARY_FRAME_PATTERN`),
+ * and issues re-key across the bump instead of being archived.
  */
-export const FINGERPRINT_VERSION = 3
+export const FINGERPRINT_VERSION = 4
 
 /** Hashed into `FingerprintHash` so a version bump rotates every issue. */
 export const FINGERPRINT_HASH_SALT = `fp${FINGERPRINT_VERSION}`
+
+/** The salt the previous version hashed with, for `PreviousFingerprintHash`. */
+export const PREVIOUS_FINGERPRINT_HASH_SALT = `fp${FINGERPRINT_VERSION - 1}`

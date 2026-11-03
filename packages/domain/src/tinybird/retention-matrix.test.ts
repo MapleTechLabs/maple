@@ -20,6 +20,8 @@ const RETENTION_DAYS = {
 	error_events: 90,
 	error_events_by_time: 90,
 	error_fingerprints_minutely: 90,
+	// Only read while a fingerprint version bump settles; the re-key needs a recent occurrence.
+	error_fingerprint_lineage: 30,
 	logs: 30,
 	logs_aggregates_hourly: 365,
 	metric_catalog: 90,
