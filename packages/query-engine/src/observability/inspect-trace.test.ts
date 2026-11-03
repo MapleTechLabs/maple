@@ -109,6 +109,19 @@ describe("inspectTrace", () => {
 		}),
 	)
 
+	it.effect("rejects a padded trace id before reading the warehouse", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { pipeCalls: [], probes: [] }
+			const error = yield* inspectTrace(` ${TRACE_ID} `).pipe(
+				Effect.provide(Layer.succeed(WarehouseExecutor, makeExecutor(captured, {}))),
+				Effect.flip,
+			)
+			assert.strictEqual(error._tag, "SchemaError")
+			assert.lengthOf(captured.pipeCalls, 0)
+			assert.lengthOf(captured.probes, 0)
+		}),
+	)
+
 	it.effect("finds a trace from the last week with one probe that skips the day already read", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { pipeCalls: [], probes: [] }
