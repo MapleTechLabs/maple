@@ -33,6 +33,7 @@ import {
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
 import { hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The transcript: the scrolling thread.
 
@@ -98,10 +99,12 @@ const markdownBody = <M>(
 export const richText = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, text: string): Html => {
 	const body = richTextSegments(text)
 	if (body._tag === "Plain") return markdownBody(h, host, text)
-	return vstack(h, { gap: "2" },
-		body.segments.flatMap((segment) => {
+	return vstack(
+		h,
+		{ gap: "2" },
+		Arr.flatMap(body.segments, (segment) => {
 			if (segment.type === "text")
-				return segment.content.trim() === "" ? [] : [markdownBody(h, host, segment.content)]
+				return Str.trim(segment.content) === "" ? [] : [markdownBody(h, host, segment.content)]
 			return host.inlineCard === undefined ? [] : [host.inlineCard(segment)]
 		}),
 	)
@@ -155,18 +158,14 @@ export const statusMarker = <M>(
 	label = "Thinking…",
 	clockMount?: PanelHost<M>["clockMount"],
 ): Html =>
-	marker(
-		h,
-		{ variant: "default", className: "text-xs", role: "status" },
-		[
-			markerIcon(h, [dotLoader(h)], "size-5"),
-			markerContent(
-				h,
-				[h.span([h.Class("shimmer")], [label]), ...runningClock(h, clockMount)],
-				hstackClass({ gap: "2" }),
-			),
-		],
-	)
+	marker(h, { variant: "default", className: "text-xs", role: "status" }, [
+		markerIcon(h, [dotLoader(h)], "size-5"),
+		markerContent(
+			h,
+			[h.span([h.Class("shimmer")], [label]), ...runningClock(h, clockMount)],
+			hstackClass({ gap: "2" }),
+		),
+	])
 
 /** Keyed by message id, so the scroller sees rows added, never patched in place. */
 const scrollerItem = <M>(
@@ -180,7 +179,10 @@ const scrollerItem = <M>(
 		id,
 		{
 			className: TRANSCRIPT_ITEM,
-			attributes: [h.DataAttribute("message-id", id), h.DataAttribute("scroll-anchor", String(isAnchor))],
+			attributes: [
+				h.DataAttribute("message-id", id),
+				h.DataAttribute("scroll-anchor", String(isAnchor)),
+			],
 		},
 		children,
 	)
@@ -313,7 +315,8 @@ const jumpButton = <M>(
 				{
 					size: "sm",
 					variant: "outline",
-					className: "absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-raised",
+					className:
+						"absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-raised",
 					attributes: [h.OnMount(mount)],
 				},
 				[icon(h, "PulseIcon"), h.span([h.Class("truncate")], ["Jump to diagnosis"])],
@@ -338,7 +341,8 @@ export const transcript = <M>(
 	const awaitingFirstToken = host.isLoading && last?.role === "user"
 	const rows = buildTranscriptRows(messages)
 	const readOnlyLabel = host.readOnly === null ? undefined : READ_ONLY_LABEL.get(host.readOnly)
-	const isMarkdownPending = transcriptMarkdown(messages).some(
+	const isMarkdownPending = Arr.some(
+		transcriptMarkdown(messages),
 		(text) => host.markdown[text]?.isStale ?? true,
 	)
 	// Keyed apart from the empty state: patched in place, the scroller's Mount would never run.
@@ -350,28 +354,28 @@ export const transcript = <M>(
 			attributes: [h.OnMount(host.scrollerMount)],
 		},
 		[
-					messageScrollerViewport(
+			messageScrollerViewport(
+				h,
+				{ attributes: [h.AriaLabel("Messages"), h.Role("region"), h.Tabindex(0)] },
+				[
+					messageScrollerContent(
 						h,
-						{ attributes: [h.AriaLabel("Messages"), h.Role("region"), h.Tabindex(0)] },
+						{
+							className: "mx-auto w-full max-w-3xl gap-4 px-4 py-6",
+							attributes: [
+								h.Attribute("aria-relevant", "additions"),
+								...(isMarkdownPending ? [h.DataAttribute("markdown-pending", "")] : []),
+								h.Role("log"),
+							],
+						},
 						[
-							messageScrollerContent(
-								h,
-								{
-									className: "mx-auto w-full max-w-3xl gap-4 px-4 py-6",
-									attributes: [
-										h.Attribute("aria-relevant", "additions"),
-										...(isMarkdownPending ? [h.DataAttribute("markdown-pending", "")] : []),
-										h.Role("log"),
-									],
-								},
-								[
 							...(readOnlyLabel === undefined
 								? []
 								: [scrollerItem(h, "__read-only", false, [separator(h, readOnlyLabel)])]),
 							...(host.fallback === undefined
 								? []
 								: [scrollerItem(h, "__fallback-diagnosis", false, [host.fallback])]),
-							...rows.map((row) => {
+							...Arr.map(rows, (row) => {
 								if (row.kind === "tool-run") {
 									const lastOfRun = row.messages[row.messages.length - 1]
 									const thinking =

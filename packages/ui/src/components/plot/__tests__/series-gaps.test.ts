@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { seriesRuns } from "../series-gaps"
+import { Array as Arr } from "effect"
 
 const MINUTE = 60_000
 const START = Date.UTC(2026, 10, 1, 12)
@@ -8,7 +9,7 @@ type Row = Readonly<{ at: Date; value: number | null }>
 
 /** One row per bucket, `null` where the series has no reading. */
 const series = (bucketMs: number, values: ReadonlyArray<number | null>): ReadonlyArray<Row> =>
-	values.map((value, index) => ({ at: new Date(START + index * bucketMs), value }))
+	Arr.map(values, (value, index) => ({ at: new Date(START + index * bucketMs), value }))
 
 const runValues = (rows: ReadonlyArray<Row>) => {
 	const { runs, lone } = seriesRuns(
@@ -16,7 +17,10 @@ const runValues = (rows: ReadonlyArray<Row>) => {
 		(row) => row.value,
 		(row) => row.at,
 	)
-	return { runs: runs.map((run) => run.map((row) => row.value)), lone: lone.map((row) => row.value) }
+	return {
+		runs: Arr.map(runs, (run) => Arr.map(run, (row) => row.value)),
+		lone: Arr.map(lone, (row) => row.value),
+	}
 }
 
 describe("seriesRuns", () => {
@@ -50,14 +54,14 @@ describe("seriesRuns", () => {
 			(row) => row.value,
 			(row) => row.at,
 		)
-		expect(silences.map((silence) => [silence.from.value, silence.to.value])).toEqual([
+		expect(Arr.map(silences, (silence) => [silence.from.value, silence.to.value])).toEqual([
 			[2, 3],
 			[3, 4],
 		])
 	})
 
 	test("rows without empty buckets still break when their timestamps are far apart", () => {
-		const rows = [0, 1, 2, 30, 31].map((minute) => ({
+		const rows = Arr.map([0, 1, 2, 30, 31], (minute) => ({
 			at: new Date(START + minute * MINUTE),
 			value: minute,
 		}))

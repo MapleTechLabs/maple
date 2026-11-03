@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
 import { badge } from "../display"
@@ -51,7 +51,7 @@ const boundInput = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, s
 		className: "text-xs",
 		attributes: [
 			h.AriaLabel(
-				`${side === "min" ? "Minimum" : "Maximum"} ${config.title.toLowerCase()} (${UNIT_WORDS[config.unit]})`,
+				`${side === "min" ? "Minimum" : "Maximum"} ${Str.toLowerCase(config.title)} (${UNIT_WORDS[config.unit]})`,
 			),
 			h.InputMode("decimal"),
 			h.Placeholder(side === "min" ? "0" : "max"),
@@ -116,7 +116,7 @@ const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): H
 						h.div(
 							[h.Class("flex flex-wrap items-center gap-1")],
 							[
-								...config.presets.map((preset) =>
+								...Arr.map(config.presets, (preset) =>
 									filterChip(
 										h,
 										{
@@ -228,8 +228,10 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 											[
 												h.Role("button"),
 												h.Tabindex(0),
-												h.AriaLabel(`Clear ${config.title.toLowerCase()} filter`),
-												h.Class("rounded-xs hover:text-muted-foreground active:text-muted-foreground"),
+												h.AriaLabel(`Clear ${Str.toLowerCase(config.title)} filter`),
+												h.Class(
+													"rounded-xs hover:text-muted-foreground active:text-muted-foreground",
+												),
 												h.OnClick(config.onApply(undefined, undefined), {
 													propagation: "Stop",
 												}),

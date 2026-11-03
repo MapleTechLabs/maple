@@ -1,4 +1,4 @@
-import { type Cause, type Duration, Effect, Schedule } from "effect"
+import { type Cause, type Duration, Effect, Schedule, String as Str } from "effect"
 import {
 	HttpClient,
 	type HttpClientError,
@@ -48,7 +48,7 @@ export const executeAttempt = <A>(
 					? {
 							"url.full": `${url.origin}${url.pathname}`,
 							"url.path": url.pathname,
-							"url.scheme": url.protocol.slice(0, -1),
+							"url.scheme": Str.slice(0, -1)(url.protocol),
 							"server.address": url.hostname,
 						}
 					: undefined),

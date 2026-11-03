@@ -10,9 +10,10 @@ import { mapleToolCatalog } from "../mcp/tools/registry"
 import { AGENTS } from "./agents"
 import { PR_REVIEW_RULESET, PR_REVIEW_TOOLS, READ_ONLY_RULESET } from "./permissions"
 import { profileForTurn } from "./profiles"
+import { Array as Arr } from "effect"
 
 describe("PR_REVIEW_RULESET", () => {
-	const registered = new Set(mapleToolCatalog.map((definition) => definition.name))
+	const registered = new Set(Arr.map(mapleToolCatalog, (definition) => definition.name))
 
 	it("names only registered tools", () => {
 		for (const name of PR_REVIEW_TOOLS) {

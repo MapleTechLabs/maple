@@ -35,6 +35,7 @@ import {
 	type Span,
 	type SpanEvent,
 } from "./otlp"
+import { Array as Arr, String as Str } from "effect"
 
 const MINUTE = 60_000
 const CLUSTER = "prod-us-east-1"
@@ -84,8 +85,9 @@ export class World {
 		// Separate stream from traffic, so changing the traffic never renames a pod.
 		const naming = new Rng(options.seed ^ 0x5eed)
 		for (const service of SERVICES) {
-			const deploys = DEPLOYS.filter((deploy) => deploy.service === service.name)
-				.map((deploy) => ({
+			const deploys = Arr.map(
+				Arr.filter(DEPLOYS, (deploy) => deploy.service === service.name),
+				(deploy) => ({
 					version: deploy.version,
 					// The bad deploy follows --incident-minutes, so rollout, gauges and errors agree.
 					at:
@@ -93,11 +95,11 @@ export class World {
 						(deploy.service === INCIDENT.service && deploy.version === INCIDENT.version
 							? options.incidentBeforeAnchorMs
 							: deploy.beforeAnchorMs),
-				}))
-				.sort((a, b) => a.at - b.at)
+				}),
+			).sort((a, b) => a.at - b.at)
 			const rollout = (version: string, at: number): Rollout => {
 				const sha = naming.hex(20)
-				const templateHash = naming.hex(5).slice(0, 9)
+				const templateHash = Str.slice(0, 9)(naming.hex(5))
 				const pods = nonEmpty(service.replicas, () =>
 					makeResource(
 						service,
@@ -111,7 +113,7 @@ export class World {
 			}
 			this.rollouts.set(service.name, [
 				rollout(service.baseVersion, Number.NEGATIVE_INFINITY),
-				...deploys.map(({ version, at }) => rollout(version, at)),
+				...Arr.map(deploys, ({ version, at }) => rollout(version, at)),
 			])
 		}
 	}
@@ -119,18 +121,23 @@ export class World {
 	resource(service: ServiceName, at: number, rng: Rng): Resource {
 		// The constructor inserts every ServiceName.
 		const rollouts = this.rollouts.get(service)!
-		const live = rollouts.filter((rollout) => rollout.at <= at).at(-1) ?? rollouts[0]
+		const live = Arr.filter(rollouts, (rollout) => rollout.at <= at).at(-1) ?? rollouts[0]
 		return rng.pick(live.pods)
 	}
 
 	allResources(): ReadonlyArray<Resource> {
-		return [...this.rollouts.values()].flatMap((rollouts) => rollouts.flatMap((rollout) => rollout.pods))
+		return Arr.flatMap([...this.rollouts.values()], (rollouts) =>
+			Arr.flatMap(rollouts, (rollout) => rollout.pods),
+		)
 	}
 }
 
 const POD_ALPHABET = "bcdfghjklmnpqrstvwxz2456789"
 const podSuffix = (rng: Rng) =>
-	Array.from({ length: 5 }, () => POD_ALPHABET[Math.floor(rng.next() * POD_ALPHABET.length)]).join("")
+	Arr.join(
+		Array.from({ length: 5 }, () => POD_ALPHABET[Math.floor(rng.next() * POD_ALPHABET.length)]),
+		"",
+	)
 
 const makeResource = (
 	service: ServiceDef,
@@ -263,14 +270,20 @@ const exceptionEvent = (at: number, failure: Failure): SpanEvent => ({
 })
 
 const fillRoute = (route: string, rng: Rng) =>
-	route
-		.replace("{id}", String(rng.int(10_000, 99_999)))
-		.replace("{sku}", `SKU-${rng.int(1000, 9999)}`)
-		.replace("[id]", `ord_${rng.hex(4)}`)
-		.replace(
-			"[slug]",
-			rng.pick(["linen-overshirt", "trail-runner-2", "canvas-tote", "merino-beanie", "field-watch"]),
-		)
+	Str.replace(
+		"[slug]",
+		rng.pick(["linen-overshirt", "trail-runner-2", "canvas-tote", "merino-beanie", "field-watch"]),
+	)(
+		Str.replace(
+			"[id]",
+			`ord_${rng.hex(4)}`,
+		)(
+			Str.replace(
+				"{sku}",
+				`SKU-${rng.int(1000, 9999)}`,
+			)(Str.replace("{id}", String(rng.int(10_000, 99_999)))(route)),
+		),
+	)
 
 /**
  * What a server or consumer span records when a call beneath it failed: the same
@@ -284,11 +297,14 @@ const recordedFailure = (service: string, failed: Failed | null): Failure | null
 	return {
 		type: "UpstreamError",
 		message,
-		stacktrace: [
-			`UpstreamError: ${message}`,
-			"    at callService (/app/src/lib/upstream.ts:41:13)",
-			"    at async handle (/app/src/server/handler.ts:27:20)",
-		].join("\n"),
+		stacktrace: Arr.join(
+			[
+				`UpstreamError: ${message}`,
+				"    at callService (/app/src/lib/upstream.ts:41:13)",
+				"    at async handle (/app/src/server/handler.ts:27:20)",
+			],
+			"\n",
+		),
 	}
 }
 
@@ -737,8 +753,8 @@ const histogramPoint = (
 	durationsMs: ReadonlyArray<number>,
 	attributes: ReadonlyArray<KeyValue>,
 ): HistogramPoint => {
-	const seconds = durationsMs.map((ms) => ms / 1000)
-	const counts = LATENCY_BOUNDS_S.map(() => 0).concat(0)
+	const seconds = Arr.map(durationsMs, (ms) => ms / 1000)
+	const counts = Arr.map(LATENCY_BOUNDS_S, () => 0).concat(0)
 	for (const value of seconds) {
 		const bucket = LATENCY_BOUNDS_S.findIndex((bound) => value <= bound)
 		const index = bucket === -1 ? LATENCY_BOUNDS_S.length : bucket
@@ -749,10 +765,10 @@ const histogramPoint = (
 		timeUnixNano: nano(minute + MINUTE),
 		attributes,
 		count: String(seconds.length),
-		sum: seconds.reduce((total, value) => total + value, 0),
+		sum: Arr.reduce(seconds, 0, (total, value) => total + value),
 		min: Math.min(...seconds),
 		max: Math.max(...seconds),
-		bucketCounts: counts.map(String),
+		bucketCounts: Arr.map(counts, String),
 		explicitBounds: LATENCY_BOUNDS_S,
 	}
 }
@@ -818,7 +834,7 @@ const buildMetrics = (
 	}
 
 	// The payment pool: a few connections in use until 3.5.0 pins it at the limit.
-	for (const resource of world.allResources().filter((r) => r.service.name === INCIDENT.service)) {
+	for (const resource of Arr.filter(world.allResources(), (r) => r.service.name === INCIDENT.service)) {
 		const points: NumberPoint[] = []
 		const pending: NumberPoint[] = []
 		for (let minute = from; minute < to; minute += MINUTE) {
@@ -866,5 +882,5 @@ const buildMetrics = (
 	for (const { resource, points } of orders.values())
 		add(resource, deltaSum("shop.orders.created", "{order}", points))
 
-	return [...byResource.values()].map(({ resource, metrics }) => ({ resource, items: metrics }))
+	return Arr.map([...byResource.values()], ({ resource, metrics }) => ({ resource, items: metrics }))
 }

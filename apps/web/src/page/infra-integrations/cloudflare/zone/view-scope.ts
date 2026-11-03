@@ -8,15 +8,16 @@ import {
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { scopeChip } from "../../kit/scope-chip"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `PanelScope`: what a panel is actually scoped to.
 
 export type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
 
 const listNames = (keys: ReadonlyArray<CloudflareFilterKey>): string => {
-	const names = keys.map((key) => FILTER_SECTION_LABEL[key].toLowerCase())
+	const names = Arr.map(keys, (key) => Str.toLowerCase(FILTER_SECTION_LABEL[key]))
 	if (names.length <= 1) return names[0] ?? ""
-	return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
+	return `${Arr.join(names.slice(0, -1), ", ")} and ${names[names.length - 1]}`
 }
 
 export type PanelScopeOptions = Readonly<{
@@ -46,14 +47,14 @@ export const panelScope = <M>(h: HtmlBuilder<M>, options: PanelScopeOptions): Ht
 	const active = activeFilterChips(options.filters)
 	if (active.length === 0) return undefined
 	const ignored = filterKeysFromServer(options.ignoredFilters)
-	const honored = active.filter((chip) => !ignored.includes(chip.key))
+	const honored = Arr.filter(active, (chip) => !ignored.includes(chip.key))
 	if (honored.length === 0) {
 		return scopeChip(h, { tone: "muted", trigger: options.trigger(options.id) }, ["zone-wide"])
 	}
 	const shown = honored.slice(0, 2)
 	const extra = honored.length - shown.length
 	return hstack(h, { gap: "1", inline: true, as: "span" }, [
-		...shown.map((chip) => scopeChip(h, { className: "max-w-[20ch] truncate" }, [chip.label])),
+		...Arr.map(shown, (chip) => scopeChip(h, { className: "max-w-[20ch] truncate" }, [chip.label])),
 		...(extra > 0 ? [scopeChip(h, { tone: "muted" }, ["+", String(extra)])] : []),
 		...(ignored.length > 0
 			? [scopeChip(h, { tone: "muted", trigger: options.trigger(options.id) }, ["partial"])]

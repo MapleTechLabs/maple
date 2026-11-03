@@ -24,6 +24,7 @@ import type { WorkloadKind, WorkloadRow } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // `WorkloadTable` / `WorkloadTableLoading`.
 
@@ -203,5 +204,5 @@ export const workloadTable = (
 		columns(h, inputs.sort, inputs.kind),
 		workloads.length === 0
 			? [dataTableEmpty(h, ["No workloads match these filters"])]
-			: workloads.map((wl) => workloadRow(h, wl, inputs)),
+			: Arr.map(workloads, (wl) => workloadRow(h, wl, inputs)),
 	)

@@ -1,7 +1,7 @@
 import { defaultWidgetLayout } from "@maple/domain/http"
 import { MetricsQueryDraftSchema } from "@maple/query-model"
 import { makeQueryDataSource } from "@maple/widgets/dashboard"
-import { Clock, Effect, Option, Random, Result, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Random, Result, Schema, Stream, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -144,7 +144,7 @@ export const dashboardChoices = (orgId: string): Stream.Stream<Message, never, R
 			(rows) =>
 				Message.UpdatedDashboards({
 					orgId,
-					dashboards: rows.flatMap((row) =>
+					dashboards: Arr.flatMap(rows, (row) =>
 						Option.toArray(
 							Option.map(rowToDocument(row), (document) => ({
 								id: document.id,
@@ -183,7 +183,7 @@ export const update = (model: Model, message: Message, context: Context): Return
 					},
 		// `handleCreate`: a blank name or a create in flight does nothing.
 		ClickedCreate: () => {
-			const name = model.newName.trim()
+			const name = Str.trim(model.newName)
 			return name === "" || model.isCreating || model.addingTo !== null || context.draft === null
 				? { model }
 				: {
@@ -253,7 +253,7 @@ const body = (h: H, model: Model): Html =>
 				: [
 						h.div(
 							[h.Class("max-h-64 space-y-1 overflow-y-auto")],
-							model.dashboards.map((d) => choiceRow(h, d)),
+							Arr.map(model.dashboards, (d) => choiceRow(h, d)),
 						),
 					]),
 			hstack(h, { gap: "2" }, [
@@ -273,7 +273,7 @@ const body = (h: H, model: Model): Html =>
 					h,
 					{
 						size: "sm",
-						isDisabled: model.newName.trim() === "",
+						isDisabled: Str.trim(model.newName) === "",
 						isLoading: model.isCreating,
 						attributes: [h.OnClick(Message.ClickedCreate())],
 					},

@@ -15,6 +15,7 @@
 import { chatActionControlId, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
 import { escapeMrkdwn, toMrkdwn } from "./mrkdwn"
+import { Array as Arr, String as Str } from "effect"
 
 export interface SlackText {
 	readonly type: "mrkdwn"
@@ -147,7 +148,7 @@ export const DENY_ACTION = "maple_deny"
 export const EMPTY_TEXT = "—"
 
 const clamp = (text: string, max: number): string =>
-	text.length <= max ? text : `${text.slice(0, max - 1)}…`
+	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`
 
 const section = (text: string): SlackSection => ({
 	type: "section",
@@ -257,11 +258,11 @@ const alertAttachment = (block: ChatAlertBlock): SlackAttachment => {
 			text: { type: "plain_text", text: clamp(block.title, MAX_HEADER_CHARS), emoji: true },
 		},
 		{
-			...section(summary.trim() === "" ? EMPTY_TEXT : summary),
+			...section(Str.trim(summary) === "" ? EMPTY_TEXT : summary),
 			...(block.fields.length === 0
 				? undefined
 				: {
-						fields: block.fields.slice(0, MAX_FIELDS).map((field) => ({
+						fields: Arr.map(block.fields.slice(0, MAX_FIELDS), (field) => ({
 							type: "mrkdwn" as const,
 							text: clamp(
 								`*${escapeMrkdwn(field.label)}*\n${toMrkdwn(field.value)}`,
@@ -279,13 +280,14 @@ const alertAttachment = (block: ChatAlertBlock): SlackAttachment => {
 		})
 	}
 	// A link too long for a button is left out rather than sent: Slack rejects the whole message.
-	const links = block.links
-		.filter((link) => link.url.length <= MAX_IMAGE_URL_CHARS)
-		.slice(0, MAX_LINK_BUTTONS)
+	const links = Arr.filter(block.links, (link) => link.url.length <= MAX_IMAGE_URL_CHARS).slice(
+		0,
+		MAX_LINK_BUTTONS,
+	)
 	if (links.length > 0) {
 		blocks.push({
 			type: "actions",
-			elements: links.map((link, index) => ({
+			elements: Arr.map(links, (link, index) => ({
 				type: "button",
 				text: { type: "plain_text", text: clamp(link.label, MAX_BUTTON_TEXT_CHARS), emoji: true },
 				action_id: `maple_link_${index}`,
@@ -295,14 +297,14 @@ const alertAttachment = (block: ChatAlertBlock): SlackAttachment => {
 		})
 	}
 	const footer = [
-		...block.footer.map(toMrkdwn),
+		...Arr.map(block.footer, toMrkdwn),
 		...(block.sentAtMs === null ? [] : [slackDate(block.sentAtMs)]),
 	]
-	if (footer.length > 0) blocks.push(context(footer.join("  ·  ")))
+	if (footer.length > 0) blocks.push(context(Arr.join(footer, "  ·  ")))
 	return {
 		color: block.color,
 		fallback: clamp(
-			escapeMrkdwn(`${block.title} · ${block.summary.replaceAll("**", "")}`),
+			escapeMrkdwn(`${block.title} · ${Str.replaceAll("**", "")(block.summary)}`),
 			MAX_FALLBACK_CHARS,
 		),
 		blocks,
@@ -320,7 +322,7 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 		switch (block.kind) {
 			case "prose": {
 				const text = toMrkdwn(block.markdown)
-				if (text.trim() !== "") rendered.push(section(text))
+				if (Str.trim(text) !== "") rendered.push(section(text))
 				fallback.push(block.markdown)
 				break
 			}
@@ -338,8 +340,13 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 			}
 			case "activity":
 				if (block.tools.length > 0) {
-					rendered.push(context(block.tools.map(toolLabel).join(" · ")))
-					fallback.push(block.tools.map((tool) => tool.label).join(", "))
+					rendered.push(context(Arr.join(Arr.map(block.tools, toolLabel), " · ")))
+					fallback.push(
+						Arr.join(
+							Arr.map(block.tools, (tool) => tool.label),
+							", ",
+						),
+					)
 				}
 				break
 			case "approval": {
@@ -398,7 +405,7 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 	if (rendered.length === 0 && attachments.length > 0) {
 		return { attachments, unfurl_links: false, unfurl_media: false }
 	}
-	const text = fallback.join("\n\n").trim()
+	const text = Str.trim(Arr.join(fallback, "\n\n"))
 	return {
 		...(attachments.length === 0 ? undefined : { attachments }),
 		text: clamp(text === "" ? EMPTY_TEXT : text, MAX_FALLBACK_CHARS),

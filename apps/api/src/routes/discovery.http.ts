@@ -1,6 +1,6 @@
 import { MapleApiV2, v2RouteNotFoundBody } from "@maple/domain/http/v2"
 import { mapleMcpServerManifest } from "@maple/domain/mcp-manifest"
-import { Context, Effect, identity, Option, Schema } from "effect"
+import { Context, Effect, identity, Option, Schema, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { OpenApi } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
@@ -87,7 +87,7 @@ const apiIndex = (origin: string) => ({
 export const DiscoveryRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
-		const origin = env.MAPLE_API_BASE_URL.replace(/\/+$/, "")
+		const origin = Str.replace(/\/+$/, "")(env.MAPLE_API_BASE_URL)
 
 		const serveOpenApi = Effect.map(openApiJson(origin), (body) =>
 			HttpServerResponse.text(body, {
@@ -123,7 +123,7 @@ export const DiscoveryRouter = HttpRouter.use((router) =>
 export const NotFoundRouter = HttpRouter.use((router) =>
 	router.add("*", "/*", (request) => {
 		const origin = untrustedRequestOrigin(request)
-		const path = request.url.split("?")[0] ?? request.url
+		const path = Str.split("?")(request.url)[0] ?? request.url
 		return Effect.succeed(
 			HttpServerResponse.jsonUnsafe(
 				{

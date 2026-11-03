@@ -1,6 +1,6 @@
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
 	capForDisplay,
@@ -36,7 +36,7 @@ export const logMessageOf: (rawBody: string) => LogMessage = memoizeByText((rawB
 	return {
 		formatted,
 		isJson: Option.isSome(pretty),
-		isLong: formatted.length > LONG_CHARS || formatted.includes("\n"),
+		isLong: formatted.length > LONG_CHARS || Str.includes("\n")(formatted),
 		copyValue: Option.isSome(pretty) && body === rawBody ? formatted : rawBody,
 	}
 })

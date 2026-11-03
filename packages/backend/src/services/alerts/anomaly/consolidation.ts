@@ -121,7 +121,7 @@ export function markFingerprintResolved(
 	fingerprintHash: string,
 	nowMs: number,
 ): IncidentFingerprintEntry[] {
-	return entries.map((e) => (e.fingerprintHash === fingerprintHash ? { ...e, resolvedAt: nowMs } : e))
+	return Arr.map(entries, (e) => (e.fingerprintHash === fingerprintHash ? { ...e, resolvedAt: nowMs } : e))
 }
 
 /** Max severity over still-firing entries; `fallback` when none are tracked. */
@@ -129,9 +129,9 @@ export function headlineSeverity(
 	entries: ReadonlyArray<IncidentFingerprintEntry>,
 	fallback: AnomalyIncidentSeverity,
 ): AnomalyIncidentSeverity {
-	const active = entries.filter((e) => e.resolvedAt === null)
+	const active = Arr.filter(entries, (e) => e.resolvedAt === null)
 	if (active.length === 0) return fallback
-	return active.some((e) => e.severity === "critical") ? "critical" : "warning"
+	return Arr.some(active, (e) => e.severity === "critical") ? "critical" : "warning"
 }
 
 /** Co-onset evidence gate for attaching a fingerprint to an open incident. */

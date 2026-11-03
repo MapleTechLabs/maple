@@ -9,6 +9,7 @@ import { pressable } from "../../ui/pressable"
 import { statusDot } from "../../ui/status-dot"
 import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
+import { Array as Arr } from "effect"
 
 // `ServiceMapLegend` (packages/ui `service-map/service-map-canvas.tsx`), with the "+N more"
 // popover listing every service.
@@ -38,7 +39,7 @@ const health = <M>(h: HtmlBuilder<M>, tone: "ok" | "warn" | "crit", label: strin
 const allServices = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Html =>
 	h.div(
 		[h.Class("grid grid-cols-2 gap-2 text-2xs")],
-		services.map((service) =>
+		Arr.map(services, (service) =>
 			hstack(h, { gap: "1.5", shrink: true }, [
 				h.div([
 					h.Class("size-2.5 rounded-sm shrink-0"),
@@ -100,16 +101,16 @@ export const serviceMapLegend = <M>(
 			...(colorMode === "service" && services.length > 0
 				? [
 						h.span([h.Class("text-foreground-faint max-sm:hidden")], ["·"]),
-						...services
-							.slice(0, 3)
-							.map((service) => swatch(h, serviceSwatchColor(service), service)),
+						...Arr.map(services.slice(0, 3), (service) =>
+							swatch(h, serviceSwatchColor(service), service),
+						),
 						...(services.length > 3 ? [morePopover(h, services, popover, toPopover)] : []),
 					]
 				: []),
 			...(colorMode === "platform"
 				? [
 						h.span([h.Class("text-foreground-faint")], ["·"]),
-						...LEGEND_PLATFORMS.map(([platform, label]) =>
+						...Arr.map(LEGEND_PLATFORMS, ([platform, label]) =>
 							swatch(h, getPlatformColor(platform === "unknown" ? undefined : platform), label),
 						),
 					]

@@ -14,7 +14,7 @@ import {
 	Investigations,
 	type ErrorIssueVerificationRow,
 } from "@maple/db/tables"
-import { DateTime, Clock, Effect, Schema } from "effect"
+import { DateTime, Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
@@ -125,7 +125,7 @@ export const enqueueFixVerification: (
 	})
 
 	const snapshot = new InvestigationSubjectSnapshot({
-		title: `Did ${input.pullRequestUrl.split("/").slice(-3).join("/")} fix ${issue.exceptionType}?`,
+		title: `Did ${Arr.join(Str.split("/")(input.pullRequestUrl).slice(-3), "/")} fix ${issue.exceptionType}?`,
 		scope: issue.serviceName,
 		status: "verifying",
 		severity: issue.severity ?? null,
@@ -156,7 +156,7 @@ export const enqueueFixVerification: (
 				value:
 					verification.baselineVersionsJson.length === 0
 						? "(none reported)"
-						: verification.baselineVersionsJson.join(", "),
+						: Arr.join(verification.baselineVersionsJson, ", "),
 			}),
 		],
 		references: [

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { InternalScrapeTarget } from "@maple/domain/http"
 import { describeHttpClientError, guardPinned, readTextWithin } from "@maple/safe-fetch"
@@ -32,7 +32,7 @@ export const scrapeTimeoutMs = (scrapeIntervalSeconds: number): number =>
 /** Parse a `Retry-After` header value, honoring only the delta-seconds form. */
 export const parseRetryAfterSeconds = (value: string | null): number | null => {
 	if (value === null) return null
-	const seconds = Number(value.trim())
+	const seconds = Number(Str.trim(value))
 	return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
 }
 

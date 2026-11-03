@@ -15,7 +15,7 @@ import {
 	severityOf,
 	sortAdvisories,
 } from "@maple/domain/runtime-advisories"
-import { Context, Effect, Layer, Ref, Schema } from "effect"
+import { Context, Effect, Layer, Ref, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 // Known vulnerabilities per runtime version for the Security Center's Runtimes tab. OSV.dev is read
@@ -113,12 +113,12 @@ const isRuntimePackage = (
 	product: AdvisoryTarget["product"],
 	repo: string,
 ) => {
-	const normalized = (name ?? "").trim().toLowerCase()
+	const normalized = Str.toLowerCase(Str.trim(name ?? ""))
 	return (
 		normalized === "" ||
 		normalized === product ||
-		normalized === repo.toLowerCase() ||
-		normalized.includes(":")
+		normalized === Str.toLowerCase(repo) ||
+		Str.includes(":")(normalized)
 	)
 }
 
@@ -132,7 +132,7 @@ const toGithubAdvisory = (
 	summary: advisory.summary,
 	severity: severityOf(advisory.severity),
 	published: advisory.published_at,
-	ranges: (advisory.vulnerabilities ?? []).flatMap((vulnerability) =>
+	ranges: Arr.flatMap(advisory.vulnerabilities ?? [], (vulnerability) =>
 		vulnerability.vulnerable_version_range === null ||
 		!isRuntimePackage(vulnerability.package?.name, product, repo)
 			? []
@@ -151,12 +151,13 @@ const githubAdvisoriesFor = (
 	version: string,
 ): ReadonlyArray<RuntimeAdvisory> =>
 	sortAdvisories(
-		advisories.flatMap((advisory) => {
-			const hits = advisory.ranges.filter(
+		Arr.flatMap(advisories, (advisory) => {
+			const hits = Arr.filter(
+				advisory.ranges,
 				(range) => inAdvisoryRange(range.vulnerable, version) && !isPatched(range.patched, version),
 			)
 			if (hits.length === 0) return []
-			const fixes = hits.flatMap((range) => {
+			const fixes = Arr.flatMap(hits, (range) => {
 				const fixed =
 					patchedVersionFor(range.patched, version) ?? rangeEndFor(range.vulnerable, version)
 				return fixed === null ? [] : [fixed]
@@ -183,9 +184,11 @@ export class RuntimeAdvisoryCatalogError extends Schema.TaggedError<RuntimeAdvis
 const GITHUB_PAGE_SIZE = 100
 
 const truncate = (raw: string | null | undefined): string | null => {
-	const text = (raw ?? "").trim()
+	const text = Str.trim(raw ?? "")
 	if (text === "") return null
-	return text.length > SUMMARY_MAX_LENGTH ? `${text.slice(0, SUMMARY_MAX_LENGTH - 1).trimEnd()}…` : text
+	return text.length > SUMMARY_MAX_LENGTH
+		? `${Str.trimEnd(Str.slice(0, SUMMARY_MAX_LENGTH - 1)(text))}…`
+		: text
 }
 
 /** Many advisories carry no summary, only details: their first sentence stands in, capped. */
@@ -193,14 +196,12 @@ const summaryOf = (vuln: OsvVuln): string | null =>
 	truncate(vuln.summary ?? vuln.details?.split(/(?<=\.)\s/)[0])
 
 const toAdvisory = (vuln: OsvVuln, version: string): RuntimeAdvisory => {
-	const fixes = (vuln.affected ?? [])
-		.flatMap((affected) => affected.ranges ?? [])
-		.flatMap((range) => {
-			const fixed = fixedVersionFor(range.events, version)
-			return fixed === null ? [] : [fixed]
-		})
+	const fixes = Arr.flatMap(vuln.affected ?? [], (affected) => affected.ranges ?? []).flatMap((range) => {
+		const fixed = fixedVersionFor(range.events, version)
+		return fixed === null ? [] : [fixed]
+	})
 	return {
-		id: vuln.aliases?.find((alias) => alias.startsWith("CVE-")) ?? vuln.id,
+		id: vuln.aliases?.find((alias) => Str.startsWith("CVE-")(alias)) ?? vuln.id,
 		url: `https://osv.dev/vulnerability/${encodeURIComponent(vuln.id)}`,
 		summary: summaryOf(vuln),
 		severity: severityOf(vuln.database_specific?.severity),

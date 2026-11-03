@@ -1,5 +1,5 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { Command, Mount } from "foldkit"
 import { writeClipboardApi } from "../copy-button"
 import { Message, type VirtualRow } from "./logs-stream-message"
@@ -26,13 +26,13 @@ const readLayout = (scroller: HTMLElement): Layout => {
 	const layout = scroller.getAttribute(`data-${LAYOUT_ATTRIBUTE}`) ?? ""
 	return {
 		count: Number(scroller.getAttribute(`data-${COUNT_ATTRIBUTE}`) ?? "0"),
-		wrap: layout.includes("wrap") && !layout.includes("nowrap"),
-		comfortable: layout.includes("comfortable"),
+		wrap: Str.includes("wrap")(layout) && !Str.includes("nowrap")(layout),
+		comfortable: Str.includes("comfortable")(layout),
 	}
 }
 
 const sameRows = (a: ReadonlyArray<VirtualRow>, b: ReadonlyArray<VirtualRow>): boolean =>
-	a.length === b.length && a.every((row, i) => row.index === b[i]?.index && row.start === b[i]?.start)
+	a.length === b.length && Arr.every(a, (row, i) => row.index === b[i]?.index && row.start === b[i]?.start)
 
 const rowsOf = (scroller: HTMLElement): ReadonlyArray<HTMLElement> =>
 	Array.from(scroller.querySelectorAll<HTMLElement>("[role='log'] > [data-index]"))
@@ -65,9 +65,10 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 					return state.layout.comfortable ? ROW_HEIGHT_COMFORTABLE : ROW_HEIGHT
 				}
 				const emitWindow = (instance: Virtualizer<HTMLElement, HTMLElement>) => {
-					const rows = instance
-						.getVirtualItems()
-						.map((item) => ({ index: item.index, start: item.start }))
+					const rows = Arr.map(instance.getVirtualItems(), (item) => ({
+						index: item.index,
+						start: item.start,
+					}))
 					const totalSize = instance.getTotalSize()
 					if (totalSize === state.totalSize && sameRows(rows, state.rows)) return
 					state.rows = rows
@@ -116,9 +117,9 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 				}
 
 				const rowObserver = new MutationObserver((records) => {
-					const removed = records.some((record) => record.removedNodes.length > 0)
+					const removed = Arr.some(records, (record) => record.removedNodes.length > 0)
 					if (removed) virtualizer.measureElement(null)
-					records.forEach((record) =>
+					Arr.forEach(records, (record) =>
 						record.addedNodes.forEach((node) => {
 							if (node instanceof HTMLElement && node.hasAttribute("data-index")) measure(node)
 						}),
@@ -138,16 +139,17 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 					virtualizer.setOptions(options())
 					// The window is read before rows re-measure: only the rows
 					// that window keeps (overscan shrinks when wrapping) are measured, against the old sizes.
-					const kept = new Set(virtualizer.getVirtualItems().map((item) => item.index))
+					const kept = new Set(Arr.map(virtualizer.getVirtualItems(), (item) => item.index))
 					rowObserver.disconnect()
 					observeLog()
 					if (relayout) {
 						state.sizeSum = 0
 						state.sizeByIndex = new Map()
 						virtualizer.measure()
-						rowsOf(scroller)
-							.filter((row) => kept.has(Number(row.dataset.index)))
-							.forEach(measure)
+						Arr.forEach(
+							Arr.filter(rowsOf(scroller), (row) => kept.has(Number(row.dataset.index))),
+							measure,
+						)
 					}
 					virtualizer._willUpdate()
 					emitWindow(virtualizer)
@@ -174,7 +176,7 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 				scroller.addEventListener(SCROLL_EVENT, onScrollRequest)
 
 				observeLog()
-				rowsOf(scroller).forEach(measure)
+				Arr.forEach(rowsOf(scroller), measure)
 				const unmount = virtualizer._didMount()
 				virtualizer._willUpdate()
 				emitWindow(virtualizer)

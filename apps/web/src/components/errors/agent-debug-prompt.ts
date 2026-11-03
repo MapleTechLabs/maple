@@ -1,4 +1,5 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 export interface AgentDebugPromptInput {
 	/** Stable error identity — the input to the `error_detail` MCP tool. */
@@ -106,12 +107,12 @@ export function formatAgentDebugPrompt(input: AgentDebugPromptInput): string {
 	lines.push(
 		"",
 		"Please:",
-		...steps.map((step, index) => `${index + 1}. ${step}`),
+		...Arr.map(steps, (step, index) => `${index + 1}. ${step}`),
 		"",
 		issueId ? "Start by claiming the issue." : "Start by calling error_detail.",
 	)
 
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 /** Adapter for the error-issue surfaces (list context menu + detail header). */

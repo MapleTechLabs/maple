@@ -11,7 +11,7 @@
 // struct, so there is no struct-offset fragility across libchdb versions.
 
 import { CString, dlopen, FFIType, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi"
-import { Effect, Result, Schema, type Scope } from "effect"
+import { Effect, Result, Schema, type Scope, Array as Arr, String as Str } from "effect"
 import { existsSync } from "node:fs"
 import { lstatSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -69,7 +69,7 @@ function resolveLibchdb(): string {
 	const found = candidates.find((p) => existsSync(p))
 	if (!found) {
 		throw new Error(
-			`libchdb not found. Looked in:\n  ${candidates.join("\n  ")}\n` +
+			`libchdb not found. Looked in:\n  ${Arr.join(candidates, "\n  ")}\n` +
 				`Set MAPLE_LIBCHDB to its path, or keep libchdb next to the maple binary.`,
 		)
 	}
@@ -224,7 +224,8 @@ export const configureRawTelemetryRetentionDays = async (
 
 export const rawTelemetryTtlStatements = (days: number): ReadonlyArray<string> => {
 	const validated = parseRawTelemetryRetentionDays({ formatVersion: 1, minimumDays: days })
-	return RAW_TELEMETRY_TTL_COLUMNS.map(
+	return Arr.map(
+		RAW_TELEMETRY_TTL_COLUMNS,
 		([table, column]) => `ALTER TABLE ${table} MODIFY TTL toDate(${column}) + INTERVAL ${validated} DAY`,
 	)
 }
@@ -242,17 +243,24 @@ const existingTtlDays = (createTableQuery: string, table: string): number => {
 /** Apply a floor without shortening a higher TTL already present in the schema. */
 export const applyRawTelemetryRetentionFloor = (db: Pick<Chdb, "query" | "exec">, days: number): void => {
 	const validated = parseRawTelemetryRetentionDays({ formatVersion: 1, minimumDays: days })
-	const names = RAW_TELEMETRY_TTL_COLUMNS.map(([table]) => `'${table}'`).join(", ")
-	const rows = db
-		.query(
-			`SELECT name, create_table_query FROM system.tables WHERE database = 'default' AND name IN (${names}) ORDER BY name`,
-			"JSONEachRow",
-		)
-		.split("\n")
-		.filter((line) => line.trim().length > 0)
-		.map((line) => decodeTableTtlRow(line))
+	const names = Arr.join(
+		Arr.map(RAW_TELEMETRY_TTL_COLUMNS, ([table]) => `'${table}'`),
+		", ",
+	)
+	const rows = Arr.map(
+		Arr.filter(
+			Str.split("\n")(
+				db.query(
+					`SELECT name, create_table_query FROM system.tables WHERE database = 'default' AND name IN (${names}) ORDER BY name`,
+					"JSONEachRow",
+				),
+			),
+			(line) => Str.trim(line).length > 0,
+		),
+		(line) => decodeTableTtlRow(line),
+	)
 	const definitions = new Map(
-		rows.map((row) => {
+		Arr.map(rows, (row) => {
 			if (typeof row.name !== "string" || typeof row.create_table_query !== "string")
 				throw new Error("invalid system.tables TTL metadata")
 			return [row.name, row.create_table_query] as const
@@ -401,9 +409,9 @@ export class Chdb {
 		pinProcessTimezoneToUtc()
 		const sym = symbols()
 		const args = chdbArgv(options)
-		const argBufs = args.map(cstr)
+		const argBufs = Arr.map(args, cstr)
 		const argv = new BigUint64Array(args.length)
-		argBufs.forEach((b, i) => {
+		Arr.forEach(argBufs, (b, i) => {
 			argv[i] = BigInt(ptr(b))
 		})
 		const connPtrPtr = sym.chdb_connect(args.length, ptr(argv))
@@ -563,10 +571,10 @@ export class Chdb {
 			this.exec(schemaSql)
 			return
 		} catch (wholeScriptError) {
-			const statements = schemaSql
-				.split(/\n\s*\n/)
-				.map((s) => s.trim().replace(/;\s*$/, ""))
-				.filter((s) => s.length > 0 && !s.startsWith("--"))
+			const statements = Arr.filter(
+				Arr.map(Str.split(/\n\s*\n/)(schemaSql), (s) => Str.replace(/;\s*$/, "")(Str.trim(s))),
+				(s) => s.length > 0 && !Str.startsWith("--")(s),
+			)
 			if (statements.length <= 1) throw wholeScriptError
 			for (const stmt of statements) this.exec(stmt)
 		}

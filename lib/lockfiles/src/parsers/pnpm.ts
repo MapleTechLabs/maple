@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
 import { isRecord, isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
 import { parseYamlDocuments } from "../internal/decode.ts"
 import { LockfileParseError } from "../errors.ts"
@@ -11,16 +11,13 @@ interface NameVersion {
 }
 
 /** Drops peer suffixes: v6+ `(react@18.2.0)` groups, v5 `_react@18.2.0` tails. */
-const stripPeers = (version: string): string => version.replace(/\(.*$/, "").replace(/_.*$/, "")
+const stripPeers = (version: string): string => Str.replace(/_.*$/, "")(Str.replace(/\(.*$/, "")(version))
 
 const V5_KEY = /^((?:@[^/]+\/)?[^/@]+)\/(\d[^/]*)$/
 
 /** Package keys: v5 `/name/1.0.0`, v6 `/name@1.0.0`, v9 `name@1.0.0`, optionally registry-prefixed. */
 const parsePnpmKey = (key: string): NameVersion | undefined => {
-	const bare = key
-		.replace(/\(.*$/, "")
-		.replace(/^[^/@]*\.[^/@]*\//, "")
-		.replace(/^\//, "")
+	const bare = Str.replace(/^\//, "")(Str.replace(/^[^/@]*\.[^/@]*\//, "")(Str.replace(/\(.*$/, "")(key)))
 	const v5 = V5_KEY.exec(bare)
 	if (v5 !== null) {
 		const version = stripPeers(v5[2] ?? "")
@@ -44,10 +41,10 @@ const importerVersion = (name: string, value: unknown): NameVersion | undefined 
 
 const importerKeys = (importer: unknown, fields: ReadonlyArray<string>): ReadonlyArray<string> =>
 	isRecord(importer)
-		? fields.flatMap((field) => {
+		? Arr.flatMap(fields, (field) => {
 				const deps = importer[field]
 				return isRecord(deps)
-					? Object.entries(deps).flatMap(([name, value]) => {
+					? Arr.flatMap(Rec.toEntries(deps), ([name, value]) => {
 							const nv = importerVersion(name, value)
 							return nv === undefined ? [] : [`${nv.name}@${nv.version}`]
 						})
@@ -72,21 +69,23 @@ const entryNameVersion = (key: string, value: unknown): NameVersion | undefined 
 export const parsePnpmLock = Effect.fn("lockfiles.parsePnpmLock")(function* (input: LockfileInput) {
 	// pnpm 11 can write an env document (the pinned package manager) before the project's.
 	const docs = (yield* parseYamlDocuments(input.path, input.content)).filter(isRecord)
-	if (!docs.some((doc) => doc.lockfileVersion !== undefined)) {
+	if (!Arr.some(docs, (doc) => doc.lockfileVersion !== undefined)) {
 		return yield* new LockfileParseError({
 			path: input.path,
 			message: "pnpm-lock.yaml has no lockfileVersion",
 		})
 	}
-	const importers = docs.flatMap((doc) => (isRecord(doc.importers) ? Object.values(doc.importers) : [doc]))
-	const direct = new Set(importers.flatMap((importer) => importerKeys(importer, PROD_FIELDS)))
-	const dev = new Set(importers.flatMap((importer) => importerKeys(importer, ["devDependencies"])))
-	const entries = docs.flatMap((doc) => [
-		...(isRecord(doc.packages) ? Object.entries(doc.packages) : []),
-		...(isRecord(doc.snapshots) ? Object.entries(doc.snapshots) : []),
+	const importers = Arr.flatMap(docs, (doc) =>
+		isRecord(doc.importers) ? Rec.values(doc.importers) : [doc],
+	)
+	const direct = new Set(Arr.flatMap(importers, (importer) => importerKeys(importer, PROD_FIELDS)))
+	const dev = new Set(Arr.flatMap(importers, (importer) => importerKeys(importer, ["devDependencies"])))
+	const entries = Arr.flatMap(docs, (doc) => [
+		...(isRecord(doc.packages) ? Rec.toEntries(doc.packages) : []),
+		...(isRecord(doc.snapshots) ? Rec.toEntries(doc.snapshots) : []),
 	])
 	const skipped = new Set<string>()
-	const packages = entries.flatMap(([key, value]): ReadonlyArray<LockedPackage> => {
+	const packages = Arr.flatMap(entries, ([key, value]): ReadonlyArray<LockedPackage> => {
 		const nv = entryNameVersion(key, value)
 		if (nv === undefined) {
 			skipped.add(key)

@@ -16,7 +16,7 @@
 // Stale-prone post-aggregation predicates (e.g. exact Status) are deliberately
 // not exposed as SQL filters since the DSL has no HAVING clause.
 
-import { DateTime } from "effect"
+import { DateTime, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compileFnCallCond } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -1087,7 +1087,10 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 				rootSpanKind: CH.anyIf($.SpanKind, isRoot),
 				rootSpanAttributes: CH.toJSONString(
 					CH.mapLiteral(
-						...ROOT_SPAN_ATTR_KEYS.map((key) => [key, CH.mapGet(rootAttributes, key)] as const),
+						...Arr.map(
+							ROOT_SPAN_ATTR_KEYS,
+							(key) => [key, CH.mapGet(rootAttributes, key)] as const,
+						),
 					),
 				),
 				spanCount: CH.count(),

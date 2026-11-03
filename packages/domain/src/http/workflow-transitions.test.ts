@@ -10,16 +10,17 @@ import {
 	WorkflowState,
 	describeWorkflowTransitions,
 } from "./errors"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const ALL_STATES = WorkflowState.literals
 
 describe("WORKFLOW_TRANSITIONS", () => {
 	it("covers every workflow state as a source", () => {
-		expect(Object.keys(WORKFLOW_TRANSITIONS).sort()).toEqual([...ALL_STATES].sort())
+		expect(Rec.keys(WORKFLOW_TRANSITIONS).sort()).toEqual([...ALL_STATES].sort())
 	})
 
 	it("only ever targets real workflow states", () => {
-		for (const [from, targets] of Object.entries(WORKFLOW_TRANSITIONS)) {
+		for (const [from, targets] of Rec.toEntries(WORKFLOW_TRANSITIONS)) {
 			for (const to of targets) {
 				expect(ALL_STATES, `${from}→${to}`).toContain(to)
 			}
@@ -27,7 +28,7 @@ describe("WORKFLOW_TRANSITIONS", () => {
 	})
 
 	it("never lets a state transition to itself", () => {
-		for (const [from, targets] of Object.entries(WORKFLOW_TRANSITIONS)) {
+		for (const [from, targets] of Rec.toEntries(WORKFLOW_TRANSITIONS)) {
 			expect(targets, from).not.toContain(from)
 		}
 	})
@@ -109,7 +110,7 @@ describe("describeWorkflowTransitions", () => {
 		// sitting in `regressed` or `verifying` still needs to know its moves.
 		const description = describeWorkflowTransitions()
 		for (const [, targets] of description.matchAll(/→\(([^)]+)\)/g)) {
-			for (const target of targets.split("|")) {
+			for (const target of Str.split("|")(targets)) {
 				expect([...MACHINE_OWNED_WORKFLOW_STATES], target).not.toContain(target)
 			}
 		}
@@ -121,7 +122,8 @@ describe("allowedTransitionsForAll", () => {
 	it("offers the matrix row for a single issue in each state, less machine-owned targets", () => {
 		for (const state of ALL_STATES) {
 			expect(allowedTransitionsForAll([state]), state).toEqual(
-				WORKFLOW_STATE_ORDER.filter(
+				Arr.filter(
+					WORKFLOW_STATE_ORDER,
 					(target) =>
 						!MACHINE_OWNED_WORKFLOW_STATES.has(target) &&
 						WORKFLOW_TRANSITIONS[state].includes(target),
@@ -142,7 +144,7 @@ describe("allowedTransitionsForAll", () => {
 		// picker and the MCP transition tool.
 		const machineOwned = ["regressed", "verifying"] as const
 		expect([...MACHINE_OWNED_WORKFLOW_STATES].sort()).toEqual([...machineOwned].sort())
-		expect(Object.values(WORKFLOW_TRANSITIONS).flat()).toEqual(expect.arrayContaining([...machineOwned]))
+		expect(Rec.values(WORKFLOW_TRANSITIONS).flat()).toEqual(expect.arrayContaining([...machineOwned]))
 		for (const state of ALL_STATES) {
 			for (const target of machineOwned) {
 				expect(allowedTransitionsForAll([state]), state).not.toContain(target)

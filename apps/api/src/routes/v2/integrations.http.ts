@@ -26,7 +26,7 @@ import {
 	V2InsufficientPermissions,
 	V2TimeRangeInvalid,
 } from "@maple/domain/http/v2"
-import { Array as Arr, Effect, Option } from "effect"
+import { Array as Arr, Effect, Option, String as Str } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { Env } from "@maple/backend/platform/Env"
@@ -50,7 +50,8 @@ export const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): 
 	const host = forwardedHost ?? headers.host
 	if (host) {
 		const proto =
-			forwardedProto ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https")
+			forwardedProto ??
+			(Str.startsWith("localhost")(host) || Str.startsWith("127.")(host) ? "http" : "https")
 		return `${proto}://${host}`
 	}
 	return Option.match(Option.liftThrowable(() => new URL(req.url))(), {
@@ -63,8 +64,8 @@ const parseUrl = (url: string): Option.Option<URL> => Option.liftThrowable(() =>
 
 const isLocalHostname = (hostname: string) =>
 	hostname === "localhost" ||
-	hostname.endsWith(".localhost") ||
-	hostname.startsWith("127.") ||
+	Str.endsWith(".localhost")(hostname) ||
+	Str.startsWith("127.")(hostname) ||
 	hostname === "[::1]"
 
 /** The deploy's own origins, from Env; never from request headers. */
@@ -89,21 +90,21 @@ export const isTrustedCallbackOrigin = (origin: string, config: CallbackOriginCo
 	if (Option.isNone(parsed)) return false
 	const candidate = parsed.value
 	if (candidate.protocol !== "https:" && candidate.protocol !== "http:") return false
-	const configured = [config.MAPLE_APP_BASE_URL, config.MAPLE_API_BASE_URL].flatMap((url) =>
+	const configured = Arr.flatMap([config.MAPLE_APP_BASE_URL, config.MAPLE_API_BASE_URL], (url) =>
 		Option.toArray(parseUrl(url)),
 	)
-	if (configured.some((url) => url.origin === candidate.origin)) return true
+	if (Arr.some(configured, (url) => url.origin === candidate.origin)) return true
 	const pr = /^pr-(\d+)$/.exec(config.MAPLE_ENVIRONMENT)
 	if (pr !== null) {
 		return [`https://app-pr-${pr[1]}.maple.dev`, `https://api-pr-${pr[1]}.maple.dev`].includes(
 			candidate.origin,
 		)
 	}
-	const appIsLocal = configured.some((url) => isLocalHostname(url.hostname))
+	const appIsLocal = Arr.some(configured, (url) => isLocalHostname(url.hostname))
 	return (
 		config.MAPLE_ENVIRONMENT === "development" &&
 		appIsLocal &&
-		isLocalHostname(candidate.hostname.toLowerCase())
+		isLocalHostname(Str.toLowerCase(candidate.hostname))
 	)
 }
 
@@ -400,7 +401,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 								url:
 									config.path === null
 										? null
-										: `${env.MAPLE_API_BASE_URL.replace(/\/+$/, "")}${config.path}`,
+										: `${Str.replace(/\/+$/, "")(env.MAPLE_API_BASE_URL)}${config.path}`,
 								secret: config.secret,
 							} satisfies V2PlanetScaleWebhookConfig
 						}),
@@ -452,7 +453,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							const cached = yield* edgeCache.getOrCompute(
 								{
 									bucket: "ps-events-v2",
-									key: `${tenant.orgId}:${payload.database ?? ""}:${payload.branch ?? ""}:${startMs}:${endMs}:${categories.join(",")}:${limit}:${payload.cursor ?? ""}`,
+									key: `${tenant.orgId}:${payload.database ?? ""}:${payload.branch ?? ""}:${startMs}:${endMs}:${Arr.join(categories, ",")}:${limit}:${payload.cursor ?? ""}`,
 									// Shorter than query-insights' 60s: a deploy marker landing a
 									// minute after the deploy is the visible failure mode here.
 									ttlSeconds: 30,

@@ -41,6 +41,8 @@ import {
 	Option,
 	Redacted,
 	Schema,
+	Record as Rec,
+	String as Str,
 } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
@@ -138,7 +140,8 @@ export const summarizeScrapeResults = (
 	results: ReadonlyArray<ScrapeResultReport>,
 ): ReadonlyMap<ScrapeTargetId, ScrapeTargetSummary> =>
 	new Map(
-		Object.values(Arr.groupBy(results, (result) => result.targetId)).map(
+		Arr.map(
+			Rec.values(Arr.groupBy(results, (result) => result.targetId)),
 			(group) =>
 				[
 					Arr.headNonEmpty(group).targetId,
@@ -301,7 +304,7 @@ const normalizeBranchPatterns = (patterns: ReadonlyArray<string> | undefined): s
 	if (!patterns) return []
 	const seen = new Set<string>()
 	for (const raw of patterns) {
-		const pattern = raw.trim()
+		const pattern = Str.trim(raw)
 		if (pattern.length > 0) seen.add(pattern)
 	}
 	return [...seen]
@@ -485,11 +488,11 @@ const RESERVED_LABEL_PREFIXES = ["maple_", "__"]
 
 const isReservedLabelKey = (key: string): boolean => {
 	if (RESERVED_LABEL_KEYS.has(key)) return true
-	return RESERVED_LABEL_PREFIXES.some((prefix) => key.startsWith(prefix))
+	return Arr.some(RESERVED_LABEL_PREFIXES, (prefix) => Str.startsWith(prefix)(key))
 }
 
 const validateUrl = (url: string) => {
-	const trimmed = url.trim()
+	const trimmed = Str.trim(url)
 	return validateExternalUrl(trimmed).pipe(
 		Effect.as(trimmed),
 		Effect.mapError(
@@ -558,11 +561,11 @@ const validateLabelsJson = (labelsJson: string | null | undefined) => {
 				}),
 		),
 		Effect.flatMap((decoded) => {
-			const reserved = Object.keys(decoded).filter(isReservedLabelKey)
+			const reserved = Arr.filter(Rec.keys(decoded), isReservedLabelKey)
 			if (reserved.length > 0) {
 				return Effect.fail(
 					new ScrapeTargetValidationError({
-						message: `Reserved label keys are not allowed: ${reserved.join(", ")}`,
+						message: `Reserved label keys are not allowed: ${Arr.join(reserved, ", ")}`,
 					}),
 				)
 			}

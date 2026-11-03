@@ -7,7 +7,7 @@ import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
@@ -20,7 +20,13 @@ import { scrollArea } from "@maple/views/ui/scroll-area"
 import type { ScopedRows } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { detailPanelHeader, edgeRow, metricTile, metricValue, sampled } from "@maple/views/service-map/panel/kit"
+import {
+	detailPanelHeader,
+	edgeRow,
+	metricTile,
+	metricValue,
+	sampled,
+} from "@maple/views/service-map/panel/kit"
 import {
 	failureAlert,
 	hyperdriveSection,
@@ -61,17 +67,18 @@ const hyperdriveOf = (model: Model, nodeId: string) =>
 
 /** The node's numbers: the summary once it lands, the edges until then (quantiles have no fallback). */
 const panelMetrics = (model: Model, inputs: DatabasePanelInputs) => {
-	const callers = inputs.rows.dbEdges.filter(
+	const callers = Arr.filter(
+		inputs.rows.dbEdges,
 		(edge) => edge.dbSystem === inputs.dbSystem && edge.dbNamespace === inputs.dbNamespace,
 	)
-	const totalCalls = callers.reduce((sum, edge) => sum + edge.callCount, 0)
-	const totalErrors = callers.reduce((sum, edge) => sum + edge.errorCount, 0)
+	const totalCalls = Arr.reduce(callers, 0, (sum, edge) => sum + edge.callCount)
+	const totalErrors = Arr.reduce(callers, 0, (sum, edge) => sum + edge.errorCount)
 	const errorRate = totalCalls > 0 ? totalErrors / totalCalls : 0
 	const avgLatencyMs =
 		totalCalls > 0
-			? callers.reduce((sum, edge) => sum + edge.avgDurationMs * edge.callCount, 0) / totalCalls
+			? Arr.reduce(callers, 0, (sum, edge) => sum + edge.avgDurationMs * edge.callCount) / totalCalls
 			: 0
-	const estimatedCalls = callers.reduce((sum, edge) => sum + edge.estimatedCallCount, 0)
+	const estimatedCalls = Arr.reduce(callers, 0, (sum, edge) => sum + edge.estimatedCallCount)
 	const response = Option.getOrNull(
 		Option.map(AsyncData.getData(model.dbSummary.data), (data) => data.value),
 	)
@@ -88,7 +95,7 @@ const panelMetrics = (model: Model, inputs: DatabasePanelInputs) => {
 		p95: summary?.p95DurationMs ?? null,
 		hasSampling: summary
 			? summary.estimatedQueryCount > summary.queryCount + 1
-			: callers.some((caller) => caller.hasSampling),
+			: Arr.some(callers, (caller) => caller.hasSampling),
 	}
 }
 
@@ -232,7 +239,7 @@ export const databasePanel = (h: H, model: Model, inputs: DatabasePanelInputs): 
 										eyebrow(h, { as: "h4" }, ["Called by"]),
 										h.div(
 											[h.Class("space-y-1.5")],
-											metrics.callers.map((caller) =>
+											Arr.map(metrics.callers, (caller) =>
 												edgeRow(h, {
 													service: caller.sourceService,
 													edge: caller,

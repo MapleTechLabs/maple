@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Fiber, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -47,7 +47,7 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const organizations = options.organizations ?? [{ id: "psorg_1", name: "acme" }]
 		// Must precede the token-endpoint match — "/oauth/token/info" contains "/oauth/token".
-		if (url.includes("/oauth/token/info")) {
+		if (Str.includes("/oauth/token/info")(url)) {
 			if (!options.introspection) {
 				return jsonResponse({ code: "internal" }, 500)
 			}
@@ -68,7 +68,7 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 				application: { uid: "ps-client-id" },
 			})
 		}
-		if (url.includes("/oauth/token")) {
+		if (Str.includes("/oauth/token")(url)) {
 			const text = await new Request(url, {
 				method: "POST",
 				body: init?.body,
@@ -102,13 +102,13 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 				...(!options.withoutRefreshToken ? { refresh_token: "ps-refresh-token" } : undefined),
 			})
 		}
-		if (url.includes("/v1/user")) {
+		if (Str.includes("/v1/user")(url)) {
 			if (options.userForbidden) {
 				return jsonResponse({ code: "forbidden" }, 403)
 			}
 			return jsonResponse({ id: "psuser_1", email: "dev@acme.test" })
 		}
-		if (url.includes("/v1/organizations")) {
+		if (Str.includes("/v1/organizations")(url)) {
 			if (orgRejectionsRemaining > 0) {
 				orgRejectionsRemaining -= 1
 				return jsonResponse(
@@ -243,7 +243,7 @@ describe("PlanetScaleOAuthService", () => {
 			const result = yield* service.completeConnect("auth-code", state, initiatorA)
 			assert.strictEqual(result.orgId, "org_a")
 			assert.deepStrictEqual(
-				result.organizations.map((org) => org.name),
+				Arr.map(result.organizations, (org) => org.name),
 				["acme", "beta"],
 			)
 
@@ -509,7 +509,7 @@ describe("PlanetScaleOAuthService", () => {
 			yield* service.completeConnect("auth-code", state, initiatorA)
 			const listed = yield* service.listOrganizations(asOrgId("org_a"))
 			assert.deepStrictEqual(
-				listed.map((org) => org.name),
+				Arr.map(listed, (org) => org.name),
 				["acme", "beta"],
 			)
 		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch({ organizations })]))
@@ -529,7 +529,7 @@ describe("PlanetScaleOAuthService", () => {
 			// keys its reconnect CTA on the tag.
 			const deadGrantFetch: typeof globalThis.fetch = async (input, init) => {
 				const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-				if (url.includes("/v1/organizations")) {
+				if (Str.includes("/v1/organizations")(url)) {
 					return jsonResponse({ code: "unauthorized" }, 401)
 				}
 				return mockPlanetScaleFetch()(input, init)

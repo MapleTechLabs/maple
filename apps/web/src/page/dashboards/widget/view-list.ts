@@ -1,7 +1,7 @@
 import { buildTimeseriesQuerySpec, createQueryDraft } from "@maple/query-engine/query-builder"
 import { getListPerformanceHints } from "../../../lib/query-builder/performance-hints"
 import { AsyncData } from "foldkit"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
@@ -88,10 +88,13 @@ export const suggestedFieldsOf = (model: Model, source: ListDataSource): Readonl
 	const prefix = ATTRIBUTE_PREFIX[source]
 	const dynamic =
 		source === "product_events"
-			? lookupNames(model, "productEventAttributeKeys").map((key) => `${prefix}${key}`)
+			? Arr.map(lookupNames(model, "productEventAttributeKeys"), (key) => `${prefix}${key}`)
 			: [
-					...lookupNames(model, "spanAttributeKeys").map((key) => `${prefix}${key}`),
-					...lookupNames(model, "resourceAttributeKeys").map((key) => `resourceAttributes.${key}`),
+					...Arr.map(lookupNames(model, "spanAttributeKeys"), (key) => `${prefix}${key}`),
+					...Arr.map(
+						lookupNames(model, "resourceAttributeKeys"),
+						(key) => `resourceAttributes.${key}`,
+					),
 				]
 	return [...KNOWN_FIELDS[source], ...dynamic]
 }
@@ -118,7 +121,7 @@ const warningList = (h: H, warnings: ReadonlyArray<string>): ReadonlyArray<Html>
 						[
 							h.ul(
 								[h.Class("space-y-1")],
-								warnings.map((warning) => h.li([], [warning])),
+								Arr.map(warnings, (warning) => h.li([], [warning])),
 							),
 						],
 						"text-severity-warn",
@@ -135,14 +138,14 @@ const performanceHints = (h: H, state: EditorState): ReadonlyArray<Html> => {
 		Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25,
 		state.listRootOnly,
 	)
-	const slow = hints.filter((hint) => hint.speed === "slow")
-	const fast = hints.filter((hint) => hint.speed === "fast")
+	const slow = Arr.filter(hints, (hint) => hint.speed === "slow")
+	const fast = Arr.filter(hints, (hint) => hint.speed === "fast")
 	if (slow.length === 0 && fast.length === 0) return []
 	const callout = (variant: "warn" | "ok", className: string, reasons: typeof hints) =>
 		alert(h, { variant, size: "sm" }, [
 			alertDescription(
 				h,
-				reasons.map((hint) => h.p([], [hint.reason])),
+				Arr.map(reasons, (hint) => h.p([], [hint.reason])),
 				`gap-1 text-2xs ${className}`,
 			),
 		])
@@ -171,9 +174,9 @@ const listLimit = (h: H, state: EditorState): Html =>
 				h.OnInput((value) => product(ProductEdit.ChangedListLimit({ value }))),
 			],
 		}),
-		typography(h, { size: "3xs", tone: "muted", as: "p" },
-			["Max 200. Recommended: 25-50 for dashboard widgets."],
-		),
+		typography(h, { size: "3xs", tone: "muted", as: "p" }, [
+			"Max 200. Recommended: 25-50 for dashboard widgets.",
+		]),
 	])
 
 const labelled = (h: H, label: string, className: string, children: ReadonlyArray<Html>): Html =>
@@ -229,7 +232,10 @@ export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray
 						rows: 1,
 						textareaClassName: "min-h-[32px] resize-y text-xs",
 						onInput: (value) => product(ProductEdit.ChangedListWhere({ value })),
-						autocomplete: autocompleteFor(model, listField(model, null, state.listWhereClause, source)),
+						autocomplete: autocompleteFor(
+							model,
+							listField(model, null, state.listWhereClause, source),
+						),
 					}),
 					...warningList(h, filterWarnings(source, state.listWhereClause)),
 					...performanceHints(h, state),
@@ -238,7 +244,7 @@ export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray
 				labelled(h, "Columns", "space-y-2", [
 					h.div(
 						[h.Class("space-y-2"), h.OnMount(MountListColumnDrag())],
-						state.listColumns.map((column, index) =>
+						Arr.map(state.listColumns, (column, index) =>
 							listColumnRow(
 								h,
 								model,
@@ -260,12 +266,8 @@ export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray
 				]),
 			],
 		),
-		hstack(h, { gap: "3" },
-			[
-				button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedRunPreview())] }, [
-					"Run preview",
-				]),
-			],
-		),
+		hstack(h, { gap: "3" }, [
+			button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedRunPreview())] }, ["Run preview"]),
+		]),
 	]
 }

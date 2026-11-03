@@ -1,5 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { BAR_CHART_TOKENS } from "@maple/views/charts/bar-chart"
@@ -55,7 +55,7 @@ const tabs = (h: H, source: V2Source, active: SourceTab): Html =>
 	underlineTabStrip(
 		h,
 		{ label: "Source sections" },
-		tabsOf(source).map((tab) => {
+		Arr.map(tabsOf(source), (tab) => {
 			const isActive = tab === active
 			return h.keyed("a")(
 				tab,

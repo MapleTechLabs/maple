@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { clientInfoUnit, coverageRows, failureKinds, sessionsScreen } from "./data-map"
+import { Array as Arr } from "effect"
 
 const coverage = {
 	toolCalls: 100,
@@ -43,7 +44,7 @@ describe("coverageRows", () => {
 		expect(rows.find((entry) => entry.label === "Sessions")?.detail).toBe(
 			"Only older, stateful servers have one: send user.id above for sessions.",
 		)
-		const labels = rows.map((entry) => entry.label)
+		const labels = Arr.map(rows, (entry) => entry.label)
 		expect(labels.indexOf("Users")).toBeLessThan(labels.indexOf("Sessions"))
 	})
 

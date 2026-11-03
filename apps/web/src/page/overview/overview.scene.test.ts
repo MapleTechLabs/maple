@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -22,7 +22,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const snapshotRow = (serviceName: string): HealthSnapshot => ({
 	serviceName,
@@ -57,7 +57,7 @@ const loaded = (rows: ReadonlyArray<HealthSnapshot>): Model => {
 		}),
 		Message.UpdatedRules({ orgId, enabled: [true, false] }),
 	]
-	return steps.reduce((model, message) => pageUpdate(model, message).model, facets)
+	return Arr.reduce(steps, facets, (model, message) => pageUpdate(model, message).model)
 }
 
 type Presence = "present" | "absent"
@@ -216,7 +216,7 @@ describe("overview", () => {
 				result: Result.fail(toLoadFailure("boom")),
 			}),
 		]
-		const waiting = steps.reduce((model, message) => pageUpdate(model, message).model, facets)
+		const waiting = Arr.reduce(steps, facets, (model, message) => pageUpdate(model, message).model)
 		expect(AsyncData.isLoading(healthData(waiting))).toBe(true)
 		const failed = pageUpdate(waiting, Message.FailedLoadIncidents({ orgId })).model
 		expect(AsyncData.getData(healthData(failed))).toEqual(

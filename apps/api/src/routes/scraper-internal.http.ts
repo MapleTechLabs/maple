@@ -220,7 +220,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 				// metrics are billed and warehouse-routed identically to the org's
 				// own OTLP traffic. Resolved for every org in one batch.
 				const keysByOrg = yield* ingestKeys.getOrCreateMany(
-					rows.map((row) => row.orgId),
+					Arr.map(rows, (row) => row.orgId),
 					SCRAPER_SYSTEM_USER,
 				)
 				// Rows are independent; most of the cost is one PlanetScale discovery

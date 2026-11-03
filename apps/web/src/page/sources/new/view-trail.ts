@@ -8,6 +8,7 @@ import type { Model } from "./model"
 import { flowSpecOf, isReceiving } from "./update"
 import { integrationMeta } from "./view-picker"
 import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The connect flow's progress: one line under the title. A finished step shows its answer, not its name.
 
@@ -45,7 +46,7 @@ export const trailOf = (model: Model): ReadonlyArray<TrailItem> => {
 		const at = spec.stages.indexOf(model.stage)
 		return [
 			source,
-			...spec.stages.map((stage, index): TrailItem => {
+			...Arr.map(spec.stages, (stage, index): TrailItem => {
 				if (index > at) return next(STAGE_LABEL[stage])
 				if (stage === "live")
 					return spec.live === "healthy"
@@ -89,7 +90,7 @@ const item = (h: H, entry: TrailItem): Html =>
 export const trail = (h: H, model: Model): Html =>
 	h.ol(
 		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-mono text-xs")],
-		trailOf(model).flatMap((entry, index) =>
+		Arr.flatMap(trailOf(model), (entry, index) =>
 			index === 0
 				? [item(h, entry)]
 				: [

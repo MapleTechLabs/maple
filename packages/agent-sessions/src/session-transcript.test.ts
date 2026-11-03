@@ -14,6 +14,7 @@ import {
 } from "./session-transcript"
 import { sessionToolResults } from "./span-detail"
 import { agentSpan, langGraphThreadSpans, llmSpan, makeSpan, toolSpan, T0 } from "./span-test-support"
+import { Array as Arr } from "effect"
 
 const SECOND = 1000
 
@@ -29,7 +30,7 @@ function transcript(spans: readonly AiSessionSpan[], overrides: Partial<Transcri
 	})
 }
 
-const kinds = (rows: readonly TranscriptRow[]) => rows.map((row) => row.kind)
+const kinds = (rows: readonly TranscriptRow[]) => Arr.map(rows, (row) => row.kind)
 
 /**
  * The one row of a kind, or a failure.
@@ -43,7 +44,7 @@ function findRow<K extends TranscriptRow["kind"]>(
 	kind: K,
 ): Extract<TranscriptRow, { kind: K }> {
 	const row = rows.find((candidate) => candidate.kind === kind)
-	if (row === undefined) throw new Error(`no ${kind} row in [${kinds(rows).join(", ")}]`)
+	if (row === undefined) throw new Error(`no ${kind} row in [${Arr.join(kinds(rows), ", ")}]`)
 	return row as Extract<TranscriptRow, { kind: K }>
 }
 
@@ -51,7 +52,7 @@ function findRows<K extends TranscriptRow["kind"]>(
 	rows: readonly TranscriptRow[],
 	kind: K,
 ): readonly Extract<TranscriptRow, { kind: K }>[] {
-	return rows.filter((row): row is Extract<TranscriptRow, { kind: K }> => row.kind === kind)
+	return Arr.filter(rows, (row): row is Extract<TranscriptRow, { kind: K }> => row.kind === kind)
 }
 
 /** One agent-rooted turn: an agent span plus whatever ran under it. */
@@ -121,7 +122,7 @@ describe("buildTranscript — turn shape", () => {
 		const rows = transcript(spans)
 		expect(kinds(rows)).toEqual(["turn", "system", "user", "assistant", "tool"])
 		// No row for the agent span itself: the chapter header is that row.
-		expect(rows.every((row) => !("span" in row) || row.span.spanId !== "agent")).toBe(true)
+		expect(Arr.every(rows, (row) => !("span" in row) || row.span.spanId !== "agent")).toBe(true)
 	})
 
 	// Claude Code records the prompt on its `interaction` span and never on the
@@ -150,9 +151,9 @@ describe("buildTranscript — turn shape", () => {
 
 	it("opens each LangGraph thread turn with the model call's prompt, not the agent root's stale one", () => {
 		const prompts = ["opening question", "second question", "third question"]
-		const users = transcript(langGraphThreadSpans(prompts)).filter((row) => row.kind === "user")
+		const users = Arr.filter(transcript(langGraphThreadSpans(prompts)), (row) => row.kind === "user")
 
-		expect(users.map((row) => row.text)).toEqual(prompts)
+		expect(Arr.map(users, (row) => row.text)).toEqual(prompts)
 	})
 
 	// A conversation-id partition can anchor a turn on the model call that opened
@@ -180,9 +181,10 @@ describe("buildTranscript — turn shape", () => {
 			}),
 		]
 
-		const texts = transcript(spans)
-			.filter((row) => row.kind === "assistant")
-			.map((row) => row.text)
+		const texts = Arr.map(
+			Arr.filter(transcript(spans), (row) => row.kind === "assistant"),
+			(row) => row.text,
+		)
 		expect(texts).toEqual(["first", "second"])
 	})
 
@@ -236,7 +238,10 @@ describe("buildTranscript — turn shape", () => {
 		]
 
 		const rows = transcript(spans)
-		const toolIds = rows.filter((row) => row.kind === "tool").map((row) => row.span.spanId)
+		const toolIds = Arr.map(
+			Arr.filter(rows, (row) => row.kind === "tool"),
+			(row) => row.span.spanId,
+		)
 		expect(toolIds).toEqual(["a1", "a2", "b1", "b2"])
 	})
 })
@@ -276,11 +281,11 @@ describe("buildTranscript — lanes and parallel markers", () => {
 
 	it("opens one marker over the lanes that overlapped", () => {
 		const rows = transcript(twoLanes)
-		const opens = rows.filter((row) => row.kind === "lane-open")
-		expect(opens.map((row) => row.agentName)).toEqual(["db-lane", "trace-lane"])
+		const opens = Arr.filter(rows, (row) => row.kind === "lane-open")
+		expect(Arr.map(opens, (row) => row.agentName)).toEqual(["db-lane", "trace-lane"])
 
 		const marker = findRow(rows, "parallel")
-		expect(marker.lanes.map((ref) => ref.agentName)).toEqual(["db-lane", "trace-lane"])
+		expect(Arr.map(marker.lanes, (ref) => ref.agentName)).toEqual(["db-lane", "trace-lane"])
 		// The fork runs forwards, and both lanes really were open together.
 		expect(marker.startMs).toBeLessThan(marker.endMs)
 		expect(marker.overlapStartMs).toBe(T0 + 2 * SECOND)
@@ -450,7 +455,7 @@ describe("buildTranscript — message extraction", () => {
 			],
 		})
 
-		const users = transcript(spans).filter((row) => row.kind === "user")
+		const users = Arr.filter(transcript(spans), (row) => row.kind === "user")
 		expect(users).toHaveLength(1)
 		expect(users[0]!.text).toBe("the new question")
 		expect(users[0]!.earlierCount).toBe(2)
@@ -478,7 +483,7 @@ describe("buildTranscript — message extraction", () => {
 				children: [call("l1", 0), call("l2", 2 * SECOND), call("l3", 4 * SECOND)],
 			}),
 		)
-		const systems = rows.filter((row) => row.kind === "system")
+		const systems = Arr.filter(rows, (row) => row.kind === "system")
 		expect(systems).toHaveLength(1)
 		expect(systems[0]!.callCount).toBe(3)
 	})
@@ -722,7 +727,7 @@ describe("buildTranscript — tool calls", () => {
 			],
 		})
 
-		const tools = transcript(spans).filter((row) => row.kind === "tool")
+		const tools = Arr.filter(transcript(spans), (row) => row.kind === "tool")
 		expect(tools).toHaveLength(1)
 		expect(tools[0]!.fromMessageOnly).toBe(true)
 		expect(tools[0]!.toolName).toBe("web_search")
@@ -758,7 +763,7 @@ describe("buildTranscript — tool calls", () => {
 			],
 		})
 
-		const tools = transcript(spans).filter((row) => row.kind === "tool")
+		const tools = Arr.filter(transcript(spans), (row) => row.kind === "tool")
 		expect(tools).toHaveLength(1)
 		expect(tools[0]!.fromMessageOnly).toBe(false)
 	})
@@ -884,7 +889,7 @@ describe("buildTranscript — structural fallback and notes", () => {
 
 	// One note for the session, not one per silent span.
 	it("says content is missing once, at the top, rather than per span", () => {
-		const notes = transcript(structural).filter((row) => row.kind === "note")
+		const notes = Arr.filter(transcript(structural), (row) => row.kind === "note")
 		expect(notes).toHaveLength(1)
 		const note = notes[0]!
 		expect(note.noteKind).toBe("capture-off")
@@ -1034,8 +1039,8 @@ describe("buildTranscript — session-level states", () => {
 			],
 		})
 
-		const assistants = transcript(spans).filter((row) => row.kind === "assistant")
-		expect(assistants.map((row) => [row.failed, row.text])).toEqual([
+		const assistants = Arr.filter(transcript(spans), (row) => row.kind === "assistant")
+		expect(Arr.map(assistants, (row) => [row.failed, row.text])).toEqual([
 			[true, undefined],
 			[false, "retried fine"],
 		])
@@ -1086,7 +1091,7 @@ describe("buildTranscript — session-level states", () => {
 
 		const rows = transcript(spans)
 		expect(kinds(rows)).toEqual(["turn", "assistant", "assistant", "tool"])
-		expect(findRows(rows, "assistant").map((row) => [row.failed, row.toolCallsOnly])).toEqual([
+		expect(Arr.map(findRows(rows, "assistant"), (row) => [row.failed, row.toolCallsOnly])).toEqual([
 			[true, false],
 			[false, true],
 		])
@@ -1110,7 +1115,7 @@ describe("buildTranscript — session-level states", () => {
 				durationMs: SECOND,
 			}),
 		]
-		expect(transcript(spans).filter((row) => row.kind === "tool")).toHaveLength(1)
+		expect(Arr.filter(transcript(spans), (row) => row.kind === "tool")).toHaveLength(1)
 	})
 })
 
@@ -1194,7 +1199,7 @@ describe("buildTranscript — parallel clustering", () => {
 	it("keeps a staggered run in one cluster", () => {
 		const rows = transcript(chain)
 		const marker = findRow(rows, "parallel")
-		expect(marker.lanes.map((lane) => lane.agentName)).toEqual(["a-lane", "b-lane", "c-lane"])
+		expect(Arr.map(marker.lanes, (lane) => lane.agentName)).toEqual(["a-lane", "b-lane", "c-lane"])
 		// The window runs forwards, whatever the stagger does.
 		expect(marker.startMs).toBe(T0 + SECOND)
 		expect(marker.endMs).toBe(T0 + 20 * SECOND)
@@ -1235,7 +1240,7 @@ describe("buildTranscript — parallel clustering", () => {
 		const rows = transcript(nested)
 		expect(findRows(rows, "parallel")).toHaveLength(1)
 		const marker = findRow(rows, "parallel")
-		expect(marker.lanes.map((lane) => lane.agentName)).toEqual(["long-lane", "x-lane", "y-lane"])
+		expect(Arr.map(marker.lanes, (lane) => lane.agentName)).toEqual(["long-lane", "x-lane", "y-lane"])
 		expect(marker.startMs).toBeLessThan(marker.endMs)
 	})
 })
@@ -1712,7 +1717,7 @@ describe("buildTranscript — row keys", () => {
 			collapsedTurns: new Set(),
 		})
 		expect(rows.length).toBeGreaterThan(20)
-		expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length)
+		expect(new Set(Arr.map(rows, (row) => row.key)).size).toBe(rows.length)
 	})
 })
 
@@ -1775,7 +1780,7 @@ describe("buildTranscript — parallel turns", () => {
 
 		const marker = findRow(rows, "parallel-turns")
 		expect(marker.depth).toBe(0)
-		expect(marker.turns.map((ref) => ref.turn.agentName)).toEqual(["log-lane", "metric-lane"])
+		expect(Arr.map(marker.turns, (ref) => ref.turn.agentName)).toEqual(["log-lane", "metric-lane"])
 		// The run's extent, and the window both turns really were open in.
 		expect(marker.startMs).toBe(T0)
 		expect(marker.endMs).toBe(T0 + 25 * SECOND)
@@ -1812,9 +1817,9 @@ describe("buildTranscript — parallel turns", () => {
 	// is really on the page — a phantom would be counted into the headline.
 	it("names every member turn with the key its header renders under", () => {
 		const rows = transcript(twoTurns)
-		const keys = new Set(rows.map((row) => row.key))
+		const keys = new Set(Arr.map(rows, (row) => row.key))
 		const marker = findRow(rows, "parallel-turns")
-		expect(marker.turns.map((ref) => ref.turn.agentName)).toEqual(["log-lane", "metric-lane"])
+		expect(Arr.map(marker.turns, (ref) => ref.turn.agentName)).toEqual(["log-lane", "metric-lane"])
 		for (const ref of marker.turns) expect(keys.has(ref.key)).toBe(true)
 	})
 
@@ -1846,7 +1851,7 @@ describe("buildTranscript — parallel turns", () => {
 		expect(findRows(rows, "parallel-turns")).toHaveLength(1)
 
 		const marker = findRow(rows, "parallel-turns")
-		expect(marker.turns.map((ref) => ref.turn.agentName)).toEqual(["a-lane", "b-lane", "c-lane"])
+		expect(Arr.map(marker.turns, (ref) => ref.turn.agentName)).toEqual(["a-lane", "b-lane", "c-lane"])
 		expect(marker.startMs).toBe(T0)
 		expect(marker.endMs).toBe(T0 + 20 * SECOND)
 		// A chain has no window all three shared, and the marker says so rather
@@ -1934,7 +1939,7 @@ describe("buildTranscript — parallel turns", () => {
 		const spans = buildAgentSessionFixture()
 		const rows = transcript(spans)
 		const marker = findRow(rows, "parallel-turns")
-		expect(marker.turns.map((ref) => ref.turn.agentName)).toEqual([
+		expect(Arr.map(marker.turns, (ref) => ref.turn.agentName)).toEqual([
 			"release-triage",
 			"log-lane",
 			"metric-lane",
@@ -1972,7 +1977,7 @@ describe("buildTranscript — investigation fan-out", () => {
 				agentName: "planner",
 				genAi: { conversationId: "inv_1_planner" },
 			}),
-			...LANES.flatMap((lane, index) => {
+			...Arr.flatMap(LANES, (lane, index) => {
 				const conversationId = `inv_1_${lane}`
 				const opensAt = 10 * SECOND + index * 300
 				return [
@@ -2030,7 +2035,7 @@ describe("buildTranscript — investigation fan-out", () => {
 		const rows = transcript(fanout())
 		const marker = findRow(rows, "parallel-turns")
 
-		expect(marker.turns.map((ref) => ref.turn.agentName)).toEqual([...LANES])
+		expect(Arr.map(marker.turns, (ref) => ref.turn.agentName)).toEqual([...LANES])
 		// All three really were open together, so a window is reported — and it
 		// runs forwards.
 		expect(marker.overlapStartMs).toBeDefined()

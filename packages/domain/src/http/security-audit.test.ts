@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { IsoDateTimeString } from "../primitives"
 import { publicHttpErrorBody } from "./error-policy"
@@ -25,7 +25,7 @@ describe("SecurityAuditCreateTargetRequest", () => {
 		const branch = failureOf({ repository: "acme/api", branch: "--upload-pack=x" })
 		expect(repository).toContain("Expected a GitHub repository as owner/name")
 		expect(branch).toContain("Expected a branch name of letters")
-		expect([repository, branch].some((message) => message.includes("RegExp"))).toBe(false)
+		expect(Arr.some([repository, branch], (message) => Str.includes("RegExp")(message))).toBe(false)
 	})
 
 	it("says why a branch ending in .lock is refused", () => {

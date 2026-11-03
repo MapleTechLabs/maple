@@ -4,7 +4,7 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { docsUrl } from "../../lib/docs"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "@maple/views/ui/alert"
@@ -174,37 +174,33 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 			h.div(
 				[h.Class("min-w-0 flex-1")],
 				[
-					hstack(h, { gap: "2", shrink: true },
-						[
-							h.span(
-								[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
-								[target.name],
-							),
-							badge(h, { variant: toneBadge(status.tone), className: "shrink-0" }, [
-								status.label,
-							]),
-							...(target.service_name !== null && target.service_name !== ""
-								? [
-										badge(
-											h,
-											{
-												variant: "outline",
-												className: "min-w-0 max-w-40",
-												attributes: [h.Title(target.service_name)],
-											},
-											[h.span([h.Class("truncate")], [target.service_name])],
-										),
-									]
-								: []),
-							...(target.auth_type !== "none"
-								? [
-										badge(h, { variant: "outline", className: "shrink-0" }, [
-											AUTH_TYPE_LABELS[target.auth_type],
-										]),
-									]
-								: []),
-						],
-					),
+					hstack(h, { gap: "2", shrink: true }, [
+						h.span(
+							[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
+							[target.name],
+						),
+						badge(h, { variant: toneBadge(status.tone), className: "shrink-0" }, [status.label]),
+						...(target.service_name !== null && target.service_name !== ""
+							? [
+									badge(
+										h,
+										{
+											variant: "outline",
+											className: "min-w-0 max-w-40",
+											attributes: [h.Title(target.service_name)],
+										},
+										[h.span([h.Class("truncate")], [target.service_name])],
+									),
+								]
+							: []),
+						...(target.auth_type !== "none"
+							? [
+									badge(h, { variant: "outline", className: "shrink-0" }, [
+										AUTH_TYPE_LABELS[target.auth_type],
+									]),
+								]
+							: []),
+					]),
 					h.div(
 						[
 							h.Class(
@@ -281,7 +277,11 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 						slotId: menuId,
 						model: card.menus[menuId] ?? Menu.init(menuId),
 						label: `Actions for ${target.name}`,
-						className: typographyClass({ tone: "muted", hoverTone: "foreground", className: "shrink-0" }),
+						className: typographyClass({
+							tone: "muted",
+							hoverTone: "foreground",
+							className: "shrink-0",
+						}),
 						entries: [
 							{
 								_tag: "Item",
@@ -347,7 +347,7 @@ export const scrapeTargetsSection = (
 ): ReadonlyArray<Html> => {
 	const data = model.statuses.scrapeTargets.data
 	const all = prometheusTargets(model)
-	const targets = focusId === null ? all : all.filter((target) => target.id === focusId)
+	const targets = focusId === null ? all : Arr.filter(all, (target) => target.id === focusId)
 	const isLoaded = AsyncData.isSuccess(data) || AsyncData.isRefreshing(data)
 	const isEmpty = isLoaded && targets.length === 0
 	const selected = targets.find((target) => target.id === model.prometheusCard.selectedId)
@@ -373,14 +373,16 @@ export const scrapeTargetsSection = (
 		return targets.length === 0
 			? focusId === null
 				? emptyState(h, integration)
-				: typography(h, { size: "sm", tone: "muted", as: "p" }, ["This scrape target no longer exists."])
+				: typography(h, { size: "sm", tone: "muted", as: "p" }, [
+						"This scrape target no longer exists.",
+					])
 			: h.div(
 					[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]")],
 					[
 						panel(
 							h,
 							{ className: "divide-y" },
-							targets.map((target) => targetRow(h, model, target, timeZone)),
+							Arr.map(targets, (target) => targetRow(h, model, target, timeZone)),
 						),
 						selected === undefined ? placeholder(h) : targetDetails(h, model, selected, timeZone),
 					],
@@ -393,12 +395,10 @@ export const scrapeTargetsSection = (
 				...(isEmpty
 					? []
 					: [
-							hstack(h, { gap: "3", justify: "between" },
-								[
-									typography(h, { size: "sm", tone: "muted", as: "p" }, [COPY.description]),
-									addButton(h, integration, "shrink-0"),
-								],
-							),
+							hstack(h, { gap: "3", justify: "between" }, [
+								typography(h, { size: "sm", tone: "muted", as: "p" }, [COPY.description]),
+								addButton(h, integration, "shrink-0"),
+							]),
 						]),
 				body,
 			],

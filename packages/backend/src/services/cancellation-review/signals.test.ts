@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
 import { deriveSignals, ruleReason } from "./signals"
 import { CancellationSnapshot } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 const fixture = (id: string) => {
 	const found = CANCELLATION_FIXTURES.find((candidate) => candidate.id === id)
@@ -10,7 +11,7 @@ const fixture = (id: string) => {
 }
 
 describe("ruleReason", () => {
-	it.each(CANCELLATION_FIXTURES.map((candidate) => [candidate.id, candidate] as const))(
+	it.each(Arr.map(CANCELLATION_FIXTURES, (candidate) => [candidate.id, candidate] as const))(
 		"reads %s as its expected reason",
 		(_id, { snapshot, expected }) => {
 			expect(ruleReason(snapshot)).toBe(expected)

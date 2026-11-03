@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * Folding N breakdown results into chart-ready rows.
  *
@@ -20,7 +21,7 @@ export interface BreakdownQueryResult {
 
 /** The label a query draws under: its legend if set, else its name. */
 export function toDisplayName(query: { name: string; legend?: string }): string {
-	const trimmedLegend = (query.legend ?? "").trim()
+	const trimmedLegend = Str.trim(query.legend ?? "")
 	return trimmedLegend || query.name
 }
 
@@ -28,19 +29,19 @@ export function mergeBreakdownResults(
 	results: ReadonlyArray<BreakdownQueryResult>,
 	enabledQueries: ReadonlyArray<{ id: string; name: string; legend?: string }>,
 ): Array<Record<string, string | number>> {
-	const successful = results.filter((r) => r.status === "success" && r.data.length > 0)
+	const successful = Arr.filter(results, (r) => r.status === "success" && r.data.length > 0)
 	if (successful.length === 0) return []
 
 	// Single query: return simple { name, value } rows
 	if (successful.length === 1) {
-		return successful[0].data
-			.map((item) => ({ name: item.name, value: item.value }))
-			.sort((a, b) => b.value - a.value)
+		return Arr.map(successful[0].data, (item) => ({ name: item.name, value: item.value })).sort(
+			(a, b) => b.value - a.value,
+		)
 	}
 
 	const rowsByName = new Map<string, Record<string, string | number>>()
 	const columnNames: string[] = []
-	const queriesById = new Map(enabledQueries.map((q) => [q.id, q]))
+	const queriesById = new Map(Arr.map(enabledQueries, (q) => [q.id, q]))
 
 	for (const result of successful) {
 		const query = queriesById.get(result.queryId)

@@ -4,6 +4,7 @@
 import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
 import { assert, describe, it } from "vitest"
 import { CLOSE_OUT_EVIDENCE_CHARS, withToolTranscript } from "./close-out"
+import { String as Str } from "effect"
 
 const pass = (calls: number, outputChars: number) =>
 	new ChatMessage({
@@ -17,7 +18,7 @@ const pass = (calls: number, outputChars: number) =>
 					id: `c${i}`,
 					name: "pr_file_diff",
 					input: { paths: [`src/f${i}.ts`] },
-					output: `${i}:${"x".repeat(outputChars)}`,
+					output: `${i}:${Str.repeat(outputChars)("x")}`,
 				}),
 		),
 		createdAt: 0,

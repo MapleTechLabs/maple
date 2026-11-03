@@ -3,7 +3,7 @@
  * text, and input problems reported against the parameter that caused them.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import {
 	CreateDashboardOutput,
 	DescribeDashboardSchemaOutput,
@@ -68,7 +68,7 @@ describe("dashboard tools", () => {
 	it("lists it with a next call that opens it", async () => {
 		const result = await call("list_dashboards", { search: "eval" })
 		const output = Schema.decodeUnknownSync(ListDashboardsOutput)(result.structuredContent)
-		expect(output.dashboards.map((d) => d.id)).toContain(dashboardId)
+		expect(Arr.map(output.dashboards, (d) => d.id)).toContain(dashboardId)
 		expect(markdown(result)).toContain(`\`get_dashboard dashboard_id="${dashboardId}"\``)
 	})
 
@@ -80,7 +80,7 @@ describe("dashboard tools", () => {
 	it("returns the document as a JSON block that round-trips", async () => {
 		const result = await call("get_dashboard", { dashboard_id: dashboardId })
 		const output = Schema.decodeUnknownSync(GetDashboardOutput)(result.structuredContent)
-		expect(output.dashboard.widgets.map((w) => w.id)).toEqual(["w1", "w2"])
+		expect(Arr.map(output.dashboard.widgets, (w) => w.id)).toEqual(["w1", "w2"])
 		expect(output.dashboard.tags).toEqual([])
 
 		const text = markdown(result)

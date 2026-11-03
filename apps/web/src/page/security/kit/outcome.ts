@@ -1,6 +1,7 @@
 import type { SecurityAuditEvent, SecurityAuditUnit } from "@maple/domain/http"
 import { ORG_NO_AI_CREDITS, ORG_SPEND_LIMIT_REACHED } from "@maple/domain/security-audit"
 import { incompleteReasonLabel } from "./format"
+import { Array as Arr, String as Str } from "effect"
 
 // What a run found and why it stopped, in the words a person reads: stop reasons, leads, unit
 // names and event sentences.
@@ -162,8 +163,8 @@ const REASON_COPY = new Map<string, (detail: string) => ReasonCopy>([
 
 const reasonOf = (code: string): StopReason => {
 	const split = code.indexOf(":")
-	const key = split === -1 ? code : code.slice(0, split)
-	const copy = REASON_COPY.get(key)?.(split === -1 ? "" : code.slice(split + 1).trim())
+	const key = split === -1 ? code : Str.slice(0, split)(code)
+	const copy = REASON_COPY.get(key)?.(split === -1 ? "" : Str.trim(Str.slice(split + 1)(code)))
 	if (copy !== undefined) return copy
 	const label = incompleteReasonLabel(code)
 	return {
@@ -177,20 +178,20 @@ const reasonOf = (code: string): StopReason => {
 
 /** Each code in a run's `incompleteReason`, in the order the run hit them. */
 export const stopReasonsOf = (incompleteReason: string | null): ReadonlyArray<StopReason> =>
-	incompleteReason === null || incompleteReason.trim() === ""
+	incompleteReason === null || Str.trim(incompleteReason) === ""
 		? [reasonOf("stopped_early")]
-		: incompleteReason
-				.split("; ")
-				.reduce<ReadonlyArray<string>>((reasons, part) => {
+		: Arr.map(
+				Str.split("; ")(incompleteReason).reduce<ReadonlyArray<string>>((reasons, part) => {
 					const last = reasons.at(-1)
-					if (part.trim() === "") return reasons
+					if (Str.trim(part) === "") return reasons
 					// An engine detail is itself a `; ` list, so only a segment that starts with a code
 					// starts a new reason.
-					return last !== undefined && !/^[a-z_]+(?::|$)/u.test(part.trim())
+					return last !== undefined && !/^[a-z_]+(?::|$)/u.test(Str.trim(part))
 						? [...reasons.slice(0, -1), `${last}; ${part}`]
 						: [...reasons, part]
-				}, [])
-				.map(reasonOf)
+				}, []),
+				reasonOf,
+			)
 
 export type StopNote = Readonly<{
 	tone: "warn" | "crit"
@@ -206,19 +207,29 @@ export const stopNoteOf = (incompleteReason: string | null, gaps: number): StopN
 	const lead = first ?? reasonOf("stopped_early")
 	return {
 		// An infrastructure failure is not a coverage decision, so it reads louder.
-		tone: reasons.some((reason) => reason.kind === "broken") ? "crit" : "warn",
+		tone: Arr.some(reasons, (reason) => reason.kind === "broken") ? "crit" : "warn",
 		title: lead.title,
-		body: [
-			lead.body,
-			...(rest.length === 0 ? [] : [`Also: ${rest.map((reason) => reason.short).join("; ")}.`]),
-			...(gaps > 0
-				? [
-						gaps === 1
-							? "1 unit was not audited and is listed as a gap."
-							: `${gaps} units were not audited and are listed as gaps.`,
-					]
-				: []),
-		].join(" "),
+		body: Arr.join(
+			[
+				lead.body,
+				...(rest.length === 0
+					? []
+					: [
+							`Also: ${Arr.join(
+								Arr.map(rest, (reason) => reason.short),
+								"; ",
+							)}.`,
+						]),
+				...(gaps > 0
+					? [
+							gaps === 1
+								? "1 unit was not audited and is listed as a gap."
+								: `${gaps} units were not audited and are listed as gaps.`,
+						]
+					: []),
+			],
+			" ",
+		),
 		action: lead.action,
 	}
 }
@@ -246,11 +257,11 @@ export const leadsLine = (confirmed: number, toValidate: number): string =>
 
 /** `ATTACK-CLASSES.md#Broken-Access-Control` reads as `Broken Access Control`; `src/a.ts#POST x` as `POST x`. */
 export const plainName = (text: string): string => {
-	const match = /^([^\s#]+)#(.+)$/u.exec(text.trim())
-	if (match === null) return text.trim()
+	const match = /^([^\s#]+)#(.+)$/u.exec(Str.trim(text))
+	if (match === null) return Str.trim(text)
 	const anchor = match[2] ?? ""
-	return /\.md$/iu.test(match[1] ?? "") && !anchor.includes(" ")
-		? anchor.replaceAll(/[-_]+/gu, " ")
+	return /\.md$/iu.test(match[1] ?? "") && !Str.includes(" ")(anchor)
+		? Str.replaceAll(/[-_]+/gu, " ")(anchor)
 		: anchor
 }
 
@@ -285,7 +296,7 @@ const ROLE_NAME = new Map([
 ])
 
 const roleName = (role: string | null): string =>
-	role === null ? "Agent" : (ROLE_NAME.get(role) ?? role.replaceAll("-", " "))
+	role === null ? "Agent" : (ROLE_NAME.get(role) ?? Str.replaceAll("-", " ")(role))
 
 /** The engine's discard note, as a reason: `result broke its contract at: a, b`. */
 const discardReason = (message: string | null): string => {

@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	click,
@@ -57,7 +57,7 @@ const row = (serviceName: string, environment = "production", serviceNamespace =
 })
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const overviewKey = (input = overviewInput({}, window, null)) =>
 	requestKey(orgId, "getServiceOverview", { data: input })
@@ -87,7 +87,7 @@ const loaded = (rows: ReadonlyArray<ServiceRow>): Model => {
 		Message.CompletedLoadChartRuntime(),
 		Message.ResolvedThemeColors({ colors: {} }),
 	]
-	return steps.reduce((model, message) => pageUpdate(model, message).model, base)
+	return Arr.reduce(steps, base, (model, message) => pageUpdate(model, message).model)
 }
 
 const themeResolved = () =>
@@ -110,13 +110,15 @@ describe("services list", () => {
 			entered,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual(expect.arrayContaining([
-			FetchOverview.name,
-			FetchSparklines.name,
-			FetchFacets.name,
-			FetchBaseline.name,
-			FetchAnomalies.name,
-		]))
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				FetchOverview.name,
+				FetchSparklines.name,
+				FetchFacets.name,
+				FetchBaseline.name,
+				FetchAnomalies.name,
+			]),
+		)
 		const fetch = resolved.commands?.find(({ name }) => name === FetchOverview.name)
 		expect(fetch?.args).toMatchObject({
 			input: { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" },
@@ -170,7 +172,7 @@ describe("services list", () => {
 		]
 		scene(
 			{ update: pageUpdate, view },
-			given(steps.reduce((model, message) => pageUpdate(model, message).model, base)),
+			given(Arr.reduce(steps, base, (model, message) => pageUpdate(model, message).model)),
 			themeResolved(),
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			expectView(role("table", { name: "Services" })).toExist(),

@@ -9,7 +9,7 @@
  * reported, never asserted. The full report is in the run's `summary.md`.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { McpToolExecutor, type McpToolExecutorApi } from "../../mcp/dispatcher"
 import { makeEvalRuntime, type EvalRuntime } from "../../mcp/__evals__/eval-runtime"
 import {
@@ -79,13 +79,14 @@ describe.skipIf(!hasEvalCredentials())("tool-use eval", () => {
 		)
 		console.info(`\n${renderSummary(summary)}\n`)
 
-		const regressions = summary.tallies.filter(
+		const regressions = Arr.filter(
+			summary.tallies,
 			(tally) =>
 				tasks.find((task) => task.id === tally.task)?.tier === "regression" &&
 				tally.passes * 2 <= tally.trials,
 		)
 		expect(
-			regressions.map((tally) => `${tally.task} ${tally.passes}/${tally.trials}`),
+			Arr.map(regressions, (tally) => `${tally.task} ${tally.passes}/${tally.trials}`),
 			`regression tasks failing a majority of trials; see ${summary.dir}/summary.md`,
 		).toEqual([])
 	})

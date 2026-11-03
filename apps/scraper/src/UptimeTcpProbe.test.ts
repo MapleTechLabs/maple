@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:net"
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { Duration, Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { UptimeTcpConfig } from "@maple/domain/uptime"
 import { HostResolver } from "@maple/safe-fetch/dns"
@@ -129,7 +129,7 @@ describe("UptimeTcpProbe", () => {
 				(host) => probe(tcpConfig(host, 22)).pipe(Effect.provide(layer)),
 			)
 			assert.deepStrictEqual(
-				outcomes.map((outcome) => outcome.errorType),
+				Arr.map(outcomes, (outcome) => outcome.errorType),
 				Array.from({ length: 6 }, (): UptimeFailureType => "ssrf_refused"),
 			)
 			assert.include(outcomes[5]?.error ?? "", "internal.example.com resolves to a loopback")

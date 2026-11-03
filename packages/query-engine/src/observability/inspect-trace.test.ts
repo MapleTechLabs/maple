@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { inspectTrace, traceProbeWindows } from "./inspect-trace"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -90,7 +90,8 @@ const run = (executor: WarehouseExecutorApi, options?: Parameters<typeof inspect
 		return yield* inspectTrace(TRACE_ID, options).pipe(Effect.provideService(WarehouseExecutor, executor))
 	})
 
-const hierarchyCalls = (captured: Captured) => captured.pipeCalls.filter((c) => c.pipe === "span_hierarchy")
+const hierarchyCalls = (captured: Captured) =>
+	Arr.filter(captured.pipeCalls, (c) => c.pipe === "span_hierarchy")
 
 describe("inspectTrace", () => {
 	it.effect("reads the last 24h and does not probe when the trace is there", () =>

@@ -18,6 +18,7 @@ import { SHEET_STAT_LABELS } from "./review-sheet-sections"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { Array as Arr, Record as Rec } from "effect"
 
 // Loading states for code review, drawn in the real panels, headers and row geometry: labels and
 // titles that don't depend on the data render for real, so only the values swap in.
@@ -90,7 +91,7 @@ export const tableSkeleton = <M>(
 			[
 				tableRow(
 					h,
-					columns.map((column) =>
+					Arr.map(columns, (column) =>
 						tableHead(
 							h,
 							[
@@ -110,7 +111,7 @@ export const tableSkeleton = <M>(
 			...rows(options.count ?? ROWS, (index) =>
 				tableRow(
 					h,
-					columns.map((column) =>
+					Arr.map(columns, (column) =>
 						tableCell(
 							h,
 							cellBar(h, column, index),
@@ -300,7 +301,7 @@ export const headlineSkeleton = <M>(
 	statRail(
 		h,
 		{ columns: options.columns, className: options.className },
-		labels.map((label) =>
+		Arr.map(labels, (label) =>
 			options.size === "secondary"
 				? statRailItem(h, {
 						compact: true,
@@ -402,7 +403,7 @@ const authorsCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 /** The analytics tab before its first answer and while the charts load. */
 export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	busyPage(h, "Loading review analytics", [
-		headlineSkeleton(h, Object.values(HEADLINE_LABELS)),
+		headlineSkeleton(h, Rec.values(HEADLINE_LABELS)),
 		grid(h, { lg: 2, gap: "6" }, [
 			chartCard(h, "Pull requests reviewed", "bar", {
 				control: true,
@@ -423,7 +424,7 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 			[h.Class("grid gap-6 lg:grid-cols-3")],
 			[barListCard(h, "Issues by category"), barListCard(h, "Review outcomes"), authorsCardSkeleton(h)],
 		),
-		headlineSkeleton(h, Object.values(SECONDARY_LABELS), {
+		headlineSkeleton(h, Rec.values(SECONDARY_LABELS), {
 			columns: 4,
 			className: "xl:grid-cols-7",
 			size: "secondary",
@@ -436,7 +437,7 @@ const tablePanel = <M>(h: HtmlBuilder<M>, title: string, columns: ReadonlyArray<
 /** The CI tab before its first answer and while the charts load. */
 export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	busyPage(h, "Loading CI analytics", [
-		headlineSkeleton(h, Object.values(CI_HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
+		headlineSkeleton(h, Rec.values(CI_HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
 		grid(h, { lg: 2, gap: "6" }, [
 			chartCard(h, "Runs by result", "bar"),
 			chartCard(h, "Run time", "line"),
@@ -553,7 +554,7 @@ export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyA
 						statRail(
 							h,
 							{},
-							Object.values(SHEET_STAT_LABELS).map((label) =>
+							Arr.map(Rec.values(SHEET_STAT_LABELS), (label) =>
 								statRailItem(h, {
 									compact: true,
 									eyebrow: label,

@@ -16,6 +16,7 @@
  */
 import { compile } from "tailwindcss"
 import { dirname, join } from "node:path"
+import { Array as Arr, String as Str } from "effect"
 
 const TAILWIND_ROOT = dirname(Bun.resolveSync("tailwindcss/package.json", import.meta.dir))
 
@@ -85,25 +86,30 @@ function blockBody(css: string, open: number): { body: string } {
 	let depth = 0
 	for (let index = open; index < css.length; index++) {
 		if (css[index] === "{") depth++
-		else if (css[index] === "}" && --depth === 0) return { body: css.slice(open + 1, index) }
+		else if (css[index] === "}" && --depth === 0) return { body: Str.slice(open + 1, index)(css) }
 	}
 	throw new Error("Unbalanced braces in compiled Tailwind CSS")
 }
 
 function parseDeclarations(body: string): Declarations {
-	return body
-		.split(";")
-		.map((declaration) => declaration.trim())
-		.filter((declaration) => declaration !== "")
-		.map((declaration) => {
+	return Arr.map(
+		Arr.filter(
+			Arr.map(Str.split(";")(body), (declaration) => Str.trim(declaration)),
+			(declaration) => declaration !== "",
+		),
+		(declaration) => {
 			const colon = declaration.indexOf(":")
-			return [declaration.slice(0, colon).trim(), declaration.slice(colon + 1).trim()] as const
-		})
+			return [
+				Str.trim(Str.slice(0, colon)(declaration)),
+				Str.trim(Str.slice(colon + 1)(declaration)),
+			] as const
+		},
+	)
 }
 
 /** `.py-2\.5` → `py-2.5`. */
 function unescapeSelector(selector: string): string {
-	return selector.slice(1).replace(/\\(.)/g, "$1")
+	return Str.replace(/\\(.)/g, "$1")(Str.slice(1)(selector))
 }
 
 function parseStylesheet(css: string): Stylesheet {
@@ -131,7 +137,7 @@ function parseStylesheet(css: string): Stylesheet {
 /** Folds `calc(0.25rem * 3)` and `calc(1 / 2 * 100%)` into a literal. */
 function foldCalc(value: string): string {
 	return value.replace(/calc\(([^()]*)\)/g, (expression, inner: string) => {
-		const terms = inner.trim().split(/\s*([*/])\s*/)
+		const terms = Str.split(/\s*([*/])\s*/)(Str.trim(inner))
 		let unit = ""
 		let result = Number.NaN
 		for (let index = 0; index < terms.length; index += 2) {
@@ -173,26 +179,29 @@ function resolveVars(value: string, scope: ReadonlyMap<string, string>, sheet: S
  * property set twice keeps its last value, as the cascade would.
  */
 function styleFor(classes: ReadonlyArray<string>, sheet: Stylesheet): string {
-	const matched = classes
-		.map((name) => {
+	const matched = Arr.map(
+		Arr.map(classes, (name) => {
 			const rule = sheet.rules.get(name)
 			if (rule === undefined) throw new Error(`Unknown Tailwind class "${name}"`)
 			return rule
-		})
-		.sort((left, right) => left.order - right.order)
-		.map((rule) => rule.declarations)
-	const scope = new Map(matched.flat().filter(([property]) => property.startsWith("--")))
+		}).sort((left, right) => left.order - right.order),
+		(rule) => rule.declarations,
+	)
+	const scope = new Map(Arr.filter(matched.flat(), ([property]) => Str.startsWith("--")(property)))
 
 	const output = new Map<string, string>()
 	for (const [property, raw] of matched.flat()) {
-		if (property.startsWith("--")) continue
-		const value = foldCalc(resolveVars(raw, scope, sheet)).replace(ZERO_LENGTH, "$10")
+		if (Str.startsWith("--")(property)) continue
+		const value = Str.replace(ZERO_LENGTH, "$10")(foldCalc(resolveVars(raw, scope, sheet)))
 		for (const physical of LEGACY.get(property) ?? [property]) {
 			output.delete(physical)
 			output.set(physical, value)
 		}
 	}
-	return [...output].map(([property, value]) => `${property}: ${value};`).join(" ")
+	return Arr.join(
+		Arr.map([...output], ([property, value]) => `${property}: ${value};`),
+		" ",
+	)
 }
 
 const START_TAG = /<([a-z][a-z0-9]*)((?:\s+[a-z-]+="[^"]*")*)(\s*\/?)>/g
@@ -202,32 +211,39 @@ const ATTRIBUTE = /\s+([a-z-]+)="([^"]*)"/g
 export async function inlineTailwind(html: string): Promise<string> {
 	const candidates = new Set<string>()
 	for (const match of html.matchAll(/\sclass="([^"]*)"/g)) {
-		for (const name of (match[1] ?? "").split(/\s+/)) if (name !== "") candidates.add(name)
+		for (const name of Str.split(/\s+/)(match[1] ?? "")) if (name !== "") candidates.add(name)
 	}
 
 	const compiler = await compile(STYLESHEET, {
 		base: TAILWIND_ROOT,
 		loadStylesheet: async (id: string) => {
-			const path = join(TAILWIND_ROOT, id.replace(/^tailwindcss\//, ""))
+			const path = join(TAILWIND_ROOT, Str.replace(/^tailwindcss\//, "")(id))
 			return { path, base: dirname(path), content: await Bun.file(path).text() }
 		},
 	})
 	const sheet = parseStylesheet(compiler.build([...candidates]))
 
 	return html.replace(START_TAG, (tag, name: string, attributes: string, close: string) => {
-		const parsed = [...attributes.matchAll(ATTRIBUTE)].map(
+		const parsed = Arr.map(
+			[...attributes.matchAll(ATTRIBUTE)],
 			(match) => [match[1] ?? "", match[2] ?? ""] as const,
 		)
 		const classes = parsed.find(([key]) => key === "class")?.[1]
 		if (classes === undefined) return tag
 
 		const inline = parsed.find(([key]) => key === "style")?.[1]
-		const own = inline === undefined ? "" : `${inline.replace(/;?\s*$/, "")};`
-		const style = [styleFor(classes.split(/\s+/).filter(Boolean), sheet), own].filter(Boolean).join(" ")
-		const rest = parsed
-			.filter(([key]) => key !== "class" && key !== "style")
-			.map(([key, value]) => ` ${key}="${value}"`)
-			.join("")
+		const own = inline === undefined ? "" : `${Str.replace(/;?\s*$/, "")(inline)};`
+		const style = Arr.join(
+			Arr.filter([styleFor(Arr.filter(Str.split(/\s+/)(classes), Boolean), sheet), own], Boolean),
+			" ",
+		)
+		const rest = Arr.join(
+			Arr.map(
+				Arr.filter(parsed, ([key]) => key !== "class" && key !== "style"),
+				([key, value]) => ` ${key}="${value}"`,
+			),
+			"",
+		)
 		return `<${name}${rest} style="${style}"${close}>`
 	})
 }

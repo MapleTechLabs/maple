@@ -3,7 +3,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -74,8 +74,8 @@ const scopeOf = (workload: WorkloadRow, referenceTime: string): WorkloadScope | 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const loadedRail = (h: H, model: Model, facets: WorkloadFacets, label: string): Html => {
-	const hasFilters = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (!hasFilters && Object.values(facets).every((options) => options.length === 0))
+	const hasFilters = Arr.some(Rec.values(filtersOf(model.search)), (values) => (values?.length ?? 0) > 0)
+	if (!hasFilters && Arr.every(Rec.values(facets), (options) => options.length === 0))
 		return filterSidebarEmpty(h)
 	const section = (
 		title: string,
@@ -109,7 +109,10 @@ const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({
 
 /** The sidebar's presence probe (`useInfraSurfaces()`): any Kubernetes surface means the chart is in. */
 const isClusterReporting = (presence: ReadonlyArray<string>): boolean =>
-	presence.some((surface) => surface === "k8sPods" || surface === "k8sNodes" || surface === "k8sWorkloads")
+	Arr.some(
+		presence,
+		(surface) => surface === "k8sPods" || surface === "k8sNodes" || surface === "k8sWorkloads",
+	)
 
 /** The probe has not answered yet: install advice would flash before the cluster is known. */
 const isProbePending = (inputs: PageViewInputs): boolean =>
@@ -118,16 +121,18 @@ const isProbePending = (inputs: PageViewInputs): boolean =>
 	!inputs.context.infra.isPresenceFailed
 
 const otherKinds = (h: H, kind: WorkloadKind): ReadonlyArray<Html> =>
-	KIND_OPTIONS.filter((option) => option.value !== kind).map((option) =>
-		button(
-			h,
-			{
-				variant: "outline",
-				size: "sm",
-				attributes: [h.Key(option.value), h.OnClick(Message.ChangedKind({ kind: option.value }))],
-			},
-			["Show ", option.label],
-		),
+	Arr.map(
+		Arr.filter(KIND_OPTIONS, (option) => option.value !== kind),
+		(option) =>
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					attributes: [h.Key(option.value), h.OnClick(Message.ChangedKind({ kind: option.value }))],
+				},
+				["Show ", option.label],
+			),
 	)
 
 /** The cluster already reports, so only this kind is missing: no install advice. */
@@ -176,7 +181,8 @@ const workloadList = (
 	const kind = kindOf(model.search)
 	const kindLabel = KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Deployments"
 	const isWaiting = AsyncData.isRefreshing(model.workloads.data)
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+	const hasStructuredFilter = Arr.some(
+		Rec.values(filtersOf(model.search)),
 		(values) => (values?.length ?? 0) > 0,
 	)
 	if (workloads.length === 0 && !hasStructuredFilter) {
@@ -186,23 +192,26 @@ const workloadList = (
 			: emptyKind(h, model, kind, kindLabel)
 	}
 	const endTime = model.frame.window?.endTime ?? ""
-	const scoped = workloads.map((workload) => ({ workload, scope: scopeOf(workload, endTime) }))
-	const count = (target: WorkloadScope) => scoped.filter((entry) => entry.scope === target).length
+	const scoped = Arr.map(workloads, (workload) => ({ workload, scope: scopeOf(workload, endTime) }))
+	const count = (target: WorkloadScope) => Arr.filter(scoped, (entry) => entry.scope === target).length
 	const saturated = count("saturated")
 	const elevated = count("elevated")
 	const scope = model.search.scope
 	const searchText = model.search.q ?? ""
-	const q = searchText.trim().toLowerCase()
-	const filtered = scoped
-		.filter((entry) => scope === undefined || entry.scope === scope)
-		.map((entry) => entry.workload)
-		.filter((workload) => q === "" || workload.workloadName.toLowerCase().includes(q))
+	const q = Str.toLowerCase(Str.trim(searchText))
+	const filtered = Arr.filter(
+		Arr.map(
+			Arr.filter(scoped, (entry) => scope === undefined || entry.scope === scope),
+			(entry) => entry.workload,
+		),
+		(workload) => q === "" || Str.includes(q)(Str.toLowerCase(workload.workloadName)),
+	)
 	return h.div(
 		[h.Class(cn("space-y-5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 		[
 			fleetBand(h, {
 				total: workloads.length,
-				noun: kindLabel.slice(0, -1).toLowerCase(),
+				noun: Str.toLowerCase(Str.slice(0, -1)(kindLabel)),
 				caption: "share of the fleet by its busiest pod's peak",
 				segments: [
 					{
@@ -322,7 +331,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						AsyncData.isFailure(model.workloads.data),
 					),
 					tabs: kubernetesViewTabs(h, "workloads", model.search),
-					filters: filtersRail(h, model, kindLabel.replace(/s$/, "")),
+					filters: filtersRail(h, model, Str.replace(/s$/, "")(kindLabel)),
 				},
 				[workloadsArea(h, model, inputs)],
 			),

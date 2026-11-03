@@ -34,6 +34,7 @@ import { gcpInfraHref, gcpLogsHref } from "./update-gcp"
 import { gcpCommand } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `GcpConnection`, `connectionIssues`, `signalText`, `Signal` and `Fact`.
 
@@ -83,20 +84,18 @@ const issueNote = (h: H, issue: Issue, hasDot: boolean): Html =>
 				[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
 				hasDot ? [statusDot(h, { tone: dotTone(issue.tone), size: "lg" })] : [],
 			),
-			vstack(h, { gap: "1.5", shrink: true },
-				[
-					h.p([h.Class("text-sm font-medium text-pretty")], [issue.title]),
-					...(issue.body === undefined
-						? []
-						: [
-								h.div(
-									[h.Class("max-w-2xl text-xs/[18px] text-pretty text-muted-foreground")],
-									issue.body,
-								),
-							]),
-					...(issue.action === undefined ? [] : [h.div([h.Class("flex pt-1")], [issue.action])]),
-				],
-			),
+			vstack(h, { gap: "1.5", shrink: true }, [
+				h.p([h.Class("text-sm font-medium text-pretty")], [issue.title]),
+				...(issue.body === undefined
+					? []
+					: [
+							h.div(
+								[h.Class("max-w-2xl text-xs/[18px] text-pretty text-muted-foreground")],
+								issue.body,
+							),
+						]),
+				...(issue.action === undefined ? [] : [h.div([h.Class("flex pt-1")], [issue.action])]),
+			]),
 		],
 	)
 
@@ -149,7 +148,7 @@ const connectionIssues = (
 					? h.p([], [lines[0] ?? ""])
 					: h.ul(
 							[h.Class("list-disc pl-4")],
-							lines.map((line) => h.li([], [line])),
+							Arr.map(lines, (line) => h.li([], [line])),
 						),
 				...(IS_ADMIN && needed === "changes-pending" && cleanedUp
 					? [h.p([], ["To remove the connection instead, choose Disconnect in its menu."])]
@@ -299,7 +298,11 @@ const signalText = (
 	}
 }
 
-const SIGNAL_LINK = hstackClass({ gap: "1", inline: true, className: typographyClass({ size: "xs", tone: "muted", hoverTone: "foreground" }) })
+const SIGNAL_LINK = hstackClass({
+	gap: "1",
+	inline: true,
+	className: typographyClass({ size: "xs", tone: "muted", hoverTone: "foreground" }),
+})
 
 const signalView = (h: H, name: string, signal: Signal, link: Html | undefined): Html =>
 	h.div(
@@ -312,12 +315,10 @@ const signalView = (h: H, name: string, signal: Signal, link: Html | undefined):
 	)
 
 const fact = (h: H, label: string, value: Html | string): Html =>
-	vstack(h, { gap: "0.5", className: "w-36 shrink-0" },
-		[
-			typography(h, { size: "2xs", tone: "muted" }, [label]),
-			typography(h, { size: "xs", truncate: true }, [value]),
-		],
-	)
+	vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
+		typography(h, { size: "2xs", tone: "muted" }, [label]),
+		typography(h, { size: "xs", truncate: true }, [value]),
+	])
 
 const signalLink = (h: H, href: string, label: string): Html =>
 	h.a([h.Href(href), h.Class(SIGNAL_LINK)], [label, icon(h, "ArrowRightIcon", { size: 12 })])
@@ -351,26 +352,39 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		metrics.kind === "receiving" && metrics.projectCount !== null
 			? countLabel(metrics.projectCount, "project")
 			: null
-	const collects = [connector.logs_enabled ? "Logs" : null, connector.metrics_enabled ? "metrics" : null]
-		.filter((part) => part !== null)
-		.join(" and ")
-	const name = hstack(h, { gap: "2.5", shrink: true },
-		[
-			heading(
-				h,
-				{ level: 3, variant: "subsection", className: typographyClass({ mono: true, truncate: true }), attributes: [h.Title(label)] },
-				[connector.scope_id],
-			),
-			badge(h, { variant: "meta", size: "xs" }, [GCP_SCOPE_NAMES[connector.scope_type]]),
-		],
+	const collects = Arr.join(
+		Arr.filter(
+			[connector.logs_enabled ? "Logs" : null, connector.metrics_enabled ? "metrics" : null],
+			(part) => part !== null,
+		),
+		" and ",
 	)
-	const subtitle = [
-		collects === "" ? "Collects nothing" : collects.charAt(0).toUpperCase() + collects.slice(1),
-		projects,
-		connector.scope_type === "project" ? null : `host ${connector.project_id}`,
-	]
-		.filter((part) => part !== null)
-		.join(" · ")
+	const name = hstack(h, { gap: "2.5", shrink: true }, [
+		heading(
+			h,
+			{
+				level: 3,
+				variant: "subsection",
+				className: typographyClass({ mono: true, truncate: true }),
+				attributes: [h.Title(label)],
+			},
+			[connector.scope_id],
+		),
+		badge(h, { variant: "meta", size: "xs" }, [GCP_SCOPE_NAMES[connector.scope_type]]),
+	])
+	const subtitle = Arr.join(
+		Arr.filter(
+			[
+				collects === ""
+					? "Collects nothing"
+					: Str.toUpperCase(collects.charAt(0)) + Str.slice(1)(collects),
+				projects,
+				connector.scope_type === "project" ? null : `host ${connector.project_id}`,
+			],
+			(part) => part !== null,
+		),
+		" · ",
+	)
 	const menuId = `gcp-connection-menu-${connector.id}`
 	const menu = rowActionsMenu(h, {
 		slotId: menuId,
@@ -389,9 +403,10 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 					[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
 					[statusDot(h, { tone: dotTone(tone), size: "lg" })],
 				),
-				vstack(h, { gap: "0.5", shrink: true },
-					[name, typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subtitle])],
-				),
+				vstack(h, { gap: "0.5", shrink: true }, [
+					name,
+					typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subtitle]),
+				]),
 			],
 		)
 	if (issues.length === 0)
@@ -419,12 +434,13 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 		h.div(
 			[h.Class("flex flex-col gap-3 pt-3 pr-2 pb-4 pl-4")],
 			[
-				hstack(h, { gap: "3", justify: "between" },
-					[nameRow(issues[0]?.tone ?? "info"), h.div([h.Class("shrink-0")], [menu])],
-				),
+				hstack(h, { gap: "3", justify: "between" }, [
+					nameRow(issues[0]?.tone ?? "info"),
+					h.div([h.Class("shrink-0")], [menu]),
+				]),
 				h.div(
 					[h.Class("flex flex-col gap-3 pr-2")],
-					issues.map((issue) => issueNote(h, issue, issues.length > 1)),
+					Arr.map(issues, (issue) => issueNote(h, issue, issues.length > 1)),
 				),
 			],
 		),

@@ -6,12 +6,14 @@ import { METRIC_TYPE_LABELS, METRIC_TYPES, SOURCE_ITEMS, TYPE_OPTIONS, VARIABLE_
 import { Message, type Model, type Variable } from "./model"
 import { itemsOf, selectField, textField } from "./view-fields"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `VariableForm` and `QuerySourceFields`: the expanded draft's controls.
 
 type H = HtmlBuilder<Message>
 
-const grid = (h: H, children: ReadonlyArray<Html>): Html => h.div([h.Class("grid grid-cols-2 gap-3")], children)
+const grid = (h: H, children: ReadonlyArray<Html>): Html =>
+	h.div([h.Class("grid grid-cols-2 gap-3")], children)
 
 const querySourceFields = (h: H, model: Model, variable: Extract<Variable, { type: "query" }>): Html => {
 	const source = variable.source
@@ -24,14 +26,26 @@ const querySourceFields = (h: H, model: Model, variable: Extract<Variable, { typ
 		}),
 		...(source.kind === "facet"
 			? []
-			: [textField(h, model, { field: "attributeKey", label: "Attribute key", placeholder: "http.route" })]),
+			: [
+					textField(h, model, {
+						field: "attributeKey",
+						label: "Attribute key",
+						placeholder: "http.route",
+					}),
+				]),
 		...(source.kind === "metric"
 			? [
-					textField(h, model, { field: "metricNames", label: "Metrics", placeholder: "http.server.duration" }),
+					textField(h, model, {
+						field: "metricNames",
+						label: "Metrics",
+						placeholder: "http.server.duration",
+					}),
 					selectField(h, model, {
 						key: "metricTypeSelect",
 						label: "Metric type",
-						entries: itemsOf(METRIC_TYPES.map((value) => ({ value, label: METRIC_TYPE_LABELS[value] }))),
+						entries: itemsOf(
+							Arr.map(METRIC_TYPES, (value) => ({ value, label: METRIC_TYPE_LABELS[value] })),
+						),
 						wrap: (message) => Message.GotMetricTypeSelectMessage({ message }),
 					}),
 				]
@@ -60,47 +74,49 @@ const includeAllRow = (h: H, model: Model, variable: Variable): Html => {
 }
 
 export const variableForm = (h: H, model: Model, variable: Variable, error: string | null): Html =>
-	vstack(h, { gap: "3" },
-		[
-			grid(h, [
-				textField(h, model, {
-					field: "name",
-					label: "Name",
-					placeholder: "service",
-					isInvalid: error !== null,
-					autoFocus: variable.name === "",
-					error,
-					description:
-						variable.name === ""
-							? null
-							: ["Reference it as ", inlineCode(h, {}, [`$${variable.name}`]), " in widget filters and SQL."],
-				}),
-				textField(h, model, {
-					field: "label",
-					label: "Label",
-					placeholder: variable.name === "" ? "Optional display label" : variable.name,
-				}),
-			]),
-			grid(h, [
-				selectField(h, model, {
-					key: "typeSelect",
-					label: "Type",
-					entries: itemsOf(VARIABLE_TYPES.map((value) => ({ value, label: TYPE_OPTIONS[value] }))),
-					wrap: (message) => Message.GotTypeSelectMessage({ message }),
-				}),
-				textField(h, model, { field: "defaultValue", label: "Default value", placeholder: "Optional" }),
-			]),
-			...(variable.type === "query" ? [querySourceFields(h, model, variable)] : []),
-			...(variable.type === "custom"
-				? [
-						textField(h, model, {
-							field: "options",
-							label: "Options (comma-separated)",
-							placeholder: "production, staging, development",
-							isTextarea: true,
-						}),
-					]
-				: []),
-			...(variable.type === "textbox" ? [] : [includeAllRow(h, model, variable)]),
-		],
-	)
+	vstack(h, { gap: "3" }, [
+		grid(h, [
+			textField(h, model, {
+				field: "name",
+				label: "Name",
+				placeholder: "service",
+				isInvalid: error !== null,
+				autoFocus: variable.name === "",
+				error,
+				description:
+					variable.name === ""
+						? null
+						: [
+								"Reference it as ",
+								inlineCode(h, {}, [`$${variable.name}`]),
+								" in widget filters and SQL.",
+							],
+			}),
+			textField(h, model, {
+				field: "label",
+				label: "Label",
+				placeholder: variable.name === "" ? "Optional display label" : variable.name,
+			}),
+		]),
+		grid(h, [
+			selectField(h, model, {
+				key: "typeSelect",
+				label: "Type",
+				entries: itemsOf(Arr.map(VARIABLE_TYPES, (value) => ({ value, label: TYPE_OPTIONS[value] }))),
+				wrap: (message) => Message.GotTypeSelectMessage({ message }),
+			}),
+			textField(h, model, { field: "defaultValue", label: "Default value", placeholder: "Optional" }),
+		]),
+		...(variable.type === "query" ? [querySourceFields(h, model, variable)] : []),
+		...(variable.type === "custom"
+			? [
+					textField(h, model, {
+						field: "options",
+						label: "Options (comma-separated)",
+						placeholder: "production, staging, development",
+						isTextarea: true,
+					}),
+				]
+			: []),
+		...(variable.type === "textbox" ? [] : [includeAllRow(h, model, variable)]),
+	])

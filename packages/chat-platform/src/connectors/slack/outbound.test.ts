@@ -3,7 +3,7 @@
  * demand: a 429, a 200 that means failure, and a workspace with no stored token at all.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer } from "effect"
+import { Effect, Fiber, Layer, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import type { InboundAction, InboundMessage } from "../../ingress"
@@ -374,7 +374,7 @@ describe("slack transport", () => {
 			const history = yield* transport.history(target, { limit: 2, before: "1700000004.000000" })
 
 			// The bound still cuts to two — at the right end.
-			expect(history.map((message) => message.text)).toEqual(["newest", "newer"])
+			expect(Arr.map(history, (message) => message.text)).toEqual(["newest", "newer"])
 			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 200 })
 		}).pipe(Effect.provide(http.layer))
 	})
@@ -428,7 +428,7 @@ describe("slack transport", () => {
 		return Effect.gen(function* () {
 			const transport = yield* slackOutbound.transport
 			const history = yield* transport.history(target, { limit: 10, before: "1700000000.000500" })
-			expect(history.map((message) => message.text)).toEqual(["", "kept"])
+			expect(Arr.map(history, (message) => message.text)).toEqual(["", "kept"])
 		}).pipe(Effect.provide(http.layer))
 	})
 

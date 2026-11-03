@@ -14,6 +14,7 @@ import { filtersRail } from "./view-filters"
 import { isNarrowedBySidebar } from "./view-empty"
 import { listBody } from "./view-list"
 import { statStrip, toolbar } from "./view-toolbar"
+import { Array as Arr } from "effect"
 
 // The errors page: sidebar, Reload, chips and the hub.
 
@@ -84,17 +85,20 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				isHidden: listStatusOf(model) === "failed",
 			}),
 		},
-		[
-			activeFilterChips(h, {
-				chips: errorFilterChips(model.search).map((chip) => ({
-					id: chip.param,
-					label: chip.label,
-					values: chip.values,
-					onRemove: Message.RemovedFilterChip({ param: chip.param }),
-				})),
-				onClearAll: Message.ClickedClearFilters(),
-			}),
-			hub(h, model, inputs),
-		].filter((node): node is Html => node !== null),
+		Arr.filter(
+			[
+				activeFilterChips(h, {
+					chips: Arr.map(errorFilterChips(model.search), (chip) => ({
+						id: chip.param,
+						label: chip.label,
+						values: chip.values,
+						onRemove: Message.RemovedFilterChip({ param: chip.param }),
+					})),
+					onClearAll: Message.ClickedClearFilters(),
+				}),
+				hub(h, model, inputs),
+			],
+			(node): node is Html => node !== null,
+		),
 	),
 )

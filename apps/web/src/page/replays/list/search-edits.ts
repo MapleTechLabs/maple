@@ -2,6 +2,7 @@ import { nextTagSelection } from "../../../components/replays/session-tags"
 import type { Facet, Range } from "./message"
 import type { Search } from "./model"
 import { selectedTags } from "./derive"
+import { Array as Arr, String as Str } from "effect"
 
 // The search edits of the replays page and its filter sidebar.
 
@@ -19,8 +20,8 @@ export const toggledFacet = (search: Search, facet: Facet, name: string): Search
 /** `setTags`: a newly ticked tier replaces the previous tier. */
 export const toggledTag = (search: Search, tag: string): Search => {
 	const selected = selectedTags(search)
-	const values = selected.some((other) => other === tag)
-		? selected.filter((other) => other !== tag)
+	const values = Arr.some(selected, (other) => other === tag)
+		? Arr.filter(selected, (other) => other !== tag)
 		: [...selected, tag]
 	return withTags(search, nextTagSelection(selected, values))
 }
@@ -31,7 +32,7 @@ export const toggledEngaged = (search: Search): Search => {
 	return withTags(
 		search,
 		selected.includes("engaged")
-			? selected.filter((tag) => tag !== "engaged")
+			? Arr.filter(selected, (tag) => tag !== "engaged")
 			: nextTagSelection(selected, [...selected, "engaged"]),
 	)
 }
@@ -42,7 +43,12 @@ export const addedRowTag = (search: Search, tag: string): Search => {
 	return { ...search, tags: nextTagSelection(selected, [...selected, tag]) }
 }
 
-export const withRange = (search: Search, range: Range, min: number | undefined, max: number | undefined): Search => {
+export const withRange = (
+	search: Search,
+	range: Range,
+	min: number | undefined,
+	max: number | undefined,
+): Search => {
 	const [low, high] = min !== undefined && max !== undefined && min > max ? [max, min] : [min, max]
 	return range === "duration"
 		? { ...search, durationMin: low, durationMax: high }
@@ -60,6 +66,6 @@ export const clearedFilters = (search: Search): Search => ({
 export const clearedSidebar = (search: Search): Search => ({ ...clearedFilters(search), q: search.q })
 
 export const textValue = (text: string): string | undefined => {
-	const trimmed = text.trim()
+	const trimmed = Str.trim(text)
 	return trimmed === "" ? undefined : trimmed
 }

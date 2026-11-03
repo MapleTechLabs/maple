@@ -12,6 +12,7 @@ import {
 } from "@maple/domain/mcp-clients"
 import { ServiceOperationsHourly, Traces, orgIdParam, utcSecondsParam } from "../tables"
 import { finiteOrZero, isoBucket } from "./format"
+import { Array as Arr } from "effect"
 
 /** The toolbar's selection, applied in SQL so percentiles are measured over what is shown. */
 export interface McpCallFilter {
@@ -61,7 +62,8 @@ export const mcpClientName = ($: TracesRow): CH.Expr<string> => {
 	const token = CH.extract_(userAgent($), MCP_CLIENT_TOKEN_PATTERN)
 	return CH.multiIf<string>(
 		[
-			...KNOWN_MCP_CLIENTS.map(
+			...Arr.map(
+				KNOWN_MCP_CLIENTS,
 				(client) => [knownClient($, client.prefix), CH.lit(client.name)] as const,
 			),
 			[token.eq(""), CH.lit(UNKNOWN_MCP_CLIENT)],
@@ -73,7 +75,8 @@ export const mcpClientName = ($: TracesRow): CH.Expr<string> => {
 /** `mcpClientOf(user agent).kind`, in SQL. */
 const mcpClientKind = ($: TracesRow): CH.Expr<string> =>
 	CH.multiIf<string>(
-		KNOWN_MCP_CLIENTS.map(
+		Arr.map(
+			KNOWN_MCP_CLIENTS,
 			(client) => [knownClient($, client.prefix), CH.lit(String(client.kind))] as const,
 		),
 		CH.lit("unknown"),

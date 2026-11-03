@@ -13,6 +13,7 @@ import { statRailLoading } from "../../kit/stat-rail"
 import { issueField } from "./view-overview"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
+import { Array as Arr } from "effect"
 
 // The issue detail skeleton and the not-found state.
 
@@ -45,7 +46,7 @@ const overviewSkeleton = (h: H): Html =>
 			panelHeader(h, { title: "Get it fixed" }),
 			h.div(
 				[h.Class("grid divide-y xl:grid-cols-2 xl:divide-x xl:divide-y-0")],
-				[0, 1].map((lane) =>
+				Arr.map([0, 1], (lane) =>
 					vstack(h, { gap: "3", className: "p-4", attributes: [h.Key(String(lane))] }, [
 						skeleton(h, "h-3 w-28"),
 						skeleton(h, "h-4 w-3/4"),

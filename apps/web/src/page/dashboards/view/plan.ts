@@ -1,6 +1,6 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
 import type { PageContext } from "../../contract"
@@ -50,7 +50,8 @@ const EMPTY_SLOT: WidgetSlot = { isRevealed: false, widthPx: null, gate: null }
 
 /** A visible tile holding a deferred refresh until `key` answers. */
 export const awaitsRefresh = (model: Model, key: string): boolean =>
-	Object.values(model.widgets).some(
+	Arr.some(
+		Rec.values(model.widgets),
 		(slot) => slot.isStale === true && slot.isOffscreen !== true && requestKeyOf(slot.gate) === key,
 	)
 
@@ -58,7 +59,7 @@ export const slotOf = (model: Model, widgetId: string): WidgetSlot => model.widg
 
 /** A chart model per chart tile, kept across document updates. */
 export const withCharts = (model: Model, widgets: ReadonlyArray<Widget>): Model["charts"] =>
-	Object.fromEntries(widgets.map((widget) => [widget.id, model.charts[widget.id] ?? Chart.init()]))
+	Rec.fromEntries(Arr.map(widgets, (widget) => [widget.id, model.charts[widget.id] ?? Chart.init()]))
 
 type FetchCommand = ReturnType<typeof FetchWidget> | ReturnType<typeof FetchVariableOptions>
 
@@ -92,7 +93,7 @@ const planVariableOptions = (model: Model, context: PageContext, mode: Keyed.Req
 	)
 	return {
 		variableOptions: planned.slots,
-		commands: planned.requests.map((request) => FetchVariableOptions(request)),
+		commands: Arr.map(planned.requests, (request) => FetchVariableOptions(request)),
 	}
 }
 
@@ -159,12 +160,12 @@ const ask = (
 /** Drops request slots no tile's current gate points at, so refreshes do not grow the map. */
 const referencedRequests = (state: PlanState): Model["requests"] => {
 	const keys = new Set(
-		Object.values(state.widgets).flatMap((slot) => [
+		Arr.flatMap(Rec.values(state.widgets), (slot) => [
 			requestKeyOf(slot.gate),
 			requestKeyOf(slot.sparkGate),
 		]),
 	)
-	return Object.fromEntries(Object.entries(state.requests).filter(([key]) => keys.has(key)))
+	return Rec.fromEntries(Arr.filter(Rec.toEntries(state.requests), ([key]) => keys.has(key)))
 }
 
 /** A stat's sparkline series, at the series' own default resolution, planned beside the stat. */
@@ -215,7 +216,7 @@ export const replan = (
 		commands: options.commands,
 		asked: [],
 	}
-	const planned = document.widgets.reduce((state, widget) => {
+	const planned = Arr.reduce(document.widgets, initial, (state, widget) => {
 		const slot = slotOf(model, widget.id)
 		const keep = (kept: WidgetSlot): PlanState =>
 			kept === state.widgets[widget.id]
@@ -255,7 +256,7 @@ export const replan = (
 		return nextSlot === state.widgets[widget.id]
 			? asked
 			: { ...asked, widgets: { ...asked.widgets, [widget.id]: nextSlot } }
-	}, initial)
+	})
 	return {
 		model: { ...withOptions, widgets: planned.widgets, requests: referencedRequests(planned) },
 		commands: planned.commands,

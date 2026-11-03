@@ -2,6 +2,7 @@ import { rect, ruleX, text } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type ChartEventMarker, EventTone, type MarkerColors } from "../event-marker-spec"
+import { Array as Arr } from "effect"
 
 // Chart event marker marks and their placement in the window, colours resolved by the page.
 
@@ -17,17 +18,17 @@ export const placeMarkersInWindow = (
 	bucketIsos: ReadonlyArray<string>,
 ): ReadonlyArray<PlacedMarker> => {
 	if (bucketIsos.length === 0 || markers.length === 0) return []
-	const times = bucketIsos
-		.map((iso) => toEpochMs(iso))
-		.filter((ms) => Number.isFinite(ms))
-		.toSorted((a, b) => a - b)
+	const times = Arr.filter(
+		Arr.map(bucketIsos, (iso) => toEpochMs(iso)),
+		(ms) => Number.isFinite(ms),
+	).toSorted((a, b) => a - b)
 	const first = times[0]
 	const last = times[times.length - 1]
 	if (first === undefined || last === undefined) return []
 	const width = times.length > 1 ? (times[1] ?? first) - first : 0
 	const end = last + width
 	const inWindow = (t: number) => Number.isFinite(t) && t >= first && t <= end
-	return markers.flatMap((marker): ReadonlyArray<PlacedMarker> => {
+	return Arr.flatMap(markers, (marker): ReadonlyArray<PlacedMarker> => {
 		const at = toEpochMs(marker.at)
 		if (!inWindow(at)) return []
 		const x = new Date(at)
@@ -46,10 +47,10 @@ export const chartEventMarkerMarks = (
 ) => {
 	if (placed.length === 0) return []
 	const labelled = placed.length <= MAX_LABELLED_MARKERS
-	const lines = placed.filter((entry) => entry.x2 === undefined)
-	const bands = placed.filter((entry) => entry.x2 !== undefined)
-	const bandMarks = EventTone.literals.flatMap((tone) => {
-		const ofTone = bands.filter((entry) => entry.marker.tone === tone)
+	const lines = Arr.filter(placed, (entry) => entry.x2 === undefined)
+	const bands = Arr.filter(placed, (entry) => entry.x2 !== undefined)
+	const bandMarks = Arr.flatMap(EventTone.literals, (tone) => {
+		const ofTone = Arr.filter(bands, (entry) => entry.marker.tone === tone)
 		return ofTone.length === 0
 			? []
 			: [

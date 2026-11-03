@@ -1,5 +1,5 @@
 import { getServiceMapNodeColor } from "@maple/ui/components/service-map/service-map-utils"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { handlePoint, type MeasuredNode } from "../xyflow/geometry"
 import { edgesLayer, flowEdge, flowNode, nodesLayer } from "../xyflow/view"
@@ -45,7 +45,7 @@ export const renderNodes = <M>(
 		...namespaceBoxes(h, graph, positions, measured, (namespace) =>
 			toMessage(Message.ClickedCollapseNamespace({ namespace })),
 		),
-		...graph.nodes.map((node) =>
+		...Arr.map(graph.nodes, (node) =>
 			flowNode(h, {
 				id: node.id,
 				type: "serviceNode",
@@ -60,7 +60,7 @@ export const renderNodes = <M>(
 
 /** Each drawable edge with its endpoints, in render order. */
 const drawableEdges = (graph: EffectiveGraph, positions: Positions, measured: Measured) =>
-	graph.edges.flatMap((edge, index) => {
+	Arr.flatMap(graph.edges, (edge, index) => {
 		const sourceMeasured = measured[edge.source]
 		const targetMeasured = measured[edge.target]
 		const sourceHandle = sourceMeasured?.handles.find((handle) => handle.type === "source")
@@ -93,7 +93,7 @@ export const renderEdges = <M>(
 ): Html =>
 	edgesLayer(
 		h,
-		drawableEdges(graph, positions, measured).map(({ edge, index, source, target }) =>
+		Arr.map(drawableEdges(graph, positions, measured), ({ edge, index, source, target }) =>
 			flowEdge(h, {
 				id: edge.id,
 				type: "serviceEdge",
@@ -107,7 +107,7 @@ export const renderEdges = <M>(
 /** The edges the particle canvas animates (relation edges carry no traffic), serialized. */
 export const particleTracks = (graph: EffectiveGraph, positions: Positions, measured: Measured): string =>
 	encodeJson(
-		drawableEdges(graph, positions, measured).flatMap(({ edge, source, target }) => {
+		Arr.flatMap(drawableEdges(graph, positions, measured), ({ edge, source, target }) => {
 			if (edge.data?.relation !== undefined) return []
 			const geometry = edgeGeometry(edge, source, target)
 			return [
@@ -129,7 +129,7 @@ export const miniMapNodes = (
 	selectedId: Option.Option<string>,
 	colorMode: ColorMode,
 ): ReadonlyArray<MiniMapNode> =>
-	graph.nodes.flatMap((node) => {
+	Arr.flatMap(graph.nodes, (node) => {
 		const size = measured[node.id]
 		if (size === undefined) return []
 		const { x, y } = positionOf(positions, node)

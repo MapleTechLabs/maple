@@ -6,7 +6,7 @@ import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { HEALTH_TONE } from "../../../components/dashboard/service-health"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -78,11 +78,11 @@ const healthDot = (h: HtmlBuilder<Message>, health: ServiceHealth | undefined): 
 
 const environmentBadge = (h: HtmlBuilder<Message>, environment: string): Html => {
 	const tint =
-		environment.toLowerCase() === "production"
+		Str.toLowerCase(environment) === "production"
 			? "bg-severity-warn-a2 text-severity-warn"
-			: environment.toLowerCase() === "staging"
+			: Str.toLowerCase(environment) === "staging"
 				? "bg-chart-p50/15 text-chart-p50"
-				: environment.toLowerCase() === "development"
+				: Str.toLowerCase(environment) === "development"
 					? "bg-severity-debug-a2 text-severity-debug"
 					: ""
 	return badge(h, { variant: "secondary", className: tint }, [environment])
@@ -128,7 +128,7 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 	)
 	const message = isResolvableSha(info.sha) ? (messages[info.sha] ?? "") : ""
 	const shortSha = truncateCommitSha(info.sha)
-	const metaText = message !== "" ? [shortSha, age].filter(Boolean).join(" · ") : age
+	const metaText = message !== "" ? Arr.join(Arr.filter([shortSha, age], Boolean), " · ") : age
 	const stateLine: Html | null = info.errorsSince
 		? h.span(
 				[h.Class("truncate text-3xs text-severity-error")],
@@ -169,15 +169,13 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 				[message !== "" ? message : shortSha],
 			)
 		: h.span([h.Class("min-w-0 max-w-full truncate text-xs text-foreground")], [shortSha])
-	return vstack(h, { gap: "0.5", shrink: true },
-		[
-			trigger,
-			stateLine ??
-				(metaText === ""
-					? null
-					: typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [metaText])),
-		],
-	)
+	return vstack(h, { gap: "0.5", shrink: true }, [
+		trigger,
+		stateLine ??
+			(metaText === ""
+				? null
+				: typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [metaText])),
+	])
 }
 
 const serviceRow = (
@@ -191,9 +189,7 @@ const serviceRow = (
 	const health = healthOf(ctx.summary, service)
 	const series = FoldkitAsyncData.getData(ctx.model.sparklines.data).pipe(
 		Option.flatMap((map) =>
-			Option.fromNullishOr(
-				Object.hasOwn(map, service.serviceName) ? map[service.serviceName] : undefined,
-			),
+			Option.fromNullishOr(Rec.has(map, service.serviceName) ? map[service.serviceName] : undefined),
 		),
 	)
 	const throughput = Option.match(series, { onNone: () => [], onSome: (s) => s.throughput })
@@ -268,7 +264,7 @@ const serviceRow = (
 							`err-${rowKey}`,
 							errorRates,
 							// Red for any error in the window, so a spike under a low average still reads.
-							service.errorRate > 0 || errorRates.some((rate) => rate > 0)
+							service.errorRate > 0 || Arr.some(errorRates, (rate) => rate > 0)
 								? TONE_COLOR.crit
 								: TONE_COLOR.neutral,
 						),
@@ -386,12 +382,9 @@ const groupHeaderRow = (
 	tableRow(
 		h,
 		[
-			tableCell(
-				h,
-				[h.div([h.Class(cn(hstackClass({ gap: "2" }), className))], children)],
-				"py-2",
-				[h.Attribute("colspan", "7")],
-			),
+			tableCell(h, [h.div([h.Class(cn(hstackClass({ gap: "2" }), className))], children)], "py-2", [
+				h.Attribute("colspan", "7"),
+			]),
 		],
 		tint,
 		[h.Key(key)],
@@ -425,39 +418,46 @@ const desktopTable = (
 	const subtitleFor = (service: ServiceRow) => (mode === "namespace" ? "" : service.serviceNamespace)
 	const body =
 		services.length === 0
-			? [
-					tableRow(h, [tableCell(h, [emptyState(h, ctx)], "p-0", [h.Attribute("colspan", "7")])]),
-				]
-			: groupServices(services, mode).flatMap(([namespace, envGroups]) => [
+			? [tableRow(h, [tableCell(h, [emptyState(h, ctx)], "p-0", [h.Attribute("colspan", "7")])])]
+			: Arr.flatMap(groupServices(services, mode), ([namespace, envGroups]) => [
 					...(mode === "namespace"
 						? [
-								groupHeaderRow(h, `ns-${namespace}`, "bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong", [
-									namespaceLabel(h, namespace),
-									typography(h, { size: "xs", tone: "muted" },
-										[
+								groupHeaderRow(
+									h,
+									`ns-${namespace}`,
+									"bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
+									[
+										namespaceLabel(h, namespace),
+										typography(h, { size: "xs", tone: "muted" }, [
 											countLabel(
-												envGroups.reduce((sum, [, rows]) => sum + rows.length, 0),
+												Arr.reduce(
+													envGroups,
+													0,
+													(sum, [, rows]) => sum + rows.length,
+												),
 												"service",
 											),
-										],
-									),
-								]),
+										]),
+									],
+								),
 							]
 						: []),
-					...envGroups.flatMap(([environment, rows]) => [
+					...Arr.flatMap(envGroups, ([environment, rows]) => [
 						groupHeaderRow(
 							h,
 							`env-${namespace}-${environment}`,
 							"bg-surface-sunken hover:bg-surface-strong active:bg-surface-strong",
 							[
 								environmentBadge(h, environment),
-								typography(h, { size: "xs", tone: "muted" },
-									[String(rows.length), " ", pluralize(rows.length, "service")],
-								),
+								typography(h, { size: "xs", tone: "muted" }, [
+									String(rows.length),
+									" ",
+									pluralize(rows.length, "service"),
+								]),
 							],
 							mode === "namespace" ? "pl-4" : undefined,
 						),
-						...rows.map((service) =>
+						...Arr.map(rows, (service) =>
 							serviceRow(
 								h,
 								ctx,
@@ -476,7 +476,7 @@ const desktopTable = (
 				tableHeader(h, [
 					tableRow(
 						h,
-						COLUMNS.map(([label, className]) => tableHead(h, [label], className)),
+						Arr.map(COLUMNS, ([label, className]) => tableHead(h, [label], className)),
 					),
 				]),
 				tableBody(h, body),
@@ -496,7 +496,7 @@ const mobileList = (
 		[h.Class("overflow-hidden rounded-md border md:hidden")],
 		services.length === 0
 			? [emptyState(h, ctx)]
-			: groupServices(services, mode).map(([namespace, envGroups]) =>
+			: Arr.map(groupServices(services, mode), ([namespace, envGroups]) =>
 					h.div(
 						[h.Key(`m-${namespace}`)],
 						[
@@ -510,22 +510,21 @@ const mobileList = (
 											],
 											[
 												namespaceLabel(h, namespace),
-												typography(h, { size: "xs", tone: "muted" },
-													[
-														countLabel(
-															envGroups.reduce(
-																(sum, [, rows]) => sum + rows.length,
-																0,
-															),
-															"service",
+												typography(h, { size: "xs", tone: "muted" }, [
+													countLabel(
+														Arr.reduce(
+															envGroups,
+															0,
+															(sum, [, rows]) => sum + rows.length,
 														),
-													],
-												),
+														"service",
+													),
+												]),
 											],
 										),
 									]
 								: []),
-							...envGroups.map(([environment, rows]) =>
+							...Arr.map(envGroups, ([environment, rows]) =>
 								h.div(
 									[h.Key(`m-${namespace}-${environment}`)],
 									[
@@ -540,12 +539,12 @@ const mobileList = (
 											],
 											[
 												environmentBadge(h, environment),
-												typography(h, { size: "xs", tone: "muted" },
-													[countLabel(rows.length, "service")],
-												),
+												typography(h, { size: "xs", tone: "muted" }, [
+													countLabel(rows.length, "service"),
+												]),
 											],
 										),
-										...rows.map((service) =>
+										...Arr.map(rows, (service) =>
 											h.a(
 												[
 													h.Key(
@@ -592,7 +591,14 @@ const mobileList = (
 															...(mode === "environment" &&
 															service.serviceNamespace !== ""
 																? [
-																		typography(h, { size: "xs", tone: "muted", truncate: true, as: "div" },
+																		typography(
+																			h,
+																			{
+																				size: "xs",
+																				tone: "muted",
+																				truncate: true,
+																				as: "div",
+																			},
 																			[service.serviceNamespace],
 																		),
 																	]
@@ -656,7 +662,11 @@ const mobileList = (
 														[
 															errorRateValue(h, {
 																rate: service.errorRate,
-																className: typographyClass({ size: "sm", weight: "semibold", className: "block" }),
+																className: typographyClass({
+																	size: "sm",
+																	weight: "semibold",
+																	className: "block",
+																}),
 															}),
 															eyebrow(h, { as: "div" }, ["err"]),
 														],
@@ -727,10 +737,10 @@ export const servicesTable = (
 	isWaiting: boolean,
 ): Html => {
 	const services = displayedServices(overview, ctx.summary, ctx.model.search)
-	const hasNamespaces = services.some((service) => service.serviceNamespace !== "")
+	const hasNamespaces = Arr.some(services, (service) => service.serviceNamespace !== "")
 	const mode = resolveGroupBy(ctx.model.search.groupBy, services, ctx.isNamespacePinned)
-	const unhealthy = services.filter((s) => healthOf(ctx.summary, s) === "unhealthy").length
-	const degraded = services.filter((s) => healthOf(ctx.summary, s) === "degraded").length
+	const unhealthy = Arr.filter(services, (s) => healthOf(ctx.summary, s) === "unhealthy").length
+	const degraded = Arr.filter(services, (s) => healthOf(ctx.summary, s) === "degraded").length
 	const healthFilter = ctx.model.search.health
 	return withOverlays(
 		h,

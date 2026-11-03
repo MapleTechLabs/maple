@@ -8,7 +8,12 @@ import * as Menu from "@maple/views/ui/menu"
 import * as MenuView from "@maple/views/ui/menu-view"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { panel } from "@maple/views/ui/panel"
-import { destinationProvider, destinationTypesFor, providerLogo, type ProviderLogoOptions } from "../shared/providers"
+import {
+	destinationProvider,
+	destinationTypesFor,
+	providerLogo,
+	type ProviderLogoOptions,
+} from "../shared/providers"
 import { menuIdOf } from "./dest-steps"
 import { pressable } from "@maple/views/ui/pressable"
 import { waitingFor } from "../shared/chat-connect"
@@ -16,6 +21,7 @@ import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
 
@@ -52,15 +58,31 @@ const logoError = (type: AlertDestinationType) => Message.FailedLoadProviderLogo
 const selectedRow = (h: H, model: NotifyView, tier: Tier, destination: AlertDestinationDocument): Html => {
 	const { primary, secondary } = destinationTarget(destination)
 	const paused =
-		destination.disabledAt !== null ? "Paused after repeated delivery failures" : destination.enabled ? null : "Paused"
+		destination.disabledAt !== null
+			? "Paused after repeated delivery failures"
+			: destination.enabled
+				? null
+				: "Paused"
 	return h.div(
 		[h.Class("flex items-center gap-2.5 px-3 py-2")],
 		[
-			logo(h, model, destination.type, destination.chatConnector ?? undefined, "flex shrink-0", logoError(destination.type)),
-			middleTruncate(h, { text: primary, tail: 16, className: typographyClass({ size: "sm", weight: "medium" }) }),
-			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" },
-				[...(paused === null ? [] : [h.span([h.Class("text-severity-error")], [paused, " · "])]), secondary],
+			logo(
+				h,
+				model,
+				destination.type,
+				destination.chatConnector ?? undefined,
+				"flex shrink-0",
+				logoError(destination.type),
 			),
+			middleTruncate(h, {
+				text: primary,
+				tail: 16,
+				className: typographyClass({ size: "sm", weight: "medium" }),
+			}),
+			typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [
+				...(paused === null ? [] : [h.span([h.Class("text-severity-error")], [paused, " · "])]),
+				secondary,
+			]),
 			iconButton(
 				h,
 				{
@@ -89,26 +111,35 @@ const menuEntries = (
 					{
 						_tag: "Group",
 						label: "Existing",
-						entries: available.map((destination): MenuView.MenuEntry => {
+						entries: Arr.map(available, (destination): MenuView.MenuEntry => {
 							const { primary, secondary } = destinationTarget(destination)
 							return {
 								_tag: "Item",
 								value: `existing:${destination.id}`,
 								label: primary,
 								content: [
-									logo(h, model, destination.type, destination.chatConnector ?? undefined, "flex shrink-0"),
+									logo(
+										h,
+										model,
+										destination.type,
+										destination.chatConnector ?? undefined,
+										"flex shrink-0",
+									),
 									middleTruncate(h, { text: primary, tail: 16, className: "flex-1" }),
-									h.span([h.Class("max-w-24 shrink-0 truncate text-xs text-muted-foreground")], [secondary]),
+									h.span(
+										[h.Class("max-w-24 shrink-0 truncate text-xs text-muted-foreground")],
+										[secondary],
+									),
 								],
 							}
 						}),
 					},
 				]
 	if (!model.isAdmin) return existing
-	const chat = connectors.flatMap((connector): ReadonlyArray<MenuView.MenuItemEntry> => {
+	const chat = Arr.flatMap(connectors, (connector): ReadonlyArray<MenuView.MenuItemEntry> => {
 		const mark = logo(h, model, "chat", connector.id, "flex shrink-0")
 		if (connector.workspaces.length > 0)
-			return connector.workspaces.map((workspace) => ({
+			return Arr.map(connector.workspaces, (workspace) => ({
 				_tag: "Item",
 				value: `chat:${connector.id}:${workspace.id}`,
 				label: connector.name,
@@ -116,7 +147,12 @@ const menuEntries = (
 					mark,
 					h.span([h.Class("flex-1")], [connector.name]),
 					...(connector.workspaces.length > 1
-						? [h.span([h.Class("max-w-28 truncate text-xs text-muted-foreground")], [workspace.name])]
+						? [
+								h.span(
+									[h.Class("max-w-28 truncate text-xs text-muted-foreground")],
+									[workspace.name],
+								),
+							]
 						: []),
 				],
 			}))
@@ -134,7 +170,7 @@ const menuEntries = (
 			},
 		]
 	})
-	const created: ReadonlyArray<MenuView.MenuItemEntry> = newTypes.map((type) => ({
+	const created: ReadonlyArray<MenuView.MenuItemEntry> = Arr.map(newTypes, (type) => ({
 		_tag: "Item",
 		value: `type:${type}`,
 		label: destinationProvider(type).label,
@@ -157,9 +193,12 @@ const addMenu = (
 	available: ReadonlyArray<AlertDestinationDocument>,
 ): Html => {
 	const connectors = model.connectors ?? []
-	const isDiscordLinked = connectors.some((c) => c.id === "discord" && c.workspaces.length > 0)
+	const isDiscordLinked = Arr.some(connectors, (c) => c.id === "discord" && c.workspaces.length > 0)
 	const newTypes = destinationTypesFor(isDiscordLinked)
-	const previewChat = connectors.filter((c) => c.workspaces.length > 0 || (c.available && c.id !== "discord"))
+	const previewChat = Arr.filter(
+		connectors,
+		(c) => c.workspaces.length > 0 || (c.available && c.id !== "discord"),
+	)
 	const menuId = menuIdOf(tier)
 	const waitingId = model.chatConnectMenuId === menuId ? waitingFor(model.chatConnect) : null
 	const waiting = connectors.find((c) => c.id === waitingId)
@@ -188,14 +227,18 @@ const addMenu = (
 							},
 							[
 								icon(h, "PlusIcon", { size: 14 }),
-								waiting === undefined ? "Add destination" : `Finish connecting ${waiting.name} in the other window…`,
+								waiting === undefined
+									? "Add destination"
+									: `Finish connecting ${waiting.name} in the other window…`,
 								h.span(
 									[h.AriaHidden(true), h.Class("ml-auto flex items-center gap-1.5")],
 									[
-										...previewChat.map((connector) =>
+										...Arr.map(previewChat, (connector) =>
 											logo(h, model, "chat", connector.id, "flex", logoError("chat")),
 										),
-										...newTypes.slice(0, 5).map((type) => logo(h, model, type, undefined, "flex", logoError(type))),
+										...Arr.map(newTypes.slice(0, 5), (type) =>
+											logo(h, model, type, undefined, "flex", logoError(type)),
+										),
 									],
 								),
 							],
@@ -215,18 +258,22 @@ export const destinationList = (
 	ids: ReadonlyArray<AlertDestinationId>,
 	destinations: ReadonlyArray<AlertDestinationDocument>,
 ): Html => {
-	const selected = destinations.filter((d) => ids.includes(d.id))
-	const available = destinations.filter((d) => !ids.includes(d.id))
-	const unresolved = ids.filter((id) => !destinations.some((d) => d.id === id))
+	const selected = Arr.filter(destinations, (d) => ids.includes(d.id))
+	const available = Arr.filter(destinations, (d) => !ids.includes(d.id))
+	const unresolved = Arr.filter(ids, (id) => !Arr.some(destinations, (d) => d.id === id))
 	const canAdd = available.length > 0 || model.isAdmin
 	return panel(h, { className: "mt-3 divide-y divide-border-subtle border-border-subtle" }, [
-		...selected.map((destination) => selectedRow(h, model, tier, destination)),
-		...unresolved.map((id) => unresolvedRow(h, tier, id)),
+		...Arr.map(selected, (destination) => selectedRow(h, model, tier, destination)),
+		...Arr.map(unresolved, (id) => unresolvedRow(h, tier, id)),
 		...(selected.length === 0 && unresolved.length === 0
 			? [
 					h.p(
 						[h.Class("px-3 py-2.5 text-sm text-muted-foreground")],
-						[canAdd ? "No one is notified yet." : "No destinations exist yet, and only an org admin can add one."],
+						[
+							canAdd
+								? "No one is notified yet."
+								: "No destinations exist yet, and only an org admin can add one.",
+						],
 					),
 				]
 			: []),
@@ -238,7 +285,10 @@ const unresolvedRow = (h: H, tier: Tier, id: AlertDestinationId): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2.5 px-3 py-2")],
 		[
-			h.span([h.Class("min-w-0 flex-1 truncate text-sm text-muted-foreground")], ["Destination unavailable"]),
+			h.span(
+				[h.Class("min-w-0 flex-1 truncate text-sm text-muted-foreground")],
+				["Destination unavailable"],
+			),
 			iconButton(
 				h,
 				{

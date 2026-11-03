@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -66,14 +66,14 @@ type Model = typeof Model.Type
 
 const init = (): Update.Return<Model, Message> => ({
 	model: {
-		toggles: Object.fromEntries(TOGGLES.map((id) => [id, Toggle.init(id.endsWith("-pressed"))])),
+		toggles: Rec.fromEntries(Arr.map(TOGGLES, (id) => [id, Toggle.init(Str.endsWith("-pressed")(id))])),
 		toggleGroups: {
 			window: ToggleGroup.init({ label: "Window", values: ["1h"] }),
 			layout: ToggleGroup.init({ label: "Layout", values: ["list"] }),
 			signals: ToggleGroup.init({ label: "Signals", isMultiple: true, values: ["logs", "traces"] }),
 		},
 		filterChips: { errors: true, warnings: false, ok: true },
-		copyButtons: Object.fromEntries(COPY_BUTTONS.map((id) => [id, CopyButton.init()])),
+		copyButtons: Rec.fromEntries(Arr.map(COPY_BUTTONS, (id) => [id, CopyButton.init()])),
 	},
 })
 
@@ -125,10 +125,10 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 // VIEW
 
 const buttonVariantRows = (h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
-	VARIANTS.map((variant) =>
+	Arr.map(VARIANTS, (variant) =>
 		kitRow(h, variant, [
-			...TEXT_SIZES.map((size) => button(h, { variant, size }, [size])),
-			...ICON_SIZES.map((size) =>
+			...Arr.map(TEXT_SIZES, (size) => button(h, { variant, size }, [size])),
+			...Arr.map(ICON_SIZES, (size) =>
 				button(h, { variant, size, attributes: [h.AriaLabel(`${variant} ${size}`)] }, [
 					icon(h, "PlusIcon"),
 				]),
@@ -220,7 +220,7 @@ const toggleGroupOf = (
 }
 
 const items = (...labels: ReadonlyArray<readonly [string, string]>) =>
-	labels.map(([value, label]) => ({ value, label }))
+	Arr.map(labels, ([value, label]) => ({ value, label }))
 
 const toggleGroups = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	kitRow(
@@ -323,10 +323,10 @@ const badges = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	kitRow(
 		h,
 		"variants",
-		BADGE_VARIANTS.map((variant) => badge(h, { variant }, [variant])),
+		Arr.map(BADGE_VARIANTS, (variant) => badge(h, { variant }, [variant])),
 	),
 	kitRow(h, "sizes, pill, mono", [
-		...BADGE_SIZES.map((size) => badge(h, { size, variant: "secondary" }, [size])),
+		...Arr.map(BADGE_SIZES, (size) => badge(h, { size, variant: "secondary" }, [size])),
 		badge(h, { pill: true, variant: "muted" }, ["pill"]),
 		badge(h, { mono: true, variant: "outline" }, ["12,480"]),
 	]),
@@ -334,7 +334,7 @@ const badges = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 
 const statusDots = (h: HtmlBuilder<Message>): Html =>
 	kitRow(h, undefined, [
-		...TONES.map((tone) =>
+		...Arr.map(TONES, (tone) =>
 			h.span([h.Class("flex items-center gap-1.5 text-xs")], [statusDot(h, { tone }), ` ${tone}`]),
 		),
 		statusDot(h, { tone: "crit", size: "sm" }),
@@ -378,26 +378,29 @@ const cardButtons = (h: HtmlBuilder<Message>): Html =>
 	kitRow(
 		h,
 		undefined,
-		(
+		Arr.map(
 			[
 				["Resting", false, false],
 				["Selected", true, false],
 				["Disabled", false, true],
-			] as const
-		).map(([title, isSelected, isDisabled]) =>
-			cardButton(
-				h,
-				{
-					onClick: Message.ClickedRefresh(),
-					isSelected,
-					isDisabled,
-					className: "flex w-56 flex-col gap-1 p-3",
-				},
-				[
-					h.span([h.Class("text-sm font-medium")], [title]),
-					h.span([h.Class("text-xs text-muted-foreground")], ["A whole card as one click target."]),
-				],
-			),
+			] as const,
+			([title, isSelected, isDisabled]) =>
+				cardButton(
+					h,
+					{
+						onClick: Message.ClickedRefresh(),
+						isSelected,
+						isDisabled,
+						className: "flex w-56 flex-col gap-1 p-3",
+					},
+					[
+						h.span([h.Class("text-sm font-medium")], [title]),
+						h.span(
+							[h.Class("text-xs text-muted-foreground")],
+							["A whole card as one click target."],
+						),
+					],
+				),
 		),
 	)
 

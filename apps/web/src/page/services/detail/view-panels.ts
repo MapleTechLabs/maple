@@ -14,6 +14,7 @@ import { errorRateValue, latencyValue } from "@maple/views/ui/values"
 import { callsPerSecond, windowSeconds } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { Array as Arr } from "effect"
 
 // The Overview tab's quiet panels.
 
@@ -46,7 +47,7 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 	const operations = AsyncData.getOrElse(model.operations.data, () => []).slice(0, PANEL_LIMIT)
 	if (operations.length === 0 || model.window === null) return null
 	const seconds = windowSeconds(model.window)
-	const maxCalls = operations.reduce((acc, op) => Math.max(acc, op.estimatedSpanCount), 0)
+	const maxCalls = Arr.reduce(operations, 0, (acc, op) => Math.max(acc, op.estimatedSpanCount))
 	const color = resolveColor(theme ?? {}, SPARKLINE_TOKEN)
 	const onViewAll = Message.ClickedTab({ tab: "operations" })
 	return sectionCard(
@@ -59,7 +60,7 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 		[
 			h.ul(
 				[h.Class("divide-y")],
-				operations.map((op) =>
+				Arr.map(operations, (op) =>
 					h.li(
 						[h.Key(op.spanName)],
 						[
@@ -111,7 +112,7 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 												view: Sparkline.view,
 												viewInputs: {
 													chartId: `op-${op.spanName}`,
-													values: op.sparkline.map((point) => point.count),
+													values: Arr.map(op.sparkline, (point) => point.count),
 													color,
 													className: "h-5 w-24",
 													revision: 0,

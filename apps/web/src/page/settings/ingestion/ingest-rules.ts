@@ -148,7 +148,7 @@ export const moved = (rules: ReadonlyArray<V2IngestRule>, id: string, step: -1 |
 	const index = rules.findIndex((rule) => rule.id === id)
 	const target = index + step
 	if (index === -1 || target < 0 || target >= rules.length) return []
-	return rules.flatMap((rule, position) => {
+	return Array.flatMap(rules, (rule, position) => {
 		const next = position === index ? rules[target] : position === target ? rules[index] : rule
 		return next === undefined ? [] : [next.id]
 	})
@@ -205,7 +205,7 @@ export const update = (model: Model, message: Message): Return =>
 				},
 			),
 		CompletedToggle: ({ id, result }) => {
-			const settled = { ...model, pending: model.pending.filter((entry) => entry !== id) }
+			const settled = { ...model, pending: Array.filter(model.pending, (entry) => entry !== id) }
 			return Result.match(result, {
 				onSuccess: () => refreshed(settled),
 				onFailure: (error): Return => ({
@@ -276,7 +276,10 @@ const hourOf = (timestamp: string): number =>
 export const hourlyMatches = (stats: V2IngestRuleStats, id: string): ReadonlyArray<number> => {
 	const lastHour = hourOf(stats.end_time)
 	const byHour = new Map(
-		stats.hourly.filter((entry) => entry.id === id).map((entry) => [hourOf(entry.bucket), entry.matched]),
+		Array.map(
+			Array.filter(stats.hourly, (entry) => entry.id === id),
+			(entry) => [hourOf(entry.bucket), entry.matched],
+		),
 	)
 	return Array.makeBy(24, (index) => byHour.get(lastHour - 23 + index) ?? 0)
 }

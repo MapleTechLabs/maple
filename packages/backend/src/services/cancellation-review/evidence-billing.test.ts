@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import type { OrgId } from "@maple/domain/http"
 import { camelizeKeys } from "@maple/backend/services/billing/autumn-http"
@@ -189,7 +189,7 @@ describe("subscriptionsEvidenceOf", () => {
 				canceled_at: CANCELLED_S - 300 * DAY_S,
 			}),
 		])
-		expect(result.others.map((sub) => [sub.startedDaysBeforeCancel, sub.switchedPlan])).toEqual([
+		expect(Arr.map(result.others, (sub) => [sub.startedDaysBeforeCancel, sub.switchedPlan])).toEqual([
 			[200, true],
 			[400, false],
 		])

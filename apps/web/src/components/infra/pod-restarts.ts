@@ -1,5 +1,6 @@
 import type { PodRestartsResponse } from "@maple/domain/http"
 import type { Tone } from "@maple/ui/lib/tone"
+import { Array as Arr } from "effect"
 
 export type PodRestartRow = PodRestartsResponse["data"][number]
 
@@ -30,13 +31,13 @@ export function summarizePodRestarts(
 		else byPod.set(key, [row])
 	}
 	return new Map(
-		[...byPod].map(([key, containers]) => {
+		Arr.map([...byPod], ([key, containers]) => {
 			const ranked = [...containers].sort(byMostRestarts)
 			return [
 				key,
 				{
-					restarts: ranked.reduce((sum, c) => sum + c.restarts, 0),
-					totalRestarts: ranked.reduce((sum, c) => sum + c.totalRestarts, 0),
+					restarts: Arr.reduce(ranked, 0, (sum, c) => sum + c.restarts),
+					totalRestarts: Arr.reduce(ranked, 0, (sum, c) => sum + c.totalRestarts),
 					lastTerminatedReason:
 						ranked.find((c) => c.lastTerminatedReason !== "")?.lastTerminatedReason ?? "",
 				},

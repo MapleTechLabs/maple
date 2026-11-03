@@ -2,6 +2,7 @@ import type { StatusPageSnapshot } from "@maple/domain/status-page"
 import { escapeHtml, safeUrl } from "./escape"
 import { baseStyles, presetStyles } from "./styles"
 import { resolveSafeTheme, safeTheme } from "./theme"
+import { Array as Arr, String as Str } from "effect"
 
 export interface RenderOptions {
 	/** CSP nonce for the inline style and script; omitted for static copies. */
@@ -28,7 +29,7 @@ export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOption
 	const logo = safeUrl(snapshot.page.logoUrl, ["https:"])
 	const website = safeUrl(snapshot.page.websiteUrl, ["https:", "http:"])
 	// Without a logo, a monogram in the theme's brand colour stands in for one.
-	const initial = escapeHtml(Array.from(snapshot.page.name.trim())[0]?.toUpperCase() ?? "")
+	const initial = escapeHtml(Array.from(Str.trim(snapshot.page.name))[0]?.toUpperCase() ?? "")
 	const mark =
 		logo === null
 			? `<span class="mono-mark" aria-hidden="true">${initial}</span>${name}`
@@ -53,17 +54,20 @@ export const renderDocument = (input: {
 	const nonce = nonceAttr(input.options)
 	const description = input.snapshot.page.description
 	const theme = safeTheme(input.snapshot.page.theme)
-	return [
-		`<!doctype html><html lang="en"><head><meta charset="utf-8">`,
-		`<meta name="viewport" content="width=device-width,initial-scale=1">`,
-		`<title>${escapeHtml(input.title)}</title>`,
-		description === null ? "" : `<meta name="description" content="${escapeHtml(description)}">`,
-		input.head ?? "",
-		`<style${nonce}>${baseStyles(resolveSafeTheme(theme))}${input.styles}${presetStyles(theme.preset)}</style>`,
-		`</head><body${input.bodyAttrs ?? ""}><main class="wrap">`,
-		input.body,
-		`</main>`,
-		input.script === undefined ? "" : `<script${nonce}>${input.script}</script>`,
-		`</body></html>`,
-	].join("")
+	return Arr.join(
+		[
+			`<!doctype html><html lang="en"><head><meta charset="utf-8">`,
+			`<meta name="viewport" content="width=device-width,initial-scale=1">`,
+			`<title>${escapeHtml(input.title)}</title>`,
+			description === null ? "" : `<meta name="description" content="${escapeHtml(description)}">`,
+			input.head ?? "",
+			`<style${nonce}>${baseStyles(resolveSafeTheme(theme))}${input.styles}${presetStyles(theme.preset)}</style>`,
+			`</head><body${input.bodyAttrs ?? ""}><main class="wrap">`,
+			input.body,
+			`</main>`,
+			input.script === undefined ? "" : `<script${nonce}>${input.script}</script>`,
+			`</body></html>`,
+		],
+		"",
+	)
 }

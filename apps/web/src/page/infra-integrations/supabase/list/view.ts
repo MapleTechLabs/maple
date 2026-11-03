@@ -25,6 +25,7 @@ import { advisorsPanel, issuesPanel } from "./view-bottom"
 import { supabaseTable, supabaseTableLoading } from "./view-table"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { Array as Arr } from "effect"
 
 // `/infra/supabase`: the organization's projects, their health and what needs a look.
 
@@ -104,7 +105,7 @@ const overview = (
 			actionLabel: "Check the connection",
 			actionVariant: "outline",
 		})
-	const names = new Map(views.map((view) => [view.ref, view.displayName]))
+	const names = new Map(Arr.map(views, (view) => [view.ref, view.displayName]))
 	return h.div(
 		[h.Class("space-y-4")],
 		[
@@ -112,7 +113,7 @@ const overview = (
 			summaryToolbar(h, views),
 			supabaseTable(h, views, isWaiting),
 			grid(h, { cols: 1, lg: 2, gap: "4" }, [
-				issuesPanel(h, model, { names, hasLogs: views.some((view) => view.logsEnabled) }),
+				issuesPanel(h, model, { names, hasLogs: Arr.some(views, (view) => view.logsEnabled) }),
 				advisorsPanel(h, model, { names, total: status.projects.length }),
 			]),
 		],
@@ -162,11 +163,14 @@ const description = (model: Model): string => {
 	if (status._tag === "None" || !status.value.connected)
 		return "CPU, memory, disk, Postgres health, API traffic and logs for each Supabase project."
 	const org = status.value.organization
-	return [
-		...(org === null ? [] : [`${org.name} organization`]),
-		countLabel(status.value.projects.length, "project"),
-		"metrics and logs every minute",
-	].join(" · ")
+	return Arr.join(
+		[
+			...(org === null ? [] : [`${org.name} organization`]),
+			countLabel(status.value.projects.length, "project"),
+			"metrics and logs every minute",
+		],
+		" · ",
+	)
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>

@@ -15,7 +15,7 @@
 // not depend on the integrations package.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect, Schema, type Exit } from "effect"
+import { Effect, Schema, type Exit, Array as Arr, Record as Rec, String as Str } from "effect"
 import { spawn } from "node:child_process"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
@@ -145,32 +145,34 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 			// `if()` disagree on type and a permissive server papered over it. The
 			// strictness pin should already have rejected that; this catches the
 			// cases where a newer server finds some other way to say "either".
-			const variantColumns = columns.filter((column) => column.type.includes("Variant("))
+			const variantColumns = Arr.filter(columns, (column) => Str.includes("Variant(")(column.type))
 			assert.isEmpty(
 				variantColumns,
-				`${entry.id} has ambiguously typed output: ${variantColumns
-					.map((column) => `${column.name} ${column.type}`)
-					.join(", ")}`,
+				`${entry.id} has ambiguously typed output: ${Arr.join(
+					Arr.map(variantColumns, (column) => `${column.name} ${column.type}`),
+					", ",
+				)}`,
 			)
 
-			const wideColumns = columns.filter((column) => isSixtyFourBitInt(column.type))
+			const wideColumns = Arr.filter(columns, (column) => isSixtyFourBitInt(column.type))
 
 			// Third class, same round trip: a 64-bit column that carries IDENTITY
 			// (hash/id/fingerprint) must be `toString()`-wrapped in the SELECT. The
 			// production clients pin `output_format_json_quote_64bit_integers=0` for
 			// wire parity with Tinybird, so an unquoted identity above 2^53 would be
 			// silently corrupted by JS number parsing.
-			const identityColumns = wideColumns.filter(
+			const identityColumns = Arr.filter(
+				wideColumns,
 				(column) =>
 					looksLikeIdentityColumn(column.name) &&
 					!IDENTITY_COLUMN_ALLOWLIST.has(`${entry.id}:${column.name}`),
 			)
 			assert.isEmpty(
 				identityColumns,
-				`${entry.id} selects identity-like 64-bit columns as integers: ${identityColumns
-					.map((column) => `${column.name} ${column.type}`)
-					.join(", ")}\n` +
-					`Wrap them in toString(...) in the SELECT so the value survives JSON as a string.`,
+				`${entry.id} selects identity-like 64-bit columns as integers: ${Arr.join(
+					Arr.map(identityColumns, (column) => `${column.name} ${column.type}`),
+					", ",
+				)}\n` + `Wrap them in toString(...) in the SELECT so the value survives JSON as a string.`,
 			)
 
 			// Second class, same round trip: a query's row schema has to accept the
@@ -198,9 +200,10 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 						assert.fail(
 							`${entry.id} declares a row schema that rejects ClickHouse's own JSON output ` +
 								`(64-bit ints ${quote64Bit ? "quoted" : "unquoted"}).\n` +
-								`64-bit columns: ${wideColumns
-									.map((column) => `${column.name} ${column.type}`)
-									.join(", ")}\n` +
+								`64-bit columns: ${Arr.join(
+									Arr.map(wideColumns, (column) => `${column.name} ${column.type}`),
+									", ",
+								)}\n` +
 								`Decode those with CH.CHNumber, not Schema.Number.\n\n${String(decoded.cause)}\n`,
 						)
 					}
@@ -250,15 +253,15 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 			await readFile(exportedPath, "utf8"),
 		)
 		assert.deepEqual(
-			exportedSuite.samples.map((s) => s.id),
-			catalog.map((c) => c.id),
+			Arr.map(exportedSuite.samples, (s) => s.id),
+			Arr.map(catalog, (c) => c.id),
 			"CLI and analyzer must use exactly the same cases",
 		)
 
 		// Recent timestamps survive production TTLs. Minute-aligned bounds let
 		// the rollup avoid raw edge reads; separate parity tests cover those seams.
 		const startMs = Math.floor((Date.now() - 2 * 86_400_000) / 86_400_000) * 86_400_000 + 10.5 * 3_600_000
-		const dateTime = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+		const dateTime = (ms: number) => Str.slice(0, 19)(Str.replace("T", " ")(new Date(ms).toISOString()))
 		const inputs = {
 			orgId: "org_benchmark_live",
 			startTime: dateTime(startMs),
@@ -285,12 +288,12 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 			"service_overview_hourly",
 		]) {
 			const rows = Number(
-				(
+				Str.trim(
 					await clickhouseExec(
 						`SELECT count() FROM ${table} WHERE OrgId = 'org_benchmark_live'`,
 						database,
-					)
-				).trim(),
+					),
+				),
 			)
 			assert.isAbove(rows, 0, `${table} has no seeded tenant rows`)
 		}
@@ -318,7 +321,7 @@ describe.skipIf(!clickhouseE2eEnabled)("Query benchmark catalog analyzer sweep",
 		)(await clickhouseExec(rollup.sql, database))
 		const decoded = await Effect.runPromise(rollup.decodeRows(rows.data))
 		assert.equal(
-			decoded.reduce((sum, row) => sum + row.count, 0),
+			Arr.reduce(decoded, 0, (sum, row) => sum + row.count),
 			40000,
 			"The actual builder must count only the seeded tenant's 40,000 spans",
 		)
@@ -379,7 +382,7 @@ export default Bench.defineSuite({ name: "populated-maple-e2e", dataset: ${JSON.
 					assert.isAbove(observation.resultRows ?? 0, 0, `${result.id}: empty results`)
 					assert.equal(observation.metricSource, "query_log", `${result.id}: query log missing`)
 					assert.isAbove(observation.memoryUsage ?? 0, 0)
-					assert.isAbove(Object.keys(observation.profileEvents).length, 0)
+					assert.isAbove(Rec.keys(observation.profileEvents).length, 0)
 				}
 			}
 		}

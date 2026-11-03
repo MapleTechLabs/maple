@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Effect, Exit, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { WarehouseDecodeError } from "./effect-utils"
 import { getMcpSession } from "./mcp"
@@ -10,7 +10,7 @@ describe("getMcpSession", () => {
 	it("fails an over-long session id as a load error before any request, instead of throwing", async () => {
 		const exit = await Effect.runPromiseExit(
 			mockedWarehouse(
-				getMcpSession({ data: { ...window, service: "maple-ai", sessionId: "a".repeat(600) } }),
+				getMcpSession({ data: { ...window, service: "maple-ai", sessionId: Str.repeat(600)("a") } }),
 			),
 		)
 		expect(Exit.isFailure(exit)).toBe(true)

@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 // Shared normalization for the row-per-category charts (funnel, horizontal bar).
 //
 // They read `{name, value}` rows from the breakdown endpoint, but a mis-wired
@@ -29,7 +30,7 @@ export function cellText(value: unknown, fallback = ""): string {
 export function pickValueField(rows: ReadonlyArray<Record<string, unknown>>): string {
 	if (rows.length === 0) return "value"
 	const first = rows[0]
-	for (const key of Object.keys(first)) {
+	for (const key of Rec.keys(first)) {
 		if (key === "name") continue
 		if (typeof first[key] === "number") return key
 	}
@@ -52,7 +53,7 @@ export function toBreakdownRows(
 	if (isTimeseriesData) {
 		const totals = new Map<string, number>()
 		for (const row of source) {
-			for (const [key, value] of Object.entries(row)) {
+			for (const [key, value] of Rec.toEntries(row)) {
 				if (key === "bucket" || typeof value !== "number") continue
 				totals.set(key, (totals.get(key) ?? 0) + asFiniteNumber(value))
 			}
@@ -61,8 +62,8 @@ export function toBreakdownRows(
 			(a, b) => b.value - a.value,
 		)
 	}
-	return source.map((row) => {
-		const raw = cellText(row.name).trim()
+	return Arr.map(source, (row) => {
+		const raw = Str.trim(cellText(row.name))
 		return {
 			name: raw === "" ? "(no value)" : raw,
 			unnamed: raw === "",

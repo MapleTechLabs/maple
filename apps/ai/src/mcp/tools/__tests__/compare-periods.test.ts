@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { ComparePeriodsOutput } from "@maple/domain/mcp-outputs"
 import { installFakeWarehouse, restoreWarehouse } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
@@ -29,7 +29,7 @@ let rt: EvalRuntime
 beforeAll(() => {
 	installFakeWarehouse([
 		{
-			match: (sql) => sql.includes("06:00:00"),
+			match: (sql) => Str.includes("06:00:00")(sql),
 			rows: [row("maple-api", 1000, 10), row("worker", 100, 0)],
 		},
 		{ match: () => true, rows: [row("maple-api", 1000, 5), row("worker", 19000, 0)] },
@@ -56,7 +56,7 @@ describe("compare_periods", () => {
 	it("scopes the overall totals to the requested service and labels the scope", async () => {
 		const result = await call({ ...WINDOW, service: "maple-api" })
 		const output = Schema.decodeUnknownSync(ComparePeriodsOutput)(result.structuredContent)
-		expect(output.services.map((s) => s.name)).toEqual(["maple-api"])
+		expect(Arr.map(output.services, (s) => s.name)).toEqual(["maple-api"])
 		expect(output.overall.current.totalSpans).toBe(1000)
 		expect(output.overall.previous.totalSpans).toBe(1000)
 		expect(markdown(result)).toContain("entry spans")

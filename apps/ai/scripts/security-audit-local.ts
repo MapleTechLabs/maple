@@ -27,7 +27,19 @@ import {
 	type PriorRun,
 	runAudit,
 } from "@maple/security-audit"
-import { Clock, ConfigProvider, Console, Effect, Layer, Option, References, Schema } from "effect"
+import {
+	Clock,
+	ConfigProvider,
+	Console,
+	Effect,
+	Layer,
+	Option,
+	References,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { type ExecutorTransport, SandboxClientError } from "@maple/backend/sandbox/client"
 import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
@@ -80,16 +92,16 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const positional: Array<string> = []
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg.startsWith("--")) {
+		if (Str.startsWith("--")(arg)) {
 			const value = argv[i + 1]
 			// Every option takes a value; a missing one, or another option in its place, is a usage error.
-			if (value === undefined || value.startsWith("--")) {
+			if (value === undefined || Str.startsWith("--")(value)) {
 				console.error(
 					`${arg} needs a value\n${"usage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]"}`,
 				)
 				process.exit(2)
 			}
-			flags.set(arg.slice(2), [...(flags.get(arg.slice(2)) ?? []), value])
+			flags.set(Str.slice(2)(arg), [...(flags.get(Str.slice(2)(arg)) ?? []), value])
 			i++
 		} else positional.push(arg)
 	}
@@ -114,7 +126,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	return {
 		repoDir: resolve(positional[0]),
 		ref: one("ref") ?? "HEAD",
-		scope: (flags.get("scope") ?? []).map((path) => path.replace(/\/+$/, "")),
+		scope: Arr.map(flags.get("scope") ?? [], (path) => Str.replace(/\/+$/, "")(path)),
 		profile,
 		budget: positiveInt("budget", one("budget")) ?? null,
 		out: one("out"),
@@ -141,8 +153,8 @@ const bounded = (text: string) => {
 const safePath = (path: string | undefined) =>
 	path === undefined || path === "" || path === "."
 		? Effect.undefined
-		: isSafeRelativePath(path.replace(/\/+$/, ""))
-			? Effect.succeed(path.replace(/\/+$/, ""))
+		: isSafeRelativePath(Str.replace(/\/+$/, "")(path))
+			? Effect.succeed(Str.replace(/\/+$/, "")(path))
 			: Effect.fail(new SourceReadError({ message: `not a safe repository-relative path: ${path}` }))
 
 /** git over the clone, at the run's commit only. */
@@ -153,14 +165,14 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 			if (result.status !== 0)
 				return Effect.fail(
 					new SourceReadError({
-						message: `cannot read ${path}: ${result.stderr.trim().slice(0, 200)}`,
+						message: `cannot read ${path}: ${Str.slice(0, 200)(Str.trim(result.stderr))}`,
 					}),
 				)
-			const lines = result.stdout.split("\n")
-			const body = lines
-				.slice(start - 1, end)
-				.map((line, i) => `${start + i}\t${line}`)
-				.join("\n")
+			const lines = Str.split("\n")(result.stdout)
+			const body = Arr.join(
+				Arr.map(lines.slice(start - 1, end), (line, i) => `${start + i}\t${line}`),
+				"\n",
+			)
 			return Effect.succeed(bounded(`${path} (${lines.length} lines)\n${body}`))
 		}),
 	grep: (pattern, path) =>
@@ -179,9 +191,11 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 			])
 			if (result.status > 1)
 				return Effect.fail(
-					new SourceReadError({ message: `grep failed: ${result.stderr.trim().slice(0, 200)}` }),
+					new SourceReadError({
+						message: `grep failed: ${Str.slice(0, 200)(Str.trim(result.stderr))}`,
+					}),
 				)
-			return Effect.succeed(bounded(result.stdout.replaceAll(`${sha}:`, "")))
+			return Effect.succeed(bounded(Str.replaceAll(`${sha}:`, "")(result.stdout)))
 		}),
 	listFiles: (path) =>
 		Effect.map(safePath(path), (safe) =>
@@ -193,13 +207,16 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 	nearby: (path, basename) =>
 		Effect.succeed(
 			bounded(
-				git(dir, ["ls-tree", "-r", "--name-only", sha])
-					.stdout.split("\n")
-					.filter(
+				Arr.join(
+					Arr.filter(
+						Str.split("\n")(git(dir, ["ls-tree", "-r", "--name-only", sha]).stdout),
 						(file) =>
-							file.startsWith(`${path}/`) || file === basename || file.endsWith(`/${basename}`),
-					)
-					.join("\n"),
+							Str.startsWith(`${path}/`)(file) ||
+							file === basename ||
+							Str.endsWith(`/${basename}`)(file),
+					),
+					"\n",
+				),
 			),
 		),
 	log: (path) =>
@@ -222,7 +239,7 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 const nextRunDir = (repo: string) => {
 	const root = join(homedir(), "security-audit-skill", repo)
 	const taken = existsSync(root)
-		? readdirSync(root).map((name) => Number(/^run-(\d+)$/.exec(name)?.[1] ?? 0))
+		? Arr.map(readdirSync(root), (name) => Number(/^run-(\d+)$/.exec(name)?.[1] ?? 0))
 		: []
 	return join(root, `run-${Math.max(0, ...taken) + 1}`)
 }
@@ -257,7 +274,7 @@ const fileStore = (out: string): AuditStoreApi => {
 		saveFindings: (_, findings, estimates) =>
 			Effect.all([
 				write("findings.json", json(findings)),
-				write("estimated-severity.json", json(Object.fromEntries(estimates))),
+				write("estimated-severity.json", json(Rec.fromEntries(estimates))),
 			]).pipe(Effect.asVoid),
 		saveReports: (_, reports) =>
 			Effect.all([
@@ -273,7 +290,7 @@ const fileStore = (out: string): AuditStoreApi => {
 				)
 				const line =
 					event._tag === "Agent"
-						? `${event.agentId.padEnd(18)} ${event.outcome}${event.usage === undefined ? "" : ` (${event.usage.inputTokens} in / ${event.usage.outputTokens} out${event.usage.costUsd === undefined ? "" : `, $${event.usage.costUsd.toFixed(3)}`})`}${event.message === undefined ? "" : `: ${event.message.slice(0, 160)}`}`
+						? `${Str.padEnd(18)(event.agentId)} ${event.outcome}${event.usage === undefined ? "" : ` (${event.usage.inputTokens} in / ${event.usage.outputTokens} out${event.usage.costUsd === undefined ? "" : `, $${event.usage.costUsd.toFixed(3)}`})`}${event.message === undefined ? "" : `: ${Str.slice(0, 160)(event.message)}`}`
 						: event._tag === "Phase"
 							? `== ${event.phase}: ${event.detail}`
 							: `-- ${event.message}`
@@ -328,7 +345,7 @@ const main = async () => {
 		)
 		process.exit(1)
 	}
-	const sha = git(args.repoDir, ["rev-parse", "--verify", `${args.ref}^{commit}`]).stdout.trim()
+	const sha = Str.trim(git(args.repoDir, ["rev-parse", "--verify", `${args.ref}^{commit}`]).stdout)
 	if (sha === "") {
 		console.error(`cannot resolve ${args.ref} in ${args.repoDir}`)
 		process.exit(1)
@@ -346,7 +363,7 @@ const main = async () => {
 		diff === undefined
 			? []
 			: diff.status === 0
-				? diff.stdout.split("\n").filter(Boolean)
+				? Arr.filter(Str.split("\n")(diff.stdout), Boolean)
 				: [EVERYTHING_CHANGED],
 	)
 
@@ -361,14 +378,14 @@ const main = async () => {
 			discovery: resolveSecurityAuditModel(settings, "discovery", tags),
 			validation: resolveSecurityAuditModel(settings, "validation", tags),
 		}
-		yield* Console.log(`Auditing ${repo} at ${sha.slice(0, 12)} (${args.profile}) into ${out}`)
+		yield* Console.log(`Auditing ${repo} at ${Str.slice(0, 12)(sha)} (${args.profile}) into ${out}`)
 		yield* Console.log(`discovery: ${models.discovery.name}, validation: ${models.validation.name}`)
 		// Prepared before any agent, as a deployed run does; the stand-in gateway serves this clone.
 		const executor =
 			args.executor === undefined
 				? undefined
 				: makeExecutor({
-						transport: httpTransport(args.executor.replace(/\/+$/u, "")),
+						transport: httpTransport(Str.replace(/\/+$/u, "")(args.executor)),
 						checkout: () =>
 							Effect.succeed(
 								new SandboxCheckout({
@@ -381,7 +398,7 @@ const main = async () => {
 					})
 		const target = { repository: repo, sha }
 		// Every run its own executor: run directories share the name `run` across eval cases.
-		const executorRun = `${repo}-${sha.slice(0, 8)}-${yield* Clock.currentTimeMillis}`
+		const executorRun = `${repo}-${Str.slice(0, 8)(sha)}-${yield* Clock.currentTimeMillis}`
 		// A failed prepare leaves the run source-only, as a deployed run does.
 		const installs =
 			executor === undefined
@@ -394,7 +411,15 @@ const main = async () => {
 					)
 		if (installs !== undefined)
 			yield* Console.log(
-				`executor prepared: ${installs.map((install) => `${install.dir} ${install.manager} ${install.outcome}`).join(", ") || "no lockfile"}`,
+				`executor prepared: ${
+					Arr.join(
+						Arr.map(
+							installs,
+							(install) => `${install.dir} ${install.manager} ${install.outcome}`,
+						),
+						", ",
+					) || "no lockfile"
+				}`,
 			)
 		const execution: AuditExecutionApi | undefined =
 			executor === undefined || installs === undefined
@@ -418,7 +443,7 @@ const main = async () => {
 			target:
 				args.scope.length === 0
 					? `the repository ${repo} at commit ${sha}, read through your tools`
-					: `the repository ${repo} at commit ${sha}, read through your tools; this run is scoped to ${args.scope.join(", ")}, so map those paths and only what they depend on or are reached from`,
+					: `the repository ${repo} at commit ${sha}, read through your tools; this run is scoped to ${Arr.join(args.scope, ", ")}, so map those paths and only what they depend on or are reached from`,
 			sourceRef: sha,
 			profile: args.profile,
 			scopePaths: args.scope,
@@ -460,7 +485,7 @@ const main = async () => {
 	for (const name of ["validate-findings.cjs", "validate-coverage-ledger.cjs"]) {
 		const file = name === "validate-findings.cjs" ? "findings.json" : "coverage-ledger.json"
 		const check = spawnSync("node", [join(SKILL_DIR, name), join(out, file)], { encoding: "utf8" })
-		console.log(`${name}: ${(check.stdout || check.stderr).trim()}`)
+		console.log(`${name}: ${Str.trim(check.stdout || check.stderr)}`)
 		// Output the skill's own validator rejects fails the run, not only its log.
 		if (check.status !== 0) process.exitCode = 1
 	}

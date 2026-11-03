@@ -28,6 +28,7 @@ import { sidePanelFrame } from "../../ui/side-panel"
 import { grid } from "../../ui/grid"
 import * as ServiceMap from "../map/service-map"
 import { detailPanelHeader, edgeRow, healthTone, metricTile, metricValue, sampled } from "./kit"
+import { Array as Arr } from "effect"
 
 // A selected service node's side panel. The app hands in the map's rows, its service and traces hrefs
 // and, where it can back one, the Infrastructure tab.
@@ -91,10 +92,16 @@ const header = <M>(
 				[icon(h, "MagnifierIcon")],
 			),
 			h.a(
-				[h.Class(textLinkClass("primary", false, "text-3xs")), h.Href(inputs.serviceHref(inputs.serviceId))],
+				[
+					h.Class(textLinkClass("primary", false, "text-3xs")),
+					h.Href(inputs.serviceHref(inputs.serviceId)),
+				],
 				["View service"],
 			),
-			h.a([h.Class(textLinkClass("primary", false, "text-3xs")), h.Href(inputs.tracesHref)], ["View traces"]),
+			h.a(
+				[h.Class(textLinkClass("primary", false, "text-3xs")), h.Href(inputs.tracesHref)],
+				["View traces"],
+			),
 			iconButton(
 				h,
 				{
@@ -106,7 +113,6 @@ const header = <M>(
 			),
 		],
 	)
-
 
 const metrics = <M>(h: HtmlBuilder<M>, overview: Overview): Html => {
 	const errorRate = overview?.errorRate ?? 0
@@ -227,9 +233,9 @@ const serviceTab = <M>(
 ): ReadonlyArray<Html> => {
 	const { serviceId, edges, durationSeconds, serviceHref } = inputs
 	const cloudflare = cloudflareOf(inputs)
-	const dependencies = edges.filter((edge) => edge.sourceService === serviceId)
-	const calledBy = edges.filter((edge) => edge.targetService === serviceId)
-	const databases = inputs.dbEdges.filter((edge) => edge.sourceService === serviceId)
+	const dependencies = Arr.filter(edges, (edge) => edge.sourceService === serviceId)
+	const calledBy = Arr.filter(edges, (edge) => edge.targetService === serviceId)
+	const databases = Arr.filter(inputs.dbEdges, (edge) => edge.sourceService === serviceId)
 	return [
 		scrollArea(h, { idPrefix: "service-map-service-scroll", className: "h-full" }, [
 			h.div(
@@ -240,7 +246,7 @@ const serviceTab = <M>(
 					...edgeSection(
 						h,
 						"Dependencies",
-						dependencies.map((edge) =>
+						Arr.map(dependencies, (edge) =>
 							edgeRow(h, {
 								service: edge.targetService,
 								href: serviceHref(edge.targetService),
@@ -255,7 +261,7 @@ const serviceTab = <M>(
 					...edgeSection(
 						h,
 						"Databases",
-						databases.map((edge) => {
+						Arr.map(databases, (edge) => {
 							const db = resolveDbNodeStyle(edge.dbSystem, edge.dbNamespace)
 							return edgeRow(h, {
 								service: dbNodeId(edge.dbSystem, edge.dbNamespace),
@@ -272,7 +278,7 @@ const serviceTab = <M>(
 					...edgeSection(
 						h,
 						"Called by",
-						calledBy.map((edge) =>
+						Arr.map(calledBy, (edge) =>
 							edgeRow(h, {
 								service: edge.sourceService,
 								href: serviceHref(edge.sourceService),
@@ -289,14 +295,24 @@ const serviceTab = <M>(
 	]
 }
 
-const tabLabel = <M>(h: HtmlBuilder<M>, value: string, label: string, count: number): ReadonlyArray<Html | string> =>
+const tabLabel = <M>(
+	h: HtmlBuilder<M>,
+	value: string,
+	label: string,
+	count: number,
+): ReadonlyArray<Html | string> =>
 	value === "service"
 		? [icon(h, "NetworkNodesIcon", { size: 12 }), label]
 		: [
 				icon(h, "CubeIcon", { size: 12 }),
 				label,
 				...(count > 0
-					? [h.span([h.Class("ml-1 text-4xs tabular-nums text-foreground-subtle")], [String(count)])]
+					? [
+							h.span(
+								[h.Class("ml-1 text-4xs tabular-nums text-foreground-subtle")],
+								[String(count)],
+							),
+						]
 					: []),
 			]
 

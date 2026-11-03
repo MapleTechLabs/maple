@@ -35,6 +35,7 @@ import type { Model } from "./model"
 import { MAX_PREVIEW_WIDGETS } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
 
@@ -90,8 +91,10 @@ const previewSkeleton = (h: H): Html => {
 	return h.div(
 		[h.Class("grid gap-2"), h.Style({ "grid-template-columns": `repeat(${CANONICAL_COLS}, 1fr)` })],
 		[
-			...[0, 1, 2].map(() => skeleton(h, "col-span-4 rounded-md", { height: statHeight })),
-			...[0, 1].map(() => skeleton(h, "col-span-6 rounded-md", { height: `${MIN_HEIGHT_DEFAULT}px` })),
+			...Arr.map([0, 1, 2], () => skeleton(h, "col-span-4 rounded-md", { height: statHeight })),
+			...Arr.map([0, 1], () =>
+				skeleton(h, "col-span-6 rounded-md", { height: `${MIN_HEIGHT_DEFAULT}px` }),
+			),
 		],
 	)
 }
@@ -134,7 +137,7 @@ const previewBody = (h: H, model: Model, timeZone: string, variables: VariableVa
 				h.Style({ "grid-template-columns": `repeat(${cols}, 1fr)` }),
 				h.OnMount(MeasurePreview()),
 			],
-			shown.map((widget) =>
+			Arr.map(shown, (widget) =>
 				h.keyed("div")(
 					widget.id,
 					[
@@ -312,7 +315,7 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 					eyebrow(h, { variant: "label" }, ["Parameters"]),
 					h.div(
 						[h.Class("flex max-w-95 flex-col gap-4")],
-						template.parameters.map((parameter) =>
+						Arr.map(template.parameters, (parameter) =>
 							field(
 								h,
 								{
@@ -368,9 +371,13 @@ const parameterFields = (h: H, model: Model, template: V2DashboardTemplate): Rea
 
 /** The sticky create row: Create, or Set up + Create it anyway for a gated template. */
 const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: boolean): Html => {
-	const missing = template.parameters
-		.filter((parameter) => parameter.required && (model.parameters[parameter.key] ?? "").trim() === "")
-		.map((parameter) => parameter.label)
+	const missing = Arr.map(
+		Arr.filter(
+			template.parameters,
+			(parameter) => parameter.required && Str.trim(model.parameters[parameter.key] ?? "") === "",
+		),
+		(parameter) => parameter.label,
+	)
 	const create = Message.ClickedCreate({ templateId: template.id })
 	return h.div(
 		[h.Class("sticky bottom-0 z-10 -mx-8 -mb-8 bg-[var(--panel-surface)] px-8 pt-3 pb-6")],
@@ -423,7 +430,7 @@ const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: b
 						[h.Class("text-muted-foreground min-w-0 text-2xs")],
 						[
 							missing.length > 0
-								? `Fill in ${missing.join(" and ")} first.`
+								? `Fill in ${Arr.join(missing, " and ")} first.`
 								: isReady
 									? "Creates a copy you own. Edit or delete it freely."
 									: "Creating it now is fine. The widgets stay empty until the data shows up, then fill in on their own.",

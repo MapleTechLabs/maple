@@ -1,4 +1,4 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { SupabaseInfraProjectsRequest, SupabaseInfraProjectTimeseriesRequest } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -106,7 +106,7 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 		}),
 	)
 	return {
-		projects: result.data.map((row): SupabaseProjectRow => ({
+		projects: Arr.map(result.data, (row): SupabaseProjectRow => ({
 			projectRef: wireString(row.projectRef),
 			cpuAvg: wireNumber(row.cpuAvg),
 			cpuMax: wireNumber(row.cpuMax),
@@ -149,7 +149,7 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 		}),
 	)
 	return {
-		buckets: result.data.map((row): SupabaseProjectTimeseriesRow => ({
+		buckets: Arr.map(result.data, (row): SupabaseProjectTimeseriesRow => ({
 			bucket: wireString(row.bucket),
 			cpu: wireNumberOrNull(row.cpu),
 			memoryAvg: wireNumber(row.memoryAvg),

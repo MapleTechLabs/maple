@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 // BOUNDARY: captured message payloads are vendor JSON, walked as `unknown`.
 
 // Envelope normalisation for the captured message fields, shared by the
@@ -5,7 +6,7 @@
 // into the documented message array every reader walks.
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /**
  * Envelopes a message list arrives in, unwrapped so every reader walks the
@@ -14,10 +15,10 @@ export const isRecord = (value: unknown): value is Record<string, unknown> =>
  * `input.value` is often the whole request body around `messages`.
  */
 export const unwrapMessages = (value: unknown): unknown =>
-	isRecord(value) && Array.isArray(value.messages) ? value.messages : value
+	isRecord(value) && Arr.isArray(value.messages) ? value.messages : value
 
 const completionChoices = (value: unknown): readonly unknown[] | undefined =>
-	isRecord(value) && Array.isArray(value.choices) ? value.choices : undefined
+	isRecord(value) && Arr.isArray(value.choices) ? value.choices : undefined
 
 export const unwrapOutputMessages = (value: unknown): unknown => {
 	// OpenAI `chat.completion` objects, alone or in an array (OpenInference's
@@ -25,15 +26,13 @@ export const unwrapOutputMessages = (value: unknown): unknown => {
 	// finish reason goes where the convention keeps it, on the message. Choices
 	// carrying no message (a streamed chunk's `delta`, an empty `choices`)
 	// leave the capture as it was rather than empty it.
-	const choices = (Array.isArray(value) ? value : [value]).map(completionChoices)
-	if (choices.length > 0 && choices.every((entry) => entry !== undefined)) {
-		const messages = choices
-			.flat()
-			.flatMap((choice) =>
-				isRecord(choice) && isRecord(choice.message)
-					? [{ ...choice.message, finish_reason: choice.finish_reason }]
-					: [],
-			)
+	const choices = Arr.map(Arr.isArray(value) ? value : [value], completionChoices)
+	if (choices.length > 0 && Arr.every(choices, (entry) => entry !== undefined)) {
+		const messages = Arr.flatMap(choices.flat(), (choice) =>
+			isRecord(choice) && isRecord(choice.message)
+				? [{ ...choice.message, finish_reason: choice.finish_reason }]
+				: [],
+		)
 		if (messages.length > 0) return messages
 	}
 	// One bare message (smolagents' `output.value`) is a one-message reply.
@@ -63,18 +62,22 @@ export const unwrapToolMessage = (value: unknown): unknown =>
 /** An array of role-carrying messages — what the message fields hold once
  *  unwrapped, as opposed to a function's arbitrary input or output. */
 export const isMessageList = (value: unknown): value is readonly Record<string, unknown>[] =>
-	Array.isArray(value) &&
+	Arr.isArray(value) &&
 	value.length > 0 &&
-	value.every((entry) => isRecord(entry) && typeof entry.role === "string")
+	Arr.every(value, (entry) => isRecord(entry) && typeof entry.role === "string")
 
 /** The records under a node's integer keys, in index order. */
 const indexed = (value: unknown): readonly Record<string, unknown>[] =>
 	isRecord(value)
-		? Object.keys(value)
-				.filter((key) => /^\d+$/.test(key))
-				.sort((a, b) => Number(a) - Number(b))
-				.map((key) => value[key])
-				.filter(isRecord)
+		? Arr.filter(
+				Arr.map(
+					Arr.filter(Rec.keys(value), (key) => /^\d+$/.test(key)).sort(
+						(a, b) => Number(a) - Number(b),
+					),
+					(key) => value[key],
+				),
+				isRecord,
+			)
 		: []
 
 /**
@@ -90,9 +93,9 @@ export const flattenedMessages = (
 ): readonly Record<string, unknown>[] | undefined => {
 	// Null-prototype nodes: the path segments come from untrusted keys.
 	const root: Record<string, unknown> = Object.create(null)
-	for (const [key, value] of Object.entries(attributes)) {
-		if (!key.startsWith(prefix) || value === "") continue
-		const path = key.slice(prefix.length).split(".")
+	for (const [key, value] of Rec.toEntries(attributes)) {
+		if (!Str.startsWith(prefix)(key) || value === "") continue
+		const path = Str.split(".")(Str.slice(prefix.length)(key))
 		let node = root
 		for (const segment of path.slice(0, -1)) {
 			const next = node[segment]
@@ -106,15 +109,16 @@ export const flattenedMessages = (
 		}
 		node[path[path.length - 1] ?? ""] = value
 	}
-	const messages = indexed(root).map((entry) => {
+	const messages = Arr.map(indexed(root), (entry) => {
 		const { contents, tool_calls: toolCalls, ...message } = isRecord(entry.message) ? entry.message : {}
 		// A content part with nothing in it (llamaindex writes `text = ""` beside
 		// its tool calls) is no part at all.
-		const parts = indexed(contents)
-			.map((content) => content.message_content)
-			.filter((part) => isRecord(part) && Object.keys(part).some((key) => key !== "type"))
+		const parts = Arr.filter(
+			Arr.map(indexed(contents), (content) => content.message_content),
+			(part) => isRecord(part) && Arr.some(Rec.keys(part), (key) => key !== "type"),
+		)
 		if (parts.length > 0) message.content = parts
-		const calls = indexed(toolCalls).map((call) => call.tool_call)
+		const calls = Arr.map(indexed(toolCalls), (call) => call.tool_call)
 		if (calls.length > 0) message.tool_calls = calls
 		return message
 	})

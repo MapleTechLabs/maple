@@ -13,6 +13,7 @@ import { changeOf } from "../analytics/view-stats"
 import { analyticsPanel, chartFrame } from "../kit/analytics-panel"
 import { Message, type Model } from "./model"
 import { grid } from "@maple/views/ui/grid"
+import { Array as Arr } from "effect"
 
 // `HeadlineStrip`, `RunsCard` and `DurationCard`.
 
@@ -83,7 +84,7 @@ export const headlineStrip = (
 	return statRail(
 		h,
 		{ columns: 3, className: "xl:grid-cols-6" },
-		stats.map((stat) =>
+		Arr.map(stats, (stat) =>
 			h.div(
 				[h.Key(stat.label), ...(stat.hint === undefined ? [] : [h.Title(stat.hint)])],
 				[
@@ -110,13 +111,13 @@ export const chartsRow = (
 	context: ChartContext,
 ): Html => {
 	const isEmpty = analytics.current.runs === 0
-	const runRows = analytics.series.map((point) => ({
+	const runRows = Arr.map(analytics.series, (point) => ({
 		bucket: bucketIso(point.bucket),
 		[RESULT_SERIES.succeeded]: point.succeeded,
 		[RESULT_SERIES.failed]: point.failed,
 		[RESULT_SERIES.cancelled]: point.cancelled,
 	}))
-	const durationRows = analytics.series.map((point) => ({
+	const durationRows = Arr.map(analytics.series, (point) => ({
 		bucket: bucketIso(point.bucket),
 		p50: point.p50DurationMs ?? "",
 		p95: point.p95DurationMs ?? "",

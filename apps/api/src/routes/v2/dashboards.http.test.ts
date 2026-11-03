@@ -1,5 +1,17 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Ref, Schema } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Option,
+	Ref,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
@@ -652,7 +664,7 @@ describe("v2 dashboard shares", () => {
 		expect(typeof shared.body.token).toBe("string")
 
 		const token: string = shared.body.token
-		expect(shared.body.token_suffix).toBe(token.slice(-6))
+		expect(shared.body.token_suffix).toBe(Str.slice(-6)(token))
 
 		// Readable again on a later call, decrypted out of storage: a caller who
 		// never saw the mint response, or who simply reopened the dialog, gets the
@@ -954,7 +966,7 @@ describe("v2 dashboard shares", () => {
 			mode: "public",
 		})
 
-		const at = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+		const at = (ms: number) => Str.replace("T", " ")(Str.slice(0, 19)(new Date(ms).toISOString()))
 		const variablesFor = async (token: string) => {
 			const response = await harness.request("POST", "/v2/share/widget-data", undefined, {
 				token,
@@ -962,7 +974,7 @@ describe("v2 dashboard shares", () => {
 				timeRange: { startTime: at(Date.now() - 3_600_000), endTime: at(Date.now() - 60_000) },
 			})
 			expect(response.status).toBe(200)
-			return Object.keys(response.body.variables).sort()
+			return Rec.keys(response.body.variables).sort()
 		}
 
 		expect(await variablesFor(board.body.token)).toEqual(["region", "tier"])
@@ -1254,7 +1266,7 @@ describe("v2 share previews", () => {
 
 		const meta = await harness.request("POST", "/v2/share/og-meta", undefined, { token })
 		const ogId: string = meta.body.imagePath.slice("/share/og/".length, -".png".length)
-		const [encodedId] = ogId.split(".") as [string]
+		const [encodedId] = Str.split(".")(ogId) as [string]
 
 		const forged = await harness.request("POST", "/v2/share/og-card", undefined, {
 			ogId: `${encodedId}.not-a-signature`,
@@ -1363,9 +1375,9 @@ describe("v2 raw SQL widgets", () => {
 		// The harness warehouse runs nothing, so an admitted run fails retryably instead.
 		const telemetryReader = await harness.bootstrapKey(["dashboards:read", ...TELEMETRY])
 		const admitted = await Promise.all(
-			[unscoped.secret, telemetryReader.secret].map((token) => widgetData(harness, id, token)),
+			Arr.map([unscoped.secret, telemetryReader.secret], (token) => widgetData(harness, id, token)),
 		)
-		expect(admitted.map((response) => response.body.results[0].reason)).toEqual(["failed", "failed"])
+		expect(Arr.map(admitted, (response) => response.body.results[0].reason)).toEqual(["failed", "failed"])
 		await harness.dispose()
 	})
 

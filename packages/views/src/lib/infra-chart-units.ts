@@ -17,14 +17,15 @@ import {
 	formatRate,
 	formatThroughput,
 } from "@maple/ui/lib/format"
+import { String as Str } from "effect"
 
 /**
  * Bucket width for the timeseries charts: aim for ~100 points, floored at the
  * poller's 5-minute granularity and rounded to whole 5-minute steps.
  */
 export function chartBucketSeconds(startTime: string, endTime: string): number {
-	const startMs = new Date(startTime.replace(" ", "T") + "Z").getTime()
-	const endMs = new Date(endTime.replace(" ", "T") + "Z").getTime()
+	const startMs = new Date(Str.replace(" ", "T")(startTime) + "Z").getTime()
+	const endMs = new Date(Str.replace(" ", "T")(endTime) + "Z").getTime()
 	const windowSeconds = Math.max((endMs - startMs) / 1000, 300)
 	return Math.max(300, Math.ceil(windowSeconds / 100 / 300) * 300)
 }
@@ -126,6 +127,6 @@ export function transformRows(
 		existing[series] = row.value
 		byBucket.set(row.bucket, existing)
 	}
-	const data = Array.from(byBucket.values()).toSorted((a, b) => a.bucket.localeCompare(b.bucket))
+	const data = Array.from(byBucket.values()).toSorted((a, b) => Str.localeCompare(b.bucket)(a.bucket))
 	return { data, series: [...seriesSet] }
 }

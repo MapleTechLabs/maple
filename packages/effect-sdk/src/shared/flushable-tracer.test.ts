@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Data, Effect, Fiber, Schema } from "effect"
+import { Data, Effect, Fiber, Schema, Array as Arr } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
 import { HttpApiSchemaError } from "effect/http-api/HttpApiError"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
@@ -85,7 +85,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			assert.isDefined(span)
 			assert.strictEqual(span!.status.code, 1 /* Ok */)
 			assert.strictEqual(
-				span!.events.some((event) => event.name === "exception"),
+				Arr.some(span!.events, (event) => event.name === "exception"),
 				false,
 			)
 		}),
@@ -121,7 +121,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			assert.isDefined(span)
 			assert.strictEqual(span!.status.code, 1 /* Ok */)
 			assert.strictEqual(
-				span!.events.some((event) => event.name === "exception"),
+				Arr.some(span!.events, (event) => event.name === "exception"),
 				false,
 			)
 		}),
@@ -151,7 +151,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			assert.isDefined(span)
 			assert.strictEqual(span!.status.code, 1 /* Ok */)
 			assert.strictEqual(
-				span!.events.some((event) => event.name === "exception"),
+				Arr.some(span!.events, (event) => event.name === "exception"),
 				false,
 			)
 		}),
@@ -177,7 +177,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			assert.isDefined(span)
 			assert.strictEqual(span!.status.code, 2 /* Error */)
 			assert.strictEqual(
-				span!.events.some((event) => event.name === "exception"),
+				Arr.some(span!.events, (event) => event.name === "exception"),
 				true,
 			)
 		}),
@@ -220,7 +220,7 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			assert.isDefined(span)
 			assert.strictEqual(span!.status.code, 1 /* Ok */)
 			assert.strictEqual(
-				span!.events.some((event) => event.name === "exception"),
+				Arr.some(span!.events, (event) => event.name === "exception"),
 				false,
 			)
 		}),
@@ -280,7 +280,7 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 			)
 			const [span] = buffer.drain()
 			assert.strictEqual(span!.status.message, "HTTP 500 (GET /api/sync/shape)")
-			const exceptions = span!.events.filter((event) => event.name === "exception")
+			const exceptions = Arr.filter(span!.events, (event) => event.name === "exception")
 			assert.strictEqual(exceptions.length, 1)
 			assert.deepStrictEqual(
 				exceptions[0]!.attributes.find((attribute) => attribute.key === "exception.type")?.value,
@@ -316,12 +316,11 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 				const [span] = buffer.drain()
 				assert.isDefined(span)
 				assert.strictEqual(span!.status.code, 2 /* Error */)
-				const types = span!.events
-					.filter((event) => event.name === "exception")
-					.map(
-						(event) =>
-							event.attributes.find((attribute) => attribute.key === "exception.type")?.value,
-					)
+				const types = Arr.map(
+					Arr.filter(span!.events, (event) => event.name === "exception"),
+					(event) =>
+						event.attributes.find((attribute) => attribute.key === "exception.type")?.value,
+				)
 				assert.deepStrictEqual(types, [{ stringValue: "HttpServerError" }])
 			}),
 		)
@@ -353,7 +352,7 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 			)
 			const [span] = buffer.drain()
 			assert.strictEqual(span!.status.code, 2 /* Error */)
-			const exceptions = span!.events.filter((event) => event.name === "exception")
+			const exceptions = Arr.filter(span!.events, (event) => event.name === "exception")
 			assert.strictEqual(exceptions.length, 1)
 			assert.deepStrictEqual(
 				exceptions[0]!.attributes.find((attribute) => attribute.key === "exception.type")?.value,
@@ -597,13 +596,11 @@ describe("makeSpanBuffer span dropping", () => {
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer({ dropSpanNames: ["queue.poll"] })
 			yield* poll(buffer)
-			assert.deepStrictEqual(
-				buffer
-					.drain()
-					.map((span) => span.name)
-					.sort(),
-				["db.query", "forked.work", "queue.claim"],
-			)
+			assert.deepStrictEqual(Arr.map(buffer.drain(), (span) => span.name).sort(), [
+				"db.query",
+				"forked.work",
+				"queue.claim",
+			])
 		}),
 	)
 
@@ -613,7 +610,7 @@ describe("makeSpanBuffer span dropping", () => {
 			yield* poll(buffer)
 			yield* Effect.void.pipe(Effect.withSpan("job.process"), Effect.provide(buffer.tracerLayer))
 			assert.deepStrictEqual(
-				buffer.drain().map((span) => span.name),
+				Arr.map(buffer.drain(), (span) => span.name),
 				["job.process"],
 			)
 		}),
@@ -667,7 +664,7 @@ describe("makeSpanBuffer anticipated-error predicate and 5xx precedence", () => 
 			yield* runSpan(buffer, Effect.fail(new SqlError({ code: "23505" })))
 			yield* runSpan(buffer, Effect.fail(new SqlError({ code: "57014" })))
 			assert.deepStrictEqual(
-				buffer.drain().map((span) => span.status.code),
+				Arr.map(buffer.drain(), (span) => span.status.code),
 				[1 /* Ok */, 2 /* Error */],
 			)
 		}),

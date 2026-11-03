@@ -4,7 +4,7 @@
  * web app's /infra/cloudflare, /infra/railway and /infra/planetscale pages, flattened onto the
  * shared infra row.
  */
-import { DateTime, Effect, Option } from "effect"
+import { DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
 import { CH } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -37,11 +37,11 @@ const WORKER_PREFIX = "cloudflare-worker/"
 const BREAKDOWN_ROWS = 25
 
 const strip = (prefix: string, serviceName: string) =>
-	serviceName.startsWith(prefix) ? serviceName.slice(prefix.length) : serviceName
+	Str.startsWith(prefix)(serviceName) ? Str.slice(prefix.length)(serviceName) : serviceName
 const ratio = (part: number, whole: number): number | undefined => (whole > 0 ? part / whole : undefined)
 
 const matchesSearch = (search: string | undefined) => (row: InfraEntityRow) =>
-	search === undefined || row.name.toLowerCase().includes(search.toLowerCase())
+	search === undefined || Str.includes(Str.toLowerCase(search))(Str.toLowerCase(row.name))
 
 /** Traffic kinds have no limit to be near: the worst one is the one failing most. */
 const byTrouble = (rows: ReadonlyArray<InfraEntityRow>, sort: InfraSort): Array<InfraEntityRow> =>
@@ -166,8 +166,8 @@ const fetchProviderRows = (kind: ProviderKind, window: InfraWindow) =>
 					],
 					{ concurrency: 2 },
 				)
-				const latencyByZone = new Map(latency.map((row) => [row.serviceName, row]))
-				return counters.map((row) => zoneRow(row, latencyByZone.get(row.serviceName)))
+				const latencyByZone = new Map(Arr.map(latency, (row) => [row.serviceName, row]))
+				return Arr.map(counters, (row) => zoneRow(row, latencyByZone.get(row.serviceName)))
 			}
 			case "cloudflare_workers": {
 				const [counters, latency] = yield* Effect.all(
@@ -183,15 +183,15 @@ const fetchProviderRows = (kind: ProviderKind, window: InfraWindow) =>
 					],
 					{ concurrency: 2 },
 				)
-				const latencyByWorker = new Map(latency.map((row) => [workerKey(row), row]))
-				return counters.map((row) => workerRow(row, latencyByWorker.get(workerKey(row))))
+				const latencyByWorker = new Map(Arr.map(latency, (row) => [workerKey(row), row]))
+				return Arr.map(counters, (row) => workerRow(row, latencyByWorker.get(workerKey(row))))
 			}
 			case "railway_services": {
 				const rows = yield* run(
 					CH.compile(Integrations.railwayServicesSQL(), params),
 					"mcpRailwayServices",
 				)
-				return rows.map(railwayRow)
+				return Arr.map(rows, railwayRow)
 			}
 			case "planetscale_databases": {
 				const [gauges, connections, storage] = yield* Effect.all(
@@ -211,19 +211,19 @@ const fetchProviderRows = (kind: ProviderKind, window: InfraWindow) =>
 					{ concurrency: 3 },
 				)
 				const databases = new Set([
-					...gauges.map((row) => row.database),
-					...connections.map((row) => row.database),
-					...storage.map((row) => row.database),
+					...Arr.map(gauges, (row) => row.database),
+					...Arr.map(connections, (row) => row.database),
+					...Arr.map(storage, (row) => row.database),
 				])
-				return [...databases]
-					.filter((database) => database !== "")
-					.map((database) =>
+				return Arr.map(
+					Arr.filter([...databases], (database) => database !== ""),
+					(database) =>
 						planetscaleRow(database, {
 							gauges: gauges.find((row) => row.database === database),
 							connections: connections.find((row) => row.database === database),
 							storage: storage.find((row) => row.database === database),
 						}),
-					)
+				)
 			}
 		}
 	})
@@ -236,7 +236,7 @@ export const PROVIDER_ENTITY_KINDS = [
 ] as const
 export type ProviderEntityKind = (typeof PROVIDER_ENTITY_KINDS)[number]
 export const isProviderEntityKind = (kind: string): kind is ProviderEntityKind =>
-	PROVIDER_ENTITY_KINDS.some((provider) => provider === kind)
+	Arr.some(PROVIDER_ENTITY_KINDS, (provider) => provider === kind)
 
 /** Which integration feeds each provider kind, to skip kinds nobody connected. */
 export const PROVIDER_OF = {
@@ -276,10 +276,12 @@ export const listProviderKind = (kind: ProviderKind, options: ListProviderOption
 		const rows = yield* fetchProviderRows(kind, options.window)
 		const { filters } = options
 		const traffic = kind === "cloudflare_zones" || kind === "cloudflare_workers"
-		const scoped = rows
-			.filter(matchesSearch(filters.search))
-			.filter((row) => filters.environment === undefined || row.environment === filters.environment)
-		const filtered = scoped.filter(
+		const scoped = Arr.filter(
+			Arr.filter(rows, matchesSearch(filters.search)),
+			(row) => filters.environment === undefined || row.environment === filters.environment,
+		)
+		const filtered = Arr.filter(
+			scoped,
 			traffic ? matchesTrafficStatus(filters.status) : matchesStatus(filters.status),
 		)
 		const sorted = traffic ? byTrouble(filtered, options.sort) : sortRows(filtered, options.sort)
@@ -314,7 +316,7 @@ const NOT_FOUND: ProviderInspectResult = { found: false, series: [] }
 
 /** Cloudflare buckets come back as ISO strings; an unparsable one is dropped, not guessed. */
 const isoPoint = (bucket: string, value: number) =>
-	Option.toArray(DateTime.make(bucket)).map((at) => ({ bucket: DateTime.toUtc(at), value }))
+	Arr.map(Option.toArray(DateTime.make(bucket)), (at) => ({ bucket: DateTime.toUtc(at), value }))
 
 /** Sums a bucket × key series into one point per bucket. */
 const perBucket = <Row extends { readonly bucket: string }>(
@@ -327,9 +329,10 @@ const perBucket = <Row extends { readonly bucket: string }>(
 		if (include(row)) totals.set(row.bucket, (totals.get(row.bucket) ?? 0) + value(row))
 		else if (!totals.has(row.bucket)) totals.set(row.bucket, 0)
 	}
-	return [...totals.entries()]
-		.sort(([a], [b]) => a.localeCompare(b))
-		.flatMap(([bucket, v]) => isoPoint(bucket, v))
+	return Arr.flatMap(
+		[...totals.entries()].sort(([a], [b]) => Str.localeCompare(b)(a)),
+		([bucket, v]) => isoPoint(bucket, v),
+	)
 }
 
 /** Totals per key, largest first, as a breakdown table. */
@@ -342,15 +345,15 @@ const keyTotals = <Row>(
 ): InfraBreakdown => {
 	const totals = new Map<string, number>()
 	for (const row of rows) totals.set(key(row), (totals.get(key(row)) ?? 0) + value(row))
-	const total = [...totals.values()].reduce((sum, v) => sum + v, 0)
+	const total = Arr.reduce([...totals.values()], 0, (sum, v) => sum + v)
 	return {
 		title,
 		keyLabel,
 		valueLabels: ["Count", "Share"],
-		rows: [...totals.entries()]
-			.sort(([, a], [, b]) => b - a)
-			.slice(0, BREAKDOWN_ROWS)
-			.map(([k, v]) => ({ key: k === "" ? "(none)" : k, values: [v, total > 0 ? v / total : 0] })),
+		rows: Arr.map(
+			[...totals.entries()].sort(([, a], [, b]) => b - a).slice(0, BREAKDOWN_ROWS),
+			([k, v]) => ({ key: k === "" ? "(none)" : k, values: [v, total > 0 ? v / total : 0] }),
+		),
 	}
 }
 
@@ -360,7 +363,7 @@ const utcPoints = <Row extends { readonly bucket: DateTime.Utc }>(
 	rows: ReadonlyArray<Row>,
 	value: (row: Row) => number | undefined,
 ) =>
-	rows.flatMap((row) => {
+	Arr.flatMap(rows, (row) => {
 		const v = value(row)
 		return v === undefined ? [] : [{ bucket: row.bucket, value: v }]
 	})
@@ -374,7 +377,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 			executor.compiledQuery(query, { profile: "aggregation", context })
 		const find = (kind: ProviderKind) =>
 			listProviderKind(kind, { window, filters: {}, sort: "name", limit: 1000 }).pipe(
-				Effect.map(({ section }) => section.rows.filter((row) => row.name === target.name)),
+				Effect.map(({ section }) => Arr.filter(section.rows, (row) => row.name === target.name)),
 			)
 
 		switch (target.kind) {
@@ -404,7 +407,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 						)
 						const latencyPoints = (
 							pick: (row: Integrations.CloudflareZoneLatencyTimeseriesOutput) => number,
-						) => latency.flatMap((row) => isoPoint(row.bucket, pick(row)))
+						) => Arr.flatMap(latency, (row) => isoPoint(row.bucket, pick(row)))
 						return {
 							found: true,
 							entity,
@@ -468,7 +471,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 									title: `Top ${dimension} values by requests`,
 									keyLabel: dimension,
 									valueLabels: ["Requests", "5xx", "Bytes"],
-									rows: rows.map((row) => ({
+									rows: Arr.map(rows, (row) => ({
 										key: row.key === "" ? "(none)" : row.key,
 										values: [row.requests, row.errors5xx, row.bytes],
 									})),
@@ -510,10 +513,14 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 									title: "Top firewall rules",
 									keyLabel: "source / action / rule / host",
 									valueLabels: ["Events"],
-									rows: top.map((row) => ({
-										key: [row.source, row.action, row.ruleId, row.host]
-											.map((part) => part || "-")
-											.join(" / "),
+									rows: Arr.map(top, (row) => ({
+										key: Arr.join(
+											Arr.map(
+												[row.source, row.action, row.ruleId, row.host],
+												(part) => part || "-",
+											),
+											" / ",
+										),
 										values: [row.events],
 									})),
 								},
@@ -564,7 +571,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 									title: "Top query names",
 									keyLabel: "Name",
 									valueLabels: ["Queries", "NXDOMAIN"],
-									rows: names.map((row) => ({
+									rows: Arr.map(names, (row) => ({
 										key: row.queryName || "(none)",
 										values: [row.queries, row.nxdomain],
 									})),
@@ -607,8 +614,8 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 				)
 				const latencyPoints = (
 					pick: (row: Integrations.CloudflareWorkerLatencyTimeseriesOutput) => number,
-				) => latency.flatMap((row) => isoPoint(row.bucket, pick(row)))
-				const doRequests = durableObjects.reduce((sum, row) => sum + row.requests, 0)
+				) => Arr.flatMap(latency, (row) => isoPoint(row.bucket, pick(row)))
+				const doRequests = Arr.reduce(durableObjects, 0, (sum, row) => sum + row.requests)
 				return {
 					found: true,
 					entity,
@@ -643,7 +650,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 						...(doRequests > 0
 							? seriesStats(
 									spec("Durable Object requests per bucket", "count"),
-									durableObjects.flatMap((row) => isoPoint(row.bucket, row.requests)),
+									Arr.flatMap(durableObjects, (row) => isoPoint(row.bucket, row.requests)),
 								)
 							: []),
 					],
@@ -663,7 +670,8 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 					CH.compile(Integrations.railwayServicesSQL(), params),
 					"mcpRailwayServices",
 				)
-				const matches = services.filter(
+				const matches = Arr.filter(
+					services,
 					(row) =>
 						row.serviceName === target.name &&
 						(target.environment === undefined || row.environmentName === target.environment),
@@ -688,7 +696,10 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 						"Memory limit": `${(match.memoryLimit / 1024 ** 3).toFixed(1)} GiB`,
 						...(matches.length > 1
 							? {
-									Environments: `${matches.length} environments run this service (${matches.map((m) => m.environmentName).join(", ")}); pass environment to pick one`,
+									Environments: `${matches.length} environments run this service (${Arr.join(
+										Arr.map(matches, (m) => m.environmentName),
+										", ",
+									)}); pass environment to pick one`,
 								}
 							: undefined),
 					},

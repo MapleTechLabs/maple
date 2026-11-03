@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 // Formatters whose output is baked into derived data — finding labels, turn
 // subtitles, cost text — so the page and the MCP print the same strings. They
 // live here, below both `@maple/ui` and `@maple/agent-sessions`, because the
@@ -35,7 +36,7 @@ export function formatDuration(ms: number): string {
 /** One decimal, without a trailing ".0": 12.2 reads "12.2", 193.0 reads "193". */
 const compactDigits = (value: number): string => {
 	const fixed = value.toFixed(1)
-	return fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed
+	return Str.endsWith(".0")(fixed) ? Str.slice(0, -2)(fixed) : fixed
 }
 
 const COMPACT_TIERS = [
@@ -96,7 +97,7 @@ const currencyFormatters = new Map<string, Intl.NumberFormat>()
 
 /** Format an amount in dollars (Autumn totals are dollars, not cents). */
 export function formatCurrency(amount: number, currency: string): string {
-	const key = currency.toUpperCase()
+	const key = Str.toUpperCase(currency)
 	let formatter = currencyFormatters.get(key)
 	if (!formatter) {
 		formatter = new Intl.NumberFormat("en-US", {

@@ -7,7 +7,7 @@
 // returning a narrower answer; a partially-correct observability answer is
 // worse than a refusal, because nothing about the output says it was partial.
 
-import { Effect, Predicate, Schema } from "effect"
+import { Effect, Predicate, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { MetricName, ServiceName, SpanId, TraceId } from "@maple/domain"
 import { MAX_LIST_RANGE_SECONDS } from "@maple/query-engine"
 import { clusterLogPatterns } from "@maple/query-engine/observability"
@@ -54,7 +54,7 @@ export const listServices = (
 			},
 		}),
 		(list) =>
-			list.data.map((s): ServiceSummary => ({
+			Arr.map(list.data, (s): ServiceSummary => ({
 				name: s.name,
 				throughput: s.throughput,
 				errorCount: s.error_count,
@@ -94,7 +94,7 @@ export const serviceMap = (
 			},
 		}),
 		(map) =>
-			map.edges.map((e): ServiceEdge => ({
+			Arr.map(map.edges, (e): ServiceEdge => ({
 				sourceService: e.source_service,
 				targetService: e.target_service,
 				callCount: e.call_count,
@@ -159,7 +159,7 @@ export const searchTraces = (
 			// Every row is a root span, so the span fields describe the root. v2
 			// search carries no attribute maps or span id; those are only available
 			// per-span via `GET /v2/traces/:id`.
-			spans: list.data.map((t): SpanResult => ({
+			spans: Arr.map(list.data, (t): SpanResult => ({
 				traceId: t.id,
 				spanId: null,
 				spanName: t.root_span_name,
@@ -279,10 +279,14 @@ export const inspectTrace = (
 			{ concurrency: 4 },
 		)
 		const logs = {
-			data: [...new Map(pages.flatMap((page) => page.data).map((l) => [l.id, l])).values()].slice(
-				0,
-				V2_LIST_MAX,
-			),
+			data: [
+				...new Map(
+					Arr.map(
+						Arr.flatMap(pages, (page) => page.data),
+						(l) => [l.id, l],
+					),
+				).values(),
+			].slice(0, V2_LIST_MAX),
 		}
 		return {
 			traceId: trace.id,
@@ -290,7 +294,7 @@ export const inspectTrace = (
 			spanCount: trace.span_count,
 			rootDurationMs: trace.duration_ms,
 			spans: buildSpanTree(trace.spans),
-			logs: logs.data.map((l) => ({
+			logs: Arr.map(logs.data, (l) => ({
 				timestamp: l.timestamp,
 				severityText: l.severity_text,
 				serviceName: l.service_name,
@@ -367,19 +371,20 @@ export const searchLogs = (
 			],
 			{ concurrency: 2 },
 		)
-		const total = series.series.reduce(
-			(sum, s) => sum + s.points.reduce((acc, pt) => acc + pt.value, 0),
+		const total = Arr.reduce(
+			series.series,
 			0,
+			(sum, s) => sum + Arr.reduce(s.points, 0, (acc, pt) => acc + pt.value),
 		)
 		return {
 			timeRange: p.range,
 			total,
-			logs: page.data.map((l) =>
+			logs: Arr.map(page.data, (l) =>
 				p.includeAttributes === true
 					? {
 							...toLogEntry(l),
-							attributes: Object.fromEntries(
-								Object.entries(l.log_attributes).filter(([, v]) => v !== ""),
+							attributes: Rec.fromEntries(
+								Arr.filter(Rec.toEntries(l.log_attributes), ([, v]) => v !== ""),
 							),
 						}
 					: toLogEntry(l),
@@ -408,7 +413,7 @@ export const mineLogPatterns = (
 			// Clustering runs over whatever the API returns. v2 caps a page at 100,
 			// so remote mode samples far less than local's 10k default; the
 			// templates are the same, their counts are drawn from a smaller sample.
-			const rows = page.data.map((l) => ({
+			const rows = Arr.map(page.data, (l) => ({
 				body: l.body,
 				severityText: l.severity_text,
 				serviceName: l.service_name,
@@ -443,7 +448,7 @@ export const listMetrics = (
 			},
 		}),
 		(list) =>
-			list.data.map((m): ListMetricsOutput => ({
+			Arr.map(list.data, (m): ListMetricsOutput => ({
 				metricName: m.name,
 				metricType: m.type,
 				serviceName: m.service_name,
@@ -515,7 +520,7 @@ export const tracesTimeseries = (
 		const group = traceGroupBy(p.groupBy)
 		const filters = traceFilters(p)
 		const results = yield* Effect.all(
-			TRACE_AGGREGATIONS.map(([, aggregation]) =>
+			Arr.map(TRACE_AGGREGATIONS, ([, aggregation]) =>
 				client.traces.timeseries({
 					payload: {
 						...toV2Window(p.range),
@@ -532,7 +537,7 @@ export const tracesTimeseries = (
 		// Merge the parallel series into one row per (bucket, group), matching the
 		// tabular shape `--format table` expects.
 		const rows = new Map<string, Record<string, unknown>>()
-		results.forEach((result, index) => {
+		Arr.forEach(results, (result, index) => {
 			const field = TRACE_AGGREGATIONS[index]![0]
 			for (const series of result.series) {
 				for (const point of series.points) {
@@ -543,7 +548,7 @@ export const tracesTimeseries = (
 				}
 			}
 		})
-		return Array.from(rows.values()).sort((a, b) => String(a.bucket).localeCompare(String(b.bucket)))
+		return Array.from(rows.values()).sort((a, b) => Str.localeCompare(String(b.bucket))(String(a.bucket)))
 	})
 
 export const tracesBreakdown = (
@@ -562,7 +567,7 @@ export const tracesBreakdown = (
 		const group = traceGroupBy(p.groupBy ?? "service") ?? "service"
 		const filters = traceFilters(p)
 		const results = yield* Effect.all(
-			TRACE_AGGREGATIONS.map(([, aggregation]) =>
+			Arr.map(TRACE_AGGREGATIONS, ([, aggregation]) =>
 				client.traces.breakdown({
 					payload: {
 						...toV2Window(p.range),
@@ -577,7 +582,7 @@ export const tracesBreakdown = (
 		)
 
 		const rows = new Map<string, Record<string, unknown>>()
-		results.forEach((result, index) => {
+		Arr.forEach(results, (result, index) => {
 			const field = TRACE_AGGREGATIONS[index]![0]
 			for (const item of result.data) {
 				const row = rows.get(item.name) ?? { name: item.name }
@@ -615,8 +620,8 @@ export const metricTimeseries = (
 			},
 		}),
 		(result) =>
-			result.series.flatMap((series) =>
-				series.points.map((point) => ({
+			Arr.flatMap(result.series, (series) =>
+				Arr.map(series.points, (point) => ({
 					bucket: point.timestamp,
 					service: series.group ?? "",
 					value: point.value,

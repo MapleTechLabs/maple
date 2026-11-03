@@ -12,7 +12,7 @@ import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
@@ -176,7 +176,7 @@ const identityRows = (p: P, state: PanelState, span: AiSessionSpan, timeZone: st
 	return keyValueList(
 		p,
 		{ layout: "grid", divided: true, className: "rounded-md border border-border-subtle px-2.5" },
-		rows.flatMap(([label, value]) =>
+		Arr.flatMap(rows, ([label, value]) =>
 			value === undefined
 				? []
 				: [
@@ -232,7 +232,10 @@ const resourceAttributesView = Submodel.defineView<PanelState, PanelMessage, Pan
 
 /** `LogsSection`: the trace panel's span logs, read once the tab is open. */
 const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { timeZone }, p) =>
-	p.div([p.Class("overflow-hidden rounded-md border border-border-subtle")], [spanLogs(p, state, timeZone, docsUrl("logs"))]),
+	p.div(
+		[p.Class("overflow-hidden rounded-md border border-border-subtle")],
+		[spanLogs(p, state, timeZone, docsUrl("logs"))],
+	),
 )
 
 /** The call's own settings and identity, shown only where the span reported them. */
@@ -256,14 +259,17 @@ const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>
 		return p.div(
 			[p.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5")],
 			[
-				...pairs.flatMap(([label, value]) =>
+				...Arr.flatMap(pairs, ([label, value]) =>
 					value === undefined
 						? []
 						: [
 								p.span(
 									[p.Class(hstackClass({ gap: "1.5", align: "baseline" }))],
 									[
-										p.span([p.Class(typographyClass({ size: "2xs", tone: "muted" }))], [label]),
+										p.span(
+											[p.Class(typographyClass({ size: "2xs", tone: "muted" }))],
+											[label],
+										),
 										p.span(
 											[p.Class("font-mono text-foreground text-xs")],
 											[typeof value === "number" ? String(value) : value],
@@ -288,7 +294,7 @@ const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>
 							p,
 							state,
 							{ id: "meta:trace", value: span.traceId, label: "Trace ID" },
-							["trace ", shortId(span.traceId, "trace"), "…", span.traceId.slice(-4)],
+							["trace ", shortId(span.traceId, "trace"), "…", Str.slice(-4)(span.traceId)],
 						),
 					],
 				),
@@ -369,7 +375,7 @@ export const toolCallsSection = (
 	const isFailed = spanFailed(span)
 	return h.div(
 		[h.Class("flex flex-col gap-3 pb-1")],
-		toolCalls.map((call, index) =>
+		Arr.map(toolCalls, (call, index) =>
 			toolCallCard(h, model, call, {
 				isFailed: isFailed && call.own,
 				statusCode: span.statusCode,

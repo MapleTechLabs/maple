@@ -1,5 +1,5 @@
 import { ChatEvent } from "@maple/domain/chat-session"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, test } from "vitest"
 import { parseMarkdownTexts } from "../../kit/markdown"
 import { TURN_IN_FLIGHT_MESSAGE } from "./kit/chat-api"
@@ -16,7 +16,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const step = (model: Model, message: Message) => update(model, message)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 /** History read, empty. */
 const ready = (): Model =>
@@ -29,7 +29,11 @@ const ready = (): Model =>
 	).model
 
 const events = (generation: number, raw: ReadonlyArray<Record<string, unknown>>) =>
-	Message.ReceivedChatEvents({ generation, events: raw.map((event) => decodeEvent(event)), nowMs: NOW })
+	Message.ReceivedChatEvents({
+		generation,
+		events: Arr.map(raw, (event) => decodeEvent(event)),
+		nowMs: NOW,
+	})
 
 describe("chat conversation", () => {
 	test("entry reads the durable history; a stale answer is dropped", () => {
@@ -62,7 +66,7 @@ describe("chat conversation", () => {
 		const sent = step(typed, Message.SubmittedComposer())
 		expect(sent.model.draft).toBe("")
 		expect(sent.model.status).toBe("submitted")
-		expect(sent.model.messages.map((message) => message.role)).toEqual(["user"])
+		expect(Arr.map(sent.model.messages, (message) => message.role)).toEqual(["user"])
 		expect(names(sent.commands)).toContain("PostChatMessage")
 	})
 
@@ -110,7 +114,7 @@ describe("chat conversation", () => {
 			]),
 		).model
 		expect(streamed.status).toBe("streaming")
-		expect(streamed.messages[1]?.parts.map((part) => part._tag)).toEqual(["dynamic-tool", "text"])
+		expect(Arr.map(streamed.messages[1]?.parts, (part) => part._tag)).toEqual(["dynamic-tool", "text"])
 		const ended = step(
 			streamed,
 			events(sending.generation, [
@@ -260,7 +264,7 @@ describe("chat conversation", () => {
 			result: Result.succeed({ messages: [earlier], cursor: 3, running: false }),
 		})
 		const loaded = step(early.model, history).model
-		expect(loaded.messages.map((message) => message.id)).toEqual(["m1"])
+		expect(Arr.map(loaded.messages, (message) => message.id)).toEqual(["m1"])
 		const sent = step(loaded, Message.SubmittedComposer())
 		expect(names(sent.commands)).toContain("PostChatMessage")
 	})
@@ -320,7 +324,7 @@ describe("chat conversation", () => {
 		expect(landed.commands?.find((command) => command.name === "ParseChatMarkdown")?.args).toEqual({
 			texts: ["All good"],
 		})
-		expect(Object.keys(landed.model.markdown).toSorted()).toEqual(["All good", "Hi"])
+		expect(Rec.keys(landed.model.markdown).toSorted()).toEqual(["All good", "Hi"])
 		expect(landed.model.markdown["All good"]).toEqual({ document: parsed[1]?.document, isStale: true })
 	})
 })

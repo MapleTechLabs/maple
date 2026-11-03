@@ -1,4 +1,4 @@
-import { DateTime } from "effect"
+import { DateTime, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	USER_SESSION_GAP_MS,
@@ -42,7 +42,7 @@ describe("clientItems", () => {
 
 	it("lists a client that connected without calling a tool after the callers, once", () => {
 		const items = clientItems(calls, reach, reach)
-		expect(items.map((item) => [item.name, item.calls])).toEqual([
+		expect(Arr.map(items, (item) => [item.name, item.calls])).toEqual([
 			["curl", 2283],
 			["Claude Code", 242],
 			["executor", 0],
@@ -52,12 +52,12 @@ describe("clientItems", () => {
 
 	it("never files a caller past the calls read's limit as connected without calling", () => {
 		const items = clientItems(calls, reach, [...reach, seen("Cursor", "agent", 3, 1, 7)])
-		expect(items.map((item) => item.name)).not.toContain("Cursor")
+		expect(Arr.map(items, (item) => item.name)).not.toContain("Cursor")
 	})
 
 	it("never lists a client that only listed tools as connected", () => {
 		const items = clientItems(calls, reach, [seen("probe", "unknown", 0, 1)])
-		expect(items.map((item) => item.name)).not.toContain("probe")
+		expect(Arr.map(items, (item) => item.name)).not.toContain("probe")
 	})
 
 	it("reads an unrecognised kind as unknown and a client without reach as unseen", () => {
@@ -71,7 +71,7 @@ describe("clientItems", () => {
 })
 
 describe("quietClientsFor", () => {
-	const names = (rows: ReadonlyArray<{ client: string }>) => rows.map((row) => row.client)
+	const names = (rows: ReadonlyArray<{ client: string }>) => Arr.map(rows, (row) => row.client)
 
 	it("keeps every reach row with no selection", () => {
 		expect(names(quietClientsFor(reach, {}))).toEqual(["Claude Code", "curl", "executor"])
@@ -89,8 +89,8 @@ describe("quietClientsFor", () => {
 })
 
 describe("agentSessionsOf", () => {
-	const agentTrace = "a".repeat(32)
-	const httpTrace = "b".repeat(32)
+	const agentTrace = Str.repeat(32)("a")
+	const httpTrace = Str.repeat(32)("b")
 	const filed = [{ traceId: agentTrace, sessionId: "claude-session-1" }]
 
 	it("files a call parented by `params._meta` under its own trace's session", () => {
@@ -140,7 +140,7 @@ describe("stitchUserSessions", () => {
 			// Quiet for the whole gap: a new session.
 			minute("u1", "Claude Code", 5 + gapMinutes * 2 + 1),
 		])
-		expect(sessions.map((s) => [s.requests, s.calls, s.errors, s.tools])).toEqual([
+		expect(Arr.map(sessions, (s) => [s.requests, s.calls, s.errors, s.tools])).toEqual([
 			[6, 3, 1, 2],
 			[2, 1, 0, 1],
 		])
@@ -159,7 +159,7 @@ describe("stitchUserSessions", () => {
 			minute("u1", "Claude Code", 2),
 			minute("u1", "Claude Code", 0),
 		])
-		expect(sessions.map((s) => `${s.user} ${s.client}`)).toEqual([
+		expect(Arr.map(sessions, (s) => `${s.user} ${s.client}`)).toEqual([
 			"u1 Claude Code",
 			"u1 Cursor",
 			"u2 Cursor",
@@ -185,7 +185,7 @@ describe("parseUserSessionKey", () => {
 	it("refuses a key whose start, client or user is missing or malformed", () => {
 		expect(parseUserSessionKey("user:abc:Cursor:u1")).toBeUndefined()
 		expect(parseUserSessionKey("user:1700000000000::u1")).toBeUndefined()
-		expect(parseUserSessionKey(`user:${"9".repeat(20)}:QQ:QQ`)).toBeUndefined()
+		expect(parseUserSessionKey(`user:${Str.repeat(20)("9")}:QQ:QQ`)).toBeUndefined()
 		expect(parseUserSessionKey("user:1700000000000:Cursor:")).toBeUndefined()
 		expect(parseUserSessionKey("user:1700000000000:%E0%A4%A:u1")).toBeUndefined()
 	})

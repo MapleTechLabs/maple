@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
 import { OrgId } from "@maple/domain"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
@@ -18,8 +18,8 @@ const HOUR_MS = 3_600_000
 const ORG_A = OrgId.make("org_isolation_a")
 const ORG_B = OrgId.make("org_isolation_b")
 const RULE_ID = "rule_isolation"
-const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
-const seconds = (ms: number) => iso(ms).slice(0, 19)
+const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
+const seconds = (ms: number) => Str.slice(0, 19)(iso(ms))
 
 const decodeOverview = decodeJsonEachRow(
 	Schema.Struct({ serviceName: Schema.String, spanCount: CH.CHNumber }),
@@ -53,7 +53,7 @@ describeWithChdb("tenant isolation against two orgs' rows", () => {
 	beforeAll(() => {
 		root = mkdtempSync(join(tmpdir(), "maple-tenant-isolation-"))
 		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
-		const spans = [ORG_A, ORG_B].flatMap((orgId) => {
+		const spans = Arr.flatMap([ORG_A, ORG_B], (orgId) => {
 			const prefix = orgId === ORG_A ? "a" : "b"
 			// Two calls in the hourly tier and one in the raw tier: only both together count three.
 			return [
@@ -63,7 +63,7 @@ describeWithChdb("tenant isolation against two orgs' rows", () => {
 			]
 		})
 		db.exec(
-			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SpanAttributes) VALUES ${spans.join(", ")}`,
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SpanAttributes) VALUES ${Arr.join(spans, ", ")}`,
 		)
 		db.exec(
 			`INSERT INTO alert_checks (OrgId, RuleId, GroupKey, Timestamp, Status, SignalType, Comparator, Threshold, ObservedValue, SampleCount, WindowMinutes, WindowStart, WindowEnd, ConsecutiveBreaches, ConsecutiveHealthy, IncidentId, IncidentTransition, EvaluationDurationMs, ErrorMessage, ErrorCategory) VALUES ${checkRow(ORG_A, "a")}, ${checkRow(ORG_B, "b")}`,
@@ -78,7 +78,7 @@ describeWithChdb("tenant isolation against two orgs' rows", () => {
 	/** The raw JSONEachRow output of a compiled query run as org A. */
 	const runAsOrgA = async (compiled: Effect.Effect<{ readonly sql: string }, unknown>) => {
 		const { sql } = await Effect.runPromise(compiled)
-		return db.query(sql.replace(/\s+FORMAT\s+\w+\s*$/, "\nFORMAT JSONEachRow"))
+		return db.query(Str.replace(/\s+FORMAT\s+\w+\s*$/, "\nFORMAT JSONEachRow")(sql))
 	}
 
 	// Each query must see org A (or the check is vacuous) and must never see org B.
@@ -91,7 +91,7 @@ describeWithChdb("tenant isolation against two orgs' rows", () => {
 	test("service overview, across the raw and hourly tiers", async () => {
 		const output = await runAsOrgA(CH.compile(CH.serviceOverviewQuery({}), { orgId: ORG_A, ...window }))
 		expectOnlyOrgA(output, "api")
-		const spanCounts = decodeOverview(output).map((row) => [row.serviceName, Number(row.spanCount)])
+		const spanCounts = Arr.map(decodeOverview(output), (row) => [row.serviceName, Number(row.spanCount)])
 		expect(spanCounts.sort()).toEqual([
 			["a-api", 3],
 			["a-front", 3],

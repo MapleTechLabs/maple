@@ -36,6 +36,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // Supabase in the connect flow: authorize an organization, switch on projects, watch the first data land.
 
@@ -207,7 +208,7 @@ const connectStatus = (h: H, model: Model, status: SupabaseIntegrationStatus | n
 				: [
 						foundChips(
 							h,
-							reached.projects.map((project) => ({ label: project.name })),
+							Arr.map(reached.projects, (project) => ({ label: project.name })),
 						),
 					],
 		)
@@ -259,9 +260,13 @@ const chooseRow = (h: H, model: Model, project: Project): Html => {
 			vstack(h, { grow: true, as: "span", className: "w-0 min-w-48" }, [
 				h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
 				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
-					[project.region, project.ref, isPaused ? "paused" : ""]
-						.filter((part) => part !== "")
-						.join(" · "),
+					Arr.join(
+						Arr.filter(
+							[project.region, project.ref, isPaused ? "paused" : ""],
+							(part) => part !== "",
+						),
+						" · ",
+					),
 				]),
 				...supabaseProjectNotes(h, project),
 			]),
@@ -276,21 +281,21 @@ const summaryRail = (h: H, status: SupabaseIntegrationStatus): Html => {
 	return flowRail(h, {
 		eyebrow: "You are about to collect",
 		items: [
-			{ icon: "LayersIcon", title: "Projects", detail: of(projects.filter(isCollecting).length) },
+			{ icon: "LayersIcon", title: "Projects", detail: of(Arr.filter(projects, isCollecting).length) },
 			{
 				icon: "MicrochipIcon",
 				title: "Metrics and Postgres health",
-				detail: of(projects.filter((project) => project.metricsEnabled).length),
+				detail: of(Arr.filter(projects, (project) => project.metricsEnabled).length),
 			},
 			{
 				icon: "FileIcon",
 				title: "Logs, polled",
-				detail: of(projects.filter((project) => project.logsEnabled).length),
+				detail: of(Arr.filter(projects, (project) => project.logsEnabled).length),
 			},
 			{
 				icon: "DatabaseIcon",
 				title: "Log drains",
-				detail: of(projects.filter((project) => project.logDrainEnabled).length),
+				detail: of(Arr.filter(projects, (project) => project.logDrainEnabled).length),
 			},
 		],
 		trust: "Change any of this later on the source page. Switches save as you flip them.",
@@ -323,7 +328,7 @@ const chooseStep = (h: H, model: Model): Html => {
 									"No projects in this organization yet. Create one in Supabase.",
 								]),
 							]
-						: status.projects.map((project) => chooseRow(h, model, project)),
+						: Arr.map(status.projects, (project) => chooseRow(h, model, project)),
 				),
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [SUPABASE_LOGS_NOTE]),
 			]),
@@ -353,12 +358,12 @@ const showsUpRail = (h: H): Html =>
 	})
 
 const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | null => {
-	const watched = projects.filter((project) => project.metricsEnabled)
+	const watched = Arr.filter(projects, (project) => project.metricsEnabled)
 	if (watched.length === 0) return null
 	const data = model.supabaseCard.metrics.data
 	if (AsyncData.isFailure(data))
 		return { state: "failed", title: "First metrics", detail: "Couldn't read the last hour's metrics." }
-	const seen = watched.flatMap((project) => {
+	const seen = Arr.flatMap(watched, (project) => {
 		const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
 		return row === null || row.lastSeen === "" ? [] : [toEpochMs(row.lastSeen)]
 	})
@@ -379,20 +384,20 @@ const metricsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow 
 }
 
 const logsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | null => {
-	const polled = projects.filter((project) => project.logsEnabled)
-	const drained = projects.filter((project) => project.logDrainEnabled)
+	const polled = Arr.filter(projects, (project) => project.logsEnabled)
+	const drained = Arr.filter(projects, (project) => project.logDrainEnabled)
 	if (polled.length === 0 && drained.length === 0) return null
 	const broken = [
-		...polled.flatMap((project) =>
+		...Arr.flatMap(polled, (project) =>
 			project.logsError === null ? [] : [`${project.name}: ${project.logsError}`],
 		),
-		...drained.flatMap((project) =>
+		...Arr.flatMap(drained, (project) =>
 			project.logDrainError === null ? [] : [`${project.name} drain: ${project.logDrainError}`],
 		),
 	]
-	if (broken.length > 0) return { state: "failed", title: "First logs", detail: broken.join(" · ") }
-	const waiting = polled.filter((project) => project.logsLastPolledAt === null)
-	const latest = polled.reduce((max, project) => Math.max(max, project.logsLastPolledAt ?? 0), 0)
+	if (broken.length > 0) return { state: "failed", title: "First logs", detail: Arr.join(broken, " · ") }
+	const waiting = Arr.filter(polled, (project) => project.logsLastPolledAt === null)
+	const latest = Arr.reduce(polled, 0, (max, project) => Math.max(max, project.logsLastPolledAt ?? 0))
 	if (waiting.length > 0)
 		return {
 			state: "working",
@@ -402,37 +407,47 @@ const logsCheck = (model: Model, projects: ReadonlyArray<Project>): CheckRow | n
 	return {
 		state: "done",
 		title: "Logs flowing",
-		detail: [
-			polled.length > 0 ? `${countLabel(polled.length, "project")} polled every minute` : "",
-			drained.length > 0
-				? `drain on ${drained.map((project) => project.name).join(", ")}, sending as lines are written`
-				: "",
-		]
-			.filter((part) => part !== "")
-			.join(" · "),
+		detail: Arr.join(
+			Arr.filter(
+				[
+					polled.length > 0 ? `${countLabel(polled.length, "project")} polled every minute` : "",
+					drained.length > 0
+						? `drain on ${Arr.join(
+								Arr.map(drained, (project) => project.name),
+								", ",
+							)}, sending as lines are written`
+						: "",
+				],
+				(part) => part !== "",
+			),
+			" · ",
+		),
 		meta: latest > 0 ? formatRelativeShortFrom(latest, model.nowMs) : null,
 	}
 }
 
 const drainCheck = (drains: ReadonlyArray<Project>): ReadonlyArray<CheckRow> => {
 	if (drains.length === 0) return []
-	const broken = drains.flatMap((project) =>
+	const broken = Arr.flatMap(drains, (project) =>
 		project.logDrainError === null ? [] : [`${project.name}: ${project.logDrainError}`],
 	)
 	return [
 		broken.length > 0
-			? { state: "failed", title: "Log drain", detail: broken.join(" · ") }
+			? { state: "failed", title: "Log drain", detail: Arr.join(broken, " · ") }
 			: {
 					state: "done",
-					title: `Log drain created on ${drains.map((project) => project.name).join(", ")}`,
+					title: `Log drain created on ${Arr.join(
+						Arr.map(drains, (project) => project.name),
+						", ",
+					)}`,
 					detail: "Visible in Supabase under Project Settings, Log Drains",
 				},
 	]
 }
 
 const liveRows = (model: Model, status: SupabaseIntegrationStatus): ReadonlyArray<CheckRow> => {
-	const collecting = status.projects.filter(isCollecting)
-	const drains = collecting.filter((project) => project.logDrainEnabled)
+	const collecting = Arr.filter(status.projects, isCollecting)
+	const drains = Arr.filter(collecting, (project) => project.logDrainEnabled)
 	return [
 		status.revoked
 			? {
@@ -453,7 +468,8 @@ const liveRows = (model: Model, status: SupabaseIntegrationStatus): ReadonlyArra
 					detail: `${countLabel(status.projects.length, "project")}, ${collecting.length} collecting`,
 				},
 		...drainCheck(drains),
-		...[metricsCheck(model, collecting), logsCheck(model, collecting)].filter(
+		...Arr.filter(
+			[metricsCheck(model, collecting), logsCheck(model, collecting)],
 			(row): row is CheckRow => row !== null,
 		),
 	]

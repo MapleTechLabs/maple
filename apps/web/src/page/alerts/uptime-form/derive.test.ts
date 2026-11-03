@@ -1,5 +1,5 @@
 import { V2UptimeMonitorCreateParams, V2UptimeMonitorUpdateParams } from "@maple/domain/http/v2"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { formFromMonitor, formIssues, isPrivateHost, wirePayload } from "./derive"
 import { heartbeatMonitor, httpMonitor } from "../shared/uptime-test-monitors"
@@ -34,10 +34,10 @@ describe("wirePayload", () => {
 describe("isPrivateHost", () => {
 	it("refuses private literals and internal names, not public names that start with a digit label", () => {
 		expect(
-			["10.0.0.1", "127.0.0.1", "[::1]", "db.internal", "localhost"].filter(isPrivateHost),
+			Arr.filter(["10.0.0.1", "127.0.0.1", "[::1]", "db.internal", "localhost"], isPrivateHost),
 		).toHaveLength(5)
 		expect(
-			["10.example.com", "0.pool.ntp.org", "127.example.com", "93.184.216.34"].some(isPrivateHost),
+			Arr.some(["10.example.com", "0.pool.ntp.org", "127.example.com", "93.184.216.34"], isPrivateHost),
 		).toBe(false)
 	})
 })
@@ -86,7 +86,7 @@ describe("formFromMonitor and wirePayload", () => {
 			service_name: null,
 			destination_ids: [],
 		})
-		;[httpMonitor(), full, heartbeatMonitor()].forEach((monitor) => {
+		Arr.forEach([httpMonitor(), full, heartbeatMonitor()], (monitor) => {
 			const payload = wirePayload(formFromMonitor(monitor), true)
 			expect(decodeUpdate(payload)._tag).toBe("Success")
 			expect(payload).toMatchObject({
@@ -103,7 +103,7 @@ describe("formFromMonitor and wirePayload", () => {
 			kind: "http",
 			name: "api",
 			url: "https://api.acme.dev/health",
-			assertions: [{ id: 1, type: "latency", op: "under", target: "", value: "9".repeat(20) }],
+			assertions: [{ id: 1, type: "latency", op: "under", target: "", value: Str.repeat(20)("9") }],
 		})
 		expect(formIssues(form)).toEqual(["A response time check needs a whole number of milliseconds."])
 	})

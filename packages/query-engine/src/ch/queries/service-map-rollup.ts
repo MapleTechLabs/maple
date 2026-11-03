@@ -12,7 +12,7 @@
 // test in `service-map.test.ts` asserts the alias set — so rows flow straight
 // into `ingest` with no reshaping.
 
-import { Schema, Effect } from "effect"
+import { Schema, Effect, Array as Arr } from "effect"
 import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
 import { utcAsWireString } from "./utc-bridge"
@@ -53,7 +53,7 @@ export const serviceMapRollupCandidateHours = (
 
 /** Unix-second hour starts returned by an existing-hours probe. */
 export const serviceMapHourSet = (rows: ReadonlyArray<ServiceMapEdgesExistingHour>): ReadonlySet<number> =>
-	new Set(rows.map((row) => row.hourTs))
+	new Set(Arr.map(rows, (row) => row.hourTs))
 
 const hasHour = (hours: ReadonlySet<number>, hourMs: number): boolean => hours.has(Math.floor(hourMs / 1000))
 
@@ -61,7 +61,7 @@ const hasHour = (hours: ReadonlySet<number>, hourMs: number): boolean => hours.h
 export const serviceMapRollupMissingHours = (
 	candidates: ReadonlyArray<number>,
 	sealed: ReadonlySet<number>,
-): ReadonlyArray<number> => candidates.filter((hourMs) => !hasHour(sealed, hourMs))
+): ReadonlyArray<number> => Arr.filter(candidates, (hourMs) => !hasHour(sealed, hourMs))
 
 /** Sealed candidates with no address-resolution rows yet. */
 export const serviceMapResolutionRepairHours = (
@@ -69,7 +69,7 @@ export const serviceMapResolutionRepairHours = (
 	sealed: ReadonlySet<number>,
 	resolved: ReadonlySet<number>,
 ): ReadonlyArray<number> =>
-	candidates.filter((hourMs) => hasHour(sealed, hourMs) && !hasHour(resolved, hourMs))
+	Arr.filter(candidates, (hourMs) => hasHour(sealed, hourMs) && !hasHour(resolved, hourMs))
 
 /** Params for the per-hour edge and resolution rollups of the hour starting at `hourMs`. */
 export const serviceMapRollupHourParams = (orgId: OrgId, hourMs: number): ServiceMapEdgesRollupParams => ({

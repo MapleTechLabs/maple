@@ -2,13 +2,15 @@ import { readFileSync } from "node:fs"
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import { PGlite } from "@electric-sql/pglite"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { bundledMigrations, listBundledMigrations, migrateBundled, readBundledMigrationsSql } from "./migrate"
 
 /** The folder for a migration by its name (the part after the kit's timestamp prefix). */
 const migrationNamed = (name: string) => {
-	const matches = listBundledMigrations().filter((migration) => migration.name.endsWith(`_${name}`))
+	const matches = Arr.filter(listBundledMigrations(), (migration) =>
+		Str.endsWith(`_${name}`)(migration.name),
+	)
 	if (matches.length !== 1)
 		throw new Error(`expected exactly one migration named ${name}, found ${matches.length}`)
 	return matches[0]!
@@ -18,10 +20,13 @@ const readMigrationSql = (name: string): string => readFileSync(migrationNamed(n
 
 const readMigrationSqlBefore = (name: string): string => {
 	const stop = migrationNamed(name).name
-	return listBundledMigrations()
-		.filter((migration) => migration.name < stop)
-		.map((migration) => readFileSync(migration.sqlPath, "utf8"))
-		.join("\n")
+	return Arr.join(
+		Arr.map(
+			Arr.filter(listBundledMigrations(), (migration) => migration.name < stop),
+			(migration) => readFileSync(migration.sqlPath, "utf8"),
+		),
+		"\n",
+	)
 }
 
 describe("migrations", () => {
@@ -36,7 +41,7 @@ describe("migrations", () => {
 			// applies), but the replay order in fresh databases would differ from
 			// production's, which is how a dependency between two migrations hides.
 			expect(
-				migrations[i]!.name.slice(0, 14) >= migrations[i - 1]!.name.slice(0, 14),
+				Str.slice(0, 14)(migrations[i]!.name) >= Str.slice(0, 14)(migrations[i - 1]!.name),
 				`${migrations[i]!.name} must not predate ${migrations[i - 1]!.name}`,
 			).toBe(true)
 		}
@@ -66,7 +71,7 @@ describe("migrations", () => {
 		try {
 			const head = migrationNamed("alert_incident_hold").name
 			const migrations = await Effect.runPromise(bundledMigrations)
-			const upTo = migrations.filter((migration) => migration.name <= head)
+			const upTo = Arr.filter(migrations, (migration) => migration.name <= head)
 			await migrateWith(pg, Migrate.run({ migrations: upTo, strict: true }))
 			expect(await ledgerCount(pg)).toBe(upTo.length)
 
@@ -83,7 +88,7 @@ describe("migrations", () => {
 			const holdColumns = await pg.query<{ column_name: string }>(
 				"SELECT column_name FROM information_schema.columns WHERE table_name = 'alert_incidents' AND column_name IN ('hold_reason', 'held_since') ORDER BY column_name",
 			)
-			expect(holdColumns.rows.map((row) => row.column_name)).toEqual(["held_since", "hold_reason"])
+			expect(Arr.map(holdColumns.rows, (row) => row.column_name)).toEqual(["held_since", "hold_reason"])
 		} finally {
 			await pg.close()
 		}
@@ -103,10 +108,11 @@ describe("migrations", () => {
 			const baseline = migrationNamed("effect_orm_baseline").name
 			expect(recorded).toHaveLength(migrations.findIndex((migration) => migration.name === baseline))
 			const ran = await migrateWith(pg, migrateBundled)
-			expect(ran.map((migration) => migration.name)).toEqual(
-				migrations
-					.filter((migration) => migration.name >= baseline)
-					.map((migration) => migration.name),
+			expect(Arr.map(ran, (migration) => migration.name)).toEqual(
+				Arr.map(
+					Arr.filter(migrations, (migration) => migration.name >= baseline),
+					(migration) => migration.name,
+				),
 			)
 			expect(await ledgerCount(pg)).toBe(migrations.length)
 		} finally {
@@ -179,12 +185,12 @@ describe("bundled migrations", () => {
 		await expect(pg.exec(readBundledMigrationsSql())).resolves.toBeDefined()
 
 		const pubs = await pg.query<{ pubname: string }>("select pubname from pg_publication")
-		expect(pubs.rows.map((r) => r.pubname)).toContain("electric_publication_default")
+		expect(Arr.map(pubs.rows, (r) => r.pubname)).toContain("electric_publication_default")
 
 		const members = await pg.query<{ tablename: string }>(
 			"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
 		)
-		expect(members.rows.map((r) => r.tablename).sort()).toEqual([...SYNCED_TABLES].sort())
+		expect(Arr.map(members.rows, (r) => r.tablename).sort()).toEqual([...SYNCED_TABLES].sort())
 
 		// relreplident 'f' = FULL. Electric refuses to serve a shape over a table that
 		// is not FULL — verified empirically against electricsql/electric:latest, which
@@ -216,7 +222,7 @@ describe("bundled migrations", () => {
 		// The scheduler claim lock (0027) must stay out of the publication: it is
 		// written once per enabled rule per minute, which is precisely the churn that
 		// splitting it off `alert_rules` was meant to keep off the replication stream.
-		expect(members.rows.map((r) => r.tablename)).not.toContain("alert_rule_claims")
+		expect(Arr.map(members.rows, (r) => r.tablename)).not.toContain("alert_rule_claims")
 
 		// 'd' = DEFAULT (primary key only). An unpublished table must not keep paying
 		// FULL's WAL cost — writing the whole old row on every UPDATE/DELETE.
@@ -224,29 +230,31 @@ describe("bundled migrations", () => {
 			`select relname, relreplident from pg_class where relname = any($1)`,
 			[UNSYNCED_TABLES],
 		)
-		expect(pruned.rows.map((r) => r.relname).sort()).toEqual([...UNSYNCED_TABLES].sort())
+		expect(Arr.map(pruned.rows, (r) => r.relname).sort()).toEqual([...UNSYNCED_TABLES].sort())
 		for (const row of pruned.rows) {
 			expect(row.relreplident, `${row.relname} replica identity`).toBe("d")
 		}
 	}, 30_000)
 
 	const publishedTables = async (pg: PGlite) =>
-		(
-			await pg.query<{ tablename: string }>(
-				"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
-			)
-		).rows
-			.map((r) => r.tablename)
-			.sort()
+		Arr.map(
+			(
+				await pg.query<{ tablename: string }>(
+					"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
+				)
+			).rows,
+			(r) => r.tablename,
+		).sort()
 
 	const fullTables = async (pg: PGlite) =>
-		(
-			await pg.query<{ relname: string }>(
-				"select relname from pg_class where relkind = 'r' and relreplident = 'f' and relnamespace = 'public'::regnamespace",
-			)
-		).rows
-			.map((r) => r.relname)
-			.sort()
+		Arr.map(
+			(
+				await pg.query<{ relname: string }>(
+					"select relname from pg_class where relkind = 'r' and relreplident = 'f' and relnamespace = 'public'::regnamespace",
+				)
+			).rows,
+			(r) => r.relname,
+		).sort()
 
 	// The fresh EU database had an empty publication before the first migration ran,
 	// so 0009's CREATE PUBLICATION hit duplicate_object and its handler rolled back the
@@ -637,7 +645,7 @@ describe("bundled migrations", () => {
 		const sources = await pg.query<{ id: string; kind: string; platform: string; name: string }>(
 			"SELECT id, kind, platform, name FROM sources",
 		)
-		const byId = new Map(sources.rows.map((row) => [row.id, row]))
+		const byId = new Map(Arr.map(sources.rows, (row) => [row.id, row]))
 		expect(byId.get("src_default")?.kind).toBe("default")
 		expect(byId.get("src_token")?.kind).toBe("token")
 		expect(byId.has("src_gone")).toBe(false)

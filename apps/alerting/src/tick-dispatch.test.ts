@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING, TICK_PATH } from "./tick-dispatch"
 
 const TOKEN = "secret-token"
@@ -156,7 +156,7 @@ describe("dispatchTick", () => {
 	it.effect("names what killed the placed invocation, from the answer it left", () =>
 		Effect.gen(function* () {
 			const binding = fakeBinding(500, {
-				body: `  Worker exceeded resource limits ${"x".repeat(1_000_000)}`,
+				body: `  Worker exceeded resource limits ${Str.repeat(1_000_000)("x")}`,
 				headers: { "cf-ray": "8f00aa11bb22cc33-IAD" },
 			}).binding
 			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: binding })

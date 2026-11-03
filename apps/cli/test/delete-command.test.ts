@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import {
 	buildDeleteRequest,
 	parseBefore,
@@ -78,7 +78,9 @@ describe("delete request", () => {
 	})
 
 	test("reports an out-of-range value as invalid, not as a missing selector", async () => {
-		expect(await build({ ...flags, service: "a".repeat(513) })).toEqual({ error: "invalid delete flags" })
+		expect(await build({ ...flags, service: Str.repeat(513)("a") })).toEqual({
+			error: "invalid delete flags",
+		})
 		expect(await build({ ...flags, namespace: "pr-42", beforeMs: -1 })).toEqual({
 			error: "invalid delete flags",
 		})
@@ -134,7 +136,7 @@ describe("token goes only to the store's own server", () => {
 
 	test("refuses a server that merely claims the store", async () => {
 		expect(await verify("http://127.0.0.1:9999", discovery)).toContain("is not the live server")
-		expect(await verify("http://127.0.0.1:4318", discovery.replace("4242", "1"))).toContain(
+		expect(await verify("http://127.0.0.1:4318", Str.replace("4242", "1")(discovery))).toContain(
 			"is not the live server",
 		)
 		expect(await verify("http://127.0.0.1:4318", undefined)).toContain("is not the live server")

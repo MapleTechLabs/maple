@@ -21,7 +21,7 @@ import {
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type { DependencyFindingStatus } from "@maple/domain/dependency-scan"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -148,7 +148,7 @@ const NO_PRODUCTION: Production = {
 }
 
 const distinctServices = (services: ReadonlyArray<{ readonly serviceName: string }>): number =>
-	new Set(services.map((service) => service.serviceName)).size
+	new Set(Arr.map(services, (service) => service.serviceName)).size
 
 const decodeSha = Schema.decodeUnknownOption(GitCommitSha)
 

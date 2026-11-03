@@ -5,6 +5,7 @@ import renderer from "../../foldkit-island/server"
 import type { SearchDoc, SearchIndexPayload } from "../../lib/docs-search"
 import { MapleBrowser } from "@maple-dev/browser"
 import { DocsSearch } from "./DocsSearch"
+import { Array as Arr } from "effect"
 
 const doc = (id: string, title: string, group: string, sections: SearchDoc["sections"] = []): SearchDoc => ({
 	id,
@@ -28,7 +29,7 @@ const index: SearchIndexPayload = {
 }
 
 const options = () =>
-	[...document.querySelectorAll('[role="option"]')].map((option) => option.getAttribute("href"))
+	Arr.map([...document.querySelectorAll('[role="option"]')], (option) => option.getAttribute("href"))
 const press = (key: string, init: KeyboardEventInit = {}) =>
 	document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...init }))
 
@@ -40,7 +41,7 @@ vi.stubGlobal("fetch", fetch)
 
 afterEach(() => {
 	// Each island listens on the document until it unmounts.
-	mounted.splice(0).forEach((element) => element.dispatchEvent(new Event("astro:unmount")))
+	Arr.forEach(mounted.splice(0), (element) => element.dispatchEvent(new Event("astro:unmount")))
 	fetch.mockReset()
 	fetch.mockImplementation(async () => Response.json(index))
 	vi.restoreAllMocks()
@@ -65,7 +66,8 @@ describe("DocsSearch island", () => {
 			]),
 		)
 		expect(
-			[...document.querySelectorAll('[data-slot="command-group-label"]')].map(
+			Arr.map(
+				[...document.querySelectorAll('[data-slot="command-group-label"]')],
 				(label) => label.textContent,
 			),
 		).toEqual(["Getting Started", "Explore"])
@@ -79,7 +81,7 @@ describe("DocsSearch island", () => {
 			expect(options()).toEqual(["/docs/explore/traces", "/docs/explore/traces#filter"]),
 		)
 		expect(
-			[...document.querySelectorAll('[role="option"] mark')].map((mark) => mark.textContent),
+			Arr.map([...document.querySelectorAll('[role="option"] mark')], (mark) => mark.textContent),
 		).toContain("Trace")
 
 		input.value = "zzqxvj"

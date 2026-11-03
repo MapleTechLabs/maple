@@ -13,6 +13,7 @@ import {
 	WaitForToastExit,
 } from "./toast"
 import { regions } from "./toast-view"
+import { Array as Arr } from "effect"
 
 /** Toasts: both Notifications regions, the newest toast first, timeouts and the exit transition. */
 const view = (model: Model, h: HtmlBuilder<Message>) =>
@@ -79,7 +80,7 @@ describe("toast scene", () => {
 	test("a hovered region holds the timeout instead of closing the toast", () => {
 		const hovered = update(entered(5000), ToastMessage.EnteredViewport()).model
 		const elapsed = update(hovered, ToastMessage.ElapsedToastTimeout({ toastId: "toasts-0" }))
-		assert(elapsed.model.toasts.map((item) => item.phase)).toEqual(["Open"])
+		assert(Arr.map(elapsed.model.toasts, (item) => item.phase)).toEqual(["Open"])
 		assert(commandNames(elapsed)).toEqual(["WaitToastTimeout"])
 		scene(
 			config,

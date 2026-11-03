@@ -41,6 +41,7 @@ import { button } from "./button"
 import { icon } from "./icon"
 import { scrollArea } from "./scroll-area"
 import { leftSheet } from "./sheet"
+import { String as Str } from "effect"
 
 // The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
 
@@ -308,7 +309,8 @@ export const sidebarMenuSubItem = <Message>(
 
 /** TanStack `<Link>`'s active test (`resolveIsActive`, default options): the path or a descendant. */
 export const isLinkActive = (currentPath: string, href: string): boolean =>
-	currentPath.startsWith(href) && (currentPath.length === href.length || currentPath[href.length] === "/")
+	Str.startsWith(href)(currentPath) &&
+	(currentPath.length === href.length || currentPath[href.length] === "/")
 
 /** What a TanStack `<Link>` adds to its element: `href`, and when active `aria-current`, `data-status` and `active`. */
 export type LinkTarget = Readonly<{ href: string; currentPath: string }>

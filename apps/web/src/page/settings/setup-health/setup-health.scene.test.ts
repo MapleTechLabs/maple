@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest"
 import { healthSegments, orderFindings, resolvedChecks, setupHealthAction } from "./derive"
 import { Message } from "./model"
 import { init, update } from "./update"
+import { Array as Arr } from "effect"
 
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
 
 describe("setup health", () => {
 	test("entry runs the audit; Re-run re-runs it once while the first is in flight", () => {
@@ -17,8 +19,10 @@ describe("setup health", () => {
 			{ status: "pass", severity: "critical" },
 			{ status: "fail", severity: "critical" },
 		] as const
-		expect(orderFindings(checks).map((check) => check.severity)).toEqual(["critical", "info"])
-		expect(resolvedChecks([{ status: "pass" }, { status: "skip" }]).label).toBe("Passing (1) and skipped (1)")
+		expect(Arr.map(orderFindings(checks), (check) => check.severity)).toEqual(["critical", "info"])
+		expect(resolvedChecks([{ status: "pass" }, { status: "skip" }]).label).toBe(
+			"Passing (1) and skipped (1)",
+		)
 	})
 
 	test("the summary bar drops empty segments, and a check names where it is fixed", () => {

@@ -1,4 +1,4 @@
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr } from "effect"
 import { RouteUsageOutput, RouteUsageSort } from "@maple/domain/mcp-outputs"
 import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -76,7 +76,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 				...(params.search === undefined ? undefined : { search: params.search }),
 				sort,
 				truncated: rows.length >= params.limit,
-				routes: rows.map((row) => {
+				routes: Arr.map(rows, (row) => {
 					const { method, route } = CH.splitEndpointName(row.spanName)
 					return {
 						service: row.serviceName,
@@ -130,7 +130,7 @@ export function registerRouteUsageTool(server: McpToolRegistrar) {
 										"First seen",
 										"Last seen",
 									],
-									routes.map((r) => [
+									Arr.map(routes, (r) => [
 										r.service,
 										r.method,
 										truncate(r.route, 80),

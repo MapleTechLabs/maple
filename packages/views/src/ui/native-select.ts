@@ -6,6 +6,7 @@ import {
 } from "@maple/ui/styles/ui/native-select"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
+import { Array as Arr } from "effect"
 
 export type NativeSelectOption = Readonly<{ value: string; label: string }>
 export type NativeSelectEntry =
@@ -63,7 +64,7 @@ export const nativeSelect = <Message>(
 					h.DataAttribute("slot", "native-select"),
 					...(options.isDisabled === true ? [h.Disabled(true)] : []),
 				],
-				entries.map((entry) =>
+				Arr.map(entries, (entry) =>
 					entry._tag === "Option"
 						? optionView(h, entry.option, options.defaultValue)
 						: h.optgroup(
@@ -72,7 +73,9 @@ export const nativeSelect = <Message>(
 									h.DataAttribute("slot", "native-select-optgroup"),
 									h.LabelAttr(entry.label),
 								],
-								entry.options.map((option) => optionView(h, option, options.defaultValue)),
+								Arr.map(entry.options, (option) =>
+									optionView(h, option, options.defaultValue),
+								),
 							),
 				),
 			),

@@ -3,6 +3,7 @@ import { createQueryDraft } from "@maple/query-engine/query-builder"
 import { makeQueryDataSource, makeRouteDataSource } from "@maple/widgets/dashboard"
 import type { EditorState, ListColumn, ListDataSource } from "./editor-state"
 import { buildListLogsParams } from "./list-logs-params"
+import { Array as Arr, String as Str } from "effect"
 
 // The list widget's halves: configured by `ListConfigPanel`, not the
 // query builder, so it owns its whole display.
@@ -13,7 +14,7 @@ type DataSource = Widget["dataSource"]
 
 /** `parsePositiveNumber`. */
 export const parsePositiveNumber = (raw: string): number | undefined => {
-	const parsed = Number.parseInt(raw.trim(), 10)
+	const parsed = Number.parseInt(Str.trim(raw), 10)
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
@@ -56,7 +57,7 @@ export const listInitialState = (
 			listDataSource: "traces",
 			listWhereClause: "",
 			listLimit: "",
-			listColumns: DEFAULT_LIST_COLUMNS.traces.map(copyColumn),
+			listColumns: Arr.map(DEFAULT_LIST_COLUMNS.traces, copyColumn),
 			listRootOnly: true,
 		}
 	const source = toListDataSource(widget.display.listDataSource)
@@ -64,7 +65,7 @@ export const listInitialState = (
 		listDataSource: source,
 		listWhereClause: widget.display.listWhereClause ?? "",
 		listLimit: typeof widget.display.listLimit === "number" ? String(widget.display.listLimit) : "",
-		listColumns: (widget.display.columns ?? DEFAULT_LIST_COLUMNS[source]).map(copyColumn),
+		listColumns: Arr.map(widget.display.columns ?? DEFAULT_LIST_COLUMNS[source], copyColumn),
 		listRootOnly: widget.display.listRootOnly ?? true,
 	}
 }
@@ -76,11 +77,11 @@ export const listDataSourceOf = (state: EditorState): DataSource => {
 		return makeRouteDataSource("list_logs", buildListLogsParams(state.listWhereClause, limit).params)
 	const effectiveWhereClause =
 		state.listDataSource === "traces" && state.listRootOnly
-			? state.listWhereClause.trim()
+			? Str.trim(state.listWhereClause)
 				? `root_only = true AND ${state.listWhereClause}`
 				: "root_only = true"
 			: state.listWhereClause
-	const columnFields = state.listColumns.flatMap((column) => (column.field ? [column.field] : []))
+	const columnFields = Arr.flatMap(state.listColumns, (column) => (column.field ? [column.field] : []))
 	return makeQueryDataSource({
 		resultShape: "list",
 		queries: [
@@ -100,11 +101,11 @@ export const listDataSourceOf = (state: EditorState): DataSource => {
 
 /** `listWidgetType.buildDisplay`: built from scratch, so nothing of the previous type survives. */
 export const listDisplayOf = (state: EditorState): Display => ({
-	title: state.title.trim() || undefined,
-	description: state.description.trim() || undefined,
+	title: Str.trim(state.title) || undefined,
+	description: Str.trim(state.description) || undefined,
 	listDataSource: state.listDataSource,
 	listWhereClause: state.listWhereClause,
 	listLimit: parsePositiveNumber(state.listLimit) ?? DEFAULT_LIST_LIMIT,
 	listRootOnly: state.listRootOnly,
-	columns: state.listColumns.length > 0 ? state.listColumns.map(copyColumn) : undefined,
+	columns: state.listColumns.length > 0 ? Arr.map(state.listColumns, copyColumn) : undefined,
 })

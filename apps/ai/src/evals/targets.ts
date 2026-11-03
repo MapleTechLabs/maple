@@ -6,7 +6,7 @@
  * dispatcher would make of it. Expectations list every acceptable answer (BFCL's per-argument
  * value lists), and a call anywhere in the trajectory can satisfy them, not only the first.
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { readToolCall } from "../mcp/tools/registry"
 
 const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
@@ -75,10 +75,10 @@ export interface CheckResult {
 }
 
 const norm = (value: Scalar): string =>
-	typeof value === "string" ? value.trim().toLowerCase() : String(value)
+	typeof value === "string" ? Str.toLowerCase(Str.trim(value)) : String(value)
 
 const scalarEquals = (expected: Scalar, actual: unknown): boolean => {
-	if (Array.isArray(actual)) return actual.length === 1 && scalarEquals(expected, actual[0])
+	if (Arr.isArray(actual)) return actual.length === 1 && scalarEquals(expected, actual[0])
 	if (typeof expected === "number") return actual !== "" && Number(actual) === expected
 	if (typeof expected === "boolean") return actual === expected || actual === String(expected)
 	return typeof actual === "string" && norm(actual) === norm(expected)
@@ -90,19 +90,23 @@ const argMatches = (expectation: ArgExpectation, actual: unknown): boolean => {
 	if ("absent" in expectation) return !present
 	if ("present" in expectation) return present
 	if ("oneOf" in expectation)
-		return present && expectation.oneOf.some((value) => scalarEquals(value, actual))
+		return present && Arr.some(expectation.oneOf, (value) => scalarEquals(value, actual))
 	if ("orDefault" in expectation) return !present || scalarEquals(expectation.orDefault, actual)
-	return typeof actual === "string" && actual.toLowerCase().includes(expectation.includes.toLowerCase())
+	return (
+		typeof actual === "string" &&
+		Str.includes(Str.toLowerCase(expectation.includes))(Str.toLowerCase(actual))
+	)
 }
 
 const callMatches = (expectation: CallExpectation, observed: ObservedCall): boolean =>
 	observed.tool === expectation.tool &&
-	Object.entries(expectation.args ?? {}).every(([key, value]) => argMatches(value, observed.args[key]))
+	Arr.every(Rec.toEntries(expectation.args ?? {}), ([key, value]) => argMatches(value, observed.args[key]))
 
 const describeExpectation = (expectation: CallExpectation): string =>
-	`${expectation.tool}(${Object.entries(expectation.args ?? {})
-		.map(([key, value]) => `${key}=${showJson(value)}`)
-		.join(", ")})`
+	`${expectation.tool}(${Arr.join(
+		Arr.map(Rec.toEntries(expectation.args ?? {}), ([key, value]) => `${key}=${showJson(value)}`),
+		", ",
+	)})`
 
 export const describeCall = (observed: ObservedCall): string =>
 	`${observed.tool}(${showJson(observed.args)})${observed.invalid ? " [invalid]" : ""}${observed.isError ? " [error]" : ""}`
@@ -114,24 +118,27 @@ export const runCheck = (
 ): CheckResult => {
 	switch (check.kind) {
 		case "calls": {
-			const pass = observed.some((made) =>
-				check.anyOf.some((expectation) => callMatches(expectation, made)),
+			const pass = Arr.some(observed, (made) =>
+				Arr.some(check.anyOf, (expectation) => callMatches(expectation, made)),
 			)
 			return {
 				pass,
 				detail: pass
-					? `matched one of ${check.anyOf.map(describeExpectation).join(" | ")}`
-					: `wanted one of ${check.anyOf.map(describeExpectation).join(" | ")}`,
+					? `matched one of ${Arr.join(Arr.map(check.anyOf, describeExpectation), " | ")}`
+					: `wanted one of ${Arr.join(Arr.map(check.anyOf, describeExpectation), " | ")}`,
 			}
 		}
 		case "never": {
-			const offending = observed.filter((made) => check.tools.includes(made.tool))
+			const offending = Arr.filter(observed, (made) => check.tools.includes(made.tool))
 			return {
 				pass: offending.length === 0,
 				detail:
 					offending.length === 0
-						? `avoided ${check.tools.join(", ")}`
-						: `called ${offending.map((made) => made.tool).join(", ")}, which it must not`,
+						? `avoided ${Arr.join(check.tools, ", ")}`
+						: `called ${Arr.join(
+								Arr.map(offending, (made) => made.tool),
+								", ",
+							)}, which it must not`,
 			}
 		}
 		case "no-tools":
@@ -141,8 +148,8 @@ export const runCheck = (
 					observed.length === 0 ? "answered without tools" : `called ${observed.length} tool(s)`,
 			}
 		case "answer-mentions": {
-			const lower = answer.toLowerCase()
-			const hit = check.anyOf.find((term) => lower.includes(term.toLowerCase()))
+			const lower = Str.toLowerCase(answer)
+			const hit = check.anyOf.find((term) => Str.includes(Str.toLowerCase(term))(lower))
 			return {
 				pass: hit !== undefined,
 				detail:
@@ -167,13 +174,16 @@ export const grade = (
 	observed: ReadonlyArray<ObservedCall>,
 	answer: string,
 ): Grade => {
-	const results = checks.map((check) => runCheck(check, observed, answer))
-	const passed = results.filter((result) => result.pass).length
-	const made = observed.length === 0 ? "no calls" : observed.map(describeCall).join("; ")
+	const results = Arr.map(checks, (check) => runCheck(check, observed, answer))
+	const passed = Arr.filter(results, (result) => result.pass).length
+	const made = observed.length === 0 ? "no calls" : Arr.join(Arr.map(observed, describeCall), "; ")
 	return {
 		pass: passed === results.length,
 		score: results.length === 0 ? 1 : passed / results.length,
 		checks: results,
-		explanation: `${results.map((result) => `${result.pass ? "ok" : "FAIL"}: ${result.detail}`).join("\n")}\ncalls: ${made}`,
+		explanation: `${Arr.join(
+			Arr.map(results, (result) => `${result.pass ? "ok" : "FAIL"}: ${result.detail}`),
+			"\n",
+		)}\ncalls: ${made}`,
 	}
 }

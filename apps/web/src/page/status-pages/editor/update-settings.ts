@@ -4,7 +4,7 @@ import type {
 	V2StatusPageBreakGlassToken,
 	V2StatusPagePublishResult,
 } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -57,7 +57,7 @@ export const changeSetting = (model: Model, field: SettingsTextField, value: str
 			})
 		: withSettings(model, (form) => ({
 				...form,
-				[field]: field === "slug" ? value.trim().toLowerCase() : value,
+				[field]: field === "slug" ? Str.toLowerCase(Str.trim(value)) : value,
 			}))
 
 export const changeTheme = (model: Model, change: Partial<ThemeForm>): Return =>

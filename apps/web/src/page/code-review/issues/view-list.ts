@@ -17,13 +17,14 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `FindingRow` under one `RelativeTime` tooltip.
 
 type H = HtmlBuilder<Message>
 
 /** Last path segment: kept visible when a long path middle-truncates. */
-const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1)
+const basename = (path: string) => Str.slice(path.lastIndexOf("/") + 1)(path)
 
 const timeTriggerId = (finding: CodeReviewFinding) => `code-review-finding-time-${finding.id}`
 
@@ -90,7 +91,7 @@ export const findingsList = (
 		view: Tooltip.view,
 		toParentMessage: (message: Tooltip.Message) => Message.GotTimeTooltipMessage({ message }),
 		viewInputs: {
-			triggerIds: findings.map(timeTriggerId),
+			triggerIds: Arr.map(findings, timeTriggerId),
 			toContent: (triggerId) => {
 				const finding = findings.find((candidate) => timeTriggerId(candidate) === triggerId)
 				return finding === undefined
@@ -104,7 +105,7 @@ export const findingsList = (
 						panel(h, {}, [
 							h.ul(
 								[h.Class("divide-y")],
-								findings.map((finding) =>
+								Arr.map(findings, (finding) =>
 									findingRow(h, finding, {
 										selected: model.search.review,
 										nowMs: model.frame.nowMs,

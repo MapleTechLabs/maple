@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 // Synchronous SHA-256 and HMAC-SHA256. WebCrypto is async-only, and the rule engine must run
 // inline in the browser preview, the API worker and local mode.
 
@@ -79,6 +80,9 @@ export const hmacSha256 = (key: Uint8Array, message: Uint8Array): Uint8Array => 
 }
 
 export const toHex = (bytes: Uint8Array): string =>
-	Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+	Arr.join(
+		Array.from(bytes, (byte) => Str.padStart(2, "0")(byte.toString(16))),
+		"",
+	)
 
 export const utf8 = (text: string): Uint8Array => encoder.encode(text)

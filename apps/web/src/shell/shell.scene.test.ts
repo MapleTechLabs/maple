@@ -1,6 +1,6 @@
 import * as Animation from "@foldkit/ui/animation"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import {
 	Command,
@@ -211,7 +211,7 @@ describe("sidebar collapse", () => {
 	test("below md a page's `useInfraSurfaces` sends one combined read once, not the dashboards", () => {
 		const mobile = enter("org_parity")(init({ ...flags, isMobile: true })).model
 		const asked = update(mobile, Message.RequestedInfraSurfaces())
-		expectVitest((asked.commands ?? []).map((command) => command.name)).toEqual(["LoadInfraSurfaces"])
+		expectVitest(Arr.map(asked.commands ?? [], (command) => command.name)).toEqual(["LoadInfraSurfaces"])
 		expectVitest(asked.model.hasRequestedSidebarData).toBe(false)
 		expectVitest(update(asked.model, Message.RequestedInfraSurfaces()).commands ?? []).toEqual([])
 	})
@@ -219,9 +219,11 @@ describe("sidebar collapse", () => {
 	test("entering an org below md defers the sidebar's reads; on desktop they go at once", () => {
 		const mobile = enter("org_parity")(init({ ...flags, isMobile: true }))
 		const desktop = enter("org_parity")(init(flags))
-		expectVitest((mobile.commands ?? []).map((command) => command.name)).toEqual([])
+		expectVitest(Arr.map(mobile.commands ?? [], (command) => command.name)).toEqual([])
 		expectVitest(mobile.model.hasRequestedSidebarData).toBe(false)
-		expectVitest((desktop.commands ?? []).map((command) => command.name)).toContain("LoadInfraSurfaces")
+		expectVitest(Arr.map(desktop.commands ?? [], (command) => command.name)).toContain(
+			"LoadInfraSurfaces",
+		)
 		expectVitest(desktop.model.hasRequestedSidebarData).toBe(true)
 	})
 })
@@ -537,7 +539,7 @@ describe("infrastructure section", () => {
 	test("a settled answer is remembered only when it differs from the remembered set", () => {
 		const first = answered(signedIn(), true)
 		expectVitest(first.model.rememberedSurfaces).toEqual({ org_parity: ["cloudflare", "hosts"] })
-		expectVitest(first.commands.map(({ name }) => name)).toEqual(["SaveInfraSurfaces"])
+		expectVitest(Arr.map(first.commands, ({ name }) => name)).toEqual(["SaveInfraSurfaces"])
 		const same = answered(signedIn({ rememberedSurfaces: { org_parity: ["cloudflare", "hosts"] } }), true)
 		expectVitest(same.commands).toEqual([])
 		const dropped = answered(

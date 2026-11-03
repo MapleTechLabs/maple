@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
@@ -418,7 +418,7 @@ describe("sumDailySpend", () => {
 			series([day("2026-10-01", 0.5), day("2026-10-02", 4, 1)]),
 		])
 		assert.deepStrictEqual(
-			total.days.map((d) => [d.date, d.logsGB, d.tracesGB, d.browserSessions, d.productEvents]),
+			Arr.map(total.days, (d) => [d.date, d.logsGB, d.tracesGB, d.browserSessions, d.productEvents]),
 			[
 				["2026-10-01", 1.5, 2, 4, 3],
 				["2026-10-02", 6, 2, 4, 1],

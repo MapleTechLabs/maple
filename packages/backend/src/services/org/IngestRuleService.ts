@@ -20,7 +20,7 @@ import {
 	OrgIngestRules,
 	type OrgIngestRuleRow,
 } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { MapleDb } from "@maple/db/client"
@@ -80,7 +80,7 @@ const fieldProblems = (fields: {
 	readonly position?: number
 }): ReadonlyArray<string> => [
 	...(fields.name !== undefined &&
-	(fields.name.trim().length === 0 || fields.name.trim().length > INGEST_RULE_LIMITS.nameLength)
+	(Str.trim(fields.name).length === 0 || Str.trim(fields.name).length > INGEST_RULE_LIMITS.nameLength)
 		? [`the name must be 1 to ${INGEST_RULE_LIMITS.nameLength} characters`]
 		: []),
 	...(fields.position !== undefined &&
@@ -98,7 +98,7 @@ const validateFields = Effect.fnUntraced(function* (fields: {
 	const problems = fieldProblems(fields)
 	if (problems.length > 0) {
 		return yield* new IngestRuleValidationError({
-			message: `Invalid ingest rule: ${problems.join("; ")}`,
+			message: `Invalid ingest rule: ${Arr.join(problems, "; ")}`,
 			problems,
 		})
 	}
@@ -112,14 +112,17 @@ const validateSpec = Effect.fnUntraced(function* (spec: IngestRuleSpec) {
 	const problems = ingestRuleProblems(spec)
 	if (problems.length > 0) {
 		return yield* new IngestRuleValidationError({
-			message: `Invalid ingest rule: ${problems.join("; ")}`,
+			message: `Invalid ingest rule: ${Arr.join(problems, "; ")}`,
 			problems,
 		})
 	}
 })
 
 const randomSalt = () =>
-	Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("")
+	Arr.join(
+		Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => Str.padStart(2, "0")(b.toString(16))),
+		"",
+	)
 
 export class IngestRuleService extends Context.Service<IngestRuleService>()(
 	"@maple/backend/services/IngestRuleService",

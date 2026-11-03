@@ -6,7 +6,7 @@ import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gap
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
@@ -25,14 +25,16 @@ interface TrafficPoint {
 }
 
 /** The descriptor a spec names by key; an unknown key reads as the strip's first metric. */
-const metricOf = (key: string) => ANALYTICS_METRICS.find((metric) => metric.key === key) ?? findMetric("visitors")
+const metricOf = (key: string) =>
+	ANALYTICS_METRICS.find((metric) => metric.key === key) ?? findMetric("visitors")
 
-export const buildAnalyticsTraffic = (
-	spec: TrafficSpec,
-): BuiltChart<TrafficPoint, ChartValue, number> => {
-	const data: ReadonlyArray<TrafficPoint> = spec.points.map((point) => ({ ...point, date: bucketDate(point.bucket) }))
+export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoint, ChartValue, number> => {
+	const data: ReadonlyArray<TrafficPoint> = Arr.map(spec.points, (point) => ({
+		...point,
+		date: bucketDate(point.bucket),
+	}))
 	const axis = makeBucketAxis(
-		data.map((point) => point.bucket),
+		Arr.map(data, (point) => point.bucket),
 		spec.timeZone,
 	)
 	const chrome = { border: spec.colors["border"] ?? "", background: spec.colors["background"] ?? "" }
@@ -46,14 +48,20 @@ export const buildAnalyticsTraffic = (
 	const tickMetric = metricOf(spec.tickMetric)
 	const focus = tooltipFocusCapture()
 	const definition = defineChart({
-		gradients: spec.series.map((entry) =>
+		gradients: Arr.map(spec.series, (entry) =>
 			verticalGradient(`${spec.gradientPrefix}-${entry.key}`, colorOf(entry.key)),
 		),
 		marks: [
-			...spec.series.flatMap((entry) => {
+			...Arr.flatMap(spec.series, (entry) => {
 				const { runs, lone, silences } = seriesRuns(data, valueOf(entry.key), at)
 				return [
-					silenceBridges(`${entry.key}-silence`, silences, at, valueOf(entry.key), colorOf(entry.key)),
+					silenceBridges(
+						`${entry.key}-silence`,
+						silences,
+						at,
+						valueOf(entry.key),
+						colorOf(entry.key),
+					),
 					...runs.flatMap((run, index) => [
 						areaY(run, {
 							id: `${entry.key}-band:${index}`,
@@ -77,7 +85,9 @@ export const buildAnalyticsTraffic = (
 					dot(lone, { x: at, y: valueOf(entry.key), r: 2.5, fill: colorOf(entry.key) }),
 				]
 			}),
-			...spec.series.map((entry) => focusDot(data, at, valueOf(entry.key), colorOf(entry.key), chrome)),
+			...Arr.map(spec.series, (entry) =>
+				focusDot(data, at, valueOf(entry.key), colorOf(entry.key), chrome),
+			),
 			focusCrosshair(chrome),
 		],
 		scales: {
@@ -103,22 +113,31 @@ export const buildAnalyticsTraffic = (
 	const tooltipOf = (points: ReadonlyArray<ChartPoint<TrafficPoint, ChartValue, number>>) =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
 			const highlighted = focus.highlight(
-				spec.series.map((entry): readonly [string, number | null] => [
+				Arr.map(spec.series, (entry): readonly [string, number | null] => [
 					metricOf(entry.metric).label,
 					valueOf(entry.key)(datum),
 				]),
 			)
 			const base = {
 				heading: axis.heading(datum.bucket),
-				rows: spec.series.flatMap((entry) => {
+				rows: Arr.flatMap(spec.series, (entry) => {
 					const value = valueOf(entry.key)(datum)
 					const metric = metricOf(entry.metric)
 					return value === null
 						? []
-						: [{ label: metric.label, color: colorOf(entry.key), dashed: false, value: metric.format(value) }]
+						: [
+								{
+									label: metric.label,
+									color: colorOf(entry.key),
+									dashed: false,
+									value: metric.format(value),
+								},
+							]
 				}),
 			}
-			return highlighted === undefined ? ChartTooltip.Bucket(base) : ChartTooltip.Bucket({ ...base, highlighted })
+			return highlighted === undefined
+				? ChartTooltip.Bucket(base)
+				: ChartTooltip.Bucket({ ...base, highlighted })
 		})
 	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf }
 }

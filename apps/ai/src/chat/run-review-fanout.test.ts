@@ -9,7 +9,7 @@
 import { OrgId, UserId } from "@maple/domain"
 import type { SubmitPrReviewRequest } from "@maple/domain/http"
 import { prReviewSessionId } from "@maple/domain/chat-session"
-import { Effect, Exit, Layer, Schema, Stream } from "effect"
+import { Effect, Exit, Layer, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
@@ -137,7 +137,7 @@ describe("runChatTurn review_files children", () => {
 		assert.notStrictEqual(worker?.attributes.get("gen_ai.conversation.id"), REVIEW_SESSION)
 		assert.strictEqual(worker?.attributes.get("maple_ai.session.id"), REVIEW_SESSION)
 		assert.strictEqual(worker?.attributes.get("maple_ai.turn.id"), "turn-1")
-		for (const span of spans.filter((span) => span.name.startsWith("execute_tool "))) {
+		for (const span of Arr.filter(spans, (span) => Str.startsWith("execute_tool ")(span.name))) {
 			assert.strictEqual(span.attributes.get("maple_ai.session.id"), REVIEW_SESSION, span.name)
 		}
 	})
@@ -197,7 +197,9 @@ describe("runChatTurn review_files children", () => {
 		)
 
 		assert.deepStrictEqual(
-			filed.map((request) => request.report.findings.map((finding) => [finding.path, finding.line])),
+			Arr.map(filed, (request) =>
+				Arr.map(request.report.findings, (finding) => [finding.path, finding.line]),
+			),
 			[[["src/a.ts", 3]]],
 		)
 	})

@@ -5,6 +5,7 @@ import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The tool scope row: what the page is about, one click out of each.
 
@@ -45,7 +46,7 @@ const chipButton = <M>(h: HtmlBuilder<M>, chip: ScopeChip, onRemove: M): Html =>
 
 export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html => {
 	// The leading number is the answer; the rest of the sentence is its unit.
-	const [count, ...rest] = config.summary.split(" ")
+	const [count, ...rest] = Str.split(" ")(config.summary)
 	return h.div(
 		[
 			h.Class(
@@ -58,7 +59,7 @@ export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html 
 				...(config.chips.length === 0
 					? [typography(h, { size: "2xs", tone: "subtle" }, ["all tools · all models"])]
 					: [
-							...config.chips.map((chip) => chipButton(h, chip, config.onRemove(chip))),
+							...Arr.map(config.chips, (chip) => chipButton(h, chip, config.onRemove(chip))),
 							button(
 								h,
 								{
@@ -75,7 +76,7 @@ export const scopeRow = <M>(h: HtmlBuilder<M>, config: ScopeRowConfig<M>): Html 
 				[h.Class("flex items-center gap-1.5 text-2xs tabular-nums")],
 				[
 					h.span([h.Class("text-foreground")], [count ?? ""]),
-					h.span([h.Class("text-muted-foreground")], [rest.join(" ")]),
+					h.span([h.Class("text-muted-foreground")], [Arr.join(rest, " ")]),
 				],
 			),
 		],

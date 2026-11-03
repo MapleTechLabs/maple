@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url"
 import { TEMPLATES, type Template } from "../templates"
 import { documentShell, renderUnit } from "../templates/render"
 import { inlineTailwind } from "./inline-tailwind"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -55,8 +56,8 @@ async function renderPage(template: Template): Promise<string> {
 function assertExactLineHeights(label: string, html: string): void {
 	for (const match of html.matchAll(/line-height:\s*([\d.]+)\s*[;"]/g)) {
 		const value = match[1]
-		if (value === undefined || value.includes("px")) continue
-		const decimals = value.split(".")[1]?.length ?? 0
+		if (value === undefined || Str.includes("px")(value)) continue
+		const decimals = Str.split(".")(value)[1]?.length ?? 0
 		if (decimals > 3) {
 			throw new Error(
 				`${label}: line-height "${value}" is a truncated ratio — pin it to px in inline-tailwind.ts`,
@@ -67,22 +68,23 @@ function assertExactLineHeights(label: string, html: string): void {
 
 function assertTightJoins(label: string, html: string): void {
 	for (const join of TIGHT_JOINS) {
-		if (!html.includes(join)) continue
-		const loosened = join.replace(/(\]\]|>)(\[\[|[.×])/, "$1 $2")
-		if (html.includes(loosened)) {
+		if (!Str.includes(join)(html)) continue
+		const loosened = Str.replace(/(\]\]|>)(\[\[|[.×])/, "$1 $2")(join)
+		if (Str.includes(loosened)(html)) {
 			throw new Error(`${label}: whitespace crept into the tight join "${join}"`)
 		}
 	}
 }
 
 function asTemplateLiteral(value: string): string {
-	return `\`${value.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${")}\``
+	return `\`${Str.replace(/\$\{/g, "\\${")(Str.replace(/`/g, "\\`")(Str.replace(/\\/g, "\\\\")(value)))}\``
 }
 
 function emitModule(output: string, page: string, fragments: ReadonlyMap<string, string>): string {
-	const entries = [...fragments.keys()]
-		.sort()
-		.map((name) => `\t${name}: ${asTemplateLiteral(fragments.get(name) ?? "")},`)
+	const entries = Arr.map(
+		[...fragments.keys()].sort(),
+		(name) => `\t${name}: ${asTemplateLiteral(fragments.get(name) ?? "")},`,
+	)
 	return `// GENERATED FILE — DO NOT EDIT.
 //
 // Compiled from packages/email/templates/ into ${output}.
@@ -93,7 +95,7 @@ export const PAGE = ${asTemplateLiteral(page)}
 
 /** Repeated, optional and nested regions spliced into the page's slots. */
 export const FRAGMENTS = {
-${entries.join("\n")}
+${Arr.join(entries, "\n")}
 } as const
 
 export type FragmentName = keyof typeof FRAGMENTS
@@ -106,7 +108,7 @@ async function buildTemplate(template: Template): Promise<{ path: string; conten
 	assertExactLineHeights(template.output, page)
 
 	const fragments = new Map<string, string>()
-	for (const [name, unit] of Object.entries(template.fragments)) {
+	for (const [name, unit] of Rec.toEntries(template.fragments)) {
 		const html = await inlineTailwind(await renderUnit(unit))
 		assertTightJoins(`${template.output}#${name}`, html)
 		assertExactLineHeights(`${template.output}#${name}`, html)

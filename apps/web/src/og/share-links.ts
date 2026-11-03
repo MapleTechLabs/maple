@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * The pure half of share social previews: which URLs are involved, and what
  * tags a link's metadata turns into.
@@ -28,28 +29,33 @@ export interface ShareOgMeta {
  * that is deliberately not a credential to an endpoint that expects one.
  */
 export const shareTokenFromPath = (pathname: string): string | undefined => {
-	if (!pathname.startsWith(SHARE_PATH_PREFIX) || pathname.startsWith(OG_IMAGE_PREFIX)) return undefined
-	const token = decodeURIComponent(pathname.slice(SHARE_PATH_PREFIX.length)).split("/")[0]
+	if (!Str.startsWith(SHARE_PATH_PREFIX)(pathname) || Str.startsWith(OG_IMAGE_PREFIX)(pathname))
+		return undefined
+	const token = Str.split("/")(decodeURIComponent(Str.slice(SHARE_PATH_PREFIX.length)(pathname)))[0]
 	return token === undefined || token.length === 0 ? undefined : token
 }
 
 /** The image id in a `/share/og/<ogId>.png` path, or `undefined`. */
 export const ogIdFromPath = (pathname: string): string | undefined => {
-	if (!pathname.startsWith(OG_IMAGE_PREFIX) || !pathname.endsWith(OG_IMAGE_SUFFIX)) return undefined
+	if (!Str.startsWith(OG_IMAGE_PREFIX)(pathname) || !Str.endsWith(OG_IMAGE_SUFFIX)(pathname))
+		return undefined
 	let ogId: string
 	try {
 		ogId = decodeURIComponent(
-			pathname.slice(OG_IMAGE_PREFIX.length, pathname.length - OG_IMAGE_SUFFIX.length),
+			Str.slice(OG_IMAGE_PREFIX.length, pathname.length - OG_IMAGE_SUFFIX.length)(pathname),
 		)
 	} catch {
 		// A lone `%` is a `URIError`; routed worker-first, letting it out is a 500 instead of a 404.
 		return undefined
 	}
-	return ogId.length === 0 || ogId.includes("/") ? undefined : ogId
+	return ogId.length === 0 || Str.includes("/")(ogId) ? undefined : ogId
 }
 
 export const escapeAttribute = (value: string): string =>
-	value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+	Str.replaceAll(
+		">",
+		"&gt;",
+	)(Str.replaceAll("<", "&lt;")(Str.replaceAll('"', "&quot;")(Str.replaceAll("&", "&amp;")(value))))
 
 /**
  * New `content` values, keyed by the `property`/`name` of the tag they replace.

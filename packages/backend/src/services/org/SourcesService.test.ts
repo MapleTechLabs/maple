@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/domain/http"
 import { SourceId } from "@maple/domain/primitives"
@@ -71,7 +71,7 @@ const insertSource = (
 	)
 
 const ownSources = (keys: SourcesService["Service"], orgId: OrgId) =>
-	keys.list(orgId).pipe(Effect.map((sources) => sources.filter((source) => source.kind !== "default")))
+	keys.list(orgId).pipe(Effect.map((sources) => Arr.filter(sources, (source) => source.kind !== "default")))
 
 describe("SourcesService", () => {
 	it.effect("creates a source whose token is stored only as its lookup hash", () => {
@@ -91,8 +91,8 @@ describe("SourcesService", () => {
 				}),
 			)
 
-			assert.isTrue(created.secret.startsWith("maple_src_"))
-			assert.isTrue(created.secret.startsWith(created.source.keyPrefix ?? "-"))
+			assert.isTrue(Str.startsWith("maple_src_")(created.secret))
+			assert.isTrue(Str.startsWith(created.source.keyPrefix ?? "-")(created.secret))
 			assert.strictEqual(created.source.name, "Checkout staging")
 			assert.deepStrictEqual(created.source.allowedSignals, ["traces", "logs"])
 			assert.deepStrictEqual(created.source.resourceAttributes, [
@@ -108,7 +108,7 @@ describe("SourcesService", () => {
 
 			const listed = yield* keys.list(orgA)
 			assert.deepStrictEqual(
-				listed.map((source) => source.kind),
+				Arr.map(listed, (source) => source.kind),
 				["default", "token"],
 			)
 			assert.deepStrictEqual(listed[1], created.source)
@@ -168,7 +168,7 @@ describe("SourcesService", () => {
 				}),
 			)
 			const description = yield* attempt(
-				new CreateSourceRequest({ platform: "nodejs", name: "a", description: "x".repeat(501) }),
+				new CreateSourceRequest({ platform: "nodejs", name: "a", description: Str.repeat(501)("x") }),
 			)
 
 			assert.deepStrictEqual(
@@ -256,7 +256,7 @@ describe("SourcesService", () => {
 			])
 
 			assert.deepStrictEqual(
-				errors.map((error) => error._tag),
+				Arr.map(errors, (error) => error._tag),
 				Array(6).fill("@maple/http/errors/SourceNotFoundError"),
 			)
 			assert.deepStrictEqual(yield* ownSources(keys, orgB), [])
@@ -462,7 +462,7 @@ describe("SourcesService", () => {
 				keys.delete(orgA, first.id).pipe(Effect.flip),
 			])
 			assert.deepStrictEqual(
-				refused.map((error) => error._tag),
+				Arr.map(refused, (error) => error._tag),
 				Array(4).fill("@maple/http/errors/SourceValidationError"),
 			)
 			assert.strictEqual((yield* keys.list(orgA)).length, 1)
@@ -494,7 +494,7 @@ describe("SourcesService", () => {
 				testDb.pglite.query<{ id: string }>("SELECT id FROM scrape_targets"),
 			)
 			assert.deepStrictEqual(
-				rows.rows.map((row) => row.id),
+				Arr.map(rows.rows, (row) => row.id),
 				[target],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -532,9 +532,12 @@ describe("SourcesService", () => {
 
 			const first = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
-				first
-					.map((source) => [source.name, source.platform, source.health.status, source.keyPrefix])
-					.sort(),
+				Arr.map(first, (source) => [
+					source.name,
+					source.platform,
+					source.health.status,
+					source.keyPrefix,
+				]).sort(),
 				[
 					["broken", "prometheus", "failing", null],
 					["node", "prometheus", "healthy", null],
@@ -573,7 +576,7 @@ describe("SourcesService", () => {
 				testDb.pglite.query<{ id: string }>("SELECT id FROM scrape_targets"),
 			)
 			assert.deepStrictEqual(
-				targets.rows.map((row) => row.id),
+				Arr.map(targets.rows, (row) => row.id),
 				["9d1e2f3a-0000-4000-8000-000000000001"],
 			)
 			assert.deepStrictEqual(
@@ -643,7 +646,7 @@ describe("SourcesService", () => {
 						[
 							id,
 							orgA,
-							id.slice(-12),
+							Str.slice(-12)(id),
 							iso(connection.verifiedAt),
 							connection.stream
 								? JSON.stringify({ regions: ["us-east-1"], namespaces: ["AWS/ECS"] })
@@ -696,7 +699,11 @@ describe("SourcesService", () => {
 
 			const sources = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
-				sources.map((source) => [source.name, source.health.status, source.health.problem]).sort(),
+				Arr.map(sources, (source) => [
+					source.name,
+					source.health.status,
+					source.health.problem,
+				]).sort(),
 				[
 					["just deployed", "pending", null],
 					[
@@ -744,7 +751,7 @@ describe("SourcesService", () => {
 
 			const sources = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
-				sources.map((source) => [source.name, source.platform, source.health.status]).sort(),
+				Arr.map(sources, (source) => [source.name, source.platform, source.health.status]).sort(),
 				[
 					["GitHub acme", "github", "pending"],
 					["GitHub globex", "github", "disconnected"],

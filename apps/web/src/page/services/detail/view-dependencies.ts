@@ -39,6 +39,7 @@ import {
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
+import { Array as Arr } from "effect"
 
 // `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge` (components/services/).
 // TODO(sampled-tooltip): an estimated rate's "Estimated ×N" tooltip is not ported (trigger only).
@@ -129,13 +130,10 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 
 const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>): Html => {
 	const sort = model.sorts.dependencies
-	const maxima = rows.reduce(
-		(acc, row) => ({
-			calls: Math.max(acc.calls, row.callsPerSec),
-			p95: Math.max(acc.p95, row.p95DurationMs),
-		}),
-		{ calls: 0, p95: 0 },
-	)
+	const maxima = Arr.reduce(rows, { calls: 0, p95: 0 }, (acc, row) => ({
+		calls: Math.max(acc.calls, row.callsPerSec),
+		p95: Math.max(acc.p95, row.p95DurationMs),
+	}))
 	const sorted = sortRows(rows, sort, (row, key) =>
 		key === "errorRate" ? row.errorRate : key === "p95DurationMs" ? row.p95DurationMs : row.callsPerSec,
 	)
@@ -180,7 +178,7 @@ const dependencyTable = (h: H, model: Model, rows: ReadonlyArray<DependencyRow>)
 								),
 							]),
 						]
-					: sorted.map((row) => dependencyRow(h, row, maxima)),
+					: Arr.map(sorted, (row) => dependencyRow(h, row, maxima)),
 			),
 		]),
 	])

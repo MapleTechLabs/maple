@@ -14,6 +14,7 @@ import { label } from "../label"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
 import { searchInput } from "../search-input"
 import { tooltipTrigger } from "../tooltip-host"
+import { Array as Arr, String as Str } from "effect"
 
 // Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
 // Alt+click on a label toggles the exclusion: `OnClick` carries no modifiers, so the root's
@@ -34,8 +35,11 @@ const visibleFilterOptions = (input: {
 	readonly maxVisible: number
 }) => {
 	const chosen = new Set([...input.selected, ...input.excluded])
-	const present = new Set(input.options.map((option) => option.name))
-	const missing = [...chosen].filter((name) => !present.has(name)).map((name) => ({ name, count: 0 }))
+	const present = new Set(Arr.map(input.options, (option) => option.name))
+	const missing = Arr.map(
+		Arr.filter([...chosen], (name) => !present.has(name)),
+		(name) => ({ name, count: 0 }),
+	)
 	const ordered =
 		chosen.size === 0
 			? input.options
@@ -49,8 +53,8 @@ const visibleFilterOptions = (input: {
 			overflowingMatches: 0,
 		}
 	}
-	const needle = input.search.toLowerCase()
-	const matches = ordered.filter((option) => option.name.toLowerCase().includes(needle))
+	const needle = Str.toLowerCase(input.search)
+	const matches = Arr.filter(ordered, (option) => Str.includes(needle)(Str.toLowerCase(option.name)))
 	return {
 		visible: matches.slice(0, MAX_SEARCH_RESULTS),
 		hasMore: 0,
@@ -143,7 +147,9 @@ export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string, descr
 		[
 			h.AriaLabel(`About ${title}`),
 			...tooltipTrigger(h, description),
-			h.Class("inline-flex shrink-0 text-foreground-faint hover:text-muted-foreground active:text-muted-foreground"),
+			h.Class(
+				"inline-flex shrink-0 text-foreground-faint hover:text-muted-foreground active:text-muted-foreground",
+			),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
 			h.Tabindex(0),
@@ -387,7 +393,9 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 																"No matches found",
 															]),
 														]
-													: visible.map((option) => optionRow(h, config, option))),
+													: Arr.map(visible, (option) =>
+															optionRow(h, config, option),
+														)),
 												...(overflowingMatches > 0
 													? [
 															h.p(
@@ -446,7 +454,7 @@ const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, sea
 		id: `filter-section-${config.title}-search`,
 		size: "sm",
 		className: "mb-2",
-		placeholder: `Search ${config.title.toLowerCase()}...`,
+		placeholder: `Search ${Str.toLowerCase(config.title)}...`,
 		value: search,
 		onInput: (value) =>
 			config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: value })),

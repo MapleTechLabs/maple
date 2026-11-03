@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { StatusPageSlugTakenError } from "@maple/domain/http"
 import { StatusPagePreviewParams, type V2UptimeMonitor } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import {
 	attr,
 	expect as expectView,
@@ -39,7 +39,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const builderUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(builderView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 const picker = (message: PickerMessage) => Message.GotPickerMessage({ message })
 
 const tcpMonitor = () =>
@@ -52,11 +52,18 @@ const tcpMonitor = () =>
 
 const withMonitors = (monitors: ReadonlyArray<V2UptimeMonitor>, isAdmin = true): Model => {
 	const start = init({ _tag: "StatusPageNew" }, context).model
-	return [
-		Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
-		Message.CompletedFetchSession({ orgId: ORG, isAdmin }),
-		Message.CompletedFetchMonitors({ key: start.monitors.key ?? "", result: Result.succeed(monitors) }),
-	].reduce((model, message) => builderUpdate(model, message).model, start)
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
+			Message.CompletedFetchSession({ orgId: ORG, isAdmin }),
+			Message.CompletedFetchMonitors({
+				key: start.monitors.key ?? "",
+				result: Result.succeed(monitors),
+			}),
+		],
+		start,
+		(model, message) => builderUpdate(model, message).model,
+	)
 }
 
 const named = (model: Model, name = "Acme Status") =>
@@ -65,7 +72,7 @@ const named = (model: Model, name = "Acme Status") =>
 describe("status page builder", () => {
 	test("a small org starts with every monitor on the page except heartbeats", () => {
 		const model = withMonitors([httpMonitor(), downMonitor(), tcpMonitor(), heartbeatMonitor()])
-		expect(model.picker.rows.map((row) => [row.name, row.isChecked])).toEqual([
+		expect(Arr.map(model.picker.rows, (row) => [row.name, row.isChecked])).toEqual([
 			["checkout-api", true],
 			["payments-api", true],
 			["postgres", true],
@@ -87,7 +94,7 @@ describe("status page builder", () => {
 		const many = Array.from({ length: 9 }, (_, index) =>
 			httpMonitor({ id: monitorId(index), name: `m${index}` }),
 		)
-		expect(withMonitors(many).picker.rows.some((row) => row.isChecked)).toBe(false)
+		expect(Arr.some(withMonitors(many).picker.rows, (row) => row.isChecked)).toBe(false)
 	})
 
 	test("the address follows the name until it is typed", () => {
@@ -119,7 +126,11 @@ describe("status page builder", () => {
 			renamed,
 			picker(PickerMessage.ClickedMoveRow({ key: monitorKey(downMonitor().id), offset: -1 })),
 		).model
-		expect(movedUp.picker.rows.map((row) => row.name)).toEqual(["Payments", "checkout-api", "postgres"])
+		expect(Arr.map(movedUp.picker.rows, (row) => row.name)).toEqual([
+			"Payments",
+			"checkout-api",
+			"postgres",
+		])
 		scene(
 			{ update: builderUpdate, view },
 			given(movedUp),
@@ -177,10 +188,14 @@ describe("status page builder", () => {
 		const adding = builderUpdate(withMonitors([]), picker(PickerMessage.ClickedAddManual()))
 		const row = adding.model.picker.rows[0]
 		expect(adding.model.picker.autofocusKey).toBe(row?.key)
-		const filled = [
-			picker(PickerMessage.ChangedRowName({ key: row?.key ?? "", value: "Docs" })),
-			picker(PickerMessage.PickedRowStatus({ key: row?.key ?? "", value: "degraded" })),
-		].reduce((model, message) => builderUpdate(model, message).model, named(adding.model))
+		const filled = Arr.reduce(
+			[
+				picker(PickerMessage.ChangedRowName({ key: row?.key ?? "", value: "Docs" })),
+				picker(PickerMessage.PickedRowStatus({ key: row?.key ?? "", value: "degraded" })),
+			],
+			named(adding.model),
+			(model, message) => builderUpdate(model, message).model,
+		)
 		expect(builderUpdate(filled, Message.ClickedSubmit({ mode: "publish" })).commands).toMatchObject([
 			{
 				name: "CreateStatusPage",
@@ -205,7 +220,7 @@ describe("status page builder", () => {
 		const [command] = fetching.commands ?? []
 		expect(command).toMatchObject({ name: "FetchStatusPagePreview" })
 		const draft = BuilderUpdatePreviewDraft(added.model)
-		expect(draft.components.map((component) => component.monitor_id)).toEqual([httpMonitor().id])
+		expect(Arr.map(draft.components, (component) => component.monitor_id)).toEqual([httpMonitor().id])
 		// The args must encode: a blank name would fail the schema and crash the app.
 		expect(Schema.encodeSync(StatusPagePreviewParams)(draft).components).toHaveLength(1)
 		scene(
@@ -220,13 +235,17 @@ describe("status page builder", () => {
 	test("keys pressed before the new row's input takes focus land in that row, not nowhere", () => {
 		const added = builderUpdate(withMonitors([]), picker(PickerMessage.ClickedAddManual())).model
 		const key = added.picker.autofocusKey ?? ""
-		const typed = [
-			picker(PickerMessage.PressedKeyOnAdd({ key: "W" })),
-			picker(PickerMessage.PressedKeyOnAdd({ key: "Enter" })),
-			picker(PickerMessage.ChangedRowName({ key, value: "Website" })),
-			picker(PickerMessage.PressedKeyOnAdd({ key: "x" })),
-		].reduce((model, message) => builderUpdate(model, message).model, added)
-		expect(typed.picker.rows.map((row) => row.name)).toEqual(["Website"])
+		const typed = Arr.reduce(
+			[
+				picker(PickerMessage.PressedKeyOnAdd({ key: "W" })),
+				picker(PickerMessage.PressedKeyOnAdd({ key: "Enter" })),
+				picker(PickerMessage.ChangedRowName({ key, value: "Website" })),
+				picker(PickerMessage.PressedKeyOnAdd({ key: "x" })),
+			],
+			added,
+			(model, message) => builderUpdate(model, message).model,
+		)
+		expect(Arr.map(typed.picker.rows, (row) => row.name)).toEqual(["Website"])
 		const routed = builderUpdate(added, picker(PickerMessage.PressedKeyOnAdd({ key: "W" }))).model
 		expect(routed.picker.rows[0]?.name).toBe("W")
 	})

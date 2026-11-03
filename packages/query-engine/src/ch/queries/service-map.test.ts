@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Exit } from "effect"
+import { DateTime, Effect, Exit, Array as Arr, Record as Rec, String as Str } from "effect"
 import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceDbEdgesSQL,
@@ -32,7 +32,10 @@ const SEALED_DB_EDGES = sealedNamespaceCollapse("service_map_db_edges_hourly")
 const SEALED_DB_QUERIES = sealedNamespaceCollapse("service_map_db_query_shapes_hourly")
 
 // The builder qualifies source columns; the shared write-side fragment does not.
-const RAW_NAMESPACE = DB_NAMESPACE_ATTR_SQL.replace(/(?<![\w.])SpanAttributes\b/g, "traces.SpanAttributes")
+const RAW_NAMESPACE = Str.replace(
+	/(?<![\w.])SpanAttributes\b/g,
+	"traces.SpanAttributes",
+)(DB_NAMESPACE_ATTR_SQL)
 
 const baseParams = {
 	orgId: OrgId.make("org_1"),
@@ -71,7 +74,7 @@ describe("serviceExternalEdgesSQL", () => {
 		// First branch of multiIf must be the messaging predicate.
 		const multiIfIdx = sql.indexOf("multiIf(")
 		expect(multiIfIdx).toBeGreaterThan(-1)
-		const after = sql.slice(multiIfIdx, multiIfIdx + 400)
+		const after = Str.slice(multiIfIdx, multiIfIdx + 400)(sql)
 		const msgIdx = after.indexOf("'messaging'")
 		const rpcIdx = after.indexOf("'rpc'")
 		const httpIdx = after.indexOf("'http'")
@@ -295,10 +298,10 @@ describe("serviceMapEdgeJoinQuery", () => {
 	// would notice — the ingest just writes defaults.
 	it("projects exactly the service_map_edges_hourly column set", () => {
 		const { sql } = compiledRollup()
-		const selectClause = sql.slice(0, sql.indexOf("FROM ("))
-		const aliases = [...selectClause.matchAll(/ AS (\w+)/g)].map((m) => m[1])
+		const selectClause = Str.slice(0, sql.indexOf("FROM ("))(sql)
+		const aliases = Arr.map([...selectClause.matchAll(/ AS (\w+)/g)], (m) => m[1])
 
-		expect(new Set(aliases)).toEqual(new Set(Object.keys(ServiceMapEdgesHourly.columns)))
+		expect(new Set(aliases)).toEqual(new Set(Rec.keys(ServiceMapEdgesHourly.columns)))
 	})
 
 	it("filters OrgId on both join sides, so the scope is derived", () => {
@@ -669,7 +672,7 @@ describe("service-map database query summaries", () => {
 				},
 			])
 
-			expect(rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) }))).toEqual([
+			expect(Arr.map(rows, (row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) }))).toEqual([
 				{
 					bucket: "2024-01-01T00:05:00.000Z",
 					queryCount: 12,

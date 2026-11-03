@@ -15,6 +15,7 @@ import { agentPresentation } from "./view-cards"
 import { type PanelHost, runningClock } from "./view-tool"
 import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `TaskCard`: one sub-agent run as a line that opens its
 // sheet: the question in full, the answer, and whatever of the child's own steps reached the parent.
@@ -194,11 +195,11 @@ const steps = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Readonl
 						title: "Its own steps",
 						className: "mb-0",
 					}),
-					...part.messages.map((message) =>
+					...Arr.map(part.messages, (message) =>
 						h.keyed("div")(
 							message.id,
 							[h.Class(vstackClass({ gap: "1.5" }))],
-							message.parts.flatMap((leaf) =>
+							Arr.flatMap(message.parts, (leaf) =>
 								leaf._tag === "text"
 									? [host.richText(leaf.text)]
 									: leaf._tag === "dynamic-tool"

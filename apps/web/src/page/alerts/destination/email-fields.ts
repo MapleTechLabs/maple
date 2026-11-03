@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
@@ -91,10 +91,14 @@ export const visibleIds = (
 	options: ReadonlyArray<MemberOption>,
 	inputValue: string,
 ): ReadonlyArray<string> => {
-	const query = inputValue.trim().toLocaleLowerCase()
-	return options
-		.filter((option) => query === "" || option.label.toLocaleLowerCase().includes(query))
-		.map((option) => option.userId)
+	const query = Str.trim(inputValue).toLocaleLowerCase()
+	return Arr.map(
+		Arr.filter(
+			options,
+			(option) => query === "" || Str.includes(query)(option.label.toLocaleLowerCase()),
+		),
+		(option) => option.userId,
+	)
 }
 
 export const update = (model: Model, message: Message): Return =>

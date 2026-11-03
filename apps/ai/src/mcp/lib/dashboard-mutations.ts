@@ -1,4 +1,14 @@
-import { Clock, DateTime, Effect, Result, Schema, SchemaIssue, SchemaTransformation } from "effect"
+import {
+	Clock,
+	DateTime,
+	Effect,
+	Result,
+	Schema,
+	SchemaIssue,
+	SchemaTransformation,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { randomUUID } from "node:crypto"
 import {
@@ -118,8 +128,8 @@ export const legacyDataSourceHint = (value: unknown): string | undefined => {
 			? '{"kind":"static"}'
 			: endpoint === "raw_sql_chart"
 				? '{"kind":"raw_sql","sql":"SELECT …"}'
-				: endpoint.startsWith("custom_query_builder_")
-					? `{"kind":"query","resultShape":"${endpoint.slice("custom_query_builder_".length)}","queries":[…]}`
+				: Str.startsWith("custom_query_builder_")(endpoint)
+					? `{"kind":"query","resultShape":"${Str.slice("custom_query_builder_".length)(endpoint)}","queries":[…]}`
 					: `{"kind":"route","endpoint":"${endpoint}","params":{…}}`
 
 	return (
@@ -146,7 +156,7 @@ export const dataSourceKindHint = (value: unknown): string | undefined => {
 	if (Result.isFailure(decodeObject(value))) return undefined
 	const decoded = decodeKindField(value)
 	const kind = Result.isFailure(decoded) ? undefined : decoded.success.kind
-	if (WIDGET_DATA_SOURCE_KINDS.some((known) => known === kind)) return undefined
+	if (Arr.some(WIDGET_DATA_SOURCE_KINDS, (known) => known === kind)) return undefined
 	return `${kind === undefined ? "The data source has no `kind`" : `Unknown data-source kind ${stringifyJson(kind)}`}. Valid shapes: ${DATA_SOURCE_VARIANTS}.`
 }
 
@@ -214,7 +224,7 @@ export const toMcpDashboardError =
 					message:
 						error.details.length === 0
 							? error.message
-							: `${error.message}\n- ${error.details.join("\n- ")}`,
+							: `${error.message}\n- ${Arr.join(error.details, "\n- ")}`,
 				})
 			default:
 				return new McpQueryError({ message: error.message, pipeName: tool, cause: error })

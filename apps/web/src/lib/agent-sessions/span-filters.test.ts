@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "@maple/agent-sessions/testing"
 import { filterSpans, isDelegation, shortTarget } from "./span-filters"
 import type { AiSessionSpan } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 const SECOND = 1000
 
@@ -20,7 +21,7 @@ const spans = [
 	}),
 ]
 
-const ids = (result: readonly AiSessionSpan[]) => result.map((span) => span.spanId)
+const ids = (result: readonly AiSessionSpan[]) => Arr.map(result, (span) => span.spanId)
 
 describe("filterSpans", () => {
 	it("keeps everything for an empty or whitespace-only query", () => {
@@ -45,7 +46,7 @@ describe("filterSpans", () => {
 })
 
 describe("isDelegation", () => {
-	const byId = (...list: readonly AiSessionSpan[]) => new Map(list.map((span) => [span.spanId, span]))
+	const byId = (...list: readonly AiSessionSpan[]) => new Map(Arr.map(list, (span) => [span.spanId, span]))
 
 	it("is a handoff when the parent agent span names a different agent", () => {
 		const parent = agentSpan({ spanId: "p", startMs: 0, durationMs: 5 * SECOND, agentName: "router" })

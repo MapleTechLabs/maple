@@ -22,6 +22,7 @@ import {
 	type ToolSeriesPoint,
 } from "./tool-analytics"
 import { AI_TOOLS_BREAKDOWN_MAX } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 const measures = (over: Partial<typeof EMPTY_MEASURES> = {}) => ({ ...EMPTY_MEASURES, ...over })
 
@@ -236,10 +237,10 @@ describe("fillSeriesBuckets", () => {
 			4 * minute,
 			60,
 		)
-		expect(filled.map((entry) => entry.bucket)).toEqual([0, minute, 2 * minute, 3 * minute])
-		expect(filled.map((entry) => entry.calls)).toEqual([0, 0, 4, 0])
-		expect(filled.map((entry) => entry.p90)).toEqual([0, 0, 9, 0])
-		expect(filled.every((entry) => entry.seriesKey === "all")).toBe(true)
+		expect(Arr.map(filled, (entry) => entry.bucket)).toEqual([0, minute, 2 * minute, 3 * minute])
+		expect(Arr.map(filled, (entry) => entry.calls)).toEqual([0, 0, 4, 0])
+		expect(Arr.map(filled, (entry) => entry.p90)).toEqual([0, 0, 9, 0])
+		expect(Arr.every(filled, (entry) => entry.seriesKey === "all")).toBe(true)
 	})
 
 	it("keeps an empty series empty", () => {

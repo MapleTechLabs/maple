@@ -1,5 +1,5 @@
 import { noopSession } from "alchemy/Report"
-import { ConfigProvider, Effect, Layer, Redacted } from "effect"
+import { ConfigProvider, Effect, Layer, Redacted, Record as Rec } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
@@ -106,7 +106,7 @@ describe("Maple provider layers", () => {
 
 			const providerTypes = yield* Effect.gen(function* () {
 				const collection = yield* Providers
-				return Object.keys(collection.providers).sort()
+				return Rec.keys(collection.providers).sort()
 			}).pipe(Effect.provide(defaultProviders))
 
 			expect(providerTypes).toEqual([

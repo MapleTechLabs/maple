@@ -5,6 +5,7 @@ import type {
 	IngestRuleSignal,
 } from "@maple/domain/ingest-rules"
 import { FIELD_LABELS, isKeyed, OP_LABELS } from "./form"
+import { Array as Arr, String as Str } from "effect"
 
 // A rule as one plain sentence; `code` parts render as inline code (keys and values).
 
@@ -36,7 +37,7 @@ const joined = (
 	parts: ReadonlyArray<ReadonlyArray<SummaryPart>>,
 	last = " and ",
 ): ReadonlyArray<SummaryPart> =>
-	parts.flatMap((part, index) =>
+	Arr.flatMap(parts, (part, index) =>
 		index === 0 ? part : [text(index === parts.length - 1 ? last : ", "), ...part],
 	)
 
@@ -49,7 +50,7 @@ const conditionParts = (condition: IngestRuleCondition): ReadonlyArray<SummaryPa
 			? [
 					text(" "),
 					...joined(
-						condition.values.map((value) => [code(value)]),
+						Arr.map(condition.values, (value) => [code(value)]),
 						" or ",
 					),
 				]
@@ -65,14 +66,14 @@ const actionParts = (action: IngestRuleAction): ReadonlyArray<SummaryPart> => {
 			? [text("drop")]
 			: [text(`keep ${action.keepPercent}%, drop the rest`)]
 	const targets = [
-		...action.detectors.map((detector) => [text(DETECTOR_LABELS[detector].toLowerCase())]),
-		...action.keys.map((key) => [code(key)]),
+		...Arr.map(action.detectors, (detector) => [text(Str.toLowerCase(DETECTOR_LABELS[detector]))]),
+		...Arr.map(action.keys, (key) => [code(key)]),
 		...(action.patterns.length === 0
 			? []
 			: [[text(action.patterns.length === 1 ? "1 pattern" : `${action.patterns.length} patterns`)]]),
 	]
 	const verb = action.method === "hash" ? "hash" : action.method === "remove" ? "remove" : "mask"
-	return [text(`${verb} `), ...joined(targets), text(` in ${action.scopes.join(", ")}`)]
+	return [text(`${verb} `), ...joined(targets), text(` in ${Arr.join(action.scopes, ", ")}`)]
 }
 
 export const summaryParts = (rule: {
@@ -81,5 +82,5 @@ export const summaryParts = (rule: {
 }): ReadonlyArray<SummaryPart> => {
 	const action = actionParts(rule.action)
 	if (rule.conditions.length === 0) return [text("Always "), ...action]
-	return [text("Where "), ...joined(rule.conditions.map(conditionParts)), text(": "), ...action]
+	return [text("Where "), ...joined(Arr.map(rule.conditions, conditionParts)), text(": "), ...action]
 }

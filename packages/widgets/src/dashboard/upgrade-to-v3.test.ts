@@ -1,5 +1,5 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	dataSourceEndpoint,
@@ -16,7 +16,7 @@ const query = { id: "a", name: "A", dataSource: "traces", aggregation: "count" }
 
 /** One v2 data source per legacy endpoint family — the full input space. */
 const V2_SOURCES: ReadonlyArray<{ label: string; source: Record<string, unknown> }> = [
-	...Object.entries(QUERY_RESULT_ENDPOINTS).map(([resultKind, endpoint]) => ({
+	...Arr.map(Rec.toEntries(QUERY_RESULT_ENDPOINTS), ([resultKind, endpoint]) => ({
 		label: `query/${resultKind}`,
 		source: {
 			endpoint,
@@ -82,7 +82,7 @@ const upgraded = (document: unknown): Record<string, unknown> => {
 
 const firstWidget = (document: unknown): Record<string, unknown> => {
 	const widgets = upgraded(document).widgets
-	if (!Array.isArray(widgets)) throw new Error("expected widgets to be an array")
+	if (!Arr.isArray(widgets)) throw new Error("expected widgets to be an array")
 	const [widget] = widgets
 	if (typeof widget !== "object" || widget === null) throw new Error("expected a widget object")
 	return widget as Record<string, unknown>

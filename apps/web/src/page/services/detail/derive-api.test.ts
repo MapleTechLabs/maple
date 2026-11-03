@@ -11,11 +11,12 @@ import {
 	statusCodeSummaries,
 } from "./derive-api"
 import type { ApiBucket, ApiTotals, Endpoint, StatusRow } from "./model-tabs"
+import { Array as Arr, String as Str } from "effect"
 
 const endpoint = (spanName: string, patch: Partial<Endpoint> = {}): Endpoint => ({
 	spanName,
 	method: "POST",
-	route: spanName.slice(spanName.indexOf(" ") + 1),
+	route: Str.slice(spanName.indexOf(" ") + 1)(spanName),
 	spanCount: 100,
 	estimatedSpanCount: 100,
 	errorCount: 0,
@@ -116,7 +117,7 @@ describe("non-2xx breakdown", () => {
 
 	test("leaves 2xx out and ranks codes by count with their share of every non-2xx response", () => {
 		const summaries = statusCodeSummaries(rows)
-		expect(summaries.map((summary) => [summary.code, summary.count])).toEqual([
+		expect(Arr.map(summaries, (summary) => [summary.code, summary.count])).toEqual([
 			["402", 340],
 			["503", 50],
 			["401", 10],
@@ -148,14 +149,16 @@ describe("table filters", () => {
 	const slow = endpoint("POST /slow", { p95DurationMs: 400 })
 
 	test("rejecting keeps endpoints answering more than 5% non-2xx", () => {
-		expect([quiet, rejecting, slow].filter((row) => matchesFilter(row, "rejecting", ""))).toEqual([
+		expect(Arr.filter([quiet, rejecting, slow], (row) => matchesFilter(row, "rejecting", ""))).toEqual([
 			rejecting,
 		])
 	})
 
 	test("slow keeps p95 above 100ms, and the search matches the span name case-insensitively", () => {
-		expect([quiet, rejecting, slow].filter((row) => matchesFilter(row, "slow", ""))).toEqual([slow])
-		expect([quiet, rejecting, slow].filter((row) => matchesFilter(row, "all", "QUI"))).toEqual([quiet])
+		expect(Arr.filter([quiet, rejecting, slow], (row) => matchesFilter(row, "slow", ""))).toEqual([slow])
+		expect(Arr.filter([quiet, rejecting, slow], (row) => matchesFilter(row, "all", "QUI"))).toEqual([
+			quiet,
+		])
 	})
 
 	test("the slowest badge goes to the worst p95 only once it is past the slow line", () => {
@@ -170,12 +173,16 @@ describe("latency histogram", () => {
 	test("the bins hold every request between the lowest and highest quantile", () => {
 		const bins = latencyHistogram(levels, [0.1, 1, 30, 70, 120])
 		expect(bins).toHaveLength(10)
-		expect(bins.reduce((sum, bin) => sum + bin.share, 0)).toBeCloseTo(1)
+		expect(Arr.reduce(bins, 0, (sum, bin) => sum + bin.share)).toBeCloseTo(1)
 	})
 
 	test("a bimodal endpoint puts most requests in the fast bins and colours the tail by percentile", () => {
 		const bins = latencyHistogram(levels, [0.03, 0.4, 29, 72, 125])
-		const fastShare = bins.filter((bin) => bin.toMs <= 1).reduce((sum, bin) => sum + bin.share, 0)
+		const fastShare = Arr.reduce(
+			Arr.filter(bins, (bin) => bin.toMs <= 1),
+			0,
+			(sum, bin) => sum + bin.share,
+		)
 		expect(fastShare).toBeGreaterThan(0.5)
 		expect(bins[0]?.band).toBe("p50")
 		expect(bins[bins.length - 1]?.band).toBe("p99")
@@ -206,7 +213,7 @@ describe("responses chart rows", () => {
 
 	test("splits each bucket's request rate by status class", () => {
 		expect(
-			responseRows([bucket({})], 60, oneMinute).map((row) => [row.attributeValue, row.value]),
+			Arr.map(responseRows([bucket({})], 60, oneMinute), (row) => [row.attributeValue, row.value]),
 		).toEqual([
 			["2xx", 7],
 			["4xx", 2],
@@ -223,7 +230,7 @@ describe("responses chart rows", () => {
 
 test("out-of-order t-digest quantiles never give a bin a negative share", () => {
 	const bins = latencyHistogram([0.1, 0.5, 0.9, 0.99], [1, 5, 4, 40])
-	expect(bins.every((bin) => bin.share >= 0)).toBe(true)
+	expect(Arr.every(bins, (bin) => bin.share >= 0)).toBe(true)
 })
 
 test("a bucket the service was silent in reads 0 on the spark, not a gap", () => {
@@ -271,7 +278,7 @@ test("the responses chart spans the selected window, not only the buckets with t
 		60,
 		window,
 	)
-	expect([...new Set(rows.map((row) => row.bucket))]).toEqual([
+	expect([...new Set(Arr.map(rows, (row) => row.bucket))]).toEqual([
 		"2026-10-24T03:00:00.000Z",
 		"2026-10-24T03:01:00.000Z",
 		"2026-10-24T03:02:00.000Z",

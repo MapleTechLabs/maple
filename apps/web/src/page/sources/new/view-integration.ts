@@ -11,6 +11,7 @@ import { Message } from "./message"
 import type { FlowHost, Model } from "./model"
 import { flowSpecOf } from "./update"
 import { flowFooter } from "./view-footer"
+import { Array as Arr } from "effect"
 
 // `/sources/new?integration=`: the integration's current step, then the footer that moves between them.
 
@@ -20,7 +21,8 @@ type H = HtmlBuilder<Message>
 const sourcesOfIntegration = (model: Model, integration: DataIntegration): ReadonlyArray<V2Source> =>
 	integration === "warpstream"
 		? []
-		: AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []).filter(
+		: Arr.filter(
+				AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []),
 				(source) => source.platform === integration,
 			)
 

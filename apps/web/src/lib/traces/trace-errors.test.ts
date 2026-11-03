@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { SpanId, TraceId } from "@maple/domain"
 import type { SpanNode } from "@maple/ui/lib/types"
 
@@ -18,7 +18,7 @@ function node(
 ): SpanNode {
 	return {
 		traceId,
-		spanId: toSpanId((++nextId).toString(16).padStart(16, "0")),
+		spanId: toSpanId(Str.padStart(16, "0")((++nextId).toString(16))),
 		parentSpanId: "",
 		spanName: name,
 		serviceName: "api",
@@ -43,7 +43,7 @@ describe("collectTraceErrors", () => {
 				node("db", 2, { statusCode: "Error", statusMessage: "deadlock" }),
 			]),
 		])
-		expect(errors.spans.map((s) => s.spanName)).toEqual(["root", "db"])
+		expect(Arr.map(errors.spans, (s) => s.spanName)).toEqual(["root", "db"])
 		expect(errors.origin?.spanName).toBe("db")
 	})
 
@@ -76,7 +76,7 @@ describe("collectTraceErrors", () => {
 				],
 			),
 		])
-		expect(errors.spans.map((s) => s.spanName)).toEqual(["GET /a"])
+		expect(Arr.map(errors.spans, (s) => s.spanName)).toEqual(["GET /a"])
 	})
 
 	it("counts a 5xx on a span whose name carries no HTTP method", () => {

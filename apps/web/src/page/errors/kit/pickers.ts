@@ -11,6 +11,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import type { QuickPickItem } from "./quick-pick"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityIcon } from "./severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
+import { Array as Arr } from "effect"
 
 // The severity and state pickers: their triggers and the
 // rows their `QuickPickMenu` offers.
@@ -101,7 +102,7 @@ export const severityItems = <M>(h: HtmlBuilder<M>): ReadonlyArray<QuickPickItem
 		shortcut: "0",
 		keywords: "none unset clear",
 	},
-	...SEVERITY_ORDER.map((severity, index) => ({
+	...Arr.map(SEVERITY_ORDER, (severity, index) => ({
 		value: severity,
 		label: SEVERITY_LABEL[severity],
 		icon: severityIcon(h, severity),
@@ -110,12 +111,12 @@ export const severityItems = <M>(h: HtmlBuilder<M>): ReadonlyArray<QuickPickItem
 ]
 
 /** `regressed` and `verifying` are set by the ticks, never chosen. */
-const OFFERED_STATES = WORKFLOW_STATE_ORDER.filter((state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state))
+const OFFERED_STATES = Arr.filter(WORKFLOW_STATE_ORDER, (state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state))
 
 /** Unreachable states stay listed but dimmed: the digits mean the same on every row. */
 export const stateItems = <M>(h: HtmlBuilder<M>, current: WorkflowState): ReadonlyArray<QuickPickItem> => {
 	const allowed = new Set<WorkflowState>(allowedTransitionsForAll([current]))
-	return OFFERED_STATES.map((state, index) => ({
+	return Arr.map(OFFERED_STATES, (state, index) => ({
 		value: state,
 		label: WORKFLOW_LABEL[state],
 		icon: workflowRingIcon(h, state, 14),

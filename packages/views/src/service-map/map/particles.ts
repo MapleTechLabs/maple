@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -59,8 +59,8 @@ const cameraReader = (canvas: HTMLCanvasElement) => {
 		const raw = state.leaf?.getAttribute(VIEWPORT_ATTRIBUTE) ?? null
 		if (raw !== state.raw) {
 			state.raw = raw
-			const parts = (raw ?? "").split(",").map(Number)
-			if (parts.length === 3 && parts.every(Number.isFinite))
+			const parts = Arr.map(Str.split(",")(raw ?? ""), Number)
+			if (parts.length === 3 && Arr.every(parts, Number.isFinite))
 				state.camera = { x: parts[0], y: parts[1], zoom: parts[2] }
 		}
 		return state.camera

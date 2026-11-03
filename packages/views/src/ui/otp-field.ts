@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { otpFieldInputStyles, otpFieldSeparatorStyles, otpFieldStyles } from "@maple/ui/styles/ui/otp-field"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -42,18 +42,18 @@ export const init = (config: {
 })
 
 /** Every slot is filled (Base UI's `complete` state). */
-export const isComplete = (model: Model): boolean => model.slots.every((slot) => slot !== "")
+export const isComplete = (model: Model): boolean => Arr.every(model.slots, (slot) => slot !== "")
 
 const REJECTED = { numeric: /\D/g, alphanumeric: /[^a-zA-Z0-9]/g } as const
 const SLOT_PATTERN = { numeric: "\\d", alphanumeric: "[a-zA-Z0-9]" } as const
 const INPUT_MODE = { numeric: "numeric", alphanumeric: "text" } as const
 
 const normalize = (model: Model, text: string): string => {
-	const valid = text.replace(REJECTED[model.validation], "")
-	return model.isUppercase ? valid.toUpperCase() : valid
+	const valid = Str.replace(REJECTED[model.validation], "")(text)
+	return model.isUppercase ? Str.toUpperCase(valid) : valid
 }
 
-export const valueOf = (model: Model): string => model.slots.join("")
+export const valueOf = (model: Model): string => Arr.join(model.slots, "")
 
 // MESSAGE
 
@@ -90,14 +90,14 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 			if (digits.length === 0) {
 				return {
 					model: modifyFields(model, {
-						slots: (slots) => slots.map((slot, i) => (i === index ? "" : slot)),
+						slots: (slots) => Arr.map(slots, (slot, i) => (i === index ? "" : slot)),
 					}),
 				}
 			}
 			return {
 				model: modifyFields(model, {
 					slots: (slots) =>
-						slots.map((slot, i) =>
+						Arr.map(slots, (slot, i) =>
 							i >= index && i < index + digits.length ? (digits[i - index] ?? slot) : slot,
 						),
 				}),
@@ -108,7 +108,7 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 			if (model.slots[index] !== "" || index === 0) return { model }
 			return {
 				model: modifyFields(model, {
-					slots: (slots) => slots.map((slot, i) => (i === index - 1 ? "" : slot)),
+					slots: (slots) => Arr.map(slots, (slot, i) => (i === index - 1 ? "" : slot)),
 				}),
 				commands: [focusSlot(model, index - 1)],
 			}
@@ -156,7 +156,11 @@ export const otpField = <ParentMessage>(
 				...(config.isInvalid === undefined ? [] : [h.AriaInvalid(config.isInvalid)]),
 				...(config.labelledBy === undefined ? [] : [h.AriaLabelledBy(config.labelledBy)]),
 				h.Class(cn(otpFieldStyles, config.className)),
-				...fillAttributes(h, config.model, config.model.slots.some((slot) => slot !== "")),
+				...fillAttributes(
+					h,
+					config.model,
+					Arr.some(config.model.slots, (slot) => slot !== ""),
+				),
 				h.DataAttribute("size", config.size ?? "default"),
 				h.DataAttribute("slot", "otp-field"),
 				h.Role("group"),

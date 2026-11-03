@@ -14,12 +14,12 @@ import {
 } from "@maple/domain/executor"
 import { OrgId } from "@maple/domain/http"
 import { SandboxCheckout } from "@maple/domain/sandbox"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ExecutorTransport } from "@maple/backend/sandbox/client"
 import { executorAgentId, executorKey, makeExecutor } from "./ExecutorService"
 
 const orgId = Schema.decodeUnknownSync(OrgId)("org_test")
-const SHA = "d".repeat(40)
+const SHA = Str.repeat(40)("d")
 const target = { repository: "octo/shop", sha: SHA }
 const RUN_ID = "7F3A2C10-1111-4222-8333-944455556666"
 
@@ -125,7 +125,7 @@ describe("ExecutorService", () => {
 			assert.strictEqual(answer.stdout, "ok")
 			assert.lengthOf(fake.prepared, 1)
 			assert.deepStrictEqual(
-				fake.ran.map((request) => request.agentId),
+				Arr.map(fake.ran, (request) => request.agentId),
 				["hunter_3-1", "hunter_3-1"],
 			)
 		}),
@@ -157,13 +157,10 @@ describe("ExecutorService", () => {
 
 describe("executor names", () => {
 	it("keeps agent ids in the skill's canonical form", () => {
-		assert.deepStrictEqual(["record-7-0", "Hunter 2", "-x", "con", "a".repeat(80)].map(executorAgentId), [
-			"record-7-0",
-			"hunter-2",
-			"a-x",
-			"acon",
-			"a".repeat(64),
-		])
+		assert.deepStrictEqual(
+			Arr.map(["record-7-0", "Hunter 2", "-x", "con", Str.repeat(80)("a")], executorAgentId),
+			["record-7-0", "hunter-2", "a-x", "acon", Str.repeat(64)("a")],
+		)
 		assert.match(executorKey(RUN_ID), /^[a-z0-9][a-z0-9-]{0,62}$/u)
 	})
 })

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { assert, describe, it } from "@effect/vitest"
 import { EXECUTOR_LIMITS, ExecutorPromotion } from "@maple/domain/executor"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	RUN_TRAILER,
 	lockfilePlanScript,
@@ -43,7 +43,7 @@ describe("lockfilePlanScript", () => {
 			"vendor/node_modules/left-pad/package-lock.json",
 			"README.md",
 		])
-		assert.deepStrictEqual(run(lockfilePlanScript(), dir).trim().split("\n"), [
+		assert.deepStrictEqual(Str.split("\n")(Str.trim(run(lockfilePlanScript(), dir))), [
 			".\tnpm",
 			"legacy\tyarn",
 			"tools\tbun",
@@ -53,24 +53,24 @@ describe("lockfilePlanScript", () => {
 
 	it("caps how many directories install", () => {
 		const dir = repoWith(
-			Array.from({ length: 12 }, (_, i) => `pkg${String(i).padStart(2, "0")}/package-lock.json`),
+			Array.from({ length: 12 }, (_, i) => `pkg${Str.padStart(2, "0")(String(i))}/package-lock.json`),
 		)
-		assert.strictEqual(run(lockfilePlanScript(), dir).trim().split("\n").length, 8)
+		assert.strictEqual(Str.split("\n")(Str.trim(run(lockfilePlanScript(), dir))).length, 8)
 	})
 
 	it("plans nothing for a repository without lockfiles", () => {
-		assert.strictEqual(run(lockfilePlanScript(), repoWith(["package.json"])).trim(), "")
+		assert.strictEqual(Str.trim(run(lockfilePlanScript(), repoWith(["package.json"]))), "")
 	})
 })
 
 describe("parsePrepareStatus", () => {
 	it("reads a ready checkout with its installs", () => {
 		const status = parsePrepareStatus(
-			`ready ${"a".repeat(40)}\n.\tnpm\tinstalled\tadded 12 packages\napps/x\tyarn\tskipped\tyarn lockfiles are not installed yet\n`,
+			`ready ${Str.repeat(40)("a")}\n.\tnpm\tinstalled\tadded 12 packages\napps/x\tyarn\tskipped\tyarn lockfiles are not installed yet\n`,
 		)
 		assert.deepStrictEqual(status, {
 			_tag: "ready",
-			sha: "a".repeat(40),
+			sha: Str.repeat(40)("a"),
 			installs: [
 				{ dir: ".", manager: "npm", outcome: "installed", detail: "added 12 packages" },
 				{
@@ -138,13 +138,25 @@ const promote = (
 	artifacts: string,
 	entries: ReadonlyArray<{ path: string; maxBytes: number }>,
 ) => {
-	const script = promoteScript(
-		"agent-1",
-		entries.map((entry) => new ExecutorPromotion(entry)),
+	const script = Str.replace(
+		"/audit/agents/agent-1/artifacts",
+		artifacts,
+	)(
+		Str.replace(
+			"/audit/agents/agent-1/scratch",
+			scratch,
+		)(
+			Str.replace(
+				"/usr/local/lib/maple/promote.py",
+				join(import.meta.dirname, "../image/promote.py"),
+			)(
+				promoteScript(
+					"agent-1",
+					Arr.map(entries, (entry) => new ExecutorPromotion(entry)),
+				),
+			),
+		),
 	)
-		.replace("/usr/local/lib/maple/promote.py", join(import.meta.dirname, "../image/promote.py"))
-		.replace("/audit/agents/agent-1/scratch", scratch)
-		.replace("/audit/agents/agent-1/artifacts", artifacts)
 	const result = spawnSync("bash", ["-c", script], { encoding: "utf8" })
 	assert.strictEqual(result.status, 0, result.stderr)
 	return decodePromotion(result.stdout)
@@ -184,14 +196,14 @@ describe("promote.py", () => {
 		const result = promote(
 			scratch,
 			artifacts,
-			["link", "dirlink/secret", "linked", "fifo", "adir", "missing"].map((path) => ({
+			Arr.map(["link", "dirlink/secret", "linked", "fifo", "adir", "missing"], (path) => ({
 				path,
 				maxBytes: 1024,
 			})),
 		)
 		assert.deepStrictEqual(result.promoted, [])
 		assert.deepStrictEqual(
-			result.rejected.map((rejected) => rejected.path),
+			Arr.map(result.rejected, (rejected) => rejected.path),
 			["link", "dirlink/secret", "linked", "fifo", "adir", "missing"],
 		)
 		assert.include(result.rejected[2]?.reason, "link count")
@@ -200,10 +212,10 @@ describe("promote.py", () => {
 
 	it("holds each file to its own limit and all files to the total", () => {
 		const { scratch, artifacts } = promotionDirs()
-		writeFileSync(join(scratch, "big"), "x".repeat(2000))
-		writeFileSync(join(scratch, "a"), "a".repeat(600 * 1024))
-		writeFileSync(join(scratch, "b"), "b".repeat(200 * 1024))
-		writeFileSync(join(scratch, "c"), "c".repeat(250 * 1024))
+		writeFileSync(join(scratch, "big"), Str.repeat(2000)("x"))
+		writeFileSync(join(scratch, "a"), Str.repeat(600 * 1024)("a"))
+		writeFileSync(join(scratch, "b"), Str.repeat(200 * 1024)("b"))
+		writeFileSync(join(scratch, "c"), Str.repeat(250 * 1024)("c"))
 		const result = promote(scratch, artifacts, [
 			{ path: "big", maxBytes: 1000 },
 			{ path: "a", maxBytes: EXECUTOR_LIMITS.promotedFileBytes },
@@ -211,11 +223,11 @@ describe("promote.py", () => {
 			{ path: "c", maxBytes: EXECUTOR_LIMITS.promotedFileBytes },
 		])
 		assert.deepStrictEqual(
-			result.promoted.map((artifact) => artifact.path),
+			Arr.map(result.promoted, (artifact) => artifact.path),
 			["b", "c"],
 		)
 		assert.deepStrictEqual(
-			result.rejected.map((rejected) => rejected.path),
+			Arr.map(result.rejected, (rejected) => rejected.path),
 			["big", "a"],
 		)
 	})
@@ -223,19 +235,19 @@ describe("promote.py", () => {
 	it("refuses the file that would take the promoted total past its limit, each file under its own", () => {
 		const { scratch, artifacts } = promotionDirs()
 		const names = ["p1", "p2", "p3", "p4", "p5"]
-		for (const name of names) writeFileSync(join(scratch, name), "z".repeat(250 * 1024))
+		for (const name of names) writeFileSync(join(scratch, name), Str.repeat(250 * 1024)("z"))
 		const result = promote(
 			scratch,
 			artifacts,
-			names.map((path) => ({ path, maxBytes: EXECUTOR_LIMITS.promotedFileBytes })),
+			Arr.map(names, (path) => ({ path, maxBytes: EXECUTOR_LIMITS.promotedFileBytes })),
 		)
 		// 1 MiB holds four 250 KiB files; the fifth would pass it.
 		assert.deepStrictEqual(
-			result.promoted.map((artifact) => artifact.path),
+			Arr.map(result.promoted, (artifact) => artifact.path),
 			["p1", "p2", "p3", "p4"],
 		)
 		assert.deepStrictEqual(
-			result.rejected.map((rejected) => rejected.path),
+			Arr.map(result.rejected, (rejected) => rejected.path),
 			["p5"],
 		)
 	})

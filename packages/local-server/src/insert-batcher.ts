@@ -9,7 +9,7 @@
 // the next tick and go into one insert. So a lone export waits for nothing,
 // and the busier the server, the larger each insert.
 
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import type { Chdb } from "./chdb"
 import {
 	buildBatchedInsertStatements,
@@ -111,16 +111,24 @@ export class InsertBatcher {
 		this.#queue = []
 		this.#queuedBytes = 0
 		const datasources = [
-			...new Set(queue.flatMap(({ batches }) => batches.map(({ datasource }) => datasource))),
+			...new Set(Arr.flatMap(queue, ({ batches }) => Arr.map(batches, ({ datasource }) => datasource))),
 		].sort()
 		for (const datasource of datasources) {
 			// An export whose insert already failed stops there, as it did when it inserted alone.
-			const parts = queue.flatMap((owner): QueuedPart[] => {
+			const parts = Arr.flatMap(queue, (owner): QueuedPart[] => {
 				if (owner.failure !== undefined) return []
-				const own = owner.batches.filter((batch) => batch.datasource === datasource)
+				const own = Arr.filter(owner.batches, (batch) => batch.datasource === datasource)
 				return own.length === 0
 					? []
-					: [{ queued: owner, ndjson: own.map((batch) => batch.ndjson).join("\n") }]
+					: [
+							{
+								queued: owner,
+								ndjson: Arr.join(
+									Arr.map(own, (batch) => batch.ndjson),
+									"\n",
+								),
+							},
+						]
 			})
 			// Whatever throws here, every export still settles below rather than waiting forever.
 			const inserted = Result.try(() => this.#insertDatasource(datasource, parts))
@@ -138,11 +146,11 @@ export class InsertBatcher {
 	#insertDatasource(datasource: string, parts: ReadonlyArray<QueuedPart>): void {
 		const statements = buildBatchedInsertStatements(
 			datasource,
-			parts.map((part) => ({ owner: part, ndjson: part.ndjson })),
+			Arr.map(parts, (part) => ({ owner: part, ndjson: part.ndjson })),
 		)
 		for (const statement of statements) {
 			// Only an export split over several statements can have failed in an earlier one.
-			if (statement.parts.some(({ owner }) => owner.queued.failure !== undefined)) continue
+			if (Arr.some(statement.parts, ({ owner }) => owner.queued.failure !== undefined)) continue
 			const inserted = Result.try(() => this.#db.exec(statement.sql))
 			if (Result.isSuccess(inserted))
 				for (const { owner, rowCount } of statement.parts) owner.queued.accepted += rowCount
@@ -151,7 +159,7 @@ export class InsertBatcher {
 			else
 				this.#retryAlone(
 					datasource,
-					statement.parts.map(({ owner }) => owner),
+					Arr.map(statement.parts, ({ owner }) => owner),
 					inserted.failure,
 				)
 		}

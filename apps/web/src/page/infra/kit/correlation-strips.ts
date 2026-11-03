@@ -16,6 +16,7 @@ import { panel } from "@maple/views/ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
 import { typography } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `CorrelationStrips`: signals stacked on one time axis under one linked cursor, each with its label, source
 // and window summary.
@@ -58,7 +59,7 @@ const lastValue = <M>(
 	const { data, series } = transformRows(strip.rows)
 	const latest = data[data.length - 1]
 	if (latest === undefined) return undefined
-	const summary = series.flatMap((name) => {
+	const summary = Arr.flatMap(series, (name) => {
 		const value = latest[name]
 		return typeof value === "number" ? [{ name, value }] : []
 	})
@@ -66,7 +67,7 @@ const lastValue = <M>(
 	const keyed = summary.length > 1
 	return seriesLegend(h, {
 		className: "mb-1",
-		items: summary.map(({ name, value }) => ({
+		items: Arr.map(summary, ({ name, value }) => ({
 			key: name,
 			label: keyed ? (name === UNNAMED_SERIES_KEY ? strip.label : name) : undefined,
 			color: keyed ? spec.colors[name] : undefined,
@@ -87,7 +88,7 @@ export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStri
 				options.mountCursor,
 			],
 		},
-		options.strips.map((strip, index) => {
+		Arr.map(options.strips, (strip, index) => {
 			const spec = InfraMetricChart.infraMetricSpec({
 				rows: strip.rows,
 				unit: strip.unit,

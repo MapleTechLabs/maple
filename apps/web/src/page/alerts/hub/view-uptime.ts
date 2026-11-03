@@ -1,6 +1,6 @@
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
@@ -68,7 +68,7 @@ const KIND_FILTERS: ReadonlyArray<{ value: UptimeKindFilter; label: string }> = 
 ]
 
 const isKindFilter = (value: string): value is UptimeKindFilter =>
-	KIND_FILTERS.some((kind) => kind.value === value)
+	Arr.some(KIND_FILTERS, (kind) => kind.value === value)
 
 /** The empty org: what uptime checks are and the first one to add. */
 const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolean): Html =>
@@ -99,9 +99,10 @@ const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolea
 /** The window's figures as the toolbar readout: the total, what is down now and the recent uptime. */
 const readout = (h: H, monitors: ReadonlyArray<UptimeMonitor>): ReadonlyArray<Html> => {
 	const summary = summarize(monitors)
-	const downNames = monitors
-		.filter((monitor) => displayStatus(monitor) === "down")
-		.map((monitor) => monitor.name)
+	const downNames = Arr.map(
+		Arr.filter(monitors, (monitor) => displayStatus(monitor) === "down"),
+		(monitor) => monitor.name,
+	)
 	return [
 		toolbarStat(h, { value: String(summary.total), label: pluralize(summary.total, "monitor") }),
 		toolbarStat(h, {
@@ -109,7 +110,7 @@ const readout = (h: H, monitors: ReadonlyArray<UptimeMonitor>): ReadonlyArray<Ht
 			label: "down",
 			dot: summary.down > 0 ? "crit" : undefined,
 			// The rows sort down first; the tooltip names them without a scroll.
-			attributes: downNames.length === 0 ? [] : [h.Title(downNames.join(", "))],
+			attributes: downNames.length === 0 ? [] : [h.Title(Arr.join(downNames, ", "))],
 		}),
 		toolbarStat(h, {
 			value: formatShare(summary.share),
@@ -121,7 +122,7 @@ const readout = (h: H, monitors: ReadonlyArray<UptimeMonitor>): ReadonlyArray<Ht
 
 const statusSegments = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>): Html => {
 	const count = (filter: StatusFilter) =>
-		monitors.filter((monitor) => matchesStatus(monitor, filter)).length
+		Arr.filter(monitors, (monitor) => matchesStatus(monitor, filter)).length
 	const options: ReadonlyArray<{ value: StatusFilter; label: string }> = [
 		{ value: "all", label: "All" },
 		{ value: "down", label: "Down" },
@@ -133,7 +134,7 @@ const statusSegments = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonito
 		size: "sm",
 		value: model.uptimeStatus,
 		onChange: (filter) => Message.ClickedUptimeStatus({ filter }),
-		options: options.map((option) => ({
+		options: Arr.map(options, (option) => ({
 			value: option.value,
 			label: `${option.label} ${count(option.value)}`,
 			ariaLabel: `${option.label} ${count(option.value)}`,
@@ -170,7 +171,7 @@ const toolbar = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>): Ht
 						),
 					],
 				},
-				KIND_FILTERS.map((kind) => nativeOption(kind.value, kind.label)),
+				Arr.map(KIND_FILTERS, (kind) => nativeOption(kind.value, kind.label)),
 			),
 			hstack(h, { gap: "3" }, readout(h, monitors)),
 		],
@@ -210,7 +211,7 @@ const PERCENTILE_TITLE = "Response time over the monitor's recent checks"
 /** P50, P95 and P99 of the recent checks; heartbeats have no response time. */
 const latencyCells = (h: H, monitor: UptimeMonitor): ReadonlyArray<Html> => {
 	const percentiles = latencyPercentiles(monitor.state.recent)
-	return PERCENTILE_COLUMNS.map((column) =>
+	return Arr.map(PERCENTILE_COLUMNS, (column) =>
 		h.span(
 			[
 				h.Class(
@@ -235,7 +236,10 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 	const isPaused = displayStatus(monitor) === "paused"
 	const recent = monitor.state.recent
 	return h.li(
-		[h.Key(monitor.id), h.Class("relative py-3 pr-2 pl-4 hover:bg-surface-faint active:bg-surface-faint")],
+		[
+			h.Key(monitor.id),
+			h.Class("relative py-3 pr-2 pl-4 hover:bg-surface-faint active:bg-surface-faint"),
+		],
 		[
 			h.div(
 				[h.Class(ROW_GRID)],
@@ -250,22 +254,26 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 							h.div(
 								[h.Class("min-w-0")],
 								[
-									hstack(h, { gap: "2", shrink: true },
-										[
-											rowLink(
-												h,
-												{
-													href: monitorHref(monitor.id),
-													className: typographyClass({ size: "sm", weight: "medium", truncate: true }),
-												},
-												[monitor.name],
-											),
-											...(displayStatus(monitor) === "up"
-												? []
-												: [uptimeStatusChip(h, monitor, nowMs)]),
-										],
-									),
-									typography(h, { size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
+									hstack(h, { gap: "2", shrink: true }, [
+										rowLink(
+											h,
+											{
+												href: monitorHref(monitor.id),
+												className: typographyClass({
+													size: "sm",
+													weight: "medium",
+													truncate: true,
+												}),
+											},
+											[monitor.name],
+										),
+										...(displayStatus(monitor) === "up"
+											? []
+											: [uptimeStatusChip(h, monitor, nowMs)]),
+									]),
+									typography(
+										h,
+										{ size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
 										[subline(monitor, nowMs)],
 									),
 								],
@@ -273,9 +281,9 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 						],
 					),
 					recentChecksStrip(h, { recent, slots: RECENT_SLOTS, isMuted: isPaused }),
-					typography(h, { size: "xs", mono: true, numeric: true, className: "text-right" },
-						[isPaused ? "–" : formatShare(uptimeShare(recent))],
-					),
+					typography(h, { size: "xs", mono: true, numeric: true, className: "text-right" }, [
+						isPaused ? "–" : formatShare(uptimeShare(recent)),
+					]),
 					...latencyCells(h, monitor),
 					...(model.isAdmin ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
 				],
@@ -299,43 +307,35 @@ const groupHeader = (h: H, [namespace, monitors]: MonitorGroup): Html =>
 	)
 
 const table = (h: H, model: Model, groups: ReadonlyArray<MonitorGroup>, nowMs: number): Html =>
-	borderedBox(
-		h,
-		{ overflow: "x-auto" },
-		[
-			h.div(
-				[h.Class("min-w-[860px]")],
-				[
-					h.div(
-						[h.Class(cn(ROW_GRID, "border-b py-2 pr-2 pl-4"))],
-						[
-							eyebrow(h, {}, ["Monitor"]),
-							eyebrow(h, {}, ["Recent checks"]),
-							eyebrow(h, { className: "text-right" }, ["Uptime"]),
-							...PERCENTILE_COLUMNS.map((column) =>
-								eyebrow(
-									h,
-									{ className: "text-right", attributes: [h.Title(PERCENTILE_TITLE)] },
-									[column.label],
-								),
-							),
-							h.span([], []),
-						],
-					),
-					h.ul(
-						[h.Class("divide-y")],
-						groups.flatMap((group) => [
-							// One unnamed group is the plain list, no header.
-							...(groups.length > 1 || group[0] !== NO_NAMESPACE
-								? [groupHeader(h, group)]
-								: []),
-							...group[1].map((monitor) => monitorRow(h, model, monitor, nowMs)),
-						]),
-					),
-				],
-			),
-		],
-	)
+	borderedBox(h, { overflow: "x-auto" }, [
+		h.div(
+			[h.Class("min-w-[860px]")],
+			[
+				h.div(
+					[h.Class(cn(ROW_GRID, "border-b py-2 pr-2 pl-4"))],
+					[
+						eyebrow(h, {}, ["Monitor"]),
+						eyebrow(h, {}, ["Recent checks"]),
+						eyebrow(h, { className: "text-right" }, ["Uptime"]),
+						...Arr.map(PERCENTILE_COLUMNS, (column) =>
+							eyebrow(h, { className: "text-right", attributes: [h.Title(PERCENTILE_TITLE)] }, [
+								column.label,
+							]),
+						),
+						h.span([], []),
+					],
+				),
+				h.ul(
+					[h.Class("divide-y")],
+					Arr.flatMap(groups, (group) => [
+						// One unnamed group is the plain list, no header.
+						...(groups.length > 1 || group[0] !== NO_NAMESPACE ? [groupHeader(h, group)] : []),
+						...Arr.map(group[1], (monitor) => monitorRow(h, model, monitor, nowMs)),
+					]),
+				),
+			],
+		),
+	])
 
 /**
  * The monitors in view: a pinned namespace keeps only its own, as the services list does, once the
@@ -351,7 +351,7 @@ const scoped = (
 		: Option.match(namespaces, {
 				onNone: () => monitors,
 				onSome: (known) =>
-					monitors.filter((monitor) => monitorNamespace(monitor, known) === pinnedNamespace),
+					Arr.filter(monitors, (monitor) => monitorNamespace(monitor, known) === pinnedNamespace),
 			})
 
 const loaded = (
@@ -369,36 +369,35 @@ const loaded = (
 			noun: "monitors",
 			description: `No monitor checks a service in the ${pinnedNamespace ?? ""} namespace. Clear the namespace pin to see every monitor.`,
 		})
-	const rows = monitors.filter(
+	const rows = Arr.filter(
+		monitors,
 		(monitor) =>
 			matchesStatus(monitor, model.uptimeStatus) &&
 			(model.uptimeKind === "all" || monitor.kind === model.uptimeKind) &&
 			matchesQuery(monitor, model.uptimeQuery, nowMs),
 	)
-	return vstack(h, { gap: "4" },
-		[
-			toolbar(h, model, monitors),
-			rows.length === 0
-				? filteredEmpty(h, {
-						noun: "monitors",
-						description: "Nothing matches the search, status and type.",
-						onClear: Message.ClickedClearUptimeFilters(),
-						clearLabel: "Clear filters",
-					})
-				: table(
-						h,
-						model,
-						// Pinned to one namespace, the groups would be one header over the whole list.
-						pinnedNamespace === null
-							? groupMonitors(
-									rows,
-									Option.getOrElse(namespaces, () => ({})),
-								)
-							: [[NO_NAMESPACE, rows]],
-						nowMs,
-					),
-		],
-	)
+	return vstack(h, { gap: "4" }, [
+		toolbar(h, model, monitors),
+		rows.length === 0
+			? filteredEmpty(h, {
+					noun: "monitors",
+					description: "Nothing matches the search, status and type.",
+					onClear: Message.ClickedClearUptimeFilters(),
+					clearLabel: "Clear filters",
+				})
+			: table(
+					h,
+					model,
+					// Pinned to one namespace, the groups would be one header over the whole list.
+					pinnedNamespace === null
+						? groupMonitors(
+								rows,
+								Option.getOrElse(namespaces, () => ({})),
+							)
+						: [[NO_NAMESPACE, rows]],
+					nowMs,
+				),
+	])
 }
 
 export const uptimeTab = (h: H, model: Model, nowMs: number, pinnedNamespace: string | null): Html => {

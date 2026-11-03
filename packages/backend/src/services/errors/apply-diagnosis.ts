@@ -24,7 +24,7 @@ import {
 } from "@maple/domain/http"
 import { ErrorIssueEventId, ErrorIssueId, type InvestigationId } from "@maple/domain/primitives"
 import { createHash } from "node:crypto"
-import { Effect, identity, Option, Schema } from "effect"
+import { Effect, identity, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import {
@@ -42,13 +42,16 @@ const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
  */
 export const deterministicInvestigationEventId = (investigationId: string): string => {
 	const hex = createHash("sha256").update(`investigation-event:${investigationId}`).digest("hex")
-	return [
-		hex.slice(0, 8),
-		hex.slice(8, 12),
-		`5${hex.slice(13, 16)}`,
-		`${((Number.parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
-		hex.slice(20, 32),
-	].join("-")
+	return Arr.join(
+		[
+			Str.slice(0, 8)(hex),
+			Str.slice(8, 12)(hex),
+			`5${Str.slice(13, 16)(hex)}`,
+			`${((Number.parseInt(Str.slice(16, 17)(hex), 16) & 0x3) | 0x8).toString(16)}${Str.slice(17, 20)(hex)}`,
+			Str.slice(20, 32)(hex),
+		],
+		"-",
+	)
 }
 
 const decodeSubjectDiscriminator = Schema.decodeUnknownOption(InvestigationSubjectDiscriminator)

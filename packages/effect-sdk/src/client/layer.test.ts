@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { layer } from "./layer.js"
 
@@ -55,7 +55,7 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 	it("applies span options and still stamps session.id on the exported span", async () => {
 		const bodies: Array<string> = []
 		onFetch = async (request) => {
-			if (request.url.endsWith("/v1/traces")) bodies.push(await request.text())
+			if (Str.endsWith("/v1/traces")(request.url)) bodies.push(await request.text())
 			return new Response(null, { status: 200 })
 		}
 		const g = globalThis as Record<string, unknown>
@@ -79,7 +79,7 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 			),
 		)
 
-		const payload = bodies.join("\n")
+		const payload = Arr.join(bodies, "\n")
 		expect(payload).toContain('"page-load"')
 		expect(payload).not.toContain('"noise.poll"')
 		expect(payload).toContain("sess-xyz")

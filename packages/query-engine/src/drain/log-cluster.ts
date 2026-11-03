@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 export class LogCluster {
 	logTemplateTokens: string[]
 	clusterId: number
@@ -10,10 +11,10 @@ export class LogCluster {
 	}
 
 	getTemplate(): string {
-		return this.logTemplateTokens.join(" ")
+		return Arr.join(this.logTemplateTokens, " ")
 	}
 
 	toString(): string {
-		return `ID=${String(this.clusterId).padEnd(5)} : size=${String(this.size).padEnd(10)}: ${this.getTemplate()}`
+		return `ID=${Str.padEnd(5)(String(this.clusterId))} : size=${Str.padEnd(10)(String(this.size))}: ${this.getTemplate()}`
 	}
 }

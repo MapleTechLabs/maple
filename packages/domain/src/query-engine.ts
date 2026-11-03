@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { ALERT_REDUCERS } from "@maple/query-model"
 import { PublicHttpErrorBodySchema } from "./http/error-policy"
 import {
@@ -538,11 +538,13 @@ const QUERY_SPEC_ARMS = new Map<string, Schema.ConstraintDecoder<unknown>>([
 
 // Split-and-trim instead of a whitespace regex: linear on any input.
 const oneLine = (message: string): string =>
-	message
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.join(" ")
+	Arr.join(
+		Arr.filter(
+			Arr.map(Str.split("\n")(message), (line) => Str.trim(line)),
+			(line) => line.length > 0,
+		),
+		" ",
+	)
 
 /**
  * One actionable line for a `QuerySpec` decode failure: the targeted arm's own

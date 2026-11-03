@@ -1,5 +1,5 @@
 import { rowToAlertIncidentDocument } from "@maple/web-data/collections/alerts"
-import { Schema, Stream } from "effect"
+import { Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { type OrgCollections, orgLive } from "../../../data/collections/org-collections"
 import { liveQueryStream } from "../../../data/live-query"
@@ -17,7 +17,7 @@ const incidents = (orgId: string): Stream.Stream<Message, never, OrgCollections>
 			(rows) =>
 				Message.UpdatedIncidents({
 					orgId,
-					incidents: rows.map(rowToAlertIncidentDocument).map((incident) => ({
+					incidents: Arr.map(Arr.map(rows, rowToAlertIncidentDocument), (incident) => ({
 						status: incident.status,
 						groupKey: incident.groupKey,
 						severity: incident.severity,

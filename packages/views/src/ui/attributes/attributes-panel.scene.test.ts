@@ -13,6 +13,7 @@ import {
 import { describe, expect, test } from "vitest"
 import { init, Message, type Model, OutMessage, update, WriteAttributeClipboard } from "./attributes-panel"
 import { type PanelInputs, view } from "./attributes-view"
+import { Record as Rec } from "effect"
 
 const INPUTS: PanelInputs = {
 	logAttributes: { "http.route": "/api/checkout", duration_ms: "785", maple_org_id: "org_1" },
@@ -95,9 +96,7 @@ describe("attributes panel", () => {
 	})
 
 	test("a huge JSON attribute expands to a capped part with a note", () => {
-		const huge = JSON.stringify(
-			Object.fromEntries(Array.from({ length: 20_000 }, (_, i) => [`key${i}`, i])),
-		)
+		const huge = JSON.stringify(Rec.fromEntries(Array.from({ length: 20_000 }, (_, i) => [`key${i}`, i])))
 		const hugeProgram = {
 			update: program.update,
 			view: (model: Model, h: HtmlBuilder<Message>) =>

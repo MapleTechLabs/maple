@@ -1,7 +1,7 @@
 import type { AiSessionSpan } from "@maple/domain/http"
 import { callMetaLine, type SpanMessage, type SpanMessagePart } from "@maple/agent-sessions"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { tryParseJson } from "@maple/views/lib/display-text"
 import { emptyMessage } from "@maple/views/ui/empty"
@@ -35,20 +35,26 @@ const ROLE_TEXT = new Map([
 	["tool", "text-chart-4"],
 ])
 
-const roleColor = (role: string): string => ROLE_TEXT.get(role.toLowerCase()) ?? "text-muted-foreground"
+const roleColor = (role: string): string => ROLE_TEXT.get(Str.toLowerCase(role)) ?? "text-muted-foreground"
 
 /** A message's parts as one preview body; reasoning is labelled rather than dropped. */
 const collapsedText = (parts: ReadonlyArray<SpanMessagePart>): string =>
-	parts
-		.map((part) => {
-			if (part.kind === "text") return part.text
-			if (part.kind === "reasoning")
-				return part.text === undefined ? "[thinking, no text captured]" : `THINKING\n${part.text}`
-			return ""
-		})
-		.filter((text) => text !== "")
-		.join("\n")
-		.trim()
+	Str.trim(
+		Arr.join(
+			Arr.filter(
+				Arr.map(parts, (part) => {
+					if (part.kind === "text") return part.text
+					if (part.kind === "reasoning")
+						return part.text === undefined
+							? "[thinking, no text captured]"
+							: `THINKING\n${part.text}`
+					return ""
+				}),
+				(text) => text !== "",
+			),
+			"\n",
+		),
+	)
 
 /** A clamped panel body, keyed for its expansion and measured overflow. */
 const panelBody = (
@@ -186,8 +192,9 @@ const messagePart = (h: H, model: Model, part: SpanMessagePart, isRaw: boolean, 
 
 const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionSpan, key: string): Html => {
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
-	const hasText = message.parts.some((part) => part.kind === "text")
-	const rendered = message.parts.some(
+	const hasText = Arr.some(message.parts, (part) => part.kind === "text")
+	const rendered = Arr.some(
+		message.parts,
 		(part) => part.kind === "text" && Option.isNone(tryParseJson(part.text)),
 	)
 		? "md"
@@ -211,7 +218,7 @@ const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionS
 		vstack(
 			h,
 			{ gap: "2", shrink: true },
-			message.parts.map((part, index) => messagePart(h, model, part, isRaw, `${key}:${index}`)),
+			Arr.map(message.parts, (part, index) => messagePart(h, model, part, isRaw, `${key}:${index}`)),
 		),
 	])
 }
@@ -222,14 +229,14 @@ export const popoverMarkdown = (
 	messages: ReadonlyArray<SpanMessage>,
 	keyPrefix: string,
 ): ReadonlyArray<string> =>
-	messages.flatMap((message, index) => {
+	Arr.flatMap(messages, (message, index) => {
 		const key = `${keyPrefix}:msg${index}`
-		if (message.role.toLowerCase() === "system")
+		if (Str.toLowerCase(message.role) === "system")
 			return disclosed(model.openRows, key, false)
 				? shownMarkdown(model, key, collapsedText(message.parts))
 				: []
 		if (disclosed(model.openRows, `${key}:raw`, false)) return []
-		return message.parts.flatMap((part, partIndex) => {
+		return Arr.flatMap(message.parts, (part, partIndex) => {
 			if (part.kind !== "text" || messageBody(part.text).rendered !== "md") return []
 			const partKey = `${key}:${partIndex}`
 			return [disclosed(model.openRows, `${partKey}:text`, false) ? part.text : previewOf(part.text)]
@@ -250,8 +257,8 @@ export const messagesSection = (
 			])
 		: h.div(
 				[h.Class("flex flex-col gap-4 pb-1")],
-				messages.map((message, index) =>
-					message.role.toLowerCase() === "system"
+				Arr.map(messages, (message, index) =>
+					Str.toLowerCase(message.role) === "system"
 						? systemMessageRow(h, model, message, `${keyPrefix}:msg${index}`)
 						: messageBlock(h, model, message, span, `${keyPrefix}:msg${index}`),
 				),

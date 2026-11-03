@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { Effect, Exit, Layer, Redacted, Scope } from "effect"
+import { Effect, Exit, Layer, Redacted, Scope, Array as Arr } from "effect"
 import * as Output from "alchemy/Output"
 import { AlchemyContext } from "alchemy/AlchemyContext"
 import {
@@ -47,7 +47,7 @@ describe("Maple.Telemetry", () => {
 					"MAPLE_ENVIRONMENT",
 					"MAPLE_INGEST_KEY",
 				])
-				assert.isTrue([...bound.values()].every(Output.isOutput))
+				assert.isTrue(Arr.every([...bound.values()], Output.isOutput))
 				assert.isDefined(context.telemetry)
 			}).pipe(Effect.scoped),
 	)

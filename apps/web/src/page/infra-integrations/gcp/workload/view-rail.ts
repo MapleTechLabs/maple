@@ -12,6 +12,7 @@ import { serviceDot } from "@maple/views/ui/values"
 import type { Message } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // `GcpWorkloadRail`.
 
@@ -70,9 +71,9 @@ const externalLink = (h: H, href: string, name: IconName, text: string): Html =>
 
 /** Rail keys in sentence case; the signal modules keep lowercase keys for their own prose. */
 const railKey = (label: string): string => {
-	const [first = "", ...rest] = label.split(" ")
-	const lead = first === "cpu" ? "CPU" : first.charAt(0).toUpperCase() + first.slice(1)
-	return [lead, ...rest].join(" ")
+	const [first, ...rest] = Str.split(" ")(label)
+	const lead = first === "cpu" ? "CPU" : Str.toUpperCase(first.charAt(0)) + Str.slice(1)(first)
+	return Arr.join([lead, ...rest], " ")
 }
 
 const factRow = (h: H, fact: GcpRailFact): Html | null =>
@@ -83,7 +84,7 @@ const factRow = (h: H, fact: GcpRailFact): Html | null =>
 	})
 
 const present = (nodes: ReadonlyArray<Html | null>): ReadonlyArray<Html> =>
-	nodes.filter((node): node is Html => node !== null)
+	Arr.filter(nodes, (node): node is Html => node !== null)
 
 export type RailOptions = Readonly<{
 	service: GcpInfraServiceId
@@ -104,7 +105,7 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 	const labels =
 		inventory === undefined
 			? []
-			: Object.entries(inventory.labels).map(([key, value]) => `${key}=${value}`)
+			: Arr.map(Rec.toEntries(inventory.labels), ([key, value]) => `${key}=${value}`)
 	const tracedService = options.traced?.service ?? null
 	const { timeSearch } = options
 	return h.div(
@@ -121,7 +122,7 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 								? null
 								: gcpStateLabel(inventory.state),
 					}),
-					...options.facts.map((fact) => factRow(h, fact)),
+					...Arr.map(options.facts, (fact) => factRow(h, fact)),
 				]),
 				...(labels.length === 0
 					? []
@@ -130,7 +131,7 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 								hstack(
 									h,
 									{ gap: "1", align: "stretch", wrap: true },
-									labels.map((text) =>
+									Arr.map(labels, (text) =>
 										h.span(
 											[h.Class("flex min-w-0 max-w-full"), h.Title(text)],
 											[
@@ -146,7 +147,13 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 			]),
 			...(options.health.length === 0
 				? []
-				: [detailRailGroup(h, "Health", present(options.health.map((fact) => factRow(h, fact))))]),
+				: [
+						detailRailGroup(
+							h,
+							"Health",
+							present(Arr.map(options.health, (fact) => factRow(h, fact))),
+						),
+					]),
 			...(options.traced === undefined
 				? []
 				: [

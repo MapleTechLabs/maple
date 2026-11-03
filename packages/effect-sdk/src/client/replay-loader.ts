@@ -22,6 +22,7 @@ import {
 import { setupStandaloneSession } from "./standalone-session.js"
 import { getCurrentIdentity } from "./user.js"
 import { CLIENT_SDK_HINT } from "../version.js"
+import { String as Str } from "effect"
 
 export interface ClientReplayConfig {
 	/** Record rrweb session replays. Default `true`. */
@@ -82,7 +83,7 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 		return noOpHandle
 
 	const engineConfig = {
-		endpoint: config.endpoint.replace(/\/$/, ""),
+		endpoint: Str.replace(/\/$/, "")(config.endpoint),
 		ingestKey: config.ingestKey,
 		sdk: CLIENT_SDK_HINT,
 		maskAllInputs: config.replay?.maskAllInputs ?? true,

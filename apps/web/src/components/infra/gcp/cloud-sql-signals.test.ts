@@ -17,6 +17,7 @@ import {
 	gcpStatements,
 	type GcpTracedQuery,
 } from "./cloud-sql-signals"
+import { Array as Arr, String as Str } from "effect"
 
 const BUCKET_SECONDS = 300
 const START_MS = Date.parse("2026-10-14T12:00:00.000Z")
@@ -126,7 +127,7 @@ describe("gcpStatementTextPrefix", () => {
 	})
 
 	it("caps a long statement so the link stays short", () => {
-		expect(gcpStatementTextPrefix(`SELECT ${"a, ".repeat(200)}b FROM t`)?.length).toBe(200)
+		expect(gcpStatementTextPrefix(`SELECT ${Str.repeat(200)("a, ")}b FROM t`)?.length).toBe(200)
 	})
 
 	it("keeps a statement without placeholders whole", () => {
@@ -311,7 +312,7 @@ describe("gcpStatements", () => {
 
 	it("never shares of less than the statements' own time, and has no latency without calls", () => {
 		const statements = gcpStatements([row("a", 3), row("b", 1, 0)], [])
-		expect(statements.map((statement) => statement.executionShare)).toEqual([0.75, 0.25])
+		expect(Arr.map(statements, (statement) => statement.executionShare)).toEqual([0.75, 0.25])
 		expect(statements[1]).toMatchObject({ p50LatencyMillis: null, p95LatencyMillis: null })
 	})
 })

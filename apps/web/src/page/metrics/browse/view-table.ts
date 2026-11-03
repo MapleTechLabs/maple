@@ -23,6 +23,7 @@ import type { Model } from "./model"
 import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -152,7 +153,7 @@ export const metricsTable = (
 						]),
 						tableBody(
 							h,
-							metrics.map((metric) => metricRow(h, model, metric, timeZone)),
+							Arr.map(metrics, (metric) => metricRow(h, model, metric, timeZone)),
 						),
 					]),
 				],

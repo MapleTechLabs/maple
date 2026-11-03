@@ -1,4 +1,4 @@
-import { DateTime, Option } from "effect"
+import { DateTime, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
@@ -30,18 +30,19 @@ export const deriveHeatmapPoints = (rows: ReadonlyArray<Row>): ReadonlyArray<Hea
 	const first = rows[0]
 	if (first === undefined) return []
 	if ("x" in first && "y" in first && "value" in first)
-		return rows.map((row) => ({
+		return Arr.map(rows, (row) => ({
 			x: cellText(row.x),
 			y: cellText(row.y),
 			value: asFiniteNumber(row.value),
 		}))
-	const numericKeys = Object.keys(first).filter(
+	const numericKeys = Arr.filter(
+		Rec.keys(first),
 		(k) => k !== "name" && k !== "bucket" && typeof first[k] === "number",
 	)
 	const labelKey = "name" in first ? "name" : "bucket" in first ? "bucket" : null
 	if (labelKey === null || numericKeys.length === 0) return []
-	return rows.flatMap((row) =>
-		numericKeys.map((xKey) => ({
+	return Arr.flatMap(rows, (row) =>
+		Arr.map(numericKeys, (xKey) => ({
 			x: xKey,
 			y: cellText(row[labelKey]),
 			value: asFiniteNumber(row[xKey]),
@@ -74,23 +75,23 @@ const EMPTY_MODEL: HeatmapModel = {
 /** `buildModel`: all-zero axes pruned (and counted), y reversed, the cross-product split into cells and holes. */
 export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapModel => {
 	if (points.length === 0) return EMPTY_MODEL
-	const xs = [...new Set(points.map((p) => p.x))]
-	const ys = [...new Set(points.map((p) => p.y))]
-	const live = points.filter((p) => p.value !== 0)
-	const liveX = new Set(live.map((p) => p.x))
-	const liveY = new Set(live.map((p) => p.y))
-	const keptX = xs.filter((x) => liveX.has(x))
-	const keptY = ys.filter((y) => liveY.has(y))
+	const xs = [...new Set(Arr.map(points, (p) => p.x))]
+	const ys = [...new Set(Arr.map(points, (p) => p.y))]
+	const live = Arr.filter(points, (p) => p.value !== 0)
+	const liveX = new Set(Arr.map(live, (p) => p.x))
+	const liveY = new Set(Arr.map(live, (p) => p.y))
+	const keptX = Arr.filter(xs, (x) => liveX.has(x))
+	const keptY = Arr.filter(ys, (y) => liveY.has(y))
 	const pruned = keptX.length > 0 && keptY.length > 0
 	const xDomain = pruned ? keptX : xs
 	const yDomain = [...(pruned ? keptY : ys)].reverse()
 	const slotKey = (x: string, y: string) => `${x}\u0000${y}`
-	const lookup = new Map(points.map((point) => [slotKey(point.x, point.y), point.value]))
-	const slots = xDomain.flatMap((x) =>
-		yDomain.map((y): HeatmapSlot => ({ x, y, value: lookup.get(slotKey(x, y)) ?? null })),
+	const lookup = new Map(Arr.map(points, (point) => [slotKey(point.x, point.y), point.value]))
+	const slots = Arr.flatMap(xDomain, (x) =>
+		Arr.map(yDomain, (y): HeatmapSlot => ({ x, y, value: lookup.get(slotKey(x, y)) ?? null })),
 	)
-	const cells = slots.filter((slot) => slot.value !== null)
-	const values = cells.flatMap((slot) => (slot.value === null ? [] : [slot.value]))
+	const cells = Arr.filter(slots, (slot) => slot.value !== null)
+	const values = Arr.flatMap(cells, (slot) => (slot.value === null ? [] : [slot.value]))
 	const min = values.length > 0 ? Math.min(...values) : 0
 	const max = values.length > 0 ? Math.max(...values) : 1
 	const span = max - min
@@ -98,7 +99,7 @@ export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapM
 		xDomain,
 		yDomain,
 		cells,
-		holes: slots.filter((slot) => slot.value === null),
+		holes: Arr.filter(slots, (slot) => slot.value === null),
 		domain: span > 0 ? [min, max] : [min, min + 1],
 		span,
 		hiddenX: pruned ? xs.length - keptX.length : 0,
@@ -153,13 +154,21 @@ const clockLabel = (iso: string, timeZone: string | undefined): string =>
 	Option.match(DateTime.make(iso), {
 		onNone: () => iso,
 		onSome: (date) =>
-			new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false })
-				.format(DateTime.toEpochMillis(date))
-				.replace(/^24:/, "00:"),
+			Str.replace(
+				/^24:/,
+				"00:",
+			)(
+				new Intl.DateTimeFormat("en-GB", {
+					timeZone,
+					hour: "2-digit",
+					minute: "2-digit",
+					hour12: false,
+				}).format(DateTime.toEpochMillis(date)),
+			),
 	})
 
 export const shortenYLabel = (raw: string, allIso: boolean, timeZone: string | undefined): string =>
 	allIso ? clockLabel(raw, timeZone) : raw
 
 export const truncateYLabel = (label: string, maxChars: number): string =>
-	label.length <= maxChars ? label : `${label.slice(0, Math.max(1, maxChars - 1))}…`
+	label.length <= maxChars ? label : `${Str.slice(0, Math.max(1, maxChars - 1))(label)}…`

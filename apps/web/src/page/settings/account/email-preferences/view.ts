@@ -24,6 +24,7 @@ import {
 	isWebEnabled,
 } from "./update"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -72,7 +73,7 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "dayOfWeek", value })),
 						],
 					},
-					DIGEST_DAYS.map((day) => nativeOption(String(day.value), day.label)),
+					Arr.map(DIGEST_DAYS, (day) => nativeOption(String(day.value), day.label)),
 				),
 				h.span([], ["at"]),
 				nativeSelect(
@@ -86,7 +87,7 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "sendHour", value })),
 						],
 					},
-					DIGEST_HOURS.map((hour) => nativeOption(String(hour.value), hour.label)),
+					Arr.map(DIGEST_HOURS, (hour) => nativeOption(String(hour.value), hour.label)),
 				),
 				nativeSelect(
 					h,
@@ -99,7 +100,7 @@ const scheduleField = (h: H, model: Model): Html => {
 							h.OnChange((value) => Message.ChangedSchedule({ field: "timezone", value })),
 						],
 					},
-					zones.map((zone) => nativeOption(zone, zone)),
+					Arr.map(zones, (zone) => nativeOption(zone, zone)),
 				),
 			],
 		),

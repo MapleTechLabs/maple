@@ -1,5 +1,5 @@
 import { clerkJsUrl, computeClerkCookieSuffix } from "@maple/domain/clerk-js-url"
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Effect, Option, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 
 /**
  * Who the visitor is to Clerk, without `@clerk/clerk-react`. Most visitors never signed in, so
@@ -37,8 +37,8 @@ declare global {
  * Another instance's cookie on the same domain (a PR preview) does not count.
  */
 export const hasClerkSessionCookie = (cookie: string, suffix: string): boolean =>
-	cookie.split(";").some((pair) => {
-		const [name = "", value = ""] = pair.trim().split("=")
+	Arr.some(Str.split(";")(cookie), (pair) => {
+		const [name, value = ""] = Str.split("=")(Str.trim(pair))
 		return (
 			(name === "__client_uat" || name === `__client_uat_${suffix}`) && Number.parseInt(value, 10) > 0
 		)

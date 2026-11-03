@@ -43,6 +43,7 @@ import schemaV42Sql from "./schema/local-schema-v42.sql" with { type: "text" }
 import schemaV43Sql from "./schema/local-schema-v43.sql" with { type: "text" }
 import schemaV44Sql from "./schema/local-schema-v44.sql" with { type: "text" }
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "@maple/local-server/schema-manifest"
+import { Array as Arr } from "effect"
 
 /**
  * Immutable per-version DDL and manifest snapshots.
@@ -110,7 +111,7 @@ export interface LocalSchemaSnapshot {
 /** Indexed by schema version; index 0 is the fingerprint-only legacy store, which has no DDL. */
 export const LOCAL_SCHEMA_SNAPSHOTS: ReadonlyArray<LocalSchemaSnapshot | undefined> = Object.freeze([
 	undefined,
-	...SNAPSHOT_SQL.map((sql, index) => {
+	...Arr.map(SNAPSHOT_SQL, (sql, index) => {
 		const manifest = buildLocalSchemaManifest(sql)
 		return Object.freeze({ version: index + 1, sql, manifest, manifestDigest: manifest.digest })
 	}),

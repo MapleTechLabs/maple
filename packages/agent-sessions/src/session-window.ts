@@ -1,5 +1,6 @@
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import { MAPLE_AI_TRACE_SESSION_PREFIX, traceSessionTraceId } from "@maple/domain/gen-ai"
+import { String as Str } from "effect"
 
 // The bounds a link carries are the session's own — see `sessionLinkWindow` —
 // so the pad covers only what a whole-second warehouse window rounds off and
@@ -109,7 +110,7 @@ const BREADCRUMB_ID_MAX_CHARS = 24
 
 export function breadcrumbSessionId(sessionId: string): string {
 	if (sessionId.length <= BREADCRUMB_ID_MAX_CHARS) return sessionId
-	return `${sessionId.slice(0, 9)}…${sessionId.slice(-4)}`
+	return `${Str.slice(0, 9)(sessionId)}…${Str.slice(-4)(sessionId)}`
 }
 
 /** How much of a synthesized id's trace id a row shows — enough to match against
@@ -142,5 +143,5 @@ export function sessionRowIdParts(sessionId: string): {
 } {
 	const traceId = traceSessionTraceId(sessionId)
 	if (traceId === undefined) return { kind: "session", id: sessionId, short: sessionId }
-	return { kind: "trace", id: traceId, short: `${traceId.slice(0, TRACE_SESSION_ID_CHARS)}…` }
+	return { kind: "trace", id: traceId, short: `${Str.slice(0, TRACE_SESSION_ID_CHARS)(traceId)}…` }
 }

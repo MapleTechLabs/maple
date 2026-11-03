@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import type { CacheValue, QueryKey } from "../../data/cache-store"
 import { cachedAs } from "../../data/cached"
 import { filtersOf, nextCursor } from "./fetch"
@@ -25,7 +25,7 @@ const CachedPages = Schema.Struct({ pages: Schema.Array(Schema.Array(SessionRow)
 /** `useInfiniteQuery`'s data: the pages and the cursor each was fetched from. */
 export const pagesToCached = (data: Pick<SessionPages, "pages">) => ({
 	pages: data.pages,
-	pageParams: [undefined, ...data.pages.slice(0, -1).map(nextCursor)],
+	pageParams: [undefined, ...Arr.map(data.pages.slice(0, -1), nextCursor)],
 })
 
 export const pagesFromCached = (value: CacheValue): Option.Option<SessionPages> =>

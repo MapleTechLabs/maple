@@ -22,6 +22,7 @@ import {
 	supabaseOAuthEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
+import { Array as Arr } from "effect"
 
 export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
@@ -69,7 +70,7 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
 		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
 		// Each connector's declared install and outbound config; unset means unavailable.
-		...[...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys].map((key) =>
+		...Arr.map([...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys], (key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
 		),
 		apnsEnv,

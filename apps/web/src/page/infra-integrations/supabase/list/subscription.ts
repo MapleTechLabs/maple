@@ -1,4 +1,4 @@
-import { Duration, Option, Schema, Stream } from "effect"
+import { Duration, Option, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { pollTicks } from "../../../../data/poll"
 import type { Resources } from "../../../../platform/resources"
@@ -17,7 +17,8 @@ const isWaiting = (model: Model): boolean =>
 			status.connected &&
 			!status.revoked &&
 			AsyncData.isSuccess(model.projects.data) &&
-			projectViews(status, model.projects.data.data).some(
+			Arr.some(
+				projectViews(status, model.projects.data.data),
 				(project) => project.collection === "waiting",
 			),
 	})

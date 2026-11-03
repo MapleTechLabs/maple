@@ -11,6 +11,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // Which regions and services a connection streams: Choose data in the connect flow, and Edit data
 // on the connected card.
@@ -56,34 +57,31 @@ export const NAMESPACE_LABEL = {
 } satisfies Record<AwsMetricNamespace, string>
 
 const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection): Html => {
-	const extra = selection.regions
-		.filter((code) => !REGIONS.some((region) => region.code === code))
-		.map((code) => ({ code, location: "" }))
+	const extra = Arr.map(
+		Arr.filter(selection.regions, (code) => !Arr.some(REGIONS, (region) => region.code === code)),
+		(code) => ({ code, location: "" }),
+	)
 	return h.ul(
 		[h.Class("grid grid-cols-1 gap-x-4 @2xl/page:grid-cols-2"), h.AriaLabel("Regions")],
-		[...REGIONS, ...extra].map((region) => {
+		Arr.map([...REGIONS, ...extra], (region) => {
 			const isPicked = selection.regions.includes(region.code)
 			const inputId = `aws-region-${region.code}`
 			return h.li(
 				[h.Class("border-b border-border-subtle")],
 				[
-					label(
-						h,
-						{ className: "flex cursor-pointer gap-3 py-2 text-sm font-normal sm:text-sm" },
-						[
-							...Checkbox.view(h, {
-								model: { isChecked: isPicked },
-								toParentMessage: () =>
-									Message.ToggledAwsRegion({ id: connection.id, region: region.code }),
-								id: `${inputId}-root`,
-								inputId,
-								ariaLabel:
-									region.location === "" ? region.code : `${region.code}, ${region.location}`,
-							}),
-							h.span([h.Class("font-mono")], [region.code]),
-							h.span([h.Class("ml-auto text-xs text-muted-foreground")], [region.location]),
-						],
-					),
+					label(h, { className: "flex cursor-pointer gap-3 py-2 text-sm font-normal sm:text-sm" }, [
+						...Checkbox.view(h, {
+							model: { isChecked: isPicked },
+							toParentMessage: () =>
+								Message.ToggledAwsRegion({ id: connection.id, region: region.code }),
+							id: `${inputId}-root`,
+							inputId,
+							ariaLabel:
+								region.location === "" ? region.code : `${region.code}, ${region.location}`,
+						}),
+						h.span([h.Class("font-mono")], [region.code]),
+						h.span([h.Class("ml-auto text-xs text-muted-foreground")], [region.location]),
+					]),
 				],
 			)
 		}),
@@ -93,9 +91,9 @@ const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection):
 const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection): Html =>
 	h.ul(
 		[h.Class("grid grid-cols-1 gap-2 @2xl/page:grid-cols-2"), h.AriaLabel("Services")],
-		AWS_METRIC_NAMESPACES.map((namespace) => {
+		Arr.map(AWS_METRIC_NAMESPACES, (namespace) => {
 			const isPicked = selection.namespaces.includes(namespace)
-			const id = `aws-namespace-${namespace.replace("/", "-").toLowerCase()}`
+			const id = `aws-namespace-${Str.toLowerCase(Str.replace("/", "-")(namespace))}`
 			return h.li(
 				[
 					h.Class(
@@ -106,12 +104,10 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 					),
 				],
 				[
-					vstack(h, { gap: "0.5", shrink: true },
-						[
-							h.span([h.Class("text-sm"), h.Id(`${id}-label`)], [NAMESPACE_LABEL[namespace]]),
-							typography(h, { size: "xs", tone: "muted", mono: true }, [namespace]),
-						],
-					),
+					vstack(h, { gap: "0.5", shrink: true }, [
+						h.span([h.Class("text-sm"), h.Id(`${id}-label`)], [NAMESPACE_LABEL[namespace]]),
+						typography(h, { size: "xs", tone: "muted", mono: true }, [namespace]),
+					]),
 					...switchControl(h, {
 						id,
 						inputId: `${id}-input`,
@@ -128,31 +124,23 @@ const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection)
 export const dataPicker = (h: H, model: Model, connection: V2AwsConnection): ReadonlyArray<Html> => {
 	const selection = selectionOf(connection, model.awsCard.selection)
 	return [
-		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabel("Regions to stream")] },
-			[
-				vstack(h, { gap: "1" },
-					[
-						heading(h, { level: 3, variant: "subsection" }, ["Regions"]),
-						typography(h, { size: "xs", tone: "muted", as: "p" },
-							["Each region gets its own metric stream. Regions added in AWS later stay off."],
-						),
-					],
-				),
-				regionList(h, connection, selection),
-			],
-		),
-		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabel("Services to stream")] },
-			[
-				vstack(h, { gap: "1" },
-					[
-						heading(h, { level: 3, variant: "subsection" }, ["Services"]),
-						typography(h, { size: "xs", tone: "muted", as: "p" },
-							["CloudWatch namespaces in the picked regions. Off means no metrics."],
-						),
-					],
-				),
-				serviceGrid(h, connection, selection),
-			],
-		),
+		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabel("Regions to stream")] }, [
+			vstack(h, { gap: "1" }, [
+				heading(h, { level: 3, variant: "subsection" }, ["Regions"]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"Each region gets its own metric stream. Regions added in AWS later stay off.",
+				]),
+			]),
+			regionList(h, connection, selection),
+		]),
+		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabel("Services to stream")] }, [
+			vstack(h, { gap: "1" }, [
+				heading(h, { level: 3, variant: "subsection" }, ["Services"]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"CloudWatch namespaces in the picked regions. Off means no metrics.",
+				]),
+			]),
+			serviceGrid(h, connection, selection),
+		]),
 	]
 }

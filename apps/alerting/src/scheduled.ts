@@ -40,7 +40,7 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
 import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Cause, Clock, Effect, Layer, Match, Option } from "effect"
+import { Cause, Clock, Effect, Layer, Match, Option, Array as Arr, Record as Rec } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
@@ -138,8 +138,8 @@ const makeTick = <A, E, R>(
 			const namespacedAnnotations =
 				annotations === undefined
 					? undefined
-					: Object.fromEntries(
-							Object.entries(annotations).map(([key, value]) => [
+					: Rec.fromEntries(
+							Arr.map(Rec.toEntries(annotations), ([key, value]) => [
 								`maple.alerting.${key}`,
 								value,
 							]),

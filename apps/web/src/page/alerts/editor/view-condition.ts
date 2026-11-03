@@ -32,6 +32,7 @@ import { fieldStateOf, idsOf, numberField, wasNote } from "./view-fields"
 import { formSelect } from "./view-select"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `RuleConditionFields`: the rule's condition row.
 
@@ -48,7 +49,7 @@ type ConditionView = Pick<Model, "mountedForm" | "savedForm"> &
 	}>
 
 /** `COMPARATOR_ITEMS`, in `comparatorLabels` order. */
-const COMPARATOR_ITEMS = [...COMPARATOR_WORDS].map(([value, label]) => ({ value, label }))
+const COMPARATOR_ITEMS = Arr.map([...COMPARATOR_WORDS], ([value, label]) => ({ value, label }))
 
 const SEVERITY_OPTIONS: ReadonlyArray<{
 	value: AlertSeverity
@@ -77,7 +78,7 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(value),
 		toParentMessage: (message) => Message.GotRadioMessage({ group: "severity", message }),
-		items: SEVERITY_OPTIONS.map((option) => ({
+		items: Arr.map(SEVERITY_OPTIONS, (option) => ({
 			value: option.value,
 			id: `rule-severity-${option.value}`,
 			inputId: `rule-severity-${option.value}-input`,
@@ -93,7 +94,7 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 				h.DataAttribute("filled", ""),
 				h.Role("radiogroup"),
 			],
-			SEVERITY_OPTIONS.flatMap((option) => {
+			Arr.flatMap(SEVERITY_OPTIONS, (option) => {
 				const isSelected = value === option.value
 				return RadioGroup.radio(
 					h,
@@ -143,7 +144,7 @@ const tierLabel = (h: H, severity: AlertSeverity): Html => {
 
 /** The saved value of a field when the draft changed it (`was`). */
 const wasOf = (saved: RuleForm | null, form: RuleForm, pick: (form: RuleForm) => string): string | null =>
-	saved !== null && pick(saved).trim() !== pick(form).trim() ? pick(saved) : null
+	saved !== null && Str.trim(pick(saved)) !== Str.trim(pick(form)) ? pick(saved) : null
 
 const comparatorRow = (h: H, model: ConditionView, form: RuleForm, saved: RuleForm | null): Html => {
 	const comparatorWas = wasOf(saved, form, (f) => f.comparator)
@@ -223,7 +224,7 @@ const criticalRow = (
 			numberField(h, {
 				id: "rule-critical-recovery",
 				label: recovery,
-				ariaLabel: `Critical ${recovery.toLowerCase()}`,
+				ariaLabel: `Critical ${Str.toLowerCase(recovery)}`,
 				placeholder: "Threshold",
 				description: "A critical that recovers drops back to warning.",
 				unit,
@@ -235,7 +236,7 @@ const criticalRow = (
 
 /** `windowDescription`: what a check reads and how often the scheduler runs one. */
 const windowDescription = (form: RuleForm): string => {
-	const minutes = Number(form.windowMinutes.trim())
+	const minutes = Number(Str.trim(form.windowMinutes))
 	if (!Number.isFinite(minutes) || minutes <= 0) return "Each check looks at this much data."
 	const every = formIntervalMinutes(form)
 	return `Each check looks at this much data, checked every ${every === 1 ? "minute" : `${every} min`}.`
@@ -254,7 +255,7 @@ const intervalPicker = (
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(selected),
 		toParentMessage: (message) => Message.GotRadioMessage({ group: "interval", message }),
-		items: options.map((option) => ({
+		items: Arr.map(options, (option) => ({
 			value: option.value,
 			id: `rule-interval-${option.value}`,
 			inputId: `rule-interval-${option.value}-input`,
@@ -275,7 +276,7 @@ const intervalPicker = (
 				h.DataAttribute("filled", ""),
 				h.Role("radiogroup"),
 			],
-			options.flatMap((option) => {
+			Arr.flatMap(options, (option) => {
 				const isSelected = option.value === selected
 				const isBlocked = option.isLongerThanWindow || option.isTooSlow
 				return RadioGroup.radio(
@@ -431,7 +432,7 @@ const checksSection = (
 								id: "rule-breaches-out-of",
 								label: "Out of the last",
 								placeholder: "In a row",
-								unit: form.breachesOutOf.trim().length > 0 ? "checks" : null,
+								unit: Str.trim(form.breachesOutOf).length > 0 ? "checks" : null,
 								onInput: changed("breachesOutOf"),
 								...values((f) => f.breachesOutOf),
 							}),

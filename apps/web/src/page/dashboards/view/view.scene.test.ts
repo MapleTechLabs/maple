@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
@@ -26,7 +26,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const stat = (id: string, field: string) => ({
 	id,
@@ -54,10 +54,14 @@ const ROUTE = { dashboardId: "dash_platform", search: {} }
 
 /** Entered, clocked and holding the document. */
 const ready = (): Model =>
-	[
-		Message.CompletedReadClock({ nowMs: NOW }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
-	].reduce((model, message) => pageUpdate(model, message).model, init(ROUTE, context).model)
+	Arr.reduce(
+		[
+			Message.CompletedReadClock({ nowMs: NOW }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+		],
+		init(ROUTE, context).model,
+		(model, message) => pageUpdate(model, message).model,
+	)
 
 describe("dashboard view", () => {
 	test("entry reads the clock and loads the chart runtime; the document asks for the shares", () => {
@@ -103,7 +107,7 @@ describe("dashboard view", () => {
 
 	test("an auto-refresh keeps each tile's data on screen and forgets the old window's request", () => {
 		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
-		const firstKey = Object.keys(revealed.requests)[0] ?? ""
+		const firstKey = Rec.keys(revealed.requests)[0] ?? ""
 		const answered = pageUpdate(
 			revealed,
 			Message.CompletedFetchWidget({ key: firstKey, result: Result.succeed({ data: [] }) }),
@@ -111,14 +115,14 @@ describe("dashboard view", () => {
 		const ticked = pageUpdate(answered, Message.TickedAutoRefresh()).model
 		const refreshed = pageUpdate(ticked, Message.CompletedReadClock({ nowMs: NOW + 60_000 }))
 		expect(names(refreshed.commands)).toContain(FetchWidget.name)
-		const slots = Object.entries(refreshed.model.requests)
-		expect(slots.map(([key]) => key)).not.toContain(firstKey)
-		expect(slots.map(([, slot]) => slot.data._tag)).toEqual(["Refreshing"])
+		const slots = Rec.toEntries(refreshed.model.requests)
+		expect(Arr.map(slots, ([key]) => key)).not.toContain(firstKey)
+		expect(Arr.map(slots, ([, slot]) => slot.data._tag)).toEqual(["Refreshing"])
 	})
 
 	test("a tile whose query changed loads afresh instead of showing the old query's data", () => {
 		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
-		const firstKey = Object.keys(revealed.requests)[0] ?? ""
+		const firstKey = Rec.keys(revealed.requests)[0] ?? ""
 		const answered = pageUpdate(
 			revealed,
 			Message.CompletedFetchWidget({ key: firstKey, result: Result.succeed({ data: [] }) }),
@@ -137,7 +141,7 @@ describe("dashboard view", () => {
 			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(changed) }),
 		)
 		expect(names(replanned.commands)).toContain(FetchWidget.name)
-		expect(Object.values(replanned.model.requests).map((slot) => slot.data._tag)).toEqual(["Loading"])
+		expect(Arr.map(Rec.values(replanned.model.requests), (slot) => slot.data._tag)).toEqual(["Loading"])
 	})
 
 	test("an auto-refresh keeps a stat's sparkline data on screen while both refresh", () => {
@@ -155,7 +159,7 @@ describe("dashboard view", () => {
 		const revealed = pageUpdate(entered, Message.RevealedWidget({ widgetId: "total-errors" }))
 		// The sparkline does not wait for the stat's value: both are asked for in one pass.
 		expect(names(revealed.commands)).toEqual([FetchWidget.name, FetchWidget.name])
-		const [statKey = "", sparkKey = ""] = Object.keys(revealed.model.requests)
+		const [statKey = "", sparkKey = ""] = Rec.keys(revealed.model.requests)
 		const answer = (model: Model, key: string) =>
 			pageUpdate(
 				model,
@@ -169,14 +173,18 @@ describe("dashboard view", () => {
 		const nextSparkKey = gate?._tag === "Request" ? gate.request.key : ""
 		expect(nextSparkKey).not.toBe(sparkKey)
 		expect(refreshed.model.requests[nextSparkKey]?.data._tag).toBe("Refreshing")
-		expect(Object.keys(refreshed.model.requests)).toHaveLength(2)
+		expect(Rec.keys(refreshed.model.requests)).toHaveLength(2)
 	})
 
 	test("one tile's answer leaves every other tile's slot as it was, so only that tile redraws", () => {
-		const revealed = [
-			Message.RevealedWidget({ widgetId: "total-errors" }),
-			Message.RevealedWidget({ widgetId: "error-rate" }),
-		].reduce((model, message) => pageUpdate(model, message).model, ready())
+		const revealed = Arr.reduce(
+			[
+				Message.RevealedWidget({ widgetId: "total-errors" }),
+				Message.RevealedWidget({ widgetId: "error-rate" }),
+			],
+			ready(),
+			(model, message) => pageUpdate(model, message).model,
+		)
 		const totalGate = revealed.widgets["total-errors"]?.gate
 		const key = totalGate?._tag === "Request" ? totalGate.request.key : ""
 		const answered = pageUpdate(
@@ -239,7 +247,7 @@ describe("dashboard view", () => {
 		expect(
 			undo?._tag === "RestoreDashboardWidgets" && [
 				undo.dashboardId,
-				undo.widgets.map((widget) => widget.id),
+				Arr.map(undo.widgets, (widget) => widget.id),
 			],
 		).toEqual([ROUTE.dashboardId, ["total-errors"]])
 	})
@@ -256,10 +264,11 @@ describe("dashboard view", () => {
 		const frame = { gridLeft: 0, gridTop: 0 }
 		const clicked = pageUpdate(pressed, Message.ReleasedPointer())
 		expect(names(clicked.commands)).toEqual([])
-		const dragged = [400, 700].reduce(
+		const dragged = Arr.reduce(
+			[400, 700],
+			pressed,
 			(model, clientX) =>
 				pageUpdate(model, Message.MovedPointer({ clientX, clientY: 100, ...frame })).model,
-			pressed,
 		)
 		expect(dragged.gesture?.isStarted).toBe(true)
 		const released = pageUpdate(dragged, Message.ReleasedPointer())

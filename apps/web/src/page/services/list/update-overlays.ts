@@ -7,6 +7,7 @@ import { type CommitDetail, type CommitFailure, commitDetailKey, OPEN_DELAY_MS }
 import { ArmCommitLookup, CopyCommitSha, FetchCommitDetail } from "./command"
 import { Message, type RowTooltip } from "./message"
 import type { Model } from "./model"
+import { String as Str } from "effect"
 
 // The table's row tooltips and `CommitShaHoverCard`: Models, trigger ids and their Messages.
 
@@ -34,9 +35,9 @@ const TOOLTIP_FIELD = {
 
 /** A DOM-safe trigger id for one row's overlay; commit triggers end in the sha they look up. */
 export const overlayTriggerId = (overlay: RowTooltip | "commit", rowKey: string, sha = ""): string =>
-	`services-${overlay}-${rowKey.replace(/[^A-Za-z0-9_-]/g, "_")}${sha === "" ? "" : `-${sha}`}`
+	`services-${overlay}-${Str.replace(/[^A-Za-z0-9_-]/g, "_")(rowKey)}${sha === "" ? "" : `-${sha}`}`
 
-const shaOfTrigger = (triggerId: string): string => triggerId.slice(-40)
+const shaOfTrigger = (triggerId: string): string => Str.slice(-40)(triggerId)
 
 export const rowTooltipMessage = (model: Model, tooltip: RowTooltip, message: Tooltip.Message): Return => {
 	const field = TOOLTIP_FIELD[tooltip]

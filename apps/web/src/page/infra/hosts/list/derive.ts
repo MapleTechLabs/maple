@@ -1,6 +1,7 @@
 import { deriveHostStatus, severityLevel } from "../../../../components/infra/format"
 import type { HostScope } from "./message"
 import type { HostRow } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 export const hostPeak = (host: HostRow): number => Math.max(host.cpuPct, host.memoryPct, host.diskPct)
 
@@ -11,11 +12,12 @@ export const hostInScope = (host: HostRow, scope: HostScope, reference: string):
 }
 
 export const countHostScopes = (hosts: ReadonlyArray<HostRow>, reference: string) => {
-	const saturated = hosts.filter((host) => hostInScope(host, "saturated", reference)).length
-	const elevated = hosts.filter(
+	const saturated = Arr.filter(hosts, (host) => hostInScope(host, "saturated", reference)).length
+	const elevated = Arr.filter(
+		hosts,
 		(host) => !hostInScope(host, "saturated", reference) && hostInScope(host, "elevated", reference),
 	).length
-	const stale = hosts.filter((host) => hostInScope(host, "stale", reference)).length
+	const stale = Arr.filter(hosts, (host) => hostInScope(host, "stale", reference)).length
 	return { total: hosts.length, saturated, elevated, stale }
 }
 
@@ -26,10 +28,11 @@ export const filterHosts = (
 	query: string,
 	reference: string,
 ): ReadonlyArray<HostRow> => {
-	const q = query.trim().toLowerCase()
-	return hosts.filter(
+	const q = Str.toLowerCase(Str.trim(query))
+	return Arr.filter(
+		hosts,
 		(host) =>
 			(scope === undefined || hostInScope(host, scope, reference)) &&
-			(q === "" || host.hostName.toLowerCase().includes(q)),
+			(q === "" || Str.includes(q)(Str.toLowerCase(host.hostName))),
 	)
 }

@@ -8,7 +8,7 @@ import {
 	getSpanAttributeKeys,
 	getTracesFacets,
 } from "@maple/web-data/warehouse/traces"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../../data/time-range"
@@ -48,7 +48,7 @@ export const FetchKeys = Command.define("FetchIngestRuleKeys", {
 				? getLogAttributeKeys({ data: {} })
 				: getResourceAttributeKeys({ data: {} })
 		).pipe(
-			Effect.map((response) => response.data.map((row) => row.attributeKey)),
+			Effect.map((response) => Arr.map(response.data, (row) => row.attributeKey)),
 			Effect.orElseSucceed((): ReadonlyArray<string> => []),
 			Effect.map((keys) => Message.CompletedFetchKeys({ scope, keys })),
 		),
@@ -62,11 +62,11 @@ export const FetchServices = Command.define("FetchIngestRuleServices", {
 			Effect.all(
 				[
 					getTracesFacets({ data: window }).pipe(
-						Effect.map((response) => response.data.services.map((row) => row.name)),
+						Effect.map((response) => Arr.map(response.data.services, (row) => row.name)),
 						Effect.orElseSucceed((): ReadonlyArray<string> => []),
 					),
 					getLogsFacets({ data: window }).pipe(
-						Effect.map((response) => response.data.services.map((row) => row.name)),
+						Effect.map((response) => Arr.map(response.data.services, (row) => row.name)),
 						Effect.orElseSucceed((): ReadonlyArray<string> => []),
 					),
 				],
@@ -107,7 +107,7 @@ const recentLogs = (window: { startTime: string; endTime: string }, service: str
 	}).pipe(
 		Effect.map((response): Samples => ({
 			_tag: "logs",
-			rows: response.data.map((row) => ({
+			rows: Arr.map(response.data, (row) => ({
 				serviceName: row.serviceName,
 				body: row.body,
 				severityNumber: row.severityNumber,
@@ -136,7 +136,7 @@ const recentSpans = (window: { startTime: string; endTime: string }, service: st
 		Effect.flatMap((response) =>
 			response.result.kind === "list" ? decodeSpanRows(response.result.data) : Effect.succeed([]),
 		),
-		Effect.map((rows): Samples => ({ _tag: "traces", rows: rows.map(toSpanSample) })),
+		Effect.map((rows): Samples => ({ _tag: "traces", rows: Arr.map(rows, toSpanSample) })),
 	)
 
 export const FetchSamples = Command.define("FetchIngestRuleSamples", {

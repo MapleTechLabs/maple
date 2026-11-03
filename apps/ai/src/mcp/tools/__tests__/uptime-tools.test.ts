@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	DeleteUptimeMonitorOutput,
 	ListUptimeMonitorsOutput,
@@ -207,7 +207,7 @@ describe("list_uptime_monitors", () => {
 			ListUptimeMonitorsOutput,
 			await runToolDirect(member, "list_uptime_monitors", { status: "down" }),
 		)
-		expect(down.monitors.map((monitor) => monitor.name)).toEqual(["payments-db"])
+		expect(Arr.map(down.monitors, (monitor) => monitor.name)).toEqual(["payments-db"])
 	})
 
 	it("hides a heartbeat's ping URL from members and shows it to admins", async () => {
@@ -241,7 +241,7 @@ describe("list_uptime_monitors", () => {
 			ListUptimeMonitorsOutput,
 			await runToolDirect(member, "list_uptime_monitors", { service: "checkout" }),
 		)
-		expect(output.monitors.map((monitor) => monitor.name)).toEqual(["checkout-api"])
+		expect(Arr.map(output.monitors, (monitor) => monitor.name)).toEqual(["checkout-api"])
 	})
 })
 
@@ -333,7 +333,7 @@ describe("delete_uptime_monitor", () => {
 			ListUptimeMonitorsOutput,
 			await runToolDirect(member, "list_uptime_monitors", {}),
 		)
-		expect(listed.monitors.map((monitor) => monitor.name)).not.toContain("nightly-backup")
+		expect(Arr.map(listed.monitors, (monitor) => monitor.name)).not.toContain("nightly-backup")
 	})
 })
 

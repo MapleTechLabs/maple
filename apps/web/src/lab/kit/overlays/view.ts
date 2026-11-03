@@ -1,6 +1,6 @@
 import { OVERLAY_ITEMS } from "../overlay-items"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kitPage, kitSection } from "../kit-layout"
 import * as ToastView from "@maple/views/ui/toast-view"
@@ -106,7 +106,9 @@ export const view = (model: Model, h: H): Html =>
 					kitSection(h, "Items", [
 						h.nav(
 							[h.AriaLabel("Overlay items"), h.Class("flex flex-wrap gap-1.5")],
-							OVERLAY_ITEMS.map((name) => itemLink(h, name, Option.contains(model.item, name))),
+							Arr.map(OVERLAY_ITEMS, (name) =>
+								itemLink(h, name, Option.contains(model.item, name)),
+							),
 						),
 					]),
 					...Option.toArray(

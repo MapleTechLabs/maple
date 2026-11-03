@@ -10,7 +10,7 @@
  */
 import { ChatSessionId, decodeChatEvent, type ChatEvent } from "@maple/domain/chat-session"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
-import { Duration, Effect, Schema, Stream } from "effect"
+import { Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
 
 /** The session's Durable Object could not be reached, or dropped the subscription mid-turn. */
 export class ChatSessionUnreachable extends Schema.TaggedError<ChatSessionUnreachable>()(
@@ -34,11 +34,13 @@ const DATA_PREFIX = "data:"
  * dropped here rather than thrown on, so a deploy skew degrades a turn instead of ending it.
  */
 const eventOfFrame = (frame: string): ReadonlyArray<ChatEvent> => {
-	const data = frame
-		.split("\n")
-		.filter((line) => line.startsWith(DATA_PREFIX))
-		.map((line) => line.slice(DATA_PREFIX.length).trimStart())
-		.join("\n")
+	const data = Arr.join(
+		Arr.map(
+			Arr.filter(Str.split("\n")(frame), (line) => Str.startsWith(DATA_PREFIX)(line)),
+			(line) => Str.trimStart(Str.slice(DATA_PREFIX.length)(line)),
+		),
+		"\n",
+	)
 	if (data === "") return []
 	const event = decodeChatEvent(data)
 	return event === undefined ? [] : [event]
@@ -71,8 +73,8 @@ const connection = (
 						Stream.mapAccumArray(
 							() => "",
 							(buffer: string, chunks) => {
-								const frames = (buffer + chunks.join("")).split(FRAME_SEPARATOR)
-								return [frames.pop() ?? "", frames.flatMap(eventOfFrame)]
+								const frames = Str.split(FRAME_SEPARATOR)(buffer + Arr.join(chunks, ""))
+								return [frames.pop() ?? "", Arr.flatMap(frames, eventOfFrame)]
 							},
 						),
 					),

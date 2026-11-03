@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { defineStaticShellLab } from "../static-shell-lab"
+import { Array as Arr } from "effect"
 
 // `/lab`: every lab and bench surface, read from the registry.
 
@@ -73,7 +74,7 @@ const page = <M>(h: HtmlBuilder<M>): Html =>
 						),
 					],
 				),
-				...SECTIONS.map((section) =>
+				...Arr.map(SECTIONS, (section) =>
 					h.section(
 						[h.Key(section.kind), h.Class("border-b px-4 py-4")],
 						[
@@ -81,8 +82,9 @@ const page = <M>(h: HtmlBuilder<M>): Html =>
 							h.p([h.Class("mt-1 text-xs text-muted-foreground")], [section.blurb]),
 							h.ul(
 								[h.Class("mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3")],
-								LAB_ENTRIES.filter((entry) => entry.kind === section.kind).map((entry) =>
-									entryCard(h, entry),
+								Arr.map(
+									Arr.filter(LAB_ENTRIES, (entry) => entry.kind === section.kind),
+									(entry) => entryCard(h, entry),
 								),
 							),
 						],

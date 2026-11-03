@@ -5,7 +5,7 @@ import {
 	StatusPageSlug,
 } from "@maple/domain/status-page"
 import { previewSnapshot } from "@maple/status-page"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureMessage } from "@maple/views/data/load-failure"
@@ -41,7 +41,9 @@ type H = HtmlBuilder<Message>
 const isSlug = Schema.is(StatusPageSlug)
 const DRAFT_PAGE_ID = Schema.decodeSync(StatusPageId)("00000000-0000-4000-8000-000000000000")
 const draftComponentId = (index: number) =>
-	Schema.decodeSync(StatusPageComponentId)(`00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`)
+	Schema.decodeSync(StatusPageComponentId)(
+		`00000000-0000-4000-8000-${Str.padStart(12, "0")(String(index + 1))}`,
+	)
 
 const pageSection = (h: H, model: Model): Html =>
 	settingsSection(h, { id: "status-page-builder-page", title: "Page" }, [
@@ -151,7 +153,7 @@ const draftDocument = (model: Model): string => {
 	const snapshot = previewSnapshot({
 		pageId: DRAFT_PAGE_ID,
 		page: {
-			name: model.name.trim() === "" ? "Status page" : model.name.trim(),
+			name: Str.trim(model.name) === "" ? "Status page" : Str.trim(model.name),
 			slug: isSlug(model.slug) ? model.slug : "preview",
 			description: null,
 			websiteUrl: null,
@@ -169,11 +171,11 @@ const draftDocument = (model: Model): string => {
 				model.previewScheme,
 			),
 		},
-		components: checkedRows(model.picker).map((row, index) => ({
+		components: Arr.map(checkedRows(model.picker), (row, index) => ({
 			id: draftComponentId(index),
-			name: row.name.trim() === "" ? "Untitled component" : row.name.trim(),
+			name: Str.trim(row.name) === "" ? "Untitled component" : Str.trim(row.name),
 			description: null,
-			group: row.group.trim() === "" ? null : row.group.trim(),
+			group: Str.trim(row.group) === "" ? null : Str.trim(row.group),
 			monitorStatus: monitors.find((monitor) => monitor.id === row.monitorId)?.state.status ?? null,
 			manualStatus: row.monitorId === null ? row.manualStatus : null,
 			showUptime: true,

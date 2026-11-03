@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { MapleApiV2, V2StatusPageComponent } from "@maple/domain/http/v2"
-import { Effect, Layer, Option, Ref, Schema } from "effect"
+import { Effect, Layer, Option, Ref, Schema, Array as Arr } from "effect"
 import { HttpClient, HttpClientResponse, UrlParams } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { expect } from "vitest"
@@ -36,7 +36,7 @@ describe("listComponents", () => {
 				HttpApiClient.make(MapleApiV2, { baseUrl: "https://api.test" }),
 			).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http)))
 			const components = yield* listComponents(pageId(1)).pipe(Effect.provide(client))
-			expect(components.map((row) => row.id)).toEqual([componentId(1), componentId(2)])
+			expect(Arr.map(components, (row) => row.id)).toEqual([componentId(1), componentId(2)])
 			expect(yield* Ref.get(cursors)).toEqual([null, "page-2"])
 		}),
 	)

@@ -1,7 +1,7 @@
 import * as Animation from "@foldkit/ui/animation"
 import { OrgId } from "@maple/domain"
 import { CloudflareIntegrationStatus, IntegrationsForbiddenError } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
 	Command,
@@ -160,6 +160,8 @@ describe("cloudflare zone selection", () => {
 		const saved = pageUpdate(saving, Message.CompletedCloudflareZones({ failure: null }))
 		expect(saved.model.cloudflareCard.isSavingZones).toBe(false)
 		expect(saved.model.cloudflareCard.zoneDialog.isOpen).toBe(false)
-		expect((saved.commands ?? []).map(({ name }) => name)).toContain("LoadIntegrationsCloudflareStatus")
+		expect(Arr.map(saved.commands ?? [], ({ name }) => name)).toContain(
+			"LoadIntegrationsCloudflareStatus",
+		)
 	})
 })

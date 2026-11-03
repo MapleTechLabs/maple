@@ -9,6 +9,7 @@
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { mapleToolCatalog } from "../mcp/tools/registry"
+import { Array as Arr } from "effect"
 
 /**
  * Today's behaviour, expressed as data: everything runs, mutations stop and ask.
@@ -18,7 +19,7 @@ import { mapleToolCatalog } from "../mcp/tools/registry"
  */
 export const DEFAULT_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "allow" }),
-	...[...MUTATING_TOOL_NAMES].sort().map((tool) => new PermissionRule({ tool, action: "ask" })),
+	...Arr.map([...MUTATING_TOOL_NAMES].sort(), (tool) => new PermissionRule({ tool, action: "ask" })),
 ]
 
 /**
@@ -35,11 +36,13 @@ export const DEFAULT_RULESET: PermissionRuleset = [
  */
 export const READ_ONLY_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),
-	...mapleToolCatalog
-		.filter((definition) => !MUTATING_TOOL_NAMES.has(definition.name))
-		.map((definition) => definition.name)
-		.sort()
-		.map((tool) => new PermissionRule({ tool, action: "allow" })),
+	...Arr.map(
+		Arr.map(
+			Arr.filter(mapleToolCatalog, (definition) => !MUTATING_TOOL_NAMES.has(definition.name)),
+			(definition) => definition.name,
+		).sort(),
+		(tool) => new PermissionRule({ tool, action: "allow" }),
+	),
 ]
 
 /**
@@ -80,10 +83,10 @@ export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 /** A reply reads what a review reads; its only writes are its own completion tools. */
 export const PR_REPLY_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),
-	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),
+	...Arr.map([...PR_REVIEW_TOOLS].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
 ]
 
 export const PR_REVIEW_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),
-	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),
+	...Arr.map([...PR_REVIEW_TOOLS].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
 ]

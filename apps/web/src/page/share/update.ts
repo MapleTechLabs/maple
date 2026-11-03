@@ -5,7 +5,7 @@ import {
 	resolveRefreshIntervalSeconds,
 	variableValuesFromSearch,
 } from "../../lib/dashboard-controls/search-params"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -81,8 +81,8 @@ const liveBatches = (
 	batches: ReadonlyArray<QueuedBatch>,
 	requested: Model["requested"],
 ): ReadonlyArray<QueuedBatch> =>
-	batches.flatMap((batch) => {
-		const requests = batch.requests.filter((request) => requested[request.widgetId] === request.key)
+	Arr.flatMap(batches, (batch) => {
+		const requests = Arr.filter(batch.requests, (request) => requested[request.widgetId] === request.key)
 		return requests.length === 0 ? [] : [{ ...batch, requests }]
 	})
 
@@ -93,7 +93,7 @@ const flush = (model: Model): Return => {
 	if (share === null || window === null) return { model }
 	const variableValues = variableValuesOf(model)
 	const variablesKey = encodeJson(variableValues)
-	const pending = share.dashboard.widgets.flatMap((widget) => {
+	const pending = Arr.flatMap(share.dashboard.widgets, (widget) => {
 		const maxDataPoints = model.options[widget.id]
 		if (maxDataPoints === undefined) return []
 		const key = encodeJson([window.startTime, window.endTime, variablesKey, maxDataPoints])
@@ -111,7 +111,7 @@ const flush = (model: Model): Return => {
 	const [first, ...rest] = batches
 	const requested = {
 		...model.requested,
-		...Object.fromEntries(pending.map((request) => [request.widgetId, request.key])),
+		...Rec.fromEntries(Arr.map(pending, (request) => [request.widgetId, request.key])),
 	}
 	return {
 		model: {
@@ -119,10 +119,11 @@ const flush = (model: Model): Return => {
 			requested,
 			states: {
 				...model.states,
-				...Object.fromEntries(
-					pending
-						.filter((request) => model.states[request.widgetId] === undefined)
-						.map((request) => [request.widgetId, { _tag: "Loading" } as const]),
+				...Rec.fromEntries(
+					Arr.map(
+						Arr.filter(pending, (request) => model.states[request.widgetId] === undefined),
+						(request) => [request.widgetId, { _tag: "Loading" } as const],
+					),
 				),
 			},
 			queuedBatches: [...liveBatches(model.queuedBatches, requested), ...rest],
@@ -192,7 +193,7 @@ export const routeChanged = (model: Model, route: Route): Return =>
 
 const decodeInterval = (value: string): Option.Option<number> => {
 	const seconds = Number(value)
-	return REFRESH_INTERVAL_OPTIONS.some((option) => option === seconds)
+	return Arr.some(REFRESH_INTERVAL_OPTIONS, (option) => option === seconds)
 		? Option.some(seconds)
 		: Option.none()
 }
@@ -218,10 +219,11 @@ export const update = (model: Model, message: Message): Return =>
 			// A widget the answer left out settles as a failure instead of loading forever.
 			const missing: WidgetState = { _tag: "Error", message: DATA_UNAVAILABLE_MESSAGE, kind: "runtime" }
 			const settled = {
-				...Object.fromEntries(Object.keys(keys).map((widgetId) => [widgetId, missing])),
+				...Rec.fromEntries(Arr.map(Rec.keys(keys), (widgetId) => [widgetId, missing])),
 				...states,
 			}
-			const isLive = Object.keys(settled).some(
+			const isLive = Arr.some(
+				Rec.keys(settled),
 				(widgetId) => model.requested[widgetId] === keys[widgetId],
 			)
 			return {
@@ -233,8 +235,9 @@ export const update = (model: Model, message: Message): Return =>
 					variables: isLive && variables !== undefined ? variables : model.variables,
 					states: {
 						...model.states,
-						...Object.fromEntries(
-							Object.entries(settled).filter(
+						...Rec.fromEntries(
+							Arr.filter(
+								Rec.toEntries(settled),
 								([widgetId]) => model.requested[widgetId] === keys[widgetId],
 							),
 						),

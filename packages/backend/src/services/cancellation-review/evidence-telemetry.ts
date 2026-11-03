@@ -17,7 +17,7 @@ import type {
 	CancellationTelemetryEvidence as TelemetryEvidence,
 } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Cause, Context, DateTime, Effect, Layer } from "effect"
+import { Cause, Context, DateTime, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -42,7 +42,7 @@ const BYTES_PER_GB = 1_000_000_000
 /** Well under the review's whole-section timeout. */
 const PART_TIMEOUT = "8 seconds"
 
-const cut = (name: string): string => name.slice(0, NAME_CHARS)
+const cut = (name: string): string => Str.slice(0, NAME_CHARS)(name)
 
 /** Three significant figures: a 2 MB service stays visible, a 40 GB one loses nothing that matters. */
 const gb = (bytes: number): number => Number((bytes / BYTES_PER_GB).toPrecision(3))
@@ -76,7 +76,7 @@ export const servicesOf = (
 	return {
 		distinctRecent: counts.distinctRecent,
 		distinctPrior: counts.distinctPrior,
-		top: rows.slice(0, SERVICES_SHOWN).map((row) => ({
+		top: Arr.map(rows.slice(0, SERVICES_SHOWN), (row) => ({
 			name: cut(row.serviceName),
 			recent: volume(row.recentTraceBytes, row.recentLogBytes, row.recentMetricBytes),
 			prior: volume(row.priorTraceBytes, row.priorLogBytes, row.priorMetricBytes),
@@ -114,21 +114,22 @@ export const resourceAttributesOf = (
 	spans: number,
 ): ReadonlyArray<CancellationResourceAttribute> => {
 	if (spans === 0) return []
-	return RESOURCE_SOURCES.map(([key, sources]) => {
+	return Arr.map(RESOURCE_SOURCES, ([key, sources]) => {
 		const byValue = new Map<string, number>()
-		for (const row of rows.filter((row) => sources.includes(row.attributeKey))) {
+		for (const row of Arr.filter(rows, (row) => sources.includes(row.attributeKey))) {
 			byValue.set(row.attributeValue, Math.max(byValue.get(row.attributeValue) ?? 0, row.spans))
 		}
-		const values = [...byValue].toSorted(([a, x], [b, y]) => y - x || a.localeCompare(b))
-		const set = values.reduce((sum, [, count]) => sum + count, 0)
+		const values = [...byValue].toSorted(([a, x], [b, y]) => y - x || Str.localeCompare(b)(a))
+		const set = Arr.reduce(values, 0, (sum, [, count]) => sum + count)
 		// The rollup counts the keys apart; never let one exceed the whole.
 		const whole = Math.max(spans, set)
 		return {
 			key,
 			notSetShare: share(whole - set, whole),
-			values: values
-				.slice(0, RESOURCE_VALUES_SHOWN)
-				.map(([value, count]) => ({ value: cut(value), share: share(count, whole) })),
+			values: Arr.map(values.slice(0, RESOURCE_VALUES_SHOWN), ([value, count]) => ({
+				value: cut(value),
+				share: share(count, whole),
+			})),
 		}
 	})
 }
@@ -143,15 +144,15 @@ export interface AlertCheckRow {
 
 export const alertChecksOf = (rows: ReadonlyArray<AlertCheckRow>): CancellationAlertChecks => {
 	const sum = (match: (row: AlertCheckRow) => boolean) =>
-		rows.filter(match).reduce((total, row) => total + row.checks, 0)
+		Arr.reduce(Arr.filter(rows, match), 0, (total, row) => total + row.checks)
 	const skipped = (reason: string) => sum((row) => row.status === "skipped" && row.skipReason === reason)
 	const errors = new Map<string, number>()
-	for (const row of rows.filter((row) => row.status === "error")) {
+	for (const row of Arr.filter(rows, (row) => row.status === "error")) {
 		const category = row.errorCategory === "" ? "unknown" : row.errorCategory
 		errors.set(category, (errors.get(category) ?? 0) + row.checks)
 	}
 	const rulesOf = (match: (row: AlertCheckRow) => boolean) =>
-		new Set(rows.filter(match).flatMap((row) => row.ruleIds)).size
+		new Set(Arr.filter(rows, match).flatMap((row) => row.ruleIds)).size
 	return {
 		checks: sum(() => true),
 		healthy: sum((row) => row.status === "healthy"),
@@ -162,8 +163,7 @@ export const alertChecksOf = (rows: ReadonlyArray<AlertCheckRow>): CancellationA
 			noValue: skipped("no_value"),
 			unspecified: skipped(""),
 		},
-		errors: [...errors]
-			.map(([category, checks]) => ({ category, checks }))
+		errors: Arr.map([...errors], ([category, checks]) => ({ category, checks }))
 			.toSorted((a, b) => b.checks - a.checks)
 			.slice(0, ALERT_ERROR_CLASSES_SHOWN),
 		rules: rulesOf(() => true),
@@ -183,7 +183,11 @@ export const errorVolumeOf = (
 			ERROR_WEEKS - 1,
 		)
 	const perWeek = Array.from({ length: ERROR_WEEKS }, (_, week) =>
-		days.filter((row) => weekOf(row.day) === week).reduce((sum, row) => sum + row.errors, 0),
+		Arr.reduce(
+			Arr.filter(days, (row) => weekOf(row.day) === week),
+			0,
+			(sum, row) => sum + row.errors,
+		),
 	)
 	return { perWeek, ...fingerprints }
 }
@@ -207,7 +211,7 @@ export const productEventsOf = (
 ): ReadonlyArray<CancellationProductEvent> => {
 	const byName = new Map<string, { recent: number; prior: number; lastMs: number }>()
 	for (const row of rows) {
-		if (row.eventName.startsWith("plan_")) continue
+		if (Str.startsWith("plan_")(row.eventName)) continue
 		const lastMs = DateTime.toEpochMillis(row.lastAt)
 		const seen = byName.get(row.eventName)
 		byName.set(row.eventName, {
@@ -216,15 +220,19 @@ export const productEventsOf = (
 			lastMs: Math.max(seen?.lastMs ?? lastMs, lastMs),
 		})
 	}
-	return [...byName]
-		.toSorted(([a, x], [b, y]) => y.recent + y.prior - (x.recent + x.prior) || a.localeCompare(b))
-		.slice(0, PRODUCT_EVENTS_SHOWN)
-		.map(([name, event]) => ({
+	return Arr.map(
+		[...byName]
+			.toSorted(
+				([a, x], [b, y]) => y.recent + y.prior - (x.recent + x.prior) || Str.localeCompare(b)(a),
+			)
+			.slice(0, PRODUCT_EVENTS_SHOWN),
+		([name, event]) => ({
 			name: cut(name),
 			recent: event.recent,
 			prior: event.prior,
 			lastDaysBeforeCancel: daysBeforeCancel(atMs, event.lastMs),
-		}))
+		}),
+	)
 }
 
 /** `rows` are per audit actor type; a type with no entries has no row. */

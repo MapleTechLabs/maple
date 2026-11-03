@@ -39,7 +39,7 @@ import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
-import { Cause, Config, Effect, Option, Ref } from "effect"
+import { Cause, Config, Effect, Option, Ref, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
@@ -88,7 +88,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		// Ticks post pull-request replies through the GitHub App; without it each one fails.
 		githubAppSourceEnv,
 		// Outbound config for `chat` destinations' connectors.
-		...chatConnectorOutboundConfigKeys.map((key) =>
+		...Arr.map(chatConnectorOutboundConfigKeys, (key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
 		),
 	)

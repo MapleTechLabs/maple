@@ -1,5 +1,5 @@
 import { STRUCTURED_MARKER } from "./structured-marker"
-import { Array, Option, Predicate, Schema } from "effect"
+import { Array, Option, Predicate, Schema, Record as Rec, String as Str } from "effect"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
@@ -36,8 +36,8 @@ const SUMMARY_EXCLUDE = new Set([
 ])
 
 const truncate = (value: string, max = 40): string => {
-	const trimmed = value.trim()
-	return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed
+	const trimmed = Str.trim(value)
+	return trimmed.length > max ? `${Str.slice(0, max - 1)(trimmed)}…` : trimmed
 }
 
 const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown)
@@ -48,7 +48,7 @@ export const inputRecord = (input: unknown): Option.Option<Readonly<Record<strin
 	globalThis.Array.isArray(input) ? Option.none() : decodeRecord(input)
 
 const formatArg = (key: string, value: unknown): Option.Option<string> => {
-	if (Predicate.isString(value) && value.trim() !== "") return Option.some(`${key}=${truncate(value)}`)
+	if (Predicate.isString(value) && Str.trim(value) !== "") return Option.some(`${key}=${truncate(value)}`)
 	if (Predicate.isNumber(value) || Predicate.isBoolean(value)) return Option.some(`${key}=${value}`)
 	return Option.none()
 }
@@ -60,7 +60,7 @@ export const toolSummary = (input: unknown): string | undefined =>
 			Option.orElse(
 				Array.findFirst(SUMMARY_KEYS, (key) => formatArg(key, record[key])),
 				() =>
-					Array.findFirst(Object.entries(record), ([key, value]) =>
+					Array.findFirst(Rec.toEntries(record), ([key, value]) =>
 						SUMMARY_EXCLUDE.has(key) ? Option.none() : formatArg(key, value),
 					),
 			),
@@ -89,7 +89,9 @@ const asStructured = (value: unknown): Option.Option<StructuredPayload> =>
 
 const parseStructuredFromText = (text: string): Option.Option<StructuredPayload> => {
 	const start = markerStart(text)
-	return start === -1 ? Option.none() : Option.flatMap(parseJson(text.slice(start).trim()), asStructured)
+	return start === -1
+		? Option.none()
+		: Option.flatMap(parseJson(Str.trim(Str.slice(start)(text))), asStructured)
 }
 
 const TextItem = Schema.Struct({ type: Schema.Literal("text"), text: Schema.String })
@@ -97,7 +99,7 @@ const decodeTextItem = Schema.decodeUnknownOption(TextItem)
 const contentTexts = (record: Readonly<Record<string, unknown>>): Option.Option<ReadonlyArray<string>> =>
 	globalThis.Array.isArray(record.content)
 		? Option.some(
-				record.content.flatMap((item) =>
+				Array.flatMap(record.content, (item) =>
 					Option.toArray(Option.map(decodeTextItem(item), (it) => it.text)),
 				),
 			)
@@ -120,7 +122,7 @@ export const extractOutputText = (output: unknown): string | null => {
 	if (output === null || output === undefined) return null
 	if (Predicate.isString(output)) {
 		const start = markerStart(output)
-		return start === -1 ? output : output.slice(0, start).trimEnd()
+		return start === -1 ? output : Str.trimEnd(Str.slice(0, start)(output))
 	}
 	return Option.match(decodeRecord(output), {
 		onNone: () => encodePrettyJson(output),
@@ -129,7 +131,10 @@ export const extractOutputText = (output: unknown): string | null => {
 			return Option.match(contentTexts(record), {
 				onNone: () => encodePrettyJson(output),
 				onSome: (texts) =>
-					texts.filter((text) => Option.isNone(parseStructuredFromText(text))).join("\n"),
+					Array.join(
+						Array.filter(texts, (text) => Option.isNone(parseStructuredFromText(text))),
+						"\n",
+					),
 			})
 		},
 	})

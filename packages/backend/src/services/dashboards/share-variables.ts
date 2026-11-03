@@ -46,7 +46,7 @@ import {
 	type VariableValues,
 } from "@maple/query-engine"
 import { ShareVariableInvalidError } from "@maple/domain/http"
-import { Array as Arr, Effect, Option } from "effect"
+import { Array as Arr, Effect, Option, Record as Rec, String as Str } from "effect"
 
 /**
  * Characters a free-text variable value may contain.
@@ -90,7 +90,7 @@ const invalid = (variableName: string) =>
  */
 export const preservesClauseStructure = (template: string, value: string): boolean => {
 	const before = splitWhereClause(template).length
-	const after = splitWhereClause(template.replaceAll(/\$\{?[A-Za-z][A-Za-z0-9_]*\}?/g, value)).length
+	const after = splitWhereClause(Str.replaceAll(/\$\{?[A-Za-z][A-Za-z0-9_]*\}?/g, value)(template)).length
 	return before === after
 }
 
@@ -121,7 +121,7 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 	): Effect.Effect<Option.Option<readonly [string, ResolvedVariable]>, ShareVariableInvalidError> => {
 		const options =
 			definition.type === "custom"
-				? (definition.options ?? []).map((option) => option.value)
+				? Arr.map(definition.options ?? [], (option) => option.value)
 				: definition.type === "query"
 					? [...(queryOptions[definition.name] ?? [])]
 					: []
@@ -150,7 +150,7 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 		/** The free-text defence: conservative charset, then the direct clause check. */
 		const passesFreeTextChecks = () => {
 			if (!TEXTBOX_ALLOWED.test(value)) return false
-			return whereClauseTemplates.every((template) => preservesClauseStructure(template, value))
+			return Arr.every(whereClauseTemplates, (template) => preservesClauseStructure(template, value))
 		}
 
 		switch (definition.type) {
@@ -187,5 +187,5 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 	// Names the board does not declare are dropped rather than rejected: a
 	// hand-edited or stale URL carrying `?var-removed=x` should render the
 	// dashboard, not a 400.
-	return Object.fromEntries(Arr.getSomes(entries)) satisfies VariableValues
+	return Rec.fromEntries(Arr.getSomes(entries)) satisfies VariableValues
 })

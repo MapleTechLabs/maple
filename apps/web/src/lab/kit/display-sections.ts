@@ -3,7 +3,14 @@ import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "@maple/views/ui/card"
 import { delta } from "@maple/views/ui/delta"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyMessage, emptyTitle } from "@maple/views/ui/empty"
+import {
+	empty,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyMessage,
+	emptyTitle,
+} from "@maple/views/ui/empty"
 import {
 	item,
 	itemActions,
@@ -19,6 +26,7 @@ import { statFigure } from "@maple/views/ui/stat-figure"
 import { type IconName, icon } from "@maple/views/ui/icon"
 import { badge } from "@maple/views/ui/display"
 import { kitSection } from "./kit-layout"
+import { Array as Arr } from "effect"
 
 // The first half of `/lab/kit/display`: surfaces, alerts, empty states and rows.
 
@@ -57,7 +65,7 @@ const servicesPanel = <M>(h: HtmlBuilder<M>): Html =>
 		}),
 		panelBody(
 			h,
-			ROWS.map((row) =>
+			Arr.map(ROWS, (row) =>
 				listRow(h, {
 					divided: true,
 					title: row.service,
@@ -78,7 +86,7 @@ export const alertSection = <M>(h: HtmlBuilder<M>): Html =>
 		h.div(
 			[h.Class("grid grid-cols-2 gap-3")],
 			[
-				...ALERT_VARIANTS.map((variant) =>
+				...Arr.map(ALERT_VARIANTS, (variant) =>
 					alert(h, { variant }, [
 						icon(h, ALERT_ICONS[variant]),
 						alertTitle(h, ["Alert ", variant]),

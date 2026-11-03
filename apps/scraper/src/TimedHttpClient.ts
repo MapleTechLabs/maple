@@ -2,7 +2,7 @@ import * as http from "node:http"
 import * as https from "node:https"
 import { pipeline, Readable, type Transform } from "node:stream"
 import * as zlib from "node:zlib"
-import { Effect, type Layer, Predicate } from "effect"
+import { Effect, type Layer, Predicate, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientError, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { DialServerName } from "@maple/safe-fetch"
 import { recordPhases } from "./UptimePhases"
@@ -22,7 +22,7 @@ const DECODERS = new Map<string, () => Transform>([
 
 /** The body as the assertions should read it: decoded, like fetch did, when its encoding is one we know. */
 const decodedBody = (response: http.IncomingMessage): Readable => {
-	const decoder = DECODERS.get((response.headers["content-encoding"] ?? "").trim().toLowerCase())?.()
+	const decoder = DECODERS.get(Str.toLowerCase(Str.trim(response.headers["content-encoding"] ?? "")))?.()
 	if (decoder === undefined) return response
 	// Destroys both ends on a corrupt body or an early cancel; the error reaches the reader.
 	pipeline(response, decoder, () => undefined)
@@ -55,8 +55,8 @@ const bodyOf = (
 
 const webHeaders = (source: http.IncomingHttpHeaders): Headers =>
 	new Headers(
-		Object.entries(source).flatMap(([name, value]): Array<[string, string]> =>
-			value === undefined ? [] : (Array.isArray(value) ? value : [value]).map((v) => [name, v]),
+		Arr.flatMap(Rec.toEntries(source), ([name, value]): Array<[string, string]> =>
+			value === undefined ? [] : Arr.map(Arr.isArray(value) ? value : [value], (v) => [name, v]),
 		),
 	)
 

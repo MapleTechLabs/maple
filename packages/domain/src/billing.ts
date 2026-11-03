@@ -1,4 +1,4 @@
-import { Predicate } from "effect"
+import { Predicate, Record as Rec } from "effect"
 
 /**
  * Shared billing gate — the single source of truth for "is this an actively
@@ -169,7 +169,7 @@ export function cycleSpend({
 	const overageByFeature: Record<string, number> = {}
 	let overageCentsExact = 0
 
-	for (const [featureId, feature] of Object.entries(features)) {
+	for (const [featureId, feature] of Rec.toEntries(features)) {
 		const units = overageUnits(feature)
 		if (units <= 0) {
 			overageByFeature[featureId] = 0
@@ -229,7 +229,7 @@ export function projectCycleSpend({
 }): number {
 	const remaining = elapsedMs <= 0 || totalMs <= elapsedMs ? 0 : (totalMs - elapsedMs) / elapsedMs
 	const projected: Record<string, FeatureUsagePricing> = {}
-	for (const [featureId, feature] of Object.entries(features)) {
+	for (const [featureId, feature] of Rec.toEntries(features)) {
 		const paced = Math.min(cycleUsage?.[featureId] ?? feature.used, feature.used)
 		projected[featureId] = { ...feature, used: feature.used + paced * remaining }
 	}

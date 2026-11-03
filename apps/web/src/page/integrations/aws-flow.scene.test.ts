@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2AwsIntegration } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -22,7 +22,7 @@ const view = withViewInputs(pageView, { context })()
 const inner = (model: Model, message: IntegrationMessage) =>
 	pageUpdate(model, Message.GotIntegrationsMessage({ message })).model
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const NOW = Date.parse("2026-10-23T09:00:00.000Z")
 const ID = encodePublicId(PublicIdPrefixes.awsConnection, "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")

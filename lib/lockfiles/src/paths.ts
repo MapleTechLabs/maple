@@ -1,4 +1,5 @@
 import type { LockfileKind } from "./types.ts"
+import { Array as Arr, String as Str } from "effect"
 
 const KIND_BY_NAME: ReadonlyMap<string, LockfileKind> = new Map([
 	["package-lock.json", "package-lock"],
@@ -14,7 +15,8 @@ const KIND_BY_NAME: ReadonlyMap<string, LockfileKind> = new Map([
 
 const IGNORED_SEGMENTS = new Set(["node_modules", "vendor", "testdata", "fixtures", "__fixtures__", ".git"])
 
-const segmentsOf = (path: string): ReadonlyArray<string> => path.split(/[\\/]+/).filter((s) => s !== "")
+const segmentsOf = (path: string): ReadonlyArray<string> =>
+	Arr.filter(Str.split(/[\\/]+/)(path), (s) => s !== "")
 
 /** Kind by basename. yarn.lock is "yarn-v1" here; the parser detects berry from its content. */
 export const lockfileKindOf = (path: string): LockfileKind | undefined =>
@@ -29,4 +31,4 @@ export const unsupportedReason = (kind: LockfileKind): string | undefined =>
 
 /** Paths a scan skips: vendored, test or dependency trees. */
 export const isIgnoredLockfilePath = (path: string): boolean =>
-	segmentsOf(path).some((segment) => IGNORED_SEGMENTS.has(segment))
+	Arr.some(segmentsOf(path), (segment) => IGNORED_SEGMENTS.has(segment))

@@ -7,6 +7,7 @@ import {
 	withTableListOnUnknownTable,
 } from "../run-sql"
 import { McpQueryBudgetError, McpQueryError } from "../types"
+import { String as Str } from "effect"
 
 const err = (message: string) => new McpQueryError({ message, pipeName: "run_sql" })
 
@@ -84,8 +85,8 @@ describe("run_sql budget hint", () => {
 describe("run_sql cells", () => {
 	it("keeps control characters visible and honours the cell cap", () => {
 		expect(cellToString("a\nb\tc")).toBe("a\\nb\\tc")
-		expect(cellToString("x".repeat(300), 200)).toHaveLength(200)
-		expect(cellToString("x".repeat(100))).toHaveLength(100)
+		expect(cellToString(Str.repeat(300)("x"), 200)).toHaveLength(200)
+		expect(cellToString(Str.repeat(100)("x"))).toHaveLength(100)
 	})
 })
 

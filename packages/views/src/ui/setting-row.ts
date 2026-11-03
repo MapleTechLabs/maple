@@ -12,6 +12,7 @@ import {
 	settingRowTextStyles,
 } from "@maple/ui/styles/ui/setting-row"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // Port of packages/ui/src/components/ui/setting-row.tsx. The React row is a Base UI `Field`: its
 // label points at the control's input, and the field state (`data-filled`, `data-disabled`) is
@@ -26,7 +27,7 @@ export interface SettingRowIds {
 
 const isChildList = (
 	value: string | Html | ReadonlyArray<Html | string>,
-): value is ReadonlyArray<Html | string> => Array.isArray(value)
+): value is ReadonlyArray<Html | string> => Arr.isArray(value)
 
 const descriptionChildren = (value: string | Html | ReadonlyArray<Html | string>) =>
 	isChildList(value) ? value : [value]

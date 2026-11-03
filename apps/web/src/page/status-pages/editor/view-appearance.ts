@@ -7,7 +7,7 @@ import {
 	type StatusPageThemeTokens,
 } from "@maple/domain/status-page"
 import { previewSnapshot } from "@maple/status-page"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
@@ -79,7 +79,7 @@ const presetTokens = (theme: ThemeForm): StatusPageThemeTokens => {
 const isRadius = Schema.is(StatusPageThemeRadius)
 const isFont = Schema.is(StatusPageThemeFont)
 const isOverride = (field: ThemeColorField): boolean =>
-	THEME_OVERRIDE_FIELDS.some((override) => override === field)
+	Arr.some(THEME_OVERRIDE_FIELDS, (override) => override === field)
 
 const colorField = (
 	h: H,
@@ -89,7 +89,7 @@ const colorField = (
 	isDisabled: boolean,
 ): Html => {
 	const value = theme[entry.field]
-	const showSwatch = error === null && value.trim() !== "" && !isDisabled
+	const showSwatch = error === null && Str.trim(value) !== "" && !isDisabled
 	return h.div(
 		[h.Class("flex items-end gap-2")],
 		[
@@ -110,7 +110,7 @@ const colorField = (
 							[
 								h.AriaHidden(true),
 								h.Class("mb-1.5 size-6 shrink-0 rounded-md border"),
-								h.Style({ backgroundColor: value.trim() }),
+								h.Style({ backgroundColor: Str.trim(value) }),
 							],
 							[],
 						),
@@ -151,7 +151,7 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 						className: "self-start",
 						value: theme.appearance,
 						onChange: (appearance) => Message.PickedThemeAppearance({ appearance }),
-						options: APPEARANCES.map((option) => ({ ...option, isDisabled: isReadOnly })),
+						options: Arr.map(APPEARANCES, (option) => ({ ...option, isDisabled: isReadOnly })),
 					}),
 					typography(h, { size: "xs", tone: "muted", as: "p" }, [
 						isAuto
@@ -161,7 +161,7 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 				]),
 				h.div(
 					[h.Class("grid gap-4 sm:grid-cols-2")],
-					COLOR_FIELDS.map((entry) =>
+					Arr.map(COLOR_FIELDS, (entry) =>
 						colorField(
 							h,
 							theme,
@@ -211,7 +211,7 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 
 // PREVIEW
 
-const orNull = (value: string): string | null => (value.trim() === "" ? null : value.trim())
+const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 
 /** The public page as the draft would render it, from the loaded components and incidents. */
 export const settingsDocument = (model: Model, page: V2StatusPage, form: SettingsForm): string => {
@@ -220,7 +220,7 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 	const snapshot = previewSnapshot({
 		pageId: page.id,
 		page: {
-			name: form.name.trim() === "" ? page.name : form.name.trim(),
+			name: Str.trim(form.name) === "" ? page.name : Str.trim(form.name),
 			slug: form.slug,
 			description: orNull(form.description),
 			websiteUrl: orNull(form.websiteUrl),
@@ -230,7 +230,7 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 			showPoweredBy: form.showPoweredBy,
 			theme: previewTheme(themeOf(form.theme), model.previewScheme),
 		},
-		components: componentsOf(model).map((component) => ({
+		components: Arr.map(componentsOf(model), (component) => ({
 			id: component.id,
 			name: component.name,
 			description: component.description,
@@ -242,9 +242,10 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 			monitored: component.monitor_id !== null,
 			days: daysOf(model.previewHistory, component.monitor_id),
 		})),
-		incidents: incidentsOf(model)
-			.filter((incident) => isListedIncident(incident, nowMs))
-			.map(toSnapshotIncident),
+		incidents: Arr.map(
+			Arr.filter(incidentsOf(model), (incident) => isListedIncident(incident, nowMs)),
+			toSnapshotIncident,
+		),
 		nowMs,
 	})
 	return previewDocument({ snapshot, nowMs, isSelectable: false, selectedIds: [] })

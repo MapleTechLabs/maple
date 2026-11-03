@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { readJwtExpMs } from "./auth-headers"
+import { String as Str } from "effect"
 
 const base64Url = (value: string): string =>
-	btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+	Str.replace(/=+$/, "")(Str.replace(/\//g, "_")(Str.replace(/\+/g, "-")(btoa(value))))
 
 const jwtWithClaims = (claims: unknown): string => `header.${base64Url(JSON.stringify(claims))}.signature`
 

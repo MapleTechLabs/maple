@@ -11,7 +11,7 @@ import {
 	nextSlowerAlertInterval,
 } from "@maple/query-engine/datetime"
 import { ALERT_EVALUATION_INTERVALS, AlertEvaluationErrorKind } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
@@ -50,11 +50,14 @@ export const intervalBeforeSlowdown = (
 				: ["time", "memory"]
 	const steps = [
 		base,
-		...ALERT_EVALUATION_INTERVALS.filter((minutes) => minutes > base && minutes < slowed),
+		...Arr.filter(ALERT_EVALUATION_INTERVALS, (minutes) => minutes > base && minutes < slowed),
 	]
 	return (
 		steps.find((from) =>
-			exceeded.some((limit) => nextSlowerAlertInterval(from, rule.windowMinutes, limit) === slowed),
+			Arr.some(
+				exceeded,
+				(limit) => nextSlowerAlertInterval(from, rule.windowMinutes, limit) === slowed,
+			),
 		) ?? base
 	)
 }
@@ -148,11 +151,11 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	// ungrouped / unselected).
 	const states =
 		input.selectedGroupKey != null
-			? input.states.filter((s) => s.group_key === input.selectedGroupKey)
+			? Arr.filter(input.states, (s) => s.group_key === input.selectedGroupKey)
 			: input.states
 	const groupChecks =
 		input.selectedGroupKey != null
-			? checks.filter((c) => c.groupKey === input.selectedGroupKey || c.status === "error")
+			? Arr.filter(checks, (c) => c.groupKey === input.selectedGroupKey || c.status === "error")
 			: checks
 
 	const stages: DiagnosisStage[] = []
@@ -178,10 +181,10 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	)
 
 	/* 2 — Evaluated recently */
-	const stateEvaluatedAt = states
-		.map((s) => parseMs(s.last_evaluated_at))
-		.filter((ms): ms is number => ms != null)
-		.reduce<number | null>((max, ms) => (max == null || ms > max ? ms : max), null)
+	const stateEvaluatedAt = Arr.filter(
+		Arr.map(states, (s) => parseMs(s.last_evaluated_at)),
+		(ms): ms is number => ms != null,
+	).reduce<number | null>((max, ms) => (max == null || ms > max ? ms : max), null)
 	const evaluatedAt = stateEvaluatedAt ?? parseMs(rule.lastEvaluatedAt)
 	const scheduledAt = parseMs(rule.lastScheduledAt)
 	if (evaluatedAt == null && scheduledAt == null) {
@@ -215,12 +218,15 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			summary: stale
 				? `Last evaluated ${relative(now, evaluatedAt)}, expected ${evaluationCadence(rule)}`
 				: `Last evaluated ${relative(now, evaluatedAt)}`,
-			evidence: [
-				`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,
-				scheduledAt != null
-					? `Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`
-					: null,
-			].filter((line): line is string => line != null),
+			evidence: Arr.filter(
+				[
+					`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,
+					scheduledAt != null
+						? `Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`
+						: null,
+				],
+				(line): line is string => line != null,
+			),
 		})
 	}
 
@@ -232,7 +238,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		errorState === undefined
 			? rule.lastEvaluationErrorKind
 			: Option.getOrNull(decodeErrorKind(errorState.last_error_kind))
-	const errorChecks = checks.filter((c) => c.status === "error")
+	const errorChecks = Arr.filter(checks, (c) => c.status === "error")
 	// An error from before a slowdown ran under the interval the rule had then, not the slowed one.
 	const errorAt = parseMs(errorState?.last_evaluated_at ?? rule.lastEvaluatedAt)
 	const slowedAt = parseMs(rule.slowedAt)
@@ -302,8 +308,8 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	const latestState = states[0] ?? null
 	const latestCheck = groupChecks.find((c) => c.status !== "error") ?? null
 	const sampleCount = latestState?.last_sample_count ?? latestCheck?.sampleCount ?? null
-	const skippedChecks = groupChecks.filter((c) => c.status === "skipped").length
-	const observableChecks = groupChecks.filter((c) => c.status !== "error").length
+	const skippedChecks = Arr.filter(groupChecks, (c) => c.status === "skipped").length
+	const observableChecks = Arr.filter(groupChecks, (c) => c.status !== "error").length
 	const noDataExplainer =
 		rule.noDataBehavior === "zero"
 			? "No-data windows are treated as 0 (they still evaluate)."
@@ -311,8 +317,8 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				? "No-data windows count as breaches."
 				: "No-data windows are skipped (they never breach). Turn on alerting when there is no data to hear about it."
 	// Checks recorded before skip reasons existed carry none and count as neither.
-	const belowMinChecks = groupChecks.filter((c) => c.skipReason === "below_min_samples").length
-	const noDataChecks = groupChecks.filter((c) => c.skipReason === "no_data").length
+	const belowMinChecks = Arr.filter(groupChecks, (c) => c.skipReason === "below_min_samples").length
+	const noDataChecks = Arr.filter(groupChecks, (c) => c.skipReason === "no_data").length
 	if (observableChecks > 0 && skippedChecks === observableChecks) {
 		stages.push({
 			id: "data",
@@ -322,16 +328,19 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				belowMinChecks > 0 && noDataChecks === 0
 					? "Every check in this window was skipped: fewer samples than the minimum"
 					: "Every check in this window was skipped: no matching data",
-			evidence: [
-				`${skippedChecks} of ${observableChecks} checks skipped`,
-				noDataChecks > 0 ? `${noDataChecks} had no data (the query matched nothing)` : null,
-				belowMinChecks > 0 ? `${belowMinChecks} were below the minimum sample count` : null,
-				rule.minimumSampleCount > 0
-					? `Minimum sample count: ${rule.minimumSampleCount} — windows below it are skipped`
-					: null,
-				noDataExplainer,
-				"Check the rule's service scope and filters against what is actually ingesting.",
-			].filter((line): line is string => line != null),
+			evidence: Arr.filter(
+				[
+					`${skippedChecks} of ${observableChecks} checks skipped`,
+					noDataChecks > 0 ? `${noDataChecks} had no data (the query matched nothing)` : null,
+					belowMinChecks > 0 ? `${belowMinChecks} were below the minimum sample count` : null,
+					rule.minimumSampleCount > 0
+						? `Minimum sample count: ${rule.minimumSampleCount} — windows below it are skipped`
+						: null,
+					noDataExplainer,
+					"Check the rule's service scope and filters against what is actually ingesting.",
+				],
+				(line): line is string => line != null,
+			),
 			action: { label: "Edit rule", kind: "edit" },
 		})
 	} else {
@@ -347,11 +356,14 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				: sampleCount != null
 					? `${sampleCount} samples in the last window`
 					: "No sample data yet",
-			evidence: [
-				skippedChecks > 0 ? `${skippedChecks} skipped checks in this window` : null,
-				rule.minimumSampleCount > 0 ? `Minimum sample count: ${rule.minimumSampleCount}` : null,
-				noDataExplainer,
-			].filter((line): line is string => line != null),
+			evidence: Arr.filter(
+				[
+					skippedChecks > 0 ? `${skippedChecks} skipped checks in this window` : null,
+					rule.minimumSampleCount > 0 ? `Minimum sample count: ${rule.minimumSampleCount}` : null,
+					noDataExplainer,
+				],
+				(line): line is string => line != null,
+			),
 		})
 	}
 
@@ -399,7 +411,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	/* 6 — Incident opened */
 	const groupIncidents =
 		input.selectedGroupKey != null
-			? openIncidents.filter((i) => i.groupKey === input.selectedGroupKey || i.groupKey == null)
+			? Arr.filter(openIncidents, (i) => i.groupKey === input.selectedGroupKey || i.groupKey == null)
 			: openIncidents
 	if (groupIncidents.length > 0) {
 		const first = groupIncidents[0]!
@@ -411,12 +423,11 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				groupIncidents.length === 1
 					? `1 open incident since ${relative(now, new Date(first.firstTriggeredAt).getTime())}`
 					: `${groupIncidents.length} open incidents`,
-			evidence: groupIncidents
-				.slice(0, 5)
-				.map(
-					(i) =>
-						`${i.groupKey ?? "all"} — opened ${relative(now, new Date(i.firstTriggeredAt).getTime())}`,
-				),
+			evidence: Arr.map(
+				groupIncidents.slice(0, 5),
+				(i) =>
+					`${i.groupKey ?? "all"} — opened ${relative(now, new Date(i.firstTriggeredAt).getTime())}`,
+			),
 		})
 	} else {
 		stages.push({
@@ -439,7 +450,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			action: { label: "Configure destinations", kind: "destinations" },
 		})
 	} else {
-		const destinationById = new Map(destinations.map((d) => [d.id as string, d]))
+		const destinationById = new Map(Arr.map(destinations, (d) => [d.id as string, d]))
 		const evidence: string[] = []
 		let failures = 0
 		let deliveries = 0
@@ -460,7 +471,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			} else if (latest.status === "success") {
 				deliveries += 1
 				evidence.push(
-					`${name}: delivered ${latest.attemptedAt != null ? relative(now, new Date(latest.attemptedAt).getTime()) : ""}`.trim(),
+					Str.trim(
+						`${name}: delivered ${latest.attemptedAt != null ? relative(now, new Date(latest.attemptedAt).getTime()) : ""}`,
+					),
 				)
 			} else {
 				evidence.push(`${name}: ${latest.status}`)

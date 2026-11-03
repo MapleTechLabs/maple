@@ -1,5 +1,5 @@
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -35,7 +35,7 @@ type H = HtmlBuilder<Message>
 
 const MODEL_ENTRIES = [
 	{ _tag: "Item" as const, item: { value: DEFAULT_MODEL, label: DEFAULT_MODEL_LABEL } },
-	...MODEL_OPTIONS.map((model) => ({
+	...Arr.map(MODEL_OPTIONS, (model) => ({
 		_tag: "Item" as const,
 		item: { value: model.id, label: model.label },
 	})),

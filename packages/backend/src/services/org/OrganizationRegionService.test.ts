@@ -7,7 +7,7 @@ import {
 } from "@maple/cache"
 import { OrganizationWrongRegionError, OrgId } from "@maple/domain/http"
 import type { MapleRegion } from "@maple/domain/organization-regions"
-import { Deferred, Effect, Exit, Fiber, Option, Ref, Schema } from "effect"
+import { Deferred, Effect, Exit, Fiber, Option, Ref, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import {
@@ -216,7 +216,7 @@ describe("OrganizationRegionService", () => {
 			)
 			yield* TestClock.adjust("200 millis")
 			const exits = yield* Fiber.join(pending)
-			assert.isTrue(exits.every(Exit.isSuccess))
+			assert.isTrue(Arr.every(exits, Exit.isSuccess))
 			assert.strictEqual(yield* Ref.get(directory.reads), 1)
 		}),
 	)

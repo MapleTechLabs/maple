@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { AdoptPolicy } from "alchemy/AdoptPolicy"
 import { AlchemyContext } from "alchemy/AlchemyContext"
 import { Stack } from "alchemy/Stack"
@@ -8,14 +8,15 @@ import { MapleAlertRuleOwnershipError, MapleAlertRuleTagsError } from "./errors"
 
 const prefix = "alchemy:"
 
-export const ownershipTags = (tags: ReadonlyArray<string>) => tags.filter((tag) => tag.startsWith(prefix))
+export const ownershipTags = (tags: ReadonlyArray<string>) =>
+	Arr.filter(tags, (tag) => Str.startsWith(prefix)(tag))
 
 /** Maple limits tags to 32 characters, so hash Alchemy's stack/stage/FQN identity. */
 const ruleOwnerTag = Effect.fn(function* (fqn: string) {
 	const identity = yield* createInternalTags(fqn)
 	// A fixed local identity is encoded for hashing, not sent over a JSON boundary.
 	// oxlint-disable-next-line effecttsgo/global-json-in-effect
-	return `${prefix}${createHash("sha256").update(JSON.stringify(identity)).digest("hex").slice(0, 24)}`
+	return `${prefix}${Str.slice(0, 24)(createHash("sha256").update(JSON.stringify(identity)).digest("hex"))}`
 })
 
 export const ruleOwnerTags = Effect.fn(function* (fqn: string) {
@@ -33,12 +34,15 @@ export const ruleTags = Effect.fn(function* (
 ) {
 	const userTags = Array.from(
 		new Set(
-			(tags ?? observed.filter((tag) => !tag.startsWith(prefix)))
-				.map((tag) => tag.trim().toLowerCase())
-				.filter(Boolean),
+			Arr.filter(
+				Arr.map(tags ?? Arr.filter(observed, (tag) => !Str.startsWith(prefix)(tag)), (tag) =>
+					Str.toLowerCase(Str.trim(tag)),
+				),
+				Boolean,
+			),
 		),
 	)
-	if (userTags.length > 19 || userTags.some((tag) => tag.startsWith(prefix))) {
+	if (userTags.length > 19 || Arr.some(userTags, (tag) => Str.startsWith(prefix)(tag))) {
 		return yield* new MapleAlertRuleTagsError({
 			message: "Alert rules allow up to 19 user tags; the alchemy: prefix is reserved for ownership.",
 		})

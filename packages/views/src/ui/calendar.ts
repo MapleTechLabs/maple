@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Calendar from "foldkit/calendar"
 import * as Dom from "foldkit/dom"
@@ -67,7 +67,7 @@ export type Message = typeof Message.Type
 
 /** The `data-day` value react-day-picker writes on a day cell (`yyyy-MM-dd`). */
 export const isoDay = (date: CalendarDate): string =>
-	`${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`
+	`${date.year}-${Str.padStart(2, "0")(String(date.month))}-${Str.padStart(2, "0")(String(date.day))}`
 
 // COMMAND
 
@@ -128,7 +128,7 @@ export const gridWeeks = (model: Model): ReadonlyArray<ReadonlyArray<CalendarDat
 }
 
 const isInGrid = (model: Model, date: CalendarDate): boolean =>
-	gridWeeks(model).some((week) => week.some((day) => Calendar.isEqual(day, date)))
+	Arr.some(gridWeeks(model), (week) => Arr.some(week, (day) => Calendar.isEqual(day, date)))
 
 /** react-day-picker's focus target: the focused day, else the selected one, else today, else the 1st. */
 export const tabbableDay = (model: Model): CalendarDate => {

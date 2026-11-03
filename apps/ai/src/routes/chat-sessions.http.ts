@@ -34,7 +34,7 @@ import {
 } from "@maple/domain/chat-session"
 import type { ChatSessionCallError, ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, Schema, Stream, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -182,7 +182,7 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				const { sessionId, tenant, stub } = resolved.session
 				const body = yield* request.text.pipe(Effect.orElseSucceed(() => ""))
 				const parsed = yield* decodeSendRequest(body).pipe(Effect.option)
-				if (parsed._tag === "None" || parsed.value.text.trim() === "") {
+				if (parsed._tag === "None" || Str.trim(parsed.value.text) === "") {
 					return problem("A non-empty `text` is required", 400)
 				}
 

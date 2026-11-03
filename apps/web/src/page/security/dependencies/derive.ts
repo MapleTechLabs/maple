@@ -8,7 +8,7 @@ import {
 	type VcsRepositoryId,
 } from "@maple/domain/http"
 import { compareVersions } from "@maple/lockfiles/versions"
-import { Duration, Option } from "effect"
+import { Duration, Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
@@ -109,7 +109,8 @@ export const filteredFindings = (
 	status: StatusFilter,
 	repositoryId: VcsRepositoryId | null,
 ): ReadonlyArray<DependencyFindingView> =>
-	findings.filter(
+	Arr.filter(
+		findings,
 		(finding) =>
 			matchesStatus(finding, status) &&
 			(repositoryId === null || finding.repositoryId === repositoryId),
@@ -135,26 +136,24 @@ export const openFindingsOf = (
 	findings: ReadonlyArray<DependencyFindingView>,
 	repositoryId: VcsRepositoryId,
 ): ReadonlyArray<DependencyFindingView> =>
-	findings.filter((finding) => finding.status === "open" && finding.repositoryId === repositoryId)
+	Arr.filter(findings, (finding) => finding.status === "open" && finding.repositoryId === repositoryId)
 
 export type SeverityCounts = Readonly<Record<AdvisorySeverity, number>>
 
 const NO_SEVERITIES = { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 } satisfies SeverityCounts
 
 export const openSeverityCounts = (findings: ReadonlyArray<DependencyFindingView>): SeverityCounts =>
-	findings
-		.filter((finding) => finding.status === "open")
-		.reduce<SeverityCounts>(
-			(counts, finding) => ({ ...counts, [finding.severity]: counts[finding.severity] + 1 }),
-			NO_SEVERITIES,
-		)
+	Arr.filter(findings, (finding) => finding.status === "open").reduce<SeverityCounts>(
+		(counts, finding) => ({ ...counts, [finding.severity]: counts[finding.severity] + 1 }),
+		NO_SEVERITIES,
+	)
 
 export const scannedCount = (repositories: ReadonlyArray<DependencyScanRepository>): number =>
-	repositories.filter((repository) => repository.latestScan !== null).length
+	Arr.filter(repositories, (repository) => repository.latestScan !== null).length
 
 export const isScanPending = (model: Model, repositoryId: VcsRepositoryId): boolean =>
 	model.requestingScans.includes(repositoryId) ||
-	model.pendingScans.some((pending) => pending.repositoryId === repositoryId)
+	Arr.some(model.pendingScans, (pending) => pending.repositoryId === repositoryId)
 
 /** A pending scan is done once its repository shows a newer scan that has finished. */
 const isSettled = (pending: PendingScan, repositories: ReadonlyArray<DependencyScanRepository>): boolean => {
@@ -167,7 +166,7 @@ export const settlePendingScans = (
 	pendingScans: ReadonlyArray<PendingScan>,
 	repositories: ReadonlyArray<DependencyScanRepository>,
 ): Readonly<{ pending: ReadonlyArray<PendingScan>; hasSettled: boolean }> => {
-	const pending = pendingScans.filter((scan) => !isSettled(scan, repositories))
+	const pending = Arr.filter(pendingScans, (scan) => !isSettled(scan, repositories))
 	return { pending, hasSettled: pending.length < pendingScans.length }
 }
 
@@ -175,7 +174,7 @@ export const unexpiredScans = (
 	pendingScans: ReadonlyArray<PendingScan>,
 	nowMs: number,
 ): ReadonlyArray<PendingScan> =>
-	pendingScans.filter((scan) => nowMs - scan.requestedAtMs < Duration.toMillis(SCAN_POLL_LIMIT))
+	Arr.filter(pendingScans, (scan) => nowMs - scan.requestedAtMs < Duration.toMillis(SCAN_POLL_LIMIT))
 
 export const selectedFindingOf = (model: Model): DependencyFindingView | null =>
 	model.selectedId === null
@@ -183,7 +182,7 @@ export const selectedFindingOf = (model: Model): DependencyFindingView | null =>
 		: (allFindingsOf(model).find((finding) => finding.id === model.selectedId) ?? null)
 
 export const reasonErrorOf = (reason: string): string | null =>
-	reason.trim() === ""
+	Str.trim(reason) === ""
 		? "Add a reason. It is shown on the finding with your name."
 		: // The API checks the reason as sent, so the cap applies to it untrimmed.
 			reason.length > DEPENDENCY_FINDING_REASON_MAX_LENGTH
@@ -191,7 +190,7 @@ export const reasonErrorOf = (reason: string): string | null =>
 			: null
 
 /** A commit as its first seven characters, as GitHub abbreviates it. */
-export const shortSha = (sha: string): string => sha.slice(0, 7)
+export const shortSha = (sha: string): string => Str.slice(0, 7)(sha)
 
 const SEVERITY_RANK = {
 	critical: 0,
@@ -231,13 +230,13 @@ export type UpgradeStep = Readonly<{
 }>
 
 const worst = <A extends string>(values: ReadonlyArray<A>, rank: Record<A, number>, fallback: A): A =>
-	values.reduce((best, value) => (rank[value] < rank[best] ? value : best), fallback)
+	Arr.reduce(values, fallback, (best, value) => (rank[value] < rank[best] ? value : best))
 
 const unique = (values: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(values)]
 
 /** A finding is per lockfile; the plan counts each advisory once. */
 const byAdvisory = (findings: ReadonlyArray<DependencyFindingView>): ReadonlyArray<DependencyFindingView> => [
-	...new Map(findings.map((finding) => [finding.advisoryId, finding] as const)).values(),
+	...new Map(Arr.map(findings, (finding) => [finding.advisoryId, finding] as const)).values(),
 ]
 
 const stepOf = (
@@ -247,7 +246,7 @@ const stepOf = (
 ): UpgradeStep => {
 	const [first] = findings
 	const ecosystem = first?.ecosystem ?? "npm"
-	const fixable = findings.filter((finding) => finding.fixedIn !== null)
+	const fixable = Arr.filter(findings, (finding) => finding.fixedIn !== null)
 	const fixes = byAdvisory(fixable)
 	// Every lockfile's fix counts: one advisory can need a higher version in another lockfile.
 	const target = fixable.reduce<string | null>(
@@ -260,8 +259,9 @@ const stepOf = (
 	)
 	// The same service appears once per finding; count each one's traffic once.
 	const spans = new Map(
-		findings.flatMap((finding) =>
-			finding.production.map(
+		Arr.flatMap(findings, (finding) =>
+			Arr.map(
+				finding.production,
 				(service) =>
 					[`${service.serviceName}/${service.environment}@${service.commitSha}`, service] as const,
 			),
@@ -273,27 +273,28 @@ const stepOf = (
 		repositoryId,
 		ecosystem,
 		packageName: first?.packageName ?? "",
-		installed: unique(findings.flatMap((finding) => finding.versions)).toSorted((a, b) =>
+		installed: unique(Arr.flatMap(findings, (finding) => finding.versions)).toSorted((a, b) =>
 			compareVersions(ecosystem, a, b),
 		),
 		target,
 		fixes,
-		unfixed: byAdvisory(findings.filter((finding) => finding.fixedIn === null)).filter(
-			(finding) => !fixes.some((fixed) => fixed.advisoryId === finding.advisoryId),
+		unfixed: Arr.filter(
+			byAdvisory(Arr.filter(findings, (finding) => finding.fixedIn === null)),
+			(finding) => !Arr.some(fixes, (fixed) => fixed.advisoryId === finding.advisoryId),
 		),
 		severity: worst(
-			findings.map((finding) => finding.severity),
+			Arr.map(findings, (finding) => finding.severity),
 			SEVERITY_RANK,
 			"unknown",
 		),
 		relation: worst(
-			findings.map((finding) => finding.relation),
+			Arr.map(findings, (finding) => finding.relation),
 			RELATION_RANK,
 			"unknown",
 		),
-		lockfiles: unique(findings.map((finding) => finding.lockfilePath)),
-		productionSpans: services.reduce((sum, service) => sum + service.spanCount, 0),
-		services: unique(services.map((service) => service.serviceName)),
+		lockfiles: unique(Arr.map(findings, (finding) => finding.lockfilePath)),
+		productionSpans: Arr.reduce(services, 0, (sum, service) => sum + service.spanCount),
+		services: unique(Arr.map(services, (service) => service.serviceName)),
 	}
 }
 
@@ -304,26 +305,25 @@ const stepOf = (
 export const upgradePlanOf = (findings: ReadonlyArray<DependencyFindingView>): ReadonlyArray<UpgradeStep> => {
 	const groups = new Map<string, ReadonlyArray<DependencyFindingView>>()
 	const repositoryOf = new Map<string, VcsRepositoryId>()
-	findings
-		.filter((finding) => finding.status === "open")
-		.forEach((finding) => {
+	Arr.forEach(
+		Arr.filter(findings, (finding) => finding.status === "open"),
+		(finding) => {
 			const key = `${finding.repositoryId}/${finding.ecosystem}/${finding.packageName}`
 			groups.set(key, [...(groups.get(key) ?? []), finding])
 			repositoryOf.set(key, finding.repositoryId)
-		})
-	return [...groups.entries()]
-		.flatMap(([key, group]) => {
-			const repositoryId = repositoryOf.get(key)
-			return repositoryId === undefined ? [] : [stepOf(key, repositoryId, group)]
-		})
-		.toSorted(
-			(a, b) =>
-				Number(a.target === null) - Number(b.target === null) ||
-				SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-				RELATION_RANK[a.relation] - RELATION_RANK[b.relation] ||
-				b.productionSpans - a.productionSpans ||
-				b.fixes.length - a.fixes.length,
-		)
+		},
+	)
+	return Arr.flatMap([...groups.entries()], ([key, group]) => {
+		const repositoryId = repositoryOf.get(key)
+		return repositoryId === undefined ? [] : [stepOf(key, repositoryId, group)]
+	}).toSorted(
+		(a, b) =>
+			Number(a.target === null) - Number(b.target === null) ||
+			SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+			RELATION_RANK[a.relation] - RELATION_RANK[b.relation] ||
+			b.productionSpans - a.productionSpans ||
+			b.fixes.length - a.fixes.length,
+	)
 }
 
 /** A repository's plan in a line's worth of numbers. */
@@ -343,7 +343,9 @@ export const planSummaryOf = (plan: ReadonlyArray<UpgradeStep>): PlanSummary =>
 /** Services that ran one of the repository's commits over the last day. */
 export const runningServicesOf = (repository: DependencyScanRepository): ReadonlyArray<string> =>
 	unique(
-		repository.runningCommits.flatMap((commit) => commit.services.map((service) => service.serviceName)),
+		Arr.flatMap(repository.runningCommits, (commit) =>
+			Arr.map(commit.services, (service) => service.serviceName),
+		),
 	)
 
 /** Open advisories, each once per repository and package however many lockfiles carry it. */
@@ -354,11 +356,11 @@ export const openAdvisoryCount = (findings: ReadonlyArray<DependencyFindingView>
 export const worstOpenSeverity = (
 	findings: ReadonlyArray<DependencyFindingView>,
 ): AdvisorySeverity | null => {
-	const open = findings.filter((finding) => finding.status === "open")
+	const open = Arr.filter(findings, (finding) => finding.status === "open")
 	return open.length === 0
 		? null
 		: worst(
-				open.map((finding) => finding.severity),
+				Arr.map(open, (finding) => finding.severity),
 				SEVERITY_RANK,
 				"unknown",
 			)
@@ -382,9 +384,9 @@ const rowOf = (key: string, steps: ReadonlyArray<UpgradeStep>): PackageRow => {
 		key,
 		ecosystem,
 		packageName: steps[0]?.packageName ?? "",
-		steps: new Map(steps.map((step) => [step.repositoryId, step] as const)),
+		steps: new Map(Arr.map(steps, (step) => [step.repositoryId, step] as const)),
 		severity: worst(
-			steps.map((step) => step.severity),
+			Arr.map(steps, (step) => step.severity),
 			SEVERITY_RANK,
 			"unknown",
 		),
@@ -396,7 +398,7 @@ const rowOf = (key: string, steps: ReadonlyArray<UpgradeStep>): PackageRow => {
 					: highest,
 			null,
 		),
-		productionSpans: steps.reduce((sum, step) => sum + step.productionSpans, 0),
+		productionSpans: Arr.reduce(steps, 0, (sum, step) => sum + step.productionSpans),
 	}
 }
 
@@ -408,19 +410,17 @@ export const packageMatrixOf = (
 	findings: ReadonlyArray<DependencyFindingView>,
 ): ReadonlyArray<PackageRow> => {
 	const groups = new Map<string, ReadonlyArray<UpgradeStep>>()
-	upgradePlanOf(findings).forEach((step) => {
+	Arr.forEach(upgradePlanOf(findings), (step) => {
 		const key = `${step.ecosystem}/${step.packageName}`
 		groups.set(key, [...(groups.get(key) ?? []), step])
 	})
-	return [...groups.entries()]
-		.map(([key, steps]) => rowOf(key, steps))
-		.toSorted(
-			(a, b) =>
-				SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-				b.productionSpans - a.productionSpans ||
-				b.steps.size - a.steps.size ||
-				a.packageName.localeCompare(b.packageName),
-		)
+	return Arr.map([...groups.entries()], ([key, steps]) => rowOf(key, steps)).toSorted(
+		(a, b) =>
+			SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+			b.productionSpans - a.productionSpans ||
+			b.steps.size - a.steps.size ||
+			Str.localeCompare(b.packageName)(a.packageName),
+	)
 }
 
 /** One repository's findings, its worst open severity and how many advisories are open. */
@@ -453,13 +453,14 @@ const buildDigest = (
 	findings: ReadonlyArray<DependencyFindingView>,
 ): Digest => {
 	const grouped = new Map<string, Array<DependencyFindingView>>()
-	findings.forEach((finding) => {
+	Arr.forEach(findings, (finding) => {
 		const group = grouped.get(finding.repositoryId)
 		if (group === undefined) grouped.set(finding.repositoryId, [finding])
 		else group.push(finding)
 	})
 	const stats = new Map(
-		[...grouped.entries()].map(
+		Arr.map(
+			[...grouped.entries()],
 			([repositoryId, own]) =>
 				[
 					repositoryId,
@@ -476,7 +477,7 @@ const buildDigest = (
 		(a, b) =>
 			rankOf(a) - rankOf(b) ||
 			statsOf(b.id).open - statsOf(a.id).open ||
-			a.fullName.localeCompare(b.fullName),
+			Str.localeCompare(b.fullName)(a.fullName),
 	)
 	return {
 		repositories,
@@ -484,8 +485,8 @@ const buildDigest = (
 		statsOf,
 		ranked,
 		packages: packageMatrixOf(findings),
-		affected: ranked.filter((repository) => statsOf(repository.id).open > 0),
-		open: [...stats.values()].reduce((sum, entry) => sum + entry.open, 0),
+		affected: Arr.filter(ranked, (repository) => statsOf(repository.id).open > 0),
+		open: Arr.reduce([...stats.values()], 0, (sum, entry) => sum + entry.open),
 		worst: worstOpenSeverity(findings),
 	}
 }

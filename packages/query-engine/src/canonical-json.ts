@@ -14,7 +14,7 @@
  * safe for the driver-free root barrel.
  */
 
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
@@ -32,17 +32,17 @@ export const canonicalJSON = (value: unknown): string => {
 		if (v === undefined) return undefined
 		if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v
 		if (typeof v === "bigint") return v.toString()
-		if (Array.isArray(v)) {
-			return v.map((item) => walk(item))
+		if (Arr.isArray(v)) {
+			return Arr.map(v, (item) => walk(item))
 		}
 		if (typeof v === "object") {
 			if (seen.has(v)) return null
 			seen.add(v)
-			const entries = Object.entries(v)
-				.filter(([, nested]) => nested !== undefined)
-				.map(([key, nested]) => [key, walk(nested)] as const)
-				.sort(([a], [b]) => a.localeCompare(b))
-			return Object.fromEntries(entries)
+			const entries = Arr.map(
+				Arr.filter(Rec.toEntries(v), ([, nested]) => nested !== undefined),
+				([key, nested]) => [key, walk(nested)] as const,
+			).sort(([a], [b]) => Str.localeCompare(b)(a))
+			return Rec.fromEntries(entries)
 		}
 		// symbol or function: every other type returned above.
 		return typeof v === "symbol" || typeof v === "function" ? v.toString() : null

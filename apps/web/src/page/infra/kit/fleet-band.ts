@@ -9,6 +9,7 @@ import { statFigure } from "@maple/views/ui/stat-figure"
 import { statRailItem } from "../../kit/stat-rail"
 import { typography } from "@maple/views/ui/typography"
 import { borderedBoxClass } from "@maple/views/ui/bordered-box"
+import { Array as Arr, String as Str } from "effect"
 
 // `FleetBand` and `FleetBandLoading`.
 
@@ -38,13 +39,13 @@ export type FleetBandOptions<S extends string, M> = Readonly<{
 	className?: string
 }>
 
-const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
+const capitalize = (text: string): string => Str.toUpperCase(text.charAt(0)) + Str.slice(1)(text)
 
 const BAND = "flex flex-col border-b bg-background md:flex-row md:items-stretch"
 
 export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: FleetBandOptions<S, M>): Html => {
 	const isWaiting = options.isWaiting === true
-	const drawn = options.segments.filter((segment) => segment.count > 0)
+	const drawn = Arr.filter(options.segments, (segment) => segment.count > 0)
 	return h.div(
 		[
 			h.Class(cn(BAND, refreshingClass(isWaiting), options.className)),
@@ -65,10 +66,11 @@ export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: Fleet
 								className: "w-full gap-px bg-transparent",
 								total: options.total,
 								minVisible: 2,
-								label: options.segments
-									.map((segment) => `${segment.count} ${segment.key}`)
-									.join(", "),
-								segments: drawn.map((segment) => ({
+								label: Arr.join(
+									Arr.map(options.segments, (segment) => `${segment.count} ${segment.key}`),
+									", ",
+								),
+								segments: Arr.map(drawn, (segment) => ({
 									key: segment.key,
 									value: segment.count,
 									className: segment.className,
@@ -78,7 +80,7 @@ export const fleetBand = <S extends string, M>(h: HtmlBuilder<M>, options: Fleet
 					typography(h, { size: "3xs", tone: "muted" }, [options.caption]),
 				],
 			),
-			...options.cells.map((cell) => {
+			...Arr.map(options.cells, (cell) => {
 				const isActive = options.activeScope === cell.scope
 				return statRailItem(h, {
 					size: "sm",

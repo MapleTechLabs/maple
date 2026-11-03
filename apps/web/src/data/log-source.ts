@@ -7,7 +7,7 @@ import {
 	MapleInternalHttp,
 	WarehouseExecutor,
 } from "@maple/web-data/warehouse/warehouse-services"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr } from "effect"
 
 // The log views' reads over the API: `listLogs` and `getSpanHierarchy`, on the warehouse services.
 
@@ -35,7 +35,10 @@ export const LogSourceLive = Layer.effect(
 					Effect.mapBoth({
 						onSuccess: (response) => ({
 							traceStartTime: response.traceStartTime ?? null,
-							spanNames: response.spans.map((span) => ({ spanId: span.spanId, spanName: span.spanName })),
+							spanNames: Arr.map(response.spans, (span) => ({
+								spanId: span.spanId,
+								spanName: span.spanName,
+							})),
 						}),
 						onFailure: toLoadFailure,
 					}),

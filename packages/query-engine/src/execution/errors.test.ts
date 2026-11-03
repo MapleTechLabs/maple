@@ -12,6 +12,7 @@ import {
 } from "@maple/domain/http"
 import { cleanErrorMessage, mapWarehouseError, toWarehouseQueryError } from "./errors"
 import { WarehouseDriverError } from "./driver-error"
+import { String as Str } from "effect"
 
 // Promise-land inputs, lifted the way a Promise-based adapter lifts them.
 const classify = (pipe: string, error: unknown, authoredBy?: "maple" | "caller") =>
@@ -405,8 +406,8 @@ describe("cleanErrorMessage", () => {
 	})
 
 	it("falls back to the first 200 chars when cleaning empties the message", () => {
-		const raw = `<html>${"x".repeat(300)}`
-		expect(cleanErrorMessage(raw)).toBe(raw.slice(0, 200))
+		const raw = `<html>${Str.repeat(300)("x")}`
+		expect(cleanErrorMessage(raw)).toBe(Str.slice(0, 200)(raw))
 	})
 })
 

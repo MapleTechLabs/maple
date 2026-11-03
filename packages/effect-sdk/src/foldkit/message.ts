@@ -1,4 +1,4 @@
-import { Predicate } from "effect"
+import { Predicate, Array as Arr } from "effect"
 
 const MAX_DEPTH = 4
 
@@ -17,7 +17,7 @@ export const messageTag = (message: unknown): string => {
 		tags.push(current._tag)
 		current = Predicate.hasProperty(current, "message") ? current.message : undefined
 	}
-	return tags.length === 0 ? "unknown" : tags.join(" > ")
+	return tags.length === 0 ? "unknown" : Arr.join(tags, " > ")
 }
 
 /** The last `size` Message tags, oldest first, for crash reports. */

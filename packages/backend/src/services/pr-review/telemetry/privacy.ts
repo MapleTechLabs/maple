@@ -14,6 +14,7 @@ import {
 	SPAN_CALL,
 	STRING_LITERAL,
 } from "./diff"
+import { Array as Arr, String as Str } from "effect"
 
 export type PrivacyKind = "secret" | "government_id" | "payment" | "contact" | "network" | "payload"
 
@@ -257,12 +258,17 @@ const PAYLOAD_WORDS = new Set(["body", "rawbody", "headers"])
 
 /** A name's words: split on separators and camelCase, lowercased. */
 const wordsOf = (name: string): ReadonlyArray<string> =>
-	name
-		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-		.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-		.toLowerCase()
-		.split(/[^a-z0-9]+/)
-		.filter((word) => word.length > 0)
+	Arr.filter(
+		Str.split(/[^a-z0-9]+/)(
+			Str.toLowerCase(
+				Str.replace(
+					/([A-Z]+)([A-Z][a-z])/g,
+					"$1 $2",
+				)(Str.replace(/([a-z0-9])([A-Z])/g, "$1 $2")(name)),
+			),
+		),
+		(word) => word.length > 0,
+	)
 
 /** The first sensitive word or compound in a name, and the words it spans. */
 const firstMatch = (words: ReadonlyArray<string>) => {
@@ -270,7 +276,7 @@ const firstMatch = (words: ReadonlyArray<string>) => {
 		for (const span of [3, 2]) {
 			const kind =
 				start + span <= words.length
-					? COMPOUNDS.get(words.slice(start, start + span).join(""))
+					? COMPOUNDS.get(Arr.join(words.slice(start, start + span), ""))
 					: undefined
 			if (kind !== undefined) return { kind, start, end: start + span }
 		}
@@ -291,12 +297,12 @@ export const classifyName = (
 ): PrivacyKind | undefined => {
 	const words = wordsOf(name)
 	const last = words.at(-1)
-	if (last === undefined || words.some((word) => NOT_THE_VALUE.has(word))) return undefined
+	if (last === undefined || Arr.some(words, (word) => NOT_THE_VALUE.has(word))) return undefined
 	const match = firstMatch(words)
 	if (match === undefined)
 		return options.chain === true && words.length > 1 && PAYLOAD_WORDS.has(last) ? "payload" : undefined
-	if (words.slice(match.end).some((word) => META_WORDS.has(word))) return undefined
-	if (match.kind === "contact" && words.slice(0, match.start).some((word) => NOT_A_PERSON.has(word)))
+	if (Arr.some(words.slice(match.end), (word) => META_WORDS.has(word))) return undefined
+	if (match.kind === "contact" && Arr.some(words.slice(0, match.start), (word) => NOT_A_PERSON.has(word)))
 		return undefined
 	return match.kind
 }
@@ -323,18 +329,16 @@ const CARD_ISSUER = /^(?:4|5[1-5]|2[2-7]|3[47]|6011|65)/
 
 /** Whether a digit string passes the Luhn check card numbers carry. */
 const luhn = (digits: string): boolean =>
-	Array.from(digits)
-		.reverse()
-		.reduce((sum, char, i) => {
-			const doubled = Number(char) * (i % 2 === 1 ? 2 : 1)
-			return sum + (doubled > 9 ? doubled - 9 : doubled)
-		}, 0) %
+	Arr.reduce(Array.from(digits).reverse(), 0, (sum, char, i) => {
+		const doubled = Number(char) * (i % 2 === 1 ? 2 : 1)
+		return sum + (doubled > 9 ? doubled - 9 : doubled)
+	}) %
 		10 ===
 	0
 
 const hasCardNumber = (text: string): boolean =>
-	[...text.matchAll(CARD_CANDIDATE)].some((match) => {
-		const digits = match[0].replace(/\D/g, "")
+	Arr.some([...text.matchAll(CARD_CANDIDATE)], (match) => {
+		const digits = Str.replace(/\D/g, "")(match[0])
 		return digits.length >= 13 && digits.length <= 19 && CARD_ISSUER.test(digits) && luhn(digits)
 	})
 
@@ -365,8 +369,8 @@ const blankLiterals = (text: string) => {
 	const code = text.replace(
 		STRING_LITERAL,
 		(whole: string, quote: string, value: string, offset: number) => {
-			const before = text.slice(Math.max(0, offset - 200), offset)
-			const after = text.slice(offset + whole.length, offset + whole.length + 4)
+			const before = Str.slice(Math.max(0, offset - 200), offset)(text)
+			const after = Str.slice(offset + whole.length, offset + whole.length + 4)(text)
 			// A key leads its value: `"k": v`, `set("k", v)`, Go's `slog.Info("msg", "k", v)`, or a
 			// key alone on its line inside a call opened above.
 			const key = SPAN_CALL.test(before)
@@ -395,7 +399,7 @@ const blankLiterals = (text: string) => {
 				)
 				interpolations.push([offset + at, offset + at + inner.length])
 			}
-			return blank.join("")
+			return Arr.join(blank, "")
 		},
 	)
 	return { literals, code, interpolations }
@@ -403,8 +407,8 @@ const blankLiterals = (text: string) => {
 
 /** The comma-separated entries of a line's code, as `[start, end)` offsets. */
 const segmentsOf = (code: string): ReadonlyArray<readonly [number, number]> => {
-	const bounds = [-1, ...[...code.matchAll(/,/g)].map((match) => match.index ?? 0), code.length]
-	return bounds.slice(1).map((end, i) => [(bounds[i] ?? -1) + 1, end] as const)
+	const bounds = [-1, ...Arr.map([...code.matchAll(/,/g)], (match) => match.index ?? 0), code.length]
+	return Arr.map(bounds.slice(1), (end, i) => [(bounds[i] ?? -1) + 1, end] as const)
 }
 
 /**
@@ -420,18 +424,19 @@ const PASS_THROUGH =
 
 /** Identifier chains used as values or keys, with their offsets: `user.email`, not `sendEmail(`. */
 const chainsOf = (code: string): ReadonlyArray<{ readonly chain: string; readonly offset: number }> =>
-	[...code.matchAll(IDENTIFIER_CHAIN)]
-		.filter((match) => {
+	Arr.map(
+		Arr.filter([...code.matchAll(IDENTIFIER_CHAIN)], (match) => {
 			const at = match.index ?? 0
-			const after = code.slice(at + match[0].length, at + match[0].length + 8)
+			const after = Str.slice(at + match[0].length, at + match[0].length + 8)(code)
 			if (/^\s*\(/.test(after)) return /(?:^|\.)get[A-Z]\w*$/.test(match[0])
 			// One indexed entry (`headers["x-github-event"]`), not the whole container.
 			if (/^\s*\[/.test(after)) return false
 			// An argument to a function that derives something from it (`fingerprintSql(body)`).
-			const callee = /([\w$.]+)\(\s*$/.exec(code.slice(Math.max(0, at - 200), at))?.[1]
+			const callee = /([\w$.]+)\(\s*$/.exec(Str.slice(Math.max(0, at - 200), at)(code))?.[1]
 			return callee === undefined || sinkIn(`${callee}(`) !== undefined || PASS_THROUGH.test(callee)
-		})
-		.map((match) => ({ chain: match[0], offset: match.index ?? 0 }))
+		}),
+		(match) => ({ chain: match[0], offset: match.index ?? 0 }),
+	)
 
 const sinkIn = (text: string): Sink | undefined =>
 	isLogCall(text) || MORE_LOGS.test(text)
@@ -486,9 +491,10 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	const sink = sinkOf(lines, index)
 	if (sink === undefined) return undefined
 	for (const { kind, label, pattern } of VALUE_PATTERNS) {
-		if (literals.some((literal) => pattern.test(literal.value))) return { kind, subject: label, sink }
+		if (Arr.some(literals, (literal) => pattern.test(literal.value)))
+			return { kind, subject: label, sink }
 	}
-	if (literals.some((literal) => hasCardNumber(literal.value)))
+	if (Arr.some(literals, (literal) => hasCardNumber(literal.value)))
 		return { kind: "payment", subject: "a card number", sink }
 
 	// Each comma-separated entry is judged on its own value: `{ email: user.email, ok: true }`.
@@ -496,21 +502,27 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	// Keys and interpolations are blanked first: `set("k", v)` does not read its key as a constant,
 	// and each `${...}` is judged on its own below.
 	const blanked: ReadonlyArray<readonly [number, number]> = [
-		...literals
-			.filter((literal) => literal.key !== undefined)
-			.map((literal) => [literal.offset, literal.offset + literal.value.length + 2] as const),
+		...Arr.map(
+			Arr.filter(literals, (literal) => literal.key !== undefined),
+			(literal) => [literal.offset, literal.offset + literal.value.length + 2] as const,
+		),
 		...interpolations,
 	]
-	const values = blanked.reduce(
-		(text, [start, end]) => text.slice(0, start) + " ".repeat(end - start) + text.slice(end),
+	const values = Arr.reduce(
+		blanked,
 		line.text,
+		(text, [start, end]) =>
+			Str.slice(0, start)(text) + Str.repeat(end - start)(" ") + Str.slice(end)(text),
 	)
-	const derived = segments.map(([start, end]) => DERIVED_VALUE.test(values.slice(start, end).trim()))
+	const derived = Arr.map(segments, ([start, end]) =>
+		DERIVED_VALUE.test(Str.trim(Str.slice(start, end)(values))),
+	)
 	const segmentAt = (offset: number) =>
 		segments.findIndex(([start, end]) => offset >= start && offset <= end)
 	const isDerived = (offset: number, valueFollows = false) => {
 		const within = interpolations.find(([start, end]) => offset >= start && offset < end)
-		if (within !== undefined) return DERIVED_VALUE.test(line.text.slice(within[0], within[1]).trim())
+		if (within !== undefined)
+			return DERIVED_VALUE.test(Str.trim(Str.slice(within[0], within[1])(line.text)))
 		const at = segmentAt(offset)
 		return derived[at] === true || (valueFollows && derived[at + 1] === true)
 	}
@@ -534,20 +546,20 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	// A key naming a non-person owner (`vcs.repository.full_name`) speaks for its own entry, and for
 	// the value entry after it in `set("k", v)`; never for other entries on the line.
 	const ownerSegments = new Set(
-		literals
-			.filter(
-				(literal) =>
-					literal.key !== undefined &&
-					wordsOf(literal.value).some((word) => NOT_A_PERSON.has(word)),
-			)
-			.flatMap((literal) => {
-				const at = segmentAt(literal.offset)
-				return literal.key === "argument" ? [at, at + 1] : [at]
-			}),
+		Arr.filter(
+			literals,
+			(literal) =>
+				literal.key !== undefined &&
+				Arr.some(wordsOf(literal.value), (word) => NOT_A_PERSON.has(word)),
+		).flatMap((literal) => {
+			const at = segmentAt(literal.offset)
+			return literal.key === "argument" ? [at, at + 1] : [at]
+		}),
 	)
-	const [worst] = named
-		.filter((hit) => hit.kind !== "contact" || !ownerSegments.has(segmentAt(hit.offset)))
-		.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind])
+	const [worst] = Arr.filter(
+		named,
+		(hit) => hit.kind !== "contact" || !ownerSegments.has(segmentAt(hit.offset)),
+	).sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind])
 	return worst === undefined ? undefined : { ...worst, sink }
 }
 
@@ -607,18 +619,18 @@ const otherLines = (lines: ReadonlyArray<number>) =>
 
 /** The diff's privacy findings: one per file and kind of data, on its first line, naming the others. */
 export const privacyFindings = (files: ReadonlyArray<PullRequestFile>): ReadonlyArray<PrReviewFinding> =>
-	files
-		.filter(
-			(file) =>
-				file.patch !== null &&
-				isRuntimeSource(file.path) &&
-				SCANNED_SOURCE.test(file.path) &&
-				!NOT_SCANNED.test(file.path),
-		)
+	Arr.filter(
+		files,
+		(file) =>
+			file.patch !== null &&
+			isRuntimeSource(file.path) &&
+			SCANNED_SOURCE.test(file.path) &&
+			!NOT_SCANNED.test(file.path),
+	)
 		.flatMap((file) => {
 			const lines = parsePatch(file.patch)
 			const byKind = new Map<PrivacyKind, { readonly hit: PrivacyHit; readonly lines: Array<number> }>()
-			lines.forEach((line, index) => {
+			Arr.forEach(lines, (line, index) => {
 				const hit = privacyHitAt(lines, index)
 				if (hit === undefined) return
 				const seen = byKind.get(hit.kind)
@@ -653,9 +665,11 @@ export const withoutReviewerOverlap = (
 	scanned: ReadonlyArray<PrReviewFinding>,
 	reviewer: ReadonlyArray<PrReviewFinding>,
 ): ReadonlyArray<PrReviewFinding> =>
-	scanned.filter(
+	Arr.filter(
+		scanned,
 		(finding) =>
-			!reviewer.some(
+			!Arr.some(
+				reviewer,
 				(own) =>
 					(own.checkId?.startsWith("PII-") ?? false) &&
 					own.path === finding.path &&

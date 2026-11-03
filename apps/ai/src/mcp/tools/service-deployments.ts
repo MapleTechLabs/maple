@@ -1,4 +1,4 @@
-import { Clock, DateTime, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ServiceDeploymentsOutput } from "@maple/domain/mcp-outputs"
 import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -20,7 +20,7 @@ const MINUTELY_RETENTION_MS = 89 * 24 * 3_600_000
 
 type Version = (typeof ServiceDeploymentsOutput.Type)["versions"][number]
 
-const shortSha = (sha: string) => (sha.length > 12 ? sha.slice(0, 12) : sha)
+const shortSha = (sha: string) => (sha.length > 12 ? Str.slice(0, 12)(sha) : sha)
 
 const groupKey = (v: { readonly service: string; readonly environment: string }) =>
 	`${v.service}\u0000${v.environment}`
@@ -32,8 +32,8 @@ const comparisons = (versions: ReadonlyArray<Version>) => {
 		const key = groupKey(v)
 		groups.set(key, [...(groups.get(key) ?? []), v])
 	}
-	return [...groups.values()].flatMap((group) => {
-		const [current, previous] = [...group].sort((a, b) => b.firstSeen.localeCompare(a.firstSeen))
+	return Arr.flatMap([...groups.values()], (group) => {
+		const [current, previous] = [...group].sort((a, b) => Str.localeCompare(a.firstSeen)(b.firstSeen))
 		return current !== undefined && previous !== undefined ? [{ current, previous }] : []
 	})
 }
@@ -99,7 +99,7 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 				const lastSeenMs = DateTime.toEpochMillis(row.lastSeen)
 				if (seen === undefined || lastSeenMs > seen) newest.set(key, lastSeenMs)
 			}
-			const versions = rows.map((row) => ({
+			const versions = Arr.map(rows, (row) => ({
 				service: row.serviceName,
 				environment: row.environment,
 				commitSha: row.commitSha,
@@ -122,7 +122,7 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 				lastSeenPrecision,
 				truncated:
 					rows.length >= params.limit ||
-					[...perGroup.values()].some((n) => n >= CH.DEPLOYMENTS_PER_SERVICE_CAP),
+					Arr.some([...perGroup.values()], (n) => n >= CH.DEPLOYMENTS_PER_SERVICE_CAP),
 				versions,
 			}
 		}),
@@ -168,7 +168,7 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 													"P95",
 													"Previous P95",
 												],
-												pairs.map(({ current, previous }) => [
+												Arr.map(pairs, ({ current, previous }) => [
 													current.service,
 													current.environment,
 													shortSha(current.commitSha),
@@ -193,7 +193,7 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 										"P95",
 										"Live",
 									],
-									versions.map((v) => [
+									Arr.map(versions, (v) => [
 										v.service,
 										v.environment,
 										shortSha(v.commitSha),
@@ -211,11 +211,9 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 					: undefined),
 				next:
 					first === undefined
-						? versions
-								.slice(0, 1)
-								.map((v) =>
-									doc.next("diagnose_service", { service: v.service }, "check its health"),
-								)
+						? Arr.map(versions.slice(0, 1), (v) =>
+								doc.next("diagnose_service", { service: v.service }, "check its health"),
+							)
 						: [
 								doc.next(
 									"compare_periods",

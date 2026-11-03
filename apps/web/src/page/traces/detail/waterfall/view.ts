@@ -7,6 +7,7 @@ import { Message, type Model } from "./model"
 import { spanRow } from "./row"
 import { flatTreeOf } from "./tree"
 import { KEYS_ATTRIBUTE, SELECTED_ATTRIBUTE, VirtualizeWaterfall } from "./virtualize"
+import { Array as Arr } from "effect"
 
 // `SpanHierarchy` (packages/ui/src/components/traces/span-hierarchy.tsx): the Waterfall tab's body.
 
@@ -83,7 +84,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, _inp
 				[
 					h.div(
 						[h.Style({ height: `${model.totalSize}px`, position: "relative", width: "100%" })],
-						model.virtualRows.flatMap((item) => {
+						Arr.flatMap(model.virtualRows, (item) => {
 							const row = flat[item.index]
 							return row === undefined
 								? []

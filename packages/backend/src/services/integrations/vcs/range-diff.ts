@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * A rebase-safe delta between two versions of a pull request, in the spirit of `git range-diff`:
  * each version's diff against its own base is compared per file, so a rebase onto a newer base
@@ -21,7 +22,7 @@ const sameChange = (before: FileChange, after: FileChange) =>
 	after.patch !== undefined &&
 	before.status === after.status &&
 	before.previousPath === after.previousPath &&
-	before.patch.replace(HUNK_HEADER, "@@") === after.patch.replace(HUNK_HEADER, "@@")
+	Str.replace(HUNK_HEADER, "@@")(before.patch) === Str.replace(HUNK_HEADER, "@@")(after.patch)
 
 /**
  * Paths whose change differs between two diffs of one pull request: changed, added to the pull
@@ -31,7 +32,7 @@ export const rangeDiffPaths = (
 	before: ReadonlyArray<FileChange>,
 	after: ReadonlyArray<FileChange>,
 ): ReadonlyArray<string> => {
-	const earlier = new Map(before.map((file) => [file.path, file]))
+	const earlier = new Map(Arr.map(before, (file) => [file.path, file]))
 	const changed: Array<string> = []
 	for (const file of after) {
 		const previous = earlier.get(file.path)

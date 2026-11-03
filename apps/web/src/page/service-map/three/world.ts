@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { type InkPalette, sceneryPalette } from "../../../components/service-map/three/appearance"
 import {
 	decorateRoutes,
@@ -56,8 +56,8 @@ export const sceneryKey = ({ view, layout, palette }: Pick<WorldInput, "view" | 
 		view,
 		palette.paper,
 		palette.ink,
-		layout.layout.districts.map((d) => [d.id, d.position, d.width, d.depth]),
-		layout.links.map((link) => link.geometryKey),
+		Arr.map(layout.layout.districts, (d) => [d.id, d.position, d.width, d.depth]),
+		Arr.map(layout.links, (link) => link.geometryKey),
 	])
 
 export const sceneryOf = (scope: Scope, input: WorldInput): Child =>
@@ -74,7 +74,7 @@ export const worldOf = (scope: Scope, input: WorldInput): THREE.Group => {
 	const { layout, links } = input.layout
 	const related = connectedIds(topology, selectedId)
 	return group({}, [
-		layout.districts.map((district) =>
+		Arr.map(layout.districts, (district) =>
 			// Atlas zones are meadow mats; Cascade terraces rise to their depth.
 			view === "cascade"
 				? stoneTerrace(scope, { district, palette })
@@ -82,7 +82,7 @@ export const worldOf = (scope: Scope, input: WorldInput): THREE.Group => {
 		),
 		view === "atlas" && wornPaths(scope, { links, palette }),
 		view === "cascade" && terraceSteps(scope, { districts: layout.districts, palette }),
-		links.map((link) => {
+		Arr.map(links, (link) => {
 			const active = link.edge.source === selectedId || link.edge.target === selectedId
 			return factoryTransport(scope, {
 				link,
@@ -96,7 +96,7 @@ export const worldOf = (scope: Scope, input: WorldInput): THREE.Group => {
 					(selectedId === null || active),
 			})
 		}),
-		topology.nodes.map((node) => {
+		Arr.map(topology.nodes, (node) => {
 			const position = layout.positions.get(node.id)
 			return (
 				position &&

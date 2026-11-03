@@ -10,6 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { PAUSE_CHOICES, PAUSE_MENU_ID } from "./update"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `SourceActions`, `IntegrationActions` and `PauseMenu`.
 
@@ -51,7 +52,7 @@ const pauseMenu = (h: H, model: Model, source: V2Source): Html =>
 				{ _tag: "Separator" },
 				{
 					_tag: "Group",
-					entries: PAUSE_CHOICES.map((choice): MenuView.MenuItemEntry => ({
+					entries: Arr.map(PAUSE_CHOICES, (choice): MenuView.MenuItemEntry => ({
 						_tag: "Item",
 						value: choice.value,
 						label: choice.label,
@@ -136,7 +137,7 @@ const integrationDeleteDialog = (h: H, model: Model, source: V2Source): Html => 
 		children: [
 			h.ul(
 				[h.Class("bg-muted flex flex-col gap-1.5 rounded-lg p-3 text-xs")],
-				deleteConsequences(source).map((line) => h.keyed("li")(line, [], [line])),
+				Arr.map(deleteConsequences(source), (line) => h.keyed("li")(line, [], [line])),
 			),
 		],
 		confirmLabel: "Disconnect and delete",

@@ -25,7 +25,19 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
-import { DateTime, Clock, Context, Effect, Layer, Match, Option, Redacted, Schema, Stream } from "effect"
+import {
+	DateTime,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Match,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import type {
 	PullRequestDelta,
@@ -264,7 +276,7 @@ const WorkflowJobPayload = Schema.Struct({
 const MAX_WORKFLOW_STEPS = 300
 const MAX_WORKFLOW_NAME_LENGTH = 200
 const boundName = (name: string) =>
-	name.length > MAX_WORKFLOW_NAME_LENGTH ? `${name.slice(0, MAX_WORKFLOW_NAME_LENGTH)}...` : name
+	name.length > MAX_WORKFLOW_NAME_LENGTH ? `${Str.slice(0, MAX_WORKFLOW_NAME_LENGTH)(name)}...` : name
 
 const decodeWorkflowRun = Schema.decodeUnknownEffect(WorkflowRunPayload)
 // Run triggers that belong to a pull request, so an approval of one vouches for its author.

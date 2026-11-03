@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -141,7 +141,7 @@ const updateDraftAccount = (
 	edit: (account: ZoneChoice) => ZoneChoice,
 ): Return => ({
 	model: withCard(model, {
-		zoneDraft: model.cloudflareCard.zoneDraft.map((account) =>
+		zoneDraft: Arr.map(model.cloudflareCard.zoneDraft, (account) =>
 			account.accountId === accountId ? edit(account) : account,
 		),
 	}),
@@ -150,7 +150,9 @@ const updateDraftAccount = (
 export const toggledManagedZone = (model: Model, accountId: string, zoneId: string): Return =>
 	updateDraftAccount(model, accountId, (account) => ({
 		...account,
-		zones: account.zones.map((zone) => (zone.id === zoneId ? { ...zone, watched: !zone.watched } : zone)),
+		zones: Arr.map(account.zones, (zone) =>
+			zone.id === zoneId ? { ...zone, watched: !zone.watched } : zone,
+		),
 	}))
 
 export const toggledWatchNewZones = (model: Model, accountId: string): Return =>
@@ -158,11 +160,11 @@ export const toggledWatchNewZones = (model: Model, accountId: string): Return =>
 
 /** Applies to the zones the name filter shows, so "Select none" then a search picks a few. */
 export const clickedSetAccountZones = (model: Model, accountId: string, watched: boolean): Return => {
-	const query = model.cloudflareCard.zoneDraftSearch.trim().toLowerCase()
+	const query = Str.toLowerCase(Str.trim(model.cloudflareCard.zoneDraftSearch))
 	return updateDraftAccount(model, accountId, (account) => ({
 		...account,
-		zones: account.zones.map((zone) =>
-			query === "" || zone.name.toLowerCase().includes(query) ? { ...zone, watched } : zone,
+		zones: Arr.map(account.zones, (zone) =>
+			query === "" || Str.includes(query)(Str.toLowerCase(zone.name)) ? { ...zone, watched } : zone,
 		),
 	}))
 }

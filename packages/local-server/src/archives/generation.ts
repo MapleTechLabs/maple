@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { lstat, rm, statfs } from "node:fs/promises"
 import { dirname, join, parse, relative, resolve, sep } from "node:path"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 import { readRawTelemetryRetentionDays } from "../chdb"
 import { LOCAL_SCHEMA_MANIFEST, SCHEMA_FINGERPRINT } from "../schema-identity"
@@ -221,7 +221,7 @@ const restoredRetentionDays = (
 		`SELECT engine_full FROM system.tables WHERE database = 'default' AND name = '${signal.name}'`,
 		"JSONEachRow",
 	)
-	const row = decodeEngineFullRow(text.split("\n").find((line) => line.trim().length > 0) ?? "")
+	const row = decodeEngineFullRow(Str.split("\n")(text).find((line) => Str.trim(line).length > 0) ?? "")
 	return Option.isSome(row) ? ttlDaysFromDefinition(row.value.engine_full) : null
 }
 
@@ -258,10 +258,10 @@ export interface FreeSpaceSnapshot {
 }
 
 const addRequiredBytes = (label: string, ...parts: readonly number[]): number => {
-	if (parts.some((part) => !Number.isSafeInteger(part) || part < 0)) {
+	if (Arr.some(parts, (part) => !Number.isSafeInteger(part) || part < 0)) {
 		throw new Error(`${label} free-space requirement contains an invalid byte count`)
 	}
-	const total = parts.reduce((sum, part) => sum + part, 0)
+	const total = Arr.reduce(parts, 0, (sum, part) => sum + part)
 	if (!Number.isSafeInteger(total))
 		throw new Error(`${label} free-space requirement exceeds the safe integer range`)
 	return total
@@ -401,7 +401,7 @@ export const createArchiveGeneration = async (
 	// callers must never supersede durable retirement evidence with a new
 	// empty/partial archive generation.
 	const { readRetiredDayLedger } = await import("./retention")
-	if (readRetiredDayLedger(dataDir).retiredDays.some((day) => day.rangeDate === rangeDate)) {
+	if (Arr.some(readRetiredDayLedger(dataDir).retiredDays, (day) => day.rangeDate === rangeDate)) {
 		throw new Error(`refusing archive create: UTC day ${rangeDate} is permanently retired`)
 	}
 	assertArchiveRootSeparate(archiveDir, dataDir)
@@ -428,7 +428,7 @@ export const createArchiveGeneration = async (
 		// The pre-lock check is only a fast refusal. Retirement uses this same
 		// maintenance lock, so this re-read is the authoritative check that closes
 		// the create-versus-retire TOCTOU window.
-		if (readRetiredDayLedger(dataDir).retiredDays.some((day) => day.rangeDate === rangeDate)) {
+		if (Arr.some(readRetiredDayLedger(dataDir).retiredDays, (day) => day.rangeDate === rangeDate)) {
 			throw new Error(`refusing archive create: UTC day ${rangeDate} is permanently retired`)
 		}
 		// Step 2: resolve and validate the checkpoint so its immutable backup size
@@ -550,7 +550,7 @@ export const createArchiveGeneration = async (
 						})(),
 					})
 					await syncTree(shardsDir)
-					const archivedRowCount = writtenShards.reduce((sum, s) => sum + s.rowCount, 0)
+					const archivedRowCount = Arr.reduce(writtenShards, 0, (sum, s) => sum + s.rowCount)
 					if (archivedRowCount !== sourceRowCount) {
 						throw new Error(
 							`archive row-count mismatch for ${signal.name} ${rangeDate}: source ${sourceRowCount}, ` +
@@ -578,7 +578,7 @@ export const createArchiveGeneration = async (
 						archivedRowCount,
 						tuning: tuningRecord(tuning),
 						tuningConfig: null,
-						shards: writtenShards.map(toShardRecord),
+						shards: Arr.map(writtenShards, toShardRecord),
 					}
 					// Step 9: promote building → final generation + manifest.
 					await promoteGeneration(
@@ -706,11 +706,13 @@ const readPreviousPointerGenerationId = (
 
 /** Parse a JSONEachRow count result (newline-delimited objects, not a JSON array). */
 const parseCount = (text: string): number => {
-	const rows = text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.map((line) => decodeJsonRecord(line))
+	const rows = Arr.map(
+		Arr.filter(
+			Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+			(line) => line.length > 0,
+		),
+		(line) => decodeJsonRecord(line),
+	)
 	const row = rows[0]
 	if (!row) return 0
 	const value = row["count()"] ?? row.count
@@ -858,7 +860,7 @@ const removeOwnedScratch = async (scratchRoot: string, scratchSubdir: string): P
 	if (!existsSync(owned)) return
 	// Containment: the subdir must be a direct child of the scratch root.
 	const rel = relative(resolve(scratchRoot), resolve(owned))
-	if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || rel.includes(sep)) {
+	if (rel === "" || rel === ".." || Str.startsWith(`..${sep}`)(rel) || Str.includes(sep)(rel)) {
 		throw new Error(`refusing to remove scratch path outside its root: ${owned}`)
 	}
 	await assertFilesystemPathNoSymlinks(owned, "owned scratch directory")
@@ -888,7 +890,7 @@ const assertExistingPathComponentsNoSymlinks = async (path: string, label: strin
 	const absolute = resolve(path)
 	const root = parse(absolute).root
 	let current = root
-	for (const component of relative(root, absolute).split(sep).filter(Boolean)) {
+	for (const component of Arr.filter(Str.split(sep)(relative(root, absolute)), Boolean)) {
 		current = join(current, component)
 		if (!existsSync(current)) break
 		const info = await lstat(current)
@@ -1440,7 +1442,7 @@ export const inspectReconciliationState = async (
 		buildingPresent: false,
 		buildingAndFinalBothPresent: false,
 		remainingTargets: gc.targets.length - gc.completedTargets,
-		affectedSignals: [...new Set(gc.targets.map((t) => t.signal))],
+		affectedSignals: [...new Set(Arr.map(gc.targets, (t) => t.signal))],
 	}
 	return { kind: "ValidSnapshot", snapshot }
 }

@@ -2,7 +2,7 @@ import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
@@ -61,7 +61,7 @@ const labelEntries = (labelsJson: string | null): ReadonlyArray<readonly [string
 	return Option.match(decodeLabels(labelsJson), {
 		onNone: () => [],
 		onSome: (parsed) =>
-			Object.entries(parsed).flatMap(([key, value]) =>
+			Arr.flatMap(Rec.toEntries(parsed), ([key, value]) =>
 				isString(value) ? [[key, value] as const] : [],
 			),
 	})
@@ -107,14 +107,14 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 					]),
 					tableBody(
 						h,
-						checks.map((check) =>
+						Arr.map(checks, (check) =>
 							tableRow(h, [
 								tableCell(
 									h,
 									[
-										typography(h, { mono: true, truncate: true, as: "div" },
-											[formatTimestampInTimezone(check.timestamp, { timeZone })],
-										),
+										typography(h, { mono: true, truncate: true, as: "div" }, [
+											formatTimestampInTimezone(check.timestamp, { timeZone }),
+										]),
 										...(check.message !== null && check.message !== ""
 											? [
 													h.div(
@@ -135,20 +135,18 @@ const checksRows = (h: H, checks: ReadonlyArray<V2ScrapeTargetCheck>, timeZone: 
 									"max-w-0 min-w-[100px] pl-3",
 								),
 								tableCell(h, [
-									hstack(h, { gap: "1.5", as: "span" },
-										[
-											check.success
-												? icon(h, "CircleCheckIcon", {
-														size: 12,
-														className: "text-severity-info",
-													})
-												: icon(h, "CircleXmarkIcon", {
-														size: 12,
-														className: "text-severity-error",
-													}),
-											h.span([], [check.success ? "up" : "down"]),
-										],
-									),
+									hstack(h, { gap: "1.5", as: "span" }, [
+										check.success
+											? icon(h, "CircleCheckIcon", {
+													size: 12,
+													className: "text-severity-info",
+												})
+											: icon(h, "CircleXmarkIcon", {
+													size: 12,
+													className: "text-severity-error",
+												}),
+										h.span([], [check.success ? "up" : "down"]),
+									]),
 								]),
 								tableCell(h, [durationOf(check.duration_seconds)], "font-mono"),
 								tableCell(h, [countOf(check.samples_scraped)], "pr-3 font-mono"),
@@ -185,16 +183,19 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 						h.div(
 							[h.Class("min-w-0")],
 							[
-								hstack(h, { gap: "2" },
-									[
-										statusDot(h, { tone: status.tone, size: "lg" }),
-										heading(
-											h,
-											{ level: 3, variant: "section", className: "truncate", attributes: [h.Title(target.name)] },
-											[target.name],
-										),
-									],
-								),
+								hstack(h, { gap: "2" }, [
+									statusDot(h, { tone: status.tone, size: "lg" }),
+									heading(
+										h,
+										{
+											level: 3,
+											variant: "section",
+											className: "truncate",
+											attributes: [h.Title(target.name)],
+										},
+										[target.name],
+									),
+								]),
 								h.p(
 									[
 										h.Class(
@@ -209,51 +210,49 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 						badge(h, { variant: toneBadge(status.tone) }, [status.label]),
 					],
 				),
-				hstack(h, { gap: "2", wrap: true },
-					[
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								isLoading: card.probing.includes(target.id),
-								attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }))],
-							},
-							[icon(h, "BoltIcon"), "Test"],
-						),
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								isDisabled: isManaged,
-								attributes: [h.OnClick(Message.ClickedEditTarget({ id: target.id }))],
-							},
-							[icon(h, "PencilIcon"), "Edit"],
-						),
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								isDisabled: card.toggling.includes(target.id),
-								attributes: [h.OnClick(Message.ClickedToggleTarget({ id: target.id }))],
-							},
-							[target.enabled ? "Disable" : "Enable"],
-						),
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								className: "text-destructive",
-								isDisabled: isManaged,
-								attributes: [h.OnClick(Message.ClickedDeleteTarget({ id: target.id }))],
-							},
-							[icon(h, "TrashIcon"), "Delete scrape target"],
-						),
-					],
-				),
+				hstack(h, { gap: "2", wrap: true }, [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							isLoading: card.probing.includes(target.id),
+							attributes: [h.OnClick(Message.ClickedProbe({ id: target.id }))],
+						},
+						[icon(h, "BoltIcon"), "Test"],
+					),
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							isDisabled: isManaged,
+							attributes: [h.OnClick(Message.ClickedEditTarget({ id: target.id }))],
+						},
+						[icon(h, "PencilIcon"), "Edit"],
+					),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							isDisabled: card.toggling.includes(target.id),
+							attributes: [h.OnClick(Message.ClickedToggleTarget({ id: target.id }))],
+						},
+						[target.enabled ? "Disable" : "Enable"],
+					),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							className: "text-destructive",
+							isDisabled: isManaged,
+							attributes: [h.OnClick(Message.ClickedDeleteTarget({ id: target.id }))],
+						},
+						[icon(h, "TrashIcon"), "Delete scrape target"],
+					),
+				]),
 			],
 		),
 		h.div(
@@ -270,16 +269,20 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 									h.div(
 										[h.Class("space-y-1")],
 										[
-											typography(h, { tone: "foreground", weight: "medium", as: "p" }, ["How to fix"]),
+											typography(h, { tone: "foreground", weight: "medium", as: "p" }, [
+												"How to fix",
+											]),
 											h.ul(
 												[h.Class("list-disc space-y-0.5 pl-4")],
-												diagnosis.fixes.map((fix) => h.li([], [fix])),
+												Arr.map(diagnosis.fixes, (fix) => h.li([], [fix])),
 											),
 										],
 									),
 									...(failureMessage !== null && failureMessage !== ""
 										? [
-												typography(h, { size: "2xs", tone: "subtle", mono: true, as: "p" },
+												typography(
+													h,
+													{ size: "2xs", tone: "subtle", mono: true, as: "p" },
 													[failureMessage],
 												),
 											]
@@ -336,9 +339,13 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 							? [
 									h.div(
 										[h.Class("flex flex-wrap gap-1.5 pt-1")],
-										labels.map(([key, value]) =>
+										Arr.map(labels, ([key, value]) =>
 											badge(h, { variant: "outline", className: "max-w-full" }, [
-												typography(h, { mono: true, truncate: true }, [key, "=", value]),
+												typography(h, { mono: true, truncate: true }, [
+													key,
+													"=",
+													value,
+												]),
 											]),
 										),
 									),
@@ -349,22 +356,20 @@ export const targetDetails = (h: H, model: Model, target: V2ScrapeTarget, timeZo
 				h.section(
 					[h.Class("space-y-2")],
 					[
-						hstack(h, { gap: "3", justify: "between" },
-							[
-								sectionTitle(h, "HistoryIcon", "Check history"),
-								...(latest === null
-									? []
-									: [
-											relativeTime(h, {
-												value: latest.timestamp,
-												nowMs: model.nowMs,
-												timeZone,
-												prefix: "Latest",
-												className: typographyClass({ size: "xs", tone: "muted" }),
-											}),
-										]),
-							],
-						),
+						hstack(h, { gap: "3", justify: "between" }, [
+							sectionTitle(h, "HistoryIcon", "Check history"),
+							...(latest === null
+								? []
+								: [
+										relativeTime(h, {
+											value: latest.timestamp,
+											nowMs: model.nowMs,
+											timeZone,
+											prefix: "Latest",
+											className: typographyClass({ size: "xs", tone: "muted" }),
+										}),
+									]),
+						]),
 						checksTable(h, model, checks, timeZone),
 					],
 				),

@@ -51,7 +51,7 @@ const decodeErrorKindOption = Schema.decodeUnknownOption(AlertEvaluationErrorKin
 const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 const MAX_ACTIVE_ALERT_RULES_PER_ORG = 100
 
-const isAdmin = (roles: ReadonlyArray<RoleName>) => roles.some((role) => adminRoles.includes(role))
+const isAdmin = (roles: ReadonlyArray<RoleName>) => Arr.some(roles, (role) => adminRoles.includes(role))
 
 export interface AlertRulesServiceApi {
 	readonly listRules: (
@@ -235,7 +235,7 @@ export const makeAlertRulePersistence = (options: {
 								.select("id")
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
 						)
-						const existingIds = new Set(destinationRows.map((destination) => destination.id))
+						const existingIds = new Set(Arr.map(destinationRows, (destination) => destination.id))
 						const missingDestinationId = normalized.destinationIds.find(
 							(id) => !existingIds.has(id),
 						)
@@ -258,7 +258,7 @@ export const makeAlertRulePersistence = (options: {
 								]),
 						)
 						const alreadyActive =
-							existingId != null && activeRows.some((row) => row.id === existingId)
+							existingId != null && Arr.some(activeRows, (row) => row.id === existingId)
 						if (!alreadyActive && activeRows.length >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
 							return yield* makeAlertValidationError(
 								`Organizations may have at most ${MAX_ACTIVE_ALERT_RULES_PER_ORG} active alert rules`,

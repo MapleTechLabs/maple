@@ -1,5 +1,5 @@
 import type { GithubRepoSummary, VcsRepositoryId } from "@maple/domain/http"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -44,7 +44,7 @@ export const clickedInstallation = (model: Model, installationId: string): Retur
 	if (
 		selection === null ||
 		model.githubCard.selectingInstallation !== null ||
-		!selection.installations.some((installation) => installation.id === installationId)
+		!Arr.some(selection.installations, (installation) => installation.id === installationId)
 	)
 		return { model }
 	return {
@@ -243,7 +243,10 @@ export const clickedBranch = (model: Model, repoId: VcsRepositoryId, branch: str
 
 const isSavingPendingBranch = (model: Model): boolean => {
 	const pending = model.githubCard.pendingBranch
-	return pending !== null && model.githubCard.savingBranches.some((entry) => entry.repoId === pending.repoId)
+	return (
+		pending !== null &&
+		Arr.some(model.githubCard.savingBranches, (entry) => entry.repoId === pending.repoId)
+	)
 }
 
 export const gotBranchDialog = (model: Model, message: Dialog.Message): Return => {
@@ -258,7 +261,7 @@ export const gotBranchDialog = (model: Model, message: Dialog.Message): Return =
 export const confirmedBranch = (model: Model): Return => {
 	const pending = model.githubCard.pendingBranch
 	const card = model.githubCard
-	if (pending === null || card.savingBranches.some((entry) => entry.repoId === pending.repoId))
+	if (pending === null || Arr.some(card.savingBranches, (entry) => entry.repoId === pending.repoId))
 		return { model }
 	return {
 		model: withCard(model, { savingBranches: [...card.savingBranches, pending] }),
@@ -275,7 +278,7 @@ export const completedTrackedBranch = (
 	failure: LoadFailure | null,
 ): Return => {
 	const saved = withCard(model, {
-		savingBranches: model.githubCard.savingBranches.filter((entry) => entry.repoId !== repoId),
+		savingBranches: Arr.filter(model.githubCard.savingBranches, (entry) => entry.repoId !== repoId),
 	})
 	const closing = [
 		(next: Model) =>

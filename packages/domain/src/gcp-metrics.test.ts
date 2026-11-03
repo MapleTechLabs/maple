@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest"
 import { GCP_METRIC_GROUPS, gcpMetricLabelAttribute } from "./gcp-metrics"
+import { Array as Arr } from "effect"
 
 describe("GCP_METRIC_GROUPS", () => {
-	const metrics = GCP_METRIC_GROUPS.flatMap((group) => group.metrics)
+	const metrics = Arr.flatMap(GCP_METRIC_GROUPS, (group) => group.metrics)
 
 	it("reads every Cloud Monitoring type once, or a distribution once more for its count", () => {
-		const readings = metrics.map((metric) => `${metric.type} ${metric.kind}`)
+		const readings = Arr.map(metrics, (metric) => `${metric.type} ${metric.kind}`)
 		expect(new Set(readings).size).toBe(metrics.length)
-		const twice = metrics.filter(
-			(metric) => metrics.filter((other) => other.type === metric.type).length > 1,
+		const twice = Arr.filter(
+			metrics,
+			(metric) => Arr.filter(metrics, (other) => other.type === metric.type).length > 1,
 		)
-		expect(twice.map((metric) => [metric.kind, metric.name])).toEqual([
+		expect(Arr.map(twice, (metric) => [metric.kind, metric.name])).toEqual([
 			["quantiles", "gcp.cloud_sql.query.duration"],
 			["sum", "gcp.cloud_sql.queries"],
 			["quantiles", "gcp.cloud_sql.query.statement.duration"],
@@ -19,10 +21,10 @@ describe("GCP_METRIC_GROUPS", () => {
 	})
 
 	it("ranks a top group by one of its own metrics, and keeps its item on every metric", () => {
-		const groups = GCP_METRIC_GROUPS.filter((group) => group.top !== undefined)
-		expect(groups.map((group) => group.resourceType)).toEqual(["cloudsql_instance_database"])
+		const groups = Arr.filter(GCP_METRIC_GROUPS, (group) => group.top !== undefined)
+		expect(Arr.map(groups, (group) => group.resourceType)).toEqual(["cloudsql_instance_database"])
 		for (const { top, metrics: own } of groups) {
-			expect(own.map((metric) => metric.name)).toContain(top!.by)
+			expect(Arr.map(own, (metric) => metric.name)).toContain(top!.by)
 			for (const metric of own) expect(metric.labels, metric.name).toContain(top!.label)
 		}
 	})
@@ -38,7 +40,7 @@ describe("GCP_METRIC_GROUPS", () => {
 			const key = `${metric.name} ${JSON.stringify(metric.attributes)}`
 			typesByKey.set(key, [...(typesByKey.get(key) ?? []), metric.type])
 		}
-		expect([...typesByKey.values()].filter((types) => types.length > 1)).toEqual([
+		expect(Arr.filter([...typesByKey.values()], (types) => types.length > 1)).toEqual([
 			[
 				"cloudsql.googleapis.com/database/network/connections",
 				"cloudsql.googleapis.com/database/postgresql/num_backends",
@@ -52,11 +54,11 @@ describe("GCP_METRIC_GROUPS", () => {
 			const definition = JSON.stringify([metric.kind, metric.unit, metric.description])
 			definitions.set(metric.name, (definitions.get(metric.name) ?? new Set()).add(definition))
 		}
-		expect([...definitions].filter(([, distinct]) => distinct.size > 1)).toEqual([])
+		expect(Arr.filter([...definitions], ([, distinct]) => distinct.size > 1)).toEqual([])
 	})
 
 	it("stores every duration in seconds", () => {
-		expect(metrics.filter((metric) => ["ms", "us", "ns"].includes(metric.unit))).toEqual([])
+		expect(Arr.filter(metrics, (metric) => ["ms", "us", "ns"].includes(metric.unit))).toEqual([])
 	})
 
 	it("never groups by the project itself: every query adds it", () => {

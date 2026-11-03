@@ -15,7 +15,17 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { view as dialogView } from "@maple/views/ui/dialog-view"
 import { MagnifierIcon } from "@maple/views/ui/control-icons"
 import { iconNode } from "@maple/views/ui/icon"
-import { Array as Arr, Effect, Option, Order, Queue, Schema, Stream } from "effect"
+import {
+	Array as Arr,
+	Effect,
+	Option,
+	Order,
+	Queue,
+	Schema,
+	Stream,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -108,7 +118,7 @@ const ReportSearch = Command.define("ReportDocsSearch", {
 	messages: [Message.CompletedSideEffect],
 	execute: ({ query }) =>
 		Effect.sync(() => {
-			trackLanding("docs_search", { query: query.slice(0, 120) })
+			trackLanding("docs_search", { query: Str.slice(0, 120)(query) })
 			return Message.CompletedSideEffect()
 		}),
 })
@@ -134,7 +144,11 @@ const ScrollHighlighted = Command.define("ScrollDocsHitIntoView", {
 		}),
 })
 
-const ShortcutMessage = Schema.Union([Message.StartedShortcuts, Message.PressedToggleShortcut, Message.PressedSlash])
+const ShortcutMessage = Schema.Union([
+	Message.StartedShortcuts,
+	Message.PressedToggleShortcut,
+	Message.PressedSlash,
+])
 type ShortcutMessage = typeof ShortcutMessage.Type
 
 /** ⌘K / Ctrl+K toggles the palette from anywhere; `/` opens it outside a text field. */
@@ -185,7 +199,7 @@ const searchableOf = (index: SearchIndexPayload): Searchable => {
 
 /** `None` browses every page (empty query); otherwise the ranked page and section hits. */
 const hitsOf = (model: Model): Option.Option<ReadonlyArray<SearchHit>> => {
-	const query = model.list.inputValue.trim()
+	const query = Str.trim(model.list.inputValue)
 	if (query === "") return Option.none()
 	return Option.some(
 		Option.match(model.index, {
@@ -194,9 +208,10 @@ const hitsOf = (model: Model): Option.Option<ReadonlyArray<SearchHit>> => {
 				const { records, fuzzy } = searchableOf(index)
 				const exact = searchRecords(records, query, MAX_RESULTS)
 				if (exact.length > 0) return exact
-				return fuzzy
-					.search(query, { limit: MAX_RESULTS })
-					.map((result) => ({ record: result.item, snippet: "" }))
+				return Arr.map(fuzzy.search(query, { limit: MAX_RESULTS }), (result) => ({
+					record: result.item,
+					snippet: "",
+				}))
 			},
 		}),
 	)
@@ -222,12 +237,12 @@ const dialogStep = (
 	isDismissal = true,
 ): UpdateReturn => {
 	const stepped = { ...model, dialog: next.model }
-	const commands = (next.commands ?? []).map(toDialog)
+	const commands = Arr.map(next.commands ?? [], toDialog)
 	if (next.outMessage?._tag === "Opened") {
 		const loaded = loadIfMissing({ ...stepped, list: freshList() })
 		return { model: loaded.model, commands: [...commands, ...(loaded.commands ?? [])] }
 	}
-	const query = model.list.inputValue.trim()
+	const query = Str.trim(model.list.inputValue)
 	return next.outMessage?._tag === "Closed" && isDismissal && query !== ""
 		? { model: stepped, commands: [...commands, ReportSearch({ query })] }
 		: { model: stepped, commands }
@@ -245,7 +260,7 @@ const listStep = (model: Model, child: Combobox.Message): UpdateReturn => {
 		}
 	}
 	const list = next.model
-	const commands = (next.commands ?? []).map(toList)
+	const commands = Arr.map(next.commands ?? [], toList)
 	const moved =
 		child._tag === "PressedInputKey" && list.highlighted !== model.list.highlighted
 			? list.highlighted
@@ -295,9 +310,12 @@ const highlight = (
 	return Option.match(best, {
 		onNone: () => [text],
 		onSome: ({ at, length }) => [
-			text.slice(0, at),
-			h.mark([h.Class("bg-transparent font-semibold text-current")], [text.slice(at, at + length)]),
-			...highlight(h, text.slice(at + length), terms),
+			Str.slice(0, at)(text),
+			h.mark(
+				[h.Class("bg-transparent font-semibold text-current")],
+				[Str.slice(at, at + length)(text)],
+			),
+			...highlight(h, Str.slice(at + length)(text), terms),
 		],
 	})
 }
@@ -394,13 +412,14 @@ const groupsOf = (
 	return Option.match(hits, {
 		onSome: (hits) => {
 			const terms = queryTerms(model.list.inputValue)
-			return [{ items: hits.map((hit) => hitItem(h, hit, terms, icons)) }]
+			return [{ items: Arr.map(hits, (hit) => hitItem(h, hit, terms, icons)) }]
 		},
 		onNone: () =>
 			Option.match(model.index, {
 				onNone: () => [],
 				onSome: (index) =>
-					Arr.sort(Object.entries(Arr.groupBy(index.docs, (doc) => doc.group)), byGroupRank).map(
+					Arr.map(
+						Arr.sort(Rec.toEntries(Arr.groupBy(index.docs, (doc) => doc.group)), byGroupRank),
 						([group, docs]) => ({
 							label: group,
 							labelClassName: "flex items-center gap-1.5",
@@ -411,7 +430,7 @@ const groupsOf = (
 									onSome: (labelLeading) => ({ labelLeading }),
 								},
 							),
-							items: docs.map((doc) => pageItem(h, doc, index.icons)),
+							items: Arr.map(docs, (doc) => pageItem(h, doc, index.icons)),
 						}),
 					),
 			}),

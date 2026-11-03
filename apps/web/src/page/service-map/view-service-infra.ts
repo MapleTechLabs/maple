@@ -15,6 +15,7 @@ import type { TimeSearch } from "../kit/time-controls"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The service panel's Infrastructure tab: the platform resources the service runs as, its
 // Kubernetes workloads, and how to link either when neither matched.
@@ -39,11 +40,11 @@ const podsHref = (workload: ServiceWorkload, kind: KnownKind | null, time: TimeS
 					: {}
 	const href = hrefOf(AppRoute.InfraKubernetesPods({ search: { ...time, ...byKind, namespaces } }))
 	// Orders the search keys: the kind filter, then namespaces.
-	const [path, query] = href.split("?")
+	const [path, query] = Str.split("?")(href)
 	if (query === undefined) return href
-	const pairs = query.split("&")
-	const isNamespaces = (pair: string) => pair.startsWith("namespaces=")
-	return `${path}?${[...pairs.filter((pair) => !isNamespaces(pair)), ...pairs.filter(isNamespaces)].join("&")}`
+	const pairs = Str.split("&")(query)
+	const isNamespaces = (pair: string) => Str.startsWith("namespaces=")(pair)
+	return `${path}?${Arr.join([...Arr.filter(pairs, (pair) => !isNamespaces(pair)), ...Arr.filter(pairs, isNamespaces)], "&")}`
 }
 
 const utilization = (value: number | null): string => (value == null ? EMPTY_VALUE : formatPercent(value))
@@ -51,62 +52,56 @@ const utilization = (value: number | null): string => (value == null ? EMPTY_VAL
 const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html => {
 	const kind = knownKindOf(workload.workloadKind)
 	return panel(h, { padded: "sm", className: "space-y-2.5" }, [
-		hstack(h, { gap: "2", align: "start", justify: "between" },
-			[
-				h.div(
-					[h.Class("min-w-0 flex-1")],
-					[
-						eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
-							icon(h, "CubeIcon", { size: 12 }),
-							h.span([], [workload.workloadKind]),
-						]),
-						h.p(
-							[h.Class("text-xs font-medium text-foreground truncate mt-0.5")],
-							[workload.workloadName],
-						),
-						h.p(
-							[h.Class("text-3xs text-muted-foreground mt-0.5 truncate")],
-							[
-								workload.namespace || "default",
-								workload.clusterName ? ` · ${workload.clusterName}` : "",
-							],
-						),
-					],
-				),
-				h.div(
-					[h.Class("flex flex-col items-end gap-px shrink-0")],
-					[
-						eyebrow(h, {}, ["pods"]),
-						typography(h, { size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true },
-							[String(workload.podCount)],
-						),
-					],
-				),
-			],
-		),
+		hstack(h, { gap: "2", align: "start", justify: "between" }, [
+			h.div(
+				[h.Class("min-w-0 flex-1")],
+				[
+					eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
+						icon(h, "CubeIcon", { size: 12 }),
+						h.span([], [workload.workloadKind]),
+					]),
+					h.p(
+						[h.Class("text-xs font-medium text-foreground truncate mt-0.5")],
+						[workload.workloadName],
+					),
+					h.p(
+						[h.Class("text-3xs text-muted-foreground mt-0.5 truncate")],
+						[
+							workload.namespace || "default",
+							workload.clusterName ? ` · ${workload.clusterName}` : "",
+						],
+					),
+				],
+			),
+			h.div(
+				[h.Class("flex flex-col items-end gap-px shrink-0")],
+				[
+					eyebrow(h, {}, ["pods"]),
+					typography(
+						h,
+						{ size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true },
+						[String(workload.podCount)],
+					),
+				],
+			),
+		]),
 		keyValueList(h, { className: "grid grid-cols-2 gap-2 text-3xs" }, [
 			keyValue(h, { label: "CPU", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" }, [
 				utilization(workload.avgCpuLimitUtilization),
 			]),
-			keyValue(h, { label: "Memory", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" }, [
-				utilization(workload.avgMemoryLimitUtilization),
-			]),
+			keyValue(
+				h,
+				{ label: "Memory", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" },
+				[utilization(workload.avgMemoryLimitUtilization)],
+			),
 		]),
 		h.div(
 			[h.Class("flex items-center gap-3 pt-0.5")],
 			[
 				...(kind === null
 					? []
-					: [
-							h.a(
-								[h.Class(LINK), h.Href(workloadLink(workload, time).href)],
-								["View workload →"],
-							),
-						]),
-				h.a(
-					[h.Class(LINK), h.Href(podsHref(workload, kind, time))],
-					["View pods →"],
-				),
+					: [h.a([h.Class(LINK), h.Href(workloadLink(workload, time).href)], ["View workload →"])]),
+				h.a([h.Class(LINK), h.Href(podsHref(workload, kind, time))], ["View pods →"]),
 			],
 		),
 	])
@@ -123,13 +118,15 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 			),
 		],
 		[
-			panel(h, { padded: "sm", className: "space-y-1 transition-colors group-hover:bg-surface-sunken" }, [
-				eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
-					icon(h, link.icon, { size: 12 }),
-					h.span([], [link.label]),
-				]),
-				hstack(h, { gap: "2", justify: "between" },
-					[
+			panel(
+				h,
+				{ padded: "sm", className: "space-y-1 transition-colors group-hover:bg-surface-sunken" },
+				[
+					eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
+						icon(h, link.icon, { size: 12 }),
+						h.span([], [link.label]),
+					]),
+					hstack(h, { gap: "2", justify: "between" }, [
 						h.p(
 							[h.Class("min-w-0 truncate font-mono text-xs font-medium text-foreground")],
 							[link.name],
@@ -138,17 +135,17 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 							size: 12,
 							className: "shrink-0 text-muted-foreground group-hover:text-primary",
 						}),
-					],
-				),
-				...(link.location.length === 0
-					? []
-					: [
-							h.p(
-								[h.Class("truncate text-3xs text-muted-foreground")],
-								[link.location.join(" · ")],
-							),
-						]),
-			]),
+					]),
+					...(link.location.length === 0
+						? []
+						: [
+								h.p(
+									[h.Class("truncate text-3xs text-muted-foreground")],
+									[Arr.join(link.location, " · ")],
+								),
+							]),
+				],
+			),
 		],
 	)
 
@@ -157,30 +154,28 @@ const infraEmptyState = (h: H): Html =>
 	h.div(
 		[h.Class("rounded-md border border-dashed bg-surface-faint p-4 space-y-3")],
 		[
-			hstack(h, { gap: "2" },
+			hstack(h, { gap: "2" }, [
+				icon(h, "CubeIcon", { size: 14, className: "text-foreground-faint" }),
+				typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "p" }, [
+					"Not linked to any infrastructure",
+				]),
+			]),
+			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+				"Set ",
+				inlineCode(h, {}, ["OTEL_SERVICE_NAME"]),
+				" to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform under Infrastructure.",
+			]),
+			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
+				"On Kubernetes, install the maple-k8s-infra Helm chart and label the namespace so spans carry ",
+				inlineCode(h, {}, ["k8s.deployment.name"]),
+				":",
+			]),
+			h.pre(
 				[
-					icon(h, "CubeIcon", { size: 14, className: "text-foreground-faint" }),
-					typography(h, { size: "xs", tone: "foreground", weight: "medium", as: "p" },
-						["Not linked to any infrastructure"],
+					h.Class(
+						"text-3xs bg-muted px-2 py-1.5 rounded-sm font-mono text-foreground overflow-x-auto",
 					),
 				],
-			),
-			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" },
-				[
-					"Set ",
-					inlineCode(h, {}, ["OTEL_SERVICE_NAME"]),
-					" to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform under Infrastructure.",
-				],
-			),
-			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" },
-				[
-					"On Kubernetes, install the maple-k8s-infra Helm chart and label the namespace so spans carry ",
-					inlineCode(h, {}, ["k8s.deployment.name"]),
-					":",
-				],
-			),
-			h.pre(
-				[h.Class("text-3xs bg-muted px-2 py-1.5 rounded-sm font-mono text-foreground overflow-x-auto")],
 				["kubectl label namespace <ns> maple.io/instrument=true"],
 			),
 			docsLink(h, "kubernetes"),
@@ -208,7 +203,9 @@ export const infrastructureTab = (
 									section(
 										h,
 										"Runs on",
-										runtimes.map((runtime) => runtimeRow(h, runtimeLink(runtime, time))),
+										Arr.map(runtimes, (runtime) =>
+											runtimeRow(h, runtimeLink(runtime, time)),
+										),
 									),
 								]),
 						...(workloads.length === 0
@@ -217,7 +214,7 @@ export const infrastructureTab = (
 									section(
 										h,
 										"Kubernetes workloads",
-										workloads.map((workload) => workloadRow(h, workload, time)),
+										Arr.map(workloads, (workload) => workloadRow(h, workload, time)),
 									),
 								]),
 					],

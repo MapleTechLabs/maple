@@ -13,7 +13,7 @@ import {
 	severityToneFor,
 } from "@maple/web-data/anomalies/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
@@ -88,21 +88,13 @@ export const anomalySummary = (h: H, incident: AnomalyIncidentDocument, nowMs: n
 			h.span([h.Class(accent)], [fmt(incident.lastObservedValue)]),
 			" ",
 			"against a ",
-			typography(h, { tone: "foreground", mono: true },
-				[fmt(incident.baselineMedian)],
-			),
+			typography(h, { tone: "foreground", mono: true }, [fmt(incident.baselineMedian)]),
 			" 7-day baseline:",
 			" ",
 			h.span([h.Class(accent)], [dev.label]),
-			dev.kind === "sigma"
-				? " above median"
-				: dev.kind === "percent"
-					? " vs baseline"
-					: "",
+			dev.kind === "sigma" ? " above median" : dev.kind === "percent" ? " vs baseline" : "",
 			", threshold ",
-			typography(h, { tone: "foreground", mono: true },
-				[fmt(incident.thresholdValue)],
-			),
+			typography(h, { tone: "foreground", mono: true }, [fmt(incident.thresholdValue)]),
 			".",
 			isStale
 				? ` Last triggered ${formatRelativeTime(incident.lastTriggeredAt, nowMs)}; this stale detector state does not represent current service health.`
@@ -152,7 +144,8 @@ export const signalChart = (
 				h,
 				{
 					dashed: true,
-					className: "flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
+					className:
+						"flex h-64 w-full items-center justify-center border-border-subtle py-0 text-xs",
 				},
 				["No signal data in this window"],
 			)
@@ -169,7 +162,7 @@ export const signalChart = (
 					view: chartView,
 					viewInputs: {
 						spec: ChartSpec.AnomalySignal({
-							points: series.buckets.map((bucket) => ({
+							points: Arr.map(series.buckets, (bucket) => ({
 								bucket: bucket.bucket,
 								value: bucket.value,
 							})),
@@ -233,37 +226,35 @@ const cardActions = (
 	issueId: NonNullable<AnomalyIncidentDocument["errorIssueId"]>,
 	isBusy: boolean,
 ): Html =>
-	hstack(h, { gap: "1.5", className: "shrink-0" },
-		[
-			linkButton(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					href: hrefOf(AppRoute.ErrorIssue({ issueId, search: {} })),
-				},
-				["Open issue", icon(h, "ArrowRightIcon")],
-			),
-			iconButton(
-				h,
-				{
-					label: "Link a different issue",
-					isDisabled: isBusy,
-					attributes: [h.OnClick(Message.ClickedLinkIssue())],
-				},
-				[icon(h, "LinkIcon")],
-			),
-			iconButton(
-				h,
-				{
-					label: "Unlink issue",
-					isDisabled: isBusy,
-					attributes: [h.OnClick(Message.ClickedUnlink())],
-				},
-				[icon(h, "XmarkIcon")],
-			),
-		],
-	)
+	hstack(h, { gap: "1.5", className: "shrink-0" }, [
+		linkButton(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				href: hrefOf(AppRoute.ErrorIssue({ issueId, search: {} })),
+			},
+			["Open issue", icon(h, "ArrowRightIcon")],
+		),
+		iconButton(
+			h,
+			{
+				label: "Link a different issue",
+				isDisabled: isBusy,
+				attributes: [h.OnClick(Message.ClickedLinkIssue())],
+			},
+			[icon(h, "LinkIcon")],
+		),
+		iconButton(
+			h,
+			{
+				label: "Unlink issue",
+				isDisabled: isBusy,
+				attributes: [h.OnClick(Message.ClickedUnlink())],
+			},
+			[icon(h, "XmarkIcon")],
+		),
+	])
 
 /** `AnomalyLinkedIssueCard`. */
 export const linkedIssueCard = (
@@ -277,45 +268,43 @@ export const linkedIssueCard = (
 		return h.div(
 			[h.Class("rounded-md border border-dashed border-border-subtle p-4")],
 			[
-				hstack(h, { gap: "3", justify: "between", wrap: true },
-					[
-						h.div(
-							[h.Class("space-y-1")],
-							[
-								typography(h, { size: "sm", tone: "foreground", as: "p" }, ["Not linked to an issue"]),
-								typography(h, { size: "xs", tone: "muted", as: "p" },
-									[
-										incident.signalType === "error_spike"
-											? "This frequency increase is fingerprint-scoped, so an issue with this fingerprint may already exist for the service."
-											: "Escalate this anomaly by linking it to an existing error issue.",
-									],
-								),
-								...(incident.fingerprintHash === null
-									? []
-									: [
-											inlineCode(
-												h,
-												{
-													className:
-														"inline-block px-1.5 py-0.5 text-2xs text-muted-foreground",
-												},
-												["fingerprint ", incident.fingerprintHash],
-											),
-										]),
-							],
-						),
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isDisabled: isBusy,
-								attributes: [h.OnClick(Message.ClickedLinkIssue())],
-							},
-							[icon(h, "LinkIcon"), "Link issue"],
-						),
-					],
-				),
+				hstack(h, { gap: "3", justify: "between", wrap: true }, [
+					h.div(
+						[h.Class("space-y-1")],
+						[
+							typography(h, { size: "sm", tone: "foreground", as: "p" }, [
+								"Not linked to an issue",
+							]),
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								incident.signalType === "error_spike"
+									? "This frequency increase is fingerprint-scoped, so an issue with this fingerprint may already exist for the service."
+									: "Escalate this anomaly by linking it to an existing error issue.",
+							]),
+							...(incident.fingerprintHash === null
+								? []
+								: [
+										inlineCode(
+											h,
+											{
+												className:
+													"inline-block px-1.5 py-0.5 text-2xs text-muted-foreground",
+											},
+											["fingerprint ", incident.fingerprintHash],
+										),
+									]),
+						],
+					),
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: isBusy,
+							attributes: [h.OnClick(Message.ClickedLinkIssue())],
+						},
+						[icon(h, "LinkIcon"), "Link issue"],
+					),
+				]),
 			],
 		)
 	const content = AsyncData.match(model.linkedIssue.data, {
@@ -327,20 +316,18 @@ export const linkedIssueCard = (
 		onRefreshing: (wire) => loadedIssue(wire),
 	})
 	function failedIssue(id: NonNullable<AnomalyIncidentDocument["errorIssueId"]>): Html {
-		return hstack(h, { gap: "3", justify: "between" },
-			[
-				h.p(
-					[h.Class("text-muted-foreground")],
-					[
-						"Linked to issue",
-						" ",
-						h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [shortIssueId(id)]),
-						". Couldn't load its details.",
-					],
-				),
-				cardActions(h, id, isBusy),
-			],
-		)
+		return hstack(h, { gap: "3", justify: "between" }, [
+			h.p(
+				[h.Class("text-muted-foreground")],
+				[
+					"Linked to issue",
+					" ",
+					h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [shortIssueId(id)]),
+					". Couldn't load its details.",
+				],
+			),
+			cardActions(h, id, isBusy),
+		])
 	}
 	function loadedIssue(wire: Parameters<typeof errorIssueFromV2>[0]): Html {
 		const issue = errorIssueFromV2(wire)
@@ -351,27 +338,32 @@ export const linkedIssueCard = (
 				h.div(
 					[h.Class("min-w-0 space-y-2")],
 					[
-						hstack(h, { gap: "2", wrap: true },
-							[
-								badge(
-									h,
-									{ variant: "outline", className: WORKFLOW_TONE[issue.workflowState] },
-									[WORKFLOW_LABEL[issue.workflowState]],
-								),
-								h.code(
-									[h.Class(typographyClass({ size: "xs", tone: "muted", mono: true, numeric: true }))],
-									[shortIssueId(issue.id)],
-								),
-								badge(
-									h,
-									{ variant: "meta", pill: true, size: "sm", className: META_CHIP_CLASS },
-									[
-										serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
-										h.span([h.Class("max-w-[140px] truncate")], [issue.serviceName]),
-									],
-								),
-							],
-						),
+						hstack(h, { gap: "2", wrap: true }, [
+							badge(h, { variant: "outline", className: WORKFLOW_TONE[issue.workflowState] }, [
+								WORKFLOW_LABEL[issue.workflowState],
+							]),
+							h.code(
+								[
+									h.Class(
+										typographyClass({
+											size: "xs",
+											tone: "muted",
+											mono: true,
+											numeric: true,
+										}),
+									),
+								],
+								[shortIssueId(issue.id)],
+							),
+							badge(
+								h,
+								{ variant: "meta", pill: true, size: "sm", className: META_CHIP_CLASS },
+								[
+									serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
+									h.span([h.Class("max-w-[140px] truncate")], [issue.serviceName]),
+								],
+							),
+						]),
 						h.p(
 							[h.Class("min-w-0 truncate font-medium text-foreground")],
 							[
@@ -386,21 +378,21 @@ export const linkedIssueCard = (
 									: []),
 							],
 						),
-						hstack(h, { gap: "3", className: typographyClass({ size: "xs", tone: "muted" }) },
-							[
-								h.span(
-									[h.Class("tabular-nums")],
-									[
-										formatNumber(issue.occurrenceCount),
-										" ",
-										pluralize(issue.occurrenceCount, "event"),
-									],
-								),
-								hstack(h, { gap: "1.5", as: "span" },
-									actor === null ? ["Unclaimed"] : [actorAvatar(h, actor)],
-								),
-							],
-						),
+						hstack(h, { gap: "3", className: typographyClass({ size: "xs", tone: "muted" }) }, [
+							h.span(
+								[h.Class("tabular-nums")],
+								[
+									formatNumber(issue.occurrenceCount),
+									" ",
+									pluralize(issue.occurrenceCount, "event"),
+								],
+							),
+							hstack(
+								h,
+								{ gap: "1.5", as: "span" },
+								actor === null ? ["Unclaimed"] : [actorAvatar(h, actor)],
+							),
+						]),
 					],
 				),
 				cardActions(h, issue.id, isBusy),

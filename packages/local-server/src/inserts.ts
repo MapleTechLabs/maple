@@ -4,6 +4,7 @@
 // of `Templates::build` in the former `apps/ingest/src/chdb.rs`.
 
 import insertMappings from "./schema/local-inserts.json"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** Pinned single-tenant org id; every row is written under it. */
 const LOCAL_ORG_ID = "local"
@@ -22,7 +23,8 @@ interface InsertMappingsFile {
 const mappings = insertMappings as InsertMappingsFile
 
 /** Escape a value for a single-quoted ClickHouse SQL string literal. */
-const escapeSqlLiteral = (value: string): string => value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+const escapeSqlLiteral = (value: string): string =>
+	Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))
 
 interface InsertTemplate {
 	readonly prefix: string
@@ -32,13 +34,13 @@ interface InsertTemplate {
 const templates: Map<string, InsertTemplate> = (() => {
 	const orgLiteral = `'${escapeSqlLiteral(LOCAL_ORG_ID)}'`
 	const out = new Map<string, InsertTemplate>()
-	for (const [name, mapping] of Object.entries(mappings.datasources)) {
+	for (const [name, mapping] of Rec.toEntries(mappings.datasources)) {
 		// Pin OrgId to the local tenant; every other select references a column
 		// produced by the format() table function.
-		const selects = mapping.selects.map((s) => (s === mappings.orgPlaceholder ? orgLiteral : s))
+		const selects = Arr.map(mapping.selects, (s) => (s === mappings.orgPlaceholder ? orgLiteral : s))
 		const prefix =
-			`INSERT INTO ${mapping.table} (${mapping.columns.join(", ")}) ` +
-			`SELECT ${selects.join(", ")} FROM format(JSONEachRow, '${mapping.inputSchema}', '`
+			`INSERT INTO ${mapping.table} (${Arr.join(mapping.columns, ", ")}) ` +
+			`SELECT ${Arr.join(selects, ", ")} FROM format(JSONEachRow, '${mapping.inputSchema}', '`
 		out.set(name, { prefix, suffix: "')" })
 	}
 	return out
@@ -82,7 +84,7 @@ const templateFor = (datasource: string): InsertTemplate => {
 
 const escapeLines = (ndjson: string): EscapedLine[] => {
 	const out: EscapedLine[] = []
-	for (const line of ndjson.split("\n")) {
+	for (const line of Str.split("\n")(ndjson)) {
 		if (line.length === 0) continue
 		// Escaping is per-character, so escaping line-by-line and joining with
 		// "\n" is identical to escaping the whole batch at once.
@@ -98,7 +100,7 @@ const splitLines = (template: InsertTemplate, lines: ReadonlyArray<EscapedLine>)
 	let chunkBytes = 0
 	const flush = () => {
 		if (chunk.length === 0) return
-		out.push({ sql: template.prefix + chunk.join("\n") + template.suffix, rowCount: chunk.length })
+		out.push({ sql: template.prefix + Arr.join(chunk, "\n") + template.suffix, rowCount: chunk.length })
 		chunk = []
 		chunkBytes = 0
 	}
@@ -119,7 +121,8 @@ const splitLines = (template: InsertTemplate, lines: ReadonlyArray<EscapedLine>)
  * `SET max_query_size` (`MAX_QUERY_SIZE_BYTES`) exists for.
  */
 export function buildInsertStatements(datasource: string, ndjson: string): InsertStatement[] {
-	return buildBatchedInsertStatements(datasource, [{ owner: undefined, ndjson }]).map(
+	return Arr.map(
+		buildBatchedInsertStatements(datasource, [{ owner: undefined, ndjson }]),
 		({ sql, rowCount }) => ({
 			sql,
 			rowCount,
@@ -155,7 +158,7 @@ export function buildBatchedInsertStatements<Owner>(
 	let bytes = 0
 	const flush = () => {
 		if (parts.length === 0) return
-		out.push({ sql: template.prefix + data.join("\n") + template.suffix, rowCount, parts })
+		out.push({ sql: template.prefix + Arr.join(data, "\n") + template.suffix, rowCount, parts })
 		data = []
 		parts = []
 		rowCount = 0
@@ -164,7 +167,7 @@ export function buildBatchedInsertStatements<Owner>(
 	for (const { owner, ndjson } of batches) {
 		const lines = escapeLines(ndjson)
 		if (lines.length === 0) continue
-		const batchBytes = lines.reduce((total, line) => total + line.bytes, 0)
+		const batchBytes = Arr.reduce(lines, 0, (total, line) => total + line.bytes)
 		if (batchBytes > MAX_ESCAPED_PAYLOAD_BYTES) {
 			flush()
 			for (const statement of splitLines(template, lines))
@@ -172,7 +175,12 @@ export function buildBatchedInsertStatements<Owner>(
 			continue
 		}
 		if (bytes + batchBytes > MAX_ESCAPED_PAYLOAD_BYTES) flush()
-		data.push(lines.map((line) => line.text).join("\n"))
+		data.push(
+			Arr.join(
+				Arr.map(lines, (line) => line.text),
+				"\n",
+			),
+		)
 		parts.push({ owner, rowCount: lines.length })
 		rowCount += lines.length
 		bytes += batchBytes

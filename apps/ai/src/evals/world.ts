@@ -14,6 +14,7 @@ import { executeSql } from "@maple/backend/platform/test-pglite"
 import type { EvalRuntime } from "../mcp/__evals__/eval-runtime"
 import type { FixtureRule } from "../mcp/__evals__/fake-warehouse"
 import { FIXTURES } from "../mcp/__evals__/utils"
+import { Array as Arr, String as Str } from "effect"
 
 interface WorldService {
 	readonly name: string
@@ -159,7 +160,7 @@ const ERRORS = [
 
 /** `YYYY-MM-DD HH:MM:SS` in UTC, `minutesAgo` before now: the warehouse's DateTime text. */
 const chTime = (minutesAgo: number): string =>
-	new Date(Date.now() - minutesAgo * 60_000).toISOString().slice(0, 19).replace("T", " ")
+	Str.replace("T", " ")(Str.slice(0, 19)(new Date(Date.now() - minutesAgo * 60_000).toISOString()))
 
 /** The service a query filters to, when it filters to one. */
 const filteredService = (sql: string): string | undefined =>
@@ -167,7 +168,9 @@ const filteredService = (sql: string): string | undefined =>
 
 const servicesFor = (sql: string): ReadonlyArray<WorldService> => {
 	const only = filteredService(sql)
-	return only === undefined ? WORLD_SERVICES : WORLD_SERVICES.filter((service) => service.name === only)
+	return only === undefined
+		? WORLD_SERVICES
+		: Arr.filter(WORLD_SERVICES, (service) => service.name === only)
 }
 
 const serviceRow = (service: WorldService) => ({
@@ -213,22 +216,25 @@ const errorRow = (error: (typeof ERRORS)[number]) => ({
 })
 
 const freshnessRows = (sql: string) =>
-	(["traces", "logs", "metrics"] as const)
-		.filter((signal) => sql.includes(`'${signal}' AS signal`))
-		.map((signal) => ({ signal, count: 250_000, firstSeen: chTime(60 * 24 * 7), lastSeen: chTime(1) }))
+	Arr.map(
+		Arr.filter(["traces", "logs", "metrics"] as const, (signal) =>
+			Str.includes(`'${signal}' AS signal`)(sql),
+		),
+		(signal) => ({ signal, count: 250_000, firstSeen: chTime(60 * 24 * 7), lastSeen: chTime(1) }),
+	)
 
 /** The world, as fake-warehouse rules. Put these before any catch-all. */
 export const worldRules = (): FixtureRule[] => [
-	{ match: (sql) => sql.includes("AS signal"), rows: freshnessRows },
+	{ match: (sql) => Str.includes("AS signal")(sql), rows: freshnessRows },
 	{
-		match: (sql) => sql.includes("AS serviceName") && sql.includes("service_commit_rows"),
-		rows: (sql) => servicesFor(sql).map(serviceRow),
+		match: (sql) => Str.includes("AS serviceName")(sql) && Str.includes("service_commit_rows")(sql),
+		rows: (sql) => Arr.map(servicesFor(sql), serviceRow),
 	},
 	{
-		match: (sql) => sql.includes("AS facetType"),
+		match: (sql) => Str.includes("AS facetType")(sql),
 		rows: [
 			{ name: "production", count: 396_300, facetType: "environment" },
-			...WORLD_SERVICES.map((service) => ({
+			...Arr.map(WORLD_SERVICES, (service) => ({
 				name: service.name,
 				count: service.throughput,
 				facetType: "service",
@@ -237,7 +243,7 @@ export const worldRules = (): FixtureRule[] => [
 	},
 	{
 		// An aggregate with no GROUP BY answers one row even when nothing matches, as ClickHouse does.
-		match: (sql) => sql.includes("FROM error_events") && sql.includes("AS noExceptionCount"),
+		match: (sql) => Str.includes("FROM error_events")(sql) && Str.includes("AS noExceptionCount")(sql),
 		rows: (sql) => {
 			const fingerprint = /FingerprintHash = toUInt64\('(\d+)'\)/.exec(sql)?.[1]
 			const error = ERRORS.find((candidate) => candidate.fingerprintHash === fingerprint)
@@ -271,54 +277,66 @@ export const worldRules = (): FixtureRule[] => [
 		},
 	},
 	{
-		match: (sql) => sql.includes("AS attributeKey"),
+		match: (sql) => Str.includes("AS attributeKey")(sql),
 		rows: (sql) =>
-			(sql.includes("resource_attribute") || /AttributeScope = 'resource'/.test(sql)
-				? RESOURCE_KEYS.map((key) => [key, 400_000] as const)
-				: [...ATTRIBUTE_VALUES].map(
-						([key, values]) => [key, values.reduce((sum, [, n]) => sum + n, 0)] as const,
-					)
-			).map(([attributeKey, usageCount]) => ({ attributeKey, usageCount })),
+			Arr.map(
+				Str.includes("resource_attribute")(sql) || /AttributeScope = 'resource'/.test(sql)
+					? Arr.map(RESOURCE_KEYS, (key) => [key, 400_000] as const)
+					: Arr.map(
+							[...ATTRIBUTE_VALUES],
+							([key, values]) => [key, Arr.reduce(values, 0, (sum, [, n]) => sum + n)] as const,
+						),
+				([attributeKey, usageCount]) => ({ attributeKey, usageCount }),
+			),
 	},
 	{
-		match: (sql) => sql.includes("AS attributeValue"),
+		match: (sql) => Str.includes("AS attributeValue")(sql),
 		rows: (sql) => {
 			const key = /AttributeKey = '([^']+)'/.exec(sql)?.[1] ?? ""
-			return (ATTRIBUTE_VALUES.get(key) ?? []).map(([attributeValue, usageCount]) => ({
+			return Arr.map(ATTRIBUTE_VALUES.get(key) ?? [], ([attributeValue, usageCount]) => ({
 				attributeValue,
 				usageCount,
 			}))
 		},
 	},
 	{
-		match: (sql) => sql.includes("AS fingerprintHash") && sql.includes("AS affectedServicesCount"),
+		match: (sql) =>
+			Str.includes("AS fingerprintHash")(sql) && Str.includes("AS affectedServicesCount")(sql),
 		rows: (sql) => {
 			const only = filteredService(sql)
-			return ERRORS.filter(
-				(error) => only === undefined || error.serviceNames.some((name) => name === only),
-			).map(errorRow)
+			return Arr.map(
+				Arr.filter(
+					ERRORS,
+					(error) => only === undefined || Arr.some(error.serviceNames, (name) => name === only),
+				),
+				errorRow,
+			)
 		},
 	},
 	{
-		match: (sql) => sql.includes("AS distinctErrorCount"),
+		match: (sql) => Str.includes("AS distinctErrorCount")(sql),
 		rows: [{ occurrences: 2_392, distinctErrorCount: ERRORS.length, noExceptionCount: 0 }],
 	},
 	{
 		// query_data traces breakdowns, by service or by operation.
 		match: (sql) =>
-			sql.includes("FROM traces") && sql.includes("AS errorRate") && !sql.includes("AS bucket"),
+			Str.includes("FROM traces")(sql) &&
+			Str.includes("AS errorRate")(sql) &&
+			!Str.includes("AS bucket")(sql),
 		rows: (sql) =>
-			sql.includes("SpanName AS name")
-				? servicesFor(sql).flatMap((service) =>
-						service.operations.map(([name, count]) => breakdownRow(name, count, service)),
+			Str.includes("SpanName AS name")(sql)
+				? Arr.flatMap(servicesFor(sql), (service) =>
+						Arr.map(service.operations, ([name, count]) => breakdownRow(name, count, service)),
 					)
-				: servicesFor(sql).map((service) => breakdownRow(service.name, service.throughput, service)),
+				: Arr.map(servicesFor(sql), (service) =>
+						breakdownRow(service.name, service.throughput, service),
+					),
 	},
 	{
-		match: (sql) => sql.includes("SpanName AS name") && filteredService(sql) !== undefined,
+		match: (sql) => Str.includes("SpanName AS name")(sql) && filteredService(sql) !== undefined,
 		rows: (sql) =>
-			servicesFor(sql).flatMap((service) =>
-				service.operations.map(([name, value]) => ({ name, value })),
+			Arr.flatMap(servicesFor(sql), (service) =>
+				Arr.map(service.operations, ([name, value]) => ({ name, value })),
 			),
 	},
 ]

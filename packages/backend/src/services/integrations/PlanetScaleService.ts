@@ -22,7 +22,18 @@ import {
 	type PlanetScaleEventRow,
 } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { DateTime, Cause, Clock, Context, Duration, Effect, Layer, Predicate, Schema } from "effect"
+import {
+	DateTime,
+	Cause,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Predicate,
+	Schema,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -311,8 +322,8 @@ const parseEventCursor = (
 	if (cursor === undefined || cursor === "") return null
 	const separator = cursor.indexOf(":")
 	if (separator <= 0) return null
-	const occurredAtMs = Number(cursor.slice(0, separator))
-	const id = cursor.slice(separator + 1)
+	const occurredAtMs = Number(Str.slice(0, separator)(cursor))
+	const id = Str.slice(separator + 1)(cursor)
 	if (!Number.isFinite(occurredAtMs) || id === "") return null
 	return { occurredAtMs, id }
 }
@@ -1143,7 +1154,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 
 /** Normalize PlanetScale's product kind to "mysql" | "postgresql". */
 const normalizeKind = (kind: string | null | undefined): string => {
-	const normalized = (kind ?? "").toLowerCase()
-	if (normalized.includes("postgres")) return "postgresql"
+	const normalized = Str.toLowerCase(kind ?? "")
+	if (Str.includes("postgres")(normalized)) return "postgresql"
 	return "mysql"
 }

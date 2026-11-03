@@ -2,6 +2,7 @@ import { ALERT_MAX_EVALUATION_INTERVAL_MINUTES, alertRuleIntervalMinutes } from 
 import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { countLabel } from "@maple/ui/lib/format"
+import { Array as Arr } from "effect"
 
 /**
  * Derived health of an alert rule, in display-priority order:
@@ -126,7 +127,7 @@ export function deriveRuleStatus(input: {
 
 	// No data only when we have state rows and ALL of them last skipped —
 	// a single skipped group among healthy ones is normal for grouped rules.
-	if (states.length > 0 && states.every((s) => s.last_status === "skipped")) {
+	if (states.length > 0 && Arr.every(states, (s) => s.last_status === "skipped")) {
 		return { status: "no-data", attention, reason: "All recent checks were skipped (no data)" }
 	}
 

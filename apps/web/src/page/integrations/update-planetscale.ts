@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -215,8 +215,8 @@ export const gotTokenField = (model: Model, field: "id" | "secret", message: Fie
 
 export const submittedToken = (model: Model): Return => {
 	const card = model.planetscaleCard
-	const tokenId = card.tokenId.value.trim()
-	const tokenSecret = card.tokenSecret.value.trim()
+	const tokenId = Str.trim(card.tokenId.value)
+	const tokenSecret = Str.trim(card.tokenSecret.value)
 	if (card.isSavingToken || tokenId === "" || tokenSecret === "") return { model }
 	return {
 		model: withCard(model, { isSavingToken: true, tokenError: null }),

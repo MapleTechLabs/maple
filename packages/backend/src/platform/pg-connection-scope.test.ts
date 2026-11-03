@@ -6,7 +6,7 @@ import {
 	makeMaplePgClient,
 } from "@maple/db/client"
 import * as Orm from "@maple-dev/effect-orm/database"
-import { Effect, Exit, Fiber, Option, References, Schema, Scope, Tracer } from "effect"
+import { Effect, Exit, Fiber, Option, References, Schema, Scope, Tracer, Array as Arr } from "effect"
 import type * as Reactivity from "effect/reactivity/Reactivity"
 import type { SqlError } from "effect/sql/SqlError"
 import { createServer, type Socket } from "node:net"
@@ -82,7 +82,7 @@ const makeRecordingTracer = () => {
 }
 
 const dbSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
-	spans.filter((span) => span.attributes.get("db.system.name") === "postgresql")
+	Arr.filter(spans, (span) => span.attributes.get("db.system.name") === "postgresql")
 
 describe("PgConnectionScope", () => {
 	it.effect("creates one pool and reuses it across every execute", () =>

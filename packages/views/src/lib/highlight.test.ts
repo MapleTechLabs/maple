@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { beforeAll, describe, expect, it } from "vitest"
 import { DISPLAY_MAX_CHARS } from "./display-text"
 import { awaitHighlighter, highlightCode, highlightTokens } from "./highlight"
@@ -28,8 +28,11 @@ describe("highlightCode", () => {
 	beforeAll(() => Effect.runPromise(awaitHighlighter))
 
 	it("comes back as escaped plain text past the display cap instead of a span per token", () => {
-		const html = highlightCode(`{"a": "<b>&"}${" ".repeat(DISPLAY_MAX_CHARS)}`, "json")
-		expect([html.includes("<span"), html.startsWith('{"a": "&lt;b&gt;&amp;"}')]).toEqual([false, true])
+		const html = highlightCode(`{"a": "<b>&"}${Str.repeat(DISPLAY_MAX_CHARS)(" ")}`, "json")
+		expect([Str.includes("<span")(html), Str.startsWith('{"a": "&lt;b&gt;&amp;"}')(html)]).toEqual([
+			false,
+			true,
+		])
 	})
 
 	it("colours tokens with the palette variables and escapes the source", () => {
@@ -49,7 +52,7 @@ describe("highlightCode", () => {
 
 	it("keeps output valid across calls, the wasm buffer being reused", () => {
 		const first = highlightCode("const a = 1", "ts")
-		highlightCode("x".repeat(100_000), "ts")
+		highlightCode(Str.repeat(100_000)("x"), "ts")
 		expect(highlightCode("const a = 1", "ts")).toBe(first)
 	})
 })

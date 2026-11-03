@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -90,13 +90,13 @@ const navigationMenuItems = (h: H): ReadonlyArray<NavigationMenu.NavigationMenuI
 		content: [
 			h.ul(
 				[h.Class("grid w-96 grid-cols-2 gap-1 p-2")],
-				PRODUCT.map((title) =>
+				Arr.map(PRODUCT, (title) =>
 					h.li(
 						[],
 						[
 							NavigationMenu.navigationMenuLink(
 								h,
-								`#${title.toLowerCase().replace(" ", "-")}`,
+								`#${Str.replace(" ", "-")(Str.toLowerCase(title))}`,
 								[title],
 							),
 						],
@@ -114,7 +114,7 @@ const navigationMenuItems = (h: H): ReadonlyArray<NavigationMenu.NavigationMenuI
 	{ _tag: "Link", label: "Pricing", href: "#pricing" },
 ]
 
-const railTriggerId = (title: string): string => `kit-rail-${title.toLowerCase()}`
+const railTriggerId = (title: string): string => `kit-rail-${Str.toLowerCase(title)}`
 const RAIL_TITLES = ["Traces", "Logs", "Metrics", "Hosts", "Alerts"]
 
 const sidebars = (h: H, model: Model): Html =>
@@ -140,9 +140,9 @@ const sidebars = (h: H, model: Model): Html =>
 							tooltipTrigger: (title) => trigger(railTriggerId(title)),
 							tooltipPortal: portal,
 						}),
-					triggerIds: RAIL_TITLES.map(railTriggerId),
+					triggerIds: Arr.map(RAIL_TITLES, railTriggerId),
 					toContent: (triggerId) =>
-						RAIL_TITLES.filter((title) => railTriggerId(title) === triggerId),
+						Arr.filter(RAIL_TITLES, (title) => railTriggerId(title) === triggerId),
 				},
 				toParentMessage: (message) => Message.GotRailTooltipMessage({ message }),
 			}),

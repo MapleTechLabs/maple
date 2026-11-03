@@ -1,4 +1,13 @@
-import { click, expect as expectView, expectOutMessage, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { type PageContext, PageOutMessage } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
@@ -7,6 +16,7 @@ import { Message } from "./message"
 import type { Model, ServiceCatalogEntry } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
+import { Array as Arr } from "effect"
 
 const NOW = Date.parse("2026-10-01T12:00:30Z")
 
@@ -46,26 +56,35 @@ const anchored = () => pageUpdate(init(context).model, Message.CompletedReadCloc
 
 const loaded = (catalog: ReadonlyArray<ServiceCatalogEntry>): Model => {
 	const base = anchored().model
-	return pageUpdate(base, Message.SucceededFetchCatalog({ key: base.catalog.key ?? "", catalog, fetchedAtMs: NOW })).model
+	return pageUpdate(
+		base,
+		Message.SucceededFetchCatalog({ key: base.catalog.key ?? "", catalog, fetchedAtMs: NOW }),
+	).model
 }
 
 describe("local services list", () => {
 	test("entry reads the clock, then asks one catalog: unfiltered rows and facets are one key", () => {
-		expect(init(context).commands.map(({ name }) => name)).toContain("ReadServicesClock")
+		expect(Arr.map(init(context).commands, ({ name }) => name)).toContain("ReadServicesClock")
 		const { commands } = anchored()
-		expect((commands ?? []).map(({ name }) => name)).toEqual([FetchCatalog.name])
+		expect(Arr.map(commands ?? [], ({ name }) => name)).toEqual([FetchCatalog.name])
 	})
 
 	test("a filter adds the unfiltered catalog for the facets", () => {
 		const filtered = contextAt("env=production")
 		const result = update(init(filtered).model, Message.CompletedReadClock({ nowMs: NOW }), filtered)
-		expect((result.commands ?? []).map(({ name }) => name)).toEqual([FetchCatalog.name, FetchCatalog.name])
+		expect(Arr.map(result.commands ?? [], ({ name }) => name)).toEqual([
+			FetchCatalog.name,
+			FetchCatalog.name,
+		])
 		expect(result.model.catalog.key).not.toBe(result.model.unfiltered.key)
 	})
 
 	test("an answer for a superseded key is dropped", () => {
 		const base = anchored().model
-		const stale = pageUpdate(base, Message.SucceededFetchCatalog({ key: "stale", catalog: [entry("x")], fetchedAtMs: NOW }))
+		const stale = pageUpdate(
+			base,
+			Message.SucceededFetchCatalog({ key: "stale", catalog: [entry("x")], fetchedAtMs: NOW }),
+		)
 		expect(stale.model.catalog).toEqual(base.catalog)
 	})
 
@@ -75,14 +94,23 @@ describe("local services list", () => {
 			given(loaded([entry("checkout-api"), entry("cart-svc")])),
 			expectView(text("checkout-api")).toExist(),
 			click(role("checkbox", { name: "production" })),
-			expectOutMessage(PageOutMessage.RequestedNavigation({ hash: "#/services?env=production", isReplace: true })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({ hash: "#/services?env=production", isReplace: true }),
+			),
 		)
 	})
 
 	test("an empty catalog asks for signal presence and renders the on-ramp", () => {
 		const base = anchored().model
-		const result = pageUpdate(base, Message.SucceededFetchCatalog({ key: base.catalog.key ?? "", catalog: [], fetchedAtMs: NOW }))
+		const result = pageUpdate(
+			base,
+			Message.SucceededFetchCatalog({ key: base.catalog.key ?? "", catalog: [], fetchedAtMs: NOW }),
+		)
 		expect(result.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
-		scene({ update: pageUpdate, view }, given(result.model), expectView(text("No services yet")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(result.model),
+			expectView(text("No services yet")).toExist(),
+		)
 	})
 })

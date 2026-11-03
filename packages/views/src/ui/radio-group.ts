@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { radioGroupStyles, radioIndicatorStyles, radioStyles } from "@maple/ui/styles/ui/radio-group"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -93,7 +93,7 @@ const arrowTarget = (
 	value: string,
 	key: string,
 ): Option.Option<RadioItem> => {
-	const enabled = config.items.filter((item) => item.isDisabled !== true)
+	const enabled = Arr.filter(config.items, (item) => item.isDisabled !== true)
 	const index = enabled.findIndex((item) => item.value === value)
 	const step =
 		key === "ArrowRight" || key === "ArrowDown" ? 1 : key === "ArrowLeft" || key === "ArrowUp" ? -1 : 0
@@ -152,14 +152,14 @@ export const radio = <ParentMessage>(
 			primitive !== undefined
 				? primitive.children
 				: checked
-				? [
-						h.span([
-							h.Class(radioIndicatorStyles),
-							stateAttribute,
-							h.DataAttribute("slot", "radio-indicator"),
-						]),
-					]
-				: [],
+					? [
+							h.span([
+								h.Class(radioIndicatorStyles),
+								stateAttribute,
+								h.DataAttribute("slot", "radio-indicator"),
+							]),
+						]
+					: [],
 		),
 		hiddenInput(h, {
 			id: item.inputId,

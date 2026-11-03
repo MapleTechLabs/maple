@@ -5,10 +5,11 @@ import { bucketIntervalLabel, inferBucketSeconds, inferRangeMs, parseBucketMs } 
 // No `@tanstack/charts` import: views read this too.
 
 import { rowsDomainMs, type TimeseriesAxisContext, type TimeseriesRow } from "./timeseries-rows"
+import { Array as Arr } from "effect"
 
 /** `normaliseFixedRows`: rows with their bucket parsed; a row with no parseable bucket is dropped. */
 export const normaliseFixedRows = (data: ReadonlyArray<Record<string, unknown>>): Array<TimeseriesRow> =>
-	data.flatMap((row) => {
+	Arr.flatMap(data, (row) => {
 		const bucket = typeof row.bucket === "string" ? row.bucket : ""
 		const epochMs = parseBucketMs(bucket)
 		return epochMs == null ? [] : [{ ...row, bucket, date: new Date(epochMs) }]
@@ -18,7 +19,7 @@ export const normaliseFixedRows = (data: ReadonlyArray<Record<string, unknown>>)
 const reportedNothingPredicate = (
 	rows: ReadonlyArray<TimeseriesRow>,
 ): ((row: TimeseriesRow) => boolean) | undefined =>
-	rows.some((row) => typeof row.totalCount === "number")
+	Arr.some(rows, (row) => typeof row.totalCount === "number")
 		? (row) => (typeof row.totalCount === "number" ? row.totalCount === 0 : true)
 		: undefined
 
@@ -74,7 +75,7 @@ export const deriveThroughputRows = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	divisor: number,
 ): Array<TimeseriesRow> =>
-	rows.map((row) => {
+	Arr.map(rows, (row) => {
 		const errorRate = typeof row.errorRate === "number" ? row.errorRate : 0
 		const rawThroughput = row[THROUGHPUT_KEY]
 		const rawTraced = row[TRACED_KEY]
@@ -105,9 +106,9 @@ export const throughputPlot = (model: FixedMetricModel, perSecond: boolean): Thr
 	return {
 		rows,
 		rateLabel: perSecond ? "/s" : bucketIntervalLabel(model.bucketSeconds),
-		hasSampling: rows.some((row) => row.hasSampling === true),
-		hasTraced: rows.some((row) => typeof row[TRACED_KEY] === "number"),
-		hasErrors: rows.some((row) => {
+		hasSampling: Arr.some(rows, (row) => row.hasSampling === true),
+		hasTraced: Arr.some(rows, (row) => typeof row[TRACED_KEY] === "number"),
+		hasErrors: Arr.some(rows, (row) => {
 			const value = row[ERROR_KEY]
 			return typeof value === "number" && value > 0
 		}),

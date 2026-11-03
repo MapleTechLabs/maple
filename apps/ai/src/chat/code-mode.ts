@@ -9,7 +9,7 @@
  */
 import { CodeExecutionLimits, type CodeExecutor } from "@yielded/agent/code-executor"
 import * as CodeMode from "@yielded/agent/code-mode"
-import { Duration, Layer } from "effect"
+import { Duration, Layer, Array as Arr, Record as Rec } from "effect"
 import { type Tool, Toolkit } from "effect/ai"
 import { TOOL_CONCURRENCY } from "./budgets"
 import { PR_REVIEW_TOOLS } from "./permissions"
@@ -78,15 +78,21 @@ const LIMITS = CodeExecutionLimits.make({
 })
 
 const description = (methods: ReadonlyArray<string>) =>
-	[
-		"Run a JavaScript program that calls Maple tools, for several independent reads at once or for reading a lot and keeping a little.",
-		"`code` is one async arrow function, `async () => { ... }`, never a bare function body.",
-		"`maple.<tool>(input)` takes the same input as the tool of that name and resolves to its text result; a failed call rejects. When a call may fail, use `Promise.allSettled` so one failure does not discard the other results.",
-		"Return only what you need (matching lines, a summary, counts): the whole result is added to the conversation.",
-		'Example: async () => { const [diff, uses] = await Promise.allSettled([maple.pr_file_diff({ repository: "owner/name", number: 1, paths: ["src/a.ts", "src/b.ts"] }), maple.sandbox_grep({ repository: "owner/name", pattern: "retryBudget" })]); return { catches: diff.status === "fulfilled" ? diff.value.split("\\n").filter((line) => line.includes("catch")) : String(diff.reason), uses: uses.status === "fulfilled" ? uses.value.split("\\n").slice(0, 20) : String(uses.reason) } }',
-		`Up to ${LIMITS.maxHostCalls} calls, ${Duration.toSeconds(LIMITS.maxWallTime)} s and ${MAX_EGRESS_BYTES / 1024} KiB of result per program; past that the program fails and returns nothing.`,
-		`Methods: ${methods.map((method) => `maple.${method}`).join(", ")}.`,
-	].join("\n")
+	Arr.join(
+		[
+			"Run a JavaScript program that calls Maple tools, for several independent reads at once or for reading a lot and keeping a little.",
+			"`code` is one async arrow function, `async () => { ... }`, never a bare function body.",
+			"`maple.<tool>(input)` takes the same input as the tool of that name and resolves to its text result; a failed call rejects. When a call may fail, use `Promise.allSettled` so one failure does not discard the other results.",
+			"Return only what you need (matching lines, a summary, counts): the whole result is added to the conversation.",
+			'Example: async () => { const [diff, uses] = await Promise.allSettled([maple.pr_file_diff({ repository: "owner/name", number: 1, paths: ["src/a.ts", "src/b.ts"] }), maple.sandbox_grep({ repository: "owner/name", pattern: "retryBudget" })]); return { catches: diff.status === "fulfilled" ? diff.value.split("\\n").filter((line) => line.includes("catch")) : String(diff.reason), uses: uses.status === "fulfilled" ? uses.value.split("\\n").slice(0, 20) : String(uses.reason) } }',
+			`Up to ${LIMITS.maxHostCalls} calls, ${Duration.toSeconds(LIMITS.maxWallTime)} s and ${MAX_EGRESS_BYTES / 1024} KiB of result per program; past that the program fails and returns nothing.`,
+			`Methods: ${Arr.join(
+				Arr.map(methods, (method) => `maple.${method}`),
+				", ",
+			)}.`,
+		],
+		"\n",
+	)
 
 /**
  * `run_code` over `tools`, or undefined when there is nothing to call. `handlers` provides those
@@ -99,7 +105,7 @@ export const buildCodeMode = <T extends Tool.Any, H, E, R>(
 	/** The direct tools are withheld, so the description carries their schemas instead. */
 	only = false,
 ) => {
-	const methods = Object.keys(tools).sort()
+	const methods = Rec.keys(tools).sort()
 	if (methods.length === 0) return undefined
 	const definition = CodeMode.make(RUN_CODE, {
 		description: description(methods),

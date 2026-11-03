@@ -2,7 +2,7 @@
  * Blocks → a Slack body. The limits are the interesting part: Slack rejects a whole message over
  * one oversized field, so a turn that overruns one must still be a turn.
  */
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { decodeChatActionControlId, encodeChatActionToken, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
@@ -60,7 +60,7 @@ describe("slack message bodies", () => {
 	})
 
 	it("clamps a section rather than letting Slack refuse the message", () => {
-		const payload = renderSlackMessage([prose("x".repeat(MAX_SECTION_CHARS * 2))])
+		const payload = renderSlackMessage([prose(Str.repeat(MAX_SECTION_CHARS * 2)("x"))])
 		const block = payload.blocks?.[0]
 		expect(block?.type === "section" && block.text.text.length).toBe(MAX_SECTION_CHARS)
 	})
@@ -119,7 +119,7 @@ describe("charts", () => {
 
 	it("drops an over-long image URL rather than sending a message Slack rejects", () => {
 		const payload = renderSlackMessage([
-			chart(`https://app.maple.dev/${"x".repeat(MAX_IMAGE_URL_CHARS)}`),
+			chart(`https://app.maple.dev/${Str.repeat(MAX_IMAGE_URL_CHARS)("x")}`),
 		])
 		expect(payload.blocks?.some((block) => block.type === "image")).toBe(false)
 	})
@@ -159,8 +159,10 @@ describe("approvals", () => {
 		// The host decodes the clicked button's value alone; `action_id` never reaches it.
 		const payload = renderSlackMessage([approval(encodeChatActionToken("call_1"))])
 		const actions = payload.blocks?.[1]
-		const values = actions?.type === "actions" ? actions.elements.map((button) => button.value) : []
-		expect(values.map((value) => Option.getOrUndefined(decodeChatActionControlId(value ?? "")))).toEqual([
+		const values = actions?.type === "actions" ? Arr.map(actions.elements, (button) => button.value) : []
+		expect(
+			Arr.map(values, (value) => Option.getOrUndefined(decodeChatActionControlId(value ?? ""))),
+		).toEqual([
 			{ decision: "approve", toolCallId: "call_1" },
 			{ decision: "deny", toolCallId: "call_1" },
 		])
@@ -197,7 +199,7 @@ describe("approvals", () => {
 	})
 
 	it("says so rather than sending buttons Slack would reject the message over", () => {
-		const payload = renderSlackMessage([approval("x".repeat(MAX_BUTTON_VALUE_CHARS + 1))])
+		const payload = renderSlackMessage([approval(Str.repeat(MAX_BUTTON_VALUE_CHARS + 1)("x"))])
 		expect(payload.blocks?.some((block) => block.type === "actions")).toBe(false)
 		expect(payload.text).toContain("Approve create_dashboard?")
 	})
@@ -270,7 +272,7 @@ describe("the rest of the vocabulary", () => {
 		// Only the primary link is styled; every link button carries its url.
 		const actions = blocks.find((block) => block.type === "actions")
 		expect(
-			actions?.type === "actions" && actions.elements.map((button) => [button.url, button.style]),
+			actions?.type === "actions" && Arr.map(actions.elements, (button) => [button.url, button.style]),
 		).toEqual([
 			["https://app.maple.dev/alerts/1", "primary"],
 			["https://app.maple.dev/alerts/rule_1", undefined],

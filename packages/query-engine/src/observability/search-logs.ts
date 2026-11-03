@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { ListLogsOutput, LogsCountOutput } from "@maple/domain/tinybird"
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -11,13 +11,13 @@ const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, 
 export const isKeyLogAttribute = (key: string): boolean =>
 	key === "log.error" ||
 	key === "error" ||
-	key.endsWith(".error") ||
-	key.startsWith("error.") ||
-	key.startsWith("exception.")
+	Str.endsWith(".error")(key) ||
+	Str.startsWith("error.")(key) ||
+	Str.startsWith("exception.")(key)
 
 const logAttributes = (raw: string | undefined): Effect.Effect<Record<string, string>> =>
 	Schema.decodeUnknownEffect(StringRecordFromJson)(raw ?? "{}").pipe(
-		Effect.map((parsed) => Object.fromEntries(Object.entries(parsed).filter(([, v]) => v !== ""))),
+		Effect.map((parsed) => Rec.fromEntries(Arr.filter(Rec.toEntries(parsed), ([, v]) => v !== ""))),
 		Effect.orElseSucceed(() => ({})),
 	)
 
@@ -69,8 +69,8 @@ export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input
 	const logs = yield* Effect.forEach(logsResult.data, (row) =>
 		Effect.map(logAttributes(row.logAttributes), (attributes) => ({
 			...toLogEntry(row),
-			keyAttributes: Object.fromEntries(
-				Object.entries(attributes).filter(([k]) => isKeyLogAttribute(k)),
+			keyAttributes: Rec.fromEntries(
+				Arr.filter(Rec.toEntries(attributes), ([k]) => isKeyLogAttribute(k)),
 			),
 			...(input.includeAttributes === true && { attributes }),
 		})),

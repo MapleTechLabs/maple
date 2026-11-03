@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /** Seeded mulberry32. Ids come from it too, so a re-seed reproduces the same traces. */
 export class Rng {
 	private state: number
@@ -26,7 +27,7 @@ export class Rng {
 	}
 
 	weighted<T>(items: readonly [readonly [T, number], ...(readonly [T, number])[]]): T {
-		const total = items.reduce((sum, [, weight]) => sum + weight, 0)
+		const total = Arr.reduce(items, 0, (sum, [, weight]) => sum + weight)
 		let roll = this.next() * total
 		for (const [item, weight] of items) {
 			roll -= weight
@@ -47,7 +48,7 @@ export class Rng {
 
 	hex(bytes: number): string {
 		let out = ""
-		for (let i = 0; i < bytes; i++) out += this.int(0, 255).toString(16).padStart(2, "0")
+		for (let i = 0; i < bytes; i++) out += Str.padStart(2, "0")(this.int(0, 255).toString(16))
 		return out
 	}
 }

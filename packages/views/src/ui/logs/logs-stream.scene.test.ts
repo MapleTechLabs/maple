@@ -17,7 +17,7 @@ import {
 	text,
 	within,
 } from "foldkit/scene"
-import { Duration, Option } from "effect"
+import { Duration, Option, Array as Arr } from "effect"
 import { Lazy } from "foldkit/test"
 import { describe, test } from "vitest"
 import { PlaceChipCard } from "./chip-card"
@@ -36,7 +36,7 @@ import { view, type ViewInputs } from "./logs-stream-view"
 import { ScrollStreamToIndex, VirtualizeLogStream } from "./virtualize"
 
 const STREAM_ID = "test-stream"
-const ROWS = LOGS_TABLE_BENCH_ROWS.slice(0, 60).map((log) =>
+const ROWS = Arr.map(LOGS_TABLE_BENCH_ROWS.slice(0, 60), (log) =>
 	toLogRowView(log, [], logTimeFormat("UTC"), FIXTURE_LOG_LINKS),
 )
 const INPUTS: ViewInputs = {
@@ -170,8 +170,13 @@ describe("logs stream: keyboard selection", () => {
 	})
 
 	test("a row links to its trace; a row without one offers no trace link", () => {
-		const untraced = LOGS_TABLE_BENCH_ROWS.slice(0, 2).map((log, i) =>
-			toLogRowView(i === 1 ? { ...log, traceId: undefined } : log, [], logTimeFormat("UTC"), FIXTURE_LOG_LINKS),
+		const untraced = Arr.map(LOGS_TABLE_BENCH_ROWS.slice(0, 2), (log, i) =>
+			toLogRowView(
+				i === 1 ? { ...log, traceId: undefined } : log,
+				[],
+				logTimeFormat("UTC"),
+				FIXTURE_LOG_LINKS,
+			),
 		)
 		scene(
 			program,
@@ -188,7 +193,7 @@ describe("logs stream: keyboard selection", () => {
 
 	test("an app without a log page offers no copy link; its trace link is the app's own", () => {
 		const links = { trace: (traceId: string) => `#/traces/${traceId}`, log: Option.none() }
-		const local = LOGS_TABLE_BENCH_ROWS.slice(0, 1).map((log) =>
+		const local = Arr.map(LOGS_TABLE_BENCH_ROWS.slice(0, 1), (log) =>
 			toLogRowView(log, [], logTimeFormat("UTC"), links),
 		)
 		scene(

@@ -19,6 +19,7 @@ import { widgetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
+import { Array as Arr } from "effect"
 
 // `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
@@ -41,41 +42,45 @@ const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text
 const header = (h: H, rawSql: RawSqlState): Html => {
 	const issue = rawSqlIssue(rawSql.draft.sql)
 	return queryPanelBar(h, [
-			iconButton(
-				h,
-				{
-					size: "icon-xs",
-					label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
-					hasTooltip: false,
-					className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-					attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
-				},
-				[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
-			),
-			badge(
-				h,
-				{
-					variant: "outline",
-					className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
-				},
-				["sql"],
-			),
-			typography(h, { size: "2xs", tone: "muted" }, ["ClickHouse"]),
-			h.div([h.Class("flex-1")], []),
-			...(issue !== null && !rawSql.isCollapsed
-				? [
-						h.span(
-							[h.Class(cn("text-2xs", TONE_TEXT.crit)), h.Title(issue.message)],
-							[issue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : issue.message],
-						),
-					]
-				: []),
-		],
-	)
+		iconButton(
+			h,
+			{
+				size: "icon-xs",
+				label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
+				hasTooltip: false,
+				className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+				attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
+			},
+			[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
+		),
+		badge(
+			h,
+			{
+				variant: "outline",
+				className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
+			},
+			["sql"],
+		),
+		typography(h, { size: "2xs", tone: "muted" }, ["ClickHouse"]),
+		h.div([h.Class("flex-1")], []),
+		...(issue !== null && !rawSql.isCollapsed
+			? [
+					h.span(
+						[h.Class(cn("text-2xs", TONE_TEXT.crit)), h.Title(issue.message)],
+						[issue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : issue.message],
+					),
+				]
+			: []),
+	])
 }
 
 const editor = (h: H, sql: string): Html =>
-	sqlEditor(h, { id: SQL_TEXTAREA_ID, label: "SQL query", value: sql, onInput: (value) => Message.ChangedSql({ value }) })
+	sqlEditor(h, {
+		id: SQL_TEXTAREA_ID,
+		label: "SQL query",
+		value: sql,
+		onInput: (value) => Message.ChangedSql({ value }),
+	})
 
 const chip = (h: H, token: string, className: string, trigger: ReadonlyArray<ChildAttribute>): Html =>
 	button(
@@ -114,7 +119,7 @@ const chipRow = (
 ): Html =>
 	h.div(
 		[h.Class("flex flex-wrap gap-1.5 flex-1 pt-2")],
-		chips.map(([token], index) =>
+		Arr.map(chips, ([token], index) =>
 			chip(
 				h,
 				token,
@@ -131,7 +136,8 @@ const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 	const variables = model.document?.variables ?? []
 	const chips = [
 		...MACRO_HINTS,
-		...variables.map(
+		...Arr.map(
+			variables,
 			(variable) =>
 				[
 					`$${variable.name}`,
@@ -146,7 +152,7 @@ const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 		view: Tooltip.view,
 		toParentMessage: (message) => Message.GotSqlChipTooltipMessage({ message }),
 		viewInputs: {
-			triggerIds: chips.map((_, index) => chipTriggerId(index)),
+			triggerIds: Arr.map(chips, (_, index) => chipTriggerId(index)),
 			className: "max-w-xs",
 			toContent: (triggerId) => [chipDescription(chips, triggerId)],
 			toView: ({ trigger, portal }) =>
@@ -197,11 +203,7 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 	const error = rawSqlErrorOf(rawSql.draft)
 	const issue = rawSqlIssue(rawSql.draft.sql)
 	return [
-		...(error === null
-			? []
-			: [
-					fieldErrorText(h, { className: "font-medium" }, error),
-				]),
+		...(error === null ? [] : [fieldErrorText(h, { className: "font-medium" }, error)]),
 		h.div(
 			[h.Class("space-y-3")],
 			[
@@ -219,22 +221,21 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 								]),
 					],
 				),
-				hstack(h, { gap: "3" },
-					[
-						button(
-							h,
-							{
-								size: "sm",
-								isDisabled: issue !== null,
-								attributes: [h.OnClick(Message.ClickedRunPreview())],
-							},
-							["Run preview"],
-						),
-						typography(h, { size: "2xs", tone: "muted", className: "ml-auto" },
-							["Targets ", inlineCode(h, {}, [widgetOf(model)?.visualization ?? ""])],
-						),
-					],
-				),
+				hstack(h, { gap: "3" }, [
+					button(
+						h,
+						{
+							size: "sm",
+							isDisabled: issue !== null,
+							attributes: [h.OnClick(Message.ClickedRunPreview())],
+						},
+						["Run preview"],
+					),
+					typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
+						"Targets ",
+						inlineCode(h, {}, [widgetOf(model)?.visualization ?? ""]),
+					]),
+				]),
 			],
 		),
 	]

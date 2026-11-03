@@ -19,16 +19,17 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { layer } from "@maple/views/ui/layer"
+import { Array as Arr, String as Str } from "effect"
 
 // The `/org-required` screen: the form on the left, a preview of the workspace being made on the right.
 
 type H = HtmlBuilder<Message>
 
 /** The name as typed, or what an untitled org is called until it has one. */
-const nameOf = (name: string): string => name.trim() || "your organization"
+const nameOf = (name: string): string => Str.trim(name) || "your organization"
 
 /** The org's initial, as its avatar tile and the preview's switcher show it. */
-const initialOf = (name: string): string => nameOf(name).charAt(0).toUpperCase()
+const initialOf = (name: string): string => Str.toUpperCase(nameOf(name).charAt(0))
 
 const header = (h: H, email: string | null): Html =>
 	hstack(h, { gap: "4", justify: "between" }, [
@@ -102,7 +103,7 @@ const regionField = (h: H, model: Model): Html =>
 			grid(
 				h,
 				{ sm: 2, gap: "3" },
-				MapleRegion.literals.map((region) =>
+				Arr.map(MapleRegion.literals, (region) =>
 					optionCard(h, {
 						type: "radio",
 						name: "org-required-region",
@@ -222,15 +223,17 @@ const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>)
 						className: "h-12 w-full text-title font-semibold",
 						isLoading: model.isCreating,
 						isDisabled:
-							model.name.trim() === "" || model.joiningId !== null || model.openingId !== null,
+							Str.trim(model.name) === "" ||
+							model.joiningId !== null ||
+							model.openingId !== null,
 					},
 					[
 						`${model.createdOrgId === null ? "Create" : "Open"} ${nameOf(model.name)}`,
 						icon(h, "ArrowRightIcon", { size: 16 }),
 					],
 				),
-				...memberships.map((organization) => membershipRow(h, model, organization)),
-				...(model.invitations ?? []).map((invitation) => invitationRow(h, model, invitation)),
+				...Arr.map(memberships, (organization) => membershipRow(h, model, organization)),
+				...Arr.map(model.invitations ?? [], (invitation) => invitationRow(h, model, invitation)),
 				...(model.invitationsError === null
 					? []
 					: [
@@ -297,7 +300,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 									vstack(
 										h,
 										{ gap: "0.5" },
-										NAV.map(([iconName, label], index) =>
+										Arr.map(NAV, ([iconName, label], index) =>
 											h.div(
 												[
 													h.Class(
@@ -403,20 +406,16 @@ export const view = (
 			h.div(
 				[h.Class("relative hidden h-dvh flex-1 border-l border-border bg-sidebar xl:block")],
 				[
-					layer(
-						h,
-						{ clip: true },
-						[
-							h.canvas(
-								[
-									h.Class("absolute left-0 top-0 size-full"),
-									h.DataAttribute("reach", "0.55"),
-									h.OnMount(MountDitherField()),
-								],
-								[],
-							),
-						],
-					),
+					layer(h, { clip: true }, [
+						h.canvas(
+							[
+								h.Class("absolute left-0 top-0 size-full"),
+								h.DataAttribute("reach", "0.55"),
+								h.OnMount(MountDitherField()),
+							],
+							[],
+						),
+					]),
 					h.div(
 						[h.Class("absolute inset-0 flex flex-col overflow-y-auto p-14")],
 						[

@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { DescribeDashboardSchemaOutput } from "@maple/domain/mcp-outputs"
 import {
 	DASHBOARD_SCHEMA_SECTIONS,
@@ -13,9 +13,9 @@ const TOOL = "describe_dashboard_schema"
 
 /** The generated markdown opens with its own heading; the doc's title takes its place. */
 const splitHeading = (markdown: string): { readonly title: string; readonly body: string } => {
-	const [first = "", ...rest] = markdown.split("\n")
-	return first.startsWith("#")
-		? { title: first.replace(/^#+\s*/, ""), body: rest.join("\n").trim() }
+	const [first, ...rest] = Str.split("\n")(markdown)
+	return Str.startsWith("#")(first)
+		? { title: Str.replace(/^#+\s*/, "")(first), body: Str.trim(Arr.join(rest, "\n")) }
 		: { title: "Dashboard widget schema", body: markdown }
 }
 

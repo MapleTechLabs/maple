@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 import * as Effect from "effect/Effect"
 import { deepEqual, isResolved } from "alchemy/Diff"
 import { Unowned } from "alchemy/AdoptPolicy"
@@ -191,12 +191,12 @@ const scopeDefaults = {
 /** The create/update body: the props the user declared, plus scope defaults. */
 const desiredBody = (props: AlertRuleProps): Record<string, unknown> => ({
 	...scopeDefaults,
-	...Object.fromEntries(Object.entries(props).filter(([, value]) => value !== undefined)),
+	...Rec.fromEntries(Arr.filter(Object.entries(props), ([, value]) => value !== undefined)),
 })
 
 /** Wire drift compare: declared fields vs the observed wire rule. */
 const drifted = (body: Record<string, unknown>, observed: Record<string, unknown>): boolean => {
-	return Object.keys(body).some((key) => !deepEqual(body[key], observed[key], { stripNullish: true }))
+	return Arr.some(Rec.keys(body), (key) => !deepEqual(body[key], observed[key], { stripNullish: true }))
 }
 
 const toAttributes = (observed: Schema.Schema.Type<typeof WireRule>, props?: AlertRuleProps) => ({
@@ -204,9 +204,7 @@ const toAttributes = (observed: Schema.Schema.Type<typeof WireRule>, props?: Ale
 	name: observed.name,
 	enabled: observed.enabled,
 	configuration: {
-		...Object.fromEntries(
-			Object.keys(props ? desiredBody(props) : {}).map((key) => [key, observed[key]]),
-		),
+		...Rec.fromEntries(Arr.map(Rec.keys(props ? desiredBody(props) : {}), (key) => [key, observed[key]])),
 		// Observe ownership even when the user leaves ordinary tags unmanaged.
 		tags: props?.tags === undefined ? ownershipTags(observed.tags) : observed.tags,
 	},

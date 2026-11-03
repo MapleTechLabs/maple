@@ -23,6 +23,7 @@ import { Message, type Model } from "./model"
 import { THEME_TOKENS } from "./tokens"
 import { detailsIdOf, isEditMode, menuIdOf } from "./update"
 import { copyScenarios } from "./view-copy"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -166,7 +167,7 @@ const tileSection = (h: H, model: Model, entry: Section): Html =>
 		entry.title,
 		entry.description,
 		entry.minColWidth,
-		entry.cells.map((cell) =>
+		Arr.map(entry.cells, (cell) =>
 			scenarioCell(h, cell.label, cell.height, widgetTile(h, tileContext(h, model, cell), cell.widget)),
 		),
 	)
@@ -179,7 +180,7 @@ const sparklineSection = (h: H, model: Model): Html =>
 		"Sparkline",
 		"The stat-widget trend line, rendered standalone across timeseries shapes. Polish: stroke, gradient, threshold color.",
 		320,
-		SPARKLINE_SAMPLES.map((sample) => {
+		Arr.map(SPARKLINE_SAMPLES, (sample) => {
 			const values = sparklineValues(sample.state)
 			const theme = model.themeColors
 			const isReady = theme !== null && isChartRuntimeReady(model.chartRuntime)
@@ -257,7 +258,7 @@ const pageContent = (h: H, model: Model): Html =>
 											"flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]",
 										),
 									],
-									NAV_ITEMS.map(([id, label]) =>
+									Arr.map(NAV_ITEMS, ([id, label]) =>
 										h.a(
 											[
 												h.Href(`#${id}`),
@@ -280,9 +281,9 @@ const pageContent = (h: H, model: Model): Html =>
 							240,
 							copyScenarios(h, model),
 						),
-						...SECTIONS.map((entry) => tileSection(h, model, entry)),
+						...Arr.map(SECTIONS, (entry) => tileSection(h, model, entry)),
 						sparklineSection(h, model),
-						...LATER_SECTIONS.map((entry) => tileSection(h, model, entry)),
+						...Arr.map(LATER_SECTIONS, (entry) => tileSection(h, model, entry)),
 					],
 		),
 	])

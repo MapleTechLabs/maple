@@ -27,7 +27,7 @@ import type {
 	ErrorIssueTransitionError,
 	ErrorValidationError,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
@@ -93,11 +93,11 @@ const toV2Incident = (incident: ErrorIncidentDocument): V2ErrorIncident => ({
 
 export const toV2IssueDetail = (detail: ErrorIssueDetailResponse): V2ErrorIssueDetail => ({
 	...toV2Issue(detail.issue),
-	timeseries: detail.timeseries.map((point) => ({
+	timeseries: Arr.map(detail.timeseries, (point) => ({
 		bucket: point.bucket,
 		count: point.count,
 	})),
-	sample_traces: detail.sampleTraces.map((trace) => ({
+	sample_traces: Arr.map(detail.sampleTraces, (trace) => ({
 		trace_id: trace.traceId,
 		span_id: trace.spanId,
 		service_name: trace.serviceName,
@@ -105,8 +105,8 @@ export const toV2IssueDetail = (detail: ErrorIssueDetailResponse): V2ErrorIssueD
 		exception_message: trace.exceptionMessage,
 		duration_micros: trace.durationMicros,
 	})),
-	incidents: detail.incidents.map(toV2Incident),
-	environments: detail.environments.map((env) => ({ name: env.name, count: env.count })),
+	incidents: Arr.map(detail.incidents, toV2Incident),
+	environments: Arr.map(detail.environments, (env) => ({ name: env.name, count: env.count })),
 })
 
 const decodeCursor = (
@@ -118,14 +118,14 @@ const decodeCursor = (
 > => {
 	if (cursor === undefined) return Effect.undefined
 	if (sort === "severity") {
-		if (!cursor.startsWith("sev_")) {
+		if (!Str.startsWith("sev_")(cursor)) {
 			return Effect.fail(V2CursorSortMismatch.make(undefined, { param: "cursor" }))
 		}
-		return Schema.decodeEffect(IssueSeverityListCursor)(cursor.slice(4)).pipe(
+		return Schema.decodeEffect(IssueSeverityListCursor)(Str.slice(4)(cursor)).pipe(
 			Effect.mapError(() => V2CursorInvalid.make(undefined, { param: "cursor" })),
 		)
 	}
-	if (cursor.startsWith("sev_")) {
+	if (Str.startsWith("sev_")(cursor)) {
 		return Effect.fail(V2CursorSortMismatch.make(undefined, { param: "cursor" }))
 	}
 	return Schema.decodeEffect(IssueListCursor)(cursor).pipe(
@@ -140,10 +140,10 @@ const decodeCursor = (
  */
 function parseFingerprintHashes(raw: string | undefined): ReadonlyArray<string> | undefined {
 	if (raw === undefined) return undefined
-	return raw
-		.split(",")
-		.map((hash) => hash.trim())
-		.filter((hash) => hash.length > 0)
+	return Arr.filter(
+		Arr.map(Str.split(",")(raw), (hash) => Str.trim(hash)),
+		(hash) => hash.length > 0,
+	)
 }
 
 /** Workflow conflicts keep their domain message but take the v2 envelope. */
@@ -152,7 +152,7 @@ const transitionConflict = (error: ErrorIssueTransitionError) =>
 const leaseConflict = (error: ErrorIssueLeaseConflictError) =>
 	Effect.fail(V2ErrorIssueLeaseConflict.make(error.message))
 const validationFailed = (error: ErrorValidationError) =>
-	Effect.fail(V2ParameterInvalid.make([error.message, ...error.details].join(" ")))
+	Effect.fail(V2ParameterInvalid.make(Arr.join([error.message, ...error.details], " ")))
 
 export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssues", (handlers) =>
 	Effect.gen(function* () {
@@ -195,7 +195,7 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 
 					return {
 						object: "list" as const,
-						data: response.issues.map(toV2Issue),
+						data: Arr.map(response.issues, toV2Issue),
 						has_more: response.nextCursor !== undefined,
 						next_cursor: response.nextCursor ?? null,
 					}
@@ -208,7 +208,7 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 
 					return {
 						object: "list" as const,
-						data: counts.map((row) => ({
+						data: Arr.map(counts, (row) => ({
 							service_name: row.serviceName,
 							open_count: row.openCount,
 						})),

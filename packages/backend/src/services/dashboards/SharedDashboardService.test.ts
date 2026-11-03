@@ -23,7 +23,7 @@
  */
 import type { PGlite } from "@electric-sql/pglite"
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, ManagedRuntime, Schema, String as Str } from "effect"
 import { OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -368,7 +368,7 @@ describe("SharedDashboardService isolation", () => {
 	it("does not change the mode of a link revoked between the read and the write", async () => {
 		// Lands a revoke right before upsert's mode UPDATE, after its live-share read.
 		const { runtime, testDb } = makeRuntime("maple-test-share-secret", async (sql, run) => {
-			if (/^update "dashboard_shares" set "mode"/i.test(sql.trimStart())) {
+			if (/^update "dashboard_shares" set "mode"/i.test(Str.trimStart(sql))) {
 				await run("UPDATE dashboard_shares SET revoked_at = now() WHERE revoked_at IS NULL")
 			}
 		})

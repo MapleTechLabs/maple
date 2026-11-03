@@ -16,6 +16,7 @@ import type { SourceState } from "./state"
 import { ROW_CLASS, sectionCaption } from "./view-findings"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `SourcesTable`, `SourceRowBody` and `HealthBar`.
 
@@ -39,12 +40,12 @@ const SEGMENT_LABEL = {
 } satisfies Record<HealthSegment["key"], string>
 
 const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>): Html => {
-	const drawn = segments.filter((segment) => segment.count > 0)
+	const drawn = Arr.filter(segments, (segment) => segment.count > 0)
 	return vstack(h, { gap: "1.5" }, [
 		segmentedBar(h, {
 			className: "w-full gap-px bg-muted",
 			minVisible: 2,
-			segments: drawn.map((segment) => ({
+			segments: Arr.map(drawn, (segment) => ({
 				key: segment.key,
 				value: segment.count,
 				className: SEGMENT_CLASS[segment.key],
@@ -52,7 +53,7 @@ const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>)
 		}),
 		h.span(
 			[h.Class("flex gap-3 text-2xs text-muted-foreground tabular-nums")],
-			drawn.map((segment) =>
+			Arr.map(drawn, (segment) =>
 				h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]]),
 			),
 		),
@@ -68,10 +69,7 @@ const healthBarUnavailable = <M>(h: HtmlBuilder<M>): Html =>
 
 /** `healthBar`'s shape while loading: the bar and an empty legend line, so the row keeps its height. */
 const healthBarLoading = <M>(h: HtmlBuilder<M>): Html =>
-	vstack(h, { gap: "1.5" }, [
-		skeletonMeter(h),
-		h.span([h.Class("text-2xs")], ["\u00a0"]),
-	])
+	vstack(h, { gap: "1.5" }, [skeletonMeter(h), h.span([h.Class("text-2xs")], ["\u00a0"])])
 
 /** `isFailureExplained`: the page already shows the one failure every source shares. */
 export const sourceRow = <M>(
@@ -184,7 +182,7 @@ export const sourcesTable = <M>(
 				{ tone: "background", className: "divide-y" },
 				sources === null
 					? Array.from({ length: PENDING_ROWS }, () => sourceRowPending(h))
-					: sources.map(({ id, state }) => sourceRow(h, id, state, time, isFailureExplained)),
+					: Arr.map(sources, ({ id, state }) => sourceRow(h, id, state, time, isFailureExplained)),
 			),
 		],
 	)

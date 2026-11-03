@@ -9,7 +9,7 @@ import {
 	PrReviewPostMergeOperation,
 	type PrReviewTelemetry,
 } from "@maple/domain/http"
-import { DateTime, Duration } from "effect"
+import { DateTime, Duration, Array as Arr, String as Str } from "effect"
 import { formatCount } from "./analyze"
 import { escapeCell } from "./render"
 
@@ -71,18 +71,16 @@ export const pickDeploy = (input: {
 }): { readonly deploy: Deployment; readonly exact: boolean } | undefined => {
 	const merge = input.mergeCommitSha?.toLowerCase()
 	// A version first seen before the merge is a revert or an earlier landing, not this one.
-	const afterMerge = input.versions.filter((version) =>
+	const afterMerge = Arr.filter(input.versions, (version) =>
 		DateTime.isGreaterThanOrEqualTo(version.firstSeen, input.mergedAt),
 	)
-	const exact = afterMerge.find((version) => version.commitSha.toLowerCase() === merge)
+	const exact = afterMerge.find((version) => Str.toLowerCase(version.commitSha) === merge)
 	if (exact !== undefined) return { deploy: exact, exact: true }
 	if (input.exactOnly || !elapsed(input.mergedAt, input.now, POST_MERGE_EXACT_WAIT)) return undefined
-	const first = afterMerge
-		.filter((version) => {
-			const committed = input.commitTimes.get(version.commitSha.toLowerCase())
-			return committed === undefined || DateTime.isGreaterThanOrEqualTo(committed, input.mergedAt)
-		})
-		.sort((a, b) => DateTime.Order(a.firstSeen, b.firstSeen))[0]
+	const first = Arr.filter(afterMerge, (version) => {
+		const committed = input.commitTimes.get(Str.toLowerCase(version.commitSha))
+		return committed === undefined || DateTime.isGreaterThanOrEqualTo(committed, input.mergedAt)
+	}).sort((a, b) => DateTime.Order(a.firstSeen, b.firstSeen))[0]
 	return first === undefined ? undefined : { deploy: first, exact: false }
 }
 
@@ -112,10 +110,10 @@ export const compareOperations = (
 	before: ReadonlyArray<WindowStats>,
 	after: ReadonlyArray<WindowStats>,
 ): ReadonlyArray<PrReviewPostMergeOperation> => {
-	const beforeBy = new Map(before.map((row) => [key(row.service, row.spanName), row] as const))
-	const afterBy = new Map(after.map((row) => [key(row.service, row.spanName), row] as const))
+	const beforeBy = new Map(Arr.map(before, (row) => [key(row.service, row.spanName), row] as const))
+	const afterBy = new Map(Arr.map(after, (row) => [key(row.service, row.spanName), row] as const))
 	const hours = Duration.toHours(POST_MERGE_WINDOW)
-	return comparedOperations(telemetry).map((operation) => {
+	return Arr.map(comparedOperations(telemetry), (operation) => {
 		const was = beforeBy.get(key(operation.service, operation.spanName))
 		const now = afterBy.get(key(operation.service, operation.spanName))
 		return new PrReviewPostMergeOperation({
@@ -153,7 +151,7 @@ export const comparedOperations = (telemetry: PrReviewTelemetry) => {
 
 /** Services worth a deploy lookup: the ones the changed files' operations and errors live in. */
 export const postMergeServices = (telemetry: PrReviewTelemetry): ReadonlyArray<string> => [
-	...new Set([...telemetry.services, ...telemetry.linkedIssues.map((issue) => issue.service)]),
+	...new Set([...telemetry.services, ...Arr.map(telemetry.linkedIssues, (issue) => issue.service)]),
 ]
 
 /** Attribute names a contract break said alerts read, that no longer arrive after the deploy. */
@@ -161,9 +159,13 @@ export const missingAfterDeploy = (
 	telemetry: PrReviewTelemetry,
 	arrivingAfter: ReadonlySet<string>,
 ): ReadonlyArray<string> =>
-	openContractBreaks(telemetry)
-		.filter((item) => item.kind === "attribute" && !arrivingAfter.has(item.name))
-		.map((item) => item.name)
+	Arr.map(
+		Arr.filter(
+			openContractBreaks(telemetry),
+			(item) => item.kind === "attribute" && !arrivingAfter.has(item.name),
+		),
+		(item) => item.name,
+	)
 
 export const postMergeMarker = (reviewId: string) => `<!-- maple-pr-post-merge ${reviewId} -->`
 
@@ -172,7 +174,7 @@ const pct = (value: number) => `${(value * 100).toFixed(1)}%`
 /** The follow-up comment on the merged pull request. */
 export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPostMerge): string => {
 	const { deploy } = postMerge
-	const when = DateTime.formatIso(deploy.firstSeen).slice(0, 16).replace("T", " ")
+	const when = Str.replace("T", " ")(Str.slice(0, 16)(DateTime.formatIso(deploy.firstSeen)))
 	const lines = [
 		postMergeMarker(reviewId),
 		"## Maple: after this shipped",
@@ -181,20 +183,21 @@ export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPost
 			? "✅ **Shipped clean.** Nothing this change touches got worse in the hour after it deployed."
 			: "⚠️ **Something changed after this shipped.** Details below.",
 		"",
-		`Deployed to \`${deploy.service}\`${deploy.environment ? ` (${deploy.environment})` : ""} at ${when} UTC as \`${deploy.commitSha.slice(0, 7)}\`${deploy.exact ? "" : ", the first version after the merge (the merge commit itself never reported)"}. Compared the ${postMerge.windowMinutes} minutes before and after.`,
+		`Deployed to \`${deploy.service}\`${deploy.environment ? ` (${deploy.environment})` : ""} at ${when} UTC as \`${Str.slice(0, 7)(deploy.commitSha)}\`${deploy.exact ? "" : ", the first version after the merge (the merge commit itself never reported)"}. Compared the ${postMerge.windowMinutes} minutes before and after.`,
 		"",
 	]
 	if (postMerge.missing.length > 0) {
 		lines.push(
 			"**Stopped arriving** (alerts read these):",
-			...postMerge.missing.map((name) => `- \`${name}\``),
+			...Arr.map(postMerge.missing, (name) => `- \`${name}\``),
 			"",
 		)
 	}
 	if (postMerge.newIssues.length > 0) {
 		lines.push(
 			"**New errors since the deploy:**",
-			...postMerge.newIssues.map(
+			...Arr.map(
+				postMerge.newIssues,
 				(issue) => `- ${issue.title} (${issue.service}, ${formatCount(issue.afterPerHour)}/h)`,
 			),
 			"",
@@ -203,7 +206,7 @@ export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPost
 	if (postMerge.linkedIssues.length > 0) {
 		lines.push(
 			"**Errors in the changed files:**",
-			...postMerge.linkedIssues.map((issue) => {
+			...Arr.map(postMerge.linkedIssues, (issue) => {
 				const stopped = issue.beforePerHour > 0 && issue.afterPerHour === 0
 				return `- ${stopped ? "✅" : issue.afterPerHour > 0 ? "🔁" : "➖"} ${issue.title}: ${formatCount(issue.beforePerHour)}/h → ${formatCount(issue.afterPerHour)}/h${stopped ? ", stopped" : issue.afterPerHour > 0 ? ", still occurring" : ""}`
 			}),
@@ -214,13 +217,14 @@ export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPost
 		lines.push(
 			"| Operation | Calls/h | Errors | p95 |",
 			"| --- | ---: | ---: | ---: |",
-			...postMerge.operations.map(
+			...Arr.map(
+				postMerge.operations,
 				(operation) =>
-					`| ${operation.regressed ? "⚠️ " : ""}\`${escapeCell(operation.spanName).replace(/`/g, "'")}\` | ${formatCount(operation.before.perHour)} → ${formatCount(operation.after.perHour)} | ${pct(operation.before.errorRate)} → ${pct(operation.after.errorRate)} | ${operation.before.p95Ms} → ${operation.after.p95Ms} ms |`,
+					`| ${operation.regressed ? "⚠️ " : ""}\`${Str.replace(/`/g, "'")(escapeCell(operation.spanName))}\` | ${formatCount(operation.before.perHour)} → ${formatCount(operation.after.perHour)} | ${pct(operation.before.errorRate)} → ${pct(operation.after.errorRate)} | ${operation.before.p95Ms} → ${operation.after.p95Ms} ms |`,
 			),
 			"",
 		)
 	}
 	lines.push("<sub>Maple looks once, an hour after the first deploy that carries the merge.</sub>")
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }

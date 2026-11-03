@@ -11,6 +11,7 @@ import { fleetSync } from "./derive"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { borderedBoxClass } from "@maple/views/ui/bordered-box"
+import { Array as Arr } from "effect"
 
 // `RailwayFleetBand` and `RailwayFleetBandLoading`.
 
@@ -49,10 +50,10 @@ const pollingValue = (inputs: FleetBandInputs, failing: number): string => {
 
 export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs): Html => {
 	const ranked = [...inputs.services].sort((a, b) => b.memoryAvg - a.memoryAvg)
-	const total = ranked.reduce((sum, row) => sum + row.memoryAvg, 0)
-	const rest = ranked.slice(STRIP_SLICES).reduce((sum, row) => sum + row.memoryAvg, 0)
+	const total = Arr.reduce(ranked, 0, (sum, row) => sum + row.memoryAvg)
+	const rest = Arr.reduce(ranked.slice(STRIP_SLICES), 0, (sum, row) => sum + row.memoryAvg)
 	const segments = [
-		...ranked.slice(0, STRIP_SLICES).map((row, index) => ({
+		...Arr.map(ranked.slice(0, STRIP_SLICES), (row, index) => ({
 			key: `${row.environmentId}:${row.serviceId}`,
 			value: row.memoryAvg,
 			className: STRIP_FILLS[index],
@@ -65,7 +66,8 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 	const subline = inputs.authFailed
 		? "Railway rejected the token"
 		: sync.lastSyncedAt !== null
-			? relativeTime(h, { tooltip: "title",
+			? relativeTime(h, {
+					tooltip: "title",
 					value: sync.lastSyncedAt,
 					nowMs: inputs.nowMs,
 					timeZone: inputs.timeZone,
@@ -80,40 +82,37 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-[26rem] md:shrink-0")],
 				[
-					hstack(h, { gap: "1.5", align: "baseline", as: "span" },
-						[
-							h.span(
-								[h.Class("font-mono text-base font-semibold tabular-nums")],
-								[formatBytes(total)],
-							),
-							typography(h, { size: "2xs", tone: "muted" },
-								[
-									"summed average memory across ",
-									String(count),
-									" ",
-									pluralize(count, "service"),
-								],
-							),
-						],
-					),
+					hstack(h, { gap: "1.5", align: "baseline", as: "span" }, [
+						h.span(
+							[h.Class("font-mono text-base font-semibold tabular-nums")],
+							[formatBytes(total)],
+						),
+						typography(h, { size: "2xs", tone: "muted" }, [
+							"summed average memory across ",
+							String(count),
+							" ",
+							pluralize(count, "service"),
+						]),
+					]),
 					segmentedBar(h, {
 						className: "w-full gap-px bg-transparent",
 						minVisible: 1,
-						label: ranked
-							.map((row) => `${row.serviceName} ${formatBytes(row.memoryAvg)}`)
-							.join(", "),
+						label: Arr.join(
+							Arr.map(ranked, (row) => `${row.serviceName} ${formatBytes(row.memoryAvg)}`),
+							", ",
+						),
 						segments,
 					}),
 					h.span(
 						[h.Class("flex gap-3 text-3xs text-muted-foreground")],
 						[
-							...ranked
-								.slice(0, LEGEND_NAMES)
-								.map((row) =>
-									typography(h, { mono: true, truncate: true },
-										[nameOf(row), " ", formatBytes(row.memoryAvg)],
-									),
-								),
+							...Arr.map(ranked.slice(0, LEGEND_NAMES), (row) =>
+								typography(h, { mono: true, truncate: true }, [
+									nameOf(row),
+									" ",
+									formatBytes(row.memoryAvg),
+								]),
+							),
 							...(ranked.length > LEGEND_NAMES
 								? [
 										h.span(
@@ -144,11 +143,7 @@ export const railwayFleetBandLoading = <M>(h: HtmlBuilder<M>): Html =>
 		[
 			h.div(
 				[h.Class("flex w-full flex-col justify-center gap-2 px-4 py-3 md:w-[26rem] md:shrink-0")],
-				[
-					skeleton(h, "h-4 w-48"),
-					skeletonMeter(h),
-					skeleton(h, "h-2.5 w-56"),
-				],
+				[skeleton(h, "h-4 w-48"), skeletonMeter(h), skeleton(h, "h-2.5 w-56")],
 			),
 			h.div(
 				[h.Class("flex flex-1 flex-col justify-center gap-1.5 border-l px-4 py-3")],

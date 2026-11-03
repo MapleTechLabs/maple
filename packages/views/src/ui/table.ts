@@ -21,6 +21,7 @@ import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { withHint } from "./eyebrow"
 import { icon } from "./icon"
+import { Array as Arr } from "effect"
 
 // Port of packages/ui/src/components/ui/table.tsx. Rows and cells repeat, so they set one class
 // attribute (S4) instead of `h.Class`.
@@ -116,7 +117,7 @@ export const tableHead = <M>(
 			h.DataAttribute("slot", "table-head"),
 			...attributes,
 		],
-		children.flatMap((child) => withHint(h, child)),
+		Arr.flatMap(children, (child) => withHint(h, child)),
 	)
 
 export const tableCell = <M>(

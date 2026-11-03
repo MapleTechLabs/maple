@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Fiber, Layer, Option, Stream } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, Option, Stream, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
@@ -46,7 +46,7 @@ const clientLayer = (responses: ReadonlyArray<Response>, requests: Array<string>
 	return Layer.effect(GithubAppClient, GithubAppClient.make).pipe(Layer.provide(http), Layer.provide(env))
 }
 
-const SHA = "a".repeat(40)
+const SHA = Str.repeat(40)("a")
 
 const logRedirect = () =>
 	new Response(null, { status: 302, headers: { location: "https://logs.example/job-7.txt" } })
@@ -83,7 +83,7 @@ describe("GithubAppClient responses that are normal states", () => {
 			const client = yield* GithubAppClient
 			const result = yield* client.listCommits("42", "octo", "shop", {})
 			assert.deepStrictEqual(
-				result.commits.map((commit) => [commit.sha, commit.author?.login]),
+				Arr.map(result.commits, (commit) => [commit.sha, commit.author?.login]),
 				[[SHA, undefined]],
 			)
 		}).pipe(Effect.provide(layer))
@@ -134,7 +134,7 @@ describe("GithubAppClient responses that are normal states", () => {
 			[
 				tokenResponse(),
 				new Response('{"message":"Not Found"}', { status: 404 }),
-				jsonResponse({ sha: SHA, tree: { sha: "b".repeat(40) } }),
+				jsonResponse({ sha: SHA, tree: { sha: Str.repeat(40)("b") } }),
 			],
 			[],
 		)
@@ -189,7 +189,7 @@ describe("GithubAppClient responses that are normal states", () => {
 			yield* advance(2)
 			const lines = yield* Fiber.join(fiber)
 			assert.deepStrictEqual(lines, ["line one", "line two"])
-			assert.strictEqual(requests.filter((url) => new URL(url).host === "logs.example").length, 2)
+			assert.strictEqual(Arr.filter(requests, (url) => new URL(url).host === "logs.example").length, 2)
 		}).pipe(Effect.provide(layer))
 	})
 

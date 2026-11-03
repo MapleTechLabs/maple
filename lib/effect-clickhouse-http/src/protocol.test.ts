@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { decodeRows } from "./protocol"
 import { ClickHouseLimitError, ClickHouseProtocolError, ClickHouseServerError } from "./errors"
 
@@ -27,7 +27,7 @@ describe("JSONEachRow framing", () => {
 	it.effect("handles one-byte chunks and empty chunks", () =>
 		Effect.gen(function* () {
 			assert.deepStrictEqual(
-				yield* collect([...wire].flatMap((byte) => [new Uint8Array(), Uint8Array.of(byte)])),
+				yield* collect(Arr.flatMap([...wire], (byte) => [new Uint8Array(), Uint8Array.of(byte)])),
 				rows,
 			)
 		}),
@@ -35,7 +35,12 @@ describe("JSONEachRow framing", () => {
 	it.effect("handles deterministic random fragmentation across many rows", () =>
 		Effect.gen(function* () {
 			const expected = Array.from({ length: 300 }, (_, n) => ({ n, s: `\n🦊${n}` }))
-			const bytes = encode(expected.map((r) => JSON.stringify(r)).join("\n") + "\n")
+			const bytes = encode(
+				Arr.join(
+					Arr.map(expected, (r) => JSON.stringify(r)),
+					"\n",
+				) + "\n",
+			)
 			for (let seed = 1; seed <= 30; seed++) {
 				let state = seed,
 					position = 0
@@ -88,7 +93,14 @@ describe("JSONEachRow framing", () => {
 		Effect.gen(function* () {
 			const rows = [{ text: frame }, { text: message }]
 			assert.deepStrictEqual(
-				yield* collect([encode(rows.map((row) => JSON.stringify(row)).join("\n"))]),
+				yield* collect([
+					encode(
+						Arr.join(
+							Arr.map(rows, (row) => JSON.stringify(row)),
+							"\n",
+						),
+					),
+				]),
 				rows,
 			)
 		}),
@@ -118,12 +130,12 @@ describe("errors after HTTP 200", () => {
 		}
 	}
 	for (const [name, bad] of [
-		["wrong tag", frame.replaceAll(info.exceptionTag, "wrong")],
-		["wrong length", frame.replace(`${encode(message).length} `, "1 ")],
-		["truncated footer", frame.slice(0, -1)],
-		["missing footer", frame.slice(0, frame.lastIndexOf("__exception__"))],
+		["wrong tag", Str.replaceAll(info.exceptionTag, "wrong")(frame)],
+		["wrong length", Str.replace(`${encode(message).length} `, "1 ")(frame)],
+		["truncated footer", Str.slice(0, -1)(frame)],
+		["missing footer", Str.slice(0, frame.lastIndexOf("__exception__"))(frame)],
 		["trailing data", frame + '{"ok":1}\n'],
-		["oversized exception", "__exception__\r\n" + "x".repeat(17000) + "\n"],
+		["oversized exception", "__exception__\r\n" + Str.repeat(17000)("x") + "\n"],
 	])
 		it.effect(`rejects ${name}`, () =>
 			Effect.gen(function* () {
@@ -146,7 +158,7 @@ describe("bounds before row assembly", () => {
 		Effect.gen(function* () {
 			let pulled = 0
 			const source = Stream.fromIterable(
-				Array.from({ length: 100 }, () => encode("x".repeat(10))),
+				Array.from({ length: 100 }, () => encode(Str.repeat(10)("x"))),
 			).pipe(
 				Stream.tap(() =>
 					Effect.sync(() => {
@@ -190,13 +202,13 @@ it.effect("keeps a complete framed error when the server subsequently breaks HTT
 )
 it.effect("finds the server exception following a large unfinished row", () =>
 	Effect.gen(function* () {
-		const error = yield* Effect.flip(collect([encode('{"partial":"' + "x".repeat(20000) + frame)]))
+		const error = yield* Effect.flip(collect([encode('{"partial":"' + Str.repeat(20000)("x") + frame)]))
 		assert.instanceOf(error, ClickHouseServerError)
 	}),
 )
 it.effect("framed exceptions survive one-byte fragmentation", () =>
 	Effect.gen(function* () {
-		const error = yield* Effect.flip(collect([...encode(frame)].map((byte) => Uint8Array.of(byte))))
+		const error = yield* Effect.flip(collect(Arr.map([...encode(frame)], (byte) => Uint8Array.of(byte))))
 		assert.instanceOf(error, ClickHouseServerError)
 	}),
 )

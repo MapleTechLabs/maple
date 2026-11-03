@@ -12,6 +12,7 @@ import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The log's meta strip, as the drawer shows it.
 
@@ -30,10 +31,11 @@ const TRIGGERS = {
 	prompt: "copy-prompt",
 } as const
 
-export const triggerIdOf = (model: Model, trigger: keyof typeof TRIGGERS): string => `${model.id}-${TRIGGERS[trigger]}`
+export const triggerIdOf = (model: Model, trigger: keyof typeof TRIGGERS): string =>
+	`${model.id}-${TRIGGERS[trigger]}`
 
 export const triggerIdsOf = (model: Model): ReadonlyArray<string> =>
-	(["json", "link", "page", "prompt"] as const).map((trigger) => triggerIdOf(model, trigger))
+	Arr.map(["json", "link", "page", "prompt"] as const, (trigger) => triggerIdOf(model, trigger))
 
 /** `copyTooltipText`: the tooltip follows the copy status. */
 const copyTooltipText = (status: CopyStatus, label: string, copiedLabel = "Copied"): string =>
@@ -44,7 +46,9 @@ export const tooltipContent = (model: Model, triggerId: string): ReadonlyArray<s
 	if (triggerId === triggerIdOf(model, "link"))
 		return [copyTooltipText(copyStatusOf(model, "meta-link"), "link to log", "Link copied")]
 	if (triggerId === triggerIdOf(model, "prompt"))
-		return [copyTooltipText(copyStatusOf(model, "error-prompt"), "error as an AI prompt", "Prompt copied")]
+		return [
+			copyTooltipText(copyStatusOf(model, "error-prompt"), "error as an AI prompt", "Prompt copied"),
+		]
 	return [copyTooltipText(copyStatusOf(model, "meta-json"), "log JSON")]
 }
 
@@ -76,19 +80,21 @@ export const metaStrip = (
 			),
 		],
 		[
-			hstack(h, { gap: "1.5", className: "shrink-0" },
-				[
-					icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
-					h.span(
-						[h.Class("font-mono"), h.Title(utcTitle(log.timestamp))],
-						[
-							copyable(h, model, "meta-time", log.timestamp, [
-								formatTimestampInTimezone(log.timestamp, { timeZone, withMilliseconds: true, hourCycle }),
-							]),
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "1.5", className: "shrink-0" }, [
+				icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
+				h.span(
+					[h.Class("font-mono"), h.Title(utcTitle(log.timestamp))],
+					[
+						copyable(h, model, "meta-time", log.timestamp, [
+							formatTimestampInTimezone(log.timestamp, {
+								timeZone,
+								withMilliseconds: true,
+								hourCycle,
+							}),
+						]),
+					],
+				),
+			]),
 			...(log.traceId
 				? [
 						h.a(
@@ -119,7 +125,12 @@ export const metaStrip = (
 			h.div(
 				[h.Class("ml-auto flex shrink-0 items-center gap-0.5")],
 				[
-					...(model.logPagePath === null ? [] : logPageControls(h, model, log, model.logPagePath, showOpenFullPage, { trigger, portalFor })),
+					...(model.logPagePath === null
+						? []
+						: logPageControls(h, model, log, model.logPagePath, showOpenFullPage, {
+								trigger,
+								portalFor,
+							})),
 					copyButton(h, {
 						status: copyStatusOf(model, "meta-json"),
 						label: "Log JSON",
@@ -155,7 +166,10 @@ const logPageControls = (
 							className: "text-muted-foreground",
 							slot: "icon-button",
 							href: path,
-							attributes: [h.AriaLabel("Open in full page"), ...trigger(triggerIdOf(model, "page"))],
+							attributes: [
+								h.AriaLabel("Open in full page"),
+								...trigger(triggerIdOf(model, "page")),
+							],
 						},
 						[icon(h, "ExternalLinkIcon")],
 					),

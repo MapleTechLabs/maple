@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { applySectionEdit, SectionEdit } from "./section-edit"
@@ -14,7 +14,7 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const stat = (id: string, target?: { sectionId: string; tabId: string }) => ({
 	id,
@@ -33,9 +33,20 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 	id: "dash_grouped",
 	name: "Grouped",
 	timeRange: { type: "relative", value: "6h" },
-	widgets: [stat("root"), stat("in-a", { sectionId: "s1", tabId: "a" }), stat("in-b", { sectionId: "s1", tabId: "b" })],
+	widgets: [
+		stat("root"),
+		stat("in-a", { sectionId: "s1", tabId: "a" }),
+		stat("in-b", { sectionId: "s1", tabId: "b" }),
+	],
 	sections: [
-		{ id: "s1", title: "Latency", tabs: [{ id: "a", title: "Overview" }, { id: "b", title: "Breakdown" }] },
+		{
+			id: "s1",
+			title: "Latency",
+			tabs: [
+				{ id: "a", title: "Overview" },
+				{ id: "b", title: "Breakdown" },
+			],
+		},
 		{ id: "s2", title: "Errors", tabs: [{ id: "c", title: "Errors" }] },
 	],
 	createdAt: "2026-09-19T12:00:00.000Z",
@@ -46,16 +57,23 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 const ROUTE = { dashboardId: "dash_grouped", search: { mode: "edit" as const } }
 
 const ready = (): Model =>
-	[
-		Message.CompletedReadClock({ nowMs: NOW }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
-	].reduce((model, message) => pageUpdate(model, message).model, init(ROUTE, context).model)
+	Arr.reduce(
+		[
+			Message.CompletedReadClock({ nowMs: NOW }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+		],
+		init(ROUTE, context).model,
+		(model, message) => pageUpdate(model, message).model,
+	)
 
 const nowIso = document.updatedAt
 
 describe("dashboard groups", () => {
 	test("a chevron collapses the group for this viewer only, in the URL", () => {
-		expect(pageUpdate(ready(), Message.ClickedSectionChevron({ sectionId: "s1", collapsed: true })).outMessage).toEqual(
+		expect(
+			pageUpdate(ready(), Message.ClickedSectionChevron({ sectionId: "s1", collapsed: true }))
+				.outMessage,
+		).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/dashboards/dash_grouped?mode=edit&collapsed=s1",
 				isReplace: true,
@@ -79,7 +97,10 @@ describe("dashboard groups", () => {
 	})
 
 	test("a group's own + opens the picker aimed at its tab, and closing it resets the aim", () => {
-		const opened = pageUpdate(ready(), Message.ClickedAddSectionWidget({ sectionId: "s1", tabId: "a" })).model
+		const opened = pageUpdate(
+			ready(),
+			Message.ClickedAddSectionWidget({ sectionId: "s1", tabId: "a" }),
+		).model
 		expect(opened.pickerTarget).toEqual({ sectionId: "s1", tabId: "a" })
 		expect(pageUpdate(opened, Message.ClickedAddWidget()).model.pickerTarget).toBeNull()
 	})
@@ -90,8 +111,11 @@ describe("dashboard groups", () => {
 		const revealed = pageUpdate(model, Message.RevealedWidget({ widgetId: "root" }))
 		expect(names(revealed.commands)).toEqual([FetchWidget.name])
 		expect(revealed.model.widgets.root?.sparkGate ?? null).toBeNull()
-		const key = Object.keys(revealed.model.requests)[0] ?? ""
-		const answered = pageUpdate(revealed.model, Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [] }) }))
+		const key = Rec.keys(revealed.model.requests)[0] ?? ""
+		const answered = pageUpdate(
+			revealed.model,
+			Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [] }) }),
+		)
 		expect(answered.model.requests[key]).toBeDefined()
 	})
 
@@ -117,12 +141,21 @@ describe("dashboard groups", () => {
 			() => "unused",
 		)
 		expect(next.sections?.map((section) => section.id)).toEqual(["s2"])
-		expect(next.widgets.filter((widget) => widget.sectionId === undefined).map((w) => w.layout.y)).toEqual([0, 2, 2])
+		expect(
+			Arr.map(
+				Arr.filter(next.widgets, (widget) => widget.sectionId === undefined),
+				(w) => w.layout.y,
+			),
+		).toEqual([0, 2, 2])
 	})
 
 	test("a new group mints its id, then its tab's", () => {
 		const ids = ["g1", "t1"]
 		const next = applySectionEdit(SectionEdit.AddSection(), document, nowIso, () => ids.shift() ?? "")
-		expect(next.sections?.at(-1)).toEqual({ id: "g1", title: "New group", tabs: [{ id: "t1", title: "New group" }] })
+		expect(next.sections?.at(-1)).toEqual({
+			id: "g1",
+			title: "New group",
+			tabs: [{ id: "t1", title: "New group" }],
+		})
 	})
 })

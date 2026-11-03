@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer, Tracer } from "effect"
+import { ConfigProvider, Effect, Layer, Tracer, Array as Arr, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
@@ -119,7 +119,7 @@ describe("GithubAppClient request span", () => {
 				.pipe(Effect.withTracer(tracer), Effect.exit)
 
 			const searchSpan = requestSpans(spans).find((span) =>
-				String(span.attributes.get("url.path")).includes("/search/code"),
+				Str.includes("/search/code")(String(span.attributes.get("url.path"))),
 			)
 			assert.isDefined(searchSpan)
 			// `url.path` on purpose, never `url.full`: the query carries the caller's
@@ -130,7 +130,10 @@ describe("GithubAppClient request span", () => {
 			}
 			// HttpClient's own `http.client` span records `url.full` with the encoded query; it must stay suppressed.
 			assert.deepStrictEqual(
-				spans.filter((span) => span.name.startsWith("http.client")).map((span) => span.name),
+				Arr.map(
+					Arr.filter(spans, (span) => Str.startsWith("http.client")(span.name)),
+					(span) => span.name,
+				),
 				[],
 			)
 		}).pipe(Effect.provide(layer))

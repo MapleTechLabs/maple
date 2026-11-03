@@ -1,5 +1,5 @@
 import { toOrgRole } from "../../../components/settings/org-membership"
-import { Array, Effect, Option, Result, Schema } from "effect"
+import { Array, Effect, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type {
@@ -89,7 +89,7 @@ const FetchMembers = Command.define("FetchClerkMemberships", {
 				onSuccess: (result) => {
 					const userId = window.Clerk?.user?.id ?? null
 					return {
-						rows: result.data.map((member) => memberRow(member, userId)),
+						rows: Array.map(result.data, (member) => memberRow(member, userId)),
 						total: result.total_count,
 					}
 				},
@@ -107,7 +107,10 @@ const FetchInvitations = Command.define("FetchClerkInvitations", {
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => invitationsPage(organization, page)),
 			Effect.mapBoth({
-				onSuccess: (result) => ({ rows: result.data.map(invitationRow), total: result.total_count }),
+				onSuccess: (result) => ({
+					rows: Array.map(result.data, invitationRow),
+					total: result.total_count,
+				}),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,
@@ -370,7 +373,9 @@ export const hasMore = (data: { readonly rows: ReadonlyArray<unknown>; readonly 
 const inviteRoleOf = (model: Model): OrgRole => toOrgRole(model.inviteRole.value)
 
 const pickedRowAction = (model: Model, menuId: string, value: string): Return => {
-	const memberId = menuId.startsWith("member-actions-") ? menuId.slice("member-actions-".length) : null
+	const memberId = Str.startsWith("member-actions-")(menuId)
+		? Str.slice("member-actions-".length)(menuId)
+		: null
 	if (memberId !== null) {
 		const member = Option.flatMap(AsyncData.getData(model.members), (data) =>
 			Array.findFirst(data.rows, (row) => row.id === memberId),
@@ -384,7 +389,7 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 				),
 		})
 	}
-	const invitationId = menuId.slice("invitation-actions-".length)
+	const invitationId = Str.slice("invitation-actions-".length)(menuId)
 	const invitation = Option.flatMap(AsyncData.getData(model.invitations), (data) =>
 		Array.findFirst(data.rows, (row) => row.id === invitationId),
 	)
@@ -514,7 +519,7 @@ export const update = (model: Model, message: Message): Return =>
 			}
 		},
 		SubmittedInvite: () => {
-			const email = model.inviteEmail.value.trim()
+			const email = Str.trim(model.inviteEmail.value)
 			if (model.isInviting || email.length === 0) return { model }
 			return {
 				model: { ...model, isInviting: true },
@@ -672,7 +677,7 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			}),
 		CompletedResend: ({ id, email, isRevoked, result }) => {
-			const next = { ...model, resending: model.resending.filter((entry) => entry !== id) }
+			const next = { ...model, resending: Array.filter(model.resending, (entry) => entry !== id) }
 			const outMessage = Result.match(result, {
 				onSuccess: () => toast("success", `Invitation resent to ${email}`),
 				onFailure: (error) => toast("error", error),

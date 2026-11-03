@@ -6,6 +6,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { authorLabel } from "./author"
 import { ALL, type Frame, FrameMessage, type WindowSearch } from "./frame"
 import { repositoriesOf } from "./frame-update"
+import { Array as Arr } from "effect"
 
 // `CodeReviewFilters` and `CodeReviewCiFilters`: repository, author or
 // workflow, and the window.
@@ -39,7 +40,7 @@ export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): C
 	const repositories = repositoriesOf(frame, options.reviewedOnly)
 	const repoEntries = [
 		item(ALL, "All repositories"),
-		...repositories.map((repo) => item(repo.id, repo.fullName)),
+		...Arr.map(repositories, (repo) => item(repo.id, repo.fullName)),
 	]
 	const listed =
 		options.selected !== undefined && !options.options.includes(options.selected)
@@ -48,7 +49,7 @@ export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): C
 	const isAuthor = options.kind === "author"
 	const optionEntries = [
 		item(ALL, isAuthor ? "All authors" : "All workflows"),
-		...listed.map((value) => item(value, value)),
+		...Arr.map(listed, (value) => item(value, value)),
 	]
 	const preset =
 		options.search.timePreset ??

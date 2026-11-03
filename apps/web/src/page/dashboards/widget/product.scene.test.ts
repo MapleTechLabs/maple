@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { SaveWidget } from "./command"
@@ -62,7 +62,7 @@ const opened = (): Step =>
 	)
 
 const edit = (change: ProductEdit) => Message.ChangedProduct({ edit: change })
-const names = (step: Step) => step.commands.map(({ name }) => name)
+const names = (step: Step) => Arr.map(step.commands, ({ name }) => name)
 
 describe("list, funnel and paths panels", () => {
 	test("a chart switched to a list on logs writes a list_logs widget with its columns", () => {
@@ -88,7 +88,11 @@ describe("list, funnel and paths panels", () => {
 	})
 
 	test("a column dragged past two centres lands two slots down", () => {
-		const list = run(opened(), Message.ClickedPanelType({ panel: "list" }), edit(ProductEdit.SetListSource({ source: "logs" })))
+		const list = run(
+			opened(),
+			Message.ClickedPanelType({ panel: "list" }),
+			edit(ProductEdit.SetListSource({ source: "logs" })),
+		)
 		// Rows 40 px apart: the first row's centre dragged 85 px down passes the next two.
 		const to = targetIndex([20, 60, 100, 140], 0, 20 + 85)
 		const dragged = run(list, edit(ProductEdit.MovedListColumn({ index: 0, delta: to })))

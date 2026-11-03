@@ -24,6 +24,7 @@ import type { Suggestion } from "./suggestions"
 import { pageSelect } from "./view-select"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The funnel step builder, compact: an ordered list of
 // steps, each an event name, a page path or (first step only) a session dimension.
@@ -52,9 +53,9 @@ const suggestingInput = (
 	suggestions: ReadonlyArray<Suggestion>,
 	inputs: Readonly<{ placeholder: string; ariaLabel: string; empty: string; isMono: boolean }>,
 ): Html => {
-	const names = suggestions.map((suggestion) => suggestion.name)
+	const names = Arr.map(suggestions, (suggestion) => suggestion.name)
 	const current = model.stepCombos[id] ?? Combobox.init(id, "single")
-	const counts = new Map(suggestions.map((suggestion) => [suggestion.name, suggestion.count]))
+	const counts = new Map(Arr.map(suggestions, (suggestion) => [suggestion.name, suggestion.count]))
 	return h.submodel({
 		slotId: `widget-editor-${id}`,
 		model: { ...current, inputValue: value, selected: names.includes(value) ? [value] : [] },
@@ -198,7 +199,7 @@ const valueInputs = (
 					model,
 					stepDimensionSelectId(scope, index),
 					step.dimension,
-					FUNNEL_SESSION_DIMENSIONS.map((dimension) => ({
+					Arr.map(FUNNEL_SESSION_DIMENSIONS, (dimension) => ({
 						value: dimension,
 						label: FUNNEL_SESSION_DIMENSION_LABEL[dimension],
 					})),
@@ -314,7 +315,7 @@ const stepRow = (h: H, model: Model, options: StepBuilderOptions, step: StepDraf
 				model,
 				stepKindSelectId(options.scope, index),
 				step.kind,
-				kinds.map((kind) => ({ value: kind, label: KIND_LABEL[kind] })),
+				Arr.map(kinds, (kind) => ({ value: kind, label: KIND_LABEL[kind] })),
 				{
 					size: "sm",
 					className: "w-24 min-w-0 shrink-0",
@@ -339,7 +340,7 @@ export const stepBuilder = (h: H, model: Model, options: StepBuilderOptions): Ht
 	const isSingle = options.maxSteps <= 1
 	const isFull = options.steps.length >= options.maxSteps
 	return vstack(h, { gap: "1.5" }, [
-		...options.steps.map((step, index) => stepRow(h, model, options, step, index)),
+		...Arr.map(options.steps, (step, index) => stepRow(h, model, options, step, index)),
 		...(isSingle
 			? []
 			: [

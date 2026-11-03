@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -76,7 +76,7 @@ const seedEmailDestination = (db: TestDb, id: string, org: OrgId, members: Array
 	Effect.gen(function* () {
 		const secret = JSON.stringify({
 			type: "email",
-			members: members.map((member) => ({
+			members: Arr.map(members, (member) => ({
 				userId: member,
 				email: `${member}@example.com`,
 				name: null,

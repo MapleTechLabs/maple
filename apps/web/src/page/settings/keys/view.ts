@@ -27,6 +27,7 @@ import { apiReference, oauthPointer } from "./view-reference"
 import { devicesTable, keysEmpty, keysTable } from "./view-table"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `ApiKeysSection`.
 
@@ -107,7 +108,7 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 			ariaLabel: "Key type",
 			value: model.typeFilter,
 			onChange: (type) => Message.ClickedTypeFilter({ type }),
-			options: (["all", "api", "mcp"] as const).map((type) => ({
+			options: Arr.map(["all", "api", "mcp"] as const, (type) => ({
 				value: type,
 				// Counts only once the keys are in: a loading "· 0" reads as an empty org.
 				label:
@@ -122,7 +123,7 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 			view: SelectView.view,
 			toParentMessage: (message) => Message.GotStatusSelectMessage({ message }),
 			viewInputs: {
-				entries: STATUS_VALUES.map((status): SelectView.SelectEntry => ({
+				entries: Arr.map(STATUS_VALUES, (status): SelectView.SelectEntry => ({
 					_tag: "Item",
 					item: { value: status, label: STATUS_LABELS[status] },
 				})),
@@ -137,7 +138,7 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 								option.label,
 								" · ",
 								String(
-									new Map<string, number>(Object.entries(counts.statusCounts)).get(
+									new Map<string, number>(Rec.toEntries(counts.statusCounts)).get(
 										option.value,
 									) ?? 0,
 								),

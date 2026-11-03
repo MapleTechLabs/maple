@@ -1,4 +1,5 @@
 import type { IntegrationsSearch } from "../../route/search"
+import { String as Str } from "effect"
 
 // The chat connector's OAuth return (`?chat=` / `?chat_identity=`): one toast, then the params go.
 
@@ -27,7 +28,7 @@ const CHAT_ERROR_COPY = {
 const MAX_UNTRUSTED_LABEL = 64
 
 const clampLabel = (value: string): string =>
-	value.length > MAX_UNTRUSTED_LABEL ? `${value.slice(0, MAX_UNTRUSTED_LABEL - 1)}…` : value
+	value.length > MAX_UNTRUSTED_LABEL ? `${Str.slice(0, MAX_UNTRUSTED_LABEL - 1)(value)}…` : value
 
 export interface ChatCallback {
 	readonly title: string
@@ -58,7 +59,8 @@ export const chatCallbackOf = (search: Search): ChatCallback | null => {
 	const copy = CHAT_ERROR_COPY[kind]
 	const reason = search.chat_reason
 	const failed =
-		(reason !== undefined && reason !== "" ? copy.reasons.get(reason.trim()) : undefined) ?? copy.generic
+		(reason !== undefined && reason !== "" ? copy.reasons.get(Str.trim(reason)) : undefined) ??
+		copy.generic
 	return {
 		title: ok ? connected : failed,
 		type: ok ? "success" : "error",

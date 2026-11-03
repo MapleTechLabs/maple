@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { FindErrorsOutput } from "@maple/domain/mcp-outputs"
 import {
 	findErrors,
@@ -22,7 +22,7 @@ const WINDOW = P.timeWindow({ defaultHours: 6 })
  * error-rate chart read as "find_errors misses errors"; the totals say what is and is not here.
  */
 const totalsLine = (output: typeof FindErrorsOutput.Type): string => {
-	const shownCount = output.errors.reduce((sum, e) => sum + e.count, 0)
+	const shownCount = Arr.reduce(output.errors, 0, (sum, e) => sum + e.count)
 	const totals = output.totals
 	if (totals === undefined) return `Total: ${output.errors.length} error types`
 	const lines = [
@@ -35,7 +35,7 @@ const totalsLine = (output: typeof FindErrorsOutput.Type): string => {
 	lines.push(
 		"Source: spans with status Error. 4xx client spans without an exception are not counted as errors here, though query_data's error_rate counts them.",
 	)
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 export function registerFindErrorsTool(server: McpToolRegistrar) {
@@ -98,7 +98,8 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 					? yield* emptyResultHints(
 							{
 								service: params.service,
-								environments: params.environment === undefined ? undefined : [params.environment],
+								environments:
+									params.environment === undefined ? undefined : [params.environment],
 							},
 							{ startTime: st, endTime: et },
 						)
@@ -106,9 +107,10 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 			// "Unknown Error" hid what these were (22k bot 404s on one service); name them by span.
 			// Cosmetic, so a failed lookup keeps the stored label rather than failing the call.
 			const labels = yield* labelExceptionlessFingerprints({
-				fingerprintHashes: errors
-					.filter((e) => isUnlabelledError(e.label))
-					.map((e) => e.fingerprintHash),
+				fingerprintHashes: Arr.map(
+					Arr.filter(errors, (e) => isUnlabelledError(e.label)),
+					(e) => e.fingerprintHash,
+				),
 				timeRange: input.timeRange,
 			}).pipe(
 				provideWarehouseExecutorFromTenant(tenant),
@@ -119,7 +121,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 			return {
 				timeRange: { start: st, end: et },
 				identity,
-				errors: errors.map((error) => ({
+				errors: Arr.map(errors, (error) => ({
 					fingerprintHash: error.fingerprintHash,
 					label: labels.get(error.fingerprintHash) ?? error.label,
 					sampleMessage: error.sampleMessage,
@@ -162,7 +164,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 										"Affected Services",
 										"Last Seen",
 									],
-									output.errors.map((error) => [
+									Arr.map(output.errors, (error) => [
 										truncate(error.label, 60),
 										truncate(error.sampleMessage, 80),
 										error.fingerprintHash,
@@ -174,15 +176,13 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 								doc.text(totalsLine(output)),
 							],
 				next: [
-					...output.errors
-						.slice(0, 3)
-						.map((error) =>
-							doc.next(
-								"error_detail",
-								{ fingerprint: error.fingerprintHash },
-								`sample traces and logs for "${error.label}"`,
-							),
+					...Arr.map(output.errors.slice(0, 3), (error) =>
+						doc.next(
+							"error_detail",
+							{ fingerprint: error.fingerprintHash },
+							`sample traces and logs for "${error.label}"`,
 						),
+					),
 					...(output.errors.length === 0
 						? []
 						: [

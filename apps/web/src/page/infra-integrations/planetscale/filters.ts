@@ -1,4 +1,5 @@
 import type { BranchCandidate } from "../../../components/infra/planetscale/branch-selection"
+import { Array as Arr, String as Str } from "effect"
 
 // PlanetScale list filters. The search fields themselves are in `route/search.ts`.
 
@@ -57,8 +58,8 @@ export interface ActiveFilterChip {
 }
 
 export const activeFilterChips = (filters: PlanetScaleFilters): ReadonlyArray<ActiveFilterChip> => [
-	...LIST_KEYS.flatMap((key) =>
-		(filters[key] ?? []).map((value) => ({ key, value, label: `${FILTER_CHIP_LABEL[key]}:${value}` })),
+	...Arr.flatMap(LIST_KEYS, (key) =>
+		Arr.map(filters[key] ?? [], (value) => ({ key, value, label: `${FILTER_CHIP_LABEL[key]}:${value}` })),
 	),
 	...(filters.branchContains !== undefined && filters.branchContains !== ""
 		? [
@@ -79,7 +80,7 @@ export const toggleFilterValue = (
 	value: string,
 ): ReadonlyArray<string> | undefined => {
 	const values = current ?? []
-	const next = values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]
+	const next = values.includes(value) ? Arr.filter(values, (entry) => entry !== value) : [...values, value]
 	return next.length === 0 ? undefined : next
 }
 
@@ -113,12 +114,13 @@ export const applyBranchFilters = (
 	filters: PlanetScaleFilters,
 ): ReadonlyArray<BranchCandidate> => {
 	const contains = filters.branchContains?.toLowerCase() ?? ""
-	return candidates.filter(
+	return Arr.filter(
+		candidates,
 		(candidate) =>
 			(filters.branches === undefined || filters.branches.includes(candidate.name)) &&
 			(filters.branchStates === undefined || filters.branchStates.includes(branchStateOf(candidate))) &&
 			(filters.branchRoles === undefined || filters.branchRoles.includes(branchRoleOf(candidate))) &&
-			(contains === "" || candidate.name.toLowerCase().includes(contains)),
+			(contains === "" || Str.includes(contains)(Str.toLowerCase(candidate.name))),
 	)
 }
 

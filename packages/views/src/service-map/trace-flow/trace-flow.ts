@@ -1,5 +1,5 @@
 import type { SpanNode } from "@maple/ui/lib/types"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import * as Canvas from "../xyflow/canvas"
@@ -42,16 +42,17 @@ export const buildFlowGraph = (input: TraceInput): FlowGraph => {
 		return { input, nodes: [], edges: [], nodeCount: nodes.length, categories: [] }
 	const layouted = getLayoutedElements(nodes, edges)
 	const present = new Set(
-		layouted.nodes
-			.filter((node) => !node.data.span.isMissing)
-			.map((node) => describeSpan(node.data.span).category.id),
+		Arr.map(
+			Arr.filter(layouted.nodes, (node) => !node.data.span.isMissing),
+			(node) => describeSpan(node.data.span).category.id,
+		),
 	)
 	return {
 		input,
 		nodes: layouted.nodes,
 		edges: layouted.edges,
 		nodeCount: nodes.length,
-		categories: SPAN_CATEGORIES.filter((category) => present.has(category.id)),
+		categories: Arr.filter(SPAN_CATEGORIES, (category) => present.has(category.id)),
 	}
 }
 
@@ -94,7 +95,7 @@ export const isNodeSelected = (node: FlowNode, selectedSpanId: Option.Option<str
 	Option.match(selectedSpanId, {
 		onNone: () => false,
 		onSome: (spanId) =>
-			node.id === spanId || node.data.combinedSpans.some((span) => span.spanId === spanId),
+			node.id === spanId || Arr.some(node.data.combinedSpans, (span) => span.spanId === spanId),
 	})
 
 /** The Fit view control frames every node, with no legibility floor. */
@@ -102,7 +103,7 @@ export const FIT_ALL: Canvas.FitRequest = { padding: 0.2, minZoom: 0.1, maxZoom:
 
 /** The first real root: the node no edge points at, skipping missing-span placeholders. */
 const rootNodeId = (graph: FlowGraph): string | undefined => {
-	const targets = new Set(graph.edges.map((edge) => edge.target))
+	const targets = new Set(Arr.map(graph.edges, (edge) => edge.target))
 	return graph.nodes.find((node) => !targets.has(node.id) && node.data.span.isMissing !== true)?.id
 }
 

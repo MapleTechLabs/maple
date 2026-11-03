@@ -30,6 +30,7 @@ import {
 	renderTable,
 	timestampMs,
 } from "./output"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 const right = "right" as const
 
@@ -43,9 +44,10 @@ const logColumns: ReadonlyArray<Column<LogEntry>> = [
 const attributeColumn: Column<LogEntry> = {
 	header: "ATTRIBUTES",
 	cell: (l) =>
-		Object.entries(l.attributes ?? {})
-			.map(([k, v]) => `${k}=${v}`)
-			.join(" "),
+		Arr.join(
+			Arr.map(Rec.toEntries(l.attributes ?? {}), ([k, v]) => `${k}=${v}`),
+			" ",
+		),
 }
 
 const spanColumns: ReadonlyArray<Column<SpanResult>> = [
@@ -144,7 +146,7 @@ interface TreeRow {
 const flattenTree = (nodes: ReadonlyArray<SpanNode>): ReadonlyArray<TreeRow> => {
 	const rows: Array<TreeRow> = []
 	const walk = (list: ReadonlyArray<SpanNode>, prefix: string, root: boolean) => {
-		list.forEach((span, i) => {
+		Arr.forEach(list, (span, i) => {
 			const last = i === list.length - 1
 			const branch = root ? "" : last ? "└─ " : "├─ "
 			rows.push({ label: `${prefix}${branch}${span.spanName}`, span })
@@ -159,7 +161,10 @@ export const traceView: View<InspectTraceOutput & { readonly url?: string }> = {
 	isEmpty: (d) => d.spans.length === 0,
 	table: (d) => {
 		const rows = flattenTree(d.spans)
-		const starts = rows.map((r) => timestampMs(r.span.startTime)).filter(Number.isFinite)
+		const starts = Arr.filter(
+			Arr.map(rows, (r) => timestampMs(r.span.startTime)),
+			Number.isFinite,
+		)
 		const traceStartMs = starts.length === 0 ? Number.NaN : Math.min(...starts)
 		// Offset from the earliest span, so gaps and overlaps read straight off the column.
 		const offset = (r: TreeRow): string => {
@@ -201,7 +206,7 @@ export const traceView: View<InspectTraceOutput & { readonly url?: string }> = {
 				title: "LOGS",
 				body: renderTable(
 					logColumns,
-					d.logs.map((l) => ({ ...l, traceId: d.traceId })),
+					Arr.map(d.logs, (l) => ({ ...l, traceId: d.traceId })),
 				),
 			})
 		}
@@ -220,7 +225,10 @@ export const diagnoseView: View<ServiceHealthOutput> = {
 					["window", `${d.timeRange.startTime} to ${d.timeRange.endTime} UTC`],
 					["throughput", formatCount(h.throughput)],
 					["errors", `${formatCount(h.errorCount)} (${formatPercent(h.errorRate)})`],
-					["p50 / p95 / p99", [h.p50Ms, h.p95Ms, h.p99Ms].map(formatDuration).join(" / ")],
+					[
+						"p50 / p95 / p99",
+						Arr.join(Arr.map([h.p50Ms, h.p95Ms, h.p99Ms], formatDuration), " / "),
+					],
 					["apdex", h.apdex.toFixed(3)],
 				]),
 			},
@@ -265,7 +273,7 @@ export const logsView = (empty: string): View<SearchLogsOutput & { readonly url?
 	table: (d) => [
 		{
 			body: renderTable(
-				d.logs.some((l) => l.attributes !== undefined)
+				Arr.some(d.logs, (l) => l.attributes !== undefined)
 					? [...logColumns, attributeColumn]
 					: logColumns,
 				d.logs,
@@ -280,9 +288,9 @@ export const logsView = (empty: string): View<SearchLogsOutput & { readonly url?
 })
 
 const topKeys = (counts: Readonly<Record<string, number>>, max: number): string => {
-	const entries = Object.entries(counts).sort((a, b) => b[1] - a[1])
-	const shown = entries.slice(0, max).map(([k]) => k)
-	return entries.length > max ? `${shown.join(", ")} +${entries.length - max}` : shown.join(", ")
+	const entries = Rec.toEntries(counts).sort((a, b) => b[1] - a[1])
+	const shown = Arr.map(entries.slice(0, max), ([k]) => k)
+	return entries.length > max ? `${Arr.join(shown, ", ")} +${entries.length - max}` : Arr.join(shown, ", ")
 }
 
 export const logPatternsView = (empty: string): View<MineLogPatternsOutput> => ({
@@ -328,7 +336,7 @@ export const topOpsView = (empty: string): View<ReadonlyArray<TopOperationRow>> 
 				[
 					{ header: "OPERATION", cell: (r) => r.name, maxWidth: 80 },
 					{
-						header: (rows[0]?.metric ?? "value").toUpperCase().replace(/_/g, " "),
+						header: Str.replace(/_/g, " ")(Str.toUpperCase(rows[0]?.metric ?? "value")),
 						cell: (r) => formatMetricValue(r.value, r.unit),
 						align: right,
 					},
@@ -362,7 +370,7 @@ export const errorDetailView = (empty: string): View<ErrorDetailOutput> => ({
 					{ header: "TIME", cell: (t) => formatTimestamp(t.startTime) },
 					{ header: "ROOT SPAN", cell: (t) => t.rootSpanName, maxWidth: 50 },
 					{ header: "DURATION", cell: (t) => formatDuration(t.durationMs), align: right },
-					{ header: "SERVICES", cell: (t) => t.services.join(", "), maxWidth: 50 },
+					{ header: "SERVICES", cell: (t) => Arr.join(t.services, ", "), maxWidth: 50 },
 					{ header: "ERROR MESSAGE", cell: (t) => t.errorMessage, maxWidth: 60 },
 				],
 				d.traces,

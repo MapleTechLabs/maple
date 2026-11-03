@@ -131,7 +131,7 @@ const parseScopeColumn = (raw: string | null): ReadonlyArray<string> =>
 	raw == null || raw === "" ? [] : Option.getOrElse(decodeScopeColumn(raw), () => [])
 
 const nonEmpty = (values: ReadonlyArray<string>): ReadonlyArray<string> | undefined => {
-	const kept = values.filter((value) => value !== "")
+	const kept = Arr.filter(values, (value) => value !== "")
 	return kept.length > 0 ? kept : undefined
 }
 
@@ -196,17 +196,15 @@ function groupServicesByEnvironment(
 		else byEnvironment.set(service.environment, [service])
 	}
 
-	return [...byEnvironment.entries()]
-		.map(([environment, groupServices]) => {
-			const requests = currentTotals.get(environment) ?? 0
-			return {
-				environment,
-				requests,
-				requestsDelta: computeDelta(requests, previousTotals.get(environment) ?? 0),
-				services: groupServices,
-			}
-		})
-		.sort((a, b) => b.requests - a.requests)
+	return Arr.map([...byEnvironment.entries()], ([environment, groupServices]) => {
+		const requests = currentTotals.get(environment) ?? 0
+		return {
+			environment,
+			requests,
+			requestsDelta: computeDelta(requests, previousTotals.get(environment) ?? 0),
+			services: groupServices,
+		}
+	}).sort((a, b) => b.requests - a.requests)
 }
 
 /**
@@ -243,14 +241,12 @@ function buildBreakdown(
 		prevTotals.set(label, (prevTotals.get(label) ?? 0) + (row.estimatedSpanCount || 0))
 	}
 
-	return [...totals.entries()]
-		.map(([label, { requests, errors }]) => ({
-			label,
-			requests,
-			errorRate: requests > 0 ? (errors / requests) * 100 : 0,
-			requestsDelta: computeDelta(requests, prevTotals.get(label) ?? 0),
-		}))
-		.sort((a, b) => b.requests - a.requests)
+	return Arr.map([...totals.entries()], ([label, { requests, errors }]) => ({
+		label,
+		requests,
+		errorRate: requests > 0 ? (errors / requests) * 100 : 0,
+		requestsDelta: computeDelta(requests, prevTotals.get(label) ?? 0),
+	})).sort((a, b) => b.requests - a.requests)
 }
 
 /**
@@ -262,19 +258,17 @@ function buildBreakdownFromRows(
 	current: ReadonlyArray<TracesBreakdownRow>,
 	previous: ReadonlyArray<TracesBreakdownRow>,
 ): Array<DigestBreakdownRow> {
-	const previousByName = new Map(previous.map((row) => [row.name, row.count || 0] as const))
-	return current
-		.map((row) => {
-			const label = row.name
-			const requests = row.count || 0
-			return {
-				label,
-				requests,
-				errorRate: (row.errorRate || 0) * 100,
-				requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
-			}
-		})
-		.sort((a, b) => b.requests - a.requests)
+	const previousByName = new Map(Arr.map(previous, (row) => [row.name, row.count || 0] as const))
+	return Arr.map(current, (row) => {
+		const label = row.name
+		const requests = row.count || 0
+		return {
+			label,
+			requests,
+			errorRate: (row.errorRate || 0) * 100,
+			requestsDelta: computeDelta(requests, previousByName.get(label) ?? 0),
+		}
+	}).sort((a, b) => b.requests - a.requests)
 }
 
 export class DigestService extends Context.Service<DigestService>()("@maple/backend/services/DigestService", {
@@ -1294,9 +1288,10 @@ function hasDigestContent(props: WeeklyDigestProps): boolean {
 		props.ingestion.traces > 0 ||
 		props.ingestion.metrics > 0 ||
 		props.ingestion.totalBytes > 0 ||
-		props.services.some(
+		Arr.some(
+			props.services,
 			(service) => service.requests > 0 || service.errorRate > 0 || service.p95Ms > 0,
 		) ||
-		props.topErrors.some((error) => error.count > 0)
+		Arr.some(props.topErrors, (error) => error.count > 0)
 	)
 }

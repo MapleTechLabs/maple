@@ -1,6 +1,6 @@
 import { DashboardDocument, DashboardVersionChangeKind } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 
@@ -97,8 +97,8 @@ export const initHistory = (): HistoryState => ({
 
 /** `actorInitials`: the first two alphanumerics of the opaque user id. */
 export const actorInitials = (userId: string): string => {
-	const upper = userId.trim().toUpperCase()
+	const upper = Str.toUpperCase(Str.trim(userId))
 	if (upper === "") return "?"
-	const chars = upper.replace(/[^A-Z0-9]/g, "")
-	return chars.slice(0, 2) || upper.slice(0, 2)
+	const chars = Str.replace(/[^A-Z0-9]/g, "")(upper)
+	return Str.slice(0, 2)(chars) || Str.slice(0, 2)(upper)
 }

@@ -1,4 +1,4 @@
-import { Tracer } from "effect"
+import { Tracer, Array as Arr } from "effect"
 
 /**
  * A tracer that keeps every span it opens, so a test can assert on span names,
@@ -27,4 +27,4 @@ export const makeRecordingTracer = () => {
 
 /** All recorded spans with the given name, in open order. */
 export const spansNamed = (spans: ReadonlyArray<Tracer.NativeSpan>, name: string) =>
-	spans.filter((span) => span.name === name)
+	Arr.filter(spans, (span) => span.name === name)

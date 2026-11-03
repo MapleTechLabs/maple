@@ -1,6 +1,6 @@
 import type { MetricsQueryDraft } from "@maple/query-engine/query-builder"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "@maple/views/charts/area-chart"
@@ -47,7 +47,11 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 	AsyncData.matchData(model.timeseries.data, {
 		onEmpty: () => chartSkeleton(h, "area"),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Couldn't load metric data", onRetry: Message.ClickedRetryChart() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load metric data",
+				onRetry: Message.ClickedRetryChart(),
+			}),
 		onData: (rows) =>
 			rows.length === 0
 				? emptyMessage(h, { className: hstackClass({ justify: "center", className: "h-full" }) }, [
@@ -78,8 +82,11 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 const isCapped = (model: Model, draft: MetricsQueryDraft): boolean =>
 	draft.groupBy.length > 0 &&
 	AsyncData.isSuccess(model.timeseries.data) &&
-	new Set(model.timeseries.data.data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket")))
-		.size >= GROUP_BY_SERIES_LIMIT
+	new Set(
+		Arr.flatMap(model.timeseries.data.data, (row) =>
+			Arr.filter(Rec.keys(row), (key) => key !== "bucket"),
+		),
+	).size >= GROUP_BY_SERIES_LIMIT
 
 /** `MetricChart` in its `ChartCard`. */
 export const metricChart = (
@@ -96,7 +103,13 @@ export const metricChart = (
 			title: h.span([h.Class("font-mono"), h.Title(label)], [label]),
 			action:
 				capped || unit !== ""
-					? hstack(h, { gap: "3", as: "span", className: typographyClass({ size: "xs", tone: "muted" }) },
+					? hstack(
+							h,
+							{
+								gap: "3",
+								as: "span",
+								className: typographyClass({ size: "xs", tone: "muted" }),
+							},
 							[
 								...(capped ? [h.span([], [`Top ${GROUP_BY_SERIES_LIMIT} series`])] : []),
 								...(unit === "" ? [] : [h.span([], ["unit: ", unit])]),
@@ -116,12 +129,11 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, { failure, title: "Couldn't load breakdown", variant: "inline" }),
 		onData: (rows) => {
-			if (rows.length === 0)
-				return emptyMessage(h, {}, ["No values for this attribute in this window"])
-			const max = Math.max(...rows.map((row) => row.value), 1)
+			if (rows.length === 0) return emptyMessage(h, {}, ["No values for this attribute in this window"])
+			const max = Math.max(...Arr.map(rows, (row) => row.value), 1)
 			return h.div(
 				[h.Class("space-y-1")],
-				rows.map((row) =>
+				Arr.map(rows, (row) =>
 					pressable(
 						h,
 						{
@@ -157,7 +169,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 const attributeKeyNames = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.attributeKeys.data), {
 		onNone: () => [],
-		onSome: (rows) => rows.map((row) => row.attributeKey),
+		onSome: (rows) => Arr.map(rows, (row) => row.attributeKey),
 	})
 
 /** `MetricBreakdown`: top values of one attribute; each bar narrows the where clause. */
@@ -196,12 +208,12 @@ const attributesList = (h: H, model: Model): Html =>
 			}),
 		onData: (rows) =>
 			rows.length === 0
-				? typography(h, { size: "xs", tone: "muted", as: "p" },
-						["This metric has no datapoint attributes."],
-					)
+				? typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"This metric has no datapoint attributes.",
+					])
 				: h.ul(
 						[h.Class("space-y-1")],
-						rows.map((row) =>
+						Arr.map(rows, (row) =>
 							h.li(
 								[
 									h.Key(row.attributeKey),
@@ -225,21 +237,19 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 		h.div(
 			[h.Class("space-y-2")],
 			[
-				hstack(h, { gap: "2", wrap: true },
-					[
-						metricTypeBadge(h, summary.metricType),
-						...(summary.unit === ""
-							? []
-							: [badge(h, { variant: "outline", size: "xs", mono: true }, [summary.unit])]),
-						...(summary.metricType === "sum"
-							? [
-									badge(h, { variant: "outline", size: "xs" }, [
-										summary.isMonotonic ? "monotonic" : "non-monotonic",
-									]),
-								]
-							: []),
-					],
-				),
+				hstack(h, { gap: "2", wrap: true }, [
+					metricTypeBadge(h, summary.metricType),
+					...(summary.unit === ""
+						? []
+						: [badge(h, { variant: "outline", size: "xs", mono: true }, [summary.unit])]),
+					...(summary.metricType === "sum"
+						? [
+								badge(h, { variant: "outline", size: "xs" }, [
+									summary.isMonotonic ? "monotonic" : "non-monotonic",
+								]),
+							]
+						: []),
+				]),
 				...(summary.description === ""
 					? []
 					: [typography(h, { size: "xs", tone: "muted", as: "p" }, [summary.description])]),
@@ -260,11 +270,14 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 					h.div(
 						[h.Class("space-y-1.5")],
 						[
-							typography(h, { size: "xs", tone: "muted", as: "p" },
-								["Emitted by ", countLabel(summary.services.length, "service")],
-							),
-							hstack(h, { gap: "1.5", align: "stretch", wrap: true },
-								summary.services.map((service) =>
+							typography(h, { size: "xs", tone: "muted", as: "p" }, [
+								"Emitted by ",
+								countLabel(summary.services.length, "service"),
+							]),
+							hstack(
+								h,
+								{ gap: "1.5", align: "stretch", wrap: true },
+								Arr.map(summary.services, (service) =>
 									badge(
 										h,
 										{

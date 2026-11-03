@@ -1,4 +1,5 @@
 import type { AttrMap, RuleRecord } from "./engine"
+import { String as Str } from "effect"
 
 // Warehouse rows to rule records, for previews over recent data. Stored attributes are
 // strings, so a preview cannot tell `3` from `"3"`; conditions compare strings anyway.
@@ -46,7 +47,7 @@ export const spanSampleToRecord = (row: SpanSample): RuleRecord => ({
 	attributes: row.spanAttributes,
 	name: row.spanName,
 	spanKind: spanKindName(row.spanKind),
-	spanStatus: row.statusCode.toLowerCase(),
+	spanStatus: Str.toLowerCase(row.statusCode),
 	statusMessage: row.statusMessage,
 	traceId: row.traceId,
 })

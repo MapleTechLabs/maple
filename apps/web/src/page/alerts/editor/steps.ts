@@ -6,6 +6,7 @@ import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { applyDefaultDestination, planPreviews } from "./plan"
+import { String as Str } from "effect"
 
 export type Return = PageReturn<Model, Message>
 
@@ -37,7 +38,7 @@ export const initialize = (model: Model, context: PageContext): Return => {
 		mountedForm: form,
 		notices: draft.notices,
 		isDefaultDestinationApplied: draft.editingRule !== null,
-		isNotesOpen: form.notes.trim().length > 0,
+		isNotesOpen: Str.trim(form.notes).length > 0,
 		isMessageTemplateOpen: form.notificationTitle.length > 0 || form.notificationBody.length > 0,
 	}
 	const loaded = planned(applyDefaultDestination(ready), context)

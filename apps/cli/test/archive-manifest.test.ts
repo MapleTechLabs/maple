@@ -17,6 +17,7 @@ import {
 import { CHDB_VERSION, MAPLE_VERSION } from "@maple/local-server/version"
 import { SCHEMA_FINGERPRINT } from "@maple/local-server/schema-identity"
 import { randomUUID } from "node:crypto"
+import { String as Str } from "effect"
 
 const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-archive-manifest-test-"))
@@ -58,7 +59,7 @@ const validGenerationManifest = (overrides: Record<string, unknown> = {}) => ({
 			rowCount: 100,
 			minEventTimeUnixNano: `${BigInt(Date.parse("2026-06-01T00:00:00.000Z")) * 1_000_000n}`,
 			maxEventTimeUnixNano: `${BigInt(Date.parse("2026-06-01T00:30:00.000Z")) * 1_000_000n}`,
-			sha256: "a".repeat(64),
+			sha256: Str.repeat(64)("a"),
 			bytes: 4096,
 			columns: ["TimestampTime", "ServiceName"],
 			complexDigest: "123456789",
@@ -214,7 +215,7 @@ describe("archive path model", () => {
 	it("places generations under signal/range/generations", async () => {
 		await withArchive(async (archiveDir) => {
 			const gen = generationsRoot(archiveDir, "traces", "2026-06-01")
-			ok(gen.endsWith(join("traces", "2026-06-01", "generations")))
+			ok(Str.endsWith(join("traces", "2026-06-01", "generations"))(gen))
 		})
 	})
 
@@ -229,9 +230,9 @@ describe("archive path model", () => {
 	it("catalog and active pointer live under the signal/range roots", async () => {
 		await withArchive(async (archiveDir) => {
 			const cat = catalogPath(archiveDir, "traces")
-			ok(cat.endsWith(join("traces", "catalog.jsonl")))
+			ok(Str.endsWith(join("traces", "catalog.jsonl"))(cat))
 			const active = activePointerPath(archiveDir, "traces", "2026-06-01")
-			ok(active.endsWith(join("traces", "2026-06-01", "active.json")))
+			ok(Str.endsWith(join("traces", "2026-06-01", "active.json"))(active))
 		})
 	})
 })
@@ -241,12 +242,12 @@ describe("archive manifest tuningConfig identity", () => {
 		const generationId = randomUUID()
 		const manifest = validGenerationManifest({
 			generationId,
-			tuningConfig: { formatVersion: 1, configName: "calib-2026.json", sha256: "b".repeat(64) },
+			tuningConfig: { formatVersion: 1, configName: "calib-2026.json", sha256: Str.repeat(64)("b") },
 		})
 		const parsed = parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId)
 		ok(parsed.tuningConfig !== null)
 		strictEqual(parsed.tuningConfig!.configName, "calib-2026.json")
-		strictEqual(parsed.tuningConfig!.sha256, "b".repeat(64))
+		strictEqual(parsed.tuningConfig!.sha256, Str.repeat(64)("b"))
 		strictEqual(parsed.tuningConfig!.formatVersion, 1)
 	})
 
@@ -279,7 +280,7 @@ describe("archive manifest tuningConfig identity", () => {
 		const generationId = randomUUID()
 		const manifest = validGenerationManifest({
 			generationId,
-			tuningConfig: { formatVersion: 1, configName: "c.json", sha256: "b".repeat(64), rogue: "x" },
+			tuningConfig: { formatVersion: 1, configName: "c.json", sha256: Str.repeat(64)("b"), rogue: "x" },
 		})
 		throws(
 			() => parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId),
@@ -291,7 +292,7 @@ describe("archive manifest tuningConfig identity", () => {
 		const generationId = randomUUID()
 		const manifest = validGenerationManifest({
 			generationId,
-			tuningConfig: { formatVersion: 1, configName: "../evil", sha256: "b".repeat(64) },
+			tuningConfig: { formatVersion: 1, configName: "../evil", sha256: Str.repeat(64)("b") },
 		})
 		throws(
 			() => parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId),

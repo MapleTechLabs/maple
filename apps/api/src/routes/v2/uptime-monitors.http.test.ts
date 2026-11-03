@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -382,8 +382,8 @@ describe("v2 uptime monitors", () => {
 				await harness.request("PATCH", path, reader, { name: "Renamed" }),
 				await harness.request("DELETE", path, reader),
 			]
-			expect(denied.map((response) => [response.status, response.body.error.code])).toEqual(
-				denied.map(() => [403, "insufficient_scope"]),
+			expect(Arr.map(denied, (response) => [response.status, response.body.error.code])).toEqual(
+				Arr.map(denied, () => [403, "insufficient_scope"]),
 			)
 
 			const { secret: writer } = await harness.bootstrapKey(undefined, ["uptime_monitors:write"])

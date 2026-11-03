@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingAccountPersistenceError, BillingCustomerId, OrgId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { CancellationReviewQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
@@ -85,7 +85,7 @@ const recordingRevocation = (fail = false) => {
 		revokeMembership: (orgId, userId) => run(`revoke:${orgId}:${userId}`),
 		revokeUser: (userId) => run(`revokeUser:${userId}`),
 		demoteMembership: (orgId, userId, roles) =>
-			run(`demote:${orgId}:${userId}:${roles.join(",")}`).pipe(
+			run(`demote:${orgId}:${userId}:${Arr.join(roles, ",")}`).pipe(
 				Effect.map(() => ({ apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked: 0 })),
 			),
 		invalidateMembership: (userId) =>
@@ -109,7 +109,9 @@ const recordingCancellationQueue = (fail = false) => {
 				sendBatch: (messages) =>
 					fail
 						? Effect.fail(new QueueSendError({ message: "queue unavailable", cause: null }))
-						: Effect.sync(() => void queued.push(...messages.map((message) => message.body))),
+						: Effect.sync(
+								() => void queued.push(...Arr.map(messages, (message) => message.body)),
+							),
 			}),
 		),
 	)
@@ -306,7 +308,7 @@ describe("ClerkWebhookRouter", () => {
 					const tamperedResponse = yield* post(
 						configured.handler,
 						"/webhooks/clerk",
-						CLERK_USER_CREATED.replace("user_2abc", "user_evil"),
+						Str.replace("user_2abc", "user_evil")(CLERK_USER_CREATED),
 						tampered,
 					)
 					assert.strictEqual(tamperedResponse.status, 401)
@@ -495,7 +497,7 @@ describe("AutumnWebhookRouter", () => {
 				assert.strictEqual(response.status, 200)
 				assert.deepStrictEqual(
 					// What the consumer decodes off the queue.
-					reviews.queued.map((body) => {
+					Arr.map(reviews.queued, (body) => {
 						const { receivedAt: _receivedAt, ...cancellation } = decodeQueuedJob(body)
 						return cancellation
 					}),
@@ -514,7 +516,7 @@ describe("AutumnWebhookRouter", () => {
 				)
 				// `updated` is still a plan change to the funnel.
 				assert.deepStrictEqual(
-					events.tracked.map((event) => event.name),
+					Arr.map(events.tracked, (event) => event.name),
 					["plan_changed"],
 				)
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))
@@ -642,7 +644,7 @@ describe("AutumnWebhookRouter", () => {
 				assert.strictEqual(response.status, 503)
 				// The funnel does not wait on the review.
 				assert.deepStrictEqual(
-					events.tracked.map((event) => event.name),
+					Arr.map(events.tracked, (event) => event.name),
 					["plan_changed"],
 				)
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))

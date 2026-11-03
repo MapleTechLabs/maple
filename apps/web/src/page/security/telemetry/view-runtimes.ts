@@ -43,6 +43,7 @@ import { Message, type Model } from "./model"
 import { telemetryLoading } from "./view-exposure"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The Runtimes tab: versions with critical CVEs to upgrade now, then each service's runtime and
 // version against its release cycle and known vulnerabilities, worst first.
@@ -65,12 +66,16 @@ const markOf = (entry: RuntimeEntry): Mark => {
 			return {
 				label: "End of life",
 				variant: "crit",
-				detail: [
-					posture.eolFrom === null ? null : `since ${posture.eolFrom}`,
-					`cycle ${posture.cycle}`,
-				]
-					.filter((part) => part !== null)
-					.join(" · "),
+				detail: Arr.join(
+					Arr.filter(
+						[
+							posture.eolFrom === null ? null : `since ${posture.eolFrom}`,
+							`cycle ${posture.cycle}`,
+						],
+						(part) => part !== null,
+					),
+					" · ",
+				),
 			}
 		case "behind":
 			return {
@@ -142,9 +147,13 @@ const runtimeCell = (h: H, entry: RuntimeEntry): Html =>
 	)
 
 const severityCounts = (counts: Record<AdvisorySeverity, number>): string =>
-	ADVISORY_SEVERITIES.filter((severity) => counts[severity] > 0)
-		.map((severity) => `${counts[severity]} ${severity}`)
-		.join(" · ")
+	Arr.join(
+		Arr.map(
+			Arr.filter(ADVISORY_SEVERITIES, (severity) => counts[severity] > 0),
+			(severity) => `${counts[severity]} ${severity}`,
+		),
+		" · ",
+	)
 
 const notScannedReason = ({ posture, row }: RuntimeEntry): string => {
 	switch (posture.status) {
@@ -156,7 +165,7 @@ const notScannedReason = ({ posture, row }: RuntimeEntry): string => {
 		}
 		default:
 			// Every tracked runtime has an advisory source, so what is left is untracked.
-			return row.runtimeName.trim() === ""
+			return Str.trim(row.runtimeName) === ""
 				? "This service reports no runtime: set process.runtime.name and process.runtime.version"
 				: "Maple does not track versions of this runtime"
 	}
@@ -244,7 +253,7 @@ const runtimesTable = (h: H, entries: ReadonlyArray<RuntimeEntry>, nowMs: number
 			]),
 			tableBody(
 				h,
-				entries.map((entry) =>
+				Arr.map(entries, (entry) =>
 					tableRow(
 						h,
 						[
@@ -442,7 +451,7 @@ const upgradeAdvice = (upgrade: CriticalUpgrade): string => {
 }
 
 const upgradeItem = (h: H, upgrade: CriticalUpgrade): Html => {
-	const urgent = upgrade.advisories.filter((advisory) => isUrgentSeverity(advisory.severity))
+	const urgent = Arr.filter(upgrade.advisories, (advisory) => isUrgentSeverity(advisory.severity))
 	const hidden = upgrade.summary.total - Math.min(urgent.length, ADVISORIES_SHOWN)
 	const isEndOfLife = upgrade.entry.posture.status === "end_of_life"
 	return h.li(
@@ -457,7 +466,7 @@ const upgradeItem = (h: H, upgrade: CriticalUpgrade): Html => {
 							[`${runtimeLabelOf(upgrade.entry)} ${upgrade.entry.row.runtimeVersion}`],
 						),
 						typography(h, { size: "xs", tone: "muted", truncate: true }, [
-							upgrade.services.join(", "),
+							Arr.join(upgrade.services, ", "),
 						]),
 					],
 				),
@@ -481,7 +490,7 @@ const upgradeItem = (h: H, upgrade: CriticalUpgrade): Html => {
 			vstack(
 				h,
 				{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
-				urgent.slice(0, ADVISORIES_SHOWN).map((advisory) => advisoryRow(h, advisory)),
+				Arr.map(urgent.slice(0, ADVISORIES_SHOWN), (advisory) => advisoryRow(h, advisory)),
 			),
 			...(hidden > 0
 				? [
@@ -508,7 +517,7 @@ const upgradesPanel = (h: H, upgrades: ReadonlyArray<CriticalUpgrade>): Html =>
 		h.p([h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")], [UPGRADES_COPY]),
 		h.ul(
 			[h.Class("divide-y divide-border px-4 pb-1")],
-			upgrades.map((upgrade) => upgradeItem(h, upgrade)),
+			Arr.map(upgrades, (upgrade) => upgradeItem(h, upgrade)),
 		),
 	])
 
@@ -549,7 +558,8 @@ export const runtimesBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 		onData: (runtimes) => {
 			const entries = runtimeEntries(runtimes)
 			if (entries.length === 0) return [runtimesEmpty(h)]
-			const hasNoVersion = currentEntries(entries).some(
+			const hasNoVersion = Arr.some(
+				currentEntries(entries),
 				(entry) => entry.posture.status === "no_version",
 			)
 			const upgrades = criticalUpgrades(entries)

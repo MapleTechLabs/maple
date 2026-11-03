@@ -1,5 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { tokenizeSql } from "../lib/sql-highlight"
+import { Array as Arr } from "effect"
 
 /** `SqlEditor`: a SQL textarea whose text is drawn, syntax-highlighted, by a `<pre>` laid under it. */
 export type SqlEditorOptions<M> = Readonly<{
@@ -25,7 +26,7 @@ export const sqlEditor = <M>(h: HtmlBuilder<M>, options: SqlEditorOptions<M>): H
 					h.code(
 						[h.Class("font-mono")],
 						[
-							...tokenizeSql(options.value).map((token) =>
+							...Arr.map(tokenizeSql(options.value), (token) =>
 								h.span(token.className === undefined ? [] : [h.Class(token.className)], [
 									token.text,
 								]),

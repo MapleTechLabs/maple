@@ -1,6 +1,6 @@
 import { HttpRouter, HttpServerRequest } from "effect/http"
 import { ChatConnectorId, encodeOAuthReturnHash, type OAuthReturnFlow } from "@maple/domain/http"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { forwardToDashboard } from "./integrations-callback.http"
 
@@ -27,7 +27,7 @@ const cardId = (connector: string): string => `chat-${connector}`
 export const ChatCallbackRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
-		const appBaseUrl = env.MAPLE_APP_BASE_URL.replace(/\/$/, "")
+		const appBaseUrl = Str.replace(/\/$/, "")(env.MAPLE_APP_BASE_URL)
 
 		/** Where the browser lands: the integrations page, with the outcome or the return to finish. */
 		const toDashboard = (search: Record<string, string>, hash = "") =>
@@ -59,7 +59,7 @@ export const ChatCallbackRouter = HttpRouter.use((router) =>
 					encodeOAuthReturnHash({
 						flow,
 						connector: connector.value,
-						query: url.value.search.replace(/^\?/, ""),
+						query: Str.replace(/^\?/, "")(url.value.search),
 					}),
 				)
 			})

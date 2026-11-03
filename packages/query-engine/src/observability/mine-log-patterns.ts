@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import type { ListLogsOutput } from "@maple/domain/tinybird"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { MineLogPatternsInput, LogPattern } from "./types"
@@ -75,14 +75,13 @@ export const clusterLogPatterns = (
 		}
 	}
 
-	const patterns: LogPattern[] = Array.from(clusters.values())
-		.map((c) => ({
-			template: c.template,
-			count: c.count,
-			sample: c.sample,
-			severityCounts: mapToObject(c.severityCounts),
-			serviceCounts: mapToObject(c.serviceCounts),
-		}))
+	const patterns: LogPattern[] = Arr.map(Array.from(clusters.values()), (c) => ({
+		template: c.template,
+		count: c.count,
+		sample: c.sample,
+		severityCounts: mapToObject(c.severityCounts),
+		serviceCounts: mapToObject(c.serviceCounts),
+	}))
 		.sort((a, b) => b.count - a.count)
 		.slice(0, limit)
 

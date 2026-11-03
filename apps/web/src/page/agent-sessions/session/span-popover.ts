@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import type { AiSessionSpan } from "@maple/domain/http"
 import {
 	classifyAiSpan,
@@ -96,36 +96,34 @@ const expansion = (
 				[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-border border-b px-5 pb-2")],
 				[
 					tabStrip(h, active, messages.length, toolCalls.length),
-					hstack(h, { gap: "2", className: "ml-auto" },
-						[
-							payloadCopyButton(h, model, {
-								key: `${keyPrefix}:json`,
-								value: encodePrettyJson(span),
-								label: "Span JSON",
-								idleLabel: "Copy JSON",
-								iconSize: 12,
+					hstack(h, { gap: "2", className: "ml-auto" }, [
+						payloadCopyButton(h, model, {
+							key: `${keyPrefix}:json`,
+							value: encodePrettyJson(span),
+							label: "Span JSON",
+							idleLabel: "Copy JSON",
+							iconSize: 12,
+							variant: "outline",
+							size: "sm",
+							className: "h-6.5 gap-1.5 text-xs",
+							hasTooltip: false,
+						}),
+						linkButton(
+							h,
+							{
 								variant: "outline",
 								size: "sm",
 								className: "h-6.5 gap-1.5 text-xs",
-								hasTooltip: false,
-							}),
-							linkButton(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									className: "h-6.5 gap-1.5 text-xs",
-									href: `${hrefOf(AppRoute.Trace({ traceId: span.traceId, search: {} }))}${orderedSearch(
-										[
-											["t", span.timestamp],
-											["spanId", span.spanId],
-										],
-									)}`,
-								},
-								["Open in Traces", icon(h, "ExternalLinkIcon")],
-							),
-						],
-					),
+								href: `${hrefOf(AppRoute.Trace({ traceId: span.traceId, search: {} }))}${orderedSearch(
+									[
+										["t", span.timestamp],
+										["spanId", span.spanId],
+									],
+								)}`,
+							},
+							["Open in Traces", icon(h, "ExternalLinkIcon")],
+						),
+					]),
 				],
 			),
 			h.div(
@@ -152,9 +150,9 @@ export const viewPopover = (
 	const found =
 		spanId === undefined
 			? undefined
-			: data.turns
-					.flatMap((turn) => turn.spans.map((span) => ({ span, turn })))
-					.find(({ span }) => span.spanId === spanId)
+			: Arr.flatMap(data.turns, (turn) => Arr.map(turn.spans, (span) => ({ span, turn }))).find(
+					({ span }) => span.spanId === spanId,
+				)
 	return spanPopover(
 		h,
 		model,
@@ -252,9 +250,13 @@ const titleRow = (
 ): Html => {
 	const category = classifyAiSpan(span)
 	const isErrored = spanFailed(span)
-	const subtitle = [turnOrdinal, spanModel(span), formatDuration(span.durationMs)]
-		.filter((part): part is string => part !== undefined)
-		.join(" · ")
+	const subtitle = Arr.join(
+		Arr.filter(
+			[turnOrdinal, spanModel(span), formatDuration(span.durationMs)],
+			(part): part is string => part !== undefined,
+		),
+		" · ",
+	)
 	return h.div(
 		[h.Class("flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-5 pt-4 pb-3")],
 		[
@@ -265,32 +267,30 @@ const titleRow = (
 			}),
 			h.span([h.Class("min-w-0 truncate font-medium font-mono text-sm")], [span.spanName]),
 			...(subtitle === "" ? [] : [typography(h, { size: "xs", tone: "muted" }, [subtitle])]),
-			hstack(h, { gap: "2", className: "ml-auto" },
-				[
-					...(isTraceDoor
-						? [
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "xs",
-										attributes: [h.OnClick(Message.ClickedOpenInTraceView())],
-									},
-									["Open in Traces view"],
-								),
-							]
-						: []),
-					iconButton(
-						h,
-						{
-							label: "Close span detail",
-							hasTooltip: false,
-							attributes: [...closeTrigger, h.OnClick(Message.ClickedCloseSpan())],
-						},
-						[icon(h, "XmarkIcon")],
-					),
-				],
-			),
+			hstack(h, { gap: "2", className: "ml-auto" }, [
+				...(isTraceDoor
+					? [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "xs",
+									attributes: [h.OnClick(Message.ClickedOpenInTraceView())],
+								},
+								["Open in Traces view"],
+							),
+						]
+					: []),
+				iconButton(
+					h,
+					{
+						label: "Close span detail",
+						hasTooltip: false,
+						attributes: [...closeTrigger, h.OnClick(Message.ClickedCloseSpan())],
+					},
+					[icon(h, "XmarkIcon")],
+				),
+			]),
 		],
 	)
 }

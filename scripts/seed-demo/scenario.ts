@@ -6,6 +6,7 @@
  * before the anchor, exhausts its Postgres pool, and starts timing out charges.
  */
 import type { Rng } from "./rng"
+import { Array as Arr } from "effect"
 
 export type Language = "nodejs" | "go" | "python"
 
@@ -186,11 +187,14 @@ const poolTimeout =
 					message: "timed out acquiring a connection from the pool after 5000ms",
 					logPrefix,
 					durationMs: 5000 + ctx.rng.int(0, 40),
-					stacktrace: [
-						"ConnectionTimeout: timed out acquiring a connection from the pool after 5000ms",
-						"    at Pool.acquire (/app/node_modules/pg-pool/index.js:45:11)",
-						...callers.map((frame) => `    at ${frame}`),
-					].join("\n"),
+					stacktrace: Arr.join(
+						[
+							"ConnectionTimeout: timed out acquiring a connection from the pool after 5000ms",
+							"    at Pool.acquire (/app/node_modules/pg-pool/index.js:45:11)",
+							...Arr.map(callers, (frame) => `    at ${frame}`),
+						],
+						"\n",
+					),
 				}
 			: null
 
@@ -199,12 +203,15 @@ const productCardTypeError: FailRule = (ctx) =>
 		? {
 				type: "TypeError",
 				message: "Cannot read properties of undefined (reading 'price')",
-				stacktrace: [
-					"TypeError: Cannot read properties of undefined (reading 'price')",
-					"    at ProductCard (/app/.next/server/app/product/[slug]/page.js:1:4821)",
-					"    at renderWithHooks (/app/node_modules/react-dom/cjs/react-dom-server.node.production.js:3:12099)",
-					"    at renderElement (/app/node_modules/react-dom/cjs/react-dom-server.node.production.js:3:14980)",
-				].join("\n"),
+				stacktrace: Arr.join(
+					[
+						"TypeError: Cannot read properties of undefined (reading 'price')",
+						"    at ProductCard (/app/.next/server/app/product/[slug]/page.js:1:4821)",
+						"    at renderWithHooks (/app/node_modules/react-dom/cjs/react-dom-server.node.production.js:3:12099)",
+						"    at renderElement (/app/node_modules/react-dom/cjs/react-dom-server.node.production.js:3:14980)",
+					],
+					"\n",
+				),
 			}
 		: null
 
@@ -213,12 +220,15 @@ const variantKeyError: FailRule = (ctx) =>
 		? {
 				type: "KeyError",
 				message: "'variant_id'",
-				stacktrace: [
-					"Traceback (most recent call last):",
-					'  File "/app/catalog/api/products.py", line 74, in get_product',
-					"    variant = variants_by_id[payload['variant_id']]",
-					"KeyError: 'variant_id'",
-				].join("\n"),
+				stacktrace: Arr.join(
+					[
+						"Traceback (most recent call last):",
+						'  File "/app/catalog/api/products.py", line 74, in get_product',
+						"    variant = variants_by_id[payload['variant_id']]",
+						"KeyError: 'variant_id'",
+					],
+					"\n",
+				),
 			}
 		: null
 
@@ -227,13 +237,16 @@ const stockConflict: FailRule = (ctx) =>
 		? {
 				type: "*inventory.ConflictError",
 				message: `stock reservation conflict: sku ${ctx.rng.int(1000, 9999)} version mismatch`,
-				stacktrace: [
-					"goroutine 412 [running]:",
-					"github.com/acme/inventory-svc/internal/stock.(*Store).Reserve(0xc0001a2000, {0x10a3f80, 0xc000514120})",
-					"\t/src/internal/stock/store.go:118 +0x2c4",
-					"github.com/acme/inventory-svc/internal/http.(*Handler).reserve(0xc00012e0c0, {0x10a2c40, 0xc0002ae1c0}, 0xc000146300)",
-					"\t/src/internal/http/reserve.go:57 +0x1b8",
-				].join("\n"),
+				stacktrace: Arr.join(
+					[
+						"goroutine 412 [running]:",
+						"github.com/acme/inventory-svc/internal/stock.(*Store).Reserve(0xc0001a2000, {0x10a3f80, 0xc000514120})",
+						"\t/src/internal/stock/store.go:118 +0x2c4",
+						"github.com/acme/inventory-svc/internal/http.(*Handler).reserve(0xc00012e0c0, {0x10a2c40, 0xc0002ae1c0}, 0xc000146300)",
+						"\t/src/internal/http/reserve.go:57 +0x1b8",
+					],
+					"\n",
+				),
 			}
 		: null
 
@@ -242,14 +255,17 @@ const smtpDisconnect: FailRule = (ctx) =>
 		? {
 				type: "smtplib.SMTPServerDisconnected",
 				message: "Connection unexpectedly closed",
-				stacktrace: [
-					"Traceback (most recent call last):",
-					'  File "/app/notify/mailer.py", line 41, in send_receipt',
-					"    smtp.send_message(message)",
-					'  File "/usr/local/lib/python3.12/smtplib.py", line 405, in getreply',
-					'    raise SMTPServerDisconnected("Connection unexpectedly closed")',
-					"smtplib.SMTPServerDisconnected: Connection unexpectedly closed",
-				].join("\n"),
+				stacktrace: Arr.join(
+					[
+						"Traceback (most recent call last):",
+						'  File "/app/notify/mailer.py", line 41, in send_receipt',
+						"    smtp.send_message(message)",
+						'  File "/usr/local/lib/python3.12/smtplib.py", line 405, in getreply',
+						'    raise SMTPServerDisconnected("Connection unexpectedly closed")',
+						"smtplib.SMTPServerDisconnected: Connection unexpectedly closed",
+					],
+					"\n",
+				),
 			}
 		: null
 

@@ -16,6 +16,7 @@ import {
 	type ServiceEndpointsWithHttpOpts,
 	type ServiceEndpointsWithHttpOutput,
 } from "./service-api"
+import { String as Str } from "effect"
 
 export type ServiceEndpointsSummaryOpts = Omit<ServiceEndpointsWithHttpOpts, "tiers">
 
@@ -52,5 +53,5 @@ export interface EndpointName {
 export function splitEndpointName(spanName: string): EndpointName {
 	const separator = spanName.indexOf(" ")
 	if (separator <= 0) return { method: "", route: spanName }
-	return { method: spanName.slice(0, separator), route: spanName.slice(separator + 1) }
+	return { method: Str.slice(0, separator)(spanName), route: Str.slice(separator + 1)(spanName) }
 }

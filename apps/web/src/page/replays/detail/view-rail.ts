@@ -29,6 +29,7 @@ import { noLinkedTraces } from "./view-timeline"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { scrollRegion } from "@maple/views/ui/scroll-region"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // The session rail: Events, Traces and Session tabs.
 // TODO(rail-virtualize): the event list renders every row; long sessions should virtualize.
@@ -172,7 +173,7 @@ const filterButton = (
 
 const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html => {
 	const countOf = (filter: EventFilter) =>
-		filter === "all" ? events.length : events.filter((ev) => ev.type === filter).length
+		filter === "all" ? events.length : Arr.filter(events, (ev) => ev.type === filter).length
 	return h.div(
 		[
 			h.Class(
@@ -191,7 +192,7 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 				},
 				[typography(h, { size: "2xs", weight: "medium" }, ["All"])],
 			),
-			...KIND_FILTERS.map((filter) =>
+			...Arr.map(KIND_FILTERS, (filter) =>
 				filterButton(
 					h,
 					{
@@ -231,7 +232,7 @@ const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html
 
 const eventDetail = (h: H, ev: EventRow): Html => {
 	const fullUrl = ev.type === "network" ? ev.netUrl : ev.url
-	const props = ev.type === "custom" ? Object.entries(parseAttributes(ev.attributes)) : []
+	const props = ev.type === "custom" ? Rec.toEntries(parseAttributes(ev.attributes)) : []
 	return h.div(
 		[h.Class("flex flex-col gap-1.5 px-3 pb-2.5 pl-[50px]")],
 		[
@@ -262,7 +263,7 @@ const eventDetail = (h: H, ev: EventRow): Html => {
 				? [
 						h.span(
 							[h.Class("whitespace-pre-wrap text-2xs leading-4 text-muted-foreground")],
-							[ev.errorStack.split("\n").slice(0, 3).join("\n")],
+							[Arr.join(Str.split("\n")(ev.errorStack).slice(0, 3), "\n")],
 						),
 					]
 				: []),
@@ -270,7 +271,7 @@ const eventDetail = (h: H, ev: EventRow): Html => {
 				? [
 						h.span(
 							[h.Class("flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground")],
-							props.map(([key, value]) =>
+							Arr.map(props, ([key, value]) =>
 								h.span(
 									[h.Key(key)],
 									[key, "=", h.span([h.Class("text-foreground-soft")], [value])],
@@ -421,7 +422,7 @@ const eventsTab = (h: H, model: RailView): Html =>
 			errorState(h, { failure, title: "Couldn't load session events", className: "flex-1 border-0" }),
 		onData: (events) => {
 			const filter = model.eventFilter
-			const rows = filter === "all" ? events : events.filter((ev) => ev.type === filter)
+			const rows = filter === "all" ? events : Arr.filter(events, (ev) => ev.type === filter)
 			return vstack(h, { grow: true, className: "min-h-0" }, [
 				filterBar(h, model, events),
 				rows.length === 0
@@ -432,13 +433,15 @@ const eventsTab = (h: H, model: RailView): Html =>
 								),
 							],
 							[
-								`No ${filter === "all" ? "events" : FILTER_LABELS[filter].toLowerCase()} in this session.`,
+								`No ${filter === "all" ? "events" : Str.toLowerCase(FILTER_LABELS[filter])} in this session.`,
 							],
 						)
 					: scrollRegion(h, {}, [
 							h.ul(
 								[h.Class("relative divide-y divide-border font-mono text-xs")],
-								rows.map((ev, index) => eventLine(h, model, ev, index, filter === "network")),
+								Arr.map(rows, (ev, index) =>
+									eventLine(h, model, ev, index, filter === "network"),
+								),
 							),
 						]),
 			])
@@ -562,7 +565,7 @@ const tracesTab = (h: H, model: RailView, traceIds: ReadonlyArray<string>): Html
 							])
 						: h.ul(
 								[h.Class("min-h-0 flex-1 divide-y divide-border overflow-y-auto")],
-								summaries.map((summary) => traceListRow(h, model, summary)),
+								Arr.map(summaries, (summary) => traceListRow(h, model, summary)),
 							),
 			})
 

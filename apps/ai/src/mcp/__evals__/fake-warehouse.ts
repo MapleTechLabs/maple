@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, String as Str } from "effect"
 import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-engine/execution"
 import { __testables } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
@@ -20,7 +20,7 @@ export type FixtureRule = {
 
 /** A read of known traces' spans: `traces` seeked through the `trace_index` subquery. */
 export const readsTraceSpans = (sql: string): boolean =>
-	/\bFROM traces\b/.test(sql) && sql.includes("FROM trace_index")
+	/\bFROM traces\b/.test(sql) && Str.includes("FROM trace_index")(sql)
 
 /**
  * Default fixtures for the large-trace `inspect_trace` scenario. Both the
@@ -29,11 +29,14 @@ export const readsTraceSpans = (sql: string): boolean =>
  */
 export const defaultTraceFixtures = (): FixtureRule[] => [
 	{
-		match: (sql) => readsTraceSpans(sql) && sql.includes(FIXTURES.traceId),
+		match: (sql) => readsTraceSpans(sql) && Str.includes(FIXTURES.traceId)(sql),
 		rows: makeLargeTraceSpans(),
 	},
 	// Only the fixture trace's logs: a bare `FROM logs` also matches log search and analytics.
-	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql) && sql.includes(FIXTURES.traceId), rows: makeTraceLogs() },
+	{
+		match: (sql) => /\bfrom\s+logs\b/i.test(sql) && Str.includes(FIXTURES.traceId)(sql),
+		rows: makeTraceLogs(),
+	},
 ]
 
 /**
@@ -78,7 +81,7 @@ export const installFakeWarehouse = (
 							return Effect.fail(
 								new WarehouseDriverError({
 									reason: "unknown",
-									message: `[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`,
+									message: `[eval fake warehouse] no fixture matched SQL:\n${Str.slice(0, 600)(sql)}`,
 								}),
 							)
 						}

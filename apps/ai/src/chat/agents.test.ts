@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
 import { ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
@@ -101,7 +101,7 @@ describe("profileForTurn", () => {
 	it("offers a connector the repository sandbox but no internal-audience tool", () => {
 		// The reviewer's pull request tools act on the org's behalf; a channel never reaches them.
 		const { tools } = toolsFor(connectorSession, CONNECTOR_ORIGIN)
-		const internal = mapleToolCatalog.filter((definition) => definition.audience === "internal")
+		const internal = Arr.filter(mapleToolCatalog, (definition) => definition.audience === "internal")
 		assert.isNotEmpty(internal, "no internal tools in the catalog — this test would pass vacuously")
 		for (const definition of internal) {
 			assert.notProperty(tools, definition.name, `${definition.name} was offered to the connector`)

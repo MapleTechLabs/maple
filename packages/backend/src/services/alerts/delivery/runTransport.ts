@@ -10,7 +10,7 @@ import {
 	type AlertDeliveryFailure,
 	type AlertDestinationType,
 } from "@maple/domain/http"
-import { Duration, Effect, Option, Result } from "effect"
+import { Duration, Effect, Option, Result, String as Str } from "effect"
 import { constTrue } from "effect/Function"
 import { HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
@@ -45,7 +45,7 @@ const MAX_ACK_BODY_BYTES = 1024 * 1024
 const readErrorBody = (response: HttpClientResponse.HttpClientResponse) =>
 	readTextPrefix(response, MAX_ERROR_BODY_BYTES).pipe(
 		Effect.map(({ text }) => {
-			const detail = text.replace(/\s+/g, " ").trim().slice(0, 500)
+			const detail = Str.slice(0, 500)(Str.trim(Str.replace(/\s+/g, " ")(text)))
 			if (detail.length > 0) return detail
 			// An empty body used to render as `"<Provider> delivery failed with 400"`
 			// with nothing after it, which reads like we dropped the reason rather

@@ -1,11 +1,11 @@
 import type { RepoSandboxServiceApi } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { OrgId } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { inspectDependencies } from "./dependencies"
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_a")
-const TARGET = { repository: "acme/api", ref: "a".repeat(40) }
+const TARGET = { repository: "acme/api", ref: Str.repeat(40)("a") }
 const NPMRC = "@acme:registry=https://npm.pkg.github.com\n"
 
 /** A checkout tracking `package.json` and `.npmrc`, whose `.npmrc` read may come back cut. */
@@ -29,10 +29,10 @@ const sandbox = (npmrcTruncated: boolean): RepoSandboxServiceApi => {
 describe("inspectDependencies", () => {
 	it("scans a config file read in full", async () => {
 		const profile = await Effect.runPromise(inspectDependencies(sandbox(false), ORG, TARGET))
-		expect([profile.privateDependencies, profile.reasons.some((r) => r.includes("too large"))]).toEqual([
-			[".npmrc: private source npm.pkg.github.com"],
-			false,
-		])
+		expect([
+			profile.privateDependencies,
+			Arr.some(profile.reasons, (r) => Str.includes("too large")(r)),
+		]).toEqual([[".npmrc: private source npm.pkg.github.com"], false])
 	})
 
 	it("labels a config file whose read was cut as uninspected instead of scanning its prefix", async () => {

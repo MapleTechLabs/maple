@@ -1,5 +1,5 @@
 import type { SecurityAuditRunDetail } from "@maple/domain/http"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -101,14 +101,18 @@ const runDetails = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: s
 	const isOpen = isDetailsOpen(model)
 	const live = isLive(run)
 	const gaps = gapCount(run)
-	const summary = [
-		run.unitTotal === 0 ? null : `${run.unitTotal - gaps} of ${run.unitTotal} units closed`,
-		gaps === 0 || live ? null : `${gaps} ${gaps === 1 ? "gap" : "gaps"}`,
-		formatUsd(runTotalUsd(run)),
-		formatElapsed(runElapsed(run, model.nowMs)),
-	]
-		.filter((part) => part !== null)
-		.join(" · ")
+	const summary = Arr.join(
+		Arr.filter(
+			[
+				run.unitTotal === 0 ? null : `${run.unitTotal - gaps} of ${run.unitTotal} units closed`,
+				gaps === 0 || live ? null : `${gaps} ${gaps === 1 ? "gap" : "gaps"}`,
+				formatUsd(runTotalUsd(run)),
+				formatElapsed(runElapsed(run, model.nowMs)),
+			],
+			(part) => part !== null,
+		),
+		" · ",
+	)
 	return vstack(h, { gap: "4", as: "section", attributes: [h.AriaLabel("How the run ran")] }, [
 		cardButton(
 			h,

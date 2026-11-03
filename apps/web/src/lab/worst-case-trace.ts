@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
 import { buildTraceDetail, type SpanHierarchyRow } from "@maple/ui/lib/span-tree"
 
@@ -60,7 +60,7 @@ function chain(depth: number, worst: boolean): SpanHierarchyRow[] {
 			startTime: formatWarehouseDateTimeMs(T0_MS + i * 5),
 			durationMs: Math.max(0.001, 2000 - i * 33),
 			statusCode: worst && i === depth - 1 ? "Error" : "Ok",
-			statusMessage: worst && i === depth - 1 ? "x".repeat(300) : "",
+			statusMessage: worst && i === depth - 1 ? Str.repeat(300)("x") : "",
 		})
 	})
 }

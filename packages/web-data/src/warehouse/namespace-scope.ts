@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { coerceServiceOverviewRows, windowDurationSeconds } from "@maple/query-engine"
 import { ServiceName, ServiceNamespace, ServiceOverviewRequest } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -44,10 +44,10 @@ export const scopeServicesToNamespaces = Effect.fn("QueryEngine.scopeServicesToN
 	)
 
 	const rows = coerceServiceOverviewRows(result.data, windowDurationSeconds(opts.startTime, opts.endTime))
-	const names = new Set(rows.map((row) => row.serviceName))
+	const names = new Set(Arr.map(rows, (row) => row.serviceName))
 
 	if (opts.services?.length) {
-		const services = opts.services.filter((service) => names.has(service))
+		const services = Arr.filter(opts.services, (service) => names.has(service))
 		return {
 			services,
 			empty: services.length === 0,

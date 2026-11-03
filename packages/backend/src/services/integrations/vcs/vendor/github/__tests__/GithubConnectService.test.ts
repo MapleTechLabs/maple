@@ -5,7 +5,7 @@ import {
 	PrReviewRepositoryConfig,
 	type VcsSyncJob,
 } from "@maple/domain/http"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -61,7 +61,7 @@ const oauthTokenResponse = () => jsonResponse({ access_token: "user-token", toke
 const userInstallationsResponse =
 	(ids: ReadonlyArray<number> = [42]) =>
 	() =>
-		jsonResponse({ total_count: ids.length, installations: ids.map((id) => ({ id })) })
+		jsonResponse({ total_count: ids.length, installations: Arr.map(ids, (id) => ({ id })) })
 
 // The user's membership in the installation's org ("octo").
 const orgMembershipResponse =
@@ -135,7 +135,7 @@ describe("connecting an existing GitHub installation", () => {
 				)
 				const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 				assert.deepStrictEqual(
-					selection.installations.map((installation) => [
+					Arr.map(selection.installations, (installation) => [
 						installation.id,
 						installation.accountLogin,
 					]),
@@ -186,7 +186,7 @@ describe("connecting an existing GitHub installation", () => {
 			const started = yield* startAuthorize(service)
 			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 			assert.deepStrictEqual(
-				selection.installations.map((installation) => installation.id),
+				Arr.map(selection.installations, (installation) => installation.id),
 				["42", "43"],
 			)
 			assert.strictEqual(sent.length, 0)
@@ -256,7 +256,7 @@ describe("connecting an existing GitHub installation", () => {
 			const started = yield* startAuthorize(service)
 			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
 			assert.deepStrictEqual(
-				selection.installations.map((installation) => installation.id),
+				Arr.map(selection.installations, (installation) => installation.id),
 				["43"],
 			)
 			assert.strictEqual(selection.unavailable, 1)
@@ -519,8 +519,8 @@ describe("GithubConnectService", () => {
 				mode: "install",
 			})
 			assert.ok(state.length > 0)
-			assert.ok(redirectUrl.startsWith("https://github.com/apps/maple-test-app/installations/new"))
-			assert.ok(redirectUrl.includes(`state=${state}`))
+			assert.ok(Str.startsWith("https://github.com/apps/maple-test-app/installations/new")(redirectUrl))
+			assert.ok(Str.includes(`state=${state}`)(redirectUrl))
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
@@ -678,7 +678,7 @@ describe("GithubConnectService", () => {
 				const roleUrls: Array<string> = []
 				const http = fakeGithubHttp((request) => {
 					const path = new URL(request.url).pathname
-					if (path.endsWith("/access_token")) return oauthTokenResponse()
+					if (Str.endsWith("/access_token")(path)) return oauthTokenResponse()
 					if (path === "/user/installations") return userInstallationsResponse([42])()
 					if (path === "/app/installations/42")
 						return jsonResponse({
@@ -762,7 +762,7 @@ describe("GithubConnectService", () => {
 				assert.strictEqual(span.attributes.get("maple.vcs.connect.refused"), true)
 				assert.strictEqual(span.attributes.get("vcs.connect.outcome"), c.outcome)
 				assert.deepStrictEqual(
-					span.events.map(([name, , attributes]) => [name, attributes["vcs.connect.outcome"]]),
+					Arr.map(span.events, ([name, , attributes]) => [name, attributes["vcs.connect.outcome"]]),
 					[["maple.vcs.connect.refused", c.outcome]],
 				)
 			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
@@ -806,7 +806,7 @@ describe("GithubConnectService", () => {
 			assert.notStrictEqual(reconnecting.repositoryDiscovery?.requestId, oldDiscovery?.requestId)
 
 			// First connect enqueues "created"; the reconnect enqueues "updated".
-			const reasons = sent.flatMap((j) => (j.kind === "installation-sync" ? [j.reason] : []))
+			const reasons = Arr.flatMap(sent, (j) => (j.kind === "installation-sync" ? [j.reason] : []))
 			assert.deepStrictEqual(reasons, ["created", "updated"])
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
@@ -922,7 +922,7 @@ describe("GithubConnectService", () => {
 					isArchived: false,
 				},
 			])
-			const SHA = "a".repeat(40)
+			const SHA = Str.repeat(40)("a")
 			yield* upsertCommitsFor(repo, orgId, "7", [
 				{
 					sha: SHA,
@@ -1088,8 +1088,8 @@ describe("GithubConnectService", () => {
 						isArchived: false,
 					},
 				])
-				const SHA_7 = "a".repeat(40)
-				const SHA_8 = "b".repeat(40)
+				const SHA_7 = Str.repeat(40)("a")
+				const SHA_8 = Str.repeat(40)("b")
 				const seedCommit = (repoId: string, sha: string) =>
 					upsertCommitsFor(repo, orgId, repoId, [
 						{
@@ -1162,7 +1162,7 @@ describe("GithubConnectService", () => {
 					isArchived: false,
 				},
 			])
-			const SHA = "a".repeat(40)
+			const SHA = Str.repeat(40)("a")
 			yield* upsertCommitsFor(repo, orgId, "7", [
 				{
 					sha: SHA,
@@ -1367,7 +1367,7 @@ describe("GithubConnectService", () => {
 					{ name: "main", headSha: null },
 					{ name: "release", headSha: null },
 				])
-				const SHA = "a".repeat(40)
+				const SHA = Str.repeat(40)("a")
 				yield* upsertCommitsFor(repo, orgId, "7", [
 					{
 						sha: SHA,
@@ -1392,7 +1392,7 @@ describe("GithubConnectService", () => {
 				const noop = yield* svc.setTrackedBranch(orgId, r.id, "main")
 				assert.strictEqual(noop.backfillQueued, false)
 				assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA))))
-				assert.strictEqual(sent.filter((j) => j.kind === "sync-commits").length, 0)
+				assert.strictEqual(Arr.filter(sent, (j) => j.kind === "sync-commits").length, 0)
 
 				// Changing the branch wipes commits and enqueues a backfill.
 				sent.length = 0
@@ -1401,7 +1401,7 @@ describe("GithubConnectService", () => {
 				assert.ok(changed.backfillQueued)
 				assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA))))
 				assert.strictEqual((yield* repoFor(repo, orgId, "7")).trackedBranch, "release")
-				const backfills = sent.filter((j) => j.kind === "sync-commits")
+				const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 				assert.strictEqual(backfills.length, 1)
 				assert.strictEqual(
 					backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",

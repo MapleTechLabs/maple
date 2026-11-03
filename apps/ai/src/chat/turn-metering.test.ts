@@ -18,7 +18,7 @@ import {
 	connectorSessionId,
 } from "@maple/domain/chat-session"
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
-import { ConfigProvider, Effect, Logger, Schema } from "effect"
+import { ConfigProvider, Effect, Logger, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
@@ -102,7 +102,7 @@ beforeEach(() => {
 					? new TextDecoder().decode(body)
 					: "{}"
 		const request = new Request(input, init)
-		if (request.url.endsWith("/v1/balances.track_tokens")) {
+		if (Str.endsWith("/v1/balances.track_tokens")(request.url)) {
 			charged.push(chargedFrom(JSON.parse(text), request.headers.get("idempotency-key")))
 		} else {
 			tracked.push(trackedFrom(JSON.parse(text)))
@@ -132,7 +132,11 @@ const meter = (
 		),
 	)
 
-const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
+const keysFor = (featureId: string) =>
+	Arr.map(
+		Arr.filter(tracked, (t) => t.featureId === featureId),
+		(t) => t.key,
+	)
 
 describe("meterTurn", () => {
 	it("charges nothing for a turn on the org's own OpenRouter key", async () => {
@@ -170,7 +174,7 @@ describe("meterTurn", () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1200, 340)
 
 		assert.deepEqual(
-			tracked.map((t) => ({ featureId: t.featureId, value: t.value })),
+			Arr.map(tracked, (t) => ({ featureId: t.featureId, value: t.value })),
 			[
 				{ featureId: "ai_input_tokens", value: 1200 },
 				{ featureId: "ai_output_tokens", value: 340 },
@@ -192,7 +196,11 @@ describe("meterTurn", () => {
 			`${INVESTIGATION}:turn-msg-3:triage:input`,
 		])
 		assert.strictEqual(
-			tracked.filter((t) => t.featureId === "ai_input_tokens").reduce((sum, t) => sum + t.value, 0),
+			Arr.reduce(
+				Arr.filter(tracked, (t) => t.featureId === "ai_input_tokens"),
+				0,
+				(sum, t) => sum + t.value,
+			),
 			6000,
 		)
 	})
@@ -221,7 +229,7 @@ describe("meterTurn", () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 900, 0)
 
 		assert.deepEqual(
-			tracked.map((t) => t.featureId),
+			Arr.map(tracked, (t) => t.featureId),
 			["ai_input_tokens"],
 		)
 	})
@@ -379,7 +387,7 @@ describe("meterTurn AI credits", () => {
 		await meterCharges(`${ORG}:inv-${INVESTIGATION}`, "msg-2", [charge(GLM, 1000, 200)])
 
 		assert.deepEqual(
-			charged.map((c) => c.key),
+			Arr.map(charged, (c) => c.key),
 			[`${INVESTIGATION}:turn-msg-2:triage:credits:0`],
 		)
 	})
@@ -389,7 +397,7 @@ describe("meterTurn AI credits", () => {
 		await meterCharges(`${ORG}:default`, "msg-1", [charge(GLM, 1000, 200)])
 
 		assert.deepEqual(
-			charged.map((c) => c.key),
+			Arr.map(charged, (c) => c.key),
 			[`${ORG}:default:msg-1:chat:credits:0`, `${ORG}:default:msg-1:chat:credits:0`],
 		)
 	})
@@ -428,7 +436,7 @@ describe("meterTurn AI credits", () => {
 		await meterCharges(`${ORG}:default`, "msg-1", [charge(GLM, 0, 0), charge(SONNET, 1000, 100)])
 
 		assert.deepEqual(
-			charged.map((c) => c.key),
+			Arr.map(charged, (c) => c.key),
 			[`${ORG}:default:msg-1:chat:credits:1`],
 		)
 	})

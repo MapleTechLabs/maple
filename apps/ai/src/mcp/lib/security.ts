@@ -3,7 +3,7 @@
  * agent can rank code audit findings, vulnerable dependencies, served scanner probes and runtimes on
  * vulnerable or end-of-life versions against each other.
  */
-import { DateTime, Effect, Option } from "effect"
+import { DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
 import type { DependencyFindingId } from "@maple/domain/dependency-scan"
@@ -156,7 +156,7 @@ const fixedByText = (fixedRunId: string, latestRun: SecurityAuditRunRow | undefi
 	const run = fixedByRun(fixedRunId, latestRun)
 	return run.ref === null
 		? `no longer found by audit run ${run.runId}`
-		: `no longer found by the audit of ${run.ref.slice(0, 12)} on ${run.at?.slice(0, 10)}`
+		: `no longer found by the audit of ${Str.slice(0, 12)(run.ref)} on ${run.at?.slice(0, 10)}`
 }
 
 /** Services running a commit of each repository (by lowercase `owner/name`), from the dependency scanner's join. */
@@ -165,9 +165,9 @@ export type RepositoryServices = ReadonlyMap<string, SecurityFindingRow["service
 export const repositoryServicesOf = (read: DependencyRead | undefined): RepositoryServices =>
 	new Map(
 		read?._tag === "read"
-			? read.repositories.map((repo) => [
-					repo.fullName.toLowerCase(),
-					servicesOf(repo.runningCommits.flatMap((commit) => commit.services)).filter(
+			? Arr.map(read.repositories, (repo) => [
+					Str.toLowerCase(repo.fullName),
+					servicesOf(Arr.flatMap(repo.runningCommits, (commit) => commit.services)).filter(
 						(ref, i, all) =>
 							all.findIndex(
 								(other) =>
@@ -182,25 +182,33 @@ export const codeRows = (
 	targets: ReadonlyArray<CodeTarget>,
 	repositoryServices: RepositoryServices,
 ): ReadonlyArray<SecurityFindingRow> =>
-	targets.flatMap(({ target, findings, latestRun }) =>
-		findings.map((row): SecurityFindingRow => ({
+	Arr.flatMap(targets, ({ target, findings, latestRun }) =>
+		Arr.map(findings, (row): SecurityFindingRow => ({
 			area: "code",
 			id: row.fingerprint,
 			severity: codeSeverityOf(row),
 			title: row.record.title,
-			location: [`${target.repository}@${target.branch}`, firstLocation(row)]
-				.filter((part) => part !== "")
-				.join(" "),
+			location: Arr.join(
+				Arr.filter(
+					[`${target.repository}@${target.branch}`, firstLocation(row)],
+					(part) => part !== "",
+				),
+				" ",
+			),
 			status: row.status,
-			detail: [
-				VERDICT_DETAIL[row.verdict],
-				row.statusReason === null ? undefined : `${row.status} because: ${row.statusReason}`,
-				row.fixedRunId === null ? undefined : fixedByText(row.fixedRunId, latestRun),
-			]
-				.filter((part) => part !== undefined)
-				.join("; "),
+			detail: Arr.join(
+				Arr.filter(
+					[
+						VERDICT_DETAIL[row.verdict],
+						row.statusReason === null ? undefined : `${row.status} because: ${row.statusReason}`,
+						row.fixedRunId === null ? undefined : fixedByText(row.fixedRunId, latestRun),
+					],
+					(part) => part !== undefined,
+				),
+				"; ",
+			),
 			// The services built from this repository: they run its code, if not necessarily this file.
-			services: repositoryServices.get(target.repository.toLowerCase()) ?? [],
+			services: repositoryServices.get(Str.toLowerCase(target.repository)) ?? [],
 			lastSeen: isoOf(row.updatedAt),
 		})),
 	)
@@ -253,7 +261,7 @@ export const readDependencies = (tenant: TenantContext, options: DependencyReadO
 			} satisfies DependencyRead
 		}
 		const wanted = options.repository?.toLowerCase()
-		const repository = repositories.repositories.find((repo) => repo.fullName.toLowerCase() === wanted)
+		const repository = repositories.repositories.find((repo) => Str.toLowerCase(repo.fullName) === wanted)
 		// An unknown repository has no findings; reading the org's would spend the cap on others.
 		const findings =
 			wanted !== undefined && repository === undefined
@@ -280,24 +288,30 @@ export const readDependencies = (tenant: TenantContext, options: DependencyReadO
 const servicesOf = (
 	services: ReadonlyArray<{ readonly serviceName: string; readonly environment: string }>,
 ): SecurityFindingRow["services"] =>
-	services.map((service) => ({ service: service.serviceName, environment: service.environment }))
+	Arr.map(services, (service) => ({ service: service.serviceName, environment: service.environment }))
 
 export const dependencyRows = (
 	findings: ReadonlyArray<DependencyFindingView>,
 ): ReadonlyArray<SecurityFindingRow> =>
-	findings.map((finding) => ({
+	Arr.map(findings, (finding) => ({
 		area: "dependencies",
 		id: finding.id,
 		severity: finding.severity,
-		title: `${finding.packageName} ${finding.versions.join(", ")}: ${finding.summary ?? displayAdvisory(finding)}`,
+		title: `${finding.packageName} ${Arr.join(finding.versions, ", ")}: ${finding.summary ?? displayAdvisory(finding)}`,
 		location: `${finding.repositoryFullName} ${finding.lockfilePath}`,
 		status: finding.status,
-		detail: [
-			`${displayAdvisory(finding)}. ${dependencyFixOf(finding)}`,
-			finding.statusReason === null ? undefined : `${finding.status} because: ${finding.statusReason}`,
-		]
-			.filter((part) => part !== undefined)
-			.join(" "),
+		detail: Arr.join(
+			Arr.filter(
+				[
+					`${displayAdvisory(finding)}. ${dependencyFixOf(finding)}`,
+					finding.statusReason === null
+						? undefined
+						: `${finding.status} because: ${finding.statusReason}`,
+				],
+				(part) => part !== undefined,
+			),
+			" ",
+		),
 		// A dev dependency is in the deployed commit's lockfile but not in what the service runs.
 		services: finding.relation === "dev" ? [] : servicesOf(finding.production),
 		lastSeen: isoOf(finding.updatedAt),
@@ -324,7 +338,7 @@ export const dependencyFixOf = (
 
 /** The CVE when the advisory has one: what people search for. */
 export const displayAdvisory = (finding: Pick<DependencyFindingView, "advisoryId" | "aliases">): string => {
-	const cve = finding.aliases.find((alias) => alias.startsWith("CVE-"))
+	const cve = finding.aliases.find((alias) => Str.startsWith("CVE-")(alias))
 	return cve === undefined ? finding.advisoryId : `${cve} (${finding.advisoryId})`
 }
 
@@ -383,7 +397,7 @@ export const readExposure = (tenant: TenantContext, window: SecurityWindow) =>
 
 const isCriticalSignature = (signature: string): boolean => {
 	const category = probeCategoryOf(signature)
-	return PROBE_CATEGORIES.some((info) => info.id === category && info.critical)
+	return Arr.some(PROBE_CATEGORIES, (info) => info.id === category && info.critical)
 }
 
 /** A service answering this share of distinct critical probes, and at least this many, serves every path. */
@@ -401,11 +415,16 @@ export interface CatchAllService {
  * serves its index page for `/.env` too, so their answers are a warning, not an exposure.
  */
 export const catchAllServices = (signatures: ReadonlyArray<SignatureRow>): ReadonlyArray<CatchAllService> => {
-	const probes = signatures.filter((row) => isCriticalSignature(row.signature))
-	return [...new Set(probes.map((row) => row.service))].flatMap((service) => {
-		const own = probes.filter((row) => row.service === service)
-		const probed = new Set(own.map((row) => row.signature)).size
-		const answered = new Set(own.filter((row) => row.answered > 0).map((row) => row.signature)).size
+	const probes = Arr.filter(signatures, (row) => isCriticalSignature(row.signature))
+	return Arr.flatMap([...new Set(Arr.map(probes, (row) => row.service))], (service) => {
+		const own = Arr.filter(probes, (row) => row.service === service)
+		const probed = new Set(Arr.map(own, (row) => row.signature)).size
+		const answered = new Set(
+			Arr.map(
+				Arr.filter(own, (row) => row.answered > 0),
+				(row) => row.signature,
+			),
+		).size
 		return answered >= CATCH_ALL_MIN_ANSWERED && answered / probed >= CATCH_ALL_SHARE
 			? [{ service, answered, probed }]
 			: []
@@ -428,10 +447,10 @@ export const exposedSeverity = (signature: string): SecuritySeverity => {
 }
 
 export const exposureRows = (read: ExposureRead): ReadonlyArray<SecurityFindingRow> => {
-	const catchAll = new Set(catchAllServices(read.signatures).map((entry) => entry.service))
-	return read.exposed
-		.filter((row) => !catchAll.has(row.service))
-		.map((row) => ({
+	const catchAll = new Set(Arr.map(catchAllServices(read.signatures), (entry) => entry.service))
+	return Arr.map(
+		Arr.filter(read.exposed, (row) => !catchAll.has(row.service)),
+		(row) => ({
 			area: "exposure",
 			id: exposureIdOf(row),
 			severity: exposedSeverity(row.signature),
@@ -441,7 +460,8 @@ export const exposureRows = (read: ExposureRead): ReadonlyArray<SecurityFindingR
 			detail: `${row.requests} probe request${row.requests === 1 ? "" : "s"} got a ${row.httpStatus}; check the path serves nothing sensitive. Sample trace ${row.sampleTraceId}`,
 			services: [{ service: row.service, environment: "" }],
 			lastSeen: isoUtc(row.lastSeen),
-		}))
+		}),
+	)
 }
 
 export interface ExposureCategory {
@@ -455,33 +475,37 @@ export interface ExposureCategory {
 
 /** Probe traffic per category, catalog order, then named scanners on ordinary paths. */
 export const exposureCategories = (read: ExposureRead, service?: string): ReadonlyArray<ExposureCategory> => {
-	const catchAll = new Set(catchAllServices(read.signatures).map((entry) => entry.service))
+	const catchAll = new Set(Arr.map(catchAllServices(read.signatures), (entry) => entry.service))
 	const signatures =
-		service === undefined ? read.signatures : read.signatures.filter((row) => row.service === service)
+		service === undefined
+			? read.signatures
+			: Arr.filter(read.signatures, (row) => row.service === service)
 	const summarize = (label: string, rows: ReadonlyArray<SignatureRow>, probes = true): ExposureCategory => {
-		const bySignature = rows.reduce(
-			(acc, row) => acc.set(row.signature, (acc.get(row.signature) ?? 0) + row.requests),
-			new Map<string, number>(),
+		const bySignature = Arr.reduce(rows, new Map<string, number>(), (acc, row) =>
+			acc.set(row.signature, (acc.get(row.signature) ?? 0) + row.requests),
 		)
 		return {
 			label,
-			requests: rows.reduce((sum, row) => sum + row.requests, 0),
+			requests: Arr.reduce(rows, 0, (sum, row) => sum + row.requests),
 			answered: probes
-				? rows.filter((row) => !catchAll.has(row.service)).reduce((sum, row) => sum + row.answered, 0)
+				? Arr.reduce(
+						Arr.filter(rows, (row) => !catchAll.has(row.service)),
+						0,
+						(sum, row) => sum + row.answered,
+					)
 				: null,
-			services: new Set(rows.map((row) => row.service)).size,
-			topPaths: [...bySignature]
-				.sort((a, b) => b[1] - a[1])
-				.slice(0, 3)
-				.map(([signature]) => signature)
-				.filter((signature) => signature !== ""),
+			services: new Set(Arr.map(rows, (row) => row.service)).size,
+			topPaths: Arr.filter(
+				Arr.map([...bySignature].sort((a, b) => b[1] - a[1]).slice(0, 3), ([signature]) => signature),
+				(signature) => signature !== "",
+			),
 		}
 	}
-	const categories = PROBE_CATEGORIES.flatMap((category) => {
-		const rows = signatures.filter((row) => probeCategoryOf(row.signature) === category.id)
+	const categories = Arr.flatMap(PROBE_CATEGORIES, (category) => {
+		const rows = Arr.filter(signatures, (row) => probeCategoryOf(row.signature) === category.id)
 		return rows.length === 0 ? [] : [summarize(category.label, rows)]
 	})
-	const scanners = signatures.filter((row) => row.signature === "")
+	const scanners = Arr.filter(signatures, (row) => row.signature === "")
 	return scanners.length === 0
 		? categories
 		: [...categories, summarize("Named scanners on ordinary paths", scanners, false)]
@@ -519,17 +543,18 @@ export const readRuntimes = (tenant: TenantContext, window: SecurityWindow) =>
 			}),
 			{ profile: "aggregation", context: "mcpRuntimeVersions" },
 		)
-		const products = rows.flatMap((row): ReadonlyArray<RuntimeProduct> => {
+		const products = Arr.flatMap(rows, (row): ReadonlyArray<RuntimeProduct> => {
 			const product = runtimeProductOf(row.runtimeName, row.sdkLanguage)
 			return product === undefined || row.runtimeVersion === "" ? [] : [product]
 		})
 		// Busiest services first, so the read cap drops the quietest versions.
-		const targets = rows
-			.toSorted((a, b) => b.spans - a.spans)
-			.flatMap((row) => {
+		const targets = Arr.flatMap(
+			rows.toSorted((a, b) => b.spans - a.spans),
+			(row) => {
 				const target = advisoryTargetOf(row)
 				return target === undefined ? [] : [target]
-			})
+			},
+		)
 		const [releases, advisories] = yield* Effect.all(
 			[
 				(yield* RuntimeReleaseCatalog).releases(products),
@@ -537,7 +562,7 @@ export const readRuntimes = (tenant: TenantContext, window: SecurityWindow) =>
 			],
 			{ concurrency: 2 },
 		)
-		const entries = rows.map((row): RuntimeEntry => {
+		const entries = Arr.map(rows, (row): RuntimeEntry => {
 			const target = advisoryTargetOf(row)
 			const key = target === undefined ? undefined : advisoryKey(target)
 			return {
@@ -595,7 +620,7 @@ export const postureText = (posture: RuntimePosture): string => {
 
 /** One row per (service, environment) on a version with advisories, past end of life, or behind. */
 export const runtimeRows = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray<SecurityFindingRow> =>
-	entries.flatMap((entry): ReadonlyArray<SecurityFindingRow> => {
+	Arr.flatMap(entries, (entry): ReadonlyArray<SecurityFindingRow> => {
 		const advisories = entry.advisories ?? []
 		const summary = summarizeAdvisories(advisories)
 		const status = entry.posture.status
@@ -611,7 +636,18 @@ export const runtimeRows = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray
 				area: "runtimes",
 				id: entry.advisoryKey ?? `${entry.row.service} ${runtimeLabelOf(entry)}`,
 				severity,
-				title: `${runtimeLabelOf(entry)}: ${[cves, status === "end_of_life" || status === "behind" ? postureText(entry.posture) : undefined].filter((part) => part !== undefined).join("; ")}`,
+				title: `${runtimeLabelOf(entry)}: ${Arr.join(
+					Arr.filter(
+						[
+							cves,
+							status === "end_of_life" || status === "behind"
+								? postureText(entry.posture)
+								: undefined,
+						],
+						(part) => part !== undefined,
+					),
+					"; ",
+				)}`,
 				location: entry.row.service,
 				status,
 				detail:
@@ -651,14 +687,17 @@ export const matchesFilters = (row: SecurityFindingRow, filters: FindingFilters)
 	if (hasTriage(row.area) && filters.status !== "all" && row.status !== filters.status) return false
 	if (filters.repository !== undefined) {
 		// `owner/name@branch path` for code, `owner/name lockfile` for dependencies: match the whole name.
-		const repo = filters.repository.toLowerCase()
-		const location = row.location.toLowerCase()
-		if (!hasTriage(row.area) || !(location.startsWith(`${repo}@`) || location.startsWith(`${repo} `)))
+		const repo = Str.toLowerCase(filters.repository)
+		const location = Str.toLowerCase(row.location)
+		if (
+			!hasTriage(row.area) ||
+			!(Str.startsWith(`${repo}@`)(location) || Str.startsWith(`${repo} `)(location))
+		)
 			return false
 	}
 	if (filters.service !== undefined) {
 		const service = filters.service
-		if (!row.services.some((ref) => ref.service === service)) return false
+		if (!Arr.some(row.services, (ref) => ref.service === service)) return false
 	}
 	return true
 }
@@ -668,15 +707,15 @@ export const rankFindings = (rows: ReadonlyArray<SecurityFindingRow>): ReadonlyA
 		(a, b) =>
 			SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
 			b.services.length - a.services.length ||
-			(b.lastSeen ?? "").localeCompare(a.lastSeen ?? ""),
+			Str.localeCompare(a.lastSeen ?? "")(b.lastSeen ?? ""),
 	)
 
 export const countBySeverity = (rows: ReadonlyArray<SecurityFindingRow>) => ({
-	critical: rows.filter((row) => row.severity === "critical").length,
-	high: rows.filter((row) => row.severity === "high").length,
-	medium: rows.filter((row) => row.severity === "medium").length,
-	low: rows.filter((row) => row.severity === "low").length,
-	other: rows.filter((row) => row.severity === "informational" || row.severity === "unknown").length,
+	critical: Arr.filter(rows, (row) => row.severity === "critical").length,
+	high: Arr.filter(rows, (row) => row.severity === "high").length,
+	medium: Arr.filter(rows, (row) => row.severity === "medium").length,
+	low: Arr.filter(rows, (row) => row.severity === "low").length,
+	other: Arr.filter(rows, (row) => row.severity === "informational" || row.severity === "unknown").length,
 })
 
 // ---------------------------------------------------------------------------------------------
@@ -691,7 +730,7 @@ export interface AreaResult {
 }
 
 const plural = (n: number, noun: string) =>
-	n === 1 ? `1 ${noun}` : `${n} ${noun.endsWith("y") ? `${noun.slice(0, -1)}ies` : `${noun}s`}`
+	n === 1 ? `1 ${noun}` : `${n} ${Str.endsWith("y")(noun) ? `${Str.slice(0, -1)(noun)}ies` : `${noun}s`}`
 
 const gated = (area: SecurityArea, gate: AreaGate): AreaResult => ({
 	area,
@@ -703,18 +742,19 @@ const gated = (area: SecurityArea, gate: AreaGate): AreaResult => ({
 
 /** Open telemetry rows and open triaged findings decide the state. */
 const stateOf = (rows: ReadonlyArray<SecurityFindingRow>): AreaResult["state"] =>
-	rows.some((row) => row.status === "open" || !hasTriage(row.area)) ? "findings" : "clear"
+	Arr.some(rows, (row) => row.status === "open" || !hasTriage(row.area)) ? "findings" : "clear"
 
 export const codeArea = (read: CodeRead, repositoryServices: RepositoryServices): AreaResult => {
 	if (read._tag !== "read") return gated("code", read)
 	// Rejected claims were disproved by the verifier; they stay readable through inspect only.
-	const rows = codeRows(read.targets, repositoryServices).filter(
-		(row) => !row.detail.startsWith("rejected"),
+	const rows = Arr.filter(
+		codeRows(read.targets, repositoryServices),
+		(row) => !Str.startsWith("rejected")(row.detail),
 	)
-	const open = read.targets.flatMap((t) => t.findings.filter((f) => f.status === "open"))
-	const confirmed = open.filter((f) => f.verdict === "confirmed").length
-	const leads = open.filter((f) => f.verdict === "needs_validation").length
-	const stale = read.targets.flatMap(({ target, latestRun }) => {
+	const open = Arr.flatMap(read.targets, (t) => Arr.filter(t.findings, (f) => f.status === "open"))
+	const confirmed = Arr.filter(open, (f) => f.verdict === "confirmed").length
+	const leads = Arr.filter(open, (f) => f.verdict === "needs_validation").length
+	const stale = Arr.flatMap(read.targets, ({ target, latestRun }) => {
 		const name = `${target.repository}@${target.branch}`
 		if (latestRun === undefined) return [`${name} has never been audited`]
 		if (latestRun.status === "complete") return []
@@ -726,10 +766,13 @@ export const codeArea = (read: CodeRead, repositoryServices: RepositoryServices)
 	return {
 		area: "code",
 		state: stateOf(rows),
-		summary: [
-			`${plural(read.targets.length, "repository")} audited: ${confirmed} confirmed ${confirmed === 1 ? "vulnerability" : "vulnerabilities"} and ${plural(leads, "unconfirmed lead")} open.`,
-			...stale.map((line) => `${line}.`),
-		].join(" "),
+		summary: Arr.join(
+			[
+				`${plural(read.targets.length, "repository")} audited: ${confirmed} confirmed ${confirmed === 1 ? "vulnerability" : "vulnerabilities"} and ${plural(leads, "unconfirmed lead")} open.`,
+				...Arr.map(stale, (line) => `${line}.`),
+			],
+			" ",
+		),
 		rows,
 		notes: [],
 	}
@@ -738,16 +781,17 @@ export const codeArea = (read: CodeRead, repositoryServices: RepositoryServices)
 export const dependencyArea = (read: DependencyRead): AreaResult => {
 	if (read._tag !== "read") return gated("dependencies", read)
 	const rows = dependencyRows(read.findings)
-	const inProduction = rows.filter((row) => row.status === "open" && row.services.length > 0).length
-	const unscanned = read.repositories
-		.filter((repo) => repo.latestScan === null)
-		.map((repo) => repo.fullName)
+	const inProduction = Arr.filter(rows, (row) => row.status === "open" && row.services.length > 0).length
+	const unscanned = Arr.map(
+		Arr.filter(read.repositories, (repo) => repo.latestScan === null),
+		(repo) => repo.fullName,
+	)
 	const capNote = read.capped
 		? [
 				`Only the ${FINDINGS_LIMIT} most urgent dependency findings were read; filter by repository for the rest.`,
 			]
 		: []
-	const notes = read.repositories.flatMap((repo) => {
+	const notes = Arr.flatMap(read.repositories, (repo) => {
 		const scan = repo.latestScan
 		if (scan === null) return []
 		const failed =
@@ -756,23 +800,32 @@ export const dependencyArea = (read: DependencyRead): AreaResult => {
 						`Latest dependency scan of ${repo.fullName} failed${scan.error === null ? "" : `: ${truncate(scan.error, 160)}`}.`,
 					]
 				: []
-		const unread = scan.lockfiles.filter((lock) => lock.status !== "parsed" && lock.status !== "skipped")
+		const unread = Arr.filter(
+			scan.lockfiles,
+			(lock) => lock.status !== "parsed" && lock.status !== "skipped",
+		)
 		return unread.length === 0
 			? failed
 			: [
 					...failed,
-					`${repo.fullName}: ${unread.map((lock) => `${lock.path} ${lock.status}`).join(", ")}; its packages are not checked.`,
+					`${repo.fullName}: ${Arr.join(
+						Arr.map(unread, (lock) => `${lock.path} ${lock.status}`),
+						", ",
+					)}; its packages are not checked.`,
 				]
 	})
 	return {
 		area: "dependencies",
 		state: stateOf(rows),
-		summary: [
-			`${read.repositories.length - unscanned.length} of ${plural(read.repositories.length, "repository")} scanned${unscanned.length === 0 ? "" : ` (never scanned: ${unscanned.join(", ")})`};`,
-			read.productionKnown
-				? `${inProduction} open ${inProduction === 1 ? "finding is" : "findings are"} in a commit a production service runs.`
-				: "production telemetry could not be joined, so no finding says which services run it.",
-		].join(" "),
+		summary: Arr.join(
+			[
+				`${read.repositories.length - unscanned.length} of ${plural(read.repositories.length, "repository")} scanned${unscanned.length === 0 ? "" : ` (never scanned: ${Arr.join(unscanned, ", ")})`};`,
+				read.productionKnown
+					? `${inProduction} open ${inProduction === 1 ? "finding is" : "findings are"} in a commit a production service runs.`
+					: "production telemetry could not be joined, so no finding says which services run it.",
+			],
+			" ",
+		),
 		rows,
 		notes: [...capNote, ...notes],
 	}
@@ -790,17 +843,18 @@ export const exposureArea = (read: ExposureRead | AreaGate): AreaResult => {
 			notes: [],
 		}
 	}
-	const probes = read.signatures.filter((row) => row.signature !== "")
-	const requests = probes.reduce((n, row) => n + row.requests, 0)
+	const probes = Arr.filter(read.signatures, (row) => row.signature !== "")
+	const requests = Arr.reduce(probes, 0, (n, row) => n + row.requests)
 	const rows = exposureRows(read)
 	const sources = read.sources.length >= SOURCES_LIMIT ? `${SOURCES_LIMIT}+` : String(read.sources.length)
 	return {
 		area: "exposure",
 		state: rows.length === 0 ? "clear" : "findings",
-		summary: `${requests} probe requests against ${plural(new Set(probes.map((row) => row.service)).size, "service")} from ${sources} sources; ${plural(rows.length, "probed path")} answered with a 2xx. Maple sees the status code, not the response body.`,
+		summary: `${requests} probe requests against ${plural(new Set(Arr.map(probes, (row) => row.service)).size, "service")} from ${sources} sources; ${plural(rows.length, "probed path")} answered with a 2xx. Maple sees the status code, not the response body.`,
 		rows,
 		notes: [
-			...catchAllServices(read.signatures).map(
+			...Arr.map(
+				catchAllServices(read.signatures),
 				(entry) =>
 					`${entry.service} answered ${entry.answered} of ${entry.probed} sensitive probe paths with a 2xx: it serves every path (a single-page app or soft-404 route), so its answers are not listed as exposures. Have it return 404 for unknown paths so real exposures show.`,
 			),
@@ -843,20 +897,25 @@ export const runtimeArea = (read: RuntimesRead | AreaGate): AreaResult => {
 		}
 	}
 	const rows = runtimeRows(read.entries)
-	const services = new Set(read.entries.map((entry) => entry.row.service)).size
-	const notJudged = read.entries.flatMap((entry) => {
+	const services = new Set(Arr.map(read.entries, (entry) => entry.row.service)).size
+	const notJudged = Arr.flatMap(read.entries, (entry) => {
 		const why = unjudged(entry)
 		return why === undefined ? [] : [why]
 	})
 	return {
 		area: "runtimes",
 		state: rows.length === 0 ? "clear" : "findings",
-		summary: [
-			`${plural(services, "service")} report a runtime; ${rows.length} on a version with known CVEs, past end of life or behind its line's latest patch.`,
-			...(notJudged.length === 0 ? [] : [`Not judged: ${notJudged.join(", ")}.`]),
-		].join(" "),
+		summary: Arr.join(
+			[
+				`${plural(services, "service")} report a runtime; ${rows.length} on a version with known CVEs, past end of life or behind its line's latest patch.`,
+				...(notJudged.length === 0 ? [] : [`Not judged: ${Arr.join(notJudged, ", ")}.`]),
+			],
+			" ",
+		),
 		rows,
 		notes:
-			read.skipped.length === 0 ? [] : [`Not checked for CVEs this time: ${read.skipped.join(", ")}.`],
+			read.skipped.length === 0
+				? []
+				: [`Not checked for CVEs this time: ${Arr.join(read.skipped, ", ")}.`],
 	}
 }

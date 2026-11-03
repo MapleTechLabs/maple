@@ -5,11 +5,12 @@ import {
 	type WarehouseError,
 	type WarehouseReadError,
 } from "@maple/domain"
+import { Array as Arr, Record as Rec } from "effect"
 
 const handlersFor = <Error extends WarehouseError, A, E, R>(
 	tags: ReadonlyArray<Error["_tag"]>,
 	f: (error: Error) => Effect.Effect<A, E, R>,
-) => Object.fromEntries(tags.map((tag) => [tag, f])) as Record<Error["_tag"], typeof f>
+) => Rec.fromEntries(Arr.map(tags, (tag) => [tag, f])) as Record<Error["_tag"], typeof f>
 
 /**
  * Derive an exhaustive `Effect.catchTags` table from the domain's canonical

@@ -30,7 +30,7 @@ import type {
 	StatusPageIncidentStatus,
 } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, isActiveIncident } from "@maple/domain/status-page"
-import { Clock, Effect, Option } from "effect"
+import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { timestampMs } from "@maple/backend/platform/time"
@@ -117,7 +117,7 @@ export const toV2StatusPageIncident = (incident: StatusPageIncidentRecord): V2St
 	started_at: isoTimestamp(incident.startedAt),
 	resolved_at: isoTimestampOrNull(incident.resolvedAt),
 	component_ids: incident.componentIds,
-	updates: incident.updates.map((update) => ({
+	updates: Arr.map(incident.updates, (update) => ({
 		id: update.id,
 		status: update.status,
 		body: update.body,
@@ -198,7 +198,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
 					const pages = yield* service.list(tenant.orgId)
-					const page = yield* paginateArray(pages.map(toV2StatusPage), query)
+					const page = yield* paginateArray(Arr.map(pages, toV2StatusPage), query)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -402,7 +402,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						id: params.id,
 						object: "status_page.break_glass_token" as const,
 						token,
-						token_suffix: token.slice(-6),
+						token_suffix: Str.slice(-6)(token),
 					}
 				}),
 			)
@@ -454,7 +454,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
 					const components = yield* service.listComponents(tenant.orgId, params.id)
-					const page = yield* paginateArray(components.map(toV2StatusPageComponent), query)
+					const page = yield* paginateArray(Arr.map(components, toV2StatusPageComponent), query)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -495,7 +495,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					yield* recordHttpAudit("status_page.components_reordered", { resourceId: params.id })
 					return {
 						object: "list" as const,
-						data: components.map(toV2StatusPageComponent),
+						data: Arr.map(components, toV2StatusPageComponent),
 						has_more: false,
 						next_cursor: null,
 					}
@@ -578,7 +578,7 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 								offset,
 							}),
 						)
-						const data = page.data.map(toV2StatusPageIncident)
+						const data = Arr.map(page.data, toV2StatusPageIncident)
 						return { object: "list" as const, ...page, data }
 					}),
 				)

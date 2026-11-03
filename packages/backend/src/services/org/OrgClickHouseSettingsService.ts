@@ -49,6 +49,7 @@ import {
 	Ref,
 	Schedule,
 	Schema,
+	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import {
@@ -569,14 +570,15 @@ const renderCollectorYaml = (input: {
 		"    logs:",
 		"      level: info",
 	]
-	return lines.join("\n") + "\n"
+	return Arr.join(lines, "\n") + "\n"
 }
 
 /**
  * Quote a YAML scalar so any `:` / `#` / leading-whitespace doesn't break
  * the serialiser. We always wrap in double quotes for predictability.
  */
-const quoteYaml = (value: string): string => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+const quoteYaml = (value: string): string =>
+	`"${Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))}"`
 
 const normalizeHttpUrl = (raw: string): Effect.Effect<string, OrgClickHouseSettingsValidationError> =>
 	validateExternalUrl(raw).pipe(
@@ -588,7 +590,7 @@ const normalizeHttpUrl = (raw: string): Effect.Effect<string, OrgClickHouseSetti
 								"ClickHouse credentials must use the user/password fields, not URL userinfo",
 						}),
 					)
-				: Effect.succeed(raw.trim().replace(/\/+$/, "")),
+				: Effect.succeed(Str.replace(/\/+$/, "")(Str.trim(raw))),
 		),
 		Effect.mapError(
 			(error) =>
@@ -662,7 +664,8 @@ const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 			kind: parsed.kind,
 			columns:
 				parsed.kind === "table"
-					? parsed.columns.filter(
+					? Arr.filter(
+							parsed.columns,
 							(column) => !performanceOnlySearchColumns.has(`${parsed.name}.${column.name}`),
 						)
 					: [],
@@ -696,7 +699,7 @@ const buildClickHouseUrl = (config: ClickHouseExecConfig): string =>
 	// analyzer (24.x+) sometimes fails to resolve unqualified table identifiers
 	// in materialized view bodies even when the X-ClickHouse-Database header is
 	// set, surfacing as `Code: 60. UNKNOWN_TABLE`.
-	`${config.url.replace(/\/$/, "")}/?database=${encodeURIComponent(config.database)}`
+	`${Str.replace(/\/$/, "")(config.url)}/?database=${encodeURIComponent(config.database)}`
 
 // Per-request timeout for ClickHouse HTTP calls. Maple's API runs on Cloudflare
 // Workers, whose *outbound* fetch is capped at ~100s — a hung request to an
@@ -745,7 +748,7 @@ export const shouldHealSchemaVersion = (
 ): boolean =>
 	storedSchemaVersion !== currentSchemaVersion &&
 	entries.length > 0 &&
-	entries.every((entry) => entry.status === "up_to_date")
+	Arr.every(entries, (entry) => entry.status === "up_to_date")
 
 const describeUpstream5xx = (status: number, message: string): string => {
 	// A 52x with the literal `error code: 5xx` body is Cloudflare's synthetic
@@ -769,7 +772,7 @@ const mapStatusToError = (
 	never,
 	OrgClickHouseSettingsUpstreamRejectedError | OrgClickHouseSettingsUpstreamUnavailableError
 > => {
-	const message = text.split("\n")[0]?.slice(0, 500) ?? ""
+	const message = Str.split("\n")(text)[0]?.slice(0, 500) ?? ""
 	if (status === 401 || status === 403) {
 		return Effect.fail(
 			new OrgClickHouseSettingsUpstreamRejectedError({
@@ -880,11 +883,11 @@ const decodeColumnRow = Schema.decodeUnknownOption(
 const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExecConfig) =>
 	Effect.gen(function* () {
 		// Tables: name + engine. Engine="MaterializedView" → MV; everything else → table.
-		const tablesSql = `SELECT name, engine FROM system.tables WHERE database = '${config.database.replace(/'/g, "''")}' FORMAT JSONEachRow`
+		const tablesSql = `SELECT name, engine FROM system.tables WHERE database = '${Str.replace(/'/g, "''")(config.database)}' FORMAT JSONEachRow`
 		const tablesText = yield* execClickHouseWithClient(client, config, tablesSql)
 		const tableRows = parseJsonEachRow(tablesText, decodeTableRow)
 
-		const columnsSql = `SELECT table, name, type FROM system.columns WHERE database = '${config.database.replace(/'/g, "''")}' FORMAT JSONEachRow`
+		const columnsSql = `SELECT table, name, type FROM system.columns WHERE database = '${Str.replace(/'/g, "''")(config.database)}' FORMAT JSONEachRow`
 		const columnsText = yield* execClickHouseWithClient(client, config, columnsSql)
 		const columnRows = parseJsonEachRow(columnsText, decodeColumnRow)
 
@@ -908,11 +911,10 @@ const fetchActualSchema = (client: HttpClient.HttpClient, config: ClickHouseExec
 
 // Malformed rows are skipped: the response comes from our own queries against system.* tables.
 const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Option<A>): ReadonlyArray<A> =>
-	text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.flatMap((line) => Option.toArray(decode(line)))
+	Arr.filter(
+		Arr.map(Str.split("\n")(text), (line) => Str.trim(line)),
+		(line) => line.length > 0,
+	).flatMap((line) => Option.toArray(decode(line)))
 
 // The migration runner + backfill chunking now live in the background
 // schema-apply Workflow (apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.ts),

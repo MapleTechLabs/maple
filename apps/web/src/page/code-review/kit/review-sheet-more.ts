@@ -4,7 +4,7 @@ import { countLabel, formatDuration, formatErrorRate, formatNumber } from "@mapl
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { DateTime } from "effect"
+import { DateTime, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ciRunsSkeleton } from "./skeletons"
@@ -32,8 +32,10 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 			...(breaks.length === 0
 				? []
 				: [
-						vstack(h, { gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
-							breaks.map((item) =>
+						vstack(
+							h,
+							{ gap: "1.5", as: "ul", className: typographyClass({ size: "sm" }) },
+							Arr.map(breaks, (item) =>
 								h.li(
 									[...(item.dismissed ? [h.Class("text-muted-foreground")] : [])],
 									[
@@ -49,9 +51,15 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 											[item.dismissed ? "Still emitted elsewhere" : "Stops arriving"],
 										),
 										" ",
-										h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [item.name]),
+										h.code(
+											[h.Class(typographyClass({ size: "xs", mono: true }))],
+											[item.name],
+										),
 										" · ",
-										item.references.map((ref) => `${ref.kind} “${ref.name}”`).join(", "),
+										Arr.join(
+											Arr.map(item.references, (ref) => `${ref.kind} “${ref.name}”`),
+											", ",
+										),
 									],
 								),
 							),
@@ -62,7 +70,8 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 				: [
 						bulletList(
 							h,
-							telemetry.linkedIssues.map(
+							Arr.map(
+								telemetry.linkedIssues,
 								(issue) =>
 									`Open error in ${issue.path}: ${issue.title} (${formatNumber(issue.occurrences)} occurrences)`,
 							),
@@ -73,12 +82,11 @@ export const productionSection = (h: H, telemetry: PrReviewTelemetry): ReadonlyA
 				: [
 						bulletList(
 							h,
-							telemetry.hotFiles
-								.slice(0, 5)
-								.map(
-									(file) =>
-										`${file.path}: ${formatNumber(file.perDay)} calls/day (${file.operations[0]?.spanName ?? ""})`,
-								),
+							Arr.map(
+								telemetry.hotFiles.slice(0, 5),
+								(file) =>
+									`${file.path}: ${formatNumber(file.perDay)} calls/day (${file.operations[0]?.spanName ?? ""})`,
+							),
 						),
 					]),
 		]),
@@ -102,17 +110,17 @@ export const postMergeSection = (h: H, postMerge: PrReviewPostMerge, nowMs: numb
 			],
 		),
 		bulletList(h, [
-			...postMerge.missing.map((name) => `${name} stopped arriving`),
-			...postMerge.newIssues.map((issue) => `New error: ${issue.title} (${issue.afterPerHour}/h)`),
-			...postMerge.linkedIssues.map(
+			...Arr.map(postMerge.missing, (name) => `${name} stopped arriving`),
+			...Arr.map(postMerge.newIssues, (issue) => `New error: ${issue.title} (${issue.afterPerHour}/h)`),
+			...Arr.map(
+				postMerge.linkedIssues,
 				(issue) => `${issue.title}: ${issue.beforePerHour}/h → ${issue.afterPerHour}/h`,
 			),
-			...postMerge.operations
-				.filter((operation) => operation.regressed)
-				.map(
-					(operation) =>
-						`${operation.spanName}: errors ${formatErrorRate(operation.before.errorRate)} → ${formatErrorRate(operation.after.errorRate)}, p95 ${operation.before.p95Ms} → ${operation.after.p95Ms} ms`,
-				),
+			...Arr.map(
+				Arr.filter(postMerge.operations, (operation) => operation.regressed),
+				(operation) =>
+					`${operation.spanName}: errors ${formatErrorRate(operation.before.errorRate)} → ${formatErrorRate(operation.after.errorRate)}, p95 ${operation.before.p95Ms} → ${operation.after.p95Ms} ms`,
+			),
 		]),
 	])
 }
@@ -131,7 +139,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 				: ciSection(h, [
 						h.ul(
 							[h.Class("-mx-2 flex flex-col")],
-							response.runs.map((run) =>
+							Arr.map(response.runs, (run) =>
 								h.li(
 									[
 										h.Key(run.traceId),
@@ -141,7 +149,13 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 									],
 									[
 										ciResultBadge(h, run.result, run.attempt, "w-32 shrink-0"),
-										typography(h, { truncate: true, className: "min-w-0 flex-1", attributes: [h.Title(run.pipeline)] },
+										typography(
+											h,
+											{
+												truncate: true,
+												className: "min-w-0 flex-1",
+												attributes: [h.Title(run.pipeline)],
+											},
 											[run.pipeline],
 										),
 										truncatedId(h, {
@@ -165,9 +179,9 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 						...(response.nextCursor === null
 							? []
 							: [
-									typography(h, { size: "xs", tone: "muted", as: "p" },
-										[`Latest ${CI_RUNS_SHOWN} runs`],
-									),
+									typography(h, { size: "xs", tone: "muted", as: "p" }, [
+										`Latest ${CI_RUNS_SHOWN} runs`,
+									]),
 								]),
 					]),
 	})
@@ -176,7 +190,7 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 	section(h, "Reviews of this pull request", [
 		h.ul(
 			[h.Class("-mx-2 flex flex-col")],
-			detail.history.map((entry) => {
+			Arr.map(detail.history, (entry) => {
 				const outcome = outcomeOf(entry)
 				const isCurrent = entry.id === detail.review.id
 				return h.li(
@@ -190,7 +204,9 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 								isDisabled: isCurrent,
 								className: cn(
 									"flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors disabled:cursor-default disabled:opacity-100",
-									isCurrent ? "bg-muted" : "hover:bg-surface-sunken active:bg-surface-sunken",
+									isCurrent
+										? "bg-muted"
+										: "hover:bg-surface-sunken active:bg-surface-sunken",
 								),
 							},
 							[
@@ -200,9 +216,9 @@ export const historySection = (h: H, sheet: ReviewSheet, detail: CodeReviewDetai
 									className: typographyClass({ size: "xs", tone: "muted" }),
 								}),
 								h.span([h.Class(cn("flex-1", outcome.tone))], [outcome.label]),
-								typography(h, { tone: "muted", numeric: true },
-									[countLabel(entry.findings, "issue")],
-								),
+								typography(h, { tone: "muted", numeric: true }, [
+									countLabel(entry.findings, "issue"),
+								]),
 								relativeTime(h, {
 									tooltip: "title",
 									value: entry.createdAt,

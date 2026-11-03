@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { AlertDestinationId, parseGoogleChatWebhookUrl } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/primitives"
 import { assert, describe, it } from "@effect/vitest"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import type { DispatchContext } from "../context"
 import type { RenderInput, SecretConfigOf } from "../Transport"
 import { googleChatTransport } from "./google-chat"
@@ -107,7 +107,7 @@ describe("googleChatTransport.render", () => {
 				widget.textParagraph?.text ?? widget.decoratedText?.text ?? [],
 		)
 		assert.include(texts, "a&lt;b&gt;&amp;c")
-		assert.isFalse(texts.some((text: string) => text.includes("a<b>")))
+		assert.isFalse(texts.some((text: string) => Str.includes("a<b>")(text)))
 	})
 
 	it("carries the chart and both links", () => {

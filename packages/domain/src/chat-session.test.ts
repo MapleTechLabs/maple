@@ -1,4 +1,4 @@
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Schema, Stream, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { OrgId } from "./primitives"
 import {
@@ -121,13 +121,13 @@ describe("chat session ids", () => {
 		// `-` is what the tab splits on, and nothing else escapes it — so both segments' charsets
 		// are what keeps `bot-<connectorId>-<conversationKey>` unambiguous.
 		const key = Schema.decodeUnknownSync(ChatConversationKey)
-		for (const bad of ["has-dash", "has space", "", "a".repeat(129)]) {
+		for (const bad of ["has-dash", "has space", "", Str.repeat(129)("a")]) {
 			expect(() => key(bad), bad).toThrow()
 		}
 		expect(key("C123.g:4_x")).toBe("C123.g:4_x")
 
 		const id = Schema.decodeUnknownSync(ChatConnectorId)
-		for (const bad of ["two-words", "Upper", "9lead", "has_underscore", "", "a".repeat(33)]) {
+		for (const bad of ["two-words", "Upper", "9lead", "has_underscore", "", Str.repeat(33)("a")]) {
 			expect(() => id(bad), bad).toThrow()
 		}
 		expect(id("testchat2")).toBe("testchat2")

@@ -4,7 +4,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PlanetscaleConnections, PlanetscaleDatabases } from "@maple/db/tables"
 import { SourceId } from "@maple/domain/primitives"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -246,7 +246,7 @@ describe("PlanetScaleWebhookRouter", () => {
 					event: "branch.out_of_memory",
 					organization: "acme",
 					database: "shop",
-					resource: { payload: "x".repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES) },
+					resource: { payload: Str.repeat(MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES)("x") },
 				})
 				const oversized = yield* Effect.promise(() =>
 					handler(

@@ -1,5 +1,5 @@
 import type { StatusPageConfigChanges } from "@maple/domain/http/v2"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -37,10 +37,16 @@ const intro = (h: H): Html =>
 	])
 
 const changeRows = (changes: StatusPageConfigChanges): ReadonlyArray<readonly [string, string]> => [
-	...(changes.fields.length === 0 ? [] : [["Fields changed", changes.fields.join(", ")] as const]),
-	...(changes.created.length === 0 ? [] : [["Components to create", changes.created.join(", ")] as const]),
-	...(changes.updated.length === 0 ? [] : [["Components to update", changes.updated.join(", ")] as const]),
-	...(changes.deleted.length === 0 ? [] : [["Components to delete", changes.deleted.join(", ")] as const]),
+	...(changes.fields.length === 0 ? [] : [["Fields changed", Arr.join(changes.fields, ", ")] as const]),
+	...(changes.created.length === 0
+		? []
+		: [["Components to create", Arr.join(changes.created, ", ")] as const]),
+	...(changes.updated.length === 0
+		? []
+		: [["Components to update", Arr.join(changes.updated, ", ")] as const]),
+	...(changes.deleted.length === 0
+		? []
+		: [["Components to delete", Arr.join(changes.deleted, ", ")] as const]),
 	...(changes.reordered ? [["Order", "Components change order"] as const] : []),
 ]
 
@@ -55,7 +61,7 @@ const summary = (h: H, changes: StatusPageConfigChanges): Html => {
 					? typography(h, { size: "sm", tone: "muted", as: "p" }, ["No changes yet."])
 					: h.dl(
 							[h.Class("grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm")],
-							rows.flatMap(([term, detail]) => [
+							Arr.flatMap(rows, ([term, detail]) => [
 								h.dt([h.Class("text-muted-foreground")], [term]),
 								h.dd([h.Class("text-foreground")], [detail]),
 							]),

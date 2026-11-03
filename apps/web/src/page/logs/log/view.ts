@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
@@ -19,8 +19,8 @@ type H = HtmlBuilder<Message>
 const BACK = { href: "/logs", label: "Back to Logs" }
 
 const bodyExcerpt = (body: string): string => {
-	const trimmed = body.trim()
-	return trimmed.length > 48 ? `${trimmed.slice(0, 48)}…` : trimmed || "Log"
+	const trimmed = Str.trim(body)
+	return trimmed.length > 48 ? `${Str.slice(0, 48)(trimmed)}…` : trimmed || "Log"
 }
 
 const loading = (h: H): ReadonlyArray<Html> => [
@@ -42,7 +42,10 @@ const missingState = (h: H, options: Readonly<{ title: string; description: stri
 		],
 		[
 			h.div(
-				[h.AriaHidden(true), h.Class("rounded-md border bg-surface-faint p-2.5 text-muted-foreground")],
+				[
+					h.AriaHidden(true),
+					h.Class("rounded-md border bg-surface-faint p-2.5 text-muted-foreground"),
+				],
 				[icon(h, "CircleWarningIcon", { size: 18 })],
 			),
 			h.div(

@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -22,12 +22,15 @@ const MAX_TAG_LENGTH = 32
 export const normalizeTags = (input: ReadonlyArray<string>): ReadonlyArray<string> =>
 	Array.from(
 		new Set(
-			input.map((raw) => raw.trim().toLowerCase().slice(0, MAX_TAG_LENGTH)).filter((tag) => tag !== ""),
+			Arr.filter(
+				Arr.map(input, (raw) => Str.slice(0, MAX_TAG_LENGTH)(Str.toLowerCase(Str.trim(raw)))),
+				(tag) => tag !== "",
+			),
 		),
 	).sort()
 
 /** `splitInput`: commas and newlines separate tags. */
-export const splitTagInput = (value: string): ReadonlyArray<string> => value.split(/[,\n]/)
+export const splitTagInput = (value: string): ReadonlyArray<string> => Str.split(/[,\n]/)(value)
 
 // MODEL
 
@@ -99,12 +102,12 @@ export const update = (model: Model, message: Message): Return =>
 			if (key === "Enter" || key === ",") return { model: commitInput(model, model.input) }
 			const last = model.drafts[model.drafts.length - 1]
 			return key === "Backspace" && model.input === "" && last !== undefined
-				? { model: { ...model, drafts: model.drafts.filter((tag) => tag !== last) } }
+				? { model: { ...model, drafts: Arr.filter(model.drafts, (tag) => tag !== last) } }
 				: { model }
 		},
 		ClickedAddTag: () => ({ model: commitInput(model, model.input) }),
 		ClickedRemoveTag: ({ tag }) => ({
-			model: { ...model, drafts: model.drafts.filter((draft) => draft !== tag) },
+			model: { ...model, drafts: Arr.filter(model.drafts, (draft) => draft !== tag) },
 		}),
 		ClickedSuggestedTag: ({ tag }) => ({ model: commitInput(model, tag) }),
 		ClickedSaveTags: () => {
@@ -143,26 +146,25 @@ const draftChips = (h: H, model: Model): Html =>
 				{ ids: TAG_IDS, className: "text-2xs", state: IDLE },
 				"No tags yet, so this dashboard won't appear under any Tags filter.",
 			)
-		: hstack(h, { gap: "1", align: "stretch", wrap: true },
-				model.drafts.map((tag) =>
-					badge(
-						h,
-						{ variant: "secondary", className: "gap-1 pr-1 font-mono text-2xs" },
-						[
-							tag,
-							iconButton(
-								h,
-								{
-									size: "icon-xs",
-									label: `Remove tag ${tag}`,
-									hasTooltip: false,
-									className: "size-4 text-muted-foreground hover:text-foreground active:text-foreground",
-									attributes: [h.OnClick(Message.ClickedRemoveTag({ tag }))],
-								},
-								[icon(h, "XmarkIcon")],
-							),
-						],
-					),
+		: hstack(
+				h,
+				{ gap: "1", align: "stretch", wrap: true },
+				Arr.map(model.drafts, (tag) =>
+					badge(h, { variant: "secondary", className: "gap-1 pr-1 font-mono text-2xs" }, [
+						tag,
+						iconButton(
+							h,
+							{
+								size: "icon-xs",
+								label: `Remove tag ${tag}`,
+								hasTooltip: false,
+								className:
+									"size-4 text-muted-foreground hover:text-foreground active:text-foreground",
+								attributes: [h.OnClick(Message.ClickedRemoveTag({ tag }))],
+							},
+							[icon(h, "XmarkIcon")],
+						),
+					]),
 				),
 			)
 
@@ -172,8 +174,10 @@ const suggestions = (h: H, unused: ReadonlyArray<string>): ReadonlyArray<Html> =
 		: [
 				field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 					plainFieldLabel(h, "Used elsewhere"),
-					hstack(h, { gap: "1", align: "stretch", wrap: true },
-						unused.map((tag) =>
+					hstack(
+						h,
+						{ gap: "1", align: "stretch", wrap: true },
+						Arr.map(unused, (tag) =>
 							button(
 								h,
 								{
@@ -198,36 +202,34 @@ const tagInput = (h: H, model: Model): Html => {
 	const canAdd = normalizeTags(splitTagInput(model.input)).length > 0
 	return field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 		fieldLabel(h, { ids: TAG_IDS, className: "text-xs", state: IDLE }, "Add a tag"),
-		hstack(h, { gap: "1.5" },
-			[
-				input(h, {
-					id: TAG_INPUT_ID,
-					size: "sm",
-					attributes: [
-						h.Value(model.input),
-						h.Placeholder("slo, api, team-platform"),
-						h.Maxlength(32),
-						h.OnInput((value) => Message.ChangedTagInput({ value })),
-						h.OnKeyDownPreventDefault((key) =>
-							key === "Enter" || key === "," || (key === "Backspace" && model.input === "")
-								? Option.some(Message.PressedTagInputKey({ key }))
-								: Option.none(),
-						),
-						h.OnBlur(Message.ClickedAddTag()),
-					],
-				}),
-				iconButton(
-					h,
-					{
-						variant: "outline",
-						label: "Add tag",
-						isDisabled: !canAdd,
-						attributes: [h.OnClick(Message.ClickedAddTag())],
-					},
-					[icon(h, "PlusIcon")],
-				),
-			],
-		),
+		hstack(h, { gap: "1.5" }, [
+			input(h, {
+				id: TAG_INPUT_ID,
+				size: "sm",
+				attributes: [
+					h.Value(model.input),
+					h.Placeholder("slo, api, team-platform"),
+					h.Maxlength(32),
+					h.OnInput((value) => Message.ChangedTagInput({ value })),
+					h.OnKeyDownPreventDefault((key) =>
+						key === "Enter" || key === "," || (key === "Backspace" && model.input === "")
+							? Option.some(Message.PressedTagInputKey({ key }))
+							: Option.none(),
+					),
+					h.OnBlur(Message.ClickedAddTag()),
+				],
+			}),
+			iconButton(
+				h,
+				{
+					variant: "outline",
+					label: "Add tag",
+					isDisabled: !canAdd,
+					attributes: [h.OnClick(Message.ClickedAddTag())],
+				},
+				[icon(h, "PlusIcon")],
+			),
+		]),
 	])
 }
 
@@ -237,7 +239,7 @@ export type ViewInputs = Readonly<{
 }>
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
-	const unused = normalizeTags(inputs.allTags).filter((tag) => !model.drafts.includes(tag))
+	const unused = Arr.filter(normalizeTags(inputs.allTags), (tag) => !model.drafts.includes(tag))
 	return formDialog(h, {
 		slotId: model.dialog.id,
 		model: model.dialog,

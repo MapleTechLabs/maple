@@ -9,7 +9,7 @@ import type { LogsListOutput } from "@maple/query-engine/ch"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { severityRank } from "@maple/ui/lib/severity"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 /** One log row, attribute maps already decoded. */
 export const LocalLog = Schema.Struct({
@@ -71,5 +71,5 @@ export const logRecordKey = (record: LogRecord): string =>
 
 /** Most severe first; unknown levels after the known ones, alphabetically. */
 export function compareSeverity(a: string, b: string): number {
-	return severityRank(a) - severityRank(b) || a.localeCompare(b)
+	return severityRank(a) - severityRank(b) || Str.localeCompare(b)(a)
 }

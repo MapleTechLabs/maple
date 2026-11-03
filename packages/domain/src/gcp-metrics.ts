@@ -1,3 +1,4 @@
+import { Array as Arr, Record as Rec } from "effect"
 /**
  * What Maple collects from a connected Google Cloud project, folder or organization. The metric
  * table is the whole metrics scope: the poller issues one `timeSeries.list` query per entry, and
@@ -71,8 +72,8 @@ export const gcpMetricLabelAttribute = (label: string) =>
 
 /** The attributes, besides `quantile`, that tell a metric's points apart. */
 export const gcpMetricPointAttributes = (metric: GcpMetric): ReadonlyArray<string> => [
-	...metric.labels.map(gcpMetricLabelAttribute),
-	...Object.keys(metric.attributes),
+	...Arr.map(metric.labels, gcpMetricLabelAttribute),
+	...Rec.keys(metric.attributes),
 ]
 
 const metric = (

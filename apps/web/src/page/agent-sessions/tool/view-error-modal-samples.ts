@@ -22,6 +22,7 @@ import { sessionLink } from "./view-error-modal-rail"
 import type { ModalInputs } from "./view-error-modal"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `SamplesPane` and `Sample` of `ToolErrorModal`: the failed calls, newest first, one open at a time.
 
@@ -33,7 +34,8 @@ const SAMPLES_PAGE = 25
 const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	const paging = pagingOf(model)
 	const last = model.pages.at(-1)?.data
-	const failure = paging === "failed" && last !== undefined && AsyncData.isFailure(last) ? last.error : undefined
+	const failure =
+		paging === "failed" && last !== undefined && AsyncData.isFailure(last) ? last.error : undefined
 	return h.div(
 		[h.Class("flex h-9 items-center gap-2 px-6 font-mono text-xs")],
 		[
@@ -94,7 +96,7 @@ export const samplesPane = (
 					]
 				: rows.length === 0
 					? [emptyMessage(h, {}, ["No samples in this window"])]
-					: rows.map((row, index) =>
+					: Arr.map(rows, (row, index) =>
 							sampleRow(h, model, inputs, row, {
 								index,
 								isOpen: index === current && !model.isSampleClosed,
@@ -111,59 +113,54 @@ export const samplesPane = (
 					),
 				],
 				[
-					hstack(h, { gap: "2", align: "baseline" },
-						[
-							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Samples"]),
-							typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
-								[
-									formatNumber(options.total),
-									" failed ",
-									pluralize(options.total, "call"),
-									" · newest first",
-								],
-							),
-						],
-					),
-					hstack(h, { gap: "2" },
-						[
-							h.span(
-								[h.Class("pr-1 text-2xs text-foreground-subtle max-md:hidden")],
-								["j / k"],
-							),
-							iconButton(
-								h,
-								{
-									label: "Newer sample",
-									variant: "outline",
-									size: "icon-xs",
-									isDisabled: current === 0,
-									className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-									attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
-								},
-								[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
-							),
-							h.span(
-								[h.Class("w-20 text-center text-xs tabular-nums text-foreground")],
-								[
-									rows.length === 0 ? "0" : String(current + 1),
-									" of ",
-									formatNumber(options.total),
-								],
-							),
-							iconButton(
-								h,
-								{
-									label: "Older sample",
-									variant: "outline",
-									size: "icon-xs",
-									isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
-									className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-									attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
-								},
-								[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
-							),
-						],
-					),
+					hstack(h, { gap: "2", align: "baseline" }, [
+						typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Samples"]),
+						typography(
+							h,
+							{ size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" },
+							[
+								formatNumber(options.total),
+								" failed ",
+								pluralize(options.total, "call"),
+								" · newest first",
+							],
+						),
+					]),
+					hstack(h, { gap: "2" }, [
+						h.span([h.Class("pr-1 text-2xs text-foreground-subtle max-md:hidden")], ["j / k"]),
+						iconButton(
+							h,
+							{
+								label: "Newer sample",
+								variant: "outline",
+								size: "icon-xs",
+								isDisabled: current === 0,
+								className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+								attributes: [h.OnClick(Message.PressedModalKey({ key: "NewerSample" }))],
+							},
+							[icon(h, "ChevronLeftIcon", { attributes: [h.AriaHidden(true)] })],
+						),
+						h.span(
+							[h.Class("w-20 text-center text-xs tabular-nums text-foreground")],
+							[
+								rows.length === 0 ? "0" : String(current + 1),
+								" of ",
+								formatNumber(options.total),
+							],
+						),
+						iconButton(
+							h,
+							{
+								label: "Older sample",
+								variant: "outline",
+								size: "icon-xs",
+								isDisabled: current >= rows.length - 1 && pagingOf(model) !== "more",
+								className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
+								attributes: [h.OnClick(Message.PressedModalKey({ key: "OlderSample" }))],
+							},
+							[icon(h, "ChevronRightIcon", { attributes: [h.AriaHidden(true)] })],
+						),
+					]),
 				],
 			),
 			h.div(
@@ -253,7 +250,10 @@ const sampleRow = (
 											"hidden shrink-0 rounded-sm border border-border px-1.5 text-2xs leading-3.5 text-foreground-subtle md:block",
 										),
 									],
-									["variant ", h.span([h.Class("text-foreground-soft")], [options.variant])],
+									[
+										"variant ",
+										h.span([h.Class("text-foreground-soft")], [options.variant]),
+									],
 								),
 							]),
 					h.span([h.Class("grow")], []),

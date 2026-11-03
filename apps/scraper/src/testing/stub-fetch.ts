@@ -1,3 +1,4 @@
+import { Record as Rec } from "effect"
 export interface RecordedRequest {
 	readonly url: string
 	readonly method: string
@@ -11,7 +12,7 @@ type Respond = (request: RecordedRequest, signal: AbortSignal | null) => Respons
 export const stubFetch = (recorded: Array<RecordedRequest>, respond: Respond) =>
 	Object.assign(
 		async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-			const headers = Object.fromEntries(new Headers(init?.headers).entries())
+			const headers = Rec.fromEntries(new Headers(init?.headers).entries())
 			const raw = init?.body
 			const body =
 				typeof raw === "string"

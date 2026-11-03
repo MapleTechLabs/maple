@@ -1,6 +1,6 @@
 import type { RepoSandboxServiceApi } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { OrgId } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { sandboxSource } from "./sandbox-source"
 
@@ -17,7 +17,7 @@ const source = (exitCode: number) =>
 			readFile: () => result(exitCode, "1\tx", "fatal: path 'b.ts' does not exist"),
 		} satisfies RepoSandboxServiceApi,
 		Schema.decodeUnknownSync(OrgId)("org_a"),
-		{ repository: "acme/api", ref: "a".repeat(40) },
+		{ repository: "acme/api", ref: Str.repeat(40)("a") },
 	)
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
@@ -26,7 +26,7 @@ describe("sandboxSource", () => {
 	it("reports a failed read to the model instead of an empty answer", async () => {
 		const read = await run(source(128).readFile("b.ts", 1, 10))
 		const grep = await run(source(128).grep("(", undefined))
-		expect([read, grep].map((r) => (r._tag === "Failure" ? r.failure.message : "ok"))).toEqual([
+		expect(Arr.map([read, grep], (r) => (r._tag === "Failure" ? r.failure.message : "ok"))).toEqual([
 			"cannot read b.ts (exit 128): fatal: path 'b.ts' does not exist",
 			"grep failed (exit 128): fatal: command line, '(': Unmatched ( or \\(",
 		])

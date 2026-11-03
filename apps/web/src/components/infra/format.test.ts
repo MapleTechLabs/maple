@@ -7,6 +7,7 @@ import {
 	formatUtilizationPercent,
 	severityLevel,
 } from "./format"
+import { Array as Arr } from "effect"
 
 describe("deriveHostStatus", () => {
 	const now = new Date("2026-04-24T12:00:00Z").getTime()
@@ -72,7 +73,7 @@ describe("node capacity", () => {
 
 describe("formatUtilizationPercent", () => {
 	it("keeps one decimal under 10% and drops trailing zeros", () => {
-		expect([0.017, 0.008, 0.06, 0.2, 0.0004, 0].map(formatUtilizationPercent)).toEqual([
+		expect(Arr.map([0.017, 0.008, 0.06, 0.2, 0.0004, 0], formatUtilizationPercent)).toEqual([
 			"1.7%",
 			"0.8%",
 			"6%",

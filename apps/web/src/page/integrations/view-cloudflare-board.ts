@@ -33,6 +33,7 @@ import type { Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { Array as Arr, String as Str } from "effect"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
 
@@ -78,7 +79,7 @@ const sparkline = (h: H, model: Model, name: string, usage: RowUsage): Html =>
 						view: Sparkline.view,
 						toParentMessage: (message: Chart.Message) => Message.GotSparklineMessage({ message }),
 						viewInputs: {
-							chartId: `cf-integration-spark-${name.replace(/\W+/g, "_")}`,
+							chartId: `cf-integration-spark-${Str.replace(/\W+/g, "_")(name)}`,
 							values: usage.points,
 							color: CLOUDFLARE_ACCENT,
 							className: "h-full w-full",
@@ -118,14 +119,7 @@ const resourceRow = (
 			],
 		),
 		h.div(
-			[
-				h.Class(
-					cn(
-						"hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block",
-						status.detailClass,
-					),
-				),
-			],
+			[h.Class(cn("hidden w-48 min-w-0 shrink-0 self-center text-2xs @lg:block", status.detailClass))],
 			detailView(h, status.detail),
 		),
 		h.div(
@@ -167,7 +161,7 @@ const sortZones = (zones: ReadonlyArray<Decorated>, key: ZoneSortKey, dir: "asc"
 	zones.toSorted((a, b) => {
 		const raw =
 			key === "name"
-				? a.entry.name.localeCompare(b.entry.name)
+				? Str.localeCompare(b.entry.name)(a.entry.name)
 				: key === "requests"
 					? a.requests - b.requests
 					: STATUS_META[a.status.kind].order - STATUS_META[b.status.kind].order
@@ -184,18 +178,19 @@ export const zoneBoard = (
 	className: string,
 ): Html => {
 	const card = model.cloudflareCard
-	const decorated = zones.map((entry) => ({
+	const decorated = Arr.map(zones, (entry) => ({
 		entry,
 		status: zoneStatus(entry, usageLoaded, model.nowMs),
 		requests: entry.usage?.totalRequests ?? 0,
 	}))
-	const counts = (kind: ZoneStatusKind) => decorated.filter((zone) => zone.status.kind === kind).length
+	const counts = (kind: ZoneStatusKind) => Arr.filter(decorated, (zone) => zone.status.kind === kind).length
 	const filter = card.zoneFilter.values[0] ?? "all"
-	const query = card.zoneSearch.trim().toLowerCase()
-	const filtered = decorated.filter(
+	const query = Str.toLowerCase(Str.trim(card.zoneSearch))
+	const filtered = Arr.filter(
+		decorated,
 		(zone) =>
 			(filter === "all" || zone.status.kind === filter) &&
-			(query === "" || zone.entry.name.toLowerCase().includes(query)),
+			(query === "" || Str.includes(query)(Str.toLowerCase(zone.entry.name))),
 	)
 	const sorted = sortZones(filtered, card.zoneSort.key, card.zoneSort.dir)
 	const head = (
@@ -227,13 +222,15 @@ export const zoneBoard = (
 					className: "ml-auto gap-1.5",
 					items: [
 						countChipItem(h, { value: "all", label: "All", count: decorated.length }),
-						...CHIP_ORDER.filter((kind) => counts(kind) > 0).map((kind) =>
-							countChipItem(h, {
-								value: kind,
-								label: STATUS_META[kind].label,
-								count: counts(kind),
-								tone: STATUS_META[kind].tone,
-							}),
+						...Arr.map(
+							Arr.filter(CHIP_ORDER, (kind) => counts(kind) > 0),
+							(kind) =>
+								countChipItem(h, {
+									value: kind,
+									label: STATUS_META[kind].label,
+									count: counts(kind),
+									tone: STATUS_META[kind].tone,
+								}),
 						),
 					],
 				}),
@@ -277,12 +274,12 @@ export const zoneBoard = (
 				sorted.length === 0
 					? emptyMessage(h, { className: "px-3 py-10" }, [
 							query !== ""
-								? `No zones match "${card.zoneSearch.trim()}"`
+								? `No zones match "${Str.trim(card.zoneSearch)}"`
 								: "No zones in this state",
 						])
 					: h.div(
 							[h.Class("max-h-[22rem] overflow-y-auto overscroll-contain")],
-							sorted.map((zone) =>
+							Arr.map(sorted, (zone) =>
 								resourceRow(
 									h,
 									model,
@@ -326,7 +323,11 @@ export const workersCard = (
 		...(aggregate.kind === "issue" || aggregate.kind === "no-data"
 			? [
 					h.div(
-						[h.Class(cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass))],
+						[
+							h.Class(
+								cn("border-b border-border-subtle px-4 py-2 text-2xs", aggregate.detailClass),
+							),
+						],
 						detailView(h, aggregate.detail),
 					),
 				]
@@ -345,7 +346,7 @@ export const workersCard = (
 			: h.div(
 					[h.Class("flex flex-col px-4 pb-2 pt-1")],
 					[
-						...visible.map((service) =>
+						...Arr.map(visible, (service) =>
 							h.div(
 								[
 									h.Class(
@@ -353,17 +354,19 @@ export const workersCard = (
 									),
 								],
 								[
-									hstack(h, { gap: "2.5", shrink: true, as: "span" },
-										[
-											statusDot(h, {
-												tone: service.totalRequests > 0 ? "ok" : "neutral",
+									hstack(h, { gap: "2.5", shrink: true, as: "span" }, [
+										statusDot(h, {
+											tone: service.totalRequests > 0 ? "ok" : "neutral",
+										}),
+										truncatedText(h, {
+											text: service.displayName,
+											className: typographyClass({
+												size: "xs",
+												tone: "foreground",
+												weight: "medium",
 											}),
-											truncatedText(h, {
-												text: service.displayName,
-												className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
-											}),
-										],
-									),
+										}),
+									]),
 									h.span(
 										[
 											h.Class(

@@ -28,6 +28,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr, Record as Rec } from "effect"
 
 // `GcpResources`: the inventory filtered by type and project.
 // TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
@@ -78,7 +79,8 @@ const filterSelect = (
 		view: selectView,
 		toParentMessage: options.toMessage,
 		viewInputs: {
-			entries: [{ value: ALL, label: options.allLabel }, ...options.entries].map(
+			entries: Arr.map(
+				[{ value: ALL, label: options.allLabel }, ...options.entries],
 				(item): SelectEntry => ({ _tag: "Item", item }),
 			),
 			ariaLabel: options.label,
@@ -91,7 +93,7 @@ const metaChip = (h: H, text: string): Html =>
 	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
 
 const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch: TimeSearch): Html => {
-	const labels = Object.entries(resource.labels).map(([key, value]) => `${key}: ${value}`)
+	const labels = Arr.map(Rec.toEntries(resource.labels), ([key, value]) => `${key}: ${value}`)
 	const type = gcpAssetTypeLabel(resource.assetType)
 	const state = resource.state === null ? null : gcpStateLabel(resource.state)
 	const workload = gcpResourceWorkload(resource)
@@ -119,7 +121,10 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 			[state ?? EMPTY_VALUE],
 		),
 		h.div(
-			[h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"), h.Title(labels.join("\n"))],
+			[
+				h.Class("hidden w-36 items-center gap-2 whitespace-nowrap lg:flex"),
+				h.Title(Arr.join(labels, "\n")),
+			],
 			[
 				...(labels.length === 0
 					? []
@@ -163,7 +168,7 @@ const resourcesList = (
 			model: model.resourceTypeSelect,
 			label: "Resource type",
 			allLabel: "All types",
-			entries: types.map((entry) => ({
+			entries: Arr.map(types, (entry) => ({
 				value: entry.assetType,
 				label: `${gcpAssetTypeLabel(entry.assetType)} (${entry.count})`,
 			})),
@@ -178,7 +183,7 @@ const resourcesList = (
 					model: model.resourceProjectSelect,
 					label: "Project",
 					allLabel: "All projects",
-					entries: projects.map((name) => ({ value: name, label: name })),
+					entries: Arr.map(projects, (name) => ({ value: name, label: name })),
 					value: project,
 					toMessage: (message) => Message.GotResourceProjectSelectMessage({ message }),
 				},
@@ -214,7 +219,7 @@ const resourcesList = (
 									"No resources yet. Maple lists them with a connection's first metrics read, then every hour.",
 								]),
 							]
-						: resources.map((resource) => resourceRow(h, resource, timeSearch)),
+						: Arr.map(resources, (resource) => resourceRow(h, resource, timeSearch)),
 				),
 	]
 }

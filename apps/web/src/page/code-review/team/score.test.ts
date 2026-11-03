@@ -2,6 +2,7 @@ import { CodeReviewTeamMember } from "@maple/domain/http"
 import { describe, expect, test } from "vitest"
 import { teamScores } from "./score"
 import { member } from "./team-member.fixture"
+import { Array as Arr } from "effect"
 
 /**
  * Someone with `pullRequests` merged pull requests and every rate at `quality` (0-1): that share of
@@ -50,7 +51,7 @@ describe("teamScores", () => {
 
 	test("a couple of flawless pull requests do not top the team", () => {
 		const members = [...team, flawless("newcomer", 2)]
-		const others = team.map((m) => scoreOf(members, m.login))
+		const others = Arr.map(team, (m) => scoreOf(members, m.login))
 		expect(scoreOf(members, "newcomer")).toBeLessThan(Math.max(...others))
 	})
 
@@ -140,7 +141,8 @@ describe("teamScores", () => {
 			firstTryGreen: 0,
 			reruns: 0,
 		})
-		const members = [...team, reviewsOnly, steady("poor-ci", 12, 0.8), steady("great-ci", 12, 0.8)].map(
+		const members = Arr.map(
+			[...team, reviewsOnly, steady("poor-ci", 12, 0.8), steady("great-ci", 12, 0.8)],
 			(m) =>
 				m.login === "poor-ci"
 					? new CodeReviewTeamMember({ ...m, firstTryGreen: 0, reruns: m.ciRuns })

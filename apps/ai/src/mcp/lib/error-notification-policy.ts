@@ -2,7 +2,7 @@
  * The error notification policy as the get and update tools report it: destinations joined to
  * their names, both id forms, and the occurrence count a new error's first notification waits for.
  */
-import { Effect, Option } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import type { ErrorNotificationPolicyDocument, OrgId } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import type { ErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
@@ -28,12 +28,17 @@ export const policyOutput = Effect.fn("McpTool.errorNotificationPolicyOutput")(f
 		),
 		Effect.option,
 	)
-	const byId = new Map(Option.getOrElse(lookup, () => []).map((d) => [d.id, d]))
+	const byId = new Map(
+		Arr.map(
+			Option.getOrElse(lookup, () => []),
+			(d) => [d.id, d],
+		),
+	)
 	const output: PolicyOutput = {
 		enabled: policy.enabled,
 		destinationIds: policy.destinationIds,
 		...(Option.isNone(lookup) ? { destinationNamesUnavailable: true } : undefined),
-		destinations: policy.destinationIds.map((id) => {
+		destinations: Arr.map(policy.destinationIds, (id) => {
 			const found = byId.get(id)
 			return {
 				id,
@@ -72,9 +77,12 @@ export const renderPolicy = (title: string, output: PolicyOutput): ToolDoc => ({
 				"Destinations",
 				output.destinations.length === 0
 					? "none: nothing is delivered"
-					: output.destinations
-							.map((d) => destinationLabel(d, output.destinationNamesUnavailable === true))
-							.join("; "),
+					: Arr.join(
+							Arr.map(output.destinations, (d) =>
+								destinationLabel(d, output.destinationNamesUnavailable === true),
+							),
+							"; ",
+						),
 			],
 			["First seen", yesNo(output.notifyOnFirstSeen)],
 			["Regression", yesNo(output.notifyOnRegression)],

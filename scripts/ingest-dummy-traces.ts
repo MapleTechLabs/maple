@@ -38,7 +38,7 @@
 import { randomBytes } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { parseArgs } from "node:util"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -185,10 +185,10 @@ const recentGitShas = (n: number): string[] => {
 			cwd: new URL("..", import.meta.url).pathname,
 			encoding: "utf8",
 		})
-		return out
-			.split("\n")
-			.map((s) => s.trim())
-			.filter(Boolean)
+		return Arr.filter(
+			Arr.map(Str.split("\n")(out), (s) => Str.trim(s)),
+			Boolean,
+		)
 	} catch {
 		return []
 	}
@@ -216,7 +216,7 @@ const generateForSha = (sha: string, at: number, opts: Options): GeneratedSha =>
 		const rootAttrs = [
 			attr("http.request.method", method),
 			attr("http.route", route),
-			attr("url.path", route.replace("{id}", String(randInt(1000, 9999)))),
+			attr("url.path", Str.replace("{id}", String(randInt(1000, 9999)))(route)),
 			attr("http.response.status_code", status),
 			attr("server.address", `${opts.service}.internal`),
 		]
@@ -261,8 +261,8 @@ const generateForSha = (sha: string, at: number, opts: Options): GeneratedSha =>
 					kind = SPAN_KIND_CLIENT
 					name = pick(CLIENT_CALLS)
 					childAttrs = [
-						attr("http.request.method", name.split(" ")[0]!),
-						attr("url.full", `https://${name.split(" ")[1]}/v1`),
+						attr("http.request.method", Str.split(" ")(name)[0]!),
+						attr("url.full", `https://${Str.split(" ")(name)[1]}/v1`),
 					]
 					break
 				}
@@ -369,31 +369,33 @@ const postOtlp = async (opts: Options, path: string, body: unknown): Promise<voi
 	}
 	if (!res!.ok) {
 		const text = await res!.text().catch(() => "")
-		fail(`ingest gateway returned ${res!.status} ${res!.statusText} for ${path}: ${text.slice(0, 500)}`)
+		fail(
+			`ingest gateway returned ${res!.status} ${res!.statusText} for ${path}: ${Str.slice(0, 500)(text)}`,
+		)
 	}
 }
 
-const shortSha = (sha: string): string => (HEX40.test(sha) ? sha.slice(0, 7) : sha.slice(0, 10))
+const shortSha = (sha: string): string => (HEX40.test(sha) ? Str.slice(0, 7)(sha) : Str.slice(0, 10)(sha))
 
 const summarize = (generated: GeneratedSha[], opts: Options): void => {
-	const totalSpans = generated.reduce((n, g) => n + g.spans.length, 0)
-	const totalLogs = generated.reduce((n, g) => n + g.logs.length, 0)
-	const totalTraces = generated.reduce((n, g) => n + g.traceCount, 0)
-	const totalErrors = generated.reduce((n, g) => n + g.errorCount, 0)
+	const totalSpans = Arr.reduce(generated, 0, (n, g) => n + g.spans.length)
+	const totalLogs = Arr.reduce(generated, 0, (n, g) => n + g.logs.length)
+	const totalTraces = Arr.reduce(generated, 0, (n, g) => n + g.traceCount)
+	const totalErrors = Arr.reduce(generated, 0, (n, g) => n + g.errorCount)
 
 	console.log(`\n  service: ${opts.service}   env: ${opts.env}   endpoint: ${opts.endpoint}`)
 	console.log(
-		`  ${"commit".padEnd(12)} ${"when".padEnd(20)} ${"traces".padStart(6)} ${"spans".padStart(6)} ${"logs".padStart(5)} ${"err".padStart(4)}`,
+		`  ${Str.padEnd(12)("commit")} ${Str.padEnd(20)("when")} ${Str.padStart(6)("traces")} ${Str.padStart(6)("spans")} ${Str.padStart(5)("logs")} ${Str.padStart(4)("err")}`,
 	)
 	for (const g of generated) {
 		console.log(
-			`  ${shortSha(g.sha).padEnd(12)} ${new Date(g.at).toISOString().slice(0, 19).replace("T", " ").padEnd(20)} ` +
-				`${String(g.traceCount).padStart(6)} ${String(g.spans.length).padStart(6)} ${String(g.logs.length).padStart(5)} ${String(g.errorCount).padStart(4)}`,
+			`  ${Str.padEnd(12)(shortSha(g.sha))} ${Str.padEnd(20)(Str.replace("T", " ")(Str.slice(0, 19)(new Date(g.at).toISOString())))} ` +
+				`${Str.padStart(6)(String(g.traceCount))} ${Str.padStart(6)(String(g.spans.length))} ${Str.padStart(5)(String(g.logs.length))} ${Str.padStart(4)(String(g.errorCount))}`,
 		)
 	}
-	console.log(`  ${"─".repeat(58)}`)
+	console.log(`  ${Str.repeat(58)("─")}`)
 	console.log(
-		`  ${"total".padEnd(12)} ${"".padEnd(20)} ${String(totalTraces).padStart(6)} ${String(totalSpans).padStart(6)} ${String(totalLogs).padStart(5)} ${String(totalErrors).padStart(4)}`,
+		`  ${Str.padEnd(12)("total")} ${Str.padEnd(20)("")} ${Str.padStart(6)(String(totalTraces))} ${Str.padStart(6)(String(totalSpans))} ${Str.padStart(5)(String(totalLogs))} ${Str.padStart(4)(String(totalErrors))}`,
 	)
 }
 
@@ -460,10 +462,10 @@ const main = async (): Promise<void> => {
 	const numShas = values["num-shas"] ? Number(values["num-shas"]) : 3
 	let shas: string[]
 	if (values.shas) {
-		shas = values.shas
-			.split(",")
-			.map((s) => s.trim().toLowerCase())
-			.filter(Boolean)
+		shas = Arr.filter(
+			Arr.map(Str.split(",")(values.shas), (s) => Str.toLowerCase(Str.trim(s))),
+			Boolean,
+		)
 	} else {
 		shas = recentGitShas(numShas)
 		if (shas.length === 0) {
@@ -486,7 +488,7 @@ const main = async (): Promise<void> => {
 		fail(`--anchor: could not parse "${anchorRaw}" (use "now" or an ISO-8601 timestamp)`)
 
 	const opts: Options = {
-		endpoint: (values.endpoint?.trim() || DEFAULT_ENDPOINT).replace(/\/$/, ""),
+		endpoint: Str.replace(/\/$/, "")(values.endpoint?.trim() || DEFAULT_ENDPOINT),
 		key: values.key?.trim() || DEFAULT_KEY,
 		service: values.service?.trim() || DEFAULT_SERVICE,
 		env: values.env?.trim() || DEFAULT_ENV,
@@ -504,7 +506,7 @@ const main = async (): Promise<void> => {
 
 	// SHA i sits at anchor - (N-1-i)*interval, so the newest SHA lands on the anchor
 	// and earlier ones march back in time.
-	const generated = opts.shas.map((sha, i) =>
+	const generated = Arr.map(opts.shas, (sha, i) =>
 		generateForSha(sha, opts.anchor - (opts.shas.length - 1 - i) * opts.shaInterval, opts),
 	)
 
@@ -515,13 +517,20 @@ const main = async (): Promise<void> => {
 		if (sample) {
 			console.log("\n  ── sample resourceSpans (dry-run, nothing sent) ──")
 			console.log(
-				encodeJsonPretty({
-					resource: { attributes: resourceAttrs(opts, sample.sha) },
-					scopeSpans: [{ scope: { name: "ingest-dummy" }, spans: sample.spans.slice(0, 4) }],
-				})
-					.split("\n")
-					.map((l) => `  ${l}`)
-					.join("\n"),
+				Arr.join(
+					Arr.map(
+						Str.split("\n")(
+							encodeJsonPretty({
+								resource: { attributes: resourceAttrs(opts, sample.sha) },
+								scopeSpans: [
+									{ scope: { name: "ingest-dummy" }, spans: sample.spans.slice(0, 4) },
+								],
+							}),
+						),
+						(l) => `  ${l}`,
+					),
+					"\n",
+				),
 			)
 		}
 		console.log("\n  (dry run — re-run without --dry-run to send)\n")
@@ -546,17 +555,18 @@ const main = async (): Promise<void> => {
 	}
 
 	// Logs: one request carrying all SHAs' resourceLogs (logs are small).
-	const resourceLogs = generated
-		.filter((g) => g.logs.length > 0)
-		.map((g) => ({
+	const resourceLogs = Arr.map(
+		Arr.filter(generated, (g) => g.logs.length > 0),
+		(g) => ({
 			resource: { attributes: resourceAttrs(opts, g.sha) },
 			scopeLogs: [{ scope: { name: "ingest-dummy" }, logRecords: g.logs }],
-		}))
+		}),
+	)
 	if (resourceLogs.length > 0) await postOtlp(opts, "/v1/logs", { resourceLogs })
 
 	if (!opts.quiet) {
-		const totalSpans = generated.reduce((n, g) => n + g.spans.length, 0)
-		const totalLogs = generated.reduce((n, g) => n + g.logs.length, 0)
+		const totalSpans = Arr.reduce(generated, 0, (n, g) => n + g.spans.length)
+		const totalLogs = Arr.reduce(generated, 0, (n, g) => n + g.logs.length)
 		console.log(
 			`\n✓ sent ${totalSpans} spans (${traceReqs} request(s)) + ${totalLogs} logs to ${opts.endpoint}`,
 		)

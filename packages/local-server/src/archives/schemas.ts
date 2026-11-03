@@ -6,7 +6,7 @@
 // domain invariants — path containment, phase-vs-kind compatibility, cursor
 // consistency — each with its own tested message, and those stay where they
 // are rather than being flattened into a struct declaration.
-import { Schema, SchemaGetter } from "effect"
+import { Schema, SchemaGetter, String as Str } from "effect"
 
 /** Byte counts and cursors: never negative, never beyond exact integer range. */
 export const NonNegativeSafeInt = Schema.Number.check(
@@ -24,7 +24,7 @@ export const NonNegativeSafeInt = Schema.Number.check(
  */
 export const Sha256Lower = Schema.String.pipe(
 	Schema.decodeTo(Schema.String, {
-		decode: SchemaGetter.transform((value: string) => value.toLowerCase()),
+		decode: SchemaGetter.transform((value: string) => Str.toLowerCase(value)),
 		encode: SchemaGetter.passthrough(),
 	}),
 ).check(

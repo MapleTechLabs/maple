@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
@@ -124,7 +124,10 @@ describe("transport render: guard flags", () => {
 	]
 
 	it("guards exactly the user-configured hosts", () => {
-		const guarded = specs.filter(([, spec]) => spec.guarded).map(([name]) => name)
+		const guarded = Arr.map(
+			Arr.filter(specs, ([, spec]) => spec.guarded),
+			([name]) => name,
+		)
 		// pagerduty + telegram post to compile-time vendor constants: there
 		// is no attacker-controlled URL to validate, so the guard would only cost a
 		// redirect walk.
@@ -132,7 +135,10 @@ describe("transport render: guard flags", () => {
 	})
 
 	it("marks exactly the providers whose token rides in the URL path", () => {
-		const sensitive = specs.filter(([, spec]) => spec.sensitivePath).map(([name]) => name)
+		const sensitive = Arr.map(
+			Arr.filter(specs, ([, spec]) => spec.sensitivePath),
+			([name]) => name,
+		)
 		// telegram is the first provider where this disagrees with `guarded`: a
 		// fixed vendor host, but the bot token rides in the path. google-chat carries its
 		// credential in the query string, which no span records.
@@ -257,7 +263,7 @@ describe("pagerduty dedup keys across severity tiers", () => {
 			{ context: { ...context, ...overrides } },
 		)
 		const sent = [pagerDutyTransport.render(input), ...(pagerDutyTransport.followUps?.(input) ?? [])]
-		return sent.map((spec) => {
+		return Arr.map(sent, (spec) => {
 			const body = JSON.parse(spec.body)
 			return `${body.event_action} ${body.dedup_key}`
 		})
@@ -410,7 +416,7 @@ describe("transport render: uptime monitors", () => {
 			).body,
 		)
 		assert.isTrue(
-			body.text.startsWith("\u{1F6A8} <b>checkout-api is down</b>\n\nStatus 503, expected 2xx."),
+			Str.startsWith("\u{1F6A8} <b>checkout-api is down</b>\n\nStatus 503, expected 2xx.")(body.text),
 		)
 	})
 })

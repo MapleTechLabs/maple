@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { Message, type Model } from "./chart"
@@ -73,8 +73,8 @@ const areaSpec = specCache(
 export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model, inputs, h) => {
 	const { definitions } = seriesDefinitionsOf(inputs.data)
 	const tokens = seriesColorTokens(definitions)
-	const colors = Object.fromEntries(
-		definitions.map((definition) => [
+	const colors = Rec.fromEntries(
+		Arr.map(definitions, (definition) => [
 			definition.chartKey,
 			resolveColor(
 				inputs.theme,
@@ -83,7 +83,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 			),
 		]),
 	)
-	const series = definitions.map((definition) => ({
+	const series = Arr.map(definitions, (definition) => ({
 		key: definition.chartKey,
 		label: definition.rawKey,
 		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,

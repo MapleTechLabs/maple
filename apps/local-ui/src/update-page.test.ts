@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { fromString } from "foldkit/url"
 import { describe, expect, test } from "vitest"
@@ -30,8 +30,10 @@ const settled = (): Model => ({
 	probe: { isInFlight: false, version: 1 },
 	presence: AsyncData.Success({ data: { signals: {}, nowMs: 1_000 } }),
 })
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
-const argsOf = (commands: ReadonlyArray<{ readonly args?: unknown }> | undefined) => (commands ?? []).map(({ args }) => args)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
+const argsOf = (commands: ReadonlyArray<{ readonly args?: unknown }> | undefined) =>
+	Arr.map(commands ?? [], ({ args }) => args)
 
 describe("refresh in place", () => {
 	test("re-probes the server, and the next empty state reads the presence again", () => {
@@ -54,11 +56,13 @@ describe("superseded requests", () => {
 	/** /logs with its list and both facets in flight. */
 	const loadingLogs = (): Model => {
 		const opened = update(settled(), Message.ChangedUrl({ url: urlOf("#/logs") })).model
-		const clocked = PageMessage.GotLogsMessage({ message: LogsMessage.CompletedReadClock({ nowMs: NOW }) })
+		const clocked = PageMessage.GotLogsMessage({
+			message: LogsMessage.CompletedReadClock({ nowMs: NOW }),
+		})
 		return updatePageMessage(opened, clocked).model
 	}
 	const stops = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-		names(commands).filter((name) => name.endsWith(".Interrupt"))
+		Arr.filter(names(commands), (name) => Str.endsWith(".Interrupt")(name))
 
 	test("a new search stops the list and facet requests it supersedes", () => {
 		const searched = update(loadingLogs(), Message.ChangedUrl({ url: urlOf("#/logs?q=timeout") }))
@@ -81,14 +85,26 @@ describe("superseded requests", () => {
 	test("an answer that lands stops nothing", () => {
 		const model = loadingLogs()
 		const key = model.page._tag === "LogsPage" ? (model.page.logs.key ?? "") : ""
-		const answer = LogsMessage.SucceededFetchLogs({ key, data: { pages: [[]], hasNextPage: false }, fetchedAtMs: NOW })
-		expect(stops(updatePageMessage(model, PageMessage.GotLogsMessage({ message: answer })).commands)).toEqual([])
+		const answer = LogsMessage.SucceededFetchLogs({
+			key,
+			data: { pages: [[]], hasNextPage: false },
+			fetchedAtMs: NOW,
+		})
+		expect(
+			stops(updatePageMessage(model, PageMessage.GotLogsMessage({ message: answer })).commands),
+		).toEqual([])
 	})
 })
 
 describe("signed-out self-hosted server", () => {
 	const rejected = (model: Model, status: number) =>
-		update(model, Message.CompletedProbeServer({ outcome: ProbeOutcome.Rejected({ status, detail: "" }), checkedAtMs: 1 }))
+		update(
+			model,
+			Message.CompletedProbeServer({
+				outcome: ProbeOutcome.Rejected({ status, detail: "" }),
+				checkedAtMs: 1,
+			}),
+		)
 
 	test("a 401 probe sends the bundled UI to the sign-in page", () => {
 		const signedOut = rejected(settled(), 401)

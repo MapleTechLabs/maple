@@ -3,7 +3,7 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgOnboardingState } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/primitives"
-import { Cause, Effect, Exit, Schema, Tracer } from "effect"
+import { Cause, Effect, Exit, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import { ConnectionError, SqlError, UniqueViolation } from "effect/sql/SqlError"
 import { Database, DatabaseError, executeWithSpan } from "./DatabaseLive"
 import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
@@ -40,7 +40,7 @@ const makeRecordingTracer = () => {
  * no longer be found by name — `db.system.name` is the stable marker.
  */
 const dbSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
-	spans.filter((span) => span.attributes.get("db.system.name") === "postgresql")
+	Arr.filter(spans, (span) => span.attributes.get("db.system.name") === "postgresql")
 
 /** A failure the callback raises on its own — not the driver's, so it must pass through untouched. */
 class CallbackFailure extends Schema.TaggedError<CallbackFailure>()("@maple/test/CallbackFailure", {
@@ -231,7 +231,7 @@ describe("Database execute span instrumentation", () => {
 			assert.strictEqual(span.attributes.get("db.statement_count"), 2)
 			const queryText = span.attributes.get("db.query.text") as string
 			// Both statements land in the joined text, not just the first.
-			assert.strictEqual(queryText.split(";\n").length, 2)
+			assert.strictEqual(Str.split(";\n")(queryText).length, 2)
 			// A multi-statement call is summarized by the joined text — the same
 			// input the warehouse derives its fallback label from — so the leading
 			// statement names the span.
@@ -293,10 +293,10 @@ describe("Database execute span instrumentation", () => {
 				{ concurrency: 2 },
 			).pipe(Effect.withTracer(tracer))
 
-			const texts = dbSpans(spans).map((span) => span.attributes.get("db.query.text") as string)
+			const texts = Arr.map(dbSpans(spans), (span) => span.attributes.get("db.query.text") as string)
 			assert.strictEqual(texts.length, 2)
-			const selectSpan = texts.find((text) => text.includes("org_onboarding_state"))
-			const probeSpan = texts.find((text) => text.includes("concurrent_probe"))
+			const selectSpan = texts.find((text) => Str.includes("org_onboarding_state")(text))
+			const probeSpan = texts.find((text) => Str.includes("concurrent_probe")(text))
 			assert.isDefined(selectSpan)
 			assert.isDefined(probeSpan)
 			assert.notInclude(selectSpan as string, "concurrent_probe")

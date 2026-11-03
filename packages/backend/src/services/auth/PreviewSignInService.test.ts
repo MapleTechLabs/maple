@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Option, Redacted } from "effect"
+import { Effect, Option, Redacted, Array as Arr, Record as Rec } from "effect"
 import {
 	makePreviewSignIn,
 	PREVIEW_REVIEWER_EMAIL,
@@ -28,7 +28,7 @@ const fakeClerk = (users: Record<string, { id: string; orgs: Array<string> }> = 
 			}),
 		isMemberOf: (userId, name) =>
 			Effect.succeed(
-				Object.values(users).some((user) => user.id === userId && user.orgs.includes(name)),
+				Arr.some(Rec.values(users), (user) => user.id === userId && user.orgs.includes(name)),
 			),
 		createOrganization: (userId, name) =>
 			Effect.sync(() => void writes.push(`createOrg ${userId} ${name}`)),

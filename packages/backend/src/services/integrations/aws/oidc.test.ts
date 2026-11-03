@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Redacted } from "effect"
+import { Effect, Redacted, Record as Rec, String as Str } from "effect"
 import { MAPLE_TEST_OIDC_KEY } from "./fake-aws"
 import { makeAwsOidcSigner } from "./oidc"
 
@@ -11,7 +11,7 @@ describe("makeAwsOidcSigner", () => {
 		Effect.gen(function* () {
 			const signer = yield* makeAwsOidcSigner(ISSUER, Redacted.make(MAPLE_TEST_OIDC_KEY.privateKey))
 			const token = Redacted.value(yield* signer.mint("aws-connection:abc", 1_800_000_000_000))
-			const [header, body, signature] = token.split(".")
+			const [header, body, signature] = Str.split(".")(token)
 			expect(decode(header ?? "")).toEqual({ alg: "RS256", typ: "JWT", kid: signer.jwk.kid })
 			expect(decode(body ?? "")).toEqual({
 				iss: ISSUER,
@@ -46,7 +46,7 @@ describe("makeAwsOidcSigner", () => {
 			).toString("base64url")
 			expect(yield* verify(`${header}.${forged}`)).toBe(false)
 			// The JWK carries the public half only.
-			expect(Object.keys(signer.jwk).sort()).toEqual(["alg", "e", "kid", "kty", "n", "use"])
+			expect(Rec.keys(signer.jwk).sort()).toEqual(["alg", "e", "kid", "kty", "n", "use"])
 		}),
 	)
 

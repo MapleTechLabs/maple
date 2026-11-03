@@ -9,7 +9,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const encodeJsonTabbed = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
 
@@ -47,7 +47,7 @@ const Report = Schema.Struct({
 const Baseline = Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Number))
 const { diagnostics } = Schema.decodeUnknownSync(Schema.fromJsonString(Report))(lint.stdout.toString())
 
-const counts: Record<string, Record<string, number>> = Object.fromEntries(RULES.map((rule) => [rule, {}]))
+const counts: Record<string, Record<string, number>> = Rec.fromEntries(Arr.map(RULES, (rule) => [rule, {}]))
 for (const { code, filename } of diagnostics) {
 	const rule = code?.match(/^maple\((.+)\)$/)?.[1]
 	if (rule === undefined || !RULES.includes(rule)) continue
@@ -55,10 +55,11 @@ for (const { code, filename } of diagnostics) {
 }
 
 const previous = Schema.decodeUnknownSync(Schema.fromJsonString(Baseline))(readFileSync(baselineFile, "utf8"))
-const grew = RULES.flatMap((rule) =>
-	Object.entries(counts[rule])
-		.filter(([file, count]) => count > (previous[rule]?.[file] ?? 0))
-		.map(([file, count]) => `  ${rule}  ${file}: ${previous[rule]?.[file] ?? 0} → ${count}`),
+const grew = Arr.flatMap(RULES, (rule) =>
+	Arr.map(
+		Arr.filter(Rec.toEntries(counts[rule]), ([file, count]) => count > (previous[rule]?.[file] ?? 0)),
+		([file, count]) => `  ${rule}  ${file}: ${previous[rule]?.[file] ?? 0} → ${count}`,
+	),
 )
 if (grew.length > 0 && !allowIncrease) {
 	console.error(
@@ -69,14 +70,14 @@ if (grew.length > 0 && !allowIncrease) {
 	process.exit(1)
 }
 
-const sorted = Object.fromEntries(
-	RULES.map((rule) => [
+const sorted = Rec.fromEntries(
+	Arr.map(RULES, (rule) => [
 		rule,
-		Object.fromEntries(Object.entries(counts[rule]).sort(([a], [b]) => a.localeCompare(b))),
+		Rec.fromEntries(Rec.toEntries(counts[rule]).sort(([a], [b]) => Str.localeCompare(b)(a))),
 	]),
 )
 writeFileSync(baselineFile, `${encodeJsonTabbed(sorted)}\n`)
 
 const total = (record: typeof Baseline.Type) =>
-	Object.values(record).reduce((sum, files) => sum + Object.values(files).reduce((a, b) => a + b, 0), 0)
+	Arr.reduce(Rec.values(record), 0, (sum, files) => sum + Arr.reduce(Rec.values(files), 0, (a, b) => a + b))
 console.log(`ui-kit baseline: ${total(previous)} → ${total(sorted)} tolerated violations`)

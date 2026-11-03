@@ -22,12 +22,12 @@ import {
 	ExecutorRunRequest,
 	ExecutorRunResponse,
 } from "@maple/domain/executor"
-import { Effect, Schema, Semaphore } from "effect"
+import { Effect, Schema, Semaphore, String as Str } from "effect"
 import { GATEWAY_HOST } from "../src/executor-probe.ts"
 import { type ExecResult, type ExecutorHost, destroy, prepare, run } from "../src/executor-session.ts"
 
 const args = process.argv.slice(2)
-const repoDir = args.find((arg) => !arg.startsWith("--"))
+const repoDir = args.find((arg) => !Str.startsWith("--")(arg))
 const portAt = args.indexOf("--port")
 const port = portAt === -1 ? 8790 : Number(args[portAt + 1])
 if (repoDir === undefined) {
@@ -40,13 +40,11 @@ const PREFIX = `maple-executor-local-${process.pid}`
 const NETWORK = `${PREFIX}-internal`
 const GATEWAY = `${PREFIX}-gateway`
 const REPO_ROOT = resolve(import.meta.dirname, "../../..")
-const gitDir = execFileSync(
-	"git",
-	["-C", resolve(repoDir), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-	{
+const gitDir = Str.trim(
+	execFileSync("git", ["-C", resolve(repoDir), "rev-parse", "--path-format=absolute", "--git-common-dir"], {
 		encoding: "utf8",
-	},
-).trim()
+	}),
+)
 
 const docker = (dockerArgs: ReadonlyArray<string>) => spawnSync("docker", dockerArgs, { encoding: "utf8" })
 
@@ -86,7 +84,8 @@ const dockerExec = (container: string, script: string, timeoutMs: number, detach
 
 const host = (key: string): ExecutorHost => {
 	const name = `${PREFIX}-${key}`
-	const running = () => docker(["inspect", "--format", "{{.State.Running}}", name]).stdout.trim() === "true"
+	const running = () =>
+		Str.trim(docker(["inspect", "--format", "{{.State.Running}}", name]).stdout) === "true"
 	return {
 		isRunning: running,
 		ensureStarted: () =>
@@ -104,7 +103,7 @@ const host = (key: string): ExecutorHost => {
 					"--privileged",
 					IMAGE,
 				])
-				return started.status === 0 ? Effect.void : Effect.fail(started.stderr.trim())
+				return started.status === 0 ? Effect.void : Effect.fail(Str.trim(started.stderr))
 			}),
 		exec: (script, timeoutMs) => dockerExec(name, script, timeoutMs),
 		spawn: (script) => dockerExec(name, script, 30_000, true).pipe(Effect.asVoid),

@@ -14,6 +14,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, MANAGE_HREF, panelEmpty, panelLink, sectionPanel } from "../panel"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // "API requests": the gateway's requests by status class, its totals, and the busiest paths.
 
@@ -55,7 +56,7 @@ const legend = (h: H, traffic: SupabaseApiTrafficResponse, isOpen: boolean): Htm
 		[
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-4")],
-				trafficShares(traffic.buckets).map(({ status, share }) =>
+				Arr.map(trafficShares(traffic.buckets), ({ status, share }) =>
 					h.span(
 						[
 							h.Key(status),
@@ -124,7 +125,7 @@ const topPathsList = (h: H, paths: SupabaseApiTopPathsResponse): Html =>
 		? panelEmpty(h, ["No paths in this window"])
 		: h.div(
 				[h.AriaLabel("Top paths")],
-				paths.paths.map((path) =>
+				Arr.map(paths.paths, (path) =>
 					h.div(
 						[h.Key(`${path.method} ${path.path}`), h.Class(PATH_ROW)],
 						[

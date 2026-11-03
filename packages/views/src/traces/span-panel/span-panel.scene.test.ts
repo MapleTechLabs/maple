@@ -1,5 +1,5 @@
 import { SpanId, TraceId } from "@maple/domain"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { inertHtml as ih } from "foldkit/html"
 import { describe, expect, test } from "vitest"
@@ -38,16 +38,20 @@ const view = withViewInputs(panelView, {
 	logsDocsHref: "https://maple.dev/docs",
 })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const detail = { spanAttributes: { "db.system.name": "postgresql" }, resourceAttributes: {}, events: [] }
 
 const loaded = (): Model => {
 	const entered = init(input).model
-	return [
-		Message.CompletedFetchDetail({ key: entered.detail.key ?? "", result: Result.succeed(detail) }),
-		Message.CompletedFetchLogs({ key: entered.logs.key ?? "", result: Result.succeed([]) }),
-	].reduce((model, message) => update(model, message).model, entered)
+	return Arr.reduce(
+		[
+			Message.CompletedFetchDetail({ key: entered.detail.key ?? "", result: Result.succeed(detail) }),
+			Message.CompletedFetchLogs({ key: entered.logs.key ?? "", result: Result.succeed([]) }),
+		],
+		entered,
+		(model, message) => update(model, message).model,
+	)
 }
 
 // The tab strip is a Tabs Submodel, so its mount resolves with the Submodel's own Message.

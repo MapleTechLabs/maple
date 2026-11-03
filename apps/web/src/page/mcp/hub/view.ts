@@ -1,6 +1,6 @@
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
@@ -47,7 +47,12 @@ export const bucketLabel = (seconds: number): string => {
 	const hours = Math.floor((seconds % 86_400) / 3_600)
 	const minutes = Math.round((seconds % 3_600) / 60)
 	const parts = [days > 0 ? `${days}d` : "", hours > 0 ? `${hours}h` : "", minutes > 0 ? `${minutes}m` : ""]
-	return parts.filter((part) => part !== "").join(" ") || "1m"
+	return (
+		Arr.join(
+			Arr.filter(parts, (part) => part !== ""),
+			" ",
+		) || "1m"
+	)
 }
 
 const windowOf = (model: Model): McpWindow | undefined =>
@@ -73,7 +78,7 @@ const hasFilter = (filters: McpFilters): boolean =>
 	filters.client !== undefined ||
 	filters.kind !== undefined ||
 	filters.isFailingOnly ||
-	filters.search.trim() !== ""
+	Str.trim(filters.search) !== ""
 
 const timeActions = (h: H, model: Model, extra: ReadonlyArray<Html> = []): Html =>
 	hstack(h, { gap: "2", wrap: true }, [
@@ -143,20 +148,25 @@ const toolbar = (
 	const clientSelect = facetSelect(h, {
 		label: "client",
 		value: model.search.client,
-		options: clients.map((client) => ({ name: client.name, count: client.calls })),
+		options: Arr.map(clients, (client) => ({ name: client.name, count: client.calls })),
 		model: model.clientSelect,
 		toMessage: (message) => Message.GotSelectMessage({ facet: "client", message }),
 	})
 	const kindSelect = facetSelect(h, {
 		label: "kind",
 		value: model.search.kind,
-		options: MCP_CLIENT_KINDS.map((kind) => ({
-			name: kind,
-			count: clients
-				.filter((client) => client.kind === kind)
-				.reduce((sum, client) => sum + client.calls, 0),
-			// A kind whose clients only connected or listed tools still filters its requests.
-		})).filter((option) => clients.some((client) => client.kind === option.name)),
+		options: Arr.filter(
+			Arr.map(MCP_CLIENT_KINDS, (kind) => ({
+				name: kind,
+				count: Arr.reduce(
+					Arr.filter(clients, (client) => client.kind === kind),
+					0,
+					(sum, client) => sum + client.calls,
+				),
+				// A kind whose clients only connected or listed tools still filters its requests.
+			})),
+			(option) => Arr.some(clients, (client) => client.kind === option.name),
+		),
 		model: model.kindSelect,
 		toMessage: (message) => Message.GotSelectMessage({ facet: "kind", message }),
 	})
@@ -277,11 +287,14 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 	const description =
 		data === undefined || data.firstSpanMs === 0
 			? "MCP server"
-			: [
-					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
-					`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
-					...(isNew ? [`first MCP span ${formatClock(data.firstSpanMs, timeZone)}`] : []),
-				].join(" · ")
+			: Arr.join(
+					[
+						...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
+						`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
+						...(isNew ? [`first MCP span ${formatClock(data.firstSpanMs, timeZone)}`] : []),
+					],
+					" · ",
+				)
 	const body = AsyncData.matchData(overview, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) => serverError(h, { failure, onRetry: Message.ClickedReload() }),
@@ -292,9 +305,10 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 					service,
 					window: windowWords(window),
 					hasOtherSpans: response.methods.length > 0,
-					connected: response.clients
-						.filter((client) => client.connects > 0)
-						.map((client) => client.name),
+					connected: Arr.map(
+						Arr.filter(response.clients, (client) => client.connects > 0),
+						(client) => client.name,
+					),
 					widen: widenOf(model),
 				})
 			return chartsReady(h, model, (theme) =>
@@ -313,7 +327,7 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 					percentileToggle: segmented(
 						h,
 						model.percentileToggle,
-						ToolPercentile.literals.map((value) => ({ value, label: value })),
+						Arr.map(ToolPercentile.literals, (value) => ({ value, label: value })),
 						(message) => Message.GotPercentileMessage({ message }),
 						"absolute top-3 right-5 p-px",
 					),
@@ -363,11 +377,11 @@ const widenOf = (model: Model) =>
 		onNone: () => undefined,
 		onSome: (preset) => ({
 			onWiden: Message.ClickedWiden(),
-			label: `Show the ${presetLabel(preset).toLowerCase()}`,
+			label: `Show the ${Str.toLowerCase(presetLabel(preset))}`,
 		}),
 	})
 
-const windowWords = (window: McpWindow): string => window.label.replace(/^Last /, "last ")
+const windowWords = (window: McpWindow): string => Str.replace(/^Last /, "last ")(window.label)
 
 const sessionsView = (h: H, model: Model, service: string, timeZone: string): Html => {
 	const sessions = dataFor(model.sessions.data, (value) => value.service === service)
@@ -445,20 +459,23 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 	const title =
 		isUserSession && userLabel !== undefined
 			? `${userLabel} on ${data.client}`
-			: data === undefined && sessionId.startsWith("user:")
+			: data === undefined && Str.startsWith("user:")(sessionId)
 				? "User session"
 				: sessionId
 	const description =
 		data === undefined || first === undefined
 			? `MCP session on ${service}`
-			: [
-					...(isUserSession
-						? ["User session, no session id: split after 30 idle minutes"]
-						: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
-					callCountText(sessionCalls(data.requests).length, data.isTruncated),
-					`started ${formatClock(first.timeMs, timeZone)}`,
-					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
-				].join(" · ")
+			: Arr.join(
+					[
+						...(isUserSession
+							? ["User session, no session id: split after 30 idle minutes"]
+							: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
+						callCountText(sessionCalls(data.requests).length, data.isTruncated),
+						`started ${formatClock(first.timeMs, timeZone)}`,
+						...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
+					],
+					" · ",
+				)
 	const body = AsyncData.matchData(session, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) =>

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { MetricName } from "@maple/domain"
 import type { MetricsTimeseriesQuery } from "@maple/domain/query-engine"
 import { validateEvaluate, type AlertEvaluateRequest } from "./query-engine"
@@ -33,7 +33,7 @@ describe("validateMetricsAttributeFilters", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/QueryEngineValidationError")
 			if (error._tag === "@maple/http/errors/QueryEngineValidationError") {
 				assert.include(
-					error.details.join("; "),
+					Arr.join(error.details, "; "),
 					"groupBy=attribute requires filters.groupByAttributeKey",
 				)
 			}
@@ -85,7 +85,7 @@ describe("validateMetricsAttributeFilters", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/QueryEngineValidationError")
 			if (error._tag === "@maple/http/errors/QueryEngineValidationError") {
 				assert.include(
-					error.details.join("; "),
+					Arr.join(error.details, "; "),
 					"groupBy=resource_attribute requires filters.groupByResourceAttributeKey",
 				)
 			}
@@ -126,7 +126,7 @@ describe("validateMetricsAttributeFilters", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/QueryEngineValidationError")
 			if (error._tag === "@maple/http/errors/QueryEngineValidationError") {
 				assert.include(
-					error.details.join("; "),
+					Arr.join(error.details, "; "),
 					"groupBy cannot combine attribute and resource_attribute",
 				)
 			}

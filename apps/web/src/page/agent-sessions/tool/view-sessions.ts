@@ -21,6 +21,7 @@ import { vendorLabel } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -87,7 +88,12 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 						"hidden w-44 shrink-0 truncate text-xs text-muted-foreground @min-[720px]/panel:block",
 					),
 				],
-				[[session.firstAgentName, ...session.serviceNames].filter((part) => part !== "").join(" · ")],
+				[
+					Arr.join(
+						Arr.filter([session.firstAgentName, ...session.serviceNames], (part) => part !== ""),
+						" · ",
+					),
+				],
 			),
 			h.span(
 				[h.Class("hidden w-56 shrink-0 items-baseline gap-2 @min-[560px]/panel:flex")],
@@ -193,7 +199,7 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 										" in this window",
 									]),
 								]
-							: inputs.rows.map((session) =>
+							: Arr.map(inputs.rows, (session) =>
 									sessionRow(h, session, inputs.tool, inputs.nowMs, inputs.timeZone),
 								),
 			),

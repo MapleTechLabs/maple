@@ -8,7 +8,7 @@ import {
 	type StackAnswers as StackPicks,
 } from "../../lib/onboarding-stack"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Effect, Option, Schema, SchemaGetter } from "effect"
+import { Effect, Option, Schema, SchemaGetter, Array as Arr, Record as Rec } from "effect"
 
 // The quick start wizard's progress in localStorage `maple-onboarding-v6-<orgId>`, with normalisation
 // of older saves (their role and intent steps are gone; the answers still feed the setup checklist).
@@ -58,7 +58,7 @@ const StoredQualifyAnswers = Schema.Struct({
 			role: role === "engineer" ? "backend" : role,
 			roleDetail: roleDetail ?? "",
 			intents: [
-				...new Set((intents ?? (intent ? [intent] : [])).map((stored) => CURRENT_INTENT[stored])),
+				...new Set(Arr.map(intents ?? (intent ? [intent] : []), (stored) => CURRENT_INTENT[stored])),
 			],
 		})),
 		encode: SchemaGetter.transform(({ role, roleDetail, intents }) => ({ role, roleDetail, intents })),
@@ -100,7 +100,7 @@ const StoredQuickStartState = Schema.fromJsonString(
 				...stored,
 				stack: stored.stack ?? NO_STACK,
 				completedSteps: isLegacyFinished(stored.completedSteps)
-					? Object.fromEntries(STEP_IDS.map((step) => [step, true]))
+					? Rec.fromEntries(Arr.map(STEP_IDS, (step) => [step, true]))
 					: stored.completedSteps,
 			})),
 			encode: SchemaGetter.transform((state) => state),
@@ -141,7 +141,7 @@ export const writeQuickStartState = (key: string, state: QuickStartState): Effec
  * plan skips the plan step, wherever the save left off.
  */
 export const resolveQuickStartStep = (state: QuickStartState, hasPlan: boolean): StepId => {
-	const steps = STEP_IDS.filter((step) => !(hasPlan && step === "plan"))
+	const steps = Arr.filter(STEP_IDS, (step) => !(hasPlan && step === "plan"))
 	return (
 		steps.find((step) => step === state.activeStep) ??
 		steps.find((step) => state.completedSteps[step] !== true) ??

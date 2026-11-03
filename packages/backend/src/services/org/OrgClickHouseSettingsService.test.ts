@@ -17,7 +17,17 @@ import {
 	makeEdgeCacheService,
 	MemoryCacheBackendLive,
 } from "@maple/cache"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	Cause,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import type { TableDiffEntry } from "@maple/domain/clickhouse"
@@ -253,7 +263,7 @@ layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (i
 	it.effect("rejects an endless response body without retrying instead of buffering it", () =>
 		Effect.gen(function* () {
 			const pulled = { count: 0 }
-			const chunk = new TextEncoder().encode("x".repeat(64 * 1024))
+			const chunk = new TextEncoder().encode(Str.repeat(64 * 1024)("x"))
 			const { state, fetchImpl } = makeFetch(() =>
 				Promise.resolve(
 					new Response(
@@ -284,7 +294,9 @@ layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (i
 					new Response(
 						new ReadableStream<Uint8Array>({
 							start: (controller) => {
-								parts.forEach((part) => controller.enqueue(new TextEncoder().encode(part)))
+								Arr.forEach(parts, (part) =>
+									controller.enqueue(new TextEncoder().encode(part)),
+								)
 								controller.close()
 							},
 						}),
@@ -292,7 +304,7 @@ layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (i
 					),
 				),
 			)
-			expect(yield* run("SELECT name", fetchImpl)).toBe(parts.join(""))
+			expect(yield* run("SELECT name", fetchImpl)).toBe(Arr.join(parts, ""))
 		}),
 	)
 

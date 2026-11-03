@@ -1,6 +1,6 @@
 import type { ErrorIssueDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
 import { AlertRuleId } from "@maple/domain/primitives"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -115,7 +115,7 @@ export const pullRequestsPanel = (
 				)
 			: h.ul(
 					[h.Class("divide-y")],
-					pullRequests.map((pr) => pullRequestRow(h, pr, isBusy)),
+					Arr.map(pullRequests, (pr) => pullRequestRow(h, pr, isBusy)),
 				),
 	])
 

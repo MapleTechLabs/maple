@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { hstack, vstack } from "./stack"
 import { typography } from "./typography"
+import { Array as Arr, String as Str } from "effect"
 
 // One cell per day, a column per week; levels on the amber heatmap ramp.
 
@@ -31,7 +32,7 @@ const LEVEL_COLOR = {
 const GAP_PX = 4
 
 const partsOf = (day: string) => {
-	const [year = 0, month = 1, date = 1] = day.split("-").map(Number)
+	const [year, month = 1, date = 1] = Arr.map(Str.split("-")(day), Number)
 	return { year, month, date, weekday: new Date(Date.UTC(year, month - 1, date)).getUTCDay() }
 }
 
@@ -59,7 +60,7 @@ export const contributionCalendar = <M>(
 	const lead = first === undefined ? 0 : partsOf(first.day).weekday
 	const weeks = Math.ceil((lead + options.days.length) / 7)
 	// A month's label sits over the first week that starts in it.
-	const monthLabels = options.days.flatMap((entry, index) => {
+	const monthLabels = Arr.flatMap(options.days, (entry, index) => {
 		const parts = partsOf(entry.day)
 		const column = Math.floor((lead + index) / 7)
 		return parts.date === 1 || index === 0
@@ -67,7 +68,7 @@ export const contributionCalendar = <M>(
 			: []
 	})
 	// A label too close to the next one is dropped, as GitHub does for a partial first month.
-	const months = monthLabels.filter((label, index) => {
+	const months = Arr.filter(monthLabels, (label, index) => {
 		const next = monthLabels[index + 1]
 		return next === undefined || next.column - label.column >= 3
 	})
@@ -89,7 +90,7 @@ export const contributionCalendar = <M>(
 						}),
 					],
 					[
-						...months.map((month) =>
+						...Arr.map(months, (month) =>
 							typography(
 								h,
 								{
@@ -105,7 +106,7 @@ export const contributionCalendar = <M>(
 								[month.label],
 							),
 						),
-						...WEEKDAYS.map((label, row) =>
+						...Arr.map(WEEKDAYS, (label, row) =>
 							typography(
 								h,
 								{
@@ -117,7 +118,7 @@ export const contributionCalendar = <M>(
 								[label],
 							),
 						),
-						...options.days.map((entry, index) =>
+						...Arr.map(options.days, (entry, index) =>
 							h.div(
 								[
 									h.Key(entry.day),
@@ -147,7 +148,7 @@ export const contributionCalendar = <M>(
 				: typography(h, { size: "xs", tone: "muted" }, [options.summary]),
 			hstack(h, { gap: "1", attributes: [h.AriaHidden(true)] }, [
 				typography(h, { size: "xs", tone: "muted", className: "mr-1" }, ["Less"]),
-				...([0, 1, 2, 3, 4] as const).map((level) =>
+				...Arr.map([0, 1, 2, 3, 4] as const, (level) =>
 					h.div(
 						[
 							h.Key(`legend-${level}`),

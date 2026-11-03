@@ -3,6 +3,7 @@ import { icon } from "../../ui/icon"
 import { pressable } from "../../ui/pressable"
 import { Message, type Model } from "../xyflow/canvas"
 import type { Rect } from "../xyflow/geometry"
+import { Array as Arr } from "effect"
 
 // `ServiceMapControls`, `ServiceMapMiniMap` and `ServiceMapBackground` (packages/ui `service-map/`).
 
@@ -126,7 +127,7 @@ export interface MiniMapNode extends Rect {
 export const miniMapRects = <M>(h: HtmlBuilder<M>, nodes: ReadonlyArray<MiniMapNode>): Html =>
 	h.g(
 		[],
-		nodes.map((node) =>
+		Arr.map(nodes, (node) =>
 			h.rect([
 				h.Attribute("x", String(node.x)),
 				h.Attribute("y", String(node.y)),

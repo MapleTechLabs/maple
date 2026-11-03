@@ -3,6 +3,7 @@ import {
 	resolveRelativeRangeToWarehouse,
 	snapRangeForCache,
 } from "@maple/query-engine"
+import { String as Str } from "effect"
 
 export interface TimeRange {
 	startTime: string
@@ -18,10 +19,10 @@ const CACHE_SNAP_INTERVAL_S = 15
  */
 export function snapTimestamp(value: string): string {
 	if (value.length !== 19 || value[4] !== "-" || value[10] !== " ") return value
-	const seconds = parseInt(value.slice(17, 19), 10)
+	const seconds = parseInt(Str.slice(17, 19)(value), 10)
 	if (Number.isNaN(seconds)) return value
 	const snapped = seconds - (seconds % CACHE_SNAP_INTERVAL_S)
-	return value.slice(0, 17) + snapped.toString().padStart(2, "0")
+	return Str.slice(0, 17)(value) + Str.padStart(2, "0")(snapped.toString())
 }
 
 export interface ResolveTimeRangeOptions {

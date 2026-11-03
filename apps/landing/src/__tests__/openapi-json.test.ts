@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { GET, openApiDocument } from "../pages/openapi.json"
+import { Array as Arr, Record as Rec } from "effect"
 
 // Endpoint tests only need `site`; the rest of APIContext is unused.
 const context = { site: new URL("https://maple.dev") } as Parameters<typeof GET>[0]
@@ -16,11 +17,11 @@ describe("/openapi.json", () => {
 
 	it("is function-calling ready: every operation has an operationId and a description", () => {
 		const doc = openApiDocument()
-		const operations = Object.values(doc.paths).flatMap((item) =>
-			Object.values(item as Record<string, { operationId?: string; description?: string }>),
+		const operations = Arr.flatMap(Rec.values(doc.paths), (item) =>
+			Rec.values(item as Record<string, { operationId?: string; description?: string }>),
 		)
 		expect(operations.length).toBeGreaterThan(50)
-		const ids = operations.map((operation) => operation.operationId)
+		const ids = Arr.map(operations, (operation) => operation.operationId)
 		expect(new Set(ids).size).toBe(ids.length)
 		for (const operation of operations) {
 			expect(operation.operationId).toEqual(expect.any(String))

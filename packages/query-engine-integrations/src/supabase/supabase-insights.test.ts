@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
@@ -24,16 +24,19 @@ const bucketed = { ...project, bucketSeconds: 300 }
 
 describe("supabase insights queries", () => {
 	it("scope every read to one org", () => {
-		const scopes = [
-			compileUnsafe(supabaseApiTrafficSeriesSQL(), bucketed),
-			compileUnsafe(supabaseApiTrafficTotalsSQL(), project),
-			compileUnsafe(supabaseApiTopPathsSQL(), project),
-			compileUnsafe(supabaseLogIssuesSQL({ byProject: true }), project),
-			compileUnsafe(supabaseLogIssuesSQL({ byProject: false }), window),
-			compileUnsafe(supabaseLogsProjectsSummarySQL(), window),
-			compileUnsafe(supabaseProjectCallersSQL(), project),
-			compileUnsafe(supabaseProjectCallerSeriesSQL(), bucketed),
-		].map((compiled) => compiled.tenantScope)
+		const scopes = Arr.map(
+			[
+				compileUnsafe(supabaseApiTrafficSeriesSQL(), bucketed),
+				compileUnsafe(supabaseApiTrafficTotalsSQL(), project),
+				compileUnsafe(supabaseApiTopPathsSQL(), project),
+				compileUnsafe(supabaseLogIssuesSQL({ byProject: true }), project),
+				compileUnsafe(supabaseLogIssuesSQL({ byProject: false }), window),
+				compileUnsafe(supabaseLogsProjectsSummarySQL(), window),
+				compileUnsafe(supabaseProjectCallersSQL(), project),
+				compileUnsafe(supabaseProjectCallerSeriesSQL(), bucketed),
+			],
+			(compiled) => compiled.tenantScope,
+		)
 		expect(new Set(scopes)).toEqual(new Set(["single-tenant"]))
 	})
 

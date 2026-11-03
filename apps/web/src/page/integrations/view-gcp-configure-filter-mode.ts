@@ -4,12 +4,13 @@ import { FILTER_MODES } from "./gcp-configure-copy"
 import type { ConfigureModel } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The `Select` of `GcpLogFilterField`: keep an existing sink's filter, or replace it.
 
 type H = HtmlBuilder<Message>
 
-const ENTRIES: ReadonlyArray<SelectView.SelectEntry> = FILTER_MODES.map((mode) => ({
+const ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(FILTER_MODES, (mode) => ({
 	_tag: "Item",
 	item: { value: mode.value, label: mode.label },
 }))

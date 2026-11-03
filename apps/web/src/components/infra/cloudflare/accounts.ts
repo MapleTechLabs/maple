@@ -1,5 +1,6 @@
 import type { CloudflareConnectedAccountStatus } from "@maple/domain/http"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { Array as Arr } from "effect"
 
 /** A sync older than this is "delayed": the poller runs every few minutes. */
 export const STALE_SYNC_MS = 30 * 60_000
@@ -25,8 +26,8 @@ export interface CloudflareAccount {
  * a failing Workers dataset. A revoked grant is grant-wide, so the page states it once, not per account.
  */
 export function accountHealth(account: CloudflareConnectedAccountStatus, now: number): AccountHealth {
-	const zones = account.zones.filter((zone) => zone.enabled)
-	const failing = zones.filter((zone) => zone.lastError !== null)
+	const zones = Arr.filter(account.zones, (zone) => zone.enabled)
+	const failing = Arr.filter(zones, (zone) => zone.lastError !== null)
 	if (failing.length > 0) {
 		return {
 			tone: "crit",
@@ -37,10 +38,13 @@ export function accountHealth(account: CloudflareConnectedAccountStatus, now: nu
 		}
 	}
 	// The oldest dataset, not the newest: a fresh Workers sync must not hide a zone that stopped.
-	const synced = [
-		...zones.map((zone) => zone.lastSyncedAt),
-		account.workers?.enabled ? account.workers.lastSyncedAt : null,
-	].filter((at): at is number => at !== null)
+	const synced = Arr.filter(
+		[
+			...Arr.map(zones, (zone) => zone.lastSyncedAt),
+			account.workers?.enabled ? account.workers.lastSyncedAt : null,
+		],
+		(at): at is number => at !== null,
+	)
 	const oldest = synced.length === 0 ? null : Math.min(...synced)
 	if (oldest !== null && now - oldest > STALE_SYNC_MS) {
 		return { tone: "warn", message: `Delayed · last sync ${formatRelativeFrom(oldest, now)}` }
@@ -56,10 +60,10 @@ export function cloudflareAccounts(
 	accounts: ReadonlyArray<CloudflareConnectedAccountStatus>,
 	now: number,
 ): CloudflareAccount[] {
-	return accounts.map((account) => ({
+	return Arr.map(accounts, (account) => ({
 		accountId: account.accountId,
 		name: account.accountName ?? account.accountId,
-		zones: account.zones.map((zone) => zone.name),
+		zones: Arr.map(account.zones, (zone) => zone.name),
 		health: accountHealth(account, now),
 	}))
 }
@@ -67,6 +71,8 @@ export function cloudflareAccounts(
 /** Zone service name to account id. Zone rows carry no account attribute; the poller knows. */
 export function zoneAccountIds(accounts: ReadonlyArray<CloudflareAccount>): ReadonlyMap<string, string> {
 	return new Map(
-		accounts.flatMap((account) => account.zones.map((zone) => [`cloudflare/${zone}`, account.accountId])),
+		Arr.flatMap(accounts, (account) =>
+			Arr.map(account.zones, (zone) => [`cloudflare/${zone}`, account.accountId]),
+		),
 	)
 }

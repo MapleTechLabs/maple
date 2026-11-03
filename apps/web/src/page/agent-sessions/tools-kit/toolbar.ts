@@ -8,6 +8,7 @@ import { searchInput } from "@maple/views/ui/search-input"
 import { switchControl } from "@maple/views/ui/switch"
 import { listToolbar } from "../../kit/list-toolbar"
 import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The tool filter toolbar and its facet selects.
 
@@ -42,7 +43,7 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 		viewInputs: {
 			entries: [
 				{ _tag: "Item", item: { value: ALL, label: "All" } },
-				...config.options.map((option): SelectView.SelectEntry => ({
+				...Arr.map(config.options, (option): SelectView.SelectEntry => ({
 					_tag: "Item",
 					item: { value: option.name, label: option.name },
 				})),
@@ -108,22 +109,18 @@ export const toolFilterToolbar = <M>(h: HtmlBuilder<M>, config: ToolbarConfig<M>
 		[
 			...config.selects,
 			// The same switch as "With errors" on the sessions list, so it reads as a filter.
-			label(
-				h,
-				{ className: "cursor-pointer text-xs sm:text-xs" },
-				[
-					...switchControl(h, {
-						id: "agent-tools-failing-switch",
-						inputId: "agent-tools-failing-input",
-						isChecked: config.isFailingOnly,
-						ariaLabel: "Failing only",
-						className:
-							"[--thumb-size:--spacing(3.5)] data-checked:bg-severity-error sm:[--thumb-size:--spacing(3.5)]",
-						onToggle: config.onToggleFailingOnly,
-					}),
-					"Failing only",
-				],
-			),
+			label(h, { className: "cursor-pointer text-xs sm:text-xs" }, [
+				...switchControl(h, {
+					id: "agent-tools-failing-switch",
+					inputId: "agent-tools-failing-input",
+					isChecked: config.isFailingOnly,
+					ariaLabel: "Failing only",
+					className:
+						"[--thumb-size:--spacing(3.5)] data-checked:bg-severity-error sm:[--thumb-size:--spacing(3.5)]",
+					onToggle: config.onToggleFailingOnly,
+				}),
+				"Failing only",
+			]),
 		],
 	)
 	return listToolbar(h, {

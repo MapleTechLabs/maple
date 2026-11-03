@@ -15,6 +15,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { isDegraded, isLoadFailed, listedOf } from "./update"
 import { listBody, listSkeleton } from "./view-list"
+import { String as Str } from "effect"
 
 // The dashboards list page: `PageShell` around the list.
 
@@ -29,7 +30,7 @@ const UNREACHABLE = /failed to fetch|networkerror|load failed|network request fa
 
 /** A failed write's cause: "Couldn't reach Maple" for a dropped connection, else the stored reason. */
 const writeFailureCause = (error: string): string =>
-	UNREACHABLE.test(error) ? "Couldn't reach Maple" : error.replace(/[.\s]+$/, "")
+	UNREACHABLE.test(error) ? "Couldn't reach Maple" : Str.replace(/[.\s]+$/, "")(error)
 
 /** Said on the list's failure card and on the disabled buttons when both are down. */
 const LIST_FAILED_READ_ONLY = "Creating and importing are off until Maple reconnects."

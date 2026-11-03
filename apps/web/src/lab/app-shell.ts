@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream, String as Str } from "effect"
 import { Subscription, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { readSessionToken } from "../platform/auth-api"
@@ -30,7 +30,7 @@ export class LabTokenDecodeError extends Schema.TaggedError<LabTokenDecodeError>
 /** The org of the stored self-hosted token, read from its claims. */
 const orgOfToken = (token: string): Effect.Effect<Option.Option<string>> =>
 	Effect.try({
-		try: () => atob((token.split(".")[1] ?? "").replaceAll("-", "+").replaceAll("_", "/")),
+		try: () => atob(Str.replaceAll("_", "/")(Str.replaceAll("-", "+")(Str.split(".")(token)[1] ?? ""))),
 		catch: (cause) => new LabTokenDecodeError({ message: "The stored token is not base64url", cause }),
 	}).pipe(
 		Effect.map((json) => Option.map(decodeClaims(json), (claims) => claims.org_id)),

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	type AwsAccountId,
 	type AwsConnectionId,
@@ -98,7 +98,7 @@ export const AWS_ROLE_NAME_PREFIX = "MapleIntegration-"
  * connection id alone, so a caller can never pick the role Maple assumes.
  */
 export const awsConnectionResourceNames = (connectionId: AwsConnectionId) => {
-	const hex = connectionId.replaceAll("-", "").slice(0, 24)
+	const hex = Str.slice(0, 24)(Str.replaceAll("-", "")(connectionId))
 	const name = `${AWS_ROLE_NAME_PREFIX}${hex}`
 	return {
 		roleName: name,
@@ -134,14 +134,14 @@ export const awsOidcIssuer = (apiBaseUrl: string) => {
 	// A scan, not a `/\/+$/` regex: that one backtracks on a long run of slashes.
 	let end = apiBaseUrl.length
 	while (end > 0 && apiBaseUrl[end - 1] === "/") end--
-	return `${apiBaseUrl.slice(0, end)}/oidc/aws`
+	return `${Str.slice(0, end)(apiBaseUrl)}/oidc/aws`
 }
 
 /** The `sub` of a connection's tokens, the one value its role's trust policy accepts. */
 export const awsOidcSubject = (connectionId: AwsConnectionId) => `aws-connection:${connectionId}`
 
 /** The issuer as IAM names it: without its scheme, in provider ARNs and condition keys. */
-const issuerHostPath = (issuer: string) => issuer.replace(/^https:\/\//u, "")
+const issuerHostPath = (issuer: string) => Str.replace(/^https:\/\//u, "")(issuer)
 
 export const awsOidcProviderArn = (accountId: AwsAccountId, issuer: string) =>
 	`arn:aws:iam::${accountId}:oidc-provider/${issuerHostPath(issuer)}`
@@ -149,8 +149,8 @@ export const awsOidcProviderArn = (accountId: AwsAccountId, issuer: string) =>
 /** Which module a customer managed policy name stands for, given the connection's role name. */
 export const awsModuleOfPolicyName = (roleName: string, policyName: string): AwsModule | undefined => {
 	const prefix = `${roleName}-`
-	if (!policyName.startsWith(prefix)) return undefined
-	const rest = policyName.slice(prefix.length)
+	if (!Str.startsWith(prefix)(policyName)) return undefined
+	const rest = Str.slice(prefix.length)(policyName)
 	return isAwsModule(rest) ? rest : undefined
 }
 
@@ -236,7 +236,7 @@ export const awsSetupPlan = (input: AwsSetupPlanInput): AwsSetupPlan => {
 				},
 			],
 		},
-		modules: input.modules.map((module) => {
+		modules: Arr.map(input.modules, (module) => {
 			const spec = AWS_MODULE_SPECS[module]
 			return {
 				module,

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, String as Str } from "effect"
 import { spanDetail } from "./span-detail"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
@@ -31,7 +31,7 @@ const makeExecutor = (sqls: string[]): WarehouseExecutorApi => ({
 	compiledQueryFirst: (compiled) => {
 		const query = compiledQueryOf(compiled)
 		sqls.push(query.sql)
-		const bounded = query.sql.includes("Timestamp >=")
+		const bounded = Str.includes("Timestamp >=")(query.sql)
 		return query.decodeFirstRow(bounded ? [] : [detailRow]).pipe(Effect.orDie)
 	},
 	query: () => Effect.succeed({ data: [] }),

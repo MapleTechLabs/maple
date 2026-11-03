@@ -13,7 +13,7 @@ import {
 } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/query-engine/runtime"
-import { Clock, DateTime, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema, Array as Arr, Record as Rec } from "effect"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
@@ -68,10 +68,10 @@ const bucketCounts = (
 	data: ReadonlyArray<{ readonly bucket: string; readonly series: Readonly<Record<string, number>> }>,
 	group: string | undefined,
 ): ReadonlyArray<number> =>
-	data.map((point) => {
+	Arr.map(data, (point) => {
 		// An ungrouped series carries exactly one key, whose name the engine
 		// picks; naming it here would couple this file to that choice.
-		const value = group === undefined ? Object.values(point.series)[0] : point.series[group]
+		const value = group === undefined ? Rec.values(point.series)[0] : point.series[group]
 		return Number(value ?? 0)
 	})
 
@@ -167,7 +167,7 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 				const seriesBucketSeconds = grouped.length > 0 || total.length > 0 ? bucketSeconds : null
 
 				const rangeSeconds = WIDGET_SUMMARY_THROUGHPUT_WINDOW_SECONDS
-				const services: ReadonlyArray<V2WidgetSummaryService> = serviceRows.map((row) => {
+				const services: ReadonlyArray<V2WidgetSummaryService> = Arr.map(serviceRows, (row) => {
 					const service = toService(row, rangeSeconds, NO_BASELINES)
 					return {
 						name: service.name,
@@ -187,7 +187,7 @@ export const HttpV2WidgetSummaryLive = HttpApiBuilder.group(MapleApiV2, "widgetS
 					issues: {
 						window_seconds: WIDGET_SUMMARY_ISSUES_WINDOW_SECONDS,
 						has_more: issuesPage.nextCursor !== undefined,
-						data: issuesPage.issues.map((issue) => ({
+						data: Arr.map(issuesPage.issues, (issue) => ({
 							id: issue.id,
 							exception_type: issue.exceptionType,
 							error_label: issue.errorLabel,

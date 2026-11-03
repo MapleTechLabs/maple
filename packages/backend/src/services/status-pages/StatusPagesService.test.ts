@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { StatusPageComponentPublicId, type StatusPageConfig } from "@maple/domain/http/v2"
@@ -73,7 +73,7 @@ describe("StatusPagesService", () => {
 
 			const listed = yield* service.list(ORG)
 			assert.deepStrictEqual(
-				listed.map((row) => row.slug),
+				Arr.map(listed, (row) => row.slug),
 				["acme"],
 			)
 			const crossOrg = yield* Effect.flip(service.get(OTHER_ORG, page.id))
@@ -250,7 +250,7 @@ describe("StatusPagesService", () => {
 
 			const reordered = yield* service.reorderComponents(ORG, page.id, [web.id, api.id])
 			assert.deepStrictEqual(
-				reordered.map((row) => [row.name, row.position]),
+				Arr.map(reordered, (row) => [row.name, row.position]),
 				[
 					["Web", 0],
 					["API", 1],
@@ -351,7 +351,7 @@ describe("StatusPagesService", () => {
 			})
 			assert.deepStrictEqual(incident.componentIds, [api.id])
 			assert.deepStrictEqual(
-				incident.updates.map((update) => [update.status, update.body]),
+				Arr.map(incident.updates, (update) => [update.status, update.body]),
 				[["investigating", "We are looking into it"]],
 			)
 			assert.isNull(incident.resolvedAt)
@@ -366,7 +366,7 @@ describe("StatusPagesService", () => {
 			assert.strictEqual(resolved.status, "resolved")
 			assert.isNotNull(resolved.resolvedAt)
 			assert.deepStrictEqual(
-				resolved.updates.map((update) => update.status),
+				Arr.map(resolved.updates, (update) => update.status),
 				["resolved", "investigating"],
 			)
 			assert.strictEqual(yield* revision(testDb, page.id), before + 2)
@@ -419,7 +419,9 @@ describe("StatusPagesService", () => {
 			yield* service.postUpdate(ORG, a.id, { status: "resolved", body: "Fixed", source: "api" })
 
 			const titles = (options: Parameters<typeof service.listOrgIncidents>[1]) =>
-				service.listOrgIncidents(ORG, options).pipe(Effect.map((list) => list.map((i) => i.title)))
+				service
+					.listOrgIncidents(ORG, options)
+					.pipe(Effect.map((list) => Arr.map(list, (i) => i.title)))
 			assert.deepStrictEqual(yield* titles({ pageId: null, state: "all", limit: 10, offset: 0 }), [
 				"C",
 				"B",
@@ -485,7 +487,7 @@ describe("StatusPagesService", () => {
 			const service = yield* StatusPagesService
 			const page = yield* createPage("acme")
 			const token = yield* service.rotateBreakGlassToken(ORG, page.id)
-			assert.isTrue(token.startsWith(STATUS_PAGE_BREAK_GLASS_PREFIX))
+			assert.isTrue(Str.startsWith(STATUS_PAGE_BREAK_GLASS_PREFIX)(token))
 			const row = yield* pageRow(testDb, page.id)
 			assert.strictEqual(
 				row?.break_glass_token_sha256,
@@ -497,9 +499,9 @@ describe("StatusPagesService", () => {
 					`SELECT row_to_json(p)::text AS dump FROM status_pages p`,
 				),
 			)
-			assert.isFalse(dump.rows.some((entry) => entry.dump.includes(token)))
+			assert.isFalse(Arr.some(dump.rows, (entry) => Str.includes(token)(entry.dump)))
 			const record = yield* service.get(ORG, page.id)
-			assert.strictEqual(record.breakGlassTokenSuffix, token.slice(-6))
+			assert.strictEqual(record.breakGlassTokenSuffix, Str.slice(-6)(token))
 
 			yield* service.revokeBreakGlassToken(ORG, page.id)
 			assert.isNull((yield* pageRow(testDb, page.id))?.break_glass_token_sha256)
@@ -535,7 +537,11 @@ describe("StatusPagesService", () => {
 						.listComponents(ORG, page.id)
 						.pipe(
 							Effect.flatMap((rows) =>
-								service.reorderComponents(ORG, page.id, rows.map((row) => row.id).reverse()),
+								service.reorderComponents(
+									ORG,
+									page.id,
+									Arr.map(rows, (row) => row.id).reverse(),
+								),
 							),
 						),
 				],
@@ -587,7 +593,7 @@ describe("StatusPagesService", () => {
 				testDb.pglite.query<{ slug: string }>(
 					`SELECT slug FROM status_page_cleanups WHERE delete_snapshot = false`,
 				),
-			).pipe(Effect.map((result) => result.rows.map((row) => row.slug)))
+			).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.slug)))
 
 		const seeded = (testDb: TestDb) =>
 			Effect.gen(function* () {
@@ -618,7 +624,7 @@ describe("StatusPagesService", () => {
 					show_powered_by: true,
 					auto_incidents: "off",
 					theme: DEFAULT_STATUS_PAGE_THEME,
-					components: [api, web, docs].map((component) => ({
+					components: Arr.map([api, web, docs], (component) => ({
 						id: component.id,
 						name: component.name,
 						description: null,
@@ -696,7 +702,7 @@ describe("StatusPagesService", () => {
 
 					const listed = yield* service.listComponents(ORG, page.id)
 					assert.deepStrictEqual(
-						listed.map((row) => [
+						Arr.map(listed, (row) => [
 							row.name,
 							row.position,
 							row.groupName,
@@ -711,10 +717,10 @@ describe("StatusPagesService", () => {
 					)
 					assert.strictEqual(listed[0]?.id, docs.id)
 					assert.strictEqual(listed[2]?.id, api.id)
-					assert.isFalse(listed.some((row) => row.id === web.id))
+					assert.isFalse(Arr.some(listed, (row) => row.id === web.id))
 					assert.deepStrictEqual(
-						applied.components.map((component) => component.id),
-						listed.map((row) => row.id),
+						Arr.map(applied.components, (component) => component.id),
+						Arr.map(listed, (row) => row.id),
 					)
 					assert.deepStrictEqual(applied, yield* service.getConfig(ORG, page.id))
 					assert.deepStrictEqual(changes, {
@@ -868,7 +874,7 @@ describe("StatusPagesService", () => {
 				})
 				assert.strictEqual(applied.config.name, "Fresh")
 				assert.notStrictEqual(applied.config.version, moved.version)
-				assert.isTrue(applied.config.components.some((c) => c.id === web.id))
+				assert.isTrue(Arr.some(applied.config.components, (c) => c.id === web.id))
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 
@@ -971,7 +977,7 @@ describe("StatusPagesService", () => {
 				assert.isTrue(page.draft)
 				const components = yield* service.listComponents(ORG, page.id)
 				assert.deepStrictEqual(
-					components.map((c) => [c.name, c.position, c.monitorId, c.groupName, c.showUptime]),
+					Arr.map(components, (c) => [c.name, c.position, c.monitorId, c.groupName, c.showUptime]),
 					[
 						["API", 0, MONITOR, "Core", true],
 						["Docs", 1, null, null, false],

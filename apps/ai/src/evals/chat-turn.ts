@@ -7,7 +7,7 @@
  * and what it was shown back, so a grade can always be checked against the trial.
  */
 import { randomUUID } from "node:crypto"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { ChatTurnEvent } from "../chat/events"
@@ -75,7 +75,7 @@ export const solveChatTurn = (input: ChatTurnInput): Effect.Effect<Transcript> =
 				answer += event.text
 				return
 			case "turn-retry":
-				answer = answer.slice(0, Math.max(0, answer.length - event.retractChars))
+				answer = Str.slice(0, Math.max(0, answer.length - event.retractChars))(answer)
 				return
 			case "tool-call":
 				pending.set(event.callId, {
@@ -90,7 +90,7 @@ export const solveChatTurn = (input: ChatTurnInput): Effect.Effect<Transcript> =
 				pending.delete(event.callId)
 				done.push({
 					...observeCall(made.name, made.input, event.isError === true),
-					output: render(event.output).slice(0, OUTPUT_CHARS),
+					output: Str.slice(0, OUTPUT_CHARS)(render(event.output)),
 					proposed: made.proposed,
 				})
 				return
@@ -127,12 +127,12 @@ export const solveChatTurn = (input: ChatTurnInput): Effect.Effect<Transcript> =
 		Effect.catchCause((cause) =>
 			Effect.sync(() => {
 				errored = true
-				endReason = `failed: ${String(cause).slice(0, 2_000)}`
+				endReason = `failed: ${Str.slice(0, 2_000)(String(cause))}`
 			}),
 		),
 		Effect.map(() => {
 			// Calls announced but never answered: an approval-gated proposal, or the cap cut them off.
-			const unanswered = [...pending.values()].map((made) => ({
+			const unanswered = Arr.map([...pending.values()], (made) => ({
 				...observeCall(made.name, made.input, false),
 				output: "",
 				proposed: made.proposed,

@@ -1,7 +1,7 @@
 import { IngestMappingOperation, IngestMappingSourceContext } from "@maple/domain/http"
 import { V2AttributeMapping } from "@maple/domain/http/v2"
 import { getResourceAttributeKeys, getSpanAttributeKeys } from "@maple/web-data/warehouse/traces"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
@@ -80,7 +80,7 @@ const FetchAttributeKeys = Command.define("FetchMappingAttributeKeys", {
 	execute: ({ scope }) =>
 		(scope === "span" ? getSpanAttributeKeys({ data: {} }) : getResourceAttributeKeys({ data: {} })).pipe(
 			Effect.mapBoth({
-				onSuccess: (response) => response.data.map((row) => row.attributeKey),
+				onSuccess: (response) => Arr.map(response.data, (row) => row.attributeKey),
 				onFailure: toLoadFailure,
 			}),
 			Effect.result,
@@ -119,9 +119,9 @@ export const operationOf = (model: Model): IngestMappingOperation =>
 	model.operation.value === "move" ? "move" : "copy"
 
 export const isFormValid = (model: Model): boolean =>
-	model.name.value.trim().length > 0 &&
-	model.sourceKey.inputValue.trim().length > 0 &&
-	model.targetKey.inputValue.trim().length > 0
+	Str.trim(model.name.value).length > 0 &&
+	Str.trim(model.sourceKey.inputValue).length > 0 &&
+	Str.trim(model.targetKey.inputValue).length > 0
 
 // UPDATE
 
@@ -172,10 +172,10 @@ export const open = (model: Model, editing: V2AttributeMapping | null): Return =
 const save = (model: Model): Return => {
 	if (model.isSaving || !isFormValid(model)) return { model }
 	const payload = {
-		name: model.name.value.trim(),
+		name: Str.trim(model.name.value),
 		source_context: sourceContextOf(model),
-		source_key: model.sourceKey.inputValue.trim(),
-		target_key: model.targetKey.inputValue.trim(),
+		source_key: Str.trim(model.sourceKey.inputValue),
+		target_key: Str.trim(model.targetKey.inputValue),
 		operation: operationOf(model),
 	}
 	return {

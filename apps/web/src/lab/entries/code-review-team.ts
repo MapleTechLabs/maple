@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { CodeReviewTeam } from "@maple/domain/http"
-import { Clock, Effect, Result, Schema } from "effect"
+import { Clock, Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import type { PageContext } from "../../page/contract"
 import * as Team from "../../page/code-review/team/model"
@@ -72,27 +72,31 @@ const activityAt = (nowMs: number) => {
 		seed = (seed * 16_807) % 2_147_483_647
 		return seed / 2_147_483_647
 	}
-	return Array.from({ length: 365 }, (_, index) => index).flatMap((index) => {
-		const at = nowMs - (364 - index) * DAY
-		// Busy and quiet stretches, like a real year: a release push, a summer lull.
-		const season = 0.55 + 0.45 * Math.sin(index / 38)
-		const day = new Date(at).toISOString().slice(0, 10)
-		const weekday = new Date(at).getUTCDay()
-		const busy = (weekday === 0 || weekday === 6 ? 0.15 : 1) * season
-		return CADENCE.flatMap(([login, cadence]) =>
-			next() < cadence * busy
-				? [
-						{
-							day,
-							login,
-							repository: REPOSITORIES[Math.floor(next() * REPOSITORIES.length)] ?? "acme/web",
-							opened: 1 + Math.floor(next() * 3),
-							merged: Math.floor(next() * 3),
-						},
-					]
-				: [],
-		)
-	})
+	return Arr.flatMap(
+		Array.from({ length: 365 }, (_, index) => index),
+		(index) => {
+			const at = nowMs - (364 - index) * DAY
+			// Busy and quiet stretches, like a real year: a release push, a summer lull.
+			const season = 0.55 + 0.45 * Math.sin(index / 38)
+			const day = Str.slice(0, 10)(new Date(at).toISOString())
+			const weekday = new Date(at).getUTCDay()
+			const busy = (weekday === 0 || weekday === 6 ? 0.15 : 1) * season
+			return Arr.flatMap(CADENCE, ([login, cadence]) =>
+				next() < cadence * busy
+					? [
+							{
+								day,
+								login,
+								repository:
+									REPOSITORIES[Math.floor(next() * REPOSITORIES.length)] ?? "acme/web",
+								opened: 1 + Math.floor(next() * 3),
+								merged: Math.floor(next() * 3),
+							},
+						]
+					: [],
+			)
+		},
+	)
 }
 
 // Logins no GitHub account holds, so the avatars fall back to initials.
@@ -256,7 +260,7 @@ type PageStep = ReturnType<typeof update>
 /** The page's reads answered by the fixture; the GitHub status read is dropped (no repositories). */
 const served = (result: PageStep) => ({
 	model: result.model,
-	commands: (result.commands ?? []).flatMap((command) => {
+	commands: Arr.flatMap(result.commands ?? [], (command) => {
 		if (command.name === "FetchCodeReviewTeam")
 			return [ServeFixtureTeam({ key: result.model.team.key ?? "" })]
 		return command.name === "FetchCodeReviewGithubStatus" ? [] : [command]
@@ -267,7 +271,7 @@ const served = (result: PageStep) => ({
 const followed = (result: PageStep) => {
 	const out = result.outMessage
 	if (out === undefined || out._tag !== "RequestedNavigation") return served(result)
-	const search = decodeSearch(Object.fromEntries(new URL(out.url, "https://lab.local").searchParams))
+	const search = decodeSearch(Rec.fromEntries(new URL(out.url, "https://lab.local").searchParams))
 	return served(routeChanged(result.model, { search }, context))
 }
 

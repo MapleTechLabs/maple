@@ -1,6 +1,6 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { formatNumber, truncate } from "../lib/format"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListErrorIssuesOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
@@ -30,7 +30,7 @@ const describeFixHistory = (issue: {
 	readonly lastResolvedAt: string | null
 }): string => {
 	if (issue.regressionCount === 0) return issue.lastResolvedAt === null ? "—" : "fixed once"
-	const when = issue.lastResolvedAt === null ? "" : `, last fixed ${issue.lastResolvedAt.slice(0, 10)}`
+	const when = issue.lastResolvedAt === null ? "" : `, last fixed ${Str.slice(0, 10)(issue.lastResolvedAt)}`
 	return `regressed ${issue.regressionCount}x${when}`
 }
 
@@ -49,14 +49,14 @@ const issueTable = (output: Output) => {
 	if (output.compact) {
 		return doc.table(
 			["Issue ID", "State", "Severity", "Service", "Exception", "Events", "Last seen", "Fingerprint"],
-			rows.map((i) => [
+			Arr.map(rows, (i) => [
 				i.id,
 				stateCell(i),
 				i.severity ?? "—",
 				i.serviceName,
 				exceptionCell(i),
 				formatNumber(i.occurrenceCount),
-				i.lastSeenAt.slice(0, 19),
+				Str.slice(0, 19)(i.lastSeenAt),
 				i.fingerprintHash,
 			]),
 		)
@@ -82,7 +82,7 @@ const issueTable = (output: Output) => {
 			// The warehouse identity, so an issue goes straight to error_detail.
 			"Fingerprint",
 		],
-		rows.map((i) => [
+		Arr.map(rows, (i) => [
 			i.id,
 			i.kind,
 			stateCell(i),
@@ -92,7 +92,7 @@ const issueTable = (output: Output) => {
 			exceptionCell(i),
 			formatNumber(i.occurrenceCount),
 			describeFixHistory(i),
-			i.lastSeenAt.slice(0, 19),
+			Str.slice(0, 19)(i.lastSeenAt),
 			"assignedActor" in i && i.assignedActor !== null ? actorLabel(i.assignedActor) : "—",
 			"leaseHolder" in i && i.leaseHolder !== null ? actorLabel(i.leaseHolder) : "—",
 			i.fingerprintHash,
@@ -117,13 +117,16 @@ const spanLabelsFor = (
 		readonly lastSeenAt: string
 	}>,
 ) => {
-	const unlabelled = issues.filter((i) => i.kind === "error" && isUnlabelledError(i.errorLabel))
-	const seen = unlabelled.map((i) => parseWarehouseDateTime(i.lastSeenAt)).filter((ms) => !Number.isNaN(ms))
+	const unlabelled = Arr.filter(issues, (i) => i.kind === "error" && isUnlabelledError(i.errorLabel))
+	const seen = Arr.filter(
+		Arr.map(unlabelled, (i) => parseWarehouseDateTime(i.lastSeenAt)),
+		(ms) => !Number.isNaN(ms),
+	)
 	if (seen.length === 0) return Effect.succeed(new Map<string, string>())
 	const endMs = Math.max(...seen) + 60_000
 	const startMs = Math.max(Math.min(...seen) - 60 * 60_000, endMs - LABEL_LOOKBACK_MS)
 	return labelExceptionlessFingerprints({
-		fingerprintHashes: unlabelled.map((i) => i.fingerprintHash),
+		fingerprintHashes: Arr.map(unlabelled, (i) => i.fingerprintHash),
 		timeRange: { startTime: formatWarehouseDateTime(startMs), endTime: formatWarehouseDateTime(endMs) },
 	}).pipe(
 		provideWarehouseExecutorFromTenant(tenant),
@@ -149,13 +152,13 @@ const filterArgs = (output: Output) => ({
 const nextCalls = (output: Output): ReadonlyArray<NextCall> => {
 	const rows: ReadonlyArray<AnyRow> = output.issues
 	const calls: Array<NextCall> = []
-	for (const issue of rows.filter((i) => i.workflowState === "regressed").slice(0, 3)) {
+	for (const issue of Arr.filter(rows, (i) => i.workflowState === "regressed").slice(0, 3)) {
 		calls.push(
 			doc.next(
 				"list_error_issue_events",
 				{ issue_id: issue.id },
 				`this issue was fixed ${
-					issue.lastResolvedAt === null ? "before" : `on ${issue.lastResolvedAt.slice(0, 10)}`
+					issue.lastResolvedAt === null ? "before" : `on ${Str.slice(0, 10)(issue.lastResolvedAt)}`
 				} and regressed; read what was already tried before investigating it as new`,
 			),
 		)
@@ -170,7 +173,7 @@ const nextCalls = (output: Output): ReadonlyArray<NextCall> => {
 			),
 		)
 	}
-	for (const issue of rows.filter((i) => i.workflowState === "triage").slice(0, 3)) {
+	for (const issue of Arr.filter(rows, (i) => i.workflowState === "triage").slice(0, 3)) {
 		calls.push(doc.next("claim_error_issue", { issue_id: issue.id }, "pick up this issue"))
 		calls.push(
 			doc.next("transition_error_issue", { issue_id: issue.id, to_state: "todo" }, "move to backlog"),
@@ -319,7 +322,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 				totalMatching,
 				...(result.nextCursor === undefined ? undefined : { nextCursor: result.nextCursor }),
 				issues: compact
-					? issues.map((i) => ({
+					? Arr.map(issues, (i) => ({
 							id: i.id,
 							kind: i.kind,
 							fingerprintHash: i.fingerprintHash,
@@ -334,7 +337,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 							lastResolvedAt: i.lastResolvedAt,
 							hasOpenIncident: i.hasOpenIncident,
 						}))
-					: issues.map((i) => ({
+					: Arr.map(issues, (i) => ({
 							id: i.id,
 							kind: i.kind,
 							fingerprintHash: i.fingerprintHash,

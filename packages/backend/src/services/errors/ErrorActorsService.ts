@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, type ActorInsert, type ActorRow } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { isReservedAgentName, SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
 import { makeErrorDatabaseExecute } from "./error-persistence"
@@ -23,7 +23,8 @@ const decodeActorDateTimeSync = Schema.decodeUnknownSync(ActorDocument.fields.la
 const decodeStoredJsonArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
 
 const parseCapabilities = (raw: unknown): ReadonlyArray<string> =>
-	Option.getOrElse(decodeStoredJsonArray(raw), (): ReadonlyArray<unknown> => []).filter(
+	Arr.filter(
+		Option.getOrElse(decodeStoredJsonArray(raw), (): ReadonlyArray<unknown> => []),
 		(value): value is string => typeof value === "string",
 	)
 
@@ -251,7 +252,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	const registerAgent: ErrorActorsServiceApi["registerAgent"] = Effect.fn(
 		"ErrorActorsService.registerAgent",
 	)(function* (orgId, byUserId, request) {
-		const name = request.name.trim()
+		const name = Str.trim(request.name)
 		if (name.length === 0) {
 			return yield* new ErrorValidationError({
 				message: "Agent name must not be empty",
@@ -306,13 +307,13 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 						.orderBy(["createdAt", "desc"]),
 				),
 			)
-			return new ActorsListResponse({ actors: rows.map(actorRowToDocument) })
+			return new ActorsListResponse({ actors: Arr.map(rows, actorRowToDocument) })
 		},
 	)
 
 	const collectActorDocs: ErrorActorsServiceApi["collectActorDocs"] = (orgId, actorIds) => {
 		const [first, ...rest] = Array.from(
-			new Set(actorIds.filter((value): value is ActorId => value != null)),
+			new Set(Arr.filter(actorIds, (value): value is ActorId => value != null)),
 		)
 		if (first === undefined) return Effect.succeed(new Map<ActorId, ActorDocument>())
 		return dbExecute((db) =>

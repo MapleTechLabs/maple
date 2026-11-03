@@ -25,6 +25,7 @@ import { notificationsSection } from "./view-notifications"
 import { querySection } from "./view-query"
 import { RULE_FORM_MAX_WIDTH, ruleStep } from "./view-step"
 import { templatesOverlay } from "./view-templates"
+import { Array as Arr, String as Str } from "effect"
 
 // `AlertCreatePageContent` and `AlertCreateFormSurface`: the rule editor page and its form.
 
@@ -72,7 +73,7 @@ const noticeBanner = (h: H, notices: ReadonlyArray<Notice>): ReadonlyArray<Html>
 				alert(
 					h,
 					{
-						variant: notices.some((notice) => notice.severity === "error") ? "crit" : "warn",
+						variant: Arr.some(notices, (notice) => notice.severity === "error") ? "crit" : "warn",
 						className: "rounded-md",
 					},
 					[
@@ -81,7 +82,7 @@ const noticeBanner = (h: H, notices: ReadonlyArray<Notice>): ReadonlyArray<Html>
 						alertDescription(h, [
 							h.div(
 								[h.Class("space-y-1")],
-								notices.map((notice) => h.p([], [notice.message])),
+								Arr.map(notices, (notice) => h.p([], [notice.message])),
 							),
 						]),
 					],
@@ -164,7 +165,7 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 								number: 4,
 								hasDivider: false,
 								title: "Name it",
-								status: form.name.trim().length === 0 ? "missing" : "done",
+								status: Str.trim(form.name).length === 0 ? "missing" : "done",
 							},
 							[detailsSection(h, model, form)],
 						),

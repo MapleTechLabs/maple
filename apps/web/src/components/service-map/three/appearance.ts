@@ -1,6 +1,7 @@
 import { Color } from "three"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import type { InkPalette } from "./palette"
+import { Array as Arr } from "effect"
 
 export { FACE_TONE, type InkPalette, type MachineKind, mapPalette } from "./palette"
 
@@ -39,8 +40,8 @@ export function sceneryPalette(palette: InkPalette): InkPalette {
 		belt: m(palette.belt),
 		kraft: m(palette.kraft),
 		tape: m(palette.tape),
-		gifts: palette.gifts.map(m),
-		foliage: palette.foliage.map(m),
+		gifts: Arr.map(palette.gifts, m),
+		foliage: Arr.map(palette.foliage, m),
 		evergreen: m(palette.evergreen),
 		stone: m(palette.stone),
 		iron: m(palette.iron),

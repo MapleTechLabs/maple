@@ -57,6 +57,7 @@ import {
 import { assertCatalogExact, rebuildCatalog } from "@maple/local-server/archives/listing"
 import { RetiredDayAuthority } from "@maple/local-server/archives/retention"
 import { ARCHIVE_SIGNALS } from "@maple/local-server/archives/signals"
+import { Array as Arr, String as Str } from "effect"
 
 // Filesystem-level tests for generation promotion, supersession, and catalog
 // append. These exercise the durable state machine without a restored chDB; the
@@ -77,7 +78,7 @@ const seedCheckpoint = (dataDir: string, checkpointId: CheckpointId, backupBytes
 	const createdAt = "2026-01-01T00:00:00.000Z"
 	const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
 	mkdirSync(join(snapshot, "backup"), { recursive: true })
-	writeFileSync(join(snapshot, "backup", "data.bin"), "x".repeat(backupBytes))
+	writeFileSync(join(snapshot, "backup", "data.bin"), Str.repeat(backupBytes)("x"))
 	writeFileSync(
 		join(snapshot, "manifest.json"),
 		`${JSON.stringify({
@@ -149,7 +150,7 @@ const manifest = (
 			rowCount: archivedRowCount,
 			minEventTimeUnixNano: `${BigInt(Date.parse("2026-06-01T00:00:00.000Z")) * 1_000_000n}`,
 			maxEventTimeUnixNano: `${BigInt(Date.parse("2026-06-01T00:30:00.000Z")) * 1_000_000n}`,
-			sha256: "a".repeat(64),
+			sha256: Str.repeat(64)("a"),
 			bytes: 4096,
 			columns: ["TimestampTime", "ServiceName"],
 			complexDigest: "123456789",
@@ -413,10 +414,10 @@ describe("archive generation promotion", () => {
 				new RetiredDayAuthority(dataDir).commit({
 					rangeDate: "2026-06-01",
 					retiredAt: "2026-06-03T00:00:00.000Z",
-					signals: ARCHIVE_SIGNALS.map((signal) => ({
+					signals: Arr.map(ARCHIVE_SIGNALS, (signal) => ({
 						signal: signal.name,
 						generationId: randomUUID(),
-						manifestSha256: "a".repeat(64),
+						manifestSha256: Str.repeat(64)("a"),
 						archivedRowCount: 1,
 						contentDigest: "1:2:3:4",
 					})),
@@ -757,7 +758,7 @@ describe("archive generation promotion", () => {
 			writeFileSync(catalogPath(archiveDir, "traces"), '{"attacker":true}\n')
 			await reconcileArchiveGeneration(seeded.dataDir, archiveDir, seeded.scratchRoot)
 			assertCatalogExact(archiveDir, "traces")
-			const lines = readFileSync(catalogPath(archiveDir, "traces"), "utf8").trim().split("\n")
+			const lines = Str.split("\n")(Str.trim(readFileSync(catalogPath(archiveDir, "traces"), "utf8")))
 			strictEqual(lines.length, 1)
 			strictEqual((JSON.parse(lines[0]!) as { generationId: string }).generationId, seeded.generationId)
 		})

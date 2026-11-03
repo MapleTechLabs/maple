@@ -6,7 +6,7 @@ import {
 } from "../../lib/query-builder/performance-hints"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AsyncData } from "foldkit"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { QueryChange, type AddOnKey } from "../../page/kit/query-builder/change"
 import type { QueryDraft } from "../../page/kit/query-builder/draft"
 import { textInput } from "../../page/kit/query-builder/parts"
@@ -238,7 +238,7 @@ const addOnToggles = (h: H, query: QueryDraft): Html =>
 			fieldEyebrow(h, "Add-ons"),
 			h.div(
 				[h.Class("flex flex-wrap gap-1.5")],
-				ADD_ONS.map((addOn) => {
+				Arr.map(ADD_ONS, (addOn) => {
 					const isOn = query.addOns[addOn.key]
 					// A pressed toggle with a check, so an add-on in use reads as on at a glance.
 					return toggle(

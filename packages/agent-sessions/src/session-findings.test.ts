@@ -4,6 +4,7 @@ import { buildSessionFindings } from "./session-findings"
 import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns } from "./session-turns"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
+import { Array as Arr, String as Str } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -90,7 +91,7 @@ describe("buildSessionFindings", () => {
 		expect(failed.findings[0]!.label).toBe("context_length_exceeded")
 		expect(failed.findings[0]!.severity).toBe("failure")
 		expect(failed.findings[0]!.turnText).toBe("Turn 2 (final)")
-		expect(failed.findings.some((finding) => finding.label === "rate_limit")).toBe(true)
+		expect(Arr.some(failed.findings, (finding) => finding.label === "rate_limit")).toBe(true)
 	})
 
 	it("tells the context story as prompt growth across the session's calls", () => {
@@ -317,11 +318,11 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const stall = result.findings.find((entry) => entry.label.startsWith("idle"))!
+		const stall = result.findings.find((entry) => Str.startsWith("idle")(entry.label))!
 		expect(stall.label).toBe("idle 58s")
 		expect(stall.turnText).toBe("Turn 2")
 		// The five-minute pause between the turns is the user thinking: no finding.
-		expect(result.findings.filter((entry) => entry.label.startsWith("idle"))).toHaveLength(1)
+		expect(Arr.filter(result.findings, (entry) => Str.startsWith("idle")(entry.label))).toHaveLength(1)
 	})
 
 	// The shape effect-agent records for a failed tool: a generic status message
@@ -377,7 +378,7 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(result.findings.map((finding) => [finding.label, finding.count])).toEqual([
+		expect(Arr.map(result.findings, (finding) => [finding.label, finding.count])).toEqual([
 			["tool_unavailable · sandbox_grep", 1],
 		])
 		expect(result.findings[0]!.detail).toBe(
@@ -402,7 +403,7 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(result.findings.map((finding) => [finding.label, finding.detail])).toEqual([
+		expect(Arr.map(result.findings, (finding) => [finding.label, finding.detail])).toEqual([
 			["tool_arguments · sandbox_grep", "invalid arguments: missing key `pattern`"],
 		])
 	})
@@ -444,12 +445,12 @@ describe("buildSessionFindings", () => {
 				parentSpanId: "gen",
 				traceId: "mirror",
 				vendorId: "openrouter",
-				spanName: `provider attempt ${id.slice(-1)}: ${provider}`,
+				spanName: `provider attempt ${Str.slice(-1)(id)}: ${provider}`,
 				startMs,
 				durationMs: 200,
 				statusCode: "Error",
 				genAi: {
-					attemptIndex: Number(id.slice(-1)),
+					attemptIndex: Number(Str.slice(-1)(id)),
 					attemptStatusCode: status,
 					attemptProvider: provider,
 				},
@@ -478,9 +479,9 @@ describe("buildSessionFindings", () => {
 		)
 
 		expect(result.verdict.status).toBe("attention")
-		expect(result.findings.map((finding) => [finding.label, finding.count, finding.severity])).toEqual([
-			["provider_retry", 3, "anomaly"],
-		])
+		expect(
+			Arr.map(result.findings, (finding) => [finding.label, finding.count, finding.severity]),
+		).toEqual([["provider_retry", 3, "anomaly"]])
 		expect(result.findings[0]!.detail).toBe(
 			"429 ×2 · 502 ×1 — Crusoe, Fireworks, Friendli · all recovered",
 		)
@@ -515,7 +516,7 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(result.findings.map((finding) => [finding.label, finding.detail])).toEqual([
+		expect(Arr.map(result.findings, (finding) => [finding.label, finding.detail])).toEqual([
 			["provider_error", "Provider returned error"],
 			["provider_retry", "503 ×1 — Together · 1 of 1 calls did not recover"],
 		])
@@ -533,7 +534,7 @@ describe("buildSessionFindings", () => {
 					genAi: { conversationId: "t2" },
 				}),
 				// Both spellings the warehouse uses for the kind.
-				...[0, 1, 2].map((index) =>
+				...Arr.map([0, 1, 2], (index) =>
 					makeSpan({
 						spanId: `probe-${index}`,
 						parentSpanId: "a2",
@@ -574,7 +575,7 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(result.findings.map((finding) => [finding.label, finding.detail])).toEqual([
+		expect(Arr.map(result.findings, (finding) => [finding.label, finding.detail])).toEqual([
 			["error", "connection reset"],
 		])
 	})
@@ -605,7 +606,7 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(result.findings.map((finding) => [finding.label, finding.detail])).toEqual([
+		expect(Arr.map(result.findings, (finding) => [finding.label, finding.detail])).toEqual([
 			["incomplete", "ended without calling `submit_plan`"],
 		])
 	})
@@ -632,7 +633,7 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(result.findings.map((finding) => [finding.label, finding.detail])).toEqual([
+		expect(Arr.map(result.findings, (finding) => [finding.label, finding.detail])).toEqual([
 			["provider_error", "Upstream error from NextBit: upstream model did not return a valid response"],
 		])
 	})
@@ -663,8 +664,8 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		expect(result.findings.map((finding) => [finding.label, finding.count, finding.detail])).toEqual([
-			["provider_error", 1, "Network connection lost."],
-		])
+		expect(Arr.map(result.findings, (finding) => [finding.label, finding.count, finding.detail])).toEqual(
+			[["provider_error", 1, "Network connection lost."]],
+		)
 	})
 })

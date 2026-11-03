@@ -15,7 +15,7 @@ import {
 	type ExecutorWorkingDirectory,
 } from "@maple/domain/executor"
 import { shellQuote } from "@maple/domain/sandbox"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { GATEWAY_HOST } from "./executor-probe"
 
 export const CHECKOUT_DIR = "/work/checkout"
@@ -53,20 +53,26 @@ const dropTo = (uid: string) =>
  * moves to a leaf first. Done once per container; the marker makes later calls skip it.
  */
 const CGROUP_READY = "/run/maple-cgroup-ready"
-const CGROUP_SETUP = [
-	`if [ ! -e ${CGROUP_READY} ]; then`,
-	`  mkdir -p ${CGROUP}/maple-init || exit 3`,
-	`  for _ in 1 2 3; do for p in $(cat ${CGROUP}/cgroup.procs); do echo "$p" > ${CGROUP}/maple-init/cgroup.procs 2>/dev/null; done; done`,
-	`  echo "+memory +pids" > ${CGROUP}/cgroup.subtree_control || exit 3`,
-	`  mkdir -p /run && : > ${CGROUP_READY}`,
-	"fi",
-].join("\n")
+const CGROUP_SETUP = Arr.join(
+	[
+		`if [ ! -e ${CGROUP_READY} ]; then`,
+		`  mkdir -p ${CGROUP}/maple-init || exit 3`,
+		`  for _ in 1 2 3; do for p in $(cat ${CGROUP}/cgroup.procs); do echo "$p" > ${CGROUP}/maple-init/cgroup.procs 2>/dev/null; done; done`,
+		`  echo "+memory +pids" > ${CGROUP}/cgroup.subtree_control || exit 3`,
+		`  mkdir -p /run && : > ${CGROUP_READY}`,
+		"fi",
+	],
+	"\n",
+)
 
 const cgroup = (name: string, limits: ReadonlyArray<readonly [string, string]>) =>
-	[
-		`mkdir -p ${CGROUP}/${name} || exit 3`,
-		...limits.map(([file, value]) => `echo ${value} > ${CGROUP}/${name}/${file} || exit 3`),
-	].join("\n")
+	Arr.join(
+		[
+			`mkdir -p ${CGROUP}/${name} || exit 3`,
+			...Arr.map(limits, ([file, value]) => `echo ${value} > ${CGROUP}/${name}/${file} || exit 3`),
+		],
+		"\n",
+	)
 
 /**
  * Every world-writable directory outside the run's own trees (`/run/lock` in today's image, besides
@@ -102,18 +108,14 @@ END {
   }
 }`
 
-const LOCKFILES = [
-	"package-lock.json",
-	"npm-shrinkwrap.json",
-	"pnpm-lock.yaml",
-	"bun.lock",
-	"bun.lockb",
-	"yarn.lock",
-].map((name) => shellQuote(`:(glob)**/${name}`))
+const LOCKFILES = Arr.map(
+	["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "bun.lock", "bun.lockb", "yarn.lock"],
+	(name) => shellQuote(`:(glob)**/${name}`),
+)
 
 /** Prints `dir<TAB>manager` for each lockfile directory to install, shallowest first. */
 export const lockfilePlanScript = (): string =>
-	`git ls-files -- ${LOCKFILES.join(" ")} | awk ${shellQuote(LOCKFILE_PLAN_AWK)} | sort -n -k1,1 -k2,2 | head -n ${MAX_INSTALLS} | cut -f2-`
+	`git ls-files -- ${Arr.join(LOCKFILES, " ")} | awk ${shellQuote(LOCKFILE_PLAN_AWK)} | sort -n -k1,1 -k2,2 | head -n ${MAX_INSTALLS} | cut -f2-`
 
 /** Each install as one line in `installs`: dir, manager, outcome, the end of its log. */
 const INSTALL_LINE = `printf '%s\\t%s\\t%s\\t%s\\n' "$dir" "$manager" "$outcome" "$(tail -c 400 "$log" 2>/dev/null | tr '\\t\\n' '  ')" >> ${PREPARE_STATE_DIR}/installs`
@@ -124,70 +126,79 @@ const INSTALL_LINE = `printf '%s\\t%s\\t%s\\t%s\\n' "$dir" "$manager" "$outcome"
  * under `prlimit`, with install scripts off and only the gateway reachable.
  */
 export const prepareScript = (sha: string): string => {
-	const environment = [
-		`PATH=${PATH}`,
-		`HOME=${CACHE_DIR}/home`,
-		"LANG=C.UTF-8",
-		"CI=1",
-		"GIT_TERMINAL_PROMPT=0",
-		`npm_config_cache=${CACHE_DIR}/npm`,
-		"npm_config_update_notifier=false",
-		`BUN_INSTALL_CACHE_DIR=${CACHE_DIR}/bun`,
-		`NPM_CONFIG_REGISTRY=${GATEWAY_NPM}`,
-		`BUN_CONFIG_REGISTRY=${GATEWAY_NPM}`,
-	].join(" ")
+	const environment = Arr.join(
+		[
+			`PATH=${PATH}`,
+			`HOME=${CACHE_DIR}/home`,
+			"LANG=C.UTF-8",
+			"CI=1",
+			"GIT_TERMINAL_PROMPT=0",
+			`npm_config_cache=${CACHE_DIR}/npm`,
+			"npm_config_update_notifier=false",
+			`BUN_INSTALL_CACHE_DIR=${CACHE_DIR}/bun`,
+			`NPM_CONFIG_REGISTRY=${GATEWAY_NPM}`,
+			`BUN_CONFIG_REGISTRY=${GATEWAY_NPM}`,
+		],
+		" ",
+	)
 	// Each command that reads target-controlled input: in the prepare cgroup, its own pid and mount
 	// namespaces (private temporary directories; nothing it starts outlives it), then unprivileged.
 	const jail = `${CGROUP}/maple-prepare/cgroup.procs`
 	const inner = `for d in ${SHARED_DIRS}; do mount -t tmpfs -o size=1g,mode=1777 tmpfs "$d" || exit 1; done; exec "$@"`
 	const asPrepare = `sh -c 'echo $$ > ${jail} && exec "$@"' sh unshare --mount --pid --fork --kill-child --mount-proc -- sh -c ${shellQuote(inner)} sh prlimit --fsize=${2 * 1024 * 1024 * 1024} --nofile=8192 --core=0 -- ${dropTo(String(PREPARE_UID))} env -i ${environment}`
 	const registry = shellQuote(GATEWAY_NPM)
-	return [
-		"set -u",
-		"umask 022",
-		CGROUP_SETUP,
-		FIND_SHARED_WRITABLE,
-		cgroup("maple-prepare", [
-			["memory.max", String(4 * 1024 * 1024 * 1024)],
-			["pids.max", "1024"],
-		]),
-		`mkdir -p ${CHECKOUT_DIR} ${CACHE_DIR}/home || exit 4`,
-		`chown ${PREPARE_UID}:${PREPARE_UID} ${CHECKOUT_DIR} ${CACHE_DIR} ${CACHE_DIR}/home || exit 4`,
-		`cd ${CHECKOUT_DIR} || exit 4`,
-		`${asPrepare} git init -q . || exit 10`,
-		// The gateway adds the repository's credential; the container never holds it.
-		`${asPrepare} git -c protocol.version=2 fetch -q --depth=1 --no-tags ${shellQuote(GATEWAY_GIT)} ${shellQuote(sha)} || exit 11`,
-		`${asPrepare} git -c advice.detachedHead=false checkout -q --detach FETCH_HEAD || exit 12`,
-		`: > ${PREPARE_STATE_DIR}/installs`,
-		`${asPrepare} sh -c ${shellQuote(lockfilePlanScript())} > ${PREPARE_STATE_DIR}/plan || exit 13`,
-		`while IFS="$(printf '\\t')" read -r dir manager; do`,
-		`  log=${PREPARE_STATE_DIR}/install.log; : > "$log"; outcome=failed`,
-		'  case "$manager" in',
-		`    npm) (cd "$dir" && ${asPrepare} npm ci --ignore-scripts --no-audit --no-fund --registry=${registry}) >"$log" 2>&1 && outcome=installed ;;`,
-		`    pnpm) (cd "$dir" && ${asPrepare} pnpm install --frozen-lockfile --ignore-scripts --registry=${registry} --ignore-pnpmfile --store-dir=${CACHE_DIR}/pnpm --config.manage-package-manager-versions=false) >"$log" 2>&1 && outcome=installed ;;`,
-		`    bun) (cd "$dir" && ${asPrepare} bun install --frozen-lockfile --ignore-scripts) >"$log" 2>&1 && outcome=installed ;;`,
-		'    *) echo "yarn lockfiles are not installed yet" >"$log"; outcome=skipped ;;',
-		"  esac",
-		`  ${INSTALL_LINE}`,
-		`done < ${PREPARE_STATE_DIR}/plan`,
-		// From here on nothing the target controls may change the checkout or what it installed.
-		reap("maple-prepare"),
-		`${drained("maple-prepare")} || exit 15`,
-		`chown -R 0:0 ${CHECKOUT_DIR} && chmod -R a+rX,go-w ${CHECKOUT_DIR} || exit 14`,
-		`rm -rf ${CACHE_DIR}`,
-		`echo ${shellQuote(sha)} > ${PREPARE_STATE_DIR}/sha`,
-	].join("\n")
+	return Arr.join(
+		[
+			"set -u",
+			"umask 022",
+			CGROUP_SETUP,
+			FIND_SHARED_WRITABLE,
+			cgroup("maple-prepare", [
+				["memory.max", String(4 * 1024 * 1024 * 1024)],
+				["pids.max", "1024"],
+			]),
+			`mkdir -p ${CHECKOUT_DIR} ${CACHE_DIR}/home || exit 4`,
+			`chown ${PREPARE_UID}:${PREPARE_UID} ${CHECKOUT_DIR} ${CACHE_DIR} ${CACHE_DIR}/home || exit 4`,
+			`cd ${CHECKOUT_DIR} || exit 4`,
+			`${asPrepare} git init -q . || exit 10`,
+			// The gateway adds the repository's credential; the container never holds it.
+			`${asPrepare} git -c protocol.version=2 fetch -q --depth=1 --no-tags ${shellQuote(GATEWAY_GIT)} ${shellQuote(sha)} || exit 11`,
+			`${asPrepare} git -c advice.detachedHead=false checkout -q --detach FETCH_HEAD || exit 12`,
+			`: > ${PREPARE_STATE_DIR}/installs`,
+			`${asPrepare} sh -c ${shellQuote(lockfilePlanScript())} > ${PREPARE_STATE_DIR}/plan || exit 13`,
+			`while IFS="$(printf '\\t')" read -r dir manager; do`,
+			`  log=${PREPARE_STATE_DIR}/install.log; : > "$log"; outcome=failed`,
+			'  case "$manager" in',
+			`    npm) (cd "$dir" && ${asPrepare} npm ci --ignore-scripts --no-audit --no-fund --registry=${registry}) >"$log" 2>&1 && outcome=installed ;;`,
+			`    pnpm) (cd "$dir" && ${asPrepare} pnpm install --frozen-lockfile --ignore-scripts --registry=${registry} --ignore-pnpmfile --store-dir=${CACHE_DIR}/pnpm --config.manage-package-manager-versions=false) >"$log" 2>&1 && outcome=installed ;;`,
+			`    bun) (cd "$dir" && ${asPrepare} bun install --frozen-lockfile --ignore-scripts) >"$log" 2>&1 && outcome=installed ;;`,
+			'    *) echo "yarn lockfiles are not installed yet" >"$log"; outcome=skipped ;;',
+			"  esac",
+			`  ${INSTALL_LINE}`,
+			`done < ${PREPARE_STATE_DIR}/plan`,
+			// From here on nothing the target controls may change the checkout or what it installed.
+			reap("maple-prepare"),
+			`${drained("maple-prepare")} || exit 15`,
+			`chown -R 0:0 ${CHECKOUT_DIR} && chmod -R a+rX,go-w ${CHECKOUT_DIR} || exit 14`,
+			`rm -rf ${CACHE_DIR}`,
+			`echo ${shellQuote(sha)} > ${PREPARE_STATE_DIR}/sha`,
+		],
+		"\n",
+	)
 }
 
 /** The background prepare: {@link prepareScript} under a runner that records how it went. */
 export const prepareRunner = (sha: string): string => {
 	const s = PREPARE_STATE_DIR
-	return [
-		"umask 022",
-		`echo $$ > ${s}/pid`,
-		`timeout --kill-after=10 ${PREPARE_TIMEOUT_SECONDS} bash -c ${shellQuote(prepareScript(sha))} > ${s}/log 2>&1`,
-		`echo $? > ${s}/exit-code.tmp && mv ${s}/exit-code.tmp ${s}/exit-code`,
-	].join("\n")
+	return Arr.join(
+		[
+			"umask 022",
+			`echo $$ > ${s}/pid`,
+			`timeout --kill-after=10 ${PREPARE_TIMEOUT_SECONDS} bash -c ${shellQuote(prepareScript(sha))} > ${s}/log 2>&1`,
+			`echo $? > ${s}/exit-code.tmp && mv ${s}/exit-code.tmp ${s}/exit-code`,
+		],
+		"\n",
+	)
 }
 
 /**
@@ -196,19 +207,22 @@ export const prepareRunner = (sha: string): string => {
  */
 export const prepareStatusScript = (): string => {
 	const s = PREPARE_STATE_DIR
-	return [
-		"umask 022",
-		`if [ -e ${s}/exit-code ]; then`,
-		`  code=$(cat ${s}/exit-code)`,
-		`  if [ "$code" = 0 ]; then echo "ready $(cat ${s}/sha)"; cat ${s}/installs; exit 0; fi`,
-		`  echo "failed $code"; tail -c 1500 ${s}/log 2>/dev/null; exit 0`,
-		"fi",
-		`if [ -e ${s}/pid ]; then`,
-		`  if kill -0 "$(cat ${s}/pid)" 2>/dev/null; then echo running; else echo lost; fi`,
-		"  exit 0",
-		"fi",
-		`if mkdir -p /work && mkdir ${s} 2>/dev/null; then echo claimed; else echo running; fi`,
-	].join("\n")
+	return Arr.join(
+		[
+			"umask 022",
+			`if [ -e ${s}/exit-code ]; then`,
+			`  code=$(cat ${s}/exit-code)`,
+			`  if [ "$code" = 0 ]; then echo "ready $(cat ${s}/sha)"; cat ${s}/installs; exit 0; fi`,
+			`  echo "failed $code"; tail -c 1500 ${s}/log 2>/dev/null; exit 0`,
+			"fi",
+			`if [ -e ${s}/pid ]; then`,
+			`  if kill -0 "$(cat ${s}/pid)" 2>/dev/null; then echo running; else echo lost; fi`,
+			"  exit 0",
+			"fi",
+			`if mkdir -p /work && mkdir ${s} 2>/dev/null; then echo claimed; else echo running; fi`,
+		],
+		"\n",
+	)
 }
 
 const InstallLine = Schema.Struct({
@@ -231,27 +245,27 @@ export type PrepareStatus =
 	| { readonly _tag: "claimed" }
 
 export const parsePrepareStatus = (stdout: string): PrepareStatus => {
-	const [head = "", ...rest] = stdout.split("\n")
-	const [state, value = ""] = head.trim().split(" ")
+	const [head, ...rest] = Str.split("\n")(stdout)
+	const [state, value = ""] = Str.split(" ")(Str.trim(head))
 	switch (state) {
 		case "ready":
 			return {
 				_tag: "ready",
 				sha: value,
-				installs: rest.flatMap((line) => {
-					const [dir, manager, outcome, detail = ""] = line.split("\t")
-					const decoded = decodeInstallLine({ dir, manager, outcome, detail: detail.trim() })
+				installs: Arr.flatMap(rest, (line) => {
+					const [dir, manager, outcome, detail = ""] = Str.split("\t")(line)
+					const decoded = decodeInstallLine({ dir, manager, outcome, detail: Str.trim(detail) })
 					return decoded._tag === "Some" ? [decoded.value] : []
 				}),
 			}
 		case "failed":
-			return { _tag: "failed", code: value, log: rest.join("\n").trim() }
+			return { _tag: "failed", code: value, log: Str.trim(Arr.join(rest, "\n")) }
 		case "lost":
 		case "claimed":
 		case "running":
 			return { _tag: state }
 		default:
-			return { _tag: "failed", code: "status", log: stdout.trim().slice(0, 1500) }
+			return { _tag: "failed", code: "status", log: Str.slice(0, 1500)(Str.trim(stdout)) }
 	}
 }
 
@@ -282,64 +296,73 @@ export const runScript = (input: RunScriptInput): string => {
 	const g = `${CGROUP}/maple-agent-${input.agentId}`
 	const c = `${AUDIT_DIR}/calls/${input.callId}`
 	const limit = EXECUTOR_LIMITS.outputBytes
-	const environment = [
-		`PATH=${PATH}`,
-		`HOME=${scratch}/.home`,
-		"TMPDIR=/tmp",
-		"LANG=C.UTF-8",
-		"CI=1",
-		`XDG_CACHE_HOME=${scratch}/.cache`,
-		`npm_config_cache=${scratch}/.cache/npm`,
-		"npm_config_update_notifier=false",
-		"GIT_CONFIG_GLOBAL=/dev/null",
-	].join(" ")
+	const environment = Arr.join(
+		[
+			`PATH=${PATH}`,
+			`HOME=${scratch}/.home`,
+			"TMPDIR=/tmp",
+			"LANG=C.UTF-8",
+			"CI=1",
+			`XDG_CACHE_HOME=${scratch}/.cache`,
+			`npm_config_cache=${scratch}/.cache/npm`,
+			"npm_config_update_notifier=false",
+			"GIT_CONFIG_GLOBAL=/dev/null",
+		],
+		" ",
+	)
 	const cwd = input.cwd === "checkout" ? CHECKOUT_DIR : scratch
-	const inner = [
-		"ip link set lo up || exit 1",
-		`for d in ${SHARED_DIRS}; do mount --bind ${scratch}/.tmp "$d" || exit 1; done`,
-		`mount --bind ${CHECKOUT_DIR} ${CHECKOUT_DIR} && mount -o remount,bind,ro ${CHECKOUT_DIR} || exit 1`,
-		`cd ${cwd} || exit 1`,
-		`: > ${c}/started`,
-		`exec prlimit --fsize=${EXECUTOR_LIMITS.fileSizeBytes} --nofile=${EXECUTOR_LIMITS.openFiles} --nproc=${EXECUTOR_LIMITS.processes} --core=0 -- ${dropTo('"$1"')} env -i ${environment} bash -c ${shellQuote(input.command)}`,
-	].join("\n")
+	const inner = Arr.join(
+		[
+			"ip link set lo up || exit 1",
+			`for d in ${SHARED_DIRS}; do mount --bind ${scratch}/.tmp "$d" || exit 1; done`,
+			`mount --bind ${CHECKOUT_DIR} ${CHECKOUT_DIR} && mount -o remount,bind,ro ${CHECKOUT_DIR} || exit 1`,
+			`cd ${cwd} || exit 1`,
+			`: > ${c}/started`,
+			`exec prlimit --fsize=${EXECUTOR_LIMITS.fileSizeBytes} --nofile=${EXECUTOR_LIMITS.openFiles} --nproc=${EXECUTOR_LIMITS.processes} --core=0 -- ${dropTo('"$1"')} env -i ${environment} bash -c ${shellQuote(input.command)}`,
+		],
+		"\n",
+	)
 	const seconds = Math.max(1, Math.ceil(input.timeoutMs / 1000))
-	return [
-		"set -u",
-		"umask 022",
-		`if [ "$(cat ${PREPARE_STATE_DIR}/exit-code 2>/dev/null)" != 0 ]; then printf '\\n${RUN_TRAILER} not-prepared 0 0 0\\n'; exit 0; fi`,
-		`mkdir -p ${AUDIT_DIR}/agents ${AUDIT_DIR}/calls && chmod 711 ${AUDIT_DIR} ${AUDIT_DIR}/agents && chmod 700 ${AUDIT_DIR}/calls || exit 2`,
-		// The agent's uid is its position in creation order, claimed under a lock.
-		`exec 9> ${AUDIT_DIR}/agents.lock && flock 9 || exit 2`,
-		// A counter, never a count of directories: a uid is never handed out twice.
-		`if [ ! -s ${a}/uid ]; then`,
-		`  mkdir -p -m 711 ${a} || exit 2`,
-		`  n=$(( $(cat ${AUDIT_DIR}/next-uid 2>/dev/null || echo ${AGENT_UID_BASE}) + 1 )) && echo "$n" > ${AUDIT_DIR}/next-uid && echo "$n" > ${a}/uid || exit 2`,
-		"fi",
-		`u=$(cat ${a}/uid)`,
-		`if ! mountpoint -q ${scratch}; then`,
-		`  mkdir -p -m 700 ${scratch} ${agentArtifacts(input.agentId)} || exit 2`,
-		`  mount -t tmpfs -o size=${EXECUTOR_LIMITS.scratchBytes},mode=0700,uid=$u,gid=$u tmpfs ${scratch} || exit 2`,
-		`  install -d -m 700 -o "$u" -g "$u" ${scratch}/.home ${scratch}/.tmp ${scratch}/.cache || exit 2`,
-		"fi",
-		FIND_SHARED_WRITABLE,
-		"flock -u 9; exec 9>&-",
-		CGROUP_SETUP,
-		cgroup(`maple-agent-${input.agentId}`, [
-			["memory.max", String(EXECUTOR_LIMITS.memoryBytes)],
-			["pids.max", String(EXECUTOR_LIMITS.processes)],
-		]),
-		`mkdir -m 700 ${c} || exit 2`,
-		`(echo $BASHPID > ${g}/cgroup.procs && exec timeout --kill-after=5 ${seconds} unshare --net --mount --pid --ipc --uts --fork --kill-child --mount-proc -- sh -c ${shellQuote(inner)} sh "$u") > ${c}/out 2> ${c}/err < /dev/null`,
-		"rc=$?",
-		// Nothing the command started may outlive it: promotion reads scratch only after this.
-		reap(`maple-agent-${input.agentId}`),
-		`if [ ! -e ${c}/started ]; then state=setup-failed; elif ${drained(`maple-agent-${input.agentId}`)}; then state=started; else state=unreaped; fi`,
-		`ob=$(wc -c < ${c}/out) && eb=$(wc -c < ${c}/err)`,
-		`head -c ${limit} ${c}/out`,
-		`head -c ${limit} ${c}/err >&2`,
-		`rm -rf ${c}`,
-		`printf '\\n${RUN_TRAILER} %s %s %s %s\\n' "$state" "$rc" "$ob" "$eb"`,
-	].join("\n")
+	return Arr.join(
+		[
+			"set -u",
+			"umask 022",
+			`if [ "$(cat ${PREPARE_STATE_DIR}/exit-code 2>/dev/null)" != 0 ]; then printf '\\n${RUN_TRAILER} not-prepared 0 0 0\\n'; exit 0; fi`,
+			`mkdir -p ${AUDIT_DIR}/agents ${AUDIT_DIR}/calls && chmod 711 ${AUDIT_DIR} ${AUDIT_DIR}/agents && chmod 700 ${AUDIT_DIR}/calls || exit 2`,
+			// The agent's uid is its position in creation order, claimed under a lock.
+			`exec 9> ${AUDIT_DIR}/agents.lock && flock 9 || exit 2`,
+			// A counter, never a count of directories: a uid is never handed out twice.
+			`if [ ! -s ${a}/uid ]; then`,
+			`  mkdir -p -m 711 ${a} || exit 2`,
+			`  n=$(( $(cat ${AUDIT_DIR}/next-uid 2>/dev/null || echo ${AGENT_UID_BASE}) + 1 )) && echo "$n" > ${AUDIT_DIR}/next-uid && echo "$n" > ${a}/uid || exit 2`,
+			"fi",
+			`u=$(cat ${a}/uid)`,
+			`if ! mountpoint -q ${scratch}; then`,
+			`  mkdir -p -m 700 ${scratch} ${agentArtifacts(input.agentId)} || exit 2`,
+			`  mount -t tmpfs -o size=${EXECUTOR_LIMITS.scratchBytes},mode=0700,uid=$u,gid=$u tmpfs ${scratch} || exit 2`,
+			`  install -d -m 700 -o "$u" -g "$u" ${scratch}/.home ${scratch}/.tmp ${scratch}/.cache || exit 2`,
+			"fi",
+			FIND_SHARED_WRITABLE,
+			"flock -u 9; exec 9>&-",
+			CGROUP_SETUP,
+			cgroup(`maple-agent-${input.agentId}`, [
+				["memory.max", String(EXECUTOR_LIMITS.memoryBytes)],
+				["pids.max", String(EXECUTOR_LIMITS.processes)],
+			]),
+			`mkdir -m 700 ${c} || exit 2`,
+			`(echo $BASHPID > ${g}/cgroup.procs && exec timeout --kill-after=5 ${seconds} unshare --net --mount --pid --ipc --uts --fork --kill-child --mount-proc -- sh -c ${shellQuote(inner)} sh "$u") > ${c}/out 2> ${c}/err < /dev/null`,
+			"rc=$?",
+			// Nothing the command started may outlive it: promotion reads scratch only after this.
+			reap(`maple-agent-${input.agentId}`),
+			`if [ ! -e ${c}/started ]; then state=setup-failed; elif ${drained(`maple-agent-${input.agentId}`)}; then state=started; else state=unreaped; fi`,
+			`ob=$(wc -c < ${c}/out) && eb=$(wc -c < ${c}/err)`,
+			`head -c ${limit} ${c}/out`,
+			`head -c ${limit} ${c}/err >&2`,
+			`rm -rf ${c}`,
+			`printf '\\n${RUN_TRAILER} %s %s %s %s\\n' "$state" "$rc" "$ob" "$eb"`,
+		],
+		"\n",
+	)
 }
 
 export interface RunTrailer {
@@ -356,11 +379,8 @@ export const parseRunOutput = (
 ): { readonly body: string; readonly trailer: RunTrailer } | undefined => {
 	const at = stdout.lastIndexOf(RUN_TRAILER)
 	if (at === -1) return undefined
-	const [state, ...numbers] = stdout
-		.slice(at + RUN_TRAILER.length)
-		.trim()
-		.split(/\s+/u)
-	const [exitCode, stdoutBytes, stderrBytes] = numbers.map(Number)
+	const [state, ...numbers] = Str.split(/\s+/u)(Str.trim(Str.slice(at + RUN_TRAILER.length)(stdout)))
+	const [exitCode, stdoutBytes, stderrBytes] = Arr.map(numbers, Number)
 	if (
 		(state !== "started" &&
 			state !== "unreaped" &&
@@ -369,11 +389,11 @@ export const parseRunOutput = (
 		exitCode === undefined ||
 		stdoutBytes === undefined ||
 		stderrBytes === undefined ||
-		![exitCode, stdoutBytes, stderrBytes].every(Number.isFinite)
+		!Arr.every([exitCode, stdoutBytes, stderrBytes], Number.isFinite)
 	)
 		return undefined
 	return {
-		body: stdout.slice(0, at).replace(/\n$/u, ""),
+		body: Str.replace(/\n$/u, "")(Str.slice(0, at)(stdout)),
 		trailer: { state, exitCode, stdoutBytes, stderrBytes },
 	}
 }
@@ -384,14 +404,18 @@ const encodePromotions = Schema.encodeSync(
 
 /** The promotion helper over the agent's scratch and artifacts, for the files the command declared. */
 export const promoteScript = (agentId: string, promote: ReadonlyArray<ExecutorPromotion>): string =>
-	[
-		"python3",
-		"-I",
-		PROMOTE_HELPER,
-		agentScratch(agentId),
-		agentArtifacts(agentId),
-		String(EXECUTOR_LIMITS.promotedTotalBytes),
-		encodePromotions(promote.map(({ path, maxBytes }) => ({ path, maxBytes }))),
-	]
-		.map(shellQuote)
-		.join(" ")
+	Arr.join(
+		Arr.map(
+			[
+				"python3",
+				"-I",
+				PROMOTE_HELPER,
+				agentScratch(agentId),
+				agentArtifacts(agentId),
+				String(EXECUTOR_LIMITS.promotedTotalBytes),
+				encodePromotions(Arr.map(promote, ({ path, maxBytes }) => ({ path, maxBytes }))),
+			],
+			shellQuote,
+		),
+		" ",
+	)

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { buildSessionAxis } from "./session-axis"
 import type { IdleGap } from "@maple/agent-sessions"
+import { Array as Arr } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -82,17 +83,17 @@ describe("buildSessionAxis", () => {
 			expect(tick.fraction).toBeLessThanOrEqual(1)
 			if (index > 0) expect(tick.fraction).toBeGreaterThan(ticks[index - 1]!.fraction)
 		}
-		expect(new Set(ticks.map((tick) => tick.label)).size).toBe(ticks.length)
+		expect(new Set(Arr.map(ticks, (tick) => tick.label)).size).toBe(ticks.length)
 	})
 
 	it("steps the ruler in clock values rather than fifths of the total", () => {
 		// 52s: 15s steps, not the 13s an even division would give.
 		const short = buildSessionAxis({ startMs: START, endMs: START + 52 * SECOND, collapsedGaps: [] })
-		expect(short.ticks.map((tick) => tick.label)).toEqual(["0s", "15s", "30s", "45s"])
+		expect(Arr.map(short.ticks, (tick) => tick.label)).toEqual(["0s", "15s", "30s", "45s"])
 
 		// Hours, not the "360m" an unrolled minute count would print.
 		const long = buildSessionAxis({ startMs: START, endMs: START + 6 * HOUR, collapsedGaps: [] })
-		expect(long.ticks.map((tick) => tick.label)).toEqual(["0s", "2h", "4h", "6h"])
+		expect(Arr.map(long.ticks, (tick) => tick.label)).toEqual(["0s", "2h", "4h", "6h"])
 	})
 
 	it("survives a session with no measurable duration", () => {

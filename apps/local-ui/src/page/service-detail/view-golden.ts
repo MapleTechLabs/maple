@@ -11,6 +11,7 @@ import { heading } from "@maple/views/ui/heading"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./message"
 import type { GoldenSignalRow, Model } from "./model"
+import { Array as Arr, Record as Rec } from "effect"
 
 // The golden signals: the four charts web's service
 // page opens with, `LatencyLineChart`, `ThroughputAreaChart`, `ApdexAreaChart`, `ErrorRateAreaChart`.
@@ -64,8 +65,8 @@ const colorsOf = (kind: Kind, theme: ThemeColors): Readonly<Record<string, strin
 	if (kind === "Latency")
 		return {
 			...chrome,
-			...Object.fromEntries(
-				LATENCY_SERIES.map((entry) => [entry.key, resolveColor(theme, entry.token)]),
+			...Rec.fromEntries(
+				Arr.map(LATENCY_SERIES, (entry) => [entry.key, resolveColor(theme, entry.token)]),
 			),
 		}
 	if (kind === "Throughput")
@@ -119,10 +120,10 @@ export const goldenSignals = (
 	isPending: boolean,
 	context: ChartContext | null,
 ): Html => {
-	const points = fillGoldenSignals(rows, window).map((point) => ({ ...point }))
+	const points = Arr.map(fillGoldenSignals(rows, window), (point) => ({ ...point }))
 	return h.section(
 		[h.Class("grid gap-3 md:grid-cols-2")],
-		TILES.map((tile) =>
+		Arr.map(TILES, (tile) =>
 			h.div(
 				[h.Key(tile.title), h.Class("space-y-2 rounded-md border p-3")],
 				[

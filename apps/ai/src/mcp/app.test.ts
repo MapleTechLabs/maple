@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, Option, Schema, Tracer } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	Tracer,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -389,7 +399,7 @@ describe("MCP HTTP authorization", () => {
 				Context.empty() as never,
 			)
 			const body = await listed.clone().text()
-			expect({ status: listed.status, defect: body.includes("A defect occurred") }).toEqual({
+			expect({ status: listed.status, defect: Str.includes("A defect occurred")(body) }).toEqual({
 				status: 200,
 				defect: false,
 			})
@@ -629,7 +639,7 @@ describe("MCP HTTP authorization", () => {
 				(await readBody(listed)).result?.tools ?? []
 			expect({
 				status: listed.status,
-				hasInspectTrace: tools.some((tool) => tool.name === "inspect_trace"),
+				hasInspectTrace: Arr.some(tools, (tool) => tool.name === "inspect_trace"),
 			}).toEqual({
 				status: 200,
 				hasInspectTrace: true,
@@ -717,11 +727,12 @@ describe("MCP server spans", () => {
 			await dispose()
 		}
 
-		const server = spans.filter(
+		const server = Arr.filter(
+			spans,
 			(span) => span.kind === "server" && span.attributes.has("mcp.method.name"),
 		)
 		expect(
-			server.map((span) => ({
+			Arr.map(server, (span) => ({
 				name: span.name,
 				sampled: span.sampled,
 				method: span.attributes.get("mcp.method.name"),
@@ -761,8 +772,8 @@ describe("MCP server spans", () => {
 		])
 
 		// The handshake the transport synthesises for the tool call is not recorded.
-		const handshakes = spans.filter((span) => span.name.endsWith("/initialize"))
-		expect(handshakes.map((span) => span.sampled)).toEqual([false])
+		const handshakes = Arr.filter(spans, (span) => Str.endsWith("/initialize")(span.name))
+		expect(Arr.map(handshakes, (span) => span.sampled)).toEqual([false])
 
 		// The caller's span is the parent; the HTTP request's span is only a link.
 		const toolCall = server[1]
@@ -770,7 +781,9 @@ describe("MCP server spans", () => {
 		expect(Option.map(parent, (span) => ({ traceId: span.traceId, spanId: span.spanId }))).toEqual(
 			Option.some({ traceId: callerTrace, spanId: callerSpan }),
 		)
-		expect(toolCall?.links.map((link) => link.span._tag === "Span" && link.span.name)).toEqual(["POST"])
+		expect(Arr.map(toolCall?.links, (link) => link.span._tag === "Span" && link.span.name)).toEqual([
+			"POST",
+		])
 		// Without a caller span the HTTP span is the parent, and not linked a second time.
 		const initialize = server[0]
 		expect(initialize?.links).toEqual([])

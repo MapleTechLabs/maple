@@ -1,5 +1,15 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Fiber, Layer, Redacted } from "effect"
+import {
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Redacted,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { ScraperEnv } from "./Env"
@@ -22,7 +32,8 @@ const check = (overrides: Partial<UptimeCheckSpan> = {}): UptimeCheckSpan => ({
 	...overrides,
 })
 
-const attrs = (list: ReadonlyArray<OtlpKeyValue>) => Object.fromEntries(list.map((kv) => [kv.key, kv.value]))
+const attrs = (list: ReadonlyArray<OtlpKeyValue>) =>
+	Rec.fromEntries(Arr.map(list, (kv) => [kv.key, kv.value]))
 
 describe("toOtlpSpan", () => {
 	it("an ok HTTP check is a CLIENT span with the traceparent ids and semconv attributes", () => {
@@ -79,8 +90,10 @@ describe("toOtlpSpan", () => {
 				},
 			}),
 		)
-		const timing = Object.fromEntries(
-			Object.entries(attrs(span.attributes)).filter(([key]) => key.startsWith("maple.uptime.timing.")),
+		const timing = Rec.fromEntries(
+			Arr.filter(Rec.toEntries(attrs(span.attributes)), ([key]) =>
+				Str.startsWith("maple.uptime.timing.")(key),
+			),
 		)
 		assert.deepStrictEqual(timing, {
 			"maple.uptime.timing.dns_ms": { doubleValue: 12.3 },
@@ -157,7 +170,9 @@ describe("UptimeSpanExporter", () => {
 				yield* TestClock.adjust(Duration.millis(0))
 
 				assert.lengthOf(recorded, 2)
-				const byKey = new Map(recorded.map((request) => [request.headers.authorization, request]))
+				const byKey = new Map(
+					Arr.map(recorded, (request) => [request.headers.authorization, request]),
+				)
 				const one = byKey.get("Bearer maple_pk_one")
 				assert.strictEqual(one?.url, "http://ingest.test/v1/traces")
 				assert.strictEqual(one?.headers["content-type"], "application/json")
@@ -223,7 +238,7 @@ describe("UptimeSpanExporter", () => {
 				assert.lengthOf(recorded, 2)
 				// A billing block is expected: the post span closes Ok, not as an error.
 				const spans = endedSpansNamed(tracer.ended, "UptimeSpanExporter.post")
-				assert.isTrue(spans.length > 0 && spans.every((span) => Exit.isSuccess(span.exit)))
+				assert.isTrue(spans.length > 0 && Arr.every(spans, (span) => Exit.isSuccess(span.exit)))
 				yield* Fiber.interrupt(fiber)
 			}).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch), Effect.provide(tracer.layer))
 		}).pipe(Effect.provide(exporterLayer)),

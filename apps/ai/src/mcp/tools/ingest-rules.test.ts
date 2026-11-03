@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -61,7 +61,7 @@ const layerFor = (testDb: TestDb, roles: ReadonlyArray<string>) =>
 		Layer.succeed(CurrentMcpTenant, {
 			orgId: Schema.decodeUnknownSync(OrgId)("org_mcp_rules"),
 			userId: Schema.decodeUnknownSync(UserId)("user_mcp_rules"),
-			roles: roles.map((role) => Schema.decodeUnknownSync(RoleName)(role)),
+			roles: Arr.map(roles, (role) => Schema.decodeUnknownSync(RoleName)(role)),
 			authMode: "self_hosted",
 		}),
 	).pipe(
@@ -85,9 +85,12 @@ describe("ingest rule MCP tools", () => {
 			assert.deepInclude(created, { action: "created" })
 			const listed = yield* call("list_ingest_rules", {})
 			assert.deepEqual(
-				Schema.decodeUnknownSync(
-					Schema.Struct({ rules: Schema.Array(Schema.Struct({ summary: Schema.String })) }),
-				)(listed).rules.map((rule) => rule.summary),
+				Arr.map(
+					Schema.decodeUnknownSync(
+						Schema.Struct({ rules: Schema.Array(Schema.Struct({ summary: Schema.String })) }),
+					)(listed).rules,
+					(rule) => rule.summary,
+				),
 				["Drop logs where severity is below info"],
 			)
 			const updated = yield* call("update_ingest_rule", { rule: "Drop debug logs", enabled: false })
@@ -196,7 +199,7 @@ describe("ingest rule MCP tools", () => {
 		)
 		assert.deepInclude(drop, { sampled: 3, dropped: 2, redactedRecords: 0 })
 		assert.deepEqual(
-			drop.examples.map((example) => [example.outcome, example.label]),
+			Arr.map(drop.examples, (example) => [example.outcome, example.label]),
 			[
 				["dropped", "noise"],
 				["dropped", "noise"],
@@ -272,14 +275,17 @@ describe("ingest rule MCP tools", () => {
 
 	it("names the argument a validation problem is about", () => {
 		assert.deepEqual(
-			[
-				"condition 1: attribute needs a key",
-				"a drop rule needs at least one condition",
-				"pick at least one signal",
-				"the name must be 1 to 120 characters",
-				"position is a whole number from 0 to 10000",
-				"pattern 1: lookaround is not supported",
-			].map(parameterOfProblem),
+			Arr.map(
+				[
+					"condition 1: attribute needs a key",
+					"a drop rule needs at least one condition",
+					"pick at least one signal",
+					"the name must be 1 to 120 characters",
+					"position is a whole number from 0 to 10000",
+					"pattern 1: lookaround is not supported",
+				],
+				parameterOfProblem,
+			),
 			["conditions", "conditions", "signals", "name", "position", "action"],
 		)
 	})

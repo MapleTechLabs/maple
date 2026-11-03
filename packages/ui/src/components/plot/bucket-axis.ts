@@ -2,6 +2,7 @@ import { formatBucketLabel } from "../../lib/format"
 import { toEpochMs } from "../../lib/time-format"
 import { bucketTimeScale } from "./plot-scales"
 import { timeseriesXAxis, type TimeseriesAxisContext } from "./timeseries-axis"
+import { Array as Arr } from "effect"
 
 /** A warehouse bucket as an instant: tz-less buckets are read as UTC, never as local time. */
 export function bucketDate(iso: string): Date {
@@ -25,10 +26,10 @@ export function bucketDate(iso: string): Date {
  * viewer's selected zone: ticks and labels follow it.
  */
 export function makeBucketAxis(bucketIsos: ReadonlyArray<string>, timeZone?: string) {
-	const epochs = bucketIsos
-		.map((iso) => toEpochMs(iso))
-		.filter((ms) => Number.isFinite(ms))
-		.sort((a, b) => a - b)
+	const epochs = Arr.filter(
+		Arr.map(bucketIsos, (iso) => toEpochMs(iso)),
+		(ms) => Number.isFinite(ms),
+	).sort((a, b) => a - b)
 	const first = epochs[0]
 	const last = epochs[epochs.length - 1]
 	const domainMs: readonly [number, number] | undefined =

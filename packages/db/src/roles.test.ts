@@ -1,7 +1,7 @@
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient"
 import { PGlite } from "@electric-sql/pglite"
 import * as Migrate from "@maple-dev/effect-orm/migrate"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { migrateBundled } from "./migrate"
 import { DB_ACCESS_ROLES, type DbAccess } from "./roles"
@@ -17,8 +17,8 @@ beforeAll(async () => {
 			),
 		),
 	)
-	await pg.exec(`CREATE ROLE login_read NOLOGIN IN ROLE ${DB_ACCESS_ROLES.read.join(", ")}`)
-	await pg.exec(`CREATE ROLE login_readwrite NOLOGIN IN ROLE ${DB_ACCESS_ROLES.readWrite.join(", ")}`)
+	await pg.exec(`CREATE ROLE login_read NOLOGIN IN ROLE ${Arr.join(DB_ACCESS_ROLES.read, ", ")}`)
+	await pg.exec(`CREATE ROLE login_readwrite NOLOGIN IN ROLE ${Arr.join(DB_ACCESS_ROLES.readWrite, ", ")}`)
 	// The previous grant, kept as the control the checks below must tell apart.
 	await pg.exec("CREATE ROLE login_owner NOLOGIN IN ROLE postgres")
 }, 120_000)

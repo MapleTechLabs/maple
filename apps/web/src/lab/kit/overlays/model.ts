@@ -1,5 +1,5 @@
 import { OVERLAY_ITEMS } from "../overlay-items"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as ContextMenu from "@maple/views/ui/context-menu"
@@ -67,8 +67,8 @@ export const decodeItem = (raw: string | null): Option.Option<OverlayItem> =>
 
 /** The `toast-<type>` items' toast type. */
 export const toastTypeOf = (item: OverlayItem): Option.Option<Toast.ToastType> =>
-	item.startsWith("toast-")
-		? Schema.decodeUnknownOption(Toast.ToastType)(item.slice("toast-".length))
+	Str.startsWith("toast-")(item)
+		? Schema.decodeUnknownOption(Toast.ToastType)(Str.slice("toast-".length)(item))
 		: Option.none()
 
 export const TOAST_COPY = {

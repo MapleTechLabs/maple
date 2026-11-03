@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { LinkPullRequestOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
@@ -12,12 +12,15 @@ export function registerLinkPullRequestTool(server: McpToolRegistrar) {
 	server.define({
 		name: "link_pull_request",
 		title: "Link Pull Request",
-		description: [
-			"Attach a GitHub pull request to an error issue without proposing new work.",
-			"When it merges, Maple opens a verification window sized by the issue's severity and occurrence rate, then closes the issue if the error stopped.",
-			"Leave the issue alone after linking: the merge moves it to `verifying` and the verdict moves it on.",
-			"propose_fix does the same link when given `pr_url`, and also moves the issue to `in_review`.",
-		].join(" "),
+		description: Arr.join(
+			[
+				"Attach a GitHub pull request to an error issue without proposing new work.",
+				"When it merges, Maple opens a verification window sized by the issue's severity and occurrence rate, then closes the issue if the error stopped.",
+				"Leave the issue alone after linking: the merge moves it to `verifying` and the verdict moves it on.",
+				"propose_fix does the same link when given `pr_url`, and also moves the issue to `in_review`.",
+			],
+			" ",
+		),
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
 			pull_request_url: P.text(

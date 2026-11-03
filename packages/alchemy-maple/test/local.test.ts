@@ -5,7 +5,7 @@ import { Stack } from "alchemy/Stack"
 import { Provider } from "alchemy/Provider"
 import * as Core from "@alchemy.run/test/Core"
 import * as State from "alchemy/State"
-import { ConfigProvider, Effect } from "effect"
+import { ConfigProvider, Effect, String as Str } from "effect"
 import { resolve } from "node:path"
 import { Local, localProviders } from "../src/Local"
 import { localConfig } from "../src/LocalConfig"
@@ -19,7 +19,7 @@ describe("Maple.Local configuration", () => {
 		expect(config.port).toBeUndefined()
 		expect(localConfig({ port: 5000 }, identity).port).toBe(5000)
 		expect(config.onDirtyStore).toBe("fail")
-		expect(config.dataDir.startsWith("/project/.alchemy/maple-local/")).toBe(true)
+		expect(Str.startsWith("/project/.alchemy/maple-local/")(config.dataDir)).toBe(true)
 		for (const changed of [
 			{ dotAlchemy: "/another-project/.alchemy" },
 			{ stack: "another-app" },

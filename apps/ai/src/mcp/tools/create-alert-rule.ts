@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { CreateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -205,13 +205,13 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 				"raw_query_sql",
 			)
 		}
-		if (!params.raw_query_sql.includes("$__orgFilter")) {
+		if (!Str.includes("$__orgFilter")(params.raw_query_sql)) {
 			return yield* invalid(
 				"raw_query_sql must reference $__orgFilter for org scoping",
 				"raw_query_sql",
 			)
 		}
-		if (!params.raw_query_sql.includes("$__timeFilter(")) {
+		if (!Str.includes("$__timeFilter(")(params.raw_query_sql)) {
 			return yield* invalid(
 				"raw_query_sql must reference $__timeFilter(...) to bound alert reads",
 				"raw_query_sql",

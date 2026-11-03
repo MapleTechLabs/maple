@@ -118,7 +118,7 @@
 // level of `aiSessionDetailsQuery` reads a derived table rather than a table,
 // and inherits `org` scope from it.
 
-import { type DateTime, Schema } from "effect"
+import { type DateTime, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { compile } from "@maple-dev/effect-orm/sql"
@@ -473,11 +473,11 @@ export interface AiSessionDetailsOutput {
  * three characters `LIKE` reads as syntax; the builder quotes the literal.
  */
 export function idSearchPattern(search: string): string {
-	let needle = search.trim()
-	if (needle.startsWith(MAPLE_AI_TRACE_SESSION_PREFIX)) {
-		needle = needle.slice(MAPLE_AI_TRACE_SESSION_PREFIX.length)
+	let needle = Str.trim(search)
+	if (Str.startsWith(MAPLE_AI_TRACE_SESSION_PREFIX)(needle)) {
+		needle = Str.slice(MAPLE_AI_TRACE_SESSION_PREFIX.length)(needle)
 	}
-	while (needle.endsWith("…")) needle = needle.slice(0, -1)
+	while (Str.endsWith("…")(needle)) needle = Str.slice(0, -1)(needle)
 	return `${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
 }
 
@@ -663,7 +663,7 @@ const SESSION_COLUMNS = [
 type SessionColumn = (typeof SESSION_COLUMNS)[number]
 
 const carry = <Row extends Record<SessionColumn, unknown>>(row: Row): Pick<Row, SessionColumn> =>
-	Object.fromEntries(SESSION_COLUMNS.map((column) => [column, row[column]])) as Pick<Row, SessionColumn>
+	Rec.fromEntries(Arr.map(SESSION_COLUMNS, (column) => [column, row[column]])) as Pick<Row, SessionColumn>
 
 /** What ranks a session, off `traceRankColumns`: its key, its extent and
  *  the measures the session filters and sorts read — the session level of
@@ -818,14 +818,10 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 					["agentStart", "desc"],
 				]
 	order.push(["sessionId", "asc"])
-	const filtersOnUsage = [
-		opts.costMin,
-		opts.costMax,
-		opts.tokensMin,
-		opts.tokensMax,
-		opts.llmCallsMin,
-		opts.llmCallsMax,
-	].some((bound) => bound !== undefined)
+	const filtersOnUsage = Arr.some(
+		[opts.costMin, opts.costMax, opts.tokensMin, opts.tokensMax, opts.llmCallsMin, opts.llmCallsMax],
+		(bound) => bound !== undefined,
+	)
 	// Usage exists only once the reporters are netted, two levels up; the
 	// session level orders and cuts the page on everything else.
 	const ranksOnSession = (_specs: typeof order): _specs is Array<[SessionSort, AiSessionSortDir]> =>
@@ -1073,9 +1069,10 @@ const NANOS_PER_MS = 1_000_000n
 
 /** `YYYY-MM-DD hh:mm:ss[.fffffffff]`, read as UTC, to nanoseconds since the epoch. */
 const warehouseNanos = (literal: string): bigint => {
-	const [datetime = "", fraction = ""] = literal.split(".")
+	const [datetime, fraction = ""] = Str.split(".")(literal)
 	return (
-		BigInt(Date.parse(`${datetime.replace(" ", "T")}Z`)) * NANOS_PER_MS + BigInt(fraction.padEnd(9, "0"))
+		BigInt(Date.parse(`${Str.replace(" ", "T")(datetime)}Z`)) * NANOS_PER_MS +
+		BigInt(Str.padEnd(9, "0")(fraction))
 	)
 }
 
@@ -1083,7 +1080,7 @@ const warehouseNanos = (literal: string): bigint => {
  *  fractional digits, so a bound round-trips exactly. */
 const warehouseDateTime = (nanos: bigint): string => {
 	const seconds = new Date(Number(nanos / NANOS_PER_SECOND) * 1000).toISOString()
-	return `${seconds.slice(0, 19).replace("T", " ")}.${(nanos % NANOS_PER_SECOND).toString().padStart(9, "0")}`
+	return `${Str.replace("T", " ")(Str.slice(0, 19)(seconds))}.${Str.padStart(9, "0")((nanos % NANOS_PER_SECOND).toString())}`
 }
 
 const nextUtcMidnight = (nanos: bigint): bigint => {
@@ -1325,9 +1322,13 @@ export function aiSessionDistributionsQuery() {
 	// `Float64` have no supertype.
 	const unnested = fromQuery(measured, "session_measures").select(() => ({
 		measured: CH.untypedExpr(
-			`arrayJoin([${Object.entries(DISTRIBUTION_BUCKET_FLOORS)
-				.map(([measure, floor]) => `tuple('${measure}', ${measure}, ${floor})`)
-				.join(", ")}])`,
+			`arrayJoin([${Arr.join(
+				Arr.map(
+					Rec.toEntries(DISTRIBUTION_BUCKET_FLOORS),
+					([measure, floor]) => `tuple('${measure}', ${measure}, ${floor})`,
+				),
+				", ",
+			)}])`,
 		),
 	}))
 	const value = CH.rawExpr("tupleElement(measured, 2)", T.float64)
@@ -1481,9 +1482,8 @@ export const aiSpanAttributes = (
 	attributes: CH.Expr<Record<string, string>>,
 ): CH.Expr<Record<string, string>> =>
 	mapFilterKeys(attributes, (key) =>
-		aiSpanAttributePrefixes.reduce(
-			(matched, prefix) => matched.or(key.like(`${prefix}%`)),
-			key.in_(...aiSpanAttributeKeys),
+		Arr.reduce(aiSpanAttributePrefixes, key.in_(...aiSpanAttributeKeys), (matched, prefix) =>
+			matched.or(key.like(`${prefix}%`)),
 		),
 	)
 
@@ -1761,7 +1761,7 @@ const SUMMARY_ARRAY_CAP = 50
 const summaryMeasures_ = ($: SpanColumns) => {
 	// `coalesce(nullIf(a, ''), nullIf(b, ''), …, '')`: the first key with a value.
 	const attr = (keys: readonly string[]) =>
-		CH.coalesce(...keys.map((key) => CH.nullIf($.SpanAttributes.get(key), "")), CH.lit(""))
+		CH.coalesce(...Arr.map(keys, (key) => CH.nullIf($.SpanAttributes.get(key), "")), CH.lit(""))
 	const field = (name: AiGenAiField) => attr(aiFieldSourceKeys(name))
 	const number = (name: AiGenAiField) => CH.toFloat64OrZero(field(name))
 

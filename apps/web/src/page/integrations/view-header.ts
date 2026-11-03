@@ -11,6 +11,7 @@ import type { Model } from "./model"
 import { entryPlate } from "./view-entry"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `IntegrationHeader`.
 
@@ -38,9 +39,13 @@ export const integrationHeader = (
 	const statusLine =
 		connected === null
 			? null
-			: [connected.stateLabel, connected.context, connected.lastSyncLabel]
-					.filter((part): part is string => part !== null && part !== "")
-					.join(" · ")
+			: Arr.join(
+					Arr.filter(
+						[connected.stateLabel, connected.context, connected.lastSyncLabel],
+						(part): part is string => part !== null && part !== "",
+					),
+					" · ",
+				)
 	return hstack(h, { wrap: true, className: "gap-x-3 gap-y-2" }, [
 		iconButton(
 			h,

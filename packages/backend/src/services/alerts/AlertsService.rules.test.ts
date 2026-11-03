@@ -9,7 +9,7 @@ import {
 } from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Layer, Schema } from "effect"
+import { Duration, Effect, Exit, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	AlertDestinationInUseError,
@@ -100,10 +100,10 @@ describe("AlertsService", () => {
 						makeWarehouseStub({
 							logsAggregateRows: [
 								{
-									bucket: new Date(DEFAULT_CLOCK_EPOCH_MS)
-										.toISOString()
-										.replace("T", " ")
-										.slice(0, 19),
+									bucket: Str.slice(
+										0,
+										19,
+									)(Str.replace("T", " ")(new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString())),
 									groupName: "all",
 									count: 42,
 								},
@@ -181,10 +181,10 @@ describe("AlertsService", () => {
 					makeWarehouseStub({
 						logsAggregateRows: [
 							{
-								bucket: new Date(DEFAULT_CLOCK_EPOCH_MS)
-									.toISOString()
-									.replace("T", " ")
-									.slice(0, 19),
+								bucket: Str.slice(
+									0,
+									19,
+								)(Str.replace("T", " ")(new Date(DEFAULT_CLOCK_EPOCH_MS).toISOString())),
 								groupName: "all",
 								count: 42,
 							},
@@ -595,7 +595,7 @@ describe("AlertsService", () => {
 			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
 			assert.isTrue(response.success)
 			assert.deepStrictEqual(
-				sent.map((s) => s.to),
+				Arr.map(sent, (s) => s.to),
 				["ops@acme.test", "oncall@acme.test"],
 			)
 			// The synthetic test notification renders under the rule name "Test alert".
@@ -683,7 +683,7 @@ describe("AlertsService", () => {
 
 			yield* alerts.testDestination(orgId, userId, adminRoles, created.id)
 			assert.deepStrictEqual(
-				sent.map((s) => s.to),
+				Arr.map(sent, (s) => s.to),
 				["oncall@acme.test", "lead@acme.test"],
 			)
 		}).pipe(
@@ -1308,9 +1308,12 @@ describe("AlertsService", () => {
 
 			const incidents = yield* alerts.listIncidents(orgId)
 			assert.lengthOf(incidents.incidents, 2)
-			const groupKeys = incidents.incidents.map((i: { groupKey: string | null }) => i.groupKey).sort()
+			const groupKeys = Arr.map(
+				incidents.incidents,
+				(i: { groupKey: string | null }) => i.groupKey,
+			).sort()
 			assert.deepStrictEqual(groupKeys, ["svc-a", "svc-b"])
-			assert.isTrue(incidents.incidents.every((i: { status: string }) => i.status === "open"))
+			assert.isTrue(Arr.every(incidents.incidents, (i: { status: string }) => i.status === "open"))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 

@@ -26,7 +26,7 @@ import {
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, AlertLinearIssues, AlertRules, type AlertDestinationRow } from "@maple/db/tables"
-import { Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
+import { Context, Effect, Layer, Match, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -83,7 +83,7 @@ const normalizeOptionalString = (value: string | null | undefined) => {
 
 const validateDestinationUrl = (rawUrl: string, field: string): Effect.Effect<string, AlertValidationError> =>
 	validateExternalUrl(rawUrl).pipe(
-		Effect.as(rawUrl.trim()),
+		Effect.as(Str.trim(rawUrl)),
 		Effect.mapError((error) => makeValidationError(`${field}: ${error.message}`, [], error)),
 	)
 
@@ -97,12 +97,12 @@ const summarizeMembers = (members: ReadonlyArray<OrgMember>): string => {
 const emailPublicConfig = (members: ReadonlyArray<OrgMember>): DestinationPublicConfig => ({
 	summary: summarizeMembers(members),
 	channelLabel: members[0]?.email ?? null,
-	memberUserIds: members.map((member) => member.userId),
+	memberUserIds: Arr.map(members, (member) => member.userId),
 })
 
 const emailSecretConfig = (members: ReadonlyArray<OrgMember>): DestinationSecretConfig => ({
 	type: "email",
-	members: members.map((member) => ({
+	members: Arr.map(members, (member) => ({
 		userId: member.userId,
 		email: member.email,
 		name: member.name,
@@ -170,7 +170,7 @@ const validateGoogleChatWebhookUrl = (rawUrl: string): Effect.Effect<string, Ale
 			)
 
 /** A chat id is not a secret, but it is also not a name — label it as what it is. */
-const telegramSummary = (chatId: string) => `Chat ${chatId.trim()}`
+const telegramSummary = (chatId: string) => `Chat ${Str.trim(chatId)}`
 
 /**
  * The workspace's name is the summary, and the connector rides in the public config so the
@@ -199,7 +199,7 @@ const buildPublicConfig = (
 			// browser, so nothing secret may appear here. It rides in
 			// `channelLabel` as well as the summary so the edit form can prefill it
 			// — without that, renaming a destination would demand retyping the id.
-			telegram: (r) => ({ summary: telegramSummary(r.chatId), channelLabel: r.chatId.trim() }),
+			telegram: (r) => ({ summary: telegramSummary(r.chatId), channelLabel: Str.trim(r.chatId) }),
 			"google-chat": (r) => ({ summary: googleChatSummary(r.webhookUrl), channelLabel: null }),
 		}),
 	)
@@ -209,19 +209,19 @@ const buildSecretConfig = (
 ): DestinationSecretConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
-			pagerduty: (r) => ({ type: "pagerduty" as const, integrationKey: r.integrationKey.trim() }),
+			pagerduty: (r) => ({ type: "pagerduty" as const, integrationKey: Str.trim(r.integrationKey) }),
 			webhook: (r) => ({
 				type: "webhook" as const,
-				url: r.url.trim(),
+				url: Str.trim(r.url),
 				signingSecret: normalizeOptionalString(r.signingSecret),
 			}),
-			discord: (r) => ({ type: "discord" as const, webhookUrl: r.webhookUrl.trim() }),
+			discord: (r) => ({ type: "discord" as const, webhookUrl: Str.trim(r.webhookUrl) }),
 			telegram: (r) => ({
 				type: "telegram" as const,
-				botToken: r.botToken.trim(),
-				chatId: r.chatId.trim(),
+				botToken: Str.trim(r.botToken),
+				chatId: Str.trim(r.chatId),
 			}),
-			"google-chat": (r) => ({ type: "google-chat" as const, webhookUrl: r.webhookUrl.trim() }),
+			"google-chat": (r) => ({ type: "google-chat" as const, webhookUrl: Str.trim(r.webhookUrl) }),
 		}),
 	)
 

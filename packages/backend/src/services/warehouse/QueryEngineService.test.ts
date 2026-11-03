@@ -1,7 +1,17 @@
 // BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
 import { describe, it } from "@effect/vitest"
 import { TestClock } from "effect/testing"
-import { Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
+import {
+	Deferred,
+	Effect,
+	Exit,
+	Fiber,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { strict as nodeAssert } from "node:assert"
 import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
 import {
@@ -37,7 +47,7 @@ const assert: typeof nodeAssert & {
 } = Object.assign(nodeAssert, {
 	isTrue: (value: unknown) => nodeAssert.strictEqual(value, true),
 	isDefined: (value: unknown) => nodeAssert.notStrictEqual(value, undefined),
-	include: (actual: string, expected: string) => nodeAssert.ok(actual.includes(expected)),
+	include: (actual: string, expected: string) => nodeAssert.ok(Str.includes(expected)(actual)),
 })
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -249,7 +259,7 @@ describe("makeQueryEngineExecute", () => {
 			})
 
 			assert.deepStrictEqual(
-				calls.map((call) => [call.context, call.profile]),
+				Arr.map(calls, (call) => [call.context, call.profile]),
 				[
 					["productEventsTimeseries", "aggregation"],
 					["productEventsBreakdown", "aggregation"],
@@ -365,8 +375,8 @@ describe("makeQueryEngineExecute", () => {
 				const response = yield* execute(tenant, sidebarRequest(kind))
 
 				assert.strictEqual(queries.length, 2, kind)
-				assert.ok(queries[0]!.includes("trace_facets_hourly"), kind)
-				assert.ok(!queries[1]!.includes("trace_facets_hourly"), kind)
+				assert.ok(Str.includes("trace_facets_hourly")(queries[0]!), kind)
+				assert.ok(!Str.includes("trace_facets_hourly")(queries[1]!), kind)
 				assert.strictEqual(response.result.kind, kind)
 			}
 		}),
@@ -387,7 +397,7 @@ describe("makeQueryEngineExecute", () => {
 				const response = yield* execute(tenant, sidebarRequest(kind))
 
 				assert.strictEqual(queries.length, 1, kind)
-				assert.ok(!queries[0]!.includes("trace_facets_hourly"), kind)
+				assert.ok(!Str.includes("trace_facets_hourly")(queries[0]!), kind)
 				assert.strictEqual(response.result.kind, kind)
 			}
 		}),
@@ -981,7 +991,7 @@ describe("makeQueryEngineExecute", () => {
 					sqlQuery: (_tenant: unknown, sql: unknown) => {
 						const query = String(sql)
 						receivedSql.push(query)
-						if (query.includes("FROM service_map_spans")) {
+						if (Str.includes("FROM service_map_spans")(query)) {
 							return Effect.succeed([
 								{
 									traceId: "trace-1",
@@ -1055,7 +1065,7 @@ describe("makeQueryEngineExecute", () => {
 
 			assert.strictEqual(response.result.kind, "list")
 			assert.deepStrictEqual(
-				response.result.data.map((row) => row.services),
+				Arr.map(response.result.data, (row) => row.services),
 				[["gateway", "checkout", "payments"], ["gateway", "checkout", "payments"], ["worker"]],
 			)
 			assert.strictEqual(receivedSql.length, 2)
@@ -1073,7 +1083,7 @@ describe("makeQueryEngineExecute", () => {
 			const execute = makeQueryEngineExecute(
 				makeTinybirdStub({
 					sqlQuery: (_tenant: unknown, sql: unknown) =>
-						String(sql).includes("FROM service_map_spans")
+						Str.includes("FROM service_map_spans")(String(sql))
 							? Effect.fail(
 									new WarehouseUpstreamError({
 										pipeName: "traceListServices",
@@ -1242,7 +1252,7 @@ describe("raw breakdown span budget", () => {
 		const execute = makeQueryEngineExecute(
 			makeTinybirdStub({
 				sqlQuery: (_tenant: unknown, sql: unknown) => {
-					if (String(sql).includes("FROM service_usage")) return volume
+					if (Str.includes("FROM service_usage")(String(sql))) return volume
 					ran.push(String(sql))
 					return Effect.succeed([])
 				},
@@ -1275,7 +1285,7 @@ describe("raw breakdown span budget", () => {
 			const failure = getFailure(yield* Effect.exit(execute(tenant, spanNameBreakdown)))
 
 			assert.ok(Schema.is(QueryEngineValidationError)(failure))
-			assert.include(failure.details.join("\n"), "Narrow the time range to 64 hours or less")
+			assert.include(Arr.join(failure.details, "\n"), "Narrow the time range to 64 hours or less")
 			assert.deepStrictEqual(ran, [])
 		}),
 	)
@@ -1526,7 +1536,7 @@ describe("makeQueryEngineEvaluate", () => {
 					for (let second = 0; second < 32; second++) {
 						yield* evaluate(tenant, {
 							...countRequest,
-							endTime: `2026-01-01 00:06:${String(second).padStart(2, "0")}`,
+							endTime: `2026-01-01 00:06:${Str.padStart(2, "0")(String(second))}`,
 						})
 					}
 					yield* evaluate(tenant, countRequest)
@@ -1923,7 +1933,7 @@ describe("evaluate with a raw_sql source", () => {
 				sampleCountStrategy: null,
 			})
 
-			const byGroup = Object.fromEntries(response.map((o) => [o.groupKey, o]))
+			const byGroup = Rec.fromEntries(Arr.map(response, (o) => [o.groupKey, o]))
 			assert.strictEqual(byGroup.checkout?.value, 30)
 			assert.strictEqual(byGroup.checkout?.sampleCount, 10)
 			assert.strictEqual(byGroup.checkout?.hasData, true)

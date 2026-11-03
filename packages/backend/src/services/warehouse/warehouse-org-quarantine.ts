@@ -1,5 +1,5 @@
 import type { EdgeCacheServiceApi } from "@maple/cache"
-import { Cause, Effect, Option } from "effect"
+import { Cause, Effect, Option, Array as Arr } from "effect"
 
 /**
  * Per-org quarantine for the cross-org alerting ticks (errors / anomalies /
@@ -39,7 +39,7 @@ const hasQuarantineTag = (value: unknown, depth = 0): boolean => {
 
 /** Does this cause (or anything wrapped inside it) carry an auth/config-class warehouse error? */
 export const causeHasWarehouseConfigClassError = <E>(cause: Cause.Cause<E>): boolean =>
-	cause.reasons.some((reason) =>
+	Arr.some(cause.reasons, (reason) =>
 		Cause.isFailReason(reason)
 			? hasQuarantineTag(reason.error)
 			: Cause.isDieReason(reason) && hasQuarantineTag(reason.defect),

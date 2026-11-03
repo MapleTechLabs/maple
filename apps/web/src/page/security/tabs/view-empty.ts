@@ -16,6 +16,7 @@ import { activeRepositoriesOf } from "./derive"
 import { Message, type Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // No target yet: the on-ramp. Without a GitHub installation it points at GitHub; with one, at Add target.
 
@@ -40,7 +41,7 @@ export const auditSteps = (h: H): Html =>
 		h.ul(
 			// Steps wrap onto more rows as the column narrows, like the run's phase strip.
 			[h.Class("flex flex-wrap gap-px bg-border")],
-			STEPS.map((step) =>
+			Arr.map(STEPS, (step) =>
 				h.li(
 					[h.Key(step.title), h.Class("flex min-w-44 flex-1 flex-col gap-1.5 bg-card px-4 py-4")],
 					[

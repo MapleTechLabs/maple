@@ -1,6 +1,6 @@
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
@@ -123,7 +123,7 @@ export const follow = (model: Model, context: ModalContext): Return => {
 
 /** Every loaded sample, page after page. */
 export const occurrencesOf = (model: Model) =>
-	model.pages.flatMap((page) =>
+	Arr.flatMap(model.pages, (page) =>
 		Option.match(AsyncData.getData(page.data), {
 			onNone: () => [],
 			onSome: (value) => value.occurrences,
@@ -235,7 +235,7 @@ export const update = (model: Model, message: Message, context: ModalContext): R
 			model: { ...model, detail: Keyed.accept(model.detail, key, result) },
 		}),
 		CompletedFetchSamples: ({ key, result }) => ({
-			model: { ...model, pages: model.pages.map((page) => Keyed.accept(page, key, result)) },
+			model: { ...model, pages: Arr.map(model.pages, (page) => Keyed.accept(page, key, result)) },
 		}),
 		ClickedLoadMore: () => loadMore(model, context),
 		ClickedSample: ({ index }) =>

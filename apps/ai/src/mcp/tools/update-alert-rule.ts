@@ -233,7 +233,10 @@ const mergeDestinations = (
 ): Array<string> => {
 	const base = params.destination_ids ?? current
 	const removed = new Set(params.remove_destination_ids ?? [])
-	return [...new Set([...base, ...(params.add_destination_ids ?? [])])].filter((id) => !removed.has(id))
+	return Arr.filter(
+		[...new Set([...base, ...(params.add_destination_ids ?? [])])],
+		(id) => !removed.has(id),
+	)
 }
 
 const noTargets = new McpInvalidInputError({
@@ -250,9 +253,9 @@ const resolveTargets = (
 	if (ids.length === 0) return Effect.fail(noTargets)
 	if (ids.includes("*")) return rules.length > 0 ? Effect.succeed(rules) : Effect.fail(noTargets)
 	const unique = [...new Set(ids)]
-	const missing = unique.find((id) => !rules.some((r) => r.id === id))
+	const missing = unique.find((id) => !Arr.some(rules, (r) => r.id === id))
 	if (missing !== undefined) return Effect.fail(ruleNotFound(missing))
-	return Effect.succeed(rules.filter((r) => unique.includes(r.id)))
+	return Effect.succeed(Arr.filter(rules, (r) => unique.includes(r.id)))
 }
 
 export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
@@ -321,15 +324,15 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			const head = saved[0]
 			if (head === undefined) return yield* noTargets
 			const bulk = saved.length > 1
-			const configWarnings = saved.flatMap(({ rule }) =>
-				ruleConfigWarnings(rule).map((w) => (bulk ? `${rule.name}: ${w}` : w)),
+			const configWarnings = Arr.flatMap(saved, ({ rule }) =>
+				Arr.map(ruleConfigWarnings(rule), (w) => (bulk ? `${rule.name}: ${w}` : w)),
 			)
 			// One rule gets a first-evaluation preview; a bulk change would run one per rule.
 			const evaluated = bulk ? undefined : yield* firstEvaluation(head.request, head.rule.enabled)
 			const warnings = [...configWarnings, ...(evaluated?.warnings ?? [])]
 			return {
 				rule: toAlertRuleRow(head.rule),
-				...(bulk ? { rules: saved.map(({ rule }) => toAlertRuleRow(rule)) } : undefined),
+				...(bulk ? { rules: Arr.map(saved, ({ rule }) => toAlertRuleRow(rule)) } : undefined),
 				...(warnings.length > 0 ? { warnings } : undefined),
 				...(evaluated === undefined ? undefined : { evaluation: evaluated.evaluation }),
 			}

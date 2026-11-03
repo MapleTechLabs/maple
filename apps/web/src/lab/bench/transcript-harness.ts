@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 /**
  * `window.__transcriptBench` for `perf/agent-transcript.perf.spec.ts`: a sweep of the page
  * scroller, one frame per step, frame and long-task sampling and the DOM the mounted rows hold.
@@ -46,11 +47,14 @@ const percentile = (values: ReadonlyArray<number>, p: number): number => {
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
 const countDom = (): DomCounts => {
-	const sizes = Array.from(document.querySelectorAll(LIST_SELECTOR)).map((row) => row.querySelectorAll("*").length)
+	const sizes = Arr.map(
+		Array.from(document.querySelectorAll(LIST_SELECTOR)),
+		(row) => row.querySelectorAll("*").length,
+	)
 	return {
 		mountedRows: sizes.length,
-		listNodes: sizes.reduce((sum, size) => sum + size, 0),
-		maxRowNodes: sizes.reduce((max, size) => Math.max(max, size), 0),
+		listNodes: Arr.reduce(sizes, 0, (sum, size) => sum + size),
+		maxRowNodes: Arr.reduce(sizes, 0, (max, size) => Math.max(max, size)),
 	}
 }
 
@@ -94,9 +98,13 @@ const runScroll = (steps: number): Promise<TranscriptBenchMetrics> => {
 			return {
 				frames: frames.length,
 				frameP95Ms: percentile(frames, 95),
-				droppedFrames: frames.filter((duration) => duration > FRAME_MS * 1.5).length,
+				droppedFrames: Arr.filter(frames, (duration) => duration > FRAME_MS * 1.5).length,
 				longTasks: longTasks.length,
-				totalBlockingMs: longTasks.reduce((sum, entry) => sum + Math.max(0, entry.duration - 50), 0),
+				totalBlockingMs: Arr.reduce(
+					longTasks,
+					0,
+					(sum, entry) => sum + Math.max(0, entry.duration - 50),
+				),
 				reactCommits: commits.count,
 				reactDurationMs: 0,
 				reactMaxCommitMs: 0,

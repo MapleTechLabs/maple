@@ -15,6 +15,7 @@ import type {
 	WebAnalyticsAiCrawler,
 	WebAnalyticsAiReferralPoint,
 } from "@maple/web-data/warehouse/web-analytics"
+import { Array as Arr } from "effect"
 
 /** Bucket widths the sparklines may use, smallest first. */
 const SPARK_STEPS = [3600, 2 * 3600, 3 * 3600, 6 * 3600, 12 * 3600, 86_400, 2 * 86_400, 7 * 86_400]
@@ -54,18 +55,18 @@ export function summarizeReferrals(
 	window: { startTime: string; endTime: string; bucketSeconds: number },
 ): ReadonlyMap<string, AiReferralSummary> {
 	const starts = bucketStarts(window.startTime, window.endTime, window.bucketSeconds)
-	const index = new Map(starts.map((at, i) => [at, i]))
+	const index = new Map(Arr.map(starts, (at, i) => [at, i]))
 	const byProduct = new Map<string, Array<number>>()
 	for (const point of points) {
-		const series = byProduct.get(point.product) ?? starts.map(() => 0)
+		const series = byProduct.get(point.product) ?? Arr.map(starts, () => 0)
 		const slot = index.get(parseWarehouseDateTime(point.bucket))
 		if (slot !== undefined) series[slot] = (series[slot] ?? 0) + point.sessions
 		byProduct.set(point.product, series)
 	}
 	return new Map(
-		[...byProduct].map(([product, spark]) => [
+		Arr.map([...byProduct], ([product, spark]) => [
 			product,
-			{ visits: spark.reduce((sum, value) => sum + value, 0), spark },
+			{ visits: Arr.reduce(spark, 0, (sum, value) => sum + value), spark },
 		]),
 	)
 }
@@ -93,25 +94,23 @@ export function rankReferrals(
 	current: ReadonlyMap<string, AiReferralSummary>,
 	previous: ReadonlyMap<string, number> | undefined,
 ): ReadonlyArray<AiReferralRank> {
-	const total = sum([...current.values()].map((summary) => summary.visits))
+	const total = sum(Arr.map([...current.values()], (summary) => summary.visits))
 	const previousTotal = previous ? sum([...previous.values()]) : 0
-	return [...current]
-		.flatMap(([id, summary]) => {
-			const product = aiProductById(id)
-			if (!product || summary.visits === 0) return []
-			const before = previous?.get(id) ?? 0
-			const share = total > 0 ? summary.visits / total : 0
-			return [
-				{
-					product,
-					visits: summary.visits,
-					share,
-					shareDeltaPoints:
-						before > 0 && previousTotal > 0 ? (share - before / previousTotal) * 100 : null,
-				},
-			]
-		})
-		.sort((a, b) => b.visits - a.visits)
+	return Arr.flatMap([...current], ([id, summary]) => {
+		const product = aiProductById(id)
+		if (!product || summary.visits === 0) return []
+		const before = previous?.get(id) ?? 0
+		const share = total > 0 ? summary.visits / total : 0
+		return [
+			{
+				product,
+				visits: summary.visits,
+				share,
+				shareDeltaPoints:
+					before > 0 && previousTotal > 0 ? (share - before / previousTotal) * 100 : null,
+			},
+		]
+	}).sort((a, b) => b.visits - a.visits)
 }
 
 export interface AiPurposeActivity {
@@ -128,7 +127,7 @@ export interface AiCrawlSummary {
 	readonly purposes: ReadonlyArray<AiPurposeActivity>
 }
 
-const crawlerByName = new Map(AI_CRAWLERS.map((crawler) => [crawler.name, crawler]))
+const crawlerByName = new Map(Arr.map(AI_CRAWLERS, (crawler) => [crawler.name, crawler]))
 
 /**
  * Crawler rows rolled up per product. Pages add across crawlers of one purpose,
@@ -163,7 +162,7 @@ export function summarizeCrawls(
 		byProduct.set(crawler.product, entry)
 	}
 	return new Map(
-		[...byProduct].map(([product, entry]) => [
+		Arr.map([...byProduct], ([product, entry]) => [
 			product,
 			{
 				requests: entry.requests,
@@ -186,4 +185,4 @@ export const purposeForCrawler = (name: string): AiCrawlPurpose | undefined =>
 /** The products that always get a card, in catalog order. */
 export const CARD_PRODUCTS: ReadonlyArray<AiProduct> = AI_PRODUCTS.slice(0, AI_PRODUCT_CARD_COUNT)
 
-const sum = (values: ReadonlyArray<number>) => values.reduce((total, value) => total + value, 0)
+const sum = (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (total, value) => total + value)

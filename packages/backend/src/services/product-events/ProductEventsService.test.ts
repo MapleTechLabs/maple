@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { makeProductEvents, toProductEventLine } from "./ProductEventsService"
 
@@ -52,11 +52,11 @@ describe("ProductEventsService", () => {
 
 	it("caps attributes at 32 keys and 1024-char values, and omits empty ids", () => {
 		const attributes: Record<string, string> = {}
-		for (let i = 0; i < 40; i++) attributes[`k${i}`] = "x".repeat(2000)
+		for (let i = 0; i < 40; i++) attributes[`k${i}`] = Str.repeat(2000)("x")
 		const line = toProductEventLine({ name: "signup_completed", userId: "", attributes }, NOW)
 		assert.isUndefined(line.user_id)
 		assert.isUndefined(line.group_id)
-		assert.strictEqual(Object.keys(line.attributes ?? {}).length, 32)
+		assert.strictEqual(Rec.keys(line.attributes ?? {}).length, 32)
 		assert.strictEqual(line.attributes?.k0?.length, 1024)
 	})
 
@@ -81,8 +81,8 @@ describe("ProductEventsService", () => {
 			assert.strictEqual(request.url, "https://ingest.example.test/v1/events")
 			assert.strictEqual(request.headers.authorization, "Bearer maple_sk_test")
 			assert.match(request.headers["content-type"] ?? "", /application\/x-ndjson/)
-			assert.isTrue(request.body.endsWith("\n"))
-			const lines = request.body.trimEnd().split("\n")
+			assert.isTrue(Str.endsWith("\n")(request.body))
+			const lines = Str.split("\n")(Str.trimEnd(request.body))
 			assert.strictEqual(lines.length, 1)
 			assert.deepStrictEqual(JSON.parse(lines[0]!), {
 				name: "signup_completed",

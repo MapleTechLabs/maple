@@ -40,6 +40,7 @@ import {
 import { type Exposure, Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The Exposure tab: probe paths a service answered, the week's totals, categories and sources.
 
@@ -98,7 +99,7 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 			]),
 			tableBody(
 				h,
-				rows.map((row) =>
+				Arr.map(rows, (row) =>
 					tableRow(
 						h,
 						[
@@ -224,14 +225,14 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 		h.p(
 			[h.Class("max-w-3xl px-4 pt-3 pb-1 font-prose text-sm text-muted-foreground")],
 			[
-				services.some((entry) => entry.sampleTraceId !== "")
+				Arr.some(services, (entry) => entry.sampleTraceId !== "")
 					? `${CATCH_ALL_COPY} Open a sample trace to confirm nothing real is served.`
 					: `${CATCH_ALL_COPY} Check one response to confirm nothing real is served.`,
 			],
 		),
 		h.ul(
 			[h.Class("divide-y divide-border px-4 pb-2 text-sm")],
-			services.map((entry) =>
+			Arr.map(services, (entry) =>
 				h.li(
 					[h.Class("flex items-center justify-between gap-4 py-2")],
 					[
@@ -303,7 +304,7 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 			]),
 			tableBody(
 				h,
-				rows.map((row) =>
+				Arr.map(rows, (row) =>
 					tableRow(
 						h,
 						[
@@ -328,7 +329,7 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 									hstack(
 										h,
 										{ gap: "1.5", wrap: true, as: "span" },
-										row.topSignatures.map((signature) =>
+										Arr.map(row.topSignatures, (signature) =>
 											h.span(
 												[
 													h.Key(signature.signature),
@@ -371,7 +372,7 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 			]),
 			tableBody(
 				h,
-				sources.map((source) =>
+				Arr.map(sources, (source) =>
 					tableRow(
 						h,
 						[

@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -66,7 +66,7 @@ const loadedRail = (
 				: [
 						filterSection(h, {
 							title: "Health",
-							options: HEALTH_LEVELS.map((level) => ({
+							options: Arr.map(HEALTH_LEVELS, (level) => ({
 								name: level,
 								count: summary.counts[level],
 							})),

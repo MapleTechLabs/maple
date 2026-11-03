@@ -4,7 +4,7 @@ import {
 	type WhereClauseAutocompleteResult,
 } from "../../../lib/query-builder/where-clause-autocomplete"
 import { applyWhereClause, type TracesSearchLike } from "../../../lib/traces/advanced-filter-sync"
-import { Option, type Result } from "effect"
+import { Option, type Result, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -29,14 +29,17 @@ type Cmd = Command.Command<Message, never, Resources>
 const MAX_SUGGESTIONS = 20
 
 const lookupNames = (model: Model, name: AutocompleteLookup): Array<string> => [
-	...lookupField(Option.getOrUndefined(AsyncData.getData(model.advanced.lookups[name]?.data ?? AsyncData.Idle())), "keys"),
+	...lookupField(
+		Option.getOrUndefined(AsyncData.getData(model.advanced.lookups[name]?.data ?? AsyncData.Idle())),
+		"keys",
+	),
 ]
 
 /** The `traces` values the provider hands the editor. */
 const valuesOf = (model: Model) => {
 	const facets = Option.getOrNull(AsyncData.getData(model.facets.data))
 	const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined) =>
-		(rows ?? []).map((row) => row.name)
+		Arr.map(rows ?? [], (row) => row.name)
 	return {
 		services: names(facets?.services),
 		spanNames: names(facets?.spanNames),
@@ -88,8 +91,7 @@ const activate = (
 	return ADVANCED_LOOKUPS.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
 		(acc, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete:${lookup}`, window)
-			const slot =
-				acc.model.advanced.lookups[lookup] ?? Keyed.idle<LookupNames, LoadFailure>()
+			const slot = acc.model.advanced.lookups[lookup] ?? Keyed.idle<LookupNames, LoadFailure>()
 			return Option.match(Keyed.request(slot, key, "Load"), {
 				onNone: () => acc,
 				onSome: (next) => ({

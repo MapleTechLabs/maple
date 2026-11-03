@@ -1,12 +1,12 @@
 import { FIXTURE_LOG_LINKS, LOGS_TABLE_BENCH_ROWS } from "../../fixtures/logs-table-bench-fixture"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { logTimeFormat, toLogRowView } from "./log-row-view"
 import { init, update } from "./logs-stream"
 import { Message } from "./logs-stream-message"
 import { pinnedColumnParts } from "./logs-stream-view"
 
-const ROWS = LOGS_TABLE_BENCH_ROWS.slice(0, 30).map((log) =>
+const ROWS = Arr.map(LOGS_TABLE_BENCH_ROWS.slice(0, 30), (log) =>
 	toLogRowView(log, [], logTimeFormat("UTC"), FIXTURE_LOG_LINKS),
 )
 
@@ -20,7 +20,11 @@ describe("logs stream: chip delays", () => {
 			Message.LeftChip(chip),
 			Message.ElapsedChipDelay({ generation: 1 }),
 		]
-		const swept = steps.reduce((model, message) => update(model, message).model, init("stream", ROWS))
+		const swept = Arr.reduce(
+			steps,
+			init("stream", ROWS),
+			(model, message) => update(model, message).model,
+		)
 		expect(Option.isNone(swept.visibleChip)).toBe(true)
 		expect(Option.isNone(swept.pendingOpen)).toBe(true)
 	})
@@ -36,7 +40,11 @@ describe("logs stream: chip delays", () => {
 			Message.ElapsedChipDelay({ generation: 2 }),
 			Message.ElapsedChipDelay({ generation: 3 }),
 		]
-		const moved = steps.reduce((model, message) => update(model, message).model, init("stream", ROWS))
+		const moved = Arr.reduce(
+			steps,
+			init("stream", ROWS),
+			(model, message) => update(model, message).model,
+		)
 		expect(moved.visibleChip).toEqual(Option.some(second))
 	})
 })

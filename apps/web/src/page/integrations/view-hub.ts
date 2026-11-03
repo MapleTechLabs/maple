@@ -28,6 +28,7 @@ import { STATUS_NAMES } from "./update-status"
 import { entryPlate } from "./view-entry"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `IntegrationsSummary` and `IntegrationCatalog`.
 
@@ -37,22 +38,20 @@ type Select = (id: IntegrationId) => Message
 export const integrationsSummary = (h: H, model: Model): Html | undefined => {
 	const summary = summaryOf(model.statuses, model.nowMs)
 	if (summary === null) return undefined
-	return hstack(h, { gap: "2" },
-		[
-			badge(h, { variant: "meta", pill: true, className: "gap-1.5 px-2.5 font-normal" }, [
-				statusDot(h, { tone: "ok" }),
-				`${summary.connected} connected`,
-			]),
-			...(summary.attention > 0
-				? [
-						badge(h, { variant: "warn", pill: true, className: "gap-1.5 px-2.5 font-normal" }, [
-							statusDot(h, { tone: "warn" }),
-							`${summary.attention} ${summary.attention === 1 ? "needs" : "need"} attention`,
-						]),
-					]
-				: []),
-		],
-	)
+	return hstack(h, { gap: "2" }, [
+		badge(h, { variant: "meta", pill: true, className: "gap-1.5 px-2.5 font-normal" }, [
+			statusDot(h, { tone: "ok" }),
+			`${summary.connected} connected`,
+		]),
+		...(summary.attention > 0
+			? [
+					badge(h, { variant: "warn", pill: true, className: "gap-1.5 px-2.5 font-normal" }, [
+						statusDot(h, { tone: "warn" }),
+						`${summary.attention} ${summary.attention === 1 ? "needs" : "need"} attention`,
+					]),
+				]
+			: []),
+	])
 }
 
 const connectedRow = (
@@ -101,9 +100,9 @@ const connectedRow = (
 								statusDot(h, {
 									tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
 								}),
-								typography(h, { size: "xs", truncate: true },
-									[connected?.stateLabel ?? "Not configured"],
-								),
+								typography(h, { size: "xs", truncate: true }, [
+									connected?.stateLabel ?? "Not configured",
+								]),
 							]),
 				],
 			),
@@ -157,33 +156,26 @@ export const newBadge = (h: H): Html => badge(h, { variant: "info", size: "sm" }
 
 const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"], onSelect: Select): Html =>
 	cardButton(h, { onClick: onSelect(entry.id), className: "flex items-center gap-4 p-4" }, [
-			entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
-			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" },
-				[
-					hstack(h, { gap: "2", shrink: true, as: "span" },
-						[
-							typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
-							...(entry.isNew === true ? [newBadge(h)] : []),
-						],
+		entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
+		vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+			hstack(h, { gap: "2", shrink: true, as: "span" }, [
+				typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
+				...(entry.isNew === true ? [newBadge(h)] : []),
+			]),
+			h.span([h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")], [entry.description]),
+		]),
+		h.span(
+			[
+				h.Class(
+					cn(
+						"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium transition-colors group-hover:border-ring/60",
+						cta === "Connect" ? "text-primary" : "text-foreground",
 					),
-					h.span(
-						[h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")],
-						[entry.description],
-					),
-				],
-			),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium transition-colors group-hover:border-ring/60",
-							cta === "Connect" ? "text-primary" : "text-foreground",
-						),
-					),
-				],
-				[cta, " →"],
-			),
-		])
+				),
+			],
+			[cta, " →"],
+		),
+	])
 
 const skeletonRow = (h: H): Html =>
 	h.div(
@@ -207,51 +199,58 @@ const firstStatusFailure = (model: Model): LoadFailure | null =>
 
 /** The hub's title and its one-line description, tight under the `<h1>` like every page header. */
 export const hubTitle = (h: H): Html =>
-	vstack(h, { gap: "1" },
-		[
-			pageTitle(h, { className: "leading-8" }, ["Integrations"]),
-			pageDescription(
-				h,
-				[
-					"Where Maple sends alerts and chat. Data sources like Cloudflare, Prometheus and GitHub are under ",
-					h.a(
-						[
-							h.Href(hrefOf(AppRoute.Sources())),
-							h.Class(typographyClass({ tone: "foreground", className: "underline underline-offset-2" })),
-						],
-						["Sources"],
-					),
-					".",
-				],
-				"text-sm",
-			),
-		],
-	)
+	vstack(h, { gap: "1" }, [
+		pageTitle(h, { className: "leading-8" }, ["Integrations"]),
+		pageDescription(
+			h,
+			[
+				"Where Maple sends alerts and chat. Data sources like Cloudflare, Prometheus and GitHub are under ",
+				h.a(
+					[
+						h.Href(hrefOf(AppRoute.Sources())),
+						h.Class(
+							typographyClass({
+								tone: "foreground",
+								className: "underline underline-offset-2",
+							}),
+						),
+					],
+					["Sources"],
+				),
+				".",
+			],
+			"text-sm",
+		),
+	])
 
 export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html => {
-	const rows = HUB_CATALOG.map((entry) => ({
+	const rows = Arr.map(HUB_CATALOG, (entry) => ({
 		entry,
 		overview: overviewOf(model.statuses, model.nowMs, entry.id),
 	}))
-	const connected = rows.flatMap(({ entry, overview }) =>
+	const connected = Arr.flatMap(rows, ({ entry, overview }) =>
 		overview !== null && (overview.kind === "connected" || overview.kind === "unavailable")
 			? [{ entry, overview }]
 			: [],
 	)
-	const available = rows.flatMap(({ entry, overview }) =>
+	const available = Arr.flatMap(rows, ({ entry, overview }) =>
 		overview !== null && overview.kind === "available" ? [{ entry, overview }] : [],
 	)
-	const loading = rows.filter(({ overview }) => overview === null)
-	const hasFailedRow = connected.some(
+	const loading = Arr.filter(rows, ({ overview }) => overview === null)
+	const hasFailedRow = Arr.some(
+		connected,
 		({ overview }) => overview.kind === "unavailable" && overview.reason === "failed",
 	)
 	const statusFailure = hasFailedRow ? firstStatusFailure(model) : null
-	const shelves = INTEGRATION_CATEGORIES.map((category) => ({
-		...category,
-		entries: available
-			.filter(({ entry }) => entry.category === category.id)
-			.toSorted((a, b) => Number(b.entry.isNew ?? false) - Number(a.entry.isNew ?? false)),
-	})).filter((shelf) => shelf.entries.length > 0)
+	const shelves = Arr.filter(
+		Arr.map(INTEGRATION_CATEGORIES, (category) => ({
+			...category,
+			entries: Arr.filter(available, ({ entry }) => entry.category === category.id).toSorted(
+				(a, b) => Number(b.entry.isNew ?? false) - Number(a.entry.isNew ?? false),
+			),
+		})),
+		(shelf) => shelf.entries.length > 0,
+	)
 	return h.div(
 		[
 			h.Class(
@@ -261,66 +260,56 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 		[
 			...(connected.length > 0 || loading.length > 0
 				? [
-						vstack(h, { gap: "2", as: "section" },
-							[
-								// Unknown status must not read as healthy, so the header goes neutral.
-								hstack(h, { gap: "3", justify: "between" },
-									[
-										eyebrow(h, { variant: "label" }, [
-											statusFailure === null ? "Connected" : "Destinations",
-										]),
-										...(statusFailure === null
-											? []
-											: [
-													hstack(h, { gap: "2" },
-														[
-															errorState(h, {
-																failure: statusFailure,
-																title: "Couldn't check integration status",
-																variant: "quiet",
-																hidesRetryButton: true,
-																onRetry: Message.ClickedRetryFailedStatuses(),
-															}),
-															button(
-																h,
-																{
-																	variant: "outline",
-																	size: "xs",
-																	attributes: [
-																		h.OnClick(
-																			Message.ClickedRetryFailedStatuses(),
-																		),
-																	],
-																},
-																["Try again"],
-															),
-														],
-													),
-												]),
-									],
-								),
-								panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
-									...connected.map(({ entry, overview }) =>
-										connectedRow(h, entry, overview, onSelect),
-									),
-									...loading.map(() => skeletonRow(h)),
+						vstack(h, { gap: "2", as: "section" }, [
+							// Unknown status must not read as healthy, so the header goes neutral.
+							hstack(h, { gap: "3", justify: "between" }, [
+								eyebrow(h, { variant: "label" }, [
+									statusFailure === null ? "Connected" : "Destinations",
 								]),
-							],
-						),
+								...(statusFailure === null
+									? []
+									: [
+											hstack(h, { gap: "2" }, [
+												errorState(h, {
+													failure: statusFailure,
+													title: "Couldn't check integration status",
+													variant: "quiet",
+													hidesRetryButton: true,
+													onRetry: Message.ClickedRetryFailedStatuses(),
+												}),
+												button(
+													h,
+													{
+														variant: "outline",
+														size: "xs",
+														attributes: [
+															h.OnClick(Message.ClickedRetryFailedStatuses()),
+														],
+													},
+													["Try again"],
+												),
+											]),
+										]),
+							]),
+							panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
+								...Arr.map(connected, ({ entry, overview }) =>
+									connectedRow(h, entry, overview, onSelect),
+								),
+								...Arr.map(loading, () => skeletonRow(h)),
+							]),
+						]),
 					]
 				: []),
-			...shelves.map((shelf) =>
-				vstack(h, { gap: "2", as: "section" },
-					[
-						eyebrow(h, { variant: "label" }, [shelf.label]),
-						h.div(
-							[h.Class("grid grid-cols-1 gap-3 lg:grid-cols-2")],
-							shelf.entries.map(({ entry, overview }) =>
-								availableCard(h, entry, overview.cta, onSelect),
-							),
+			...Arr.map(shelves, (shelf) =>
+				vstack(h, { gap: "2", as: "section" }, [
+					eyebrow(h, { variant: "label" }, [shelf.label]),
+					h.div(
+						[h.Class("grid grid-cols-1 gap-3 lg:grid-cols-2")],
+						Arr.map(shelf.entries, ({ entry, overview }) =>
+							availableCard(h, entry, overview.cta, onSelect),
 						),
-					],
-				),
+					),
+				]),
 			),
 		],
 	)

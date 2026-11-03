@@ -27,6 +27,7 @@ import { type QueryPeek, statementTracesHref } from "./peek"
 import { appP95Tone, lockTone } from "./view-sql"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `GcpQueryPeekSheet`: one Query Insights statement, its callers and its slowest traced calls.
 
@@ -193,7 +194,7 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 			sectionHead(h, "Called by", more > 0 ? `the busiest, +${more} more` : "client spans"),
 			h.div(
 				[h.Class("border-y border-border-subtle")],
-				services.map((service) =>
+				Arr.map(services, (service) =>
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Service({ serviceName: service, search: timeSearch }))),
@@ -284,7 +285,9 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 								),
 							),
 						],
-						spans.map((span) => spanRow(h, span, spans[0]?.durationMs ?? 0, inputs.timeZone)),
+						Arr.map(spans, (span) =>
+							spanRow(h, span, spans[0]?.durationMs ?? 0, inputs.timeZone),
+						),
 					),
 	})
 	return h.section(

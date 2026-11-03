@@ -1,5 +1,6 @@
 import type { ServicePlatform } from "@maple/ui/components/service-map/service-map-types"
 import type { IconName } from "../../ui/icon"
+import { String as Str } from "effect"
 
 // copied: packages/ui/src/components/service-map/service-map-runtime.ts with the icon as a name
 // (the original imports React icon components); the 3D mark paths stay in the original.
@@ -11,10 +12,10 @@ export interface RuntimeGlyph {
 }
 
 export function resolveRuntimeGlyph(rt: string): RuntimeGlyph | null {
-	const key = rt.trim().toLowerCase()
-	if (key.startsWith("openjdk") || key === "jvm" || key === "java")
+	const key = Str.toLowerCase(Str.trim(rt))
+	if (Str.startsWith("openjdk")(key) || key === "jvm" || key === "java")
 		return { icon: "OpenjdkMonoIcon", short: "jvm", full: "JVM" }
-	if (key.startsWith(".net") || key === "dotnet" || key === "coreclr")
+	if (Str.startsWith(".net")(key) || key === "dotnet" || key === "coreclr")
 		return { icon: null, short: "dotnet", full: ".NET" }
 	switch (key) {
 		case "nodejs":
@@ -54,6 +55,6 @@ export function formatRuntime(
 	platform: ServicePlatform | undefined,
 ): RuntimeGlyph | null {
 	if (!rt) return null
-	if (platform === "cloudflare" && rt.toLowerCase() === "workerd") return null
+	if (platform === "cloudflare" && Str.toLowerCase(rt) === "workerd") return null
 	return resolveRuntimeGlyph(rt) ?? { icon: null, short: rt, full: rt }
 }

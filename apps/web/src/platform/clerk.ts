@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/organization-regions"
 import { currentRegion } from "../lib/region"
 import { bootedClerk, type ClerkLoadError } from "./clerk-boot"
-import { Clock, Duration, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Predicate, Queue, Schema, Stream, Array as Arr } from "effect"
 
 /** The slice of clerk-js this app reads (`window.Clerk`). */
 interface ClerkResources {
@@ -275,7 +275,7 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		maybeOrganization: Option.map(Option.fromNullishOr(resources.organization), (organization) =>
 			toOrganization(organization, nowMs),
 		),
-		memberships: (resources.user?.organizationMemberships ?? []).map((membership) =>
+		memberships: Arr.map(resources.user?.organizationMemberships ?? [], (membership) =>
 			toOrganization(membership.organization, nowMs),
 		),
 		maybePendingTask: Option.filter(
@@ -389,7 +389,7 @@ const stringField = (value: unknown, key: string): string | undefined =>
 
 /** `accountErrorMessage`: Clerk's own `longMessage`/`message`, else the error's, else `fallback`. */
 export const clerkErrorMessage = (cause: unknown, fallback: string): string => {
-	if (Predicate.hasProperty(cause, "errors") && Array.isArray(cause.errors)) {
+	if (Predicate.hasProperty(cause, "errors") && Arr.isArray(cause.errors)) {
 		const first: unknown = cause.errors[0]
 		return stringField(first, "longMessage") ?? stringField(first, "message") ?? fallback
 	}
@@ -428,8 +428,9 @@ export const REVERIFICATION_CANCELLED = "User cancelled attempted verification"
 /** `session_reverification_required`: the session is past the window for this write. */
 const isReverificationRequired = (error: ClerkActionError): boolean =>
 	Predicate.hasProperty(error.cause, "errors") &&
-	Array.isArray(error.cause.errors) &&
-	error.cause.errors.some(
+	Arr.isArray(error.cause.errors) &&
+	Arr.some(
+		error.cause.errors,
 		(entry: unknown) => stringField(entry, "code") === "session_reverification_required",
 	)
 
@@ -485,7 +486,7 @@ export const pendingUserInvitations: Effect.Effect<
 > = currentClerkUser.pipe(
 	Effect.flatMap(userInvitationPage),
 	Effect.map((invitations) =>
-		invitations.map((invitation) => ({
+		Arr.map(invitations, (invitation) => ({
 			id: invitation.id,
 			orgId: invitation.publicOrganizationData.id,
 			orgName: invitation.publicOrganizationData.name,

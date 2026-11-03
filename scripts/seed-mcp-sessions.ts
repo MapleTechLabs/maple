@@ -13,7 +13,7 @@
  * with TINYBIRD_TOKEN (`.env.local`).
  */
 import { parseArgs } from "node:util"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -36,8 +36,12 @@ const random = () => {
 	seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31
 	return seed / 2 ** 31
 }
-const hex = (length: number) => Array.from({ length }, () => Math.floor(random() * 16).toString(16)).join("")
-const timeOf = (ms: number) => `${new Date(ms).toISOString().slice(0, 23).replace("T", " ")}000000`
+const hex = (length: number) =>
+	Arr.join(
+		Array.from({ length }, () => Math.floor(random() * 16).toString(16)),
+		"",
+	)
+const timeOf = (ms: number) => `${Str.replace("T", " ")(Str.slice(0, 23)(new Date(ms).toISOString()))}000000`
 
 type Row = Record<string, unknown>
 const rows: Row[] = []
@@ -128,25 +132,30 @@ const request = (
 	})
 	const isJsonRpcError = req.errorType !== undefined && req.errorType !== "tool_error"
 	// Only the attributes the request has; an absent one is left off, as a server would.
-	const attributes = Object.fromEntries(
-		[
-			["mcp.method.name", req.method],
-			["mcp.protocol.version", options.isStateless === true ? "2026-07-28" : "2025-06-18"],
-			["jsonrpc.request.id", String(options.id)],
-			["network.transport", "tcp"],
-			["user_agent.original", options.userAgent],
-			["mcp.session.id", options.sessionId],
-			["user.id", options.user?.id],
-			["user.name", options.user?.name],
+	const attributes = Rec.fromEntries(
+		Arr.filter(
 			[
-				"maple.mcp.client.name",
-				options.isStateless === true || req.method === "initialize" ? options.clientInfo : undefined,
+				["mcp.method.name", req.method],
+				["mcp.protocol.version", options.isStateless === true ? "2026-07-28" : "2025-06-18"],
+				["jsonrpc.request.id", String(options.id)],
+				["network.transport", "tcp"],
+				["user_agent.original", options.userAgent],
+				["mcp.session.id", options.sessionId],
+				["user.id", options.user?.id],
+				["user.name", options.user?.name],
+				[
+					"maple.mcp.client.name",
+					options.isStateless === true || req.method === "initialize"
+						? options.clientInfo
+						: undefined,
+				],
+				["gen_ai.tool.name", req.tool],
+				["gen_ai.operation.name", req.tool === undefined ? undefined : "execute_tool"],
+				["error.type", req.errorType],
+				["rpc.response.status_code", isJsonRpcError ? req.errorType : undefined],
 			],
-			["gen_ai.tool.name", req.tool],
-			["gen_ai.operation.name", req.tool === undefined ? undefined : "execute_tool"],
-			["error.type", req.errorType],
-			["rpc.response.status_code", isJsonRpcError ? req.errorType : undefined],
-		].filter((entry): entry is [string, string] => entry[1] !== undefined),
+			(entry): entry is [string, string] => entry[1] !== undefined,
+		),
 	)
 	span({
 		service: server,
@@ -177,7 +186,7 @@ const session = (
 	}>,
 	requests: ReadonlyArray<Request>,
 ) =>
-	requests.forEach((req, index) =>
+	Arr.forEach(requests, (req, index) =>
 		request(server, { ...options, startMs: options.startMs + index * options.gapMs, id: index + 1 }, req),
 	)
 
@@ -203,7 +212,7 @@ const agentCalls: ReadonlyArray<Request> = [
 	{ method: "tools/call", tool: "list_sections", durationMs: 54 },
 ]
 const claudeStart = now - 95 * MIN
-const claudeRequests = agentCalls.map((req, index) => {
+const claudeRequests = Arr.map(agentCalls, (req, index) => {
 	if (req.method !== "tools/call") return req
 	const traceId = hex(32)
 	const startMs = claudeStart + index * 40_000 - 1_500
@@ -364,7 +373,8 @@ session("notes-mcp", { userAgent: "claude-code/2.1.314 (cli)", startMs: now - 30
 
 // `--service` seeds only those servers (and the agents calling them), e.g. after adding one.
 const only = values.service === undefined ? undefined : new Set(values.service)
-const seeded = rows.filter(
+const seeded = Arr.filter(
+	rows,
 	(row) =>
 		only === undefined ||
 		only.has(String(row.service_name)) ||
@@ -383,10 +393,13 @@ if (!host || !token) {
 	console.error("TINYBIRD_HOST and TINYBIRD_TOKEN are required")
 	process.exit(2)
 }
-const response = await fetch(`${host.replace(/\/+$/, "")}/v0/events?name=traces&wait=true`, {
+const response = await fetch(`${Str.replace(/\/+$/, "")(host)}/v0/events?name=traces&wait=true`, {
 	method: "POST",
 	headers: { Authorization: `Bearer ${token}` },
-	body: seeded.map((row) => encodeJson(row)).join("\n"),
+	body: Arr.join(
+		Arr.map(seeded, (row) => encodeJson(row)),
+		"\n",
+	),
 })
 if (!response.ok) {
 	console.error(`Tinybird answered ${response.status}: ${await response.text()}`)

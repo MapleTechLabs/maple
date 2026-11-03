@@ -9,7 +9,7 @@
  *                        env-level self-hosted read endpoint
  * - `chdb`             — the embedded chDB engine behind the local `maple` binary
  */
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 export type WarehouseBackendKind = "tinybird" | "tinybird-gateway" | "clickhouse" | "chdb"
 
@@ -56,9 +56,9 @@ export interface WarehouseTargetIdentity {
 const decodeUrl = Schema.decodeUnknownOption(Schema.URLFromString)
 
 const hostOf = (urlOrHost: string): string => {
-	const trimmed = urlOrHost.trim()
+	const trimmed = Str.trim(urlOrHost)
 	if (trimmed === "") return ""
-	const parsed = decodeUrl(trimmed.includes("://") ? trimmed : `https://${trimmed}`)
+	const parsed = decodeUrl(Str.includes("://")(trimmed) ? trimmed : `https://${trimmed}`)
 	// Not a URL even with a scheme bolted on — a bare identifier, or a config
 	// typo. Pass it through so the two sides still agree on the same node.
 	return Option.isSome(parsed) ? parsed.value.host : trimmed

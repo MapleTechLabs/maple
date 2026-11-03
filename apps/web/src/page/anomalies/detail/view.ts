@@ -29,6 +29,7 @@ import { anomalySummary, anomalyTitle, CHART_TOKENS, linkedIssueCard, signalChar
 import { linkIssueDialog } from "./view-link-dialog"
 import { anomalySidebar } from "./view-sidebar"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The anomaly detail page over `ResultPage`.
 
@@ -39,47 +40,71 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 	const isStale = isStaleOpenIncident(incident, model.nowMs)
 	const tone = severityToneFor(incident)
 	const isBusy = model.busy !== null
-	return hstack(h, { gap: "2" },
-		[
-			badge(h, { variant: "outline", className: isStale ? SEVERITY_TONE.resolved.badge : tone.badge }, [
-				...(isOpen && !isStale
-					? [hstack(h, { gap: "1.5", as: "span" }, [statusDot(h, { tone: tone.tone }), incident.severity])]
-					: isStale
-						? ["Stale · last seen ", relativeTime(h, { value: incident.lastTriggeredAt, nowMs: model.nowMs, timeZone })]
-						: [incident.resolveReason !== null ? RESOLVE_REASON_LABEL[incident.resolveReason] : "Resolved"]),
-			]),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					isDisabled: isBusy,
-					isLoading: model.busy === "investigate",
-					attributes: [h.OnClick(Message.ClickedInvestigate())],
-				},
-				[icon(h, "PulseIcon"), "Open investigation"],
-			),
-			...(isOpen
+	return hstack(h, { gap: "2" }, [
+		badge(h, { variant: "outline", className: isStale ? SEVERITY_TONE.resolved.badge : tone.badge }, [
+			...(isOpen && !isStale
 				? [
-						button(
-							h,
-							{ size: "sm", variant: "outline", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedResolve())] },
-							["Resolve"],
-						),
+						hstack(h, { gap: "1.5", as: "span" }, [
+							statusDot(h, { tone: tone.tone }),
+							incident.severity,
+						]),
 					]
-				: []),
-		],
-	)
+				: isStale
+					? [
+							"Stale · last seen ",
+							relativeTime(h, {
+								value: incident.lastTriggeredAt,
+								nowMs: model.nowMs,
+								timeZone,
+							}),
+						]
+					: [
+							incident.resolveReason !== null
+								? RESOLVE_REASON_LABEL[incident.resolveReason]
+								: "Resolved",
+						]),
+		]),
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				isDisabled: isBusy,
+				isLoading: model.busy === "investigate",
+				attributes: [h.OnClick(Message.ClickedInvestigate())],
+			},
+			[icon(h, "PulseIcon"), "Open investigation"],
+		),
+		...(isOpen
+			? [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: isBusy,
+							attributes: [h.OnClick(Message.ClickedResolve())],
+						},
+						["Resolve"],
+					),
+				]
+			: []),
+	])
 }
 
 const resolveDescription = (incident: AnomalyIncidentDocument): string =>
 	`The incident is marked resolved manually${
-		incident.fingerprints.filter((f) => f.resolvedAt === null).length > 1
+		Arr.filter(incident.fingerprints, (f) => f.resolvedAt === null).length > 1
 			? ", including every error fingerprint grouped into it"
 			: ""
 	}. If the signal keeps deviating, the detector waits out a one-hour cooldown before re-opening it.`
 
-const loadedBody = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): ReadonlyArray<Html> => {
+const loadedBody = (
+	h: H,
+	model: Model,
+	incident: AnomalyIncidentDocument,
+	timeZone: string,
+): ReadonlyArray<Html> => {
 	const isBusy = model.busy !== null
 	return [
 		h.div(
@@ -92,9 +117,11 @@ const loadedBody = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZ
 				h.section(
 					[h.AriaLabelledBy("linked-issue-heading")],
 					[
-						eyebrow(h, { as: "h2", className: "mb-3 block", attributes: [h.Id("linked-issue-heading")] }, [
-							"Linked issue",
-						]),
+						eyebrow(
+							h,
+							{ as: "h2", className: "mb-3 block", attributes: [h.Id("linked-issue-heading")] },
+							["Linked issue"],
+						),
 						linkedIssueCard(h, model, incident, isBusy),
 					],
 				),
@@ -145,12 +172,20 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					])
 				: state._tag === "Failed"
 					? dashboardPage(h, {}, [
-							errorState(h, { failure: state.failure, title: "Couldn't load anomaly", onRetry: Message.ClickedRetry() }),
+							errorState(h, {
+								failure: state.failure,
+								title: "Couldn't load anomaly",
+								onRetry: Message.ClickedRetry(),
+							}),
 						])
 					: dashboardPage(h, { titleContent: detailTitleSkeleton(h, false) }, [
 							h.div(
 								[h.Class("space-y-4")],
-								[skeleton(h, "h-5 w-2/3"), skeleton(h, "h-64 w-full"), skeleton(h, "h-32 w-full")],
+								[
+									skeleton(h, "h-5 w-2/3"),
+									skeleton(h, "h-64 w-full"),
+									skeleton(h, "h-32 w-full"),
+								],
 							),
 						])
 	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: CHART_TOKENS }))], [page])

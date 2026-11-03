@@ -22,6 +22,7 @@ import { adminOnlyNote, settingsSection, settingsSections } from "../kit/section
 import { Message, type Model, type PolicyDraft } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
@@ -41,7 +42,7 @@ const CONFIDENCE_ITEMS = [
 ] as const
 
 const destinationOptions = (h: H, model: Model, destinations: ReadonlyArray<AlertDestinationDocument>) =>
-	destinations.map((destination) => ({
+	Arr.map(destinations, (destination) => ({
 		value: destination.id,
 		ariaLabel: destination.id,
 		icon: providerLogo(h, {
@@ -82,7 +83,7 @@ const severityRule = (
 								toParentMessage: (message) =>
 									Message.GotConfidenceSelectMessage({ severity, message }),
 								viewInputs: {
-									entries: CONFIDENCE_ITEMS.map((item): SelectView.SelectEntry => ({
+									entries: Arr.map(CONFIDENCE_ITEMS, (item): SelectView.SelectEntry => ({
 										_tag: "Item",
 										item,
 									})),
@@ -131,7 +132,7 @@ const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 		)
 	return h.div(
 		[h.Class("space-y-4")],
-		SEVERITY_ORDER.map((severity) => severityRule(h, model, draft, severity, destinations)),
+		Arr.map(SEVERITY_ORDER, (severity) => severityRule(h, model, draft, severity, destinations)),
 	)
 }
 
@@ -265,9 +266,13 @@ const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 		badge(h, { variant: "outline", className: "capitalize" }, [evaluated.outcome]),
 		typography(h, { size: "sm", tone: "muted" }, [
 			evaluated.outcome === "route"
-				? evaluated.destinationIds
-						.map((id) => destinations.find((destination) => destination.id === id)?.name ?? id)
-						.join(", ")
+				? Arr.join(
+						Arr.map(
+							evaluated.destinationIds,
+							(id) => destinations.find((destination) => destination.id === id)?.name ?? id,
+						),
+						", ",
+					)
 				: (evaluated.skipReason?.replaceAll("_", " ") ?? ""),
 		]),
 	]
@@ -286,7 +291,7 @@ const simulator = (h: H, model: Model): Html => {
 					view: SelectView.view,
 					toParentMessage: (message) => Message.GotSeveritySelectMessage({ message }),
 					viewInputs: {
-						entries: SEVERITY_ORDER.map((severity): SelectView.SelectEntry => ({
+						entries: Arr.map(SEVERITY_ORDER, (severity): SelectView.SelectEntry => ({
 							_tag: "Item",
 							item: { value: severity, label: SEVERITY_LABEL[severity] },
 						})),
@@ -400,7 +405,7 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 						? emptyMessage(h, {}, ["No escalation attempts have been recorded"])
 						: h.div(
 								[],
-								response.attempts.map((attempt) =>
+								Arr.map(response.attempts, (attempt) =>
 									listRow(h, {
 										divided: true,
 										leading: h.span(
@@ -412,12 +417,14 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 										),
 										title: typography(h, { tone: "muted", weight: "normal" }, [
 											attempt.deliveries.length > 0
-												? attempt.deliveries
-														.map(
+												? Arr.join(
+														Arr.map(
+															attempt.deliveries,
 															(delivery) =>
 																`${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`,
-														)
-														.join(", ")
+														),
+														", ",
+													)
 												: (attempt.skipReason?.replaceAll("_", " ") ??
 													"Awaiting delivery"),
 										]),

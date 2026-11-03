@@ -26,6 +26,7 @@ import { type TranscriptHost, transcript } from "./kit/view-transcript"
 import { Message } from "./message"
 import { isLoading, type Model } from "./model"
 import { hstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // One conversation: transcript, notices, composer.
 
@@ -258,7 +259,7 @@ const suggestionPills = <M>(
 ): Html =>
 	h.div(
 		[h.Class(cn(hstackClass({ gap: "2", wrap: true }), "mb-3"))],
-		suggestions.items.map((suggestion) =>
+		Arr.map(suggestions.items, (suggestion) =>
 			button(
 				h,
 				{

@@ -1,5 +1,5 @@
 import { FunnelKeyBy, FunnelSessionDimension } from "@maple/query-model"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import type { EditorState } from "./editor-state"
 import { applyProductEdit } from "./product-apply"
 import { ProductEdit, type StepScope, StepKind } from "./product-edit"
@@ -26,7 +26,7 @@ const scopeOf = (raw: string | undefined): StepScope => (raw === "paths" ? "path
 
 /** A panel select's picked value as the edit it makes; `None` for another select. */
 export const productSelectEdit = (id: string, value: string): Option.Option<ProductEdit> => {
-	const [name, first, second] = id.split(":")
+	const [name, first, second] = Str.split(":")(id)
 	const index = Number(first)
 	switch (name) {
 		case "list-unit":
@@ -54,7 +54,7 @@ export const productSelectEdit = (id: string, value: string): Option.Option<Prod
 
 /** `BreakdownPicker`'s `onValueChange`: None clears, a dimension sets, "Attribute…" emits the typed key. */
 export const breakdownPicked = (state: EditorState, value: string, attributeKey: string): EditorState => {
-	const key = attributeKey.trim()
+	const key = Str.trim(attributeKey)
 	const next =
 		value === BREAKDOWN_NONE
 			? null

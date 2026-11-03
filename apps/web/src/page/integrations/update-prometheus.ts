@@ -1,7 +1,7 @@
 import type { ScrapeTargetId } from "@maple/domain/http"
 import { ScrapeIntervalSeconds } from "@maple/domain/http"
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -50,7 +50,7 @@ const refreshTargets = (model: Model, context: PageContext): Return =>
 export const prometheusTargets = (model: Model): ReadonlyArray<V2ScrapeTarget> =>
 	Option.match(AsyncData.getData(model.statuses.scrapeTargets.data), {
 		onNone: () => [],
-		onSome: (targets) => targets.filter((target) => target.target_type === "prometheus"),
+		onSome: (targets) => Arr.filter(targets, (target) => target.target_type === "prometheus"),
 	})
 
 const targetOf = (model: Model, id: ScrapeTargetId) =>
@@ -73,7 +73,7 @@ export const clickedTarget = (model: Model, context: PageContext, id: ScrapeTarg
 	requestChecks(withCard(model, { selectedId: id }), context, "Load")
 
 const without = (ids: ReadonlyArray<ScrapeTargetId>, id: ScrapeTargetId) =>
-	ids.filter((entry) => entry !== id)
+	Arr.filter(ids, (entry) => entry !== id)
 
 export const clickedProbe = (model: Model, id: ScrapeTargetId): Return =>
 	model.prometheusCard.probing.includes(id)
@@ -211,22 +211,24 @@ export const parsedInterval = (form: ScrapeForm): number | null => {
 }
 
 export const isFormValid = (form: ScrapeForm): boolean =>
-	form.name.value.trim().length > 0 && form.url.value.trim().length > 0 && parsedInterval(form) !== null
+	Str.trim(form.name.value).length > 0 &&
+	Str.trim(form.url.value).length > 0 &&
+	parsedInterval(form) !== null
 
 const credentialsOf = (form: ScrapeForm): string | null => {
 	if (form.authType === "bearer")
-		return form.token.value.trim() === "" ? null : encodeJson({ token: form.token.value.trim() })
+		return Str.trim(form.token.value) === "" ? null : encodeJson({ token: Str.trim(form.token.value) })
 	if (form.authType === "basic")
-		return form.username.value.trim() === "" && form.password.value.trim() === ""
+		return Str.trim(form.username.value) === "" && Str.trim(form.password.value) === ""
 			? null
-			: encodeJson({ username: form.username.value.trim(), password: form.password.value.trim() })
+			: encodeJson({ username: Str.trim(form.username.value), password: Str.trim(form.password.value) })
 	return null
 }
 
 /** The connect flow asks for the URL first: a blank name falls back to the URL's host. */
 const withDefaultName = (form: ScrapeForm): ScrapeForm =>
-	form.name.value.trim() === "" && form.url.value.trim() !== ""
-		? { ...form, name: Field.init(hostnameOf(form.url.value.trim())) }
+	Str.trim(form.name.value) === "" && Str.trim(form.url.value) !== ""
+		? { ...form, name: Field.init(hostnameOf(Str.trim(form.url.value))) }
 		: form
 
 export const submittedForm = (model: Model): Return => {
@@ -235,17 +237,17 @@ export const submittedForm = (model: Model): Return => {
 	const interval = parsedInterval(form)
 	if (card.isSaving || !isFormValid(form) || interval === null) return { model }
 	const credentials = credentialsOf(form)
-	const serviceName = form.serviceName.value.trim()
+	const serviceName = Str.trim(form.serviceName.value)
 	return {
 		model: withCard(model, { isSaving: true, form }),
 		commands: [
 			SaveTarget({
 				editingId: card.editingId,
 				payload: {
-					name: form.name.value.trim(),
+					name: Str.trim(form.name.value),
 					scrape_interval_seconds: interval,
 					service_name: serviceName === "" ? null : serviceName,
-					url: form.url.value.trim(),
+					url: Str.trim(form.url.value),
 					auth_type: form.authType,
 					auth_credentials: credentials ?? undefined,
 				},

@@ -1,6 +1,6 @@
 import { MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, String as Str } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/http-api"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
@@ -112,7 +112,9 @@ const apiReferenceRoute = (path: `/${string}`) =>
 	Layer.unwrap(
 		Effect.gen(function* () {
 			const env = yield* Env
-			return HttpApiScalar.layerCdn(instanceApiV2(env.MAPLE_API_BASE_URL.replace(/\/+$/, "")), { path })
+			return HttpApiScalar.layerCdn(instanceApiV2(Str.replace(/\/+$/, "")(env.MAPLE_API_BASE_URL)), {
+				path,
+			})
 		}),
 	)
 const DocsRoute = apiReferenceRoute("/docs")

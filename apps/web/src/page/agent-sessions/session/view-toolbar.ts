@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Effect, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -101,7 +101,7 @@ const optionRow = (h: H, model: Model, row: OptionRow): Html =>
 /** `ViewOptions`: what this view shows, behind one trigger. */
 const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 	const rows = optionsOf(view)
-	const on = rows.filter((row) => model.options[row.option]).length
+	const on = Arr.filter(rows, (row) => model.options[row.option]).length
 	return h.submodel({
 		slotId: "agent-session-display",
 		model: model.displayPopover,
@@ -134,7 +134,7 @@ const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 						),
 					),
 				),
-			toContent: () => rows.map((row) => optionRow(h, model, row)),
+			toContent: () => Arr.map(rows, (row) => optionRow(h, model, row)),
 		},
 	})
 }

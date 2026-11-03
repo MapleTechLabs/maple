@@ -166,7 +166,7 @@ const listChildren = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Htm
 										],
 										[entry.label],
 									),
-							...entry.items.map((item, offset) =>
+							...Array.map(entry.items, (item, offset) =>
 								option(h, model, inputs, item, start + offset),
 							),
 						],
@@ -182,7 +182,7 @@ const LIST_KEYS = new Set(["ArrowDown", "ArrowUp", "Home", "End", "Enter", " ", 
 const listKeys = (h: H, options: ReadonlyArray<SelectOption>) =>
 	h.OnKeyDownPreventDefault((key) =>
 		LIST_KEYS.has(key)
-			? Option.some(Message.PressedListKey({ key, values: options.map((item) => item.value) }))
+			? Option.some(Message.PressedListKey({ key, values: Array.map(options, (item) => item.value) }))
 			: Option.none(),
 	)
 

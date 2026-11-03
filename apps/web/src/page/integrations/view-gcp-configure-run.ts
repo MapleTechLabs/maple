@@ -30,6 +30,7 @@ import { fileCard } from "./view-gcp-configure-script"
 import { applied, runStatus } from "./view-gcp-configure-status"
 import { openCloudShellButton, type ScriptFailure, SMALL } from "./view-gcp-parts"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // `ApplyStage` / `GcpApplyView`: the script and the run's status, or the confirmed run.
 
@@ -39,18 +40,21 @@ type Children = ReadonlyArray<Html | string>
 /** What the script applies, so it is never a black box, and the way back to change it. */
 export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, byScript = true): Html => {
 	const removed = byScript ? "removed by this run" : "to remove"
-	const capabilities = [
-		connector.logs_enabled
-			? `Logs · ${logFilter}`
-			: connector.applied_logs_enabled === true
-				? `Logs · ${removed}`
-				: null,
-		connector.metrics_enabled
-			? "Metrics"
-			: connector.applied_metrics_enabled === true
-				? `Metrics · ${removed}`
-				: null,
-	].filter((label) => label !== null)
+	const capabilities = Arr.filter(
+		[
+			connector.logs_enabled
+				? `Logs · ${logFilter}`
+				: connector.applied_logs_enabled === true
+					? `Logs · ${removed}`
+					: null,
+			connector.metrics_enabled
+				? "Metrics"
+				: connector.applied_metrics_enabled === true
+					? `Metrics · ${removed}`
+					: null,
+		],
+		(label) => label !== null,
+	)
 	return hstack(h, { gap: "2", wrap: true }, [
 		chip(h, [
 			h.span([h.Class("text-muted-foreground")], [GCP_SCOPE_NAMES[connector.scope_type]]),
@@ -64,7 +68,7 @@ export const runSummary = (h: H, connector: V2GcpConnector, logFilter: string, b
 						h.span([h.Class("font-mono")], [connector.project_id]),
 					]),
 				]),
-		...capabilities.map((label) => chip(h, [label])),
+		...Arr.map(capabilities, (label) => chip(h, [label])),
 		button(
 			h,
 			{
@@ -88,7 +92,7 @@ export const runAs = (h: H, connector: V2GcpConnector): ReadonlyArray<Html | str
 		" of ",
 		...(connector.scope_type === "project" ? [] : ["the host project "]),
 		mono(h, connector.project_id),
-		...scopeRoles.flatMap((name, index) => [index === 0 ? " who also has " : " and ", role(name)]),
+		...Arr.flatMap(scopeRoles, (name, index) => [index === 0 ? " who also has " : " and ", role(name)]),
 		...(scopeRoles.length > 0 ? [` on the ${connector.scope_type}`] : []),
 		".",
 	]

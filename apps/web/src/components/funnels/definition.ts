@@ -12,6 +12,7 @@ import {
 	type FunnelSessionDimension as FunnelSessionDimensionType,
 	type FunnelStep as FunnelStepType,
 } from "@maple/query-model"
+import { Array as Arr, String as Str } from "effect"
 
 export const DEFAULT_FUNNEL_KEY_BY: FunnelKeyByType = "person"
 export const DEFAULT_FUNNEL_WINDOW_SECONDS = 24 * 3600
@@ -48,13 +49,13 @@ export const FUNNEL_SESSION_DIMENSIONS: ReadonlyArray<FunnelSessionDimensionType
 
 /** Steps with something to match on. A blank event name is a step still being typed. */
 export const completedSteps = (steps: ReadonlyArray<FunnelStepType>): ReadonlyArray<FunnelStepType> =>
-	steps.filter((step) => {
+	Arr.filter(steps, (step) => {
 		switch (step.kind) {
 			case "event":
-				return step.eventName.trim() !== ""
+				return Str.trim(step.eventName) !== ""
 			case "page":
-				return step.pagePath.trim() !== ""
+				return Str.trim(step.pagePath) !== ""
 			case "session":
-				return step.value.trim() !== ""
+				return Str.trim(step.value) !== ""
 		}
 	})

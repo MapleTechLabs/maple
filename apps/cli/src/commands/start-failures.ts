@@ -1,4 +1,4 @@
-import { Clock, Duration, Effect, Option, Predicate, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Predicate, Schema, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { dirname } from "node:path"
 import { annotateOutcome, EXIT_START_REFUSED, markFailedExit } from "../core/outcomes"
@@ -62,7 +62,7 @@ export const MAX_BACKOFF_MS = 60 * 1000
 /** Tag plus message with numbers masked, so a changing PID or port is one failure. */
 export const startFailureFingerprint = (error: unknown): string => {
 	const report = describeFailure(error)
-	return `${report.tag}:${report.message.replace(/\d+/g, "#")}`
+	return `${report.tag}:${Str.replace(/\d+/g, "#")(report.message)}`
 }
 
 export interface StartFailureDecision {

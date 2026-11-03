@@ -1,4 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // Issue priority: its labels, the bars icon and the clamp.
 
@@ -18,7 +19,7 @@ export const clampPriority = (value: number): PriorityLevel =>
 	Number.isFinite(value) ? (LEVELS[Math.min(4, Math.max(0, Math.trunc(value)))] ?? 0) : 0
 
 const attrs = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<readonly [string, string]>) =>
-	entries.map(([name, value]) => h.Attribute(name, value))
+	Arr.map(entries, ([name, value]) => h.Attribute(name, value))
 
 const BARS = [
 	{ x: 3, h: 7 },
@@ -43,7 +44,7 @@ export const priorityBarsIcon = <M>(h: HtmlBuilder<M>, level: PriorityLevel, siz
 		)
 	if (level === 0) {
 		return svg(
-			[4, 12, 20].map((cx) =>
+			Arr.map([4, 12, 20], (cx) =>
 				h.circle(
 					attrs(h, [
 						["cx", String(cx)],
@@ -87,7 +88,7 @@ export const priorityBarsIcon = <M>(h: HtmlBuilder<M>, level: PriorityLevel, siz
 	}
 	const filled = level === 2 ? 3 : level === 3 ? 2 : 1
 	return svg(
-		BARS.map((bar, index) =>
+		Arr.map(BARS, (bar, index) =>
 			h.rect(
 				attrs(h, [
 					["x", String(bar.x)],

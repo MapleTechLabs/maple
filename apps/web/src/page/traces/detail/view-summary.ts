@@ -18,6 +18,7 @@ import { computeServiceShares, type ServiceShare } from "./derive"
 import { Message } from "./message"
 import type { LoadedTrace } from "./select"
 import { typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // The trace anatomy strip, over the @maple/ui strip.
 // TODO(tooltip): the commit hover card (interactive, so a hover card, not a tooltip).
@@ -56,7 +57,7 @@ const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare
 		? null
 		: h.div(
 				[h.Class("flex h-1.5 w-full gap-px overflow-hidden rounded-full")],
-				shares.map((share) =>
+				Arr.map(shares, (share) =>
 					h.span(
 						[
 							h.Class("h-full"),
@@ -180,7 +181,7 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 			spectrumBar(h, shares),
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1")],
-				shares.map((share) =>
+				Arr.map(shares, (share) =>
 					h.span(
 						[h.Class("flex items-center gap-1.5 font-mono text-xs")],
 						[

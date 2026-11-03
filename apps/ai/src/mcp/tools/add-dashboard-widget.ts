@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	MCP_PANEL_TYPES,
 	MCP_VISUALIZATIONS,
@@ -258,7 +258,7 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 			const blockingWarnings = yield* collectBlockingBuilderWarnings(dataSource)
 			if (blockingWarnings.length > 0) {
 				return yield* invalid(
-					`This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT saved):\n- ${blockingWarnings.join("\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
+					`This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT saved):\n- ${Arr.join(blockingWarnings, "\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
 				)
 			}
 
@@ -269,7 +269,7 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 
 			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) =>
 				Effect.gen(function* () {
-					if (existingWidgets.some((w) => w.id === newId)) {
+					if (Arr.some(existingWidgets, (w) => w.id === newId)) {
 						return yield* invalid(
 							`Widget id "${newId}" already exists on dashboard ${dashboard_id}. To change that widget use update_dashboard_widget widget_id="${newId}" (title, chart_id or patch_json for a partial edit); to add another, pass a different widget_id or omit it.`,
 							undefined,

@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { GcpConnectorId, GcpLogRuntime, GcpProjectId, GcpResourceNumber } from "@maple/domain/primitives"
 import {
 	gcpLogFilter,
@@ -232,11 +232,12 @@ const run = (script: string, options: RunOptions = {}) => {
 	const dir = mkdtempSync(join(tmpdir(), "maple-gcp-script-"))
 	tempDirs.push(dir)
 	const fakes = { gcloud: options.gcloud ?? FAKE_GCLOUD, curl: FAKE_CURL, sleep: "#!/usr/bin/env bash\n" }
-	for (const [name, source] of Object.entries(fakes)) {
+	for (const [name, source] of Rec.toEntries(fakes)) {
 		writeFileSync(join(dir, name), source)
 		chmodSync(join(dir, name), 0o755)
 	}
-	const read = (file: string) => (existsSync(file) ? readFileSync(file, "utf8").trim().split("\n") : [])
+	const read = (file: string) =>
+		existsSync(file) ? Str.split("\n")(Str.trim(readFileSync(file, "utf8"))) : []
 	const log = join(dir, "gcloud.log")
 	const result = spawnSync("bash", options.shell ?? [], {
 		input: script + (options.typedAfter ?? ""),
@@ -252,7 +253,7 @@ const run = (script: string, options: RunOptions = {}) => {
 			GCLOUD_ANSWER: options.answer ?? "",
 			GCLOUD_ACCOUNT: options.account ?? "jane@acme.com",
 			GCLOUD_BILLING: options.billing ?? "True",
-			GCLOUD_APIS: (options.apis ?? []).join("\n"),
+			GCLOUD_APIS: Arr.join(options.apis ?? [], "\n"),
 			CURL_LOG: join(dir, "curl.log"),
 			CURL_IAM:
 				options.lacking === "unanswered" || options.lacking === "unseen"
@@ -271,8 +272,8 @@ const run = (script: string, options: RunOptions = {}) => {
 		stdout: result.stdout,
 		stderr: result.stderr,
 		/** Every gcloud command but the access checks, which each test of them names itself. */
-		commands: read(log).filter((command) => !isAccessCheck(command)),
-		access: read(log).filter(isAccessCheck),
+		commands: Arr.filter(read(log), (command) => !isAccessCheck(command)),
+		access: Arr.filter(read(log), isAccessCheck),
 		args: read(`${log}.args`),
 		/** The project each gcloud call was counted against. */
 		projects: read(`${log}.project`),
@@ -301,7 +302,7 @@ const REPORT = (members: string) =>
 const publish = (members: string) =>
 	expect.stringMatching(
 		new RegExp(
-			`^pubsub topics publish ${NAME} --project=acme-host --message=${REPORT(members).source.slice(1)}`,
+			`^pubsub topics publish ${NAME} --project=acme-host --message=${Str.slice(1)(REPORT(members).source)}`,
 		),
 	)
 
@@ -342,7 +343,7 @@ const logsRemovalCommands = (scope: Scope) => [
 const ACCOUNT_LOOKUP = `iam service-accounts list --project=acme-host --filter=email=${ACCOUNT} --format=value(email)`
 
 /** A command that only looks: a describe, or the service account list. */
-const isLookup = (command: string) => command.includes(" describe ") || command === ACCOUNT_LOOKUP
+const isLookup = (command: string) => Str.includes(" describe ")(command) || command === ACCOUNT_LOOKUP
 
 const metricsRemovalCommands = (scope: Scope) => [
 	ACCOUNT_LOOKUP,
@@ -387,7 +388,7 @@ describe.each(scopeTypes)("renderGcpSetupScript for a %s", (scopeType) => {
 
 Checking access
   ✓ Signed in as jane@acme.com
-${[...scope.found, `  ✓ ${host} acme-host found (Acme Production)`].join("\n")}
+${Arr.join([...scope.found, `  ✓ ${host} acme-host found (Acme Production)`], "\n")}
   ✓ Billing is enabled
   ✓ jane@acme.com has the permissions this script needs
   ✓ Log filter accepted
@@ -429,7 +430,7 @@ Done. Google Cloud is set up for Maple.
 		const { status, stdout, commands, access } = run(script, { describe: "found" })
 		expect(status).toBe(0)
 		// Everything exists already, so the log pipeline is updated in place, filter untouched.
-		expect(commands.filter((command) => command.includes(" create "))).toEqual([])
+		expect(Arr.filter(commands, (command) => Str.includes(" create ")(command))).toEqual([])
 		expect(commands).toContain(
 			`logging sinks update ${NAME} pubsub.googleapis.com/projects/acme-host/topics/${NAME} --no-disabled ${scope.sinkWrite}`,
 		)
@@ -464,9 +465,9 @@ Done. Google Cloud matches your Maple switches.
 		expect(commands).toContain(
 			`${scope.iam} add-iam-policy-binding ${scope.id} --member=serviceAccount:${ACCOUNT} --role=roles/cloudasset.viewer --condition=None`,
 		)
-		expect(curl.filter((call) => call.startsWith(PUSH_ENDPOINT))).toEqual([
-			expect.stringMatching(REPORT('"logs":false').source.slice(1)),
-			expect.stringMatching(REPORT('"metrics":true').source.slice(1)),
+		expect(Arr.filter(curl, (call) => Str.startsWith(PUSH_ENDPOINT)(call))).toEqual([
+			expect.stringMatching(Str.slice(1)(REPORT('"logs":false').source)),
+			expect.stringMatching(Str.slice(1)(REPORT('"metrics":true').source)),
 		])
 		expect(stdout).toContain(`  Log forwarding          off, removing
   Metrics and resources   on
@@ -487,13 +488,13 @@ Log forwarding
 		expect(existing.status).toBe(0)
 		expect(existing.commands).toEqual([...logsRemovalCommands(scope), ...metricsRemovalCommands(scope)])
 		expect(existing.curl).toEqual([
-			expect.stringMatching(REPORT('"logs":false,"metrics":false').source.slice(1)),
+			expect.stringMatching(Str.slice(1)(REPORT('"logs":false,"metrics":false').source)),
 		])
 		expect(existing.stdout).toBe(`Maple cleanup for ${scopeType} ${scope.id}
 
 Checking access
   ✓ Signed in as jane@acme.com
-${[...scope.found, `  ✓ ${host} acme-host found (Acme Production)`].join("\n")}
+${Arr.join([...scope.found, `  ✓ ${host} acme-host found (Acme Production)`], "\n")}
 
 Log forwarding
   ✓ Log sink deleted
@@ -513,7 +514,7 @@ Done. Everything the setup script created is gone.
 
 		const fresh = run(script)
 		expect(fresh.status).toBe(0)
-		expect(fresh.commands.every(isLookup)).toBe(true)
+		expect(Arr.every(fresh.commands, isLookup)).toBe(true)
 		expect(fresh.stdout.match(/ {2}✓ Nothing left to remove/g)).toHaveLength(2)
 	})
 })
@@ -522,24 +523,21 @@ describe("the text that is copied", () => {
 	const script = setup(setupInput("project", { logs: true, metrics: true }))
 
 	it("is the script as a here-document for a child bash", () => {
-		const lines = script.split("\n")
+		const lines = Str.split("\n")(script)
 		expect(lines.slice(0, 3)).toEqual([
 			` { [ -z "\${ZSH_VERSION-}" ] || case "\${HISTORY_IGNORE-}" in *"*MAPLE_SETUP_SCRIPT*"*) ;; *) HISTORY_IGNORE="(\${HISTORY_IGNORE:+$HISTORY_IGNORE|}*MAPLE_SETUP_SCRIPT*)" ;; esac; [ -z "\${BASH_VERSION-}" ] || case "$(history 1)" in *MAPLE_SETUP_SCRIPT*) history -d -1 ;; esac 2>/dev/null`,
 			"bash /dev/fd/3 3<<'MAPLE_SETUP_SCRIPT'",
 			"#!/usr/bin/env bash",
 		])
-		expect(script.endsWith("\nMAPLE_SETUP_SCRIPT\n}\n")).toBe(true)
+		expect(Str.endsWith("\nMAPLE_SETUP_SCRIPT\n}\n")(script)).toBe(true)
 		// An interactive zsh runs a comment as a command.
-		expect(
-			lines
-				.slice(0, 2)
-				.concat(lines.slice(-3))
-				.some((line) => line.startsWith("#")),
-		).toBe(false)
+		expect(Arr.some(lines.slice(0, 2).concat(lines.slice(-3)), (line) => Str.startsWith("#")(line))).toBe(
+			false,
+		)
 		// Plain ASCII survives a paste under any locale; the marks it prints are spelled as bytes.
-		expect(Array.from(script).every((character) => character.charCodeAt(0) < 128)).toBe(true)
+		expect(Arr.every(Array.from(script), (character) => character.charCodeAt(0) < 128)).toBe(true)
 
-		const cleanupLines = cleanup(SCOPES.project).split("\n")
+		const cleanupLines = Str.split("\n")(cleanup(SCOPES.project))
 		expect(cleanupLines[1]).toBe("bash /dev/fd/3 3<<'MAPLE_CLEANUP_SCRIPT'")
 		expect(cleanupLines.slice(-3)).toEqual(["MAPLE_CLEANUP_SCRIPT", "}", ""])
 	})
@@ -559,7 +557,7 @@ describe("the text that is copied", () => {
 		const bashMajor = Number(
 			spawnSync("bash", ["-c", "echo $BASH_VERSINFO"], { encoding: "utf8" }).stdout,
 		)
-		if (bashMajor >= 5) expect(stdout.trim().endsWith("\n0")).toBe(true)
+		if (bashMajor >= 5) expect(Str.endsWith("\n0")(Str.trim(stdout))).toBe(true)
 	})
 
 	it("is refused when a value would end the here-document early", () => {
@@ -596,7 +594,7 @@ describe("renderGcpSetupScript", () => {
 			},
 		)
 		expect(status).toBe(0)
-		expect(commands.filter((command) => command.includes(" create "))).toEqual([])
+		expect(Arr.filter(commands, (command) => Str.includes(" create ")(command))).toEqual([])
 		expect(commands).not.toContainEqual(expect.stringContaining("--log-filter"))
 		expect(stdout).toContain(`
 Log forwarding
@@ -659,11 +657,11 @@ Done. Everything is in place.
 # Details: https://maple.dev/docs/integrations/gcp-opentelemetry${MODE_COMMENT}`
 		expect(filtered(all)).toContain(allForwardedComment)
 		for (const script of [filtered(null), filtered([]), filtered(all)]) {
-			const comment = script.slice(
+			const comment = Str.slice(
 				script.indexOf("# ---- Which logs"),
 				script.indexOf("LOG_FILTER_MODE="),
-			)
-			expect(Math.max(...comment.split("\n").map((line) => line.length))).toBeLessThan(100)
+			)(script)
+			expect(Math.max(...Arr.map(Str.split("\n")(comment), (line) => line.length))).toBeLessThan(100)
 		}
 
 		const { stdout, commands } = run(filtered(all), { describe: "found" })
@@ -686,7 +684,7 @@ Done. Everything is in place.
 		expect(status).toBe(1)
 		expect(commands.at(-1)).toContain("logging sinks create")
 		expect(
-			stdout.endsWith(`
+			Str.endsWith(`
 Log forwarding
   ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)
   ✓ Topic created
@@ -696,20 +694,23 @@ Log forwarding
       ERROR: (gcloud) PERMISSION_DENIED: Permission denied on resource (or it may not exist).
 
     What to do: jane@acme.com needs Logs Configuration Writer on project acme-host.
-${UNFINISHED}`),
+${UNFINISHED}`)(stdout),
 		).toBe(true)
 	})
 
 	it("prints Google's error without its machine-readable details", () => {
 		const { stdout } = run(setup(setupInput("project", { logs: true, metrics: true })), {
 			fail: "topics create",
-			answer: [
-				"WARNING: This command is using service account impersonation.",
-				"ERROR: (gcloud.pubsub.topics.create) Failed to create topic: User not authorized to perform this action.",
-				"- '@type': type.googleapis.com/google.rpc.ErrorInfo",
-				"  metadata:",
-				"    troubleshooter_url: https://console.cloud.google.com/iam-admin/troubleshooter",
-			].join("\n"),
+			answer: Arr.join(
+				[
+					"WARNING: This command is using service account impersonation.",
+					"ERROR: (gcloud.pubsub.topics.create) Failed to create topic: User not authorized to perform this action.",
+					"- '@type': type.googleapis.com/google.rpc.ErrorInfo",
+					"  metadata:",
+					"    troubleshooter_url: https://console.cloud.google.com/iam-admin/troubleshooter",
+				],
+				"\n",
+			),
 		})
 		expect(stdout).toContain(
 			"User not authorized to perform this action.\n\n    What to do: jane@acme.com needs Owner on project acme-host.",
@@ -810,12 +811,12 @@ ${UNFINISHED}`)
 		expect(allOn.stdout).toContain("  ✓ APIs enabled (Pub/Sub, Cloud Logging, Cloud Resource Manager)\n")
 
 		// One is off: only that one is switched on, and a refusal names it and the role.
-		const oneOff = run(script, { apis: all.filter((api) => api !== "iam.googleapis.com") })
-		expect(oneOff.commands.filter((command) => command.startsWith("services enable"))).toEqual([
+		const oneOff = run(script, { apis: Arr.filter(all, (api) => api !== "iam.googleapis.com") })
+		expect(Arr.filter(oneOff.commands, (command) => Str.startsWith("services enable")(command))).toEqual([
 			"services enable iam.googleapis.com --project=acme-host",
 		])
 		const refused = run(script, {
-			apis: all.filter((api) => api !== "pubsub.googleapis.com"),
+			apis: Arr.filter(all, (api) => api !== "pubsub.googleapis.com"),
 			fail: "services enable",
 		})
 		expect(refused.status).toBe(1)
@@ -842,7 +843,7 @@ ${UNFINISHED}`)
 `)
 
 		// The shell the text is fed to still has to find bash.
-		const bash = spawnSync("bash", ["-c", "command -v bash"], { encoding: "utf8" }).stdout.trim()
+		const bash = Str.trim(spawnSync("bash", ["-c", "command -v bash"], { encoding: "utf8" }).stdout)
 		const dir = mkdtempSync(join(tmpdir(), "maple-gcp-bin-"))
 		tempDirs.push(dir)
 		symlinkSync(bash, join(dir, "bash"))
@@ -1059,7 +1060,9 @@ esac
 		)
 		expect(status).toBe(0)
 		expect(stdout.match(/ {2}… waiting for Google to publish the new service account\n/g)).toHaveLength(1)
-		expect(commands.filter((command) => command.includes("roles/monitoring.viewer"))).toHaveLength(3)
+		expect(
+			Arr.filter(commands, (command) => Str.includes("roles/monitoring.viewer")(command)),
+		).toHaveLength(3)
 	})
 
 	it("leaves an enabled metrics setup alone when the deployment has lost its Google identity", () => {
@@ -1156,7 +1159,7 @@ esac
 `
 		const { status, stdout, commands } = run(cleanup(SCOPES.project), { gcloud: hostOff })
 		expect(status).toBe(0)
-		expect(commands.every(isLookup)).toBe(true)
+		expect(Arr.every(commands, isLookup)).toBe(true)
 		expect(stdout.match(/ {2}✓ Nothing left to remove/g)).toHaveLength(2)
 	})
 
@@ -1164,7 +1167,7 @@ esac
 		const removal = run(cleanup(SCOPES.project), { gcloud: FAKE_GCLOUD_ACCOUNT_DELETED })
 		expect(removal.stdout).toContain("Done. Everything the setup script created is gone.")
 		expect(removal.status).toBe(0)
-		expect(removal.commands.every(isLookup)).toBe(true)
+		expect(Arr.every(removal.commands, isLookup)).toBe(true)
 
 		// So does a setup script with metrics off, run a second time.
 		const metricsOff = run(setup(setupInput("project", { logs: true, metrics: false })), {
@@ -1194,7 +1197,9 @@ esac
 		for (const env of [{ GCLOUD_TOPIC: "_deleted-topic_" }, { GCLOUD_DETACHED: "True" }]) {
 			const { status, stdout, commands } = run(script, { describe: "found", env })
 			expect(status).toBe(0)
-			expect(commands.filter((command) => command.startsWith("pubsub subscriptions "))).toEqual([
+			expect(
+				Arr.filter(commands, (command) => Str.startsWith("pubsub subscriptions ")(command)),
+			).toEqual([
 				`pubsub subscriptions describe ${NAME} --project=acme-host --format=value(topic)`,
 				...(env.GCLOUD_DETACHED === undefined
 					? []
@@ -1217,7 +1222,7 @@ esac
 		})
 		expect(granted.status).toBe(0)
 		expect(
-			granted.commands.filter((command) => command.includes("roles/logging.logWriter")),
+			Arr.filter(granted.commands, (command) => Str.includes("roles/logging.logWriter")(command)),
 		).toHaveLength(2)
 		expect(granted.stdout).not.toContain("waiting for Google")
 
@@ -1227,7 +1232,7 @@ esac
 		})
 		expect(removed.status).toBe(0)
 		expect(
-			removed.commands.filter((command) => command.includes("roles/monitoring.viewer")),
+			Arr.filter(removed.commands, (command) => Str.includes("roles/monitoring.viewer")(command)),
 		).toHaveLength(2)
 		expect(removed.commands.at(-1)).toBe(
 			`iam service-accounts delete ${ACCOUNT} --project=acme-host --quiet`,
@@ -1292,7 +1297,7 @@ esac
 				"--display-name=Maple metrics and resource reader",
 				"--format=value(writerIdentity)",
 				`--member=${WRITER}`,
-				expect.stringMatching(`^--message=${REPORT('"logs":true').source.slice(1)}`),
+				expect.stringMatching(`^--message=${Str.slice(1)(REPORT('"logs":true').source)}`),
 			]),
 		)
 	})
@@ -1301,7 +1306,8 @@ esac
 		const NOISE =
 			'NOT log_id("cloudaudit.googleapis.com/data_access") AND NOT httpRequest.userAgent:"GoogleHC" AND NOT protoPayload.methodName="io.k8s.coordination.v1.leases.update" AND NOT logName:"serialconsole.googleapis.com"'
 		const all = GcpLogRuntime.literals
-		const without = (runtime: GcpLogRuntime) => gcpLogFilter(all.filter((other) => other !== runtime))
+		const without = (runtime: GcpLogRuntime) =>
+			gcpLogFilter(Arr.filter(all, (other) => other !== runtime))
 		expect(gcpLogFilter(all)).toBe(NOISE)
 		expect(without("cloud_run")).toBe(
 			`${NOISE} AND NOT (log_id("run.googleapis.com/stdout") OR log_id("run.googleapis.com/stderr"))`,

@@ -15,6 +15,7 @@ import type { Model } from "./model"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `McpToolsList`.
 
@@ -59,7 +60,10 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 			trigger: [
 				icon(h, "ChevronRightIcon", {
 					size: 14,
-					className: cn(typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }), isOpen && "rotate-90"),
+					className: cn(
+						typographyClass({ tone: "muted", className: "shrink-0 transition-transform" }),
+						isOpen && "rotate-90",
+					),
 				}),
 				h.span([h.Class("font-medium")], [group.label]),
 				typography(h, { size: "xs", tone: "muted", numeric: true }, [String(group.tools.length)]),
@@ -71,7 +75,7 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 				[
 					h.ul(
 						[],
-						rows.map((tool) => toolRow(h, tool)),
+						Arr.map(rows, (tool) => toolRow(h, tool)),
 					),
 					...(hidden > 0
 						? [
@@ -81,7 +85,9 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 										variant: "ghost",
 										size: "xs",
 										className: "-ml-2 mt-1 text-muted-foreground",
-										attributes: [h.OnClick(Message.ClickedShowAllTools({ groupId: group.id }))],
+										attributes: [
+											h.OnClick(Message.ClickedShowAllTools({ groupId: group.id })),
+										],
 									},
 									["Show ", String(hidden), " more"],
 								),
@@ -94,7 +100,7 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 }
 
 const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>): ReadonlyArray<Html> => {
-	const isSearching = model.toolSearch.trim() !== ""
+	const isSearching = Str.trim(model.toolSearch) !== ""
 	const groups = groupMcpTools(tools, model.toolSearch)
 	return [
 		h.div(
@@ -122,7 +128,7 @@ const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>):
 					})
 				: h.div(
 						[h.Class("divide-y")],
-						groups.map((group, index) =>
+						Arr.map(groups, (group, index) =>
 							toolGroup(
 								h,
 								group,

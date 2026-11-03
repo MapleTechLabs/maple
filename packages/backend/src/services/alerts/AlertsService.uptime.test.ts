@@ -2,7 +2,7 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { AlertValidationError } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { type AlertDestinationId, AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
 import { AlertsService } from "./AlertsService"
@@ -203,7 +203,7 @@ describe("AlertsService uptime rules", () => {
 			assert.strictEqual(resolved[0]?.status, "resolved")
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.sameMembers(
-				events.events.map((event) => event.eventType),
+				Arr.map(events.events, (event) => event.eventType),
 				["trigger", "resolve"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: fetchImpl })))
@@ -332,7 +332,7 @@ describe("AlertsService uptime rules", () => {
 			assert.strictEqual((yield* ruleCount)?.n, 1)
 			const opened = (yield* alerts.listIncidents(orgId)).incidents
 			assert.deepStrictEqual(
-				opened.map((incident) => [incident.ruleName, incident.status]),
+				Arr.map(opened, (incident) => [incident.ruleName, incident.status]),
 				[["Legacy check", "open"]],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
@@ -409,7 +409,7 @@ describe("AlertsService uptime rules", () => {
 			yield* alerts.runSchedulerTick()
 			const opened = (yield* alerts.listIncidents(orgId)).incidents
 			assert.deepStrictEqual(
-				opened.map((incident) => [incident.ruleName, incident.groupKey, incident.status]),
+				Arr.map(opened, (incident) => [incident.ruleName, incident.groupKey, incident.status]),
 				[["Live check", "__total__", "open"]],
 			)
 
@@ -422,7 +422,7 @@ describe("AlertsService uptime rules", () => {
 			yield* alerts.runSchedulerTick()
 			const after = (yield* alerts.listIncidents(orgId)).incidents
 			assert.deepStrictEqual(
-				after.map((incident) => [incident.ruleName, incident.status]),
+				Arr.map(after, (incident) => [incident.ruleName, incident.status]),
 				[["Live check", "resolved"]],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
@@ -459,7 +459,7 @@ describe("AlertsService uptime rules", () => {
 			assert.lengthOf(yield* tickAt(6), 0)
 			const overdue = yield* tickAt(7)
 			assert.deepStrictEqual(
-				overdue.map((incident) => [incident.groupKey, incident.status]),
+				Arr.map(overdue, (incident) => [incident.groupKey, incident.status]),
 				[["backup-job", "open"]],
 			)
 			const state = yield* Effect.promise(() =>

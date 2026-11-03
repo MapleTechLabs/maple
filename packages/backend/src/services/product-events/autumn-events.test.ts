@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { cancellationsFromBillingUpdated, decodeAutumnBillingUpdated } from "./autumn-events"
 
 const subscription = (overrides: Record<string, unknown> = {}) => ({
@@ -92,7 +92,7 @@ describe("cancellationsFromBillingUpdated", () => {
 				},
 			])
 			assert.deepStrictEqual(
-				result.map(({ phase, pastDue, trial }) => ({ phase, pastDue, trial })),
+				Arr.map(result, ({ phase, pastDue, trial }) => ({ phase, pastDue, trial })),
 				[{ phase: "ended", pastDue: true, trial: true }],
 			)
 		}),
@@ -113,7 +113,7 @@ describe("cancellationsFromBillingUpdated", () => {
 				},
 			])
 			assert.deepStrictEqual(
-				result.map(({ phase, trial }) => ({ phase, trial })),
+				Arr.map(result, ({ phase, trial }) => ({ phase, trial })),
 				[{ phase: "scheduled", trial: false }],
 			)
 		}),
@@ -128,7 +128,7 @@ describe("cancellationsFromBillingUpdated", () => {
 				{ action: "expired", subscription: subscription({ status: "expired" }) },
 			])
 			assert.deepStrictEqual(
-				result.map(({ planId, phase }) => ({ planId, phase })),
+				Arr.map(result, ({ planId, phase }) => ({ planId, phase })),
 				[{ planId: "startup", phase: "ended" }],
 			)
 		}),

@@ -104,7 +104,7 @@ const spanLevelSearch = (
 	return Effect.map(
 		executor.query<SpanSearchWireRow>("span_search", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> =>
-			result.data.map((row): SpanResult => ({
+			Arr.map(result.data, (row): SpanResult => ({
 				traceId: Schema.decodeSync(TraceId)(row.traceId),
 				spanId: Schema.decodeSync(SpanId)(row.spanId),
 				spanName: row.spanName,

@@ -16,7 +16,7 @@
  * decode failure, so the common request-decode path now renders the path alone.
  * The path still identifies the widget positionally (`widgets[0]`).
  */
-import { SchemaIssue } from "effect"
+import { SchemaIssue, Array as Arr } from "effect"
 
 /** Which part of the request failed to decode; mirrors `HttpApiSchemaError.kind`. */
 export type SchemaErrorKind = "Params" | "Headers" | "Query" | "Body" | "Payload" | "ResponseHeaders"
@@ -38,7 +38,7 @@ export const formatIssuePath = (path: ReadonlyArray<PropertyKey>): string => {
 
 const readKey = (value: unknown, key: PropertyKey): unknown => {
 	if (typeof value !== "object" || value === null) return undefined
-	if (typeof key === "number") return Array.isArray(value) ? value[key] : undefined
+	if (typeof key === "number") return Arr.isArray(value) ? value[key] : undefined
 	return (value as Record<PropertyKey, unknown>)[key]
 }
 
@@ -78,7 +78,7 @@ const reportedInputs = (issue: SchemaIssue.Issue): ReadonlyArray<unknown> => {
 				break
 			case "Composite":
 			case "AnyOf":
-				current.issues.forEach(visit)
+				Arr.forEach(current.issues, visit)
 				break
 		}
 	}
@@ -115,7 +115,7 @@ export const describeSchemaIssue = (issue: SchemaIssue.Issue): ReadonlyArray<Sch
 
 	for (const entry of formatStandard(issue).issues) {
 		// Standard Schema allows either a bare key or a `{ key }` segment object.
-		const path = (entry.path ?? []).map((segment) =>
+		const path = Arr.map(entry.path ?? [], (segment) =>
 			typeof segment === "object" && segment !== null ? segment.key : segment,
 		)
 		const key = formatIssuePath(path)
@@ -129,8 +129,10 @@ export const describeSchemaIssue = (issue: SchemaIssue.Issue): ReadonlyArray<Sch
 
 	const details: Array<SchemaIssueDetail> = []
 	for (const [key, { path, messages }] of byPath) {
-		const widgetId = inputs.map((input) => widgetIdForPath(input, path)).find((id) => id !== undefined)
-		const message = messages.join("; ")
+		const widgetId = Arr.map(inputs, (input) => widgetIdForPath(input, path)).find(
+			(id) => id !== undefined,
+		)
+		const message = Arr.join(messages, "; ")
 		const location = key === "" ? "<root>" : key
 		const label = widgetId === undefined ? location : `${location} (widget "${widgetId}")`
 		details.push({ path: key, widgetId, message, line: `${label}: ${message}` })

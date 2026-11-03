@@ -9,7 +9,7 @@ import { areaY, d3Curve, defineChart, dot, lineY, rect, ruleY, type ChartValue }
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { curveMonotoneX } from "d3-shape"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { AlertSignalType } from "@maple/domain/http"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
@@ -53,7 +53,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 	}
 	const formatTime = (value: number, mode: "tick" | "tooltip") =>
 		formatBucketLabel(new Date(value).toISOString(), axisContext, mode)
-	const points: Array<SignalPoint> = spec.rows.map((row) => ({
+	const points: Array<SignalPoint> = Arr.map(spec.rows, (row) => ({
 		...row,
 		t: num(row.t),
 		at: new Date(num(row.t)),
@@ -149,7 +149,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 			...(spec.hasGhost
 				? [
 						silences(GHOST_KEY, palette.muted),
-						...runsOf(GHOST_KEY).runs.map((run, index) =>
+						...Arr.map(runsOf(GHOST_KEY).runs, (run, index) =>
 							lineY(run, {
 								id: `${GHOST_KEY}:${index}`,
 								x: at,
@@ -164,9 +164,9 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 					]
 				: []),
 			...(spec.isMultiSeries
-				? spec.seriesKeys.flatMap((key) => [
+				? Arr.flatMap(spec.seriesKeys, (key) => [
 						silences(key, color(key)),
-						...runsOf(key).runs.map((run, index) =>
+						...Arr.map(runsOf(key).runs, (run, index) =>
 							lineY(run, {
 								id: `${key}:${index}`,
 								x: at,
@@ -235,7 +235,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 		tooltip: cursorTooltip<SignalPoint>("pointer"),
 	})
 
-	const metaByT = new Map(spec.meta.map((entry) => [entry.t, entry]))
+	const metaByT = new Map(Arr.map(spec.meta, (entry) => [entry.t, entry]))
 	const tooltipKeys = [
 		...(spec.isMultiSeries ? spec.seriesKeys : [SINGLE_KEY]),
 		...(spec.hasGhost ? [GHOST_KEY] : []),
@@ -246,15 +246,18 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 		Option.map(Option.fromNullishOr(focused[0]), ({ datum }) => {
 			const t = num(datum.t)
 			const meta = metaByT.get(t)
-			const extras = [
-				meta != null ? `${meta.sampleCount} samples` : null,
-				meta?.status === "skipped" ? "skipped" : null,
-				meta?.provisional === true ? "in progress" : null,
-			].filter((part) => part !== null)
+			const extras = Arr.filter(
+				[
+					meta != null ? `${meta.sampleCount} samples` : null,
+					meta?.status === "skipped" ? "skipped" : null,
+					meta?.provisional === true ? "in progress" : null,
+				],
+				(part) => part !== null,
+			)
 			const label = formatTime(t, "tooltip")
 			return ChartTooltip.Bucket({
-				heading: extras.length > 0 ? `${label} · ${extras.join(" · ")}` : label,
-				rows: tooltipKeys.flatMap((key) => {
+				heading: extras.length > 0 ? `${label} · ${Arr.join(extras, " · ")}` : label,
+				rows: Arr.flatMap(tooltipKeys, (key) => {
 					const value = datum[key]
 					return typeof value !== "number"
 						? []

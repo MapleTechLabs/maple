@@ -1,5 +1,5 @@
 import { type DashboardDocument, IsoDateTimeString } from "@maple/domain/http"
-import { DateTime, Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema, String as Str } from "effect"
 import { OrgCollections } from "../../../data/collections/org-collections"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { PageOutMessage } from "../../contract"
@@ -30,7 +30,7 @@ const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
 
 const messageField = (value: unknown): Option.Option<string> =>
 	typeof value === "object" && value !== null && "message" in value && typeof value.message === "string"
-		? Option.some(value.message).pipe(Option.filter((message) => message.trim().length > 0))
+		? Option.some(value.message).pipe(Option.filter((message) => Str.trim(message).length > 0))
 		: Option.none()
 
 /** The wrapped failure an error carries, if any. */
@@ -77,7 +77,7 @@ export const readDocument = (orgId: string, id: string) =>
 const isTxidAwaitTimeout = (error: unknown, depth = 0): boolean => {
 	if (depth > 5 || typeof error !== "object" || error === null) return false
 	if ("name" in error && error.name === "TimeoutWaitingForTxIdError") return true
-	if (Option.exists(messageField(error), (message) => message.includes("Timeout waiting for txId")))
+	if (Option.exists(messageField(error), (message) => Str.includes("Timeout waiting for txId")(message)))
 		return true
 	return Option.exists(causeOf(error), (inner) => isTxidAwaitTimeout(inner, depth + 1))
 }

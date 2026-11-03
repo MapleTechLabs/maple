@@ -33,6 +33,7 @@ import { type TextField, toFormState } from "./form"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 // The destination dialog. The Email, Linear and chat fields live in `*-fields-view.ts`.
 
@@ -160,11 +161,11 @@ const providerTile = (
 /** `ProviderPicker`: linked chat workspaces first, then the provider types. */
 const providerPicker = (h: H, model: Model): Html => {
 	const connectors = model.connectors ?? []
-	const isDiscordLinked = connectors.some((c) => c.id === "discord" && c.workspaces.length > 0)
+	const isDiscordLinked = Arr.some(connectors, (c) => c.id === "discord" && c.workspaces.length > 0)
 	return grid(h, { cols: 2, gap: "2" }, [
-		...connectors.flatMap((connector) => {
+		...Arr.flatMap(connectors, (connector) => {
 			if (connector.workspaces.length > 0)
-				return connector.workspaces.map((workspace) =>
+				return Arr.map(connector.workspaces, (workspace) =>
 					providerTile(h, model, {
 						key: workspace.id,
 						type: "chat",
@@ -199,7 +200,7 @@ const providerPicker = (h: H, model: Model): Html => {
 				}),
 			]
 		}),
-		...destinationTypesFor(isDiscordLinked).map((type) =>
+		...Arr.map(destinationTypesFor(isDiscordLinked), (type) =>
 			providerTile(h, model, {
 				key: type,
 				type,
@@ -219,7 +220,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 	switch (form.type) {
 		case "pagerduty": {
 			const isBadKey =
-				form.integrationKey.trim().length > 0 && !isValidPagerDutyKey(form.integrationKey)
+				Str.trim(form.integrationKey).length > 0 && !isValidPagerDutyKey(form.integrationKey)
 			const fieldIds = ids("integration", true)
 			return [
 				fieldBlock(h, [
@@ -305,7 +306,7 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 		case "google-chat": {
 			const fieldIds = ids("google-chat-webhook", true)
 			const isBadUrl =
-				form.webhookUrl.trim().length > 0 && !isValidGoogleChatWebhookUrl(form.webhookUrl)
+				Str.trim(form.webhookUrl).length > 0 && !isValidGoogleChatWebhookUrl(form.webhookUrl)
 			return [
 				fieldBlock(h, [
 					fieldLabel(
@@ -490,7 +491,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 						? [
 								h.div(
 									[h.Class("space-y-1 rounded-md border border-border-subtle p-1")],
-									model.telegramChats.map((chat) =>
+									Arr.map(model.telegramChats, (chat) =>
 										listRow(
 											h,
 											{

@@ -11,7 +11,7 @@
  *   MAPLE_CLOUDFLARE_API_BASE_URL=http://127.0.0.1:9781
  */
 import { createHash } from "node:crypto"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -36,7 +36,7 @@ Bun.serve({
 			if (!challenge || method !== "S256") {
 				return new Response("PKCE S256 code_challenge required", { status: 400 })
 			}
-			const code = `mock-code-${Math.random().toString(36).slice(2, 10)}`
+			const code = `mock-code-${Str.slice(2, 10)(Math.random().toString(36))}`
 			issuedCodes.set(code, { challenge })
 			const target = new URL(redirectUri)
 			target.searchParams.set("code", code)
@@ -111,14 +111,17 @@ Bun.serve({
 		if (url.pathname === "/graphql" && req.method === "POST") {
 			const body = (await req.json()) as { query?: string; variables?: Record<string, unknown> }
 			const query = body.query ?? ""
-			if (query.includes("MapleCfDatasetSettings")) return json({ data: settingsData() })
-			if (query.includes("MapleCfHttpAnalytics")) {
+			if (Str.includes("MapleCfDatasetSettings")(query)) return json({ data: settingsData() })
+			if (Str.includes("MapleCfHttpAnalytics")(query)) {
 				return json({ data: httpAnalyticsData(body.variables) })
 			}
-			if (query.includes("MapleCfWorkersAnalytics")) {
+			if (Str.includes("MapleCfWorkersAnalytics")(query)) {
 				return json({ data: workersAnalyticsData(body.variables) })
 			}
-			return json({ data: null, errors: [{ message: `unknown operation: ${query.slice(0, 60)}` }] })
+			return json({
+				data: null,
+				errors: [{ message: `unknown operation: ${Str.slice(0, 60)(query)}` }],
+			})
 		}
 
 		return json({ success: false, errors: [{ code: 7003, message: "not found" }], result: null }, 404)
@@ -162,7 +165,7 @@ const datasetSettings = () => ({
 
 const settingsData = () => ({
 	viewer: {
-		zones: MOCK_ZONES.map((zone) => ({
+		zones: Arr.map(MOCK_ZONES, (zone) => ({
 			zoneTag: zone.id,
 			settings: { httpRequestsAdaptiveGroups: datasetSettings() },
 		})),
@@ -178,7 +181,7 @@ const bucketsInWindow = (variables: Record<string, unknown> | undefined): string
 	const end = (typeof rawEnd === "string" ? Date.parse(rawEnd) : NaN) || Date.now()
 	const out: string[] = []
 	for (let t = Math.ceil(start / 300_000) * 300_000; t < end; t += 300_000) {
-		out.push(new Date(t).toISOString().replace(".000Z", "Z"))
+		out.push(Str.replace(".000Z", "Z")(new Date(t).toISOString()))
 	}
 	return out.slice(0, 288)
 }
@@ -190,13 +193,13 @@ const jitter = (bucket: string, salt: number, max: number) => {
 }
 
 const httpAnalyticsData = (variables: Record<string, unknown> | undefined) => {
-	const zoneTags = Array.isArray(variables?.zoneTags) ? (variables?.zoneTags as string[]) : []
+	const zoneTags = Arr.isArray(variables?.zoneTags) ? (variables?.zoneTags as string[]) : []
 	const buckets = bucketsInWindow(variables)
 	return {
 		viewer: {
-			zones: zoneTags.map((zoneTag, zi) => ({
+			zones: Arr.map(zoneTags, (zoneTag, zi) => ({
 				zoneTag,
-				groups: buckets.flatMap((bucket) => [
+				groups: Arr.flatMap(buckets, (bucket) => [
 					{
 						count: 40 + jitter(bucket, zi, 30),
 						avg: { sampleInterval: 10 },
@@ -234,7 +237,7 @@ const httpAnalyticsData = (variables: Record<string, unknown> | undefined) => {
 						},
 					},
 				]),
-				latency: buckets.map((bucket) => ({
+				latency: Arr.map(buckets, (bucket) => ({
 					count: 50,
 					quantiles: {
 						edgeTimeToFirstByteMsP50: 35 + jitter(bucket, zi + 70, 20),
@@ -257,7 +260,7 @@ const workersAnalyticsData = (variables: Record<string, unknown> | undefined) =>
 		viewer: {
 			accounts: [
 				{
-					invocations: buckets.flatMap((bucket) => [
+					invocations: Arr.flatMap(buckets, (bucket) => [
 						{
 							sum: {
 								requests: 120 + jitter(bucket, 200, 60),

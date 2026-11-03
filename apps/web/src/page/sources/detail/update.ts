@@ -1,5 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { Option, Result } from "effect"
+import { Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -283,10 +283,10 @@ const save = (model: Model): Return => {
 	const form = model.settings
 	if (Option.isNone(source) || form === null || form.isSaving) return { model }
 	const outcome = Rules.rulesOutcome(form.rules)
-	const name = form.name.trim()
+	const name = Str.trim(form.name)
 	const isToken = hasToken(source.value)
 	if (name.length === 0 || (isToken && !outcome.valid)) return { model }
-	const description = form.description.trim()
+	const description = Str.trim(form.description)
 	const basics = { name, description: description.length > 0 ? description : null }
 	return {
 		model: withSettings(model, (current) => ({ ...current, isSaving: true })),

@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { GithubIntegrationStatus } from "@maple/domain/http"
 import { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import { Clock, Effect, Fiber, Ref, Result, Schema, Stream } from "effect"
+import { Clock, Effect, Fiber, Ref, Result, Schema, Stream, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -18,7 +18,7 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const step = (model: Model, message: Message) => update(model, message, context).model
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const status = (fields: Partial<Record<keyof V2PlanetScaleIntegration, unknown>>) =>
 	Schema.decodeUnknownSync(V2PlanetScaleIntegration)({

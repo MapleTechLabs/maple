@@ -17,6 +17,7 @@ import {
 	pluralize,
 } from "@maple/ui/lib/format"
 import { OTHER_COLOR } from "@maple/ui/components/charts/_shared/bucket-series"
+import { Array as Arr, String as Str } from "effect"
 
 /** Which measure the strip, the chart and the breakdown columns are reading. */
 export const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
@@ -206,7 +207,7 @@ export function fillSeriesBuckets(
 	const first = points[0]
 	if (first === undefined) return points
 	const stepMs = bucketSeconds * 1000
-	const byBucket = new Map(points.map((point) => [point.bucket, point]))
+	const byBucket = new Map(Arr.map(points, (point) => [point.bucket, point]))
 	const filled: ToolSeriesPoint[] = []
 	for (let bucket = Math.floor(startMs / stepMs) * stepMs; bucket < endMs; bucket += stepMs) {
 		filled.push(byBucket.get(bucket) ?? { ...EMPTY_MEASURES, bucket, seriesKey: first.seriesKey })
@@ -249,7 +250,7 @@ const METRIC_LABEL = {
 
 /** Tile eyebrow / chart subject. Duration names the percentile driving it. */
 export function toolMetricLabel(metric: ToolMetric, percentile: ToolPercentile): string {
-	return metric === "duration" ? `${percentile.toUpperCase()} duration` : METRIC_LABEL[metric]
+	return metric === "duration" ? `${Str.toUpperCase(percentile)} duration` : METRIC_LABEL[metric]
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -333,7 +334,10 @@ export function rankSeriesKeys(points: ReadonlyArray<ToolSeriesPoint>): Readonly
 	for (const point of points) {
 		calls.set(point.seriesKey, (calls.get(point.seriesKey) ?? 0) + point.calls)
 	}
-	return [...calls.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key]) => key)
+	return Arr.map(
+		[...calls.entries()].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+		([key]) => key,
+	)
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -358,7 +362,7 @@ export function toolChartTitle({
 	const parts: string[] = [toolMetricLabel(metric, percentile)]
 	if (tool !== undefined) parts.push(tool)
 	if (model !== undefined) parts.push(model)
-	return parts.join(" · ")
+	return Arr.join(parts, " · ")
 }
 
 /**
@@ -394,9 +398,10 @@ export function metricSpark(
 	metric: ToolMetric,
 	percentile: ToolPercentile,
 ): ReadonlyArray<number> {
-	return points
-		.toSorted((a, b) => a.bucket - b.bucket)
-		.map((point) => metricValue(point, metric, percentile))
+	return Arr.map(
+		points.toSorted((a, b) => a.bucket - b.bucket),
+		(point) => metricValue(point, metric, percentile),
+	)
 }
 
 /* -------------------------------------------------------------------------------------------------
@@ -475,8 +480,8 @@ export function toolsTableFooter(
 	readonly subject: string
 	readonly detail: string
 } {
-	const calls = rows.reduce((sum, row) => sum + row.calls, 0)
-	const errors = rows.reduce((sum, row) => sum + row.errors, 0)
+	const calls = Arr.reduce(rows, 0, (sum, row) => sum + row.calls)
+	const errors = Arr.reduce(rows, 0, (sum, row) => sum + row.errors)
 	return {
 		subject:
 			rows.length >= limit

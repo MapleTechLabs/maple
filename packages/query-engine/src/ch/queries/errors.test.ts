@@ -15,6 +15,7 @@ import {
 	tracesFacetsQuery,
 } from "./errors"
 import { OrgId } from "@maple/domain"
+import { String as Str } from "effect"
 
 const baseParams = {
 	orgId: OrgId.make("org_1"),
@@ -278,9 +279,9 @@ describe("errorsFacetsQuery", () => {
 		// or there is no way to widen the selection again.
 		const q = errorsFacetsQuery({ services: ["api"], deploymentEnvs: ["prod"] })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const branches = sql.split("UNION ALL")
-		const serviceBranch = branches.find((b) => b.includes("'service' AS facetType"))
-		const envBranch = branches.find((b) => b.includes("'environment' AS facetType"))
+		const branches = Str.split("UNION ALL")(sql)
+		const serviceBranch = branches.find((b) => Str.includes("'service' AS facetType")(b))
+		const envBranch = branches.find((b) => Str.includes("'environment' AS facetType")(b))
 
 		expect(serviceBranch).not.toContain("ServiceName IN ('api')")
 		expect(serviceBranch).toContain("DeploymentEnv IN ('prod')")
@@ -294,9 +295,9 @@ describe("errorsFacetsQuery", () => {
 		// very section you excluded it from — and there would be no row to untick.
 		const q = errorsFacetsQuery({ excludedServices: ["noisy"], excludedDeploymentEnvs: ["staging"] })
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const branches = sql.split("UNION ALL")
-		const serviceBranch = branches.find((b) => b.includes("'service' AS facetType"))
-		const envBranch = branches.find((b) => b.includes("'environment' AS facetType"))
+		const branches = Str.split("UNION ALL")(sql)
+		const serviceBranch = branches.find((b) => Str.includes("'service' AS facetType")(b))
+		const envBranch = branches.find((b) => Str.includes("'environment' AS facetType")(b))
 
 		expect(serviceBranch).not.toContain("ServiceName NOT IN ('noisy')")
 		expect(serviceBranch).toContain("DeploymentEnv NOT IN ('staging')")

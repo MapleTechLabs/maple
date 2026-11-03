@@ -4,6 +4,7 @@ import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { ServiceWorkload } from "../lens/rail"
 import type { Model } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 // Pure derivations of `LensBody`.
 
@@ -47,17 +48,21 @@ export const bucketSecondsOf = (model: Model, window: TimeWindow): number => {
 export const worstPerBucket = (
 	rows: ReadonlyArray<Readonly<{ bucket: string; value: number }>>,
 ): ReadonlyArray<Readonly<{ bucket: string; value: number }>> =>
-	[
-		...rows
-			.reduce((byBucket, row) => {
+	Arr.map(
+		[
+			...Arr.reduce(rows, new Map<string, number>(), (byBucket, row) => {
 				const current = byBucket.get(row.bucket)
-				return current === undefined || row.value > current ? byBucket.set(row.bucket, row.value) : byBucket
-			}, new Map<string, number>())
-			.entries(),
-	]
-		.map(([bucket, value]) => ({ bucket, value }))
-		.sort((a, b) => a.bucket.localeCompare(b.bucket))
+				return current === undefined || row.value > current
+					? byBucket.set(row.bucket, row.value)
+					: byBucket
+			}).entries(),
+		],
+		([bucket, value]) => ({ bucket, value }),
+	).sort((a, b) => Str.localeCompare(b.bucket)(a.bucket))
 
 /** The CPU rows on the service series' bucket spelling (`toIsoBucket`). */
 export const cpuRowsOf = (model: Model) =>
-	AsyncData.getOrElse(model.cpu.data, () => []).map((row) => ({ ...row, bucket: toIsoBucket(row.bucket) }))
+	Arr.map(
+		AsyncData.getOrElse(model.cpu.data, () => []),
+		(row) => ({ ...row, bucket: toIsoBucket(row.bucket) }),
+	)

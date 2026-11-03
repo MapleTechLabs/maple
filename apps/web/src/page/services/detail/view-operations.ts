@@ -29,6 +29,7 @@ import {
 } from "./view-table-cells"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
+import { Array as Arr } from "effect"
 
 // The Operations tab: one table, p50 and the activity sparkline hidden below `md`.
 // TODO(row-keyboard): Enter / Space on a focused row does not drill down yet; click does.
@@ -45,15 +46,13 @@ const loadingState = (h: H): Html =>
 			rows: 10,
 			className: "gap-0",
 			renderRow: () =>
-				hstack(h, { gap: "3", className: stripClass("skeletonRow") },
-					[
-						skeleton(h, "h-3 flex-1"),
-						skeleton(h, "h-3 w-12"),
-						skeleton(h, "h-3 w-10"),
-						skeleton(h, "h-3 w-12"),
-						skeleton(h, "hidden h-5 w-24 md:block"),
-					],
-				),
+				hstack(h, { gap: "3", className: stripClass("skeletonRow") }, [
+					skeleton(h, "h-3 flex-1"),
+					skeleton(h, "h-3 w-12"),
+					skeleton(h, "h-3 w-10"),
+					skeleton(h, "h-3 w-12"),
+					skeleton(h, "hidden h-5 w-24 md:block"),
+				]),
 		}),
 	])
 
@@ -116,7 +115,7 @@ const operationRow = (
 						view: Sparkline.view,
 						viewInputs: {
 							chartId: `ops-${op.spanName}`,
-							values: op.sparkline.map((point) => point.count),
+							values: Arr.map(op.sparkline, (point) => point.count),
 							color: context.color,
 							className: "ml-auto h-5 w-24",
 							revision: 0,
@@ -146,8 +145,8 @@ const operationsTable = (
 	const seconds = model.window === null ? 0 : windowSeconds(model.window)
 	const context = {
 		seconds,
-		maxCalls: operations.reduce((acc, op) => Math.max(acc, op.estimatedSpanCount), 0),
-		maxP95: operations.reduce((acc, op) => Math.max(acc, op.p95DurationMs), 0),
+		maxCalls: Arr.reduce(operations, 0, (acc, op) => Math.max(acc, op.estimatedSpanCount)),
+		maxP95: Arr.reduce(operations, 0, (acc, op) => Math.max(acc, op.p95DurationMs)),
 		color: resolveColor(theme ?? {}, SPARKLINE_TOKEN),
 	}
 	const sorted = sortRows(operations, sort, (op, key) =>
@@ -191,7 +190,7 @@ const operationsTable = (
 								),
 							]),
 						]
-					: sorted.map((op) => operationRow(h, op, context)),
+					: Arr.map(sorted, (op) => operationRow(h, op, context)),
 			),
 		]),
 	])
@@ -205,7 +204,8 @@ export const operationsTab = (h: H, model: Model, theme: ThemeColors | null): Ht
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
 		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load operations", onRetry: retry }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load operations", onRetry: retry }),
+		onStale: ({ error }) =>
+			errorState(h, { failure: error, title: "Couldn't load operations", onRetry: retry }),
 		onRefreshing: (operations) => operationsBody(h, model, operations, theme, true),
 		onSuccess: (operations) => operationsBody(h, model, operations, theme, false),
 	})

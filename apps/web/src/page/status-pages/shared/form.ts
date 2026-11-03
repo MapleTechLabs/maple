@@ -25,7 +25,7 @@ import {
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
 } from "@maple/domain/status-page"
-import { DateTime, Option, Schema } from "effect"
+import { DateTime, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { closingStatus, STATUSES_OF_KIND } from "./derive"
 import { slugIssue } from "./slug"
 
@@ -76,13 +76,13 @@ export const componentFormOf = (component: V2StatusPageComponent): ComponentForm
 	showUptime: component.show_uptime,
 })
 
-const orNull = (value: string): string | null => (value.trim() === "" ? null : value.trim())
+const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 const decodeMonitorId = Schema.decodeUnknownOption(UptimeMonitorId)
 const decodeComponentStatus = Schema.decodeUnknownOption(StatusPageComponentStatus)
 
 /** The whole component, sent on create and update alike so a cleared field is cleared. */
 export const componentPayload = (form: ComponentForm): V2StatusPageComponentCreateParams => ({
-	name: form.name.trim(),
+	name: Str.trim(form.name),
 	description: orNull(form.description),
 	group: orNull(form.group),
 	monitor_id: Option.getOrNull(decodeMonitorId(form.monitorId)),
@@ -135,7 +135,7 @@ const LOCAL_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/u
 export const localToIso = (value: string, timeZone: string): Option.Option<string> => {
 	const match = LOCAL_DATE_TIME.exec(value)
 	if (match === null) return Option.none()
-	const [year, month, day, hour, minute] = match.slice(1).map(Number)
+	const [year, month, day, hour, minute] = Arr.map(match.slice(1), Number)
 	return Option.map(
 		DateTime.makeZoned({ year, month, day, hour, minute }, { timeZone, adjustForTimeZone: true }),
 		DateTime.formatIso,
@@ -155,8 +155,8 @@ export const incidentIssues = (form: IncidentForm, timeZone: string): ReadonlyAr
 					? "The maintenance must end after it starts."
 					: null
 	return [
-		...(form.title.trim() === "" ? ["Add a title."] : []),
-		...(form.body.trim() === "" ? ["Write the first update."] : []),
+		...(Str.trim(form.title) === "" ? ["Add a title."] : []),
+		...(Str.trim(form.body) === "" ? ["Write the first update."] : []),
 		...(windowIssue === null ? [] : [windowIssue]),
 	]
 }
@@ -169,10 +169,10 @@ export const incidentPayload = (
 	const base: V2StatusPageIncidentCreateParams = {
 		page_id: pageId,
 		kind: form.kind,
-		title: form.title.trim(),
+		title: Str.trim(form.title),
 		impact: form.impact,
 		status: form.status,
-		body: form.body.trim(),
+		body: Str.trim(form.body),
 		component_ids: form.componentIds,
 		published: form.isPublished,
 	}
@@ -290,7 +290,7 @@ export const settingsFormOf = (page: V2StatusPage): SettingsForm => ({
 	theme: themeFormOf(page.theme),
 })
 
-const normalizedColor = (value: string): string => value.trim().toLowerCase()
+const normalizedColor = (value: string): string => Str.toLowerCase(Str.trim(value))
 
 /** The theme as the API stores it: blank colours null, the rest trimmed and lower-cased. */
 export const themeOf = (form: ThemeForm): StatusPageTheme => ({
@@ -305,12 +305,12 @@ export const themeOf = (form: ThemeForm): StatusPageTheme => ({
 /** The values the API stores: trimmed, the colours lower-cased, as `settingsPayload` sends them. */
 const normalizedSettings = (form: SettingsForm): SettingsForm => ({
 	...form,
-	name: form.name.trim(),
-	description: form.description.trim(),
-	websiteUrl: form.websiteUrl.trim(),
-	privacyUrl: form.privacyUrl.trim(),
-	termsUrl: form.termsUrl.trim(),
-	logoUrl: form.logoUrl.trim(),
+	name: Str.trim(form.name),
+	description: Str.trim(form.description),
+	websiteUrl: Str.trim(form.websiteUrl),
+	privacyUrl: Str.trim(form.privacyUrl),
+	termsUrl: Str.trim(form.termsUrl),
+	logoUrl: Str.trim(form.logoUrl),
 	theme: themeFormOf(themeOf(form.theme)),
 })
 
@@ -342,7 +342,7 @@ const sameTheme = (a: ThemeForm, b: ThemeForm): boolean =>
 	a.font === b.font
 /** The service's rule: a URL `URL` can parse, over https. Checked here so Save never sends what it refuses. */
 const httpsIssue = (value: string): string | null => {
-	const url = value.trim()
+	const url = Str.trim(value)
 	if (url === "") return null
 	if (url.length > STATUS_PAGE_MAX_URL_LENGTH)
 		return `Keep it under ${STATUS_PAGE_MAX_URL_LENGTH} characters.`
@@ -352,7 +352,7 @@ const httpsIssue = (value: string): string | null => {
 
 /** Each field's problem, or `null`: the API refuses the same values. */
 export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsTextField, string | null>> => ({
-	name: form.name.trim() === "" ? "Add a name." : null,
+	name: Str.trim(form.name) === "" ? "Add a name." : null,
 	slug: slugIssue(form.slug),
 	description: null,
 	websiteUrl: httpsIssue(form.websiteUrl),
@@ -363,7 +363,7 @@ export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsText
 })
 
 const colorIssue = (value: string): string | null =>
-	value.trim() === "" || STATUS_PAGE_HEX_COLOR_PATTERN.test(value.trim())
+	Str.trim(value) === "" || STATUS_PAGE_HEX_COLOR_PATTERN.test(Str.trim(value))
 		? null
 		: "Use a hex color like #1a2b3c."
 
@@ -378,24 +378,24 @@ export const themeColorIssues = (theme: ThemeForm): Readonly<Record<ThemeColorFi
 
 /** Unreadable text, as the API would refuse it; checked once every colour is a valid hex. */
 export const themeContrastOf = (theme: ThemeForm): string | null =>
-	Object.values(themeColorIssues(theme)).some((issue) => issue !== null)
+	Arr.some(Rec.values(themeColorIssues(theme)), (issue) => issue !== null)
 		? null
 		: themeContrastIssue(themeOf(theme))
 
 /** A problem in the page fields, which the Settings tab shows. */
 export const hasPageFieldIssues = (form: SettingsForm): boolean =>
-	Object.values(settingsIssues(form)).some((issue) => issue !== null)
+	Arr.some(Rec.values(settingsIssues(form)), (issue) => issue !== null)
 
 /** A problem in the colours, which the Appearance tab shows. */
 export const hasThemeIssues = (form: SettingsForm): boolean =>
-	Object.values(themeColorIssues(form.theme)).some((issue) => issue !== null) ||
+	Arr.some(Rec.values(themeColorIssues(form.theme)), (issue) => issue !== null) ||
 	themeContrastOf(form.theme) !== null
 
 export const hasSettingsIssues = (form: SettingsForm): boolean =>
 	hasPageFieldIssues(form) || hasThemeIssues(form)
 
 export const settingsPayload = (form: SettingsForm): V2StatusPageUpdateParams => ({
-	name: form.name.trim(),
+	name: Str.trim(form.name),
 	slug: form.slug,
 	description: orNull(form.description),
 	website_url: orNull(form.websiteUrl),

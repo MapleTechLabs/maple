@@ -1,7 +1,7 @@
 import * as Animation from "@foldkit/ui/animation"
 import { cn } from "@maple/ui/lib/utils"
 import { hoverCardContentStyles, hoverCardPositionerStyles } from "@maple/ui/styles/ui/hover-card"
-import { Duration, Effect, Number, Option, Schema, Stream } from "effect"
+import { Duration, Effect, Number, Option, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Submodel, type Update } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -200,7 +200,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		])
 	// Built here, not when `toView` asks: handlers bind to the boundary that builds them.
 	const triggers = new Map(
-		[triggerId(model.id), ...(inputs.triggerIds ?? [])].map(
+		Arr.map(
+			[triggerId(model.id), ...(inputs.triggerIds ?? [])],
 			(id): readonly [string, ReadonlyArray<ChildAttribute>] => [id, attributesOf(id)],
 		),
 	)

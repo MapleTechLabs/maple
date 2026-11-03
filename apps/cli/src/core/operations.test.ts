@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { strict as assert } from "node:assert"
-import { Cause, Effect, Exit, Layer, Option, Schema, Tracer } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import {
 	FetchHttpClient,
 	HttpClient,
@@ -202,12 +202,12 @@ describe("assertKnownService", () => {
 												request.body._tag === "Uint8Array"
 													? new TextDecoder().decode(request.body.body)
 													: ""
-											const rows = body.includes("throughput")
+											const rows = Str.includes("throughput")(body)
 												? [overviewRow("api"), overviewRow("worker")]
-												: body.includes("spanCount")
+												: Str.includes("spanCount")(body)
 													? [
 															{
-																spanCount: body.includes("'checkout'")
+																spanCount: Str.includes("'checkout'")(body)
 																	? presentSpans
 																	: 0,
 															},
@@ -256,9 +256,9 @@ describe("serviceMap in local mode", () => {
 				// SAFETY: the local executor always posts a `{ sql }` JSON body.
 				const sql = (JSON.parse(raw) as { sql?: string }).sql ?? ""
 				sqls.push(sql)
-				const rows = sql.includes("service_map_db_edges_hourly")
+				const rows = Str.includes("service_map_db_edges_hourly")(sql)
 					? [{ sourceService: "api", dbSystem: "postgresql", dbNamespace: "shop", ...STATS }]
-					: sql.includes("service_external_edges_hourly")
+					: Str.includes("service_external_edges_hourly")(sql)
 						? [
 								{
 									sourceService: "api",
@@ -300,7 +300,7 @@ describe("serviceMap in local mode", () => {
 				["api -> postgresql/shop"],
 			)
 			assert.strictEqual(result.external, undefined)
-			assert.ok(!sqls.some((sql) => sql.includes("service_external_edges_hourly")))
+			assert.ok(!Arr.some(sqls, (sql) => Str.includes("service_external_edges_hourly")(sql)))
 		}),
 	)
 
@@ -308,12 +308,12 @@ describe("serviceMap in local mode", () => {
 		Effect.gen(function* () {
 			const { result, sqls } = yield* run("api")
 			// Filtering a capped org-wide list would drop a quiet service's inbound edges.
-			const edgesSql = sqls.find((sql) => sql.includes("service_map_edges_hourly"))
+			const edgesSql = sqls.find((sql) => Str.includes("service_map_edges_hourly")(sql))
 			assert.ok(edgesSql)
 			assert.match(edgesSql, /SourceService = 'api' OR [\w.]*TargetService = 'api'/)
 			assert.match(edgesSql, /p\.ServiceName = 'api' OR c\.ServiceName = 'api'/)
 			assert.deepStrictEqual(
-				result.edges.map((e) => `${e.sourceService} -> ${e.targetService}`),
+				Arr.map(result.edges, (e) => `${e.sourceService} -> ${e.targetService}`),
 				["web -> api", "api -> billing"],
 			)
 			assert.strictEqual(result.databases?.length, 1)

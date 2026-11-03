@@ -1,7 +1,7 @@
 // The one way backend code sends telemetry to the ingest gateway: OTLP JSON, the org's public key,
 // one timeout and one error. Pollers map `IngestSendError` onto their own failure handling.
 
-import { Data, Duration, Effect, Schema } from "effect"
+import { Data, Duration, Effect, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { isIngestRefusal, summarizeUpstreamBody } from "@maple/backend/services/integrations/upstream-body"
@@ -58,7 +58,7 @@ export const keepRefusal = <A, E, R>(self: Effect.Effect<A, E | IngestSendError,
 export const makeIngestSender = Effect.gen(function* () {
 	const env = yield* Env
 	const httpClient = yield* HttpClient.HttpClient
-	const baseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
+	const baseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
 
 	// A refusal is the org's state, not a fault: the span ends Ok and the error fails outside it.
 	const attempt = Effect.fn("IngestSender.send")(

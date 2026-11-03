@@ -76,6 +76,7 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { Array as Arr, String as Str } from "effect"
 
 // The Overview tab: totals, the targets table, open leads and recent runs.
 
@@ -101,13 +102,16 @@ const findingsOfTarget = (
 
 /** What the spend covers, and plainly when it is not all of it. */
 const spendNote = (spend: Spend): string =>
-	[
-		`${formatNumber(spend.tokens)} tokens`,
-		...(spend.unpriced === 0
-			? []
-			: [`models not yet priced for ${spend.unpriced} ${spend.unpriced === 1 ? "run" : "runs"}`]),
-		...(spend.isPartial ? [`newest ${RUN_LIST_CAP} runs per target only`] : []),
-	].join(" · ")
+	Arr.join(
+		[
+			`${formatNumber(spend.tokens)} tokens`,
+			...(spend.unpriced === 0
+				? []
+				: [`models not yet priced for ${spend.unpriced} ${spend.unpriced === 1 ? "run" : "runs"}`]),
+			...(spend.isPartial ? [`newest ${RUN_LIST_CAP} runs per target only`] : []),
+		],
+		" · ",
+	)
 
 const monthDay = (epochMs: number): string =>
 	new Date(epochMs).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
@@ -228,8 +232,8 @@ const countTitle = (
 	severity: "critical" | "high" | "medium" | "low",
 	unverified: ReadonlyArray<SecurityAuditFinding>,
 ): string => {
-	const estimated = unverified.filter((finding) => bucketOf(finding) === severity).length
-	const base = `${count} ${SECURITY_SEVERITY_LABEL[severity].toLowerCase()}`
+	const estimated = Arr.filter(unverified, (finding) => bucketOf(finding) === severity).length
+	const base = `${count} ${Str.toLowerCase(SECURITY_SEVERITY_LABEL[severity])}`
 	return estimated === 0 ? base : `${base}, ${estimated} unverified`
 }
 
@@ -237,12 +241,12 @@ const countTitle = (
 const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html => {
 	const open = [...openConfirmed(findings), ...openNeedsValidation(findings)]
 	const counts = countByBucket(open)
-	const unverified = open.filter(isUnverified)
+	const unverified = Arr.filter(open, isUnverified)
 	const toValidate = counts.needs_validation
 	return h.span(
 		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
 		[
-			...(["critical", "high", "medium", "low"] as const).map((severity) =>
+			...Arr.map(["critical", "high", "medium", "low"] as const, (severity) =>
 				h.span(
 					[
 						h.Key(severity),
@@ -280,7 +284,7 @@ const severityLegend = (h: H): Html =>
 	hstack(
 		h,
 		{ gap: "2.5", as: "span", attributes: [h.AriaHidden(true)] },
-		(["critical", "high", "medium", "low"] as const).map((severity) =>
+		Arr.map(["critical", "high", "medium", "low"] as const, (severity) =>
 			hstack(h, { gap: "1.5", inline: true, as: "span", attributes: [h.Key(severity)] }, [
 				statusDot(h, { tone: "custom", className: SEVERITY_FILL[severity] }),
 				SECURITY_SEVERITY_LABEL[severity],
@@ -338,7 +342,7 @@ const metaLine = (h: H, parts: ReadonlyArray<string>, title: string): Html =>
 			h.Class(cn("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground", ROW_LINK_LIFT)),
 			h.Title(title),
 		],
-		parts.map((part, index) =>
+		Arr.map(parts, (part, index) =>
 			h.span(
 				[
 					h.Key(String(index)),
@@ -363,8 +367,8 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 	const href = run === undefined ? targetRunsHref(target) : runHref(run)
 	const isFindingsKnown = typeof findings === "object" && findings !== null
 	// Model first so a long scope path is what truncates.
-	const parts = [targetModelOf(model, target), ...targetParts(target)].filter((part) => part !== null)
-	const meta = parts.join(" · ")
+	const parts = Arr.filter([targetModelOf(model, target), ...targetParts(target)], (part) => part !== null)
+	const meta = Arr.join(parts, " · ")
 	const leads = isFindingsKnown
 		? run === undefined || run.status === "failed"
 			? findings.length === 0
@@ -438,7 +442,7 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 			]),
 			tableBody(
 				h,
-				targets.map((target) => targetRow(h, model, target)),
+				Arr.map(targets, (target) => targetRow(h, model, target)),
 			),
 		]),
 	])
@@ -484,7 +488,10 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 			vstack(h, { shrink: true, as: "span" }, [
 				typography(h, { size: "sm", truncate: true }, [finding.record.title]),
 				typography(h, { size: "xs", tone: "muted", truncate: true }, [
-					[repository, locationOf(finding.record) ?? ""].filter((part) => part !== "").join(" · "),
+					Arr.join(
+						Arr.filter([repository, locationOf(finding.record) ?? ""], (part) => part !== ""),
+						" · ",
+					),
 				]),
 			]),
 		],
@@ -507,7 +514,7 @@ const topFindingsList = (
 			])
 		: h.ul(
 				[h.Class("divide-y")],
-				rows.map((finding) =>
+				Arr.map(rows, (finding) =>
 					findingItem(
 						h,
 						finding,
@@ -561,7 +568,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 			? emptyMessage(h, {}, ["No runs yet. Start one from a target."])
 			: h.ul(
 					[h.Class("divide-y")],
-					runs.map((run) => {
+					Arr.map(runs, (run) => {
 						const repository =
 							targets.find((target) => target.id === run.targetId)?.repository ??
 							"Removed target"
@@ -579,11 +586,14 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 								vstack(h, { shrink: true, grow: true, as: "span" }, [
 									repositoryName(h, repository, "text-sm"),
 									typography(h, { size: "xs", tone: "muted", truncate: true }, [
-										[
-											RUN_KIND_LABEL[run.kind].toLowerCase(),
-											PROFILE_LABEL[run.profile],
-											note,
-										].join(" · "),
+										Arr.join(
+											[
+												Str.toLowerCase(RUN_KIND_LABEL[run.kind]),
+												PROFILE_LABEL[run.profile],
+												note,
+											],
+											" · ",
+										),
 									]),
 								]),
 								h.span([h.Class("shrink-0")], [runStatusBadge(h, run)]),

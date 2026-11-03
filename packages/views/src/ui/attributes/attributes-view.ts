@@ -9,6 +9,7 @@ import { icon } from "../icon"
 import { attributeRow, type RowContext } from "./attribute-row"
 import { type AttributeSource, isOpen, Message, type Model } from "./attributes-panel"
 import { searchInput } from "../search-input"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Port of `AttributesTable`, `AttributesSection`, `ResourceAttributesSection` (packages/ui/src/
 // components/attributes/attributes-table.tsx) and the log attributes panel.
@@ -89,7 +90,7 @@ const collapsible = (
 const stripNamespace = (key: string, namespace: string): string => {
 	if (namespace === "Other") return key
 	const prefix = `${namespace}.`
-	return key.startsWith(prefix) ? key.slice(prefix.length) : key
+	return Str.startsWith(prefix)(key) ? Str.slice(prefix.length)(key) : key
 }
 
 const filterEntries = (
@@ -97,8 +98,11 @@ const filterEntries = (
 	query: string,
 ): ReadonlyArray<readonly [string, string]> => {
 	if (query === "") return entries
-	const q = query.toLowerCase()
-	return entries.filter(([key, value]) => key.toLowerCase().includes(q) || value.toLowerCase().includes(q))
+	const q = Str.toLowerCase(query)
+	return Arr.filter(
+		entries,
+		([key, value]) => Str.includes(q)(Str.toLowerCase(key)) || Str.includes(q)(Str.toLowerCase(value)),
+	)
 }
 
 const title4 = (h: H, title: string) =>
@@ -111,7 +115,7 @@ const noMatches = (h: H, title: string, query: string) =>
 			title4(h, title),
 			h.div(
 				[h.Class("text-xs text-muted-foreground py-2")],
-				["No ", title.toLowerCase(), ' match "', query, '"'],
+				["No ", Str.toLowerCase(title), ' match "', query, '"'],
 			),
 		],
 	)
@@ -128,17 +132,21 @@ type TableOptions = Readonly<{
 const attributesTable = (h: H, context: RowContext, options: TableOptions): Html => {
 	const { model } = context
 	const query = model.search
-	const entries = Object.entries(options.attributes)
+	const entries = Rec.toEntries(options.attributes)
 	if (entries.length === 0)
 		return h.div(
 			[h.Class("text-xs text-muted-foreground py-2")],
-			["No ", options.title.toLowerCase(), " available"],
+			["No ", Str.toLowerCase(options.title), " available"],
 		)
 	const rowContext = { ...context, idPrefix: options.section }
 	if (options.isGrouped) {
-		const groups = groupAttributesByNamespace({ ...options.attributes })
-			.map((group) => ({ ...group, entries: filterEntries(group.entries, query) }))
-			.filter((group) => group.entries.length > 0)
+		const groups = Arr.filter(
+			Arr.map(groupAttributesByNamespace({ ...options.attributes }), (group) => ({
+				...group,
+				entries: filterEntries(group.entries, query),
+			})),
+			(group) => group.entries.length > 0,
+		)
 		if (groups.length === 0) return noMatches(h, options.title, query)
 		return h.div(
 			[h.Class("space-y-1.5")],
@@ -146,7 +154,7 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 				title4(h, options.title),
 				h.div(
 					[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
-					groups.map((group) =>
+					Arr.map(groups, (group) =>
 						collapsible(h, model, {
 							key: `${options.section}:${group.namespace}`,
 							defaultOpen: group.entries.length <= 8 || query !== "",
@@ -172,7 +180,7 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 											"divide-y divide-border-subtle border-t border-border-subtle bg-surface-faint",
 										),
 									],
-									group.entries.map(([key, value]) =>
+									Arr.map(group.entries, ([key, value]) =>
 										attributeRow(
 											h,
 											rowContext,
@@ -197,7 +205,7 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
 			title4(h, options.title),
 			h.div(
 				[h.Class("divide-y divide-border-subtle overflow-hidden rounded-md border")],
-				filtered.map(([key, value]) => attributeRow(h, rowContext, key, value)),
+				Arr.map(filtered, ([key, value]) => attributeRow(h, rowContext, key, value)),
 			),
 		],
 	)
@@ -209,11 +217,11 @@ const attributesTable = (h: H, context: RowContext, options: TableOptions): Html
  */
 export const attributesSection = (h: H, context: RowContext, options: TableOptions): Html => {
 	const { groups, rest } = splitGenAiAttributes({ ...options.attributes })
-	const entries = Object.entries(rest)
-	const standard = Object.fromEntries(entries.filter(([key]) => !key.startsWith("maple_")))
-	const internal = Object.fromEntries(entries.filter(([key]) => key.startsWith("maple_")))
-	const internalCount = Object.keys(internal).length
-	const showRawTable = Object.keys(standard).length > 0 || groups.length === 0
+	const entries = Rec.toEntries(rest)
+	const standard = Rec.fromEntries(Arr.filter(entries, ([key]) => !Str.startsWith("maple_")(key)))
+	const internal = Rec.fromEntries(Arr.filter(entries, ([key]) => Str.startsWith("maple_")(key)))
+	const internalCount = Rec.keys(internal).length
+	const showRawTable = Rec.keys(standard).length > 0 || groups.length === 0
 	return h.div(
 		[h.Class("space-y-2")],
 		[
@@ -309,8 +317,7 @@ export const view = Submodel.defineView<Model, Message, PanelInputs>((model, inp
 	h.div(
 		[h.Class(cn("space-y-3"))],
 		[
-			...(Object.keys(inputs.logAttributes).length > 0 ||
-			Object.keys(inputs.resourceAttributes).length > 0
+			...(Rec.keys(inputs.logAttributes).length > 0 || Rec.keys(inputs.resourceAttributes).length > 0
 				? [attributesSearch(h, model)]
 				: []),
 			sectionOf(h, model, inputs, "log", inputs.logTitle ?? "Log Attributes"),

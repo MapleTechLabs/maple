@@ -1,5 +1,5 @@
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kbd } from "@maple/views/ui/display"
@@ -35,7 +35,7 @@ const items = (
 	entries: ReadonlyArray<Item>,
 	offset = 0,
 ): ReadonlyArray<Html> =>
-	entries.map((entry, index) => {
+	Arr.map(entries, (entry, index) => {
 		const id = `${popupIdOf(menu)}-item-${offset + index}`
 		return menuItem(
 			h,
@@ -181,7 +181,7 @@ const namespaceList = (h: HtmlBuilder<Message>, model: Model, menu: Menu): Reado
 		...(rows.isFiltered
 			? []
 			: [namespaceItem(h, "All namespaces", Option.none(), Option.isNone(pinned))]),
-		...rows.matches.map((name) =>
+		...Arr.map(rows.matches, (name) =>
 			namespaceItem(h, name, Option.some(name), Option.contains(pinned, name)),
 		),
 		...Option.match(rows.unseenPin, {
@@ -228,9 +228,9 @@ const navSectionMenu = (
 	currentPath: string,
 	clerk: ShellClerk | null,
 ): ReadonlyArray<Html> => {
-	const item = shellNavGroups(clerk)
-		.flatMap((group) => group.items)
-		.find((candidate) => candidate.title === title)
+	const item = Arr.flatMap(shellNavGroups(clerk), (group) => group.items).find(
+		(candidate) => candidate.title === title,
+	)
 	if (item?.subItems === undefined) return []
 	const { shown, hidden } = partitionSubItems(item.subItems, surfacesOf(model), currentPath)
 	const toItem = (sub: (typeof shown)[number]): Item => ({
@@ -242,9 +242,15 @@ const navSectionMenu = (
 	})
 	const labelId = `${popupIdOf(menu)}-label`
 	return [
-		menuGroup(h, labelId, [menuLabel(h, labelId, [item.title]), ...items(h, menu, shown.map(toItem))]),
+		menuGroup(h, labelId, [
+			menuLabel(h, labelId, [item.title]),
+			...items(h, menu, Arr.map(shown, toItem)),
+		]),
 		...(hidden.length > 0
-			? [menuSeparator(h), menuGroup(h, undefined, items(h, menu, hidden.map(toItem), shown.length))]
+			? [
+					menuSeparator(h),
+					menuGroup(h, undefined, items(h, menu, Arr.map(hidden, toItem), shown.length)),
+				]
 			: []),
 	]
 }

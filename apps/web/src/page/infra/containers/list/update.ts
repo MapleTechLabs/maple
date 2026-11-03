@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -72,7 +72,7 @@ export const sortOf = (search: Search) => {
 const resetKeyOf = (model: Model) =>
 	encodeJson({
 		filters: filtersOf(model.search),
-		q: model.debouncedQuery.trim(),
+		q: Str.trim(model.debouncedQuery),
 		scope: model.search.scope,
 		...sortOf(model.search),
 	})
@@ -84,7 +84,7 @@ export const containersInput = (model: Model, window: TimeWindow): ContainersInp
 	startTime: window.startTime,
 	endTime: window.endTime,
 	...filtersOf(model.search),
-	search: model.debouncedQuery.trim() === "" ? undefined : model.debouncedQuery.trim(),
+	search: Str.trim(model.debouncedQuery) === "" ? undefined : Str.trim(model.debouncedQuery),
 	scope: model.search.scope,
 	...sortOf(model.search),
 	limit: PAGE_SIZE,

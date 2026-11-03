@@ -44,6 +44,7 @@ import {
 } from "./telemetry"
 import { V2SchemaErrors, V2UnexpectedErrors } from "./auth"
 import { collapseQueryParameterNullBranches } from "./openapi-nullable"
+import { Record as Rec } from "effect"
 
 const HTTP_OPERATION_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const
 
@@ -60,7 +61,7 @@ interface OpenApiSpec {
 
 /** Add the rate-limit retry contract to every generated 429 response. */
 const addRateLimitResponseHeaders = <S extends OpenApiSpec>(spec: S): S => {
-	for (const pathItem of Object.values(spec.paths ?? {})) {
+	for (const pathItem of Rec.values(spec.paths ?? {})) {
 		if (typeof pathItem !== "object" || pathItem === null) continue
 		for (const method of HTTP_OPERATION_METHODS) {
 			const operation = pathItem[method]

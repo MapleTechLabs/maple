@@ -10,6 +10,7 @@ import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@mapl
 import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import { isGroupByRequested } from "./inspect-widget"
 import { stringifyJson } from "./json"
+import { Array as Arr, String as Str } from "effect"
 
 type DashboardWidget = typeof DashboardWidgetSchema.Type
 
@@ -167,7 +168,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 				: paths.anchor.kind === "event"
 					? paths.anchor.eventName
 					: paths.anchor.pagePath
-		if (anchorName.trim() === "") {
+		if (Str.trim(anchorName) === "") {
 			fatal.push(
 				'`panel_type: "paths"` needs an anchor: set `display_json.paths.anchor` to `{ "kind": "event", "eventName": … }` or `{ "kind": "page", "pagePath": … }`.',
 			)
@@ -205,7 +206,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	// instead of one slice per category. The web editor blocks this; the MCP path
 	// did not.
 	if (meta.requiresGroupBy && querySet !== null) {
-		const grouped = querySet.queries.some((query) => isGroupByRequested(query))
+		const grouped = Arr.some(querySet.queries, (query) => isGroupByRequested(query))
 		if (!grouped) {
 			warnings.push(
 				`\`panel_type: "${panelType}"\` needs a group-by or it renders a single slice. Set \`groupBy: ["service.name"]\` AND \`addOns: { "groupBy": true }\` — without the addOn the groupBy is silently ignored.`,
@@ -216,8 +217,8 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	// The same gate, reported on its own: a groupBy that looks set but isn't.
 	if (querySet !== null) {
 		for (const query of querySet.queries) {
-			const hasTokens = (query.groupBy ?? []).some((token) => {
-				const trimmed = token.trim().toLowerCase()
+			const hasTokens = Arr.some(query.groupBy ?? [], (token) => {
+				const trimmed = Str.toLowerCase(Str.trim(token))
 				return trimmed.length > 0 && trimmed !== "none" && trimmed !== "all"
 			})
 			if (hasTokens && !query.addOns?.groupBy) {
@@ -234,7 +235,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	if (querySet !== null) {
 		for (const query of querySet.queries) {
 			if (query.dataSource !== "traces") continue
-			const hasValueField = ((query as { valueField?: string }).valueField ?? "").trim().length > 0
+			const hasValueField = Str.trim((query as { valueField?: string }).valueField ?? "").length > 0
 			if (!hasValueField && /^p(50|95|99)$/.test(query.aggregation)) {
 				warnings.push(
 					`Query "${query.name}" uses \`aggregation: "${query.aggregation}"\` on traces without a \`valueField\`. Bare percentiles only apply to a numeric span attribute; for latency use \`"${query.aggregation}_duration"\`.`,
@@ -250,7 +251,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 		warnings.push(
 			`\`${field.label}: "${field.value}"\` is not a known unit and will render as a plain number.${
 				suggestion ? ` Did you mean \`"${suggestion}"\`?` : ""
-			} Known units: ${WIDGET_UNIT_TOKENS.join(", ")}.`,
+			} Known units: ${Arr.join(WIDGET_UNIT_TOKENS, ", ")}.`,
 		)
 	}
 
@@ -274,7 +275,7 @@ export const formatRenderIssues = (issues: WidgetRenderIssues, widgetLabel?: str
 	const lines: string[] = []
 	for (const message of issues.fatal) lines.push(`- ${prefix}${message}`)
 	for (const message of issues.warnings) lines.push(`- ${prefix}${message}`)
-	return lines.join("\n")
+	return Arr.join(lines, "\n")
 }
 
 /**

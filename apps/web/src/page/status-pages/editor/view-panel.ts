@@ -35,6 +35,7 @@ import { ADD_PICKER_ID, PANEL_TITLE_ID } from "./update-components"
 import { UPDATE_BODY_ID } from "./update-incidents"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The side panel: one component (saved as you go), one incident, the composer, or Add component.
 
@@ -128,7 +129,7 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 		h,
 		{
 			kind: "Component",
-			title: form.name.trim() === "" ? component.name : form.name.trim(),
+			title: Str.trim(form.name) === "" ? component.name : Str.trim(form.name),
 			status: h.div(
 				[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],
 				[`Visitors see ${COMPONENT_STATUS_LABEL[status]}`, saveIndicator(h, model)],
@@ -148,7 +149,7 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 					label: "Shown as",
 					value: form.name,
 					isDisabled: isReadOnly,
-					error: form.name.trim() === "" ? "Add a name." : null,
+					error: Str.trim(form.name) === "" ? "Add a name." : null,
 					onInput: (value) => Message.ChangedComponentField({ field: "name", value }),
 					onBlur: Message.CommittedComponent(),
 				}),
@@ -169,7 +170,7 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 					isDisabled: isReadOnly,
 					entries: [
 						{ value: "", label: "No monitor" },
-						...monitorsOf(model).map((monitor) => ({
+						...Arr.map(monitorsOf(model), (monitor) => ({
 							value: monitor.id,
 							label: monitor.name,
 						})),
@@ -186,7 +187,7 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 						: "Automatic follows open incidents.",
 					entries: [
 						{ value: "", label: "Automatic" },
-						...COMPONENT_STATUS_OPTIONS.map((value) => ({
+						...Arr.map(COMPONENT_STATUS_OPTIONS, (value) => ({
 							value,
 							label: COMPONENT_STATUS_LABEL[value],
 						})),
@@ -257,11 +258,12 @@ const IMPACT_TONE = {
 } as const satisfies Record<StatusPageIncidentImpact, "muted" | "warn" | "crit">
 
 const statusEntries = (kind: V2StatusPageIncident["kind"], isOpening: boolean) =>
-	STATUSES_OF_KIND[kind]
-		.filter((status) => !isOpening || status !== closingStatus(kind))
-		.map((status) => ({ value: status, label: INCIDENT_STATUS_LABEL[status] }))
+	Arr.map(
+		Arr.filter(STATUSES_OF_KIND[kind], (status) => !isOpening || status !== closingStatus(kind)),
+		(status) => ({ value: status, label: INCIDENT_STATUS_LABEL[status] }),
+	)
 
-const IMPACT_ENTRIES = StatusPageIncidentImpact.literals.map((impact) => ({
+const IMPACT_ENTRIES = Arr.map(StatusPageIncidentImpact.literals, (impact) => ({
 	value: impact,
 	label: IMPACT_LABEL[impact],
 }))
@@ -318,7 +320,7 @@ const updateForm = (h: H, model: Model): ReadonlyArray<Html> => {
 								size: "sm",
 								type: "submit",
 								isLoading: model.isPostingUpdate,
-								isDisabled: form.body.trim() === "",
+								isDisabled: Str.trim(form.body) === "",
 							},
 							[
 								form.status === closingStatus(form.kind)
@@ -395,9 +397,10 @@ const incidentActions = (h: H, model: Model, incident: V2StatusPageIncident): Re
 			]
 
 export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident, time: TimeInputs): Html => {
-	const names = componentsOf(model)
-		.filter((component) => incident.component_ids.includes(component.id))
-		.map((component) => component.name)
+	const names = Arr.map(
+		Arr.filter(componentsOf(model), (component) => incident.component_ids.includes(component.id)),
+		(component) => component.name,
+	)
 	const window = windowLine(incident, time.timeZone)
 	return frame(
 		h,
@@ -420,7 +423,7 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 		},
 		[
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				names.length === 0 ? "No components named" : names.join(", "),
+				names.length === 0 ? "No components named" : Arr.join(names, ", "),
 				...(window === null ? [] : [` · ${window}`]),
 			]),
 			...incidentActions(h, model, incident),
@@ -429,7 +432,7 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 				eyebrow(h, { as: "h3" }, ["Updates"]),
 				h.ol(
 					[h.Class(vstackClass({ gap: "3" }))],
-					incident.updates.map((update) =>
+					Arr.map(incident.updates, (update) =>
 						h.li(
 							[h.Key(update.id), h.Class("flex flex-col gap-1 border-l pl-3")],
 							[
@@ -468,7 +471,7 @@ const componentChecklist = (h: H, model: Model): Html => {
 				: vstack(
 						h,
 						{ gap: "2" },
-						components.map((component) => {
+						Arr.map(components, (component) => {
 							const inputId = `status-page-incident-component-${component.id}`
 							return label(
 								h,

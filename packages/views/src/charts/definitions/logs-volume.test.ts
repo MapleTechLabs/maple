@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { buildLogsVolume } from "./logs-volume"
 
@@ -31,6 +31,6 @@ describe("logs volume tooltip", () => {
 			color: "#00f",
 		}
 		const tooltip = Option.getOrUndefined(built.tooltipOf([point]))
-		expect(tooltip?._tag === "Bucket" ? tooltip.rows.map((r) => r.value) : []).toEqual(["12.3K"])
+		expect(tooltip?._tag === "Bucket" ? Arr.map(tooltip.rows, (r) => r.value) : []).toEqual(["12.3K"])
 	})
 })

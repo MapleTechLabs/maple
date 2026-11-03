@@ -5,7 +5,7 @@
 // direct-integration analytics poller. Backs /infra/cloudflare. Rates are
 // derived here as 0–1 ratios (×100 only at display, per repo convention).
 
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	CloudflareInfraPlatformResourcesRequest,
 	CloudflareInfraWorkerDetailRequest,
@@ -26,7 +26,7 @@ const ZONE_SERVICE_PREFIX = "cloudflare/"
 const WORKER_SERVICE_PREFIX = "cloudflare-worker/"
 
 const stripPrefix = (serviceName: string, prefix: string) =>
-	serviceName.startsWith(prefix) ? serviceName.slice(prefix.length) : serviceName
+	Str.startsWith(prefix)(serviceName) ? Str.slice(prefix.length)(serviceName) : serviceName
 
 const ratio = (numerator: number, denominator: number) => (denominator > 0 ? numerator / denominator : 0)
 
@@ -132,7 +132,7 @@ const cloudflareFilterPayload = (input: CloudflareFilterInput) => {
 		[string, ReadonlyArray<string> | string | undefined]
 	>) {
 		if (value === undefined) continue
-		if (Array.isArray(value) ? value.length > 0 : value !== "") out[key] = value
+		if (Arr.isArray(value) ? value.length > 0 : value !== "") out[key] = value
 	}
 	return out
 }
@@ -172,7 +172,7 @@ export const getCloudflareZones = Effect.fn("QueryEngine.getCloudflareZones")(fu
 		}),
 	)
 	return {
-		zones: result.data.map((row): CloudflareZoneRow => {
+		zones: Arr.map(result.data, (row): CloudflareZoneRow => {
 			const serviceName = wireString(row.serviceName)
 			const requests = Number(row.requests ?? 0)
 			const errors5xx = Number(row.errors5xx ?? 0)
@@ -226,7 +226,7 @@ export const getCloudflareZoneTimeseries = Effect.fn("QueryEngine.getCloudflareZ
 		}),
 	)
 	return {
-		buckets: result.data.map((row): CloudflareZoneTimeseriesRow => {
+		buckets: Arr.map(result.data, (row): CloudflareZoneTimeseriesRow => {
 			const serviceName = wireString(row.serviceName)
 			return {
 				serviceName,
@@ -298,17 +298,17 @@ export const getCloudflareZoneDetail = Effect.fn("QueryEngine.getCloudflareZoneD
 		}),
 	)
 	return {
-		statusBuckets: result.statusBuckets.map((row): CloudflareZoneStatusBucket => ({
+		statusBuckets: Arr.map(result.statusBuckets, (row): CloudflareZoneStatusBucket => ({
 			bucket: wireString(row.bucket),
 			statusClass: wireString(row.statusClass, "unknown"),
 			requests: Number(row.requests ?? 0),
 		})),
-		cacheBuckets: result.cacheBuckets.map((row): CloudflareZoneCacheBucket => ({
+		cacheBuckets: Arr.map(result.cacheBuckets, (row): CloudflareZoneCacheBucket => ({
 			bucket: wireString(row.bucket),
 			cacheStatus: wireString(row.cacheStatus, "unknown"),
 			requests: Number(row.requests ?? 0),
 		})),
-		latencyBuckets: result.latencyBuckets.map((row): CloudflareZoneLatencyBucket => ({
+		latencyBuckets: Arr.map(result.latencyBuckets, (row): CloudflareZoneLatencyBucket => ({
 			bucket: wireString(row.bucket),
 			ttfbP50Ms: Number(row.ttfbP50Ms ?? 0),
 			ttfbP95Ms: Number(row.ttfbP95Ms ?? 0),
@@ -386,12 +386,12 @@ export const getCloudflareWorkerDetail = Effect.fn("QueryEngine.getCloudflareWor
 		}),
 	)
 	return {
-		outcomeBuckets: result.outcomeBuckets.map((row): CloudflareWorkerOutcomeBucket => ({
+		outcomeBuckets: Arr.map(result.outcomeBuckets, (row): CloudflareWorkerOutcomeBucket => ({
 			bucket: wireString(row.bucket),
 			status: wireString(row.status || "unknown"),
 			requests: Number(row.requests ?? 0),
 		})),
-		latencyBuckets: result.latencyBuckets.map((row): CloudflareWorkerLatencyBucket => ({
+		latencyBuckets: Arr.map(result.latencyBuckets, (row): CloudflareWorkerLatencyBucket => ({
 			bucket: wireString(row.bucket),
 			cpuP50Ms: Number(row.cpuP50Ms ?? 0),
 			cpuP99Ms: Number(row.cpuP99Ms ?? 0),
@@ -400,11 +400,14 @@ export const getCloudflareWorkerDetail = Effect.fn("QueryEngine.getCloudflareWor
 			doWallP50Ms: Number(row.doWallP50Ms ?? 0),
 			doWallP99Ms: Number(row.doWallP99Ms ?? 0),
 		})),
-		durableObjectBuckets: result.durableObjectBuckets.map((row): CloudflareWorkerDurableObjectBucket => ({
-			bucket: wireString(row.bucket),
-			requests: Number(row.requests ?? 0),
-			errors: Number(row.errors ?? 0),
-		})),
+		durableObjectBuckets: Arr.map(
+			result.durableObjectBuckets,
+			(row): CloudflareWorkerDurableObjectBucket => ({
+				bucket: wireString(row.bucket),
+				requests: Number(row.requests ?? 0),
+				errors: Number(row.errors ?? 0),
+			}),
+		),
 	} satisfies CloudflareWorkerDetail
 })
 
@@ -426,7 +429,7 @@ export const getCloudflareWorkers = Effect.fn("QueryEngine.getCloudflareWorkers"
 		}),
 	)
 	return {
-		workers: result.data.map((row): CloudflareWorkerRow => {
+		workers: Arr.map(result.data, (row): CloudflareWorkerRow => {
 			const serviceName = wireString(row.serviceName)
 			const requests = Number(row.requests ?? 0)
 			const errors = Number(row.errors ?? 0)
@@ -485,12 +488,12 @@ export const getCloudflareZoneSecurity = Effect.fn("QueryEngine.getCloudflareZon
 		}),
 	)
 	return {
-		buckets: result.buckets.map((row): CloudflareZoneFirewallBucket => ({
+		buckets: Arr.map(result.buckets, (row): CloudflareZoneFirewallBucket => ({
 			bucket: wireString(row.bucket),
 			action: wireString(row.action, "unknown"),
 			events: Number(row.events ?? 0),
 		})),
-		top: result.top.map((row): CloudflareZoneFirewallTopRow => ({
+		top: Arr.map(result.top, (row): CloudflareZoneFirewallTopRow => ({
 			source: wireString(row.source, "unknown"),
 			action: wireString(row.action, "unknown"),
 			ruleId: wireString(row.ruleId, "unknown"),
@@ -535,12 +538,12 @@ export const getCloudflareZoneDns = Effect.fn("QueryEngine.getCloudflareZoneDns"
 		}),
 	)
 	return {
-		buckets: result.buckets.map((row): CloudflareZoneDnsBucket => ({
+		buckets: Arr.map(result.buckets, (row): CloudflareZoneDnsBucket => ({
 			bucket: wireString(row.bucket),
 			responseCode: wireString(row.responseCode, "unknown"),
 			queries: Number(row.queries ?? 0),
 		})),
-		names: result.names.map((row): CloudflareZoneDnsName => ({
+		names: Arr.map(result.names, (row): CloudflareZoneDnsName => ({
 			queryName: wireString(row.queryName, "unknown"),
 			queries: Number(row.queries ?? 0),
 			nxdomain: Number(row.nxdomain ?? 0),
@@ -588,7 +591,7 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 			}),
 		)
 		return {
-			queues: result.queues.map((row): CloudflareQueueRow => {
+			queues: Arr.map(result.queues, (row): CloudflareQueueRow => {
 				const serviceName = wireString(row.serviceName)
 				return {
 					serviceName,
@@ -600,7 +603,7 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 					consumerConcurrency: Number(row.consumerConcurrency ?? 0),
 				}
 			}),
-			durableObjects: result.durableObjects.map((row): CloudflareDurableObjectRow => {
+			durableObjects: Arr.map(result.durableObjects, (row): CloudflareDurableObjectRow => {
 				const serviceName = wireString(row.serviceName)
 				const requests = Number(row.requests ?? 0)
 				const errors = Number(row.errors ?? 0)
@@ -706,20 +709,20 @@ export const getCloudflareZoneBreakdown = Effect.fn("QueryEngine.getCloudflareZo
 			})
 		}),
 	)
-	const rows = result.totals.map((row) => ({
+	const rows = Arr.map(result.totals, (row) => ({
 		key: wireString(row.key),
 		requests: Number(row.requests ?? 0),
 		errors5xx: Number(row.errors5xx ?? 0),
 		bytes: Number(row.bytes ?? 0),
 	}))
-	const attributed = rows.reduce((sum, row) => sum + row.requests, 0)
+	const attributed = Arr.reduce(rows, 0, (sum, row) => sum + row.requests)
 	const breakdown: CloudflareZoneBreakdown = {
-		totals: rows.map((row): CloudflareBreakdownTotal => ({
+		totals: Arr.map(rows, (row): CloudflareBreakdownTotal => ({
 			...row,
 			errorRate: ratio(row.errors5xx, row.requests),
 			share: ratio(row.requests, attributed),
 		})),
-		buckets: result.buckets.map((row): CloudflareBreakdownBucket => ({
+		buckets: Arr.map(result.buckets, (row): CloudflareBreakdownBucket => ({
 			bucket: wireString(row.bucket),
 			key: wireString(row.key),
 			requests: Number(row.requests ?? 0),
@@ -824,7 +827,7 @@ export const getCloudflareTopTraffic = Effect.fn("Integrations.getCloudflareTopT
 	)
 	return {
 		unavailableReason: result.unavailableReason,
-		rows: result.rows.map((row): CloudflareTopTrafficEntry => ({
+		rows: Arr.map(result.rows, (row): CloudflareTopTrafficEntry => ({
 			key: row.key,
 			requests: row.requests,
 			bytes: row.bytes,

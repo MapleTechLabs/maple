@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer } from "effect"
+import { Effect, Exit, Layer, Array as Arr } from "effect"
 import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, utcDay } from "@maple/domain/status-page"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -126,7 +126,7 @@ describe("toSnapshot", () => {
 		assert.strictEqual(snapshot.components[0]?.status, "operational")
 		// Past the listing window, the resolved one still marks its day in the calendar index.
 		assert.deepStrictEqual(
-			snapshot.incidentHistory.map((entry) => entry.resolvedAt),
+			Arr.map(snapshot.incidentHistory, (entry) => entry.resolvedAt),
 			[NOW - 20 * DAY_MS],
 		)
 	})
@@ -194,7 +194,7 @@ describe("toSnapshot", () => {
 			},
 		])
 		assert.deepStrictEqual(
-			snapshot.incidents.map((listed) => listed.title),
+			Arr.map(snapshot.incidents, (listed) => listed.title),
 			["Not started", "Open now"],
 		)
 	})
@@ -295,7 +295,7 @@ describe("toSnapshot", () => {
 		assert.strictEqual(opened.incidents[0]?.openedByOverlayEntryId, "entry-1")
 		// An imported entry keeps its overlay id, so the feed does not show it twice after import.
 		assert.deepStrictEqual(
-			opened.incidents[0]?.updates.map((u) => [u.id, u.overlayEntryId]),
+			Arr.map(opened.incidents[0]?.updates, (u) => [u.id, u.overlayEntryId]),
 			[
 				["later", null],
 				["entry-1", "entry-1"],
@@ -392,18 +392,18 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			assert.strictEqual(snapshot.revision, 4)
 			assert.deepStrictEqual(snapshot.page.theme, DEFAULT_STATUS_PAGE_THEME)
 			assert.deepStrictEqual(
-				snapshot.components.map((c) => [c.name, c.status, c.days.length]),
+				Arr.map(snapshot.components, (c) => [c.name, c.status, c.days.length]),
 				[
 					["API", "major_outage", 365],
 					["Docs", "major_outage", 0],
 				],
 			)
 			assert.deepStrictEqual(
-				snapshot.incidents.map((i) => [i.title, i.updates.length]),
+				Arr.map(snapshot.incidents, (i) => [i.title, i.updates.length]),
 				[["Docs slow", 1]],
 			)
 			assert.deepStrictEqual(
-				snapshot.incidentHistory.map((entry) => [entry.title, entry.impact]),
+				Arr.map(snapshot.incidentHistory, (entry) => [entry.title, entry.impact]),
 				[
 					["Docs slow", "critical"],
 					["Old outage", "major"],
@@ -411,7 +411,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			)
 			assert.strictEqual(snapshot.components[0]?.days[64]?.checks, 7)
 			assert.deepStrictEqual(
-				snapshot.components.map((c) => c.monitored),
+				Arr.map(snapshot.components, (c) => c.monitored),
 				[true, false],
 			)
 
@@ -440,7 +440,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			yield* seedResolved("The day before", firstDayStart - 60_000)
 			const snapshot = yield* builder.build(pageId, NOW)
 			assert.deepStrictEqual(
-				snapshot.incidentHistory.map((entry) => entry.title),
+				Arr.map(snapshot.incidentHistory, (entry) => entry.title),
 				["On the first day"],
 			)
 		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
@@ -473,7 +473,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				{ discard: true },
 			)
 			const snapshot = yield* builder.build(pageId, NOW)
-			assert.isTrue(snapshot.incidents.some((incident) => incident.title === "Long-running"))
+			assert.isTrue(Arr.some(snapshot.incidents, (incident) => incident.title === "Long-running"))
 			// Resolve it now: as the most recently resolved, it stays indexed despite its old start.
 			yield* Effect.promise(() =>
 				executeSql(
@@ -483,7 +483,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				),
 			)
 			const after = yield* builder.build(pageId, NOW + 1_000)
-			assert.isTrue(after.incidentHistory.some((entry) => entry.title === "Long-running"))
+			assert.isTrue(Arr.some(after.incidentHistory, (entry) => entry.title === "Long-running"))
 		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
 	})
 
@@ -595,7 +595,7 @@ describe("StatusPageSnapshotBuilder.buildDraft", () => {
 			assert.isNull(snapshot.breakGlassTokenSha256)
 			assert.deepStrictEqual(snapshot.incidents, [])
 			assert.deepStrictEqual(
-				snapshot.components.map((c) => [c.id, c.name, c.status, c.monitored]),
+				Arr.map(snapshot.components, (c) => [c.id, c.name, c.status, c.monitored]),
 				[
 					[draftComponentId(0), "Docs", "operational", false],
 					[draftComponentId(1), "API", "major_outage", true],

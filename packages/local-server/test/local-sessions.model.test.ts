@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import fc from "fast-check"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
@@ -61,7 +61,7 @@ const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log:
 		const chunk = decoder.decode(value, { stream: true })
 		buffered += chunk
 		log.push(chunk)
-		const line = buffered.split("\n").find((candidate) => candidate.startsWith("SESSION "))
+		const line = Str.split("\n")(buffered).find((candidate) => Str.startsWith("SESSION ")(candidate))
 		if (line !== undefined) {
 			reader.releaseLock()
 			// Keep draining so the child never blocks on a full pipe.
@@ -69,7 +69,7 @@ const readSession = async (child: Bun.Subprocess<"ignore", "pipe", "pipe">, log:
 				void child.stdout.pipeTo(
 					new WritableStream({ write: (bytes) => void log.push(decoder.decode(bytes)) }),
 				)
-			return decodeSessionLine(line.slice("SESSION ".length))
+			return decodeSessionLine(Str.slice("SESSION ".length)(line))
 		}
 	}
 	throw new Error(`session printed no SESSION line: ${buffered}`)
@@ -115,8 +115,8 @@ const settled = async (world: World) => {
 	while (Date.now() < deadline) {
 		const owner = claimPid(world.dataDir)
 		const discovered = discoveryPid(world.dataDir)
-		const alive = world.sessions.map((session) => session.process.pid)
-		const endpoints = [...new Set(world.sessions.map((session) => session.endpoint))]
+		const alive = Arr.map(world.sessions, (session) => session.process.pid)
+		const endpoints = [...new Set(Arr.map(world.sessions, (session) => session.endpoint))]
 		if (alive.length === 0) {
 			last = { owner, discovered, open: existsSync(storeOpenMarkerPath(world.dataDir)) }
 			if (
@@ -126,21 +126,24 @@ const settled = async (world: World) => {
 			)
 				return
 		} else {
-			const serving = await Promise.all(endpoints.map(healthy))
+			const serving = await Promise.all(Arr.map(endpoints, healthy))
 			last = { owner, discovered, alive, endpoints, serving }
 			if (
 				owner !== undefined &&
 				alive.includes(owner) &&
 				discovered === owner &&
 				endpoints.length === 1 &&
-				serving.every(Boolean)
+				Arr.every(serving, Boolean)
 			)
 				return
 		}
 		await Bun.sleep(200)
 	}
-	const logs = world.sessions.map((session) => `--- PID ${session.process.pid}\n${session.log.join("")}`)
-	throw new Error(`sessions never settled: ${JSON.stringify(last)}\n${logs.join("\n")}`)
+	const logs = Arr.map(
+		world.sessions,
+		(session) => `--- PID ${session.process.pid}\n${Arr.join(session.log, "")}`,
+	)
+	throw new Error(`sessions never settled: ${JSON.stringify(last)}\n${Arr.join(logs, "\n")}`)
 }
 
 class Start implements fc.AsyncCommand<{ running: number }, World> {
@@ -177,7 +180,10 @@ class Stop implements fc.AsyncCommand<{ running: number }, World> {
 			Bun.sleep(30_000).then(() => "timed out"),
 		])
 		if (exited === "timed out") session!.process.kill("SIGKILL")
-		expect({ exited, log: exited === 0 ? "" : session!.log.join("") }).toEqual({ exited: 0, log: "" })
+		expect({ exited, log: exited === 0 ? "" : Arr.join(session!.log, "") }).toEqual({
+			exited: 0,
+			log: "",
+		})
 		model.running--
 		await settled(world)
 	}
@@ -248,10 +254,10 @@ describe.skipIf(skipWithoutChdb)("several alchemy dev sessions on one store", ()
 					child.kill("SIGUSR2")
 				} else child.kill("SIGTERM")
 				const exited = await Promise.race([child.exited, Bun.sleep(10_000).then(() => "timeout")])
-				expect(existsSync(storeOpenMarkerPath(dataDir)), log.join("")).toBe(false)
-				if (mode === "foreign-exit") expect(exited, log.join("")).toBe(143)
+				expect(existsSync(storeOpenMarkerPath(dataDir)), Arr.join(log, "")).toBe(false)
+				if (mode === "foreign-exit") expect(exited, Arr.join(log, "")).toBe(143)
 				// Bun versions differ on whether EPIPE is an unhandled error or a native exit.
-				else expect([0, 1], log.join("")).toContain(exited)
+				else expect([0, 1], Arr.join(log, "")).toContain(exited)
 				const reopened = spawn("scoped")
 				const printed = await readSession(reopened, [])
 				expect(printed.error).toBeUndefined()
@@ -261,7 +267,7 @@ describe.skipIf(skipWithoutChdb)("several alchemy dev sessions on one store", ()
 				expect(await reopened.exited).toBe(0)
 			} finally {
 				for (const child of children) if (child.exitCode === null) child.kill("SIGKILL")
-				await Promise.all(children.map((child) => child.exited))
+				await Promise.all(Arr.map(children, (child) => child.exited))
 				rmSync(root, { recursive: true, force: true })
 			}
 		},
@@ -297,16 +303,17 @@ describe.skipIf(skipWithoutChdb)("several alchemy dev sessions on one store", ()
 			expect(existsSync(storeOpenMarkerPath(dataDir))).toBe(true)
 			// The retry clock lives in a separate Bun process; fake timers cannot drive it.
 			const deadline = Date.now() + 10_000
-			while (!log.join("").includes("not cleanly closed") && Date.now() < deadline) await Bun.sleep(50)
-			expect(log.join("")).toContain("not cleanly closed")
+			while (!Str.includes("not cleanly closed")(Arr.join(log, "")) && Date.now() < deadline)
+				await Bun.sleep(50)
+			expect(Arr.join(log, "")).toContain("not cleanly closed")
 			await Bun.sleep(3500)
-			const output = log.join("")
+			const output = Arr.join(log, "")
 			expect(output.match(/cannot take over Maple Local/g)).toHaveLength(1)
 			expect(output).toContain('onDirtyStore: "wipe"')
 			expect(output).not.toContain("; retrying")
 		} finally {
 			for (const child of children) if (child.exitCode === null) child.kill("SIGKILL")
-			await Promise.all(children.map((child) => child.exited))
+			await Promise.all(Arr.map(children, (child) => child.exited))
 			rmSync(root, { recursive: true, force: true })
 		}
 	}, 60_000)

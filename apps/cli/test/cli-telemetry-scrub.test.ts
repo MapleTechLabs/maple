@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { sanitizeArgv, sanitizeStack, scrubAttributes, scrubTraceData } from "../src/core/telemetry"
+import { Array as Arr } from "effect"
 
 const str = (key: string, value: string) => ({ key, value: { stringValue: value } })
 
@@ -21,7 +22,7 @@ describe("CLI telemetry scrubber", () => {
 			str("error.type", "HTTP 400"),
 			{ key: "db.query.length", value: { intValue: 41 } },
 		])
-		expect(scrubbed.map((attribute) => attribute.key)).toEqual([
+		expect(Arr.map(scrubbed, (attribute) => attribute.key)).toEqual([
 			"db.system.name",
 			"error.type",
 			"db.query.length",
@@ -87,7 +88,7 @@ describe("CLI telemetry scrubber", () => {
 		expect(JSON.stringify(scrubbed)).not.toContain("secret")
 		expect(scrubbed.status).toEqual({ code: 2 })
 		expect(scrubbed.attributes).toEqual([str("cli.argv", "query")])
-		expect(scrubbed.events[0]!.attributes.map((attribute) => attribute.key)).toEqual([
+		expect(Arr.map(scrubbed.events[0]!.attributes, (attribute) => attribute.key)).toEqual([
 			"exception.type",
 			"exception.stacktrace",
 		])

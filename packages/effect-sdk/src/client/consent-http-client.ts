@@ -1,5 +1,5 @@
 import { consentAllowedSince, hasConsent } from "@maple/browser-session"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Array as Arr, String as Str } from "effect"
 
 import { trySyncOrUndefined } from "../shared/try-sync.js"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
@@ -38,34 +38,38 @@ const after = (value: unknown, threshold: bigint): boolean =>
 	trySyncOrUndefined(() => BigInt(String(value ?? 0)) >= threshold) ?? false
 
 const pruneTraces = (body: OtlpBody, threshold: bigint): OtlpBody | undefined => {
-	const resourceSpans = (body.resourceSpans ?? [])
-		.map((resource) => ({
+	const resourceSpans = Arr.filter(
+		Arr.map(body.resourceSpans ?? [], (resource) => ({
 			...resource,
-			scopeSpans: (resource.scopeSpans ?? [])
-				.map((scope) => ({
+			scopeSpans: Arr.filter(
+				Arr.map(resource.scopeSpans ?? [], (scope) => ({
 					...scope,
-					spans: (scope.spans ?? []).filter((span) => after(span.startTimeUnixNano, threshold)),
-				}))
-				.filter((scope) => scope.spans.length > 0),
-		}))
-		.filter((resource) => resource.scopeSpans.length > 0)
+					spans: Arr.filter(scope.spans ?? [], (span) => after(span.startTimeUnixNano, threshold)),
+				})),
+				(scope) => scope.spans.length > 0,
+			),
+		})),
+		(resource) => resource.scopeSpans.length > 0,
+	)
 	return resourceSpans.length > 0 ? { ...body, resourceSpans } : undefined
 }
 
 const pruneLogs = (body: OtlpBody, threshold: bigint): OtlpBody | undefined => {
-	const resourceLogs = (body.resourceLogs ?? [])
-		.map((resource) => ({
+	const resourceLogs = Arr.filter(
+		Arr.map(body.resourceLogs ?? [], (resource) => ({
 			...resource,
-			scopeLogs: (resource.scopeLogs ?? [])
-				.map((scope) => ({
+			scopeLogs: Arr.filter(
+				Arr.map(resource.scopeLogs ?? [], (scope) => ({
 					...scope,
-					logRecords: (scope.logRecords ?? []).filter((record) =>
+					logRecords: Arr.filter(scope.logRecords ?? [], (record) =>
 						after(record.timeUnixNano ?? record.observedTimeUnixNano, threshold),
 					),
-				}))
-				.filter((scope) => scope.logRecords.length > 0),
-		}))
-		.filter((resource) => resource.scopeLogs.length > 0)
+				})),
+				(scope) => scope.logRecords.length > 0,
+			),
+		})),
+		(resource) => resource.scopeLogs.length > 0,
+	)
 	return resourceLogs.length > 0 ? { ...body, resourceLogs } : undefined
 }
 
@@ -79,7 +83,7 @@ export const filterOtlpRequestForConsent = (
 ): HttpClientRequest.HttpClientRequest | undefined => {
 	if (!hasConsent()) return undefined
 	if (!requireConsent) return request
-	if (request.url.endsWith("/v1/metrics")) return undefined
+	if (Str.endsWith("/v1/metrics")(request.url)) return undefined
 	if (request.body._tag !== "Uint8Array") return undefined
 	// Bound before the closure: narrowing on `request.body` does not survive into one.
 	const body = request.body
@@ -94,9 +98,9 @@ export const filterOtlpRequestForConsent = (
 		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		const decoded = JSON.parse(new TextDecoder().decode(body.body)) as OtlpBody
 		const threshold = BigInt(Math.trunc(since)) * 1_000_000n
-		const filtered = request.url.endsWith("/v1/traces")
+		const filtered = Str.endsWith("/v1/traces")(request.url)
 			? pruneTraces(decoded, threshold)
-			: request.url.endsWith("/v1/logs")
+			: Str.endsWith("/v1/logs")(request.url)
 				? pruneLogs(decoded, threshold)
 				: undefined
 		return filtered

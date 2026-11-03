@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import {
 	BucketSeconds,
 	DeploymentEnvironment,
@@ -74,7 +74,7 @@ export const getServiceEndpoints = Effect.fn("QueryEngine.getServiceEndpoints")(
 		}),
 	)
 
-	const endpoints: ServiceEndpoint[] = result.data.map((row) => ({
+	const endpoints: ServiceEndpoint[] = Arr.map(result.data, (row) => ({
 		spanName: row.spanName,
 		method: row.method,
 		route: row.route,
@@ -171,7 +171,7 @@ export const getServiceApiOverview = Effect.fn("QueryEngine.getServiceApiOvervie
 	return {
 		totals: toTotals(result.totals),
 		previous: result.previous === null ? null : toTotals(result.previous),
-		buckets: result.buckets.map(toBucket),
+		buckets: Arr.map(result.buckets, toBucket),
 	}
 })
 
@@ -209,7 +209,7 @@ export const getServiceEndpointsTimeseries = Effect.fn("QueryEngine.getServiceEn
 				})
 			}),
 		)
-		return { buckets: result.buckets.map(toBucket) }
+		return { buckets: Arr.map(result.buckets, toBucket) }
 	},
 )
 
@@ -258,7 +258,7 @@ export const getServiceEndpointStatusBreakdown = Effect.fn("QueryEngine.getServi
 				})
 			}),
 		)
-		const rows: ServiceEndpointStatusRow[] = result.rows.map((row) => ({ ...row }))
+		const rows: ServiceEndpointStatusRow[] = Arr.map(result.rows, (row) => ({ ...row }))
 		return { rows }
 	},
 )
@@ -318,8 +318,8 @@ export const getServiceEndpointDetail = Effect.fn("QueryEngine.getServiceEndpoin
 		latencyQuantileLevels: [...result.latencyQuantileLevels],
 		latencyQuantilesMs: [...result.latencyQuantilesMs],
 		body: result.body === null ? null : { ...result.body },
-		userAgents: result.userAgents.map((agent) => ({ ...agent })),
-		slowest: result.slowest.map((request) => ({ ...request })),
+		userAgents: Arr.map(result.userAgents, (agent) => ({ ...agent })),
+		slowest: Arr.map(result.slowest, (request) => ({ ...request })),
 	}
 	return detail
 })

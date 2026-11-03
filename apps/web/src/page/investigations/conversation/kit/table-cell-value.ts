@@ -1,6 +1,7 @@
 // BOUNDARY: This module reads model-authored table text and narrows it before it
 // becomes a link or a color.
 import type { LatencyScale } from "@maple/ui/lib/latency-tone"
+import { String as Str } from "effect"
 
 /**
  * What a column is about, read off its header. Shape alone settles some cells
@@ -67,7 +68,7 @@ const UNIT_MS = new Map<string, number>([
 
 /** Header phrasings, loosest first: the model writes "Duration", "p99 latency", "Avg". */
 export function columnRole(header: string): ColumnRole | null {
-	const text = header.toLowerCase()
+	const text = Str.toLowerCase(header)
 	if (/trace\s*id|^trace$/.test(text)) return "trace"
 	if (/service|operation owner/.test(text)) return "service"
 	if (/duration|latency|elapsed|\bp5\d\b|\bp9\d\b|response time/.test(text)) return "duration"
@@ -84,7 +85,7 @@ export function columnRole(header: string): ColumnRole | null {
  * the p99 budget, the most forgiving of the four.
  */
 export function durationScale(header: string): LatencyScale {
-	const text = header.toLowerCase()
+	const text = Str.toLowerCase(header)
 	if (/\bp5\d\b|median/.test(text)) return "p50"
 	if (/\bavg\b|average|\bmean\b/.test(text)) return "avg"
 	if (/\bp9[0-8]\b/.test(text)) return "p95"
@@ -94,11 +95,11 @@ export function durationScale(header: string): LatencyScale {
 function parseDuration(text: string, scale: LatencyScale): CellValue | null {
 	const match = DURATION_RE.exec(text)
 	if (!match) return null
-	const amount = Number(match[1]!.replaceAll(",", ""))
-	const unit = UNIT_MS.get(match[2]!.toLowerCase())
+	const amount = Number(Str.replaceAll(",", "")(match[1]!))
+	const unit = UNIT_MS.get(Str.toLowerCase(match[2]!))
 	if (!Number.isFinite(amount) || unit === undefined) return null
 	const note = match[3] ?? null
-	const value = note ? text.slice(0, text.length - note.length).trimEnd() : text
+	const value = note ? Str.trimEnd(Str.slice(0, text.length - note.length)(text)) : text
 	return { kind: "duration", ms: amount * unit, scale, value, note }
 }
 
@@ -120,12 +121,12 @@ export interface ClassifyOptions {
  * and a wrong claim in a reply about production costs more than a missing one.
  */
 export function classifyCell(raw: string, options: ClassifyOptions): CellValue {
-	const text = raw.trim()
+	const text = Str.trim(raw)
 	if (text.length === 0) return PLAIN
 
-	if (TRACE_ID_RE.test(text)) return { kind: "trace", traceId: text.toLowerCase() }
+	if (TRACE_ID_RE.test(text)) return { kind: "trace", traceId: Str.toLowerCase(text) }
 
-	if (SEVERITY_LABELS.has(text.toUpperCase())) return { kind: "severity", label: text.toUpperCase() }
+	if (SEVERITY_LABELS.has(Str.toUpperCase(text))) return { kind: "severity", label: Str.toUpperCase(text) }
 
 	const duration = parseDuration(text, durationScale(options.header))
 	if (duration) return duration
@@ -135,13 +136,13 @@ export function classifyCell(raw: string, options: ClassifyOptions): CellValue {
 			return options.knownServices.has(text) ? { kind: "service", name: text } : PLAIN
 		}
 		case "error": {
-			const lower = text.toLowerCase()
+			const lower = Str.toLowerCase(text)
 			if (lower === "yes" || lower === "true") return { kind: "flag", severe: true, text }
 			if (lower === "no" || lower === "false" || lower === "none") {
 				return { kind: "flag", severe: false, text }
 			}
 			if (COUNT_RE.test(text)) {
-				return { kind: "flag", severe: Number(text.replaceAll(",", "")) > 0, text }
+				return { kind: "flag", severe: Number(Str.replaceAll(",", "")(text)) > 0, text }
 			}
 			return PLAIN
 		}

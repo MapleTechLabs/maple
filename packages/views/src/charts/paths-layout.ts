@@ -1,4 +1,5 @@
 import { asFiniteNumber } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { Array as Arr, String as Str } from "effect"
 
 // The graph and layout of `PathsChart` (packages/ui/src/components/charts/paths/paths-chart.tsx):
 // rows are hops, column 0 is the anchor, `''` ended and `$other` the folded remainder.
@@ -59,9 +60,14 @@ export const toGraph = (
 	const touch = (column: number, name: string, count: number) => {
 		const id = nodeId(column, name)
 		const node = nodes.get(id)
-		nodes.set(id, node === undefined ? { id, column, name, count, kind: kindOf(name) } : { ...node, count: node.count + count })
+		nodes.set(
+			id,
+			node === undefined
+				? { id, column, name, count, kind: kindOf(name) }
+				: { ...node, count: node.count + count },
+		)
 	}
-	source.forEach((row) => {
+	Arr.forEach(source, (row) => {
 		const hop = asFiniteNumber(row.hop)
 		const count = asFiniteNumber(row.count)
 		if (hop < 1 || count <= 0) return
@@ -81,18 +87,18 @@ const placeNodes = (
 	scale: number,
 ): Map<string, PlacedNode> => {
 	const placed = new Map<string, PlacedNode>()
-	columns.forEach((column) => {
-		const ordered = nodes
-			.filter((node) => node.column === column)
-			.toSorted(
-				(a, b) =>
-					KIND_RANK[a.kind] - KIND_RANK[b.kind] || b.count - a.count || a.name.localeCompare(b.name),
-			)
-		ordered.reduce((y, node) => {
+	Arr.forEach(columns, (column) => {
+		const ordered = Arr.filter(nodes, (node) => node.column === column).toSorted(
+			(a, b) =>
+				KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
+				b.count - a.count ||
+				Str.localeCompare(b.name)(a.name),
+		)
+		Arr.reduce(ordered, HEADER_H, (y, node) => {
 			const h = Math.max(2, node.count * scale)
 			placed.set(node.id, { ...node, x: columnX(column), y, h })
 			return y + h + NODE_GAP
-		}, HEADER_H)
+		})
 	})
 	return placed
 }
@@ -105,45 +111,47 @@ export const layoutPaths = (
 	height: number,
 	reverse: boolean,
 ): PathsLayout => {
-	const columns = [...new Set(nodes.map((node) => node.column))].toSorted((a, b) => a - b)
+	const columns = [...new Set(Arr.map(nodes, (node) => node.column))].toSorted((a, b) => a - b)
 	const columnX = (column: number): number => {
 		const index = columns.indexOf(column)
 		const x = columns.length === 1 ? 0 : (index * (width - NODE_W)) / (columns.length - 1)
 		return reverse ? width - NODE_W - x : x
 	}
-	const inColumn = (column: number) => nodes.filter((node) => node.column === column)
+	const inColumn = (column: number) => Arr.filter(nodes, (node) => node.column === column)
 	const maxTotal = Math.max(
 		1,
-		...columns.map((column) => inColumn(column).reduce((acc, node) => acc + node.count, 0)),
+		...Arr.map(columns, (column) => Arr.reduce(inColumn(column), 0, (acc, node) => acc + node.count)),
 	)
-	const maxNodes = Math.max(1, ...columns.map((column) => inColumn(column).length))
+	const maxNodes = Math.max(1, ...Arr.map(columns, (column) => inColumn(column).length))
 	const plotH = Math.max(0, height - HEADER_H - FOOTER_H - NODE_GAP * (maxNodes - 1))
 	const scale = plotH / maxTotal
 	const placed = placeNodes(nodes, columns, columnX, scale)
 	const yOf = (id: string) => placed.get(id)?.y ?? 0
 	const outOffset = new Map<string, number>()
 	const inOffset = new Map<string, number>()
-	const withSy = links
-		.toSorted((a, b) => yOf(a.source) - yOf(b.source) || yOf(a.target) - yOf(b.target))
-		.map((link) => {
+	const withSy = Arr.map(
+		links.toSorted((a, b) => yOf(a.source) - yOf(b.source) || yOf(a.target) - yOf(b.target)),
+		(link) => {
 			const h = link.count * scale
 			const sy = yOf(link.source) + (outOffset.get(link.source) ?? 0)
 			outOffset.set(link.source, (outOffset.get(link.source) ?? 0) + h)
 			return { ...link, sy, h }
-		})
-	const laid = withSy
-		.toSorted((a, b) => yOf(a.target) - yOf(b.target) || yOf(a.source) - yOf(b.source))
-		.map((link): PlacedLink => {
+		},
+	)
+	const laid = Arr.map(
+		withSy.toSorted((a, b) => yOf(a.target) - yOf(b.target) || yOf(a.source) - yOf(b.source)),
+		(link): PlacedLink => {
 			const ty = yOf(link.target) + (inOffset.get(link.target) ?? 0)
 			inOffset.set(link.target, (inOffset.get(link.target) ?? 0) + link.h)
 			const sx = placed.get(link.source)?.x ?? 0
 			const tx = placed.get(link.target)?.x ?? 0
 			return { ...link, ty, x0: reverse ? sx : sx + NODE_W, x1: reverse ? tx + NODE_W : tx }
-		})
+		},
+	)
 	return { nodes: placed, links: laid, columns }
 }
 
-export const ribbon =(x0: number, sy: number, x1: number, ty: number, h: number): string => {
+export const ribbon = (x0: number, sy: number, x1: number, ty: number, h: number): string => {
 	const cx = (x0 + x1) / 2
 	return `M${x0},${sy} C${cx},${sy} ${cx},${ty} ${x1},${ty} L${x1},${ty + h} C${cx},${ty + h} ${cx},${sy + h} ${x0},${sy + h} Z`
 }

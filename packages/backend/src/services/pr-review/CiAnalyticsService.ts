@@ -19,7 +19,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositories } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { CompiledQueryInput } from "@maple/query-engine/execution"
-import { Array as Arr, Clock, Context, DateTime, Effect, Layer } from "effect"
+import { Array as Arr, Clock, Context, DateTime, Effect, Layer, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -74,8 +74,8 @@ const encodeCursor = (startedAtMs: number, traceId: string) => `${startedAtMs}_$
 const decodeCursor = (cursor: string) => {
 	const at = cursor.indexOf("_")
 	return {
-		startedAt: DateTime.makeUnsafe(Number(cursor.slice(0, at))),
-		traceId: cursor.slice(at + 1),
+		startedAt: DateTime.makeUnsafe(Number(Str.slice(0, at)(cursor))),
+		traceId: Str.slice(at + 1)(cursor),
 	}
 }
 

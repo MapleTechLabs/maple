@@ -3,7 +3,7 @@
  * Usage: bun lib/lockfiles/scripts/bench.ts bun.lock [more lockfiles...]
  */
 import { readFileSync } from "node:fs"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { parseLockfile } from "../src/index.ts"
 
 const RUNS = 5
@@ -18,18 +18,18 @@ const benchOne = (path: string) =>
 				return { parsed, ms: performance.now() - start }
 			}),
 		)
-		const sorted = timings.map((t) => t.ms).sort((a, b) => a - b)
+		const sorted = Arr.map(timings, (t) => t.ms).sort((a, b) => a - b)
 		const first = timings[0]
 		if (first === undefined) return
 		const { parsed } = first
 		// Without manifests some formats (yarn) cannot tell direct dependencies apart.
-		const direct = parsed.packages.some((p) => p.relation === "unknown")
+		const direct = Arr.some(parsed.packages, (p) => p.relation === "unknown")
 			? "unknown"
-			: String(parsed.packages.filter((p) => p.relation === "direct").length)
+			: String(Arr.filter(parsed.packages, (p) => p.relation === "direct").length)
 		yield* Effect.log(
 			`${path}: ${parsed.kind}, ${parsed.packages.length} packages (${direct} direct), ${(content.length / 1024).toFixed(0)} KiB, ` +
 				`first ${first.ms.toFixed(1)} ms, median ${(sorted[Math.floor(RUNS / 2)] ?? 0).toFixed(1)} ms over ${RUNS} runs` +
-				(parsed.warnings.length > 0 ? `, warnings: ${parsed.warnings.join("; ")}` : ""),
+				(parsed.warnings.length > 0 ? `, warnings: ${Arr.join(parsed.warnings, "; ")}` : ""),
 		)
 	})
 

@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { MAPLE_REGION_LABELS } from "@maple/domain/organization-regions"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { hasMultipleRegions } from "../lib/region"
-import { Option, Record } from "effect"
+import { Option, Record, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
@@ -230,10 +230,10 @@ const footerNavRow = (
 			h,
 			{
 				rail: "active",
-				isActive: [
-					options.href,
-					...(options.alsoActive === undefined ? [] : [options.alsoActive]),
-				].some((path) => currentPath === path || currentPath.startsWith(`${path}/`)),
+				isActive: Arr.some(
+					[options.href, ...(options.alsoActive === undefined ? [] : [options.alsoActive])],
+					(path) => currentPath === path || Str.startsWith(`${path}/`)(currentPath),
+				),
 				link: { href: options.href, currentPath },
 				hasTooltip: true,
 				attributes: tip(options.title),

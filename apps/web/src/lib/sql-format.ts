@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 /**
  * Conservative, dependency-free SQL pretty-printer tuned for the ClickHouse
  * dialect Maple writes (Grafana-style `$__macros`, `Map['key']` access, the
@@ -106,7 +107,7 @@ function lex(sql: string): Tok[] {
 		else if (macro !== undefined) toks.push({ type: "macro", value: macro, up: "" })
 		else if (op !== undefined) toks.push({ type: "op", value: op, up: op })
 		else if (num !== undefined) toks.push({ type: "num", value: num, up: "" })
-		else if (word !== undefined) toks.push({ type: "word", value: word, up: word.toUpperCase() })
+		else if (word !== undefined) toks.push({ type: "word", value: word, up: Str.toUpperCase(word) })
 		else if (punct !== undefined) toks.push({ type: "punct", value: punct, up: punct })
 		else if (other !== undefined) toks.push({ type: "other", value: other, up: other })
 	}
@@ -168,7 +169,7 @@ function spacer(prev: Tok, cur: Tok): string {
 
 export function formatSql(sql: string): string {
 	try {
-		const input = sql.trim()
+		const input = Str.trim(sql)
 		if (!input) return input
 		const toks = lex(input)
 		if (toks.length === 0) return input
@@ -205,7 +206,7 @@ export function formatSql(sql: string): string {
 
 			let sep: string
 			if (!prev) sep = ""
-			else if (prev.type === "comment" && prev.value.startsWith("--")) sep = "\n"
+			else if (prev.type === "comment" && Str.startsWith("--")(prev.value)) sep = "\n"
 			else if (isClauseBreak) sep = "\n"
 			else if (isAndOrBreak || afterSelectComma || firstSelectItem) sep = `\n${INDENT}`
 			else sep = spacer(prev, t)
@@ -227,9 +228,9 @@ export function formatSql(sql: string): string {
 			prev = t
 		}
 
-		const result = out.trim()
+		const result = Str.trim(out)
 		return result.length > 0 ? result : input
 	} catch {
-		return sql.trim()
+		return Str.trim(sql)
 	}
 }

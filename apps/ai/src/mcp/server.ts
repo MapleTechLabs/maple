@@ -1,5 +1,5 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Array as Arr } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { McpToolExecutorLoader, McpToolsUnavailableError } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
@@ -13,7 +13,7 @@ import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 const toCallToolResult = (result: McpToolResult): McpSchema.CallToolResult =>
 	new McpSchema.CallToolResult({
 		isError: result.isError === true ? true : undefined,
-		content: result.content.map((entry) => ({
+		content: Arr.map(result.content, (entry) => ({
 			type: "text" as const,
 			text: entry.text,
 		})),

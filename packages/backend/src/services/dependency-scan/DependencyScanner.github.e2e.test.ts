@@ -6,7 +6,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { GitCommitSha, VcsInstallation, VcsRepo, type VcsRepositoryRef } from "@maple/domain/http"
-import { Console, Effect, Layer, Option, Schema } from "effect"
+import { Console, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { spawnSync } from "node:child_process"
 import { mkdtempSync } from "node:fs"
@@ -17,7 +17,7 @@ import { PackageAdvisoryCatalog } from "@maple/backend/services/security/Package
 import { DependencyScanner, DependencySources } from "./DependencyScanner"
 import { DependencyScanStore } from "./DependencyScanStore"
 
-const repos = (process.env.DEPSCAN_GITHUB_E2E_REPOS ?? "").split(",").filter((repo) => repo !== "")
+const repos = Arr.filter(Str.split(",")(process.env.DEPSCAN_GITHUB_E2E_REPOS ?? ""), (repo) => repo !== "")
 const token = process.env.GITHUB_TOKEN ?? ""
 
 const trackedDbs: Array<TestDb> = []
@@ -63,7 +63,7 @@ const source = {
 			Effect.flatMap(Schema.decodeUnknownEffect(Tree)),
 			Effect.map((tree) => ({
 				truncated: tree.truncated,
-				files: tree.tree.flatMap((entry) =>
+				files: Arr.flatMap(tree.tree, (entry) =>
 					entry.type === "blob"
 						? [{ path: entry.path, sha: entry.sha, size: entry.size ?? 0 }]
 						: [],
@@ -74,7 +74,9 @@ const source = {
 	fetchBlobText: (_installation: unknown, _repo: VcsRepositoryRef, blobSha: string) =>
 		github(repoOf(_repo), `/git/blobs/${blobSha}`).pipe(
 			Effect.flatMap(Schema.decodeUnknownEffect(Blob)),
-			Effect.map((blob) => Buffer.from(blob.content.replace(/\s/g, ""), "base64").toString("utf8")),
+			Effect.map((blob) =>
+				Buffer.from(Str.replace(/\s/g, "")(blob.content), "base64").toString("utf8"),
+			),
 			Effect.orDie,
 		),
 }
@@ -101,7 +103,7 @@ const osvScanner = (path: string): OsvScannerOutput => {
 
 const scanAndCompare = (fullName: string) =>
 	Effect.gen(function* () {
-		const [owner = "", name = ""] = fullName.split("/")
+		const [owner, name = ""] = Str.split("/")(fullName)
 		const repoInfo = yield* github(fullName, "").pipe(
 			Effect.flatMap(Schema.decodeUnknownEffect(Repo)),
 			Effect.orDie,
@@ -154,7 +156,7 @@ const scanAndCompare = (fullName: string) =>
 		const scan = outcome.scan
 		const matches = yield* store.scanMatches({ orgId: repository.orgId, scanId: scan.id })
 		yield* Console.log(
-			`${fullName}@${scan.commitSha.slice(0, 12)} (${branch}): ${scan.lockfiles.length} lockfiles, ${scan.packageCount} packages, ${matches.length} vulnerable matches, ${Date.now() - started} ms`,
+			`${fullName}@${Str.slice(0, 12)(scan.commitSha)} (${branch}): ${scan.lockfiles.length} lockfiles, ${scan.packageCount} packages, ${matches.length} vulnerable matches, ${Date.now() - started} ms`,
 		)
 
 		const dir = mkdtempSync(join(tmpdir(), "depscan-"))
@@ -168,10 +170,10 @@ const scanAndCompare = (fullName: string) =>
 			`https://github.com/${fullName}`,
 			dir,
 		])
-		const cloned = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"]).stdout.toString().trim()
+		const cloned = Str.trim(spawnSync("git", ["-C", dir, "rev-parse", "HEAD"]).stdout.toString())
 		if (cloned !== scan.commitSha) yield* Console.log(`  clone is at ${cloned}, comparison may differ`)
 
-		const results = scan.lockfiles.map((lockfile) => {
+		const results = Arr.map(scan.lockfiles, (lockfile) => {
 			// An unsupported format or an oversized file is an expected outcome; a failed read is not.
 			if (lockfile.status !== "parsed")
 				return {
@@ -179,51 +181,70 @@ const scanAndCompare = (fullName: string) =>
 					ok: lockfile.status === "unsupported" || lockfile.status === "too_large",
 				}
 			const ours = new Map<string, Array<Set<string>>>()
-			matches
-				.filter((match) => match.lockfilePath === lockfile.path)
-				.forEach((match) => {
-					const key = `${match.ecosystem}:${match.packageName}@${match.version.replace(/^v/, "")}`
+			Arr.forEach(
+				Arr.filter(matches, (match) => match.lockfilePath === lockfile.path),
+				(match) => {
+					const key = `${match.ecosystem}:${match.packageName}@${Str.replace(/^v/, "")(match.version)}`
 					ours.set(key, [...(ours.get(key) ?? []), new Set([match.advisoryId, ...match.aliases])])
-				})
+				},
+			)
 			const theirs = new Map(
-				(osvScanner(join(dir, lockfile.path)).results ?? [])
-					.flatMap((result) => result.packages ?? [])
-					.map((pkg) => [
-						`${pkg.package.ecosystem}:${pkg.package.name}@${pkg.package.version.replace(/^v/, "")}`,
-						(pkg.groups ?? []).map((group) => new Set([...group.ids, ...(group.aliases ?? [])])),
-					]),
+				Arr.map(
+					Arr.flatMap(
+						osvScanner(join(dir, lockfile.path)).results ?? [],
+						(result) => result.packages ?? [],
+					),
+					(pkg) => [
+						`${pkg.package.ecosystem}:${pkg.package.name}@${Str.replace(/^v/, "")(pkg.package.version)}`,
+						Arr.map(
+							pkg.groups ?? [],
+							(group) => new Set([...group.ids, ...(group.aliases ?? [])]),
+						),
+					],
+				),
 			)
 			const keys = new Set([...ours.keys(), ...theirs.keys()])
-			const diffs = [...keys].flatMap((key) => {
+			const diffs = Arr.flatMap([...keys], (key) => {
 				const mine = ours.get(key) ?? []
 				const other = theirs.get(key) ?? []
-				const missing = other.filter(
-					(group) => !mine.some((names) => [...group].some((id) => names.has(id))),
+				const missing = Arr.filter(
+					other,
+					(group) => !Arr.some(mine, (names) => Arr.some([...group], (id) => names.has(id))),
 				)
-				const extra = mine.filter(
-					(names) => !other.some((group) => [...group].some((id) => names.has(id))),
+				const extra = Arr.filter(
+					mine,
+					(names) => !Arr.some(other, (group) => Arr.some([...group], (id) => names.has(id))),
 				)
 				return missing.length === 0 && extra.length === 0
 					? []
 					: [
-							`    ${key}: only osv-scanner ${missing.map((g) => [...g][0]).join(",")}; only ours ${extra.map((n) => [...n][0]).join(",")}`,
+							`    ${key}: only osv-scanner ${Arr.join(
+								Arr.map(missing, (g) => [...g][0]),
+								",",
+							)}; only ours ${Arr.join(
+								Arr.map(extra, (n) => [...n][0]),
+								",",
+							)}`,
 						]
 			})
-			const count = [...ours.values()].reduce((sum, list) => sum + list.length, 0)
-			const theirCount = [...theirs.values()].reduce((sum, list) => sum + list.length, 0)
+			const count = Arr.reduce([...ours.values()], 0, (sum, list) => sum + list.length)
+			const theirCount = Arr.reduce([...theirs.values()], 0, (sum, list) => sum + list.length)
 			return {
-				line: [
-					`  ${diffs.length === 0 ? "MATCH" : "DIFF "} ${lockfile.path}: ${lockfile.packageCount} packages, ${count} advisories (osv-scanner ${theirCount})`,
-					...diffs,
-				].join("\n"),
+				line: Arr.join(
+					[
+						`  ${diffs.length === 0 ? "MATCH" : "DIFF "} ${lockfile.path}: ${lockfile.packageCount} packages, ${count} advisories (osv-scanner ${theirCount})`,
+						...diffs,
+					],
+					"\n",
+				),
 				ok: diffs.length === 0,
 			}
 		})
 		yield* Effect.forEach(results, (result) => Console.log(result.line))
 		// A scan that compared no lockfile proves nothing.
-		const compared = scan.lockfiles.filter((lockfile) => lockfile.status === "parsed").length
+		const compared = Arr.filter(scan.lockfiles, (lockfile) => lockfile.status === "parsed").length
 		return [
-			...results.flatMap((result) => (result.ok ? [] : [result.line])),
+			...Arr.flatMap(results, (result) => (result.ok ? [] : [result.line])),
 			...(compared === 0 ? [`  no lockfile of ${fullName} was parsed and compared`] : []),
 		]
 	})

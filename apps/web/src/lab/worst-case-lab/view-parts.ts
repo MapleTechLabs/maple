@@ -1,5 +1,5 @@
 import { containerImage, finding, formatterCases, hosts, pods } from "../worst-case-fixture"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { HOST_SORT_ACCESSORS } from "../../page/infra/hosts/list/view"
 import { hostTable } from "../../page/infra/hosts/list/view-table"
@@ -81,7 +81,7 @@ export const formattersSection = (h: H, model: Model): Html =>
 				),
 				h.tbody(
 					[],
-					formatterCases(model.mode).map((row) =>
+					Arr.map(formatterCases(model.mode), (row) =>
 						h.tr(
 							[],
 							[
@@ -96,7 +96,7 @@ export const formattersSection = (h: H, model: Model): Html =>
 		),
 		h.div(
 			[h.Class("max-w-3xl space-y-1 rounded-md border")],
-			footers(h, model).flatMap((footer) => (footer === null ? [] : [footer])),
+			Arr.flatMap(footers(h, model), (footer) => (footer === null ? [] : [footer])),
 		),
 	])
 
@@ -138,26 +138,26 @@ export const modeToggle = (h: H, model: Model): Html =>
 		[
 			h.div(
 				[h.Class("flex gap-0.5 rounded-full bg-neutral-200 p-1")],
-				(
+				Arr.map(
 					[
 						{ value: "demo", label: "Demo data" },
 						{ value: "worst", label: "Worst case" },
-					] satisfies ReadonlyArray<{ value: Model["mode"]; label: string }>
-				).map((option) =>
-					h.button(
-						[
-							h.Key(option.value),
-							h.Type("button"),
-							h.AriaPressed(String(model.mode === option.value)),
-							h.OnClick(Message.ClickedMode({ mode: option.value })),
-							h.Class(
-								model.mode === option.value
-									? "rounded-full px-3 py-1 text-xs bg-white text-neutral-900"
-									: "rounded-full px-3 py-1 text-xs text-neutral-600",
-							),
-						],
-						[option.label],
-					),
+					] satisfies ReadonlyArray<{ value: Model["mode"]; label: string }>,
+					(option) =>
+						h.button(
+							[
+								h.Key(option.value),
+								h.Type("button"),
+								h.AriaPressed(String(model.mode === option.value)),
+								h.OnClick(Message.ClickedMode({ mode: option.value })),
+								h.Class(
+									model.mode === option.value
+										? "rounded-full px-3 py-1 text-xs bg-white text-neutral-900"
+										: "rounded-full px-3 py-1 text-xs text-neutral-600",
+								),
+							],
+							[option.label],
+						),
 				),
 			),
 		],

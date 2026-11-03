@@ -7,7 +7,7 @@
  * added here so the container never holds it, and never `git-receive-pack`), the public npm
  * registry read-only (`/npm/`), and the probe's marker. Everything else is refused.
  */
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { GATEWAY_HOST, GATEWAY_MARKER } from "./executor-probe"
 
 export interface GatewayProps {
@@ -77,10 +77,10 @@ const basicToken = (token: string) => `Basic ${btoa(`x-access-token:${token}`)}`
 export const route = (request: Request, props: GatewayProps): Route | { readonly refused: string } => {
 	const url = new URL(request.url)
 	const method = request.method
-	if (url.pathname.startsWith("/git/")) {
+	if (Str.startsWith("/git/")(url.pathname)) {
 		const git = props.git
 		if (git === undefined) return { refused: "no repository is being prepared" }
-		const remote = git.remoteUrl.replace(/\/+$/u, "")
+		const remote = Str.replace(/\/+$/u, "")(git.remoteUrl)
 		if (
 			method === "GET" &&
 			url.pathname === "/git/info/refs" &&
@@ -103,12 +103,15 @@ export const route = (request: Request, props: GatewayProps): Route | { readonly
 			}
 		return { refused: `${method} ${url.pathname} is not a git fetch` }
 	}
-	if (url.pathname.startsWith("/npm/")) {
+	if (Str.startsWith("/npm/")(url.pathname)) {
 		if (method !== "GET" && method !== "HEAD") return { refused: "the npm registry is read-only" }
-		const rest = url.pathname.slice("/npm/".length)
-		if (rest === "" || rest.split("/").some((part) => part === "" || part === "." || part === ".."))
+		const rest = Str.slice("/npm/".length)(url.pathname)
+		if (
+			rest === "" ||
+			Arr.some(Str.split("/")(rest), (part) => part === "" || part === "." || part === "..")
+		)
 			return { refused: "not a package path" }
-		const tarball = rest.endsWith(".tgz")
+		const tarball = Str.endsWith(".tgz")(rest)
 		return {
 			url: `${NPM_UPSTREAM}${rest}`,
 			method,
@@ -134,7 +137,7 @@ export const gatewayFetch = (
 			yield* Effect.logWarning("executor gateway refused a request").pipe(
 				Effect.annotateLogs({
 					"maple.executor.gateway.method": request.method,
-					"maple.executor.gateway.path": url.pathname.slice(0, 200),
+					"maple.executor.gateway.path": Str.slice(0, 200)(url.pathname),
 					"maple.executor.gateway.reason": target.refused,
 				}),
 			)
@@ -154,7 +157,7 @@ export const gatewayFetch = (
 			upstream(new Request(target.url, { method: target.method, headers, body, redirect: "follow" })),
 		)
 		const responseHeaders = forwardHeaders(response.headers, FORWARDED_RESPONSE_HEADERS)
-		const json = (response.headers.get("content-type") ?? "").includes("json")
+		const json = Str.includes("json")(response.headers.get("content-type") ?? "")
 		if (target.rewriteRegistryUrls && json && response.ok) {
 			const length = Number(response.headers.get("content-length") ?? "0")
 			if (length > MAX_NPM_METADATA_BYTES) return refuse(502, "package metadata is too large")
@@ -162,7 +165,7 @@ export const gatewayFetch = (
 			const text = yield* attempt(() =>
 				new Response(capped(response.body, MAX_NPM_METADATA_BYTES)).text(),
 			)
-			return new Response(text.replaceAll(NPM_UPSTREAM, NPM_THROUGH_GATEWAY), {
+			return new Response(Str.replaceAll(NPM_UPSTREAM, NPM_THROUGH_GATEWAY)(text), {
 				status: response.status,
 				headers: responseHeaders,
 			})
@@ -174,7 +177,7 @@ export const gatewayFetch = (
 	}).pipe(
 		Effect.catch((error) =>
 			Effect.logWarning("executor gateway upstream failed").pipe(
-				Effect.annotateLogs({ "error.message": error.slice(0, 300) }),
+				Effect.annotateLogs({ "error.message": Str.slice(0, 300)(error) }),
 				Effect.as(refuse(502, "the upstream did not answer")),
 			),
 		),

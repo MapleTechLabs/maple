@@ -23,7 +23,18 @@ import {
 } from "../../../lib/billing/controls"
 import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
-import { Cause, Clock, DateTime, Duration, Effect, Option, Result, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	DateTime,
+	Duration,
+	Effect,
+	Option,
+	Result,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { AsyncData, Command, Dom } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { trackProduct } from "../../../data/analytics"
@@ -168,17 +179,18 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 	execute: currentClerkUser.pipe(
 		Effect.map((user): ReadonlyArray<OrgChoice> => {
 			const activeId = window.Clerk?.organization?.id
-			return (user.organizationMemberships ?? [])
-				.filter(
+			return Arr.map(
+				Arr.filter(
+					user.organizationMemberships ?? [],
 					(membership) =>
 						membership.role === "org:admin" && membership.organization.id !== activeId,
-				)
-				.map(({ organization }) => ({
+				),
+				({ organization }) => ({
 					orgId: OrgId.make(organization.id),
 					name: organization.name,
 					imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
-				}))
-				.toSorted((a, b) => a.name.localeCompare(b.name))
+				}),
+			).toSorted((a, b) => Str.localeCompare(b.name)(a.name))
 		}),
 		loaded((result) => Message.CompletedFetchOrgChoices({ result })),
 	),

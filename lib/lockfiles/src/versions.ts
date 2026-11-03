@@ -1,4 +1,5 @@
 import type { Ecosystem } from "./types.ts"
+import { String as Str } from "effect"
 
 interface SemVer {
 	readonly major: string
@@ -19,8 +20,8 @@ const isNumeric = (id: string): boolean => /^\d+$/.test(id)
 
 /** Numeric strings of any length, compared without overflow. */
 const compareNumeric = (a: string, b: string): number => {
-	const x = a.replace(/^0+(?=\d)/, "")
-	const y = b.replace(/^0+(?=\d)/, "")
+	const x = Str.replace(/^0+(?=\d)/, "")(a)
+	const y = Str.replace(/^0+(?=\d)/, "")(b)
 	return x.length !== y.length ? x.length - y.length : x < y ? -1 : x > y ? 1 : 0
 }
 
@@ -49,16 +50,16 @@ const toSemVer = (m: RegExpExecArray): SemVer => ({
 	major: m[1] ?? "0",
 	minor: m[2] ?? "0",
 	patch: m[3] ?? "0",
-	prerelease: m[4] === undefined ? [] : m[4].split("."),
+	prerelease: m[4] === undefined ? [] : Str.split(".")(m[4]),
 })
 
 const parseSemVer = (version: string): SemVer | undefined => {
-	const m = SEMVER.exec(version.trim().replace(/^=?\s*v?/, ""))
+	const m = SEMVER.exec(Str.replace(/^=?\s*v?/, "")(Str.trim(version)))
 	return m === null ? undefined : toSemVer(m)
 }
 
 const parseGo = (version: string): SemVer | undefined => {
-	const m = GO_SEMVER.exec(version.trim())
+	const m = GO_SEMVER.exec(Str.trim(version))
 	return m === null ? undefined : toSemVer(m)
 }
 

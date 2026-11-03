@@ -13,7 +13,7 @@ import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceRuntimes, getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
 import { getServiceDependenciesBundle } from "@maple/web-data/warehouse/service-map"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
-import { Clock, Duration, Effect, Predicate, Schema } from "effect"
+import { Clock, Duration, Effect, Predicate, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readCommitDetail } from "../../kit/commit-card"
@@ -154,14 +154,15 @@ export const FetchUsage = Command.define("FetchServiceDetailUsage", {
 		getServiceUsage({ data: input }).pipe(
 			Effect.mapBoth({
 				onSuccess: (response) => ({
-					totals: response.data.reduce(
+					totals: Arr.reduce(
+						response.data,
+						{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
 						(acc, row) => ({
 							logs: acc.logs + row.totalLogs,
 							traces: acc.traces + row.totalTraces,
 							metrics: acc.metrics + row.totalMetrics,
 							dataSize: acc.dataSize + row.dataSizeBytes,
 						}),
-						{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
 					),
 					previous: response.previousTotals ?? null,
 				}),
@@ -214,7 +215,7 @@ export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.errorIssues.list({ query })
-			return response.data.map((issue) => ({
+			return Arr.map(response.data, (issue) => ({
 				id: issue.id,
 				title:
 					issue.error_label || issue.exception_type || issue.exception_message || "Unknown error",

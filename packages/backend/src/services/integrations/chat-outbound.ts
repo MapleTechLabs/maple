@@ -114,9 +114,10 @@ export const missingOutboundConfig = (
 	workspace: OwnedChatWorkspace,
 	outboundConfig: ConnectorConfig,
 ): ReadonlyArray<string> =>
-	workspace.connector.outbound.requiredConfig
-		.filter((key) => !outboundConfig.has(key.name))
-		.map((key) => key.name)
+	Arr.map(
+		Arr.filter(workspace.connector.outbound.requiredConfig, (key) => !outboundConfig.has(key.name)),
+		(key) => key.name,
+	)
 
 /**
  * The workspace's outbound transport, with the deployment's outbound config and the workspace's

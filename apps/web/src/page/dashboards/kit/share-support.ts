@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT, PRODUCT_EVENTS_PATHS_ENDPOINT } from "@maple/widgets/dashboard"
 
 // Which widgets a shared view can render, judged
@@ -46,7 +46,10 @@ export interface UnsupportedShareWidget {
 }
 
 /** Widgets that will render as unavailable tiles for a viewer. */
-export const unsupportedShareWidgets = (widgets: ReadonlyArray<WidgetLike>): ReadonlyArray<UnsupportedShareWidget> =>
-	widgets
-		.filter((widget) => !isShareSupported(widget.dataSource))
-		.map((widget) => ({ id: widget.id, title: widget.display?.title ?? widget.id }))
+export const unsupportedShareWidgets = (
+	widgets: ReadonlyArray<WidgetLike>,
+): ReadonlyArray<UnsupportedShareWidget> =>
+	Arr.map(
+		Arr.filter(widgets, (widget) => !isShareSupported(widget.dataSource)),
+		(widget) => ({ id: widget.id, title: widget.display?.title ?? widget.id }),
+	)

@@ -1,6 +1,6 @@
 import type { ErrorIssueDetailResponse } from "@maple/domain/http"
 import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -144,7 +144,7 @@ const overview = (
 	const { issue, timeseries } = detail
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
 	const stats = issueStats(h, issue, {
-		windowCount: timeseries.reduce((sum, bucket) => sum + bucket.count, 0),
+		windowCount: Arr.reduce(timeseries, 0, (sum, bucket) => sum + bucket.count),
 		windowLabel: windowLabel(model.search),
 		spark: signal?.dense ?? [],
 		surge: signal?.surge ?? null,
@@ -220,7 +220,7 @@ const otherTab = (
 	const participants = [
 		...(issue.leaseHolder ? [issue.leaseHolder] : []),
 		...(issue.assignedActor ? [issue.assignedActor] : []),
-		...[...events].reverse().flatMap((event) => (event.actor ? [event.actor] : [])),
+		...Arr.flatMap([...events].reverse(), (event) => (event.actor ? [event.actor] : [])),
 	]
 	return bodySection(h, { id: "activity", title: "Activity" }, [
 		AsyncData.matchData(model.events.data, {

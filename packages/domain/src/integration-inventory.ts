@@ -9,6 +9,7 @@ import {
 	worstSourceStatus,
 } from "./source-health"
 import { redactUrlSecrets } from "./url-redaction"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 export const INTEGRATION_PROVIDERS = [
 	"github",
@@ -206,10 +207,10 @@ const failingError = (state: PollState, status: IntegrationStatus) =>
 
 /** "2 of 14 zones failing: <first error>", or null when every resource is healthy. */
 const summarizeResources = (resources: ReadonlyArray<IntegrationResource>): string | null => {
-	const unhealthy = resources.filter((r) => r.status !== "healthy")
+	const unhealthy = Arr.filter(resources, (r) => r.status !== "healthy")
 	if (unhealthy.length === 0) return null
-	const worst = worstStatus(unhealthy.map((r) => r.status))
-	const ofWorst = unhealthy.filter((r) => r.status === worst)
+	const worst = worstStatus(Arr.map(unhealthy, (r) => r.status))
+	const ofWorst = Arr.filter(unhealthy, (r) => r.status === worst)
 	const example = ofWorst.find((r) => r.lastError !== null) ?? ofWorst[0]
 	if (example === undefined) return null
 	const detail = example.lastError ?? example.note
@@ -245,8 +246,8 @@ const entry = (
 		readonly feeds?: ReadonlyArray<string>
 	},
 ): IntegrationEntry => {
-	const resources = fields.resources.map((r) => withAge(r, now))
-	const resourceStatus = worstStatus(resources.map((r) => r.status))
+	const resources = Arr.map(fields.resources, (r) => withAge(r, now))
+	const resourceStatus = worstStatus(Arr.map(resources, (r) => r.status))
 	const status = worstStatus([fields.own?.status ?? "healthy", resourceStatus])
 	const problem =
 		fields.own && STATUS_RANK[fields.own.status] <= STATUS_RANK[resourceStatus]
@@ -260,7 +261,7 @@ const entry = (
 		problem: status === "healthy" ? null : problem,
 		feeds: fields.feeds ?? INTEGRATION_FEEDS[provider],
 		resources: [...resources].sort(
-			(a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.name.localeCompare(b.name),
+			(a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || Str.localeCompare(b.name)(a.name),
 		),
 	}
 }
@@ -277,12 +278,12 @@ const revokedProblem = (label: string) => ({
 })
 
 const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
-	const installations = inputs.vcsInstallations.filter((i) => i.provider === "github")
+	const installations = Arr.filter(inputs.vcsInstallations, (i) => i.provider === "github")
 	if (installations.length === 0) return null
-	const active = installations.filter((i) => i.status === "active")
-	const resources = inputs.vcsRepositories
-		.filter((r) => r.provider === "github")
-		.map((repo): IntegrationResource => {
+	const active = Arr.filter(installations, (i) => i.status === "active")
+	const resources = Arr.map(
+		Arr.filter(inputs.vcsRepositories, (r) => r.provider === "github"),
+		(repo): IntegrationResource => {
 			const status: IntegrationStatus =
 				repo.syncStatus === "error" ? "failing" : repo.syncStatus === "ready" ? "healthy" : "pending"
 			const branch = repo.trackedBranch ?? repo.defaultBranch
@@ -294,27 +295,37 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 				lastError: status === "failing" ? repo.lastSyncError : null,
 				note: `tracks ${branch}${repo.prReviewEnabled ? ", PR review on" : ""}${status === "pending" ? `, sync ${repo.syncStatus}` : ""}`,
 			}
-		})
-	const ciTraces = active.some((i) => i.ciTracesEnabled)
+		},
+	)
+	const ciTraces = Arr.some(active, (i) => i.ciTracesEnabled)
 	return entry("github", now, {
-		account: installations.map((i) => i.accountLogin).join(", "),
-		connectedAt: Math.min(...installations.map((i) => i.createdAt)),
+		account: Arr.join(
+			Arr.map(installations, (i) => i.accountLogin),
+			", ",
+		),
+		connectedAt: Math.min(...Arr.map(installations, (i) => i.createdAt)),
 		own:
 			active.length === 0
 				? {
 						status: "disconnected",
-						problem: `The GitHub App installation is ${installations.map((i) => i.status).join(", ")}; reinstall it in Sources.`,
+						problem: `The GitHub App installation is ${Arr.join(
+							Arr.map(installations, (i) => i.status),
+							", ",
+						)}; reinstall it in Sources.`,
 					}
 				: undefined,
 		resources,
-		feeds: INTEGRATION_FEEDS.github.filter((feed) => ciTraces || !feed.startsWith("GitHub Actions")),
+		feeds: Arr.filter(
+			INTEGRATION_FEEDS.github,
+			(feed) => ciTraces || !Str.startsWith("GitHub Actions")(feed),
+		),
 	})
 }
 
 const cloudflare = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const oauth = oauthFor(inputs, "cloudflare")
 	if (!oauth && inputs.cloudflareStates.length === 0 && inputs.cloudflareLogpush.length === 0) return null
-	const analytics = inputs.cloudflareStates.map((state): IntegrationResource => {
+	const analytics = Arr.map(inputs.cloudflareStates, (state): IntegrationResource => {
 		const status = pollStatus(state, now, POLLER_STALE_MS)
 		const isZone = state.dataset === "http_requests"
 		return {
@@ -326,7 +337,7 @@ const cloudflare = (inputs: IntegrationInventoryInputs, now: number): Integratio
 			note: null,
 		}
 	})
-	const logpush = inputs.cloudflareLogpush.map((connector): IntegrationResource => ({
+	const logpush = Arr.map(inputs.cloudflareLogpush, (connector): IntegrationResource => ({
 		kind: "logpush",
 		name: connector.name,
 		status:
@@ -339,7 +350,7 @@ const cloudflare = (inputs: IntegrationInventoryInputs, now: number): Integratio
 		lastError: connector.lastError,
 		note: `${connector.zoneName} → service ${connector.serviceName}`,
 	}))
-	const hyperdrives = inputs.cloudflareHyperdrives.map((config): IntegrationResource => ({
+	const hyperdrives = Arr.map(inputs.cloudflareHyperdrives, (config): IntegrationResource => ({
 		kind: "hyperdrive",
 		name: config.name,
 		status: "healthy",
@@ -358,7 +369,7 @@ const cloudflare = (inputs: IntegrationInventoryInputs, now: number): Integratio
 const railway = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const connection = inputs.railwayConnection
 	if (connection === null) return null
-	const resources = inputs.railwayEnvironments.map((env): IntegrationResource => {
+	const resources = Arr.map(inputs.railwayEnvironments, (env): IntegrationResource => {
 		const status = pollStatus(env, now, POLLER_STALE_MS)
 		return {
 			kind: "environment",
@@ -408,9 +419,9 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 			resources: [],
 		})
 	}
-	const databases = inputs.planetscaleDatabases.map((db): IntegrationResource => {
-		const states = inputs.planetscalePollStates.filter((s) => s.databaseId === db.databaseId)
-		const statuses = states.map((s) => pollStatus(s, now, PLANETSCALE_STALE_MS))
+	const databases = Arr.map(inputs.planetscaleDatabases, (db): IntegrationResource => {
+		const states = Arr.filter(inputs.planetscalePollStates, (s) => s.databaseId === db.databaseId)
+		const statuses = Arr.map(states, (s) => pollStatus(s, now, PLANETSCALE_STALE_MS))
 		const status = states.length === 0 ? "healthy" : worstStatus(statuses)
 		const failing = states.find((_, i) => statuses[i] === "failing")
 		return {
@@ -429,16 +440,19 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 		}
 	})
 	// A disabled managed target only holds branch filters: metrics come from the metrics API.
-	const scrape = inputs.scrapeTargets
-		.filter((t) => t.managedBy?.startsWith("planetscale:") && t.enabled !== false)
-		.map((t) => scrapeResource(t, now, "metrics scrape"))
+	const scrape = Arr.map(
+		inputs.scrapeTargets.filter((t) => t.managedBy?.startsWith("planetscale:") && t.enabled !== false),
+		(t) => scrapeResource(t, now, "metrics scrape"),
+	)
 	// Only permissions something still depends on; older bindings stored ones that no longer matter.
-	const missing = Object.entries(connection.detectedPermissions ?? {})
-		.filter(
+	const missing = Arr.map(
+		Arr.filter(
+			Rec.toEntries(connection.detectedPermissions ?? {}),
 			([permission, granted]) =>
-				!granted && PLANETSCALE_PERMISSION_FEEDS.some(([key]) => key === permission),
-		)
-		.map(([permission]) => permission)
+				!granted && Arr.some(PLANETSCALE_PERMISSION_FEEDS, ([key]) => key === permission),
+		),
+		([permission]) => permission,
+	)
 	// The inventory pass clears its error on success, so a set error is the latest outcome.
 	const own = isRevoked(oauth)
 		? revokedProblem("PlanetScale")
@@ -447,9 +461,10 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 			: missing.length > 0
 				? {
 						status: "failing" as const,
-						problem: `The grant lacks ${missing
-							.map((permission) => `${permission} (${permissionFeed(permission)})`)
-							.join(", ")}; reconnect PlanetScale in Sources with it granted.`,
+						problem: `The grant lacks ${Arr.join(
+							Arr.map(missing, (permission) => `${permission} (${permissionFeed(permission)})`),
+							", ",
+						)}; reconnect PlanetScale in Sources with it granted.`,
 					}
 				: connection.lastInventoryAt === null
 					? { status: "pending" as const, problem: "The first database inventory has not run yet." }
@@ -504,19 +519,19 @@ export const scrapeResource = (
 }
 
 const prometheus = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
-	const targets = inputs.scrapeTargets.filter((t) => t.managedBy === null)
+	const targets = Arr.filter(inputs.scrapeTargets, (t) => t.managedBy === null)
 	if (targets.length === 0) return null
 	return entry("prometheus", now, {
 		account: null,
 		connectedAt: null,
-		resources: targets.map((t) => scrapeResource(t, now, "scrape target")),
+		resources: Arr.map(targets, (t) => scrapeResource(t, now, "scrape target")),
 	})
 }
 
 const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const linear = oauthFor(inputs, "linear")
 	if (!linear && inputs.chatWorkspaces.length === 0) return null
-	const workspaces = inputs.chatWorkspaces.map((w): IntegrationResource => ({
+	const workspaces = Arr.map(inputs.chatWorkspaces, (w): IntegrationResource => ({
 		kind: "workspace",
 		name: w.name,
 		status: "healthy",
@@ -537,7 +552,7 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 			]
 		: []
 	const connectedAt = [
-		...inputs.chatWorkspaces.map((w) => w.createdAt),
+		...Arr.map(inputs.chatWorkspaces, (w) => w.createdAt),
 		...(linear ? [linear.createdAt] : []),
 	]
 	return entry("chat", now, {
@@ -551,21 +566,27 @@ export const buildIntegrationInventory = (
 	inputs: IntegrationInventoryInputs,
 	now: number,
 ): IntegrationInventory => {
-	const integrations = [
-		github(inputs, now),
-		cloudflare(inputs, now),
-		railway(inputs, now),
-		planetscale(inputs, now),
-		prometheus(inputs, now),
-		chat(inputs, now),
-	].filter((e): e is IntegrationEntry => e !== null)
-	const connected = new Set(integrations.map((e) => e.provider))
+	const integrations = Arr.filter(
+		[
+			github(inputs, now),
+			cloudflare(inputs, now),
+			railway(inputs, now),
+			planetscale(inputs, now),
+			prometheus(inputs, now),
+			chat(inputs, now),
+		],
+		(e): e is IntegrationEntry => e !== null,
+	)
+	const connected = new Set(Arr.map(integrations, (e) => e.provider))
 	return {
 		integrations,
-		available: INTEGRATION_PROVIDERS.filter((p) => !connected.has(p)).map((provider) => ({
-			provider,
-			feeds: INTEGRATION_FEEDS[provider],
-		})),
+		available: Arr.map(
+			Arr.filter(INTEGRATION_PROVIDERS, (p) => !connected.has(p)),
+			(provider) => ({
+				provider,
+				feeds: INTEGRATION_FEEDS[provider],
+			}),
+		),
 	}
 }
 
@@ -578,10 +599,10 @@ export const withSourceHealth = (
 	sources: ReadonlyArray<{ readonly platform: string; readonly health: SourceHealthResult }>,
 ): IntegrationInventory => ({
 	...inventory,
-	integrations: inventory.integrations.map((entry) => {
-		const own = sources.filter((source) => source.platform === entry.provider)
+	integrations: Arr.map(inventory.integrations, (entry) => {
+		const own = Arr.filter(sources, (source) => source.platform === entry.provider)
 		if (own.length === 0) return entry
-		const status = worstStatus([entry.status, ...own.map((source) => source.health.status)])
+		const status = worstStatus([entry.status, ...Arr.map(own, (source) => source.health.status)])
 		const problem = own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
 		return { ...entry, status, problem: status === "healthy" ? null : problem }
 	}),

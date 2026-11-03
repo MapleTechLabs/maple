@@ -2,13 +2,13 @@ import { assert, describe, it } from "@effect/vitest"
 import type { RepoSandboxServiceApi } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { OrgId } from "@maple/domain/http"
 import { EVERYTHING_CHANGED } from "@maple/security-audit"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { changedPaths, MAX_CHANGED_PATHS } from "./changed-paths"
 
 const orgId = Schema.decodeUnknownSync(OrgId)("org_a")
-const target = { repository: "acme/api", ref: "b".repeat(40) }
+const target = { repository: "acme/api", ref: Str.repeat(40)("b") }
 
-const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")))
+const parent = (path: string) => Str.slice(0, Math.max(0, path.lastIndexOf("/")))(path)
 
 /**
  * Git over a fixed change, cutting any answer longer than `maxBytes` as the container does.
@@ -17,18 +17,20 @@ const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")
 const fakeGit = (changed: ReadonlyArray<string>, maxBytes: number) => {
 	const calls: Array<string> = []
 	const dirs = new Set(
-		changed.flatMap((path) =>
-			path
-				.split("/")
+		Arr.flatMap(changed, (path) =>
+			Str.split("/")(path)
 				.slice(0, -1)
-				.map((_, i, parts) => parts.slice(0, i + 1).join("/")),
+				.map((_, i, parts) => Arr.join(parts.slice(0, i + 1), "/")),
 		),
 	)
 	const answer = (paths: ReadonlyArray<string>) => {
-		const stdout = paths.map((p) => `${p}\n`).join("")
+		const stdout = Arr.join(
+			Arr.map(paths, (p) => `${p}\n`),
+			"",
+		)
 		return Effect.succeed({
 			exitCode: 0,
-			stdout: stdout.slice(0, maxBytes),
+			stdout: Str.slice(0, maxBytes)(stdout),
 			stderr: "",
 			wallTimeMs: 1,
 			truncated: stdout.length > maxBytes,
@@ -42,17 +44,17 @@ const fakeGit = (changed: ReadonlyArray<string>, maxBytes: number) => {
 		exec: (_org, _target, options) =>
 			Effect.suspend(() => {
 				const args = options.args.slice(3)
-				calls.push(args.join(" "))
+				calls.push(Arr.join(args, " "))
 				const spec = args.at(-1) ?? ""
 				if (args.includes("ls-tree")) {
-					const dir = args.includes("--") ? spec.replace(/\/$/, "") : ""
-					return answer([...dirs].filter((d) => parent(d) === dir))
+					const dir = args.includes("--") ? Str.replace(/\/$/, "")(spec) : ""
+					return answer(Arr.filter([...dirs], (d) => parent(d) === dir))
 				}
 				if (spec === "--") return answer(changed)
-				if (spec.startsWith(":(literal)"))
-					return answer(changed.filter((p) => p.startsWith(`${spec.slice(10)}/`)))
-				const dir = spec === ":(glob)*" ? "" : spec.slice(7, -2)
-				return answer(changed.filter((p) => parent(p) === dir))
+				if (Str.startsWith(":(literal)")(spec))
+					return answer(Arr.filter(changed, (p) => Str.startsWith(`${Str.slice(10)(spec)}/`)(p)))
+				const dir = spec === ":(glob)*" ? "" : Str.slice(7, -2)(spec)
+				return answer(Arr.filter(changed, (p) => parent(p) === dir))
 			}),
 	}
 	return { sandbox, calls }
@@ -68,7 +70,7 @@ describe("changedPaths", () => {
 				"src/index.ts",
 			]
 			const { sandbox } = fakeGit(changed, 200)
-			const paths = yield* changedPaths(sandbox, orgId, target, "a".repeat(40))
+			const paths = yield* changedPaths(sandbox, orgId, target, Str.repeat(40)("a"))
 			assert.deepStrictEqual([...paths].sort(), [...changed].sort())
 		}),
 	)
@@ -76,7 +78,7 @@ describe("changedPaths", () => {
 	it.effect("answers with one diff when the change fits", () =>
 		Effect.gen(function* () {
 			const { sandbox, calls } = fakeGit(["src/a.ts"], 48 * 1024)
-			const paths = yield* changedPaths(sandbox, orgId, target, "a".repeat(40))
+			const paths = yield* changedPaths(sandbox, orgId, target, Str.repeat(40)("a"))
 			assert.deepStrictEqual([paths, calls.length], [["src/a.ts"], 1])
 		}),
 	)
@@ -85,7 +87,7 @@ describe("changedPaths", () => {
 		Effect.gen(function* () {
 			const changed = Array.from({ length: 50 }, (_, i) => `src/file${i}.ts`)
 			const { sandbox } = fakeGit(changed, 200)
-			assert.deepStrictEqual(yield* changedPaths(sandbox, orgId, target, "a".repeat(40)), [
+			assert.deepStrictEqual(yield* changedPaths(sandbox, orgId, target, Str.repeat(40)("a")), [
 				EVERYTHING_CHANGED,
 			])
 		}),
@@ -95,7 +97,7 @@ describe("changedPaths", () => {
 		Effect.gen(function* () {
 			const changed = Array.from({ length: MAX_CHANGED_PATHS + 1 }, (_, i) => `pkg${i % 40}/f${i}.ts`)
 			const { sandbox } = fakeGit(changed, 48 * 1024)
-			assert.deepStrictEqual(yield* changedPaths(sandbox, orgId, target, "a".repeat(40)), [
+			assert.deepStrictEqual(yield* changedPaths(sandbox, orgId, target, Str.repeat(40)("a")), [
 				EVERYTHING_CHANGED,
 			])
 		}),

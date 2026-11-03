@@ -1,5 +1,5 @@
 import { scrubUrl } from "@maple/browser-session"
-import { Effect, Layer, Predicate, Tracer } from "effect"
+import { Effect, Layer, Predicate, Tracer, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	type FlushableTelemetry,
 	type MapleClientFlushableConfig,
@@ -229,8 +229,11 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 		tracing.registerCommand(command.name)
 		// Namespaced, so an app's `orgId` or `limit` arg never collides with a semconv or backend key.
 		const args = {
-			...Object.fromEntries(
-				Object.entries(scrubArgs(command.args)).map(([key, value]) => [`${ARG_PREFIX}${key}`, value]),
+			...Rec.fromEntries(
+				Arr.map(Rec.toEntries(scrubArgs(command.args)), ([key, value]) => [
+					`${ARG_PREFIX}${key}`,
+					value,
+				]),
 			),
 			"maple.foldkit.message": tag,
 		}
@@ -249,7 +252,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 			return result
 		return {
 			...result,
-			commands: result.commands.map((command) => instrumentCommand(command, tag, navigationId)),
+			commands: Arr.map(result.commands, (command) => instrumentCommand(command, tag, navigationId)),
 		}
 	}
 
@@ -321,7 +324,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 				: Predicate.hasProperty(context.message, "value")
 					? context.message.value
 					: undefined
-		tracing.recordPhase(`foldkit.${context._tag.toLowerCase()}`, startTime, endTime, {
+		tracing.recordPhase(`foldkit.${Str.toLowerCase(context._tag)}`, startTime, endTime, {
 			"maple.foldkit.phase": context._tag,
 			"maple.foldkit.duration_ms": context.durationMs,
 			"maple.foldkit.threshold_ms": context.thresholdMs,

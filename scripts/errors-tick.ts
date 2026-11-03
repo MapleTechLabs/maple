@@ -13,6 +13,7 @@
  * is in the env `bun dev` was started with; the alerting log says so once.
  */
 import { parseArgs } from "node:util"
+import { String as Str } from "effect"
 
 const MINUTE_CRON = "* * * * *"
 
@@ -23,7 +24,10 @@ const { values } = parseArgs({
 	},
 })
 
-const base = (values.url ?? process.env.MAPLE_DEV_ALERTING_URL ?? "https://alerting.localhost").replace(/\/$/, "")
+const base = Str.replace(
+	/\/$/,
+	"",
+)(values.url ?? process.env.MAPLE_DEV_ALERTING_URL ?? "https://alerting.localhost")
 const cron = values.cron ?? MINUTE_CRON
 const target = `${base}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent(cron)}`
 
@@ -33,7 +37,7 @@ const response = await fetch(target).catch((cause: unknown) => {
 	console.error("Is the stack up with alerting in it? `bun dev api web ingest alerting`")
 	process.exit(1)
 })
-const body = (await response.text()).trim()
+const body = Str.trim(await response.text())
 
 if (!response.ok) {
 	console.error(`${response.status} from ${target}${body ? `\n${body}` : ""}`)

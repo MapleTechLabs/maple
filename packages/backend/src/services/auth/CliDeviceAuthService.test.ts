@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -79,7 +79,7 @@ describe("CliDeviceAuthService", () => {
 
 			const pending = yield* auth.poll(started.deviceCode)
 			expect(pending.status).toBe("pending")
-			const inspected = yield* auth.inspect(started.userCode.toLowerCase())
+			const inspected = yield* auth.inspect(Str.toLowerCase(started.userCode))
 			expect(inspected.deviceName).toBe("Maple CLI on laptop")
 
 			yield* auth.approve(started.userCode, {

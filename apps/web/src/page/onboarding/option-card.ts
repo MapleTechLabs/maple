@@ -3,6 +3,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
 import { PIXEL_GLYPHS } from "@maple/views/ui/icons.generated"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr, String as Str } from "effect"
 
 // `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
 // its end state.
@@ -12,11 +13,7 @@ export type PixelGlyphName = keyof typeof PIXEL_GLYPHS
 /** `rasterOrder`: segments top row first, left to right, so the reveal scans. */
 const rasterOrder = (segments: ReadonlyArray<string>): ReadonlyArray<string> => {
 	const origin = (d: string) => {
-		const [x = 0, y = 0] = d
-			.slice(1)
-			.trim()
-			.split(/[\s,]+/)
-			.map(Number)
+		const [x, y = 0] = Arr.map(Str.split(/[\s,]+/)(Str.trim(Str.slice(1)(d))), Number)
 		return { x, y }
 	}
 	return [...segments].sort((a, b) => {
@@ -38,10 +35,7 @@ const segmentPath = <M>(h: HtmlBuilder<M>, d: string, extra: ReadonlyArray<Attri
 /** `DrawnCheck`: the tick at its drawn (`pathLength` 1) or undrawn end state. */
 const drawnCheck = <M>(h: HtmlBuilder<M>, isChecked: boolean, className: string | false | undefined): Html =>
 	h.span(
-		[
-			h.AriaHidden(true),
-			h.Class(choiceCheckClass(isChecked, true, className)),
-		],
+		[h.AriaHidden(true), h.Class(choiceCheckClass(isChecked, true, className))],
 		[
 			h.svg(
 				[h.Attribute("viewBox", "0 0 24 24"), h.Class("size-3"), h.Attribute("fill", "none")],
@@ -169,11 +163,11 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 								),
 							),
 						],
-						segments.map((d) => segmentPath(h, d, [])),
+						Arr.map(segments, (d) => segmentPath(h, d, [])),
 					),
 					h.g(
 						[h.Class("text-primary")],
-						segments.map((d) =>
+						Arr.map(segments, (d) =>
 							segmentPath(h, d, [h.Style({ opacity: isSelected ? "1" : "0" })]),
 						),
 					),

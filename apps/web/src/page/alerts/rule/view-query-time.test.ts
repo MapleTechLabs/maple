@@ -1,5 +1,5 @@
 import { AlertCheckDocument } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { checkTimesOf } from "./view-query-time"
 
@@ -38,6 +38,6 @@ describe("checkTimesOf", () => {
 			check(100, 2_000),
 			check(101, 3_000),
 		]
-		expect(checkTimesOf(checks).map((time) => time.durationMs)).toEqual([3_000, 2_000])
+		expect(Arr.map(checkTimesOf(checks), (time) => time.durationMs)).toEqual([3_000, 2_000])
 	})
 })

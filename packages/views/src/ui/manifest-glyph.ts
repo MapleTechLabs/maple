@@ -1,5 +1,6 @@
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 /** `chatConnectorIcon`: one `<svg>` from a manifest's path data; `monochrome` drops the brand fills. */
 export const manifestGlyph = <M>(
@@ -18,7 +19,7 @@ export const manifestGlyph = <M>(
 			h.Attribute("fill", "currentColor"),
 			h.AriaHidden(true),
 		],
-		manifestIcon.paths.map((path) =>
+		Arr.map(manifestIcon.paths, (path) =>
 			h.path([
 				h.Attribute("d", path.d),
 				...(options.monochrome === true || path.fill === undefined

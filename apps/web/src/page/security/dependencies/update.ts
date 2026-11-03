@@ -1,5 +1,5 @@
 import type { DependencyFindingStatus, DependencyFindingTriageStatus } from "@maple/domain/dependency-scan"
-import { Option, Result } from "effect"
+import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -180,7 +180,7 @@ const dropUnknownRepository = (step: Return): Return => {
 	const { scope } = step.model
 	const repositories = Option.getOrNull(AsyncData.getData(step.model.repositories.data))
 	if (scope === "all" || repositories === null || step.outMessage !== undefined) return step
-	return repositories.repositories.some((repository) => repository.id === scope)
+	return Arr.some(repositories.repositories, (repository) => repository.id === scope)
 		? step
 		: {
 				...step,
@@ -206,8 +206,8 @@ const afterRepositories = (model: Model, context: PageContext): Return => {
 
 const TRIAGE_TOAST = {
 	open: "Finding reopened",
-	dismissed: `Marked ${STATUS_FILTER_LABEL.dismissed.toLowerCase()}`,
-	accepted_risk: `Marked ${STATUS_FILTER_LABEL.accepted_risk.toLowerCase()}`,
+	dismissed: `Marked ${Str.toLowerCase(STATUS_FILTER_LABEL.dismissed)}`,
+	accepted_risk: `Marked ${Str.toLowerCase(STATUS_FILTER_LABEL.accepted_risk)}`,
 } satisfies Record<DependencyFindingTriageStatus, string>
 
 /** The answer's status as a triage one; a write never answers `fixed`, so it reads as open. */
@@ -217,7 +217,7 @@ const triageStatusOf = (status: DependencyFindingStatus): DependencyFindingTriag
 const triage = (model: Model, status: DependencyFindingTriageStatus): Return => {
 	const finding = selectedFindingOf(model)
 	if (finding === null || !model.isAdmin || model.savingStatus !== null) return { model }
-	const reason = model.reason.value.trim()
+	const reason = Str.trim(model.reason.value)
 	// Reopening needs no reason; setting a finding aside does.
 	if (status !== "open" && reasonErrorOf(reason) !== null)
 		return { model: { ...model, isReasonSubmitted: true } }
@@ -252,7 +252,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedScanRequest: ({ repositoryId, result }) => {
 			const requested = {
 				...model,
-				requestingScans: model.requestingScans.filter((id) => id !== repositoryId),
+				requestingScans: Arr.filter(model.requestingScans, (id) => id !== repositoryId),
 			}
 			return Result.match(result, {
 				onSuccess: () => {
@@ -296,7 +296,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: {
 				...model,
 				expandedPackages: model.expandedPackages.includes(key)
-					? model.expandedPackages.filter((expanded) => expanded !== key)
+					? Arr.filter(model.expandedPackages, (expanded) => expanded !== key)
 					: [...model.expandedPackages, key],
 			},
 		}),

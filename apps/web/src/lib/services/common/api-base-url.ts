@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 
@@ -18,6 +18,6 @@ export const apiPublicUrl =
 const originOf = Option.liftThrowable((url: string) => new URL(url).origin)
 
 /** The origins the API answers on: its own, and the proxy's when `apiBaseUrl` is same-origin. */
-export const apiOrigins: ReadonlyArray<string> = [apiBaseUrl, apiPublicUrl].flatMap((url) =>
+export const apiOrigins: ReadonlyArray<string> = Arr.flatMap([apiBaseUrl, apiPublicUrl], (url) =>
 	Option.toArray(originOf(url)),
 )

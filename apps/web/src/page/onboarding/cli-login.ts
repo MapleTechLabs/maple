@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
@@ -40,11 +40,8 @@ export type Model = typeof Model.Type
 
 /** `normalizeCliUserCode`: upper-case alphanumerics, eight at most, `XXXX-XXXX`. */
 export const normalizeCliUserCode = (value: string): string => {
-	const normalized = value
-		.toUpperCase()
-		.replace(/[^A-Z0-9]/g, "")
-		.slice(0, 8)
-	return normalized.length > 4 ? `${normalized.slice(0, 4)}-${normalized.slice(4)}` : normalized
+	const normalized = Str.slice(0, 8)(Str.replace(/[^A-Z0-9]/g, "")(Str.toUpperCase(value)))
+	return normalized.length > 4 ? `${Str.slice(0, 4)(normalized)}-${Str.slice(4)(normalized)}` : normalized
 }
 
 /** The code field's id: the first slot, which its label's `for` points at. */
@@ -125,7 +122,7 @@ type UpdateReturn = Update.Return<Model, Message, Resources>
 
 const inspect = (model: Model, code: string): UpdateReturn => {
 	const normalized = normalizeCliUserCode(code)
-	if (normalized.replace("-", "").length !== 8) {
+	if (Str.replace("-", "")(normalized).length !== 8) {
 		return {
 			model: modifyFields(model, {
 				state: () =>
@@ -147,7 +144,7 @@ export const init = (initialCode: string | undefined): UpdateReturn => {
 		otp: OtpField.init({
 			id: CODE_FIELD_ID,
 			length: 8,
-			value: normalizeCliUserCode(initialCode ?? "").replace("-", ""),
+			value: Str.replace("-", "")(normalizeCliUserCode(initialCode ?? "")),
 			validation: "alphanumeric",
 			isUppercase: true,
 		}),

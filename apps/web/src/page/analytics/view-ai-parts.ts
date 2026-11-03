@@ -24,6 +24,7 @@ import type { AiCrawlers } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
+import { Array as Arr } from "effect"
 
 // The AI tab's building blocks: its sections and product icons.
 
@@ -152,9 +153,13 @@ const crawlLine = (
 	if (crawl !== undefined && top !== undefined)
 		return {
 			text: `Read ${plural(top.pages, "page", "pages")} for ${top.purpose}, ${formatRelativeTime(toEpochMs(top.lastSeen), nowMs)}`,
-			title: crawl.purposes
-				.map((activity) => `${plural(activity.pages, "page", "pages")} for ${activity.purpose}`)
-				.join(" · "),
+			title: Arr.join(
+				Arr.map(
+					crawl.purposes,
+					(activity) => `${plural(activity.pages, "page", "pages")} for ${activity.purpose}`,
+				),
+				" · ",
+			),
 		}
 	if (crawl !== undefined && crawl.requests > 0)
 		return {
@@ -282,7 +287,7 @@ export const rankingTable = (h: H, ranks: ReadonlyArray<AiReferralRank>, surface
 				hidden: "hidden @min-[360px]/panel:flex",
 			}),
 		],
-		ranks.map((rank, index) =>
+		Arr.map(ranks, (rank, index) =>
 			h.div(
 				[
 					h.Key(rank.product.id),
@@ -364,7 +369,7 @@ export const crawlerTable = (
 				hidden: "hidden @min-[460px]/panel:flex",
 			}),
 		],
-		crawlers.map((row) => {
+		Arr.map(crawlers, (row) => {
 			const product = productForCrawler(row.crawler)
 			const purpose = purposeForCrawler(row.crawler)
 			return h.div(
@@ -439,32 +444,30 @@ const FORMATS: ReadonlyArray<{
 const crawlerMarks = (h: H, crawlers: ReadonlyArray<string>): Html => {
 	const products = [
 		...new Map(
-			crawlers.flatMap((name) => {
+			Arr.flatMap(crawlers, (name) => {
 				const product = productForCrawler(name)
 				return product === undefined ? [] : [[product.id, product] as const]
 			}),
 		).values(),
 	]
 	return hstack(h, { gap: "1", as: "span" }, [
-		...products
-			.slice(0, 6)
-			.map((product) =>
-				h.span([h.Key(product.id), h.Title(product.label)], [aiProductIcon(h, product.id, 12)]),
-			),
+		...Arr.map(products.slice(0, 6), (product) =>
+			h.span([h.Key(product.id), h.Title(product.label)], [aiProductIcon(h, product.id, 12)]),
+		),
 		...(products.length > 6 ? [h.span([], ["+", String(products.length - 6)])] : []),
 	])
 }
 
 /** `AiContentFormats`: one card per format, then the other files. */
 export const contentFormats = (h: H, formats: AiCrawlers["formats"]): Html => {
-	const byFormat = new Map(formats.map((row) => [row.format, row]))
+	const byFormat = new Map(Arr.map(formats, (row) => [row.format, row]))
 	const other = byFormat.get("other")
 	return h.div(
 		[h.Class("space-y-2")],
 		[
 			h.div(
 				[h.Class("grid gap-3 @min-[720px]/page:grid-cols-3")],
-				FORMATS.map((entry) => {
+				Arr.map(FORMATS, (entry) => {
 					const row = byFormat.get(entry.format)
 					const requests = row?.requests ?? 0
 					const pages = row?.pages ?? 0

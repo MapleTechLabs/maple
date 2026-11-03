@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { ConfigProvider, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -77,7 +77,7 @@ const fetchStub = (world: World): typeof fetch =>
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		world.openRouterUrls.push(url)
 		world.openRouterCalls.push(new Headers(init?.headers).get("authorization"))
-		return url.endsWith("/chat/completions")
+		return Str.endsWith("/chat/completions")(url)
 			? new Response(world.euChatBody, { status: world.euChatStatus })
 			: new Response("{}", { status: world.openRouterStatus })
 	}) as typeof fetch
@@ -198,7 +198,7 @@ describe("OrgOpenRouterKeyService", () => {
 			world,
 			Effect.gen(function* () {
 				const keys = yield* OrgOpenRouterKeyService
-				const error = yield* Effect.flip(keys.set(ORG, USER, `sk-or-v1-${"a".repeat(260)}`))
+				const error = yield* Effect.flip(keys.set(ORG, USER, `sk-or-v1-${Str.repeat(260)("a")}`))
 				assert.strictEqual(error._tag, "@maple/http/openrouter-key/OpenRouterKeyValidationError")
 				assert.deepStrictEqual(world.openRouterCalls, [])
 			}),

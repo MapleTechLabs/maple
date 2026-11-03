@@ -1,4 +1,4 @@
-import { Clock, DateTime, Effect, Option } from "effect"
+import { Clock, DateTime, Effect, Option, Array as Arr, Record as Rec } from "effect"
 import { IdleTtl } from "../../data/idle-ttl"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../data/read-cache"
@@ -12,8 +12,8 @@ import { MapleApiV2Client } from "../../platform/api-clients"
 const fetchSignalPresences = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	const response = yield* client.telemetrySignals.retrieve()
-	return Object.fromEntries(
-		response.signals.map((entry): readonly [string, SignalPresence] => [
+	return Rec.fromEntries(
+		Arr.map(response.signals, (entry): readonly [string, SignalPresence] => [
 			entry.signal,
 			entry.status === "unknown"
 				? UNKNOWN_PRESENCE

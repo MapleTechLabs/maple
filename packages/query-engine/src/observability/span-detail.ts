@@ -1,4 +1,4 @@
-import { Array as Arr, DateTime, Effect, Option, Schema, pipe } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Schema, pipe, Record as Rec } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
@@ -9,7 +9,7 @@ const parseAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
 	Schema.decodeUnknownEffect(StringRecordFromJson)(raw).pipe(
 		Effect.map((parsed) =>
 			pipe(
-				Object.entries(parsed),
+				Rec.toEntries(parsed),
 				Arr.filter(([, v]) => v !== ""),
 				Object.fromEntries,
 			),

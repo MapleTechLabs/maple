@@ -9,6 +9,7 @@ import {
 } from "@maple/domain/http"
 
 import { cloudflareIngestPhase } from "./ingest-phase"
+import { Array as Arr } from "effect"
 
 const NOW = 1_800_000_000_000
 const MINUTE = 60_000
@@ -51,8 +52,9 @@ const usage = (services: ReadonlyArray<{ name: string; kind: "zone" | "worker"; 
 		windowStart: NOW - 24 * HOUR,
 		windowEnd: NOW,
 		bucketSeconds: 3600,
-		totalRequests: services.reduce((sum, service) => sum + service.requests, 0),
-		services: services.map(
+		totalRequests: Arr.reduce(services, 0, (sum, service) => sum + service.requests),
+		services: Arr.map(
+			services,
 			(service) =>
 				new CloudflareServiceUsage({
 					serviceName: `cloudflare/${service.name}`,

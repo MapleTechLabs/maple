@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest"
 
 import { parseAnnotations } from "./chat-annotations"
+import { Array as Arr } from "effect"
 
 const service = (name: string) => `{"name":"${name}","throughputRpm":660,"errorRate":45.45,"p99Ms":14425}`
 
 describe("parseAnnotations", () => {
 	it("parses the documented form on its own line", () => {
 		const segments = parseAnnotations(`Top offender:\n<<maple:service:${service("maple-chat")}>>\nrest`)
-		expect(segments.map((s) => s.type)).toEqual(["text", "service", "text"])
+		expect(Arr.map(segments, (s) => s.type)).toEqual(["text", "service", "text"])
 	})
 
 	it("parses a single-bracket form", () => {
@@ -24,7 +25,7 @@ describe("parseAnnotations", () => {
 		const segments = parseAnnotations(
 			`<maple:service:${service("a")}><maple:service:${service("b")}><maple:service:${service("c")}>`,
 		)
-		expect(segments.map((s) => s.type)).toEqual(["service", "service", "service"])
+		expect(Arr.map(segments, (s) => s.type)).toEqual(["service", "service", "service"])
 	})
 
 	it("keeps surrounding prose", () => {

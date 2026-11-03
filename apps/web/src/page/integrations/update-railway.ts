@@ -1,5 +1,5 @@
 import { RailwayConnectRequest } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
@@ -45,7 +45,7 @@ export const submittedToken = (model: Model): Return => {
 	const connect = model.railwayCard.connect
 	if (connect.isSubmitting) return { model }
 	const mode = model.railwayCard.isRotating || isAuthFailed(model) ? "rotate" : "connect"
-	return Option.match(decodeConnectRequest({ token: connect.token.value.trim() }), {
+	return Option.match(decodeConnectRequest({ token: Str.trim(connect.token.value) }), {
 		onNone: () => ({ model }),
 		onSome: (request) => ({
 			model: withCard(model, { connect: { ...connect, isSubmitting: true, error: null } }),

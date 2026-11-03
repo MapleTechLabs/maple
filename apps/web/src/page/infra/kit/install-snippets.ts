@@ -1,4 +1,5 @@
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
+import { Array as Arr, String as Str } from "effect"
 
 // The install modal's snippet builders.
 
@@ -8,7 +9,7 @@ export const isCustomEndpoint = ingestUrl !== CHART_DEFAULT_INGEST_URL
 
 export const maskToken = (token: string): string => {
 	const prefix = "maple_sk_"
-	return token.startsWith(prefix) ? `${prefix}${"•".repeat(24)}` : "•".repeat(24)
+	return Str.startsWith(prefix)(token) ? `${prefix}${Str.repeat(24)("•")}` : Str.repeat(24)("•")
 }
 
 export const helmCommand = (token: string): string => {
@@ -19,30 +20,34 @@ export const helmCommand = (token: string): string => {
 		`  --set-string maple.ingestKey.value=${token} \\`,
 		"  --set-string global.clusterName=production",
 	]
-	return (
+	return Arr.join(
 		isCustomEndpoint
 			? [
 					...lines.slice(0, -1),
 					`${lines[lines.length - 1]} \\`,
 					`  --set-string maple.ingest.endpoint=${ingestUrl}`,
 				]
-			: lines
-	).join("\n")
+			: lines,
+		"\n",
+	)
 }
 
 export const dockerCommand = (token: string): string =>
-	[
-		"docker run -d --name maple-agent \\",
-		"  --restart unless-stopped --user 0:0 \\",
-		"  -v /var/run/docker.sock:/var/run/docker.sock:ro \\",
-		"  -v /var/lib/docker/containers:/var/lib/docker/containers:ro \\",
-		"  -v maple-agent-state:/var/lib/otelcol \\",
-		"  -p 4317:4317 -p 4318:4318 \\",
-		`  -e MAPLE_INGEST_KEY=${token} \\`,
-		...(isCustomEndpoint ? [`  -e MAPLE_ENDPOINT=${ingestUrl} \\`] : []),
-		"  ghcr.io/mapletechlabs/maple/otel-collector-maple:0.2.0 \\",
-		"  --config /etc/otel/docker-config.yaml",
-	].join("\n")
+	Arr.join(
+		[
+			"docker run -d --name maple-agent \\",
+			"  --restart unless-stopped --user 0:0 \\",
+			"  -v /var/run/docker.sock:/var/run/docker.sock:ro \\",
+			"  -v /var/lib/docker/containers:/var/lib/docker/containers:ro \\",
+			"  -v maple-agent-state:/var/lib/otelcol \\",
+			"  -p 4317:4317 -p 4318:4318 \\",
+			`  -e MAPLE_INGEST_KEY=${token} \\`,
+			...(isCustomEndpoint ? [`  -e MAPLE_ENDPOINT=${ingestUrl} \\`] : []),
+			"  ghcr.io/mapletechlabs/maple/otel-collector-maple:0.2.0 \\",
+			"  --config /etc/otel/docker-config.yaml",
+		],
+		"\n",
+	)
 
 export const HOST_CONFIG = `receivers:
     hostmetrics:

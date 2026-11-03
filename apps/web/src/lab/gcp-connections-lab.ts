@@ -1,5 +1,5 @@
 import { V2GcpConnector } from "@maple/domain/http/v2"
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -79,7 +79,7 @@ export const scenariosAt = (nowMs: number): ReadonlyArray<{ title: string; conne
 			},
 		},
 	]
-	return scenarios.map(({ title, over }, index) => ({
+	return Arr.map(scenarios, ({ title, over }, index) => ({
 		title,
 		connector: withIndexId(connectorOf(base, over), index),
 	}))
@@ -101,11 +101,11 @@ export type Return = Update.Return<Model, Message, Resources>
 
 export const init = (flags: GcpLabFlags): Return => {
 	const scenarios = scenariosAt(flags.nowMs)
-	const connectors = scenarios.map((scenario) => scenario.connector)
+	const connectors = Arr.map(scenarios, (scenario) => scenario.connector)
 	return {
 		model: {
 			timeZone: flags.timeZone,
-			titles: scenarios.map((scenario) => scenario.title),
+			titles: Arr.map(scenarios, (scenario) => scenario.title),
 			connectors,
 			hub: hubOf(flags.nowMs, connectors),
 		},
@@ -141,7 +141,7 @@ const connectionsView = Submodel.defineView<
 	dashboardPage(h, {}, [
 		h.div(
 			[h.Class("mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 font-display")],
-			inputs.connectors.map((connector, index) =>
+			Arr.map(inputs.connectors, (connector, index) =>
 				h.section(
 					[h.Key(connector.id), h.Class("flex flex-col gap-2")],
 					[

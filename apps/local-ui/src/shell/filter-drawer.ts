@@ -1,7 +1,7 @@
 import { type LiftedRail, splitPageRails } from "@maple/web/shell/page-rails"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "../message"
 import type { Model } from "../model"
@@ -24,12 +24,16 @@ export const filterRailOf = (model: Model, page: Html): Option.Option<LiftedRail
 	model.filterDrawer.isOpen
 		? Option.map(splitPageRails(page).maybeFilters, (rail) => ({
 				...rail,
-				children: rail.children.map((child) => (child === null ? child : cloneNode(child))),
+				children: Arr.map(rail.children, (child) => (child === null ? child : cloneNode(child))),
 			}))
 		: Option.none()
 
 /** `{drawerOpen ? <div className="h-full min-h-0">{sidebar}</div> : null}` after the sr-only title. */
-export const filterDrawer = (h: HtmlBuilder<Message>, model: Model, maybeRail: Option.Option<LiftedRail>): Html =>
+export const filterDrawer = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	maybeRail: Option.Option<LiftedRail>,
+): Html =>
 	h.submodel({
 		slotId: `${model.filterDrawer.id}-dialog`,
 		model: model.filterDrawer,
@@ -41,7 +45,9 @@ export const filterDrawer = (h: HtmlBuilder<Message>, model: Model, maybeRail: O
 			toView: ({ portal }) => portal,
 			toContent: () => [
 				DialogView.dialogTitle(h, "sheet", model.filterDrawer.id, "Filters", "sr-only"),
-				...Option.toArray(Option.map(maybeRail, (rail) => h.div([h.Class("h-full min-h-0")], rail.children))),
+				...Option.toArray(
+					Option.map(maybeRail, (rail) => h.div([h.Class("h-full min-h-0")], rail.children)),
+				),
 			],
 		},
 		toParentMessage: (message: Dialog.Message) => Message.GotFilterDrawerMessage({ message }),

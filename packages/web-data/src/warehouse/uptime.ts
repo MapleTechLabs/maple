@@ -1,7 +1,7 @@
 import { QueryEngineExecuteRequest, type QueryEngineExecuteResponse } from "@maple/query-engine"
 import type { TracesFilters } from "@maple/domain/query-engine"
 import { UPTIME_MONITOR_ID_ATTRIBUTE, UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import {
 	ServiceName,
 	type UptimeCheck,
@@ -156,10 +156,11 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 	const points = buildServiceDetailPoints(series, input.startTime, input.endTime, bucketSeconds, nowMs)
 	// Totals read every bucket the warehouse returned; the chart's points drop a partial first one.
 	const buckets = series.result.kind === "timeseries" ? series.result.data : []
-	const checks = buckets.reduce((sum, bucket) => sum + (bucket.series.count ?? 0), 0)
-	const failures = buckets.reduce(
-		(sum, bucket) => sum + Math.round((bucket.series.error_rate ?? 0) * (bucket.series.count ?? 0)),
+	const checks = Arr.reduce(buckets, 0, (sum, bucket) => sum + (bucket.series.count ?? 0))
+	const failures = Arr.reduce(
+		buckets,
 		0,
+		(sum, bucket) => sum + Math.round((bucket.series.error_rate ?? 0) * (bucket.series.count ?? 0)),
 	)
 	const samples = [...list.checks].reverse()
 	return {

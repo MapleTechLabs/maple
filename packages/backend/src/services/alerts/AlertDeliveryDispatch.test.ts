@@ -7,7 +7,7 @@ import {
 	UNGROUPED_GROUP_KEY,
 } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Fiber, Schema } from "effect"
+import { Effect, Fiber, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	buildAlertRuleUrl,
@@ -429,7 +429,7 @@ describe("dispatchDelivery", () => {
 				},
 			}
 			const pulled = { count: 0 }
-			const chunk = new TextEncoder().encode("boom ".repeat(200))
+			const chunk = new TextEncoder().encode(Str.repeat(200)("boom "))
 			const fetchFn: typeof fetch = async () =>
 				new Response(
 					new ReadableStream<Uint8Array>({
@@ -480,7 +480,7 @@ describe("dispatchDelivery", () => {
 			const result = yield* dispatchDelivery(emailContext, "{}", failingFetch, 5_000, LINK, CHAT, deps)
 
 			assert.deepStrictEqual(
-				sent.map((s) => s.to),
+				Arr.map(sent, (s) => s.to),
 				["ops@acme.test", "oncall@acme.test"],
 			)
 			assert.include(sent[0]!.subject, "Test alert")

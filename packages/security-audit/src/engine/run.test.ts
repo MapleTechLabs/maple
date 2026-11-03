@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Findings, Ledger } from "../schema"
 import { findingsErrors, ledgerErrors } from "../validators"
 import {
@@ -25,7 +25,7 @@ import {
 import type { AgentInvocation } from "./ports"
 import { isMaterial } from "./validate"
 
-const ALL = [KEYS, SEARCH, EXPORT].map(idOf)
+const ALL = Arr.map([KEYS, SEARCH, EXPORT], idOf)
 
 /** A deep run where the first post-wave critic finds one missing unit and later critics find none. */
 const happy =
@@ -55,7 +55,7 @@ const happy =
 		}
 	}
 
-const roles = (invocations: ReadonlyArray<AgentInvocation>) => invocations.map((i) => i.agentId)
+const roles = (invocations: ReadonlyArray<AgentInvocation>) => Arr.map(invocations, (i) => i.agentId)
 
 describe("runAudit, deep profile", () => {
 	it("runs every phase in order and completes with a validated ledger and findings", async () => {
@@ -76,8 +76,10 @@ describe("runAudit, deep profile", () => {
 			"record-1-0",
 		])
 		expect(result.status).toBe("complete")
-		expect(result.findings.map((f) => [f.fingerprint, f.verdict])).toEqual([[FINGERPRINT, "confirmed"]])
-		expect(Object.fromEntries(result.ledger.map((u) => [u.surface, u.status]))).toEqual({
+		expect(Arr.map(result.findings, (f) => [f.fingerprint, f.verdict])).toEqual([
+			[FINGERPRINT, "confirmed"],
+		])
+		expect(Rec.fromEntries(Arr.map(result.ledger, (u) => [u.surface, u.status]))).toEqual({
 			"POST /keys": "candidate",
 			"POST /search": "covered",
 			"POST /export": "covered",
@@ -89,12 +91,12 @@ describe("runAudit, deep profile", () => {
 	it("produces a ledger and findings that encode through the stored schemas", async () => {
 		const { result } = await runScripted(baseInput(), happy())
 		const encoded = Schema.encodeUnknownSync(Ledger)(result.ledger)
-		expect(Object.fromEntries(encoded.map((u) => [u.surface, u.priority ?? null]))).toEqual({
+		expect(Rec.fromEntries(Arr.map(encoded, (u) => [u.surface, u.priority ?? null]))).toEqual({
 			"POST /keys": 1,
 			"POST /search": 2,
 			"POST /export": null,
 		})
-		expect(Schema.encodeUnknownSync(Findings)(result.findings).map((f) => f.fingerprint)).toEqual([
+		expect(Arr.map(Schema.encodeUnknownSync(Findings)(result.findings), (f) => f.fingerprint)).toEqual([
 			FINGERPRINT,
 		])
 	})
@@ -112,10 +114,11 @@ describe("runAudit, deep profile", () => {
 		expect(recorded.events).toContainEqual(
 			expect.objectContaining({ _tag: "Agent", agentId: "hunter-w1-2", outcome: "discarded" }),
 		)
-		const rehunt = recorded.invocations.filter(
-			(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(SEARCH)}"`),
+		const rehunt = Arr.filter(
+			recorded.invocations,
+			(i) => i.role === "hunter" && Str.includes(`"coverage_id": "${idOf(SEARCH)}"`)(i.prompt),
 		)
-		expect(rehunt.map((i) => i.agentId)).toEqual(["hunter-w1-2", "hunter-w2-1"])
+		expect(Arr.map(rehunt, (i) => i.agentId)).toEqual(["hunter-w1-2", "hunter-w2-1"])
 		expect(result.ledger.find((u) => u.surface === "POST /search")?.status).toBe("covered")
 	})
 
@@ -144,7 +147,7 @@ describe("runAudit, deep profile", () => {
 				? json({ ...emptyCritic, missing_units: [bogus], stop: false })
 				: happy()(i),
 		)
-		expect(result.ledger.map((u) => u.surface)).toEqual(expect.not.arrayContaining(["POST /export"]))
+		expect(Arr.map(result.ledger, (u) => u.surface)).toEqual(expect.not.arrayContaining(["POST /export"]))
 	})
 
 	it("refuses a local check without a promoted artifact and returns the unit to planned", async () => {
@@ -153,9 +156,9 @@ describe("runAudit, deep profile", () => {
 			const answer = hunterAnswer(i, ALL)
 			return json({
 				...answer,
-				units: answer.units.map((u) => ({
+				units: Arr.map(answer.units, (u) => ({
 					...u,
-					checks: u.checks.map((c) => ({
+					checks: Arr.map(u.checks, (c) => ({
 						...c,
 						method: "local",
 						artifact: "agents/hunter-w1-2/artifacts/x.txt",
@@ -178,16 +181,22 @@ describe("runAudit, budget", () => {
 
 	it("defers what the allowance cannot reach and keeps the validation reserve for both reviews", async () => {
 		const { result, recorded } = await runScripted(baseInput({ budget: 9 }), happy())
-		expect(recorded.invocations.filter((i) => i.role === "hunter").map((i) => i.agentId)).toEqual([
-			"hunter-w1-1",
-		])
+		expect(
+			Arr.map(
+				Arr.filter(recorded.invocations, (i) => i.role === "hunter"),
+				(i) => i.agentId,
+			),
+		).toEqual(["hunter-w1-1"])
 		expect(result.ledger.find((u) => u.surface === "POST /search")?.unresolved).toEqual([
 			"budget_cannot_reserve_critics_and_validation",
 		])
 		expect(recorded.invocations).toHaveLength(9)
 		// No gap critic out of the validation reserve: the candidate gets its Phase 3 and Phase 5 reviews.
 		expect(roles(recorded.invocations).slice(-2)).toEqual(["verify-1", "record-1-0"])
-		expect([result.status, result.findings.map((f) => f.verdict)]).toEqual(["complete", ["confirmed"]])
+		expect([result.status, Arr.map(result.findings, (f) => f.verdict)]).toEqual([
+			"complete",
+			["confirmed"],
+		])
 		expect(result.gaps).toContain("budget_cannot_reserve_critics_and_validation")
 	})
 })
@@ -195,14 +204,17 @@ describe("runAudit, budget", () => {
 describe("runAudit, disclosed coverage", () => {
 	it("names every unit a budget-cut run did not audit in its report", async () => {
 		const { result } = await runScripted(baseInput({ budget: 9 }), happy())
-		const unaudited = result.ledger.filter((u) => u.status !== "covered" && u.status !== "candidate")
+		const unaudited = Arr.filter(result.ledger, (u) => u.status !== "covered" && u.status !== "candidate")
 		expect(unaudited.length).toBeGreaterThan(0)
 		expect(result.reports.report).toContain(
 			`Not covered by this run (${unaudited.length} ${unaudited.length === 1 ? "unit" : "units"}):`,
 		)
-		const unnamed = unaudited.filter(
+		const unnamed = Arr.filter(
+			unaudited,
 			(unit) =>
-				!result.reports.report.includes(`- ${unit.status}: ${unit.surface} / ${unit.attack_class}`),
+				!Str.includes(`- ${unit.status}: ${unit.surface} / ${unit.attack_class}`)(
+					result.reports.report,
+				),
 		)
 		expect(unnamed).toEqual([])
 	})
@@ -226,13 +238,13 @@ describe("runAudit, execution mode", () => {
 			}),
 			happy(),
 		)
-		const sections = result.reports.report.split("\n## ")
+		const sections = Str.split("\n## ")(result.reports.report)
 		expect([
-			sections.find((s) => s.startsWith("Run"))?.includes(`- ${line}.`),
+			sections.find((s) => Str.startsWith("Run")(s))?.includes(`- ${line}.`),
 			sections
-				.find((s) => s.startsWith("NEEDS VALIDATION"))
+				.find((s) => Str.startsWith("NEEDS VALIDATION")(s))
 				?.includes(`${line}. Leads whose deciding fact needs execution stay here.`),
-			result.reports.needsValidation.startsWith(`# Needs validation\n\n${line}.`),
+			Str.startsWith(`# Needs validation\n\n${line}.`)(result.reports.needsValidation),
 		]).toEqual([true, true, true])
 	})
 })
@@ -247,9 +259,9 @@ describe("runAudit, local checks", () => {
 			return {
 				text: json({
 					...answer,
-					units: answer.units.map((unit) => ({
+					units: Arr.map(answer.units, (unit) => ({
 						...unit,
-						checks: unit.checks.map((check) => ({
+						checks: Arr.map(unit.checks, (check) => ({
 							...check,
 							method: "local",
 							artifact: artifact(i.agentId),
@@ -276,12 +288,13 @@ describe("runAudit, local checks", () => {
 			keys?.local_checks[0]?.method,
 			ledgerErrors(Schema.decodeUnknownSync(Ledger)(recorded.ledger)),
 		]).toEqual(["candidate", "local", []])
-		expect(result.findings.map((f) => f.verdict)).toEqual(["confirmed"])
+		expect(Arr.map(result.findings, (f) => f.verdict)).toEqual(["confirmed"])
 		expect(
-			recorded.events.some(
+			Arr.some(
+				recorded.events,
 				(e) =>
 					e._tag === "Note" &&
-					e.message.endsWith("promoted agents/hunter-w1-1/artifacts/poc/out.txt"),
+					Str.endsWith("promoted agents/hunter-w1-1/artifacts/poc/out.txt")(e.message),
 			),
 		).toBe(true)
 	})
@@ -310,7 +323,7 @@ describe("runAudit, record verification", () => {
 						: json({ decision: "verified", fingerprint: FINGERPRINT }),
 			}),
 		)
-		expect(roles(recorded.invocations).filter((id) => id.startsWith("record-"))).toEqual([
+		expect(Arr.filter(roles(recorded.invocations), (id) => Str.startsWith("record-")(id))).toEqual([
 			"record-1-0",
 			"record-1-1",
 		])
@@ -328,7 +341,9 @@ describe("runAudit, record verification", () => {
 					json({
 						decision: "replace",
 						reason: "keeps changing",
-						record: i.prompt.includes('"overall_severity": "high"') ? lowered() : confirmed(),
+						record: Str.includes('"overall_severity": "high"')(i.prompt)
+							? lowered()
+							: confirmed(),
 					}),
 			}),
 		)
@@ -344,8 +359,8 @@ describe("runAudit, record verification", () => {
 				? json({ decision: "rejected", record: rejectedRecord })
 				: happy()(i),
 		)
-		expect(result.findings.map((f) => f.verdict)).toEqual(["rejected"])
-		expect(recorded.invocations.some((i) => i.role === "record-verifier")).toBe(false)
+		expect(Arr.map(result.findings, (f) => f.verdict)).toEqual(["rejected"])
+		expect(Arr.some(recorded.invocations, (i) => i.role === "record-verifier")).toBe(false)
 	})
 })
 
@@ -368,8 +383,9 @@ describe("runAudit, prior runs", () => {
 		)
 		const keysId = idOf(KEYS)
 		expect(
-			recorded.invocations.filter(
-				(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${keysId}"`),
+			Arr.filter(
+				recorded.invocations,
+				(i) => i.role === "hunter" && Str.includes(`"coverage_id": "${keysId}"`)(i.prompt),
 			),
 		).toEqual([])
 		const keys = result.ledger.find((u) => u.coverage_id === keysId)
@@ -378,7 +394,7 @@ describe("runAudit, prior runs", () => {
 			"candidate",
 			"verify-1",
 		])
-		expect(result.findings.map((f) => f.verdict)).toEqual(["confirmed"])
+		expect(Arr.map(result.findings, (f) => f.verdict)).toEqual(["confirmed"])
 	})
 
 	it("hunts a confirmed record's unit again when its source changed", async () => {
@@ -392,13 +408,14 @@ describe("runAudit, prior runs", () => {
 					ledger: prior.ledger,
 					findings: prior.findings,
 				},
-				changedSincePrior: (paths) => paths.some((p) => p.includes("keys")),
+				changedSincePrior: (paths) => Arr.some(paths, (p) => Str.includes("keys")(p)),
 			}),
 			happy(),
 		)
 		expect(
-			recorded.invocations.some(
-				(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`),
+			Arr.some(
+				recorded.invocations,
+				(i) => i.role === "hunter" && Str.includes(`"coverage_id": "${idOf(KEYS)}"`)(i.prompt),
 			),
 		).toBe(true)
 		expect(result.ledger.find((u) => u.coverage_id === idOf(KEYS))?.prior_status).toBe(
@@ -410,10 +427,13 @@ describe("runAudit, prior runs", () => {
 describe("runAudit, quick profile", () => {
 	it("runs one wave and one final critic, defers what the critic accepts, and skips Phase 5", async () => {
 		const { result, recorded } = await runScripted(baseInput({ profile: "quick" }), happy())
-		expect(recorded.invocations.filter((i) => i.role === "critic").map((i) => i.agentId)).toEqual([
-			"critic-w1-post",
-		])
-		expect(recorded.invocations.some((i) => i.role === "record-verifier")).toBe(false)
+		expect(
+			Arr.map(
+				Arr.filter(recorded.invocations, (i) => i.role === "critic"),
+				(i) => i.agentId,
+			),
+		).toEqual(["critic-w1-post"])
+		expect(Arr.some(recorded.invocations, (i) => i.role === "record-verifier")).toBe(false)
 		expect(result.ledger.find((u) => u.surface === "POST /export")?.unresolved).toEqual([
 			"quick_profile_final_critic",
 		])
@@ -438,8 +458,10 @@ describe("runAudit, review regressions", () => {
 			}),
 			happy(),
 		)
-		const hunted = recorded.invocations.filter((i) => i.role === "hunter")
-		expect(hunted.some((i) => i.prompt.includes(`"coverage_id": "${idOf(EXPORT)}"`))).toBe(false)
+		const hunted = Arr.filter(recorded.invocations, (i) => i.role === "hunter")
+		expect(Arr.some(hunted, (i) => Str.includes(`"coverage_id": "${idOf(EXPORT)}"`)(i.prompt))).toBe(
+			false,
+		)
 		expect(result.ledger.find((u) => u.coverage_id === idOf(EXPORT))?.status).toBe("out_of_scope")
 	})
 
@@ -465,7 +487,7 @@ describe("runAudit, review regressions", () => {
 			baseInput({
 				runId: "run-2",
 				prior,
-				changedSincePrior: (paths) => paths.some((p) => p.includes("search")),
+				changedSincePrior: (paths) => Arr.some(paths, (p) => Str.includes("search")(p)),
 			}),
 			(i) => {
 				if (i.role !== "hunter") return happy()(i)
@@ -473,7 +495,7 @@ describe("runAudit, review regressions", () => {
 				const answer = hunterAnswer(i, ALL)
 				return json({
 					...answer,
-					units: answer.units.map((u) => ({
+					units: Arr.map(answer.units, (u) => ({
 						...u,
 						disposition: "candidate",
 						candidate_fingerprints: [FINGERPRINT],
@@ -482,14 +504,14 @@ describe("runAudit, review regressions", () => {
 				})
 			},
 		)
-		expect(recorded.invocations.filter((i) => i.role === "candidate-verifier")).toHaveLength(1)
+		expect(Arr.filter(recorded.invocations, (i) => i.role === "candidate-verifier")).toHaveLength(1)
 	})
 
 	it("defers a quick run's units whose hunter failed instead of leaving them planned", async () => {
 		const { result } = await runScripted(baseInput({ profile: "quick" }), (i) =>
 			i.agentId === "hunter-w1-2" ? "not json" : happy()(i),
 		)
-		expect(result.ledger.filter((u) => u.status === "planned")).toEqual([])
+		expect(Arr.filter(result.ledger, (u) => u.status === "planned")).toEqual([])
 	})
 
 	it("does not count synthesis re-proposing a prior unit as lost coverage", async () => {
@@ -521,7 +543,7 @@ describe("runAudit, review regressions", () => {
 				return json({ ...answer, candidates: answer.candidates.length === 0 ? [] : [moved] })
 			},
 		)
-		expect(recorded.invocations.some((i) => i.role === "candidate-verifier")).toBe(true)
+		expect(Arr.some(recorded.invocations, (i) => i.role === "candidate-verifier")).toBe(true)
 	})
 
 	it("does not validate a candidate whose unit result was refused", async () => {
@@ -531,13 +553,13 @@ describe("runAudit, review regressions", () => {
 			// The keys unit's check claims another agent's ownership, so that unit result is refused.
 			return json({
 				...answer,
-				units: answer.units.map((u) => ({
+				units: Arr.map(answer.units, (u) => ({
 					...u,
-					checks: u.checks.map((c) => ({ ...c, agent_id: "someone-else" })),
+					checks: Arr.map(u.checks, (c) => ({ ...c, agent_id: "someone-else" })),
 				})),
 			})
 		})
-		expect(recorded.invocations.some((i) => i.role === "candidate-verifier")).toBe(false)
+		expect(Arr.some(recorded.invocations, (i) => i.role === "candidate-verifier")).toBe(false)
 	})
 })
 
@@ -549,7 +571,7 @@ describe("runAudit, carrying several records on one unit", () => {
 		})
 		// Verifiers answer for the record their prompt carries.
 		const twoRecords = (i: AgentInvocation) => {
-			const isSecond = i.prompt.includes("keys/second-root-cause")
+			const isSecond = Str.includes("keys/second-root-cause")(i.prompt)
 			if (i.role === "candidate-verifier")
 				return json({ decision: "confirmed", record: isSecond ? second : confirmed() })
 			if (i.role === "record-verifier")
@@ -566,7 +588,7 @@ describe("runAudit, carrying several records on one unit", () => {
 					second.verdict === "confirmed" ? second : (undefined as never)
 				return json({
 					...answer,
-					units: answer.units.map((u) =>
+					units: Arr.map(answer.units, (u) =>
 						u.disposition === "candidate"
 							? { ...u, candidate_fingerprints: [FINGERPRINT, "keys/second-root-cause"] }
 							: u,
@@ -581,7 +603,7 @@ describe("runAudit, carrying several records on one unit", () => {
 		})
 		const prior = { runId: "run-1", sourceRef: "abc123", ledger: first.ledger, findings: first.findings }
 		const { result } = await runScripted(baseInput({ runId: "run-2", prior }), twoRecords)
-		expect(result.findings.map((f) => f.fingerprint)).toEqual([
+		expect(Arr.map(result.findings, (f) => f.fingerprint)).toEqual([
 			"keys/roll-missing-org-scope",
 			"keys/second-root-cause",
 		])
@@ -608,13 +630,14 @@ describe("runAudit, third review regressions", () => {
 					ledger: second.result.ledger,
 					findings: second.result.findings,
 				},
-				changedSincePrior: (paths) => paths.some((p) => p.includes("keys")),
+				changedSincePrior: (paths) => Arr.some(paths, (p) => Str.includes("keys")(p)),
 			}),
 			happy(),
 		)
 		expect(
-			third.recorded.invocations.some(
-				(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`),
+			Arr.some(
+				third.recorded.invocations,
+				(i) => i.role === "hunter" && Str.includes(`"coverage_id": "${idOf(KEYS)}"`)(i.prompt),
 			),
 		).toBe(true)
 	})
@@ -627,10 +650,10 @@ describe("runAudit, fourth review regressions", () => {
 		const { result: first } = await runScripted(baseInput(), (i) => {
 			if (i.role !== "hunter") return happy()(i)
 			const answer = hunterAnswer(i, ALL)
-			const owned = answer.units.some((u) => u.coverage_id === searchId)
+			const owned = Arr.some(answer.units, (u) => u.coverage_id === searchId)
 			return json({
 				...answer,
-				units: answer.units.map((u) =>
+				units: Arr.map(answer.units, (u) =>
 					u.coverage_id === searchId
 						? { ...u, disposition: "candidate", candidate_fingerprints: [FINGERPRINT] }
 						: u,
@@ -642,7 +665,7 @@ describe("runAudit, fourth review regressions", () => {
 		const { result, recorded } = await runScripted(baseInput({ runId: "run-2", prior }), happy())
 		const status = (id: string) => result.ledger.find((u) => u.coverage_id === id)?.status
 		expect([status(idOf(KEYS)), status(searchId)]).toEqual(["candidate", "candidate"])
-		expect(recorded.invocations.filter((i) => i.role === "candidate-verifier")).toHaveLength(1)
+		expect(Arr.filter(recorded.invocations, (i) => i.role === "candidate-verifier")).toHaveLength(1)
 		expect(result.status).toBe("complete")
 		expect(ledgerErrors(result.ledger)).toEqual([])
 	})
@@ -662,7 +685,7 @@ describe("runAudit, fourth review regressions", () => {
 			}),
 			happy(),
 		)
-		expect(recorded.invocations.some((i) => i.role === "hunter")).toBe(false)
+		expect(Arr.some(recorded.invocations, (i) => i.role === "hunter")).toBe(false)
 		expect(result.status).toBe("incomplete")
 		expect(result.incompleteReasons).toContain("budget_cannot_fund_a_hunter")
 	})
@@ -716,7 +739,7 @@ describe("runAudit, fifth review regressions", () => {
 		const { recorded } = await runScripted(baseInput({ concurrency: 4 }), (i) => {
 			if (i.role !== "hunter") return happy()(i)
 			const answer = hunterAnswer(i, ALL)
-			const ownsSearch = i.prompt.includes(`"coverage_id": "${idOf(SEARCH)}"`)
+			const ownsSearch = Str.includes(`"coverage_id": "${idOf(SEARCH)}"`)(i.prompt)
 			const uncovered = {
 				surface: ownsSearch ? "GET /a-first" : "GET /z-last",
 				boundary: "none",
@@ -728,7 +751,7 @@ describe("runAudit, fifth review regressions", () => {
 			if (!ownsSearch) return json({ ...answer, uncovered: [uncovered] })
 			return json({
 				...answer,
-				units: answer.units.map((u) => ({
+				units: Arr.map(answer.units, (u) => ({
 					...u,
 					disposition: "candidate",
 					candidate_fingerprints: [searchFp],
@@ -754,13 +777,13 @@ describe("runAudit, fifth review regressions", () => {
 				prior: { ...prior, findings: [...prior.findings, { ...broken, fingerprint: "search/old" }] },
 			}),
 			(i) => {
-				if (i.role !== "hunter" || !i.prompt.includes(`"coverage_id": "${idOf(SEARCH)}"`))
+				if (i.role !== "hunter" || !Str.includes(`"coverage_id": "${idOf(SEARCH)}"`)(i.prompt))
 					return happy()(i)
 				// The search hunter raises the unchanged rejected claim again, so it is reported.
 				const answer = hunterAnswer(i, ALL)
 				return json({
 					...answer,
-					units: answer.units.map((u) => ({
+					units: Arr.map(answer.units, (u) => ({
 						...u,
 						disposition: "candidate",
 						candidate_fingerprints: ["search/old"],
@@ -769,10 +792,10 @@ describe("runAudit, fifth review regressions", () => {
 				})
 			},
 		)
-		expect(result.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT, "search/old"])
-		expect(recorded.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT])
+		expect(Arr.map(result.findings, (f) => f.fingerprint)).toEqual([FINGERPRINT, "search/old"])
+		expect(Arr.map(recorded.findings, (f) => f.fingerprint)).toEqual([FINGERPRINT])
 		expect(result.status).toBe("incomplete")
-		expect(result.gaps.some((gap) => gap.includes("search/old"))).toBe(true)
+		expect(Arr.some(result.gaps, (gap) => Str.includes("search/old")(gap))).toBe(true)
 	})
 })
 
@@ -785,8 +808,10 @@ describe("runAudit, record verifier failures", () => {
 					? "I could not finish the review."
 					: happy()(i),
 		)
-		expect(result.findings.map((f) => [f.fingerprint, f.verdict])).toEqual([[FINGERPRINT, "confirmed"]])
-		expect(recorded.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT])
+		expect(Arr.map(result.findings, (f) => [f.fingerprint, f.verdict])).toEqual([
+			[FINGERPRINT, "confirmed"],
+		])
+		expect(Arr.map(recorded.findings, (f) => f.fingerprint)).toEqual([FINGERPRINT])
 		const keys = result.ledger.find((u) => u.coverage_id === idOf(KEYS))
 		expect(keys?.not_rechecked).toEqual([FINGERPRINT])
 		expect(ledgerErrors(result.ledger)).toEqual([])
@@ -795,8 +820,8 @@ describe("runAudit, record verifier failures", () => {
 		)
 		expect(result.incompleteReasons).toEqual(["record_verification_incomplete"])
 		expect(
-			result.gaps.some((gap) =>
-				gap.includes(`${FINGERPRINT} kept as confirmed without its final re-check`),
+			Arr.some(result.gaps, (gap) =>
+				Str.includes(`${FINGERPRINT} kept as confirmed without its final re-check`)(gap),
 			),
 		).toBe(true)
 	})
@@ -823,10 +848,13 @@ describe("runAudit, answers without a tool call", () => {
 
 	it("records a gap when the retry also answers without reading", async () => {
 		const { result, recorded } = await runScripted(baseInput(), (i) =>
-			i.agentId.startsWith("recon-1c") ? unread : happy()(i),
+			Str.startsWith("recon-1c")(i.agentId) ? unread : happy()(i),
 		)
 		expect(
-			recorded.invocations.filter((i) => i.agentId.startsWith("recon-1c")).map((i) => i.agentId),
+			Arr.map(
+				Arr.filter(recorded.invocations, (i) => Str.startsWith("recon-1c")(i.agentId)),
+				(i) => i.agentId,
+			),
 		).toEqual(["recon-1c", "recon-1c-r1"])
 		expect(recorded.invocations.find((i) => i.role === "synthesis")?.prompt).not.toContain(unread.text)
 		expect(result.gaps).toContain("recon-1c answered twice without reading the repository")
@@ -848,7 +876,7 @@ describe("runAudit, critic repair", () => {
 
 	it("ends the run incomplete only when the repair breaks its contract too", async () => {
 		const { result } = await runScripted(baseInput(), (i) =>
-			i.agentId.startsWith("critic-w1-post") ? broken : happy()(i),
+			Str.startsWith("critic-w1-post")(i.agentId) ? broken : happy()(i),
 		)
 		expect(result.incompleteReasons).toContain("critic_unavailable: post-wave critic after wave 1")
 	})
@@ -858,9 +886,9 @@ describe("runAudit, repository layout", () => {
 	it("gives hunters and critics the run's directory tree", async () => {
 		const tree = "src/\n  routes/\n  services/"
 		const { recorded } = await runScripted(baseInput({ repoTree: tree }), happy())
-		const prompts = recorded.invocations.filter((i) => i.role === "hunter" || i.role === "critic")
+		const prompts = Arr.filter(recorded.invocations, (i) => i.role === "hunter" || i.role === "critic")
 		expect(prompts.length).toBeGreaterThan(0)
-		expect(prompts.every((i) => i.prompt.includes(tree))).toBe(true)
+		expect(Arr.every(prompts, (i) => Str.includes(tree)(i.prompt))).toBe(true)
 	})
 })
 
@@ -906,9 +934,13 @@ describe("runAudit, estimated severity", () => {
 					)(i),
 		)
 		expect(
-			recorded.invocations
-				.filter((i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`))
-				.map((i) => i.agentId),
+			Arr.map(
+				Arr.filter(
+					recorded.invocations,
+					(i) => i.role === "hunter" && Str.includes(`"coverage_id": "${idOf(KEYS)}"`)(i.prompt),
+				),
+				(i) => i.agentId,
+			),
 		).toEqual(["hunter-w1-1"])
 		expect(recorded.findings).toEqual([leadRecord])
 		expect(recorded.estimates.get(FINGERPRINT) ?? null).toBeNull()
@@ -923,7 +955,9 @@ describe("runAudit, estimated severity", () => {
 					: undefined,
 			),
 		)
-		expect(roles(recorded.invocations).filter((id) => id.startsWith("verify-"))).toEqual(["verify-1"])
+		expect(Arr.filter(roles(recorded.invocations), (id) => Str.startsWith("verify-")(id))).toEqual([
+			"verify-1",
+		])
 		expect(recorded.estimates.get(FINGERPRINT)?.overall_severity).toBe("high")
 	})
 
@@ -945,9 +979,13 @@ describe("runAudit, estimated severity", () => {
 					)(i),
 		)
 		expect(
-			recorded.invocations
-				.filter((i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`))
-				.map((i) => i.agentId),
+			Arr.map(
+				Arr.filter(
+					recorded.invocations,
+					(i) => i.role === "hunter" && Str.includes(`"coverage_id": "${idOf(KEYS)}"`)(i.prompt),
+				),
+				(i) => i.agentId,
+			),
 		).toEqual(["hunter-w1-1"])
 		expect(recorded.findings).toEqual([leadRecord])
 		expect(recorded.estimates.get(FINGERPRINT) ?? null).toBeNull()
@@ -1015,7 +1053,9 @@ describe("runAudit, estimated severity", () => {
 		)
 		const record = recorded.invocations.find((i) => i.agentId === "record-1-0")
 		expect(record?.prompt).toContain(JSON.stringify(estimate("medium")))
-		expect(roles(recorded.invocations).filter((id) => id.startsWith("record-"))).toEqual(["record-1-0"])
+		expect(Arr.filter(roles(recorded.invocations), (id) => Str.startsWith("record-")(id))).toEqual([
+			"record-1-0",
+		])
 		expect(recorded.estimates.get(FINGERPRINT)).toEqual(estimate("low"))
 	})
 
@@ -1024,7 +1064,7 @@ describe("runAudit, estimated severity", () => {
 			baseInput(),
 			leads(() => json({ decision: "confirmed", record: confirmed() })),
 		)
-		expect(recorded.findings.map((f) => f.verdict)).toEqual(["confirmed"])
+		expect(Arr.map(recorded.findings, (f) => f.verdict)).toEqual(["confirmed"])
 		expect(recorded.estimates.size).toBe(0)
 	})
 })

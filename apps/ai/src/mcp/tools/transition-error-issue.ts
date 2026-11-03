@@ -1,5 +1,5 @@
 import type { McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { TransitionErrorIssueOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
@@ -39,13 +39,16 @@ export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "transition_error_issue",
 		title: "Transition Error Issue",
-		description: [
-			"Move an error issue to another workflow state.",
-			"`regressed` and `verifying` are set by Maple's own ticks and cannot be requested: `regressed` means a fixed error fired again from a build after the fix, `verifying` means a linked PR merged and the post-merge check is running.",
-			"`cancelled` is final. A refused move names the states allowed from the current one.",
-			"Do not move an issue to `done` yourself once a PR is linked: the merge opens a verification window that closes the issue when the error stops.",
-			"Moving to a closed state ends your lease. For several issues at once use transition_error_issues.",
-		].join(" "),
+		description: Arr.join(
+			[
+				"Move an error issue to another workflow state.",
+				"`regressed` and `verifying` are set by Maple's own ticks and cannot be requested: `regressed` means a fixed error fired again from a build after the fix, `verifying` means a linked PR merged and the post-merge check is running.",
+				"`cancelled` is final. A refused move names the states allowed from the current one.",
+				"Do not move an issue to `done` yourself once a PR is linked: the merge opens a verification window that closes the issue when the error stops.",
+				"Moving to a closed state ends your lease. For several issues at once use transition_error_issues.",
+			],
+			" ",
+		),
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
 			to_state: P.oneOf(SELECTABLE_STATES, "Target workflow state"),

@@ -32,6 +32,7 @@ import { Message, type Model } from "./model"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The run's title block, its stop banner, the phase strip and the four totals.
 
@@ -66,7 +67,7 @@ export const runTitle = (
 						`${target?.branch ?? "branch"} @ ${refLabel(run.sourceRef)}`,
 					]),
 					metaItem(h, run.scopePaths.length === 0 ? null : "FolderIcon", [
-						h.span([h.Title(run.scopePaths.join("\n"))], [scopeLabel(run.scopePaths)]),
+						h.span([h.Title(Arr.join(run.scopePaths, "\n"))], [scopeLabel(run.scopePaths)]),
 					]),
 					metaItem(h, null, [PROFILE_LABEL[run.profile]]),
 					...(run.discoveryModel === null
@@ -245,7 +246,7 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 			// Phases wrap onto more rows as the column narrows; each row fills its width.
 			h.Class("flex flex-wrap gap-px overflow-hidden rounded-md border bg-border"),
 		],
-		phases.map((phase) =>
+		Arr.map(phases, (phase) =>
 			h.li(
 				[
 					h.Key(phase.name),
@@ -314,10 +315,13 @@ export const runStats = (
 					? undefined
 					: live
 						? `${leadsLine(verdicts.confirmed, verdicts.needsValidation)} · ${waiting} ${waiting === 1 ? "candidate" : "candidates"} waiting`
-						: [
-								leadsLine(verdicts.confirmed, verdicts.needsValidation),
-								...(verdicts.rejected === 0 ? [] : [`${verdicts.rejected} disproved`]),
-							].join(" · "),
+						: Arr.join(
+								[
+									leadsLine(verdicts.confirmed, verdicts.needsValidation),
+									...(verdicts.rejected === 0 ? [] : [`${verdicts.rejected} disproved`]),
+								],
+								" · ",
+							),
 		}),
 		statRailItem(h, {
 			eyebrow: "Coverage",
@@ -336,14 +340,17 @@ export const runStats = (
 								tone: gaps > 0 && !live ? "warn" : undefined,
 								label: `${closed} of ${run.unitTotal} units closed`,
 							}),
-							[
-								...(areas === null || areas === 0
-									? []
-									: [`${areas} ${areas === 1 ? "area" : "areas"}`]),
-								gaps === 0
-									? "no gaps"
-									: `${gaps} ${live ? "still open" : gaps === 1 ? "gap" : "gaps"}`,
-							].join(" · "),
+							Arr.join(
+								[
+									...(areas === null || areas === 0
+										? []
+										: [`${areas} ${areas === 1 ? "area" : "areas"}`]),
+									gaps === 0
+										? "no gaps"
+										: `${gaps} ${live ? "still open" : gaps === 1 ? "gap" : "gaps"}`,
+								],
+								" · ",
+							),
 						]),
 		}),
 		statRailItem(h, {

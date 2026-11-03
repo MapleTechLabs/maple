@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import {
 	GitCommitSha,
 	OrgId,
@@ -24,13 +24,13 @@ const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
 const REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
 const OTHER_REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
 const reviewId = (n: number) =>
-	Schema.decodeUnknownSync(PrReviewId)(`00000000-0000-4000-9000-${String(n).padStart(12, "0")}`)
+	Schema.decodeUnknownSync(PrReviewId)(`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(n))}`)
 
 const DAY = 86_400_000
 const START = Date.UTC(2026, 8, 1)
 const at = (days: number, hours = 0) => START + days * DAY + hours * 3_600_000
 const INSTALLATION = Schema.decodeUnknownSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
-const SHA = "a".repeat(40)
+const SHA = Str.repeat(40)("a")
 
 const report = (verdict: "clean" | "issues", confidence: number, severities: ReadonlyArray<string>) =>
 	Schema.decodeUnknownSync(PrReviewReport)({
@@ -38,7 +38,7 @@ const report = (verdict: "clean" | "issues", confidence: number, severities: Rea
 		summary: "Summary",
 		confidence,
 		coverage: [],
-		findings: severities.map((severity, index) => ({
+		findings: Arr.map(severities, (severity, index) => ({
 			path: "src/index.ts",
 			line: index + 1,
 			category: "correctness",
@@ -53,20 +53,23 @@ const seed = Effect.gen(function* () {
 	yield* database.execute((db) =>
 		db.run(
 			PG.insertInto(VcsRepositories).values(
-				[
-					{ id: REPO, orgId: ORG, fullName: "acme/web" },
-					{ id: OTHER_REPO, orgId: OTHER_ORG, fullName: "other/api" },
-				].map((repo) => ({
-					...repo,
-					provider: "github" as const,
-					installationId: INSTALLATION,
-					externalRepoId: repo.id,
-					owner: repo.fullName.split("/")[0] ?? "",
-					name: repo.fullName.split("/")[1] ?? "",
-					htmlUrl: `https://github.com/${repo.fullName}`,
-					createdAt: at(0),
-					updatedAt: at(0),
-				})),
+				Arr.map(
+					[
+						{ id: REPO, orgId: ORG, fullName: "acme/web" },
+						{ id: OTHER_REPO, orgId: OTHER_ORG, fullName: "other/api" },
+					],
+					(repo) => ({
+						...repo,
+						provider: "github" as const,
+						installationId: INSTALLATION,
+						externalRepoId: repo.id,
+						owner: Str.split("/")(repo.fullName)[0] ?? "",
+						name: Str.split("/")(repo.fullName)[1] ?? "",
+						htmlUrl: `https://github.com/${repo.fullName}`,
+						createdAt: at(0),
+						updatedAt: at(0),
+					}),
+				),
 			),
 		),
 	)
@@ -86,7 +89,7 @@ const seed = Effect.gen(function* () {
 		orgId: input.orgId ?? ORG,
 		repositoryId: input.repositoryId ?? REPO,
 		number: input.number,
-		headSha: Schema.decodeUnknownSync(GitCommitSha)(SHA.slice(0, 39) + String(input.n % 10)),
+		headSha: Schema.decodeUnknownSync(GitCommitSha)(Str.slice(0, 39)(SHA) + String(input.n % 10)),
 		url: `https://github.com/acme/web/pull/${input.number}`,
 		title: `PR ${input.number}`,
 		authorLogin: input.author,
@@ -214,11 +217,11 @@ describe("PrReviewAnalyticsService", () => {
 				assert.strictEqual(analytics.series[2]?.warn, 1)
 				assert.deepStrictEqual({ ...analytics.verdicts }, { clean: 1, issues: 1, notApplicable: 0 })
 				assert.deepStrictEqual(
-					analytics.repositories.map((repo) => [repo.fullName, repo.reviews, repo.findings]),
+					Arr.map(analytics.repositories, (repo) => [repo.fullName, repo.reviews, repo.findings]),
 					[["acme/web", 3, 2]],
 				)
 				assert.deepStrictEqual(
-					analytics.authors.map((row) => [row.author, row.pullRequests, row.findings]),
+					Arr.map(analytics.authors, (row) => [row.author, row.pullRequests, row.findings]),
 					[
 						["ada", 1, 2],
 						["lin", 1, 0],
@@ -260,7 +263,7 @@ describe("PrReviewAnalyticsService", () => {
 				const service = yield* PrReviewAnalyticsService
 				const first = yield* service.listReviews(ORG, { ...window, limit: 2 })
 				assert.deepStrictEqual(
-					first.reviews.map((review) => [review.number, review.status]),
+					Arr.map(first.reviews, (review) => [review.number, review.status]),
 					[
 						[11, "failed"],
 						[10, "completed"],
@@ -274,7 +277,7 @@ describe("PrReviewAnalyticsService", () => {
 					cursor: first.nextCursor ?? undefined,
 				})
 				assert.deepStrictEqual(
-					second.reviews.map((review) => [
+					Arr.map(second.reviews, (review) => [
 						review.findings,
 						review.criticalFindings,
 						review.repositoryFullName,
@@ -299,7 +302,7 @@ describe("PrReviewAnalyticsService", () => {
 				): Effect.Effect<ReadonlyArray<string>, unknown, PrReviewAnalyticsService> =>
 					service.listReviews(ORG, { ...window, sortBy, sortDir, limit: 1, cursor }).pipe(
 						Effect.flatMap((response) => {
-							const ids = response.reviews.map((review) => review.id)
+							const ids = Arr.map(response.reviews, (review) => review.id)
 							return response.nextCursor === null
 								? Effect.succeed(ids)
 								: Effect.map(walk(sortBy, sortDir, response.nextCursor), (rest) => [
@@ -352,7 +355,7 @@ describe("PrReviewAnalyticsService", () => {
 				const service = yield* PrReviewAnalyticsService
 				const analytics = yield* service.analytics(ORG, window)
 				assert.deepStrictEqual(
-					analytics.authors.map((row) => [row.author, row.pullRequests, row.findings]),
+					Arr.map(analytics.authors, (row) => [row.author, row.pullRequests, row.findings]),
 					[
 						["ada", 1, 2],
 						["aaron", 1, 0],
@@ -372,7 +375,7 @@ describe("PrReviewAnalyticsService", () => {
 				assert.strictEqual(detail.report?.findings.length, 2)
 				assert.strictEqual(detail.history.length, 2)
 				assert.deepStrictEqual(
-					detail.findings.map((finding) => [finding.handle, finding.status]),
+					Arr.map(detail.findings, (finding) => [finding.handle, finding.status]),
 					[
 						["F1", "resolved"],
 						["F2", "open"],
@@ -391,7 +394,7 @@ describe("PrReviewAnalyticsService", () => {
 				const service = yield* PrReviewAnalyticsService
 				const response = yield* service.listFindings(ORG, { ...window, severity: "critical" })
 				assert.deepStrictEqual(
-					response.findings.map((finding) => [finding.handle, finding.pullRequestTitle]),
+					Arr.map(response.findings, (finding) => [finding.handle, finding.pullRequestTitle]),
 					[["F1", "PR 10"]],
 				)
 			}),
@@ -405,7 +408,7 @@ describe("PrReviewAnalyticsService", () => {
 				const service = yield* PrReviewAnalyticsService
 				const numbers = (q: string) =>
 					Effect.map(service.listReviews(ORG, { ...window, q }), (response) =>
-						response.reviews.map((review) => review.number),
+						Arr.map(response.reviews, (review) => review.number),
 					)
 				assert.deepStrictEqual(yield* numbers("LIN"), [11])
 				assert.deepStrictEqual(yield* numbers("pr 11"), [11])
@@ -423,7 +426,7 @@ describe("PrReviewAnalyticsService", () => {
 				const service = yield* PrReviewAnalyticsService
 				const handles = (q: string) =>
 					Effect.map(service.listFindings(ORG, { ...window, q }), (response) =>
-						response.findings.map((finding) => finding.handle),
+						Arr.map(response.findings, (finding) => finding.handle),
 					)
 				assert.deepStrictEqual(yield* handles("finding 2"), ["F2"])
 				assert.deepStrictEqual((yield* handles("index.ts")).toSorted(), ["F1", "F2"])

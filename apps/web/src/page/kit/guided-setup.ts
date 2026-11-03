@@ -19,6 +19,7 @@ import { panel } from "@maple/views/ui/panel"
 import type * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../settings/kit/code-block"
+import { Array as Arr, String as Str } from "effect"
 
 // `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
 
@@ -48,7 +49,7 @@ const SETUP_TAB_ICONS = {
 } as const satisfies { readonly [Value in (typeof SETUP_TAB_VALUES)[number]]: IconName }
 
 const isSetupTab = (value: string): value is (typeof SETUP_TAB_VALUES)[number] =>
-	SETUP_TAB_VALUES.some((tab) => tab === value)
+	Arr.some(SETUP_TAB_VALUES, (tab) => tab === value)
 
 const PACKAGE_MANAGERS = [
 	{ id: "npm", command: "npm install" },
@@ -58,12 +59,12 @@ const PACKAGE_MANAGERS = [
 ] as const
 
 export const SETUP_TAB_VALUES = ["install", "instrument", "claude-code"] as const
-export const PACKAGE_TAB_VALUES = PACKAGE_MANAGERS.map((pm) => pm.id)
+export const PACKAGE_TAB_VALUES = Arr.map(PACKAGE_MANAGERS, (pm) => pm.id)
 
 export const frameworkIconStrip = <M>(h: HtmlBuilder<M>): Html =>
 	h.span(
 		[h.Class("text-muted-foreground flex shrink-0 items-center gap-2"), h.AriaHidden(true)],
-		sdkSnippets.map((snippet) => icon(h, FRAMEWORK_ICONS[snippet.language], { size: 14 })),
+		Arr.map(sdkSnippets, (snippet) => icon(h, FRAMEWORK_ICONS[snippet.language], { size: 14 })),
 	)
 
 /** `FrameworkPicker`: pill chips (`compact`) or labelled cards under "Pick your stack". */
@@ -74,7 +75,7 @@ export const frameworkPicker = <M>(
 	const { compact, selected } = options
 	const chips = h.div(
 		[h.Class("flex flex-wrap gap-1.5")],
-		sdkSnippets.map((snippet) => {
+		Arr.map(sdkSnippets, (snippet) => {
 			const isActive = selected === snippet.language
 			return h.button(
 				[
@@ -154,7 +155,7 @@ export const agentPromptButton = <M>(
 				[
 					h.span(
 						[h.AriaHidden(true), h.Class("flex")],
-						AGENT_MARKS.map((mark, index) =>
+						Arr.map(AGENT_MARKS, (mark, index) =>
 							h.span(
 								[
 									h.Attribute("style", `--n:${index}`),
@@ -180,14 +181,14 @@ export const agentPromptButton = <M>(
 								[h.Class("sr-only"), h.AriaLive("polite")],
 								[AGENT_LABELS[options.copy.status]],
 							),
-							...CopyButton.CopyStatus.literals.map((state) =>
+							...Arr.map(CopyButton.CopyStatus.literals, (state) =>
 								h.span(
 									[
 										h.AriaHidden(true),
 										h.Class("agent-prompt__label"),
 										h.DataAttribute("label", state),
 									],
-									Array.from(AGENT_LABELS[state]).map((char, index) =>
+									Arr.map(Array.from(AGENT_LABELS[state]), (char, index) =>
 										h.span([h.Attribute("style", `--i:${index}`)], [char]),
 									),
 								),
@@ -249,12 +250,20 @@ const packageManagerBlock = <M>(
 		view: TabsView.view,
 		toParentMessage: parts.toPackageTabs,
 		viewInputs: {
-			labels: PACKAGE_MANAGERS.map((pm) => pm.id),
+			labels: Arr.map(PACKAGE_MANAGERS, (pm) => pm.id),
 			panel: (value) => {
 				const pm = PACKAGE_MANAGERS.find((entry) => entry.id === value)
 				return pm === undefined
 					? undefined
-					: [block(h, parts, `install:${pm.id}`, `${pm.command} ${packages.join(" ")}`, "shell")]
+					: [
+							block(
+								h,
+								parts,
+								`install:${pm.id}`,
+								`${pm.command} ${Arr.join(packages, " ")}`,
+								"shell",
+							),
+						]
 			},
 		},
 	})
@@ -267,9 +276,10 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 	const padding = isBoxed ? "p-3" : "px-4 pt-3 pb-4"
 	const apiKey = parts.apiKey
 	const interpolate = (template: string) =>
-		template
-			.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)
-			.replace(/\{\{API_KEY\}\}/g, apiKey || "<your-api-key>")
+		Str.replace(
+			/\{\{API_KEY\}\}/g,
+			apiKey || "<your-api-key>",
+		)(Str.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)(template))
 	const install = snippet.install
 	const docs = parts.docs ?? FRAMEWORK_DOCS[snippet.language]
 	const tabs = h.submodel({
@@ -327,7 +337,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 							parts,
 							"instrument",
 							interpolate(snippet.instrument),
-							snippet.label.toLowerCase(),
+							Str.toLowerCase(snippet.label),
 							REPLAY_BLOCK_CLASS,
 							false,
 							snippet.lang,

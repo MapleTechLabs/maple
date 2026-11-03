@@ -2,6 +2,7 @@ import { PrReviewFinding, type PullRequestFile } from "@maple/domain/http"
 import { assert, describe, it } from "vitest"
 import { parsePatch } from "./diff"
 import { privacyFindings, privacyHitAt, withoutReviewerOverlap } from "./privacy"
+import { Array as Arr, String as Str } from "effect"
 
 const file = (
 	path: string,
@@ -13,17 +14,23 @@ const file = (
 	status: "modified",
 	additions: added.length,
 	deletions: 0,
-	patch: [
-		`@@ -10,${context.length} +10,${context.length + added.length} @@`,
-		...context.map((line) => ` ${line}`),
-		...added.map((line) => `+${line}`),
-	].join("\n"),
+	patch: Arr.join(
+		[
+			`@@ -10,${context.length} +10,${context.length + added.length} @@`,
+			...Arr.map(context, (line) => ` ${line}`),
+			...Arr.map(added, (line) => `+${line}`),
+		],
+		"\n",
+	),
 })
 
 /** The hit on the last added line of a snippet, read with the lines above it. */
 const hitOf = (...snippet: ReadonlyArray<string>) => {
 	const lines = parsePatch(
-		`@@ -1,0 +1,${snippet.length} @@\n${snippet.map((line) => `+${line}`).join("\n")}`,
+		`@@ -1,0 +1,${snippet.length} @@\n${Arr.join(
+			Arr.map(snippet, (line) => `+${line}`),
+			"\n",
+		)}`,
 	)
 	return privacyHitAt(lines, lines.length - 1)
 }
@@ -162,23 +169,29 @@ describe("privacyHitAt", () => {
 
 describe("privacyHitAt on hostile input", () => {
 	it("returns quickly on a long run of whitespace", () => {
-		assert.isUndefined(hitOf(`logger.info({ ok:true${" ".repeat(10_000)}x })`))
-		assert.isUndefined(hitOf(`logger.info({ k: "v"${" ".repeat(10_000)}x })`))
+		assert.isUndefined(hitOf(`logger.info({ ok:true${Str.repeat(10_000)(" ")}x })`))
+		assert.isUndefined(hitOf(`logger.info({ k: "v"${Str.repeat(10_000)(" ")}x })`))
 	})
 
 	it("skips generated lines, however many", () => {
-		const minified = `+${'k:"v",'.repeat(2_000)}`
-		const patch = `@@ -1,0 +1,300 @@\n${Array.from({ length: 300 }, () => minified).join("\n")}`
+		const minified = `+${Str.repeat(2_000)('k:"v",')}`
+		const patch = `@@ -1,0 +1,300 @@\n${Arr.join(
+			Array.from({ length: 300 }, () => minified),
+			"\n",
+		)}`
 		assert.lengthOf(privacyFindings([{ ...file("src/bundle.js", []), patch }]), 0)
 	})
 
 	it("does not read a call opened in an earlier hunk", () => {
-		const patch = [
-			"@@ -1,1 +1,1 @@",
-			' logger.info("start", {',
-			"@@ -399,0 +400,1 @@",
-			"+const email = user.email",
-		].join("\n")
+		const patch = Arr.join(
+			[
+				"@@ -1,1 +1,1 @@",
+				' logger.info("start", {',
+				"@@ -399,0 +400,1 @@",
+				"+const email = user.email",
+			],
+			"\n",
+		)
 		assert.lengthOf(privacyFindings([{ ...file("src/a.ts", []), patch }]), 0)
 	})
 })
@@ -193,7 +206,7 @@ describe("privacyFindings", () => {
 			]),
 		])
 		assert.deepStrictEqual(
-			findings.map((finding) => [
+			Arr.map(findings, (finding) => [
 				finding.line,
 				finding.severity,
 				finding.checkId,

@@ -1,6 +1,6 @@
 // Ownership of a local store: the PID file that serializes every process
 // opening it, with stale-claim takeover and legacy-sidecar adoption.
-import { Clock, Effect, Option } from "effect"
+import { Clock, Effect, Option, String as Str } from "effect"
 import { randomUUID } from "node:crypto"
 import { linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
@@ -19,7 +19,7 @@ import {
 
 /** Parse `ps -o etime=` (`[[dd-]hh:]mm:ss`) into whole seconds. */
 export const parseElapsedSeconds = (raw: string): number | undefined => {
-	const match = raw.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)
+	const match = Str.trim(raw).match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)
 	if (!match) return undefined
 	const [, days, hours, minutes, seconds] = match
 	return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes) * 60 + Number(seconds)
@@ -33,7 +33,7 @@ export const parseElapsedSeconds = (raw: string): number | undefined => {
 export const parseProcStartedAtMs = (pidStat: string, systemStat: string): number | undefined => {
 	const commEnd = pidStat.lastIndexOf(")")
 	// `state` is field 3, so `starttime` (field 22) is index 19 after the comm.
-	const ticks = pidStat.slice(commEnd + 2).split(" ")[19] ?? ""
+	const ticks = Str.split(" ")(Str.slice(commEnd + 2)(pidStat))[19] ?? ""
 	const boot = systemStat.match(/^btime (\d+)$/m)
 	if (commEnd < 0 || !boot || !/^\d+$/.test(ticks)) return undefined
 	// /proc reports times in USER_HZ, which the kernel ABI fixes at 100 per second.
@@ -86,7 +86,7 @@ export const readPidSnapshot = (path: string): Effect.Effect<Option.Option<PidFi
 		try: (): PidFileSnapshot => {
 			const raw = readFileSync(path, "utf8")
 			const info = statSync(path)
-			const pid = Number.parseInt(raw.trim(), 10)
+			const pid = Number.parseInt(Str.trim(raw), 10)
 			return {
 				raw,
 				pid: Number.isInteger(pid) && pid > 0 ? pid : undefined,

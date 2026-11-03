@@ -1,5 +1,6 @@
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
+import { Array as Arr } from "effect"
 
 // The bar geometry of `Flamegraph` and `FlamegraphMinimap` (packages/ui `traces/flamegraph*.tsx`).
 
@@ -20,7 +21,7 @@ export interface FlamegraphBar {
 
 const walk = (node: SpanNode, visit: (node: SpanNode) => void): void => {
 	visit(node)
-	node.children.forEach((child) => walk(child, visit))
+	Arr.forEach(node.children, (child) => walk(child, visit))
 }
 
 /** Bars relative to the focused span (or the whole trace), one lane per depth before packing. */
@@ -41,9 +42,9 @@ const barsOf = (input: FlamegraphInput, focused: SpanNode | undefined): Readonly
 			leftPercent: left,
 			widthPercent: Math.min(widthPercent, 100 - left),
 		})
-		node.children.forEach(visit)
+		Arr.forEach(node.children, visit)
 	}
-	if (focused === undefined) input.rootSpans.forEach(visit)
+	if (focused === undefined) Arr.forEach(input.rootSpans, visit)
 	else visit(focused)
 	return bars
 }
@@ -52,13 +53,15 @@ const barsOf = (input: FlamegraphInput, focused: SpanNode | undefined): Readonly
 const packLanes = (
 	bars: ReadonlyArray<FlamegraphBar>,
 ): { bars: ReadonlyArray<FlamegraphBar>; totalLanes: number } => {
-	const depths = [...new Set(bars.map((bar) => bar.depth))].sort((a, b) => a - b)
+	const depths = [...new Set(Arr.map(bars, (bar) => bar.depth))].sort((a, b) => a - b)
 	const packed: Array<FlamegraphBar> = []
 	let laneOffset = 0
-	depths.forEach((depth) => {
+	Arr.forEach(depths, (depth) => {
 		const lanes: Array<number> = []
-		const group = bars.filter((bar) => bar.depth === depth).sort((a, b) => a.leftPercent - b.leftPercent)
-		group.forEach((bar) => {
+		const group = Arr.filter(bars, (bar) => bar.depth === depth).sort(
+			(a, b) => a.leftPercent - b.leftPercent,
+		)
+		Arr.forEach(group, (bar) => {
 			const free = lanes.findIndex((end) => bar.leftPercent >= end)
 			const index = free === -1 ? lanes.length : free
 			lanes[index] = bar.leftPercent + bar.widthPercent
@@ -107,7 +110,7 @@ export const minimapBars = (input: FlamegraphInput): MinimapLayout => {
 	if (cached !== undefined) return cached
 	const traceStartMs = new Date(input.traceStartTime).getTime()
 	const bars: Array<MinimapBar> = []
-	input.rootSpans.forEach((root) =>
+	Arr.forEach(input.rootSpans, (root) =>
 		walk(root, (node) => {
 			const leftPercent = Math.max(
 				0,
@@ -122,16 +125,17 @@ export const minimapBars = (input: FlamegraphInput): MinimapLayout => {
 			})
 		}),
 	)
-	const layout = { bars, maxDepth: bars.reduce((max, bar) => Math.max(max, bar.depth), 0) }
+	const layout = { bars, maxDepth: Arr.reduce(bars, 0, (max, bar) => Math.max(max, bar.depth)) }
 	minimaps.set(input, layout)
 	return layout
 }
 
 /** The deepest span under a point of the minimap, as a percent of the trace. */
 export const spanAtMinimapPercent = (input: FlamegraphInput, percent: number): SpanNode | undefined =>
-	minimapBars(input)
-		.bars.filter((bar) => percent >= bar.leftPercent && percent <= bar.leftPercent + bar.widthPercent)
-		.reduce<MinimapBar | undefined>(
-			(deepest, bar) => (deepest === undefined || bar.depth > deepest.depth ? bar : deepest),
-			undefined,
-		)?.span
+	Arr.filter(
+		minimapBars(input).bars,
+		(bar) => percent >= bar.leftPercent && percent <= bar.leftPercent + bar.widthPercent,
+	).reduce<MinimapBar | undefined>(
+		(deepest, bar) => (deepest === undefined || bar.depth > deepest.depth ? bar : deepest),
+		undefined,
+	)?.span

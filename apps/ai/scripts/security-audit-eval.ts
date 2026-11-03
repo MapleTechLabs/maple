@@ -28,7 +28,7 @@ import {
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
 	aggregate,
 	type CaseResult,
@@ -73,13 +73,13 @@ const realPath = (path: string): string =>
 /** Whether `path` is `dir` or inside it, both already real. */
 const isWithin = (path: string, dir: string) => {
 	const rel = relative(dir, path)
-	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+	return rel === "" || (rel !== ".." && !Str.startsWith(`..${sep}`)(rel) && !isAbsolute(rel))
 }
 
 /** The Maple checkout this script runs from: results (case repos, findings) must stay out of it. */
 const repoRoot = () => {
 	const top = spawnSync("git", ["-C", AI_DIR, "rev-parse", "--show-toplevel"], { encoding: "utf8" })
-	return realPath(top.status === 0 ? top.stdout.trim() : resolve(AI_DIR, "..", ".."))
+	return realPath(top.status === 0 ? Str.trim(top.stdout) : resolve(AI_DIR, "..", ".."))
 }
 
 interface Args {
@@ -122,10 +122,10 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		(acc, arg) =>
 			acc.pending !== null
 				? { ...acc, flags: new Map(acc.flags).set(acc.pending, arg), pending: null }
-				: arg.startsWith("--")
-					? switches.has(arg.slice(2))
-						? { ...acc, flags: new Map(acc.flags).set(arg.slice(2), "true") }
-						: { ...acc, pending: arg.slice(2) }
+				: Str.startsWith("--")(arg)
+					? switches.has(Str.slice(2)(arg))
+						? { ...acc, flags: new Map(acc.flags).set(Str.slice(2)(arg), "true") }
+						: { ...acc, pending: Str.slice(2)(arg) }
 					: { ...acc, positional: [...acc.positional, arg] },
 		{ flags: new Map(), positional: [], pending: null },
 	)
@@ -152,10 +152,10 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	// Executing runs measure something else: they never take the source-only baseline's key.
 	if (variant === undefined && flag("executor") !== undefined) return usage()
 	return {
-		caseFiles: parsed.positional.map((path) => resolve(path)),
+		caseFiles: Arr.map(parsed.positional, (path) => resolve(path)),
 		results,
 		repos: resolve(flag("repos") ?? join(EVAL_CACHE, "repos")),
-		only: flag("only") === undefined ? null : new Set((flag("only") ?? "").split(",")),
+		only: flag("only") === undefined ? null : new Set(Str.split(",")(flag("only") ?? "")),
 		variant,
 		profile,
 		budget: number("budget"),
@@ -175,8 +175,8 @@ const git = (dir: string, args: ReadonlyArray<string>) => {
 	const result = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" })
 	return {
 		ok: result.status === 0,
-		stdout: (result.stdout ?? "").trim(),
-		stderr: (result.stderr ?? "").trim(),
+		stdout: Str.trim(result.stdout ?? ""),
+		stderr: Str.trim(result.stderr ?? ""),
 	}
 }
 
@@ -201,21 +201,33 @@ const ensureRepo = (repos: string, c: EvalCase): RepoCheck => {
 	const origin = git(dir, ["remote", "get-url", "--", "origin"])
 	if (!origin.ok || origin.stdout !== c.repo.url)
 		return { error: `${dir} exists with origin ${origin.stdout || "(none)"}, not ${c.repo.url}` }
-	const missing = [c.sha, ...c.bugs.map((bug) => bug.fixSha)].filter((sha) => !hasCommit(dir, sha))
+	const missing = Arr.filter(
+		[c.sha, ...Arr.map(c.bugs, (bug) => bug.fixSha)],
+		(sha) => !hasCommit(dir, sha),
+	)
 	if (missing.length > 0) {
 		const fetched = git(dir, ["fetch", "-q", "--filter=blob:none", "--", "origin", ...missing])
 		if (!fetched.ok)
-			return { error: `cannot fetch ${missing.join(", ")} from ${c.repo.url}: ${fetched.stderr}` }
+			return { error: `cannot fetch ${Arr.join(missing, ", ")} from ${c.repo.url}: ${fetched.stderr}` }
 	}
 	// An unknown fix commit cannot be checked, so it fails the case rather than reading as "not contained".
-	const unknown = [c.sha, ...c.bugs.map((bug) => bug.fixSha)].filter((sha) => !hasCommit(dir, sha))
-	if (unknown.length > 0) return { error: `commits not present after fetch: ${unknown.join(", ")}` }
+	const unknown = Arr.filter(
+		[c.sha, ...Arr.map(c.bugs, (bug) => bug.fixSha)],
+		(sha) => !hasCommit(dir, sha),
+	)
+	if (unknown.length > 0) return { error: `commits not present after fetch: ${Arr.join(unknown, ", ")}` }
 	// A run at a commit that already contains a fix would score a fixed bug as missed.
-	const fixed = c.bugs.filter(
+	const fixed = Arr.filter(
+		c.bugs,
 		(bug) => git(dir, ["merge-base", "--is-ancestor", "--", bug.fixSha, c.sha]).ok,
 	)
 	return fixed.length > 0
-		? { error: `${c.sha} already contains the fix for ${fixed.map((b) => b.id).join(", ")}` }
+		? {
+				error: `${c.sha} already contains the fix for ${Arr.join(
+					Arr.map(fixed, (b) => b.id),
+					", ",
+				)}`,
+			}
 		: { dir }
 }
 
@@ -233,10 +245,13 @@ const readStatus = (runDir: string) => {
 
 const loadResults = (results: string): ReadonlyArray<CaseResult> =>
 	existsSync(results)
-		? readdirSync(results)
-				.map((name) => join(results, name, "result.json"))
-				.filter((path) => existsSync(path))
-				.map((path) => decodeCaseResult(decodeJson(readFileSync(path, "utf8"))))
+		? Arr.map(
+				Arr.filter(
+					Arr.map(readdirSync(results), (name) => join(results, name, "result.json")),
+					(path) => existsSync(path),
+				),
+				(path) => decodeCaseResult(decodeJson(readFileSync(path, "utf8"))),
+			)
 		: []
 
 /**
@@ -246,14 +261,16 @@ const loadResults = (results: string): ReadonlyArray<CaseResult> =>
 const RUN_DIR = /^run(\.aborted-\d+)?$/
 
 const spentUsd = (results: string) =>
-	readdirSync(results, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
-		.flatMap((entry) =>
-			readdirSync(join(results, entry.name))
-				.filter((name) => RUN_DIR.test(name))
-				.map((name) => join(results, entry.name, name, "events.jsonl")),
-		)
-		.reduce((acc, path) => acc + usageOf(readJsonLines(path)).costUsd, 0)
+	Arr.reduce(
+		Arr.filter(readdirSync(results, { withFileTypes: true }), (entry) => entry.isDirectory()).flatMap(
+			(entry) =>
+				readdirSync(join(results, entry.name))
+					.filter((name) => RUN_DIR.test(name))
+					.map((name) => join(results, entry.name, name, "events.jsonl")),
+		),
+		0,
+		(acc, path) => acc + usageOf(readJsonLines(path)).costUsd,
+	)
 
 /**
  * Claims a key for this process: an exclusive create, so two harnesses never run the same key.
@@ -299,7 +316,7 @@ const runCase = (
 		repoDir,
 		"--ref",
 		c.sha,
-		...c.scope.flatMap((path) => ["--scope", path]),
+		...Arr.flatMap(c.scope, (path) => ["--scope", path]),
 		"--profile",
 		settings.profile,
 		"--budget",
@@ -313,7 +330,7 @@ const runCase = (
 		...(args.executor === undefined ? [] : ["--executor", args.executor]),
 	]
 	const log = join(out, "runner.log")
-	writeFileSync(log, `bun ${runnerArgs.join(" ")}\n`)
+	writeFileSync(log, `bun ${Arr.join(runnerArgs, " ")}\n`)
 	return new Promise((done) => {
 		const child = spawn("bun", runnerArgs, { cwd: AI_DIR, stdio: ["ignore", "pipe", "pipe"] })
 		const append = (chunk: Buffer) => writeFileSync(log, chunk, { flag: "a" })
@@ -363,7 +380,7 @@ const loadGrades = (path: string): Grades =>
 const writeSummary = (args: Args) => {
 	const results = loadResults(args.results)
 	const grades = loadGrades(args.grades)
-	const runs = results.map((r) => scoreRun(r, readFindings(join(args.results, r.key, "run")), grades))
+	const runs = Arr.map(results, (r) => scoreRun(r, readFindings(join(args.results, r.key, "run")), grades))
 	const byLanguage = aggregate(runs, (r) => `${r.corpus}/${r.language}`)
 	const byCorpus = aggregate(runs, (r) => r.corpus)
 	const total = aggregate(runs, () => "all")
@@ -371,21 +388,34 @@ const writeSummary = (args: Args) => {
 		join(args.results, "results.json"),
 		`${encodePrettyJson({ generatedAt: new Date().toISOString(), byLanguage, byCorpus, total, runs })}\n`,
 	)
-	const summary = [
-		"# Security audit eval",
-		`Generated ${new Date().toISOString()} from ${results.length} runs; grades from ${args.grades}.`,
-		"## By language",
-		renderTable(byLanguage),
-		"## By corpus",
-		renderTable([...byCorpus, ...total]),
-		"## Runs",
-		renderRuns(runs),
-		"## Location suggestions (ungraded aid)",
-		...results.map(
-			(r) =>
-				`- ${r.key}: ${r.locationMatches.map((m) => `${m.bug} <- ${m.fingerprint} [${m.verdict}] ${m.files.join(", ")}`).join("; ") || "none"}`,
-		),
-	].join("\n\n")
+	const summary = Arr.join(
+		[
+			"# Security audit eval",
+			`Generated ${new Date().toISOString()} from ${results.length} runs; grades from ${args.grades}.`,
+			"## By language",
+			renderTable(byLanguage),
+			"## By corpus",
+			renderTable([...byCorpus, ...total]),
+			"## Runs",
+			renderRuns(runs),
+			"## Location suggestions (ungraded aid)",
+			...Arr.map(
+				results,
+				(r) =>
+					`- ${r.key}: ${
+						Arr.join(
+							Arr.map(
+								r.locationMatches,
+								(m) =>
+									`${m.bug} <- ${m.fingerprint} [${m.verdict}] ${Arr.join(m.files, ", ")}`,
+							),
+							"; ",
+						) || "none"
+					}`,
+			),
+		],
+		"\n\n",
+	)
 	writeFileSync(join(args.results, "summary.md"), `${summary}\n`)
 	console.log(renderTable([...byLanguage, ...total]))
 }
@@ -395,14 +425,14 @@ type Settings = { readonly profile: Profile; readonly budget: number; readonly c
 /** One case under its claim: skip a finished key, check the cap and the repository, then run. */
 const runClaimed = async (args: Args, c: EvalCase, settings: Settings, key: string) => {
 	const existing = loadResults(args.results)
-	if (existing.some((r) => r.key === key)) {
+	if (Arr.some(existing, (r) => r.key === key)) {
 		console.log(`skip ${key}: already has a result`)
 		return
 	}
 	const spent = spentUsd(args.results)
 	const estimate = estimateCost(
 		settings.budget,
-		existing.map((r) => r.metrics),
+		Arr.map(existing, (r) => r.metrics),
 		args.perInvocationUsd,
 	)
 	if (!fitsCap(spent, estimate, args.capUsd)) {
@@ -434,11 +464,12 @@ const main = async () => {
 		console.error("OPENROUTER_API_KEY is not set; run under `infisical run --env dev --`.")
 		return process.exit(1)
 	}
-	const files = args.caseFiles.map((path) => decodeCaseFile(decodeJson(readFileSync(path, "utf8"))))
-	const queue = files.flatMap((file) =>
-		file.cases
-			.filter((c) => args.only === null || args.only.has(c.id))
-			.map((c) => ({ c, settings: settingsFor(args, file.defaults, c) })),
+	const files = Arr.map(args.caseFiles, (path) => decodeCaseFile(decodeJson(readFileSync(path, "utf8"))))
+	const queue = Arr.flatMap(files, (file) =>
+		Arr.map(
+			Arr.filter(file.cases, (c) => args.only === null || args.only.has(c.id)),
+			(c) => ({ c, settings: settingsFor(args, file.defaults, c) }),
+		),
 	)
 	// Sequential on purpose: each run already fans out to its own agents, and the cap is checked
 	// against real spend before every launch and while each run is in flight.

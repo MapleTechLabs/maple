@@ -1,4 +1,5 @@
 import type { AnomalyIncidentDocument, AnomalySignalType } from "@maple/domain/http"
+import { Array as Arr } from "effect"
 
 export type AnomalySeverity = "warning" | "critical"
 
@@ -39,7 +40,7 @@ export function matchesAnomalyFilters(
 }
 
 export function hasAnomalyFilters(filters: AnomalyFilters): boolean {
-	return Object.values(filters).some((values) => (values?.length ?? 0) > 0)
+	return Arr.some(Object.values(filters), (values) => (values?.length ?? 0) > 0)
 }
 
 /** One facet, in both polarities. `label` matches the sidebar section title exactly. */

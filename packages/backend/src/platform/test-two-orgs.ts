@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import type { TestDb } from "./test-pglite"
 
 /**
@@ -38,7 +38,7 @@ type SeedValue = string | number | boolean | Uint8Array
 /** A value for a required column, unique per (table, column, org) so keys never collide. */
 const valueFor = (column: ColumnInfo, tag: string): SeedValue => {
 	const type = column.udt_name
-	if (type.startsWith("_")) return "{}"
+	if (Str.startsWith("_")(type)) return "{}"
 	if (type === "bool") return false
 	if (type === "jsonb" || type === "json") return "{}"
 	if (type === "uuid") return randomUUID()
@@ -65,7 +65,8 @@ export const seedOrgRow = (db: TestDb, tableName: string, orgColumn: string, org
 			 ORDER BY ordinal_position`,
 			[tableName],
 		)
-		const required = columns.filter(
+		const required = Arr.filter(
+			columns,
 			(column) =>
 				column.column_name === orgColumn ||
 				(column.is_nullable === "NO" &&
@@ -73,11 +74,17 @@ export const seedOrgRow = (db: TestDb, tableName: string, orgColumn: string, org
 					column.is_identity === "NO" &&
 					column.is_generated === "NEVER"),
 		)
-		const values = required.map((column): SeedValue =>
+		const values = Arr.map(required, (column): SeedValue =>
 			column.column_name === orgColumn ? orgId : valueFor(column, `${tableName}:${orgId}`),
 		)
-		const names = required.map((column) => `"${column.column_name}"`).join(", ")
-		const placeholders = required.map((_, index) => `$${index + 1}`).join(", ")
+		const names = Arr.join(
+			Arr.map(required, (column) => `"${column.column_name}"`),
+			", ",
+		)
+		const placeholders = Arr.join(
+			Arr.map(required, (_, index) => `$${index + 1}`),
+			", ",
+		)
 		yield* Effect.acquireUseRelease(
 			query(db, NoRows, "SET session_replication_role = replica"),
 			() => query(db, NoRows, `INSERT INTO "${tableName}" (${names}) VALUES (${placeholders})`, values),

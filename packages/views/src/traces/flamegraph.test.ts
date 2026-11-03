@@ -1,6 +1,6 @@
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
 import { buildTraceDetail, type SpanHierarchyRow } from "@maple/ui/lib/span-tree"
-import { Option } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { click, given, expect as expectScene, Mount, role, scene, text } from "foldkit/scene"
 import { Lazy } from "foldkit/test"
@@ -47,14 +47,12 @@ const input: FlamegraphInput = {
 }
 const step = update(input)
 const lanes = (focused?: string) =>
-	Object.fromEntries(
-		flamegraphBars(
-			input,
-			focused === undefined ? undefined : findSpanById(input.rootSpans, focused),
-		).bars.map((bar) => [
-			bar.span.spanId,
-			{ lane: bar.lane, left: bar.leftPercent, width: bar.widthPercent },
-		]),
+	Rec.fromEntries(
+		Arr.map(
+			flamegraphBars(input, focused === undefined ? undefined : findSpanById(input.rootSpans, focused))
+				.bars,
+			(bar) => [bar.span.spanId, { lane: bar.lane, left: bar.leftPercent, width: bar.widthPercent }],
+		),
 	)
 
 describe("flamegraph layout", () => {

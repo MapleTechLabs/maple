@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Dialog from "@maple/views/ui/dialog"
 import { pageRailSheet } from "../page/kit/page-rail-sheet"
@@ -35,7 +35,7 @@ const filterLabelOf = (rail: LiftedRail): string => Option.getOrElse(rail.label,
 
 export const filterSheetTrigger = (h: HtmlBuilder<Message>, model: Model, rail: LiftedRail): Html =>
 	railTrigger(h, {
-		label: `Open ${filterLabelOf(rail).toLowerCase()}`,
+		label: `Open ${Str.toLowerCase(filterLabelOf(rail))}`,
 		icon: "LayoutLeftIcon",
 		id: Dialog.triggerId(model.filterSheet.id),
 		onClick: Message.ClickedOpenFilters(),

@@ -1,4 +1,5 @@
 import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
+import { String as Str } from "effect"
 
 /**
  * One x axis for series that came from different endpoints.
@@ -18,5 +19,5 @@ export function unifiedBucketDomain(sources: ReadonlyArray<ReadonlyArray<string>
 	for (const buckets of sources) {
 		for (const bucket of buckets) seen.add(toIsoBucket(bucket))
 	}
-	return [...seen].sort((a, b) => a.localeCompare(b))
+	return [...seen].sort((a, b) => Str.localeCompare(b)(a))
 }

@@ -18,6 +18,7 @@ import {
 	resolveHyperdriveRefId,
 	resolveWorkerName,
 } from "./stage.ts"
+import { String as Str } from "effect"
 
 /** The binding's name — also the managed Connection's logical id, so both flavors bind under it. */
 export const MAPLE_DB_BINDING = "MAPLE_DB"
@@ -55,7 +56,7 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 				host: pgUrl.hostname,
 				port: Number(pgUrl.port || "5432"),
 				// Connect-time db, not the PlanetScale resource name.
-				database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+				database: Str.replace(/^\//, "")(pgUrl.pathname) || "postgres",
 				user: decodeURIComponent(pgUrl.username),
 				password: Redacted.make(decodeURIComponent(pgUrl.password)),
 			},
@@ -67,7 +68,7 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 				scheme: "postgres",
 				host: pgUrl.hostname,
 				port: Number(pgUrl.port || "5432"),
-				database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+				database: Str.replace(/^\//, "")(pgUrl.pathname) || "postgres",
 				user: decodeURIComponent(pgUrl.username),
 				password: Redacted.make(decodeURIComponent(pgUrl.password)),
 				// Docker Postgres has no TLS; alchemy's default `prefer` stalls until timeout.

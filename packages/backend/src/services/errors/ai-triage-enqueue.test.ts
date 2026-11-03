@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, ConfigProvider, Effect, Layer, Schema, Semaphore } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Schema, Semaphore, Array as Arr } from "effect"
 import {
 	AiTriageResult,
 	ErrorIssueId,
@@ -337,8 +337,8 @@ describe("maybeEnqueueTriage", () => {
 				{ concurrency: "unbounded" },
 			)
 
-			assert.strictEqual(results.filter((result) => result.enqueued).length, 2)
-			assert.strictEqual(results.filter((result) => result.reason === "daily_cap").length, 3)
+			assert.strictEqual(Arr.filter(results, (result) => result.enqueued).length, 2)
+			assert.strictEqual(Arr.filter(results, (result) => result.reason === "daily_cap").length, 3)
 			assert.lengthOf(chat.turns, 2)
 		}).pipe(Effect.provide(makeLayer())),
 	)

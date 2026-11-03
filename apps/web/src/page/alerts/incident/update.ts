@@ -6,7 +6,7 @@ import {
 	AlertRuleRowSchema,
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -129,7 +129,7 @@ const followData = (model: Model, context: PageContext): Return =>
 			]
 			return {
 				model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-				commands: steps.flatMap((step) => step.commands),
+				commands: Arr.flatMap(steps, (step) => step.commands),
 			}
 		},
 	})
@@ -192,8 +192,8 @@ const withRuleRows = (
 		"rules" in patch
 			? model.rules !== null &&
 				isSameRuleRows(
-					model.rules.filter((row) => row.id === ruleId),
-					patch.rules.filter((row) => row.id === ruleId),
+					Arr.filter(model.rules, (row) => row.id === ruleId),
+					Arr.filter(patch.rules, (row) => row.id === ruleId),
 				)
 			: model.states !== null &&
 				isSameStateRows(

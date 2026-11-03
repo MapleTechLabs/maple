@@ -5,6 +5,7 @@ import { getSpanKindLabel, normalizeSpanKind, SPAN_KIND_LABELS } from "@maple/ui
 import type { Span } from "@maple/ui/lib/types"
 import type { FlowIconName } from "../../ui/flow-icons"
 import { type CloudPlatformInfo, getCloudPlatform } from "./cloud-platforms"
+import { String as Str } from "effect"
 
 // copied: packages/ui/src/lib/span-category.ts with `Icon` as an icon name (the original
 // imports React icon components). Phase 1 should split it like `service-map-db-style.ts`.
@@ -107,7 +108,7 @@ const categoryOf = (
 		return { id: "function", label: "Function", icon: "PuzzlePieceIcon", accent: ACCENTS.function }
 	const kindLabel = spanKind
 		? getSpanKindLabel(spanKind)
-		: span.spanKind.replace(/^SPAN_KIND_/, "") || "Internal"
+		: Str.replace(/^SPAN_KIND_/, "")(span.spanKind) || "Internal"
 	return { id: "internal", label: kindLabel, icon: "CodeIcon", accent: ACCENTS.internal }
 }
 

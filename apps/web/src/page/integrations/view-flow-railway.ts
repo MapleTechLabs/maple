@@ -21,6 +21,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
 import { railwayTokenForm } from "./view-railway-token"
+import { Array as Arr, Record as Rec } from "effect"
 
 // Railway in the connect flow: paste a token, then watch the first sync land.
 
@@ -85,7 +86,7 @@ const projectChips = (h: H, status: RailwayIntegrationStatus): Html => {
 	)
 	return foundChips(
 		h,
-		Object.entries(services).map(([project, count]) => ({
+		Arr.map(Rec.toEntries(services), ([project, count]) => ({
 			label: project,
 			detail: countLabel(count, "service"),
 		})),
@@ -161,7 +162,7 @@ const liveRows = (
 	timeZone: string,
 ): ReadonlyArray<CheckRow> => {
 	const total = status.environments.length
-	const failing = status.environments.filter((environment) => environment.lastError !== null).length
+	const failing = Arr.filter(status.environments, (environment) => environment.lastError !== null).length
 	const queued = unsyncedEnvironments(status)
 	const synced = total - queued - failing
 	return [
@@ -182,7 +183,11 @@ const liveRows = (
 					state: "done",
 					title: `${countLabel(total, "environment")} found`,
 					detail: `${countLabel(
-						status.environments.reduce((sum, environment) => sum + environment.serviceCount, 0),
+						Arr.reduce(
+							status.environments,
+							0,
+							(sum, environment) => sum + environment.serviceCount,
+						),
 						"service",
 					)}. PR environments are skipped.`,
 				},

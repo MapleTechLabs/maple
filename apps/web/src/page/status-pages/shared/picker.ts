@@ -1,7 +1,7 @@
 import { StatusPageComponentStatus, UptimeMonitorId } from "@maple/domain"
 import type { StatusPageDraftComponent, V2UptimeMonitor } from "@maple/domain/http/v2"
 import { STATUS_PAGE_MAX_URL_LENGTH } from "@maple/domain/status-page"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { bareUrl } from "../../alerts/shared/uptime-derive"
 import { formIssues, nameFromUrl, wirePayload } from "../../alerts/uptime-form/derive"
@@ -62,7 +62,7 @@ const monitorRow = (monitor: V2UptimeMonitor, isChecked: boolean): PickerRow => 
 export const seedPicker = (monitors: ReadonlyArray<V2UptimeMonitor>, precheck: boolean): Picker => ({
 	...emptyPicker,
 	isUrlOpen: monitors.length === 0,
-	rows: monitors.map((monitor) =>
+	rows: Arr.map(monitors, (monitor) =>
 		monitorRow(
 			monitor,
 			precheck && monitors.length <= PRECHECK_MAX_MONITORS && monitor.kind !== "heartbeat",
@@ -106,13 +106,13 @@ const decodeStatus = Schema.decodeUnknownOption(StatusPageComponentStatus)
 
 const mapRow = (picker: Picker, key: string, change: (row: PickerRow) => PickerRow): Picker => ({
 	...picker,
-	rows: picker.rows.map((row) => (row.key === key ? change(row) : row)),
+	rows: Arr.map(picker.rows, (row) => (row.key === key ? change(row) : row)),
 })
 
 /** Swaps the row with the next checked row in `offset`'s direction; unchecked rows stay put. */
 export const moveRow = (picker: Picker, key: string, offset: number): Picker => {
 	const from = picker.rows.findIndex((row) => row.key === key)
-	const checked = picker.rows.flatMap((row, index) => (row.isChecked ? [index] : []))
+	const checked = Arr.flatMap(picker.rows, (row, index) => (row.isChecked ? [index] : []))
 	const at = checked.indexOf(from)
 	const to = checked[at + (offset < 0 ? -1 : 1)]
 	const row = picker.rows[from]
@@ -120,13 +120,13 @@ export const moveRow = (picker: Picker, key: string, offset: number): Picker => 
 	if (at < 0 || to === undefined || row === undefined || other === undefined) return picker
 	return {
 		...picker,
-		rows: picker.rows.map((entry, index) => (index === from ? other : index === to ? row : entry)),
+		rows: Arr.map(picker.rows, (entry, index) => (index === from ? other : index === to ? row : entry)),
 	}
 }
 
 /** A `https://` URL for what was pasted: a bare host gets the scheme. */
 export const normalizeUrl = (raw: string): string => {
-	const trimmed = raw.trim()
+	const trimmed = Str.trim(raw)
 	return trimmed === "" || /^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed) ? trimmed : `https://${trimmed}`
 }
 
@@ -176,7 +176,10 @@ export const updatePicker = (picker: Picker, message: PickerMessage): PickerStep
 			}),
 		ClickedMoveRow: ({ key, offset }) => step(moveRow(picker, key, offset)),
 		ClickedRemoveRow: ({ key }) =>
-			step({ ...picker, rows: picker.rows.filter((row) => row.key !== key || row.monitorId !== null) }),
+			step({
+				...picker,
+				rows: Arr.filter(picker.rows, (row) => row.key !== key || row.monitorId !== null),
+			}),
 		ClickedAddManual: () => {
 			const key = `c:${picker.nextKey}`
 			const row: PickerRow = {
@@ -217,7 +220,10 @@ export const monitorCreated = (picker: Picker, monitor: V2UptimeMonitor): Picker
 	isCreatingMonitor: false,
 	url: "",
 	urlIssue: null,
-	rows: [...picker.rows.filter((row) => row.key !== monitorKey(monitor.id)), monitorRow(monitor, true)],
+	rows: [
+		...Arr.filter(picker.rows, (row) => row.key !== monitorKey(monitor.id)),
+		monitorRow(monitor, true),
+	],
 })
 
 export const monitorFailed = (picker: Picker, message: string): Picker => ({
@@ -228,26 +234,28 @@ export const monitorFailed = (picker: Picker, message: string): Picker => ({
 
 /** Rows the page lists, in order. */
 export const checkedRows = (picker: Picker): ReadonlyArray<PickerRow> =>
-	picker.rows.filter((row) => row.isChecked)
+	Arr.filter(picker.rows, (row) => row.isChecked)
 
 export const rowIssue = (row: PickerRow): string | null =>
-	row.isChecked && row.name.trim() === "" ? "Name this component" : null
+	row.isChecked && Str.trim(row.name) === "" ? "Name this component" : null
 
-export const hasRowIssues = (picker: Picker): boolean => picker.rows.some((row) => rowIssue(row) !== null)
+export const hasRowIssues = (picker: Picker): boolean =>
+	Arr.some(picker.rows, (row) => rowIssue(row) !== null)
 
-const orNull = (value: string): string | null => (value.trim() === "" ? null : value.trim())
+const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 
 /**
  * The page's components as the create and the preview take them, in list order. A row with no
  * name yet is left out: the API refuses a blank name, and `rowIssue` blocks the create meanwhile.
  */
 export const draftComponents = (picker: Picker): ReadonlyArray<StatusPageDraftComponent> =>
-	checkedRows(picker)
-		.filter((row) => row.name.trim() !== "")
-		.map((row) => ({
-			name: row.name.trim(),
+	Arr.map(
+		Arr.filter(checkedRows(picker), (row) => Str.trim(row.name) !== ""),
+		(row) => ({
+			name: Str.trim(row.name),
 			group: orNull(row.group),
 			monitor_id: row.monitorId,
 			manual_status: row.monitorId === null ? row.manualStatus : null,
 			show_uptime: true,
-		}))
+		}),
+	)

@@ -2,14 +2,14 @@ import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/domain"
 import { expect, it } from "vitest"
 import { makeExecutor } from "../../scripts/pr-review-local"
 
 it("historical replay reads its head but cannot read a future fix or execute git", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "review-replay-"))
-	const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim()
+	const git = (...args: string[]) => Str.trim(execFileSync("git", args, { cwd: dir, encoding: "utf8" }))
 	try {
 		git("init", "--quiet")
 		git("config", "user.email", "eval@example.test")

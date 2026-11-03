@@ -6,16 +6,19 @@ import type { APIRoute } from "astro"
 import { competitors } from "../lib/competitors"
 import { absolute, blocks, docHeader, markdown, table } from "../lib/page-markdown"
 import * as m from "../paraglide/messages.js"
+import { Array as Arr } from "effect"
 
 export const GET: APIRoute = ({ site }) => {
 	const pages = blocks(
 		`## ${m.cmp_hub_pages_title()}`,
-		competitors
-			.map(
+		Arr.join(
+			Arr.map(
+				competitors,
 				(c) =>
 					`- [${c.navLabel()}](${absolute(site, `/compare/${c.slug}.md`)}): ${c.navDesc()} (HTML: ${absolute(site, `/compare/${c.slug}`)})`,
-			)
-			.join("\n"),
+			),
+			"\n",
+		),
 	)
 
 	// Mirrors BillComparison.astro cell for cell.

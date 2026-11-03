@@ -7,6 +7,7 @@
 import type { APIRoute } from "astro"
 import { getCollection } from "astro:content"
 import { blocks, docHeader, markdown } from "../lib/page-markdown"
+import { Array as Arr } from "effect"
 
 const STATUS_ORDER = ["shipped", "in-progress", "planned", "exploring"] as const
 const STATUS_HEADING: Record<(typeof STATUS_ORDER)[number], string> = {
@@ -19,7 +20,7 @@ const STATUS_HEADING: Record<(typeof STATUS_ORDER)[number], string> = {
 export const GET: APIRoute = async () => {
 	const entries = await getCollection("roadmap")
 
-	const sections = STATUS_ORDER.map((status) => {
+	const sections = Arr.map(STATUS_ORDER, (status) => {
 		const items = entries
 			.filter((entry) => entry.data.status === status)
 			.sort((a, b) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title))
@@ -31,13 +32,14 @@ export const GET: APIRoute = async () => {
 			...items.map((entry) =>
 				blocks(
 					`### ${entry.data.title}`,
-					[
-						entry.data.category,
-						entry.data.quarter,
-						entry.data.shipped_date && `shipped ${entry.data.shipped_date}`,
-					]
-						.filter(Boolean)
-						.join(" · "),
+					Arr.join(
+						[
+							entry.data.category,
+							entry.data.quarter,
+							entry.data.shipped_date && `shipped ${entry.data.shipped_date}`,
+						].filter(Boolean),
+						" · ",
+					),
 					entry.data.description,
 					entry.body ?? "",
 				),

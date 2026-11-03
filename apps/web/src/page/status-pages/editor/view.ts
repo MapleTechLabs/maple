@@ -1,7 +1,7 @@
 import type { StatusPageComponentStatus } from "@maple/domain"
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import { worstStatus } from "@maple/domain/status-page"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -46,7 +46,7 @@ type H = HtmlBuilder<Message>
 /** The banner a visitor sees now: the worst component, from what is loaded. */
 const overallOf = (model: Model): StatusPageComponentStatus =>
 	worstStatus(
-		componentsOf(model).map((component) =>
+		Arr.map(componentsOf(model), (component) =>
 			componentStatus(component, monitorsOf(model), incidentsOf(model)),
 		),
 	)
@@ -141,7 +141,7 @@ const TAB_LABELS = {
 	json: "JSON",
 } as const satisfies Record<"page" | Exclude<EditorView, "live">, string>
 
-const TABS = (["page", "appearance", "settings", "json"] as const).map((view) => ({
+const TABS = Arr.map(["page", "appearance", "settings", "json"] as const, (view) => ({
 	view,
 	label: TAB_LABELS[view],
 }))
@@ -151,7 +151,7 @@ const tabs = (h: H, model: Model, page: V2StatusPage): Html => {
 	return linkTabStrip(
 		h,
 		"Status page views",
-		TABS.map((tab) => ({
+		Arr.map(TABS, (tab) => ({
 			key: tab.view,
 			href: statusPageHref(page.id, tab.view === "page" ? undefined : tab.view),
 			label: tab.label,
@@ -230,12 +230,17 @@ export const removeComponentCopy = (
 	page: V2StatusPage,
 	component: Readonly<{ monitor_id: string | null }> | undefined,
 ): string =>
-	[
-		page.draft
-			? "It leaves the draft; visitors never see it."
-			: "Visitors stop seeing it within a minute.",
-		...(component?.monitor_id === null || component === undefined ? [] : ["Its monitor keeps running."]),
-	].join(" ")
+	Arr.join(
+		[
+			page.draft
+				? "It leaves the draft; visitors never see it."
+				: "Visitors stop seeing it within a minute.",
+			...(component?.monitor_id === null || component === undefined
+				? []
+				: ["Its monitor keeps running."]),
+		],
+		" ",
+	)
 
 const deleteComponentDialog = (h: H, model: Model, page: V2StatusPage): Html => {
 	const component = componentsOf(model).find((row) => row.id === model.confirmDeleteComponentId)

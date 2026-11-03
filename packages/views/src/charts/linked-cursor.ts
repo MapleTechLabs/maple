@@ -1,4 +1,4 @@
-import { Effect, Queue, Stream } from "effect"
+import { Effect, Queue, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -26,7 +26,7 @@ interface CursorState {
 }
 
 const alignOverlays = (container: HTMLElement) => {
-	const placements = [...container.querySelectorAll<HTMLElement>(CHART_SELECTOR)].flatMap((chart) => {
+	const placements = Arr.flatMap([...container.querySelectorAll<HTMLElement>(CHART_SELECTOR)], (chart) => {
 		const overlay = chart.querySelector<HTMLElement>(OVERLAY_SELECTOR)
 		const plot = chart.querySelector<Element>(PLOT_SELECTOR)
 		const host = overlay?.offsetParent
@@ -44,7 +44,7 @@ const alignOverlays = (container: HTMLElement) => {
 			},
 		]
 	})
-	placements.forEach(({ overlay, left, top, width, height }) => {
+	Arr.forEach(placements, ({ overlay, left, top, width, height }) => {
 		overlay.style.left = `${left}px`
 		overlay.style.top = `${top}px`
 		overlay.style.width = `${width}px`

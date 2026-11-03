@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /**
  * The catalogue of dev-only lab surfaces under `/lab`.
  *
@@ -483,7 +484,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 
 /** Anything under the `/lab` tree, index included. */
 export function isLabPath(pathname: string): boolean {
-	return pathname === LAB_ROOT || pathname.startsWith(`${LAB_ROOT}/`)
+	return pathname === LAB_ROOT || Str.startsWith(`${LAB_ROOT}/`)(pathname)
 }
 
 /**
@@ -492,5 +493,5 @@ export function isLabPath(pathname: string): boolean {
  */
 export function isSessionlessLabPath(pathname: string): boolean {
 	if (pathname === LAB_ROOT || pathname === `${LAB_ROOT}/`) return true
-	return LAB_ENTRIES.some((entry) => entry.session === "none" && entry.path === pathname)
+	return Arr.some(LAB_ENTRIES, (entry) => entry.session === "none" && entry.path === pathname)
 }

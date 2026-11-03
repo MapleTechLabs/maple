@@ -22,6 +22,7 @@
 // therefore produces no headers at all and degrades into a plain sorted list.
 
 import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
+import { Array as Arr, String as Str } from "effect"
 
 // The table sort direction.
 type SortDir = "asc" | "desc"
@@ -58,7 +59,7 @@ export interface EndpointGroup<E extends GroupableEndpoint = ServiceEndpoint> {
 
 export type EndpointSort = "traffic" | "path" | "errorRate" | "p50" | "p95" | "p99"
 
-const segments = (route: string): string[] => route.split("/").filter((part) => part.length > 0)
+const segments = (route: string): string[] => Arr.filter(Str.split("/")(route), (part) => part.length > 0)
 
 /**
  * Whether a route looks like a raw URL path rather than a route template.
@@ -73,9 +74,9 @@ const segments = (route: string): string[] => route.split("/").filter((part) => 
  * wrong about one route is cheap by comparison.
  */
 export function looksUnrouted(route: string): boolean {
-	return segments(route).some((segment) => {
+	return Arr.some(segments(route), (segment) => {
 		// Template segments are proof of the opposite — a real route.
-		if (segment.startsWith("{") || segment.startsWith(":")) return false
+		if (Str.startsWith("{")(segment) || Str.startsWith(":")(segment)) return false
 		if (/^\d+$/.test(segment)) return true
 		if (/^[0-9a-fA-F]{8,}$/.test(segment)) return true
 		if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(segment))
@@ -137,14 +138,14 @@ const PROBE_FRAGMENTS = [
  * `http.route` at all, and the rollup does not keep it.
  */
 export function looksLikeProbe(route: string): boolean {
-	const lower = route.toLowerCase()
+	const lower = Str.toLowerCase(route)
 	// Proxy probes send an absolute URL as the request target.
-	if (lower.startsWith("http://") || lower.startsWith("https://")) return true
+	if (Str.startsWith("http://")(lower) || Str.startsWith("https://")(lower)) return true
 	// Traversal and null-byte attempts, raw or percent-encoded.
-	if (lower.includes("..") || lower.includes("%2e") || lower.includes("%00")) return true
-	if (lower.includes("\\") || lower.includes("<") || lower.includes(">")) return true
+	if (Str.includes("..")(lower) || Str.includes("%2e")(lower) || Str.includes("%00")(lower)) return true
+	if (Str.includes("\\")(lower) || Str.includes("<")(lower) || Str.includes(">")(lower)) return true
 	if (PROBE_EXTENSIONS.test(lower)) return true
-	return PROBE_FRAGMENTS.some((fragment) => lower.includes(fragment))
+	return Arr.some(PROBE_FRAGMENTS, (fragment) => Str.includes(fragment)(lower))
 }
 
 interface TrieNode<E> {
@@ -186,14 +187,14 @@ function subtreeEndpoints<E>(node: TrieNode<E>): E[] {
 }
 
 function totalsFor(endpoints: readonly GroupableEndpoint[]): EndpointGroup["totals"] {
-	const estimatedSpanCount = endpoints.reduce((sum, e) => sum + e.estimatedSpanCount, 0)
-	const estimatedErrorCount = endpoints.reduce((sum, e) => sum + e.estimatedErrorCount, 0)
+	const estimatedSpanCount = Arr.reduce(endpoints, 0, (sum, e) => sum + e.estimatedSpanCount)
+	const estimatedErrorCount = Arr.reduce(endpoints, 0, (sum, e) => sum + e.estimatedErrorCount)
 	return {
 		estimatedSpanCount,
 		errorRate: estimatedSpanCount > 0 ? estimatedErrorCount / estimatedSpanCount : 0,
-		p50DurationMs: endpoints.reduce((worst, e) => Math.max(worst, e.p50DurationMs), 0),
-		p95DurationMs: endpoints.reduce((worst, e) => Math.max(worst, e.p95DurationMs), 0),
-		p99DurationMs: endpoints.reduce((worst, e) => Math.max(worst, e.p99DurationMs), 0),
+		p50DurationMs: Arr.reduce(endpoints, 0, (worst, e) => Math.max(worst, e.p50DurationMs)),
+		p95DurationMs: Arr.reduce(endpoints, 0, (worst, e) => Math.max(worst, e.p95DurationMs)),
+		p99DurationMs: Arr.reduce(endpoints, 0, (worst, e) => Math.max(worst, e.p99DurationMs)),
 	}
 }
 
@@ -207,7 +208,7 @@ function collect<E extends GroupableEndpoint>(
 		const endpoints = subtreeEndpoints(node)
 		groups.push({
 			kind: "stem",
-			stem: `/${path.join("/")}`,
+			stem: `/${Arr.join(path, "/")}`,
 			endpoints,
 			totals: totalsFor(endpoints),
 		})
@@ -239,7 +240,7 @@ function collect<E extends GroupableEndpoint>(
 	// thin branches fall through to the ungrouped run rather than being dragged
 	// under a stem they do not belong to. Without this test, `/v2/webhooks` (2)
 	// beside `/v2/status` (1) collapsed into one meaningless `/v2` group.
-	if ([...node.children.values()].some((child) => child.count >= 2)) {
+	if (Arr.some([...node.children.values()], (child) => child.count >= 2)) {
 		for (const child of node.children.values()) {
 			collect(child, [...path, child.segment], groups, loose)
 		}
@@ -265,7 +266,7 @@ const leafMetric = (endpoint: GroupableEndpoint, sort: Exclude<EndpointSort, "pa
 }
 
 const byPath = (a: GroupableEndpoint, b: GroupableEndpoint) =>
-	a.route.localeCompare(b.route) || a.method.localeCompare(b.method)
+	Str.localeCompare(b.route)(a.route) || Str.localeCompare(b.method)(a.method)
 
 /**
  * Partition endpoints into stem groups, headerless singletons for the endpoints
@@ -327,7 +328,7 @@ export function groupEndpoints<E extends GroupableEndpoint>(
 	}
 	groups.sort(
 		sort === "path"
-			? (a, b) => sign * groupPath(a).localeCompare(groupPath(b))
+			? (a, b) => sign * Str.localeCompare(groupPath(b))(groupPath(a))
 			: (a, b) => sign * (leading(a) - leading(b)),
 	)
 
@@ -365,13 +366,13 @@ export interface LeafLabel {
  * route stays "/" rather than an index of nothing.
  */
 export function leafLabel(route: string, stem: string): LeafLabel {
-	const grouped = stem.length > 0 && route.startsWith(stem)
-	const remainder = grouped ? route.slice(stem.length) : route
+	const grouped = stem.length > 0 && Str.startsWith(stem)(route)
+	const remainder = grouped ? Str.slice(stem.length)(route) : route
 	if (remainder === "" || remainder === "/") {
 		return grouped ? { head: "", tail: "(index)" } : { head: "", tail: "/" }
 	}
 	const lastSlash = remainder.lastIndexOf("/")
 	if (lastSlash <= 0) return { head: "", tail: remainder }
-	const head = remainder.slice(0, lastSlash)
-	return { head: grouped ? `…${head}` : head, tail: remainder.slice(lastSlash) }
+	const head = Str.slice(0, lastSlash)(remainder)
+	return { head: grouped ? `…${head}` : head, tail: Str.slice(lastSlash)(remainder) }
 }

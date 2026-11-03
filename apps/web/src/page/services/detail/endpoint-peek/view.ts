@@ -46,6 +46,7 @@ import type { Model } from "./model"
 import type { Peek } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The endpoint drawer: the endpoint's numbers, its requests and latency over the window, the status
 // codes, the latency distribution, the clients, the body sizes and the slowest requests.
@@ -99,7 +100,7 @@ const stat = (h: H, label: string, value: string, sub: string, tone?: Tone): Htm
 const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, seconds: number): Html => {
 	const { endpoint } = peek
 	const mix = knownStatusMix(endpoint)
-	const topClient = codes.find((code) => code.name.startsWith("4"))
+	const topClient = codes.find((code) => Str.startsWith("4")(code.name))
 	return statRail(h, { columns: 4, className: "overflow-hidden sm:grid-cols-4" }, [
 		stat(
 			h,
@@ -211,11 +212,10 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 
 const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Html => {
 	const codes = endpointStatusCodes(rows, spanName)
-	const errorType = rows
-		.filter(
-			(row) => row.spanName === spanName && row.errorType !== "" && Number(row.httpStatusCode) >= 400,
-		)
-		.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)[0]
+	const errorType = Arr.filter(
+		rows,
+		(row) => row.spanName === spanName && row.errorType !== "" && Number(row.httpStatusCode) >= 400,
+	).toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)[0]
 	return card(h, "Status codes", null, [
 		...(codes.length === 0
 			? [
@@ -223,8 +223,8 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 						"No status codes recorded in this window",
 					]),
 				]
-			: codes.slice(0, 4).map((code) => {
-					const tone = code.name.startsWith("2")
+			: Arr.map(codes.slice(0, 4), (code) => {
+					const tone = Str.startsWith("2")(code.name)
 						? { text: TONE_TEXT.info, bar: TONE_FILL.ok }
 						: isServerError(code.name)
 							? { text: TONE_TEXT.crit, bar: TONE_FILL.crit }
@@ -235,7 +235,7 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 							[
 								h.span(
 									[h.Class(cn("truncate", tone.text))],
-									[`${code.name} ${reasonPhrase(code.name)}`.trim()],
+									[Str.trim(`${code.name} ${reasonPhrase(code.name)}`)],
 								),
 								h.span(
 									[h.Class("shrink-0")],
@@ -279,7 +279,7 @@ const BAND_CLASS = {
 
 const distributionCard = (h: H, detail: EndpointDetail): Html => {
 	const bins = latencyHistogram(detail.latencyQuantileLevels, detail.latencyQuantilesMs)
-	const peak = bins.reduce((max, bin) => Math.max(max, bin.share), 0)
+	const peak = Arr.reduce(bins, 0, (max, bin) => Math.max(max, bin.share))
 	const first = bins[0]
 	const last = bins[bins.length - 1]
 	return card(h, "Distribution", hint(h, "log scale"), [
@@ -290,7 +290,7 @@ const distributionCard = (h: H, detail: EndpointDetail): Html => {
 			: vstack(h, { gap: "1.5" }, [
 					h.div(
 						[h.Class("flex h-16 items-end gap-[3px]")],
-						bins.map((bin, index) =>
+						Arr.map(bins, (bin, index) =>
 							h.div([
 								h.Key(String(index)),
 								h.Class(cn("flex-1 rounded-t-xs", BAND_CLASS[bin.band])),
@@ -319,29 +319,27 @@ const clientsCard = (h: H, detail: EndpointDetail, spanCount: number): Html => {
 			? typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No requests carried a user agent."])
 			: h.div(
 					[h.Class("flex flex-col gap-1.5 text-2xs tabular-nums")],
-					detail.userAgents
-						.slice(0, 5)
-						.map((agent) =>
-							hstack(h, { gap: "2", attributes: [h.Key(agent.value)] }, [
-								typography(
-									h,
-									{
-										truncate: true,
-										className: "min-w-0 flex-1",
-										attributes: [h.Title(agent.value)],
-									},
-									[agent.value === "" ? "(no user agent)" : agent.value],
-								),
-								...(agent.count === null || total === 0
-									? []
-									: [
-											h.span(
-												[h.Class("shrink-0 text-muted-foreground")],
-												[formatErrorRate(agent.count / total)],
-											),
-										]),
-							]),
-						),
+					Arr.map(detail.userAgents.slice(0, 5), (agent) =>
+						hstack(h, { gap: "2", attributes: [h.Key(agent.value)] }, [
+							typography(
+								h,
+								{
+									truncate: true,
+									className: "min-w-0 flex-1",
+									attributes: [h.Title(agent.value)],
+								},
+								[agent.value === "" ? "(no user agent)" : agent.value],
+							),
+							...(agent.count === null || total === 0
+								? []
+								: [
+										h.span(
+											[h.Class("shrink-0 text-muted-foreground")],
+											[formatErrorRate(agent.count / total)],
+										),
+									]),
+						]),
+					),
 				),
 	])
 }
@@ -357,18 +355,20 @@ const bodyCard = (h: H, detail: EndpointDetail): Html =>
 			: vstack(h, { gap: "2" }, [
 					h.div(
 						[h.Class("grid grid-cols-3 gap-2")],
-						[
-							{ label: "p50", bytes: detail.body.p50Bytes },
-							{ label: "p95", bytes: detail.body.p95Bytes },
-							{ label: "max", bytes: detail.body.maxBytes },
-						].map(({ label, bytes }) =>
-							h.div(
-								[h.Key(label), h.Class("flex flex-col")],
-								[
-									typography(h, { size: "3xs", tone: "muted" }, [label]),
-									h.span([h.Class("text-ui tabular-nums")], [formatBytes(bytes)]),
-								],
-							),
+						Arr.map(
+							[
+								{ label: "p50", bytes: detail.body.p50Bytes },
+								{ label: "p95", bytes: detail.body.p95Bytes },
+								{ label: "max", bytes: detail.body.maxBytes },
+							],
+							({ label, bytes }) =>
+								h.div(
+									[h.Key(label), h.Class("flex flex-col")],
+									[
+										typography(h, { size: "3xs", tone: "muted" }, [label]),
+										h.span([h.Class("text-ui tabular-nums")], [formatBytes(bytes)]),
+									],
+								),
 						),
 					),
 					hint(h, `${formatNumber(detail.body.count)} requests reported a size`),
@@ -402,7 +402,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 			),
 			...(detail.slowest.length === 0
 				? [emptyMessage(h, {}, ["No requests in this window"])]
-				: detail.slowest.map((request) =>
+				: Arr.map(detail.slowest, (request) =>
 						h.a(
 							[
 								h.Key(`${request.traceId}-${request.timestamp}`),
@@ -426,7 +426,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 										h.Class(
 											cn(
 												"w-10 shrink-0",
-												request.httpStatusCode.startsWith("2")
+												Str.startsWith("2")(request.httpStatusCode)
 													? TONE_TEXT.info
 													: TONE_TEXT[
 															isServerError(request.httpStatusCode)
@@ -468,7 +468,7 @@ const detailSections = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Rea
 		onEmpty: () => [
 			h.div(
 				[h.Key("detail-loading"), h.Class("grid grid-cols-1 gap-3 sm:grid-cols-2"), h.AriaBusy(true)],
-				[0, 1, 2, 3].map((index) =>
+				Arr.map([0, 1, 2, 3], (index) =>
 					h.div([h.Key(String(index))], [skeleton(h, "h-[148px] w-full rounded-md")]),
 				),
 			),

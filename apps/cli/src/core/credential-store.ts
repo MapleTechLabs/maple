@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Effect, Stream, String as Str } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
@@ -41,7 +41,7 @@ const run = (
 			[handle.exitCode, Stream.mkString(Stream.decodeText(handle.stdout))],
 			{ concurrency: "unbounded" },
 		)
-		return { ok: exitCode === 0, stdout: stdout.trim() }
+		return { ok: exitCode === 0, stdout: Str.trim(stdout) }
 	}).pipe(
 		Effect.scoped,
 		Effect.tapCause((cause) => Effect.logDebug(`credential helper ${command} failed`, cause)),

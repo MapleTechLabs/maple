@@ -62,7 +62,7 @@ import {
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
 } from "@maple/domain/status-page"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
@@ -303,7 +303,7 @@ const slugTaken = (slug: string) =>
 const isValidSlug = Schema.is(StatusPageSlug)
 
 const validateName = (raw: string, what: string) => {
-	const name = raw.trim()
+	const name = Str.trim(raw)
 	if (name.length === 0) return Effect.fail(invalid(`${what} is required`))
 	if (name.length > MAX_NAME_LENGTH)
 		return Effect.fail(invalid(`${what} must be at most ${MAX_NAME_LENGTH} characters`))
@@ -339,7 +339,7 @@ const validateHex = (raw: string | null, what: string) => {
 	const value = raw?.trim() ?? ""
 	if (value.length === 0) return Effect.succeed(null)
 	return STATUS_PAGE_HEX_COLOR_PATTERN.test(value)
-		? Effect.succeed(value.toLowerCase())
+		? Effect.succeed(Str.toLowerCase(value))
 		: Effect.fail(invalid(`${what} must be a hex color like #1a2b3c`))
 }
 
@@ -387,7 +387,7 @@ const validateWindow = (
 }
 
 const validateUpdateBody = (raw: string) => {
-	const body = raw.trim()
+	const body = Str.trim(raw)
 	if (body.length === 0) return Effect.fail(invalid("An update needs a message"))
 	if (body.length > MAX_TEXT_LENGTH)
 		return Effect.fail(invalid(`An update must be at most ${MAX_TEXT_LENGTH} characters`))
@@ -447,7 +447,7 @@ const loadIncidents = Effect.fnUntraced(function* (
 	orgId: OrgId,
 	rows: ReadonlyArray<StatusPageIncidentRow>,
 ) {
-	const [first, ...rest] = rows.map((row) => row.id)
+	const [first, ...rest] = Arr.map(rows, (row) => row.id)
 	if (first === undefined) return []
 	const links = yield* db.run(
 		PG.from(StatusPageIncidentComponents)
@@ -460,7 +460,7 @@ const loadIncidents = Effect.fnUntraced(function* (
 			.where(($) => [$.orgId.eq(orgId), $.incidentId.in_(first, ...rest)])
 			.orderBy(["createdAt", "desc"], ["id", "desc"]),
 	)
-	return rows.map((row): StatusPageIncidentRecord => ({
+	return Arr.map(rows, (row): StatusPageIncidentRecord => ({
 		id: row.id,
 		pageId: row.pageId,
 		kind: row.kind,
@@ -472,8 +472,14 @@ const loadIncidents = Effect.fnUntraced(function* (
 		scheduledEnd: row.scheduledEnd,
 		startedAt: row.startedAt,
 		resolvedAt: row.resolvedAt,
-		componentIds: links.filter((link) => link.incidentId === row.id).map((link) => link.componentId),
-		updates: updates.filter((update) => update.incidentId === row.id).map(toUpdateRecord),
+		componentIds: Arr.map(
+			Arr.filter(links, (link) => link.incidentId === row.id),
+			(link) => link.componentId,
+		),
+		updates: Arr.map(
+			Arr.filter(updates, (update) => update.incidentId === row.id),
+			toUpdateRecord,
+		),
 		createdBy: row.createdBy,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
@@ -594,7 +600,7 @@ const ensureComponentsOnPage = Effect.fnUntraced(function* (
 			.select("id")
 			.where(($) => [$.orgId.eq(orgId), $.pageId.eq(pageId), $.id.in_(first, ...rest)]),
 	)
-	const known = new Set(found.map((row) => row.id))
+	const known = new Set(Arr.map(found, (row) => row.id))
 	const missing = componentIds.find((id) => !known.has(id))
 	if (missing !== undefined) return yield* invalid(`Component ${missing} is not on this page`)
 })
@@ -614,7 +620,7 @@ const replaceIncidentComponents = Effect.fnUntraced(function* (
 	if (componentIds.length === 0) return
 	yield* db.run(
 		PG.insertInto(StatusPageIncidentComponents).values(
-			componentIds.map((componentId) => ({ incidentId, componentId, orgId })),
+			Arr.map(componentIds, (componentId) => ({ incidentId, componentId, orgId })),
 		),
 	)
 })
@@ -635,7 +641,7 @@ const contentOf = (
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
 	theme: page.theme,
-	components: components.map((component) => ({
+	components: Arr.map(components, (component) => ({
 		id: component.id,
 		name: component.name,
 		description: component.description,

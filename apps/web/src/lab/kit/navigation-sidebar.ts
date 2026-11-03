@@ -21,6 +21,7 @@ import {
 	type SidebarState,
 	sidebarWrapper,
 } from "@maple/views/ui/sidebar"
+import { Array as Arr } from "effect"
 
 // `SidebarFrame`: a layout-contained frame holds the sidebar's
 // fixed container, so an expanded and a collapsed sidebar sit side by side.
@@ -95,7 +96,7 @@ export const sidebarFrame = <Message>(h: HtmlBuilder<Message>, options: SidebarF
 										sidebarMenu(
 											h,
 											undefined,
-											TELEMETRY.map((item) =>
+											Arr.map(TELEMETRY, (item) =>
 												sidebarMenuItem(h, undefined, [
 													menuButton(item.title, item.icon, item.isActive),
 													...(item.badge === undefined

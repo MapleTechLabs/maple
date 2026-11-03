@@ -15,7 +15,7 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 } from "@maple/backend/sandbox/contract"
-import { Context, Duration, Effect, Layer, Stream } from "effect"
+import { Context, Duration, Effect, Layer, Stream, Array as Arr, String as Str } from "effect"
 import {
 	NETWORK_DISABLED,
 	REPO_MOUNT_TARGET,
@@ -59,8 +59,8 @@ export const gitPathspec = (path: string | undefined, glob: string | undefined):
  */
 const rejectUnsafePath = (label: string, value: string | undefined) =>
 	value !== undefined &&
-	(value.startsWith("/") ||
-		value.split("/").includes("..") ||
+	(Str.startsWith("/")(value) ||
+		Str.split("/")(value).includes("..") ||
 		// oxlint-disable-next-line no-control-regex
 		/[\u0000-\u001f]/.test(value))
 		? Effect.fail(
@@ -81,14 +81,17 @@ const READ_FILE_PROGRAM = `NR>=s && NR<=e { printf "%d: %s\\n", NR, $0 } END { p
  * which git quotes for names with `"` or `\`. The mode must be a regular file's: a committed
  * symlink is tracked too, and `awk` would follow it out. The `./` anchor stops a leading `-`.
  */
-const READ_FILE_SCRIPT = [
-	`entry=$(git ${GIT_COMMON.join(" ")} ls-files --stage -- ":(literal)$1") || exit 2`,
-	`if [ -z "$entry" ] || [ -d "./$1" ]; then printf "'%s' is not a tracked file at this commit\\n" "$1" >&2; exit 1; fi`,
-	`case "\${entry%% *}" in`,
-	`100644|100755) exec awk -v s="$2" -v e="$3" "$4" "./$1" ;;`,
-	`*) printf "'%s' is not a regular file in the repository\\n" "$1" >&2; exit 3 ;;`,
-	"esac",
-].join("\n")
+const READ_FILE_SCRIPT = Arr.join(
+	[
+		`entry=$(git ${Arr.join(GIT_COMMON, " ")} ls-files --stage -- ":(literal)$1") || exit 2`,
+		`if [ -z "$entry" ] || [ -d "./$1" ]; then printf "'%s' is not a tracked file at this commit\\n" "$1" >&2; exit 1; fi`,
+		`case "\${entry%% *}" in`,
+		`100644|100755) exec awk -v s="$2" -v e="$3" "$4" "./$1" ;;`,
+		`*) printf "'%s' is not a regular file in the repository\\n" "$1" >&2; exit 3 ;;`,
+		"esac",
+	],
+	"\n",
+)
 
 export interface SandboxCommandResult {
 	readonly exitCode: number
@@ -165,7 +168,7 @@ const environment = new SandboxEnvironment({ allow: SANDBOX_COMMAND_ENV_NAMES })
 const inWorkspace = (relative: string | undefined): string =>
 	relative === undefined || relative === "" || relative === "."
 		? REPO_MOUNT_TARGET
-		: `${REPO_MOUNT_TARGET}/${relative.replace(/^\/+/, "")}`
+		: `${REPO_MOUNT_TARGET}/${Str.replace(/^\/+/, "")(relative)}`
 
 /** Fold the event stream into what a tool renders. Non-zero exits are results, not failures: `rg` exits 1 on no match. */
 const utf8 = new TextEncoder()

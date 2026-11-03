@@ -12,31 +12,38 @@ import type { Model } from "./model"
 import type { ScriptFailure } from "./view-gcp-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { String as Str } from "effect"
 
 // `FileCard` and `LoadFailure`: a generated file to copy, the start in view, the rest on request.
 
 type H = HtmlBuilder<Message>
 
 const COPY_ID = "configure-file"
-const LINK = typographyClass({ size: "xs", tone: "muted", weight: "normal", hoverTone: "foreground", className: "h-auto p-0" })
+const LINK = typographyClass({
+	size: "xs",
+	tone: "muted",
+	weight: "normal",
+	hoverTone: "foreground",
+	className: "h-auto p-0",
+})
 
 /** Why a file couldn't be loaded, and the way to load it again. */
 export const loadFailure = (h: H, failure: ScriptFailure): Html =>
-	hstack(h, { gap: "2", wrap: true },
-		[
-			typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [failure.message]),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					isLoading: failure.isRetrying,
-					attributes: [h.OnClick(Message.ClickedGcpConfigureScriptRetry())],
-				},
-				["Try again"],
-			),
-		],
-	)
+	hstack(h, { gap: "2", wrap: true }, [
+		typography(h, { size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [
+			failure.message,
+		]),
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "outline",
+				isLoading: failure.isRetrying,
+				attributes: [h.OnClick(Message.ClickedGcpConfigureScriptRetry())],
+			},
+			["Try again"],
+		),
+	])
 
 export type FileCardOptions = Readonly<{
 	name: string
@@ -80,14 +87,12 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2 border-b bg-surface-sunken px-3 py-2")],
 				[
-					typography(h, { size: "xs", tone: "muted", mono: true },
-						[
-							promptShown ? "Prompt for a coding agent" : name,
-							...(shown === null || promptShown
-								? []
-								: [` · ${countLabel(shown.split("\n").length, "line")}`]),
-						],
-					),
+					typography(h, { size: "xs", tone: "muted", mono: true }, [
+						promptShown ? "Prompt for a coding agent" : name,
+						...(shown === null || promptShown
+							? []
+							: [` · ${countLabel(Str.split("\n")(shown).length, "line")}`]),
+					]),
 					h.span(
 						[h.Class("ml-auto flex flex-wrap items-center justify-end gap-2")],
 						[

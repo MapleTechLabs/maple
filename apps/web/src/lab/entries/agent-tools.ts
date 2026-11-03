@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { buildToolAnalyticsFixture, buildToolCells, toolFixtureFacets } from "../agent-tools-fixture"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -177,11 +177,12 @@ type PageStep = Readonly<{
 /** Runs a page step to rest: reads are answered in place, navigations re-enter, the rest is lifted. */
 const settle = (model: Model, step: PageStep): Return => {
 	const withPage: Model = { ...model, page: step.model }
-	const resolved = (step.commands ?? []).map(
+	const resolved = Arr.map(
+		step.commands ?? [],
 		(command) => [command, answer(command, step.model.nowMs)] as const,
 	)
-	const answers = resolved.flatMap(([, maybe]) => Option.toArray(maybe))
-	const rest = resolved.flatMap(([command, maybe]) => (Option.isNone(maybe) ? [command] : []))
+	const answers = Arr.flatMap(resolved, ([, maybe]) => Option.toArray(maybe))
+	const rest = Arr.flatMap(resolved, ([command, maybe]) => (Option.isNone(maybe) ? [command] : []))
 	const navigated = Option.match(followNavigation(withPage, step.outMessage), {
 		onNone: () => ({ model: withPage, commands: [] }),
 		onSome: (next) => settle(withPage, next),
@@ -294,8 +295,9 @@ const toolsPage = Submodel.defineView<ToolsModel, ToolsMessage, Readonly<{ timeZ
 /** The search as the lab prints it: the keys set, in the page's order. */
 const searchJson = (model: Model): string =>
 	encodeJson(
-		Object.fromEntries(
-			Object.entries(model.view === "detail" ? model.detail.search : model.page.search).filter(
+		Rec.fromEntries(
+			Arr.filter(
+				Object.entries(model.view === "detail" ? model.detail.search : model.page.search),
 				([key, value]) => value !== undefined && key !== "timePreset",
 			),
 		),
@@ -328,11 +330,11 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 			h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[
-					...VIEWS.map((view) =>
+					...Arr.map(VIEWS, (view) =>
 						labButton(h, view, model.view === view, Message.ClickedView({ view })),
 					),
 					h.span([h.Class("w-4")], []),
-					...WIDTHS.map((option) =>
+					...Arr.map(WIDTHS, (option) =>
 						labButton(
 							h,
 							option.label,
@@ -343,7 +345,7 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html =>
 					...(model.view === "detail"
 						? [
 								h.span([h.Class("w-4")], []),
-								...DETAIL_TOOLS.map((tool) =>
+								...Arr.map(DETAIL_TOOLS, (tool) =>
 									labButton(
 										h,
 										tool,

@@ -1,5 +1,6 @@
 import type { BillingAddress } from "@maple/domain/http"
 import { countryName } from "./countries"
+import { Array as Arr, String as Str } from "effect"
 
 /**
  * Pure helpers behind the billing-details card. The verification vocabulary
@@ -28,7 +29,7 @@ export const verificationBadge = (status: string | null | undefined): Verificati
 }
 
 const present = (value: string | null | undefined): value is string =>
-	typeof value === "string" && value.trim().length > 0
+	typeof value === "string" && Str.trim(value).length > 0
 
 /**
  * The address as invoice lines: street lines, then "postal code city, state",
@@ -37,16 +38,19 @@ const present = (value: string | null | undefined): value is string =>
 export const formatAddressLines = (address: BillingAddress | null | undefined): ReadonlyArray<string> => {
 	if (!address) return []
 	const lines: string[] = []
-	if (present(address.line1)) lines.push(address.line1.trim())
-	if (present(address.line2)) lines.push(address.line2.trim())
-	const locality = [address.postalCode, address.city]
-		.filter(present)
-		.map((part) => part.trim())
-		.join(" ")
-	const region = present(address.state) ? address.state.trim() : ""
-	const localityLine = [locality, region].filter((part) => part.length > 0).join(", ")
+	if (present(address.line1)) lines.push(Str.trim(address.line1))
+	if (present(address.line2)) lines.push(Str.trim(address.line2))
+	const locality = Arr.join(
+		Arr.map(Arr.filter([address.postalCode, address.city], present), (part) => Str.trim(part)),
+		" ",
+	)
+	const region = present(address.state) ? Str.trim(address.state) : ""
+	const localityLine = Arr.join(
+		Arr.filter([locality, region], (part) => part.length > 0),
+		", ",
+	)
 	if (localityLine.length > 0) lines.push(localityLine)
-	if (present(address.country)) lines.push(countryName(address.country.trim().toUpperCase()))
+	if (present(address.country)) lines.push(countryName(Str.toUpperCase(Str.trim(address.country))))
 	return lines
 }
 
@@ -56,6 +60,6 @@ export const hasAddress = (address: BillingAddress | null | undefined): boolean 
 
 /** Trim an input field; an empty field becomes `null` so Stripe clears it. */
 export const fieldOrNull = (value: string): string | null => {
-	const trimmed = value.trim()
+	const trimmed = Str.trim(value)
 	return trimmed.length === 0 ? null : trimmed
 }

@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
 import { crashDetails, crashReference } from "./view"
 
@@ -24,7 +24,7 @@ describe("crashReference", () => {
 	test("a self-referencing Message stops instead of looping", () => {
 		const message = { _tag: "Loop", message: {} }
 		message.message = message
-		expect(crashReference(Option.some(message)).split(" > ")).toHaveLength(8)
+		expect(Str.split(" > ")(crashReference(Option.some(message)))).toHaveLength(8)
 	})
 })
 

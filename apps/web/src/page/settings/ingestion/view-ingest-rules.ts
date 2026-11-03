@@ -26,6 +26,7 @@ import { settingsSection } from "../kit/section"
 import { hourlyMatches, menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
+import { Array as Arr } from "effect"
 
 // `IngestRulesSection`: above the attribute mappings on the ingestion tab.
 
@@ -47,7 +48,8 @@ const addRuleButton = (h: H) =>
 const summary = (h: H, rule: V2IngestRule): Html =>
 	h.span(
 		[h.Class("text-muted-foreground min-w-0 text-xs break-words")],
-		summaryParts({ conditions: rule.conditions, action: fromV2IngestRuleAction(rule.action) }).map(
+		Arr.map(
+			summaryParts({ conditions: rule.conditions, action: fromV2IngestRuleAction(rule.action) }),
 			(part) =>
 				part._tag === "code"
 					? inlineCode(h, { variant: "plain", className: "text-foreground break-all" }, [part.text])
@@ -128,7 +130,10 @@ const ruleRow = (
 				[
 					truncatedText(h, { text: rule.name, className: "text-sm" }),
 					typography(h, { size: "2xs", tone: "muted" }, [
-						rule.signals.map((signal) => SIGNAL_LABELS[signal]).join(", "),
+						Arr.join(
+							Arr.map(rule.signals, (signal) => SIGNAL_LABELS[signal]),
+							", ",
+						),
 					]),
 				],
 			),
@@ -189,7 +194,7 @@ const rulesTable = (h: H, model: Model, isAdmin: boolean, rules: ReadonlyArray<V
 					...(isAdmin ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
 				],
 			),
-			...rules.map((rule, index) => ruleRow(h, model, isAdmin, rule, index, rules.length)),
+			...Arr.map(rules, (rule, index) => ruleRow(h, model, isAdmin, rule, index, rules.length)),
 		],
 	)
 
@@ -208,7 +213,7 @@ const rulesEmpty = (h: H, isAdmin: boolean): Html =>
 				? [
 						emptyActions(
 							h,
-							TEMPLATE_IDS.map((id) =>
+							Arr.map(TEMPLATE_IDS, (id) =>
 								linkButton(h, { variant: "outline", size: "sm", href: newRuleHref(id) }, [
 									TEMPLATES[id].label,
 								]),

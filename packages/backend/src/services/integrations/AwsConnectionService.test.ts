@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { hashIngestKey } from "@maple/db"
@@ -131,7 +131,7 @@ describe("AwsConnectionService", () => {
 			// alone must be what refuses it.
 			const template = (yield* service.setup(otherOrgId, theirs.id)).cloudformationTemplate
 			assert.include(template, `"${theirs.oidcSubject}"`)
-			aws.deploy(account, template.replaceAll(`"${theirs.oidcSubject}"`, `"${mine.oidcSubject}"`))
+			aws.deploy(account, Str.replaceAll(`"${theirs.oidcSubject}"`, `"${mine.oidcSubject}"`)(template))
 			const checked = yield* later(service.check(otherOrgId, theirs.id))
 			assert.isNull(checked.verifiedAt)
 			// The same role trusting their own id verifies: nothing else was wrong with it.
@@ -247,7 +247,7 @@ describe("AwsConnectionService", () => {
 	it.effect("streams metrics with a secret only this connection's row can verify", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
-		const regions = ["us-east-1", "eu-central-1"].map((region) =>
+		const regions = Arr.map(["us-east-1", "eu-central-1"], (region) =>
 			Schema.decodeUnknownSync(AwsRegion)(region),
 		)
 		const streamSecretHash = (id: string) =>
@@ -408,7 +408,10 @@ describe("AwsConnectionService", () => {
 			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
 			const [a, b] = yield* Effect.all([service.checkDue(), service.checkDue()], { concurrency: 2 })
 			assert.strictEqual((a?.checked ?? 0) + (b?.checked ?? 0), 1)
-			assert.strictEqual(aws.calls.filter((call) => call === "AssumeRoleWithWebIdentity").length, 1)
+			assert.strictEqual(
+				Arr.filter(aws.calls, (call) => call === "AssumeRoleWithWebIdentity").length,
+				1,
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 

@@ -1,6 +1,6 @@
 import { type GithubIntegrationStatus, VcsRepositoryId } from "@maple/domain/http"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { Option, Schema } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { emptyRetained, type Retained, retainedStatus } from "./retained"
@@ -115,7 +115,9 @@ export const frameRouteChanged = (
 	return routeWindowStep(previous, search, {
 		resolve,
 		requestAll: (mode) =>
-			frame.window === null ? resolve() : { frame: next, commands: [], out: { _tag: "ResolvedWindow", window: frame.window, mode } },
+			frame.window === null
+				? resolve()
+				: { frame: next, commands: [], out: { _tag: "ResolvedWindow", window: frame.window, mode } },
 	})
 }
 
@@ -187,8 +189,14 @@ export const updateFrame = (
 					next.outMessage === undefined
 						? null
 						: next.outMessage._tag === "RejectedRange"
-							? { _tag: "RefusedWindow", toast: TimeRangePicker.rejectedToast(next.outMessage.maxRangeSeconds) }
-							: { _tag: "PickedWindow", window: TimeRangePicker.searchPatchOf(next.outMessage) },
+							? {
+									_tag: "RefusedWindow",
+									toast: TimeRangePicker.rejectedToast(next.outMessage.maxRangeSeconds),
+								}
+							: {
+									_tag: "PickedWindow",
+									window: TimeRangePicker.searchPatchOf(next.outMessage),
+								},
 			}
 		},
 		ClickedResetTimeRange: () => ({
@@ -222,5 +230,7 @@ export const repositoriesOf = (frame: Frame, reviewedOnly: boolean) =>
 	Option.match(AsyncData.getData(frame.githubStatus.data), {
 		onNone: () => [],
 		onSome: (status) =>
-			reviewedOnly ? status.repositories.filter((repo) => repo.prReviewEnabled) : status.repositories,
+			reviewedOnly
+				? Arr.filter(status.repositories, (repo) => repo.prReviewEnabled)
+				: status.repositories,
 	})

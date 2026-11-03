@@ -21,6 +21,7 @@ import {
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ResultRow } from "./model"
+import { Array as Arr } from "effect"
 
 // The Query page's result table and its error state.
 
@@ -60,7 +61,7 @@ export const queryError = <M>(h: HtmlBuilder<M>, title: string, detail: string):
 
 export const resultTable = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<ResultRow>): Html => {
 	const columns = inferColumns(rows)
-	const numeric = new Set(columns.filter((column) => isNumericColumn(rows, column)))
+	const numeric = new Set(Arr.filter(columns, (column) => isNumericColumn(rows, column)))
 	const shown = rows.length > DISPLAY_ROW_LIMIT ? rows.slice(0, DISPLAY_ROW_LIMIT) : rows
 	return h.div(
 		[],
@@ -72,7 +73,7 @@ export const resultTable = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<ResultRow>
 					[
 						tableRow(
 							h,
-							columns.map((column) =>
+							Arr.map(columns, (column) =>
 								tableHead(h, [column], cn("px-3", numeric.has(column) && "text-right"), [
 									h.Key(column),
 								]),
@@ -83,10 +84,10 @@ export const resultTable = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<ResultRow>
 				),
 				tableBody(
 					h,
-					shown.map((row, index) =>
+					Arr.map(shown, (row, index) =>
 						tableRow(
 							h,
-							columns.map((column) => {
+							Arr.map(columns, (column) => {
 								const text = formatCell(row[column])
 								const cell = numeric.has(column) ? numericTableCell : tableCell
 								return cell(

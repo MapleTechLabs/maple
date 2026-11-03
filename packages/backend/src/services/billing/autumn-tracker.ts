@@ -10,7 +10,7 @@
  * charges dollars per model through Autumn's AI credit system, and
  * {@link trackTokenUsage} keeps the legacy raw token counts for comparison.
  */
-import { Config, Duration, Effect, Option, Redacted } from "effect"
+import { Config, Duration, Effect, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import type { BillingCustomerId } from "@maple/domain/http"
@@ -82,7 +82,7 @@ interface UsageRequest {
 const optional = <A>(config: Config.Config<A>) =>
 	Config.option(config).pipe(Config.orElse(() => Config.succeed(Option.none<A>())))
 
-const notBlank = (value: string) => value.trim() !== ""
+const notBlank = (value: string) => Str.trim(value) !== ""
 
 const trackerConfig = Config.all({
 	secretKey: optional(Config.Redacted("AUTUMN_SECRET_KEY")).pipe(
@@ -98,7 +98,7 @@ const resolveTracker = Effect.fn("AutumnTracker.resolveTracker")(function* (orgI
 	if (config === undefined || Option.isNone(config.secretKey)) return undefined
 	if (Option.contains(config.defaultOrgId, orgId)) return undefined
 	return {
-		apiUrl: Option.getOrElse(config.apiUrl, () => DEFAULT_AUTUMN_API_URL).replace(/\/+$/, ""),
+		apiUrl: Str.replace(/\/+$/, "")(Option.getOrElse(config.apiUrl, () => DEFAULT_AUTUMN_API_URL)),
 		secretKey: config.secretKey.value,
 	}
 })
@@ -171,13 +171,16 @@ export const trackTokenUsage = Effect.fn("AutumnTracker.trackTokenUsage")(functi
 	idempotencyKey,
 	source,
 }: TrackTokenUsageOptions) {
-	const counts = [
-		{ featureId: "ai_input_tokens", value: inputTokens, suffix: "input" },
-		{ featureId: "ai_output_tokens", value: outputTokens, suffix: "output" },
-	].filter((count) => count.value > 0)
+	const counts = Arr.filter(
+		[
+			{ featureId: "ai_input_tokens", value: inputTokens, suffix: "input" },
+			{ featureId: "ai_output_tokens", value: outputTokens, suffix: "output" },
+		],
+		(count) => count.value > 0,
+	)
 	yield* postAll(
 		customerId,
-		counts.map((count) => ({
+		Arr.map(counts, (count) => ({
 			path: AUTUMN_TRACK_PATH,
 			label: count.featureId,
 			body: {
@@ -213,11 +216,11 @@ export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function
 }: TrackAiCreditsOptions) {
 	yield* postAll(
 		customerId,
-		spends
-			.flatMap((spend, index) =>
+		Arr.map(
+			Arr.flatMap(spends, (spend, index) =>
 				spendsAnything(spend) ? [{ spend, key: `${idempotencyKey}:${source}:credits:${index}` }] : [],
-			)
-			.map(({ spend, key }) => ({
+			),
+			({ spend, key }) => ({
 				path: AUTUMN_TRACK_TOKENS_PATH,
 				label: spend.modelId,
 				idempotencyKey: key,
@@ -232,7 +235,8 @@ export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function
 					reasoning_tokens: spend.reasoningTokens,
 					properties: { source },
 				},
-			})),
+			}),
+		),
 	)
 })
 

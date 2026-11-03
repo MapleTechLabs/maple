@@ -1,4 +1,4 @@
-import { Effect, Option, Predicate, Schema, Stream } from "effect"
+import { Effect, Option, Predicate, Schema, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { CrashContext } from "foldkit/runtime"
@@ -29,7 +29,7 @@ export const crashReference = (message: Option.Option<unknown>): string =>
 		onNone: () => "Initial render",
 		onSome: (value) => {
 			const tags = tagPath(value, 0)
-			return tags.length === 0 ? "Unknown message" : tags.join(" > ")
+			return tags.length === 0 ? "Unknown message" : Arr.join(tags, " > ")
 		},
 	})
 
@@ -38,12 +38,15 @@ export const crashDetails = (
 	reference: string,
 	at: Readonly<{ pathname: string; time: Date; build: string | undefined }>,
 ): string =>
-	[
-		`Message: ${reference}`,
-		`Page: ${at.pathname}`,
-		`Time: ${at.time.toISOString()}`,
-		...(at.build === undefined || at.build === "" ? [] : [`Build: ${at.build}`]),
-	].join("\n")
+	Arr.join(
+		[
+			`Message: ${reference}`,
+			`Page: ${at.pathname}`,
+			`Time: ${at.time.toISOString()}`,
+			...(at.build === undefined || at.build === "" ? [] : [`Build: ${at.build}`]),
+		],
+		"\n",
+	)
 
 // The dispatch loop is gone, so the leaves and the copy button run on plain DOM listeners.
 const MountCrashPage = Mount.defineStream("MountCrashPage", {

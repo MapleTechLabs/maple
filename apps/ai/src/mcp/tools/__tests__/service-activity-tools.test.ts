@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	DbQueryVolumeOutput,
 	IngestFreshnessOutput,
@@ -18,7 +18,7 @@ const sqlSeen: string[] = []
 // Each tool reads one distinctive table; the probe and history unions of ingest_freshness differ by table.
 const fixtures: FixtureRule[] = [
 	{
-		match: (sql) => (sql.includes("totalSizeBytes") ? (sqlSeen.push(sql), true) : false),
+		match: (sql) => (Str.includes("totalSizeBytes")(sql) ? (sqlSeen.push(sql), true) : false),
 		rows: [
 			{
 				serviceName: "api",
@@ -56,7 +56,7 @@ const fixtures: FixtureRule[] = [
 	},
 	{
 		match: (sql) =>
-			sql.includes("service_map_db_query_shapes_hourly") ? (sqlSeen.push(sql), true) : false,
+			Str.includes("service_map_db_query_shapes_hourly")(sql) ? (sqlSeen.push(sql), true) : false,
 		rows: [
 			{
 				serviceName: "api",
@@ -73,7 +73,7 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{
-		match: (sql) => (sql.includes("AS commitSha") ? (sqlSeen.push(sql), true) : false),
+		match: (sql) => (Str.includes("AS commitSha")(sql) ? (sqlSeen.push(sql), true) : false),
 		rows: [
 			{
 				serviceName: "api",
@@ -106,7 +106,7 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{
-		match: (sql) => (sql.includes("route_windows") ? (sqlSeen.push(sql), true) : false),
+		match: (sql) => (Str.includes("route_windows")(sql) ? (sqlSeen.push(sql), true) : false),
 		rows: [
 			{
 				serviceName: "api",
@@ -120,7 +120,7 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{
-		match: (sql) => (sql.includes("metric_catalog") ? (sqlSeen.push(sql), true) : false),
+		match: (sql) => (Str.includes("metric_catalog")(sql) ? (sqlSeen.push(sql), true) : false),
 		rows: [
 			{ signal: "traces", count: "12", lastSeen: "2026-10-01 11:59:00" },
 			{ signal: "metrics", count: "0", lastSeen: "1970-01-01 00:00:00" },
@@ -131,7 +131,7 @@ const fixtures: FixtureRule[] = [
 		rows: [{ signal: "logs", count: "0", lastSeen: "1970-01-01 00:00:00" }],
 	},
 	{
-		match: (sql) => sql.includes("service_usage"),
+		match: (sql) => Str.includes("service_usage")(sql),
 		rows: [
 			{
 				signal: "traces",
@@ -182,7 +182,7 @@ describe("service_deployments", () => {
 		expect(result.isError).toBeUndefined()
 		const output = Schema.decodeUnknownSync(ServiceDeploymentsOutput)(result.structuredContent)
 		expect(output.lastSeenPrecision).toBe("minute")
-		expect(output.versions.map((v) => [v.commitSha.slice(0, 1), v.live])).toEqual([
+		expect(Arr.map(output.versions, (v) => [Str.slice(0, 1)(v.commitSha), v.live])).toEqual([
 			["b", true],
 			["a", false],
 		])
@@ -247,7 +247,7 @@ describe("ingest_freshness", () => {
 		expect(result.isError).toBeUndefined()
 		const output = Schema.decodeUnknownSync(IngestFreshnessOutput)(result.structuredContent)
 		expect(output.probeWindow).toEqual({ start: "2026-10-01 11:00:00", end: END })
-		expect(output.signals.map((s) => [s.signal, s.status])).toEqual([
+		expect(Arr.map(output.signals, (s) => [s.signal, s.status])).toEqual([
 			["traces", "receiving"],
 			["logs", "stalled"],
 			["metrics", "none"],

@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto"
 import { lstatSync, readFileSync } from "node:fs"
-import { Result, Schema } from "effect"
+import { Result, Schema, String as Str } from "effect"
 import { durableWrite } from "./durable-files"
 
 /** A credential or ledger path that is a symlink or a non-file; refused rather than followed. */
@@ -23,7 +23,7 @@ export const ensureLocalToken = async (path: string, label: string): Promise<str
 		if (!missing) throw existing.failure
 		await durableWrite(path, `${randomBytes(32).toString("hex")}\n`)
 	}
-	const token = readRealFile(path, label).trim()
+	const token = Str.trim(readRealFile(path, label))
 	return Schema.decodeUnknownSync(Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u)))(token)
 }
 

@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 import type { DispatchContext } from "../context"
 import type { RenderInput, SecretConfigOf } from "../Transport"
@@ -113,8 +113,8 @@ describe("telegramTransport.render", () => {
 		assert.strictEqual(body.parse_mode, "HTML")
 		// The token must never reach the body or a header — only the path, which
 		// `sensitivePath` keeps off the span.
-		assert.isFalse(spec.body.includes(BOT_TOKEN))
-		assert.isFalse(JSON.stringify(spec.headers).includes(BOT_TOKEN))
+		assert.isFalse(Str.includes(BOT_TOKEN)(spec.body))
+		assert.isFalse(Str.includes(BOT_TOKEN)(JSON.stringify(spec.headers)))
 	})
 
 	it("carries the Open in Maple link as the only inline keyboard button", () => {
@@ -140,7 +140,7 @@ describe("telegramTransport.render", () => {
 		const input = inputFor({ context: makeContext({ ruleName: "<b>Pwn</b> & co" }) })
 		const { text } = render(input).body
 		assert.include(text, "&lt;b&gt;Pwn&lt;/b&gt; &amp; co")
-		assert.isFalse(text.includes("<b>Pwn"))
+		assert.isFalse(Str.includes("<b>Pwn")(text))
 	})
 
 	it("previews the chart when there is one, and nothing otherwise", () => {
@@ -170,12 +170,12 @@ describe("telegramTransport.render", () => {
 			const { text } = render(
 				inputFor({ templated: { title: "T", body: "[Tap](tg://user?id=1)" } }),
 			).body
-			assert.isFalse(text.includes("<a href"))
+			assert.isFalse(Str.includes("<a href")(text))
 			assert.include(text, "[Tap](tg://user?id=1)")
 		})
 
 		it("caps the text at Telegram's 4096-character limit", () => {
-			const { text } = render(inputFor({ templated: { title: "T", body: "x".repeat(9000) } })).body
+			const { text } = render(inputFor({ templated: { title: "T", body: Str.repeat(9000)("x") } })).body
 			assert.isAtMost(text.length, 4096)
 		})
 	})
@@ -358,7 +358,7 @@ describe("fetchTelegramChats", () => {
 			assert.strictEqual(result.status, "ok")
 			if (result.status === "ok") {
 				assert.deepStrictEqual(
-					result.chats.map((chat) => chat.id),
+					Arr.map(result.chats, (chat) => chat.id),
 					["-100222", "-100111"],
 				)
 			}

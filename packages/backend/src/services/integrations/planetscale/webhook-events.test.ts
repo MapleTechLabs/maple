@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Result, Array as Arr } from "effect"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
@@ -60,7 +60,7 @@ describe("verifyPlanetScaleSignature", () => {
 
 describe("classifyPlanetScaleEvent", () => {
 	it("acts on every event Maple subscribes its webhooks to", () => {
-		const ignored = PLANETSCALE_WEBHOOK_EVENTS.filter((event) => {
+		const ignored = Arr.filter(PLANETSCALE_WEBHOOK_EVENTS, (event) => {
 			const { action } = classifyPlanetScaleEvent(event)
 			return action !== "issue" && action !== "timeline"
 		})
@@ -346,7 +346,7 @@ describe("upsertPlanetScaleIssue", () => {
 				],
 				{ concurrency: "unbounded" },
 			)
-			assert.deepStrictEqual(results.map(({ action }) => action).sort(), ["created", "refreshed"])
+			assert.deepStrictEqual(Arr.map(results, ({ action }) => action).sort(), ["created", "refreshed"])
 			assert.strictEqual(results[0].issueId, results[1].issueId)
 
 			const aggregate = yield* Effect.promise(() =>
@@ -393,7 +393,7 @@ describe("upsertPlanetScaleIssue", () => {
 				],
 				{ concurrency: "unbounded" },
 			)
-			assert.deepStrictEqual(results.map(({ action }) => action).sort(), ["refreshed", "reopened"])
+			assert.deepStrictEqual(Arr.map(results, ({ action }) => action).sort(), ["refreshed", "reopened"])
 
 			const aggregate = yield* Effect.promise(() =>
 				queryFirstRow<{

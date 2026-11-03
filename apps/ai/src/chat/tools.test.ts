@@ -7,7 +7,7 @@
 import { type ChatTurnOrigin, prReviewSessionId } from "@maple/domain/chat-session"
 import { MAPLE_NATIVE_SESSION_ID_ATTR } from "@maple/domain/gen-ai"
 import { ChatConnectorId, ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	buildDiagnosisCompletion,
@@ -313,7 +313,11 @@ describe("buildReviewCompletion", () => {
 
 			assert.isTrue(Result.isSuccess(await call(CLEAN)))
 			assert.deepStrictEqual(
-				filed[0]!.report.findings.map((finding) => [finding.path, finding.line, finding.severity]),
+				Arr.map(filed[0]!.report.findings, (finding) => [
+					finding.path,
+					finding.line,
+					finding.severity,
+				]),
 				[["src/capture.ts", 213, "warn"]],
 			)
 			assert.equal(filed[0]!.report.verdict, "issues")
@@ -342,7 +346,7 @@ describe("buildReviewCompletion", () => {
 			assert.isTrue(Result.isFailure(await call()))
 			assert.isTrue(Result.isSuccess(await call()))
 			assert.deepStrictEqual(
-				filed[0]!.report.findings.map((finding) => [finding.path, finding.category]),
+				Arr.map(filed[0]!.report.findings, (finding) => [finding.path, finding.category]),
 				[["src/queue.ts", "correctness"]],
 			)
 		})
@@ -351,7 +355,7 @@ describe("buildReviewCompletion", () => {
 			const { filed, call } = submitWith(true)
 			assert.isTrue(Result.isSuccess(await call(CLEAN)))
 			assert.deepStrictEqual(
-				filed[0]!.report.findings.map((finding) => [finding.path, finding.line]),
+				Arr.map(filed[0]!.report.findings, (finding) => [finding.path, finding.line]),
 				[["src/capture.ts", 213]],
 			)
 		})
@@ -371,10 +375,13 @@ describe("buildReviewCompletion", () => {
 		it("counts a finding saved and repeated in the submission once", async () => {
 			const children = makeChildFindings()
 			children.observe(
-				[
-					"src/capture.ts:213 | warn | correctness | Queue acks early | Why | Fix | -",
-					"src/capture.ts:216 | warn | security | Secret in a log | Why | Fix | -",
-				].join("\n"),
+				Arr.join(
+					[
+						"src/capture.ts:213 | warn | correctness | Queue acks early | Why | Fix | -",
+						"src/capture.ts:216 | warn | security | Secret in a log | Why | Fix | -",
+					],
+					"\n",
+				),
 			)
 			const completion = buildReviewCompletion(
 				REVIEW_SESSION,
@@ -482,7 +489,13 @@ describe("record_finding", () => {
 	// An inline comment the author reads in ten seconds: the body says what breaks, the fix is below it.
 	it("refuses an essay-length finding with what to cut, then saves the rewrite", async () => {
 		const { ledger, save } = setup()
-		const essay = { ...RETRY, body: Array.from({ length: 70 }, (_, i) => `word${i}`).join(" ") }
+		const essay = {
+			...RETRY,
+			body: Arr.join(
+				Array.from({ length: 70 }, (_, i) => `word${i}`),
+				" ",
+			),
+		}
 		const refused = await save(essay)
 		assert.isTrue(Result.isFailure(refused))
 		const message = Result.isFailure(refused) ? refused.failure.message : ""
@@ -499,7 +512,10 @@ describe("record_finding", () => {
 			...RETRY,
 			line,
 			title: `finding ${line}`,
-			suggestion: Array.from({ length: 40 }, () => "fix").join(" "),
+			suggestion: Arr.join(
+				Array.from({ length: 40 }, () => "fix"),
+				" ",
+			),
 		})
 		const outcomes = []
 		for (const line of [1, 2, 3, 4, 5]) outcomes.push(Result.isSuccess(await save(essay(line))))
@@ -513,7 +529,15 @@ describe("record_finding", () => {
 		const result = await submit({
 			verdict: "issues",
 			summary: "Adds a retry to the order client.",
-			findings: [{ ...RETRY, body: Array.from({ length: 61 }, () => "w").join(" ") }],
+			findings: [
+				{
+					...RETRY,
+					body: Arr.join(
+						Array.from({ length: 61 }, () => "w"),
+						" ",
+					),
+				},
+			],
 		})
 		assert.isTrue(Result.isSuccess(result))
 		assert.lengthOf(filed[0]!.report.findings, 1)
@@ -524,7 +548,15 @@ describe("record_finding", () => {
 		const submission: PrReviewSubmission = {
 			verdict: "issues",
 			summary: "Adds a retry to the order client.",
-			findings: [{ ...RETRY, body: Array.from({ length: 61 }, () => "w").join(" ") }],
+			findings: [
+				{
+					...RETRY,
+					body: Arr.join(
+						Array.from({ length: 61 }, () => "w"),
+						" ",
+					),
+				},
+			],
 		}
 		const first = await submit(submission)
 		assert.isTrue(Result.isFailure(first))
@@ -549,7 +581,7 @@ describe("record_finding", () => {
 		assert.isTrue(Result.isSuccess(result))
 		const report = filed[0]!.report
 		assert.deepStrictEqual(
-			report.findings.map((finding) => finding.line),
+			Arr.map(report.findings, (finding) => finding.line),
 			[42, 90],
 		)
 		// A saved warn makes the review one with issues, whatever the submission called it.

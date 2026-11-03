@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Clock, Duration, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Layer, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	type AlertDestinationId,
@@ -216,7 +216,7 @@ describe("AlertsService delivery drain across destinations", () => {
 			)
 			assert.include(delivered, "https://example.com/fast")
 			assert.deepStrictEqual(
-				statuses.rows.map((row) => [row.deliveryKey, row.status]),
+				Arr.map(statuses.rows, (row) => [row.deliveryKey, row.status]),
 				[
 					["fast-1", "success"],
 					["slow-1", "success"],
@@ -401,7 +401,7 @@ describe("AlertsService delivery drain", () => {
 			yield* Effect.forEach(Arr.range(1, 60), (n) =>
 				Effect.promise(() =>
 					insertDeliveryEventRow(testDb, {
-						id: `00000000-0000-4000-8000-${String(500 + n).padStart(12, "0")}`,
+						id: `00000000-0000-4000-8000-${Str.padStart(12, "0")(String(500 + n))}`,
 						orgId,
 						incidentId: null,
 						ruleId: rule.id,
@@ -495,7 +495,7 @@ describe("AlertsService chat digests", () => {
 			yield* Effect.forEach(Arr.range(1, count), (n) =>
 				Effect.promise(() =>
 					insertDeliveryEventRow(testDb, {
-						id: `00000000-0000-4000-8000-${String(900 + n).padStart(12, "0")}`,
+						id: `00000000-0000-4000-8000-${Str.padStart(12, "0")(String(900 + n))}`,
 						orgId,
 						incidentId: null,
 						ruleId: rule.id,
@@ -546,7 +546,7 @@ describe("AlertsService chat digests", () => {
 		Effect.gen(function* () {
 			const { posts, queue } = yield* runBurst(5, "posted")
 			assert.deepStrictEqual(posts, ["\u{1F514} 5 alert notifications"])
-			assert.strictEqual(queue, Array(5).fill("success@1").join(","))
+			assert.strictEqual(queue, Arr.join(Array(5).fill("success@1"), ","))
 		}),
 	)
 
@@ -554,7 +554,7 @@ describe("AlertsService chat digests", () => {
 		Effect.gen(function* () {
 			const { posts, queue } = yield* runBurst(2, "posted")
 			assert.lengthOf(posts, 2)
-			assert.notInclude(posts.join(","), "alert notifications")
+			assert.notInclude(Arr.join(posts, ","), "alert notifications")
 			assert.strictEqual(queue, "success@1,success@1")
 		}),
 	)
@@ -563,7 +563,7 @@ describe("AlertsService chat digests", () => {
 		Effect.gen(function* () {
 			const { posts, queue, health } = yield* runBurst(4, "rejected")
 			assert.lengthOf(posts, 1)
-			assert.strictEqual(queue, Array(4).fill("failed@1").join(","))
+			assert.strictEqual(queue, Arr.join(Array(4).fill("failed@1"), ","))
 			assert.strictEqual(health?.failures, 1)
 			assert.isTrue(health?.enabled)
 		}),
@@ -575,7 +575,10 @@ describe("AlertsService chat digests", () => {
 			const { queue } = yield* runBurst(4, "rate_limited", (n) =>
 				n === 1 ? "not-an-event-type" : "trigger",
 			)
-			assert.strictEqual(queue, [...Array(4).fill("failed@1"), ...Array(3).fill("queued@2")].join(","))
+			assert.strictEqual(
+				queue,
+				Arr.join([...Array(4).fill("failed@1"), ...Array(3).fill("queued@2")], ","),
+			)
 		}),
 	)
 
@@ -592,7 +595,10 @@ describe("AlertsService chat digests", () => {
 		Effect.gen(function* () {
 			const { posts, queue } = yield* runBurst(5, "rate_limited")
 			assert.lengthOf(posts, 1)
-			assert.strictEqual(queue, [...Array(5).fill("failed@1"), ...Array(5).fill("queued@2")].join(","))
+			assert.strictEqual(
+				queue,
+				Arr.join([...Array(5).fill("failed@1"), ...Array(5).fill("queued@2")], ","),
+			)
 		}),
 	)
 })
@@ -664,7 +670,7 @@ describe("AlertsService held incidents", () => {
 	/** The `startTime` literal of a compiled liveness query, as epoch ms. */
 	const probeWindowStartMs = (sql: string): number | null => {
 		const match = />= '(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'/.exec(sql)
-		return match?.[1] === undefined ? null : Date.parse(`${match[1].replace(" ", "T")}Z`)
+		return match?.[1] === undefined ? null : Date.parse(`${Str.replace(" ", "T")(match[1])}Z`)
 	}
 
 	/**
@@ -711,7 +717,9 @@ describe("AlertsService held incidents", () => {
 		const rowsForQuery = (sql: string) => {
 			const scoped = /ServiceName (?:= '([^']+)'|IN \('([^']+)'\))/.exec(sql)
 			const service = scoped?.[1] ?? scoped?.[2]
-			return service === undefined ? state.rows : state.rows.filter((row) => row.groupName === service)
+			return service === undefined
+				? state.rows
+				: Arr.filter(state.rows, (row) => row.groupName === service)
 		}
 		return {
 			...makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
@@ -723,7 +731,7 @@ describe("AlertsService held incidents", () => {
 					const query = compiledQueryOf(compiled)
 					// The org-wide pulse (a rule with no service scope): same counts,
 					// union shape.
-					if (query.sql.includes("service_overview_spans")) {
+					if (Str.includes("service_overview_spans")(query.sql)) {
 						const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
 						return yield* query
 							.decodeRows([
@@ -740,7 +748,7 @@ describe("AlertsService held incidents", () => {
 			compiledQueryFirst: (_tenant, compiled) =>
 				Effect.gen(function* () {
 					const query = compiledQueryOf(compiled)
-					if (!query.sql.includes("service_operations_minutely")) {
+					if (!Str.includes("service_operations_minutely")(query.sql)) {
 						return yield* query.decodeFirstRow(state.rows).pipe(Effect.orDie)
 					}
 					if (state.liveness.failProbe) {
@@ -842,7 +850,7 @@ describe("AlertsService held incidents", () => {
 			assert.strictEqual(held.resolvedAt, null)
 			const eventsWhileHeld = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				eventsWhileHeld.events.map((e) => e.eventType),
+				Arr.map(eventsWhileHeld.events, (e) => e.eventType),
 				["trigger", "trigger"],
 				"a hold must not notify",
 			)
@@ -865,7 +873,10 @@ describe("AlertsService held incidents", () => {
 			// other event in the meantime.
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				events.events.map((e) => e.eventType).filter((type) => type !== "renotify"),
+				Arr.filter(
+					Arr.map(events.events, (e) => e.eventType),
+					(type) => type !== "renotify",
+				),
 				["resolve", "trigger", "trigger"],
 			)
 
@@ -964,14 +975,15 @@ describe("AlertsService held incidents", () => {
 			state.rows = [breaching("checkout")]
 			yield* tickAfter(state, alerts, 1)
 
-			const payments = (yield* alerts.listIncidents(orgId)).incidents.filter(
+			const payments = Arr.filter(
+				(yield* alerts.listIncidents(orgId)).incidents,
 				(incident) => incident.groupKey === "payments",
 			)
 			assert.lengthOf(payments, 2)
-			assert.isTrue(payments.every((incident) => incident.status === "resolved"))
+			assert.isTrue(Arr.every(payments, (incident) => incident.status === "resolved"))
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				events.events.map((event: { eventType: string }) => event.eventType).sort(),
+				Arr.map(events.events, (event: { eventType: string }) => event.eventType).sort(),
 				["resolve", "trigger", "trigger"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))
@@ -1067,7 +1079,7 @@ describe("AlertsService held incidents", () => {
 			assert.strictEqual(resolved.holdReason, null)
 			const events = yield* alerts.listDeliveryEvents(orgId)
 			assert.deepStrictEqual(
-				events.events.map((e) => e.eventType),
+				Arr.map(events.events, (e) => e.eventType),
 				["resolve", "trigger", "trigger"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeLivenessStub(state), { fetch: okFetch })))

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import * as Effect from "effect/Effect"
 import * as Config from "effect/Config"
 import * as Redacted from "effect/Redacted"
@@ -174,14 +174,15 @@ export const ApiKeyProvider = () =>
 					const wires = yield* Effect.forEach(items, (item) => decodeWireApiKey(item))
 					// Secrets are unrecoverable via list — empty placeholder (list only
 					// powers enumeration/nuke, which needs IDs, not secrets).
-					return wires
-						.filter((wire) => !wire.revoked)
-						.map((wire) => ({
+					return Arr.map(
+						Arr.filter(wires, (wire) => !wire.revoked),
+						(wire) => ({
 							keyId: wire.id,
 							name: wire.name,
 							keyPrefix: wire.key_prefix,
 							secret: Redacted.make(""),
-						}))
+						}),
+					)
 				}),
 			}
 		}),

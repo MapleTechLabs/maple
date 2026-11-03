@@ -6,7 +6,7 @@
 import { internalTokenFor, selfFetcher } from "@maple/backend/platform/self-binding"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream, String as Str } from "effect"
 import { HttpClient, type HttpClientError, HttpClientRequest } from "effect/http"
 import { isLaneOf, type TickLane } from "./schedule.ts"
 
@@ -127,9 +127,7 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 		Stream.takeUntil((head) => head.length >= MAX_FAILURE_BODY_CHARS),
 		Stream.runLast,
 		Effect.map((head) =>
-			Option.getOrElse(head, () => "")
-				.trim()
-				.slice(0, MAX_FAILURE_BODY_CHARS),
+			Str.slice(0, MAX_FAILURE_BODY_CHARS)(Str.trim(Option.getOrElse(head, () => ""))),
 		),
 		Effect.orElseSucceed(() => ""),
 	)

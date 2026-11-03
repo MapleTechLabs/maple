@@ -123,6 +123,7 @@ import {
 	GENAI_TOOL_NAME_SQL,
 } from "./gen-ai-columns"
 import { NORMALIZED_SPAN_NAME_SQL } from "./span-display-name"
+import { Array as Arr } from "effect"
 
 /**
  * Materialized view to aggregate log usage statistics per service per hour
@@ -1050,7 +1051,13 @@ const errorEventsSelectSql = `
           -- Only string values: JSONExtractString renders a number or an object
           -- as its JSON text, which titled \`{"error":{"code":5}}\` with the object.
           multiIf(
-            ${JSON_LABEL_KEYS.map((key) => `${jsonStringIsSet(key)}, JSONExtractString(_msgText, '${key}'),`).join("\n            ")}
+            ${Arr.join(
+				Arr.map(
+					JSON_LABEL_KEYS,
+					(key) => `${jsonStringIsSet(key)}, JSONExtractString(_msgText, '${key}'),`,
+				),
+				"\n            ",
+			)}
             ${jsonStringIsSet("type")}, extract(JSONExtractString(_msgText, 'type'), '([^/]+)$'),
             'JSON error'
           ) AS _jsonLabel,

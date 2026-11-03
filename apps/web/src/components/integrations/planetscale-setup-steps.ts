@@ -11,6 +11,7 @@
 
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
+import { String as Str } from "effect"
 
 /** Where branch metrics come from. Legacy wire values ("oauth", "missing") mean the API poller. */
 export type MetricsAuth = "api" | "service_token"
@@ -232,7 +233,9 @@ export function derivePlanetScaleSetup(
 										"webhooks",
 										"failed",
 										"Webhooks failing",
-										`${webhooks.registered_databases} of ${webhooks.databases} databases. ${webhooks.last_error ?? ""}`.trim(),
+										Str.trim(
+											`${webhooks.registered_databases} of ${webhooks.databases} databases. ${webhooks.last_error ?? ""}`,
+										),
 									)
 								: check(
 										"webhooks",

@@ -1,5 +1,5 @@
 import { IngestRuleSpec } from "@maple/domain/ingest-rules"
-import { Schema } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { applyRules, compileRules, isAttrList, type AttrMap, type AttrValue, type RuleRecord } from "./engine"
 
 // One shared-fixture case and its outcome in the JSON form both engines agree on. The fixture
@@ -42,28 +42,32 @@ export interface FixtureCase {
 }
 
 const fromHex = (hex: string) => Uint8Array.from(hex.match(/../g) ?? [], (byte) => Number.parseInt(byte, 16))
-const toHex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+const toHex = (bytes: Uint8Array) =>
+	Arr.join(
+		Array.from(bytes, (byte) => Str.padStart(2, "0")(byte.toString(16))),
+		"",
+	)
 
 const toValue = (json: unknown): AttrValue => {
 	if (typeof json === "string" || typeof json === "number" || typeof json === "boolean") return json
-	if (Array.isArray(json)) return json.map(toValue)
+	if (Arr.isArray(json)) return Arr.map(json, toValue)
 	if (isBytesMarker(json)) return fromHex(json.$bytes)
 	return toMap(json)
 }
 const toMap = (json: unknown): AttrMap =>
 	typeof json === "object" && json !== null
-		? Object.fromEntries(Object.entries(json).map(([k, v]) => [k, toValue(v)]))
+		? Rec.fromEntries(Arr.map(Rec.toEntries(json), ([k, v]) => [k, toValue(v)]))
 		: {}
 
 const toJson = (value: AttrValue): Json => {
 	if (typeof value === "bigint") return Number(value)
 	if (value instanceof Uint8Array) return { $bytes: toHex(value) }
-	if (isAttrList(value)) return value.map(toJson)
+	if (isAttrList(value)) return Arr.map(value, toJson)
 	if (typeof value === "object") return mapJson(value)
 	return value
 }
 const mapJson = (map: AttrMap): Json =>
-	Object.fromEntries(Object.entries(map).map(([k, v]) => [k, toJson(v)]))
+	Rec.fromEntries(Arr.map(Rec.toEntries(map), ([k, v]) => [k, toJson(v)]))
 const eventsJson = (record: RuleRecord) =>
 	record.events?.map((event) => ({ name: event.name, attributes: mapJson(event.attributes) }))
 
@@ -87,10 +91,10 @@ export const toRecord = (input: unknown): RuleRecord => {
 
 /** The entries whose value is present, as a JSON object. */
 export const present = (entries: ReadonlyArray<readonly [string, Json | undefined]>): Schema.JsonObject =>
-	Object.fromEntries(entries.flatMap(([key, value]) => (value === undefined ? [] : [[key, value]])))
+	Rec.fromEntries(Arr.flatMap(entries, ([key, value]) => (value === undefined ? [] : [[key, value]])))
 
 export const isJsonObject = (value: Json | undefined): value is Schema.JsonObject =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /** A member of a JSON object; undefined for anything else. */
 export const member = (value: Json | undefined, key: string): Json | undefined =>
@@ -114,7 +118,9 @@ export const outcomeJson = (record: RuleRecord): Schema.JsonObject =>
 export const runCase = (fixture: FixtureCase): Json => {
 	const compiled = compileRules(decodeSpecs(fixture.rules), fixture.salt)
 	if (compiled.invalid.length > 0)
-		return { invalid: compiled.invalid.map((rule) => ({ index: rule.index, problems: rule.problems })) }
+		return {
+			invalid: Arr.map(compiled.invalid, (rule) => ({ index: rule.index, problems: rule.problems })),
+		}
 	const outcome = applyRules(compiled, toRecord(fixture.input), () => 0.5)
 	return outcome._tag === "dropped" ? { dropped: true } : outcomeJson(outcome.record)
 }

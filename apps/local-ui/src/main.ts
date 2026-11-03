@@ -4,11 +4,20 @@ import { INSTALL_METHODS } from "./lib/links"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as Toast from "@maple/views/ui/toast"
 import * as TooltipHost from "@maple/views/ui/tooltip-host"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, type Runtime } from "foldkit"
 import type { Url } from "foldkit/url"
 import { ApplyTheme, ProbeServer } from "./command"
-import { LocalEnv, readIsMobile, readLocalEnv, readRememberedRange, readSidebarOpen, readTheme, readTimeFormat, Theme } from "./env"
+import {
+	LocalEnv,
+	readIsMobile,
+	readLocalEnv,
+	readRememberedRange,
+	readSidebarOpen,
+	readTheme,
+	readTimeFormat,
+	Theme,
+} from "./env"
 import { TimeFormat } from "./page/kit/local-time"
 import type { Message } from "./message"
 import { initFilterDrawer, type Model } from "./model"
@@ -65,8 +74,16 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		maybeServer: Option.none(),
 		probe: { isInFlight: true, version: 0 },
 		hasIngested: false,
-		connect: Popover.init(CONNECT_POPOVER_ID, { side: "right", align: "end", initialFocus: "first-tabbable" }),
-		installTabs: Tabs.init({ idBase: 0, values: INSTALL_METHODS.map((method) => method.id), selected: INSTALL_METHODS[0]?.id ?? "" }),
+		connect: Popover.init(CONNECT_POPOVER_ID, {
+			side: "right",
+			align: "end",
+			initialFocus: "first-tabbable",
+		}),
+		installTabs: Tabs.init({
+			idBase: 0,
+			values: Arr.map(INSTALL_METHODS, (method) => method.id),
+			selected: INSTALL_METHODS[0]?.id ?? "",
+		}),
 		presence: AsyncData.Idle(),
 		isPresenceStale: false,
 		hasCache: flags.hasSavedResults,
@@ -78,6 +95,10 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 	const entered = enterLocation(model, null)
 	return {
 		model: entered.model,
-		commands: [ApplyTheme({ theme: flags.theme }), ProbeServer({ apiBase: flags.env.apiBase }), ...(entered.commands ?? [])],
+		commands: [
+			ApplyTheme({ theme: flags.theme }),
+			ProbeServer({ apiBase: flags.env.apiBase }),
+			...(entered.commands ?? []),
+		],
 	}
 }

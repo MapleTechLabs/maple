@@ -139,7 +139,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				? closed
 				: {
 						...closed,
-						commands: [...(closed.commands ?? []), FocusTrigger({ id: triggerIdOf(model.id, model.value) })],
+						commands: [
+							...(closed.commands ?? []),
+							FocusTrigger({ id: triggerIdOf(model.id, model.value) }),
+						],
 					}
 		},
 		PressedOutside: () => close(model),
@@ -201,7 +204,9 @@ const focusGuards = (id: string, value: string): Stream.Stream<void> =>
 								Array.findFirst(
 									tabbables(document.body),
 									(element) =>
-										after !== null && !popup.contains(element) && isFollowing(after, element),
+										after !== null &&
+										!popup.contains(element) &&
+										isFollowing(after, element),
 								),
 								() => trigger,
 							),
@@ -354,7 +359,10 @@ const portal = (h: H, model: Model, inputs: ViewInputs, value: string): Html => 
 			item._tag === "Trigger" && item.value === value,
 	)
 	const content = Option.match(open, { onNone: () => [], onSome: (item) => item.content })
-	const contentClassName = Option.match(open, { onNone: () => undefined, onSome: (item) => item.contentClassName })
+	const contentClassName = Option.match(open, {
+		onNone: () => undefined,
+		onSome: (item) => item.contentClassName,
+	})
 	return h.div(
 		[
 			// Keyed by the open item, so switching items re-anchors the Mount to the new trigger.
@@ -426,7 +434,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					...openAttribute,
 					h.DataAttribute("slot", "navigation-menu-list"),
 				],
-				inputs.items.map((item) =>
+				Array.map(inputs.items, (item) =>
 					h.li(
 						[
 							h.Class(cn(navigationMenuItemStyles)),

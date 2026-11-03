@@ -1,6 +1,6 @@
 import { ALERT_TEMPLATE_VARIABLES } from "@maple/domain/http"
 import { comparatorSupportsTiers } from "@maple/web-data/alerts/form-utils"
-import { Struct } from "effect"
+import { Struct, Array as Arr } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { card } from "@maple/views/ui/card"
@@ -35,10 +35,13 @@ type NotificationsForm = Pick<
 >
 
 const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
-const BODY_PLACEHOLDER = [
-	"{{ signal.label }} is *{{ value }}* ({{ comparator.label }} {{ threshold }}) over the last {{ window }}.",
-	"*Severity:* {{ severity }} · *Group:* {{ group }}",
-].join("\n")
+const BODY_PLACEHOLDER = Arr.join(
+	[
+		"{{ signal.label }} is *{{ value }}* ({{ comparator.label }} {{ threshold }}) over the last {{ window }}.",
+		"*Severity:* {{ severity }} · *Group:* {{ group }}",
+	],
+	"\n",
+)
 
 const tierHeading = (h: H, severity: "warning" | "critical", text: string): Html =>
 	h.p(
@@ -139,7 +142,8 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 const notifications = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const destinations = destinationsOf(model)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
-	const isAnySelected = destinations.some(
+	const isAnySelected = Arr.some(
+		destinations,
 		(d) => form.destinationIds.includes(d.id) || (escalation?.destinationIds.includes(d.id) ?? false),
 	)
 	return card(
@@ -220,7 +224,7 @@ const variables = (h: H): Html =>
 			hstack(
 				h,
 				{ gap: "1", align: "stretch", wrap: true },
-				ALERT_TEMPLATE_VARIABLES.map((variable) =>
+				Arr.map(ALERT_TEMPLATE_VARIABLES, (variable) =>
 					button(
 						h,
 						{

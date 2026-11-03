@@ -35,6 +35,7 @@ import { spawnSync } from "node:child_process"
 import { appendFileSync } from "node:fs"
 import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
 import { writeTinybirdDatafiles } from "./write-tinybird-datafiles"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 type Subcommand = "up" | "down" | "sweep"
 
@@ -52,7 +53,7 @@ const parseArgs = (): { subcommand: Subcommand; branchName: string; prNumber: st
 	}
 	// PR numbers are digits only; this is also the only untrusted input that ends
 	// up in a branch name, so keep it strictly numeric.
-	const prNumber = (rawPr ?? "").trim()
+	const prNumber = Str.trim(rawPr ?? "")
 	if (!/^\d+$/.test(prNumber)) {
 		fail(`Expected a numeric PR number, got "${rawPr ?? ""}"`)
 	}
@@ -94,10 +95,10 @@ const runTb = (
 	if (proc.error) {
 		fail(`Failed to invoke \`tb\` — is the Tinybird CLI installed? (${proc.error.message})`)
 	}
-	const stdout = (proc.stdout ?? "").trim()
-	const stderr = (proc.stderr ?? "").trim()
+	const stdout = Str.trim(proc.stdout ?? "")
+	const stderr = Str.trim(proc.stderr ?? "")
 	// Log the subcommand only — never the auth flags/token.
-	console.log(`$ tb --cloud ${args.join(" ")}`)
+	console.log(`$ tb --cloud ${Arr.join(args, " ")}`)
 	// `secret` suppresses the captured output entirely, for anything that could
 	// print a token value.
 	if (!opts?.secret) {
@@ -170,14 +171,14 @@ const resolveSigningKey = async (
 
 const exportToGithubEnv = (vars: Record<string, string>): void => {
 	const githubEnv = process.env.GITHUB_ENV?.trim()
-	const lines = Object.entries(vars).map(([key, value]) => `${key}=${value}`)
+	const lines = Arr.map(Rec.toEntries(vars), ([key, value]) => `${key}=${value}`)
 	if (!githubEnv) {
 		// Local run: just print so a developer can copy them.
 		console.log("\nResolved branch env (GITHUB_ENV unset — printing instead):")
 		for (const line of lines) console.log(`  ${line}`)
 		return
 	}
-	appendFileSync(githubEnv, `${lines.join("\n")}\n`)
+	appendFileSync(githubEnv, `${Arr.join(lines, "\n")}\n`)
 }
 
 const up = async (branchName: string): Promise<void> => {
@@ -257,14 +258,19 @@ const sweep = async (): Promise<void> => {
 	}
 	const candidates = [
 		...new Map(
-			[...listed.stdout.matchAll(/\bpr_(\d+)\b/g)].map((match) => [
+			Arr.map([...listed.stdout.matchAll(/\bpr_(\d+)\b/g)], (match) => [
 				match[0],
 				{ name: match[0], prNumber: match[1] as string },
 			]),
 		).values(),
 	]
 	console.log(
-		`Found ${candidates.length} pr_* branch(es): ${candidates.map((c) => c.name).join(", ") || "—"}`,
+		`Found ${candidates.length} pr_* branch(es): ${
+			Arr.join(
+				Arr.map(candidates, (c) => c.name),
+				", ",
+			) || "—"
+		}`,
 	)
 
 	const failures: string[] = []
@@ -285,7 +291,7 @@ const sweep = async (): Promise<void> => {
 		}
 	}
 	if (failures.length > 0) {
-		fail(`Failed to remove orphan branch(es): ${failures.join(", ")}`)
+		fail(`Failed to remove orphan branch(es): ${Arr.join(failures, ", ")}`)
 	}
 	console.log("✓ Sweep complete")
 }

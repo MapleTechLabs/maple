@@ -7,7 +7,7 @@
  */
 import { OrgId, UserId } from "@maple/domain"
 import { prReplySessionId, prReviewSessionId } from "@maple/domain/chat-session"
-import { Cause, Effect, Exit, Layer, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Schema, Stream, Array as Arr } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
@@ -112,17 +112,19 @@ describe("runChatTurn tool failures", () => {
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 2, "the model is called again after the failed tool")
-		const results = prompts[1]!.content.flatMap((message) =>
+		const results = Arr.flatMap(prompts[1]!.content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(
-			results.map(
+			Arr.map(
+				results,
 				(part) => part.type === "tool-result" && { name: part.name, isFailure: part.isFailure },
 			),
 			{ name: "run_sql", isFailure: true },
 		)
 		assert.deepInclude(
-			events.map(
+			Arr.map(
+				events,
 				(event) => event.type === "tool-result" && { output: event.output, isError: event.isError },
 			),
 			{ output: "SQL rejected (MissingOrgFilter)", isError: true },
@@ -192,11 +194,12 @@ describe("runChatTurn diagnosis rejections", () => {
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted)
 		// The rejection is a failed tool result the model reads, not a retried model call.
-		const results = prompts[1]!.content.flatMap((message) =>
+		const results = Arr.flatMap(prompts[1]!.content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(
-			results.map(
+			Arr.map(
+				results,
 				(part) => part.type === "tool-result" && { name: part.name, isFailure: part.isFailure },
 			),
 			{ name: "submit_diagnosis", isFailure: true },
@@ -234,16 +237,17 @@ describe("runChatTurn diagnosis rejections", () => {
 
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 1)
-		assert.isFalse(events.some((event) => event.type === "text-delta"))
+		assert.isFalse(Arr.some(events, (event) => event.type === "text-delta"))
 		// Settling is not a failure: Maple's own error tracking would file every investigation.
-		const failed = spans.filter(
+		const failed = Arr.filter(
+			spans,
 			(span) =>
 				span.status._tag === "Ended" &&
 				Exit.isFailure(span.status.exit) &&
 				!Cause.hasInterruptsOnly(span.status.exit.cause),
 		)
 		assert.deepEqual(
-			failed.map((span) => span.name),
+			Arr.map(failed, (span) => span.name),
 			[],
 		)
 		assert.deepEqual(events.at(-1), { type: "turn-end", messageId: "msg-1", reason: "stop" })
@@ -322,7 +326,8 @@ describe("runChatTurn diagnosis rejections", () => {
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 1)
 		assert.deepInclude(
-			events.map(
+			Arr.map(
+				events,
 				(event) => event.type === "tool-result" && { callId: event.callId, output: event.output },
 			),
 			{ callId: "call-1", output: "1 row" },
@@ -359,11 +364,12 @@ describe("runChatTurn reply rejections", () => {
 		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
-		const results = prompts[1]!.content.flatMap((message) =>
+		const results = Arr.flatMap(prompts[1]!.content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(
-			results.map(
+			Arr.map(
+				results,
 				(part) => part.type === "tool-result" && { name: part.name, isFailure: part.isFailure },
 			),
 			{ name: "propose_edit", isFailure: true },

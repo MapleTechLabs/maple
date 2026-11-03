@@ -6,7 +6,7 @@ import {
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 } from "@maple/backend/platform/bindings"
-import { Effect, Exit, Layer, Tracer, Schema } from "effect"
+import { Effect, Exit, Layer, Tracer, Schema, Array as Arr, String as Str } from "effect"
 import {
 	MESSAGING_SYSTEM,
 	QUEUE_BATCH_MAX_BYTES,
@@ -37,7 +37,7 @@ const fakeQueueEnv = (opts?: { reject?: boolean }) => {
 				? Effect.fail(new QueueSendError({ message: "simulated queue outage", cause: undefined }))
 				: Effect.sync(() => {
 						chunks.push([...messages])
-						sentTo.push({ queue, kinds: messages.map((m) => kindOf(m.body)) })
+						sentTo.push({ queue, kinds: Arr.map(messages, (m) => kindOf(m.body)) })
 					}),
 	})
 	const layer = Layer.mergeAll(
@@ -48,7 +48,7 @@ const fakeQueueEnv = (opts?: { reject?: boolean }) => {
 }
 
 const chunkSizes = (chunks: ReadonlyArray<ReadonlyArray<CapturedMessage>>): number[] =>
-	chunks.map((c) => c.length)
+	Arr.map(chunks, (c) => c.length)
 
 // Byte size of a captured message body, matching the producer's own measure.
 const encoder = new TextEncoder()
@@ -63,7 +63,7 @@ const assertChunksValid = (chunks: ReadonlyArray<ReadonlyArray<CapturedMessage>>
 			chunk.length <= QUEUE_BATCH_MAX_MESSAGES,
 			`chunk holds ${chunk.length} <= ${QUEUE_BATCH_MAX_MESSAGES} messages`,
 		)
-		const bytes = chunk.reduce((sum, m) => sum + bodyBytes(m), 0)
+		const bytes = Arr.reduce(chunk, 0, (sum, m) => sum + bodyBytes(m))
 		if (chunk.length > 1) {
 			assert.ok(
 				bytes <= QUEUE_BATCH_MAX_BYTES,
@@ -90,15 +90,15 @@ const pushJob = (i: number, messageBytes: number): VcsSyncJob => ({
 	branch: "main",
 	commits: [
 		{
-			sha: "a".repeat(40),
-			message: "x".repeat(messageBytes),
+			sha: Str.repeat(40)("a"),
+			message: Str.repeat(messageBytes)("x"),
 			authorName: null,
 			authorEmail: null,
 			authorLogin: null,
 			authorAvatarUrl: null,
 			authoredAt: null,
 			committedAt: 1,
-			htmlUrl: `https://github.com/octo/repo/commit/${"a".repeat(40)}`,
+			htmlUrl: `https://github.com/octo/repo/commit/${Str.repeat(40)("a")}`,
 		},
 	],
 })
@@ -132,8 +132,8 @@ describe("VcsSyncQueue producer spans", () => {
 			yield* queue.sendBatch([installSyncJob(1)]).pipe(Effect.withTracer(tracer))
 			yield* queue.send(installSyncJob(2)).pipe(Effect.withTracer(tracer))
 
-			const produced = spans.filter((span) => span.name.startsWith("VcsSyncQueue."))
-			assert.deepStrictEqual(produced.map((span) => span.name).sort(), [
+			const produced = Arr.filter(spans, (span) => Str.startsWith("VcsSyncQueue.")(span.name))
+			assert.deepStrictEqual(Arr.map(produced, (span) => span.name).sort(), [
 				"VcsSyncQueue.send",
 				"VcsSyncQueue.sendBatch",
 			])
@@ -166,7 +166,7 @@ describe("VcsSyncQueue routing", () => {
 			yield* queue.send(scan)
 			yield* queue.send(pushJob(2, 10))
 			const kindsOn = (name: VcsQueueName) =>
-				sentTo.filter((s) => s.queue === name).flatMap((s) => s.kinds)
+				Arr.filter(sentTo, (s) => s.queue === name).flatMap((s) => s.kinds)
 			assert.deepStrictEqual(kindsOn(VCS_SYNC_QUEUE), ["push", "installation-sync", "push"])
 			assert.deepStrictEqual(kindsOn(VCS_BACKFILL_QUEUE), [
 				"installation-sync",
@@ -192,7 +192,7 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 			])
 			// No job is dropped: every chunk concatenated reconstructs the full list.
 			assert.strictEqual(
-				chunks.reduce((n, c) => n + c.length, 0),
+				Arr.reduce(chunks, 0, (n, c) => n + c.length),
 				jobs.length,
 			)
 		}).pipe(provideQueue(layer))
@@ -228,7 +228,7 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 			assert.ok(oversizedChunk, "oversized message is sent in a chunk of its own")
 			// All three jobs survive across the chunks (nothing silently dropped).
 			assert.strictEqual(
-				chunks.reduce((n, c) => n + c.length, 0),
+				Arr.reduce(chunks, 0, (n, c) => n + c.length),
 				jobs.length,
 			)
 		}).pipe(provideQueue(layer))

@@ -8,7 +8,7 @@ import type {
 	CancellationSessionDigest,
 	CancellationStripeFeedback,
 } from "@maple/domain/http"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { reviewedSubscriptionOf } from "./evidence-billing"
 import { daysBeforeCancel, redactText } from "./evidence-input"
 
@@ -54,8 +54,8 @@ const text = (value: string | null | undefined): string | null => {
 	const cut =
 		full === undefined || full.length <= COMMENT_CHARS
 			? full
-			: full.slice(0, COMMENT_CHARS).replace(/\S*$/, "")
-	return cut ? cut.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]") : null
+			: Str.replace(/\S*$/, "")(Str.slice(0, COMMENT_CHARS)(full))
+	return cut ? Str.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]")(cut) : null
 }
 
 /**
@@ -97,10 +97,10 @@ const pathOf = (url: string): string => (URL.canParse(url) ? new URL(url).pathna
 
 /** Page paths in order, a reload or in-page navigation to the same path counted once. */
 const pagesOf = (events: ReadonlyArray<TranscriptEvent>): ReadonlyArray<string> =>
-	events
-		.filter((event) => event.type === "navigation" && event.url !== "")
-		.map((event) => pathOf(event.url))
-		.filter((path, index, paths) => index === 0 || paths[index - 1] !== path)
+	Arr.map(
+		Arr.filter(events, (event) => event.type === "navigation" && event.url !== ""),
+		(event) => pathOf(event.url),
+	).filter((path, index, paths) => index === 0 || paths[index - 1] !== path)
 
 /** An error event, a console error or a failed request, in a line. */
 const problemOf = (event: TranscriptEvent): string =>
@@ -117,8 +117,8 @@ const problemOf = (event: TranscriptEvent): string =>
  * stream's routine 409 when a shape must be refetched.
  */
 const isOwnNoise = (event: TranscriptEvent): boolean =>
-	event.message.startsWith("[MapleClientSDK]") ||
-	(event.type === "network" && event.netStatus === 409 && pathOf(event.netUrl).endsWith("/sync/shape"))
+	Str.startsWith("[MapleClientSDK]")(event.message) ||
+	(event.type === "network" && event.netStatus === 409 && Str.endsWith("/sync/shape")(pathOf(event.netUrl)))
 
 /** `pages` and `problems` are the session's last events of each kind, oldest first. */
 export const digestSession = (
@@ -134,7 +134,14 @@ export const digestSession = (
 	pageViews: row.pageViews,
 	clicks: row.clickCount,
 	pages: pagesOf(pages),
-	problems: [...new Set(problems.filter((event) => !isOwnNoise(event)).map(problemOf))].slice(-10),
+	problems: [
+		...new Set(
+			Arr.map(
+				Arr.filter(problems, (event) => !isOwnNoise(event)),
+				problemOf,
+			),
+		),
+	].slice(-10),
 })
 
 export interface AuditRow {

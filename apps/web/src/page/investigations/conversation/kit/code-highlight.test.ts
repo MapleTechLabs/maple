@@ -1,10 +1,10 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { beforeAll, describe, expect, it } from "vitest"
 import { awaitHighlighter } from "@maple/views/lib/highlight"
 import { highlight } from "./code-highlight"
 
 const slots = (language: string, code: string) =>
-	highlight(language, code).lines.map((line) => line.map((token) => [token.slot, token.content]))
+	Arr.map(highlight(language, code).lines, (line) => Arr.map(line, (token) => [token.slot, token.content]))
 
 describe("highlight", () => {
 	beforeAll(() => Effect.runPromise(awaitHighlighter))

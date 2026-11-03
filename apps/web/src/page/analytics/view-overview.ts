@@ -9,7 +9,7 @@ import {
 } from "@maple/views/lib/analytics-metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -87,14 +87,14 @@ const metricStrip = (
 ): Html =>
 	h.div(
 		[h.Class(GRID)],
-		ANALYTICS_METRICS.map((metric, index) => {
+		Arr.map(ANALYTICS_METRICS, (metric, index) => {
 			const isAvailable = isMetricAvailable(metric, source)
 			const value = metric.value(source)
 			const change = isAvailable ? metricDelta(metric, source, previous) : null
 			return statRailItem(h, {
 				eyebrow: metric.label,
 				value: isAvailable && value !== null ? metric.format(value) : EMPTY_VALUE,
-				spark: isAvailable ? metric.series(source).map((point) => point.value) : undefined,
+				spark: isAvailable ? Arr.map(metric.series(source), (point) => point.value) : undefined,
 				delta: change === null ? undefined : delta(h, { ratio: change, invert: metric.invertDelta }),
 				subline: isAvailable ? metric.subline(source) : "No visitor ids",
 				isSelected: metric.key === selected,
@@ -119,7 +119,7 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 		onEmpty: () => [
 			h.div(
 				[h.Class(GRID), h.AriaBusy(true)],
-				ANALYTICS_METRICS.map(() => statRailItemSkeleton(h, TILE_NARROW)),
+				Arr.map(ANALYTICS_METRICS, () => statRailItemSkeleton(h, TILE_NARROW)),
 			),
 			chartLoading(h, { variant: "area", height: 224 }),
 		],
@@ -186,7 +186,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 	const breakdowns = dataOf(model.breakdowns)
 	if (breakdowns === undefined) return []
 	const pages = dataOf(model.pages) ?? []
-	const isMultiSite = new Set(pages.map((page) => page.host)).size > 1
+	const isMultiSite = new Set(Arr.map(pages, (page) => page.host)).size > 1
 	const events = dataOf(model.events) ?? []
 	return [
 		{
@@ -231,7 +231,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 			dimensions: [
 				{
 					tab: "Pages",
-					rows: pages.map((page) => ({
+					rows: Arr.map(pages, (page) => ({
 						name: page.pagePath,
 						count: page.sessions,
 						views: page.pageViews,
@@ -330,7 +330,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 			dimensions: [
 				{
 					tab: "Events",
-					rows: events.map((event) => ({
+					rows: Arr.map(events, (event) => ({
 						name: event.name,
 						count: event.sessions,
 						views: event.events,
@@ -379,7 +379,7 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 						header,
 						h.ul(
 							[h.Class("divide-y")],
-							samples.map((sample, index) =>
+							Arr.map(samples, (sample, index) =>
 								h.li(
 									[h.Key(`${index}:${sample.traceId}:${sample.spanId}`)],
 									[
@@ -445,7 +445,7 @@ const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
 			return h.div(
 				[h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")],
 				[
-					...overviewCards(model).map((card) =>
+					...Arr.map(overviewCards(model), (card) =>
 						h.div(
 							[
 								h.Key(card.id),

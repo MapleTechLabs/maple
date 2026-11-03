@@ -6,6 +6,7 @@ import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { GcpCloudSqlInstance } from "../components/infra/gcp/inventory"
 import type { GcpFleetRead, GcpProjectHealth, GcpSparklinePoint } from "../components/infra/gcp/list-model"
 import type { GcpMetricPoint, GcpView } from "../components/infra/gcp/tabs"
+import { Array as Arr } from "effect"
 
 // Three projects over the last 12 hours, as the Paper artboards draw them: a Cloud Run service
 // serving 5xx, a failing 1st gen function, slow services, one idle but billed; a growing push
@@ -407,10 +408,10 @@ export const CLOUD_SQL_INSTANCES: ReadonlyArray<GcpCloudSqlInstance> = [
 ]
 
 export const FLEET: ReadonlyArray<GcpFleetRead> = [
-	{ service: "cloudRun", points: SERVICES.flatMap(runPoints), failed: false },
+	{ service: "cloudRun", points: Arr.flatMap(SERVICES, runPoints), failed: false },
 	{ service: "cloudFunctions", points: functionPoints, failed: false },
-	{ service: "pubsub", points: SUBSCRIPTIONS.flatMap(subscriptionPoints), failed: false },
-	{ service: "cloudSql", points: DATABASES.flatMap(databasePoints), failed: false },
+	{ service: "pubsub", points: Arr.flatMap(SUBSCRIPTIONS, subscriptionPoints), failed: false },
+	{ service: "cloudSql", points: Arr.flatMap(DATABASES, databasePoints), failed: false },
 ]
 
 const bucketTime = (bucket: number) => new Date(START_MS + bucket * BUCKET_SECONDS * 1000).toISOString()
@@ -423,8 +424,8 @@ const series = (
 	trend: (bucket: number) => number,
 ): ReadonlyArray<GcpSparklinePoint> => {
 	const weights = Array.from({ length: BUCKETS }, (_, bucket) => trend(bucket))
-	const sum = weights.reduce((a, b) => a + b, 0)
-	return weights.map((weight, bucket) => ({
+	const sum = Arr.reduce(weights, 0, (a, b) => a + b)
+	return Arr.map(weights, (weight, bucket) => ({
 		keys,
 		bucket: bucketTime(bucket),
 		metric,
@@ -449,21 +450,21 @@ export const SPARKLINE_READS: ReadonlyArray<{
 }> = [
 	{
 		service: "cloudRun",
-		points: SERVICES.flatMap((s) =>
+		points: Arr.flatMap(SERVICES, (s) =>
 			series([s.name, s.project, s.region], `${RUN}.requests`, s.requests, s.trend),
 		),
 	},
 	{ service: "cloudFunctions", points: series(IMAGE_RESIZE, `${FUNCTION}.executions`, 42_100, wave) },
 	{
 		service: "pubsub",
-		points: SUBSCRIPTIONS.flatMap((s) => [
+		points: Arr.flatMap(SUBSCRIPTIONS, (s) => [
 			...series([s.name, s.project], `${SUB}.sent_messages`, s.delivered, s.trend),
 			...backlog([s.name, s.project], s.backlog),
 		]),
 	},
 	{
 		service: "cloudSql",
-		points: DATABASES.flatMap((db) =>
+		points: Arr.flatMap(DATABASES, (db) =>
 			db.queries === undefined || db.trend === undefined
 				? []
 				: series(

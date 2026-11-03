@@ -4,10 +4,11 @@
  * cannot be re-signed; `services/auth/device/fixtures/app-attest.json` covers Apple's own chain.
  */
 import { createHash } from "node:crypto"
+import { Array as Arr, String as Str } from "effect"
 
 const sha256 = (...parts: ReadonlyArray<Uint8Array | string>) => {
 	const hash = createHash("sha256")
-	parts.forEach((part) => hash.update(part))
+	Arr.forEach(parts, (part) => hash.update(part))
 	return new Uint8Array(hash.digest())
 }
 
@@ -31,7 +32,7 @@ const integer = (bytes: Uint8Array) =>
 const octets = (bytes: Uint8Array) => tlv(0x04, bytes)
 const bitString = (bytes: Uint8Array) => tlv(0x03, new Uint8Array([0]), bytes)
 const oid = (dotted: string) => {
-	const [a = 0, b = 0, ...rest] = dotted.split(".").map(Number)
+	const [a, b = 0, ...rest] = Arr.map(Str.split(".")(dotted), Number)
 	const arc = (value: number): ReadonlyArray<number> => {
 		const groups = [value & 0x7f]
 		const higher = (remaining: number): void => {
@@ -43,14 +44,14 @@ const oid = (dotted: string) => {
 		higher(value >> 7)
 		return groups
 	}
-	return tlv(0x06, new Uint8Array([a * 40 + b, ...rest.flatMap(arc)]))
+	return tlv(0x06, new Uint8Array([a * 40 + b, ...Arr.flatMap(rest, arc)]))
 }
 const utcTime = (ms: number) => {
 	const iso = new Date(ms).toISOString()
 	return tlv(
 		0x17,
 		new TextEncoder().encode(
-			`${iso.slice(2, 4)}${iso.slice(5, 7)}${iso.slice(8, 10)}${iso.slice(11, 13)}${iso.slice(14, 16)}${iso.slice(17, 19)}Z`,
+			`${Str.slice(2, 4)(iso)}${Str.slice(5, 7)(iso)}${Str.slice(8, 10)(iso)}${Str.slice(11, 13)(iso)}${Str.slice(14, 16)(iso)}${Str.slice(17, 19)(iso)}Z`,
 		),
 	)
 }

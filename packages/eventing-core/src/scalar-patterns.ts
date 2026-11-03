@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 /** Decimal strings bounded without rounding through a JavaScript number. */
 const magnitudePattern = (maximum: bigint): string => {
 	const digits = maximum.toString()
@@ -9,10 +10,12 @@ const magnitudePattern = (maximum: bigint): string => {
 		if (lastDigit < minimumDigit) continue
 		const digit = lastDigit === minimumDigit ? String(lastDigit) : `[${minimumDigit}-${lastDigit}]`
 		const remaining = digits.length - index - 1
-		alternatives.push(`${digits.slice(0, index)}${digit}${remaining === 0 ? "" : `[0-9]{${remaining}}`}`)
+		alternatives.push(
+			`${Str.slice(0, index)(digits)}${digit}${remaining === 0 ? "" : `[0-9]{${remaining}}`}`,
+		)
 	}
 	alternatives.push(digits)
-	return `(?:${alternatives.join("|")})`
+	return `(?:${Arr.join(alternatives, "|")})`
 }
 
 export const INT64_MIN = -(1n << 63n)

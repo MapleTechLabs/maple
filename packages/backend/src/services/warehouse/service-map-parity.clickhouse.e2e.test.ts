@@ -29,7 +29,7 @@
 //     carrying only the legacy `db.system` sit in the raw edge and the interior.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -54,7 +54,8 @@ const HOUR_MS = 3_600_000
 const MINUTE_MS = 60_000
 const SECOND_MS = 1000
 
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 /** Midnight, three days back — comfortably inside the TTL horizon on both ends. */
 const BASE_MS = Math.floor((Date.now() - 3 * DAY_MS) / DAY_MS) * DAY_MS
@@ -231,11 +232,11 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	).flat(),
 ]
 
-const quote = (value: string): string => `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
 
 const insertSpans = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
-	const rows = spans
-		.map((row) => {
+	const rows = Arr.join(
+		Arr.map(spans, (row) => {
 			const spanAttributes =
 				row.spanAttributes ??
 				(row.dbSystem === ""
@@ -244,8 +245,9 @@ const insertSpans = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
 						? `map('db.system', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'server.address', 'pg.internal', 'db.query.text', 'SELECT 1')`
 						: `map('db.system.name', ${quote(row.dbSystem)}, 'db.namespace', ${quote(row.dbNamespace)}, 'db.query.text', 'SELECT 1')`)
 			return `(${quote(ORG_ID)}, ${quote(chDateTime(row.ms))}, ${quote(row.traceId)}, ${quote(row.spanId)}, ${quote(row.parentSpanId)}, ${quote("op")}, ${quote(row.kind)}, ${quote(row.service)}, ${row.durationNs}, ${quote(row.status)}, ${row.sampleRate}, '', ${spanAttributes}, map('deployment.environment', 'production'))`
-		})
-		.join(",\n")
+		}),
+		",\n",
+	)
 
 	await clickhouseExec(
 		`INSERT INTO traces
@@ -347,11 +349,11 @@ const assertDbEdgesMatchFlatScan = async (): Promise<void> => {
 	assert.isAbove(truth.length, 1, "ground truth collapsed to a single group — seed is too thin")
 	const key = (row: Record<string, unknown>) =>
 		`${String(row.sourceService)}::${String(row.dbSystem)}::${String(row.dbNamespace)}`
-	const bySplice = new Map(spliced.map((row) => [key(row), row]))
+	const bySplice = new Map(Arr.map(spliced, (row) => [key(row), row]))
 
 	assert.deepStrictEqual(
 		[...bySplice.keys()].sort(),
-		truth.map(key).sort(),
+		Arr.map(truth, key).sort(),
 		"spliced query and flat scan disagree on which database edges exist",
 	)
 	for (const expected of truth) {
@@ -483,7 +485,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 
 		const key = (row: Record<string, unknown>) =>
 			`${String(row.sourceService)}::${String(row.dbSystem)}::${String(row.dbNamespace)}`
-		const bySplice = new Map(spliced.map((row) => [key(row), row]))
+		const bySplice = new Map(Arr.map(spliced, (row) => [key(row), row]))
 
 		let compared = 0
 		for (const expected of truth) {
@@ -549,9 +551,9 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 		assert.isAbove(truth.length, 0, "ground truth found no service edges — seed is too thin")
 		const key = (row: Record<string, unknown>) =>
 			`${String(row.sourceService)}::${String(row.targetService)}`
-		const bySplice = new Map(spliced.map((row) => [key(row), row]))
+		const bySplice = new Map(Arr.map(spliced, (row) => [key(row), row]))
 
-		assert.deepStrictEqual([...bySplice.keys()].sort(), truth.map(key).sort())
+		assert.deepStrictEqual([...bySplice.keys()].sort(), Arr.map(truth, key).sort())
 		for (const expected of truth) {
 			const actual = bySplice.get(key(expected))
 			assert.strictEqual(num(actual?.callCount), num(expected.callCount), `callCount ${key(expected)}`)
@@ -571,8 +573,8 @@ describe.skipIf(!clickhouseE2eEnabled)("service map raw-vs-rollup parity", () =>
 			runJson(DB_EDGE_TRUTH_SQL),
 		])
 
-		const expectedCalls = truth.reduce((sum, row) => sum + num(row.callCount), 0)
-		const expectedErrors = truth.reduce((sum, row) => sum + num(row.errorCount), 0)
+		const expectedCalls = Arr.reduce(truth, 0, (sum, row) => sum + num(row.callCount))
+		const expectedErrors = Arr.reduce(truth, 0, (sum, row) => sum + num(row.errorCount))
 		assert.strictEqual(num(spliced[0]?.queryCount), expectedCalls, "summary queryCount")
 		assert.strictEqual(num(spliced[0]?.errorCount), expectedErrors, "summary errorCount")
 	})

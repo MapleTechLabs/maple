@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SECURITY_AUDIT_LIMIT_DEFAULTS } from "@maple/backend/services/security-audit/limits"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { parseRepoSize, REPO_SIZE_COMMAND, repoLimitViolations } from "./repo-size"
 
@@ -54,14 +54,17 @@ describe("the size probe", () => {
 		try {
 			writeFileSync(
 				join(bin, "git"),
-				[
-					"#!/bin/sh",
-					'for arg in "$@"; do case "$arg" in',
-					"  rev-list) echo 7; exit 0 ;;",
-					"  ls-tree) echo 'fatal: not a tree object' >&2; exit 128 ;;",
-					"  ls-files) exit 0 ;;",
-					"esac; done",
-				].join("\n"),
+				Arr.join(
+					[
+						"#!/bin/sh",
+						'for arg in "$@"; do case "$arg" in',
+						"  rev-list) echo 7; exit 0 ;;",
+						"  ls-tree) echo 'fatal: not a tree object' >&2; exit 128 ;;",
+						"  ls-files) exit 0 ;;",
+						"esac; done",
+					],
+					"\n",
+				),
 			)
 			chmodSync(join(bin, "git"), 0o755)
 			const probe = spawnSync(REPO_SIZE_COMMAND.command, [...REPO_SIZE_COMMAND.args], {

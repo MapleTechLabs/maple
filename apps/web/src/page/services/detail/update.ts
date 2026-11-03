@@ -2,7 +2,7 @@ import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
 import { ENDPOINTS_LIMIT } from "../../../components/services/service-endpoints"
 import { buildServiceOpenIssuesQuery } from "../../../lib/services/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { Option, type Result } from "effect"
+import { Option, type Result, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -178,7 +178,7 @@ const dependenciesStep =
 const samplingActive = (model: Model): boolean =>
 	Option.match(AsyncData.getData(model.overview.data), {
 		onNone: () => false,
-		onSome: (overview) => overview.points.some((point) => point.hasSampling),
+		onSome: (overview) => Arr.some(overview.points, (point) => point.hasSampling),
 	})
 
 /** `ServiceErrorsPanel`'s query: one selected environment scopes it to the window, capped at 90 days. */
@@ -199,14 +199,14 @@ const overviewShas = (model: Model): ReadonlyArray<string> =>
 	Option.match(AsyncData.getData(model.overview.data), {
 		onNone: () => [],
 		onSome: (overview) => {
-			const buckets = overview.points.map((point) => point.bucket)
+			const buckets = Arr.map(overview.points, (point) => point.bucket)
 			const markers = commitMarkers(overview.releases, buckets, model.commits)
 			const deploys = deriveDeploys(overview.releases)
 			const visible = deploys.slice(0, model.isDeploysExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL)
 			return [
 				...new Set([
 					...markerShas(markers),
-					...visible.flatMap((deploy) => (isResolvableSha(deploy.sha) ? [deploy.sha] : [])),
+					...Arr.flatMap(visible, (deploy) => (isResolvableSha(deploy.sha) ? [deploy.sha] : [])),
 				]),
 			]
 		},
@@ -219,17 +219,17 @@ export const DEPLOYS_EXPANDED = 50
 const commitsStep =
 	(context: PageContext) =>
 	(model: Model): Step => {
-		const missing = overviewShas(model).filter((sha) => model.commits[sha] === undefined)
+		const missing = Arr.filter(overviewShas(model), (sha) => model.commits[sha] === undefined)
 		return missing.length === 0
 			? NONE
 			: {
 					patch: {
 						commits: {
 							...model.commits,
-							...Object.fromEntries(missing.map((sha) => [sha, AsyncData.Loading()])),
+							...Rec.fromEntries(Arr.map(missing, (sha) => [sha, AsyncData.Loading()])),
 						},
 					},
-					commands: missing.map((sha) =>
+					commands: Arr.map(missing, (sha) =>
 						FetchCommit({ key: commitDetailKey(context.orgId, sha), sha }),
 					),
 				}
@@ -339,8 +339,10 @@ const isCollapsedKind = (kind: string) => kind === "probes" || kind === "unroute
 export const seriesSpanNames = (model: Model): ReadonlyArray<string> =>
 	model.endpoints.retained === true
 		? []
-		: groupsOf(loadedEndpoints(model), model.sorts.endpoints)
-				.filter((group) => !isCollapsedKind(group.kind))
+		: Arr.filter(
+				groupsOf(loadedEndpoints(model), model.sorts.endpoints),
+				(group) => !isCollapsedKind(group.kind),
+			)
 				.flatMap((group) => group.endpoints)
 				.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)
 				.slice(0, SPARKLINE_ENDPOINTS)
@@ -401,7 +403,7 @@ const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode
 export const tableRows = (model: Model): ReadonlyArray<Endpoint> =>
 	visibleEndpoints(
 		groupsOf(
-			loadedEndpoints(model).filter((endpoint) =>
+			Arr.filter(loadedEndpoints(model), (endpoint) =>
 				matchesFilter(endpoint, model.endpointFilter, model.endpointQuery),
 			),
 			model.sorts.endpoints,
@@ -464,10 +466,11 @@ const reconcilePeek = (model: Model): Readonly<{ model: Model; clear: boolean }>
 	const spanName = model.search.endpoint
 	if (spanName === undefined || tabOf(model.search) !== "api" || !AsyncData.isSuccess(model.endpoints.data))
 		return { model, clear: false }
-	if (tableRows(model).some((row) => row.spanName === spanName)) return { model, clear: false }
+	if (Arr.some(tableRows(model), (row) => row.spanName === spanName)) return { model, clear: false }
 	const group = groupsOf(loadedEndpoints(model), model.sorts.endpoints).find(
 		(candidate) =>
-			isCollapsedKind(candidate.kind) && candidate.endpoints.some((row) => row.spanName === spanName),
+			isCollapsedKind(candidate.kind) &&
+			Arr.some(candidate.endpoints, (row) => row.spanName === spanName),
 	)
 	return group === undefined || model.expandedEndpointGroups.includes(group.kind)
 		? { model, clear: true }
@@ -574,7 +577,7 @@ export const init = (
 		},
 		environmentSelect: Select.init("service-environment", { value: ALL_ENVIRONMENTS, selectedIndex: 0 }),
 		timePicker: TimeRangePicker.init("service-time-range"),
-		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+		charts: Rec.fromEntries(Arr.map(CHART_IDS, (id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -802,7 +805,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: {
 						...model,
 						expandedEndpointGroups: model.expandedEndpointGroups.includes(kind)
-							? model.expandedEndpointGroups.filter((open) => open !== kind)
+							? Arr.filter(model.expandedEndpointGroups, (open) => open !== kind)
 							: [...model.expandedEndpointGroups, kind],
 					},
 				},

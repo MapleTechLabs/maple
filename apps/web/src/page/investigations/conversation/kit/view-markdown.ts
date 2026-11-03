@@ -6,7 +6,7 @@ import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "@maple/views/charts/area-chart"
 import * as BarChart from "@maple/views/charts/bar-chart"
@@ -101,7 +101,7 @@ const tableView =
 	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>) =>
 	(views: Markdown.Views) =>
 	(node: Markdown.Table): Html => {
-		const headers = node.headerRow.cells.map((cell) =>
+		const headers = Arr.map(node.headerRow.cells, (cell) =>
 			Option.getOrElse(inlineText(cell.content), () => ""),
 		)
 		const content = (cell: Markdown.TableCell): ReadonlyArray<Html | string> =>
@@ -121,7 +121,7 @@ const tableView =
 					[
 						tableRow(
 							h,
-							node.headerRow.cells.map((cell) =>
+							Arr.map(node.headerRow.cells, (cell) =>
 								tableHead(h, content(cell), "h-8 px-3 text-xs"),
 							),
 						),
@@ -130,10 +130,10 @@ const tableView =
 				),
 				tableBody(
 					h,
-					node.bodyRows.map((row) =>
+					Arr.map(node.bodyRows, (row) =>
 						tableRow(
 							h,
-							row.cells.map((cell, column) => {
+							Arr.map(row.cells, (cell, column) => {
 								const header = headers[column] ?? ""
 								const value = Option.match(inlineText(cell.content), {
 									onNone: (): CellValue => ({ kind: "plain" }),
@@ -191,7 +191,7 @@ const chartFrame = <M>(h: HtmlBuilder<M>, title: string | null, children: Readon
 const timeseriesRows = (
 	spec: Extract<ChartSpec, { readonly data: ReadonlyArray<{ readonly bucket: string }> }>,
 ) =>
-	spec.data.map((point): Readonly<Record<string, string | number>> => ({
+	Arr.map(spec.data, (point): Readonly<Record<string, string | number>> => ({
 		bucket: point.bucket,
 		...point.series,
 	}))
@@ -204,7 +204,7 @@ const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartS
 			model: host.charts[id] ?? ChartModel.init(),
 			view: HbarChart.view,
 			viewInputs: {
-				data: spec.data.map((point) => ({ name: point.name, value: point.value })),
+				data: Arr.map(spec.data, (point) => ({ name: point.name, value: point.value })),
 				unit,
 				className: PLOT_HEIGHT,
 			},

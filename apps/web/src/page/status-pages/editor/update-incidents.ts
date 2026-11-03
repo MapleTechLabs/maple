@@ -7,7 +7,7 @@ import type {
 import { StatusPageIncidentImpact, StatusPageIncidentStatus } from "@maple/domain"
 import { worstStatus } from "@maple/domain/status-page"
 import type { V2StatusPageIncident } from "@maple/domain/http/v2"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { componentStatus, isOpenIncident, STATUSES_OF_KIND } from "../shared/derive"
@@ -65,16 +65,16 @@ export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return
 	const selected = model.panel?._tag === "Component" ? model.panel.componentId : null
 	const affected =
 		selected !== null
-			? components.filter((component) => component.id === selected)
-			: components.filter((component) => statusOf(component) !== "operational")
+			? Arr.filter(components, (component) => component.id === selected)
+			: Arr.filter(components, (component) => statusOf(component) !== "operational")
 	const blank = emptyIncidentForm(kind)
 	const form =
 		kind === "maintenance" || affected.length === 0
-			? { ...blank, componentIds: affected.map((component) => component.id) }
+			? { ...blank, componentIds: Arr.map(affected, (component) => component.id) }
 			: {
 					...blank,
-					componentIds: affected.map((component) => component.id),
-					impact: IMPACT_OF_STATUS[worstStatus(affected.map(statusOf))],
+					componentIds: Arr.map(affected, (component) => component.id),
+					impact: IMPACT_OF_STATUS[worstStatus(Arr.map(affected, statusOf))],
 				}
 	return focusPanel({ ...model, panel: { _tag: "Compose" }, incidentForm: form, incidentFailure: null })
 }
@@ -117,7 +117,7 @@ export const toggleIncidentComponent = (model: Model, componentId: StatusPageCom
 			incidentForm: {
 				...model.incidentForm,
 				componentIds: ids.includes(componentId)
-					? ids.filter((id) => id !== componentId)
+					? Arr.filter(ids, (id) => id !== componentId)
 					: [...ids, componentId],
 			},
 		},
@@ -166,7 +166,7 @@ export const createdIncident = (
 
 /** Opens the incident in the panel, its update form closed. */
 export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): Return =>
-	incidentsOf(model).some((incident) => incident.id === incidentId)
+	Arr.some(incidentsOf(model), (incident) => incident.id === incidentId)
 		? focusPanel({
 				...model,
 				panel: { _tag: "Incident", incidentId },
@@ -204,14 +204,14 @@ export const changeUpdate = (model: Model, field: "status" | "body", value: stri
 
 export const submitUpdate = (model: Model): Return => {
 	const form = model.updateForm
-	return form === null || model.isPostingUpdate || form.body.trim() === ""
+	return form === null || model.isPostingUpdate || Str.trim(form.body) === ""
 		? { model }
 		: {
 				model: { ...model, isPostingUpdate: true, updateFailure: null },
 				commands: [
 					PostIncidentUpdate({
 						incidentId: form.incidentId,
-						payload: { status: form.status, body: form.body.trim() },
+						payload: { status: form.status, body: Str.trim(form.body) },
 					}),
 				],
 			}
@@ -256,7 +256,7 @@ export const publishedIncident = (
 ): Return => {
 	const settled = {
 		...model,
-		publishingIncidentIds: model.publishingIncidentIds.filter((id) => id !== incidentId),
+		publishingIncidentIds: Arr.filter(model.publishingIncidentIds, (id) => id !== incidentId),
 	}
 	return Result.match(result, {
 		onSuccess: (incident): Return => ({

@@ -15,7 +15,7 @@ export const nextIndex = (
 	key: RovingKey,
 ): Option.Option<number> => {
 	const indices = Array.getSomes(
-		enabled.map((isEnabled, index) => (isEnabled ? Option.some(index) : Option.none())),
+		Array.map(enabled, (isEnabled, index) => (isEnabled ? Option.some(index) : Option.none())),
 	)
 	const position = current === null ? -1 : indices.indexOf(current)
 	switch (key) {

@@ -3,7 +3,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { table, tableBody, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { failureWithoutData, isAwaitingFirstData } from "@maple/views/data/keyed"
@@ -72,29 +72,32 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			})
 		return h.div(
 			[h.Class(refreshingClass(model.traces.retained === true))],
-			[
-				table(h, {}, [
-					tableHeader(h, [
-						tableRow(h, [
-							tableHead(h, ["Trace"], "w-[40%]"),
-							tableHead(h, ["Services"]),
-							tableHead(h, ["Duration"], "text-right"),
-							tableHead(h, ["Spans"], "text-right"),
-							tableHead(h, ["Status"]),
-							tableHead(h, ["Started"], "text-right"),
+			Arr.filter(
+				[
+					table(h, {}, [
+						tableHeader(h, [
+							tableRow(h, [
+								tableHead(h, ["Trace"], "w-[40%]"),
+								tableHead(h, ["Services"]),
+								tableHead(h, ["Duration"], "text-right"),
+								tableHead(h, ["Spans"], "text-right"),
+								tableHead(h, ["Status"]),
+								tableHead(h, ["Started"], "text-right"),
+							]),
 						]),
+						tableBody(
+							h,
+							Arr.map(rows, (row) => traceRow(h, row, query, model.nowMs, context.timeFormat)),
+						),
 					]),
-					tableBody(
-						h,
-						rows.map((row) => traceRow(h, row, query, model.nowMs, context.timeFormat)),
-					),
-				]),
-				listFooter(h, {
-					hasMore: hasNextPage,
-					isLoading: model.isFetchingNextPage,
-					onLoadMore: Message.ClickedLoadMore(),
-				}),
-			].filter((child) => child !== null),
+					listFooter(h, {
+						hasMore: hasNextPage,
+						isLoading: model.isFetchingNextPage,
+						onLoadMore: Message.ClickedLoadMore(),
+					}),
+				],
+				(child) => child !== null,
+			),
 		)
 	}
 	return pageShell(

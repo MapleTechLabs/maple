@@ -45,6 +45,7 @@ import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
+import { Array as Arr, String as Str } from "effect"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
 
@@ -88,19 +89,25 @@ const findingsCell = (
 ): Html => {
 	if (counts === null) return muted(h, "", "Findings are visible to org admins only")
 	const { buckets, unverified } = counts
-	const shown = SCORED_BUCKETS.filter((bucket) => buckets[bucket] > 0)
+	const shown = Arr.filter(SCORED_BUCKETS, (bucket) => buckets[bucket] > 0)
 	if (shown.length === 0) return muted(h, isLive(run) ? "" : "None")
 	return h.span(
 		[
 			h.Class("flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1"),
 			h.Title(
-				[
-					...shown.map((bucket) => `${buckets[bucket]} ${BUCKET_LABEL[bucket].toLowerCase()}`),
-					...(unverified === 0 ? [] : [`${unverified} of them estimated, not yet proven`]),
-				].join(", "),
+				Arr.join(
+					[
+						...Arr.map(
+							shown,
+							(bucket) => `${buckets[bucket]} ${Str.toLowerCase(BUCKET_LABEL[bucket])}`,
+						),
+						...(unverified === 0 ? [] : [`${unverified} of them estimated, not yet proven`]),
+					],
+					", ",
+				),
 			),
 		],
-		shown.map((bucket) =>
+		Arr.map(shown, (bucket) =>
 			h.span(
 				[h.Key(bucket), h.Class("inline-flex items-center gap-1 font-mono text-xs tabular-nums")],
 				[bucketDot(h, bucket, "size-2"), String(buckets[bucket])],
@@ -148,11 +155,14 @@ const runRow = (
 						[
 							typography(h, { size: "sm", mono: true }, [`Run ${shortId(run.id)}`]),
 							typography(h, { size: "xs", tone: "muted", truncate: true }, [
-								[
-									RUN_KIND_LABEL[run.kind].toLowerCase(),
-									PROFILE_LABEL[run.profile],
-									scopeLabel(run.scopePaths),
-								].join(" · "),
+								Arr.join(
+									[
+										Str.toLowerCase(RUN_KIND_LABEL[run.kind]),
+										PROFILE_LABEL[run.profile],
+										scopeLabel(run.scopePaths),
+									],
+									" · ",
+								),
 							]),
 							// Phones drop the target and cost columns, so they ride under the run.
 							h.span(
@@ -223,7 +233,7 @@ const toolbar = (
 			viewInputs: {
 				entries: [
 					{ _tag: "Item", item: { value: "all", label: "All targets" } },
-					...targets.map((target): SelectView.SelectEntry => ({
+					...Arr.map(targets, (target): SelectView.SelectEntry => ({
 						_tag: "Item",
 						item: { value: target.id, label: target.repository },
 					})),
@@ -249,7 +259,7 @@ export const startRunAction = (h: H, model: Model): Html | undefined => {
 	const targetId = model.runsSearch.target
 	const target = targetsOf(model).find((candidate) => candidate.id === targetId)
 	if (target === undefined || !model.isAdmin) return undefined
-	const isRunning = runsForTarget(model, target.id).some(isLive)
+	const isRunning = Arr.some(runsForTarget(model, target.id), isLive)
 	return button(
 		h,
 		{
@@ -340,7 +350,7 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 						]),
 						tableBody(
 							h,
-							runs.map((run) => runRow(h, model, run, targets, timeZone)),
+							Arr.map(runs, (run) => runRow(h, model, run, targets, timeZone)),
 						),
 					]),
 	})

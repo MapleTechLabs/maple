@@ -1,4 +1,5 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { String as Str } from "effect"
 /**
  * Derive a warehouse query window around a single trace timestamp.
  *
@@ -21,7 +22,7 @@ export function computeTraceTimeWindow(
 ): { startTime: string; endTime: string } | undefined {
 	if (!timestamp) return undefined
 	// Accept both ISO (`...T...Z`) and ClickHouse DateTime64 (`YYYY-MM-DD HH:MM:SS[.fff]`).
-	const t = new Date(timestamp.includes("T") ? timestamp : `${timestamp.replace(" ", "T")}Z`)
+	const t = new Date(Str.includes("T")(timestamp) ? timestamp : `${Str.replace(" ", "T")(timestamp)}Z`)
 	if (Number.isNaN(t.getTime())) return undefined
 	const halfWidthMs = halfWidthHours * 60 * 60 * 1000
 	return {

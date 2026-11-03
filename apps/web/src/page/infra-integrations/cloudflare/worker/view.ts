@@ -47,6 +47,7 @@ import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // `WorkerDetailPage` and its parts.
 
@@ -251,9 +252,9 @@ const buildStrips = (h: H, detail: WorkerDetail, data: PageData): ReadonlyArray<
 			),
 		},
 	]
-	if (!detail.durableObjectBuckets.some((b) => b.requests > 0)) return strips
-	const calls = detail.durableObjectBuckets.reduce((acc, b) => acc + b.requests, 0)
-	const errors = detail.durableObjectBuckets.reduce((acc, b) => acc + b.errors, 0)
+	if (!Arr.some(detail.durableObjectBuckets, (b) => b.requests > 0)) return strips
+	const calls = Arr.reduce(detail.durableObjectBuckets, 0, (acc, b) => acc + b.requests)
+	const errors = Arr.reduce(detail.durableObjectBuckets, 0, (acc, b) => acc + b.errors)
 	return [
 		...strips,
 		{
@@ -293,7 +294,8 @@ const signals = (
 		strips: buildStrips(h, detail, data),
 		xDomain: [
 			...new Set(
-				[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets].map(
+				Arr.map(
+					[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets],
 					(b) => b.bucket,
 				),
 			),
@@ -320,7 +322,7 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 		panelHeader(h, { title: "Outcomes" }),
 		h.div(
 			[h.Class("divide-y divide-border-subtle")],
-			totals.byStatus.map(({ status, count }) => {
+			Arr.map(totals.byStatus, ({ status, count }) => {
 				const success = status === "success"
 				const share = totals.invocations > 0 ? count / totals.invocations : 0
 				const label = outcomeLabel(status)
@@ -340,7 +342,7 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 							[h.Class("flex min-w-0 flex-1 items-baseline gap-2")],
 							[
 								h.span([h.Class("truncate text-xs text-foreground")], [label]),
-								...(label.toLowerCase() === status.toLowerCase()
+								...(Str.toLowerCase(label) === Str.toLowerCase(status)
 									? []
 									: [
 											typography(
@@ -388,8 +390,9 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 /** `CloudflareWorkerRail`. */
 const rail = (h: H, data: PageData, timeZone: string): Html => {
 	const { row, traced } = data
-	const deploys = data.markers.map((marker) => ({ commitSha: marker.id, firstSeen: marker.at }))
-	const present = (nodes: ReadonlyArray<Html | null>) => nodes.filter((node): node is Html => node !== null)
+	const deploys = Arr.map(data.markers, (marker) => ({ commitSha: marker.id, firstSeen: marker.at }))
+	const present = (nodes: ReadonlyArray<Html | null>) =>
+		Arr.filter(nodes, (node): node is Html => node !== null)
 	return h.div(
 		[h.Class("flex flex-col")],
 		[
@@ -425,7 +428,7 @@ const rail = (h: H, data: PageData, timeZone: string): Html => {
 							]),
 						]
 					: present(
-							deploys.map((deploy) =>
+							Arr.map(deploys, (deploy) =>
 								detailRailMetaRow(h, {
 									icon: "CodeIcon",
 									label: shortId(deploy.commitSha, "sha"),
@@ -447,18 +450,21 @@ const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
 				]),
 			]
 		: [
-				...[
-					detailRailMetaRow(h, {
-						icon: "PulseIcon",
-						label: "spans",
-						value: formatNumber(traced.spans),
-					}),
-					detailRailMetaRow(h, {
-						icon: "PulseIcon",
-						label: "error spans",
-						value: formatNumber(traced.errors),
-					}),
-				].filter((node): node is Html => node !== null),
+				...Arr.filter(
+					[
+						detailRailMetaRow(h, {
+							icon: "PulseIcon",
+							label: "spans",
+							value: formatNumber(traced.spans),
+						}),
+						detailRailMetaRow(h, {
+							icon: "PulseIcon",
+							label: "error spans",
+							value: formatNumber(traced.errors),
+						}),
+					],
+					(node): node is Html => node !== null,
+				),
 				h.a(
 					[
 						h.Class(textLinkClass("primary", true, "pt-1 text-xs")),

@@ -1,4 +1,4 @@
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import * as AttributesPanel from "@maple/views/ui/attributes/attributes-panel"
 import { type CopyStatus, writeClipboard } from "@maple/views/ui/copy-button"
@@ -98,7 +98,8 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 /** A log on show: the attributes and context panels start fresh, the tooltip closed. */
 const viewing = (model: Model, log: LogRecord, selected: string, hasInfra: boolean): Model => {
 	const values = tabValues(log, hasInfra)
-	const isSameTabs = model.tabs.selected === selected && values.join() === model.tabs.values.join()
+	const isSameTabs =
+		model.tabs.selected === selected && Arr.join(values, ",") === Arr.join(model.tabs.values, ",")
 	return {
 		...model,
 		log,
@@ -136,7 +137,12 @@ export type Scope = Readonly<{ orgId: string; pinnedNamespace: string | null }>
 export const open = (model: Model, log: LogRecord, scope: Scope, hasInfra = false): Return =>
 	withPanels(
 		liftDialog(
-			viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes", hasInfra),
+			viewing(
+				{ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace },
+				log,
+				"attributes",
+				hasInfra,
+			),
 			Dialog.open(model.dialog),
 		),
 	)
@@ -144,7 +150,12 @@ export const open = (model: Model, log: LogRecord, scope: Scope, hasInfra = fals
 /** `/logs/$logId`: the page's log, every panel reading at once. */
 export const show = (model: Model, log: LogRecord, scope: Scope): Return =>
 	withPanels({
-		model: viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes", false),
+		model: viewing(
+			{ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace },
+			log,
+			"attributes",
+			false,
+		),
 	})
 
 /** The app closes the sheet (its page moved on, as to the trace the sheet linked to). */
@@ -230,7 +241,9 @@ export const update = (model: Model, message: Message): Return =>
 			const next = Tooltip.update(model.tooltip, inner)
 			return {
 				model: { ...model, tooltip: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotTooltipMessage({ message: m })),
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotTooltipMessage({ message: m }),
+				),
 			}
 		},
 		ClickedShowFullMessage: () => ({ model: { ...model, isHeroExpanded: !model.isHeroExpanded } }),

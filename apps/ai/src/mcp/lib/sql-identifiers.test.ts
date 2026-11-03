@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { fixUnknownIdentifier } from "./sql-identifiers"
+import { String as Str } from "effect"
 
 const unknown = (name: string) => `Unknown expression or function identifier \`${name}\` in scope SELECT`
 
@@ -102,7 +103,7 @@ describe("fixUnknownIdentifier", () => {
 		const sql =
 			"SELECT t.body FROM logs l JOIN traces t ON l.TraceId = t.TraceId WHERE $__orgFilter(l) AND $__orgFilter(t)"
 		expect(fixUnknownIdentifier(sql, unknown("t.body"))).toBeUndefined()
-		expect(fixUnknownIdentifier(sql.replace("t.body", "l.body"), unknown("l.body"))?.sql).toContain(
+		expect(fixUnknownIdentifier(Str.replace("t.body", "l.body")(sql), unknown("l.body"))?.sql).toContain(
 			"SELECT l.Body FROM",
 		)
 	})

@@ -5,6 +5,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The firing-alerts hero, without the last-evaluated hint.
 
@@ -58,12 +59,16 @@ const rulesSummary = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html =>
 
 const firing = <M>(h: HtmlBuilder<M>, counts: HeroCounts): Html => {
 	const label =
-		[
-			counts.criticalCount > 0 ? `${counts.criticalCount} critical` : "",
-			counts.warningCount > 0 ? `${counts.warningCount} warning` : "",
-		]
-			.filter((part) => part !== "")
-			.join(" · ") || `${counts.openCount} open`
+		Arr.join(
+			Arr.filter(
+				[
+					counts.criticalCount > 0 ? `${counts.criticalCount} critical` : "",
+					counts.warningCount > 0 ? `${counts.warningCount} warning` : "",
+				],
+				(part) => part !== "",
+			),
+			" · ",
+		) || `${counts.openCount} open`
 	return card(
 		h,
 		[

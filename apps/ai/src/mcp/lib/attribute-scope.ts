@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { exploreAttributeKeys } from "@maple/query-engine/observability"
 import { queryWarehouse, withTenantExecutor } from "./query-warehouse"
 
@@ -42,7 +42,7 @@ const traceKeys = (scope: AttributeScope, window: { startTime: string; endTime: 
 	withTenantExecutor(
 		exploreAttributeKeys({ source: "traces", scope, timeRange: window, limit: 1000 }),
 	).pipe(
-		Effect.map((rows) => rows.map((r) => r.key)),
+		Effect.map((rows) => Arr.map(rows, (r) => r.key)),
 		Effect.orElseSucceed((): ReadonlyArray<string> => []),
 	)
 
@@ -67,7 +67,7 @@ export const resolveAttributeScope = Effect.fn("McpTool.resolveAttributeScope")(
 			end_time: window.endTime,
 			limit: 1000,
 		}).pipe(
-			Effect.map(({ data }) => data.map((r) => r.attributeKey)),
+			Effect.map(({ data }) => Arr.map(data, (r) => r.attributeKey)),
 			Effect.orElseSucceed((): ReadonlyArray<string> => []),
 		)
 		scope = pickAttributeScope(key, metricKeys, "unknown")

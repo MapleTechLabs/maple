@@ -30,7 +30,7 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import { QuerySetSchema } from "@maple/query-model"
 import { dataSourceQuerySet, toWidgetRequest } from "@maple/widgets/dashboard"
-import { Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { DashboardWidgetDataService, shareViewerTenant } from "./DashboardWidgetDataService"
@@ -439,12 +439,14 @@ describe("shared widget data parity with the signed-in board", () => {
 			pod: ["k8s.pod-a"],
 			sev: [],
 		})
-		const facetQueries = shared.captured.execute.filter(
+		const facetQueries = Arr.filter(
+			shared.captured.execute,
 			(r) => (r.query as { kind: string }).kind === "facets",
 		)
 		expect(facetQueries).toHaveLength(2)
 		expect(
-			shared.captured.execute.every(
+			Arr.every(
+				shared.captured.execute,
 				(r) => r.startTime === WINDOW.startTime && r.endTime === WINDOW.endTime,
 			),
 		).toBe(true)

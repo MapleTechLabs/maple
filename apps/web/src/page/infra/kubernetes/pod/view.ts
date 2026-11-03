@@ -24,6 +24,7 @@ import { podContainerRestarts, podRestartsStat } from "../pod-restarts-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { String as Str } from "effect"
 
 // `PodDetailPage` in `KubernetesShell`.
 
@@ -152,7 +153,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										chartId: `pod-${metric}`,
 										seriesLabel: POD_METRIC_LABELS.get(metric) ?? metric,
 										showThreshold:
-											metric.startsWith("cpu_") || metric.startsWith("memory_"),
+											Str.startsWith("cpu_")(metric) ||
+											Str.startsWith("memory_")(metric),
 										theme: model.themeColors,
 										runtime: model.chartRuntime,
 										timeZone: inputs.context.timeZone,

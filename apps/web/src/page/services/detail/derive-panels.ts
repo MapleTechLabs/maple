@@ -1,5 +1,6 @@
 import type { DependencyBundle } from "./model-tabs"
 import type { Release } from "./model"
+import { Array as Arr, String as Str } from "effect"
 
 // Pure halves of the Overview panels (recent deploys, dependency strip).
 
@@ -13,7 +14,7 @@ export type DeployEntry = Readonly<{
 
 /** `deriveDeploys`: one entry per commit, newest first-seen first. */
 export const deriveDeploys = (releases: ReadonlyArray<Release>): ReadonlyArray<DeployEntry> => {
-	const bySha = releases.reduce((acc, point) => {
+	const bySha = Arr.reduce(releases, new Map<string, DeployEntry>(), (acc, point) => {
 		const existing = acc.get(point.commitSha)
 		acc.set(
 			point.commitSha,
@@ -32,7 +33,7 @@ export const deriveDeploys = (releases: ReadonlyArray<Release>): ReadonlyArray<D
 					},
 		)
 		return acc
-	}, new Map<string, DeployEntry>())
+	})
 	return [...bySha.values()].toSorted((a, b) =>
 		a.firstSeen < b.firstSeen ? 1 : a.firstSeen > b.firstSeen ? -1 : 0,
 	)
@@ -44,7 +45,7 @@ export const isResolvableSha = (sha: string): boolean => /^[0-9a-f]{40}$/i.test(
 /** `firstLine`: a commit message's subject. */
 export const firstLine = (message: string): string => {
 	const index = message.indexOf("\n")
-	return (index === -1 ? message : message.slice(0, index)).trim()
+	return Str.trim(index === -1 ? message : Str.slice(0, index)(message))
 }
 
 export type DependencyKind = "service" | "database" | "http" | "messaging" | "rpc"
@@ -54,7 +55,7 @@ export type StripTarget = Readonly<{ id: string; kind: DependencyKind; name: str
 /** The "Talks to" chips: every downstream target, busiest first. */
 export const stripTargets = (bundle: DependencyBundle): ReadonlyArray<StripTarget> =>
 	[
-		...bundle.serviceEdges.flatMap((edge): ReadonlyArray<StripTarget> =>
+		...Arr.flatMap(bundle.serviceEdges, (edge): ReadonlyArray<StripTarget> =>
 			edge.targetService === ""
 				? []
 				: [
@@ -66,7 +67,7 @@ export const stripTargets = (bundle: DependencyBundle): ReadonlyArray<StripTarge
 						},
 					],
 		),
-		...bundle.dbEdges.flatMap((edge): ReadonlyArray<StripTarget> =>
+		...Arr.flatMap(bundle.dbEdges, (edge): ReadonlyArray<StripTarget> =>
 			edge.dbSystem === ""
 				? []
 				: [
@@ -78,7 +79,7 @@ export const stripTargets = (bundle: DependencyBundle): ReadonlyArray<StripTarge
 						},
 					],
 		),
-		...bundle.externalEdges.flatMap((edge): ReadonlyArray<StripTarget> =>
+		...Arr.flatMap(bundle.externalEdges, (edge): ReadonlyArray<StripTarget> =>
 			edge.targetName === ""
 				? []
 				: [

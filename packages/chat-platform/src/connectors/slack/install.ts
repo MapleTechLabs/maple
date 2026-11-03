@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
@@ -26,7 +26,7 @@ export const slackAuthorizeUrl = (
 ): string => {
 	const params = new URLSearchParams({
 		client_id: clientId,
-		scope: BOT_SCOPES.join(","),
+		scope: Arr.join(BOT_SCOPES, ","),
 		redirect_uri: input.redirectUri,
 		state: input.state,
 	})

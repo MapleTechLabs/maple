@@ -1,6 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { miniBarsStyles } from "@maple/ui/styles/ui/mini-bars"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 // Port of packages/ui/src/components/ui/mini-bars.tsx: a static bar sparkline in one <svg>.
 
@@ -46,11 +47,11 @@ export const miniBars = <M>(h: HtmlBuilder<M>, options: MiniBarsOptions): Html =
 	const minHeight = options.minHeight ?? 5
 	const gap = options.gap ?? 2
 	const count = values.length
-	const max = count > 0 ? Math.max(...values.map(finite)) : 0
+	const max = count > 0 ? Math.max(...Arr.map(values, finite)) : 0
 	const barWidth = Math.max((100 - gap * (count - 1)) / Math.max(count, 1), 0.5)
 	const tail = options.tail
 	const tailStart = tail === undefined ? 0 : count - Math.max(1, Math.round(count * tail))
-	const bars = values.flatMap((raw, index) => {
+	const bars = Arr.flatMap(values, (raw, index) => {
 		const value = finite(raw)
 		const x = index * (barWidth + gap)
 		const dim = index < tailStart

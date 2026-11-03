@@ -2,7 +2,7 @@
  * RFC 9449 section 4.3 proof checks, minus replay: that needs storage, so the caller records
  * the returned `jti` (see `DeviceCredentialsService`). Pure apart from WebCrypto.
  */
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, String as Str } from "effect"
 import {
 	base64url,
 	EcPublicJwk,
@@ -105,7 +105,7 @@ export const verifyDpopProof = Effect.fn("DpopProof.verify")(function* (check: D
 		return yield* reject("malformed", "The proof must carry jti, htm, htu and iat.")
 	const claims = payload.value
 
-	if (claims.htm !== check.method.toUpperCase()) {
+	if (claims.htm !== Str.toUpperCase(check.method)) {
 		return yield* reject("htm", "The proof htm does not match the request method.")
 	}
 	const htu = normalizeHtu(claims.htu)

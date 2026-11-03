@@ -9,6 +9,7 @@ import {
 	type ToolSeriesPoint,
 	type ToolTotals,
 } from "@maple/web-data/lib/tool-analytics"
+import { Array as Arr, String as Str } from "effect"
 
 /** The lab's stand-in for the URL: the toolbar's filters and the scope chips. */
 export type ToolAnalyticsSearch = Readonly<{
@@ -185,7 +186,7 @@ export function buildToolCells(nowMs: number): ReadonlyArray<ToolFixtureCell> {
 	const cells: ToolFixtureCell[] = []
 	const start = nowMs - BUCKETS * BUCKET_MS
 
-	PROFILES.forEach((profile, profileIndex) => {
+	Arr.forEach(PROFILES, (profile, profileIndex) => {
 		for (let index = 0; index < BUCKETS; index++) {
 			const bucket = start + index * BUCKET_MS
 			// A diurnal swing plus per-bucket noise, so the lines have shape.
@@ -197,7 +198,7 @@ export function buildToolCells(nowMs: number): ReadonlyArray<ToolFixtureCell> {
 			const regression =
 				profile.name === "run_tests" && index > BUCKETS * 0.6 ? 1 + (index - BUCKETS * 0.6) / 14 : 1
 
-			profile.models.forEach((model, modelIndex) => {
+			Arr.forEach(profile.models, (model, modelIndex) => {
 				const share = 1 / profile.models.length
 				const calls = Math.max(0, Math.round(profile.rate * diurnal * noise * share))
 				if (calls === 0) return
@@ -282,16 +283,17 @@ export function buildToolAnalyticsFixture(
 	nowMs: number,
 	cells: ReadonlyArray<ToolFixtureCell>,
 ): AgentToolsViewData {
-	const needle = (search.q ?? "").trim().toLowerCase()
-	const filtered = cells.filter((cell) => {
-		if (needle !== "" && !cell.tool.toLowerCase().includes(needle)) return false
+	const needle = Str.toLowerCase(Str.trim(search.q ?? ""))
+	const filtered = Arr.filter(cells, (cell) => {
+		if (needle !== "" && !Str.includes(needle)(Str.toLowerCase(cell.tool))) return false
 		if (search.service !== undefined && cell.service !== search.service) return false
 		if (search.env !== undefined && cell.env !== search.env) return false
 		if (search.failing === true && cell.errors === 0) return false
 		return true
 	})
 
-	const scoped = filtered.filter(
+	const scoped = Arr.filter(
+		filtered,
 		(cell) =>
 			(search.tool === undefined || cell.tool === search.tool) &&
 			(search.model === undefined || cell.model === search.model),
@@ -307,15 +309,17 @@ export function buildToolAnalyticsFixture(
 
 	// `\u0000` separates the rollup key's two halves: it is the one character a
 	// tool or model name cannot contain.
-	const series: ToolSeriesPoint[] = [
-		...rollup(scoped, (cell) => `${cell.bucket}\u0000${seriesKeyOf(cell)}`).entries(),
-	].map(([key, value]) => {
-		const [bucket, seriesKey] = key.split("\u0000")
-		return { bucket: Number(bucket), seriesKey: seriesKey!, ...value }
-	})
+	const series: ToolSeriesPoint[] = Arr.map(
+		[...rollup(scoped, (cell) => `${cell.bucket}\u0000${seriesKeyOf(cell)}`).entries()],
+		([key, value]) => {
+			const [bucket, seriesKey] = Str.split("\u0000")(key)
+			return { bucket: Number(bucket), seriesKey: seriesKey!, ...value }
+		},
+	)
 
 	// The chart's read: the same scope, one series (`split: "none"`).
-	const scopeSeries: ToolSeriesPoint[] = [...rollup(scoped, (cell) => `${cell.bucket}`).entries()].map(
+	const scopeSeries: ToolSeriesPoint[] = Arr.map(
+		[...rollup(scoped, (cell) => `${cell.bucket}`).entries()],
 		([bucket, value]) => ({ bucket: Number(bucket), seriesKey: "", ...value }),
 	)
 
@@ -349,18 +353,16 @@ export function buildToolAnalyticsFixture(
 	): ReadonlyArray<ToolBreakdownRow> => {
 		const lastSeen = lastSeenBy(keyOf, Math.max)
 		const firstSeen = lastSeenBy(keyOf, Math.min)
-		return [...rollup(rows, keyOf).entries()]
-			.map(([key, value]) => ({
-				key,
-				...value,
-				lastSeen: lastSeen.get(key) ?? nowMs,
-				firstSeen: firstSeen.get(key) ?? nowMs,
-			}))
-			.sort((a, b) => b.calls - a.calls)
+		return Arr.map([...rollup(rows, keyOf).entries()], ([key, value]) => ({
+			key,
+			...value,
+			lastSeen: lastSeen.get(key) ?? nowMs,
+			firstSeen: firstSeen.get(key) ?? nowMs,
+		})).sort((a, b) => b.calls - a.calls)
 	}
 
 	const tools = breakdown(
-		filtered.filter((cell) => search.model === undefined || cell.model === search.model),
+		Arr.filter(filtered, (cell) => search.model === undefined || cell.model === search.model),
 		(cell) => cell.tool,
 	)
 
@@ -372,12 +374,12 @@ export function buildToolAnalyticsFixture(
 		previousTotals,
 		// The denominator, derived as the route derives it: the model-scoped Tools
 		// breakdown, before the tool chip.
-		scopeCalls: tools.reduce((sum, row) => sum + row.calls, 0),
+		scopeCalls: Arr.reduce(tools, 0, (sum, row) => sum + row.calls),
 		tools,
 		// The window's whole session population — the real one counts every agent
 		// session, including the ones that called no tool at all, so the fixture's
 		// is deliberately larger than any tool total.
-		allSessions: Math.round(cells.reduce((sum, cell) => sum + cell.sessions, 0) * 1.4),
+		allSessions: Math.round(Arr.reduce(cells, 0, (sum, cell) => sum + cell.sessions) * 1.4),
 	}
 }
 
@@ -390,9 +392,9 @@ export function toolFixtureFacets(cells: ReadonlyArray<ToolFixtureCell>) {
 			const key = keyOf(cell)
 			out.set(key, (out.get(key) ?? 0) + cell.sessions)
 		}
-		return [...out.entries()]
-			.map(([name, value]) => ({ name, count: value }))
-			.sort((a, b) => b.count - a.count)
+		return Arr.map([...out.entries()], ([name, value]) => ({ name, count: value })).sort(
+			(a, b) => b.count - a.count,
+		)
 	}
 	return {
 		services: count((cell) => cell.service),

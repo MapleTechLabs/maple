@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
@@ -76,7 +76,7 @@ const loaded = (): Model => {
 				result: Result.succeed(new MapBundle(BUNDLE)),
 			}),
 	]
-	return steps.reduce((model, step) => pageUpdate(model, step(model)).model, entered)
+	return Arr.reduce(steps, entered, (model, step) => pageUpdate(model, step(model)).model)
 }
 
 const scene3d = (message: Scene3d.Message) => Message.GotScene3dMessage({ message })
@@ -95,7 +95,7 @@ const measureTabs = Mount.resolve(
 )
 
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
-	messages.reduce((current, message) => pageUpdate(current, message).model, model)
+	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
 describe("service map 3D: viewport state", () => {
 	test("Cascade switches the perspective; pressing it again keeps it, as legacy ignores a release", () => {

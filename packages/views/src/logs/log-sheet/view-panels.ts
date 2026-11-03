@@ -5,7 +5,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { formatCompactTimeInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Effect } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { AsyncData, Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ROW_LINE_CHARS } from "@maple/views/lib/display-text"
@@ -64,18 +64,23 @@ const RevealTimelineRow = Mount.define("RevealLogTimelineRow", {
 })
 
 export const showsErrorBanner = (log: LogRecord): boolean => {
-	const severity = severityLabel(log.severityText, log.severityNumber).toUpperCase()
+	const severity = Str.toUpperCase(severityLabel(log.severityText, log.severityNumber))
 	return severity === "ERROR" || severity === "FATAL" || severity === "CRITICAL"
 }
 
 /** `LogErrorBanner`: the exception message (else the body), its type and a prompt to copy. */
-export const errorBanner = (h: H, model: Model, log: LogRecord, { trigger, portalFor }: TooltipParts): Html | null => {
+export const errorBanner = (
+	h: H,
+	model: Model,
+	log: LogRecord,
+	{ trigger, portalFor }: TooltipParts,
+): Html | null => {
 	const message = log.logAttributes["exception.message"] ?? log.logAttributes["error.message"] ?? log.body
 	if (message === "") return null
 	const promptTrigger = triggerIdOf(model, "prompt")
 	const section = errorSectionView(h, {
 		message,
-		title: log.severityText.toUpperCase() === "FATAL" ? "Fatal" : "Error",
+		title: Str.toUpperCase(log.severityText) === "FATAL" ? "Fatal" : "Error",
 		badge: log.logAttributes["exception.type"] ?? log.logAttributes["error.type"],
 		isExpanded: model.isErrorExpanded,
 		onToggle: Message.ToggledErrorExpanded(),
@@ -117,7 +122,10 @@ const logTime = (h: H, timestamp: string, timeZone: string): ReadonlyArray<Html 
 	const formatted = formatCompactTimeInTimezone(timestamp, { timeZone })
 	const dot = formatted.lastIndexOf(".")
 	if (dot === -1) return [formatted]
-	return [formatted.slice(0, dot), h.span([h.Class("text-foreground-faint")], [formatted.slice(dot)])]
+	return [
+		Str.slice(0, dot)(formatted),
+		h.span([h.Class("text-foreground-faint")], [Str.slice(dot)(formatted)]),
+	]
 }
 
 const contextList = (
@@ -134,7 +142,7 @@ const contextList = (
 			h.Key(selectedKey),
 			h.Class(cn("relative min-h-0 flex-1 overflow-y-auto rounded-md border", className)),
 		],
-		rows.map((row) => {
+		Arr.map(rows, (row) => {
 			const key = contextKey(row)
 			const isCurrent = key === selectedKey
 			const cells = [
@@ -158,13 +166,13 @@ const contextList = (
 								typographyClass({ truncate: true, className: "min-w-0 flex-1" }),
 								isCurrent
 									? "text-foreground"
-									: QUIET_SEVERITIES.has(row.severityText.toUpperCase())
+									: QUIET_SEVERITIES.has(Str.toUpperCase(row.severityText))
 										? "text-muted-foreground"
 										: "text-foreground-soft",
 							),
 						),
 					],
-					[(row.body.split("\n", 1)[0] ?? "").slice(0, ROW_LINE_CHARS)],
+					[Str.slice(0, ROW_LINE_CHARS)(row.body.split("\n", 1)[0] ?? "")],
 				),
 			]
 			return h.li(
@@ -210,36 +218,30 @@ export const contextPanel = (
 	return h.div(
 		[h.Class("flex h-full min-h-0 flex-col gap-1.5")],
 		[
-			hstack(h, { gap: "2", className: "shrink-0" },
-				[
-					heading(
-						h,
-						{ level: 4, variant: "label" },
-						[
-							"Surrounding logs",
-							h.span(
-								[h.Class("ml-1 font-normal text-foreground-subtle")],
-								[scoped === undefined ? log.serviceName : `${scoped.key}=${scoped.value}`],
-							),
-						],
+			hstack(h, { gap: "2", className: "shrink-0" }, [
+				heading(h, { level: 4, variant: "label" }, [
+					"Surrounding logs",
+					h.span(
+						[h.Class("ml-1 font-normal text-foreground-subtle")],
+						[scoped === undefined ? log.serviceName : `${scoped.key}=${scoped.value}`],
 					),
-					...(instance === undefined
-						? []
-						: [
-								ToggleGroup.view(h, {
-									model: model.contextScope,
-									toParentMessage: (message) => Message.GotContextScopeMessage({ message }),
-									items: [
-										{ value: "instance", label: "Instance" },
-										{ value: "service", label: "Service" },
-									],
-									variant: "outline",
-									size: "xs",
-									className: "ml-auto",
-								}),
-							]),
-				],
-			),
+				]),
+				...(instance === undefined
+					? []
+					: [
+							ToggleGroup.view(h, {
+								model: model.contextScope,
+								toParentMessage: (message) => Message.GotContextScopeMessage({ message }),
+								items: [
+									{ value: "instance", label: "Instance" },
+									{ value: "service", label: "Service" },
+								],
+								variant: "outline",
+								size: "xs",
+								className: "ml-auto",
+							}),
+						]),
+			]),
 			Number.isNaN(timestampMs(log.timestamp))
 				? emptyMessage(h, {}, ["This log has no readable timestamp"])
 				: AsyncData.matchData(rows, {
@@ -263,7 +265,7 @@ const isCurrentLog = (log: LogRecord, current: LogRecord): boolean =>
 	log.timestamp === current.timestamp && log.spanId === current.spanId && log.body === current.body
 
 const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArray<LogRecord>): Html => {
-	const logs = data.toSorted((a, b) => a.exactTimestamp.localeCompare(b.exactTimestamp))
+	const logs = data.toSorted((a, b) => Str.localeCompare(b.exactTimestamp)(a.exactTimestamp))
 	if (logs.length <= 1) return emptyMessage(h, {}, ["No other logs in this trace"])
 	const spans = AsyncData.getData(model.traceSpans.data)
 	const spanStart =
@@ -273,19 +275,19 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 	const hasSpanStart = Number.isFinite(spanStart)
 	const traceStart = hasSpanStart ? spanStart : new Date(logs[0]?.timestamp ?? "").getTime()
 	const spanNames = new Map(
-		spans._tag === "Some" ? spans.value.spanNames.map((span) => [span.spanId, span.spanName]) : [],
+		spans._tag === "Some" ? Arr.map(spans.value.spanNames, (span) => [span.spanId, span.spanName]) : [],
 	)
 	return borderedBox(
 		h,
 		{ overflow: "hidden" },
-		logs.map((log, index) => {
+		Arr.map(logs, (log, index) => {
 			const isCurrent = isCurrentLog(log, current)
 			const relativeMs = new Date(log.timestamp).getTime() - traceStart
 			const previous = index > 0 ? logs[index - 1] : undefined
 			const spanChanged =
 				previous !== undefined && previous.spanId !== log.spanId ? log.spanId : undefined
 			return h.div(
-				[h.Key(`${log.timestamp}-${log.spanId}-${log.body.slice(0, 20)}-${index}`)],
+				[h.Key(`${log.timestamp}-${log.spanId}-${Str.slice(0, 20)(log.body)}-${index}`)],
 				[
 					...(spanChanged === undefined
 						? []
@@ -379,26 +381,22 @@ export const traceTimeline = (h: H, model: Model, log: LogRecord): Html | null =
 	return h.div(
 		[h.Class("space-y-1.5")],
 		[
-			heading(
-				h,
-				{ level: 4, variant: "label" },
-				[
-					"Trace Timeline",
-					...(count > 1
-						? [
-								h.span(
-									[
-										h.Class("ml-1 text-foreground-subtle"),
-										...(isTruncated
-											? [h.Title(`Showing the first ${TRACE_LOG_LIMIT} logs returned`)]
-											: []),
-									],
-									[isTruncated ? `${TRACE_LOG_LIMIT}+` : String(count)],
-								),
-							]
-						: []),
-				],
-			),
+			heading(h, { level: 4, variant: "label" }, [
+				"Trace Timeline",
+				...(count > 1
+					? [
+							h.span(
+								[
+									h.Class("ml-1 text-foreground-subtle"),
+									...(isTruncated
+										? [h.Title(`Showing the first ${TRACE_LOG_LIMIT} logs returned`)]
+										: []),
+								],
+								[isTruncated ? `${TRACE_LOG_LIMIT}+` : String(count)],
+							),
+						]
+					: []),
+			]),
 			AsyncData.matchData(model.traceLogs.data, {
 				onEmpty: () => rowSkeleton(h, 5, ["w-10", "w-16"]),
 				onFailure: (failure) =>

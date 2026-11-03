@@ -1,4 +1,5 @@
 import { typographyClass } from "../ui/typography"
+import { String as Str } from "effect"
 const KEYWORDS = new Set([
 	"SELECT",
 	"FROM",
@@ -74,7 +75,7 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 	TOKEN_RE.lastIndex = 0
 	let m: RegExpExecArray | null
 	while ((m = TOKEN_RE.exec(code)) !== null) {
-		if (m.index > last) tokens.push({ text: code.slice(last, m.index), start: last })
+		if (m.index > last) tokens.push({ text: Str.slice(last, m.index)(code), start: last })
 		const [full, comment, str, macro, num, ident] = m
 		if (comment) {
 			tokens.push({
@@ -89,7 +90,7 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 		} else if (num) {
 			tokens.push({ text: num, start: m.index, className: "text-chart-4" })
 		} else if (ident) {
-			if (KEYWORDS.has(ident.toUpperCase())) {
+			if (KEYWORDS.has(Str.toUpperCase(ident))) {
 				tokens.push({ text: ident, start: m.index, className: "text-chart-5" })
 			} else if (code.charAt(m.index + ident.length) === "(") {
 				tokens.push({ text: ident, start: m.index, className: "text-chart-1" })
@@ -101,6 +102,6 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 		}
 		last = m.index + full.length
 	}
-	if (last < code.length) tokens.push({ text: code.slice(last), start: last })
+	if (last < code.length) tokens.push({ text: Str.slice(last)(code), start: last })
 	return tokens
 }

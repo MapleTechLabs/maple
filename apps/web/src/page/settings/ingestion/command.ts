@@ -2,7 +2,7 @@ import { AttributeMappingPublicId, RecommendationPublicId } from "@maple/domain/
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Clock, Effect, Option, type Result, Schema } from "effect"
+import { Clock, Effect, Option, type Result, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../../data/time-range"
@@ -30,7 +30,7 @@ export const FetchIngestOverview = Command.define("FetchIngestOverview", {
 			const response = yield* getServiceOverview({
 				data: pinnedNamespace === null ? range : { ...range, namespaces: [pinnedNamespace] },
 			})
-			return response.data.map((row) => ({
+			return Arr.map(response.data, (row) => ({
 				serviceName: String(row.serviceName),
 				spanCount: row.spanCount ?? 0,
 			}))

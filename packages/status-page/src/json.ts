@@ -6,6 +6,7 @@ import {
 	type StatusPageSnapshotIncident,
 } from "@maple/domain/status-page"
 import { activeIncidents } from "./select"
+import { Array as Arr } from "effect"
 
 /** statuspage.io's page indicator for the overall status. */
 export const STATUS_INDICATOR = {
@@ -35,7 +36,7 @@ const incidentJson = (incident: StatusPageSnapshotIncident) => ({
 	updated_at: iso(incident.updates[0]?.at ?? incident.startedAt),
 	resolved_at: iso(incident.resolvedAt),
 	component_ids: incident.componentIds,
-	incident_updates: incident.updates.map((update) => ({
+	incident_updates: Arr.map(incident.updates, (update) => ({
 		id: update.id,
 		status: update.status,
 		body: update.body,
@@ -56,21 +57,28 @@ export const renderStatusJson = (snapshot: StatusPageSnapshot, freshness: Status
 			updated_at: iso(freshness.updatedAt),
 		},
 		status: { ...STATUS_INDICATOR[overall], delayed: freshness._tag === "delayed" },
-		components: snapshot.components.map((component) => ({
+		components: Arr.map(snapshot.components, (component) => ({
 			id: component.id,
 			name: component.name,
 			description: component.description,
 			group: component.group,
 			status: COMPONENT_STATUS[component.status],
 		})),
-		incidents: active.filter((incident) => incident.kind === "incident").map(incidentJson),
-		scheduled_maintenances: snapshot.incidents
-			.filter((incident) => incident.kind === "maintenance" && incident.status !== "completed")
-			.map((incident) => ({
+		incidents: Arr.map(
+			Arr.filter(active, (incident) => incident.kind === "incident"),
+			incidentJson,
+		),
+		scheduled_maintenances: Arr.map(
+			Arr.filter(
+				snapshot.incidents,
+				(incident) => incident.kind === "maintenance" && incident.status !== "completed",
+			),
+			(incident) => ({
 				...incidentJson(incident),
 				scheduled_for: iso(incident.scheduledStart),
 				scheduled_until: iso(incident.scheduledEnd),
-			})),
+			}),
+		),
 		updated_at: iso(freshness.updatedAt),
 	}
 }

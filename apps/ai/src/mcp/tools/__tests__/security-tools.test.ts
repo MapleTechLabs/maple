@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import { InspectSecurityFindingOutput, ListSecurityFindingsOutput } from "@maple/domain/mcp-outputs"
 import { RoleName } from "@maple/domain/primitives"
 import type { McpToolResult } from "../types"
@@ -55,13 +55,16 @@ const inspect = async (id: string) => {
 describe("list_security_findings", () => {
 	it("ranks every area's worst findings together in one call", async () => {
 		const { output } = await list(admin, {})
-		expect(output.areas.map((area) => [area.area, area.state])).toEqual([
+		expect(Arr.map(output.areas, (area) => [area.area, area.state])).toEqual([
 			["code", "findings"],
 			["dependencies", "findings"],
 			["exposure", "findings"],
 			["runtimes", "findings"],
 		])
-		const critical = output.findings.filter((row) => row.severity === "critical").map((row) => row.id)
+		const critical = Arr.map(
+			Arr.filter(output.findings, (row) => row.severity === "critical"),
+			(row) => row.id,
+		)
 		expect(critical).toEqual(
 			expect.arrayContaining([
 				SECURITY_WORLD.criticalFingerprint,
@@ -70,8 +73,8 @@ describe("list_security_findings", () => {
 				"nodejs@22.4.0",
 			]),
 		)
-		expect(output.findings.map((row) => SEVERITY_ORDER.indexOf(row.severity))).toEqual(
-			output.findings.map((row) => SEVERITY_ORDER.indexOf(row.severity)).toSorted((a, b) => a - b),
+		expect(Arr.map(output.findings, (row) => SEVERITY_ORDER.indexOf(row.severity))).toEqual(
+			Arr.map(output.findings, (row) => SEVERITY_ORDER.indexOf(row.severity)).toSorted((a, b) => a - b),
 		)
 	})
 
@@ -83,29 +86,32 @@ describe("list_security_findings", () => {
 
 	it("does not report a catch-all service's answered probes as exposures", async () => {
 		const { output } = await list(admin, { area: "exposure" })
-		expect(output.findings.map((row) => row.id)).toEqual(["legacy-admin:/.env", "billing:/actuator/env"])
-		expect(output.notes.join("\n")).toContain(SECURITY_WORLD.catchAllService)
+		expect(Arr.map(output.findings, (row) => row.id)).toEqual([
+			"legacy-admin:/.env",
+			"billing:/actuator/env",
+		])
+		expect(Arr.join(output.notes, "\n")).toContain(SECURITY_WORLD.catchAllService)
 		expect(output.exposure?.sources[0]).toMatchObject({ address: "185.220.101.4", scanner: "nuclei" })
 	})
 
 	it("does not place a dev dependency in production", async () => {
 		const { output } = await list(admin, { area: "dependencies" })
-		const vitest = output.findings.find((row) => row.title.startsWith("vitest"))
-		const next = output.findings.find((row) => row.title.startsWith("next"))
+		const vitest = output.findings.find((row) => Str.startsWith("vitest")(row.title))
+		const next = output.findings.find((row) => Str.startsWith("next")(row.title))
 		expect(vitest?.services).toEqual([])
 		expect(next?.services).toEqual([{ service: "checkout", environment: "production" }])
 	})
 
 	it("narrows code findings to a service through the repository it runs", async () => {
 		const { output } = await list(admin, { service: "checkout" })
-		const areas = new Set(output.findings.map((row) => row.area))
+		const areas = new Set(Arr.map(output.findings, (row) => row.area))
 		expect(areas).toEqual(new Set(["code", "dependencies", "runtimes"]))
-		expect(output.findings.some((row) => row.id === SECURITY_WORLD.criticalFingerprint)).toBe(true)
+		expect(Arr.some(output.findings, (row) => row.id === SECURITY_WORLD.criticalFingerprint)).toBe(true)
 	})
 
 	it("shows triaged findings and why only when asked for them", async () => {
 		const open = await list(admin, { area: "code" })
-		expect(open.output.findings.some((row) => row.status === "dismissed")).toBe(false)
+		expect(Arr.some(open.output.findings, (row) => row.status === "dismissed")).toBe(false)
 		const all = await list(admin, { area: "code", status: "all" })
 		const dismissed = all.output.findings.find((row) => row.status === "dismissed")
 		expect(dismissed?.detail).toContain("single-use at the payment provider")
@@ -113,7 +119,7 @@ describe("list_security_findings", () => {
 
 	it("skips the per-service areas under a repository filter", async () => {
 		const { output } = await list(admin, { repository: "acme/api" })
-		expect(output.areas.map((area) => area.area)).toEqual(["code", "dependencies"])
+		expect(Arr.map(output.areas, (area) => area.area)).toEqual(["code", "dependencies"])
 		expect(output.areas.find((area) => area.area === "dependencies")?.summary).toContain(
 			"never scanned: acme/api",
 		)
@@ -171,7 +177,7 @@ describe("inspect_security_finding", () => {
 
 	it("finds every runtime version a CVE affects and names the services checked clean", async () => {
 		const { output } = await inspect(SECURITY_WORLD.nodeCve)
-		const versions = output.matches.flatMap((m) =>
+		const versions = Arr.flatMap(output.matches, (m) =>
 			m.area === "runtimes" ? [[m.version, m.fixedIn]] : [],
 		)
 		expect(versions).toEqual(
@@ -180,7 +186,7 @@ describe("inspect_security_finding", () => {
 				["22.4.0", "22.12.0"],
 			]),
 		)
-		const runtimes = output.coverage.find((line) => line.startsWith("Runtimes:"))
+		const runtimes = output.coverage.find((line) => Str.startsWith("Runtimes:")(line))
 		expect(runtimes).toContain("legacy-admin")
 		expect(runtimes).toContain("not checkable: cart")
 	})
@@ -227,7 +233,9 @@ describe("inspect_security_finding", () => {
 		await seedSecurityWorld(isolated)
 		rules.unshift({
 			match: (sql) =>
-				sql.includes(" AS commitSha") && sql.includes(" AS spanCount") && !sql.includes("lastSeen"),
+				Str.includes(" AS commitSha")(sql) &&
+				Str.includes(" AS spanCount")(sql) &&
+				!Str.includes("lastSeen")(sql),
 			failure: { message: "warehouse unavailable", type: "UNKNOWN" },
 		})
 		try {
@@ -308,7 +316,7 @@ describe("inspect_security_finding", () => {
 			catchAll: false,
 			severity: "critical",
 		})
-		expect(probe?.area === "exposure" ? probe.probes.map((p) => p.signature) : []).toEqual([
+		expect(probe?.area === "exposure" ? Arr.map(probe.probes, (p) => p.signature) : []).toEqual([
 			"/.env",
 			"/.git/",
 			"/phpmyadmin",

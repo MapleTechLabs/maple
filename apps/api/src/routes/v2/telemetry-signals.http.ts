@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import type { V2TelemetrySignal, V2TelemetrySignals } from "@maple/domain/http/v2"
-import { Effect } from "effect"
+import { Effect, Array as Arr } from "effect"
 import type { SignalPresence, SignalPresenceReport } from "@maple/backend/services/org/SignalPresenceService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 
@@ -21,7 +21,7 @@ const toV2 = (report: SignalPresenceReport): V2TelemetrySignals => ({
 	window_start: new Date(report.windowStart).toISOString(),
 	window_end: new Date(report.windowEnd).toISOString(),
 	warehouse_available: report.warehouseAvailable,
-	signals: report.signals.map(toV2Signal),
+	signals: Arr.map(report.signals, toV2Signal),
 })
 
 export const HttpV2TelemetrySignalsLive = HttpApiBuilder.group(MapleApiV2, "telemetrySignals", (handlers) =>

@@ -1,7 +1,7 @@
 import { OrgId as OrgIdSchema, type OrgId } from "@maple/domain"
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { Option, Schema, Struct } from "effect"
+import { Option, Schema, Struct, Array as Arr } from "effect"
 import { AsyncData, Command, Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
 import { Transition } from "foldkit/route"
@@ -323,7 +323,8 @@ const showPageToast = (model: Model, request: PageToast) => {
 			toastRootActions: (actions) =>
 				rootAction === null ? actions : { ...actions, [toastId]: rootAction.action },
 		}),
-		commands: (added.commands ?? []).map(
+		commands: Arr.map(
+			added.commands ?? [],
 			Command.mapMessage((message) => Message.GotToastMessage({ message })),
 		),
 	}
@@ -420,7 +421,8 @@ const writePage =
 				...(held.isNewHolder || held.released.length > 0
 					? [ReleaseReads({ orgId: transition.slot?.orgId ?? null, keys: held.released })]
 					: []),
-				...transition.commands.map(
+				...Arr.map(
+					transition.commands,
 					Command.mapMessage((message) => Message.GotPageMessage({ message })),
 				),
 				...followed.outCommands,
@@ -499,7 +501,10 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 		: null
 
 const toOnboardingCommands = (step: Onboarding.Step) =>
-	step.commands.map(Command.mapMessage((message) => Message.GotOnboardingMessage({ message })))
+	Arr.map(
+		step.commands,
+		Command.mapMessage((message) => Message.GotOnboardingMessage({ message })),
+	)
 
 /** Route entry: the screen is kept while its key holds, rebuilt on a new one, dropped on leave. */
 const loadOnboarding: Step = (model) => {
@@ -983,7 +988,8 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 				return {
 					model,
 					commands: [
-						...commands.map(
+						...Arr.map(
+							commands,
 							Command.mapMessage((message) => Message.GotPreloadMessage({ message })),
 						),
 						...(keys.length === 0 ? [] : [HoldPreloads({ keys })]),
@@ -1142,7 +1148,7 @@ const foldMessage = (model: Model, message: Message) =>
 export const update = (model: Model, message: Message): UpdateReturn => {
 	const result = foldMessage(model, message)
 	const next = result.model
-	return next !== model && Struct.keys(model).every((key) => model[key] === next[key])
+	return next !== model && Arr.every(Struct.keys(model), (key) => model[key] === next[key])
 		? { ...result, model }
 		: result
 }

@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -102,7 +102,7 @@ describe("maximumInvoiceCents", () => {
 
 	it("counts only billable features without a cap as uncapped", () => {
 		// Metrics is unlimited and sessions are hard-capped: no cap can bound either.
-		expect(uncappedFeatures(model, customer).map((feature) => feature.featureId)).toEqual(["logs"])
+		expect(Arr.map(uncappedFeatures(model, customer), (feature) => feature.featureId)).toEqual(["logs"])
 	})
 })
 

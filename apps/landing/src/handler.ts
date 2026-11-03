@@ -1,4 +1,5 @@
 import { API_ORIGIN } from "./lib/agent-resources"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /** The Workers Assets binding, as this handler needs it. */
 export interface AssetsBinding {
@@ -15,7 +16,7 @@ export interface AssetsBinding {
  * in a catch-all wildcard, so treating a wildcard as a match would serve
  * markdown to every human visitor.
  */
-const wantsMarkdown = (request: Request): boolean => acceptHeader(request).includes("text/markdown")
+const wantsMarkdown = (request: Request): boolean => Str.includes("text/markdown")(acceptHeader(request))
 
 /**
  * Browsers always name `text/html`; `curl`, SDK HTTP clients, and agents send
@@ -24,14 +25,14 @@ const wantsMarkdown = (request: Request): boolean => acceptHeader(request).inclu
  */
 const acceptsHtml = (request: Request): boolean => {
 	const accept = acceptHeader(request)
-	return accept.includes("text/html") || accept.includes("application/xhtml+xml")
+	return Str.includes("text/html")(accept) || Str.includes("application/xhtml+xml")(accept)
 }
 
-const acceptHeader = (request: Request): string => (request.headers.get("Accept") ?? "").toLowerCase()
+const acceptHeader = (request: Request): string => Str.toLowerCase(request.headers.get("Accept") ?? "")
 
 /** `/pricing` → `/pricing.md`; `/docs/x/y/` → `/docs/x/y.md`; `/` → `/index.md`. Extensions opt out. */
 export const markdownTwin = (pathname: string): string | null => {
-	const path = pathname.replace(/\/+$/, "") || "/"
+	const path = Str.replace(/\/+$/, "")(pathname) || "/"
 	if (path === "/") return "/index.md"
 	if (/\.[a-z0-9]+$/i.test(path)) return null
 	return `${path}.md`
@@ -57,7 +58,7 @@ export const apiNotFoundBody = (method: string, pathname: string, origin: string
 		type: "not_found_error",
 		code: "route_not_found",
 		title: "No such route",
-		message: `No route matches ${method.toUpperCase()} ${pathname} on ${origin}, which serves the Maple website. The Maple API is at ${API_ORIGIN} — reference: ${API_ORIGIN}/v2/docs, OpenAPI: ${origin}/openapi.json, MCP server: ${API_ORIGIN}/mcp.`,
+		message: `No route matches ${Str.toUpperCase(method)} ${pathname} on ${origin}, which serves the Maple website. The Maple API is at ${API_ORIGIN} — reference: ${API_ORIGIN}/v2/docs, OpenAPI: ${origin}/openapi.json, MCP server: ${API_ORIGIN}/mcp.`,
 		retryable: false,
 		recovery: "fix_request",
 	},
@@ -65,7 +66,7 @@ export const apiNotFoundBody = (method: string, pathname: string, origin: string
 
 /** Docs paths get the docs 404 (search and docs nav); everything else the site one. */
 const notFoundPage = async (url: URL, assets: AssetsBinding): Promise<Response> => {
-	if (url.pathname.startsWith("/docs/")) {
+	if (Str.startsWith("/docs/")(url.pathname)) {
 		const docs = await assets.fetch(new Request(new URL("/docs/404/", url)))
 		if (docs.ok) return docs
 	}
@@ -74,29 +75,32 @@ const notFoundPage = async (url: URL, assets: AssetsBinding): Promise<Response> 
 
 /** The markdown 404: what was asked for, and where to look instead. */
 export const notFoundMarkdown = (pathname: string, origin: string): string =>
-	[
-		"# 404 — Not found",
-		"",
-		`There is no page at \`${pathname}\` on ${origin}.`,
-		"",
-		"## Where to look next",
-		"",
-		`- [Site index for agents](${origin}/llms.txt) — every section of the site with its markdown URL`,
-		`- [Sitemap](${origin}/sitemap-index.xml)`,
-		`- [Documentation](${origin}/docs.md) · [Full docs, single file](${origin}/llms-full.txt)`,
-		`- [Pricing](${origin}/pricing.md) · [Changelog](${origin}/changelog.md) · [Roadmap](${origin}/roadmap.md)`,
-		`- [API reference](${API_ORIGIN}/v2/docs) · [OpenAPI spec](${origin}/openapi.json) · [MCP server manifest](${origin}/.well-known/mcp.json)`,
-		`- [About](${origin}/about.md) · [Contact](${origin}/contact.md)`,
-		"",
-		"Append `.md` to any page URL, or send `Accept: text/markdown`, to receive its markdown source.",
-		"",
-	].join("\n")
+	Arr.join(
+		[
+			"# 404 — Not found",
+			"",
+			`There is no page at \`${pathname}\` on ${origin}.`,
+			"",
+			"## Where to look next",
+			"",
+			`- [Site index for agents](${origin}/llms.txt) — every section of the site with its markdown URL`,
+			`- [Sitemap](${origin}/sitemap-index.xml)`,
+			`- [Documentation](${origin}/docs.md) · [Full docs, single file](${origin}/llms-full.txt)`,
+			`- [Pricing](${origin}/pricing.md) · [Changelog](${origin}/changelog.md) · [Roadmap](${origin}/roadmap.md)`,
+			`- [API reference](${API_ORIGIN}/v2/docs) · [OpenAPI spec](${origin}/openapi.json) · [MCP server manifest](${origin}/.well-known/mcp.json)`,
+			`- [About](${origin}/about.md) · [Contact](${origin}/contact.md)`,
+			"",
+			"Append `.md` to any page URL, or send `Accept: text/markdown`, to receive its markdown source.",
+			"",
+		],
+		"\n",
+	)
 
 const MARKDOWN_TYPE = "text/markdown; charset=utf-8"
 
 const withHeaders = (response: Response, set: Record<string, string>): Response => {
 	const headers = new Headers(response.headers)
-	for (const [name, value] of Object.entries(set)) headers.set(name, value)
+	for (const [name, value] of Rec.toEntries(set)) headers.set(name, value)
 	return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 

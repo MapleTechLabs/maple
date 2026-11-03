@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { CloudflareIntegrationStatus } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../../contract"
@@ -16,7 +16,7 @@ const NOW = 1_790_000_000_000
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
 
 const zone = (name: string, at: number) => ({
 	id: name,
@@ -35,7 +35,7 @@ const account = (accountId: string, accountName: string, zones: ReadonlyArray<st
 	scope: "analytics:read",
 	analyticsCapable: true,
 	revoked: false,
-	zones: zones.map((name) => zone(name, NOW - 60_000)),
+	zones: Arr.map(zones, (name) => zone(name, NOW - 60_000)),
 	workers: null,
 })
 
@@ -149,14 +149,19 @@ describe("cloudflare list", () => {
 		const multi = status({
 			accounts: [account("acc_a", "Acme", ["acme.test"]), account("acc_b", "Beta", ["beta.test"])],
 		})
-		const loaded = [
-			Message.CompletedFetchZones({ key: "", result: Result.succeed([zoneRow("acme.test", 5)]) }),
-			Message.CompletedFetchWorkers({ key: "", result: Result.succeed([workerRow("api", "acc_b")]) }),
-			Message.CompletedFetchPlatform({
-				key: "",
-				result: Result.succeed({ queues: [], durableObjects: [] }),
-			}),
-		].reduce(
+		const loaded = Arr.reduce(
+			[
+				Message.CompletedFetchZones({ key: "", result: Result.succeed([zoneRow("acme.test", 5)]) }),
+				Message.CompletedFetchWorkers({
+					key: "",
+					result: Result.succeed([workerRow("api", "acc_b")]),
+				}),
+				Message.CompletedFetchPlatform({
+					key: "",
+					result: Result.succeed({ queues: [], durableObjects: [] }),
+				}),
+			],
+			withStatus(entered({ account: "acc_b" }), multi).model,
 			(model, message) => {
 				const slot =
 					message._tag === "CompletedFetchZones"
@@ -166,7 +171,6 @@ describe("cloudflare list", () => {
 							: model.platform
 				return pageUpdate(model, { ...message, key: slot.key ?? "" }).model
 			},
-			withStatus(entered({ account: "acc_b" }), multi).model,
 		)
 		const scope = listScopeOf(loaded, listDataOf(loaded))
 		expect(scope.counts).toEqual({ zones: 0, workers: 1, queues: 0 })

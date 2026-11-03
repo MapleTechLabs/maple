@@ -28,6 +28,7 @@ import { rail } from "./view-rail"
 import { errorChip, TOOL_CHIP } from "../kit/error-chip"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { Array as Arr } from "effect"
 
 // The session overview: checks and the tool ledger, the rail.
 
@@ -52,9 +53,9 @@ const openSpan = (model: Model, spanId: string) =>
 	Message.ClickedSpan({ spanId: model.search.span === spanId ? undefined : spanId })
 
 const ledgerHeader = (h: H, summary: SessionSummary): Html => {
-	const calls = summary.tools.reduce((total, tool) => total + tool.calls, 0)
-	const failed = summary.tools.reduce((total, tool) => total + tool.failed, 0)
-	const toolMs = summary.tools.reduce((total, tool) => total + tool.totalMs, 0)
+	const calls = Arr.reduce(summary.tools, 0, (total, tool) => total + tool.calls)
+	const failed = Arr.reduce(summary.tools, 0, (total, tool) => total + tool.failed)
+	const toolMs = Arr.reduce(summary.tools, 0, (total, tool) => total + tool.totalMs)
 	return h.div(
 		[h.Class("flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2")],
 		[
@@ -107,7 +108,7 @@ const ledgerColumns = (h: H, axis: SessionAxis): Html =>
 		h.span([h.Class(LEDGER_TIME)], ["Slowest"]),
 		h.span(
 			[h.Class("relative h-3.5 min-w-0 grow")],
-			axis.ticks.flatMap((tick) =>
+			Arr.flatMap(axis.ticks, (tick) =>
 				tick.fraction === 0
 					? []
 					: [
@@ -144,7 +145,7 @@ const callLane = (
 		[h.Class("relative h-6 min-w-0 grow")],
 		[
 			h.span([h.AriaHidden(true), h.Class("absolute top-1/2 left-0 h-px w-full bg-border")], []),
-			...tool.events.map((event) =>
+			...Arr.map(tool.events, (event) =>
 				pressable(
 					h,
 					{
@@ -206,7 +207,7 @@ const ledgerRow = (
 	axis: SessionAxis,
 	sessionStartMs: number,
 ): Html => {
-	const failures = tool.events.filter((event) => event.failed)
+	const failures = Arr.filter(tool.events, (event) => event.failed)
 	const isDisclosable = tool.description !== undefined || failures.length > 0
 	const isExpanded = model.ledgerOpen === tool.name
 	return h.div(
@@ -295,7 +296,9 @@ const ledgerRow = (
 												[tool.description],
 											),
 										]),
-								...failures.map((event) => failedCallRow(h, model, event, sessionStartMs)),
+								...Arr.map(failures, (event) =>
+									failedCallRow(h, model, event, sessionStartMs),
+								),
 							],
 						),
 					]
@@ -316,7 +319,9 @@ const toolUsage = (h: H, model: Model, summary: SessionSummary): Html => {
 						[h.Class("flex flex-col")],
 						[
 							ledgerColumns(h, axis),
-							...summary.tools.map((tool) => ledgerRow(h, model, tool, axis, summary.startMs)),
+							...Arr.map(summary.tools, (tool) =>
+								ledgerRow(h, model, tool, axis, summary.startMs),
+							),
 						],
 					),
 		],

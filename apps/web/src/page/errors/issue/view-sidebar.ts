@@ -26,6 +26,7 @@ import type { Model } from "./model"
 import { sidebarBusy } from "./writes"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str } from "effect"
 
 // The issue sidebar with its state and severity selects.
 // TODO(lease): a held lease should render the lease HUD with Extend and Release; Claim is inert here.
@@ -44,16 +45,16 @@ const SEVERITY_SOURCE_HINT = {
 	manual: "set by hand",
 } satisfies Record<IssueSeveritySource, string>
 
-const OFFERED_STATES = WORKFLOW_STATE_ORDER.filter((state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state))
+const OFFERED_STATES = Arr.filter(WORKFLOW_STATE_ORDER, (state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state))
 
 const isWorkflowState = (value: string): value is WorkflowState =>
-	WORKFLOW_STATE_ORDER.some((state) => state === value)
+	Arr.some(WORKFLOW_STATE_ORDER, (state) => state === value)
 const isSeverity = (value: string) => SEVERITY_ORDER.find((severity) => severity === value) ?? null
 
 /** Unreachable states stay listed but disabled, so the list reads the same from every state. */
 const stateEntries = (current: WorkflowState): ReadonlyArray<SelectView.SelectEntry> => {
 	const allowed = new Set<WorkflowState>(allowedTransitionsForAll([current]))
-	return OFFERED_STATES.map((state) => ({
+	return Arr.map(OFFERED_STATES, (state) => ({
 		_tag: "Item",
 		item: {
 			value: state,
@@ -64,7 +65,7 @@ const stateEntries = (current: WorkflowState): ReadonlyArray<SelectView.SelectEn
 }
 
 const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
-	...SEVERITY_ORDER.map((severity) => ({
+	...Arr.map(SEVERITY_ORDER, (severity) => ({
 		_tag: "Item" as const,
 		item: { value: severity, label: SEVERITY_LABEL[severity] },
 	})),
@@ -136,7 +137,7 @@ const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironmen
 	return h.ul(
 		[h.Class("flex w-full min-w-0 flex-col items-stretch gap-0.5")],
 		[
-			...shown.map((env) =>
+			...Arr.map(shown, (env) =>
 				h.li(
 					[h.Class("flex min-w-0 items-baseline justify-between gap-3")],
 					[
@@ -157,7 +158,7 @@ const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironmen
 }
 
 /** `shortIssueId`: the first seven hex digits, upper case. */
-const shortIssueId = (id: string): string => id.replace(/-/g, "").slice(0, 7).toUpperCase()
+const shortIssueId = (id: string): string => Str.toUpperCase(Str.slice(0, 7)(Str.replace(/-/g, "")(id)))
 
 /** `IssueIdCopy`: the short id that copies the full one. */
 const issueIdCopy = (h: H, model: Model, id: string): Html =>
@@ -292,9 +293,13 @@ export const issueSidebar = (
 					{
 						label: "Environment",
 						hint: environments.length > 0 ? "in this window" : undefined,
-						title: environments
-							.map((env) => `${env.name} · ${env.count.toLocaleString("en-US")}`)
-							.join("\n"),
+						title: Arr.join(
+							Arr.map(
+								environments,
+								(env) => `${env.name} · ${env.count.toLocaleString("en-US")}`,
+							),
+							"\n",
+						),
 					},
 					[environmentValue(h, environments)],
 				),
@@ -302,12 +307,12 @@ export const issueSidebar = (
 					? [
 							detailRailRow(
 								h,
-								{ label: "Resolved in", title: issue.resolvedVersions.join(", ") },
+								{ label: "Resolved in", title: Arr.join(issue.resolvedVersions, ", ") },
 								[
 									typography(
 										h,
 										{ size: "xs", tone: "foreground", mono: true, truncate: true },
-										[issue.resolvedVersions.join(", ")],
+										[Arr.join(issue.resolvedVersions, ", ")],
 									),
 								],
 							),

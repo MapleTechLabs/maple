@@ -1,6 +1,6 @@
 import { DailySpendResponse, DailyVolume, WarehouseQueryError } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Context, DateTime, Effect, Layer } from "effect"
+import { Context, DateTime, Effect, Layer, String as Str } from "effect"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -26,7 +26,7 @@ const BYTES_PER_BILLED_GB = 1_000_000_000
 /** ClickHouse datetime literal (`YYYY-MM-DD HH:MM:SS`), which is what the DSL params want. */
 
 /** `YYYY-MM-DD` in UTC — the key the client renders and the series is indexed by. */
-export const toUtcDateKey = (epochMs: number) => new Date(epochMs).toISOString().slice(0, 10)
+export const toUtcDateKey = (epochMs: number) => Str.slice(0, 10)(new Date(epochMs).toISOString())
 
 const startOfUtcDay = (epochMs: number) => Math.floor(epochMs / DAY_MS) * DAY_MS
 

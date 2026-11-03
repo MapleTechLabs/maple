@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr } from "effect"
 import { OrgId } from "@maple/domain"
 import type { TimeseriesPoint } from "@maple/domain/query-engine"
 import { Schema } from "effect"
@@ -170,11 +170,11 @@ const runSequence = (requests: ReadonlyArray<Request>, backend: EdgeCacheBackend
 
 /** The same sequence with the cache bypassed — ground truth for the points. */
 const oracle = (requests: ReadonlyArray<Request>) =>
-	requests.map((r) => warehousePointsFor(r.startMs, r.endMs))
+	Arr.map(requests, (r) => warehousePointsFor(r.startMs, r.endMs))
 
 const coverageOf = (outcomes: ReadonlyArray<BucketCacheOutcome>) => {
-	const requested = outcomes.reduce((sum, o) => sum + o.requestedBuckets, 0)
-	const hit = outcomes.reduce((sum, o) => sum + o.bucketsHit, 0)
+	const requested = Arr.reduce(outcomes, 0, (sum, o) => sum + o.requestedBuckets)
+	const hit = Arr.reduce(outcomes, 0, (sum, o) => sum + o.bucketsHit)
 	return requested === 0 ? 1 : hit / requested
 }
 
@@ -183,7 +183,7 @@ const assertMatchesOracle = (
 	requests: ReadonlyArray<Request>,
 ) => {
 	const expected = oracle(requests)
-	outcomes.forEach((outcome, index) => {
+	Arr.forEach(outcomes, (outcome, index) => {
 		assert.deepStrictEqual(
 			outcome.points,
 			expected[index]!,
@@ -314,7 +314,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 				{ orgId, query: DEFAULT_QUERY, bucketSeconds: BUCKET_SECONDS, ...window },
 				({ startMs, endMs }) =>
 					Effect.succeed(
-						warehousePointsFor(startMs, endMs).map((p) => ({
+						Arr.map(warehousePointsFor(startMs, endMs), (p) => ({
 							...p,
 							series: { ...p.series, owner: 1 },
 						})),
@@ -328,7 +328,7 @@ describe("bucket cache hit rate — dashboard access patterns", () => {
 				({ startMs, endMs }) => {
 					bComputed = true
 					return Effect.succeed(
-						warehousePointsFor(startMs, endMs).map((p) => ({
+						Arr.map(warehousePointsFor(startMs, endMs), (p) => ({
 							...p,
 							series: { ...p.series, owner: 2 },
 						})),
@@ -572,7 +572,7 @@ describe("bucket cache hit rate — concurrency", () => {
 				{ concurrency: "unbounded" },
 			)
 
-			outcomes.forEach((outcome, index) => {
+			Arr.forEach(outcomes, (outcome, index) => {
 				assert.deepStrictEqual(
 					outcome.points,
 					warehousePointsFor(widgets[index]!.startMs, widgets[index]!.endMs),

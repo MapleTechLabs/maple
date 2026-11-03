@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 // Span-kind and span-status presentation — the single copies of two small maps
 // that were previously duplicated across every trace tooltip and detail panel
 // (web, local-ui, mobile, and twice inside this package). Kept dependency-free
@@ -17,7 +18,7 @@ const CANONICAL_KINDS: ReadonlySet<string> = new Set(["SERVER", "CLIENT", "PRODU
 /** Both warehouse spellings (and any casing) → a canonical kind; `null` for anything else. */
 export function normalizeSpanKind(spanKind: string | null | undefined): SpanKind | null {
 	if (!spanKind) return null
-	const bare = spanKind.replace(/^SPAN_KIND_/i, "").toUpperCase()
+	const bare = Str.toUpperCase(Str.replace(/^SPAN_KIND_/i, "")(spanKind))
 	return CANONICAL_KINDS.has(bare) ? (bare as SpanKind) : null
 }
 
@@ -35,7 +36,7 @@ export function getSpanKindLabel(spanKind: string | null | undefined): string {
 	if (!spanKind) return "Unknown"
 	const kind = normalizeSpanKind(spanKind)
 	if (kind) return SPAN_KIND_LABELS[`SPAN_KIND_${kind}`] ?? kind
-	return SPAN_KIND_LABELS[spanKind] ?? spanKind.replace("SPAN_KIND_", "")
+	return SPAN_KIND_LABELS[spanKind] ?? Str.replace("SPAN_KIND_", "")(spanKind)
 }
 
 /** Span status (`Ok`/`Error`/`Unset`, Title case per Maple convention) → badge classes. */

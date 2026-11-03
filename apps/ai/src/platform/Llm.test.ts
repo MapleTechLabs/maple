@@ -10,7 +10,17 @@
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
-import { ConfigProvider, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import {
+	ConfigProvider,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
@@ -57,7 +67,7 @@ const captureRequest = (
 		const fakeFetch: typeof globalThis.fetch = async (input, init) => {
 			const headers: Record<string, string> = {}
 			new Headers(init?.headers).forEach((value, key) => {
-				headers[key.toLowerCase()] = value
+				headers[Str.toLowerCase(key)] = value
 			})
 			// The body arrives as bytes, not a string — `Response` is the cheapest correct decoder.
 			const bodyText = await new Response(init?.body ?? "{}").text()
@@ -139,7 +149,10 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 
 	it.live("truncates an over-long session id to OpenRouter's 256-character limit", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureRequest(openRouterEnv, { ...tags, sessionId: "s".repeat(400) })
+			const captured = yield* captureRequest(openRouterEnv, {
+				...tags,
+				sessionId: Str.repeat(400)("s"),
+			})
 
 			expect(captured.body.session_id).toHaveLength(256)
 		}),
@@ -456,12 +469,15 @@ const sseBody = (
 					})}`,
 					"",
 				]
-	return [
-		...chunks.flatMap((chunk) => [`data: ${JSON.stringify({ ...envelope, ...chunk })}`, ""]),
-		...terminal,
-		"data: [DONE]",
-		"",
-	].join("\n")
+	return Arr.join(
+		[
+			...Arr.flatMap(chunks, (chunk) => [`data: ${JSON.stringify({ ...envelope, ...chunk })}`, ""]),
+			...terminal,
+			"data: [DONE]",
+			"",
+		],
+		"\n",
+	)
 }
 
 /**
@@ -605,7 +621,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
 			// "said nothing" half of the report, and it survives a finish part on its own.
 			const parts = yield* streamParts(disjointReasoningUsage, { omitUsage: true })
 
-			expect(parts.map((part) => part.type)).toContain("text-end")
+			expect(Arr.map(parts, (part) => part.type)).toContain("text-end")
 		}),
 	)
 
@@ -665,7 +681,7 @@ describe("streamed completion — a stream that ends without a usage block", () 
 		Effect.gen(function* () {
 			const parts = yield* streamParts(disjointReasoningUsage)
 
-			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "finish")).toHaveLength(1)
 		}),
 	)
 
@@ -700,8 +716,8 @@ describe("streamed completion — a stream that ends without a usage block", () 
 				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
 			})
 
-			expect(parts.filter((part) => part.type === "tool-call")).toHaveLength(1)
-			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "tool-call")).toHaveLength(1)
+			expect(Arr.filter(parts, (part) => part.type === "finish")).toHaveLength(1)
 		}),
 	)
 })
@@ -736,7 +752,7 @@ describe("layerDecisionModel — Clef on Workers AI", () => {
 			const fakeFetch: typeof globalThis.fetch = async (input, init) => {
 				const headers: Record<string, string> = {}
 				new Headers(init?.headers).forEach((value, key) => {
-					headers[key.toLowerCase()] = value
+					headers[Str.toLowerCase(key)] = value
 				})
 				const bodyText = await new Response(init?.body ?? "{}").text()
 				captured = {

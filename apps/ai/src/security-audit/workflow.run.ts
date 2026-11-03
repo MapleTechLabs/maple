@@ -59,6 +59,8 @@ import {
 	Predicate,
 	Schedule,
 	Schema,
+	Array as Arr,
+	String as Str,
 } from "effect"
 import { HttpClient } from "effect/http"
 import {
@@ -118,7 +120,7 @@ export const toSandboxStepError =
 	(step: string) =>
 	(error: SandboxError): AuditSandboxStepError =>
 		new AuditSandboxStepError({
-			message: `${step}: ${describeSandboxError(error)}`.slice(0, 1_000),
+			message: Str.slice(0, 1_000)(`${step}: ${describeSandboxError(error)}`),
 			step,
 			sandboxTag: error._tag,
 		})
@@ -150,7 +152,7 @@ const preparedNothing = (profile: ExecutionProfile, why: string): ExecutionProfi
 	mode: "source_only",
 	reasons: [
 		...profile.reasons,
-		`the execution sandbox could not prepare the repository: ${why.slice(0, 300)}`,
+		`the execution sandbox could not prepare the repository: ${Str.slice(0, 300)(why)}`,
 	],
 })
 
@@ -211,7 +213,7 @@ const durableAgents = (
 			Effect.catchDefect((defect) =>
 				Effect.fail(
 					refused(
-						`the organization's audit spend step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+						`the organization's audit spend step died: ${Str.slice(0, 600)(Cause.pretty(Cause.die(defect)))}`,
 						"org_budget_unavailable",
 					),
 				),
@@ -286,7 +288,7 @@ const runAgentStep = (
 		Effect.catchDefect((defect) =>
 			Effect.fail(
 				new AuditAgentError({
-					message: `agent step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+					message: `agent step died: ${Str.slice(0, 600)(Cause.pretty(Cause.die(defect)))}`,
 					role: invocation.role,
 					agentId: invocation.agentId,
 				}),
@@ -335,11 +337,11 @@ export const auditWithAgents = <E, R>(
 				Effect.andThen(sandbox.exec(orgId, target, { command: "git", args: ["rev-parse", "HEAD"] })),
 				Effect.mapError(toSandboxStepError("resolve-commit")),
 				Effect.flatMap((result) =>
-					result.exitCode === 0 && /^[0-9a-f]{40}$/.test(result.stdout.trim())
-						? Effect.succeed(result.stdout.trim())
+					result.exitCode === 0 && /^[0-9a-f]{40}$/.test(Str.trim(result.stdout))
+						? Effect.succeed(Str.trim(result.stdout))
 						: Effect.fail(
 								new AuditCommitUnresolvedError({
-									message: `cannot pin ${payload.ref}: ${result.stderr.trim().slice(0, 300)}`,
+									message: `cannot pin ${payload.ref}: ${Str.slice(0, 300)(Str.trim(result.stderr))}`,
 								}),
 							),
 				),
@@ -361,7 +363,7 @@ export const auditWithAgents = <E, R>(
 				if (Option.isNone(size)) {
 					return {
 						violations: [
-							`its size could not be measured (exit ${result.exitCode}: ${result.stderr.trim().slice(0, 300)})`,
+							`its size could not be measured (exit ${result.exitCode}: ${Str.slice(0, 300)(Str.trim(result.stderr))})`,
 						],
 					}
 				}
@@ -401,7 +403,7 @@ export const auditWithAgents = <E, R>(
 					executor.prepare(orgId, payload.runId, executorTarget).pipe(
 						Effect.map((installs) => ({
 							ok: true as const,
-							installs: installs.map(({ dir, manager, outcome, detail }) => ({
+							installs: Arr.map(installs, ({ dir, manager, outcome, detail }) => ({
 								dir,
 								manager,
 								outcome,
@@ -419,7 +421,10 @@ export const auditWithAgents = <E, R>(
 					Effect.catchCauseIf(
 						(cause) => !Cause.hasInterruptsOnly(cause),
 						(cause) =>
-							Effect.succeed({ ok: false as const, error: Cause.pretty(cause).slice(0, 300) }),
+							Effect.succeed({
+								ok: false as const,
+								error: Str.slice(0, 300)(Cause.pretty(cause)),
+							}),
 					),
 				)
 		const executionProfile =
@@ -430,7 +435,8 @@ export const auditWithAgents = <E, R>(
 				: {
 						_tag: "Unavailable",
 						blocker:
-							executionProfile.reasons.join("; ") || "no execution sandbox for this repository",
+							Arr.join(executionProfile.reasons, "; ") ||
+							"no execution sandbox for this repository",
 					}
 		const auditExecution: AuditExecutionApi | undefined =
 			prepared?.ok === true
@@ -463,7 +469,7 @@ export const auditWithAgents = <E, R>(
 								Effect.annotateLogs({
 									runId: payload.runId,
 									exitCode: result.exitCode,
-									stderr: result.stderr.slice(0, 500),
+									stderr: Str.slice(0, 500)(result.stderr),
 								}),
 								Effect.as(""),
 							),
@@ -585,7 +591,7 @@ export const auditWithAgents = <E, R>(
 		const result = yield* runAudit({
 			runId: payload.runId,
 			repo: payload.repository,
-			target: `the repository ${payload.repository} at commit ${sha}, read through your tools${payload.scopePaths.length === 0 ? "" : `; this run is scoped to ${payload.scopePaths.join(", ")}, so map those paths and only what they depend on or are reached from`}`,
+			target: `the repository ${payload.repository} at commit ${sha}, read through your tools${payload.scopePaths.length === 0 ? "" : `; this run is scoped to ${Arr.join(payload.scopePaths, ", ")}, so map those paths and only what they depend on or are reached from`}`,
 			sourceRef: sha,
 			profile: payload.profile,
 			scopePaths: payload.scopePaths,
@@ -618,17 +624,14 @@ export const auditWithAgents = <E, R>(
 			// the finding is not tied to a unit this run left unaudited (deferred, blocked, out of scope).
 			const row = yield* store.getRun(payload.runId)
 			const unaudited = new Set(
-				result.ledger
-					.filter(
-						(u) =>
-							u.status !== "covered" &&
-							u.status !== "candidate" &&
-							u.status !== "not_applicable",
-					)
-					.flatMap((u) => [
-						...u.result_fingerprints,
-						...(u.carried_fingerprint === undefined ? [] : [u.carried_fingerprint]),
-					]),
+				Arr.filter(
+					result.ledger,
+					(u) =>
+						u.status !== "covered" && u.status !== "candidate" && u.status !== "not_applicable",
+				).flatMap((u) => [
+					...u.result_fingerprints,
+					...(u.carried_fingerprint === undefined ? [] : [u.carried_fingerprint]),
+				]),
 			)
 			if (
 				result.status === "complete" &&
@@ -642,7 +645,7 @@ export const auditWithAgents = <E, R>(
 				// Cancelled (or otherwise finished) meanwhile: never mark fixed, and finishRun keeps its outcome.
 				row.value.finishedAt === null
 			) {
-				const reported = new Set(result.findings.map((f) => f.fingerprint))
+				const reported = new Set(Arr.map(result.findings, (f) => f.fingerprint))
 				const gone = (yield* store.listFindings(row.value.targetId)).filter(
 					(f) =>
 						f.status === "open" &&
@@ -650,14 +653,14 @@ export const auditWithAgents = <E, R>(
 						!reported.has(f.fingerprint) &&
 						!unaudited.has(f.fingerprint) &&
 						changedSincePrior([
-							...f.record.trace.map((t) => t.file),
-							...f.record.evidence.map((e) => e.file),
+							...Arr.map(f.record.trace, (t) => t.file),
+							...Arr.map(f.record.evidence, (e) => e.file),
 						]),
 				)
 				if (gone.length > 0)
 					yield* store.markFixed(
 						row.value.targetId,
-						gone.map((f) => f.fingerprint),
+						Arr.map(gone, (f) => f.fingerprint),
 						payload.runId,
 					)
 			}
@@ -665,7 +668,7 @@ export const auditWithAgents = <E, R>(
 				payload.runId,
 				result.status === "complete"
 					? { status: "complete" }
-					: { status: "incomplete", reason: result.incompleteReasons.join("; ") },
+					: { status: "incomplete", reason: Arr.join(result.incompleteReasons, "; ") },
 			)
 		})
 		yield* durableStep("settle", settle, STEP_RETRY)
@@ -683,7 +686,7 @@ export const auditWithAgents = <E, R>(
 						const store = (yield* SecurityAuditStore).forOrg(orgId)
 						yield* store.finishRun(payload.runId, {
 							status: "failed",
-							error: Cause.pretty(cause).slice(0, 2_000),
+							error: Str.slice(0, 2_000)(Cause.pretty(cause)),
 						})
 						// A run that died leaves no executor running until its inactivity timeout.
 						yield* (yield* ExecutorService).destroy(payload.runId)

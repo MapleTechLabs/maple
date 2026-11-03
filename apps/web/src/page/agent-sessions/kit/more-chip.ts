@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { Array as Arr } from "effect"
 
 /** The "+N" after a first name: a chip with a hover state, naming the hidden rest on hover. */
 export const moreChip = <M>(
@@ -16,7 +17,7 @@ export const moreChip = <M>(
 			),
 			...(options.names === undefined || options.names.length === 0
 				? []
-				: [h.Title(options.names.join(", "))]),
+				: [h.Title(Arr.join(options.names, ", "))]),
 		],
 		[`+${options.count}`],
 	)
