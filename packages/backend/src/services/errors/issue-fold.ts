@@ -17,6 +17,7 @@ import { mergeVersions } from "./issue-versions"
  * Fold `sources` into `target`, already validated and locked by the caller: their
  * fingerprints become the target's aliases, their counts and builds add to it, and
  * each is archived pointing at it. Shared by a user's merge and a version bump's re-key.
+ * Returns the target as it now stands, for a caller that folds into it again.
  */
 export const foldIssues = (
 	db: MapleDb,
@@ -27,11 +28,11 @@ export const foldIssues = (
 		readonly timestamp: number
 		readonly event: (issueId: ErrorIssueId, payload: Record<string, unknown>) => ErrorIssueEventInsert
 	},
-): Effect.Effect<void, MapleDbError> =>
+): Effect.Effect<ErrorIssueRow, MapleDbError> =>
 	Effect.gen(function* () {
 		const { orgId, target, timestamp, event } = input
 		const merged = input.sources
-		if (merged.length === 0) return
+		if (merged.length === 0) return target
 		const sourceIds = Arr.map(merged, (row) => row.id)
 		// A source's own aliases travel with it; the ones it re-keyed itself
 		// become its own, so unmerging it hands them back.
@@ -112,7 +113,7 @@ export const foldIssues = (
 				})
 				.where(($) => [$.orgId.eq(orgId), $.id.in_(...sourceIds)]),
 		)
-		yield* db.run(
+		const [folded] = yield* db.run(
 			PG.update(ErrorIssues)
 				.set({
 					occurrenceCount:
@@ -125,7 +126,8 @@ export const foldIssues = (
 					),
 					updatedAt: timestamp,
 				})
-				.where(($) => [$.orgId.eq(orgId), $.id.eq(target.id)]),
+				.where(($) => [$.orgId.eq(orgId), $.id.eq(target.id)])
+				.returning(),
 		)
 		yield* db.run(
 			PG.insertInto(ErrorIssueEvents).values([
@@ -143,4 +145,6 @@ export const foldIssues = (
 				),
 			]),
 		)
+		// The target is locked by the caller, so the update always returns it.
+		return folded ?? target
 	})

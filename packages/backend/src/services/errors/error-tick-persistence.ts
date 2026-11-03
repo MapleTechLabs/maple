@@ -439,31 +439,43 @@ const rekeyOwners = (
 			),
 		)
 		const issueById = new Map(Arr.map(candidates, (issue) => [issue.id, issue]))
-		const folded = new Set<ErrorIssueId>()
-		const rekeyed = yield* Effect.forEach(unowned, (row) =>
+		// An issue folded earlier in this pass is reached through the one it was folded into.
+		const foldedInto = new Map<ErrorIssueId, ErrorIssueId>()
+		const survivor = (id: ErrorIssueId): ErrorIssueId => {
+			const next = foldedInto.get(id)
+			return next === undefined ? id : survivor(next)
+		}
+		const rekeyedTo = yield* Effect.forEach(unowned, (row) =>
 			Effect.gen(function* () {
 				const issues = Arr.dedupe(
 					Arr.flatMap(previousOf(row), (hash) => {
 						const owner = previousOwners.get(hash)
-						const issue = owner === undefined ? undefined : issueById.get(owner.id)
-						return issue === undefined || folded.has(issue.id) ? [] : [issue]
+						const issue = owner === undefined ? undefined : issueById.get(survivor(owner.id))
+						return issue === undefined ? [] : [issue]
 					}),
 				).sort(rekeyOrder)
 				const [keeper, ...rest] = issues
 				if (keeper === undefined) return []
 				if (rest.length > 0) {
-					Arr.forEach(rest, (issue) => folded.add(issue.id))
-					yield* foldIssues(tx, {
+					Arr.forEach(rest, (issue) => foldedInto.set(issue.id, keeper.id))
+					// Folding writes totals from the row it is given, so keep the latest one.
+					const folded = yield* foldIssues(tx, {
 						orgId,
 						target: keeper,
 						sources: rest,
 						timestamp: input.windowEndMs,
 						event: (issueId, payload) => buildEvent(input, issueId, "merge", { payload }),
 					})
+					issueById.set(folded.id, folded)
 				}
-				return [[row.fingerprintHash, ownerOf(keeper)] as const]
+				return [[row.fingerprintHash, keeper.id] as const]
 			}),
 		).pipe(Effect.map(Arr.flatten))
+		// A later row may have folded an earlier row's keeper away: alias to the survivor.
+		const rekeyed = Arr.flatMap(rekeyedTo, ([fingerprintHash, keeperId]) => {
+			const issue = issueById.get(survivor(keeperId))
+			return issue === undefined ? [] : [[fingerprintHash, ownerOf(issue)] as const]
+		})
 		yield* Effect.forEach(
 			Arr.chunksOf(rekeyed, BULK_CHUNK_ROWS),
 			(chunk) =>

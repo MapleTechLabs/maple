@@ -69,14 +69,18 @@ const CORPUS = [
 /**
  * Every fingerprint version and the digest of the corpus's hash inputs under it.
  * Versions only increase, so inputs that move cannot be recorded without a bump.
+ * v3's entry was computed by the v3 code itself, before the bump.
  */
 const HISTORY: ReadonlyArray<{ readonly version: number; readonly digest: string }> = [
+	{ version: 3, digest: "2b1083177f1c21fe168908eb4db9f228ebfcbaa6a4c03412d4ce83441d6a3173" },
 	{ version: 4, digest: "63ea63b3ef048e9e2ab9fe320609b7f0ed529ad935112653147883ad4654585f" },
 ]
 
-const digest = createHash("sha256")
-	.update(JSON.stringify(Arr.map(CORPUS, (event) => computeFingerprintInputs(event).hashInputs)))
-	.digest("hex")
+const digestOf = (inputs: (event: (typeof CORPUS)[number]) => ReadonlyArray<string>) =>
+	createHash("sha256")
+		.update(JSON.stringify(Arr.map(CORPUS, inputs)))
+		.digest("hex")
+const digest = digestOf((event) => computeFingerprintInputs(event).hashInputs)
 
 describe("FINGERPRINT_VERSION", () => {
 	it("is bumped whenever the hash inputs move", () => {
@@ -88,5 +92,15 @@ describe("FINGERPRINT_VERSION", () => {
 		const versions = Arr.map(HISTORY, (entry) => entry.version)
 		expect(versions).toEqual([...versions].sort((a, b) => a - b))
 		expect(new Set(versions).size).toBe(versions.length)
+	})
+
+	it("hashes what the previous version hashed, so a bump can re-key its issues", () => {
+		// A bump must also teach `previousHashInputs` (and the views' `_prevHash`) the
+		// rule it replaced; otherwise lineage names hashes no issue owns.
+		const previous = HISTORY.find((entry) => entry.version === FINGERPRINT_VERSION - 1)
+		expect(
+			digestOf((event) => computeFingerprintInputs(event).previousHashInputs),
+			"previousHashInputs no longer reproduces the previous version's hash inputs.",
+		).toBe(previous?.digest)
 	})
 })

@@ -2275,6 +2275,70 @@ describe("ErrorsService.runTick", () => {
 		)
 	})
 
+	it.effect("a hash re-keyed onto an issue the same pass folds away follows it to the survivor", () => {
+		const BUMPED_A = "3333333333333333333"
+		const BUMPED_B = "5555555555555555555"
+		const OTHER_V3 = "4444444444444444444"
+		// A's only old issue is X; B's are Y (being worked) and X, so B folds X into Y.
+		const rows = [
+			scanRow({ fingerprintHash: BUMPED_A, count: 2 }),
+			scanRow({ fingerprintHash: BUMPED_B, count: 3 }),
+		]
+		const lineage = [
+			{ fingerprintHash: BUMPED_A, previousFingerprintHash: SCAN_FINGERPRINT },
+			{ fingerprintHash: BUMPED_B, previousFingerprintHash: OTHER_V3 },
+			{ fingerprintHash: BUMPED_B, previousFingerprintHash: SCAN_FINGERPRINT },
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const x = asIssueId(randomUUID())
+			const y = asIssueId(randomUUID())
+			yield* seedIssue(x, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				occurrenceCount: 5,
+			})
+			yield* seedIssue(y, {
+				fingerprintHash: OTHER_V3,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				workflowState: "in_progress",
+				occurrenceCount: 7,
+			})
+
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssueById(x)).mergedIntoIssueId, y)
+			// Both hashes' occurrences and X's history land on Y, none on the archived X.
+			assert.strictEqual((yield* loadIssueById(y)).occurrenceCount, 17)
+			assert.strictEqual((yield* loadIssueById(x)).occurrenceCount, 5)
+			const aliases = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueFingerprints)
+						.select("fingerprintHash", "issueId")
+						.where(($) => [$.orgId.eq(ORG), $.source.eq("rekey")])
+						.orderBy(["fingerprintHash", "asc"]),
+				),
+			)
+			assert.deepStrictEqual(aliases, [
+				{ fingerprintHash: BUMPED_A, issueId: y },
+				{ fingerprintHash: BUMPED_B, issueId: y },
+			])
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
 	it.effect("a re-key onto an issue retention retired brings it back", () => {
 		const BUMPED = "3333333333333333333"
 		const rows = [scanRow({ fingerprintHash: BUMPED, count: 4 })]
