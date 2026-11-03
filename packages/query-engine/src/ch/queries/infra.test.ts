@@ -54,7 +54,7 @@ describe("listHostsQuery", () => {
 		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
 		expect(sql).toContain("MetricName = 'system.filesystem.usage'")
 		expect(sql).toContain(
-			"coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free', 'reserved')",
+			"coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free')",
 		)
 		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
 		expect(sql).toContain(
@@ -65,8 +65,18 @@ describe("listHostsQuery", () => {
 
 	it("scopes every branch to the org and the host search", () => {
 		const { sql } = compileUnsafe(listHostsQuery({ search: "web" }), baseParams)
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(3)
+		// The hosts page, plus each disk branch and the page subquery it reads its hosts from.
+		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(5)
 		expect(sql.match(/positionCaseInsensitive\([^)]*'host\.name'\], 'web'\) > 0/g)).toHaveLength(3)
+	})
+
+	it("reads disk only for the page's hosts, one latest value per mount", () => {
+		const { sql } = compileUnsafe(listHostsQuery({ limit: 10, offset: 20 }), baseParams)
+		expect(sql.match(/ResourceAttributes\['host\.name'\] IN \(SELECT/g)).toHaveLength(2)
+		expect(sql.match(/LIMIT 10\s+OFFSET 20/g)).toHaveLength(3)
+		expect(
+			sql.match(/argMax\(metrics_(sum|gauge)\.Value, metrics_(sum|gauge)\.TimeUnix\)/g),
+		).toHaveLength(2)
 	})
 })
 
@@ -104,9 +114,15 @@ describe("hostGaugeTimeseriesQuery", () => {
 describe("hostNetworkTimeseriesQuery", () => {
 	const { sql } = compileUnsafe(hostNetworkTimeseriesQuery({ hostName: "h" }), baseParams)
 
-	it("reads one bucket before the range so the first bucket has a previous sample", () => {
-		expect(sql).toContain("metrics_sum.TimeUnix >= '2024-01-01 00:00:00' - INTERVAL 60 SECOND")
-		expect(sql).toContain("network_deltas.TimeUnix >= '2024-01-01 00:00:00'")
+	it("reads at least ten minutes before the range so the first bucket has a previous sample", () => {
+		expect(sql).toContain(
+			"metrics_sum.TimeUnix >= '2024-01-01 00:00:00' - INTERVAL greatest(60, 600) SECOND",
+		)
+		expect(sql).toContain("deltas.TimeUnix >= '2024-01-01 00:00:00'")
+	})
+
+	it("leaves out loopback", () => {
+		expect(sql).toContain("metrics_sum.Attributes['device']) NOT IN ('lo', 'lo0')")
 	})
 
 	it("never sums the raw cumulative value", () => {

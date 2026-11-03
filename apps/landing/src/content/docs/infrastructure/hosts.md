@@ -82,9 +82,9 @@ If you already run a Collector on the host for application telemetry, add the `h
 | `system.memory.utilization`   | MEM in **Usage**, the fleet band, Memory chart                      |
 | `system.filesystem.usage`     | DSK in **Usage**, the fleet band, Filesystem chart (per mountpoint) |
 | `system.cpu.load_average.15m` | **Load 15m** column and chart                                       |
-| `system.network.io`           | Network chart (bytes per second, in and out)                        |
+| `system.network.io`           | Network chart (bytes per second in and out, without loopback)       |
 
-The list shows each host's **Usage** (CPU, MEM and DSK), **Load 15m** and **Last seen**. Search by name with **Search hosts…**. The band above the list splits the fleet by each host's busiest of CPU, memory and disk, and filters the list:
+The list shows each host's **Usage** (CPU, MEM and DSK), **Load 15m** and **Last seen**. DSK is the fullest mount's latest reading, as `df` shows it: used / (used + free). Search by name with **Search hosts…**. The band above the list splits the fleet by each host's busiest of CPU, memory and disk, and filters the list:
 
 | Filter                | Meaning                             |
 | --------------------- | ----------------------------------- |

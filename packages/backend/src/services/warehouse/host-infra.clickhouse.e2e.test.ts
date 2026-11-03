@@ -89,7 +89,7 @@ const filesystemPoints: ReadonlyArray<Point> = [
 
 // system.network.io samples every minute, offset by 30s, from one bucket before the window
 // to its end. eth0 receives 6000 B/min (100 B/s) and transmits 12000 B/min (200 B/s); lo
-// receives 600 B/min (10 B/s). eth0's receive counter resets 32.5 minutes in.
+// receives 600 B/min (10 B/s), which the chart leaves out. eth0's receive counter resets 32.5 minutes in.
 const RESET_INDEX = 42
 const networkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_, index) => {
 	const ms = START_MS - 10 * MINUTE_MS + 30_000 + index * MINUTE_MS
@@ -189,17 +189,26 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 		return Schema.decodeUnknownSync(Schema.Array(compiled.rowSchema!))(body.data)
 	}
 
-	it("reads disk % as used / (used + free + reserved) of the fullest real mount", async () => {
+	it("reads disk % as used / (used + free) of the fullest real mount's latest scrape", async () => {
 		const rows = await run(compileUnsafe(CH.listHostsQuery(), window))
 		const disk = Object.fromEntries(rows.map((row) => [row.hostName, row.diskPct]))
-		assert.closeTo(disk["receiver-host"]!, 0.6, 1e-9)
-		assert.closeTo(disk["semconv-host"]!, 0.25, 1e-9)
+		assert.closeTo(disk["receiver-host"]!, 60 / 90, 1e-9)
+		assert.closeTo(disk["semconv-host"]!, 25 / 95, 1e-9)
 		assert.closeTo(disk["utilization-host"]!, 0.42, 1e-9)
 
 		const [detail] = await run(
-			compileUnsafe(CH.hostDetailSummaryQuery({ hostName: "semconv-host" }), window),
+			compileUnsafe(CH.hostDetailSummaryQuery({ hostName: "receiver-host" }), window),
 		)
-		assert.closeTo(detail!.diskPct, 0.25, 1e-9)
+		assert.closeTo(detail!.diskPct, 60 / 90, 1e-9)
+	})
+
+	it("reads disk % for every host on the page and only those", async () => {
+		const [first] = await run(compileUnsafe(CH.listHostsQuery({ limit: 1 }), window))
+		const [second] = await run(compileUnsafe(CH.listHostsQuery({ limit: 1, offset: 1 }), window))
+		const all = await run(compileUnsafe(CH.listHostsQuery(), window))
+		const diskOf = Object.fromEntries(all.map((row) => [row.hostName, row.diskPct]))
+		assert.strictEqual(first!.diskPct, diskOf[first!.hostName])
+		assert.strictEqual(second!.diskPct, diskOf[second!.hostName])
 	})
 
 	it("lists each real mount with its average and peak used fraction", async () => {
@@ -210,16 +219,17 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			receiver.map((row) => [row.mountpoint, row.device]),
 			[["/", "/dev/sda1"]],
 		)
-		assert.closeTo(receiver[0]!.usedAvg, 0.5, 1e-9)
-		assert.closeTo(receiver[0]!.usedMax, 0.6, 1e-9)
+		assert.closeTo(receiver[0]!.usedAvg, (40 / 90 + 60 / 90) / 2, 1e-9)
+		assert.closeTo(receiver[0]!.usedMax, 60 / 90, 1e-9)
 
 		const semconv = await run(
 			compileUnsafe(CH.hostFilesystemsQuery({ hostName: "semconv-host" }), window),
 		)
 		assert.deepEqual(
-			semconv.map((row) => [row.mountpoint, row.device, row.usedMax]),
-			[["/data", "/dev/sdb1", 0.25]],
+			semconv.map((row) => [row.mountpoint, row.device]),
+			[["/data", "/dev/sdb1"]],
 		)
+		assert.closeTo(semconv[0]!.usedMax, 25 / 95, 1e-9)
 	})
 
 	it("charts each mount's used fraction per bucket", async () => {
@@ -230,15 +240,14 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			}),
 		)
 		assert.deepEqual(
-			rows.map((row) => [row.attributeValue, row.avgValue]),
-			[
-				["/", 0.4],
-				["/", 0.6],
-			],
+			rows.map((row) => row.attributeValue),
+			["/", "/"],
 		)
+		assert.closeTo(rows[0]!.avgValue, 40 / 90, 1e-9)
+		assert.closeTo(rows[1]!.avgValue, 60 / 90, 1e-9)
 	})
 
-	it("charts network I/O as bytes per second, across devices and a counter reset", async () => {
+	it("charts network I/O as bytes per second, across a counter reset, without loopback", async () => {
 		const rows = await run(
 			compileUnsafe(CH.hostNetworkTimeseriesQuery({ hostName: "receiver-host" }), {
 				...window,
@@ -247,7 +256,20 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 		)
 		const byDirection = (direction: string) =>
 			rows.filter((row) => row.attributeValue === direction).map((row) => Math.round(row.rateValue))
-		assert.deepEqual(byDirection("receive"), [110, 110, 110, 110, 110, 110])
+		assert.deepEqual(byDirection("receive"), [100, 100, 100, 100, 100, 100])
 		assert.deepEqual(byDirection("transmit"), [200, 200, 200, 200, 200, 200])
+	})
+
+	it("keeps the true rate in buckets narrower than the scrape interval", async () => {
+		const rows = await run(
+			compileUnsafe(CH.hostNetworkTimeseriesQuery({ hostName: "receiver-host" }), {
+				...window,
+				bucketSeconds: 15,
+			}),
+		)
+		const transmit = rows.filter((row) => row.attributeValue === "transmit")
+		// One bucket per minute's scrape, from the first one in the window.
+		assert.strictEqual(transmit.length, 60)
+		assert.deepEqual([...new Set(transmit.map((row) => Math.round(row.rateValue)))], [200])
 	})
 })

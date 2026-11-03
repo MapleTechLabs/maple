@@ -1833,7 +1833,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:infra:hostDetailSummaryQuery:default  [734d9142]
+-- builder:infra:hostDetailSummaryQuery:default  [2aab5fe2]
 SELECT
           host.hostName AS hostName,
           host.osType AS osType,
@@ -1867,32 +1867,37 @@ SELECT
           AND metrics_gauge.MetricName IN ('system.cpu.utilization', 'system.memory.utilization', 'system.filesystem.utilization', 'system.cpu.load_average.15m')
         GROUP BY hostName) AS host
         LEFT JOIN (SELECT
-          filesystem_points.hostName AS hostName,
-          max(filesystem_points.usedFraction) AS diskPct
+          latest_mounts.hostName AS hostName,
+          max(latest_mounts.usedFraction) AS diskPct
         FROM (
 SELECT
+          latest_usage.hostName AS hostName,
+          latest_usage.mountpoint AS mountpoint,
+          latest_usage.device AS device,
+          ifNull(ifNotFinite(sumIf(latest_usage.bytes, latest_usage.state = 'used') / sum(latest_usage.bytes), 0), 0) AS usedFraction
+        FROM (SELECT
           metrics_sum.ResourceAttributes['host.name'] AS hostName,
           coalesce(nullIf(metrics_sum.Attributes['system.filesystem.mountpoint'], ''), metrics_sum.Attributes['mountpoint']) AS mountpoint,
-          any(coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device'])) AS device,
-          metrics_sum.TimeUnix AS sampleTime,
-          ifNull(ifNotFinite(sumIf(metrics_sum.Value, coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) = 'used') / sum(metrics_sum.Value), 0), 0) AS usedFraction
+          coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device']) AS device,
+          coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) AS state,
+          argMax(metrics_sum.Value, metrics_sum.TimeUnix) AS bytes
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ResourceAttributes['host.name'] != ''
           AND metrics_sum.MetricName = 'system.filesystem.usage'
-          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free', 'reserved')
-          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.type'], ''), metrics_sum.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
+          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free')
+          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.type'], ''), metrics_sum.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs', 'erofs')
           AND metrics_sum.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
-        GROUP BY hostName, mountpoint, sampleTime
+        GROUP BY hostName, mountpoint, device, state) AS latest_usage
+        GROUP BY hostName, mountpoint, device
 UNION ALL
 SELECT
           metrics_gauge.ResourceAttributes['host.name'] AS hostName,
           coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.mountpoint'], ''), metrics_gauge.Attributes['mountpoint']) AS mountpoint,
           coalesce(nullIf(metrics_gauge.Attributes['system.device'], ''), metrics_gauge.Attributes['device']) AS device,
-          metrics_gauge.TimeUnix AS sampleTime,
-          metrics_gauge.Value AS usedFraction
+          argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) AS usedFraction
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
@@ -1900,13 +1905,14 @@ SELECT
           AND metrics_gauge.ResourceAttributes['host.name'] != ''
           AND metrics_gauge.MetricName = 'system.filesystem.utilization'
           AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.state'], ''), metrics_gauge.Attributes['state']) IN ('used', '')
-          AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.type'], ''), metrics_gauge.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
+          AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.type'], ''), metrics_gauge.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs', 'erofs')
           AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
-) AS filesystem_points
+        GROUP BY hostName, mountpoint, device
+) AS latest_mounts
         GROUP BY hostName) AS disk ON host.hostName = disk.hostName
         FORMAT JSON
 
--- builder:infra:hostFilesystemsQuery:default  [440a8669]
+-- builder:infra:hostFilesystemsQuery:default  [88ee7861]
 SELECT
           filesystem_points.mountpoint AS mountpoint,
           any(filesystem_points.device) AS device,
@@ -1916,7 +1922,7 @@ SELECT
 SELECT
           metrics_sum.ResourceAttributes['host.name'] AS hostName,
           coalesce(nullIf(metrics_sum.Attributes['system.filesystem.mountpoint'], ''), metrics_sum.Attributes['mountpoint']) AS mountpoint,
-          any(coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device'])) AS device,
+          coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device']) AS device,
           metrics_sum.TimeUnix AS sampleTime,
           ifNull(ifNotFinite(sumIf(metrics_sum.Value, coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) = 'used') / sum(metrics_sum.Value), 0), 0) AS usedFraction
         FROM metrics_sum
@@ -1925,10 +1931,10 @@ SELECT
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ResourceAttributes['host.name'] != ''
           AND metrics_sum.MetricName = 'system.filesystem.usage'
-          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free', 'reserved')
-          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.type'], ''), metrics_sum.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
+          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free')
+          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.type'], ''), metrics_sum.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs', 'erofs')
           AND metrics_sum.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
-        GROUP BY hostName, mountpoint, sampleTime
+        GROUP BY hostName, mountpoint, device, sampleTime
 UNION ALL
 SELECT
           metrics_gauge.ResourceAttributes['host.name'] AS hostName,
@@ -1943,7 +1949,7 @@ SELECT
           AND metrics_gauge.ResourceAttributes['host.name'] != ''
           AND metrics_gauge.MetricName = 'system.filesystem.utilization'
           AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.state'], ''), metrics_gauge.Attributes['state']) IN ('used', '')
-          AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.type'], ''), metrics_gauge.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
+          AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.type'], ''), metrics_gauge.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs', 'erofs')
           AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
 ) AS filesystem_points
         GROUP BY mountpoint
@@ -1951,7 +1957,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:infra:hostFilesystemTimeseriesQuery:default  [7dee1bac]
+-- builder:infra:hostFilesystemTimeseriesQuery:default  [4ce2dcd4]
 SELECT
           toStartOfInterval(filesystem_points.sampleTime, INTERVAL 300 SECOND) AS bucket,
           filesystem_points.mountpoint AS attributeValue,
@@ -1960,7 +1966,7 @@ SELECT
 SELECT
           metrics_sum.ResourceAttributes['host.name'] AS hostName,
           coalesce(nullIf(metrics_sum.Attributes['system.filesystem.mountpoint'], ''), metrics_sum.Attributes['mountpoint']) AS mountpoint,
-          any(coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device'])) AS device,
+          coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device']) AS device,
           metrics_sum.TimeUnix AS sampleTime,
           ifNull(ifNotFinite(sumIf(metrics_sum.Value, coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) = 'used') / sum(metrics_sum.Value), 0), 0) AS usedFraction
         FROM metrics_sum
@@ -1969,10 +1975,10 @@ SELECT
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ResourceAttributes['host.name'] != ''
           AND metrics_sum.MetricName = 'system.filesystem.usage'
-          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free', 'reserved')
-          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.type'], ''), metrics_sum.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
+          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free')
+          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.type'], ''), metrics_sum.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs', 'erofs')
           AND metrics_sum.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
-        GROUP BY hostName, mountpoint, sampleTime
+        GROUP BY hostName, mountpoint, device, sampleTime
 UNION ALL
 SELECT
           metrics_gauge.ResourceAttributes['host.name'] AS hostName,
@@ -1987,7 +1993,7 @@ SELECT
           AND metrics_gauge.ResourceAttributes['host.name'] != ''
           AND metrics_gauge.MetricName = 'system.filesystem.utilization'
           AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.state'], ''), metrics_gauge.Attributes['state']) IN ('used', '')
-          AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.type'], ''), metrics_gauge.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
+          AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.type'], ''), metrics_gauge.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs', 'erofs')
           AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
 ) AS filesystem_points
         GROUP BY bucket, attributeValue
@@ -2024,25 +2030,32 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:infra:hostNetworkTimeseriesQuery:default  [8b393d3d]
-WITH network_deltas AS (
+-- builder:infra:hostNetworkTimeseriesQuery:default  [f76af7f9]
 SELECT
+          series_rates.bucket AS bucket,
+          series_rates.direction AS attributeValue,
+          ifNull(ifNotFinite(sum(series_rates.rate), 0), 0) AS rateValue
+        FROM (SELECT
+          toStartOfInterval(deltas.TimeUnix, INTERVAL 60 SECOND) AS bucket,
+          deltas.direction AS direction,
+          deltas.series AS series,
+          sum(deltas.delta) / sum(deltas.elapsedSeconds) AS rate
+        FROM (SELECT
           metrics_sum.TimeUnix AS TimeUnix,
           coalesce(nullIf(metrics_sum.Attributes['network.io.direction'], ''), metrics_sum.Attributes['direction']) AS direction,
-          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
+          cityHash64(metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes))) AS series,
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta,
+          toUnixTimestamp64Nano(metrics_sum.TimeUnix) / 1000000000 - (toUnixTimestamp64Nano(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) / 1000000000) AS elapsedSeconds
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 60 SECOND
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL greatest(60, 600) SECOND
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
           AND metrics_sum.MetricName = 'system.network.io'
-)
-SELECT
-          toStartOfInterval(network_deltas.TimeUnix, INTERVAL 60 SECOND) AS bucket,
-          network_deltas.direction AS attributeValue,
-          ifNull(ifNotFinite(sum(network_deltas.delta) / min(least(toUnixTimestamp(toStartOfInterval(network_deltas.TimeUnix, INTERVAL 60 SECOND)) + 60, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(network_deltas.TimeUnix, INTERVAL 60 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS rateValue
-        FROM network_deltas
-        WHERE network_deltas.TimeUnix >= '2026-01-01 10:30:00'
+          AND coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device']) NOT IN ('lo', 'lo0')) AS deltas
+        WHERE deltas.TimeUnix >= '2026-01-01 10:30:00'
+          AND deltas.elapsedSeconds > 0
+        GROUP BY bucket, direction, series) AS series_rates
         GROUP BY bucket, attributeValue
         ORDER BY bucket ASC
         FORMAT JSON
@@ -2099,7 +2112,7 @@ SELECT
         LIMIT 1
 FORMAT JSON
 
--- builder:infra:listHostsQuery:searchPaged  [bf77d33d]
+-- builder:infra:listHostsQuery:searchPaged  [b02178b5]
 SELECT
           hosts.hostName AS hostName,
           hosts.osType AS osType,
@@ -2131,32 +2144,58 @@ SELECT
         LIMIT 50
         OFFSET 50) AS hosts
         LEFT JOIN (SELECT
-          filesystem_points.hostName AS hostName,
-          max(filesystem_points.usedFraction) AS diskPct
+          latest_mounts.hostName AS hostName,
+          max(latest_mounts.usedFraction) AS diskPct
         FROM (
 SELECT
+          latest_usage.hostName AS hostName,
+          latest_usage.mountpoint AS mountpoint,
+          latest_usage.device AS device,
+          ifNull(ifNotFinite(sumIf(latest_usage.bytes, latest_usage.state = 'used') / sum(latest_usage.bytes), 0), 0) AS usedFraction
+        FROM (SELECT
           metrics_sum.ResourceAttributes['host.name'] AS hostName,
           coalesce(nullIf(metrics_sum.Attributes['system.filesystem.mountpoint'], ''), metrics_sum.Attributes['mountpoint']) AS mountpoint,
-          any(coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device'])) AS device,
-          metrics_sum.TimeUnix AS sampleTime,
-          ifNull(ifNotFinite(sumIf(metrics_sum.Value, coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) = 'used') / sum(metrics_sum.Value), 0), 0) AS usedFraction
+          coalesce(nullIf(metrics_sum.Attributes['system.device'], ''), metrics_sum.Attributes['device']) AS device,
+          coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) AS state,
+          argMax(metrics_sum.Value, metrics_sum.TimeUnix) AS bytes
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.ResourceAttributes['host.name'] != ''
           AND metrics_sum.MetricName = 'system.filesystem.usage'
-          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free', 'reserved')
-          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.type'], ''), metrics_sum.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
-          AND positionCaseInsensitive(metrics_sum.ResourceAttributes['host.name'], 'ip-10') > 0
-        GROUP BY hostName, mountpoint, sampleTime
+          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.state'], ''), metrics_sum.Attributes['state']) IN ('used', 'free')
+          AND coalesce(nullIf(metrics_sum.Attributes['system.filesystem.type'], ''), metrics_sum.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs', 'erofs')
+          AND metrics_sum.ResourceAttributes['host.name'] IN (SELECT
+          page.hostName AS hostName
+        FROM (SELECT
+          metrics_gauge.ResourceAttributes['host.name'] AS hostName,
+          any(metrics_gauge.ResourceAttributes['os.type']) AS osType,
+          any(metrics_gauge.ResourceAttributes['host.arch']) AS hostArch,
+          any(metrics_gauge.ResourceAttributes['cloud.provider']) AS cloudProvider,
+          max(metrics_gauge.TimeUnix) AS lastSeen,
+          greatest(1 - ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.cpu.utilization' AND metrics_gauge.Attributes['state'] = 'idle')), 1), 0) AS cpuPct,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.memory.utilization' AND metrics_gauge.Attributes['state'] = 'used')), 0), 0) AS memoryPct,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'system.cpu.load_average.15m'), 0), 0) AS load15
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['host.name'] != ''
+          AND metrics_gauge.MetricName IN ('system.cpu.utilization', 'system.memory.utilization', 'system.filesystem.utilization', 'system.cpu.load_average.15m')
+          AND positionCaseInsensitive(metrics_gauge.ResourceAttributes['host.name'], 'ip-10') > 0
+        GROUP BY hostName
+        ORDER BY lastSeen DESC
+        LIMIT 50
+        OFFSET 50) AS page)
+        GROUP BY hostName, mountpoint, device, state) AS latest_usage
+        GROUP BY hostName, mountpoint, device
 UNION ALL
 SELECT
           metrics_gauge.ResourceAttributes['host.name'] AS hostName,
           coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.mountpoint'], ''), metrics_gauge.Attributes['mountpoint']) AS mountpoint,
           coalesce(nullIf(metrics_gauge.Attributes['system.device'], ''), metrics_gauge.Attributes['device']) AS device,
-          metrics_gauge.TimeUnix AS sampleTime,
-          metrics_gauge.Value AS usedFraction
+          argMax(metrics_gauge.Value, metrics_gauge.TimeUnix) AS usedFraction
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
@@ -2164,9 +2203,31 @@ SELECT
           AND metrics_gauge.ResourceAttributes['host.name'] != ''
           AND metrics_gauge.MetricName = 'system.filesystem.utilization'
           AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.state'], ''), metrics_gauge.Attributes['state']) IN ('used', '')
-          AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.type'], ''), metrics_gauge.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
+          AND coalesce(nullIf(metrics_gauge.Attributes['system.filesystem.type'], ''), metrics_gauge.Attributes['type']) NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs', 'erofs')
+          AND metrics_gauge.ResourceAttributes['host.name'] IN (SELECT
+          page.hostName AS hostName
+        FROM (SELECT
+          metrics_gauge.ResourceAttributes['host.name'] AS hostName,
+          any(metrics_gauge.ResourceAttributes['os.type']) AS osType,
+          any(metrics_gauge.ResourceAttributes['host.arch']) AS hostArch,
+          any(metrics_gauge.ResourceAttributes['cloud.provider']) AS cloudProvider,
+          max(metrics_gauge.TimeUnix) AS lastSeen,
+          greatest(1 - ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.cpu.utilization' AND metrics_gauge.Attributes['state'] = 'idle')), 1), 0) AS cpuPct,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.memory.utilization' AND metrics_gauge.Attributes['state'] = 'used')), 0), 0) AS memoryPct,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'system.cpu.load_average.15m'), 0), 0) AS load15
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ResourceAttributes['host.name'] != ''
+          AND metrics_gauge.MetricName IN ('system.cpu.utilization', 'system.memory.utilization', 'system.filesystem.utilization', 'system.cpu.load_average.15m')
           AND positionCaseInsensitive(metrics_gauge.ResourceAttributes['host.name'], 'ip-10') > 0
-) AS filesystem_points
+        GROUP BY hostName
+        ORDER BY lastSeen DESC
+        LIMIT 50
+        OFFSET 50) AS page)
+        GROUP BY hostName, mountpoint, device
+) AS latest_mounts
         GROUP BY hostName) AS disk ON hosts.hostName = disk.hostName
         ORDER BY lastSeen DESC
         FORMAT JSON
