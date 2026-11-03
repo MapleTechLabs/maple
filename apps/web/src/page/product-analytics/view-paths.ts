@@ -6,7 +6,7 @@ import {
 	type PathsDirection,
 } from "@maple/query-model"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as PathsChart from "@maple/views/charts/paths-chart"
@@ -139,7 +139,7 @@ const nextSteps = (rows: ReadonlyArray<PathsRow>): ReadonlyArray<Tally> =>
 		(row) => row.toNode,
 	)
 
-/** Where a sequence stopped: the node a hop into `''` left from. */
+/** Where a sequence stopped: the node a hop into `''` left from. At most depth × (branches + 1) rows. */
 const endings = (rows: ReadonlyArray<PathsRow>): ReadonlyArray<Tally> =>
 	tally(
 		rows.filter((row) => row.toNode === ""),
@@ -170,7 +170,7 @@ const tallyTable = (
 		]),
 		tableBody(
 			h,
-			options.rows.slice(0, 6).map((row) =>
+			Arr.map(options.rows, (row) =>
 				tableRow(
 					h,
 					[
