@@ -95,8 +95,12 @@ const PROVIDED = new Set([
 	"BASE_URL",
 ])
 
+/**
+ * A test by folder, or by the file name's last dot segment before the extension: a known test
+ * suffix (`x.e2e.ts`, `x.test-d.ts`) or a custom one ending in it (`x.stripe-live.ts`).
+ */
 const TEST_PATH =
-	/(^|\/)(__tests__|__snapshots__|__fixtures__|tests?|fixtures?|e2e|testdata|mocks?)\/|\.(test|spec|eval|bench)\.[a-z]+$/i
+	/(^|\/)(__tests__|__snapshots__|__fixtures__|tests?|fixtures?|e2e|integration|playwright|testdata|mocks?)\/|\.(test|spec|eval|bench|e2e|integration|it|live|test-d|[\w-]+-(live|e2e|test))\.[a-z]+$/i
 const DOC_PATH = /\.(md|mdx|txt|rst)$/i
 /** Code a developer runs by hand; what it reads is set on their machine, not in a deployment. */
 const LOCAL_PATH = /(^|\/)(scripts?|examples?|benchmarks?|evals?)\//i

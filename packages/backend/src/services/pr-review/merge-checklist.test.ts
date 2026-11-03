@@ -98,6 +98,40 @@ describe("detectMergeSteps", () => {
 		)
 	})
 
+	it("skips files a custom test suffix or a test folder marks as tests", () => {
+		const read = (path: string) => file(path, "@@ -1 +1 @@\n+const k = process.env.PAYMENTS_KEY")
+		assert.deepEqual(
+			names([
+				read(
+					"apps/subscriptions-api/src/providers/stripe/CheckoutServiceElementsIntro.stripe-live.ts",
+				),
+				read("src/checkout.e2e.ts"),
+				read("src/checkout.integration.ts"),
+				read("src/checkout.it.ts"),
+				read("src/checkout.live.ts"),
+				read("src/types.test-d.ts"),
+				read("src/checkout.smoke-test.ts"),
+				read("apps/web/integration/checkout.ts"),
+				read("apps/web/playwright/checkout.ts"),
+			]),
+			[],
+		)
+	})
+
+	it("still reads ordinary files whose names contain a test word", () => {
+		const read = (path: string) => file(path, "@@ -1 +1 @@\n+const k = process.env.PAYMENTS_KEY")
+		for (const path of [
+			"src/latest.ts",
+			"src/live.ts",
+			"src/go-live.ts",
+			"src/integration.ts",
+			"src/integrations/stripe.ts",
+			"src/contest.ts",
+		]) {
+			assert.deepEqual(names([read(path)]), ["secret:PAYMENTS_KEY"], path)
+		}
+	})
+
 	it("reads CI secrets and variables from workflows, and keys from env templates", () => {
 		const detected = detectMergeSteps([
 			file(
