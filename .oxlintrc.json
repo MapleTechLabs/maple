@@ -47,7 +47,7 @@
 		"maple/no-record-string-any": "error",
 		"maple/no-try-catch": "error",
 		"maple/no-date-parse": "error",
-		"typescript/no-explicit-any": "warn",
+		"typescript/no-explicit-any": "error",
 		"typescript/no-non-null-assertion": "error",
 		"no-alert": "error",
 		"no-loss-of-precision": "error",
@@ -382,6 +382,19 @@
 			"rules": {
 				"anti-slop/no-shape-in-symbol-names": "off"
 			}
+		},
+		// `any` burndown: drop each file as its casts get real types.
+		{
+			"files": [
+				"apps/ai/src/security-audit/workflow.run.test.ts",
+				"apps/api/scripts/bench-startup-cpu.ts",
+				"apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.test.ts",
+				"packages/auth/src/index.ts",
+				"packages/backend/src/platform/durable-step.test.ts",
+				"packages/effect-sdk/src/client/flushable.test.ts",
+				"packages/web-data/src/warehouse/custom-charts.ts"
+			],
+			"rules": { "typescript/no-explicit-any": "off" }
 		},
 		// Standalone generic DSLs use `any` as a variance placeholder; Maple product code may not.
 		{

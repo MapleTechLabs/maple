@@ -579,7 +579,7 @@ function stepIndex(stepCount: number): CH.Expr<number> {
  */
 export function productEventsFunnelQuery(
 	opts: ProductEventsFunnelOpts,
-): Result.Result<CHQuery<any, ProductEventsFunnelOutput, any>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelOutput, {}>, ProductEventsFunnelError> {
 	const invalid = validate(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
@@ -620,7 +620,7 @@ export function productEventsFunnelQuery(
  */
 export function productEventsFunnelBreakdownQuery(
 	opts: ProductEventsFunnelBreakdownOpts,
-): Result.Result<CHQuery<any, ProductEventsFunnelBreakdownOutput, any>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelBreakdownOutput, {}>, ProductEventsFunnelError> {
 	const invalid = validate(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const limit = opts.limit ?? 10
@@ -678,7 +678,7 @@ export function productEventsFunnelBreakdownQuery(
  */
 export function productEventNamesQuery(
 	opts: ProductEventNamesOpts = {},
-): CHQuery<any, ProductEventNamesOutput, any> {
+): CHQuery<ColumnDefs, ProductEventNamesOutput, {}> {
 	const filters: ProductEventsFilters = { ...opts.filters, useProductEvents: true }
 	const limit = opts.limit ?? 100
 	return from(ProductEvents)
@@ -742,7 +742,7 @@ export interface ProductEventsForTraceOpts {
  */
 export function productEventsForTraceQuery(
 	opts: ProductEventsForTraceOpts = {},
-): CHQuery<any, ProductEventForTraceOutput, any> {
+): CHQuery<ColumnDefs, ProductEventForTraceOutput, {}> {
 	return from(ProductEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
@@ -786,7 +786,7 @@ export interface ProductEventTraceSamplesOpts {
  */
 export function productEventTraceSamplesQuery(
 	opts: ProductEventTraceSamplesOpts = {},
-): CHQuery<any, ProductEventTraceSampleOutput, any> {
+): CHQuery<ColumnDefs, ProductEventTraceSampleOutput, {}> {
 	return from(ProductEvents)
 		.select(($) => ({
 			traceId: $.TraceId,
@@ -933,7 +933,7 @@ export type ProductEventsFunnelTimingOutput = typeof productEventsFunnelTimingRo
  */
 export function productEventsFunnelTimingQuery(
 	opts: ProductEventsFunnelOpts,
-): Result.Result<CHQuery<any, ProductEventsFunnelTimingOutput, any>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelTimingOutput, {}>, ProductEventsFunnelError> {
 	const invalid = validateDetails(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
@@ -988,7 +988,7 @@ export const FUNNEL_LEAVERS_PER_STEP = 6
  */
 export function productEventsFunnelLeaversQuery(
 	opts: ProductEventsFunnelOpts,
-): Result.Result<CHQuery<any, ProductEventsFunnelLeaversOutput, any>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelLeaversOutput, {}>, ProductEventsFunnelError> {
 	const invalid = validateDetails(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}

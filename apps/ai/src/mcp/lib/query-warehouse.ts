@@ -43,7 +43,7 @@ export const withTenantExecutor = Effect.fn("McpWarehouse.withTenantExecutor")(f
 	return yield* effect.pipe(provideWarehouseExecutorFromTenant(tenant))
 })
 
-export const queryWarehouse = Effect.fn("McpWarehouse.queryWarehouse")(function* <T = any>(
+export const queryWarehouse = Effect.fn("McpWarehouse.queryWarehouse")(function* <T = unknown>(
 	pipe: WarehouseQueryName,
 	params?: Record<string, unknown>,
 ) {

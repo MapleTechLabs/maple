@@ -293,6 +293,6 @@ export const decodeUpstream = <S extends Schema.Top>(
 ): Effect.Effect<S["Type"], BillingUpstreamError, S["DecodingServices"]> =>
 	Schema.decodeUnknownEffect(schema)(value).pipe(
 		Effect.mapError(
-			(error) => new BillingUpstreamError({ message: `Unexpected billing response: ${error}` }),
+			(error) => new BillingUpstreamError({ message: `Unexpected billing response: ${error.message}` }),
 		),
 	)

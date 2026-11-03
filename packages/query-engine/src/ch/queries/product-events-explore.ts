@@ -249,7 +249,7 @@ export function productEventsTimeseriesQuery(
 
 export function productEventsBreakdownQuery(
 	opts: ProductEventsBreakdownOpts,
-): CHQuery<any, ProductEventsBreakdownOutput, any> {
+): CHQuery<ColumnDefs, ProductEventsBreakdownOutput, {}> {
 	return from(ProductEvents)
 		.select(($) => ({
 			name: dimensionColumn($, opts.groupBy, opts.groupByAttributeKey),
@@ -264,7 +264,7 @@ export function productEventsBreakdownQuery(
 
 export function productEventsListQuery(
 	opts: ProductEventsListOpts,
-): CHQuery<any, ProductEventsListOutput, any> {
+): CHQuery<ColumnDefs, ProductEventsListOutput, {}> {
 	return from(ProductEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
@@ -302,7 +302,7 @@ export interface ProductEventAttributeKeysOutput {
 /** The `track()` prop keys in use, most common first. No rollup exists; this scans the window. */
 export function productEventAttributeKeysQuery(
 	opts: ProductEventAttributeKeysOpts = {},
-): CHQuery<any, ProductEventAttributeKeysOutput, any> {
+): CHQuery<ColumnDefs, ProductEventAttributeKeysOutput, {}> {
 	return from(ProductEvents)
 		.select(($) => ({
 			attributeKey: CH.arrayJoin(CH.mapKeys($.Attributes)),
@@ -327,7 +327,7 @@ export interface ProductEventAttributeValuesOutput {
 
 export function productEventAttributeValuesQuery(
 	opts: ProductEventAttributeValuesOpts,
-): CHQuery<any, ProductEventAttributeValuesOutput, any> {
+): CHQuery<ColumnDefs, ProductEventAttributeValuesOutput, {}> {
 	return from(ProductEvents)
 		.select(($) => ({
 			attributeValue: $.Attributes.get(opts.attributeKey),

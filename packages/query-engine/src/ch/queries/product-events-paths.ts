@@ -19,7 +19,7 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, fromQuery, inSubquery, table } from "@maple-dev/effect-orm/clickhouse"
-import type { CHQuery } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { Result, Schema } from "effect"
 import { ProductEvents, orgIdParam } from "../tables"
@@ -215,7 +215,7 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
  */
 export function productEventsPathsQuery(
 	opts: ProductEventsPathsOpts,
-): Result.Result<CHQuery<any, ProductEventsPathsOutput, any>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsPathsOutput, {}>, ProductEventsFunnelError> {
 	const invalid = validate(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}

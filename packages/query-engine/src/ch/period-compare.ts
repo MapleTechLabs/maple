@@ -1,10 +1,10 @@
 import type { OrgId } from "@maple/domain"
-import { compile, type CHQuery, type NeedsSelect } from "@maple-dev/effect-orm/clickhouse"
+import { compile, type CHQuery, type ColumnDefs, type NeedsSelect } from "@maple-dev/effect-orm/clickhouse"
 import { Effect, Schema } from "effect"
 import { rawCompiledQuery } from "./raw-sql"
 
 /** A query `compile` accepts, whatever it selects. */
-type CompileTarget<Output extends Record<string, unknown>> = CHQuery<any, Output> & NeedsSelect<Output>
+type CompileTarget<Output extends Record<string, unknown>> = CHQuery<ColumnDefs, Output> & NeedsSelect<Output>
 
 export interface PeriodCompareWindows {
 	readonly orgId: OrgId
@@ -24,7 +24,7 @@ export interface PeriodCompareWindows {
  */
 export const compilePeriodCompare = <
 	Output extends Record<string, unknown>,
-	Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<any, any, never, never>>,
+	Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<unknown, unknown, never, never>>,
 >(
 	query: CompileTarget<Output>,
 	windows: PeriodCompareWindows,

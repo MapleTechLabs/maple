@@ -61,7 +61,13 @@ import {
 	localAccessDenial,
 	readOnlyRejection,
 } from "../lib/failure"
-import type { ErrorRow, MetricSeriesOutput, ServiceMapResult, TopOperationRow } from "../lib/views"
+import type {
+	CompareRow,
+	ErrorRow,
+	MetricSeriesOutput,
+	ServiceMapResult,
+	TopOperationRow,
+} from "../lib/views"
 import { LOCAL_ORG_ID, localDriverError } from "./executor"
 import { Mode, type ModeError } from "./mode"
 import * as Remote from "./remote-ops"
@@ -753,7 +759,7 @@ export const compareServiceOverview = (p: { current: Range; previous: Range; env
 const localCompareServiceOverview = (p: { current: Range; previous: Range; environment?: string }) =>
 	Effect.gen(function* () {
 		const executor = yield* WarehouseExecutor
-		const result = yield* executor.query("service_overview_compare", {
+		const result = yield* executor.query<CompareRow>("service_overview_compare", {
 			current_start_time: p.current.startTime,
 			current_end_time: p.current.endTime,
 			previous_start_time: p.previous.startTime,

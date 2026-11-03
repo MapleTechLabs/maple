@@ -21,11 +21,13 @@ export const makeMetricBuffer = (): MetricBuffer => {
 	 * Metric hooks. A late first grant still works because `captured` is false.
 	 */
 	let revoked = false
+	// oxlint-disable-next-line typescript/no-explicit-any -- Effect's metric registry holds every metric type
 	const registry = new Map<string, Metric.Metric.Metadata<any, any>>()
 	// Gate hooks so pre-consent updates never enter cumulative state.
 	const set = registry.set.bind(registry)
 	registry.set = (key, metadata) => {
 		const hooks = metadata.hooks
+		// oxlint-disable-next-line typescript/no-explicit-any -- Effect's metric registry holds every metric type
 		;(metadata as { hooks: Metric.Metric.Hooks<any, any> }).hooks = {
 			get: hooks.get,
 			update: (input, context) => {

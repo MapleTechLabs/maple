@@ -7,7 +7,7 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import { type DateTime, Schema } from "effect"
 import { param, from, compileFnCall, compileTypedFnCall } from "@maple-dev/effect-orm/clickhouse"
-import type { CHQuery, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import type { CHQuery, ColumnDefs, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { AI_PRODUCTS } from "@maple/domain/ai-traffic"
 import { AiCrawlerRequests, SessionReplays, orgIdParam } from "../tables"
 import { replaysWhere, type WebAnalyticsFilters } from "./web-analytics"
@@ -77,7 +77,7 @@ export interface WebAnalyticsAiReferralsOutput {
  */
 export function webAnalyticsAiReferralsQuery(
 	opts: WebAnalyticsAiReferralsOpts = {},
-): CHQuery<any, WebAnalyticsAiReferralsOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsAiReferralsOutput, {}> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
 	return from(SessionReplays)
 		.select(($) => ({
@@ -127,7 +127,7 @@ export interface WebAnalyticsAiCrawlersOutput {
 /** Requests, failures and pages served per crawler. */
 export function webAnalyticsAiCrawlersQuery(
 	filters: WebAnalyticsAiCrawlerFilters = {},
-): CHQuery<any, WebAnalyticsAiCrawlersOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawlersOutput, {}> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			crawler: $.Crawler,
@@ -169,7 +169,7 @@ export interface WebAnalyticsAiCrawlerFormatsOutput {
 /** Crawler requests by document type, with the crawlers that asked for each. */
 export function webAnalyticsAiCrawlerFormatsQuery(
 	filters: WebAnalyticsAiCrawlerFilters = {},
-): CHQuery<any, WebAnalyticsAiCrawlerFormatsOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawlerFormatsOutput, {}> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			format: aiContentFormatExpr($.Path),
@@ -198,7 +198,7 @@ export interface WebAnalyticsAiCrawledPagesOutput {
 /** The pages AI crawlers read most, served fetches only. */
 export function webAnalyticsAiCrawledPagesQuery(
 	opts: WebAnalyticsAiCrawledPagesOpts = {},
-): CHQuery<any, WebAnalyticsAiCrawledPagesOutput, any> {
+): CHQuery<ColumnDefs, WebAnalyticsAiCrawledPagesOutput, {}> {
 	return from(AiCrawlerRequests)
 		.select(($) => ({
 			host: $.Host,
