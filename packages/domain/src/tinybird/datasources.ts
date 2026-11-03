@@ -1104,6 +1104,34 @@ export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_mi
 export type ErrorFingerprintsMinutelyRow = InferRow<typeof errorFingerprintsMinutely>
 
 /**
+ * The hashes the previous FINGERPRINT_VERSION gave each fingerprint: every one, since
+ * a bump can fold several old issues into one new hash. The salt rotates every hash, so
+ * every error but a user-keyed one writes a row. The issue evaluator reads it to re-key
+ * existing issues onto the new hash; drop the view once the bump has settled.
+ */
+export const errorFingerprintLineage = defineDatasource("error_fingerprint_lineage", {
+	tenantColumn: "OrgId",
+	description:
+		"Previous-version fingerprint for each new fingerprint hash, so the issue evaluator carries issues across a fingerprint version bump. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Minute: utcDateTime(),
+		FingerprintHash: t.uint64(),
+		PreviousFingerprintHash: t.uint64(),
+	},
+	// Each (hash, previous hash) pair is its own key, so a bump that folds two old issues
+	// into one hash keeps both; repeats of a pair merge away.
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Minute)",
+		sortingKey: ["OrgId", "Minute", "FingerprintHash", "PreviousFingerprintHash"],
+		ttl: "toDate(Minute) + INTERVAL 30 DAY",
+	}),
+})
+
+export type ErrorFingerprintLineageRow = InferRow<typeof errorFingerprintLineage>
+
+/**
  * Pre-materialized root spans for the trace list view.
  * Extracts HTTP attributes and normalizes span names at write time
  * so the trace list query avoids scanning heavy Map columns and GROUP BY.

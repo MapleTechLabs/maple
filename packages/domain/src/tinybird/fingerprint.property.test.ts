@@ -81,6 +81,17 @@ const RUNTIMES = [
 	"hibernate",
 	"apple",
 ] as const
+/** Runtimes whose frames are a dependency's or the stdlib's, which the hash skips. */
+const LIBRARY_RUNTIMES: ReadonlySet<Runtime> = new Set([
+	"store",
+	"hoisted",
+	"pip",
+	"pystd",
+	"gem",
+	"gomod",
+	"jvmProxy",
+	"jvmAccessor",
+])
 const site = (runtimes: ReadonlyArray<Runtime>) =>
 	fc.record({ runtime: fc.constantFrom(...runtimes), fn: name, file: name })
 type Runtime = (typeof RUNTIMES)[number] | (typeof PYTHON_RUNTIMES)[number]
@@ -329,6 +340,8 @@ describe("two bugs are two issues", () => {
 			fc.property(Stack, name, name, (stack, fnA, fnB) => {
 				fc.pre(fnA !== fnB)
 				const [top, ...callers] = stack.sites
+				// A throw inside a dependency or the stdlib groups by its app callers instead.
+				fc.pre(!LIBRARY_RUNTIMES.has(top!.runtime))
 				const render = (fn: string) => renderStack([{ ...top!, fn, file: fn }, ...callers], stack.a)
 				expect(fingerprint("Error", render(fnA), "").fpFrames).not.toBe(
 					fingerprint("Error", render(fnB), "").fpFrames,

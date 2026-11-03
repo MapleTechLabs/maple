@@ -1218,6 +1218,18 @@ SELECT
         LIMIT 5
         FORMAT JSON
 
+-- builder:errors:errorFingerprintLineageQuery:default  [531d31bf]
+SELECT
+          toString(error_fingerprint_lineage.FingerprintHash) AS fingerprintHash,
+          toString(error_fingerprint_lineage.PreviousFingerprintHash) AS previousFingerprintHash
+        FROM error_fingerprint_lineage
+        WHERE error_fingerprint_lineage.OrgId = 'org_sql_catalog'
+          AND error_fingerprint_lineage.Minute >= '2026-01-01 10:30:00'
+          AND error_fingerprint_lineage.Minute < '2026-01-03 14:15:00'
+          AND error_fingerprint_lineage.FingerprintHash IN (toUInt64('11640393269246331608'))
+        GROUP BY fingerprintHash, previousFingerprintHash
+        FORMAT JSON
+
 -- builder:errors:errorFingerprintOccurrencesQuery:default  [701c5603]
 SELECT
           toString(error_events.FingerprintHash) AS fingerprintHash,

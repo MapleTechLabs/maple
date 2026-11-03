@@ -8,6 +8,8 @@ import {
 	EFFECT_SPAN_FRAME_MARKER,
 	ERROR_MSG_REDACTIONS,
 	FINGERPRINT_HASH_SALT,
+	LIBRARY_FRAME_PATTERN,
+	PREVIOUS_FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	JSON_LABEL_KEYS,
@@ -41,6 +43,7 @@ import {
 	errorEvents,
 	errorEventsByTime,
 	errorFingerprintsMinutely,
+	errorFingerprintLineage,
 	aiTraceIndex,
 	aiCrawlerRequests,
 	scannerRequests,
@@ -948,7 +951,7 @@ export { errorEventsSelectSql as ERROR_EVENTS_MV_SQL }
 const jsonStringIsSet = (key: string) =>
 	`JSONType(_msgText, '${key}') = 'String' AND JSONExtractString(_msgText, '${key}') != ''`
 
-const errorEventsSelectSql = `
+const errorEventsWithSql = `
         WITH
           arrayFirstIndex(n -> n = 'exception', EventsName) AS _ei,
           -- Only fill the old Unknown Error bucket. Event values (including
@@ -1048,16 +1051,30 @@ const errorEventsSelectSql = `
               1, ${MAX_NORMALIZED_FRAMES}
             )
           ) AS _normFrames,
-          arraySlice(
-            -- A repeat (two anonymous closures in one bundle, or recursion) collapses
-            -- so it does not use up the frames the hash keeps.
-            arrayFilter((frame, i) -> i = 1 OR frame != _normFrames[i - 1], _normFrames, arrayEnumerate(_normFrames)),
-            -- A namespaced type plus its message names one failure: keep only the
-            -- throw site. With no message the frames are all that is left; keep 3.
-            1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})
-          ) AS _topFrames,
+          -- A repeat (two anonymous closures in one bundle, or recursion) collapses
+          -- so it does not use up the frames the hash keeps.
+          arrayFilter((frame, i) -> i = 1 OR frame != _normFrames[i - 1], _normFrames, arrayEnumerate(_normFrames)) AS _distinctFrames,
+          -- The application's own frames: a dependency's or a runtime's frames vary with
+          -- its internals and version. A stack with none keeps every frame.
+          arrayFilter(frame -> NOT match(frame, ${chPattern(LIBRARY_FRAME_PATTERN)}), _distinctFrames) AS _appFrames,
+          -- A namespaced type plus its message names one failure: keep only the
+          -- throw site. With no message the frames are all that is left; keep 3.
+          if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES}) AS _maxFrames,
+          arraySlice(if(length(_appFrames) > 0, _appFrames, _distinctFrames), 1, _maxFrames) AS _topFrames,
           if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
           arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
+          -- The previous version's frames, for the issue evaluator's re-key while a bump settles.
+          arrayStringConcat(arraySlice(_distinctFrames, 1, _maxFrames), '\\n') AS _prevFpFrames,
+          if(
+            _customFp != '',
+            cityHash64(OrgId, ServiceName, ${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}, _customFp),
+            cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})
+          ) AS _hash,
+          if(
+            _customFp != '',
+            _hash,
+            cityHash64(OrgId, ServiceName, _exType, _prevFpFrames, _msgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)})
+          ) AS _prevHash,
           -- Display-only, best-effort human label (decoupled from the fingerprint:
           -- many labels may map to one hash). The broad key list here is a DISPLAY
           -- heuristic only; the fingerprint above makes no key-name assumption.
@@ -1100,28 +1117,10 @@ const errorEventsSelectSql = `
               SpanAttributes['http.response.status_code'],
               SpanAttributes['http.status_code']
             )
-          ) AS _httpStatus
-        SELECT
-          OrgId,
-          toDateTime(Timestamp) AS Timestamp,
-          TraceId,
-          SpanId,
-          ParentSpanId,
-          ServiceName,
-          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
-          _exType AS ExceptionType,
-          _exMsg AS ExceptionMessage,
-          _exStack AS ExceptionStacktrace,
-          _topFrame AS TopFrame,
-          if(
-            _customFp != '',
-            cityHash64(OrgId, ServiceName, ${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}, _customFp),
-            cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})
-          ) AS FingerprintHash,
-          StatusMessage,
-          Duration,
-          _errorLabel AS ErrorLabel,
-          ResourceAttributes['service.version'] AS ServiceVersion
+          ) AS _httpStatus`
+
+/** The error spans the projections read: `traces` with the 4xx client-noise filter. */
+const errorEventsSourceSql = `
         FROM traces
         WHERE StatusCode = 'Error'
           -- Client-side runtimes (notably the native Cloudflare Workers
@@ -1138,7 +1137,26 @@ const errorEventsSelectSql = `
             AND _ei = 0
             AND SpanAttributes['exception.type'] = ''
             AND (SpanAttributes['error.type'] = '' OR SpanAttributes['error.type'] = toString(_httpStatus))
-          )
+          )`
+
+const errorEventsSelectSql = `${errorEventsWithSql}
+        SELECT
+          OrgId,
+          toDateTime(Timestamp) AS Timestamp,
+          TraceId,
+          SpanId,
+          ParentSpanId,
+          ServiceName,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          _exType AS ExceptionType,
+          _exMsg AS ExceptionMessage,
+          _exStack AS ExceptionStacktrace,
+          _topFrame AS TopFrame,
+          _hash AS FingerprintHash,
+          StatusMessage,
+          Duration,
+          _errorLabel AS ErrorLabel,
+          ResourceAttributes['service.version'] AS ServiceVersion${errorEventsSourceSql}
       `
 
 export const errorEventsMv = defineMaterializedView("error_events_mv", {
@@ -1208,6 +1226,30 @@ export const errorFingerprintsMinutelyMv = defineMaterializedView("error_fingerp
           groupUniqArray(ServiceVersion) AS ServiceVersions
         FROM error_events
         GROUP BY OrgId, Minute, FingerprintHash
+      `,
+		}),
+	],
+})
+
+/**
+ * Each fingerprint's previous-version hashes, for every error a version bump re-keyed:
+ * all of them but the user-keyed ones, which no bump touches. Reads `traces` with the
+ * same expressions as `error_events_mv`, so both hashes come from one evaluation.
+ */
+export const errorFingerprintLineageMv = defineMaterializedView("error_fingerprint_lineage_mv", {
+	description:
+		"Records the previous-version fingerprint hashes of each error fingerprint a version bump re-keyed, for the issue evaluator.",
+	datasource: errorFingerprintLineage,
+	nodes: [
+		node({
+			name: "error_fingerprint_lineage_mv_node",
+			sql: `${errorEventsWithSql}
+        SELECT
+          OrgId,
+          toStartOfMinute(toDateTime(Timestamp)) AS Minute,
+          _hash AS FingerprintHash,
+          _prevHash AS PreviousFingerprintHash${errorEventsSourceSql}
+          AND _hash != _prevHash
       `,
 		}),
 	],

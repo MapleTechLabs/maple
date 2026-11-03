@@ -206,6 +206,10 @@ loop in verification without a human ever seeing it.
 - **Versions are compared by membership, never by ordering.** `maple-cli` reports semver and the
   Workers report git SHAs; "newer than the fix" is not a question those strings can answer.
 - **Severity has three sources with a precedence**: manual > ai > detector (`IssueSeveritySource`).
+- **Every change that moves a fingerprint bumps `FINGERPRINT_VERSION`.** A bump keeps issues:
+  while it settles, `error_fingerprint_lineage` records each new hash's previous one and the tick
+  re-keys the issue onto it. `fingerprint-version.test.ts` fails when the hash inputs move
+  without a bump.
 - **Merging moves fingerprints, not history.** A merged issue is archived with
   `merged_into_issue_id`, and its hashes become aliases of the kept issue
   (`error_issue_fingerprints`), so the tick lands their next occurrences there. Its timeline, PRs
