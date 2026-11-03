@@ -2156,7 +2156,7 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			const updated = yield* loadIssueById(owner)
 			// Both hashes in one window are one upsert row, and the owner keeps its title.
@@ -2172,6 +2172,43 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 			assert.lengthOf(candidates, 0)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("an issue's own occurrence keeps its fresh title when a merged-in hash comes after it", () => {
+		const OWNER_FINGERPRINT = "22222222222222222222"
+		// The owner's own row first, the merged-in hash after it: scan order is not guaranteed.
+		const rows = [
+			scanRow({
+				fingerprintHash: OWNER_FINGERPRINT,
+				count: 2,
+				exceptionMessage: "upstream timed out after 30s",
+			}),
+			scanRow({ count: 3, serviceName: "billing-worker", exceptionType: "OtherError" }),
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const owner = asIssueId(randomUUID())
+			yield* seedIssue(owner, { fingerprintHash: OWNER_FINGERPRINT, exceptionMessage: "stale message" })
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: SCAN_FINGERPRINT,
+						issueId: owner,
+						source: "merge",
+						createdAt: TICK_MS,
+					}),
+				),
+			)
+
+			yield* errors.runTick
+
+			const updated = yield* loadIssueById(owner)
+			assert.strictEqual(updated.occurrenceCount, 5)
+			assert.strictEqual(updated.exceptionMessage, "upstream timed out after 30s")
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
