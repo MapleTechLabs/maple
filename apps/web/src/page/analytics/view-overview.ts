@@ -327,6 +327,18 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 		{
 			id: "events",
 			isWide: true,
+			link: {
+				label: "Funnels and paths",
+				href: hrefOf(
+					AppRoute.ProductAnalytics({
+						search: {
+							startTime: model.search.startTime,
+							endTime: model.search.endTime,
+							timePreset: model.search.timePreset,
+						},
+					}),
+				),
+			},
 			dimensions: [
 				{
 					tab: "Events",

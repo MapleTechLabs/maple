@@ -3,6 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
+import { favicon as kitFavicon, isHostLike } from "../kit/analytics-filter-rail"
 import { Message, type FilterKey } from "./message"
 import type { Model } from "./model"
 
@@ -12,25 +13,14 @@ type H = HtmlBuilder<Message>
 
 const ICON_BOX = "size-4 shrink-0"
 
-const faviconUrl = (host: string): string => `https://favicon.maple.dev/?url=${encodeURIComponent(host)}`
-
-/** `isHostLike`: a dotted name a favicon could exist for. */
-export const isHostLike = (value: string): boolean => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(value)
-
 /** `Favicon`: the site's icon, or its reserved box once the image failed. */
 export const favicon = (h: H, model: Model, host: string, className?: string): Html =>
-	model.failedFavicons.includes(host)
-		? h.span([h.Class(cn(ICON_BOX, className)), h.AriaHidden(true)], [])
-		: h.img([
-				h.Src(faviconUrl(host)),
-				h.Alt(""),
-				h.AriaHidden(true),
-				h.Loading("lazy"),
-				h.Decoding("async"),
-				h.Referrerpolicy("no-referrer"),
-				h.OnError(Message.FailedFavicon({ host })),
-				h.Class(cn(ICON_BOX, "rounded-xs object-contain", className)),
-			])
+	kitFavicon(
+		h,
+		{ failed: model.failedFavicons, onFailed: (failed) => Message.FailedFavicon({ host: failed }) },
+		host,
+		className,
+	)
 
 const ICON_KEYS: ReadonlyArray<FilterKey> = ["referrerHost", "host", "utmSource", "browserName", "deviceType"]
 

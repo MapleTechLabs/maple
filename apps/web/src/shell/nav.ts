@@ -161,6 +161,7 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			exploreItem,
 			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
+			{ title: "Product analytics", href: "/product-analytics", icon: "ChartBarTrendUpIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 		],
 	},

@@ -10,29 +10,11 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { Breakdowns } from "../kit/analytics-filter-rail"
 
 // `/analytics`.
 
 export type Search = typeof AnalyticsSearch.Type
-
-const FacetRow = Schema.Struct({ name: Schema.String, count: Schema.Number })
-
-/** `WebAnalyticsBreakdowns`. */
-export const Breakdowns = Schema.Struct({
-	referrerHosts: Schema.Array(FacetRow),
-	countries: Schema.Array(FacetRow),
-	deviceTypes: Schema.Array(FacetRow),
-	browsers: Schema.Array(FacetRow),
-	operatingSystems: Schema.Array(FacetRow),
-	languages: Schema.Array(FacetRow),
-	utmSources: Schema.Array(FacetRow),
-	utmMediums: Schema.Array(FacetRow),
-	utmCampaigns: Schema.Array(FacetRow),
-	entryPaths: Schema.Array(FacetRow),
-	exitPaths: Schema.Array(FacetRow),
-	hosts: Schema.Array(FacetRow),
-})
-export type Breakdowns = typeof Breakdowns.Type
 
 export const AnalyticsEvent = Schema.Struct({ name: Schema.String, events: Schema.Number, sessions: Schema.Number })
 

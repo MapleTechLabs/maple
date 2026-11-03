@@ -17,7 +17,15 @@ import {
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import { PushSourcePlatform } from "@maple/domain/primitives"
-import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
+import {
+	FunnelKeyBy,
+	FunnelPopulationFilters,
+	FunnelStep,
+	FunnelVariant,
+	PathsAnchor,
+	PathsDirection,
+	QUERY_BUILDER_METRIC_TYPES,
+} from "@maple/query-model"
 
 // apps/web/src/lib/search-params.ts
 const StringArray = Schema.Array(Schema.String)
@@ -501,6 +509,21 @@ export const AnalyticsSearch = Schema.Struct({
 	...analyticsFilterSearchFields,
 	...TimeRangeSearchFields,
 	tab: Schema.optional(Schema.String),
+})
+
+/** `/product-analytics`: the population filters, the tab, and the funnel and paths definitions. */
+export const ProductAnalyticsSearch = Schema.Struct({
+	...FunnelPopulationFilters.fields,
+	...TimeRangeSearchFields,
+	tab: Schema.optional(Schema.String),
+	steps: Schema.optional(Schema.Array(FunnelStep)),
+	keyBy: Schema.optional(FunnelKeyBy),
+	within: NumberParam,
+	view: Schema.optional(FunnelVariant),
+	anchor: Schema.optional(PathsAnchor),
+	direction: Schema.optional(PathsDirection),
+	depth: NumberParam,
+	branches: NumberParam,
 })
 
 const AnomalySeverityLiteral = Schema.Literals(["warning", "critical"])
