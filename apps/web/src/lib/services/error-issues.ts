@@ -100,6 +100,8 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 		id: issue.id,
 		kind: issue.kind,
 		fingerprintHash: issue.fingerprint_hash,
+		// Absent from an API deployed before merges existed: the issue owns its own hash only.
+		fingerprintHashes: issue.fingerprint_hashes ?? [issue.fingerprint_hash],
 		serviceName: issue.service_name,
 		exceptionType: issue.exception_type,
 		exceptionMessage: issue.exception_message,

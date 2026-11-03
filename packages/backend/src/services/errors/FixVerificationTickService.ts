@@ -11,6 +11,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { enqueueFixVerification } from "@maple/backend/services/errors/fix-verification-enqueue"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
+import { issueFingerprintHashes } from "./issue-fingerprints"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
@@ -152,12 +153,18 @@ const make: Effect.Effect<
 		fingerprintHash: string,
 		nowMs: number,
 	) {
-		const compiled = CH.compile(CH.errorIssueVersionsSinceQuery({ limit: VERSION_SCAN_LIMIT }), {
-			orgId: row.orgId,
-			fingerprintHash,
-			startTime: DateTime.makeUnsafe(row.mergedAt),
-			endTime: DateTime.makeUnsafe(nowMs),
-		})
+		const owned = yield* dbExecute((db) =>
+			issueFingerprintHashes(db, row.orgId, [{ id: row.issueId, fingerprintHash }]),
+		)
+		const fingerprintHashes = owned.get(row.issueId) ?? [fingerprintHash]
+		const compiled = CH.compile(
+			CH.errorIssueVersionsSinceQuery({ fingerprintHashes, limit: VERSION_SCAN_LIMIT }),
+			{
+				orgId: row.orgId,
+				startTime: DateTime.makeUnsafe(row.mergedAt),
+				endTime: DateTime.makeUnsafe(nowMs),
+			},
+		)
 		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
 			profile: "aggregation",
 			context: "errorIssueVersionsSince",

@@ -154,11 +154,28 @@ export function resolveSignalState(
  * same reason.
  */
 export function sparkFingerprintHashes(
-	issues: ReadonlyArray<{ readonly kind: IssueKind; readonly fingerprintHash: string }>,
+	issues: ReadonlyArray<{ readonly kind: IssueKind; readonly fingerprintHashes: ReadonlyArray<string> }>,
 ): ReadonlyArray<string> {
+	return Arr.flatMap(issues, (issue) => (issue.kind === "error" ? issue.fingerprintHashes : []))
+}
+
+const lookupAll = <V>(map: ReadonlyMap<string, V>, keys: ReadonlyArray<string>): ReadonlyArray<V> =>
+	Arr.flatMap(keys, (key) => {
+		const value = map.get(key)
+		return value === undefined ? [] : [value]
+	})
+
+/** Sum the per-hash spark points of one issue into one series, bucket by bucket. */
+const mergeSparkPoints = (
+	series: ReadonlyArray<ReadonlyArray<{ readonly bucket: string; readonly count: number }>>,
+): ReadonlyArray<{ readonly bucket: string; readonly count: number }> => {
+	if (series.length <= 1) return series[0] ?? []
+	const byBucket = Arr.reduce(Arr.flatten(series), new Map<string, number>(), (acc, point) =>
+		acc.set(point.bucket, (acc.get(point.bucket) ?? 0) + point.count),
+	)
 	return Arr.map(
-		Arr.filter(issues, (issue) => issue.kind === "error"),
-		(issue) => issue.fingerprintHash,
+		[...byBucket.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+		([bucket, count]) => ({ bucket, count }),
 	)
 }
 
@@ -180,7 +197,17 @@ export function buildErrorSignals(input: {
 	const sparkByHash = new Map(Arr.map(input.spark, (series) => [series.fingerprintHash, series.points]))
 
 	return Arr.map(input.issues, (issue) => {
-		const volume = volumeByHash.get(issue.fingerprintHash)
+		// A merged issue owns several hashes; its row shows their sum.
+		const volumes = lookupAll(volumeByHash, issue.fingerprintHashes)
+		const volume =
+			volumes.length === 0
+				? undefined
+				: {
+						count: Arr.reduce(volumes, 0, (sum, row) => sum + row.count),
+						affectedServicesCount: Math.max(
+							...Arr.map(volumes, (row) => row.affectedServicesCount),
+						),
+					}
 		return {
 			id: issue.id,
 			fingerprintHash: issue.fingerprintHash,
@@ -192,7 +219,7 @@ export function buildErrorSignals(input: {
 			windowCount: volume ? volume.count : null,
 			totalCount: issue.occurrenceCount,
 			affectedServicesCount: volume ? volume.affectedServicesCount : null,
-			spark: sparkByHash.get(issue.fingerprintHash) ?? [],
+			spark: mergeSparkPoints(lookupAll(sparkByHash, issue.fingerprintHashes)),
 			lastSeenAt: issue.lastSeenAt,
 			firstSeenAt: issue.firstSeenAt,
 			assignee: issue.leaseHolder ?? issue.assignedActor,

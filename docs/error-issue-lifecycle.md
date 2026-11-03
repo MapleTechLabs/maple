@@ -12,7 +12,8 @@ This is the flow both humans and agents are meant to follow. If you are changing
 | Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                  |
 | Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                       |
 | Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet worth a row of its own. |
-| **Issue**     | `error_issues`                                              | The durable, assignable record. One per fingerprint.    |
+| **Issue**     | `error_issues`                                              | The durable, assignable record. Owns one fingerprint.   |
+| Alias         | `error_issue_fingerprints`                                  | More fingerprints an issue owns, merged or re-keyed.    |
 | Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.               |
 | Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.          |
 | Verification  | `error_issue_verifications`                                 | One post-merge "did that actually work?" check.         |

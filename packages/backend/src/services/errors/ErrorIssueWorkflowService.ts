@@ -44,6 +44,7 @@ import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-ac
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
+import { issueFingerprintHashes } from "./issue-fingerprints"
 import { escalationDedupeKey, escalationReasonFor } from "./issue-severity"
 
 const StoredJsonRecord = Schema.Record(Schema.String, Schema.Unknown)
@@ -125,6 +126,7 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 		hasOpenIncident: boolean,
 		actorMap: Map<ActorId, ActorDocument>,
 		activity: IssueActivityRollup,
+		fingerprintHashes: ReadonlyArray<string>,
 	) => ErrorIssueDocument
 	readonly requireIssue: (
 		orgId: OrgId,
@@ -215,11 +217,13 @@ const make: Effect.Effect<
 		hasOpenIncident,
 		actorMap,
 		activity,
+		fingerprintHashes,
 	) =>
 		new ErrorIssueDocument({
 			id: row.id,
 			kind: row.kind,
 			fingerprintHash: row.fingerprintHash,
+			fingerprintHashes,
 			serviceName: row.serviceName,
 			exceptionType: row.exceptionType,
 			exceptionMessage: row.exceptionMessage,
@@ -377,12 +381,19 @@ const make: Effect.Effect<
 			const issueIds = Arr.map(rows, (row) => row.id)
 			const openSet = yield* issuesWithOpenIncidents(orgId, issueIds)
 			const activityMap = yield* issueActivityRollups(orgId, issueIds)
+			const hashesByIssue = yield* dbExecute((db) => issueFingerprintHashes(db, orgId, rows))
 			const actorMap = yield* actorsService.collectActorDocs(
 				orgId,
 				Arr.flatMap(rows, (row) => [row.assignedActorId ?? null, row.leaseHolderActorId ?? null]),
 			)
 			return Arr.map(rows, (row) =>
-				rowToIssue(row, openSet.has(row.id), actorMap, activityMap.get(row.id) ?? EMPTY_ACTIVITY),
+				rowToIssue(
+					row,
+					openSet.has(row.id),
+					actorMap,
+					activityMap.get(row.id) ?? EMPTY_ACTIVITY,
+					hashesByIssue.get(row.id) ?? [row.fingerprintHash],
+				),
 			)
 		})
 

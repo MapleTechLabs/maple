@@ -1535,9 +1535,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "errorIssueTimeseriesQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.errorIssueTimeseriesQuery(), {
+			CH.compileUnsafe(CH.errorIssueTimeseriesQuery({ fingerprintHashes: [FINGERPRINT] }), {
 				...window,
-				fingerprintHash: FINGERPRINT,
 				bucketSeconds: 300,
 			}),
 	},
@@ -1556,9 +1555,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "errorIssueSampleTracesQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.errorIssueSampleTracesQuery({ limit: 5 }), {
+			CH.compileUnsafe(CH.errorIssueSampleTracesQuery({ fingerprintHashes: [FINGERPRINT], limit: 5 }), {
 				...window,
-				fingerprintHash: FINGERPRINT,
 			}),
 		// TraceId/SpanId decode through their branded schemas (minLength 1), which
 		// the synthetic row's "" would fail.
@@ -1569,9 +1567,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "errorIssueEnvironmentsQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.errorIssueEnvironmentsQuery(), {
+			CH.compileUnsafe(CH.errorIssueEnvironmentsQuery({ fingerprintHashes: [FINGERPRINT] }), {
 				...window,
-				fingerprintHash: FINGERPRINT,
 			}),
 	},
 	{
@@ -1581,9 +1578,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "errorIssueVersionsSinceQuery",
 		label: "default",
 		compile: () =>
-			CH.compileUnsafe(CH.errorIssueVersionsSinceQuery(), {
+			CH.compileUnsafe(CH.errorIssueVersionsSinceQuery({ fingerprintHashes: [FINGERPRINT] }), {
 				...window,
-				fingerprintHash: FINGERPRINT,
 			}),
 	},
 	{

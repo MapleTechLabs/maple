@@ -308,6 +308,7 @@ function issueOf(seed: SignalSeed, nowMs: number): ErrorIssueDocument {
 		id: uuid(seed.n),
 		kind: seed.kind ?? "error",
 		fingerprintHash: String(1_000_000_000_000_000 + seed.n * 7_919),
+		fingerprintHashes: [String(1_000_000_000_000_000 + seed.n * 7_919)],
 		serviceName: seed.service,
 		exceptionType: seed.title,
 		exceptionMessage: seed.detail,

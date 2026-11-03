@@ -564,11 +564,10 @@ export function compilePipeQuery(
 			Match.when("error_issue_timeseries", () =>
 				withParam("fingerprint_hash", (fingerprintHash) =>
 					eraseType(
-						compile(errorIssueTimeseriesQuery(), {
+						compile(errorIssueTimeseriesQuery({ fingerprintHashes: [fingerprintHash] }), {
 							orgId,
 							startTime,
 							endTime,
-							fingerprintHash,
 							bucketSeconds: int("bucket_seconds", 3600),
 						}),
 					),
@@ -577,24 +576,34 @@ export function compilePipeQuery(
 			Match.when("error_issue_sample_traces", () =>
 				withParam("fingerprint_hash", (fingerprintHash) =>
 					eraseType(
-						compile(errorIssueSampleTracesQuery({ limit: int("limit", 25) }), {
-							orgId,
-							startTime,
-							endTime,
-							fingerprintHash,
-						}),
+						compile(
+							errorIssueSampleTracesQuery({
+								fingerprintHashes: [fingerprintHash],
+								limit: int("limit", 25),
+							}),
+							{
+								orgId,
+								startTime,
+								endTime,
+							},
+						),
 					),
 				),
 			),
 			Match.when("error_issue_environments", () =>
 				withParam("fingerprint_hash", (fingerprintHash) =>
 					eraseType(
-						compile(errorIssueEnvironmentsQuery({ limit: int("limit", 20) }), {
-							orgId,
-							startTime,
-							endTime,
-							fingerprintHash,
-						}),
+						compile(
+							errorIssueEnvironmentsQuery({
+								fingerprintHashes: [fingerprintHash],
+								limit: int("limit", 20),
+							}),
+							{
+								orgId,
+								startTime,
+								endTime,
+							},
+						),
 					),
 				),
 			),

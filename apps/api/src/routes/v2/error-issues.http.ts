@@ -48,6 +48,7 @@ export const toV2Issue = (issue: ErrorIssueDocument): V2ErrorIssue => ({
 	object: "error_issue",
 	kind: issue.kind,
 	fingerprint_hash: issue.fingerprintHash,
+	fingerprint_hashes: issue.fingerprintHashes,
 	service_name: issue.serviceName,
 	exception_type: issue.exceptionType,
 	exception_message: issue.exceptionMessage,
