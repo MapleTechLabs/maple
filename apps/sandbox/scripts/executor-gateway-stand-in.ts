@@ -4,6 +4,8 @@
  * npm requests go to the real public registry, so prepare's installs are real.
  *
  *   bun scripts/executor-gateway-stand-in.ts <dir holding fixture.git>
+ *
+ * Also `executor:local`'s gateway, with the audited clone's git directory mounted as fixture.git.
  */
 import { spawn } from "node:child_process"
 import { Effect } from "effect"
@@ -26,6 +28,10 @@ const gitBackend = async (request: Request): Promise<Response> => {
 			HTTP_CONTENT_ENCODING: request.headers.get("content-encoding") ?? "",
 			HTTP_GIT_PROTOCOL: request.headers.get("git-protocol") ?? "",
 			REMOTE_ADDR: "127.0.0.1",
+			// Prepare fetches one commit by its sha, as GitHub allows.
+			GIT_CONFIG_COUNT: "1",
+			GIT_CONFIG_KEY_0: "uploadpack.allowAnySHA1InWant",
+			GIT_CONFIG_VALUE_0: "true",
 		},
 	})
 	child.stdin.end(Buffer.from(await request.arrayBuffer()))

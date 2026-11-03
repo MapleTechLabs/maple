@@ -46,7 +46,7 @@ export class SourceReader extends Context.Service<SourceReader, SourceReaderApi>
 /** Lines one `read_file` call may return. */
 export const MAX_READ_LINES = 400
 
-const ToolFailure = Schema.Struct({ message: Schema.String })
+export const ToolFailure = Schema.Struct({ message: Schema.String })
 
 const readFileTool = Tool.make("read_file", {
 	description: `Read lines of a tracked file at the audited commit, numbered. At most ${MAX_READ_LINES} lines per call.`,
@@ -115,7 +115,7 @@ const render = (output: SourceOutput) =>
 		: output.text || "(no output)"
 
 /** What a tool answers the model when it cannot: `failureMode: "return"` hands it this message. */
-type ToolFailure = typeof ToolFailure.Type
+export type ToolFailure = typeof ToolFailure.Type
 
 const answer = (effect: Effect.Effect<SourceOutput, SourceReadError>) =>
 	effect.pipe(
@@ -205,11 +205,11 @@ const missedRead = (source: SourceReaderApi, path: string, error: SourceReadErro
 	})
 
 /**
- * The toolkit's handlers over the `SourceReader` the run provides. `onCall` runs once per tool
+ * The read tools' handlers over the `SourceReader` the run provides. `onCall` runs once per tool
  * call, so the host can tell an agent that read the repository from one that never did.
  */
-export const auditToolHandlers = (source: SourceReaderApi, onCall: Effect.Effect<void> = Effect.void) =>
-	toolHandlersWithContent(AUDIT_TOOLKIT, {
+export const sourceHandlers = (source: SourceReaderApi, onCall: Effect.Effect<void> = Effect.void) =>
+	AUDIT_TOOLKIT.of({
 		read_file: ({ path, start_line, end_line }) =>
 			Effect.gen(function* () {
 				yield* onCall
@@ -241,3 +241,7 @@ export const auditToolHandlers = (source: SourceReaderApi, onCall: Effect.Effect
 				Effect.flatMap(scopePath(path), (scope) => answer(source.log(scope))),
 			),
 	})
+
+/** The read-only toolkit's handlers, as every role without execution gets them. */
+export const auditToolHandlers = (source: SourceReaderApi, onCall: Effect.Effect<void> = Effect.void) =>
+	toolHandlersWithContent(AUDIT_TOOLKIT, sourceHandlers(source, onCall))

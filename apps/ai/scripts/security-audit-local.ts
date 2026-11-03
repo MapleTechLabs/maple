@@ -1,12 +1,13 @@
 /**
  * `bun run security:local <repo-dir> [options]`: one security-audit run of Cloudflare's skill over a
  * local clone, with the same engine, prompts and agents a deployed run uses. Source is read with
- * git at one commit; no target code is executed. The run directory has the skill's own layout, and
- * the upstream validators check it at the end.
+ * git at one commit. Target code runs only with `--executor`, in the execution sandbox that
+ * `bun run --cwd apps/sandbox executor:local <repo-dir>` serves. The run directory has the skill's
+ * own layout, and the upstream validators check it at the end.
  *
  * Options: --ref <commit> (HEAD) · --scope <path> (repeatable) · --profile quick|standard|deep (deep)
  * · --budget <invocations> · --out <dir> (~/security-audit-skill/<repo>/run-<N>) · --prior <run dir>
- * · --concurrency <n> (4) · --discovery-model <id> · --validation-model <id>
+ * · --concurrency <n> (4) · --discovery-model <id> · --validation-model <id> · --executor <url>
  */
 import { spawnSync } from "node:child_process"
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -26,8 +27,30 @@ import {
 	type PriorRun,
 	runAudit,
 } from "@maple/security-audit"
-import { ConfigProvider, Console, Effect, Layer, References, Schema } from "effect"
+import { ConfigProvider, Console, Effect, Layer, Option, References, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { type ExecutorTransport, SandboxClientError } from "@maple/backend/sandbox/client"
+import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
+import {
+	EXECUTOR_DESTROY_PATH,
+	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RUN_PATH,
+	ExecutorDestroyRequest,
+	ExecutorDestroyResponse,
+	ExecutorPrepareRequest,
+	ExecutorPrepareResponse,
+	ExecutorRunRequest,
+	ExecutorRunResponse,
+} from "@maple/domain/executor"
+import { OrgId } from "@maple/domain/http"
+import { SandboxCheckout } from "@maple/domain/sandbox"
 import { makeAuditAgents } from "@/security-audit/agents"
+import {
+	type AuditExecutionApi,
+	AuditExecutionError,
+	EXECUTION_TOOL_GUIDANCE,
+	executionPolicy,
+} from "@/security-audit/execution"
 import { AUDIT_TOOL_GUIDANCE, SourceReadError, type SourceReaderApi } from "@/security-audit/source"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "@/platform/Llm"
 
@@ -48,6 +71,8 @@ interface Args {
 	readonly concurrency: number
 	readonly discoveryModel: string | undefined
 	readonly validationModel: string | undefined
+	/** `executor:local`'s address; without it nothing executes. */
+	readonly executor: string | undefined
 }
 
 const parseArgs = (argv: ReadonlyArray<string>): Args => {
@@ -97,6 +122,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		concurrency: positiveInt("concurrency", one("concurrency")) ?? 4,
 		discoveryModel: one("discovery-model"),
 		validationModel: one("validation-model"),
+		executor: one("executor"),
 	}
 }
 
@@ -266,6 +292,44 @@ const fileStore = (out: string): AuditStoreApi => {
 	}
 }
 
+/** The executor ignores the org; a local run still names one for the same calls a deployed run makes. */
+const LOCAL_ORG = Schema.decodeUnknownSync(OrgId)("org_local_security_audit")
+
+/** The executor wire over HTTP to `executor:local`, decoded with the same schemas as the binding. */
+const httpTransport = (base: string): ExecutorTransport => {
+	const send = <Body, A>(path: string, body: Body, answer: Schema.Decoder<A>) =>
+		HttpClient.execute(
+			HttpClientRequest.post(`${base}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+		).pipe(
+			Effect.flatMap((response) => response.json),
+			Effect.flatMap((json) => Schema.decodeUnknownEffect(answer)(json)),
+			Effect.mapBoth({
+				onSuccess: Option.some,
+				onFailure: (error) => new SandboxClientError({ message: `executor:local: ${String(error)}` }),
+			}),
+			// A CLI script: each call is its own entry point.
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(FetchHttpClient.layer),
+		)
+	return {
+		available: true,
+		prepare: (request) =>
+			send(
+				EXECUTOR_PREPARE_PATH,
+				Schema.encodeSync(ExecutorPrepareRequest)(request),
+				ExecutorPrepareResponse,
+			),
+		run: (request) =>
+			send(EXECUTOR_RUN_PATH, Schema.encodeSync(ExecutorRunRequest)(request), ExecutorRunResponse),
+		destroy: (request) =>
+			send(
+				EXECUTOR_DESTROY_PATH,
+				Schema.encodeSync(ExecutorDestroyRequest)(request),
+				ExecutorDestroyResponse,
+			),
+	}
+}
+
 const main = async () => {
 	const args = parseArgs(process.argv.slice(2))
 	if (!process.env.OPENROUTER_API_KEY) {
@@ -309,7 +373,53 @@ const main = async () => {
 		}
 		yield* Console.log(`Auditing ${repo} at ${sha.slice(0, 12)} (${args.profile}) into ${out}`)
 		yield* Console.log(`discovery: ${models.discovery.name}, validation: ${models.validation.name}`)
-		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha)).pipe(
+		// Prepared before any agent, as a deployed run does; the stand-in gateway serves this clone.
+		const executor =
+			args.executor === undefined
+				? undefined
+				: makeExecutor({
+						transport: httpTransport(args.executor.replace(/\/+$/u, "")),
+						checkout: () =>
+							Effect.succeed(
+								new SandboxCheckout({
+									repository: repo,
+									sha,
+									remoteUrl: "local",
+									token: "local",
+								}),
+							),
+					})
+		const target = { repository: repo, sha }
+		// Every run its own executor: run directories share the name `run` across eval cases.
+		const executorRun = `${repo}-${sha.slice(0, 8)}-${Date.now()}`
+		// A failed prepare leaves the run source-only, as a deployed run does.
+		const installs =
+			executor === undefined
+				? undefined
+				: yield* executor.prepare(LOCAL_ORG, executorRun, target).pipe(
+						Effect.tapError((error) =>
+							Console.log(`executor not prepared, running source-only: ${error.message}`),
+						),
+						Effect.orElseSucceed(() => undefined),
+					)
+		if (installs !== undefined)
+			yield* Console.log(
+				`executor prepared: ${installs.map((install) => `${install.dir} ${install.manager} ${install.outcome}`).join(", ") || "no lockfile"}`,
+			)
+		const execution: AuditExecutionApi | undefined =
+			executor === undefined || installs === undefined
+				? undefined
+				: {
+						run: (agentId, command) =>
+							executor
+								.run(LOCAL_ORG, executorRun, target, { ...command, agentId })
+								.pipe(
+									Effect.mapError(
+										(error) => new AuditExecutionError({ message: error.message }),
+									),
+								),
+					}
+		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha), execution).pipe(
 			Effect.provide(layerLlm(settings)),
 		)
 		const input: AuditRunInput = {
@@ -323,12 +433,18 @@ const main = async () => {
 			profile: args.profile,
 			scopePaths: args.scope,
 			budget: args.budget,
-			execution: {
-				_tag: "Unavailable",
-				blocker:
-					"this runner has no OS-enforced sandbox (no network isolation, resource limits or scratch-only writes)",
-			},
-			toolGuidance: AUDIT_TOOL_GUIDANCE,
+			execution:
+				installs === undefined
+					? {
+							_tag: "Unavailable",
+							blocker:
+								"this run has no OS-enforced sandbox (start executor:local and pass --executor to execute)",
+						}
+					: executionPolicy(installs),
+			toolGuidance:
+				installs === undefined
+					? AUDIT_TOOL_GUIDANCE
+					: `${AUDIT_TOOL_GUIDANCE} ${EXECUTION_TOOL_GUIDANCE}`,
 			prior,
 			changedSincePrior,
 			concurrency: args.concurrency,
@@ -336,6 +452,7 @@ const main = async () => {
 		return yield* runAudit(input).pipe(
 			// The script composes the engine with its host here, at its entry point.
 			Effect.provide([Layer.succeed(AuditAgents, agents), Layer.succeed(AuditStore, fileStore(out))]),
+			Effect.ensuring(executor === undefined ? Effect.void : executor.destroy(executorRun)),
 		)
 	})
 	const result = await Effect.runPromise(

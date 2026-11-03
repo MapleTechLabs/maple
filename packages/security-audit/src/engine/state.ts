@@ -82,6 +82,8 @@ export interface EngineState {
 	readonly criticClean: boolean
 	/** Every agent id this run spent, so none is ever reused. */
 	readonly usedIds: ReadonlySet<string>
+	/** What the parent promoted for each agent (`AgentAnswer.promoted`): the artifacts a `local` check may cite. */
+	readonly promoted: ReadonlyMap<string, ReadonlySet<string>>
 	/** Why the host stopped launching agents (the org's budget is spent); null while it launches. */
 	readonly halted: string | null
 	readonly usage: { readonly inputTokens: number; readonly outputTokens: number; readonly costUsd: number }
@@ -101,6 +103,7 @@ export const initialState: EngineState = {
 	incomplete: [],
 	criticClean: false,
 	usedIds: new Set(),
+	promoted: new Map(),
 	halted: null,
 	usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
 }
@@ -243,6 +246,18 @@ export const makeEngine = (input: AuditRunInput) =>
 						message: answer.failure.message,
 					})
 					return undefined
+				}
+				const promoted = answer.success.promoted ?? []
+				if (promoted.length > 0) {
+					yield* Ref.update(state, (s) => ({
+						...s,
+						promoted: new Map(s.promoted).set(agentId, new Set(promoted)),
+					}))
+					yield* Effect.forEach(
+						promoted,
+						(path) => event({ _tag: "Note", message: `${agentId} promoted ${path}` }),
+						{ discard: true },
+					)
 				}
 				const usage = answer.success.usage
 				if (usage !== undefined) {

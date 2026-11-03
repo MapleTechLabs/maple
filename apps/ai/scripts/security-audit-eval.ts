@@ -11,7 +11,8 @@
  * Options: --results <dir> (~/.cache/maple-security-eval/results, never inside this repo) · --repos <dir> (~/.cache/maple-security-eval/repos) · --only <id,...>
  * · --variant <name> with --profile/--budget/--concurrency overrides · --cap-usd <n> (250)
  * · --per-invocation-usd <n> (1.5, the estimate before any run) · --grades <file> (<results>/grades.json)
- * · --discovery-model / --validation-model <openrouter id> · --score-only · --dry-run
+ * · --discovery-model / --validation-model <openrouter id> · --executor <url> (executor:local, serving
+ * the case's clone) · --score-only · --dry-run
  */
 import { spawn, spawnSync } from "node:child_process"
 import {
@@ -97,11 +98,13 @@ interface Args {
 	readonly dryRun: boolean
 	readonly discoveryModel: string | undefined
 	readonly validationModel: string | undefined
+	/** `executor:local`'s address, passed to every run: they execute target code. */
+	readonly executor: string | undefined
 }
 
 const usage = () => {
 	console.error(
-		"usage: bun run security:eval <cases.json>... [--results <dir>] [--repos <dir>] [--only <id,...>] [--variant <name> --profile <p> --budget <n> --concurrency <n>] [--cap-usd <n>] [--per-invocation-usd <n>] [--grades <file>] [--score-only] [--dry-run]",
+		"usage: bun run security:eval <cases.json>... [--results <dir>] [--repos <dir>] [--only <id,...>] [--variant <name> --profile <p> --budget <n> --concurrency <n>] [--cap-usd <n>] [--per-invocation-usd <n>] [--grades <file>] [--executor <url>] [--score-only] [--dry-run]",
 	)
 	return process.exit(2)
 }
@@ -146,6 +149,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const variant = flag("variant")
 	// An override without a variant name would overwrite the default run's results.
 	if (variant === undefined && (profile !== undefined || flag("budget") !== undefined)) return usage()
+	// Executing runs measure something else: they never take the source-only baseline's key.
+	if (variant === undefined && flag("executor") !== undefined) return usage()
 	return {
 		caseFiles: parsed.positional.map((path) => resolve(path)),
 		results,
@@ -162,6 +167,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		dryRun: flag("dry-run") === "true",
 		discoveryModel: flag("discovery-model"),
 		validationModel: flag("validation-model"),
+		executor: flag("executor"),
 	}
 }
 
@@ -304,6 +310,7 @@ const runCase = (
 		runDir,
 		...(args.discoveryModel === undefined ? [] : ["--discovery-model", args.discoveryModel]),
 		...(args.validationModel === undefined ? [] : ["--validation-model", args.validationModel]),
+		...(args.executor === undefined ? [] : ["--executor", args.executor]),
 	]
 	const log = join(out, "runner.log")
 	writeFileSync(log, `bun ${runnerArgs.join(" ")}\n`)
