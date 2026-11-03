@@ -14,7 +14,7 @@ import {
 	LOCAL_SCHEMA_V6,
 	LOCAL_SCHEMA_V10,
 	LOCAL_SCHEMA_V11,
-	LOCAL_SCHEMA_V45,
+	LOCAL_SCHEMA_V46,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
 } from "@maple/local-server/schema-identity"
@@ -97,11 +97,11 @@ const [v10ToV11ProductEventsModule] = Arr.filter(
 )
 
 describe("current local schema identity", () => {
-	it("matches the generated v45 revision and keeps the issue-297 identity frozen", () => {
+	it("matches the generated v46 revision and keeps the issue-297 identity frozen", () => {
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_FINGERPRINT).toBe("51c2621a62c86fd0")
+		expect(SCHEMA_FINGERPRINT).toBe("3871c915576e1793")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_DIGEST).toBe("51c2621a62c86fd0e928cb3671592ccef6cda18b296eefdc6c4f1e8a50ddc1cc")
+		expect(SCHEMA_DIGEST).toBe("3871c915576e1793230af632eeb14ea3cc5e2112c8801bd32c8b7b7d0c8f5eda")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- frozen identity that stores already on disk carry
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
@@ -109,8 +109,8 @@ describe("current local schema identity", () => {
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
 		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
-		expect(CURRENT_LOCAL_SCHEMA.version).toBe(45)
-		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V45)
+		expect(CURRENT_LOCAL_SCHEMA.version).toBe(46)
+		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V46)
 		const logs = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "logs")
 		expect(logs?.columns.some((column) => Str.startsWith("idx_")(column.name))).toBe(false)
 		expect(logs?.indexes).toContain("idx_lower_body")
@@ -438,7 +438,7 @@ describe("local migration registry", () => {
 				// One past the current tip — bump alongside LOCAL_SCHEMA_VERSION, or this
 				// stops testing the future-store guard and starts testing the
 				// unknown-fingerprint one.
-				{ ...CURRENT_LOCAL_SCHEMA, version: 46, fingerprint: "future", digest: SCHEMA_DIGEST },
+				{ ...CURRENT_LOCAL_SCHEMA, version: 47, fingerprint: "future", digest: SCHEMA_DIGEST },
 				CURRENT_LOCAL_SCHEMA,
 			),
 		).toThrow(/newer than this build/)
@@ -611,6 +611,7 @@ describe("local migration registry", () => {
 			"local-0042-to-0043-error-fingerprint-fuzz-fixes",
 			"local-0043-to-0044-error-fingerprint-json-frames",
 			"local-0044-to-0045-error-fingerprint-interleaved-values",
+			"local-0045-to-0046-error-custom-fingerprint",
 		]
 		const versions = (id: string) => {
 			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
@@ -1628,6 +1629,7 @@ describe("v10 -> v11 product events module", () => {
 			"local-0042-to-0043-error-fingerprint-fuzz-fixes",
 			"local-0043-to-0044-error-fingerprint-json-frames",
 			"local-0044-to-0045-error-fingerprint-interleaved-values",
+			"local-0045-to-0046-error-custom-fingerprint",
 		])
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V11)
 		// The dropped table is declared, and the backfilled ones say what they

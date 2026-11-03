@@ -2,6 +2,9 @@ import { defineMaterializedView, node } from "@maple-dev/effect-orm/tinybird"
 import {
 	chPattern,
 	chRedactChain,
+	CUSTOM_FINGERPRINT_ATTRIBUTE,
+	CUSTOM_FINGERPRINT_MAX_CHARS,
+	CUSTOM_FINGERPRINT_REDACTIONS,
 	EFFECT_SPAN_FRAME_MARKER,
 	ERROR_MSG_REDACTIONS,
 	FINGERPRINT_HASH_SALT,
@@ -902,7 +905,8 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
  * cityHash64 FingerprintHash used to group occurrences into Issues.
  *
  * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames
- * (1 for a namespaced type), message signature, FINGERPRINT_HASH_SALT).
+ * (1 for a namespaced type), message signature, FINGERPRINT_HASH_SALT), or
+ * (OrgId, ServiceName, 'maple.fingerprint', value) when the error carries that key.
  * - Stack lines are filtered by frame SHAPE — one alternative per runtime's frame
  *   syntax — not by "contains `:NUMBER`". The old rule accepted any colon-digit
  *   line, so Drizzle's `params:` line (actual row values) and `Type: message`
@@ -963,6 +967,15 @@ const errorEventsSelectSql = `
             if(_useAttrs, SpanAttributes['exception.stacktrace'], '')
           ) AS _exStack,
           if(_useAttrs, _exMsg, StatusMessage) AS _msgText,
+          -- A user key replaces type, frames, message and salt in the hash: the
+          -- exception event's value first, then the span's. Trimmed and capped.
+          substringUTF8(
+            ${chRedactChain(
+				`coalesce(nullIf(if(_ei > 0, EventsAttributes[_ei][${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}], ''), ''), SpanAttributes[${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}])`,
+				CUSTOM_FINGERPRINT_REDACTIONS,
+			)},
+            1, ${CUSTOM_FINGERPRINT_MAX_CHARS}
+          ) AS _customFp,
           -- JSON detection for the message signature below.
           isValidJSON(_msgText) AS _isJson,
           _isJson AND JSONType(_msgText) = 'Object' AS _isJsonObj,
@@ -1100,7 +1113,11 @@ const errorEventsSelectSql = `
           _exMsg AS ExceptionMessage,
           _exStack AS ExceptionStacktrace,
           _topFrame AS TopFrame,
-          cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)}) AS FingerprintHash,
+          if(
+            _customFp != '',
+            cityHash64(OrgId, ServiceName, ${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}, _customFp),
+            cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})
+          ) AS FingerprintHash,
           StatusMessage,
           Duration,
           _errorLabel AS ErrorLabel,

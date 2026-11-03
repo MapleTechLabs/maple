@@ -37,6 +37,11 @@ export interface FingerprintInputs {
 	 * so the key heuristic here never affects bucketing.
 	 */
 	readonly label: string
+	/**
+	 * Everything `FingerprintHash` hashes after OrgId and ServiceName. A user key
+	 * (`maple.fingerprint`) replaces the type, frames, message and salt.
+	 */
+	readonly hashInputs: ReadonlyArray<string>
 }
 
 /**
@@ -77,6 +82,16 @@ export const EFFECT_SPAN_FRAME_MARKER = "(definition)"
 export const MSG_SCAN_CHARS = 1000
 /** How much of the redacted result reaches the hash. */
 export const MSG_SIGNATURE_CHARS = 120
+
+/**
+ * A span or exception-event attribute that sets the grouping key outright. Scoped to
+ * org and service, and unsalted, so a user-chosen key survives a FINGERPRINT_VERSION
+ * bump. Trimmed by `CUSTOM_FINGERPRINT_REDACTIONS`, then cut to the cap.
+ */
+export const CUSTOM_FINGERPRINT_ATTRIBUTE = "maple.fingerprint"
+/** Code points of a user key that reach the hash, so a value can't mint a key per row. */
+export const CUSTOM_FINGERPRINT_MAX_CHARS = 200
+export const CUSTOM_FINGERPRINT_REDACTIONS: Redactions = [["^[ \\t\\n\\r]+|[ \\t\\n\\r]+$", ""]]
 
 /**
  * Matches frame lines by SHAPE — one alternative per runtime — rather than by
@@ -622,11 +637,15 @@ function messageSignature(statusMessage: string): string {
 	)
 }
 
-/** `statusMessage` is the MV's resolved `_msgText`, including attribute fallback. */
+/**
+ * `statusMessage` is the MV's resolved `_msgText`, including attribute fallback.
+ * `customFingerprint` is the raw `maple.fingerprint` value, the event's when set, else the span's.
+ */
 export function computeFingerprintInputs(args: {
 	readonly exceptionType: string
 	readonly exceptionStacktrace: string
 	readonly statusMessage: string
+	readonly customFingerprint?: string
 }): FingerprintInputs {
 	const msgSignature = messageSignature(args.statusMessage)
 	// A namespaced type plus its message names the failure, so the throw site is enough.
@@ -660,7 +679,16 @@ export function computeFingerprintInputs(args: {
 
 	const label = args.exceptionType !== "" ? args.exceptionType : statusLabel(args.statusMessage)
 
-	return { topFrame, fpFrames, msgSignature, label }
+	const custom = leftCodePoints(
+		applyRedactions(args.customFingerprint ?? "", CUSTOM_FINGERPRINT_REDACTIONS),
+		CUSTOM_FINGERPRINT_MAX_CHARS,
+	)
+	const hashInputs =
+		custom !== ""
+			? [CUSTOM_FINGERPRINT_ATTRIBUTE, custom]
+			: [args.exceptionType, fpFrames, msgSignature, FINGERPRINT_HASH_SALT]
+
+	return { topFrame, fpFrames, msgSignature, label, hashInputs }
 }
 
 /**

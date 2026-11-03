@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest"
 import {
 	chPattern,
 	computeFingerprintInputs,
+	CUSTOM_FINGERPRINT_ATTRIBUTE,
+	CUSTOM_FINGERPRINT_MAX_CHARS,
+	CUSTOM_FINGERPRINT_REDACTIONS,
 	EFFECT_SPAN_FRAME_MARKER,
 	ERROR_MSG_REDACTIONS,
 	FINGERPRINT_HASH_SALT,
@@ -20,6 +23,45 @@ import {
 } from "./fingerprint"
 import { ERROR_EVENTS_MV_SQL } from "./materializations"
 import { Array as Arr, String as Str } from "effect"
+
+describe("maple.fingerprint override", () => {
+	const nodeError = (fn: string, message: string, customFingerprint?: string) =>
+		computeFingerprintInputs({
+			exceptionType: "PaymentError",
+			exceptionStacktrace: `PaymentError: ${message}\n    at ${fn} (/app/src/pay.ts:4:2)`,
+			statusMessage: message,
+			customFingerprint,
+		})
+
+	it("groups different stacks and messages by the user key alone", () => {
+		const a = nodeError("charge", "card 4242 declined", "checkout-payment-declined")
+		const b = nodeError("refund", "issuer timeout", "  checkout-payment-declined\n")
+		expect(a.hashInputs).toEqual([CUSTOM_FINGERPRINT_ATTRIBUTE, "checkout-payment-declined"])
+		expect(b.hashInputs).toEqual(a.hashInputs)
+	})
+
+	it("leaves the display fields as the algorithm computes them", () => {
+		const custom = nodeError("charge", "card declined", "checkout")
+		const plain = nodeError("charge", "card declined")
+		expect({ ...custom, hashInputs: [] }).toEqual({ ...plain, hashInputs: [] })
+	})
+
+	it("falls back to the computed inputs, salt included, when the key is blank", () => {
+		const blank = nodeError("charge", "card declined", " \t ")
+		expect(blank.hashInputs).toEqual([
+			"PaymentError",
+			blank.fpFrames,
+			blank.msgSignature,
+			FINGERPRINT_HASH_SALT,
+		])
+		expect(nodeError("charge", "card declined").hashInputs).toEqual(blank.hashInputs)
+	})
+
+	it("caps the key by code point", () => {
+		const long = nodeError("charge", "x", Str.repeat(CUSTOM_FINGERPRINT_MAX_CHARS + 50)("😀"))
+		expect(long.hashInputs[1]).toBe(Str.repeat(CUSTOM_FINGERPRINT_MAX_CHARS)("😀"))
+	})
+})
 
 describe("error fingerprint normalization", () => {
 	it("extracts and normalizes top 3 Node.js frames", () => {
@@ -665,6 +707,7 @@ describe("SQL parity", () => {
 			...JSON_TYPE_VALUE_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
 			...ERROR_MSG_REDACTIONS,
+			...CUSTOM_FINGERPRINT_REDACTIONS,
 		]) {
 			const chReplacement = Str.replace(/\$([1-9])/g, "\\$1")(replacement)
 			expect(sql).toContain(`${chPattern(pattern)}, ${chPattern(chReplacement)}`)
@@ -673,7 +716,7 @@ describe("SQL parity", () => {
 
 	it("hashes the version salt, so a FINGERPRINT_VERSION bump rotates every issue", () => {
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the salt is semantic: it rotates every issue
-		expect(sql).toContain(`_msgSig, ${chPattern(FINGERPRINT_HASH_SALT)}) AS FingerprintHash`)
+		expect(sql).toContain(`_msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})\n          ) AS FingerprintHash`)
 	})
 
 	it("truncates by character in both implementations, not by byte", () => {
@@ -694,7 +737,12 @@ describe("SQL parity", () => {
 		// RE2 rejects backreferences and lookaround; JS accepts both, so a pattern
 		// written here can typecheck, pass every test above, and still fail at
 		// deploy time against the warehouse.
-		for (const [pattern] of [...FRAME_REDACTIONS, ...JSON_VALUE_REDACTIONS, ...ERROR_MSG_REDACTIONS]) {
+		for (const [pattern] of [
+			...FRAME_REDACTIONS,
+			...JSON_VALUE_REDACTIONS,
+			...ERROR_MSG_REDACTIONS,
+			...CUSTOM_FINGERPRINT_REDACTIONS,
+		]) {
 			expect(pattern).not.toMatch(/\(\?[=!<]/)
 			expect(pattern).not.toMatch(/\\[1-9]/)
 		}
