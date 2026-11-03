@@ -405,6 +405,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		recordEvent: die,
 		buildEvent: dieSync,
 		recordEventAudit: die,
+		fingerprintHashesOf: die,
 		applyTransition: die,
 		heartbeatIssue: die,
 		releaseIssue: die,

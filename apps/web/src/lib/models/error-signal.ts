@@ -204,6 +204,7 @@ export function buildErrorSignals(input: {
 				? undefined
 				: {
 						count: Arr.reduce(volumes, 0, (sum, row) => sum + row.count),
+						// A lower bound: hashes that hit different services are not unioned here.
 						affectedServicesCount: Math.max(
 							...Arr.map(volumes, (row) => row.affectedServicesCount),
 						),

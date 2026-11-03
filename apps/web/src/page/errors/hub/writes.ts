@@ -36,7 +36,7 @@ export const WriteOutcome = Schema.Struct({
 })
 export type WriteOutcome = typeof WriteOutcome.Type
 
-const writeOne = (issueId: ErrorIssueId, write: HubWrite) =>
+const writeOne = (issueId: ErrorIssueId, write: Exclude<HubWrite, { readonly _tag: "Merge" }>) =>
 	Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		const params = { issueId }
@@ -57,11 +57,6 @@ const writeOne = (issueId: ErrorIssueId, write: HubWrite) =>
 				return yield* client.errors.setIssueSeverity({
 					params,
 					payload: new ErrorIssueSetSeverityRequest({ severity: write.severity }),
-				})
-			case "Merge":
-				return yield* client.errors.mergeIssues({
-					params: { issueId: write.targetId },
-					payload: new ErrorIssueMergeRequest({ sourceIssueIds: [issueId] }),
 				})
 		}
 	})

@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
-import { ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
-import { ErrorIssueEvents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
+import { ErrorIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
+import { ErrorIncidents, ErrorIssueEvents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -14,6 +14,7 @@ import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
+const asIncidentId = Schema.decodeUnknownSync(ErrorIncidentId)
 
 const ORG = asOrgId("org_error_issue_merge_test")
 const USER = asUserId("user_error_issue_merge_test")
@@ -202,6 +203,67 @@ describe("ErrorIssueMergeService", () => {
 			])
 			const again = yield* Effect.flip(merges.unmergeIssue(ORG, actorId, source))
 			assert.strictEqual(again._tag, "@maple/http/errors/ErrorValidationError")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("unmerging an issue that had its own merges takes back only its share", () =>
+		Effect.gen(function* () {
+			const merges = yield* ErrorIssueMergeService
+			const actorId = yield* actor
+			const target = yield* seedIssue("100", { occurrenceCount: 10 })
+			const middle = yield* seedIssue("200", { occurrenceCount: 5 })
+			const inner = yield* seedIssue("300", { occurrenceCount: 3 })
+			yield* merges.mergeIssues(ORG, actorId, middle, [inner])
+			yield* merges.mergeIssues(ORG, actorId, target, [middle])
+			assert.strictEqual((yield* loadIssue(target)).occurrenceCount, 18)
+
+			const restored = yield* merges.unmergeIssue(ORG, actorId, middle)
+
+			// The issue merged into it earlier now belongs to the target, with its count.
+			assert.strictEqual((yield* loadIssue(target)).occurrenceCount, 13)
+			assert.strictEqual(restored.occurrenceCount, 5)
+			assert.deepStrictEqual(restored.fingerprintHashes, ["200"])
+			assert.strictEqual((yield* loadIssue(inner)).mergedIntoIssueId, target)
+			yield* merges.unmergeIssue(ORG, actorId, inner)
+			assert.strictEqual((yield* loadIssue(target)).occurrenceCount, 10)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("closes a merged issue's open incident without waiting for it to go stale", () =>
+		Effect.gen(function* () {
+			const merges = yield* ErrorIssueMergeService
+			const database = yield* Database
+			const actorId = yield* actor
+			const now = yield* Clock.currentTimeMillis
+			const target = yield* seedIssue("100")
+			const source = yield* seedIssue("200")
+			const incidentId = asIncidentId(randomUUID())
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIncidents).values({
+						id: incidentId,
+						orgId: ORG,
+						issueId: source,
+						status: "open",
+						reason: "first_seen",
+						firstTriggeredAt: now,
+						lastTriggeredAt: now,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				),
+			)
+
+			yield* merges.mergeIssues(ORG, actorId, target, [source])
+
+			const [incident] = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIncidents)
+						.select("status")
+						.where(($) => [$.id.eq(incidentId)]),
+				),
+			)
+			assert.strictEqual(incident?.status, "resolved")
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

@@ -59,6 +59,7 @@ import {
 } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
+import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -1331,25 +1332,10 @@ const make: Effect.Effect<
 
 		// firstSeenAt per fingerprint so young issues stay with first_seen handling.
 		const fingerprints = Arr.dedupe(Arr.map(spikes.observations, (o) => o.fingerprintHash))
-		const issueRows =
-			fingerprints.length === 0
-				? []
-				: yield* dbExecute((db) =>
-						db.run(
-							PG.from(ErrorIssues)
-								.select(($) => ({
-									fingerprintHash: $.fingerprintHash,
-									issueId: $.id,
-									firstSeenAt: $.firstSeenAt,
-								}))
-								.where(($) => [
-									$.orgId.eq(orgId),
-									PG.inList($.fingerprintHash, fingerprints),
-								]),
-						),
-					)
-		const issueFirstSeenAt = new Map(Arr.map(issueRows, (r) => [r.fingerprintHash, r.firstSeenAt]))
-		const issueIdByFingerprint = new Map(Arr.map(issueRows, (r) => [r.fingerprintHash, r.issueId]))
+		// Through aliases too: a spike on a merged-away hash belongs to the issue it was merged into.
+		const owners = yield* dbExecute((db) => issuesOwningHashes(db, orgId, fingerprints))
+		const issueFirstSeenAt = new Map(Arr.map([...owners], ([hash, owner]) => [hash, owner.firstSeenAt]))
+		const issueIdByFingerprint = new Map(Arr.map([...owners], ([hash, owner]) => [hash, owner.issueId]))
 
 		const evaluations: AnomalyEvaluation[] = []
 		for (const series of goldenSeries) {

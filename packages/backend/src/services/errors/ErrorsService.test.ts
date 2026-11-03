@@ -2646,6 +2646,28 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
+	it.effect("an occurrence never brings a merged-away issue back", () => {
+		// The hash is still the merged issue's primary with no alias yet: a tick that read
+		// the aliases before a merge committed. It must not reappear in the list.
+		const rows = [scanRow()]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const owner = asIssueId(randomUUID())
+			const mergedAway = asIssueId(randomUUID())
+			yield* seedIssue(owner, { fingerprintHash: "22222222222222222222" })
+			yield* seedIssue(mergedAway, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				archivedAt: TICK_MS - 1_000,
+				mergedIntoIssueId: owner,
+			})
+
+			yield* errors.runTick()
+
+			assert.strictEqual((yield* loadIssueById(mergedAway)).archivedAt, TICK_MS - 1_000)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
 	it.effect("a regression on an archived resolved issue reopens it where it can be seen", () => {
 		const rows = [scanRow()]
 		return Effect.gen(function* () {

@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ErrorIssueFingerprints } from "@maple/db/tables"
+import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import type { ErrorIssueId, OrgId } from "@maple/domain/http"
 import { Array as Arr, Effect } from "effect"
@@ -43,4 +43,36 @@ export const issueFingerprintHashes = (
 				],
 			]),
 		)
+	})
+
+/**
+ * The issue each warehouse hash lands on: through an alias first (a merged-away
+ * issue's hash belongs to the issue it was merged into), else the issue it is primary for.
+ */
+export const issuesOwningHashes = (
+	db: MapleDb,
+	orgId: OrgId,
+	hashes: ReadonlyArray<string>,
+): Effect.Effect<
+	Map<string, { readonly issueId: ErrorIssueId; readonly firstSeenAt: number }>,
+	MapleDbError
+> =>
+	Effect.gen(function* () {
+		if (hashes.length === 0) return new Map()
+		const primaries = yield* db.run(
+			PG.from(ErrorIssues)
+				.select(($) => ({ hash: $.fingerprintHash, issueId: $.id, firstSeenAt: $.firstSeenAt }))
+				.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...hashes)]),
+		)
+		const aliases = yield* db.run(
+			PG.from(ErrorIssueFingerprints)
+				.innerJoin(ErrorIssues, "issue", (alias, issue) => issue.id.eq(alias.issueId))
+				.select(($) => ({
+					hash: $.fingerprintHash,
+					issueId: $.issue.id,
+					firstSeenAt: $.issue.firstSeenAt,
+				}))
+				.where(($) => [$.orgId.eq(orgId), $.issue.orgId.eq(orgId), $.fingerprintHash.in_(...hashes)]),
+		)
+		return new Map(Arr.map([...primaries, ...aliases], ({ hash, ...owner }) => [hash, owner] as const))
 	})
