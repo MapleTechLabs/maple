@@ -124,6 +124,15 @@ const networkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_, index
 	]
 }).flat()
 
+// Current semconv attribute names: semconv-host receives 3000 B/min (50 B/s) on eth0.
+const semconvNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_, index) => ({
+	host: "semconv-host",
+	metric: "system.network.io",
+	ms: START_MS - 10 * MINUTE_MS + 30_000 + index * MINUTE_MS,
+	value: 3000 * index,
+	attrs: { "system.device": "eth0", "network.io.direction": "receive" },
+}))
+
 // Every host reports CPU, which is what lists it; utilization-host sends the opt-in gauge.
 const gaugePoints: ReadonlyArray<Point> = [
 	...["receiver-host", "semconv-host", "utilization-host"].map((host) => ({
@@ -162,7 +171,7 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
 		await clickhouseExec(
-			`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic, Attributes, ResourceAttributes) VALUES\n${[...filesystemPoints, ...networkPoints].map(sumRow).join(",\n")}`,
+			`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic, Attributes, ResourceAttributes) VALUES\n${[...filesystemPoints, ...networkPoints, ...semconvNetworkPoints].map(sumRow).join(",\n")}`,
 			database,
 		)
 		await clickhouseExec(
@@ -258,6 +267,19 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			rows.filter((row) => row.attributeValue === direction).map((row) => Math.round(row.rateValue))
 		assert.deepEqual(byDirection("receive"), [100, 100, 100, 100, 100, 100])
 		assert.deepEqual(byDirection("transmit"), [200, 200, 200, 200, 200, 200])
+	})
+
+	it("reads the direction under its current semconv name", async () => {
+		const rows = await run(
+			compileUnsafe(CH.hostNetworkTimeseriesQuery({ hostName: "semconv-host" }), {
+				...window,
+				bucketSeconds: 600,
+			}),
+		)
+		assert.deepEqual(
+			rows.map((row) => [row.attributeValue, Math.round(row.rateValue)]),
+			Array.from({ length: 6 }, () => ["receive", 50]),
+		)
 	})
 
 	it("keeps the true rate in buckets narrower than the scrape interval", async () => {
