@@ -4020,6 +4020,13 @@
           "fingerprint_hash": {
             "type": "string"
           },
+          "fingerprint_hashes": {
+            "description": "Every fingerprint the issue owns, its own first: merged-in issues add theirs.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "first_seen_at": {
             "type": "string"
           },
@@ -4046,6 +4053,10 @@
           },
           "lease_holder": {
             "$ref": "#/components/schemas/ErrorIssueActor"
+          },
+          "merged_into_issue_id": {
+            "$ref": "#/components/schemas/_maple_ErrorIssueId",
+            "description": "The issue this one was merged into. A merged issue is archived."
           },
           "merged_pull_request_count": {
             "type": "number"
@@ -4210,6 +4221,13 @@
           "fingerprint_hash": {
             "type": "string"
           },
+          "fingerprint_hashes": {
+            "description": "Every fingerprint the issue owns, its own first: merged-in issues add theirs.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "first_seen_at": {
             "type": "string"
           },
@@ -4242,6 +4260,10 @@
           },
           "lease_holder": {
             "$ref": "#/components/schemas/ErrorIssueActor"
+          },
+          "merged_into_issue_id": {
+            "$ref": "#/components/schemas/_maple_ErrorIssueId",
+            "description": "The issue this one was merged into. A merged issue is archived."
           },
           "merged_pull_request_count": {
             "type": "number"
