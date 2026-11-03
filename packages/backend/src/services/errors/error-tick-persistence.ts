@@ -381,12 +381,15 @@ const canonicalizeScanRows = (
 		if (aliases.length === 0) return rows
 		// The owning issue keeps its own title and service; a merged-in hash only adds counts.
 		const ownerByAlias = new Map(Arr.map(aliases, ({ alias, ...owner }) => [alias, owner]))
-		return mergeScanRows(
-			Arr.map(rows, (row) => {
+		// The merge keeps the last row's display fields, so aliased rows go first and an
+		// issue's own observation in this window wins over its stored fields.
+		return mergeScanRows([
+			...Arr.flatMap(rows, (row) => {
 				const owner = ownerByAlias.get(row.fingerprintHash)
-				return owner === undefined ? row : { ...row, ...owner }
+				return owner === undefined ? [] : [{ ...row, ...owner }]
 			}),
-		)
+			...Arr.filter(rows, (row) => !ownerByAlias.has(row.fingerprintHash)),
+		])
 	})
 
 const buildEvent = (
