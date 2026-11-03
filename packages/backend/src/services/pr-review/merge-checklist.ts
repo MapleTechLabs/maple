@@ -71,6 +71,13 @@ const looksSecret = (name: string) =>
 	/SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|_KEY$|_DSN$|SIGNING/.test(name) &&
 	!/PUBLISHABLE|PUBLIC/.test(name)
 
+/**
+ * A name only a test run reads: a whole `TEST` or `E2E` token, as in `STRIPE_E2E_TEST_SECRET_KEY`.
+ * Whole tokens only, so `LATEST_RELEASE` and `CONTEST_KEY` still count.
+ */
+const testOnlyName = (name: string) =>
+	Arr.some(Str.split("_")(name), (token) => token === "TEST" || token === "E2E")
+
 /** Names every runtime or CI provides; never something to add. */
 const PROVIDED = new Set([
 	"NODE_ENV",
@@ -95,8 +102,12 @@ const PROVIDED = new Set([
 	"BASE_URL",
 ])
 
+/**
+ * A test by folder, or by the file name's last dot segment before the extension: a known test
+ * suffix (`x.e2e.ts`, `x.test-d.ts`) or a custom one ending in it (`x.stripe-live.ts`).
+ */
 const TEST_PATH =
-	/(^|\/)(__tests__|__snapshots__|__fixtures__|tests?|fixtures?|e2e|testdata|mocks?)\/|\.(test|spec|eval|bench)\.[a-z]+$/i
+	/(^|\/)(__tests__|__snapshots__|__fixtures__|tests?|fixtures?|e2e|integration|playwright|testdata|mocks?)\/|\.(test|spec|eval|bench|e2e|integration|it|live|test-d|[\w-]+-(live|e2e|test))\.[a-z]+$/i
 const DOC_PATH = /\.(md|mdx|txt|rst)$/i
 /** Code a developer runs by hand; what it reads is set on their machine, not in a deployment. */
 const LOCAL_PATH = /(^|\/)(scripts?|examples?|benchmarks?|evals?)\//i
@@ -223,6 +234,8 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 		if (!readsNamesIn(path)) continue
 		const remember = (candidate: MergeStepName) => {
 			if (PROVIDED.has(candidate.name) || names.has(candidate.name)) return
+			// A CI secret for an e2e run still has to be added to the repository; a runtime read does not.
+			if (!candidate.ci && testOnlyName(candidate.name)) return
 			names.set(candidate.name, candidate)
 		}
 		for (const { text, line } of added) {
