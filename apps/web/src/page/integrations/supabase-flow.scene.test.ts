@@ -45,7 +45,7 @@ const project = (overrides: Record<string, unknown> = {}) => ({
 })
 
 const status = (overrides: Record<string, unknown> = {}) =>
-	Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
+	Schema.decodeSync(SupabaseIntegrationStatus)({
 		configured: true,
 		connected: true,
 		organization: { id: "org-1", slug: "acme", name: "Acme" },

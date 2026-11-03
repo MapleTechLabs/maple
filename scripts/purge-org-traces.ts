@@ -105,8 +105,7 @@ const parseInstant = (flag: string): Date => {
 }
 
 const decodeMvLineage = Schema.decodeUnknownOption(
-	Schema.Struct({
-		_tag: Schema.Literal("MaterializedView"),
+	Schema.TaggedStruct("MaterializedView", {
 		ddl: Schema.Struct({ to: Schema.String, sources: Schema.Array(Schema.String) }),
 	}),
 )
@@ -182,7 +181,7 @@ const tinybird = async <S extends Schema.Decoder<unknown>>(
 	const body = await response.text()
 	if (!response.ok)
 		fail(`${init?.method ?? "GET"} ${path} → ${response.status}: ${Str.slice(0, 500)(body)}`)
-	return Schema.decodeUnknownSync(Schema.fromJsonString(schema))(body)
+	return Schema.decodeSync(Schema.fromJsonString(schema))(body)
 }
 
 const countRows = async (target: Target, condition: string): Promise<number> => {

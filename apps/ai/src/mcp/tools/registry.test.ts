@@ -149,7 +149,7 @@ describe("P.optionalNumber", () => {
 
 	// Absence still means absence — the leniency is about encoding, not presence.
 	it("leaves an omitted parameter omitted", () => {
-		expect(Effect.runSync(Schema.decodeUnknownEffect(schema)({}))).toEqual({})
+		expect(Effect.runSync(Schema.decodeEffect(schema)({}))).toEqual({})
 	})
 })
 

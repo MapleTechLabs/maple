@@ -5,22 +5,26 @@
  * all it does: summarizing across turns was half-built here once, behind a durable event nothing
  * ever wrote, and is gone.
  */
-import type { ChatMessage } from "@maple/domain/chat-session"
+import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
 import { assert, describe, it } from "vitest"
 import { promptFromHistory } from "./run"
 import { Array as Arr, String as Str } from "effect"
 
 let seq = 0
 
-const message = (role: "user" | "assistant", text: string, toolCalls: unknown[] = []): ChatMessage =>
-	({
+const message = (
+	role: "user" | "assistant",
+	text: string,
+	toolCalls: ReadonlyArray<ChatToolCall> = [],
+): ChatMessage =>
+	new ChatMessage({
 		id: `m${(seq += 1)}`,
 		role,
 		text,
 		toolCalls,
 		createdAt: seq,
 		startSeq: seq,
-	}) as ChatMessage
+	})
 
 const textOf = (messages: ReadonlyArray<{ content: ReadonlyArray<unknown> }>) =>
 	Arr.map(messages, (m) =>
@@ -50,7 +54,7 @@ describe("promptFromHistory", () => {
 		seq = 0
 		const replayed = promptFromHistory([
 			message("user", "check it"),
-			message("assistant", "", [{ id: "c1" }]),
+			message("assistant", "", [new ChatToolCall({ id: "c1", name: "list_services", input: {} })]),
 			message("assistant", "Done."),
 		])
 

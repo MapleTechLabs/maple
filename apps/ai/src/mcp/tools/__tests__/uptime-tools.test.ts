@@ -28,7 +28,7 @@ afterAll(async () => {
 })
 
 const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+	Schema.decodeSync(schema)(result.structuredContent)
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 

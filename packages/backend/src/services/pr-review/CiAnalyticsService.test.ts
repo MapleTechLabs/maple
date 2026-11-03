@@ -15,15 +15,15 @@ import { CI_MAX_SPAN_MS, CiAnalyticsService } from "./CiAnalyticsService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_ci_analytics")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
-const REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
-const OTHER_REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
-const INSTALLATION = Schema.decodeUnknownSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
+const ORG = Schema.decodeSync(OrgId)("org_ci_analytics")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
+const REPO = Schema.decodeSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
+const OTHER_REPO = Schema.decodeSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
+const INSTALLATION = Schema.decodeSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
 const tenant: TenantContext = {
 	orgId: ORG,
-	userId: Schema.decodeUnknownSync(UserId)("user_ci"),
-	roles: [Schema.decodeUnknownSync(RoleName)("org:admin")],
+	userId: Schema.decodeSync(UserId)("user_ci"),
+	roles: [Schema.decodeSync(RoleName)("org:admin")],
 	authMode: "self_hosted",
 }
 

@@ -34,8 +34,11 @@ interface OtlpBody {
 // A nanosecond timestamp that is not a numeric string throws out of `BigInt`
 // rather than producing NaN, and an event with no readable timestamp cannot be
 // shown to postdate consent — so it is dropped.
-const after = (value: unknown, threshold: bigint): boolean =>
-	trySyncOrUndefined(() => BigInt(String(value ?? 0)) >= threshold) ?? false
+const after = (value: unknown, threshold: bigint): boolean => {
+	const raw = value ?? 0
+	if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "bigint") return false
+	return trySyncOrUndefined(() => BigInt(raw) >= threshold) ?? false
+}
 
 const pruneTraces = (body: OtlpBody, threshold: bigint): OtlpBody | undefined => {
 	const resourceSpans = Arr.filter(

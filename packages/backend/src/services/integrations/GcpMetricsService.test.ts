@@ -12,6 +12,7 @@ import {
 	Array as Arr,
 	Record as Rec,
 	String as Str,
+	DateTime,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -533,7 +534,7 @@ const inventory = (testDb: TestDb, id: string) =>
 		),
 	).pipe(Effect.map((row) => row?.resources ?? []))
 
-const pollAll = GcpMetricsService.use((gcp) => gcp.pollAll())
+const pollAll = GcpMetricsService.use((gcp) => gcp.pollAll)
 
 const decodeJwtPart = (part: string) => JSON.parse(Buffer.from(part, "base64url").toString("utf8"))
 
@@ -653,7 +654,7 @@ describe("GcpMetricsService", () => {
 				)
 				assert.strictEqual(
 					attributes.maple_source_id,
-					publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id)),
+					publicSourceId(Schema.decodeSync(SourceId)(source!.id)),
 				)
 				const metric = resource.scopeMetrics[0].metrics[0]
 				assert.strictEqual(metric.name, "gcp.cloud_run.requests")
@@ -1382,7 +1383,7 @@ describe("GcpMetricsService", () => {
 				yield* insertConnector(testDb, CONNECTOR_B, { projectId: "acme-staging" })
 				yield* Effect.promise(() =>
 					executeSql(testDb, "UPDATE gcp_connectors SET metrics_lease_until = $1 WHERE id = $2", [
-						new Date(now + minute).toISOString(),
+						DateTime.formatIso(DateTime.makeUnsafe(now + minute)),
 						CONNECTOR_B,
 					]),
 				)

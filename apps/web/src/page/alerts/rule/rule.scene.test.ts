@@ -252,7 +252,7 @@ describe("alert rule", () => {
 			slowed_at: new Date(NOW - 30 * 60_000).toISOString(),
 		})
 		const model = loaded({}, rule)
-		const timed = Schema.decodeUnknownSync(AlertCheckDocument)({
+		const timed = Schema.decodeSync(AlertCheckDocument)({
 			timestamp: new Date(NOW - 10 * 60_000).toISOString(),
 			groupKey: "__total__",
 			status: "healthy",

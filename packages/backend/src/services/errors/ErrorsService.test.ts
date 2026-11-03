@@ -12,6 +12,7 @@ import {
 	Schema,
 	Array as Arr,
 	String as Str,
+	DateTime,
 } from "effect"
 import { TestClock } from "effect/testing"
 import {
@@ -93,7 +94,7 @@ describe("makePersistenceError", () => {
 	it("survives a Schema round-trip when cause is absent", () => {
 		const err = makePersistenceError(new Error("boom"))
 		const encoded = Schema.encodeSync(ErrorPersistenceError)(err)
-		const decoded = Schema.decodeUnknownSync(ErrorPersistenceError)(encoded)
+		const decoded = Schema.decodeSync(ErrorPersistenceError)(encoded)
 		expect("cause" in decoded).toBe(false)
 		expect(decoded.message).toBe("boom")
 	})
@@ -442,7 +443,7 @@ describe("ErrorIssueReadModelsService.countOpenIssuesByService", () => {
 	it.effect("groups actionable error issues by service, excluding done/alert/archived", () =>
 		Effect.gen(function* () {
 			const readModels = yield* ErrorIssueReadModelsService
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			yield* seedIssue(asIssueId(randomUUID()), {
 				serviceName: "checkout-api",
 			})
@@ -999,7 +1000,7 @@ const runTicksUntilCaughtUp = Effect.fn("test.runTicksUntilCaughtUp")(function* 
 		const cursor = yield* database.execute((db) => db.run(PG.from(ErrorTickStates).select()))
 		const behind = cursor.length === 0 || Arr.some(cursor, (row) => row.processedThrough < cutoffMs)
 		if (!behind) break
-		const result = yield* errors.runTick()
+		const result = yield* errors.runTick
 		totals.issuesTouched += result.issuesTouched
 		totals.incidentsOpened += result.incidentsOpened
 		totals.incidentsResolved += result.incidentsResolved
@@ -1013,7 +1014,7 @@ describe("ErrorsService.runTick", () => {
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(TICK_MS)
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 			assert.deepStrictEqual(result, {
 				orgsProcessed: 0,
 				issuesTouched: 0,
@@ -1038,7 +1039,7 @@ describe("ErrorsService.runTick", () => {
 			// discovery (empty scan rows) reports it inactive.
 			yield* seedIngestKey(ORG)
 
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 			// Not visited at all: an org with no issue/incident state has nothing to
 			// expire, wake or auto-resolve, so the per-org Postgres round-trips are
 			// pure waste. `orgsProcessed` counts orgs actually scanned, not known.
@@ -1067,7 +1068,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIssue(asIssueId(randomUUID()))
 			yield* seedIngestKey(IDLE)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			// The stateful org is still scanned so resolution/aging keeps running…
 			assert.isTrue(scanned.has(ORG))
@@ -1123,7 +1124,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIngestKey(ORG)
 			yield* seedCursor(TICK_MS - 12 * MINUTE)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			assert.isFalse(scanned.has(ORG))
 			assert.strictEqual((yield* cursor)?.processedThrough, PARKED_MS)
@@ -1137,7 +1138,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIngestKey(ORG)
 			yield* seedCursor(TICK_MS - 10 * MINUTE)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 10 * MINUTE)
 		}).pipe(Effect.provide(makeGatingLayer({}))),
@@ -1152,7 +1153,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIngestKey(ORG)
 			yield* seedCursor(TICK_MS - 30 * DAY)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			assert.isFalse(scanned.has(ORG))
 			assert.strictEqual((yield* cursor)?.processedThrough, PARKED_MS)
@@ -1174,7 +1175,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIngestKey(ORG)
 			yield* seedCursor(TICK_MS - 3 * 60 * MINUTE)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			// The hour before the first error is skipped; one window from it is applied.
 			assert.isTrue(scanned.has(ORG))
@@ -1196,7 +1197,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIngestKey(ORG)
 			yield* seedCursor(TICK_MS - 3 * 60 * MINUTE)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 3 * 60 * MINUTE)
 		}).pipe(Effect.provide(makeGatingLayer({ failFirstErrorLookup: true }))),
@@ -1209,7 +1210,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIngestKey(ORG)
 			yield* seedCursor(TICK_MS - 60 * MINUTE)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 55 * MINUTE)
 		}).pipe(Effect.provide(makeGatingLayer({ scanRows: () => [scanRow()] }))),
@@ -1222,12 +1223,12 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIngestKey(ORG)
 			yield* seedCursor(TICK_MS - 12 * MINUTE, { token: "held", expiresAtMs: TICK_MS + MINUTE })
 
-			yield* errors.runTick()
+			yield* errors.runTick
 			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 12 * MINUTE)
 
 			// Two minutes on the lease has lapsed without the tick that took it committing.
 			yield* TestClock.setTime(TICK_MS + 2 * MINUTE)
-			yield* errors.runTick()
+			yield* errors.runTick
 			const row = yield* cursor
 			assert.strictEqual(row?.processedThrough, PARKED_MS + 2 * MINUTE)
 			assert.isNull(row?.claimToken)
@@ -1241,7 +1242,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIngestKey(ORG)
 			yield* seedCursor(TICK_MS - 12 * MINUTE)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			assert.strictEqual((yield* cursor)?.processedThrough, TICK_MS - 12 * MINUTE)
 		}).pipe(Effect.provide(makeGatingLayer({ failDiscovery: true }))),
@@ -1254,7 +1255,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			assert.strictEqual(profiles.get("errorActiveOrgsDiscovery"), "discovery")
 			assert.strictEqual(profiles.get("errorIssuesScan"), "aggregation")
@@ -1273,7 +1274,7 @@ describe("ErrorsService.runTick", () => {
 				// so seed an unrelated issue to make the org known.
 				yield* seedIssue(asIssueId(randomUUID()))
 
-				const result = yield* errors.runTick()
+				const result = yield* errors.runTick
 				assert.deepStrictEqual(result, {
 					orgsProcessed: 1,
 					issuesTouched: 1,
@@ -1347,7 +1348,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
 
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 			assert.strictEqual(result.issuesTouched, 1)
 
 			const issues = yield* loadIssuesByFingerprint(SCAN_FINGERPRINT)
@@ -1364,12 +1365,12 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
 
-			const first = yield* errors.runTick()
+			const first = yield* errors.runTick
 			assert.strictEqual(first.incidentsOpened, 1)
 
 			// Same aligned minute boundary: the persisted cursor has already committed
 			// this half-open window, so the second invocation cannot count it again.
-			const second = yield* errors.runTick()
+			const second = yield* errors.runTick
 			assert.strictEqual(second.issuesTouched, 0)
 			assert.strictEqual(second.incidentsOpened, 0)
 
@@ -1454,7 +1455,7 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 			let deliveries = yield* database.execute((db) =>
 				db.run(PG.from(ErrorNotificationDeliveries).select()),
 			)
@@ -1464,7 +1465,7 @@ describe("ErrorsService.runTick", () => {
 
 			rows = []
 			yield* TestClock.setTime(TICK_MS + 60_000)
-			yield* errors.runTick()
+			yield* errors.runTick
 			deliveries = yield* database.execute((db) =>
 				db.run(PG.from(ErrorNotificationDeliveries).select()),
 			)
@@ -1548,7 +1549,7 @@ describe("ErrorsService.runTick", () => {
 						yield* allInFlight.await
 					}).pipe(Effect.orDie)
 
-				yield* errors.runTick()
+				yield* errors.runTick
 
 				assert.lengthOf(leaseHeadroomMs, 6)
 				assert.isTrue(
@@ -1589,7 +1590,7 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 
-			yield* errors.runTick()
+			yield* errors.runTick
 			assert.lengthOf(
 				Arr.filter(dispatched, (key) => Str.endsWith(":open")(key)),
 				1,
@@ -1601,7 +1602,7 @@ describe("ErrorsService.runTick", () => {
 			rows = []
 			yield* TestClock.setTime(TICK_MS + 31 * 60_000)
 			const caughtUp = yield* runTicksUntilCaughtUp()
-			const resolveResults = yield* Effect.all([errors.runTick(), errors.runTick()], {
+			const resolveResults = yield* Effect.all([errors.runTick, errors.runTick], {
 				concurrency: 2,
 			})
 			assert.strictEqual(
@@ -1623,7 +1624,7 @@ describe("ErrorsService.runTick", () => {
 				}),
 			]
 			yield* TestClock.setTime(reopenMs)
-			const reopenResults = yield* Effect.all([errors.runTick(), errors.runTick()], {
+			const reopenResults = yield* Effect.all([errors.runTick, errors.runTick], {
 				concurrency: 2,
 			})
 			assert.strictEqual(
@@ -1663,7 +1664,7 @@ describe("ErrorsService.runTick", () => {
 				const actorService = yield* ErrorActorsService
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
-				yield* errors.runTick()
+				yield* errors.runTick
 				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
 				// Walk the long way round on purpose: the direct triage -> done path is
@@ -1679,7 +1680,7 @@ describe("ErrorsService.runTick", () => {
 				yield* backdateResolution(issue.id, TICK_MS - 3 * 60 * 60 * 1000)
 
 				yield* TestClock.setTime(TICK_MS + 120_000)
-				const second = yield* errors.runTick()
+				const second = yield* errors.runTick
 				assert.strictEqual(second.issuesTouched, 1)
 				assert.strictEqual(second.incidentsOpened, 1)
 
@@ -1718,7 +1719,7 @@ describe("ErrorsService.runTick", () => {
 				const actorService = yield* ErrorActorsService
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
-				yield* errors.runTick()
+				yield* errors.runTick
 				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 				assert.strictEqual(issue.workflowState, "triage")
 
@@ -1752,7 +1753,7 @@ describe("ErrorsService.runTick", () => {
 			const database = yield* Database
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
-			yield* errors.runTick()
+			yield* errors.runTick
 			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
 			yield* database.execute((db) =>
@@ -1764,7 +1765,7 @@ describe("ErrorsService.runTick", () => {
 			)
 
 			yield* TestClock.setTime(TICK_MS + 120_000)
-			const second = yield* errors.runTick()
+			const second = yield* errors.runTick
 			assert.strictEqual(second.issuesTouched, 0)
 			assert.strictEqual(second.incidentsOpened, 0)
 			assert.strictEqual(second.issuesReopened, 0)
@@ -1786,7 +1787,7 @@ describe("ErrorsService.runTick", () => {
 				snoozeUntil: TICK_MS - 1_000,
 			})
 
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 			assert.strictEqual(result.issuesReopened, 1)
 
 			const database = yield* Database
@@ -1826,7 +1827,7 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 			assert.deepStrictEqual(result, {
 				orgsProcessed: 1,
 				issuesTouched: 0,
@@ -1863,7 +1864,7 @@ describe("ErrorsService.runTick", () => {
 			const database = yield* Database
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
-			yield* errors.runTick()
+			yield* errors.runTick
 			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
 			// The fingerprint goes quiet.
@@ -1915,12 +1916,12 @@ describe("ErrorsService.runTick", () => {
 			const database = yield* Database
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
-			yield* errors.runTick()
+			yield* errors.runTick
 			assert.strictEqual(issueScans, 1)
 
 			// Cursor sits at TICK_MS - 60s; a 6-minute jump offers a 5-minute window.
 			yield* TestClock.setTime(TICK_MS + 6 * 60_000)
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 
 			// Two scans in one tick: the oversized one and the halved rescan.
 			assert.strictEqual(issueScans, 3)
@@ -1956,7 +1957,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
 
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 			assert.strictEqual(result.issuesTouched, 3_100)
 			assert.strictEqual(result.incidentsOpened, 3_100)
 
@@ -1985,7 +1986,7 @@ describe("ErrorsService.runTick", () => {
 
 			// The same burst a minute later lands on the incidents it just opened.
 			yield* TestClock.setTime(TICK_MS + 60_000)
-			const ongoing = yield* errors.runTick()
+			const ongoing = yield* errors.runTick
 			assert.strictEqual(ongoing.issuesTouched, 3_100)
 			assert.strictEqual(ongoing.incidentsOpened, 0)
 
@@ -2005,7 +2006,7 @@ describe("ErrorsService.runTick", () => {
 			const database = yield* Database
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			const before = yield* database.execute((db) =>
 				db.run(
@@ -2099,7 +2100,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			// An unrelated issue, purely so the org is discovered as active.
 			yield* seedIssue(asIssueId(randomUUID()))
-			yield* errors.runTick()
+			yield* errors.runTick
 			assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 0)
 			assert.lengthOf(yield* candidates(), 1)
 
@@ -2107,7 +2108,7 @@ describe("ErrorsService.runTick", () => {
 			// count AND union the build set rather than overwrite either.
 			rows[0] = scanRow({ count: 1, serviceVersions: ["1.1.0"] })
 			yield* TestClock.setTime(TICK_MS + 120_000)
-			yield* errors.runTick()
+			yield* errors.runTick
 			assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 0)
 			const pending = (yield* candidates())[0]!
 			assert.strictEqual(pending.occurrenceCount, 2)
@@ -2116,7 +2117,7 @@ describe("ErrorsService.runTick", () => {
 			// Third occurrence clears the threshold.
 			rows[0] = scanRow({ count: 1, serviceVersions: ["1.1.0"] })
 			yield* TestClock.setTime(TICK_MS + 240_000)
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			const promoted = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 			// The issue opens with the occurrences it earned across all three ticks,
@@ -2183,7 +2184,7 @@ describe("ErrorsService.runTick", () => {
 				const actorService = yield* ErrorActorsService
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
-				yield* errors.runTick()
+				yield* errors.runTick
 				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
 				const actor = yield* actorService.ensureUserActor(ORG, USER)
@@ -2197,7 +2198,7 @@ describe("ErrorsService.runTick", () => {
 
 				rows[0] = scanRow({ serviceVersions: ["1.2.3"] })
 				yield* TestClock.setTime(TICK_MS + 120_000)
-				const second = yield* errors.runTick()
+				const second = yield* errors.runTick
 
 				// An old client still running the pre-fix build is not new work: the
 				// issue stays fixed, and — the part that matters — no fresh incident,
@@ -2235,7 +2236,7 @@ describe("ErrorsService.runTick", () => {
 			})
 
 			// ONGOING gets a real issue + open incident from a first tick.
-			yield* errors.runTick()
+			yield* errors.runTick
 			const ongoing = (yield* loadIssuesByFingerprint(ONGOING))[0]!
 			const openIncident = (yield* loadIncidentsForIssue(ongoing.id))[0]!
 			assert.strictEqual(openIncident.status, "open")
@@ -2274,7 +2275,7 @@ describe("ErrorsService.runTick", () => {
 				scanRow({ fingerprintHash: FRESH, count: 6, firstSeen, lastSeen }),
 			]
 			yield* TestClock.setTime(secondMs)
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 
 			// The snoozed fingerprint is skipped, the other three are applied.
 			assert.strictEqual(result.issuesTouched, 3)
@@ -2342,7 +2343,7 @@ describe("ErrorsService.runTick", () => {
 			yield* errors.claimIssue(ORG, actor.id, issueId)
 
 			yield* TestClock.setTime(TICK_MS + 35 * 60_000)
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 			assert.strictEqual(result.leasesExpired, 1)
 
 			const database = yield* Database
@@ -2371,17 +2372,17 @@ describe("ErrorsService.runTick", () => {
 			const errors = yield* ErrorsService
 
 			yield* TestClock.setTime(RETENTION_TICK_MS)
-			assert.isTrue((yield* errors.runTick()).retentionRan)
+			assert.isTrue((yield* errors.runTick).retentionRan)
 
 			// The alerting cron fires every minute while the scan window is two
 			// minutes wide. Bucketing the phase on the window put this tick in the
 			// same bucket as the one above, so retention ran twice an hour for every
 			// org — the archived-issue purge was 35% of all database time.
 			yield* TestClock.setTime(RETENTION_TICK_MS + 60_000)
-			assert.isFalse((yield* errors.runTick()).retentionRan)
+			assert.isFalse((yield* errors.runTick).retentionRan)
 
 			yield* TestClock.setTime(RETENTION_TICK_MS + 120_000)
-			assert.isFalse((yield* errors.runTick()).retentionRan)
+			assert.isFalse((yield* errors.runTick).retentionRan)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
@@ -2451,7 +2452,7 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 			assert.isTrue(result.retentionRan)
 			assert.strictEqual(result.issuesArchived, 1)
 			assert.strictEqual(result.issuesDeleted, 1)
@@ -2507,13 +2508,13 @@ describe("ErrorsService.runTick", () => {
 				occurrenceCount: 40,
 			})
 
-			const retention = yield* errors.runTick()
+			const retention = yield* errors.runTick
 			assert.isTrue(retention.retentionRan)
 			assert.strictEqual(retention.issuesDeleted, 0)
 
 			rows = [scanRow({ serviceVersions: ["1.4.0"] })]
 			yield* TestClock.setTime(TICK_MS)
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			const issues = yield* loadIssuesByFingerprint(SCAN_FINGERPRINT)
 			assert.lengthOf(issues, 1)
@@ -2560,7 +2561,7 @@ describe("ErrorsService.runTick", () => {
 				),
 			)
 
-			assert.isTrue((yield* errors.runTick()).retentionRan)
+			assert.isTrue((yield* errors.runTick).retentionRan)
 
 			const left = yield* database.execute((db) =>
 				db.run(
@@ -2594,7 +2595,7 @@ describe("ErrorsService.runTick", () => {
 				resolvedVersionsJson: ["1.4.0"],
 			})
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			const issue = yield* loadIssueById(issueId)
 			assert.strictEqual(issue.workflowState, "regressed")
@@ -2611,7 +2612,7 @@ describe("ErrorsService.runTick", () => {
 			yield* seedIssue(stale, { fingerprintVersion: FINGERPRINT_VERSION - 1 })
 			yield* seedIssue(current, { fingerprintVersion: FINGERPRINT_VERSION })
 
-			const result = yield* errors.runTick()
+			const result = yield* errors.runTick
 
 			assert.strictEqual(result.issuesArchived, 1)
 			assert.strictEqual((yield* loadIssueById(stale)).archivedAt, RETENTION_TICK_MS)
@@ -2635,7 +2636,7 @@ describe("ErrorsService.runTick", () => {
 				archivedAt: TICK_MS - DAY_MS,
 			})
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			const issue = yield* loadIssueById(issueId)
 			assert.isNull(issue.archivedAt)
@@ -2660,7 +2661,7 @@ describe("ErrorsService.runTick", () => {
 				archivedAt: TICK_MS - 6 * DAY_MS,
 			})
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			const issue = yield* loadIssueById(issueId)
 			assert.strictEqual(issue.workflowState, "regressed")
@@ -2683,7 +2684,7 @@ describe("ErrorsService.runTick", () => {
 				archivedAt: TICK_MS - 6 * DAY_MS,
 			})
 
-			yield* errors.runTick()
+			yield* errors.runTick
 
 			const issue = yield* loadIssueById(issueId)
 			assert.strictEqual(issue.workflowState, "done")
@@ -2752,12 +2753,12 @@ const makeIdleTickHarness = (
 	} = {},
 ) => {
 	const db = createTestDb(createdDbs, opts.startParams)
-	const runStatement = db.pglite.query
+	const runStatement = db.pglite.query.bind(db.pglite)
 	db.pglite.query = function (...args: Parameters<typeof runStatement>) {
 		return opts.rejectSql?.(args[0])
 			? Promise.reject(new Error("statement rejected"))
-			: runStatement.apply(db.pglite, args)
-	} as typeof runStatement
+			: runStatement(...args)
+	} as typeof db.pglite.query
 
 	const errors = opts.errors ?? []
 	const calls: Array<WarehouseCall> = []
@@ -2904,7 +2905,7 @@ const tickAt = (nowMs: number) =>
 	Effect.gen(function* () {
 		const errors = yield* ErrorsService
 		yield* TestClock.setTime(nowMs)
-		return yield* errors.runTick()
+		return yield* errors.runTick
 	})
 
 const issuesOf = (orgId: OrgId) =>
@@ -3533,7 +3534,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 						? Effect.promise(() =>
 								h.db.pglite.query(
 									"update error_tick_states set claim_token = 'other-tick', claim_expires_at = $1 where org_id = $2",
-									[new Date(T + 5 * MINUTE_MS).toISOString(), IDLE],
+									[DateTime.formatIso(DateTime.makeUnsafe(T + 5 * MINUTE_MS)), IDLE],
 								),
 							).pipe(Effect.asVoid)
 						: Effect.void,
@@ -3559,7 +3560,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 				call.context === LOOKUP
 					? Effect.promise(() =>
 							h.db.pglite.query("update error_tick_states set processed_through = $1", [
-								new Date(cutoffAt(T)).toISOString(),
+								DateTime.formatIso(DateTime.makeUnsafe(cutoffAt(T))),
 							]),
 						).pipe(Effect.asVoid)
 					: Effect.void,
@@ -3587,7 +3588,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			yield* TestClock.setTime(T)
 			yield* seedIdleOrgs([{ orgId: IDLE, cursorMs: T - 4 * HOUR_MS }])
 
-			const results = yield* Effect.all([errors.runTick(), errors.runTick()], { concurrency: 2 })
+			const results = yield* Effect.all([errors.runTick, errors.runTick], { concurrency: 2 })
 
 			assert.strictEqual(
 				Arr.reduce(results, 0, (total, result) => total + result.issuesTouched),
@@ -4230,7 +4231,7 @@ describe("ErrorsService.runTick org config priming", () => {
 			const result = yield* Effect.gen(function* () {
 				yield* seedIngestKeys(orgs)
 				const errors = yield* ErrorsService
-				return yield* errors.runTick()
+				return yield* errors.runTick
 			}).pipe(
 				Effect.provide(
 					makeTickLayerOver(createTestDb(createdDbs), warehouse, { edgeBackend: probe.backend }),

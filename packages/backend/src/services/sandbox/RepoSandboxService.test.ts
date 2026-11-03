@@ -14,7 +14,7 @@ import { Duration, Effect, Layer, Schema, Stream, String as Str } from "effect"
 import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_git_test")
+const ORG = Schema.decodeSync(OrgId)("org_git_test")
 
 /** A file outside the checkout that no tool may ever return. */
 const SENTINEL = `${mkdtempSync(`${tmpdir()}/maple-outside-`)}/secret.txt`

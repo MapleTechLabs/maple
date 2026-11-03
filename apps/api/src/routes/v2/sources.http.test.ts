@@ -37,8 +37,8 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_sources_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_sources_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_sources_e2e")
+const USER = Schema.decodeSync(UserId)("user_sources_e2e")
 
 const testConfig = () =>
 	ConfigProvider.layer(

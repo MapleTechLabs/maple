@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Array as Arr } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import type { WeeklyDigestProps } from "@maple/email/weekly-digest-core"
@@ -165,6 +166,7 @@ const makeHarness = (
 				emailStub,
 				makeWarehouseStub(fixture, seen, failing),
 				Layer.succeed(EdgeCacheService, makeEdgeCacheService(makeMemoryBackend())),
+				SecureRandom.layerWebCrypto,
 			),
 		),
 		Layer.provideMerge(base),

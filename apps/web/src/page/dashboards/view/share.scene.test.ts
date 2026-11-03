@@ -21,7 +21,7 @@ const share = (message: ShareMessage) => Message.GotShareMessage({ message })
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_share",
 	name: "Share",
 	timeRange: { type: "relative", value: "6h" },

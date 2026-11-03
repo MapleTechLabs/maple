@@ -93,6 +93,9 @@ const run = (executor: WarehouseExecutorApi, options?: Parameters<typeof inspect
 const hierarchyCalls = (captured: Captured) =>
 	Arr.filter(captured.pipeCalls, (c) => c.pipe === "span_hierarchy")
 
+/** A timestamp hint far from where the fixture trace actually is. */
+const STALE_HINT = new Date("2026-04-05T12:00:00Z")
+
 describe("inspectTrace", () => {
 	it.effect("reads the last 24h and does not probe when the trace is there", () =>
 		Effect.gen(function* () {
@@ -180,7 +183,7 @@ describe("inspectTrace", () => {
 					window: { start: "2026-03-20 08:00:00", end: "2026-03-20 08:00:00" },
 					probeTimestamp: "2026-03-20 08:00:00.250000000",
 				}),
-				{ timestampHint: new Date("2026-04-05T12:00:00Z") },
+				{ timestampHint: STALE_HINT },
 			)
 			assert.strictEqual(result.spanCount, 1)
 			// A hint read nothing near now, so the tiers start open-ended at the last day.

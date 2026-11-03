@@ -96,7 +96,7 @@ const disconnected = () =>
 		}),
 	)
 
-const selection = Schema.decodeUnknownSync(GithubInstallationSelection)({
+const selection = Schema.decodeSync(GithubInstallationSelection)({
 	state: "selection-1",
 	needsApproval: [],
 	unavailable: 0,
@@ -189,7 +189,7 @@ describe("github connect flow", () => {
 				provider: "github",
 				status: "success",
 				message: "Choose an account",
-				github: Schema.decodeUnknownSync(GithubInstallationSelection)({
+				github: Schema.decodeSync(GithubInstallationSelection)({
 					...selection,
 					installations: [],
 					needsApproval: ["acme"],

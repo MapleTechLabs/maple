@@ -83,7 +83,7 @@ const EpochMillisSchema = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(0),
 	Schema.isLessThanOrEqualTo(8_640_000_000_000_000),
 )
-const validDate = (epochMs: number): Date => new Date(Schema.decodeUnknownSync(EpochMillisSchema)(epochMs))
+const validDate = (epochMs: number): Date => new Date(Schema.decodeSync(EpochMillisSchema)(epochMs))
 
 export const planetScaleWebhookTimestampMillis = (payload: PlanetScaleWebhookPayload): number | null => {
 	if (payload.timestamp == null || !Number.isFinite(payload.timestamp) || payload.timestamp <= 0)
@@ -109,7 +109,7 @@ export const PLANETSCALE_WEBHOOK_ADAPTER: SignalSourceAdapter<
 	},
 	normalize: ({ connectionId, payload }, context) => {
 		const observedAtDate = validDate(timestampMs(context.acceptedAt))
-		const payloadJson = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(payload)
+		const payloadJson = Schema.decodeSync(PlanetScaleWebhookPayload)(payload)
 		const occurredAtMs = planetScaleWebhookTimestampMillis(payload) ?? observedAtDate.getTime()
 		const occurredAt = validDate(occurredAtMs).toISOString()
 		const occurrenceId = `derived:sha256:${createHash("sha256")
@@ -249,7 +249,7 @@ export const projectPlanetScaleWebhookEvent = (
 			cause,
 		})
 	return Result.gen(function* () {
-		const decoded = yield* Schema.decodeUnknownResult(ProjectionInputSchema)(input).pipe(
+		const decoded = yield* Schema.decodeResult(ProjectionInputSchema)(input).pipe(
 			Result.mapError(invalid),
 		)
 		const observedAt = new Date(decoded.receivedAt).toISOString()

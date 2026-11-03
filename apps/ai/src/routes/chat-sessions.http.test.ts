@@ -17,11 +17,11 @@ import { ChatSessionsRouter } from "./chat-sessions.http"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_chat")
-const USER = Schema.decodeUnknownSync(UserId)("user_chat")
+const ORG = Schema.decodeSync(OrgId)("org_chat")
+const USER = Schema.decodeSync(UserId)("user_chat")
 const INTERNAL_TOKEN = "chat-internal-service-token"
-const connectorId = Schema.decodeUnknownSync(ChatConnectorId)("testchat")
-const conversationKey = Schema.decodeUnknownSync(ChatConversationKey)("c1")
+const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
+const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
 const SESSION_PATH = `/api/chat/sessions/${encodeURIComponent(`${ORG}:inv-1`)}`
 
 const config = ConfigProvider.layer(

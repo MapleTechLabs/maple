@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr, Clock } from "effect"
 import {
 	AiTriageEvidence,
 	AiTriageResult,
@@ -71,7 +71,7 @@ const makeHarness = (
 
 const makeLayer = () => makeHarness().layer
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_investigation_test")
+const ORG = Schema.decodeSync(OrgId)("org_investigation_test")
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 
@@ -424,7 +424,7 @@ describe("InvestigationService", () => {
 		return Effect.gen(function* () {
 			const database = yield* Database
 			const service = yield* InvestigationService
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 
 			// Both ceilings set to one, and one investigation already started today —
 			// so runs and passes are each exhausted before the calls below.
@@ -509,7 +509,7 @@ describe("InvestigationService", () => {
 			const FAST_ID = "1a1a1a1a-0000-4000-8000-000000000001"
 			const FAILED_ID = "2b2b2b2b-0000-4000-8000-000000000002"
 			const MANUAL_ID = "3c3c3c3c-0000-4000-8000-000000000003"
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const anomaly = (id: string, triageStatus: "none" | "pending") => ({
 				id: asAnomalyId(id),
 				orgId: ORG,
@@ -646,7 +646,7 @@ describe("InvestigationService", () => {
 			const service = yield* InvestigationService
 			const database = yield* Database
 			const issueId = asIssueId(randomUUID())
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(ErrorIssues).values({

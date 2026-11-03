@@ -362,31 +362,29 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 								"flex w-20 shrink-0 items-center justify-end gap-1.5 text-3xs tabular-nums",
 							),
 						],
-						[
-							...(ev.type === "network"
-								? [
-										h.span(
-											[h.Class(cn("font-semibold", statusTone(ev.netStatus)))],
-											[ev.netStatus ? String(ev.netStatus) : "ERR"],
-										),
-										h.span(
-											[
-												h.Class(
-													cn(
-														isError || isSlowRequest(ev.netDurationMs)
-															? cn("font-semibold", TONE_TEXT.warn)
-															: "text-muted-foreground",
-														isError && TONE_TEXT.crit,
-													),
+						ev.type === "network"
+							? [
+									h.span(
+										[h.Class(cn("font-semibold", statusTone(ev.netStatus)))],
+										[ev.netStatus ? String(ev.netStatus) : "ERR"],
+									),
+									h.span(
+										[
+											h.Class(
+												cn(
+													isError || isSlowRequest(ev.netDurationMs)
+														? cn("font-semibold", TONE_TEXT.warn)
+														: "text-muted-foreground",
+													isError && TONE_TEXT.crit,
 												),
-											],
-											[formatNetDuration(ev.netDurationMs)],
-										),
-									]
-								: ev.type === "console" && ev.level
-									? [h.span([h.Class(visual.tone)], [ev.level])]
-									: []),
-						],
+											),
+										],
+										[formatNetDuration(ev.netDurationMs)],
+									),
+								]
+							: ev.type === "console" && ev.level
+								? [h.span([h.Class(visual.tone)], [ev.level])]
+								: [],
 					),
 				],
 			),

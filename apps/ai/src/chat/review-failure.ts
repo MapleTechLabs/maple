@@ -11,7 +11,7 @@ import {
 	ModelProtocolError,
 } from "@yielded/agent/agent-error"
 import { PR_REVIEW_FAILURE_COPY, type PrReviewFailureReason } from "@maple/domain/http"
-import { Cause, Array as Arr } from "effect"
+import { Cause, Schema, Array as Arr } from "effect"
 import { isAiError, type AiError } from "effect/ai/AiError"
 
 /** Whose OpenRouter key the run used: a rejected org key is theirs to fix, a rejected Maple key is ours. */
@@ -46,7 +46,7 @@ const PROVIDER_REASONS: ReadonlySet<PrReviewFailureReason> = new Set([
 
 /** The reason one error names, or `undefined` for one that says nothing specific. */
 const reasonOf = (error: unknown, context: ReviewFailureContext): PrReviewFailureReason | undefined => {
-	if (error instanceof AgentPolicyError) {
+	if (Schema.is(AgentPolicyError)(error)) {
 		switch (error.limit) {
 			case "duration":
 				return "time_limit"
@@ -56,9 +56,9 @@ const reasonOf = (error: unknown, context: ReviewFailureContext): PrReviewFailur
 				return "step_limit"
 		}
 	}
-	if (error instanceof ContextBudgetError || error instanceof ContextOverflowError) return "context_limit"
+	if (Schema.is(ContextBudgetError)(error) || Schema.is(ContextOverflowError)(error)) return "context_limit"
 	// The engine's run-event and response-part ceilings: the run outgrew its room, like a step limit.
-	if (error instanceof ModelProtocolError && /exceeded the \d+-(event|part)/.test(error.message))
+	if (Schema.is(ModelProtocolError)(error) && /exceeded the \d+-(event|part)/.test(error.message))
 		return "step_limit"
 	if (isAiError(error)) return providerReason(error, context)
 	return undefined

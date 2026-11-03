@@ -1,4 +1,5 @@
 import { HttpApiBuilder } from "effect/http-api"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import {
 	CurrentTenant,
 	MapleAiApi,
@@ -37,7 +38,17 @@ import {
 } from "@maple/domain/security-audit"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import { AuditStoreError } from "@maple/security-audit"
-import { Clock, DateTime, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	Clock,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
@@ -154,15 +165,13 @@ const toUnit = (row: SecurityAuditUnitSummary): SecurityAuditUnit => ({
 /** A store failure is the database's, never the caller's: a 503 that names the operation. */
 const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>) =>
 	effect.pipe(
-		Effect.catchIf(
-			(error): error is AuditStoreError => error instanceof AuditStoreError,
-			(error) =>
-				Effect.fail(
-					new SecurityAuditPersistenceError({
-						message: "Security audit storage is unavailable",
-						cause: error.message,
-					}),
-				),
+		Effect.catchIf(Schema.is(AuditStoreError), (error) =>
+			Effect.fail(
+				new SecurityAuditPersistenceError({
+					message: "Security audit storage is unavailable",
+					cause: error.message,
+				}),
+			),
 		),
 	)
 
@@ -178,7 +187,7 @@ const requireDistinctModels = (discovery: string, validation: string) =>
 			)
 		: Effect.void
 
-const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
+const decodeRunId = Schema.decodeSync(SecurityAuditRunId)
 const decodeIso = Schema.decodeSync(IsoDateTimeString)
 
 /** `/api/security-audit/*`: targets, runs and findings for the caller's org, behind `securityAudit`. */
@@ -189,6 +198,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		const workflow = yield* SecurityAuditWorkflowStarter
 		const credits = yield* SecurityAuditCredits
 		const repositorySize = yield* SecurityAuditRepositorySize
+		const random = yield* SecureRandom.SecureRandom
 
 		/** The caller's org store, once the org is in the rollout. The org is the tenant's, never the request's. */
 		const orgAccess = Effect.gen(function* () {
@@ -221,7 +231,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		 */
 		const orgSettings = (store: SecurityAuditOrgStore) =>
 			Effect.gen(function* () {
-				const settings = yield* orUnavailable(store.getSettings())
+				const settings = yield* orUnavailable(store.getSettings)
 				const row = Option.getOrNull(settings)
 				const llm = yield* loadLlmSettings
 				const now = yield* Clock.currentTimeMillis
@@ -370,7 +380,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			.handle("listTargets", () =>
 				Effect.gen(function* () {
 					const { store } = yield* orgAccess
-					const rows = yield* orUnavailable(store.listTargets())
+					const rows = yield* orUnavailable(store.listTargets)
 					return { targets: Arr.map(rows, toTarget) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listTargets")),
 			)
@@ -390,7 +400,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					}
 					yield* refuseOversized(tenant.orgId, target.repository)
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
-					const runId = newRunId()
+					const uuid = yield* random.uuidV4()
+					const runId = decodeRunId(uuid)
 					// Paid in AI credits: the plan must include them, with some left or overage allowed.
 					yield* credits.ensure(tenant.orgId).pipe(
 						Effect.catchTags({
@@ -602,4 +613,4 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				}).pipe(Effect.withSpan("HttpSecurityAudit.updateFindingStatus")),
 			)
 	}),
-)
+).pipe(Layer.provide(SecureRandom.layerWebCrypto))

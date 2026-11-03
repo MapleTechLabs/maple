@@ -120,7 +120,7 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 					const json = yield* response.json.pipe(
 						Effect.mapError(toClientError("the sandbox worker returned invalid JSON")),
 					)
-					const decoded = yield* Schema.decodeUnknownEffect(answer)(json).pipe(
+					const decoded = yield* Schema.decodeEffect(answer)(json).pipe(
 						Effect.mapError(toClientError("the sandbox worker returned an unexpected payload")),
 					)
 					return Option.some(decoded)

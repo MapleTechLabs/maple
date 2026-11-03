@@ -49,7 +49,7 @@ export const UptimeInternalRouter = HttpRouter.use((router) =>
 				const denied = unauthorized(req)
 				if (denied) return denied
 
-				const rows = yield* service.listProbeTargets()
+				const rows = yield* service.listProbeTargets
 				// Check spans go into each org's own traces, sent with its public ingest key.
 				const keysByOrg = yield* ingestKeys.getOrCreateMany(
 					Arr.map(rows, (row) => row.orgId),

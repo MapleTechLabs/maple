@@ -8,7 +8,7 @@ import { GCP_SETUP_FIXTURES } from "../../lab/gcp-setup-fixtures"
 import { gcpAgentPrompt, gcpManualSteps, gcpRemovalList } from "./gcp-setup-steps"
 
 const connector = (over: Record<string, unknown> = {}) =>
-	Schema.decodeUnknownSync(V2GcpConnector)({
+	Schema.decodeSync(V2GcpConnector)({
 		id: "gcpc_YofPTrK9782DWwcnXhpcCw",
 		object: "gcp_connector",
 		scope_type: "project",

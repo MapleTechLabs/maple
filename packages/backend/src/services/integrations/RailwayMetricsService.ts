@@ -150,7 +150,7 @@ export interface RailwayMetricsServiceApi {
 	/** Polls now instead of waiting for the cron. Caught-up environments cost no Railway call. */
 	readonly sync: (orgId: OrgId) => Effect.Effect<RailwayIntegrationStatus, IntegrationsPersistenceError>
 	readonly pollOrg: (orgId: OrgId) => Effect.Effect<RailwayPollOrgSummary, IntegrationsPersistenceError>
-	readonly pollAllOrgs: () => Effect.Effect<RailwayPollAllOrgsSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<RailwayPollAllOrgsSummary, IntegrationsPersistenceError>
 }
 
 export class RailwayMetricsService extends Context.Service<RailwayMetricsService, RailwayMetricsServiceApi>()(
@@ -798,7 +798,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				return summary
 			})
 
-			const pollAllOrgs = Effect.fn("RailwayMetricsService.pollAllOrgs")(function* () {
+			const pollAllOrgs = Effect.gen(function* () {
 				const connections = yield* dbExecute((db) =>
 					db.run(
 						PG.from(RailwayConnections)
@@ -835,7 +835,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					failures: summaries.reduce((sum, summary) => sum + summary.failures, 0),
 					skipped: summaries.filter((summary) => summary.skipped !== null).length,
 				} satisfies RailwayPollAllOrgsSummary
-			})
+			}).pipe(Effect.withSpan("RailwayMetricsService.pollAllOrgs"))
 
 			/** Best effort: a failed or slow poll still leaves the connection for the cron to catch up. */
 			const pollNow = (orgId: OrgId) =>

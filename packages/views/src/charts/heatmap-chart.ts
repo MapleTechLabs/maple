@@ -95,7 +95,7 @@ export const HEATMAP_TOKENS: ReadonlyArray<string> = [
 	"--foreground",
 ]
 
-const isKnownScale = (value: string): value is HeatmapColorScale & (typeof SCALES)[number] =>
+const isKnownScale = (value: string): value is HeatmapColorScale =>
 	Arr.some(SCALES, (scale) => scale === value)
 
 const rampStops = (theme: ThemeColors, scale: (typeof SCALES)[number]): ReadonlyArray<string> =>

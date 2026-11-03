@@ -152,7 +152,7 @@ export interface AwsConnectionServiceApi {
 		IntegrationsNotFoundError | AwsIntegrationUnavailableError | IntegrationsPersistenceError
 	>
 	/** The hourly sweep: every connection not checked within the hour, except paused ones. */
-	readonly checkDue: () => Effect.Effect<AwsCheckSweep, IntegrationsPersistenceError>
+	readonly checkDue: Effect.Effect<AwsCheckSweep, IntegrationsPersistenceError>
 	/** Deleting the row is the disconnect: Maple stops assuming the role. */
 	readonly delete: (
 		orgId: OrgId,
@@ -750,11 +750,11 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					),
 				)
 
-			const checkDue = Effect.fn("AwsConnectionService.checkDue")(function* () {
+			const checkDue = Effect.gen(function* () {
 				if (signer === undefined) return { due: 0, checked: 0, failures: 0 }
 				const startedAt = yield* Clock.currentTimeMillis
 				return yield* sweepFrom(signer, startedAt, { due: 0, checked: 0, failures: 0 })
-			})
+			}).pipe(Effect.withSpan("AwsConnectionService.checkDue"))
 
 			const deleteConnection = Effect.fn("AwsConnectionService.delete")(function* (
 				orgId: OrgId,

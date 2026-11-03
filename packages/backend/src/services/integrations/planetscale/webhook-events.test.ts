@@ -1,4 +1,4 @@
-import { Result, Array as Arr } from "effect"
+import { Result, Array as Arr, DateTime } from "effect"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
@@ -109,7 +109,7 @@ describe("classifyPlanetScaleEvent", () => {
 		})
 		assert.deepStrictEqual(first, redelivery)
 
-		const withoutTimestamp = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)({
+		const withoutTimestamp = Schema.decodeSync(PlanetScaleWebhookPayload)({
 			event: "branch.ready",
 			database: "main-db",
 		})
@@ -119,7 +119,7 @@ describe("classifyPlanetScaleEvent", () => {
 			payload: withoutTimestamp,
 			receivedAt: 1_698_252_880_000,
 		})
-		assert.strictEqual(fallback.time, new Date(1_698_252_880_000).toISOString())
+		assert.strictEqual(fallback.time, DateTime.formatIso(DateTime.makeUnsafe(1_698_252_880_000)))
 	})
 
 	it("maps health events to issues and lifecycle events to timeline rows", () => {
@@ -438,7 +438,7 @@ describe("upsertPlanetScaleIssue", () => {
 				executeSql(
 					testDb,
 					"UPDATE error_issues SET workflow_state = 'wontfix', snooze_until = $2 WHERE id = $1",
-					[first.issueId, new Date(10_000).toISOString()],
+					[first.issueId, DateTime.formatIso(DateTime.makeUnsafe(10_000))],
 				),
 			)
 
@@ -545,7 +545,7 @@ describe("upsertPlanetScaleIssue", () => {
 				executeSql(
 					testDb,
 					"UPDATE error_issues SET workflow_state = 'wontfix', snooze_until = $2 WHERE id = $1",
-					[first.issueId, new Date(5_000).toISOString()],
+					[first.issueId, DateTime.formatIso(DateTime.makeUnsafe(5_000))],
 				),
 			)
 

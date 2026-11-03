@@ -1086,12 +1086,10 @@ export function collectBuilderCatalog(): ReadonlyArray<CatalogEntry> {
 
 /** The benchmark and analyzer consume these same compiled cases. Compilation
  * failures stay typed at CLI boundaries instead of dropping fixtures. */
-export const collectQueryCatalog = () =>
-	Effect.try({
-		try: () => [...collectPipeCatalog(), ...collectQuerySpecCatalog(), ...collectBuilderCatalog()],
-		catch: (cause) =>
-			new BenchmarkError({ message: `Core catalog compilation failed: ${String(cause)}` }),
-	})
+export const collectQueryCatalog = Effect.try({
+	try: () => [...collectPipeCatalog(), ...collectQuerySpecCatalog(), ...collectBuilderCatalog()],
+	catch: (cause) => new BenchmarkError({ message: `Core catalog compilation failed: ${String(cause)}` }),
+})
 
 /** Composition happens in the app, keeping integration knowledge out of core. */
 export const mergeQueryCatalogs = (...catalogs: ReadonlyArray<ReadonlyArray<CatalogEntry>>) => {

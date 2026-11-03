@@ -18,7 +18,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const ids = ["iss_YoxMYDoXSr3tsBZyBLmNMv", "iss_YoxMYDoXSr3tsBZyBLmNMw", "iss_YoxMYDoXSr3tsBZyBLmNMx"]
 const issue = (id: string, lastSeen: string) =>
-	Schema.decodeUnknownSync(V2ErrorIssue)({
+	Schema.decodeSync(V2ErrorIssue)({
 		id,
 		object: "error_issue",
 		kind: "error",

@@ -83,10 +83,10 @@ export interface SchemaApplyWorkflowResult {
 /** The one secret the run needs, resolved by the `ConfigProvider` the Workflow class builds on the env. */
 const ENCRYPTION_KEY_CONFIG = "MAPLE_INGEST_KEY_ENCRYPTION_KEY"
 
-interface LoadOptionalFeatureStateOptions<R> {
-	readonly ensureBookkeeping: Effect.Effect<void, unknown, R>
-	readonly readServerVersion: Effect.Effect<string, unknown, R>
-	readonly readAppliedFeatureRevisions: Effect.Effect<ReadonlyMap<string, number>, unknown, R>
+interface LoadOptionalFeatureStateOptions<E, R> {
+	readonly ensureBookkeeping: Effect.Effect<void, E, R>
+	readonly readServerVersion: Effect.Effect<string, E, R>
+	readonly readAppliedFeatureRevisions: Effect.Effect<ReadonlyMap<string, number>, E, R>
 }
 
 export type OptionalFeatureState =
@@ -111,8 +111,8 @@ const causeMessage = (cause: Cause.Cause<unknown>): string => {
  * is ready for ingest. Keeping this boundary explicit also makes the workflow
  * policy testable without a live durable-workflow runtime.
  */
-export const loadOptionalFeatureState = <R>(
-	options: LoadOptionalFeatureStateOptions<R>,
+export const loadOptionalFeatureState = <E, R>(
+	options: LoadOptionalFeatureStateOptions<E, R>,
 ): Effect.Effect<OptionalFeatureState, never, R> =>
 	Effect.gen(function* () {
 		yield* options.ensureBookkeeping
@@ -509,7 +509,7 @@ export const runClickHouseSchemaApply = (
 	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId).pipe(
+		const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId).pipe(
 			Effect.mapError(
 				(error) => new SchemaApplyPayloadError({ message: error.message, rawOrgId: payload.orgId }),
 			),

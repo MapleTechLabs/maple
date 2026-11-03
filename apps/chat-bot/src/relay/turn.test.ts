@@ -154,7 +154,7 @@ const chat = (
 				history: (historyTarget, options) =>
 					Effect.suspend(() => {
 						historyCalls.push({ channelId: historyTarget.channelId, ...options })
-						return earlier instanceof ChatOutboundError
+						return Schema.is(ChatOutboundError)(earlier)
 							? Effect.fail(earlier)
 							: Effect.succeed(earlier)
 					}),

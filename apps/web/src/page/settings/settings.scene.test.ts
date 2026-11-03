@@ -59,7 +59,7 @@ const tools = [
 		destructive: false,
 	},
 ]
-const connection = Schema.decodeUnknownSync(V2McpConnection)({
+const connection = Schema.decodeSync(V2McpConnection)({
 	id: "mcpc_p12S8T8agEHUkYc825nMz6",
 	object: "mcp_connection",
 	client_name: "Claude Code",
@@ -244,7 +244,7 @@ describe("settings page", () => {
 	})
 
 	test("checkout polls re-read only the page's customer; the confirmed plan refreshes the app's once", () => {
-		const subscribed = Schema.decodeUnknownSync(BillingCustomer)({
+		const subscribed = Schema.decodeSync(BillingCustomer)({
 			id: "org_acme",
 			subscriptions: [
 				{
@@ -283,7 +283,7 @@ describe("settings page", () => {
 
 	// Billing is Clerk-only, so the tab left while it confirmed a checkout return is placed in `kept`.
 	test("a checkout return settles even when the Billing tab was left while it waited", () => {
-		const subscribed = Schema.decodeUnknownSync(BillingCustomer)({
+		const subscribed = Schema.decodeSync(BillingCustomer)({
 			id: "org_acme",
 			subscriptions: [
 				{

@@ -224,7 +224,8 @@ export const toJson = (value: unknown): Schema.Json => {
 	if (Arr.isArray(value)) return Arr.map(value, toJson)
 	if (typeof value === "object")
 		return Rec.fromEntries(Arr.map(Rec.toEntries(value), ([k, v]) => [k, toJson(v)]))
-	return String(value)
+	// A function or symbol has no JSON form; no warehouse driver returns one.
+	return null
 }
 
 /** Whether a time macro put the window into the statement; otherwise the SQL picks its own range. */
@@ -237,7 +238,7 @@ export function cellToString(value: Schema.Json | undefined, maxChars = DEFAULT_
 		value === null || value === undefined
 			? "null"
 			: typeof value === "object"
-				? (stringifyJson(value) ?? String(value))
+				? (stringifyJson(value) ?? "[unserializable value]")
 				: String(value)
 	return truncate(Str.replace(/\t/g, "\\t")(Str.replace(/\r?\n/g, "\\n")(text)), maxChars)
 }

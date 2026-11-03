@@ -73,7 +73,7 @@ import {
 import * as SqlClient from "effect/sql/SqlClient"
 import { Rng } from "./rng"
 
-const DEMO_GITHUB_SOURCE = Schema.decodeUnknownSync(SourceId)("5e0a1c3b-0000-4000-8000-00000000de01")
+const DEMO_GITHUB_SOURCE = Schema.decodeSync(SourceId)("5e0a1c3b-0000-4000-8000-00000000de01")
 
 // Same value as `DEMO_ORG_ID` in make-env.ts; importing that module would run its program.
 const DEMO_ORG = "org_3AcmeShopDemo0000000000000"
@@ -88,7 +88,7 @@ const MIN = 60_000
 const HOUR = 60 * MIN
 const DAY = 24 * HOUR
 
-const orgId = Schema.decodeUnknownSync(OrgId)(DEMO_ORG)
+const orgId = Schema.decodeSync(OrgId)(DEMO_ORG)
 const toReviewId = Schema.decodeUnknownSync(PrReviewId)
 const toRepositoryId = Schema.decodeUnknownSync(VcsRepositoryId)
 const toInstallationId = Schema.decodeUnknownSync(VcsInstallationId)
@@ -1651,7 +1651,7 @@ const buildWorld = (now: number) => {
 			status: "active" as const,
 			suspendedAt: null,
 			ciTracesEnabled: true,
-			installedByUserId: Schema.decodeUnknownSync(UserId)("user_3AcmeShopDemoAdmin0000000"),
+			installedByUserId: Schema.decodeSync(UserId)("user_3AcmeShopDemoAdmin0000000"),
 			createdAt: now - 41 * DAY,
 			updatedAt: now - 41 * DAY,
 		},

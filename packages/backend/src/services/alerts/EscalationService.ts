@@ -55,7 +55,7 @@ interface EscalationTickResult {
 }
 
 export interface EscalationServiceApi {
-	readonly runEscalationTick: () => Effect.Effect<EscalationTickResult, AlertPersistenceError>
+	readonly runEscalationTick: Effect.Effect<EscalationTickResult, AlertPersistenceError>
 }
 
 /*
@@ -268,9 +268,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 			return "retried" as const
 		})
 
-		const runEscalationTick: EscalationServiceApi["runEscalationTick"] = Effect.fn(
-			"EscalationService.runEscalationTick",
-		)(function* () {
+		const runEscalationTick: EscalationServiceApi["runEscalationTick"] = Effect.gen(function* () {
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(IssueEscalations)
@@ -312,7 +310,7 @@ const make: Effect.Effect<EscalationServiceApi, never, Database | NotificationDi
 				failed: count("failed"),
 				retried: count("retried"),
 			}
-		})
+		}).pipe(Effect.withSpan("EscalationService.runEscalationTick"))
 
 		return EscalationService.of({ runEscalationTick })
 	},

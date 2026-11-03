@@ -84,6 +84,9 @@ const messagePart = fc.oneof(
 	hostile,
 	fc.uuid(),
 	chars("0123456789abcdefABCDEF", 6, 40),
+	// Single-case values that interleave letters and digits, and their near-miss names.
+	chars("0123456789abcdefghijklmnopqrstuvwxyz", 8, 30),
+	chars("0123456789ABCDEFGHJKMNPQRSTVWXYZ", 8, 14),
 	fc.integer().map(String),
 	fc.constantFrom(
 		"RouteNotFound (GET /.env)",
@@ -99,6 +102,10 @@ const messagePart = fc.oneof(
 		"StatusCode error (404 GET https://host.dev/f956aa438ac39eff/codex~maple-in-process)",
 		"/v1/user/@handle42",
 		"rejected key tok_prod_9fQz2LmXc7RtV4bNw8Yh",
+		"internal error; reference = skqdd7q56j7h4ovn7obivsp1",
+		"web2#build exited",
+		"utf8mb4_unicode_520_ci",
+		"a#b1c2d3e4f5",
 		"HTTP 503",
 		"returned 418",
 		"/Users/bob/.maple/store",

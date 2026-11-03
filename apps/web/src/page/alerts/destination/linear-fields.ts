@@ -65,7 +65,7 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-const settle = <A, R>(effect: Effect.Effect<A, unknown, R>) =>
+const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.result(Effect.mapError(effect, toLoadFailure))
 
 export const FetchStatus = Command.define("FetchAlertLinearStatus", {

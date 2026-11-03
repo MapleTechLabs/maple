@@ -26,6 +26,7 @@ import type { MapleDb } from "@maple/db/client"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -169,10 +170,10 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Dependency scan store operation failed",
 )
 
+const decodeScanId = Schema.decodeSync(DependencyScanId)
+
 // Byte-identical to `JSON.stringify`, which finding ids hash.
 const encodeJsonKey = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-const newScanId = () => Schema.decodeSync(DependencyScanId)(crypto.randomUUID())
 
 /** Rows per statement: ~20 binds each keeps one insert far under Postgres's 65,535. */
 const WRITE_CHUNK = 1000
@@ -441,15 +442,18 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "DependencyScanStore", toPersistenceError)
+			const random = yield* SecureRandom.SecureRandom
+			const newScanId = Effect.map(random.uuidV4(), decodeScanId)
 
 			const startScan: DependencyScanStoreApi["startScan"] = Effect.fn("DependencyScanStore.startScan")(
 				function* (input) {
 					const now = yield* Clock.currentTimeMillis
+					const id = yield* newScanId
 					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.insertInto(DependencyScans)
 								.values({
-									id: newScanId(),
+									id,
 									orgId: input.orgId,
 									repositoryId: input.repositoryId,
 									commitSha: input.commitSha,
@@ -810,5 +814,5 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(SecureRandom.layerWebCrypto))
 }

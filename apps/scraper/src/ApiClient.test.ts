@@ -84,7 +84,7 @@ describe("ApiClient", () => {
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
 			const client = yield* ApiClient
-			const targets = yield* client.listTargets().pipe(
+			const targets = yield* client.listTargets.pipe(
 				Effect.provideService(
 					FetchHttpClient.Fetch,
 					stubFetch(recorded, () => Response.json([VALID_TARGET])),
@@ -104,7 +104,7 @@ describe("ApiClient", () => {
 	it.effect("fails with a typed error on non-2xx target list responses", () =>
 		Effect.gen(function* () {
 			const client = yield* ApiClient
-			const result = yield* client.listTargets().pipe(
+			const result = yield* client.listTargets.pipe(
 				Effect.provideService(
 					FetchHttpClient.Fetch,
 					stubFetch([], () => new Response("nope", { status: 401 })),
@@ -119,7 +119,7 @@ describe("ApiClient", () => {
 	it.effect("fails with a typed error when the payload does not match the schema", () =>
 		Effect.gen(function* () {
 			const client = yield* ApiClient
-			const result = yield* client.listTargets().pipe(
+			const result = yield* client.listTargets.pipe(
 				Effect.provideService(
 					FetchHttpClient.Fetch,
 					stubFetch([], () => Response.json([{ nonsense: true }])),
@@ -210,7 +210,7 @@ describe("ApiClient", () => {
 			const recorded: Array<RecordedRequest> = []
 			const client = yield* ApiClient
 			const fiber = yield* Effect.forkChild(
-				client.listTargets().pipe(
+				client.listTargets.pipe(
 					Effect.provideService(
 						FetchHttpClient.Fetch,
 						stubFetch(recorded, () => {
@@ -240,7 +240,7 @@ describe("ApiClient", () => {
 					{ status: 200 },
 				)
 			const fiber = yield* Effect.forkChild(
-				client.listTargets().pipe(
+				client.listTargets.pipe(
 					Effect.provideService(
 						FetchHttpClient.Fetch,
 						stubFetch(recorded, () =>

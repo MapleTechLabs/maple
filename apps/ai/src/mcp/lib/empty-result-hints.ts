@@ -1,7 +1,7 @@
 import { Effect, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { exploreAttributeKeys } from "@maple/query-engine/observability"
-import { QuerySpec } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QuerySpec } from "@maple/query-engine"
 import { CurrentMcpTenant, queryWarehouse, withTenantExecutor } from "./query-warehouse"
 import { missingFilterHints, type KnownValues, type RequestedFilters } from "./filter-suggestions"
 
@@ -66,7 +66,7 @@ const spanNames = (window: Window, service: string | undefined) =>
 		})
 		const tenant = yield* CurrentMcpTenant
 		const engine = yield* QueryEngineService
-		const response = yield* engine.execute(tenant, { ...window, query })
+		const response = yield* engine.execute(tenant, new QueryEngineExecuteRequest({ ...window, query }))
 		const names = response.result.kind === "breakdown" ? Arr.map(response.result.data, (d) => d.name) : []
 		return { spanNames: names } satisfies KnownValues
 	})

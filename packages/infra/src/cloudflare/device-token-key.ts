@@ -14,12 +14,11 @@ export interface MapleDeviceTokenEnv {
 	readonly MAPLE_DEVICE_TOKEN_SIGNING_KEY: Output.Output<Redacted.Redacted<string>>
 }
 
-export const createMapleDeviceTokenKey = () =>
-	Effect.gen(function* () {
-		const key = yield* Alchemy.KeyPair("device-token-signing-key", {
-			algorithm: "ec",
-			namedCurve: "P-256",
-		})
-		const env: MapleDeviceTokenEnv = { MAPLE_DEVICE_TOKEN_SIGNING_KEY: key.privateKey }
-		return env
+export const createMapleDeviceTokenKey = Effect.gen(function* () {
+	const key = yield* Alchemy.KeyPair("device-token-signing-key", {
+		algorithm: "ec",
+		namedCurve: "P-256",
 	})
+	const env: MapleDeviceTokenEnv = { MAPLE_DEVICE_TOKEN_SIGNING_KEY: key.privateKey }
+	return env
+})

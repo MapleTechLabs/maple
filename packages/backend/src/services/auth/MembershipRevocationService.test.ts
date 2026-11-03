@@ -61,12 +61,12 @@ const makeLayer = (testDb: TestDb, edgeCache: Layer.Layer<EdgeCacheService>) => 
 	)
 }
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_revoke")
-const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_other")
-const userId = Schema.decodeUnknownSync(UserId)("user_leaver")
-const stayerId = Schema.decodeUnknownSync(UserId)("user_stayer")
-const memberRole = Schema.decodeUnknownSync(RoleName)("org:member")
-const adminRole = Schema.decodeUnknownSync(RoleName)("org:admin")
+const orgId = Schema.decodeSync(OrgId)("org_revoke")
+const otherOrgId = Schema.decodeSync(OrgId)("org_other")
+const userId = Schema.decodeSync(UserId)("user_leaver")
+const stayerId = Schema.decodeSync(UserId)("user_stayer")
+const memberRole = Schema.decodeSync(RoleName)("org:member")
+const adminRole = Schema.decodeSync(RoleName)("org:admin")
 const resource = "https://api.example.com/mcp"
 const redirectUri = "http://127.0.0.1:49152/callback"
 const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
@@ -178,8 +178,8 @@ const seedDigestSubscription = (db: TestDb, id: string, org: OrgId, user: UserId
 		db.pglite.query(
 			`insert into digest_subscriptions
 				(id, org_id, user_id, email, enabled, opted_out_at, created_at, updated_at)
-			 values ($1, $2, $3, $1 || '@example.com', $4, $5, now(), now())`,
-			[id, org, user, !optedOut, optedOut ? new Date() : null],
+			 values ($1, $2, $3, $1 || '@example.com', $4, CASE WHEN $5 THEN now() END, now(), now())`,
+			[id, org, user, !optedOut, optedOut],
 		),
 	)
 

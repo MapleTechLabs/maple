@@ -38,7 +38,7 @@ const TodosLive = HttpApiBuilder.group(TodoApi, "todos", (handlers) =>
 	Effect.gen(function* () {
 		const todos = yield* TodoService
 		return handlers
-			.handle("list", () => todos.list())
+			.handle("list", () => todos.list)
 			.handle("create", ({ payload }) => todos.create(payload.title))
 			.handle("toggle", ({ params }) => todos.toggle(params.id))
 			.handle("remove", ({ params }) => todos.remove(params.id))

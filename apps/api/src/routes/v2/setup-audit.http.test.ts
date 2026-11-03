@@ -59,8 +59,8 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_audit_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_audit_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_audit_e2e")
+const USER = Schema.decodeSync(UserId)("user_audit_e2e")
 
 const die = () => Effect.die(new Error("not available in this test harness"))
 

@@ -38,7 +38,7 @@ export interface PreviewClerk {
 }
 
 export interface PreviewSignInServiceApi {
-	readonly status: () => Effect.Effect<PreviewSignInStatusResponse>
+	readonly status: Effect.Effect<PreviewSignInStatusResponse>
 	readonly signIn: (
 		key: string,
 	) => Effect.Effect<
@@ -107,7 +107,7 @@ export const makePreviewSignIn = (
 	})
 
 	return {
-		status: () => Effect.succeed(new PreviewSignInStatusResponse({ enabled: Option.isSome(enabled) })),
+		status: Effect.succeed(new PreviewSignInStatusResponse({ enabled: Option.isSome(enabled) })),
 		signIn,
 	}
 }
