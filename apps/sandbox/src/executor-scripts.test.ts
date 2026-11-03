@@ -220,6 +220,26 @@ describe("promote.py", () => {
 		)
 	})
 
+	it("refuses the file that would take the promoted total past its limit, each file under its own", () => {
+		const { scratch, artifacts } = promotionDirs()
+		const names = ["p1", "p2", "p3", "p4", "p5"]
+		for (const name of names) writeFileSync(join(scratch, name), "z".repeat(250 * 1024))
+		const result = promote(
+			scratch,
+			artifacts,
+			names.map((path) => ({ path, maxBytes: EXECUTOR_LIMITS.promotedFileBytes })),
+		)
+		// 1 MiB holds four 250 KiB files; the fifth would pass it.
+		assert.deepStrictEqual(
+			result.promoted.map((artifact) => artifact.path),
+			["p1", "p2", "p3", "p4"],
+		)
+		assert.deepStrictEqual(
+			result.rejected.map((rejected) => rejected.path),
+			["p5"],
+		)
+	})
+
 	it("never overwrites an artifact, and never writes through a symlink planted in artifacts", () => {
 		const { root, scratch, artifacts } = promotionDirs()
 		writeFileSync(join(scratch, "out"), "first\n")
