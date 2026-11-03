@@ -341,7 +341,7 @@ const coverageSignals = (
 			state: coverage.cost,
 			title: "Cost",
 			explains: {
-				captured: "Each call carries the cost its instrumentation reported. Not a bill.",
+				captured: "At least one call carries the cost its instrumentation reported. Not a bill.",
 				missing: "No span reported a cost. Maple prices nothing itself.",
 				absent: NO_MODEL_CALL,
 			}[coverage.cost],
