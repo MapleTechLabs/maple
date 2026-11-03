@@ -185,10 +185,10 @@ export const completedHubWrite = (
 	return { ...refreshed, outMessage: toast }
 }
 
-/** The bulk bar's menus: a picked severity or state writes the selection. */
+/** The bulk bar's menus: a picked severity or state writes the selection; a picked issue keeps it. */
 export const bulkMenuStep = (
 	model: Model,
-	which: "bulkSeverityMenu" | "bulkMoveMenu",
+	which: "bulkSeverityMenu" | "bulkMoveMenu" | "bulkMergeMenu",
 	message: Menu.Message,
 ): Return => {
 	const next: Update.ReturnWithOutMessage<Menu.Model, Menu.Message, Menu.OutMessage> = Menu.update(
@@ -198,13 +198,27 @@ export const bulkMenuStep = (
 	const wrap = (inner: Menu.Message) =>
 		which === "bulkSeverityMenu"
 			? Message.GotBulkSeverityMenuMessage({ message: inner })
-			: Message.GotBulkMoveMenuMessage({ message: inner })
+			: which === "bulkMoveMenu"
+				? Message.GotBulkMoveMenuMessage({ message: inner })
+				: Message.GotBulkMergeMenuMessage({ message: inner })
 	const lifted: Return = {
 		model: { ...model, [which]: next.model },
 		commands: Command.mapMessages(next.commands ?? [], wrap),
 	}
 	if (next.outMessage?._tag !== "SelectedItem") return lifted
 	const value = next.outMessage.value
+	if (which === "bulkMergeMenu") {
+		const ids = Arr.filter(orderedIds(lifted.model), (id) => lifted.model.selectedIds.includes(id))
+		const targetId = ids.find((id) => id === value)
+		if (targetId === undefined) return lifted
+		const merged = startHubWrite(
+			cleared(lifted.model),
+			Arr.filter(ids, (id) => id !== targetId),
+			{ _tag: "Merge", targetId },
+			true,
+		)
+		return { ...merged, commands: [...(lifted.commands ?? []), ...(merged.commands ?? [])] }
+	}
 	const write: HubWrite | null =
 		which === "bulkSeverityMenu"
 			? { _tag: "SetSeverity", severity: SEVERITY_ORDER.find((severity) => severity === value) ?? null }

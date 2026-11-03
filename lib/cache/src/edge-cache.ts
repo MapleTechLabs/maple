@@ -265,10 +265,7 @@ export const makeEdgeCacheService = (
 		key: string,
 		nowMs: number,
 		timeoutMs: number,
-	): Effect.Effect<
-		{ readonly value: unknown | undefined; readonly timedOut: boolean },
-		EdgeCacheBackendError
-	> =>
+	): Effect.Effect<{ readonly value: unknown; readonly timedOut: boolean }, EdgeCacheBackendError> =>
 		Effect.gen(function* () {
 			// The slot is held until the UNDERLYING read settles, not until the race
 			// does: an abandoned `cache.match()` cannot be cancelled and keeps its

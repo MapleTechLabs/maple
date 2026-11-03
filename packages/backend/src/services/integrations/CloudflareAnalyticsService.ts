@@ -1259,7 +1259,7 @@ interface PollAllOrgsSummary {
 }
 
 export interface CloudflareAnalyticsServiceApi {
-	readonly pollAllOrgs: () => Effect.Effect<PollAllOrgsSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<PollAllOrgsSummary, IntegrationsPersistenceError>
 	readonly pollOrg: (orgId: OrgId) => Effect.Effect<PollOrgSummary, IntegrationsPersistenceError>
 	readonly getStatus: (
 		orgId: OrgId,
@@ -2915,7 +2915,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			} satisfies PollOrgSummary
 		})
 
-		const pollAllOrgs = Effect.fn("CloudflareAnalyticsService.pollAllOrgs")(function* () {
+		const pollAllOrgs = Effect.gen(function* () {
 			const connectionRows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(OAuthConnections)
@@ -3030,7 +3030,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				skipped,
 				perOrg,
 			} satisfies PollAllOrgsSummary
-		})
+		}).pipe(Effect.withSpan("CloudflareAnalyticsService.pollAllOrgs"))
 
 		const getStatus = Effect.fn("CloudflareAnalyticsService.getStatus")(function* (orgId: OrgId) {
 			const rows = yield* loadStateRows(orgId)

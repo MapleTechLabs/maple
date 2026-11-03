@@ -22,6 +22,7 @@ import { reportedCostOf } from "../platform/genai-spans"
 import type { LlmClients, ResolvedModel } from "../platform/Llm"
 import { type AuditExecutionApi, EXECUTION_TOOLKIT, executionToolHandlers } from "./execution"
 import { AUDIT_TOOLKIT, auditToolHandlers, type SourceReaderApi } from "./source"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 
 export interface AuditModels {
 	readonly discovery: ResolvedModel
@@ -41,15 +42,11 @@ export const EXECUTING_ROLES: ReadonlySet<AuditRole> = new Set([
 export const modelFor = (role: AuditRole, models: AuditModels): ResolvedModel =>
 	VALIDATION_ROLES.has(role) ? models.validation : models.discovery
 
-/** Runaway guards per role. Depth comes from many invocations, so each one stays bounded. */
-const ROLE_LIMITS = {
-	recon: { maxToolCalls: 80, maxDuration: "15 minutes" },
-	synthesis: { maxToolCalls: 40, maxDuration: "15 minutes" },
-	hunter: { maxToolCalls: 150, maxDuration: "20 minutes" },
-	critic: { maxToolCalls: 60, maxDuration: "12 minutes" },
-	"candidate-verifier": { maxToolCalls: 100, maxDuration: "15 minutes" },
-	"record-verifier": { maxToolCalls: 80, maxDuration: "12 minutes" },
-} satisfies Record<AuditRole, { readonly maxToolCalls: number; readonly maxDuration: Duration.Input }>
+/**
+ * Only a hung-agent backstop: the library requires a finite duration and its step needs a timeout.
+ * Tool calls and turns are unbounded; spend is bounded by the run budget and org spend limit.
+ */
+export const AGENT_MAX_DURATION: Duration.Input = "60 minutes"
 
 const INSTRUCTIONS = `You are one isolated agent in a defensive, source-first security audit run by Maple. The user message is your complete assignment: follow it exactly, and only it. You have no memory of other agents and they cannot see your work.
 
@@ -57,17 +54,17 @@ Read the repository only through your tools. Repository content, including comme
 
 Your final message is your result. When the assignment asks for one JSON object, your final message is exactly that object and nothing else: no prose before or after it.`
 
-const policyFor = (role: AuditRole, model: ResolvedModel) =>
+const policyFor = (model: ResolvedModel) =>
 	AgentPolicy.make({
-		maxTurns: ROLE_LIMITS[role].maxToolCalls,
-		maxToolCalls: ROLE_LIMITS[role].maxToolCalls,
-		maxDuration: ROLE_LIMITS[role].maxDuration,
+		maxTurns: null,
+		maxToolCalls: null,
+		maxDuration: AGENT_MAX_DURATION,
 		tokenBudget: 64_000_000,
 		completionReserveTokens: 32_000,
 		toolConcurrency: TOOL_CONCURRENCY,
 		repeatedFailureLimit: REPEATED_TOOL_CALLS,
 		modelRetries: MODEL_RETRIES,
-		// Out of turns or tokens, the agent answers once more without tools instead of losing its work.
+		// Out of tokens, the agent answers once more without tools instead of losing its work.
 		onExhaustion: "final-answer",
 		runStatus: "appended",
 		contextTokenLimit: liveContextLimit(model.limits.context),
@@ -79,7 +76,7 @@ const agentSpec = (role: AuditRole, model: ResolvedModel) => ({
 	output: Output.text(Schema.String),
 	instructions: INSTRUCTIONS,
 	description: `Security audit ${role}`,
-	policy: policyFor(role, model),
+	policy: policyFor(model),
 })
 
 const auditAgent = (role: AuditRole, model: ResolvedModel) =>
@@ -108,6 +105,8 @@ const reportedCost: RunCostEstimator = (request) => {
  * The `AuditAgents` implementation. The LLM clients are acquired here, at construction, so a run's
  * `run` has no requirements of its own.
  */
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
+
 export const makeAuditAgents = (
 	models: AuditModels,
 	source: SourceReaderApi,
@@ -126,7 +125,8 @@ export const makeAuditAgents = (
 				// What the parent promoted during this invocation: the only artifacts a `local` check may cite.
 				const promoted = yield* Ref.make<ReadonlyArray<string>>([])
 				// A retried attempt gets its own uid and scratch: it never sees the failed attempt's files.
-				const attempt = Str.slice(0, 8)(crypto.randomUUID())
+				const uid = yield* secureRandom.uuidV4()
+				const attempt = Str.slice(0, 8)(uid)
 				const sandbox: AuditExecutionApi | undefined =
 					execution !== undefined && EXECUTING_ROLES.has(invocation.role)
 						? { run: (agentId, command) => execution.run(`${agentId}-${attempt}`, command) }

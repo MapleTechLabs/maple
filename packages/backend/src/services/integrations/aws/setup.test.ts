@@ -7,7 +7,7 @@ import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AwsAccountId } from "@maple/domain/primitives"
 import { renderAwsCleanupScript, renderAwsSetupScript } from "./setup"
 
-const accountId = Schema.decodeUnknownSync(AwsAccountId)("123456789012")
+const accountId = Schema.decodeSync(AwsAccountId)("123456789012")
 const PROVIDER_ARN = "arn:aws:iam::123456789012:oidc-provider/api.maple.test/oidc/aws"
 const target = {
 	accountId,

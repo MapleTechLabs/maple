@@ -199,7 +199,7 @@ const foldTooltip = Update.foldChild({
 // PAGES
 
 /** The org a bare public page (a share link) is keyed under when nobody is signed in. */
-const PUBLIC_ORG = Schema.decodeUnknownOption(OrgIdSchema)("public")
+const PUBLIC_ORG = Schema.decodeOption(OrgIdSchema)("public")
 
 /** A public page's context: the viewer's org when signed in, else `PUBLIC_ORG`; no shell state. */
 const publicContextOf = (model: Model, maybeOrgId: Option.Option<OrgId>): Option.Option<PageContext> =>

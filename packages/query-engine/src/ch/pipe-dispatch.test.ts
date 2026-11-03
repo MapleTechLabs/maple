@@ -42,6 +42,37 @@ describe("compilePipeQuery", () => {
 		}
 	})
 
+	it("service_apdex_time_series filters by deployment_env on every tier", () => {
+		// Minute and hour rollups, then the raw entry-point spans (a sub-minute bucket,
+		// or a threshold the rollups did not pre-count).
+		for (const tier of [
+			{ bucket_seconds: 300 },
+			{ bucket_seconds: 3600 },
+			{ bucket_seconds: 30 },
+			{ bucket_seconds: 300, apdex_threshold_ms: 1000 },
+		]) {
+			const sql = compilePipeQuery("service_apdex_time_series", {
+				...baseParams(),
+				service_name: "checkout",
+				deployment_env: "production",
+				...tier,
+			})!.sql
+			expect(sql, JSON.stringify(tier)).toContain("DeploymentEnv IN ('production')")
+		}
+	})
+
+	it("list_logs pages by offset", () => {
+		const first = compilePipeQuery("list_logs", { ...baseParams(), limit: 30 })!.sql
+		const second = compilePipeQuery("list_logs", { ...baseParams(), limit: 30, offset: 30 })!.sql
+		expect(second).not.toBe(first)
+		expect(second).toContain("OFFSET 30")
+	})
+
+	it("list_traces filters by http_method", () => {
+		const sql = compilePipeQuery("list_traces", { ...baseParams(), http_method: "POST" })!.sql
+		expect(sql).toContain("'POST'")
+	})
+
 	it("returns undefined for unknown pipes", () => {
 		const result = compilePipeQuery("nonexistent_pipe", baseParams())
 		expect(result).toBeUndefined()

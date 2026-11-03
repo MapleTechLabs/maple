@@ -17,6 +17,7 @@ import {
 	Array as Arr,
 	String as Str,
 } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { FetchHttpClient } from "effect/http"
 import {
 	AlertRecipientSelectionError,
@@ -174,7 +175,7 @@ export const defaultTestRuntime: AlertRuntimeApi = {
 	// scheduler-timestamp tests drive it deterministically via TestClock.setTime /
 	// TestClock.adjust. Real `fetch`/`Effect.timeout` settle on the live event loop.
 	now: Clock.currentTimeMillis,
-	makeUuid: () => crypto.randomUUID(),
+	makeUuid: () => SecureRandom.uuidV4Unsafe(),
 	deliveryTimeoutMs: () => 15_000,
 	schedulerTickBudgetMs: () => 25_000,
 	schedulerEvalTimeoutMs: () => 15_000,

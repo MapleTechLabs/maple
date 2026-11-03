@@ -159,7 +159,7 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 			...(tab === "connection"
 				? [connectionPart(h, model, source, timeZone, "card") ?? loading(h)]
 				: []),
-			...(tab === "settings" ? [settingsTab(h, model, source)] : []),
+			...(tab === "settings" ? [settingsTab(h, model, source, timeZone)] : []),
 		],
 	)
 }

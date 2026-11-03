@@ -71,6 +71,8 @@ export const ErrorDetailOutput = Schema.Struct({
 	),
 	/** Set when the fingerprint was resolved from an error issue id. */
 	issueId: Schema.optionalKey(Schema.String),
+	/** The issue's other fingerprints (merged in or re-keyed), which this read does not cover. */
+	otherFingerprints: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** The fingerprint across its lookback, from error_events; present whenever it occurred. */
 	summary: Schema.optionalKey(
 		Schema.Struct({

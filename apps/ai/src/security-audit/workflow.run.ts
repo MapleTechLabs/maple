@@ -134,10 +134,10 @@ const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponen
  */
 const ADMISSION_RETRY = { retries: { limit: 6, delay: "15 seconds", backoff: "exponential" } } as const
 
-/** An agent may run 20 minutes; its step allows that plus a margin, and retries once. */
-const AGENT_STEP = {
+/** An agent may run 60 minutes; its step allows that plus a margin, and retries once. */
+export const AGENT_STEP = {
 	retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
-	timeout: "30 minutes",
+	timeout: "75 minutes",
 } as const
 
 /** A prepare fetches the commit and installs its lockfiles; its wait is 22 minutes, retried once. */
@@ -310,7 +310,7 @@ export const auditWithAgents = <E, R>(
 	options: { readonly ownKey?: boolean } = {},
 ) =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
 		yield* Effect.annotateCurrentSpan({
 			"maple.security_audit.run_id": payload.runId,
 			"maple.org_id": orgId,
@@ -561,7 +561,7 @@ export const auditWithAgents = <E, R>(
 				if (!hasCredits) return "no_credits" as const
 				// Read live, so a limit an admin raises or lowers applies to the agents still to come.
 				const limits = yield* securityAuditLimits
-				const settings = yield* store.getSettings()
+				const settings = yield* store.getSettings
 				const limitUsd = Option.match(settings, {
 					onNone: () => limits.defaultMonthlySpendLimitUsd,
 					onSome: (row) => row.monthlySpendLimitUsd,
@@ -682,7 +682,7 @@ export const auditWithAgents = <E, R>(
 			Cause.hasInterruptsOnly(cause)
 				? Effect.void
 				: Effect.gen(function* () {
-						const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+						const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
 						const store = (yield* SecurityAuditStore).forOrg(orgId)
 						yield* store.finishRun(payload.runId, {
 							status: "failed",
@@ -700,7 +700,7 @@ export const auditWithAgents = <E, R>(
  */
 export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId)
 		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(orgId)
 		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
 		const deploySettings = yield* loadLlmSettings

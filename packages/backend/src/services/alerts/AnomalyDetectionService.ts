@@ -59,6 +59,7 @@ import {
 } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
+import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -223,7 +224,7 @@ export interface AnomalyServiceCountRow {
 }
 
 export interface AnomalyDetectionServiceApi {
-	readonly runTick: () => Effect.Effect<AnomalyTickResult, AnomalyPersistenceError>
+	readonly runTick: Effect.Effect<AnomalyTickResult, AnomalyPersistenceError>
 	readonly listIncidents: (
 		orgId: OrgId,
 		opts: {
@@ -1331,25 +1332,10 @@ const make: Effect.Effect<
 
 		// firstSeenAt per fingerprint so young issues stay with first_seen handling.
 		const fingerprints = Arr.dedupe(Arr.map(spikes.observations, (o) => o.fingerprintHash))
-		const issueRows =
-			fingerprints.length === 0
-				? []
-				: yield* dbExecute((db) =>
-						db.run(
-							PG.from(ErrorIssues)
-								.select(($) => ({
-									fingerprintHash: $.fingerprintHash,
-									issueId: $.id,
-									firstSeenAt: $.firstSeenAt,
-								}))
-								.where(($) => [
-									$.orgId.eq(orgId),
-									PG.inList($.fingerprintHash, fingerprints),
-								]),
-						),
-					)
-		const issueFirstSeenAt = new Map(Arr.map(issueRows, (r) => [r.fingerprintHash, r.firstSeenAt]))
-		const issueIdByFingerprint = new Map(Arr.map(issueRows, (r) => [r.fingerprintHash, r.issueId]))
+		// Through aliases too: a spike on a merged-away hash belongs to the issue it was merged into.
+		const owners = yield* dbExecute((db) => issuesOwningHashes(db, orgId, fingerprints))
+		const issueFirstSeenAt = new Map(Arr.map([...owners], ([hash, owner]) => [hash, owner.firstSeenAt]))
+		const issueIdByFingerprint = new Map(Arr.map([...owners], ([hash, owner]) => [hash, owner.issueId]))
 
 		const evaluations: AnomalyEvaluation[] = []
 		for (const series of goldenSeries) {
@@ -2160,129 +2146,125 @@ const make: Effect.Effect<
 		return stats
 	})
 
-	const runTick: AnomalyDetectionServiceApi["runTick"] = Effect.fn("AnomalyDetectionService.runTick")(
-		function* () {
-			const nowMs = yield* Clock.currentTimeMillis
-			const runRetention = Math.floor(nowMs / TICK_CADENCE_MS) % RETENTION_PHASE_EVERY_N_TICKS === 0
+	const runTick: AnomalyDetectionServiceApi["runTick"] = Effect.gen(function* () {
+		const nowMs = yield* Clock.currentTimeMillis
+		const runRetention = Math.floor(nowMs / TICK_CADENCE_MS) % RETENTION_PHASE_EVERY_N_TICKS === 0
 
-			const ingestOrgs = yield* dbExecute((db) =>
-				db.run(PG.from(OrgIngestKeys).select("orgId").distinct()),
-			)
-			const settingsOrgs = yield* dbExecute((db) =>
-				db.run(PG.from(AnomalyDetectorSettings).select("orgId").distinct()),
-			)
-			const knownOrgs = new Set<OrgId>(
-				Arr.map([...ingestOrgs, ...settingsOrgs], (r) => decodeOrgIdSync(r.orgId)),
-			)
+		const ingestOrgs = yield* dbExecute((db) => db.run(PG.from(OrgIngestKeys).select("orgId").distinct()))
+		const settingsOrgs = yield* dbExecute((db) =>
+			db.run(PG.from(AnomalyDetectorSettings).select("orgId").distinct()),
+		)
+		const knownOrgs = new Set<OrgId>(
+			Arr.map([...ingestOrgs, ...settingsOrgs], (r) => decodeOrgIdSync(r.orgId)),
+		)
 
-			// Orgs with an OPEN incident must be processed even when idle so the
-			// no-data sweep (NO_DATA_RESOLVE_MS) can resolve incidents whose series
-			// went silent.
-			const openIncidentRows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(AnomalyIncidents)
-						.select("orgId")
-						.distinct()
-						.where(($) => [$.status.eq("open")]),
-				),
-			)
-			const mustProcess = new Set<OrgId>(Arr.map(openIncidentRows, (r) => decodeOrgIdSync(r.orgId)))
-			const candidates = new Set<OrgId>([...knownOrgs, ...mustProcess])
+		// Orgs with an OPEN incident must be processed even when idle so the
+		// no-data sweep (NO_DATA_RESOLVE_MS) can resolve incidents whose series
+		// went silent.
+		const openIncidentRows = yield* dbExecute((db) =>
+			db.run(
+				PG.from(AnomalyIncidents)
+					.select("orgId")
+					.distinct()
+					.where(($) => [$.status.eq("open")]),
+			),
+		)
+		const mustProcess = new Set<OrgId>(Arr.map(openIncidentRows, (r) => decodeOrgIdSync(r.orgId)))
+		const candidates = new Set<OrgId>([...knownOrgs, ...mustProcess])
 
-			const activeOrgs = yield* resolveActiveOrgs([...candidates], nowMs)
-			const orgsToProcess = Arr.filter(
-				[...candidates],
-				(org) => activeOrgs.has(org) || mustProcess.has(org),
-			)
+		const activeOrgs = yield* resolveActiveOrgs([...candidates], nowMs)
+		const orgsToProcess = Arr.filter(
+			[...candidates],
+			(org) => activeOrgs.has(org) || mustProcess.has(org),
+		)
 
-			// One batched read warms the org warehouse-config memo before the fan-out
-			// below, so 4 concurrent fibers do not each miss it cold. Best-effort.
-			yield* orgChSettings
-				.primeRuntimeConfigs(orgsToProcess)
-				.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime anomaly tick runtime configs" }))
+		// One batched read warms the org warehouse-config memo before the fan-out
+		// below, so 4 concurrent fibers do not each miss it cold. Best-effort.
+		yield* orgChSettings
+			.primeRuntimeConfigs(orgsToProcess)
+			.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime anomaly tick runtime configs" }))
 
-			const orgFailures = yield* Ref.make(0)
-			const emptyStats = {
-				seriesEvaluated: 0,
-				incidentsOpened: 0,
-				incidentsAttached: 0,
-				incidentsReopened: 0,
-				incidentsContinued: 0,
-				incidentsResolved: 0,
-			}
-			const results = yield* Effect.forEach(
-				orgsToProcess,
-				(org) =>
-					Effect.gen(function* () {
-						// Orgs whose warehouse rejected queries with an auth/config-class
-						// error are parked (see warehouse-org-quarantine.ts).
-						if (yield* withOutboundPermit(isOrgWarehouseQuarantined(edgeCache, org))) {
-							yield* Effect.logInfo("Skipping org with quarantined warehouse").pipe(
-								Effect.annotateLogs({ orgId: org }),
-							)
-							return emptyStats
-						}
-						return yield* processOrg(org, nowMs, runRetention)
-					}).pipe(
-						// Isolate genuine per-org failures/defects so one bad org can't fail
-						// the whole tick. Interrupts (isolate teardown) are NOT per-org
-						// failures — re-raise them so the tick cancels promptly instead of
-						// logging a phantom failure and marching through the remaining orgs.
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.gen(function* () {
-										const quarantined = yield* quarantineOnConfigClassCause(
-											edgeCache,
-											org,
-											cause,
-											nowMs,
+		const orgFailures = yield* Ref.make(0)
+		const emptyStats = {
+			seriesEvaluated: 0,
+			incidentsOpened: 0,
+			incidentsAttached: 0,
+			incidentsReopened: 0,
+			incidentsContinued: 0,
+			incidentsResolved: 0,
+		}
+		const results = yield* Effect.forEach(
+			orgsToProcess,
+			(org) =>
+				Effect.gen(function* () {
+					// Orgs whose warehouse rejected queries with an auth/config-class
+					// error are parked (see warehouse-org-quarantine.ts).
+					if (yield* withOutboundPermit(isOrgWarehouseQuarantined(edgeCache, org))) {
+						yield* Effect.logInfo("Skipping org with quarantined warehouse").pipe(
+							Effect.annotateLogs({ orgId: org }),
+						)
+						return emptyStats
+					}
+					return yield* processOrg(org, nowMs, runRetention)
+				}).pipe(
+					// Isolate genuine per-org failures/defects so one bad org can't fail
+					// the whole tick. Interrupts (isolate teardown) are NOT per-org
+					// failures — re-raise them so the tick cancels promptly instead of
+					// logging a phantom failure and marching through the remaining orgs.
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.interrupt
+							: Effect.gen(function* () {
+									const quarantined = yield* quarantineOnConfigClassCause(
+										edgeCache,
+										org,
+										cause,
+										nowMs,
+									)
+									if (quarantined) {
+										yield* Effect.logInfo(
+											"Org warehouse rejected queries with a config-class error; quarantined",
+										).pipe(
+											Effect.annotateLogs({
+												orgId: org,
+												error: summarizeCause(cause),
+											}),
 										)
-										if (quarantined) {
-											yield* Effect.logInfo(
-												"Org warehouse rejected queries with a config-class error; quarantined",
-											).pipe(
-												Effect.annotateLogs({
-													orgId: org,
-													error: summarizeCause(cause),
-												}),
-											)
-										} else {
-											yield* Effect.logError("Anomaly tick failed for org").pipe(
-												Effect.annotateLogs({
-													orgId: org,
-													error: summarizeCause(cause),
-												}),
-											)
-										}
-										yield* Ref.update(orgFailures, (n) => n + 1)
-										return emptyStats
-									}),
-						),
+									} else {
+										yield* Effect.logError("Anomaly tick failed for org").pipe(
+											Effect.annotateLogs({
+												orgId: org,
+												error: summarizeCause(cause),
+											}),
+										)
+									}
+									yield* Ref.update(orgFailures, (n) => n + 1)
+									return emptyStats
+								}),
 					),
-				{ concurrency: 4 },
-			)
+				),
+			{ concurrency: 4 },
+		)
 
-			const totals = Arr.reduce(results, emptyStats, (acc, r) => ({
-				seriesEvaluated: acc.seriesEvaluated + r.seriesEvaluated,
-				incidentsOpened: acc.incidentsOpened + r.incidentsOpened,
-				incidentsAttached: acc.incidentsAttached + r.incidentsAttached,
-				incidentsReopened: acc.incidentsReopened + r.incidentsReopened,
-				incidentsContinued: acc.incidentsContinued + r.incidentsContinued,
-				incidentsResolved: acc.incidentsResolved + r.incidentsResolved,
-			}))
+		const totals = Arr.reduce(results, emptyStats, (acc, r) => ({
+			seriesEvaluated: acc.seriesEvaluated + r.seriesEvaluated,
+			incidentsOpened: acc.incidentsOpened + r.incidentsOpened,
+			incidentsAttached: acc.incidentsAttached + r.incidentsAttached,
+			incidentsReopened: acc.incidentsReopened + r.incidentsReopened,
+			incidentsContinued: acc.incidentsContinued + r.incidentsContinued,
+			incidentsResolved: acc.incidentsResolved + r.incidentsResolved,
+		}))
 
-			const failureCount = yield* Ref.get(orgFailures)
-			yield* Effect.annotateCurrentSpan({
-				"maple.anomaly.known_orgs": knownOrgs.size,
-				"maple.anomaly.orgs_processed": orgsToProcess.length,
-				"maple.anomaly.org_failures": failureCount,
-				...totals,
-			})
+		const failureCount = yield* Ref.get(orgFailures)
+		yield* Effect.annotateCurrentSpan({
+			"maple.anomaly.known_orgs": knownOrgs.size,
+			"maple.anomaly.orgs_processed": orgsToProcess.length,
+			"maple.anomaly.org_failures": failureCount,
+			...totals,
+		})
 
-			return { orgsProcessed: orgsToProcess.length, orgFailures: failureCount, ...totals }
-		},
-	)
+		return { orgsProcessed: orgsToProcess.length, orgFailures: failureCount, ...totals }
+	}).pipe(Effect.withSpan("AnomalyDetectionService.runTick"))
 
 	return AnomalyDetectionService.of({
 		runTick,

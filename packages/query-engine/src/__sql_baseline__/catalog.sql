@@ -1218,6 +1218,18 @@ SELECT
         LIMIT 5
         FORMAT JSON
 
+-- builder:errors:errorFingerprintLineageQuery:default  [531d31bf]
+SELECT
+          toString(error_fingerprint_lineage.FingerprintHash) AS fingerprintHash,
+          toString(error_fingerprint_lineage.PreviousFingerprintHash) AS previousFingerprintHash
+        FROM error_fingerprint_lineage
+        WHERE error_fingerprint_lineage.OrgId = 'org_sql_catalog'
+          AND error_fingerprint_lineage.Minute >= '2026-01-01 10:30:00'
+          AND error_fingerprint_lineage.Minute < '2026-01-03 14:15:00'
+          AND error_fingerprint_lineage.FingerprintHash IN (toUInt64('11640393269246331608'))
+        GROUP BY fingerprintHash, previousFingerprintHash
+        FORMAT JSON
+
 -- builder:errors:errorFingerprintOccurrencesQuery:default  [701c5603]
 SELECT
           toString(error_events.FingerprintHash) AS fingerprintHash,
@@ -1263,13 +1275,13 @@ SELECT
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:errors:errorIssueEnvironmentsQuery:default  [ac20faf3]
+-- builder:errors:errorIssueEnvironmentsQuery:default  [236861f6]
 SELECT
           error_events.DeploymentEnv AS name,
           count() AS count
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
-          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
           AND error_events.Timestamp >= '2026-01-01 10:30:00'
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
           AND error_events.DeploymentEnv != ''
@@ -1278,7 +1290,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:errors:errorIssueSampleTracesQuery:default  [2974a216]
+-- builder:errors:errorIssueSampleTracesQuery:default  [79f165f1]
 SELECT
           error_events.TraceId AS traceId,
           error_events.SpanId AS spanId,
@@ -1288,7 +1300,7 @@ SELECT
           intDiv(error_events.Duration, 1000) AS durationMicros
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
-          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
           AND error_events.Timestamp >= '2026-01-01 10:30:00'
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         ORDER BY timestamp DESC
@@ -1316,26 +1328,26 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:errors:errorIssueTimeseriesQuery:default  [6e698308]
+-- builder:errors:errorIssueTimeseriesQuery:default  [4cba945f]
 SELECT
           toStartOfInterval(error_events.Timestamp, INTERVAL 300 SECOND) AS bucket,
           count() AS count
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
-          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
           AND error_events.Timestamp >= '2026-01-01 10:30:00'
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY bucket
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:errors:errorIssueVersionsSinceQuery:default  [df2788f2]
+-- builder:errors:errorIssueVersionsSinceQuery:default  [68c1ba69]
 SELECT
           error_events.ServiceVersion AS serviceVersion,
           count() AS count
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
-          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
           AND error_events.Timestamp >= '2026-01-01 10:30:00'
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY serviceVersion
@@ -12104,13 +12116,13 @@ SELECT
         ORDER BY startTime DESC
         FORMAT JSON
 
--- pipe:error_issue_environments:default:baseline  [ac20faf3]
+-- pipe:error_issue_environments:default:baseline  [236861f6]
 SELECT
           error_events.DeploymentEnv AS name,
           count() AS count
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
-          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
           AND error_events.Timestamp >= '2026-01-01 10:30:00'
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
           AND error_events.DeploymentEnv != ''
@@ -12119,7 +12131,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:error_issue_sample_traces:default:baseline  [2974a216]
+-- pipe:error_issue_sample_traces:default:baseline  [79f165f1]
 SELECT
           error_events.TraceId AS traceId,
           error_events.SpanId AS spanId,
@@ -12129,20 +12141,20 @@ SELECT
           intDiv(error_events.Duration, 1000) AS durationMicros
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
-          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
           AND error_events.Timestamp >= '2026-01-01 10:30:00'
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         ORDER BY timestamp DESC
         LIMIT 25
         FORMAT JSON
 
--- pipe:error_issue_timeseries:default:baseline  [6e698308]
+-- pipe:error_issue_timeseries:default:baseline  [4cba945f]
 SELECT
           toStartOfInterval(error_events.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           count() AS count
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
-          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
           AND error_events.Timestamp >= '2026-01-01 10:30:00'
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY bucket

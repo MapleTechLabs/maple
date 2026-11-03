@@ -23,7 +23,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 const ORG = asOrgId("org_audit_log_test")
 const USER = asUserId("user_audit_log_test")
 const DASHBOARD_ID = "3f1b7c02-9a44-4d1e-8b2f-0c5d6e7a8b91"
-const API_KEY = Schema.decodeUnknownSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b3c4d5e6f")
+const API_KEY = Schema.decodeSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b3c4d5e6f")
 
 /**
  * A warehouse that records what `ingest` receives and answers `compiledQuery`

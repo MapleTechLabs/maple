@@ -1,6 +1,11 @@
 import fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { computeFingerprintInputs, MAX_FINGERPRINT_FRAMES, MSG_SIGNATURE_CHARS } from "./fingerprint"
+import {
+	computeFingerprintInputs,
+	CUSTOM_FINGERPRINT_MAX_CHARS,
+	MAX_FINGERPRINT_FRAMES,
+	MSG_SIGNATURE_CHARS,
+} from "./fingerprint"
 
 // Grouping is two promises: the same bug under different runtime values is ONE
 // issue, and two bugs are TWO. Each property renders one structure under two
@@ -76,6 +81,17 @@ const RUNTIMES = [
 	"hibernate",
 	"apple",
 ] as const
+/** Runtimes whose frames are a dependency's or the stdlib's, which the hash skips. */
+const LIBRARY_RUNTIMES: ReadonlySet<Runtime> = new Set([
+	"store",
+	"hoisted",
+	"pip",
+	"pystd",
+	"gem",
+	"gomod",
+	"jvmProxy",
+	"jvmAccessor",
+])
 const site = (runtimes: ReadonlyArray<Runtime>) =>
 	fc.record({ runtime: fc.constantFrom(...runtimes), fn: name, file: name })
 type Runtime = (typeof RUNTIMES)[number] | (typeof PYTHON_RUNTIMES)[number]
@@ -324,6 +340,8 @@ describe("two bugs are two issues", () => {
 			fc.property(Stack, name, name, (stack, fnA, fnB) => {
 				fc.pre(fnA !== fnB)
 				const [top, ...callers] = stack.sites
+				// A throw inside a dependency or the stdlib groups by its app callers instead.
+				fc.pre(!LIBRARY_RUNTIMES.has(top!.runtime))
 				const render = (fn: string) => renderStack([{ ...top!, fn, file: fn }, ...callers], stack.a)
 				expect(fingerprint("Error", render(fnA), "").fpFrames).not.toBe(
 					fingerprint("Error", render(fnB), "").fpFrames,
@@ -437,6 +455,32 @@ describe("signature bounds", () => {
 					/[0-9]/,
 				)
 			}),
+		)
+	})
+
+	it("hashes one bounded user key for every error that carries it", () => {
+		fc.assert(
+			fc.property(
+				fc.string({ minLength: 1, maxLength: 300 }).filter((key) => key.trim() !== ""),
+				fc.tuple(fc.string({ maxLength: 20 }), anyText, anyText),
+				fc.tuple(fc.string({ maxLength: 20 }), anyText, anyText),
+				(key, [typeA, stackA, messageA], [typeB, stackB, messageB]) => {
+					const hash = (
+						exceptionType: string,
+						exceptionStacktrace: string,
+						statusMessage: string,
+					) =>
+						computeFingerprintInputs({
+							exceptionType,
+							exceptionStacktrace,
+							statusMessage,
+							customFingerprint: ` ${key}\n`,
+						}).hashInputs
+					const a = hash(typeA, stackA, messageA)
+					expect(hash(typeB, stackB, messageB)).toEqual(a)
+					expect(Array.from(a[1] ?? "").length).toBeLessThanOrEqual(CUSTOM_FINGERPRINT_MAX_CHARS)
+				},
+			),
 		)
 	})
 })

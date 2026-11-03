@@ -13,6 +13,7 @@ import {
 	type SourceSignal,
 } from "@maple/domain/primitives"
 import { Option, Schema, Array as Arr } from "effect"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
 import { statusRank } from "./status"
@@ -50,15 +51,10 @@ export const toPublicSourceId = Schema.encodeSync(SourcePublicId)
 export const fromPublicSourceId = Schema.decodeUnknownOption(SourcePublicId)
 
 /** "Paused until Oct 17, 15:42", or "Paused until resumed". */
-export const pausedLabel = (source: V2Source): string =>
+export const pausedLabel = (source: V2Source, timeZone: string): string =>
 	source.paused_until === null
 		? "Paused until resumed"
-		: `Paused until ${new Date(source.paused_until).toLocaleString(undefined, {
-				month: "short",
-				day: "numeric",
-				hour: "numeric",
-				minute: "2-digit",
-			})}`
+		: `Paused until ${formatTimestampInTimezone(source.paused_until, { timeZone, style: "range" })}`
 
 /** Token sources take rules and actions; the default source and integrations have no token. */
 export const hasToken = (source: V2Source): boolean => source.key_prefix !== null

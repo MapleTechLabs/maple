@@ -3,7 +3,7 @@
 // cityHash64 of exactly the inputs the TS mirror derives, for every v3 rule.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { computeFingerprintInputs, FINGERPRINT_HASH_SALT } from "@maple/domain/tinybird/fingerprint"
+import { computeFingerprintInputs } from "@maple/domain/tinybird/fingerprint"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { msToDate } from "../../platform/time"
 import {
@@ -206,7 +206,7 @@ const mirroredSql = Arr.join(
 			exceptionStacktrace: row.stacktrace,
 			statusMessage: row.message,
 		})
-		return `SELECT ${quote(row.spanId)} AS SpanId, ${quote(inputs.topFrame)} AS TopFrame, toString(cityHash64(${quote(ORG_ID)}, ${quote(SERVICE)}, ${quote(row.type)}, ${quote(inputs.fpFrames)}, ${quote(inputs.msgSignature)}, ${quote(FINGERPRINT_HASH_SALT)})) AS Hash`
+		return `SELECT ${quote(row.spanId)} AS SpanId, ${quote(inputs.topFrame)} AS TopFrame, toString(cityHash64(${Arr.join(Arr.map([ORG_ID, SERVICE, ...inputs.hashInputs], quote), ", ")})) AS Hash`
 	}),
 	"\nUNION ALL\n",
 )

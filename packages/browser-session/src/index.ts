@@ -68,5 +68,6 @@ export {
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "./platform/region"
+export { isCommitSha } from "./platform/commit-sha"
 export { redactUrl, scrubUrl } from "./platform/url-privacy"
 export { selectorOf } from "./capture/interactions"

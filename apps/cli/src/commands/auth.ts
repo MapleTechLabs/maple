@@ -302,7 +302,7 @@ const logoutHandler = Effect.fnUntraced(function* () {
 			),
 		)
 	}
-	yield* config.clearRemoteCredential()
+	yield* config.clearRemoteCredential
 	yield* Console.log("✓ Logged out and removed the stored credential.")
 })
 

@@ -108,6 +108,7 @@ export const TABLE_DELETE_PLAN = {
 	error_events: derived("Timestamp"),
 	error_events_by_time: derived("Timestamp"),
 	error_fingerprints_minutely: unkeyed("Minute"),
+	error_fingerprint_lineage: unkeyed("Minute"),
 	identity_links: { strategy: "excluded", reason: SESSION_DATA },
 	logs: raw("Timestamp"),
 	logs_aggregates_hourly: derived("Hour", { namespace: SERVICE_NAMESPACE }),
@@ -188,8 +189,7 @@ const requestedDimensions = (request: ScopedDeleteRequest): ReadonlyArray<Dimens
 /** Bucketed rollups cannot split an hour, so every table uses the same hour cutoff. */
 export const floorToHour = (ms: number): number => Math.floor(ms / HOUR_MS) * HOUR_MS
 
-const sqlString = (value: string): string =>
-	`'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const sqlString = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const sourceExpression = (source: DimensionSource, dimension: Dimension): string => {
 	if ("column" in source) return source.column
@@ -739,7 +739,7 @@ const readPending = (dataDir: string) =>
 		const path = pendingDeletePath(dataDir)
 		if (!existsSync(path)) return Option.none<PendingDelete>()
 		const text = yield* run("read pending delete", () => readRealFile(path, "pending delete journal"))
-		const pending = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(PendingDelete))(text).pipe(
+		const pending = yield* Schema.decodeEffect(Schema.fromJsonString(PendingDelete))(text).pipe(
 			Effect.mapError(
 				(cause) =>
 					new ScopedDeleteError({ message: `malformed pending delete journal ${path}`, cause }),

@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { afterEach, expect, it as vitestIt, vi } from "vitest"
-import { Effect, Metric, Redacted, Array as Arr, String as Str } from "effect"
+import { Clock, DateTime, Effect, Metric, Redacted, Array as Arr, String as Str } from "effect"
 import {
 	buildResolved,
 	fetchTransport,
@@ -70,7 +70,7 @@ describe("runFlush", () => {
 	it.live("retains failed and cooldown batches while allowing the other signal to succeed", () =>
 		Effect.gen(function* () {
 			vi.useFakeTimers()
-			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+			vi.setSystemTime(DateTime.toDateUtc(DateTime.makeUnsafe("2026-01-01T00:00:00Z")))
 			const spans = makeSpanBuffer()
 			const logs = makeLogBuffer()
 			const metrics = makeMetricBuffer()
@@ -283,7 +283,7 @@ describe("runFlush", () => {
 			yield* Effect.promise(() => flushed)
 
 			expect(errorSpy).toHaveBeenCalledTimes(1)
-			expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
+			expect(tracesState.disabledUntil).toBeGreaterThan(yield* Clock.currentTimeMillis)
 
 			// No room for even the newest item: one request, in drain order.
 			sent.length = 0
@@ -343,7 +343,7 @@ describe("runFlush", () => {
 	it.live("retries a changed metric after a failed export", () =>
 		Effect.gen(function* () {
 			vi.useFakeTimers()
-			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+			vi.setSystemTime(DateTime.toDateUtc(DateTime.makeUnsafe("2026-01-01T00:00:00Z")))
 			const spans = makeSpanBuffer()
 			const logs = makeLogBuffer()
 			const metrics = makeMetricBuffer()

@@ -118,10 +118,14 @@ describe("init and shutdown", () => {
 		await vi.waitFor(() => expect(second.sessionId).not.toBe(""))
 		await second.shutdown()
 
-		const sent = vi
-			.mocked(fetch)
-			.mock.calls.filter(([url]) => String(url).endsWith("/v1/sessionEvents"))
-			.map(([, request]) => String(request?.body))
+		const sent = await Promise.all(
+			vi
+				.mocked(fetch)
+				.mock.calls.filter(([url]) =>
+					(url instanceof Request ? url.url : url.toString()).endsWith("/v1/sessionEvents"),
+				)
+				.map(([, request]) => new Response(request?.body).text()),
+		)
 		expect(sent.join("\n")).toContain("during_teardown")
 	})
 

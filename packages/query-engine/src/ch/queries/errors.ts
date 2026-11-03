@@ -25,6 +25,7 @@ import {
 	ErrorEvents,
 	ErrorEventsByTime,
 	ErrorFingerprintsMinutely,
+	ErrorFingerprintLineage,
 	ServiceUsage,
 	TraceFacetsHourly,
 	TraceIndex,
@@ -1284,6 +1285,27 @@ export function errorTickIssuesQuery() {
 }
 
 /**
+ * The previous-version hashes of each given fingerprint seen in the window, for the
+ * ones a fingerprint version bump re-keyed (several when the bump folded issues
+ * together). The tick asks only about the fingerprints it just scanned.
+ */
+export function errorFingerprintLineageQuery(opts: { readonly fingerprintHashes: readonly string[] }) {
+	return from(ErrorFingerprintLineage)
+		.select(($) => ({
+			fingerprintHash: CH.toString_($.FingerprintHash),
+			previousFingerprintHash: CH.toString_($.PreviousFingerprintHash),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Minute.gte(utcSecondsParam("startTime")),
+			$.Minute.lt(utcSecondsParam("endTime")),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
+		])
+		.groupBy("fingerprintHash", "previousFingerprintHash")
+		.format("JSON")
+}
+
+/**
  * The first minute in a half-open window that holds any error for the org, or
  * no row. Lets the tick move a cursor that fell behind while the org was not
  * being scanned straight to where there is something to process.
@@ -1367,14 +1389,19 @@ export function errorFingerprintsQuery(opts: ErrorFingerprintsOpts) {
 		.format("JSON")
 }
 
-// Error Issue timeseries — per-fingerprint occurrence bucket
+// Error Issue timeseries: per-issue occurrence buckets
+
+/** An issue's whole fingerprint set: its own hash plus any merged-in or re-keyed ones. */
+export interface IssueFingerprintsOpts {
+	readonly fingerprintHashes: readonly string[]
+}
 
 export interface ErrorIssueTimeseriesOutput {
 	readonly bucket: DateTime.Utc
 	readonly count: number
 }
 
-export function errorIssueTimeseriesQuery() {
+export function errorIssueTimeseriesQuery(opts: IssueFingerprintsOpts) {
 	return from(ErrorEvents)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
@@ -1382,7 +1409,7 @@ export function errorIssueTimeseriesQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
@@ -1404,7 +1431,7 @@ export interface ErrorIssueSampleTracesOutput {
 	readonly durationMicros: number
 }
 
-export function errorIssueSampleTracesQuery(opts: { limit?: number }) {
+export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limit?: number }) {
 	return from(ErrorEvents)
 		.select(($) => ({
 			traceId: $.TraceId,
@@ -1416,7 +1443,7 @@ export function errorIssueSampleTracesQuery(opts: { limit?: number }) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
 		])
@@ -1445,7 +1472,7 @@ export const ErrorIssueVersionsSinceOutputSchema = Schema.Struct({
 })
 export type ErrorIssueVersionsSinceOutput = Schema.Schema.Type<typeof ErrorIssueVersionsSinceOutputSchema>
 
-export function errorIssueVersionsSinceQuery(opts: { limit?: number } = {}) {
+export function errorIssueVersionsSinceQuery(opts: IssueFingerprintsOpts & { limit?: number }) {
 	return (
 		from(ErrorEvents)
 			.select(($) => ({
@@ -1454,7 +1481,7 @@ export function errorIssueVersionsSinceQuery(opts: { limit?: number } = {}) {
 			}))
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
-				$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
+				fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
 				$.Timestamp.gte(utcSecondsParam("startTime")),
 				$.Timestamp.lte(utcSecondsParam("endTime")),
 			])
@@ -1468,7 +1495,7 @@ export function errorIssueVersionsSinceQuery(opts: { limit?: number } = {}) {
 	)
 }
 
-export function errorIssueEnvironmentsQuery(opts: { limit?: number } = {}) {
+export function errorIssueEnvironmentsQuery(opts: IssueFingerprintsOpts & { limit?: number }) {
 	return from(ErrorEvents)
 		.select(($) => ({
 			name: $.DeploymentEnv,
@@ -1476,7 +1503,7 @@ export function errorIssueEnvironmentsQuery(opts: { limit?: number } = {}) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
 			$.Timestamp.lte(utcSecondsParam("endTime")),
 			$.DeploymentEnv.neq(""),

@@ -24,6 +24,7 @@ import {
 	Schema,
 	Tracer,
 	String as Str,
+	DateTime,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
@@ -1044,7 +1045,10 @@ describe("AlertsService claim fence", () => {
 				// the group the second tick had already resolved.
 				assert.sameMembers(
 					Arr.map(incidents, (incident) => incident.resolvedAt),
-					[new Date(firstClaimAt).toISOString(), new Date(secondClaimAt).toISOString()],
+					[
+						DateTime.formatIso(DateTime.makeUnsafe(firstClaimAt)),
+						DateTime.formatIso(DateTime.makeUnsafe(secondClaimAt)),
+					],
 				)
 				const resolveEvents = Arr.filter(
 					(yield* alerts.listDeliveryEvents(orgId)).events,
@@ -1056,7 +1060,8 @@ describe("AlertsService claim fence", () => {
 				)
 
 				const lateGroup = incidents.find(
-					(incident) => incident.resolvedAt === new Date(secondClaimAt).toISOString(),
+					(incident) =>
+						incident.resolvedAt === DateTime.formatIso(DateTime.makeUnsafe(secondClaimAt)),
 				)!.groupKey
 				const lateState = yield* Effect.promise(() =>
 					queryFirstRow<{ lastEvaluatedAt: Date | null; consecutiveHealthy: number }>(

@@ -242,9 +242,11 @@ const event = (
 		// One tag under two types: the SDK reads its env where the bridge provides the Worker's.
 		const services = yield* Layer.buildWithScope(
 			Layer.mergeAll(
-				MapleCloudflareSDK.make(workerTelemetryConfig({ serviceName: "maple-api" })).requestLayer,
+				MapleCloudflareSDK.make(
+					workerTelemetryConfig({ serviceName: "maple-api" }),
+				).requestLayer.pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
 				Layer.succeed(Cloudflare.WorkerEnvironment, env),
-			).pipe(Layer.provide(Layer.succeed(MapleCloudflareSDK.WorkerEnvironment, env))),
+			),
 			request,
 		)
 		// Alchemy currently erases this helper's return type to any. Restore its boundary contract.

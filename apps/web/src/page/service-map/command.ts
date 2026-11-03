@@ -65,7 +65,7 @@ const PrefsJson = Schema.fromJsonString(ViewPrefs)
 
 /** Undecodable entries fall back to the defaults, as the atoms do. */
 const readJson = <A>(key: string, schema: Schema.Decoder<A>): Option.Option<A> =>
-	Option.flatMap(readLocalStorage(key), (raw) => Schema.decodeUnknownOption(schema)(raw))
+	Option.flatMap(readLocalStorage(key), (raw) => Schema.decodeOption(schema)(raw))
 
 export const ReadStored = Command.define("ReadServiceMapStored", {
 	args: { orgId: Schema.String },

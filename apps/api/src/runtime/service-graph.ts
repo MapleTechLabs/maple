@@ -34,6 +34,7 @@ import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAna
 import { AiTriageService } from "@maple/backend/services/errors/AiTriageService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
@@ -180,6 +181,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	InvestigationService.layer,
 	ErrorActorsService.layer,
 	ErrorIssueWorkflowService.layer,
+	ErrorIssueMergeService.layer,
 	ErrorPolicyService.layer,
 	ErrorIssueReadModelsService.layer,
 	ErrorsService.layer,

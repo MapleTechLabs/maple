@@ -13,6 +13,7 @@
 //     --scratch-root <s> --keep <n> [--block-ms <n>]
 
 import { writeFileSync, existsSync, mkdirSync } from "node:fs"
+import { join } from "node:path"
 import { runArchiveGc } from "@maple/local-server/archives/gc"
 
 interface Args {
@@ -47,8 +48,6 @@ const writeMarker = (markerDir: string, boundary: string): void => {
 	mkdirSync(markerDir, { recursive: true })
 	writeFileSync(join(markerDir, "paused"), `${boundary}\n${process.pid}\n${new Date().toISOString()}\n`)
 }
-
-const join = (require("node:path") as typeof import("node:path")).join
 
 const BLOCK = (ms: number): Promise<void> =>
 	new Promise((resolve) => {

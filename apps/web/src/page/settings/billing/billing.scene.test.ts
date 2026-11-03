@@ -13,14 +13,14 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const customer = Schema.decodeUnknownSync(BillingCustomer)({
+const customer = Schema.decodeSync(BillingCustomer)({
 	id: "org_acme",
 	subscriptions: [
 		{ planId: "startup", status: "active", currentPeriodStart: 0, currentPeriodEnd: 30 * 86_400_000 },
 	],
 })
 
-const profile = Schema.decodeUnknownSync(BillingProfile)({
+const profile = Schema.decodeSync(BillingProfile)({
 	linked: true,
 	name: "Acme Shop Ltd",
 	address: { line1: "1 Market Street", city: "London", postalCode: "EC1A 1BB", country: "GB" },
@@ -29,7 +29,7 @@ const profile = Schema.decodeUnknownSync(BillingProfile)({
 
 const NOW = 10 * 86_400_000
 
-const standalone = Schema.decodeUnknownSync(BillingAccount)({
+const standalone = Schema.decodeSync(BillingAccount)({
 	orgId: "org_acme",
 	role: "standalone",
 	billingOrg: { orgId: "org_acme", name: "Acme", imageUrl: null },
@@ -76,7 +76,7 @@ describe("billing tab", () => {
 	})
 
 	test("a signal with bytes dropped by rules says so under its usage", () => {
-		const stats = Schema.decodeUnknownSync(V2IngestRuleStats)({
+		const stats = Schema.decodeSync(V2IngestRuleStats)({
 			object: "ingest_rule_stats",
 			start_time: "1970-01-01T00:00:00.000Z",
 			end_time: "1970-01-11T00:00:00.000Z",

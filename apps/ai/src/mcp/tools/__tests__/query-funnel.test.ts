@@ -176,7 +176,7 @@ describe("productEventsFunnel (observability helper)", () => {
 	]
 	const compiledSql: string[] = []
 	const executor = Context.make(WarehouseExecutor, {
-		orgId: Schema.decodeUnknownSync(OrgId)("org_test"),
+		orgId: Schema.decodeSync(OrgId)("org_test"),
 		query: () => Effect.succeed({ data: [] }),
 		compiledQuery: <T>(compiled: CH.CompiledQueryInput<T>) => {
 			compiledSql.push(compiledQueryOf(compiled).sql)

@@ -44,7 +44,11 @@ export function ingestEndpointForRegion(region: unknown): string {
 	}
 	const parsed = parseRegion(region)
 	if (parsed) return INGEST_ENDPOINTS[parsed]
-	const label = String(region)
+	// An object would print "[object Object]"; name its type instead.
+	const label =
+		typeof region === "string" || typeof region === "number" || typeof region === "boolean"
+			? String(region)
+			: `<${typeof region}>`
 	if (!warnedRegions.has(label)) {
 		warnedRegions.add(label)
 		console.warn(

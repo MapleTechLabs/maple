@@ -51,6 +51,9 @@ import { migration_0049_service_map_db_edges_minutely } from "./0049_service_map
 import { migration_0050_security_telemetry } from "./0050_security_telemetry"
 import { migration_0051_error_fingerprint_fuzz_fixes } from "./0051_error_fingerprint_fuzz_fixes"
 import { migration_0052_error_fingerprint_json_frames } from "./0052_error_fingerprint_json_frames"
+import { migration_0053_error_fingerprint_interleaved_values } from "./0053_error_fingerprint_interleaved_values"
+import { migration_0054_error_custom_fingerprint } from "./0054_error_custom_fingerprint"
+import { migration_0055_error_fingerprint_v4 } from "./0055_error_fingerprint_v4"
 import { Array as Arr } from "effect"
 
 /**
@@ -135,6 +138,9 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0050_security_telemetry,
 	migration_0051_error_fingerprint_fuzz_fixes,
 	migration_0052_error_fingerprint_json_frames,
+	migration_0053_error_fingerprint_interleaved_values,
+	migration_0054_error_custom_fingerprint,
+	migration_0055_error_fingerprint_v4,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

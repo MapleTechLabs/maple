@@ -48,6 +48,7 @@ import {
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 	planWidgetRequest,
+	QueryEngineExecuteRequest,
 	rawSqlRowsForDisplay,
 	type PlannedWidgetRequest,
 	type VariableValues,
@@ -515,7 +516,14 @@ export class DashboardWidgetDataService extends Context.Service<
 				[...byQuery.values()],
 				({ query, names }) =>
 					queryEngine
-						.execute(tenant, { startTime: window.startTime, endTime: window.endTime, query })
+						.execute(
+							tenant,
+							new QueryEngineExecuteRequest({
+								startTime: window.startTime,
+								endTime: window.endTime,
+								query,
+							}),
+						)
 						.pipe(
 							Effect.map((response) =>
 								dashboardVariableOptionsFromResult(query, response.result),

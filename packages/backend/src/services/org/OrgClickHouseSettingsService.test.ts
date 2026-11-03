@@ -207,7 +207,7 @@ describe("isRetryableUpstream", () => {
 layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (it) => {
 	it.effect("uses manual redirects and rejects every 3xx without following it", () =>
 		Effect.gen(function* () {
-			let redirectMode: RequestRedirect | undefined
+			let redirectMode: RequestInit["redirect"]
 			let calls = 0
 			const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 				calls += 1

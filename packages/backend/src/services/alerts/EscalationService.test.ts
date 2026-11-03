@@ -199,7 +199,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule())
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.deepStrictEqual(result, { processed: 1, sent: 1, skipped: 0, failed: 0, retried: 0 })
 			assert.lengthOf(calls, 1)
@@ -231,7 +231,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule(), false)
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.deepStrictEqual(result, { processed: 1, sent: 0, skipped: 1, failed: 0, retried: 0 })
 			assert.lengthOf(calls, 0)
@@ -250,7 +250,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy([{ severity: "critical", destinationIds: [randomUUID()] }])
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.strictEqual(result.skipped, 1)
 			assert.lengthOf(calls, 0)
@@ -268,7 +268,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(["not a rule shape"])
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.deepStrictEqual(result, { processed: 1, sent: 0, skipped: 1, failed: 0, retried: 0 })
 			assert.lengthOf(calls, 0)
@@ -287,7 +287,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule({ minConfidence: "high" }))
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.strictEqual(result.skipped, 1)
 			assert.lengthOf(calls, 0)
@@ -305,7 +305,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule({ minConfidence: "high" }))
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.strictEqual(result.sent, 1)
 			assert.lengthOf(calls, 1)
@@ -321,7 +321,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule())
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.deepStrictEqual(result, { processed: 1, sent: 1, skipped: 0, failed: 0, retried: 0 })
 			assert.lengthOf(calls, 1)
@@ -339,7 +339,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule())
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.deepStrictEqual(result, { processed: 1, sent: 0, skipped: 1, failed: 0, retried: 0 })
 			assert.lengthOf(calls, 0)
@@ -366,7 +366,7 @@ describe("EscalationService.runEscalationTick", () => {
 			)
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.deepStrictEqual(result, { processed: 1, sent: 0, skipped: 1, failed: 0, retried: 0 })
 			assert.lengthOf(calls, 0)
@@ -389,7 +389,7 @@ describe("EscalationService.runEscalationTick", () => {
 			yield* seedPolicy(highRule())
 
 			const service = yield* EscalationService
-			const result = yield* service.runEscalationTick()
+			const result = yield* service.runEscalationTick
 
 			assert.deepStrictEqual(result, { processed: 1, sent: 0, skipped: 0, failed: 1, retried: 0 })
 			assert.lengthOf(calls, 1)
@@ -397,7 +397,7 @@ describe("EscalationService.runEscalationTick", () => {
 			assert.strictEqual(rows[0]?.status, "sent")
 			assert.strictEqual(rows[0]?.attempts, 1)
 
-			const second = yield* service.runEscalationTick()
+			const second = yield* service.runEscalationTick
 			assert.deepStrictEqual(second, { processed: 0, sent: 0, skipped: 0, failed: 0, retried: 0 })
 			assert.lengthOf(calls, 1)
 		}).pipe(Effect.provide(layer))
@@ -413,7 +413,7 @@ describe("EscalationService.runEscalationTick", () => {
 
 			const service = yield* EscalationService
 
-			const first = yield* service.runEscalationTick()
+			const first = yield* service.runEscalationTick
 			assert.strictEqual(first.retried, 1)
 			let rows = yield* loadEscalations
 			assert.strictEqual(rows[0]?.status, "queued")
@@ -427,10 +427,10 @@ describe("EscalationService.runEscalationTick", () => {
 				},
 			])
 
-			const second = yield* service.runEscalationTick()
+			const second = yield* service.runEscalationTick
 			assert.strictEqual(second.retried, 1)
 
-			const third = yield* service.runEscalationTick()
+			const third = yield* service.runEscalationTick
 			assert.strictEqual(third.failed, 1)
 			rows = yield* loadEscalations
 			assert.strictEqual(rows[0]?.status, "failed")

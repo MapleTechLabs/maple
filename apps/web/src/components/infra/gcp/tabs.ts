@@ -59,7 +59,8 @@ export function formatGcpValue(format: GcpColumnFormat, value: number | undefine
 			return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 		case "cores":
 			// Most containers use a fraction of a core: millicores, as Kubernetes writes them.
-			if (value >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+			if (Math.round(value * 1000) >= 1000)
+				return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 			return value > 0 && value < 0.001 ? "<1m" : `${Math.round(value * 1000)}m`
 		case "percent":
 			return formatPercent(value)

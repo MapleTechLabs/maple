@@ -208,7 +208,7 @@ const resolvePage = Effect.fnUntraced(function* (tool: string, orgId: OrgId, ref
 
 const decodeIncidentId = (ref: string) => {
 	const value = Str.trim(ref)
-	return Schema.decodeUnknownEffect(StatusPageIncidentId)(
+	return Schema.decodeEffect(StatusPageIncidentId)(
 		decodePublicId(PublicIdPrefixes.statusPageIncident, value) ?? value,
 	).pipe(
 		Effect.mapError(

@@ -19,17 +19,17 @@ import { PrReviewAnalyticsService } from "./PrReviewAnalyticsService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_review_analytics")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
-const REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
-const OTHER_REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
+const ORG = Schema.decodeSync(OrgId)("org_review_analytics")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
+const REPO = Schema.decodeSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
+const OTHER_REPO = Schema.decodeSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
 const reviewId = (n: number) =>
-	Schema.decodeUnknownSync(PrReviewId)(`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(n))}`)
+	Schema.decodeSync(PrReviewId)(`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(n))}`)
 
 const DAY = 86_400_000
 const START = Date.UTC(2026, 8, 1)
 const at = (days: number, hours = 0) => START + days * DAY + hours * 3_600_000
-const INSTALLATION = Schema.decodeUnknownSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
+const INSTALLATION = Schema.decodeSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
 const SHA = Str.repeat(40)("a")
 
 const report = (verdict: "clean" | "issues", confidence: number, severities: ReadonlyArray<string>) =>
@@ -89,7 +89,7 @@ const seed = Effect.gen(function* () {
 		orgId: input.orgId ?? ORG,
 		repositoryId: input.repositoryId ?? REPO,
 		number: input.number,
-		headSha: Schema.decodeUnknownSync(GitCommitSha)(Str.slice(0, 39)(SHA) + String(input.n % 10)),
+		headSha: Schema.decodeSync(GitCommitSha)(Str.slice(0, 39)(SHA) + String(input.n % 10)),
 		url: `https://github.com/acme/web/pull/${input.number}`,
 		title: `PR ${input.number}`,
 		authorLogin: input.author,
@@ -341,7 +341,7 @@ describe("PrReviewAnalyticsService", () => {
 							orgId: ORG,
 							repositoryId: REPO,
 							number: 12,
-							headSha: Schema.decodeUnknownSync(GitCommitSha)(SHA),
+							headSha: Schema.decodeSync(GitCommitSha)(SHA),
 							url: "https://github.com/acme/web/pull/12",
 							title: "PR 12",
 							authorLogin: "aaron",

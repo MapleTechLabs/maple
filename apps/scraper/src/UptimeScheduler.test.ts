@@ -75,14 +75,13 @@ const harnessLayer = (harness: Harness) =>
 		Layer.provide(
 			Layer.mergeAll(
 				Layer.succeed(ApiClient, {
-					listTargets: () => Effect.succeed([]),
+					listTargets: Effect.succeed([]),
 					reportResults: () => Effect.void,
-					listUptimeTargets: () =>
-						Effect.suspend(() =>
-							harness.listFails
-								? Effect.fail(new ApiRequestError({ message: "api down", status: 503 }))
-								: Effect.succeed(harness.targets),
-						),
+					listUptimeTargets: Effect.suspend(() =>
+						harness.listFails
+							? Effect.fail(new ApiRequestError({ message: "api down", status: 503 }))
+							: Effect.succeed(harness.targets),
+					),
 					reportUptimeResults: (results) => Effect.sync(() => void harness.reported.push(results)),
 				}),
 				Layer.succeed(ScraperEnv, testEnv),

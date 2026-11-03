@@ -16,13 +16,16 @@ const BASE_URL = "http://127.0.0.1:4318"
 const httpWith = (request: typeof fetch) =>
 	FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, request)))
 
+const requestUrl = (input: string | URL | Request): string =>
+	typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+
 const stubFetch = (handler: (url: string, init?: RequestInit) => Response): typeof fetch =>
 	(async (input: string | URL | Request, init?: RequestInit) =>
-		handler(String(input), init)) as typeof fetch
+		handler(requestUrl(input), init)) as typeof fetch
 
 // The Effect HttpClient hands fetch a `Uint8Array` body, so decode rather than stringify.
 const bodyText = (body: RequestInit["body"]) =>
-	body instanceof Uint8Array ? new TextDecoder().decode(body) : String(body ?? "{}")
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : "{}"
 
 const stubLocalServer = (rows: ReadonlyArray<Record<string, unknown>>) => {
 	const requests: Array<{ url: string; sql: string }> = []

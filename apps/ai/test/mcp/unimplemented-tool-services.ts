@@ -9,6 +9,7 @@ import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesServ
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
@@ -44,6 +45,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(ErrorActorsService)({}),
 	Layer.mock(ErrorIssueReadModelsService)({}),
 	ErrorIssueWorkflowService.layer,
+	Layer.mock(ErrorIssueMergeService)({}),
 	ErrorPolicyService.layer,
 	Layer.mock(ErrorsService)({}),
 	Layer.mock(IssueFixVerificationService)({}),

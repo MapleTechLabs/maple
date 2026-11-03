@@ -5,7 +5,7 @@ import { BTreeIndex } from "@tanstack/db"
 import type { ElectricCollectionUtils, Txid } from "@tanstack/electric-db-collection"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
 import { createCollection as tanstackCreateCollection } from "@tanstack/db"
-import { Effect, type ManagedRuntime, Schema, String as Str } from "effect"
+import { Effect, type ManagedRuntime, Random, Schema, String as Str } from "effect"
 import { AwaitTxIdError, InvalidTxIdError, TxIdTimeoutError } from "./errors"
 import { convertDeleteHandler, convertInsertHandler, convertUpdateHandler } from "./handlers"
 import type { BackoffConfig, EffectElectricCollectionConfig } from "./types"
@@ -167,7 +167,10 @@ function createBackoffOnError(
 			return
 		}
 
-		const delay = backoffConfig.jitter ? currentDelay * (0.5 + Math.random()) : currentDelay
+		const baseDelay = currentDelay
+		const delay = backoffConfig.jitter
+			? await Effect.runPromise(Effect.map(Random.next, (r) => baseDelay * (0.5 + r)))
+			: baseDelay
 
 		logVia(runtime, Effect.logWarning("Connection error, retrying"), {
 			collectionId,
@@ -178,7 +181,7 @@ function createBackoffOnError(
 			cause: error,
 		})
 
-		await new Promise((resolve) => setTimeout(resolve, delay))
+		await Effect.runPromise(Effect.sleep(delay))
 
 		currentDelay = Math.min(currentDelay * backoffConfig.multiplier, backoffConfig.maxDelayMs)
 

@@ -21,6 +21,7 @@ const BUSY = {
 	Heartbeat: "heartbeat",
 	Release: "release",
 	SetSeverity: "severity",
+	Unmerge: "unmerge",
 } satisfies Readonly<Record<IssueWrite["_tag"], Busy>>
 
 /** `useMutationAction`'s failure toast: the title, the error's user-facing message. */
@@ -30,6 +31,7 @@ const ERROR_TITLE = {
 	Heartbeat: "Couldn't extend lease",
 	Release: "Couldn't release issue",
 	SetSeverity: "Couldn't change severity",
+	Unmerge: "Couldn't unmerge issue",
 } satisfies Readonly<Record<IssueWrite["_tag"], string>>
 
 const successTitle = (write: IssueWrite, severity: string | null): string => {
@@ -44,6 +46,8 @@ const successTitle = (write: IssueWrite, severity: string | null): string => {
 			return "Released"
 		case "SetSeverity":
 			return severity === null ? "Severity cleared" : `Severity set to ${severity}`
+		case "Unmerge":
+			return "Unmerged"
 	}
 }
 
@@ -67,7 +71,7 @@ const settledBusy = (busy: Model["busy"], kind: Busy): Model["busy"] => {
 	return at === -1 ? busy : [...busy.slice(0, at), ...busy.slice(at + 1)]
 }
 
-const BUSY_PRIORITY: ReadonlyArray<Busy> = ["state", "severity", "heartbeat", "release", "claim"]
+const BUSY_PRIORITY: ReadonlyArray<Busy> = ["state", "severity", "heartbeat", "release", "claim", "unmerge"]
 
 /** The sidebar's busy state: the first in-flight kind by its priority chain. */
 export const sidebarBusy = (model: Model): Busy | null =>

@@ -465,10 +465,10 @@ const score = (argv: ReadonlyArray<string>) => {
 	const cases: { cases: ReadonlyArray<EvalCase> } = decodeTrustedJson(
 		readFileSync(join(dir, "corpus.json"), "utf8"),
 	)
-	const grades = Schema.decodeUnknownSync(
+	const grades = Schema.decodeSync(
 		Schema.fromJsonString(Schema.Array(Schema.Struct({ ...Grade.fields, runId: Schema.String }))),
 	)(readFileSync(join(dir, "grades.json"), "utf8"))
-	const results = Schema.decodeUnknownSync(
+	const results = Schema.decodeSync(
 		Schema.fromJsonString(
 			Schema.Array(
 				Schema.Struct({

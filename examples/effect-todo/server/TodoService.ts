@@ -347,7 +347,7 @@ export class TodoService extends Context.Service<TodoService>()("@maple-examples
 		})
 
 		return {
-			list: () => measured("list", list()),
+			list: measured("list", list()),
 			create: (title: string) => measured("create", create(title)),
 			toggle: (id: string) => measured("toggle", toggle(id)),
 			remove: (id: string) => measured("remove", remove(id)),

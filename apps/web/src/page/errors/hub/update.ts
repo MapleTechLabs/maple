@@ -362,6 +362,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		focusedId: null,
 		bulkSeverityMenu: Menu.init("errors-bulk-severity"),
 		bulkMoveMenu: Menu.init("errors-bulk-move"),
+		bulkMergeMenu: Menu.init("errors-bulk-merge"),
 		writingIds: [],
 		rowMenu: ContextMenu.init("errors-row-menu"),
 		rowMenuTarget: null,
@@ -621,6 +622,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearSelection: () => ({ model: { ...model, selectedIds: [], selectionAnchor: null } }),
 		GotBulkSeverityMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkSeverityMenu", inner),
 		GotBulkMoveMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkMoveMenu", inner),
+		GotBulkMergeMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkMergeMenu", inner),
 		CompletedHubWrite: ({ ids, write, isBulk, outcome }) =>
 			completedHubWrite(model, context, ids, write, isBulk, outcome, pageQuery),
 		ToggledAllRows: () => ({ model: { ...model, ...toggledAllRows(model) } }),

@@ -3,7 +3,7 @@ import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { buildTraceOverview, renderTraceOverview } from "../lib/render-trace"
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import { InspectTraceOutput } from "@maple/domain/mcp-outputs"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { inspectTrace } from "@maple/query-engine/observability"
@@ -50,7 +50,11 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan("maple.trace.id", trace_id)
 			const options = { errorsOnly: errors_only === true }
 			const timestampHint =
-				timestamp === undefined ? undefined : new Date(parseWarehouseDateTime(timestamp))
+				timestamp === undefined
+					? undefined
+					: Option.getOrUndefined(
+							Option.map(DateTime.make(parseWarehouseDateTime(timestamp)), DateTime.toDateUtc),
+						)
 
 			const result = yield* withTenantExecutor(inspectTrace(trace_id, { timestampHint })).pipe(
 				Effect.catchTags({

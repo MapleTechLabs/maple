@@ -100,6 +100,8 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 		id: issue.id,
 		kind: issue.kind,
 		fingerprintHash: issue.fingerprint_hash,
+		// Absent from an API deployed before merges existed: the issue owns its own hash only.
+		fingerprintHashes: issue.fingerprint_hashes ?? [issue.fingerprint_hash],
 		serviceName: issue.service_name,
 		exceptionType: issue.exception_type,
 		exceptionMessage: issue.exception_message,
@@ -125,6 +127,7 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 		resolvedVersions: issue.resolved_versions,
 		snoozeUntil: asIsoOrNull(issue.snooze_until),
 		archivedAt: asIsoOrNull(issue.archived_at),
+		mergedIntoIssueId: issue.merged_into_issue_id ?? null,
 		hasOpenIncident: issue.has_open_incident,
 		commentCount: issue.comment_count,
 		openPullRequestCount: issue.open_pull_request_count,

@@ -7,7 +7,7 @@ const publicId = (n: number) =>
 	encodePublicId(PublicIdPrefixes.source, `0199a0e1-0000-7000-8000-00000000000${n}`)
 
 const source = (n: number, fields: Record<string, unknown> = {}) =>
-	Schema.decodeUnknownSync(V2Source)({
+	Schema.decodeSync(V2Source)({
 		id: publicId(n),
 		object: "source",
 		name: `Source ${n}`,

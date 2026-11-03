@@ -177,11 +177,11 @@ const foldInto = (
 				break
 			}
 			if (call !== undefined) {
-				message.toolCalls[index] = {
+				message.toolCalls[index] = new ChatToolCall({
 					...call,
 					output: event.output,
 					...(event.isError === true ? { isError: true } : undefined),
-				} as ChatToolCall
+				})
 			}
 			break
 		}
@@ -213,7 +213,7 @@ const settleUnfinished = (drafts: Drafts, messageId: string, nested?: Map<string
 		child?.messages.forEach((draft) => settleUnfinished(child, draft.id))
 		const task =
 			call.task?.status === "running" ? { ...call.task, status: "aborted" as const } : call.task
-		return { ...call, stopped: true, ...(task === undefined ? undefined : { task }) } as ChatToolCall
+		return new ChatToolCall({ ...call, stopped: true, ...(task === undefined ? undefined : { task }) })
 	})
 }
 
@@ -259,8 +259,12 @@ const foldTaskEvent = (
 
 	// `ChatToolCall` is the readonly wire type, so the call is rebuilt rather than mutated. Keying
 	// the nested transcript by task id rather than by object identity is what makes that safe.
+	// Plain on purpose: `task.messages` must stay the live `child.messages`, which a class
+	// constructor would copy. Like the top-level drafts, the HTTP edge rebuilds real instances.
+	// @effect-diagnostics-next-line schemaClassObjectLiteral:off
 	parent.toolCalls[index] = {
 		...parent.toolCalls[index],
+		// @effect-diagnostics-next-line schemaClassObjectLiteral:off
 		task: {
 			id: ref.id,
 			agent: ref.agent,

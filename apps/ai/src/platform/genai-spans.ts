@@ -539,7 +539,7 @@ export const toolCallJson = (value: unknown): string => {
 	if (Predicate.isString(value)) return resultJson(value)
 	if (!Predicate.isObjectOrArray(value)) return encodeJson({ result: value })
 	const json = stringify(value)
-	if (json === undefined) return resultJson(String(value))
+	if (json === undefined) return resultJson("[unserializable value]")
 	if (json.length <= TOOL_JSON_BUDGET) return json
 	return withinToolBudget(json, (prefix) => encodeJson({ truncated: true, prefix }))
 }

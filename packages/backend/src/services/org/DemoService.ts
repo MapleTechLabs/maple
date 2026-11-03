@@ -1,5 +1,5 @@
 import { DemoSeedError, DemoSeedResponse } from "@maple/domain/http"
-import { Array as Arr, Context, Effect, Layer } from "effect"
+import { Array as Arr, Context, Effect, Layer, Random } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -43,10 +43,12 @@ export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
 					})
 				}
 				const safeHours = Math.max(1, Math.min(24, Math.floor(hours)))
+				const random = yield* Random.Random
 				const { traceRows, logRows, metricGaugeRows, metricSumRows } = generateDemoRows({
 					orgId: tenant.orgId,
 					hours: safeHours,
 					ratePerHour: DEMO_RATE_PER_HOUR,
+					random: () => random.nextDoubleUnsafe(),
 				})
 
 				const ingestAll = (

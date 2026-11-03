@@ -286,7 +286,7 @@ describe("runAudit, local checks", () => {
 		expect([
 			keys?.status,
 			keys?.local_checks[0]?.method,
-			ledgerErrors(Schema.decodeUnknownSync(Ledger)(recorded.ledger)),
+			ledgerErrors(Schema.decodeSync(Ledger)(recorded.ledger)),
 		]).toEqual(["candidate", "local", []])
 		expect(Arr.map(result.findings, (f) => f.verdict)).toEqual(["confirmed"])
 		expect(
@@ -815,9 +815,7 @@ describe("runAudit, record verifier failures", () => {
 		const keys = result.ledger.find((u) => u.coverage_id === idOf(KEYS))
 		expect(keys?.not_rechecked).toEqual([FINGERPRINT])
 		expect(ledgerErrors(result.ledger)).toEqual([])
-		expect(Schema.decodeUnknownSync(Ledger)(Schema.encodeSync(Ledger)(result.ledger))).toEqual(
-			result.ledger,
-		)
+		expect(Schema.decodeSync(Ledger)(Schema.encodeSync(Ledger)(result.ledger))).toEqual(result.ledger)
 		expect(result.incompleteReasons).toEqual(["record_verification_incomplete"])
 		expect(
 			Arr.some(result.gaps, (gap) =>

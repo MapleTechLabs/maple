@@ -229,7 +229,7 @@ export const runScripted = (
 				const scripted = answer(invocation)
 				return typeof scripted === "string"
 					? Effect.succeed({ text: scripted })
-					: scripted instanceof AuditAgentError
+					: Schema.is(AuditAgentError)(scripted)
 						? Effect.fail(scripted)
 						: Effect.succeed(scripted)
 			}),

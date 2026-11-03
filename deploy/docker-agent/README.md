@@ -16,7 +16,7 @@ What it collects:
 All signals export over OTLP HTTP to Maple's ingest gateway, which owns ingest-key auth and org
 enrichment — same contract as the k8s chart. The end-user install guide (one-liner + compose
 variant, what lights up in the product) lives at
-[`apps/landing/src/content/docs/guides/docker-infrastructure.md`](../../apps/landing/src/content/docs/guides/docker-infrastructure.md);
+[`apps/landing/src/content/docs/infrastructure/docker.md`](../../apps/landing/src/content/docs/infrastructure/docker.md);
 the engineering end-to-end (attributes → queries → UI, and the design decisions) at
 [`docs/docker-container-monitoring.md`](../../docs/docker-container-monitoring.md).
 

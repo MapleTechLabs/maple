@@ -177,7 +177,7 @@ const mentionedIds = (text: string): ReadonlyArray<string> =>
  * refuses. Hazel ids are UUIDs, so nothing is lost.
  */
 const decodeConversationKey = (channelId: string) =>
-	Schema.decodeUnknownOption(ChatConversationKey)(Str.replaceAll("-", "")(channelId))
+	Schema.decodeOption(ChatConversationKey)(Str.replaceAll("-", "")(channelId))
 
 /** The thread when the turn is in one, the channel otherwise — on Hazel both are channel ids. */
 const channelOf = (target: ChatTarget): string => target.threadId ?? target.channelId
@@ -275,7 +275,7 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			response.json.pipe(
 				Effect.mapError((cause) => failed(operation, "Hazel's reply could not be read", { cause })),
 				Effect.flatMap((json) =>
-					Schema.decodeUnknownEffect(schema)(json).pipe(
+					Schema.decodeEffect(schema)(json).pipe(
 						Effect.mapError(() => failed(operation, `Hazel answered with ${what}`)),
 					),
 				),

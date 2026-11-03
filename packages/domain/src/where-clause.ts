@@ -154,6 +154,8 @@ export interface ParseWhereClauseOptions {
 	readonly orGroups?: boolean
 }
 
+const isParseWarning = Schema.is(WhereClauseParseWarning)
+
 const unsupported = (part: string) =>
 	new WhereClauseParseWarning({ message: `Unsupported clause syntax ignored: ${part}`, clause: part })
 
@@ -258,7 +260,7 @@ export function parseWhereClause(
 		const inner = unwrapParentheses(part)
 		if (inner === undefined) {
 			const parsed = parseSimpleClause(part)
-			if (parsed instanceof WhereClauseParseWarning) warnings.push(parsed)
+			if (isParseWarning(parsed)) warnings.push(parsed)
 			else clauses.push(parsed)
 			continue
 		}
@@ -268,7 +270,7 @@ export function parseWhereClause(
 		const members = splitOnKeyword(inner, "OR")
 		if (members.length === 1) {
 			const parsed = parseSimpleClause(inner)
-			if (parsed instanceof WhereClauseParseWarning) warnings.push(unsupported(part))
+			if (isParseWarning(parsed)) warnings.push(unsupported(part))
 			else clauses.push(parsed)
 			continue
 		}
@@ -277,10 +279,7 @@ export function parseWhereClause(
 			continue
 		}
 		const parsedMembers = Arr.map(members, parseSimpleClause)
-		const valid = Arr.filter(
-			parsedMembers,
-			(m): m is ParsedClause => !(m instanceof WhereClauseParseWarning),
-		)
+		const valid = Arr.filter(parsedMembers, (m): m is ParsedClause => !isParseWarning(m))
 		if (valid.length !== parsedMembers.length) {
 			warnings.push(
 				new WhereClauseParseWarning({

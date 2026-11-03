@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, DateTime } from "effect"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -18,7 +18,7 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const NOW = Date.now()
 const DAY_MS = 24 * 60 * 60 * 1000
 
-const insertEvent = (testDb: TestDb, id: string, orgId: string, occurredAt: Date) =>
+const insertEvent = (testDb: TestDb, id: string, orgId: string, occurredAtMs: number) =>
 	Effect.promise(() =>
 		executeSql(
 			testDb,
@@ -27,7 +27,7 @@ const insertEvent = (testDb: TestDb, id: string, orgId: string, occurredAt: Date
 			  external_id, title, source, occurred_at, created_at)
 			 VALUES ($1, $2, '', 'main-db', '', 'deploy_request', 'deploy_request.schema_applied',
 			         'schema_applied', $1, 'Deploy request', 'webhook', $3, $3)`,
-			[id, orgId, occurredAt.toISOString()],
+			[id, orgId, DateTime.formatIso(DateTime.makeUnsafe(occurredAtMs))],
 		),
 	)
 
@@ -46,10 +46,10 @@ describe("runPlanetScaleEventRetention", () => {
 	it.live("drops events past the 90-day window and keeps the rest", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			yield* insertEvent(testDb, "fresh", "org_1", new Date(NOW - 10 * DAY_MS))
-			yield* insertEvent(testDb, "edge", "org_1", new Date(NOW - 89 * DAY_MS))
-			yield* insertEvent(testDb, "stale", "org_1", new Date(NOW - 91 * DAY_MS))
-			yield* insertEvent(testDb, "ancient", "org_2", new Date(NOW - 400 * DAY_MS))
+			yield* insertEvent(testDb, "fresh", "org_1", NOW - 10 * DAY_MS)
+			yield* insertEvent(testDb, "edge", "org_1", NOW - 89 * DAY_MS)
+			yield* insertEvent(testDb, "stale", "org_1", NOW - 91 * DAY_MS)
+			yield* insertEvent(testDb, "ancient", "org_2", NOW - 400 * DAY_MS)
 
 			yield* runPlanetScaleEventRetention
 
@@ -66,7 +66,10 @@ describe("runPlanetScaleEventRetention", () => {
 				executeSql(
 					testDb,
 					"INSERT INTO planetscale_issue_receipts (org_id, event_id, processed_at) VALUES ('org_1', 'old', $1), ('org_1', 'recent', $2)",
-					[new Date(NOW - 91 * DAY_MS).toISOString(), new Date(NOW - 89 * DAY_MS).toISOString()],
+					[
+						DateTime.formatIso(DateTime.makeUnsafe(NOW - 91 * DAY_MS)),
+						DateTime.formatIso(DateTime.makeUnsafe(NOW - 89 * DAY_MS)),
+					],
 				),
 			)
 			yield* runPlanetScaleEventRetention
@@ -85,7 +88,7 @@ describe("runPlanetScaleEventRetention", () => {
 		return Effect.gen(function* () {
 			// Well under 20k: the cap probe must not fire, and nothing may be lost.
 			for (let i = 0; i < 5; i++) {
-				yield* insertEvent(testDb, `e${i}`, "org_1", new Date(NOW - i * 1000))
+				yield* insertEvent(testDb, `e${i}`, "org_1", NOW - i * 1000)
 			}
 			yield* runPlanetScaleEventRetention
 			assert.strictEqual((yield* countEvents(testDb, "org_1"))?.n, 5)

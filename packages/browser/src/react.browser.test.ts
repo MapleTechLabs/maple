@@ -84,13 +84,16 @@ describe("MapleErrorBoundary", () => {
 		vi.spyOn(console, "error").mockImplementation(() => {})
 		flushSync(() =>
 			root.render(
-				createElement(MapleErrorBoundary, {
-					fallback: ({ reset }: { reset: () => void }) => {
-						resetBoundary = reset
-						return createElement("p", null, "fallback")
+				createElement(
+					MapleErrorBoundary,
+					{
+						fallback: ({ reset }: { reset: () => void }) => {
+							resetBoundary = reset
+							return createElement("p", null, "fallback")
+						},
 					},
-					children: createElement(Broken),
-				}),
+					createElement(Broken),
+				),
 			),
 		)
 		expect(container.textContent).toBe("fallback")

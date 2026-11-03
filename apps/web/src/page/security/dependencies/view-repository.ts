@@ -260,8 +260,10 @@ const planPanel = (
 	plan: ReadonlyArray<UpgradeStep>,
 	notRunning: string,
 ): Html =>
-	panel(h, { className: "overflow-hidden" }, [
-		...(plan.length === 0
+	panel(
+		h,
+		{ className: "overflow-hidden" },
+		plan.length === 0
 			? [emptyMessage(h, {}, [emptyPlanLine(repository)])]
 			: [
 					typography(h, { size: "xs", tone: "muted", as: "p", className: stripClass("head") }, [
@@ -289,8 +291,8 @@ const planPanel = (
 							}),
 						),
 					]),
-				]),
-	])
+				],
+	)
 
 /** Beside the switcher: the tracked branch, the GitHub link and Scan now. */
 const repositoryActions = (h: H, model: Model, repository: DependencyScanRepository): ReadonlyArray<Html> => [

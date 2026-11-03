@@ -177,7 +177,7 @@ export const kpiRail = (
 				value: formatShare(share),
 				tone: share !== null && share < 1 ? "warn" : "neutral",
 				compact: true,
-				subline: `Over the last ${monitor.state.recent.length} checks`,
+				subline: `Over the last ${countLabel(monitor.state.recent.length, "check")}`,
 			}),
 		])
 	}
@@ -190,8 +190,8 @@ export const kpiRail = (
 			p50: recent.p50,
 			p95: recent.p95,
 			p99: recent.p99,
-			scope: `last ${monitor.state.recent.length} checks`,
-			subline: `last ${monitor.state.recent.length} checks`,
+			scope: `last ${countLabel(monitor.state.recent.length, "check")}`,
+			subline: `last ${countLabel(monitor.state.recent.length, "check")}`,
 		}),
 		onSome: (data) => ({
 			share: data.checks === 0 ? null : (data.checks - data.failures) / data.checks,

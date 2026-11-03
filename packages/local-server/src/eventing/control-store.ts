@@ -301,12 +301,10 @@ const asNumber = (value: number | bigint): number => {
 }
 
 const decodeProjection = (json: string): SignalProjectionSpec =>
-	decodeSignalProjectionSpec(Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json))
+	decodeSignalProjectionSpec(Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(json))
 
 const decodeEvent = (json: string): MapleCloudEvent => {
-	const validated = validateMapleCloudEvent(
-		Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(json),
-	)
+	const validated = validateMapleCloudEvent(Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(json))
 	if (Result.isFailure(validated)) throw validated.failure
 	return validated.success.event
 }

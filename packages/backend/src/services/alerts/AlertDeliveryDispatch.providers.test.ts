@@ -54,7 +54,7 @@ const unusedLinear: EffectTransportDeps["linear"] = {
 		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
 }
 
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const SENT_AT_MS = Date.parse("2026-06-02T00:00:00.000Z")
 const LINK = "https://web.localhost/alerts"
@@ -62,7 +62,7 @@ const CHAT = "https://web.localhost/alerts/rule_1"
 
 const destinationRow = (overrides: Partial<AlertDestinationRow> = {}): AlertDestinationRow => ({
 	id: DESTINATION_ID,
-	orgId: Schema.decodeUnknownSync(OrgId)("org_1"),
+	orgId: Schema.decodeSync(OrgId)("org_1"),
 	name: "Destination",
 	type: "webhook",
 	enabled: true,

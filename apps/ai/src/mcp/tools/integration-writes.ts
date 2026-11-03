@@ -281,7 +281,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 						Effect.fail(new McpInvalidInputError({ message: error.message, parameter: "url" })),
 					),
 					Effect.mapError((error) =>
-						error instanceof McpInvalidInputError
+						Schema.is(McpInvalidInputError)(error)
 							? error
 							: queryError("create_scrape_target")(error),
 					),
@@ -341,7 +341,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 						Effect.fail(new McpInvalidInputError({ message: error.message })),
 					),
 					Effect.mapError((error) =>
-						error instanceof McpInvalidInputError
+						Schema.is(McpInvalidInputError)(error)
 							? error
 							: queryError("update_scrape_target")(error),
 					),

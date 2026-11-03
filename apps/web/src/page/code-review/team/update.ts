@@ -88,7 +88,12 @@ export const init = (
 		frame: frame.frame,
 		team: Keyed.idle(),
 		teamCache: carried.retained.team,
-		activityCard: HoverCard.init(ACTIVITY_CARD_ID, { openDelayMs: 80, side: "top", sideOffset: 6 }),
+		activityCard: HoverCard.init(ACTIVITY_CARD_ID, {
+			openDelayMs: 80,
+			side: "top",
+			sideOffset: 6,
+			interactive: false,
+		}),
 	}
 	return liftFrame(model, frame, context)
 }

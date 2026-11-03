@@ -249,7 +249,7 @@ describe("the typed outputs", () => {
 
 	it("encode through their schemas", () => {
 		const listing = changedFilesOutput("octo/shop", 7, [file("src/a.ts"), file("bun.lock")])
-		const decoded = Schema.decodeUnknownSync(PrChangedFilesOutput)(
+		const decoded = Schema.decodeSync(PrChangedFilesOutput)(
 			Schema.encodeUnknownSync(PrChangedFilesOutput)(listing),
 		)
 		assert.deepEqual(
@@ -257,7 +257,7 @@ describe("the typed outputs", () => {
 			["source", "lockfile"],
 		)
 		const diffs = fileDiffsOutput("octo/shop", 7, [file("src/a.ts")], ["src/a.ts", "nope.ts"])
-		const decodedDiffs = Schema.decodeUnknownSync(PrFileDiffOutput)(
+		const decodedDiffs = Schema.decodeSync(PrFileDiffOutput)(
 			Schema.encodeUnknownSync(PrFileDiffOutput)(diffs),
 		)
 		assert.deepEqual(decodedDiffs.notChanged, ["nope.ts"])

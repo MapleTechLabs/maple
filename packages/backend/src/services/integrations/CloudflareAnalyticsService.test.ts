@@ -14,7 +14,7 @@ import {
 	OAuthConnections,
 	OrgClickHouseSettings,
 } from "@maple/db/tables"
-import { Array as Arr, ConfigProvider, Effect, Layer, Metric, Schema, Tracer } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Metric, Schema, Tracer, DateTime } from "effect"
 import type { Types } from "effect"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
@@ -524,7 +524,7 @@ const seedConnection = (
 										accounts.map((account) => ({ id: account.id, name: account.name })),
 									)
 								: null,
-						connectedByUserId: Schema.decodeUnknownSync(UserId)("user_1"),
+						connectedByUserId: Schema.decodeSync(UserId)("user_1"),
 						scope,
 						accessTokenCiphertext: accessEnc.ciphertext,
 						accessTokenIv: accessEnc.iv,
@@ -767,7 +767,7 @@ describe("CloudflareAnalyticsService", () => {
 			const source = yield* Effect.promise(() =>
 				queryFirstRow<{ id: string }>(testDb, "SELECT id FROM sources WHERE platform = 'cloudflare'"),
 			)
-			const expectedSource = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+			const expectedSource = publicSourceId(Schema.decodeSync(SourceId)(source!.id))
 			const stamped = otlpCalls.flatMap((call) =>
 				call.payload.resourceMetrics.map(
 					(rm) =>
@@ -1320,7 +1320,7 @@ describe("CloudflareAnalyticsService", () => {
 	describe("zone selection", () => {
 		const SECOND_ZONE_ID = "zone-2"
 		const twoZones = [zoneFixture, { ...zoneFixture, id: SECOND_ZONE_ID, name: "beta.example" }]
-		const ADMIN = Schema.decodeUnknownSync(UserId)("user_admin")
+		const ADMIN = Schema.decodeSync(UserId)("user_admin")
 		const enabledByZone = loadStateRows.pipe(
 			Effect.map((rows) =>
 				Object.fromEntries(
@@ -1570,7 +1570,10 @@ describe("CloudflareAnalyticsService", () => {
 			)
 			// Pre-CAS this was nulled by the stale tick's unconditional release,
 			// letting a third tick overlap the successor.
-			assert.strictEqual(new Date(anchor?.lease_until ?? 0).getTime(), SUCCESSOR_LEASE.getTime())
+			assert.strictEqual(
+				DateTime.toEpochMillis(DateTime.makeUnsafe(anchor?.lease_until ?? 0)),
+				SUCCESSOR_LEASE.getTime(),
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, captured, { onGraphql })))
 	})
 
@@ -1601,7 +1604,7 @@ describe("CloudflareAnalyticsService", () => {
 			// skips instead of polling.
 			yield* seedStateRow({ dataset: "workers_invocations", leaseUntil: T0 + 3 * MIN })
 			const service = yield* CloudflareAnalyticsService
-			const result = yield* service.pollAllOrgs()
+			const result = yield* service.pollAllOrgs
 			assert.strictEqual(result.rowsIngested, 0)
 			assert.strictEqual(result.skipped, 1)
 			assert.strictEqual(result.perOrg.length, 1)
@@ -1624,7 +1627,7 @@ describe("CloudflareAnalyticsService", () => {
 				),
 			)
 			const service = yield* CloudflareAnalyticsService
-			const result = yield* service.pollAllOrgs()
+			const result = yield* service.pollAllOrgs
 			assert.strictEqual(result.perOrg.length, 0)
 			assert.strictEqual(result.rowsIngested, 0)
 

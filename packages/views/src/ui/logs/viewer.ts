@@ -21,7 +21,7 @@ const browserTimeZone = (): string => {
 const storedTimeZone = (raw: string | null): Option.Option<string> =>
 	Option.fromNullishOr(raw).pipe(
 		Option.map((value) =>
-			Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String))(value).pipe(
+			Schema.decodeOption(Schema.fromJsonString(Schema.String))(value).pipe(
 				Option.getOrElse(() => value),
 			),
 		),

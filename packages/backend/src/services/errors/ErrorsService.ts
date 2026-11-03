@@ -32,6 +32,7 @@ import {
 	ErrorFingerprintCandidates,
 	ErrorIssues,
 	ErrorIssueEvents,
+	ErrorIssueFingerprints,
 	type ErrorIssueRow,
 	ErrorIssueStates,
 	ErrorNotificationPolicies,
@@ -159,6 +160,8 @@ const ARCHIVED_RETENTION_DAYS = 90
 const RETENTION_PHASE_PERIOD_MS = 60_000
 const RETENTION_PHASE_EVERY_N_TICKS = 60
 const DAY_MS = 24 * 60 * 60 * 1000
+/** How long a pre-bump issue may go unseen before retention retires it; the tick re-keys live ones. */
+const FINGERPRINT_BUMP_GRACE_MS = 7 * DAY_MS
 const DEFAULT_LEASE_DURATION_MS = 30 * 60_000
 const SYSTEM_AGENT_NAME = SYSTEM_ERRORS_AGENT_NAME
 export interface ErrorsServiceApi {
@@ -215,7 +218,7 @@ export interface ErrorsServiceApi {
 			readonly deploymentEnv: string
 		},
 	) => Effect.Effect<void, ErrorPersistenceError>
-	readonly runTick: () => Effect.Effect<
+	readonly runTick: Effect.Effect<
 		{
 			readonly orgsProcessed: number
 			readonly issuesTouched: number
@@ -1276,12 +1279,51 @@ const make: Effect.Effect<
 			lastSeenMs: DateTime.toEpochMillis(raw.lastSeen),
 		}))
 
+		// The hash a fingerprint version bump replaced, so the issue it belonged to carries
+		// over. Without it a bump only opens new issues; that is the cost of a failed read.
+		const lineage =
+			rows.length === 0
+				? []
+				: yield* warehouse
+						.compiledQuery(
+							tenant,
+							CH.compile(
+								CH.errorFingerprintLineageQuery({
+									fingerprintHashes: Arr.map(rows, (row) => row.fingerprintHash),
+								}),
+								{
+									orgId,
+									// Lineage rows are stamped with their minute; a window can start mid-minute.
+									startTime: DateTime.makeUnsafe(
+										windowStartMs - (windowStartMs % TICK_MINUTE_MS),
+									),
+									endTime: DateTime.makeUnsafe(windowEndMs),
+								},
+							),
+							{ profile: "list", context: "errorFingerprintLineage" },
+						)
+						.pipe(
+							Effect.catch((error) =>
+								Effect.as(
+									Effect.logWarning("Error tick lineage read failed").pipe(
+										Effect.annotateLogs({ orgId, cause: error.message }),
+									),
+									[],
+								),
+							),
+						)
+		const previousByHash = Arr.groupBy(lineage, (row) => row.fingerprintHash)
+
 		const persistence = yield* dbExecute((db) =>
 			persistErrorTickWindow(db, {
 				orgId,
 				actorId: systemActor.id,
 				rows: Arr.map(rows, (row) => ({
 					fingerprintHash: row.fingerprintHash,
+					previousFingerprintHashes: Arr.map(
+						previousByHash[row.fingerprintHash] ?? [],
+						(entry) => entry.previousFingerprintHash,
+					),
 					serviceName: row.serviceName,
 					exceptionType: row.exceptionType,
 					exceptionMessage: row.exceptionMessage,
@@ -1410,12 +1452,11 @@ const make: Effect.Effect<
 
 		const { issuesArchived, issuesDeleted } = runRetention
 			? yield* Effect.gen(function* () {
-					// Issues left behind by a fingerprint-algorithm bump. Their hashes can
-					// never be produced again (v1 and v2 hashes cannot collide), so there is
-					// nothing to wait for: archive them on sight instead of holding a dead
-					// issue in `triage` until the resolved window retires it. Scoped to
-					// error-kind — alert and integration issues key off their own
-					// identifiers, not the ClickHouse fingerprint.
+					// Issues a fingerprint-algorithm bump left behind. One that still occurs is
+					// re-keyed onto its new hash by the tick and restamped, so only an issue
+					// quiet for FINGERPRINT_BUMP_GRACE_MS is retired here; if it comes back,
+					// the tick restores it. Error-kind only: alert and integration issues
+					// key off their own identifiers, not the ClickHouse fingerprint.
 					const staleFingerprintRows = yield* dbExecute((db) =>
 						db.run(
 							PG.update(ErrorIssues)
@@ -1424,6 +1465,7 @@ const make: Effect.Effect<
 									$.orgId.eq(orgId),
 									$.kind.eq("error"),
 									$.fingerprintVersion.lt(FINGERPRINT_VERSION),
+									$.lastSeenAt.lt(nowMs - FINGERPRINT_BUMP_GRACE_MS),
 									$.archivedAt.isNull(),
 								])
 								.returning("id"),
@@ -1497,6 +1539,55 @@ const make: Effect.Effect<
 									$.orgId.eq(orgId),
 									$.issueId.in_(...ids),
 								]),
+							),
+						)
+						// The issues merged into a purged one get back what they brought, as an unmerge
+						// hands it back: their own hash is their primary again, the rest their aliases.
+						const freed = yield* dbExecute((db) =>
+							db.run(
+								PG.from(ErrorIssues)
+									.select("id", "fingerprintHash")
+									.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
+							),
+						)
+						yield* Effect.forEach(
+							freed,
+							(issue) =>
+								dbExecute((db) =>
+									Effect.andThen(
+										db.run(
+											PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+												$.orgId.eq(orgId),
+												$.originIssueId.eq(issue.id),
+												$.fingerprintHash.eq(issue.fingerprintHash),
+											]),
+										),
+										db.run(
+											PG.update(ErrorIssueFingerprints)
+												.set({ issueId: issue.id, originIssueId: null })
+												.where(($) => [
+													$.orgId.eq(orgId),
+													$.originIssueId.eq(issue.id),
+												]),
+										),
+									),
+								),
+							{ discard: true },
+						)
+						// Whatever the purged issues still own stops landing anywhere.
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						yield* dbExecute((db) =>
+							db.run(
+								PG.update(ErrorIssues)
+									.set({ mergedIntoIssueId: null, updatedAt: nowMs })
+									.where(($) => [$.orgId.eq(orgId), $.mergedIntoIssueId.in_(...ids)]),
 							),
 						)
 						yield* dbExecute((db) =>
@@ -1704,7 +1795,7 @@ const make: Effect.Effect<
 	// Align to the latest completed minute. Per-org cursor leases serialize
 	// overlapping cron invocations; the cursor advances atomically with issue,
 	// incident, audit-event, and notification-outbox writes.
-	const runTick: ErrorsServiceApi["runTick"] = Effect.fn("ErrorsService.runTick")(function* () {
+	const runTick: ErrorsServiceApi["runTick"] = Effect.gen(function* () {
 		const nowMs = yield* Clock.currentTimeMillis
 		const cutoffMs = Math.floor(nowMs / TICK_MINUTE_MS) * TICK_MINUTE_MS - TICK_INGESTION_LAG_MS
 
@@ -1862,7 +1953,7 @@ const make: Effect.Effect<
 			retentionRan,
 			investigationsAbandoned,
 		}
-	})
+	}).pipe(Effect.withSpan("ErrorsService.runTick"))
 
 	return ErrorsService.of({
 		transitionIssue,

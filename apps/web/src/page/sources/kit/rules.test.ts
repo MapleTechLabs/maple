@@ -6,7 +6,7 @@ import { expiresAtOf, expiryChoicesOf, init, Message, rulesOutcome, update } fro
 import { SIGNALS } from "./shared"
 
 const source = (fields: Record<string, unknown> = {}) =>
-	Schema.decodeUnknownSync(V2Source)({
+	Schema.decodeSync(V2Source)({
 		id: encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000002"),
 		object: "source",
 		name: "Checkout API",

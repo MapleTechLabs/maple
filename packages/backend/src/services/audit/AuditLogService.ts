@@ -164,13 +164,15 @@ const logDenied = (event: AuditLogEvent) =>
  * succeeded must not 500 because its audit write did not — but let interrupts
  * propagate so fiber teardown never triggers a stray write.
  */
-const neverFail = (action: string) => (write: Effect.Effect<void, unknown>) =>
-	write.pipe(
-		Effect.catch((error) => Effect.logWarning("Audit log write failed", { action, cause: error })),
-		Effect.catchDefect((defect) =>
-			Effect.logWarning("Audit log write failed", { action, cause: defect }),
-		),
-	)
+const neverFail =
+	(action: string) =>
+	<E, R>(write: Effect.Effect<void, E, R>): Effect.Effect<void, never, R> =>
+		write.pipe(
+			Effect.catch((error) => Effect.logWarning("Audit log write failed", { action, cause: error })),
+			Effect.catchDefect((defect) =>
+				Effect.logWarning("Audit log write failed", { action, cause: defect }),
+			),
+		)
 
 /** Which optional filters bind, and the parameter values behind them. */
 const listQueryInputs = (orgId: OrgId, filters: AuditLogListFilters) => {
@@ -255,7 +257,9 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 			 * local dev, crons, and the consumer itself — none of which are
 			 * serving a response.
 			 */
-			const publish = (event: AuditLogEvent) =>
+			const publish = (
+				event: AuditLogEvent,
+			): Effect.Effect<void, Effect.Error<ReturnType<typeof writeDirect>> | AuditQueueSendError> =>
 				Option.isNone(queue)
 					? writeDirect(event)
 					: queue.value.sendBatch([{ body: encodeAuditLogEventSync(event) }]).pipe(

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, String as Str, Clock } from "effect"
 import { InvestigationFreeformSubject, InvestigationId, OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AiTriageSettings, Investigations } from "@maple/db/tables"
@@ -70,7 +70,7 @@ const seedSettings = (maxRunsPerDay: number, maxPassesPerDay: number) =>
 const seedStartedRuns = (count: number, idOffset = 0) =>
 	Effect.gen(function* () {
 		const database = yield* Database
-		const now = Date.now()
+		const now = yield* Clock.currentTimeMillis
 		yield* Effect.forEach(
 			Array.from({ length: count }, (_, index) => index),
 			(index) =>

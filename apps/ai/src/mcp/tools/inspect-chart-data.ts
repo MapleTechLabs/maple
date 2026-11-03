@@ -20,7 +20,7 @@ type QueryResult = Output["queries"][number]
 
 /** A value as JSON, or absent when it has no JSON form. JSON text drops `undefined` keys first. */
 const asJson = (value: unknown): Option.Option<Schema.Json> =>
-	Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(stringifyJson(value) ?? "")
+	Schema.decodeOption(Schema.fromJsonString(Schema.Json))(stringifyJson(value) ?? "")
 
 const decodeRows = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Array(Schema.Record(Schema.String, Schema.Json))),
@@ -74,7 +74,7 @@ function queryBlocks(query: QueryResult): ReadonlyArray<DocBlock> {
 
 function rawSqlCell(value: Schema.Json | undefined): string {
 	if (value === null || value === undefined) return "null"
-	if (typeof value === "object") return truncate(stringifyJson(value) ?? String(value), 60)
+	if (typeof value === "object") return truncate(stringifyJson(value) ?? "[unserializable value]", 60)
 	return truncate(String(value), 60)
 }
 

@@ -15,6 +15,7 @@ import {
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
+import { isCommitSha } from "@maple/browser-session/commit-sha"
 import { SDK_VERSION } from "../version.js"
 import { Layer, Redacted, String as Str } from "effect"
 import {
@@ -181,7 +182,7 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 	}
 	// `serviceVersion` may be a semver release string, which belongs in
 	// `service.version` but not in `vcs.*` — only a SHA-shaped value is stamped.
-	if (config.serviceVersion && /^[0-9a-f]{7,40}$/i.test(config.serviceVersion)) {
+	if (isCommitSha(config.serviceVersion)) {
 		attributes["vcs.ref.head.revision"] = config.serviceVersion
 	}
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace

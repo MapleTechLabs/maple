@@ -263,6 +263,7 @@ describe("formatGcpValue", () => {
 		expect(formatGcpValue("cores", 0.0002)).toBe("<1m")
 		expect(formatGcpValue("cores", 0)).toBe("0m")
 		expect(formatGcpValue("cores", 1.25)).toBe("1.25")
+		expect(formatGcpValue("cores", 0.9996)).toBe("1")
 	})
 })
 

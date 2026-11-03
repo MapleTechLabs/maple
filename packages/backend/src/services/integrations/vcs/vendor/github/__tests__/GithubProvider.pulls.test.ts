@@ -14,7 +14,7 @@ import {
 	String as Str,
 } from "effect"
 import { TestClock } from "effect/testing"
-import { GitCommitSha, type PullRequestReviewPublication, type VcsInstallation } from "@maple/domain/http"
+import { GitCommitSha, type PullRequestReviewPublication, VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
@@ -50,7 +50,24 @@ const jsonResponse = (body: unknown, status = 200) =>
 
 const tokenResponse = () => jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" })
 
-const INSTALLATION = { externalInstallationId: "42" } as VcsInstallation
+const INSTALLATION = Schema.decodeSync(VcsInstallation)({
+	id: "00000000-0000-4000-8000-000000000042",
+	orgId: "org_test",
+	provider: "github",
+	externalInstallationId: "42",
+	accountLogin: "octo",
+	accountType: "organization",
+	externalAccountId: "1",
+	accountAvatarUrl: null,
+	repositorySelection: "all",
+	status: "active",
+	suspendedAt: null,
+	ciTracesEnabled: true,
+	repositoryDiscovery: null,
+	installedByUserId: "user_1",
+	createdAt: 0,
+	updatedAt: 0,
+})
 const REPO = { externalRepoId: "1", owner: "octo", name: "shop" }
 
 const apiPullRequest = (overrides: Record<string, unknown> = {}) => ({
@@ -183,7 +200,7 @@ describe("GithubProvider pull requests", () => {
 })
 
 describe("GithubProvider commits", () => {
-	const sha = Schema.decodeUnknownSync(GitCommitSha)(Str.repeat(40)("b"))
+	const sha = Schema.decodeSync(GitCommitSha)(Str.repeat(40)("b"))
 
 	it.effect("answers none for a SHA GitHub has never seen", () =>
 		// GitHub's 422 for a well-formed SHA that names nothing: a deploy reported
@@ -215,7 +232,7 @@ describe("GithubProvider commits", () => {
 })
 
 describe("GithubProvider publishing a review", () => {
-	const HEAD = Schema.decodeUnknownSync(GitCommitSha)(Str.repeat(40)("c"))
+	const HEAD = Schema.decodeSync(GitCommitSha)(Str.repeat(40)("c"))
 	const MARKER = "<!-- maple-pr-review -->"
 	const publication = (
 		comments: PullRequestReviewPublication["comments"] = [],

@@ -22,7 +22,7 @@ import {
 	ExecutorRunRequest,
 	ExecutorRunResponse,
 } from "@maple/domain/executor"
-import { Effect, Schema, Semaphore, String as Str } from "effect"
+import { Clock, Deferred, Duration, Effect, Schema, Semaphore, String as Str } from "effect"
 import { GATEWAY_HOST } from "../src/executor-probe.ts"
 import { type ExecResult, type ExecutorHost, destroy, prepare, run } from "../src/executor-session.ts"
 
@@ -60,8 +60,9 @@ process.on("SIGINT", () => {
 
 /** `docker exec` as the Durable Object's `exec()`: a root bash, its output, its exit code. */
 const dockerExec = (container: string, script: string, timeoutMs: number, detach = false) =>
-	Effect.callback<ExecResult, string>((resume) => {
-		const started = Date.now()
+	Effect.gen(function* () {
+		const started = yield* Clock.currentTimeMillis
+		const exited = yield* Deferred.make<number | null, string>()
 		const child = spawn("docker", [
 			"exec",
 			...(detach ? ["--detach"] : []),
@@ -74,12 +75,18 @@ const dockerExec = (container: string, script: string, timeoutMs: number, detach
 		let stderr = ""
 		child.stdout.on("data", (chunk) => (stdout += chunk))
 		child.stderr.on("data", (chunk) => (stderr += chunk))
-		const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs)
-		child.on("error", (error) => resume(Effect.fail(error.message)))
-		child.on("close", (code) => {
-			clearTimeout(timer)
-			resume(Effect.succeed({ exitCode: code ?? -1, stdout, stderr, durationMs: Date.now() - started }))
-		})
+		child.on("error", (error) => Deferred.doneUnsafe(exited, Effect.fail(error.message)))
+		child.on("close", (code) => Deferred.doneUnsafe(exited, Effect.succeed(code)))
+		// Past its budget the command is killed; its close still reports what it printed.
+		const code = yield* Deferred.await(exited).pipe(
+			Effect.timeoutOrElse({
+				duration: Duration.millis(timeoutMs),
+				orElse: () =>
+					Effect.sync(() => child.kill("SIGKILL")).pipe(Effect.andThen(Deferred.await(exited))),
+			}),
+		)
+		const finished = yield* Clock.currentTimeMillis
+		return { exitCode: code ?? -1, stdout, stderr, durationMs: finished - started } satisfies ExecResult
 	})
 
 const host = (key: string): ExecutorHost => {

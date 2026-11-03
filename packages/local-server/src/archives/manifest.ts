@@ -179,8 +179,7 @@ const requiredPositiveInteger = (record: Record<string, unknown>, key: string): 
 }
 
 /** The same 64-hex rule the journal enforces, stated once in ./schemas. */
-const isSha256Hex = (value: string): boolean =>
-	Schema.decodeUnknownResult(Sha256Lower)(value)._tag === "Success"
+const isSha256Hex = (value: string): boolean => Schema.decodeResult(Sha256Lower)(value)._tag === "Success"
 
 /** A safe logical config name (no path separators, no traversal). */
 const SAFE_CONFIG_NAME = /^[A-Za-z0-9._-]+$/

@@ -1083,34 +1083,33 @@ export interface IntegrationCatalogEntry extends CatalogEntry {
 }
 
 /** Compile every fixture. A fixture that throws fails here, not in production. */
-export const collectIntegrationQueryCatalog = () =>
-	Effect.try({
-		try: (): ReadonlyArray<IntegrationCatalogEntry> =>
-			Arr.map(integrationFixtures, (fixture) => {
-				const compiled = fixture.compile()
-				// The executor dies on unresolved placeholders at runtime; a fixture
-				// missing a compile param must fail HERE.
-				if (Str.includes("__PARAM_")(compiled.sql)) {
-					throw new Error(
-						`Integration catalog: ${fixture.module}/${fixture.name} (${fixture.label}) ` +
-							`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
-					)
-				}
-				return {
-					id: `builder:${fixture.module}:${fixture.name}:${fixture.label}`,
-					name: fixture.name,
-					source: "builder",
-					label: fixture.label,
-					capabilityLabel: "baseline",
-					route: undefined,
-					fingerprint: fingerprintSql(compiled.sql),
-					sql: compiled.sql,
-					compiled,
-				}
-			}),
-		catch: (cause) =>
-			new BenchmarkError({ message: `Integration catalog compilation failed: ${String(cause)}` }),
-	})
+export const collectIntegrationQueryCatalog = Effect.try({
+	try: (): ReadonlyArray<IntegrationCatalogEntry> =>
+		Arr.map(integrationFixtures, (fixture) => {
+			const compiled = fixture.compile()
+			// The executor dies on unresolved placeholders at runtime; a fixture
+			// missing a compile param must fail HERE.
+			if (Str.includes("__PARAM_")(compiled.sql)) {
+				throw new Error(
+					`Integration catalog: ${fixture.module}/${fixture.name} (${fixture.label}) ` +
+						`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
+				)
+			}
+			return {
+				id: `builder:${fixture.module}:${fixture.name}:${fixture.label}`,
+				name: fixture.name,
+				source: "builder",
+				label: fixture.label,
+				capabilityLabel: "baseline",
+				route: undefined,
+				fingerprint: fingerprintSql(compiled.sql),
+				sql: compiled.sql,
+				compiled,
+			}
+		}),
+	catch: (cause) =>
+		new BenchmarkError({ message: `Integration catalog compilation failed: ${String(cause)}` }),
+})
 
 // Anti-rot assertion — the integration half of `UNDECODED_QUERIES`
 

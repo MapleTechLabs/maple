@@ -8,9 +8,9 @@ import { AgentFeedbackService } from "./AgentFeedbackService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_feedback")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_feedback")
+const ORG = Schema.decodeSync(OrgId)("org_feedback")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
+const USER = Schema.decodeSync(UserId)("user_feedback")
 
 const provide = <A, E>(effect: Effect.Effect<A, E, AgentFeedbackService>) =>
 	effect.pipe(

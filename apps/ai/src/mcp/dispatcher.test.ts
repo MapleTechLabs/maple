@@ -29,7 +29,7 @@ const TENANT: TenantContext = {
 const CONNECTOR_TENANT: TenantContext = {
 	...TENANT,
 	userId: "chat-connector" as TenantContext["userId"],
-	actorId: Schema.decodeUnknownSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
+	actorId: Schema.decodeSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
 	turnOrigin: {
 		kind: "connector",
 		connectorId: "testchat",
@@ -183,7 +183,7 @@ describe("MCP dispatcher", () => {
 				// Same answer as a name that was never registered, so probing cannot
 				// tell the two apart.
 				expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
-				expect(error.name).toBe("sandbox_exec")
+				expect(error.toolName).toBe("sandbox_exec")
 			}),
 		)
 
@@ -235,7 +235,7 @@ describe("MCP dispatcher", () => {
 				>,
 			)
 			expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
-			expect(error.name).toBe("not_a_maple_tool")
+			expect(error.toolName).toBe("not_a_maple_tool")
 		}),
 	)
 
