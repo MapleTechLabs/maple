@@ -7,7 +7,7 @@
 // Replay a failure with FINGERPRINT_FUZZ_SEED=<seed from the failure message>.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { computeFingerprintInputs, FINGERPRINT_HASH_SALT } from "@maple/domain/tinybird/fingerprint"
+import { computeFingerprintInputs, CUSTOM_FINGERPRINT_ATTRIBUTE } from "@maple/domain/tinybird/fingerprint"
 import { Schema, Array as Arr, String as Str } from "effect"
 import fc from "fast-check"
 import { msToDate } from "../../platform/time"
@@ -181,6 +181,26 @@ const jsonMessage = fc.oneof(
 		),
 )
 
+/** A `maple.fingerprint` value: absent mostly, else padded, blank, or past the cap. */
+const customKey = fc.oneof(
+	{ arbitrary: fc.constant(undefined), weight: 6 },
+	{ arbitrary: fc.oneof(word, hostile), weight: 2 },
+	{
+		arbitrary: fc.oneof(
+			word.map((w) => ` \t${w}\n `),
+			fc.constantFrom(
+				"",
+				" ",
+				"\t\n\r",
+				Str.repeat(250)("x"),
+				Str.repeat(201)("😀"),
+				`${Str.repeat(199)("é")}  z`,
+			),
+		),
+		weight: 1,
+	},
+)
+
 const Case = fc.record({
 	type: fc.oneof(fc.constantFrom("", "Error", "HttpServerError", "@acme/http/errors/Upstream"), hostile),
 	stack: fc.array(frameLine, { maxLength: 14 }).map((lines) => Arr.join(lines, "\n")),
@@ -198,11 +218,14 @@ const Case = fc.record({
 		{ arbitrary: jsonMessage, weight: 2 },
 	),
 	viaAttributes: fc.boolean(),
+	eventKey: customKey,
+	spanKey: customKey,
 })
 type Case = typeof Case extends fc.Arbitrary<infer A> ? A : never
 
 /** ClickHouse treats every input as UTF-8 bytes; a lone surrogate has no such encoding. */
-const wellFormed = (c: Case) => c.type.isWellFormed() && c.stack.isWellFormed() && c.message.isWellFormed()
+const wellFormed = (c: Case) =>
+	Arr.every([c.type, c.stack, c.message, c.eventKey ?? "", c.spanKey ?? ""], (s) => s.isWellFormed())
 const CASES = Arr.filter(fc.sample(Case, { numRuns: RUNS, seed: SEED }), wellFormed)
 
 /**
@@ -210,6 +233,9 @@ const CASES = Arr.filter(fc.sample(Case, { numRuns: RUNS, seed: SEED }), wellFor
  * StatusMessage; without one, and with no StatusMessage, it falls back to the
  * `exception.*` span attributes. Both paths feed the same mirror inputs.
  */
+const withKey = (attributes: Record<string, string>, key: string | undefined) =>
+	key === undefined ? attributes : { ...attributes, [CUSTOM_FINGERPRINT_ATTRIBUTE]: key }
+
 const traceRow = (c: Case, spanId: string) => {
 	const exception = {
 		"exception.type": c.type,
@@ -228,11 +254,11 @@ const traceRow = (c: Case, spanId: string) => {
 		Duration: 1_000_000,
 		StatusCode: "Error",
 		StatusMessage: c.viaAttributes ? "" : c.message,
-		SpanAttributes: c.viaAttributes ? exception : {},
+		SpanAttributes: withKey(c.viaAttributes ? exception : {}, c.spanKey),
 		ResourceAttributes: {},
 		EventsTimestamp: c.viaAttributes ? [] : [SEED_TS],
 		EventsName: c.viaAttributes ? [] : ["exception"],
-		EventsAttributes: c.viaAttributes ? [] : [exception],
+		EventsAttributes: c.viaAttributes ? [] : [withKey(exception, c.eventKey)],
 	})
 }
 
@@ -241,14 +267,16 @@ const mirrorRow = (c: Case, spanId: string) => {
 		exceptionType: c.type,
 		exceptionStacktrace: c.stack,
 		statusMessage: c.message,
+		// The view reads the event's key first, then the span's; an empty value counts as unset.
+		customFingerprint:
+			!c.viaAttributes && c.eventKey !== undefined && c.eventKey !== "" ? c.eventKey : c.spanKey,
 	})
 	return JSON.stringify({
 		SpanId: spanId,
 		TopFrame: inputs.topFrame,
-		Frames: inputs.fpFrames,
 		Signature: inputs.msgSignature,
 		Label: inputs.label,
-		Type: c.type,
+		HashInputs: inputs.hashInputs,
 	})
 }
 
@@ -278,7 +306,7 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			database,
 		)
 		await clickhouseExec(
-			"CREATE TABLE fingerprint_mirror (SpanId String, TopFrame String, Frames String, Signature String, Label String, Type String) ENGINE = Memory",
+			"CREATE TABLE fingerprint_mirror (SpanId String, TopFrame String, Signature String, Label String, HashInputs Array(String)) ENGINE = Memory",
 			database,
 		)
 		await clickhouseExec(
@@ -296,7 +324,11 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 		const body = await clickhouseExec(
 			`SELECT e.SpanId AS SpanId, e.TopFrame AS TopFrame, m.TopFrame AS MirrorTopFrame,
 			        e.ErrorLabel AS ErrorLabel, m.Label AS MirrorLabel, m.Signature AS Signature,
-			        toBool(e.FingerprintHash = cityHash64('${ORG_ID}', '${SERVICE}', m.Type, m.Frames, m.Signature, '${FINGERPRINT_HASH_SALT}')) AS HashMatches
+			        toBool(e.FingerprintHash = if(
+			          length(m.HashInputs) = 2,
+			          cityHash64('${ORG_ID}', '${SERVICE}', m.HashInputs[1], m.HashInputs[2]),
+			          cityHash64('${ORG_ID}', '${SERVICE}', m.HashInputs[1], m.HashInputs[2], m.HashInputs[3], m.HashInputs[4])
+			        )) AS HashMatches
 			 FROM error_events AS e INNER JOIN fingerprint_mirror AS m ON e.SpanId = m.SpanId
 			 WHERE e.OrgId = '${ORG_ID}' AND (NOT HashMatches OR e.TopFrame != m.TopFrame OR e.ErrorLabel != m.Label)
 			 FORMAT JSONEachRow`,

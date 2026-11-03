@@ -37,6 +37,34 @@ The fingerprint combines five things:
 
 The environment is not part of the fingerprint, so the same bug in staging and production is one issue.
 
+### Set the grouping yourself
+
+When the automatic grouping splits one bug into several issues, or merges two, set a `maple.fingerprint` attribute on the error span or on its exception event. Every error in a service that carries the same value becomes one issue, whatever its stack or message. The type, message and stack still show on the issue as usual.
+
+```ts
+import { trace } from "@opentelemetry/api"
+
+const span = trace.getActiveSpan()
+span?.setAttribute("maple.fingerprint", "checkout-payment-declined")
+span?.recordException(error)
+```
+
+With Effect, annotate the span the error fails:
+
+```ts
+import { Effect } from "effect"
+
+const charge = Effect.gen(function* () {
+	yield* Effect.annotateCurrentSpan("maple.fingerprint", "checkout-payment-declined")
+	// ...
+})
+```
+
+- The value is scoped to the organization and the service: the same value in two services is two issues.
+- A value on the exception event wins over one on the span. Surrounding whitespace is ignored, and only the first 200 characters count.
+- Use a fixed name for the failure, never an ID or other per-request value, or every occurrence becomes its own issue.
+- Adding the attribute starts a new issue for those errors; the issue they had before stops receiving occurrences.
+
 A fingerprint becomes an issue after 3 occurrences. Until then it notifies nobody. A fingerprint that stays below 3 occurrences for 24 hours is dropped.
 
 Issues come from three sources. The **Source** filter names them:

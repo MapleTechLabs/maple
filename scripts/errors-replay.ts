@@ -8,7 +8,8 @@
  *
  * A sample is JSONL, or the `{ "rows": [...] }` object the `run_sql` MCP tool
  * returns. Each row: serviceName, exceptionType, statusMessage,
- * exceptionStacktrace, and optionally count (events the row stands for) and
+ * exceptionStacktrace, and optionally count (events the row stands for),
+ * customFingerprint (a `maple.fingerprint` value, read from traces) and
  * fingerprintHash (production's hash, which turns on the parity check).
  * One way to pull a week of variants from an org:
  *
@@ -41,6 +42,7 @@ const Row = Schema.Struct({
 	exceptionType: Schema.String,
 	statusMessage: Schema.String,
 	exceptionStacktrace: Schema.String,
+	customFingerprint: Schema.optional(Schema.String),
 	count: Schema.optional(Schema.Union([Schema.Number, Schema.NumberFromString])),
 	fingerprintHash: Schema.optional(Schema.String),
 })
