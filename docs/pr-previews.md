@@ -59,6 +59,11 @@ reviewer and its org), seeds demo telemetry into the reviewer's org through the 
 and fails the job if a Postgres- or warehouse-backed route returns anything but a 2xx. Without
 `PREVIEW_SIGNIN_KEY` it seeds the dev test user instead. The PR comment reports the outcome.
 
+The alerting crons run on previews (`MAPLE_ALERTING_ALLOW_NONPROD` in the deploy workflow), so
+the seed's error events become error issues within a few minutes of the deploy, and alert rules
+evaluate against the preview's own data. That is safe only because the preview database starts
+empty; never point a preview at a database holding real orgs.
+
 ## Limits and cost
 
 - At most `MAX_LIVE_PREVIEWS` (3) open PRs may carry `preview`; the deploy refuses the next one.
