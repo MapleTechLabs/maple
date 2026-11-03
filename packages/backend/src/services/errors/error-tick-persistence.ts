@@ -516,14 +516,19 @@ const canonicalizeScanRows = (
 		)
 		const rekeyed = yield* rekeyOwners(tx, input, rows, aliased)
 		if (aliased.size === 0 && rekeyed.size === 0) return rows
-		return mergeScanRows(
-			Arr.map(rows, (row) => {
-				const owner = aliased.get(row.fingerprintHash) ?? rekeyed.get(row.fingerprintHash)
-				if (owner === undefined) return row
+		const ownerOfRow = (row: ErrorTickScanRow) =>
+			aliased.get(row.fingerprintHash) ?? rekeyed.get(row.fingerprintHash)
+		// The merge keeps the last row's display fields, so redirected rows go first and an
+		// issue's own observation in this window wins over its stored fields.
+		return mergeScanRows([
+			...Arr.flatMap(rows, (row) => {
+				const owner = ownerOfRow(row)
+				if (owner === undefined) return []
 				const { id: _id, ...fields } = owner
-				return { ...row, ...fields }
+				return [{ ...row, ...fields }]
 			}),
-		)
+			...Arr.filter(rows, (row) => ownerOfRow(row) === undefined),
+		])
 	})
 
 const buildEvent = (
