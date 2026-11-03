@@ -14,7 +14,8 @@
 		"bench:run": "bun run scripts/bench-queries.ts run",
 		"bench:inspect": "bun run scripts/bench-queries.ts inspect",
 		"bench:compare": "bun run scripts/bench-queries.ts compare",
-		"bench:startup-cpu": "bun run scripts/bench-startup-cpu.ts"
+		"bench:startup-cpu": "bun run scripts/bench-startup-cpu.ts",
+		"atmn": "sh scripts/atmn.sh"
 	},
 	"dependencies": {
 		"@alchemy.run/cloudflare": "catalog:alchemy",
@@ -38,7 +39,6 @@
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@types/node": "catalog:tooling",
-		"atmn": "^1.1.25",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
 		"wrangler": "^4.154.0"
