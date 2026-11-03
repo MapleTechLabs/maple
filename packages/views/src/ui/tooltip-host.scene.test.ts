@@ -50,6 +50,29 @@ describe("tooltip host", () => {
 		scene({ update, view: sceneView }, given(moved.model), mounted, expect(text("Second")).toExist())
 	})
 
+	test("sweeping to a neighbour (leave, then enter) opens it at once while the close is warm", () => {
+		const open = elapsed(entered(init(ID), "a", "First").model).model
+		const left = update(open, Message.GotTooltipMessage({ message: Tooltip.Message.LeftTrigger() }))
+		const next = entered(left.model, "b", "Second")
+		assert({
+			isOpen: next.model.tooltip.isOpen,
+			anchor: next.model.tooltip.triggerId,
+			waits: (next.commands ?? []).some((command) => command.name === "WaitOpenDelay"),
+		}).toEqual({ isOpen: true, anchor: "b", waits: false })
+		scene({ update, view: sceneView }, given(next.model), mounted, expect(text("Second")).toExist())
+	})
+
+	test("once the warm window passes, the next trigger waits the delay again", () => {
+		const open = elapsed(entered(init(ID), "a", "First").model).model
+		const left = update(open, Message.GotTooltipMessage({ message: Tooltip.Message.LeftTrigger() })).model
+		const cooled = update(left, Message.ElapsedWarmWindow({ generation: left.warmGeneration })).model
+		const next = entered(cooled, "b", "Second")
+		assert({
+			isOpen: next.model.tooltip.isOpen,
+			commands: next.commands?.map((command) => command.name),
+		}).toEqual({ isOpen: false, commands: ["WaitOpenDelay"] })
+	})
+
 	test("only the anchored trigger's text and the incoming one are kept", () => {
 		const open = elapsed(entered(init(ID), "a", "First").model).model
 		const second = entered(open, "b", "Second").model

@@ -1,4 +1,4 @@
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -46,12 +46,20 @@ export const Model = Schema.Struct({
 	tooltip: Tooltip.Model,
 	/** The content by trigger id: the anchored trigger's and the one taking over. */
 	shown: Schema.Record(Schema.String, Shown),
+	/** A tooltip closed by leaving its trigger moments ago: the next trigger opens at once. */
+	isWarm: Schema.Boolean,
+	warmGeneration: Schema.Number,
 })
 export type Model = typeof Model.Type
+
+/** `TooltipProvider`'s `timeout`: how long after a close the next trigger skips the delay. */
+const WARM_WINDOW_MS = 400
 
 export const init = (id: string, options: Tooltip.InitOptions = {}): Model => ({
 	tooltip: Tooltip.init(id, options),
 	shown: {},
+	isWarm: false,
+	warmGeneration: 0,
 })
 
 // MESSAGE
@@ -61,6 +69,7 @@ export const Message = defineMessageUnion({
 	FocusedTrigger: { triggerId: Schema.String, shown: Shown },
 	/** A shown trigger's text changed under it (Copy, then Copied). */
 	ChangedTriggerText: { triggerId: Schema.String, text: Schema.String },
+	ElapsedWarmWindow: { generation: Schema.Number },
 	GotTooltipMessage: { message: Tooltip.Message },
 })
 export type Message = typeof Message.Type
@@ -84,14 +93,48 @@ const remember = (model: Model, triggerId: string, shown: Shown): Model => {
 					[model.tooltip.triggerId, anchored],
 					[triggerId, shown],
 				]
-	return { tooltip: { ...model.tooltip, requestedSide: shown.side }, shown: Object.fromEntries(kept) }
+	return {
+		...model,
+		tooltip: { ...model.tooltip, requestedSide: shown.side },
+		shown: Object.fromEntries(kept),
+	}
+}
+
+const WaitWarmWindow = Command.define("WaitTooltipWarmWindow", {
+	args: { generation: Schema.Number },
+	messages: [Message.ElapsedWarmWindow],
+	execute: ({ generation }) =>
+		Effect.sleep(Duration.millis(WARM_WINDOW_MS)).pipe(
+			Effect.as(Message.ElapsedWarmWindow({ generation })),
+		),
+})
+
+/** Enters the trigger; while warm, opens at once instead of waiting the delay. */
+const enter = (model: Model, triggerId: string): UpdateReturn => {
+	const entered = Tooltip.update(model.tooltip, Tooltip.Message.EnteredTrigger({ triggerId }))
+	if (!model.isWarm || entered.model.isOpen) return lift(model, entered)
+	const opened = Tooltip.update(
+		entered.model,
+		Tooltip.Message.ElapsedOpenDelay({ generation: entered.model.hoverGeneration }),
+	)
+	return lift({ ...model, isWarm: false }, opened)
+}
+
+/** Leaving an open tooltip's trigger closes it and warms the next trigger for a moment. */
+const leave = (model: Model): UpdateReturn => {
+	const left = lift(model, Tooltip.update(model.tooltip, Tooltip.Message.LeftTrigger()))
+	if (!model.tooltip.isOpen) return left
+	const generation = model.warmGeneration + 1
+	return {
+		model: { ...left.model, isWarm: true, warmGeneration: generation },
+		commands: [...(left.commands ?? []), WaitWarmWindow({ generation })],
+	}
 }
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		EnteredTrigger: ({ triggerId, shown }) => {
-			const next = remember(model, triggerId, shown)
-			return lift(next, Tooltip.update(next.tooltip, Tooltip.Message.EnteredTrigger({ triggerId })))
+			return enter(remember(model, triggerId, shown), triggerId)
 		},
 		FocusedTrigger: ({ triggerId, shown }) => {
 			const next = remember(model, triggerId, shown)
@@ -103,7 +146,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				? { model }
 				: { model: { ...model, shown: { ...model.shown, [triggerId]: { ...shown, text } } } }
 		},
-		GotTooltipMessage: ({ message: inner }) => lift(model, Tooltip.update(model.tooltip, inner)),
+		ElapsedWarmWindow: ({ generation }) =>
+			generation === model.warmGeneration ? { model: { ...model, isWarm: false } } : { model },
+		GotTooltipMessage: ({ message: inner }) =>
+			inner._tag === "LeftTrigger" ? leave(model) : lift(model, Tooltip.update(model.tooltip, inner)),
 	})
 
 // SUBSCRIPTION
