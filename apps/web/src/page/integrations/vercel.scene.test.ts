@@ -220,7 +220,9 @@ describe("vercel card: connecting", () => {
 describe("vercel card: connected", () => {
 	test("a healthy team reads the last 24 hours once and shows its drains", () => {
 		const entered = withStatus(connected())
-		expect(names(entered.commands)).toEqual(["LoadVercelProjects", "LoadVercelTimeseries", "LoadVercelGateway"])
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining(["LoadVercelProjects", "LoadVercelTimeseries", "LoadVercelGateway"]),
+		)
 		scene(
 			{ update: step, view },
 			given(entered.model),

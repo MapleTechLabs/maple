@@ -25,12 +25,15 @@ import { button, linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
+import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { item, itemContent, itemMedia } from "@maple/views/ui/item"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { truncatedText } from "@maple/views/ui/truncated-text"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnHead, dataTable, dataTableEmpty, ROW_LINK_CLASS } from "../infra/kit/data-table"
 import {
 	integrationEmpty,
@@ -133,7 +136,7 @@ const summary = (h: H, model: Model, status: VercelIntegrationStatus, timeZone: 
 				h.div(
 					[h.Class("flex flex-wrap items-center gap-2")],
 					[
-						h.h3([h.Class("text-sm font-semibold")], [status.team?.name ?? "Vercel"]),
+						heading(h, { level: 3, variant: "section" }, [status.team?.name ?? "Vercel"]),
 						...(status.team === null
 							? []
 							: [h.span([h.Class("font-mono text-xs text-muted-foreground")], [status.team.slug])]),
@@ -278,7 +281,7 @@ const quickMetrics = (h: H, model: Model, status: VercelIntegrationStatus): Html
 	if (failure !== null)
 		return errorState(h, {
 			failure,
-			title: "Failed to load the last 24 hours",
+			title: "Couldn't load the last 24 hours",
 			onRetry: Message.ClickedVercelRetryUsage(),
 			variant: "row",
 		})
@@ -319,7 +322,7 @@ const quickMetrics = (h: H, model: Model, status: VercelIntegrationStatus): Html
 				[
 					h.Href(hrefOf(AppRoute.InfraVercel({ search: { view: "aiGateway" } }))),
 					h.Class(
-						"inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground hover:text-foreground",
+						"inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 					),
 				],
 				["Open", icon(h, "ArrowRightIcon", { size: 11 })],
@@ -438,22 +441,25 @@ const drainRow = (h: H, name: string, enabled: boolean, drain: VercelDrainStatus
 		: drain === null
 			? { label: "Missing", tone: "crit" }
 			: DRAIN_LABEL[drain.status]
-	return h.li(
-		[h.Class("flex items-center gap-3 px-4 py-2.5")],
-		[
-			statusDot(h, { tone: state.tone }),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col")],
-				[
-					h.span([h.Class("font-mono text-xs text-foreground")], [name]),
-					...(enabled && drain !== null && drain.id !== null
-						? [truncatedText(h, { text: drain.id, mono: true, className: "text-2xs text-muted-foreground" })]
-						: []),
-				],
-			),
-			h.span([h.Class("shrink-0 text-xs text-muted-foreground")], [state.label]),
-		],
-	)
+	return hstack(h, { as: "li", gap: "3", className: "px-4 py-2.5" }, [
+		statusDot(h, { tone: state.tone }),
+		h.span(
+			[h.Class("flex min-w-0 flex-1 flex-col")],
+			[
+				typography(h, { size: "xs", tone: "foreground", mono: true }, [name]),
+				...(enabled && drain !== null && drain.id !== null
+					? [
+							truncatedText(h, {
+								text: drain.id,
+								mono: true,
+								className: typographyClass({ size: "2xs", tone: "muted" }),
+							}),
+						]
+					: []),
+			],
+		),
+		h.span([h.Class("shrink-0 text-xs text-muted-foreground")], [state.label]),
+	])
 }
 
 /** What Maple installed on the team, and what it forwards. */
@@ -511,7 +517,7 @@ const disconnectDialog = (h: H, model: Model, status: VercelIntegrationStatus): 
 		isPending: model.disconnect.isPending,
 		children: [
 			h.dl(
-				[h.Class("flex flex-col gap-3 pb-3 text-sm")],
+				[h.Class(vstackClass({ gap: "3", className: "pb-3 text-sm" }))],
 				[
 					fact("On Vercel, right away", ["Deletes ", ...drains, " on ", team, "."]),
 					fact("In Maple", ["Removes the token. Logs and traces already in Maple stay until retention ends."]),
@@ -528,10 +534,10 @@ const connectedView = (h: H, model: Model, status: VercelIntegrationStatus, time
 			summary(h, model, status, timeZone),
 			...vercelIssues(status).map((issue) => issueAlert(h, model, issue)),
 			quickMetrics(h, model, status),
-			h.div(
-				[h.Class("flex flex-col gap-4 lg:flex-row lg:items-start")],
-				[projectsPanel(h, model, status, timeZone), drainsPanel(h, status)],
-			),
+			vstack(h, { gap: "4", className: "lg:flex-row lg:items-start" }, [
+				projectsPanel(h, model, status, timeZone),
+				drainsPanel(h, status),
+			]),
 			disconnectDialog(h, model, status),
 		],
 	)
@@ -547,7 +553,7 @@ export const vercelCard = (h: H, model: Model, timeZone: string): ReadonlyArray<
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Vercel integration",
+				title: "Couldn't load the Vercel integration",
 				onRetry: Message.ClickedRetryStatus({ name: "vercel" }),
 			}),
 		onStale: ({ data }) => byStatus(h, model, data, timeZone),

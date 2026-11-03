@@ -46,6 +46,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { relativeTime } from "../../../kit/relative-time"
@@ -409,7 +410,7 @@ const topErrors = (h: H, errors: VercelInfraProjectDetailResponse["errors"], clo
 												variant: "short",
 												mono: true,
 												tooltip: "title",
-												className: "text-2xs text-muted-foreground",
+												className: typographyClass({ size: "2xs", tone: "muted" }),
 											}),
 										],
 									),
@@ -460,8 +461,9 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 					...(deployment.commitSha === null || deployment.commitSha === ""
 						? []
 						: [
-								h.span(
-									[h.Class("shrink-0 font-mono text-3xs text-muted-foreground")],
+								typography(
+									h,
+									{ size: "3xs", tone: "muted", mono: true, className: "shrink-0" },
 									[deployment.commitSha.slice(0, 7)],
 								),
 							]),
@@ -480,7 +482,7 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 						variant: "short",
 						mono: true,
 						tooltip: "title",
-						className: "text-2xs text-muted-foreground",
+						className: typographyClass({ size: "2xs", tone: "muted" }),
 					}),
 				],
 			),
@@ -496,7 +498,7 @@ const deploymentRow = (h: H, deployment: VercelDeploymentSummary, clock: Clock):
 									h.Rel("noopener noreferrer"),
 									h.AriaLabel("Open in Vercel"),
 									h.Title("Open in Vercel"),
-									h.Class("text-muted-foreground hover:text-foreground"),
+									h.Class("text-muted-foreground hover:text-foreground active:text-foreground"),
 								],
 								[icon(h, "ExternalLinkIcon", { size: 12 })],
 							),
@@ -531,7 +533,7 @@ const deployments = (h: H, model: Model, clock: Clock): Html => {
 					? [
 							errorState(h, {
 								failure,
-								title: "Failed to load deployments",
+								title: "Couldn't load deployments",
 								onRetry: Message.ClickedRetryDeployments(),
 								variant: "inline",
 								className: "px-4",
@@ -565,7 +567,7 @@ const aiGatewaySection = (h: H, model: Model, time: TimeSearch, bar: BarChartSlo
 					heading,
 					errorState(h, {
 						failure,
-						title: "Failed to load AI Gateway usage",
+						title: "Couldn't load AI Gateway usage",
 						onRetry: Message.ClickedRetryAiGateway(),
 					}),
 				],
@@ -595,7 +597,7 @@ const requestsSection = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> 
 		return [
 			errorState(h, {
 				failure,
-				title: "Failed to load this project's requests",
+				title: "Couldn't load this project's requests",
 				onRetry: Message.ClickedRetryRequests(),
 			}),
 		]
@@ -613,7 +615,7 @@ const detailSection = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> =>
 		return [
 			errorState(h, {
 				failure,
-				title: "Failed to load top paths and errors",
+				title: "Couldn't load top paths and errors",
 				onRetry: Message.ClickedRetryDetail(),
 			}),
 		]
@@ -637,9 +639,9 @@ const header = (h: H, model: Model, time: TimeSearch, clock: Clock): Html => {
 			project?.framework === null || project === null ? undefined : heroChip(h, project.framework),
 		meta:
 			production === null
-				? [h.span([h.Class("text-2xs text-muted-foreground")], ["No production deployment recorded"])]
+				? [typography(h, { size: "2xs", tone: "muted" }, ["No production deployment recorded"])]
 				: [
-						h.span([h.Class("text-2xs text-muted-foreground")], ["Production"]),
+						typography(h, { size: "2xs", tone: "muted" }, ["Production"]),
 						deploymentInline(h, production, clock),
 						h.a(
 							[
@@ -647,7 +649,7 @@ const header = (h: H, model: Model, time: TimeSearch, clock: Clock): Html => {
 								h.Target("_blank"),
 								h.Rel("noopener noreferrer"),
 								h.Class(
-									"inline-flex items-center gap-1 font-mono text-2xs text-muted-foreground hover:text-foreground",
+									"inline-flex items-center gap-1 font-mono text-2xs text-muted-foreground hover:text-foreground active:text-foreground",
 								),
 							],
 							[production.url, icon(h, "ExternalLinkIcon", { size: 10 })],

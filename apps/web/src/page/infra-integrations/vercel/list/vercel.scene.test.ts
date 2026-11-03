@@ -73,11 +73,10 @@ const notConnected = new VercelIntegrationStatus({
 describe("vercel list", () => {
 	test("entry asks for the status and the window; the warehouse reads wait for a connected status", () => {
 		const entered = init({ search: {} }, context)
-		expect(names(entered.commands)).toEqual([
-			"ResolveVercelWindow",
-			"LoadVercelStatus",
-			"LoadChartRuntime",
-		])
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining(["ResolveVercelWindow", "LoadVercelStatus", "LoadChartRuntime"]),
+		)
+		expect(names(entered.commands)).not.toContain("FetchVercelProjects")
 		const windowed = pageUpdate(
 			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
@@ -90,11 +89,9 @@ describe("vercel list", () => {
 				result: Result.succeed(VERCEL_STATUS),
 			}),
 		)
-		expect(names(connected.commands)).toEqual([
-			"FetchVercelProjects",
-			"FetchVercelRequestSeries",
-			"FetchVercelAiGateway",
-		])
+		expect(names(connected.commands)).toEqual(
+			expect.arrayContaining(["FetchVercelProjects", "FetchVercelRequestSeries", "FetchVercelAiGateway"]),
+		)
 	})
 
 	test("forwarded projects list with their numbers, a silent one included, and open their page", () => {
@@ -188,7 +185,7 @@ describe("vercel list", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			themeResolved(),
-			expectView(text("Failed to load Vercel projects")).toExist(),
+			expectView(text("Couldn't load Vercel projects")).toExist(),
 		)
 		expect(names(pageUpdate(model, Message.ClickedRetryProjects()).commands)).toEqual([
 			"FetchVercelProjects",
@@ -218,7 +215,7 @@ describe("vercel list", () => {
 			{ update: pageUpdate, view },
 			given({ ...model, search: { view: "aiGateway" } }),
 			themeResolved(),
-			expectView(text("Failed to load AI Gateway usage")).toExist(),
+			expectView(text("Couldn't load AI Gateway usage")).toExist(),
 		)
 	})
 

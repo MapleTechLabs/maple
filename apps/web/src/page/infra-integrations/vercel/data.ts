@@ -49,16 +49,20 @@ export const loadVercelStatus = () =>
 /** `vercelProjectsResultAtom({ data: window })`. */
 export const loadVercelProjects = (window: TimeWindow) =>
 	getVercelProjects({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-		Effect.map((response): ReadonlyArray<VercelInfraProject> => response.projects),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<VercelInfraProject> => response.projects,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 
 /** `vercelRequestTimeseriesResultAtom({ data })`. */
 export const loadVercelRequestSeries = (input: SeriesInput) =>
 	getVercelRequestTimeseries({ data: { ...input } }).pipe(
-		Effect.map((response): ReadonlyArray<VercelInfraRequestBucket> => response.buckets),
-		Effect.mapError(toLoadFailure),
+		Effect.mapBoth({
+			onSuccess: (response): ReadonlyArray<VercelInfraRequestBucket> => response.buckets,
+			onFailure: toLoadFailure,
+		}),
 		Effect.result,
 	)
 

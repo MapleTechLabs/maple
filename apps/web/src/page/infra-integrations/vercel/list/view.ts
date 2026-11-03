@@ -19,6 +19,7 @@ import type { TimeWindow } from "../../../../data/time-range"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { typography } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
@@ -98,7 +99,7 @@ const tracesOnlyNotice = (h: H): Html =>
 			h.p(
 				[h.Class("text-xs text-muted-foreground")],
 				[
-					h.span([h.Class("font-medium text-foreground")], ["Only traces are forwarded. "]),
+					typography(h, { weight: "medium", tone: "foreground" }, ["Only traces are forwarded. "]),
 					"Requests, cache hits and error logs come from the logs drain; latency still shows.",
 				],
 			),
@@ -127,7 +128,7 @@ const projectsBody = (h: H, model: Model, frame: ListFrame): ReadonlyArray<Html>
 		return [
 			errorState(h, {
 				failure: projectsFailure,
-				title: "Failed to load Vercel projects",
+				title: "Couldn't load Vercel projects",
 				onRetry: Message.ClickedRetryProjects(),
 			}),
 		]
@@ -165,7 +166,7 @@ const projectsBody = (h: H, model: Model, frame: ListFrame): ReadonlyArray<Html>
 			: [
 					errorState(h, {
 						failure: bucketsFailure,
-						title: "Failed to load the request series",
+						title: "Couldn't load the request series",
 						onRetry: Message.ClickedRetryBuckets(),
 						variant: "row",
 					}),
@@ -200,7 +201,7 @@ const aiGatewayBody = (h: H, model: Model, frame: ListFrame): ReadonlyArray<Html
 		return [
 			errorState(h, {
 				failure,
-				title: "Failed to load AI Gateway usage",
+				title: "Couldn't load AI Gateway usage",
 				onRetry: Message.ClickedRetryAiGateway(),
 			}),
 		]
@@ -305,7 +306,7 @@ const statusView = (h: H, model: Model, timeZone: string): Html => {
 					header(h, model, null),
 					errorState(h, {
 						failure,
-						title: "Failed to load the Vercel connection",
+						title: "Couldn't load the Vercel connection",
 						onRetry: Message.ClickedRetryStatus(),
 					}),
 				],

@@ -32,6 +32,7 @@ import { chartLoading } from "@maple/views/ui/chart-state"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnHead, dataTable, ROW_LINK_CLASS } from "../../infra/kit/data-table"
 import type { TimeSearch } from "../../infra/kit/view-tabs"
 import { relativeTime } from "../../kit/relative-time"
@@ -206,7 +207,10 @@ const usageCells = <M>(h: HtmlBuilder<M>, usage: Usage): ReadonlyArray<Html> => 
 	const rate = errorRate(usage.errors, usage.requests)
 	return [
 		h.div([h.Class(NUM)], [formatNumber(usage.requests)]),
-		h.div([h.Class(cn(NUM, "font-medium text-foreground"))], [formatCost(usage.costUsd)]),
+		h.div(
+			[h.Class(cn(NUM, typographyClass({ weight: "medium", tone: "foreground" })))],
+			[formatCost(usage.costUsd)],
+		),
 		h.div([h.Class(cn(NUM, "hidden md:block"))], [formatNumber(usage.inputTokens)]),
 		h.div([h.Class(cn(NUM, "hidden md:block"))], [formatNumber(usage.outputTokens)]),
 		h.div(
@@ -247,22 +251,29 @@ const modelsTable = <M>(h: HtmlBuilder<M>, models: VercelAiGatewayResponse["mode
 							h.div(
 								[h.Class("flex w-0 min-w-[220px] flex-1 items-baseline gap-2")],
 								[
-									h.span(
-										[
-											h.Class("truncate font-mono text-xs font-medium text-foreground"),
-											h.Title(model.model),
-										],
+									typography(
+										h,
+										{
+											size: "xs",
+											tone: "foreground",
+											weight: "medium",
+											mono: true,
+											truncate: true,
+											attributes: [h.Title(model.model)],
+										},
 										[model.model],
 									),
 									...(model.provider === ""
 										? []
 										: [
-												h.span(
-													[
-														h.Class(
-															"shrink-0 font-mono text-3xs text-muted-foreground",
-														),
-													],
+												typography(
+													h,
+													{
+														size: "3xs",
+														tone: "muted",
+														mono: true,
+														className: "shrink-0",
+													},
 													[model.provider],
 												),
 											]),

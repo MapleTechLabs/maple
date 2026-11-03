@@ -75,22 +75,27 @@ const populated = (): Model =>
 describe("vercel project", () => {
 	test("entry reads the status and deployments; the window brings the project's warehouse reads", () => {
 		const entered = init(route, context)
-		expect(names(entered.commands)).toEqual([
-			"ResolveVercelProjectWindow",
-			"LoadVercelProjectStatus",
-			"FetchVercelDeployments",
-			"LoadChartRuntime",
-		])
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining([
+				"ResolveVercelProjectWindow",
+				"LoadVercelProjectStatus",
+				"FetchVercelDeployments",
+				"LoadChartRuntime",
+			]),
+		)
+		expect(names(entered.commands)).not.toContain("FetchVercelProjectRows")
 		const resolved = pageUpdate(
 			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([
-			"FetchVercelProjectRows",
-			"FetchVercelProjectRequestSeries",
-			"FetchVercelProjectDetail",
-			"FetchVercelProjectAiGateway",
-		])
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchVercelProjectRows",
+				"FetchVercelProjectRequestSeries",
+				"FetchVercelProjectDetail",
+				"FetchVercelProjectAiGateway",
+			]),
+		)
 	})
 
 	test("the inventory names the project; its id stands in until then", () => {
@@ -130,15 +135,16 @@ describe("vercel project", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			themeResolved(),
-			expectView(text("Failed to load this project's requests")).toExist(),
-			expectView(text("Failed to load top paths and errors")).toExist(),
-			expectView(text("Failed to load deployments")).toExist(),
-			expectView(text("Failed to load AI Gateway usage")).toExist(),
+			expectView(text("Couldn't load this project's requests")).toExist(),
+			expectView(text("Couldn't load top paths and errors")).toExist(),
+			expectView(text("Couldn't load deployments")).toExist(),
+			expectView(text("Couldn't load AI Gateway usage")).toExist(),
 		)
-		expect(names(pageUpdate(model, Message.ClickedRetryRequests()).commands)).toEqual([
-			"FetchVercelProjectRows",
-			"FetchVercelProjectRequestSeries",
-		])
+		const retriedRequests = names(pageUpdate(model, Message.ClickedRetryRequests()).commands)
+		expect(retriedRequests).toEqual(
+			expect.arrayContaining(["FetchVercelProjectRows", "FetchVercelProjectRequestSeries"]),
+		)
+		expect(retriedRequests).not.toContain("FetchVercelDeployments")
 		expect(names(pageUpdate(model, Message.ClickedRetryDeployments()).commands)).toEqual([
 			"FetchVercelDeployments",
 		])

@@ -11,13 +11,16 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
 import * as Field from "@maple/views/ui/field"
+import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { input } from "@maple/views/ui/input"
+import { label } from "@maple/views/ui/label"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import * as RadioGroup from "@maple/views/ui/radio-group"
 import { searchInput } from "@maple/views/ui/search-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { switchControl } from "@maple/views/ui/switch"
+import { typography } from "@maple/views/ui/typography"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { settingsChange, vercelStatusOf } from "./update-vercel"
@@ -124,7 +127,7 @@ const tokenFields = (h: H, configure: VercelConfigureModel): Html => {
 					? [
 							Field.fieldError(
 								h,
-								{ ids, state, className: "leading-5 text-pretty", attributes: [h.Role("alert")] },
+								{ ids, state, className: "text-xs/5 text-pretty", attributes: [h.Role("alert")] },
 								configure.error,
 							),
 						]
@@ -197,21 +200,27 @@ const teamStage = (h: H, configure: VercelConfigureModel, teams: ReadonlyArray<V
 			h.div(
 				[h.Class("flex flex-col gap-2")],
 				[
-					h.h3([h.Id("vercel-team-heading"), h.Class(TITLE)], ["Which team should Maple watch?"]),
+					heading(h, { level: 3, variant: "subsection", id: "vercel-team-heading" }, ["Which team should Maple watch?"]),
 					RadioGroup.radioGroup(
 						h,
-						{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
+						{
+							label: "Which team should Maple watch?",
+							className: "gap-0 divide-y overflow-hidden rounded-md border",
+						},
 						teams.map((team) =>
 							h.div(
-								[h.Key(team.id), h.Class("flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40")],
+								[h.Key(team.id), h.Class("flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 active:bg-muted/40")],
 								[
 									...RadioGroup.radio(h, config, team.id),
-									h.label(
-										[
-											h.Id(RadioGroup.labelId(`vercel-team-${team.id}-input`)),
-											h.For(`vercel-team-${team.id}-input`),
-											h.Class("flex min-w-0 flex-1 cursor-pointer items-center gap-3"),
-										],
+									label(
+										h,
+										{
+											className: "flex min-w-0 flex-1 cursor-pointer gap-3 font-normal",
+											attributes: [
+												h.Id(RadioGroup.labelId(`vercel-team-${team.id}-input`)),
+												h.For(`vercel-team-${team.id}-input`),
+											],
+										},
 										[
 											h.span([h.Class("min-w-0 flex-1 truncate text-sm font-medium")], [team.name]),
 											h.span([h.Class("font-mono text-xs text-muted-foreground")], [team.slug]),
@@ -295,11 +304,13 @@ const projectList = (h: H, configure: VercelConfigureModel, projects: ReadonlyAr
 							return h.li(
 								[h.Key(project.id)],
 								[
-									h.label(
-										[
-											h.Id(Checkbox.labelId(inputId)),
-											h.Class("flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted/40"),
-										],
+									label(
+										h,
+										{
+											className:
+												"flex cursor-pointer gap-3 px-3 py-2 font-normal hover:bg-muted/40 active:bg-muted/40",
+											attributes: [h.Id(Checkbox.labelId(inputId))],
+										},
 										[
 											...Checkbox.view(h, {
 												model: { isChecked: configure.draft.projectIds.includes(project.id) },
@@ -344,12 +355,12 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 									h.div(
 										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
 										[
-											h.label(
-												[
-													h.Id(`vercel-${signal.flag}-label`),
-													h.For(`vercel-${signal.flag}-input`),
-													h.Class("flex items-center gap-2 text-sm font-medium"),
-												],
+											label(
+												h,
+												{
+													className: "flex text-sm sm:text-sm",
+													attributes: [h.Id(`vercel-${signal.flag}-label`), h.For(`vercel-${signal.flag}-input`)],
+												},
 												[
 													signal.title,
 													badge(h, { variant: "outline", size: "xs", className: "font-mono" }, [signal.drain]),
@@ -377,7 +388,7 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 					h.div(
 						[h.Class("flex items-center justify-between gap-3")],
 						[
-							h.h3([h.Class(TITLE)], ["Projects"]),
+							heading(h, { level: 3, variant: "subsection" }, ["Projects"]),
 							segmentedSelect(h, {
 								ariaLabel: "Projects",
 								size: "sm",
@@ -408,7 +419,7 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 					h.div(
 						[h.Class("flex items-center justify-between gap-3")],
 						[
-							h.label([h.For("vercel-sampling"), h.Class(TITLE)], ["Sampling"]),
+							label(h, { className: "text-sm/5 sm:text-sm/5", attributes: [h.For("vercel-sampling")] }, ["Sampling"]),
 							nativeSelect(
 								h,
 								{
@@ -440,8 +451,14 @@ export const vercelCostNote = <M>(h: HtmlBuilder<M>): Html =>
 			h.ul(
 				[h.Class("flex flex-col gap-0.5 leading-5")],
 				[
-					h.li([], [h.span([h.Class("font-medium text-foreground")], ["$0.50 per GB"]), " of logs and traces sent"]),
-					h.li([], [h.span([h.Class("font-medium text-foreground")], ["$0.05 per 1,000"]), " AI Gateway traces"]),
+					h.li(
+						[],
+						[typography(h, { weight: "medium", tone: "foreground" }, ["$0.50 per GB"]), " of logs and traces sent"],
+					),
+					h.li(
+						[],
+						[typography(h, { weight: "medium", tone: "foreground" }, ["$0.05 per 1,000"]), " AI Gateway traces"],
+					),
 					h.li(
 						[],
 						[
@@ -451,7 +468,7 @@ export const vercelCostNote = <M>(h: HtmlBuilder<M>): Html =>
 									h.Href("https://vercel.com/docs/drains"),
 									h.Target("_blank"),
 									h.Rel("noreferrer"),
-									h.Class("underline underline-offset-2 hover:no-underline"),
+									h.Class("underline underline-offset-2 hover:no-underline active:no-underline"),
 								],
 								["Pricing"],
 							),

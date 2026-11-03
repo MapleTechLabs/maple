@@ -7,6 +7,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { VercelFleetTotals, VercelProjectRow } from "../../../../components/infra/vercel/list-model"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { typography } from "@maple/views/ui/typography"
 import { columnHead, dataTable, headSort, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import type { TimeSearch } from "../../../infra/kit/view-tabs"
 import { statRail, statRailItem, statRailItemSkeleton } from "../../../kit/stat-rail"
@@ -171,8 +172,9 @@ const row = (h: H, view: RowView, time: TimeSearch, clock: Clock): Html =>
 					...(view.framework === null
 						? []
 						: [
-								h.span(
-									[h.Class("shrink-0 font-mono text-3xs text-muted-foreground")],
+								typography(
+									h,
+									{ size: "3xs", tone: "muted", mono: true, className: "shrink-0" },
 									[view.framework],
 								),
 							]),
@@ -182,7 +184,7 @@ const row = (h: H, view: RowView, time: TimeSearch, clock: Clock): Html =>
 				[h.Class("hidden w-[220px] lg:block")],
 				[
 					view.production === null
-						? h.span([h.Class("text-2xs text-muted-foreground")], ["no production deployment"])
+						? typography(h, { size: "2xs", tone: "muted" }, ["no production deployment"])
 						: deploymentInline(h, view.production, clock),
 				],
 			),

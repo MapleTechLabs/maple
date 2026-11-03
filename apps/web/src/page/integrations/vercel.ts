@@ -165,7 +165,7 @@ export const ConnectVercel = Command.define("ConnectVercel", {
 						teamName: null,
 						error: errorText(
 							error,
-							mode === "token" ? "Vercel didn't accept this token." : "Failed to connect Vercel.",
+							mode === "token" ? "Vercel didn't accept this token." : "Couldn't connect Vercel.",
 						),
 					}),
 				onSuccess: (status) =>
@@ -187,7 +187,7 @@ export const SaveVercelSettings = Command.define("SaveVercelSettings", {
 				onFailure: (error) =>
 					Message.CompletedVercelSave({
 						isReapply,
-						error: errorText(error, "Failed to update the drains."),
+						error: errorText(error, "Couldn't update the drains."),
 					}),
 				onSuccess: () => Message.CompletedVercelSave({ isReapply, error: null }),
 			}),
