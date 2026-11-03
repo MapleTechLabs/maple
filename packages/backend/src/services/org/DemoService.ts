@@ -4,9 +4,11 @@ import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { generateDemoRows } from "./demo/fixtures"
+import { generateDemoProductRows } from "./demo/product"
 
 const DEMO_HOURS_DEFAULT = 6
 const DEMO_RATE_PER_HOUR = 250
+const DEMO_VISITORS_PER_HOUR = 40
 // Rows per warehouse append. Keeps each NDJSON POST body modest (~1.5k rows
 // total for the 6h default) without fanning out into many tiny requests.
 const INGEST_CHUNK = 500
@@ -50,7 +52,13 @@ export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
 				})
 
 				const ingestAll = (
-					datasource: "traces" | "logs" | "metrics_gauge" | "metrics_sum",
+					datasource:
+						| "traces"
+						| "logs"
+						| "metrics_gauge"
+						| "metrics_sum"
+						| "session_replays"
+						| "product_events",
 					rows: ReadonlyArray<unknown>,
 				) =>
 					Effect.forEach(
@@ -76,6 +84,14 @@ export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
 				// Runtime, Metric Overview) have data to show.
 				yield* ingestAll("metrics_gauge", metricGaugeRows)
 				yield* ingestAll("metrics_sum", metricSumRows)
+				// Browser sessions and their product events, so Web and Product analytics have data.
+				const { sessionRows, eventRows } = generateDemoProductRows({
+					orgId: tenant.orgId,
+					hours: safeHours,
+					visitorsPerHour: DEMO_VISITORS_PER_HOUR,
+				})
+				yield* ingestAll("session_replays", sessionRows)
+				yield* ingestAll("product_events", eventRows)
 
 				return new DemoSeedResponse({
 					seeded: true,
