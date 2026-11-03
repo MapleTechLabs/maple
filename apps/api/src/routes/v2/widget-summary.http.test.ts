@@ -67,6 +67,7 @@ const issueDocument = (overrides: Partial<ErrorIssueDocument> = {}): ErrorIssueD
 		kind: "error",
 		fingerprintHash: "12345",
 		fingerprintHashes: ["12345"],
+		mergedIntoIssueId: null,
 		serviceName: "api",
 		exceptionType: "TypeError",
 		exceptionMessage: "Cannot read properties of undefined",

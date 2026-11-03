@@ -334,6 +334,7 @@ function issueOf(seed: SignalSeed, nowMs: number): ErrorIssueDocument {
 		resolvedVersions: [],
 		snoozeUntil: null,
 		archivedAt: null,
+		mergedIntoIssueId: null,
 		hasOpenIncident: seed.incident ?? false,
 		commentCount: seed.comments ?? 0,
 		openPullRequestCount: seed.openPrs ?? 0,

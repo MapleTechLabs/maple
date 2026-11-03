@@ -275,6 +275,8 @@ export const ErrorIssueEventType = Schema.Literals([
 	"pr_merged",
 	"verification_started",
 	"verification_verdict",
+	"merge",
+	"unmerge",
 ]).annotate({
 	identifier: "@maple/ErrorIssueEventType",
 	title: "Error Issue Event Type",
@@ -355,6 +357,8 @@ export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorI
 	resolvedVersions: Schema.Array(Schema.String),
 	snoozeUntil: Schema.NullOr(IsoDateTimeString),
 	archivedAt: Schema.NullOr(IsoDateTimeString),
+	/** Set when this issue was merged into another; it is archived and its hashes land there. */
+	mergedIntoIssueId: Schema.NullOr(ErrorIssueId),
 	hasOpenIncident: Schema.Boolean,
 	// Activity rollups for list surfaces: is anyone talking about this issue,
 	// and where do its linked PRs stand — without a per-issue events fetch.
@@ -484,6 +488,11 @@ export class ErrorIssueSetSeverityRequest extends Schema.Class<ErrorIssueSetSeve
 )({
 	severity: Schema.NullOr(IssueSeverity),
 	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+}) {}
+
+/** Fold these issues into the one in the path; each is archived pointing at it. */
+export class ErrorIssueMergeRequest extends Schema.Class<ErrorIssueMergeRequest>("ErrorIssueMergeRequest")({
+	sourceIssueIds: Schema.Array(ErrorIssueId).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
 }) {}
 
 // Pull request links + fix verification
@@ -925,6 +934,21 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			payload: ErrorIssueSetSeverityRequest,
 			success: ErrorIssueDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("mergeIssues", "/issues/:issueId/merge", {
+			params: { issueId: ErrorIssueId },
+			payload: ErrorIssueMergeRequest,
+			success: ErrorIssueDocument,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("unmergeIssue", "/issues/:issueId/unmerge", {
+			params: { issueId: ErrorIssueId },
+			success: ErrorIssueDocument,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
 		}),
 	)
 	.add(

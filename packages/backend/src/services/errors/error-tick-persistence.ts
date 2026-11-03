@@ -284,7 +284,7 @@ export const isRegression = (
  * Re-observing a build moves it to the end, so the cap evicts by least-recently-
  * seen rather than by insertion order.
  */
-const mergeVersions = (
+export const mergeVersions = (
 	existing: ReadonlyArray<string>,
 	observed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {

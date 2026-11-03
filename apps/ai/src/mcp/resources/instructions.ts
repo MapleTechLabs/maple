@@ -83,6 +83,8 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - \`transition_error_issue\` — everything else, e.g. \`wontfix\` with a \`snooze_until\`.
 - \`transition_error_issues\`: the same move on many issues at once (one note, per-issue results).
   \`propose_fix\` takes \`also_issue_ids\` when one PR fixes several issues.
+- \`merge_error_issues\`: fold duplicates of one bug into one issue. Only after you have confirmed
+  they share a root cause; their future occurrences land on the kept issue.
 
 ## Attribute Filtering
 - Call \`explore_attributes\` before filtering by custom attributes

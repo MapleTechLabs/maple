@@ -30,6 +30,7 @@ import type {
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 
@@ -74,6 +75,7 @@ export const toV2Issue = (issue: ErrorIssueDocument): V2ErrorIssue => ({
 	resolved_versions: issue.resolvedVersions,
 	snooze_until: issue.snoozeUntil,
 	archived_at: issue.archivedAt,
+	merged_into_issue_id: issue.mergedIntoIssueId,
 	has_open_incident: issue.hasOpenIncident,
 	comment_count: issue.commentCount,
 	open_pull_request_count: issue.openPullRequestCount,
@@ -161,6 +163,7 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 		const errors = yield* ErrorsService
 		const workflow = yield* ErrorIssueWorkflowService
 		const actors = yield* ErrorActorsService
+		const merges = yield* ErrorIssueMergeService
 
 		// Actions run as the signed-in user's actor, the same one the dashboard uses.
 		const callerActor = Effect.gen(function* () {
@@ -282,6 +285,31 @@ export const HttpV2ErrorIssuesLive = HttpApiBuilder.group(MapleApiV2, "errorIssu
 						"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
 					}),
 					Effect.withSpan("HttpV2ErrorIssues.release"),
+				),
+			)
+			.handle("merge", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const { orgId, actorId } = yield* callerActor
+					const issue = yield* merges.mergeIssues(
+						orgId,
+						actorId,
+						params.id,
+						payload.source_issue_ids,
+					)
+					return toV2Issue(issue)
+				}).pipe(
+					Effect.catchTags({ "@maple/http/errors/ErrorValidationError": validationFailed }),
+					Effect.withSpan("HttpV2ErrorIssues.merge"),
+				),
+			)
+			.handle("unmerge", ({ params }) =>
+				Effect.gen(function* () {
+					const { orgId, actorId } = yield* callerActor
+					const issue = yield* merges.unmergeIssue(orgId, actorId, params.id)
+					return toV2Issue(issue)
+				}).pipe(
+					Effect.catchTags({ "@maple/http/errors/ErrorValidationError": validationFailed }),
+					Effect.withSpan("HttpV2ErrorIssues.unmerge"),
 				),
 			)
 			.handle("setSeverity", ({ params, payload }) =>

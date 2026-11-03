@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, ErrorForbiddenError, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
@@ -12,6 +13,7 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 	Effect.gen(function* () {
 		const actors = yield* ErrorActorsService
 		const workflow = yield* ErrorIssueWorkflowService
+		const merges = yield* ErrorIssueMergeService
 		const policies = yield* ErrorPolicyService
 		const errors = yield* ErrorsService
 		const verification = yield* IssueFixVerificationService
@@ -168,6 +170,25 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 						},
 					)
 				}).pipe(Effect.withSpan("HttpErrors.setIssueSeverity")),
+			)
+			.handle("mergeIssues", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
+					return yield* merges.mergeIssues(
+						tenant.orgId,
+						actor.id,
+						params.issueId,
+						payload.sourceIssueIds,
+					)
+				}).pipe(Effect.withSpan("HttpErrors.mergeIssues")),
+			)
+			.handle("unmergeIssue", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
+					return yield* merges.unmergeIssue(tenant.orgId, actor.id, params.issueId)
+				}).pipe(Effect.withSpan("HttpErrors.unmergeIssue")),
 			)
 			.handle("listIssueEvents", ({ params, query }) =>
 				Effect.gen(function* () {

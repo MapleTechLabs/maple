@@ -9,6 +9,7 @@ import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesServ
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
@@ -403,6 +404,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		hydrateIssue: die,
 		recordEvent: die,
 		buildEvent: dieSync,
+		recordEventAudit: die,
 		applyTransition: die,
 		heartbeatIssue: die,
 		releaseIssue: die,
@@ -410,6 +412,10 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		setSeverity: die,
 		commentOnIssue: die,
 		listIssueEvents: die,
+	}),
+	Layer.succeed(ErrorIssueMergeService, {
+		mergeIssues: die,
+		unmergeIssue: die,
 	}),
 	Layer.succeed(ErrorActorsService, {
 		registerAgent: die,

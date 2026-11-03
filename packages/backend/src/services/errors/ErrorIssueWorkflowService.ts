@@ -173,6 +173,14 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly payload?: StoredJsonRecord
 		},
 	) => ErrorIssueEventInsert
+	/** Mirror an actor-attributed issue event into the org audit log. Never fails. */
+	readonly recordEventAudit: (
+		orgId: OrgId,
+		issueId: ErrorIssueId,
+		actorId: ActorId,
+		type: ErrorIssueEventType,
+		opts: { readonly fromState?: WorkflowState | null; readonly toState?: WorkflowState | null },
+	) => Effect.Effect<void>
 	readonly applyTransition: (
 		orgId: OrgId,
 		actorId: ActorId | null,
@@ -250,6 +258,7 @@ const make: Effect.Effect<
 			resolvedVersions: row.resolvedVersionsJson,
 			snoozeUntil: row.snoozeUntil == null ? null : isoFromMs(row.snoozeUntil),
 			archivedAt: row.archivedAt == null ? null : isoFromMs(row.archivedAt),
+			mergedIntoIssueId: row.mergedIntoIssueId,
 			hasOpenIncident,
 			commentCount: activity.commentCount,
 			openPullRequestCount: activity.openPullRequestCount,
@@ -940,6 +949,7 @@ const make: Effect.Effect<
 		hydrateIssue,
 		recordEvent,
 		buildEvent: buildEventInsert,
+		recordEventAudit,
 		applyTransition,
 		heartbeatIssue,
 		releaseIssue,

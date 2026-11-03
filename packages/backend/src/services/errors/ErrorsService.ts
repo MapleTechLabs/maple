@@ -32,6 +32,7 @@ import {
 	ErrorFingerprintCandidates,
 	ErrorIssues,
 	ErrorIssueEvents,
+	ErrorIssueFingerprints,
 	type ErrorIssueRow,
 	ErrorIssueStates,
 	ErrorNotificationPolicies,
@@ -1494,6 +1495,15 @@ const make: Effect.Effect<
 						yield* dbExecute((db) =>
 							db.run(
 								PG.deleteFrom(ErrorIssueEvents).where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...ids),
+								]),
+							),
+						)
+						// A purged issue's hashes stop landing on it; merged-away issues keep theirs pointed at their owner.
+						yield* dbExecute((db) =>
+							db.run(
+								PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
 									$.orgId.eq(orgId),
 									$.issueId.in_(...ids),
 								]),

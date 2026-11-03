@@ -6,6 +6,7 @@ import type { AlertRulesService } from "@maple/backend/services/alerts/AlertRule
 import type { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import type { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import type { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import type { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import type { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import type { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import type { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
@@ -48,6 +49,7 @@ export type McpToolRuntimeRequirements =
 	| ErrorActorsService
 	| ErrorIssueReadModelsService
 	| ErrorIssueWorkflowService
+	| ErrorIssueMergeService
 	| ErrorPolicyService
 	| ErrorsService
 	| IntegrationInventoryService
