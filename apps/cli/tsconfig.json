@@ -21,7 +21,13 @@
 			{
 				"name": "@effect/language-service",
 				"ignoreEffectWarningsInTscExitCode": true,
-				"diagnosticSeverity": { "unstableApiUsage": "off" }
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
 			}
 		]
 	}

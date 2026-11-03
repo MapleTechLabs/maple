@@ -390,6 +390,7 @@ export {
 	errorTickBootstrapIssuesQuery,
 	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
+	errorFingerprintLineageQuery,
 	errorFingerprintsQuery,
 	errorIssueTimeseriesQuery,
 	errorIssueSampleTracesQuery,

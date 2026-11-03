@@ -227,6 +227,8 @@ export const ErrorEventsByTime = Datasources.errorEventsByTime
 /** Minute-grain per-fingerprint rollup consumed by the error issue tick. */
 export const ErrorFingerprintsMinutely = Datasources.errorFingerprintsMinutely
 
+export const ErrorFingerprintLineage = Datasources.errorFingerprintLineage
+
 export const MetricsSum = Datasources.metricsSum
 
 export const MetricsGauge = Datasources.metricsGauge

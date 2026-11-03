@@ -83,6 +83,7 @@ export const Model = Schema.Struct({
 	focusedId: Schema.NullOr(Schema.String),
 	bulkSeverityMenu: Menu.Model,
 	bulkMoveMenu: Menu.Model,
+	bulkMergeMenu: Menu.Model,
 	/** Rows with a write in flight; another write on them waits. */
 	writingIds: Schema.Array(Schema.String),
 	/** The right-click menu, on the row last pressed. */

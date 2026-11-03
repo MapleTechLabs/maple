@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ErrorIncidents, ErrorIssues } from "@maple/db/tables"
+import { ErrorIncidents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { Clock, Effect, Layer, Schema, Array as Arr, DateTime } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -35,14 +35,17 @@ const createdDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const makeWarehouseStub = (contexts: Array<string>): WarehouseQueryServiceApi => ({
+const makeWarehouseStub = (contexts: Array<string>, sqls: Array<string>): WarehouseQueryServiceApi => ({
 	query: () => Effect.die(new Error("unexpected pipe query")),
 	rawSqlQuery: () => Effect.die(new Error("unexpected raw SQL query")),
 	crossOrgQuery: () => Effect.die(new Error("unexpected cross-org query")),
 	compiledQuery: (_tenant, compile, options) => {
 		const compiled =
 			typeof compile === "function" ? Effect.runSync(compile(baselineWarehouseCapabilities())) : compile
-		return Effect.sync(() => contexts.push(options?.context ?? "")).pipe(
+		return Effect.sync(() => {
+			contexts.push(options?.context ?? "")
+			sqls.push(compiledQueryOf(compiled).sql)
+		}).pipe(
 			Effect.andThen(
 				compiledQueryOf(compiled)
 					.decodeRows(
@@ -64,7 +67,7 @@ const makeWarehouseStub = (contexts: Array<string>): WarehouseQueryServiceApi =>
 	},
 })
 
-const makeLayer = (contexts: Array<string>) => {
+const makeLayer = (contexts: Array<string>, sqls: Array<string> = []) => {
 	const database = createTestDb(createdDbs).layer
 	const actors = ErrorActorsService.layer.pipe(Layer.provide(database))
 	const workflow = Layer.effect(ErrorIssueWorkflowService, ErrorIssueWorkflowService.make).pipe(
@@ -72,7 +75,7 @@ const makeLayer = (contexts: Array<string>) => {
 		Layer.provide(database),
 		Layer.provide(actors),
 	)
-	const warehouse = Layer.succeed(WarehouseQueryService, makeWarehouseStub(contexts))
+	const warehouse = Layer.succeed(WarehouseQueryService, makeWarehouseStub(contexts, sqls))
 	const readModels = readRequirements.pipe(
 		Layer.provide(database),
 		Layer.provide(warehouse),
@@ -296,5 +299,46 @@ describe("ErrorIssueReadModelsService", () => {
 			assert.strictEqual(incidentsError._tag, "@maple/http/errors/ErrorIssueNotFoundError")
 			assert.deepStrictEqual(contexts, [])
 		}).pipe(Effect.provide(makeLayer(contexts)))
+	})
+
+	it.effect("reads an issue across every fingerprint merged into it", () => {
+		const sqls: Array<string> = []
+		return Effect.gen(function* () {
+			const database = yield* Database
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const owner = asIssueId(randomUUID())
+			const other = asIssueId(randomUUID())
+			yield* seedIssue(ORG, owner, now, { fingerprintHash: "11111111111111111111" })
+			yield* seedIssue(ORG, other, now, { fingerprintHash: "4444444444444444444" })
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: "3333333333333333333",
+						issueId: owner,
+						source: "merge",
+						createdAt: now,
+					}),
+				),
+			)
+
+			const detail = yield* readModels.getIssue(ORG, owner, {})
+			assert.deepStrictEqual(detail.issue.fingerprintHashes, [
+				"11111111111111111111",
+				"3333333333333333333",
+			])
+			// Timeseries, samples and environments each ask for both hashes.
+			const issueReads = Arr.filter(sqls, (sql) => sql.includes("11111111111111111111"))
+			assert.lengthOf(issueReads, 3)
+			for (const sql of issueReads) expect(sql).toContain("3333333333333333333")
+
+			// The volume-ranked list asks by hash; a merged-in one finds its owner.
+			const listed = yield* readModels.listIssues(ORG, { fingerprintHashes: ["3333333333333333333"] })
+			assert.deepStrictEqual(
+				Arr.map(listed.issues, (issue) => issue.id),
+				[owner],
+			)
+		}).pipe(Effect.provide(makeLayer([], sqls)))
 	})
 })

@@ -3,7 +3,16 @@ import { describe, expect, it } from "vitest"
 import type { WorkflowState } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 
-import { densifySpark, resolveSignalState, sparkFingerprintHashes, surgeRatio } from "./error-signal"
+import { ErrorIssueDocument } from "@maple/domain/http"
+
+import { buildErrorsLabFixture } from "../../lab/errors-fixture"
+import {
+	buildErrorSignals,
+	densifySpark,
+	resolveSignalState,
+	sparkFingerprintHashes,
+	surgeRatio,
+} from "./error-signal"
 
 const HOUR_MS = 3_600_000
 
@@ -54,10 +63,10 @@ describe("sparkFingerprintHashes", () => {
 		// synthetic key. Sending one to the batched spark query makes ClickHouse
 		// reject `toUInt64('alert:…')` and fails the sparklines for every row.
 		const hashes = sparkFingerprintHashes([
-			{ kind: "error", fingerprintHash: "753390793895937054" },
-			{ kind: "alert", fingerprintHash: "alert:550bb2c5-8fe0-4ab9-b2f8-e566674cb0a2:scraper" },
-			{ kind: "integration", fingerprintHash: "planetscale:maple:branch.out_of_memory" },
-			{ kind: "error", fingerprintHash: "1037926342141719040" },
+			{ kind: "error", fingerprintHashes: ["753390793895937054"] },
+			{ kind: "alert", fingerprintHashes: ["alert:550bb2c5-8fe0-4ab9-b2f8-e566674cb0a2:scraper"] },
+			{ kind: "integration", fingerprintHashes: ["planetscale:maple:branch.out_of_memory"] },
+			{ kind: "error", fingerprintHashes: ["1037926342141719040"] },
 		])
 		expect(hashes).toEqual(["753390793895937054", "1037926342141719040"])
 	})
@@ -124,5 +133,43 @@ describe("surgeRatio", () => {
 	it("reads low when a fingerprint is dying off", () => {
 		const fading = [100, 60, 30, 10, 0, 0, 0, 0, 0, 0]
 		expect(surgeRatio(fading) ?? 1).toBeLessThan(0.5)
+	})
+})
+
+describe("buildErrorSignals", () => {
+	it("sums a merged issue's volume and spark across every hash it owns", () => {
+		const base = buildErrorsLabFixture(Date.parse("2026-11-03T12:00:00Z")).signals[0]!.issue
+		const merged = new ErrorIssueDocument({ ...base, fingerprintHashes: ["1", "2"] })
+		const day = (n: number) => `2026-11-0${n}T00:00:00.000Z`
+		const [signal] = buildErrorSignals({
+			issues: [merged],
+			warehouse: [
+				{ fingerprintHash: "1", count: 4, affectedServicesCount: 1 },
+				{ fingerprintHash: "2", count: 6, affectedServicesCount: 2 },
+			].map((row) => ({
+				...row,
+				errorLabel: "",
+				sampleMessage: "",
+				firstSeen: new Date(0),
+				lastSeen: new Date(0),
+			})),
+			spark: [
+				{
+					fingerprintHash: "1",
+					points: [
+						{ bucket: day(1), count: 1 },
+						{ bucket: day(2), count: 3 },
+					],
+				},
+				{ fingerprintHash: "2", points: [{ bucket: day(2), count: 6 }] },
+			],
+			investigations: new Map(),
+		})
+		expect(signal?.windowCount).toBe(10)
+		expect(signal?.affectedServicesCount).toBe(2)
+		expect(signal?.spark).toEqual([
+			{ bucket: day(1), count: 1 },
+			{ bucket: day(2), count: 9 },
+		])
 	})
 })

@@ -460,7 +460,13 @@ export const maybeEnqueueTriage: (
 			const latestRows = yield* database.execute((db) =>
 				db.run(
 					PG.from(Investigations)
-						.select("id", "status", "createdAt", "startedAt")
+						.select(($) => ({
+							id: $.id,
+							status: $.status,
+							createdAt: $.createdAt,
+							startedAt: $.startedAt,
+							progressJson: storedProgressJson($),
+						}))
 						.where(($) => [$.orgId.eq(input.orgId), $.issueId.eq(issueId)])
 						.orderBy(["createdAt", "desc"])
 						.limit(1),
@@ -475,6 +481,7 @@ export const maybeEnqueueTriage: (
 							status: latestRow.status,
 							createdAtMs: latestRow.createdAt,
 							startedAtMs: latestRow.startedAt,
+							progressJson: latestRow.progressJson,
 						}
 			const issueGate = evaluateIssueGate({
 				workflowState: issueRows[0]?.workflowState ?? null,

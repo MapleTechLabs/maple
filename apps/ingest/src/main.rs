@@ -1486,6 +1486,16 @@ async fn entitlement_rejection(
     ))
 }
 
+/// The `browser_sessions` gate every browser-session route shares: events,
+/// replay metadata and replay chunks. A denied org gets nothing from any of them,
+/// so a refused session never leaves a stored transcript or recording behind.
+async fn browser_sessions_rejection(state: &AppState, org_id: &str) -> Option<ApiError> {
+    if org_id == SENTINEL_ORG_ID {
+        return None;
+    }
+    entitlement_rejection(state, org_id, BROWSER_SESSIONS_FEATURE_ID).await
+}
+
 #[derive(Clone, Debug)]
 struct ClickHouseTargetRow {
     ch_url: String,
@@ -4270,6 +4280,12 @@ async fn handle_replay_meta_inner(
                 ApiError::too_many_requests("Per-org ingest limit exceeded")
             })?;
 
+    // Gated on every request, not only on a billable session start: a denied org
+    // must not keep storing the continuation rows and chunks of its sessions.
+    if let Some(error) = browser_sessions_rejection(state, &org_id).await {
+        return Err(error);
+    }
+
     let pipeline = native_rows_pipeline_for(
         state,
         destination,
@@ -4481,12 +4497,8 @@ async fn handle_session_events_inner(
     // `/v1/events`). The REJECTION here deliberately stays on `browser_sessions`:
     // an exhausted product-events allowance is billed as usage_based overage and
     // must not 402 a whole session transcript.
-    if org_id != SENTINEL_ORG_ID {
-        if let Some(error) =
-            entitlement_rejection(state, &org_id, BROWSER_SESSIONS_FEATURE_ID).await
-        {
-            return Err(error);
-        }
+    if let Some(error) = browser_sessions_rejection(state, &org_id).await {
+        return Err(error);
     }
 
     let pipeline = native_rows_pipeline_for(
@@ -4870,6 +4882,12 @@ async fn handle_replay_blob_inner(
                 warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
                 ApiError::too_many_requests("Per-org ingest limit exceeded")
             })?;
+
+    // Gated on every request, not only on a billable session start: a denied org
+    // must not keep storing the continuation rows and chunks of its sessions.
+    if let Some(error) = browser_sessions_rejection(state, &org_id).await {
+        return Err(error);
+    }
 
     let pipeline = native_rows_pipeline_for(
         state,
@@ -12191,6 +12209,89 @@ mod tests {
         .await
         .expect("a normal chunk is still accepted");
         assert!(rx.recv().await.is_some(), "the normal chunk is stored");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn replay_routes_refuse_a_denied_org_before_storing_anything() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/{*path}", axum::routing::put(fake_r2_put))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let queue_dir = unique_main_test_dir("replay-denied");
+        let store = Arc::new(FakeKeyStore::default());
+        let (denied, allowed) = (
+            "maple_sk_test_replay_denied",
+            "maple_sk_test_replay_allowed",
+        );
+        for (raw_key, org_id) in [
+            (denied, "org_replay_denied"),
+            (allowed, "org_replay_allowed"),
+        ] {
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: org_id.to_owned(),
+                    self_managed: true,
+                    clickhouse_ready: true,
+                },
+            );
+        }
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let state = with_autumn_denying(state, "org_replay_denied").await;
+        let state = with_replay_blob_store(state, format!("http://{addr}"));
+        let chunk = || gzip_bytes(r#"[{"type":2,"timestamp":1}]"#);
+
+        let before = queue_dir_bytes(&queue_dir);
+        let error = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(denied, "sess_denied", 3),
+            chunk(),
+        )
+        .await
+        .expect_err("a denied org's replay chunk must be refused");
+        assert_eq!(error.status, StatusCode::PAYMENT_REQUIRED);
+
+        // A continuation row (no billable session start) is refused too.
+        let error = handle_replay_meta_inner(
+            &state,
+            &bearer_headers(denied),
+            Bytes::from_static(br#"{"session_id":"sess_denied","version":2,"billable_start":0}"#),
+        )
+        .await
+        .expect_err("a denied org's session metadata must be refused");
+        assert_eq!(error.status, StatusCode::PAYMENT_REQUIRED);
+
+        assert!(rx.try_recv().is_err(), "nothing may reach the blob store");
+        assert_eq!(
+            queue_dir_bytes(&queue_dir),
+            before,
+            "nothing may be enqueued"
+        );
+
+        handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(allowed, "sess_ok", 0),
+            chunk(),
+        )
+        .await
+        .expect("an allowed org's chunk is accepted");
+        assert!(rx.recv().await.is_some(), "the allowed chunk is stored");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }

@@ -292,7 +292,9 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 					parameter: "path",
 				})
 			}
-			const allLines = Str.split("\n")(file.content)
+			const split = Str.split("\n")(file.content)
+			// A trailing newline ends the last line; it does not start another.
+			const allLines = split.at(-1) === "" ? split.slice(0, -1) : split
 			// Whole lines up to the character budget, so every returned line keeps its number.
 			const candidates = allLines.slice(start - 1, end)
 			// Characters spent before each line: every line costs its length plus a newline.

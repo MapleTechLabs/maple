@@ -580,6 +580,33 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "a9e59221736d9ef7225601bc6ad9571e46aaab5a3e6032ff60e3e100a518ee27",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v46: error_events views read a maple.fingerprint attribute as the grouping
+		// key. No stored row is rewritten or moved; only new occurrences hash with it.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 46,
+		fingerprint: "3871c915576e1793",
+		digest: "3871c915576e1793230af632eeb14ea3cc5e2112c8801bd32c8b7b7d0c8f5eda",
+		manifestDigest: "1ac5925ec42c2f51511137762410c05d8f5543b626241f5238e9f1e315c9df38",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v47: fingerprint v4 error_events views (in-app frames) and the new
+		// error_fingerprint_lineage table and view. No stored row is rewritten or moved;
+		// lineage fills from new occurrences only.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 47,
+		fingerprint: "17ce90209b63108e",
+		digest: "17ce90209b63108ee1d33540826ef331aa64edf2379d1088935bdef9145daa2e",
+		manifestDigest: "73247801dadb7aed70cbc98a9e629e79521537496d84ca54d9d073bb05a51263",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */

@@ -1750,5 +1750,64 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
 		],
 	},
+	{
+		id: "local-0045-to-0046-error-custom-fingerprint",
+		from: 45,
+		to: 46,
+		description: "Recreate the error_events MVs: a maple.fingerprint attribute sets the grouping key",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so an error carrying maple.fingerprint groups by that key per org and service",
+			],
+		],
+		verifies: "Verify the v46 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences carrying a maple.fingerprint attribute hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0046-to-0047-error-fingerprint-v4",
+		from: 46,
+		to: 47,
+		description:
+			"Recreate the error_events MVs for fingerprint v4 (in-app frames) and add the lineage table that re-keys issues",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so the hash keeps the application's own frames, salted fp4",
+			],
+			[
+				"create-error-fingerprint-lineage",
+				"Create error_fingerprint_lineage and its view, recording each re-keyed fingerprint's v3 hashes from now on",
+			],
+		],
+		verifies: "Verify the v47 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; new occurrences hash with v4, and the lineage table links each to its v3 hashes.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

@@ -50,6 +50,7 @@ import {
 	DigestSubscriptions,
 	ErrorIncidents,
 	ErrorIssueEvents,
+	ErrorIssueFingerprints,
 	ErrorIssueStates,
 	ErrorIssues,
 	ErrorNotificationPolicies,
@@ -186,6 +187,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
+	// The aliases go with the issues they point at.
+	ErrorIssueFingerprints,
 	ErrorIssues,
 	ErrorNotificationPolicies,
 	Actors,

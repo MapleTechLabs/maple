@@ -38,6 +38,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
 	ErrorFingerprintCandidates,
+	ErrorIssueFingerprints,
 	ErrorIncidents,
 	ErrorNotificationDeliveries,
 	ErrorIssues,
@@ -147,6 +148,7 @@ const makeWarehouseStub = (
 	scanRows: () => ReadonlyArray<Record<string, unknown>> = () => [],
 	onScan?: () => void,
 	fingerprintRows?: () => ReadonlyArray<Record<string, unknown>>,
+	lineageRows?: () => ReadonlyArray<Record<string, unknown>>,
 ): WarehouseQueryServiceApi => ({
 	query: () => Effect.die(new Error("unexpected warehouse query")),
 	rawSqlQuery: () => Effect.succeed([]),
@@ -169,6 +171,10 @@ const makeWarehouseStub = (
 			// listIssues' deployment-environment filter (shaped like ErrorFingerprintsOutput).
 			if (options?.context === "errorIssueEnvFingerprints") {
 				return Effect.orDie(compiledQueryOf(compiled).decodeRows(fingerprintRows?.() ?? []))
+			}
+			// The previous-version hash of each scanned fingerprint a bump re-keyed.
+			if (options?.context === "errorFingerprintLineage") {
+				return Effect.orDie(compiledQueryOf(compiled).decodeRows(lineageRows?.() ?? []))
 			}
 			// Active-org discovery reads the same data the scan does, so model that
 			// consistency: surface the org iff it currently has error rows.
@@ -193,6 +199,7 @@ const makeErrorsLayer = (
 	edgeBackend?: ReturnType<typeof makeMemoryBackend>,
 	fingerprintRows?: () => ReadonlyArray<Record<string, unknown>>,
 	dispatcher?: (typeof NotificationDispatcher)["Service"],
+	lineageRows?: () => ReadonlyArray<Record<string, unknown>>,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -209,7 +216,7 @@ const makeErrorsLayer = (
 	const errorPolicyLive = ErrorPolicyService.layer.pipe(Layer.provide(databaseLive))
 	const warehouseLive = Layer.succeed(
 		WarehouseQueryService,
-		makeWarehouseStub(scanRows, onScan, fingerprintRows),
+		makeWarehouseStub(scanRows, onScan, fingerprintRows, lineageRows),
 	)
 	const errorIssueReadModelsLive = Layer.effect(
 		ErrorIssueReadModelsService,
@@ -2128,6 +2135,330 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
+	it.effect("lands a merged-in fingerprint on the issue that owns it", () => {
+		const OWNER_FINGERPRINT = "2222222222222222222"
+		const rows = [
+			scanRow({ count: 3, serviceName: "billing-worker", exceptionType: "OtherError" }),
+			scanRow({ fingerprintHash: OWNER_FINGERPRINT, count: 2 }),
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const owner = asIssueId(randomUUID())
+			const mergedAway = asIssueId(randomUUID())
+			yield* seedIssue(owner, { fingerprintHash: OWNER_FINGERPRINT })
+			// The issue that was merged out keeps its own hash as its primary, archived.
+			yield* seedIssue(mergedAway, { fingerprintHash: SCAN_FINGERPRINT, archivedAt: TICK_MS })
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: SCAN_FINGERPRINT,
+						issueId: owner,
+						source: "merge",
+						createdAt: TICK_MS,
+					}),
+				),
+			)
+
+			yield* errors.runTick
+
+			const updated = yield* loadIssueById(owner)
+			// Both hashes in one window are one upsert row, and the owner keeps its title.
+			assert.strictEqual(updated.occurrenceCount, 5)
+			assert.strictEqual(updated.serviceName, "checkout-api")
+			assert.strictEqual(updated.exceptionType, "TimeoutError")
+			assert.strictEqual((yield* loadIssueById(mergedAway)).occurrenceCount, 0)
+			const candidates = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select()
+						.where(($) => [$.fingerprintHash.eq(SCAN_FINGERPRINT)]),
+				),
+			)
+			assert.lengthOf(candidates, 0)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a fingerprint version bump re-keys an issue instead of opening a new one", () => {
+		const BUMPED = "3333333333333333333"
+		const rows = [scanRow({ fingerprintHash: BUMPED, count: 4 })]
+		const lineage = [{ fingerprintHash: BUMPED, previousFingerprintHash: SCAN_FINGERPRINT }]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				workflowState: "in_progress",
+				occurrenceCount: 10,
+			})
+
+			yield* errors.runTick
+
+			const issue = yield* loadIssueById(issueId)
+			assert.strictEqual(issue.occurrenceCount, 14)
+			assert.strictEqual(issue.workflowState, "in_progress")
+			// Restamped, so the version sweep leaves it alone.
+			assert.strictEqual(issue.fingerprintVersion, FINGERPRINT_VERSION)
+			assert.lengthOf(yield* loadIssuesByFingerprint(BUMPED), 0)
+			const aliases = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueFingerprints)
+						.select("fingerprintHash", "issueId", "source")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(aliases, [{ fingerprintHash: BUMPED, issueId, source: "rekey" }])
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
+	it.effect("a bump that folds two old issues into one hash keeps the one being worked", () => {
+		const BUMPED = "3333333333333333333"
+		const OTHER_V3 = "4444444444444444444"
+		const rows = [scanRow({ fingerprintHash: BUMPED, count: 2 })]
+		const lineage = [
+			{ fingerprintHash: BUMPED, previousFingerprintHash: SCAN_FINGERPRINT },
+			{ fingerprintHash: BUMPED, previousFingerprintHash: OTHER_V3 },
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const worked = asIssueId(randomUUID())
+			const busier = asIssueId(randomUUID())
+			yield* seedIssue(worked, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				workflowState: "in_progress",
+				occurrenceCount: 5,
+			})
+			yield* seedIssue(busier, {
+				fingerprintHash: OTHER_V3,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				occurrenceCount: 9,
+			})
+
+			yield* errors.runTick
+
+			const kept = yield* loadIssueById(worked)
+			assert.strictEqual(kept.occurrenceCount, 16)
+			assert.isNull(kept.archivedAt)
+			const folded = yield* loadIssueById(busier)
+			assert.strictEqual(folded.mergedIntoIssueId, worked)
+			// Folded in this tick's window, not left for the version sweep.
+			assert.isAbove(folded.archivedAt ?? 0, TICK_MS - 10 * 60_000)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
+	it.effect("a hash re-keyed onto an issue the same pass folds away follows it to the survivor", () => {
+		const BUMPED_A = "3333333333333333333"
+		const BUMPED_B = "5555555555555555555"
+		const OTHER_V3 = "4444444444444444444"
+		// A's only old issue is X; B's are Y (being worked) and X, so B folds X into Y.
+		const rows = [
+			scanRow({ fingerprintHash: BUMPED_A, count: 2 }),
+			scanRow({ fingerprintHash: BUMPED_B, count: 3 }),
+		]
+		const lineage = [
+			{ fingerprintHash: BUMPED_A, previousFingerprintHash: SCAN_FINGERPRINT },
+			{ fingerprintHash: BUMPED_B, previousFingerprintHash: OTHER_V3 },
+			{ fingerprintHash: BUMPED_B, previousFingerprintHash: SCAN_FINGERPRINT },
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const x = asIssueId(randomUUID())
+			const y = asIssueId(randomUUID())
+			yield* seedIssue(x, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				occurrenceCount: 5,
+			})
+			yield* seedIssue(y, {
+				fingerprintHash: OTHER_V3,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				workflowState: "in_progress",
+				occurrenceCount: 7,
+			})
+
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssueById(x)).mergedIntoIssueId, y)
+			// Both hashes' occurrences and X's history land on Y, none on the archived X.
+			assert.strictEqual((yield* loadIssueById(y)).occurrenceCount, 17)
+			assert.strictEqual((yield* loadIssueById(x)).occurrenceCount, 5)
+			const aliases = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueFingerprints)
+						.select("fingerprintHash", "issueId")
+						.where(($) => [$.orgId.eq(ORG), $.source.eq("rekey")])
+						.orderBy(["fingerprintHash", "asc"]),
+				),
+			)
+			assert.deepStrictEqual(aliases, [
+				{ fingerprintHash: BUMPED_A, issueId: y },
+				{ fingerprintHash: BUMPED_B, issueId: y },
+			])
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
+	it.effect("a re-key onto an issue retention retired brings it back", () => {
+		const BUMPED = "3333333333333333333"
+		const rows = [scanRow({ fingerprintHash: BUMPED, count: 4 })]
+		const lineage = [{ fingerprintHash: BUMPED, previousFingerprintHash: SCAN_FINGERPRINT }]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(issueId, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				workflowState: "todo",
+				archivedAt: TICK_MS - 8 * DAY_MS,
+			})
+
+			yield* errors.runTick
+
+			const issue = yield* loadIssueById(issueId)
+			assert.isNull(issue.archivedAt)
+			assert.strictEqual(issue.workflowState, "todo")
+			assert.strictEqual(issue.occurrenceCount, 4)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
+	it.effect("a bumped hash follows its old hash into the issue it was merged into", () => {
+		const BUMPED = "3333333333333333333"
+		const OWNER_FINGERPRINT = "2222222222222222222"
+		const rows = [scanRow({ fingerprintHash: BUMPED, count: 2 })]
+		const lineage = [{ fingerprintHash: BUMPED, previousFingerprintHash: SCAN_FINGERPRINT }]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const owner = asIssueId(randomUUID())
+			const mergedAway = asIssueId(randomUUID())
+			yield* seedIssue(owner, { fingerprintHash: OWNER_FINGERPRINT })
+			yield* seedIssue(mergedAway, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				archivedAt: TICK_MS,
+				mergedIntoIssueId: owner,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: SCAN_FINGERPRINT,
+						issueId: owner,
+						source: "merge",
+						originIssueId: mergedAway,
+						createdAt: TICK_MS,
+					}),
+				),
+			)
+
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssueById(owner)).occurrenceCount, 2)
+			assert.strictEqual((yield* loadIssueById(mergedAway)).occurrenceCount, 0)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
+	it.effect("an issue's own occurrence keeps its fresh title when a merged-in hash comes after it", () => {
+		const OWNER_FINGERPRINT = "2222222222222222222"
+		// The owner's own row first, the merged-in hash after it: scan order is not guaranteed.
+		const rows = [
+			scanRow({
+				fingerprintHash: OWNER_FINGERPRINT,
+				count: 2,
+				exceptionMessage: "upstream timed out after 30s",
+			}),
+			scanRow({ count: 3, serviceName: "billing-worker", exceptionType: "OtherError" }),
+		]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(TICK_MS)
+			const owner = asIssueId(randomUUID())
+			yield* seedIssue(owner, { fingerprintHash: OWNER_FINGERPRINT, exceptionMessage: "stale message" })
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: SCAN_FINGERPRINT,
+						issueId: owner,
+						source: "merge",
+						createdAt: TICK_MS,
+					}),
+				),
+			)
+
+			yield* errors.runTick
+
+			const updated = yield* loadIssueById(owner)
+			assert.strictEqual(updated.occurrenceCount, 5)
+			assert.strictEqual(updated.exceptionMessage, "upstream timed out after 30s")
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
 	it.effect(
 		"an occurrence from a pre-fix build leaves a done issue alone and opens no incident",
 		() => {
@@ -2175,9 +2506,9 @@ describe("ErrorsService.runTick", () => {
 
 	it.effect("one batched window applies new, ongoing, regressed and snoozed fingerprints", () => {
 		const ONGOING = "11111111111111111111"
-		const REGRESSED = "22222222222222222222"
-		const SNOOZED = "33333333333333333333"
-		const FRESH = "44444444444444444444"
+		const REGRESSED = "2222222222222222222"
+		const SNOOZED = "3333333333333333333"
+		const FRESH = "4444444444444444444"
 		let rows: ReadonlyArray<Record<string, unknown>> = [scanRow({ fingerprintHash: ONGOING, count: 3 })]
 		return Effect.gen(function* () {
 			const errors = yield* ErrorsService
@@ -2336,6 +2667,65 @@ describe("ErrorsService.runTick", () => {
 
 			yield* TestClock.setTime(RETENTION_TICK_MS + 120_000)
 			assert.isFalse((yield* errors.runTick).retentionRan)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("purging an issue hands the issues merged into it their fingerprints back", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			const longAgo = RETENTION_TICK_MS - 120 * DAY_MS
+			const kept = asIssueId(randomUUID())
+			const merged = asIssueId(randomUUID())
+			// The kept issue is past archived retention; the one merged into it is not yet.
+			yield* seedIssue(kept, {
+				fingerprintHash: "1111111111111111111",
+				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				lastSeenAt: longAgo,
+			})
+			yield* seedIssue(merged, {
+				fingerprintHash: "2222222222222222222",
+				archivedAt: RETENTION_TICK_MS - DAY_MS,
+				mergedIntoIssueId: kept,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values([
+						{
+							orgId: ORG,
+							fingerprintHash: "2222222222222222222",
+							issueId: kept,
+							source: "merge",
+							originIssueId: merged,
+							createdAt: longAgo,
+						},
+						// A hash the merged issue had owned before it was merged.
+						{
+							orgId: ORG,
+							fingerprintHash: "3333333333333333333",
+							issueId: kept,
+							source: "rekey",
+							originIssueId: merged,
+							createdAt: longAgo,
+						},
+					]),
+				),
+			)
+
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssueById(merged)).mergedIntoIssueId, null)
+			const aliases = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssueFingerprints)
+						.select("fingerprintHash", "issueId", "originIssueId")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(aliases, [
+				{ fingerprintHash: "3333333333333333333", issueId: merged, originIssueId: null },
+			])
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
@@ -2509,7 +2899,7 @@ describe("ErrorsService.runTick", () => {
 				db.run(
 					PG.insertInto(ErrorFingerprintCandidates).values([
 						candidate("11111111111111111111", RETENTION_TICK_MS - DAY_MS - 60_000),
-						candidate("22222222222222222222", RETENTION_TICK_MS - DAY_MS + 60_000),
+						candidate("2222222222222222222", RETENTION_TICK_MS - DAY_MS + 60_000),
 					]),
 				),
 			)
@@ -2525,7 +2915,7 @@ describe("ErrorsService.runTick", () => {
 			)
 			assert.deepStrictEqual(
 				Arr.map(left, (row) => row.fingerprintHash),
-				["22222222222222222222"],
+				["2222222222222222222"],
 			)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
@@ -2556,19 +2946,29 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
-	it.effect("the retention phase archives an issue left on an older fingerprint version", () =>
+	it.effect("the retention phase retires a quiet issue left on an older fingerprint version", () =>
 		Effect.gen(function* () {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(RETENTION_TICK_MS)
-			const stale = asIssueId(randomUUID())
+			const quiet = asIssueId(randomUUID())
+			const live = asIssueId(randomUUID())
 			const current = asIssueId(randomUUID())
-			yield* seedIssue(stale, { fingerprintVersion: FINGERPRINT_VERSION - 1 })
+			yield* seedIssue(quiet, {
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				lastSeenAt: RETENTION_TICK_MS - 8 * DAY_MS,
+			})
+			// Seen within the grace window: the tick re-keys it onto its new hash.
+			yield* seedIssue(live, {
+				fingerprintVersion: FINGERPRINT_VERSION - 1,
+				lastSeenAt: RETENTION_TICK_MS - DAY_MS,
+			})
 			yield* seedIssue(current, { fingerprintVersion: FINGERPRINT_VERSION })
 
 			const result = yield* errors.runTick
 
 			assert.strictEqual(result.issuesArchived, 1)
-			assert.strictEqual((yield* loadIssueById(stale)).archivedAt, RETENTION_TICK_MS)
+			assert.strictEqual((yield* loadIssueById(quiet)).archivedAt, RETENTION_TICK_MS)
+			assert.isNull((yield* loadIssueById(live)).archivedAt)
 			assert.isNull((yield* loadIssueById(current)).archivedAt)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
@@ -2597,6 +2997,28 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(issue.priority, 1)
 			// Restamped, so the version sweep does not archive it again.
 			assert.strictEqual(issue.fingerprintVersion, FINGERPRINT_VERSION)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("an occurrence never brings a merged-away issue back", () => {
+		// The hash is still the merged issue's primary with no alias yet: a tick that read
+		// the aliases before a merge committed. It must not reappear in the list.
+		const rows = [scanRow()]
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			const owner = asIssueId(randomUUID())
+			const mergedAway = asIssueId(randomUUID())
+			yield* seedIssue(owner, { fingerprintHash: "2222222222222222222" })
+			yield* seedIssue(mergedAway, {
+				fingerprintHash: SCAN_FINGERPRINT,
+				archivedAt: TICK_MS - 1_000,
+				mergedIntoIssueId: owner,
+			})
+
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssueById(mergedAway)).archivedAt, TICK_MS - 1_000)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 

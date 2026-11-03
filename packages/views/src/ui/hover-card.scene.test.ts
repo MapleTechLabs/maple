@@ -59,4 +59,16 @@ describe("hover card scene", () => {
 			state: "LeaveStart",
 		})
 	})
+
+	test("a readout card closes sooner than an interactive one once the pointer leaves", () => {
+		const delayOf = (interactive: boolean) => {
+			const [command] =
+				update(init(ID, { isOpen: true, interactive }), Message.LeftTrigger()).commands ?? []
+			const delayMs = command?.name === WaitHoverDelay.name ? command.args?.delayMs : undefined
+			return typeof delayMs === "number" ? delayMs : undefined
+		}
+		const readout = delayOf(false)
+		const interactive = delayOf(true)
+		assert(readout !== undefined && interactive !== undefined && readout < interactive).toBe(true)
+	})
 })
