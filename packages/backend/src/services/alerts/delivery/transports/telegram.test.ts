@@ -230,7 +230,7 @@ describe("verifyTelegramCredentials", () => {
 		const calls: string[] = []
 		let index = 0
 		const fetchFn: typeof fetch = async (input) => {
-			calls.push(String(input))
+			calls.push(String(input instanceof Request ? input.url : input))
 			const next = responses[Math.min(index++, responses.length - 1)]!
 			return new Response(JSON.stringify(next.body), {
 				status: next.status,
@@ -298,7 +298,7 @@ describe("fetchTelegramChats", () => {
 	const respondWith = (status: number, body: unknown) => {
 		const calls: string[] = []
 		const fetchFn: typeof fetch = async (input) => {
-			calls.push(String(input))
+			calls.push(String(input instanceof Request ? input.url : input))
 			return new Response(JSON.stringify(body), {
 				status,
 				headers: { "content-type": "application/json" },

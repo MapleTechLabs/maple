@@ -103,19 +103,15 @@ export const linearGraphql = Effect.fn("Linear.graphql", { kind: "client" })(fun
 	})
 
 	if (status === 401 || errors.some(isAuthError)) {
-		return yield* Effect.fail(
-			new IntegrationsRevokedError({ message: "Linear rejected the access token. Reconnect Linear." }),
-		)
+		return yield* new IntegrationsRevokedError({
+			message: "Linear rejected the access token. Reconnect Linear.",
+		})
 	}
 	if (status === 429 || errors.some((error) => error.code === "RATELIMITED")) {
-		return yield* Effect.fail(
-			new IntegrationsUpstreamError({ message: "Linear rate limit reached", status: 429 }),
-		)
+		return yield* new IntegrationsUpstreamError({ message: "Linear rate limit reached", status: 429 })
 	}
 	if (Option.isNone(envelope) || (status >= 300 && errors.length === 0)) {
-		return yield* Effect.fail(
-			new IntegrationsUpstreamError({ message: `Linear API returned ${status}`, status }),
-		)
+		return yield* new IntegrationsUpstreamError({ message: `Linear API returned ${status}`, status })
 	}
 	return { data: envelope.value.data ?? null, errors } satisfies LinearGraphqlResult
 })

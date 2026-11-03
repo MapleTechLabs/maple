@@ -147,7 +147,7 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 		const puts: number[] = []
 		const backend: EdgeCacheBackend = {
 			name: "memory",
-			get: () => Effect.succeed(undefined), // force a miss → always computes → always writes
+			get: () => Effect.undefined, // force a miss → always computes → always writes
 			put: (_bucket, _hash, _value, ttlSeconds) =>
 				Effect.sync(() => {
 					puts.push(ttlSeconds)
@@ -249,7 +249,7 @@ describe("EdgeCacheService.invalidate", () => {
 	it.effect("swallows backend delete failures (best-effort)", () => {
 		const failing: EdgeCacheBackend = {
 			name: "memory",
-			get: () => Effect.succeed(undefined),
+			get: () => Effect.undefined,
 			put: () => Effect.void,
 			delete: () => Effect.fail(new EdgeCacheBackendError({ op: "delete", message: "kv unavailable" })),
 		}
@@ -613,10 +613,10 @@ describe("EdgeCacheService read deadline", () => {
 						// the shape of an uncancellable cache.match that resolves long
 						// after the read abandoned it.
 						return Effect.callback<undefined>((resume) => {
-							settleFirstRead = () => resume(Effect.succeed(undefined))
+							settleFirstRead = () => resume(Effect.undefined)
 						})
 					}
-					return Effect.succeed(undefined)
+					return Effect.undefined
 				}),
 			put: () => Effect.void,
 			delete: () => Effect.void,

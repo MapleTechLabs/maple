@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -138,7 +138,7 @@ const withHarness = (
 
 /** A plan that allows one monitor. */
 const ONE_MONITOR_PLAN = Layer.succeed(UptimeMonitorAllowance, {
-	limit: () => Effect.succeed(Option.some(1)),
+	limit: () => Effect.succeedSome(1),
 	track: () => Effect.void,
 })
 

@@ -145,10 +145,10 @@ describe("ClickHouse migrations", () => {
 		// Two divergent copies of this SELECT would show up as a page-view count
 		// that steps at the backfill boundary — on a table with no dedup, nothing
 		// else would catch it.
-		const mvBody = migration_0014_web_events.statements.find((s) =>
-			String(s).includes("CREATE MATERIALIZED VIEW"),
-		)
-		expect(String(mvBody)).toContain(webEventsBackfill.select)
+		const mvBody = migration_0014_web_events.statements
+			.filter((s) => typeof s === "string")
+			.find((s) => s.includes("CREATE MATERIALIZED VIEW"))
+		expect(mvBody).toContain(webEventsBackfill.select)
 		expect(webEventsBackfill.where).toBe("Type IN ('navigation', 'custom')")
 		expect(webEventsBackfill.from).toBe("session_events")
 		expect(webEventsBackfill.tsColumn).toBe("Timestamp")

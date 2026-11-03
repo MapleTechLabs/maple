@@ -37,7 +37,7 @@ import {
 } from "@maple/domain/security-audit"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import { AuditStoreError } from "@maple/security-audit"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
@@ -385,7 +385,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							message: `This organization has spent its $${org.monthlySpendLimitUsd.toLocaleString("en-US")} monthly security audit limit.`,
 							limitUsd: org.monthlySpendLimitUsd,
 							spentUsd: org.spentUsd,
-							resetsAt: decodeIso(new Date(org.resetsAt).toISOString()),
+							resetsAt: decodeIso(DateTime.formatIso(DateTime.makeUnsafe(org.resetsAt))),
 						})
 					}
 					yield* refuseOversized(tenant.orgId, target.repository)

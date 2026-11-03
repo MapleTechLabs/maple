@@ -154,7 +154,10 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		// fiber; a single shared collector would put both statements on whichever
 		// span looked last. The unit suite can only assert the calls see different
 		// collectors; this asserts the consequence that actually matters.
-		const texts = dbSpans(spans).map((span) => String(span.attributes.get("db.query.text") ?? ""))
+		const texts = dbSpans(spans).map((span) => {
+			const text = span.attributes.get("db.query.text")
+			return typeof text === "string" ? text : ""
+		})
 		assert.strictEqual(texts.length, 2)
 		const alpha = texts.filter((text) => text.includes("alpha_marker"))
 		const beta = texts.filter((text) => text.includes("beta_marker"))
@@ -277,14 +280,14 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 				}),
 		})
 
-		const results = await Effect.runPromise(
+		const results = await Effect.runPromiseExit(
 			Effect.all(
 				[
 					scope.run((db) => db.execute(Orm.sql`select pg_sleep(0.8)`)),
 					scope.run((db) => db.query(Orm.sql`select 'waited' as tag`)),
 				],
 				{ concurrency: 2 },
-			).pipe(Effect.exit),
+			),
 		)
 
 		await Effect.runPromise(scope.close)

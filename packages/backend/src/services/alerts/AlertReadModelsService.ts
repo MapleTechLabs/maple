@@ -401,8 +401,8 @@ export class AlertReadModelsService extends Context.Service<
 					? Duration.toMillis(DateTime.distance(since, until))
 					: Number.NaN
 			if (!(rangeMs > 0 && rangeMs <= maxRangeMs) || since == null || until == null) {
-				return yield* Effect.fail(
-					makeValidationError("Alert check summaries require a valid range of at most 365 days"),
+				return yield* makeValidationError(
+					"Alert check summaries require a valid range of at most 365 days",
 				)
 			}
 

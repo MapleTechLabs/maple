@@ -14,6 +14,7 @@ import {
 	alertIntervalsFitting,
 	alertQueryLimits,
 	alertRuleIntervalMinutes,
+	CompiledAlertQueryPlan,
 	nextSlowerAlertInterval,
 	ENGINE_UNGROUPED_GROUP_KEY,
 	formatWarehouseDateTime,
@@ -88,6 +89,7 @@ import {
 } from "@maple/db/tables"
 import type { MapleDb } from "@maple/db/client"
 import {
+	DateTime,
 	Array as Arr,
 	Cause,
 	Chunk,
@@ -359,7 +361,7 @@ const ALERT_CHECK_INGEST_BUDGET = Duration.seconds(15)
 
 /** A warehouse outage (5xx or unreachable), not a fault of the rule being evaluated. */
 const warehouseOutageOf = (error: unknown): Option.Option<WarehouseUpstreamError> =>
-	error instanceof WarehouseUpstreamError &&
+	Schema.is(WarehouseUpstreamError)(error) &&
 	(error.upstreamStatus === undefined || error.upstreamStatus >= 500)
 		? Option.some(error)
 		: Option.none()
@@ -487,10 +489,10 @@ const orderAlertRulesByLastClaim = <T extends { readonly id: string }>(
 
 /** The destination's provider refused the delivery, as opposed to Maple failing to send it. */
 const isProviderDeliveryFailure = (error: unknown): error is AlertDeliveryFailure =>
-	error instanceof AlertDeliveryError ||
-	error instanceof AlertDeliveryAuthError ||
-	error instanceof AlertDeliveryTargetMissingError ||
-	error instanceof AlertDeliveryRejectedError
+	Schema.is(AlertDeliveryError)(error) ||
+	Schema.is(AlertDeliveryAuthError)(error) ||
+	Schema.is(AlertDeliveryTargetMissingError)(error) ||
+	Schema.is(AlertDeliveryRejectedError)(error)
 
 // Deliveries claimed per batch. The drain takes batches until the queue is
 // empty or DELIVERY_DRAIN_BUDGET_MS has passed; the rest wait for the next tick.
@@ -860,7 +862,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// re-fenced, so retry once; a lost claim or an edit stays final.
 					Effect.retry({
 						times: 1,
-						while: (error) => !(error instanceof AlertRuleClaimLostError),
+						while: (error) => !Schema.is(AlertRuleClaimLostError)(error),
 					}),
 				)
 				// Only now do the checks count: a failed flush must not report
@@ -1565,7 +1567,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* requireAdmin(roles)
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
 				if (oldRow.signalType === "uptime") {
-					return yield* Effect.fail(makeValidationError(UPTIME_RULE_MANAGED_MESSAGE))
+					return yield* makeValidationError(UPTIME_RULE_MANAGED_MESSAGE)
 				}
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
@@ -1799,7 +1801,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				// Alongside the series query, which spans many windows and so says nothing about one check.
 				const queryTiming = yield* Effect.forkChild(
-					plan.kind === "raw_sql" ? probeQueryTiming(orgId, normalized) : Effect.succeed(undefined),
+					plan.kind === "raw_sql" ? probeQueryTiming(orgId, normalized) : Effect.undefined,
 				)
 
 				const windowMs = normalized.windowMinutes * 60_000
@@ -1810,7 +1812,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					!Number.isFinite(requestedEndMs) ||
 					requestedEndMs <= requestedStartMs
 				) {
-					return yield* Effect.fail(makeValidationError("Invalid preview time range"))
+					return yield* makeValidationError("Invalid preview time range")
 				}
 
 				// Tumbling windows aligned to the epoch — the same alignment the CH
@@ -1822,13 +1824,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const minStartMs = endMs - maxBuckets * windowMs
 				const startMs = Math.max(alignedStartMs, minStartMs)
 				if (endMs - startMs < windowMs) {
-					return yield* Effect.fail(
-						makeValidationError("Preview range must span at least one evaluation window"),
+					return yield* makeValidationError(
+						"Preview range must span at least one evaluation window",
 					)
 				}
 				const truncatedToStart =
 					alignedStartMs < minStartMs
-						? decodeIsoDateTimeStringSync(new Date(startMs).toISOString())
+						? decodeIsoDateTimeStringSync(DateTime.formatIso(DateTime.makeUnsafe(startMs)))
 						: null
 
 				const bucketStarts: number[] = []
@@ -1988,7 +1990,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const groupedAlert = isGroupedPlan(plan) && plan.noDataBehavior === "alert"
 				const skipGapsRule: NormalizedRule = {
 					...normalized,
-					compiledPlan: { ...plan, noDataBehavior: "skip" },
+					compiledPlan: new CompiledAlertQueryPlan({ ...plan, noDataBehavior: "skip" }),
 				}
 				const emptyKey = toStorageGroupKey(plan, ENGINE_UNGROUPED_GROUP_KEY)
 				if (groupedAlert && !obsByGroup.has(emptyKey)) {
@@ -3206,7 +3208,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									priorNotifiedAt:
 										inheritedNotificationAt === null
 											? undefined
-											: new Date(inheritedNotificationAt).toISOString(),
+											: DateTime.formatIso(
+													DateTime.makeUnsafe(inheritedNotificationAt),
+												),
 								}),
 							)
 						} else if (lifecycle.eventType === "trigger") {

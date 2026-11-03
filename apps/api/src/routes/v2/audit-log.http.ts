@@ -196,15 +196,11 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 					query.actor_id !== undefined ? yield* actorIdentityFilter(query.actor_id) : undefined
 				const affectedUser =
 					query.affected_user !== undefined
-						? yield* Option.match(decodeUserIdOption(query.affected_user), {
-								onNone: () =>
-									Effect.fail(
-										V2ParameterInvalid.make("Invalid affected_user.", {
-											param: "affected_user",
-										}),
-									),
-								onSome: (userId) => Effect.succeed(userId),
-							})
+						? yield* Effect.fromOption(decodeUserIdOption(query.affected_user), () =>
+								V2ParameterInvalid.make("Invalid affected_user.", {
+									param: "affected_user",
+								}),
+							)
 						: undefined
 				const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 					audit

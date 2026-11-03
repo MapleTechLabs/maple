@@ -14,6 +14,7 @@ import {
 	OrgId,
 	RoleName,
 	UserId,
+	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -328,13 +329,18 @@ export const createWebhookDestination = (
 	orgId: ReturnType<typeof asOrgId>,
 	userId: ReturnType<typeof asUserId>,
 ) =>
-	alerts.createDestination(orgId, userId, adminRoles, {
-		type: "webhook",
-		name: "Primary webhook",
-		enabled: true,
-		url: "https://example.com/maple-alerts",
-		signingSecret: "webhook-secret",
-	})
+	alerts.createDestination(
+		orgId,
+		userId,
+		adminRoles,
+		new WebhookAlertDestinationConfig({
+			type: "webhook",
+			name: "Primary webhook",
+			enabled: true,
+			url: "https://example.com/maple-alerts",
+			signingSecret: "webhook-secret",
+		}),
+	)
 
 export const createErrorRateRule = (
 	alerts: AlertsServiceApi,

@@ -155,8 +155,8 @@ class VideoEngine implements ReplayEngine {
 	private readonly streamStart: number
 
 	constructor(input: ReplayEngineCreateInput) {
-		this.onFinish = input.onFinish
-		this.onResize = input.onResize
+		this.onFinish = () => input.onFinish()
+		this.onResize = () => input.onResize()
 		this.streamStart = streamStartMs(input.events)
 		this.segments = extractVideoSegments(input.events, this.streamStart)
 

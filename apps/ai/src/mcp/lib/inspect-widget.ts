@@ -13,7 +13,11 @@ import {
 	type FormulaDraft,
 	type QueryRunResult,
 } from "@maple/query-engine/formula-results"
-import { QueryBuilderFormulaSchema, QueryBuilderQueryDraftSchema } from "@maple/domain/http"
+import {
+	QueryBuilderFormulaSchema,
+	QueryBuilderQueryDraftSchema,
+	WarehouseQueryRequest,
+} from "@maple/domain/http"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import {
 	computeBreakdownStats,
@@ -278,17 +282,20 @@ const metricExistsInCatalog = Effect.fn("McpInspectWidget.metricExistsInCatalog"
 ) {
 	const warehouse = yield* WarehouseQueryService
 	return yield* warehouse
-		.query(tenant, {
-			pipeName: "list_metrics",
-			params: {
-				start_time: startTime,
-				end_time: endTime,
-				search: metricName,
-				...(metricType ? { metric_type: metricType } : undefined),
-				limit: 200,
-				offset: 0,
-			},
-		})
+		.query(
+			tenant,
+			new WarehouseQueryRequest({
+				pipeName: "list_metrics",
+				params: {
+					start_time: startTime,
+					end_time: endTime,
+					search: metricName,
+					...(metricType ? { metric_type: metricType } : undefined),
+					limit: 200,
+					offset: 0,
+				},
+			}),
+		)
 		.pipe(
 			Effect.map((resp) =>
 				(resp.data as ReadonlyArray<{ metricName?: string }>).some(

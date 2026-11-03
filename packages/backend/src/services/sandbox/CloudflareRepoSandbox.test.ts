@@ -21,7 +21,7 @@ import {
 	SandboxRuntime,
 	SandboxSecretHandle,
 } from "@maple/backend/sandbox/contract"
-import { Duration, Effect, Exit, Fiber, Option, Schema, Stream } from "effect"
+import { Duration, Effect, Exit, Fiber, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import type { RepositoryCheckout } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { admit, makeCloudflareRepoSandbox } from "./CloudflareRepoSandbox"
@@ -66,11 +66,11 @@ const makeSandbox = (
 			return Effect.succeed(checkout)
 		},
 		exec: (execRequest) => {
-			if (!bound) return Effect.succeed(Option.none())
+			if (!bound) return Effect.succeedNone
 			calls.push(
 				`exec:${execRequest.command} ${execRequest.args.join(" ")}|@${execRequest.cwd}|sha=${execRequest.checkout.sha}`,
 			)
-			return Effect.succeed(Option.some(answer(execRequest)))
+			return Effect.succeedSome(answer(execRequest))
 		},
 	})
 

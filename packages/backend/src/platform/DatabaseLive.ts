@@ -74,13 +74,13 @@ const capQueryMessage = (message: string): string =>
  * on the span as `db.query.text`.
  */
 export const toDatabaseError = (cause: unknown): DatabaseError => {
-	if (cause instanceof SqlError) {
+	if (Schema.is(SqlError)(cause)) {
 		return new DatabaseError({ message: driverRootError(cause)?.message ?? cause.message, cause })
 	}
 	// effect-orm keeps the driver's `SqlError` as `cause`, which classification reads.
-	if (cause instanceof Orm.DatabaseError || cause instanceof Orm.TransactionCommitFailed) {
+	if (Schema.is(Orm.DatabaseError)(cause) || Schema.is(Orm.TransactionCommitFailed)(cause)) {
 		const root = driverRootError(cause.cause)?.message ?? cause.message
-		const statement = cause instanceof Orm.DatabaseError ? capQueryMessage(cause.sql) : undefined
+		const statement = Schema.is(Orm.DatabaseError)(cause) ? capQueryMessage(cause.sql) : undefined
 		return new DatabaseError({
 			message: statement === undefined || statement === "" ? root : `${root} [while: ${statement}]`,
 			cause: driverSqlError(cause.cause) ?? cause.message,
@@ -150,7 +150,7 @@ export const failExecuteWithSpan = Effect.fn(
 	if (extraAttributes) {
 		yield* Effect.annotateCurrentSpan(extraAttributes)
 	}
-	return yield* Effect.fail(error)
+	return yield* error
 })
 
 /**
@@ -248,7 +248,7 @@ export const executeWithSpan = Effect.fn(
 		}),
 		Effect.withTracerEnabled(false),
 		absorbDriverErrors,
-		Effect.tapError((error) => (error instanceof DatabaseError ? annotateFailure(error) : annotate)),
+		Effect.tapError((error) => (Schema.is(DatabaseError)(error) ? annotateFailure(error) : annotate)),
 	)
 	yield* annotate
 	if (Array.isArray(result)) {

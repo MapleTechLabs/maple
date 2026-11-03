@@ -46,7 +46,7 @@ const makeWorkersBackend = (cache: Cache): EdgeCacheBackend => ({
 							try: (): Promise<unknown> => response.json(),
 							catch: backendError("get"),
 						}).pipe(Effect.orElseSucceed(() => undefined))
-					: Effect.succeed(undefined),
+					: Effect.undefined,
 			),
 		),
 	put: (bucket, hash, value, ttlSeconds) =>

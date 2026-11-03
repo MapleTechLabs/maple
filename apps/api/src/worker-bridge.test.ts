@@ -95,7 +95,10 @@ const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
 const attributeOf = (span: ExportedSpan | undefined, key: string): string | undefined => {
 	const value = span?.attributes.find((attribute) => attribute.key === key)?.value
 	const rendered = value === undefined ? undefined : Object.values(value)[0]
-	return rendered === undefined ? undefined : String(rendered)
+	if (rendered === undefined) return undefined
+	return typeof rendered === "string" || typeof rendered === "number" || typeof rendered === "boolean"
+		? String(rendered)
+		: JSON.stringify(rendered)
 }
 
 const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
@@ -108,7 +111,10 @@ const exceptionTypeOf = (span: ExportedSpan | undefined): string | undefined => 
 	const event = span?.events?.find((candidate) => candidate.name === "exception")
 	const value = event?.attributes.find((attribute) => attribute.key === "exception.type")?.value
 	const rendered = value === undefined ? undefined : Object.values(value)[0]
-	return rendered === undefined ? undefined : String(rendered)
+	if (rendered === undefined) return undefined
+	return typeof rendered === "string" || typeof rendered === "number" || typeof rendered === "boolean"
+		? String(rendered)
+		: JSON.stringify(rendered)
 }
 
 const env = {

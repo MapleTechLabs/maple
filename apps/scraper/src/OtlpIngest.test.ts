@@ -83,7 +83,7 @@ const stubFetch = (
 			headers[key] = value
 		})
 		recorded.push({
-			url: String(input),
+			url: input instanceof Request ? input.url : input.toString(),
 			method: init?.method ?? "GET",
 			headers,
 			body:

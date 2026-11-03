@@ -1097,11 +1097,10 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			const requireRepository = (orgId: OrgId, repositoryId: VcsRepositoryId) =>
 				asPersistence(repo.getRepositoryById(orgId, repositoryId)).pipe(
 					Effect.flatMap((existing) =>
-						Option.isNone(existing)
-							? Effect.fail(
-									new IntegrationsValidationError({ message: "Repository not found" }),
-								)
-							: Effect.succeed(existing.value),
+						Effect.fromOption(
+							existing,
+							() => new IntegrationsValidationError({ message: "Repository not found" }),
+						),
 					),
 				)
 

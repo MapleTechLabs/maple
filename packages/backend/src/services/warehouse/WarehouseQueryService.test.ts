@@ -253,15 +253,13 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 		// throw an auth error.
 		const orgSettingsLive = Layer.succeed(OrgClickHouseSettingsService, {
 			resolveRuntimeConfig: () =>
-				Effect.succeed(
-					Option.some({
-						backend: "clickhouse" as const,
-						url: "https://byo.example",
-						user: "byo-user",
-						password: "byo-password",
-						database: "maple",
-					}),
-				),
+				Effect.succeedSome({
+					backend: "clickhouse" as const,
+					url: "https://byo.example",
+					user: "byo-user",
+					password: "byo-password",
+					database: "maple",
+				}),
 			invalidateRuntimeConfig: () => Effect.succeed(false),
 		} as OrgClickHouseSettingsServiceApi)
 		const layer = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
@@ -751,7 +749,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 						try: () => {
 							calls.push({ datasource, rows })
 						},
-						catch: WarehouseDriverError.fromUnknown,
+						catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 					}),
 			}),
 		)
@@ -782,7 +780,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 						try: () => {
 							inserts++
 						},
-						catch: WarehouseDriverError.fromUnknown,
+						catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 					}),
 			}),
 		)
@@ -808,7 +806,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 						try: () => {
 							throw new Error("HTTP 400 Bad Request: DB::Exception: Syntax error")
 						},
-						catch: WarehouseDriverError.fromUnknown,
+						catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 					}),
 			}),
 		)
@@ -886,7 +884,7 @@ describe("createTinybirdSqlClient.insert wire framing (the production insert pat
 		const requestFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers)
 			captured.push({
-				url: String(input),
+				url: String(input instanceof Request ? input.url : input),
 				method: init?.method,
 				contentType: headers.get("content-type") ?? undefined,
 				auth: headers.get("authorization") ?? undefined,
@@ -938,7 +936,7 @@ describe("createTinybirdSqlClient.sql wire format", () => {
 	const captureSql = async (statement: ClickHouseStatement): Promise<string> => {
 		const sent: string[] = []
 		const requestFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-			const url = new URL(String(input))
+			const url = new URL(String(input instanceof Request ? input.url : input))
 			if (url.pathname.endsWith("/v0/sql")) {
 				const fromParam = url.searchParams.get("q")
 				sent.push(fromParam ?? requestBodyText(init?.body))
@@ -1016,7 +1014,7 @@ describe("ingest routes writes to the managed pipeline, not a per-org read overr
 							try: () => {
 								used.push({ op: "insert", kind: config.kind })
 							},
-							catch: WarehouseDriverError.fromUnknown,
+							catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 						}),
 				}),
 			resolveRoute: (_tenant, purpose) => {
@@ -1066,7 +1064,7 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 						try: () => {
 							used.push({ op: "insert", kind: config.kind })
 						},
-						catch: WarehouseDriverError.fromUnknown,
+						catch: (cause) => WarehouseDriverError.fromUnknown(cause),
 					}),
 			}),
 		)

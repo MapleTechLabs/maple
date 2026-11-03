@@ -143,9 +143,7 @@ const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 	getBytes: (key) =>
 		runtime(client.get(key)).pipe(
 			Effect.flatMap((object) =>
-				object === null
-					? Effect.succeed(Option.none<Uint8Array>())
-					: object.bytes().pipe(Effect.map(Option.some)),
+				object === null ? Effect.succeed(Option.none<Uint8Array>()) : Effect.asSome(object.bytes()),
 			),
 			Effect.mapError((error) => new ObjectStoreError({ message: error.message, cause: error.cause })),
 		),

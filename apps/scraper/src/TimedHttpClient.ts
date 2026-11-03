@@ -41,7 +41,7 @@ const bodyOf = (
 	const { body } = request
 	switch (body._tag) {
 		case "Empty":
-			return Effect.succeed(undefined)
+			return Effect.undefined
 		case "Uint8Array":
 			return Effect.succeed(body.body)
 		case "Raw":

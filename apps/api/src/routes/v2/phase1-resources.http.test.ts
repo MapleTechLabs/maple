@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Ref, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Ref, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import {
@@ -342,7 +342,7 @@ const warehouseStub = makeWarehouseServiceStub({
 	// Replay payload reads go through the bounded variant (they carry an explicit
 	// response-byte ceiling), so the stub has to answer it too.
 	compiledQueryBounded: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
-	compiledQueryFirst: () => Effect.succeed(Option.none()),
+	compiledQueryFirst: () => Effect.succeedNone,
 	// Handlers warm the org route before fanning out; the real one resolves
 	// route + capabilities, which this stub has nothing to resolve.
 	warmRoute: () => Effect.void,
@@ -545,14 +545,12 @@ const makeHarness = (
 					const current = yield* requireStoredIssue(issueId)
 					// `wontfix` stands in for a move the workflow refuses.
 					if (toState === "wontfix") {
-						return yield* Effect.fail(
-							new ErrorIssueTransitionError({
-								message: `Cannot move from ${current.workflowState} to ${toState}`,
-								issueId,
-								fromState: current.workflowState,
-								toState,
-							}),
-						)
+						return yield* new ErrorIssueTransitionError({
+							message: `Cannot move from ${current.workflowState} to ${toState}`,
+							issueId,
+							fromState: current.workflowState,
+							toState,
+						})
 					}
 					issueActions.push({ action: "transition", actorId, opts })
 					return yield* updateStoredIssue({ workflowState: toState, notes: opts?.note ?? null })

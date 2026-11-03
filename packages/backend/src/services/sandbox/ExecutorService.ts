@@ -15,7 +15,8 @@ import {
 } from "@maple/domain/executor"
 import type { OrgId } from "@maple/domain/http"
 import { SandboxCheckout } from "@maple/domain/sandbox"
-import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { Cause, Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type ExecutorTransport, SandboxClient } from "@maple/backend/sandbox/client"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 
@@ -109,7 +110,7 @@ export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 				unavailable(
 					error.cause === undefined
 						? error.message
-						: `${error.message}: ${String(error.cause).slice(0, 300)}`,
+						: `${error.message}: ${summarizeCause(Cause.fail(error.cause)).slice(0, 300)}`,
 				),
 			),
 			Effect.flatMap(Option.match({ onNone: () => Effect.fail(noExecutor), onSome: Effect.succeed })),

@@ -165,26 +165,22 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						)
 						yield* Effect.annotateCurrentSpan("maple.rate_limit.outcome", rateLimitOutcome)
 						if (rateLimitOutcome === "limited") {
-							return yield* Effect.fail(
-								V2RateLimited.make(undefined, {
-									retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
-								}),
-							)
+							return yield* V2RateLimited.make(undefined, {
+								retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
+							})
 						}
 						// A device credential's scopes are its whole authority: no exemptions.
 						const { route } = yield* HttpRouter.RouteContext
 						const required = requiredScopeForRoute(request.method, route.path)
 						if (required === null || !scopeAllows(resolved.scopes, required)) {
-							return yield* Effect.fail(
-								V2InsufficientScope.make("This device credential cannot call this endpoint."),
+							return yield* V2InsufficientScope.make(
+								"This device credential cannot call this endpoint.",
 							)
 						}
 						const requestedOrg = getOrgSelectionHeader(request.headers)
 						if (requestedOrg !== undefined && requestedOrg !== resolved.orgId) {
-							return yield* Effect.fail(
-								V2OrganizationAccessDenied.make(
-									"A device credential cannot select a different organization.",
-								),
+							return yield* V2OrganizationAccessDenied.make(
+								"A device credential cannot select a different organization.",
 							)
 						}
 						const tenant = new CurrentTenant.TenantSchema({
@@ -232,7 +228,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						if (resolved.kind === "mcp") {
 							const message = "This API key is only valid for the MCP server."
 							yield* recordDenied(message)
-							return yield* Effect.fail(V2InvalidCredentials.make(message))
+							return yield* V2InvalidCredentials.make(message)
 						}
 
 						// A device credential's authority is entirely its pinned
@@ -243,7 +239,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						if (resolved.kind === "device" && resolved.roles === null) {
 							const message = "This device credential is not valid."
 							yield* recordDenied(message)
-							return yield* Effect.fail(V2InvalidCredentials.make(message))
+							return yield* V2InvalidCredentials.make(message)
 						}
 
 						// Attribute before the scope check so scope-rejected
@@ -262,11 +258,9 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						})
 
 						if (rateLimitOutcome === "limited") {
-							return yield* Effect.fail(
-								V2RateLimited.make(undefined, {
-									retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
-								}),
-							)
+							return yield* V2RateLimited.make(undefined, {
+								retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
+							})
 						}
 
 						// The route *template* the router matched, not `request.url`: the
@@ -295,7 +289,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						) {
 							const message = `This API key does not have the "${required.family}:${required.access}" scope required for this request.`
 							yield* recordDenied(message)
-							return yield* Effect.fail(V2InsufficientScope.make(message))
+							return yield* V2InsufficientScope.make(message)
 						}
 
 						// An API key is already organization-bound, so a selection could
@@ -306,7 +300,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						if (requestedOrg !== undefined && requestedOrg !== resolved.orgId) {
 							const message = "An API key cannot select a different organization."
 							yield* recordDenied(message)
-							return yield* Effect.fail(V2OrganizationAccessDenied.make(message))
+							return yield* V2OrganizationAccessDenied.make(message)
 						}
 
 						const tenant = new CurrentTenant.TenantSchema({

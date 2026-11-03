@@ -57,7 +57,7 @@ const make = Effect.gen(function* () {
 		(tenant: TenantContext, sessionId: string, window: SessionWindow, offset: number) =>
 		<Row>(rows: ReadonlyArray<Row>) =>
 			rows.length > 0 || offset > 0
-				? Effect.succeed(Option.some(rows))
+				? Effect.succeedSome(rows)
 				: Effect.map(exists(tenant, sessionId, window), (found) =>
 						found ? Option.some(rows) : Option.none(),
 					)

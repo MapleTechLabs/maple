@@ -452,12 +452,10 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 	const response = yield* executeQueryEngine("queryEngine.listTraces", request)
 
 	if (response.result.kind !== "list") {
-		return yield* Effect.fail(
-			new WarehouseTransformError({
-				operation: "queryEngine.listTraces",
-				message: `Unexpected result kind from query engine: ${response.result.kind}`,
-			}),
-		)
+		return yield* new WarehouseTransformError({
+			operation: "queryEngine.listTraces",
+			message: `Unexpected result kind from query engine: ${response.result.kind}`,
+		})
 	}
 
 	const toTransformError = (cause: Schema.SchemaError) =>

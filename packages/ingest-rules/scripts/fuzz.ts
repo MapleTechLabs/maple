@@ -75,7 +75,8 @@ const firstDifference = (
 ): string | null => {
 	if (isDeepStrictEqual(ts, rust)) return null
 	if (typeof ts === "string" && typeof rust === "string") {
-		const at = [...ts].findIndex((char, index) => char !== [...rust][index])
+		const rustChars = Array.from(rust)
+		const at = Array.from(ts).findIndex((char, index) => char !== rustChars[index])
 		return `${path} at char ${at}\n  ts:   ${clip(ts, at)}\n  rust: ${clip(rust, at)}`
 	}
 	if (isJsonObject(ts) && isJsonObject(rust)) {

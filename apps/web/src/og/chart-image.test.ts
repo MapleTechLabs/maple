@@ -122,7 +122,7 @@ describe("axis placement", () => {
 			const inner = (child.children as ReadonlyArray<Record<string, unknown>>)[0] ?? {}
 			return {
 				style: (child.style ?? {}) as Placed["style"],
-				text: String(inner.text ?? ""),
+				text: typeof inner.text === "string" ? inner.text : "",
 				color: (inner.style as { color?: string } | undefined)?.color,
 			}
 		})

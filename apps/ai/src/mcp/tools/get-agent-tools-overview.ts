@@ -107,11 +107,11 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 						? readAiToolsBreakdowns(tenant, new AiToolsBreakdownsRequest(scope)).pipe(
 								Effect.map((response) => response.tools),
 							)
-						: Effect.succeed(undefined),
+						: Effect.undefined,
 					// The groups are fingerprints of ONE tool's failures, and "every tool's groups" is a
 					// list with no question behind it.
 					selected === undefined
-						? Effect.succeed(undefined)
+						? Effect.undefined
 						: readAiToolErrors(
 								tenant,
 								new AiToolErrorsRequest({

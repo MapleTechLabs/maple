@@ -116,7 +116,7 @@ const decodeCursor = (
 	IssueListCursorFields | IssueSeverityListCursorFields | undefined,
 	ReturnType<typeof V2CursorInvalid.make> | ReturnType<typeof V2CursorSortMismatch.make>
 > => {
-	if (cursor === undefined) return Effect.succeed(undefined)
+	if (cursor === undefined) return Effect.undefined
 	if (sort === "severity") {
 		if (!cursor.startsWith("sev_")) {
 			return Effect.fail(V2CursorSortMismatch.make(undefined, { param: "cursor" }))

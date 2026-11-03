@@ -276,12 +276,7 @@ export const isSessionTraceCond = ($: {
  * only the deepest span carrying the failure counts — `failureEvents` in
  * `@maple/agent-sessions`' `session-summary.ts`, one level deep.
  */
-const failedSpansExpr = (_: {
-	readonly SpanId: CH.Expr<string>
-	readonly ParentSpanId: CH.Expr<string>
-	readonly IsToolCall: CH.Expr<number>
-	readonly IsError: CH.Expr<number>
-}): CH.Expr<unknown> =>
+const failedSpansExpr = (): CH.Expr<unknown> =>
 	CH.untypedExpr(
 		`groupArrayIf(${MAX_USAGE_REPORTERS_PER_TRACE})(tuple(SpanId, ParentSpanId, IsToolCall), IsError = 1)`,
 	)
@@ -637,7 +632,7 @@ const indexTraces = <Bounds extends IndexBounds>(
 			// another on its own page.
 			firstAgentName: CH.argMin($.AgentName, agentOrder),
 			firstAgentAt: CH.min_(agentOrder),
-			failedSpans: failedSpansExpr($),
+			failedSpans: failedSpansExpr(),
 			// Usage AND model calls travel as reporters: both are counted one level
 			// up, where every trace of the session is in hand — see `ai-span-columns`.
 			...traceUsageColumns($),

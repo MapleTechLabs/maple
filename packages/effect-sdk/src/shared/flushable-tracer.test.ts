@@ -46,7 +46,7 @@ describe("makeSpanBuffer ignored-failure drop", () => {
 	it.effect("keeps successful spans", () =>
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer()
-			yield* runSpan(buffer, Effect.succeed(undefined))
+			yield* runSpan(buffer, Effect.undefined)
 			assert.strictEqual(buffer.size(), 1)
 		}),
 	)
@@ -508,10 +508,7 @@ describe("makeSpanBuffer restore", () => {
 			const buffer = makeSpanBuffer()
 			yield* runSpan(buffer, Effect.succeed("old"))
 			const [oldest] = buffer.drain()
-			yield* Effect.succeed(undefined).pipe(
-				Effect.withSpan("newest"),
-				Effect.provide(buffer.tracerLayer),
-			)
+			yield* Effect.undefined.pipe(Effect.withSpan("newest"), Effect.provide(buffer.tracerLayer))
 			const [newest] = buffer.drain()
 			assert.isDefined(oldest)
 			assert.isDefined(newest)

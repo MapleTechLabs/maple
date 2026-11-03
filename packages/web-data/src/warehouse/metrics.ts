@@ -8,6 +8,7 @@ import {
 	executeQueryEngine,
 	extractAttributeValues,
 	runWarehouseQuery,
+	wireString,
 } from "./effect-utils"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 
@@ -41,14 +42,14 @@ export interface Metric {
 
 function transformMetric(raw: Record<string, unknown>): Metric {
 	return {
-		metricName: String(raw.metricName ?? ""),
-		metricType: String(raw.metricType ?? ""),
-		serviceName: String(raw.serviceName ?? ""),
-		metricDescription: String(raw.metricDescription ?? ""),
-		metricUnit: String(raw.metricUnit ?? ""),
+		metricName: wireString(raw.metricName),
+		metricType: wireString(raw.metricType),
+		serviceName: wireString(raw.serviceName),
+		metricDescription: wireString(raw.metricDescription),
+		metricUnit: wireString(raw.metricUnit),
 		dataPointCount: Number(raw.dataPointCount ?? 0),
-		firstSeen: String(raw.firstSeen ?? ""),
-		lastSeen: String(raw.lastSeen ?? ""),
+		firstSeen: wireString(raw.firstSeen),
+		lastSeen: wireString(raw.lastSeen),
 		isMonotonic: Boolean(raw.isMonotonic),
 	}
 }

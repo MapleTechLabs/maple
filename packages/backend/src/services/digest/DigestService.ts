@@ -461,7 +461,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			yield* Effect.annotateCurrentSpan("maple.digest.namespaces", scope.namespaces.join(","))
 
 			const nowMs = yield* Clock.currentTimeMillis
-			const now = new Date(nowMs)
 
 			// Every window is day-aligned to UTC midnight. `bucket_seconds: 86_400`
 			// snaps `toStartOfInterval` to UTC midnight, so a rolling now-7d window
@@ -470,7 +469,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			// makes the sparkline's bars add up to the headline Requests number —
 			// they used to be measured over different spans.
 			const DAY_MS = 24 * 60 * 60 * 1000
-			const todayStartMs = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+			const todayStartMs = Math.floor(nowMs / DAY_MS) * DAY_MS
 			const currentStartMs = todayStartMs - 7 * DAY_MS
 			const previousStartMs = todayStartMs - 14 * DAY_MS
 

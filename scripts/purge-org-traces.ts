@@ -170,11 +170,11 @@ const JobStatus = Schema.Struct({ status: Schema.String, error: Schema.optionalK
 const tinybird = async <S extends Schema.Decoder<unknown>>(
 	schema: S,
 	path: string,
-	init?: RequestInit,
+	init?: Omit<RequestInit, "headers">,
 ): Promise<S["Type"]> => {
 	const response = await fetch(path.startsWith("http") ? path : `${host}${path}`, {
 		...init,
-		headers: { Authorization: `Bearer ${token}`, ...init?.headers },
+		headers: { Authorization: `Bearer ${token}` },
 	})
 	const body = await response.text()
 	if (!response.ok) fail(`${init?.method ?? "GET"} ${path} → ${response.status}: ${body.slice(0, 500)}`)

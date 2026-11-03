@@ -15,7 +15,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { ApiKeys, McpOAuthAuthorizations, McpOAuthClients, McpOAuthRefreshTokens } from "@maple/db/tables"
 import { REFRESH_FAMILY_ABSOLUTE_TTL_MS, revokeRefreshFamily } from "./mcp-oauth-family"
-import { Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -134,7 +134,7 @@ const fnClientErrorsOk =
 		body(...args).pipe(
 			Effect.map((value): Result.Result<A, McpOAuthProtocolError> => Result.succeed(value)),
 			Effect.catchIf(
-				(error): error is McpOAuthProtocolError => error instanceof McpOAuthProtocolError,
+				(error): error is McpOAuthProtocolError => Schema.is(McpOAuthProtocolError)(error),
 				(error) =>
 					Effect.annotateCurrentSpan({
 						"error.type": error._tag,
@@ -525,7 +525,7 @@ export class McpOAuthService extends Context.Service<
 				redirectUri: row.redirectUri,
 				resource: row.resource,
 				scopes: row.scopes,
-				expiresAt: new Date(row.expiresAt).toISOString(),
+				expiresAt: DateTime.formatIso(DateTime.makeUnsafe(row.expiresAt)),
 				status,
 			})
 		})

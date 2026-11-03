@@ -107,10 +107,9 @@ const validateToken = (
 	requestJson<Session>(`${apiUrl}/api/auth/session`, {
 		headers: { authorization: `Bearer ${token}` },
 	}).pipe(
-		Effect.flatMap((session) =>
-			typeof session.orgId === "string" && typeof session.userId === "string"
-				? Effect.succeed(session)
-				: Effect.fail(new CliAuthError({ message: "Maple returned an invalid session response" })),
+		Effect.filterOrFail(
+			(session) => typeof session.orgId === "string" && typeof session.userId === "string",
+			() => new CliAuthError({ message: "Maple returned an invalid session response" }),
 		),
 	)
 

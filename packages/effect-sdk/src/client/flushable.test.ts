@@ -63,7 +63,7 @@ const pendingResponses = () => {
 
 const recordSpans = (telemetry: ReturnType<typeof make>, names: ReadonlyArray<string>) =>
 	Effect.runPromise(
-		Effect.forEach(names, (name) => Effect.succeed(undefined).pipe(Effect.withSpan(name)), {
+		Effect.forEach(names, (name) => Effect.undefined.pipe(Effect.withSpan(name)), {
 			discard: true,
 		}).pipe(Effect.provide(telemetry.layer)),
 	)
@@ -161,7 +161,7 @@ describe("MapleFlush.make (client)", () => {
 		const telemetry = make(baseConfig)
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -199,7 +199,7 @@ describe("MapleFlush.make (client)", () => {
 
 		await Effect.runPromise(
 			Effect.all([
-				Effect.succeed(undefined).pipe(Effect.withSpan("before-consent")),
+				Effect.undefined.pipe(Effect.withSpan("before-consent")),
 				Metric.update(counter, 5),
 			]).pipe(Effect.provide(telemetry.layer)),
 		)
@@ -210,7 +210,7 @@ describe("MapleFlush.make (client)", () => {
 		setConsent(true)
 		await Effect.runPromise(
 			Effect.all([
-				Effect.succeed(undefined).pipe(Effect.withSpan("after-consent")),
+				Effect.undefined.pipe(Effect.withSpan("after-consent")),
 				Metric.update(counter, 2),
 			]).pipe(Effect.provide(telemetry.layer)),
 		)
@@ -288,9 +288,7 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make(baseConfig)
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
 		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
@@ -320,9 +318,7 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make(baseConfig)
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
@@ -368,10 +364,10 @@ describe("MapleFlush.make (client)", () => {
 		const telemetry = make({ ...baseConfig, replay: { enabled: false } })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-a"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-a"), Effect.provide(telemetry.layer)),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-b"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-b"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
 
@@ -403,9 +399,7 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make({ ...baseConfig, flushOnUnload: true })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 
 		expect(dom.listenerCount("pagehide")).toBe(1)
 		expect(dom.listenerCount("pageshow")).toBe(1)
@@ -454,7 +448,7 @@ describe("MapleFlush.make (client)", () => {
 		const telemetry = make({ ...baseConfig, autoFlushInterval: 5_000 })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("timed-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("timed-op"), Effect.provide(telemetry.layer)),
 		)
 
 		await vi.advanceTimersByTimeAsync(5_000)
@@ -504,9 +498,7 @@ describe("MapleFlush.make (client)", () => {
 			flushOnUnload: false,
 		})
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
 		const traces = calls.find((call) => call.url.endsWith("/v1/traces"))
@@ -525,9 +517,7 @@ describe("MapleFlush.make (client)", () => {
 		}
 		const telemetry = make({ ...baseConfig, flushOnUnload: true })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 
 		// Still visible → the handler must not flush.
 		dom.fire("visibilitychange")
@@ -563,7 +553,7 @@ describe("MapleFlush.make (client)", () => {
 		const telemetry = make(baseConfig) // autoFlushInterval + flushOnUnload both off
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("late-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("late-op"), Effect.provide(telemetry.layer)),
 		)
 		// No manual flush, no timer, no unload event — dispose must still drain.
 		expect(calls.length).toBe(0)

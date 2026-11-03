@@ -5,7 +5,7 @@ import {
 	VcsCommitNotFoundError,
 	VcsCommitShaInvalidError,
 } from "@maple/domain/http"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import type { HttpClient } from "effect/http"
@@ -223,13 +223,13 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
 
 			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof VcsCommitNotFoundError)
+			assert.ok(Schema.is(VcsCommitNotFoundError)(findError(exit)))
 			const afterFirst = calls.commitGets
 			assert.ok(afterFirst >= 1)
 
 			// Second lookup is served from the negative cache — no new provider probe.
 			const exit2 = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			assert.ok(findError(exit2) instanceof VcsCommitNotFoundError)
+			assert.ok(Schema.is(VcsCommitNotFoundError)(findError(exit2)))
 			assert.strictEqual(calls.commitGets, afterFirst)
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
@@ -246,7 +246,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			for (const bad of ["abc1234", "not-a-sha", "g".repeat(40), "a".repeat(39)]) {
 				const exit = yield* svc.resolveCommitDetail(orgId, bad).pipe(Effect.exit)
 				assert.ok(
-					findError(exit) instanceof VcsCommitShaInvalidError,
+					Schema.is(VcsCommitShaInvalidError)(findError(exit)),
 					`expected invalid-sha error for "${bad}"`,
 				)
 			}
@@ -262,7 +262,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			const svc = yield* VcsCommitService
 			const orgId = asOrgId("org_test")
 			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsNotConnectedError)
+			assert.ok(Schema.is(IntegrationsNotConnectedError)(findError(exit)))
 		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 })

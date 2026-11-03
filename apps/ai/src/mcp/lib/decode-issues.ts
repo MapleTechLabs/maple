@@ -230,6 +230,9 @@ export const parameterDocs = (
 }
 
 const formatter = SchemaIssue.makeFormatterStandardSchemaV1()
+/** A Standard Schema path segment is a key or an object holding one. */
+const segmentName = (segment: PropertyKey | { readonly key: PropertyKey }): string =>
+	String(typeof segment === "object" ? segment.key : segment)
 
 const describeParameter = (name: string, docs: ReadonlyMap<string, ParameterDoc>): string => {
 	const parameter = docs.get(name)
@@ -253,9 +256,9 @@ export const formatDecodeFailure = (
 	const required = new Set(Array.isArray(inputSchema.required) ? inputSchema.required.map(String) : [])
 	const lines = formatter(error.issue).issues.map(({ path: rawPath, message }) => {
 		const path = rawPath ?? []
-		const name = path.length === 0 ? undefined : String(path[0])
+		const name = path.length === 0 ? undefined : segmentName(path[0])
 		if (name === undefined) return `- ${message}`
-		const nested = path.length > 1 ? ` at ${path.slice(1).map(String).join(".")}` : ""
+		const nested = path.length > 1 ? ` at ${path.slice(1).map(segmentName).join(".")}` : ""
 		return message === "Missing key"
 			? `- Missing required ${describeParameter(name, docs)}`
 			: `- \`${name}\`${nested}: ${message}`

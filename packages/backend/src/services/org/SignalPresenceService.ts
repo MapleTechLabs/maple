@@ -109,7 +109,7 @@ const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService
 		const rows = yield* warehouse
 			.compiledQuery(tenant, compiled, { profile: "discovery", context: "signalPresence" })
 			.pipe(
-				Effect.map(Option.some),
+				Effect.asSome,
 				Effect.catchCause((cause) =>
 					Effect.logWarning("Signal presence unavailable — warehouse read failed").pipe(
 						Effect.annotateLogs({ orgId: tenant.orgId, cause }),

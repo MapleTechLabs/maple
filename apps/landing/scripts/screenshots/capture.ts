@@ -8,7 +8,7 @@
  * `bun run dev:signin`), renders at 2x, and writes webp via `cwebp`.
  */
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, DateTime, Effect, FileSystem, Option, Schema } from "effect"
+import { Config, Console, DateTime, Effect, FileSystem, Option, Schema } from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -71,7 +71,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const mintTicket = Effect.fn("capture.mintTicket")(
 	function* (email: string) {
-		const secret = process.env.CLERK_SECRET_KEY ?? ""
+		const secret = yield* Config.String("CLERK_SECRET_KEY").pipe(Config.withDefault(""))
 		if (!secret.startsWith("sk_test_")) {
 			return yield* new CaptureError({
 				message: "CLERK_SECRET_KEY must be a development key (sk_test_…)",

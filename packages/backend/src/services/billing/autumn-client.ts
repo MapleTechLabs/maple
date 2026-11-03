@@ -145,15 +145,13 @@ export const readCustomerCached = (
 				ttlSeconds: (result: AutumnResult) => customerCacheTtl(result.response),
 			},
 			runAutumn.pipe(
-				Effect.flatMap((res) =>
-					res.statusCode === 200
-						? Effect.succeed(res)
-						: Effect.fail(
-								new UncacheableAutumnResult({
-									message: `Autumn returned HTTP ${res.statusCode}; response must not be cached`,
-									result: res,
-								}),
-							),
+				Effect.filterOrFail(
+					(res) => res.statusCode === 200,
+					(res) =>
+						new UncacheableAutumnResult({
+							message: `Autumn returned HTTP ${res.statusCode}; response must not be cached`,
+							result: res,
+						}),
 				),
 			),
 		)

@@ -32,7 +32,7 @@ const discordFetch = (
 		input: Parameters<typeof globalThis.fetch>[0],
 		init?: RequestInit,
 	) => {
-		const url = String(input)
+		const url = new Request(input).url
 		if (url.startsWith(TOKEN_URL)) {
 			return Promise.resolve(jsonResponse({ access_token: "at-1", token_type: "Bearer" }))
 		}

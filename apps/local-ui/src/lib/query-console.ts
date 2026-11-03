@@ -2,7 +2,7 @@
 // formatting, CSV/JSON export and the starter queries.
 
 import { LocalQueryFailed, LocalQueryUnreachable, type LocalQueryRow } from "@maple/query-engine/local"
-import { Option, Schema } from "effect"
+import { Formatter, Option, Schema } from "effect"
 import { LOCAL_ORG_ID } from "./constants"
 
 const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
@@ -106,7 +106,7 @@ export function formatCell(value: unknown): string {
 	if (typeof value === "string") return value
 	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
 		return String(value)
-	return Option.getOrElse(encodeJson(value), () => String(value))
+	return Option.getOrElse(encodeJson(value), () => Formatter.format(value))
 }
 
 export function truncateCell(text: string, max = CELL_TRUNCATE_LENGTH): string {

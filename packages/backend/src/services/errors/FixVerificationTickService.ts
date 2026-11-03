@@ -235,7 +235,7 @@ const make: Effect.Effect<
 				if (subject === undefined) return "skipped"
 
 				const split = yield* occurrenceSplit(row, subject.fingerprintHash, nowMs).pipe(
-					Effect.map(Option.some),
+					Effect.asSome,
 					// Interrupts (isolate teardown) are NOT failures — re-raise them so the
 					// tick cancels promptly instead of recording a non-answer for this row.
 					Effect.catchCause((cause) =>

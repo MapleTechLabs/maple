@@ -14,7 +14,7 @@
 import { createPrivateKey, createPublicKey, sign } from "node:crypto"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { Console, Effect, Schema } from "effect"
+import { Config, Console, Effect, Option, Schema } from "effect"
 import {
 	MAPLE_RELEASE_PUBLIC_KEY,
 	parseChecksumManifest,
@@ -148,12 +148,21 @@ const main = Effect.gen(function* () {
 	if (installer === undefined) {
 		return yield* failWith('scripts/install.sh has no `release_public_key="..."` line')
 	}
+	const privateKeyPem = yield* Config.String("MAPLE_RELEASE_SIGNING_KEY").pipe(
+		Config.option,
+		Effect.map(Option.getOrUndefined),
+		Effect.orElseSucceed(() => undefined),
+	)
+	const signingRequired = yield* Config.String("MAPLE_RELEASE_SIGNING_REQUIRED").pipe(
+		Config.withDefault(""),
+		Effect.orElseSucceed(() => ""),
+	)
 	const outcome = yield* signReleaseManifest({
 		manifest,
-		privateKeyPem: process.env.MAPLE_RELEASE_SIGNING_KEY,
+		privateKeyPem,
 		embeddedPublicKey: MAPLE_RELEASE_PUBLIC_KEY,
 		installerPublicKey: installer,
-		required: process.env.MAPLE_RELEASE_SIGNING_REQUIRED === "1",
+		required: signingRequired === "1",
 	})
 	if (outcome.warning !== undefined) yield* Console.log(`::warning::${outcome.warning}`)
 	if (outcome.signature !== undefined) {

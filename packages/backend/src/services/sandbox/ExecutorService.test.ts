@@ -55,7 +55,7 @@ const fakeTransport = (
 				ran.push(request)
 				return available ? Option.fromNullishOr(runs.shift()) : Option.none()
 			}),
-		destroy: () => Effect.succeed(Option.some(new ExecutorDestroyed())),
+		destroy: () => Effect.succeedSome(new ExecutorDestroyed()),
 	}
 	return { transport, prepared, ran }
 }

@@ -120,7 +120,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 				params.area === undefined
 					? params.repository === undefined || !telemetry(area)
 					: params.area === area
-			const skip = Effect.succeed(undefined)
+			const skip = Effect.undefined
 			// Code findings borrow the dependency scanner's repository-to-service join, so they read it too.
 			const [codeRead, dependencyRead, exposure, runtimes] = yield* Effect.all(
 				[
@@ -155,7 +155,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			})
 			const now = yield* Clock.currentTimeMillis
 			return {
-				generatedAt: new Date(now).toISOString(),
+				generatedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
 				window,
 				...(params.area === undefined ? undefined : { areaFilter: params.area }),
 				filters: {

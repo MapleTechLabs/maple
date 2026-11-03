@@ -142,7 +142,7 @@ const assumeWithToken = (
 			orElse: () => Effect.fail(timedOut("AssumeRoleWithWebIdentity")),
 		}),
 		Effect.mapError((error) =>
-			error instanceof AwsApiError
+			Schema.is(AwsApiError)(error)
 				? error
 				: new AwsApiError({
 						message: `AssumeRoleWithWebIdentity: ${error.message}`,
@@ -180,7 +180,7 @@ export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 	) =>
 		effect.pipe(
 			Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => Effect.fail(timedOut(what)) }),
-			Effect.mapError((error) => (error instanceof AwsApiError ? error : toReadError(what)(error))),
+			Effect.mapError((error) => (Schema.is(AwsApiError)(error) ? error : toReadError(what)(error))),
 		)
 	const [role, attached] = yield* Effect.all(
 		[

@@ -1,4 +1,4 @@
-import { DashboardDocument } from "@maple/domain/http"
+import { DashboardDocument, withWidgets } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount, Submodel, Subscription } from "foldkit"
@@ -137,7 +137,7 @@ const withLayouts = (model: BenchModel, layouts: ReadonlyArray<Box>): BenchModel
 	})
 	return {
 		...model,
-		board: { ...model.board, document: { ...document, widgets } },
+		board: { ...model.board, document: withWidgets(document, widgets, document.updatedAt) },
 		layoutCommits: model.layoutCommits + 1,
 		lastCommitSize: moved.length,
 	}

@@ -25,7 +25,7 @@ const tokenFetch = (respond: () => Response, bodies: Array<string> = []) =>
 		input: Parameters<typeof globalThis.fetch>[0],
 		init?: RequestInit,
 	) => {
-		const url = String(input)
+		const url = new Request(input).url
 		if (!url.startsWith(TOKEN_URL)) return Promise.reject(new Error(`unexpected fetch: ${url}`))
 		// Read the body through `Request` rather than off `init`: the client is free to hand fetch a
 		// stream there.

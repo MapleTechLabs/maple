@@ -217,7 +217,7 @@ export const loadAgentSessionSpans = Effect.fn("McpAgentSessions.loadAgentSessio
 							? Effect.succeed(HALVE)
 							: state.spans.length === 0
 								? Effect.fail(error)
-								: Effect.succeed(undefined),
+								: Effect.undefined,
 					),
 					Effect.flatMap((page) => {
 						if (page === HALVE) {

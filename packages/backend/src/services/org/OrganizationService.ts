@@ -371,11 +371,9 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				action: string,
 			) {
 				if (isOrgAdmin(roles)) return
-				return yield* Effect.fail(
-					new OrganizationForbiddenError({
-						message: `Only org admins can ${action}`,
-					}),
-				)
+				return yield* new OrganizationForbiddenError({
+					message: `Only org admins can ${action}`,
+				})
 			})
 
 			const purgeOrgScopedRows = Effect.fn("OrganizationService.purgeOrgScopedRows")(function* (

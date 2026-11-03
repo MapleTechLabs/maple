@@ -33,6 +33,10 @@ import {
 	createWebhookDestination,
 } from "./alerts-service-test-support"
 
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
+
 const trackedDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -152,7 +156,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		const bodies: Array<string> = []
 		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-			bodies.push(String(init?.body ?? ""))
+			bodies.push(requestBodyText(init?.body))
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 

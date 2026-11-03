@@ -1,4 +1,4 @@
-import { asFiniteNumber, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { asFiniteNumber, cellText, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
@@ -62,7 +62,7 @@ const groupedSteps = (rows: ReadonlyArray<Row>, valueField: string) => {
 	const order: Array<string> = []
 	const byName = new Map<string, { value: number; byGroup: Map<string, number> }>()
 	rows.forEach((row) => {
-		const raw = row.name === null || row.name === undefined ? "" : String(row.name).trim()
+		const raw = cellText(row.name).trim()
 		const name = raw === "" ? "(no value)" : raw
 		const existing = byName.get(name)
 		const step = existing ?? { value: 0, byGroup: new Map<string, number>() }

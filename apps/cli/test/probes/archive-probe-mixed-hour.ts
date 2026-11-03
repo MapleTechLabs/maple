@@ -61,13 +61,15 @@ try {
 			),
 		)) {
 			if (Number(r.h) !== shardHour)
-				h.fail(`shard ${s.name} (hour ${shardHour}) contains hour-${r.h} row ${r.TraceId}`)
+				h.fail(
+					`shard ${s.name} (hour ${shardHour}) contains hour-${String(r.h)} row ${String(r.TraceId)}`,
+				)
 			archived.push({ id: String(r.TraceId), hour: Number(r.h) })
 		}
 	}
 	const archivedSet = archived.map((a) => a.id).sort()
 	if (archivedSet.join(",") !== sourceSet.join(","))
-		h.fail(`source [${sourceSet}] != archived [${archivedSet}]`)
+		h.fail(`source [${sourceSet.join(",")}] != archived [${archivedSet.join(",")}]`)
 	if (new Set(archivedSet).size !== archivedSet.length) h.fail(`duplicate rows in archive`)
 
 	const hour12 = written.find((s) => s.name.startsWith("12-"))

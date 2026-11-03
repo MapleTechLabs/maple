@@ -141,12 +141,10 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		function* (orgId, actorId) {
 			const row = yield* selectActorRow(orgId, actorId)
 			if (!row) {
-				return yield* Effect.fail(
-					new ActorNotFoundError({
-						message: `Actor '${actorId}' not found`,
-						actorId,
-					}),
-				)
+				return yield* new ActorNotFoundError({
+					message: `Actor '${actorId}' not found`,
+					actorId,
+				})
 			}
 			return actorRowToDocument(row)
 		},
@@ -210,9 +208,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		const after = yield* selectUserActor(orgId, userId)
 		const row = after[0]
 		if (!row) {
-			return yield* Effect.fail(
-				new ErrorPersistenceError({ message: "Failed to ensure user actor row" }),
-			)
+			return yield* new ErrorPersistenceError({ message: "Failed to ensure user actor row" })
 		}
 		return actorRowToDocument(row)
 	})
@@ -242,9 +238,9 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		const after = yield* selectByName
 		const row = after[0]
 		if (!row) {
-			return yield* Effect.fail(
-				new ErrorPersistenceError({ message: `Failed to ensure agent actor row '${agentName}'` }),
-			)
+			return yield* new ErrorPersistenceError({
+				message: `Failed to ensure agent actor row '${agentName}'`,
+			})
 		}
 		return actorRowToDocument(row)
 	})
@@ -257,20 +253,16 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	)(function* (orgId, byUserId, request) {
 		const name = request.name.trim()
 		if (name.length === 0) {
-			return yield* Effect.fail(
-				new ErrorValidationError({
-					message: "Agent name must not be empty",
-					details: [request.name],
-				}),
-			)
+			return yield* new ErrorValidationError({
+				message: "Agent name must not be empty",
+				details: [request.name],
+			})
 		}
 		if (isReservedAgentName(name)) {
-			return yield* Effect.fail(
-				new ErrorValidationError({
-					message: `Agent name '${name}' is reserved`,
-					details: [name],
-				}),
-			)
+			return yield* new ErrorValidationError({
+				message: `Agent name '${name}' is reserved`,
+				details: [name],
+			})
 		}
 
 		const timestamp = yield* Clock.currentTimeMillis
@@ -293,15 +285,13 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		const rows = yield* selectAgentByName(orgId, name)
 		const row = rows[0]
 		if (!row) {
-			return yield* Effect.fail(new ErrorPersistenceError({ message: "Failed to register agent" }))
+			return yield* new ErrorPersistenceError({ message: "Failed to register agent" })
 		}
 		if (row.id !== id) {
-			return yield* Effect.fail(
-				new ErrorValidationError({
-					message: `An agent named '${name}' already exists for this org`,
-					details: [name],
-				}),
-			)
+			return yield* new ErrorValidationError({
+				message: `An agent named '${name}' already exists for this org`,
+				details: [name],
+			})
 		}
 		return actorRowToDocument(row)
 	})

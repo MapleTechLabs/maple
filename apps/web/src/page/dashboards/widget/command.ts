@@ -1,5 +1,6 @@
 import { DashboardVariableSchema, DashboardWidgetSchema, TimeRangeSchema } from "@maple/domain/http"
 import { Clock, Effect, Queue, Schema, Stream } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -55,13 +56,13 @@ export const FetchVariableOptions = Command.define("FetchWidgetEditorVariableOpt
 		),
 })
 
-/** `crypto.randomUUID()` for a new or cloned query, or a new formula. */
+/** A fresh UUID for a new or cloned query, or a new formula. */
 export const GenerateId = Command.define("GenerateWidgetEditorId", {
 	args: { purpose: GeneratedIdPurpose, source: Schema.String },
 	messages: [Message.GeneratedId],
 	execute: ({ purpose, source }) =>
 		Effect.map(
-			Effect.sync(() => crypto.randomUUID()),
+			Effect.flatMap(Effect.service(SecureRandom.SecureRandom), (random) => random.uuidV4()),
 			(id) => Message.GeneratedId({ purpose, source, id }),
 		),
 })

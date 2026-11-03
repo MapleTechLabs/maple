@@ -40,7 +40,7 @@ const orgOfToken = (token: string): Effect.Effect<Option.Option<string>> =>
 export const labShellFlags: Effect.Effect<LabShellFlags> = Effect.all({
 	shell: Shell.readShellFlags,
 	maybeOrgId: Effect.flatMap(readSessionToken, (maybeToken) =>
-		Option.match(maybeToken, { onNone: () => Effect.succeed(Option.none()), onSome: orgOfToken }),
+		Option.match(maybeToken, { onNone: () => Effect.succeedNone, onSome: orgOfToken }),
 	),
 })
 

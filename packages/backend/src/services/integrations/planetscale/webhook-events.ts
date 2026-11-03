@@ -711,12 +711,10 @@ export const upsertPlanetScaleIssue: (
 						// The queue consumer retries on `DatabaseError`, so this unreachable
 						// state keeps the failure class it always surfaced as.
 						if (!row) {
-							return yield* Effect.fail(
-								new DatabaseError({
-									message: "Failed to ensure system-integrations actor row",
-									cause: undefined,
-								}),
-							)
+							return yield* new DatabaseError({
+								message: "Failed to ensure system-integrations actor row",
+								cause: undefined,
+							})
 						}
 						return row.id
 					})
@@ -857,14 +855,11 @@ export const upsertPlanetScaleIssue: (
 					// this distinct occurrence instead of committing a receipt-only skip.
 					const winner = (yield* db.run(lockIssue))[0]
 					if (winner === undefined) {
-						return yield* Effect.fail(
-							new PlanetScaleIssueConflictUnresolved({
-								message:
-									"PlanetScale issue conflict winner was not visible in the transaction",
-								orgId: input.orgId,
-								fingerprintHash,
-							}),
-						)
+						return yield* new PlanetScaleIssueConflictUnresolved({
+							message: "PlanetScale issue conflict winner was not visible in the transaction",
+							orgId: input.orgId,
+							fingerprintHash,
+						})
 					}
 					return yield* applyExistingIssue(winner)
 				}),

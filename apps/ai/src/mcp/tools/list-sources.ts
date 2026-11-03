@@ -1,6 +1,6 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema } from "effect"
 import { ListSourcesOutput } from "@maple/domain/mcp-outputs"
 import { SourcePlatform } from "@maple/domain/primitives"
 import { SOURCE_HEALTH_STATUSES } from "@maple/domain/source-health"
@@ -60,7 +60,7 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 				"maple.sources.unhealthy": rows.filter((row) => row.status !== "healthy").length,
 			})
 			const now = yield* Clock.currentTimeMillis
-			return { generatedAt: new Date(now).toISOString(), sources: rows }
+			return { generatedAt: DateTime.formatIso(DateTime.makeUnsafe(now)), sources: rows }
 		}),
 		render: (output) => {
 			if (output.sources.length === 0) {

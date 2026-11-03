@@ -1,8 +1,8 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
-import { AlertValidationError } from "@maple/domain/http"
+import { AlertValidationError, WebhookAlertDestinationConfig } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, Duration, Effect, Exit } from "effect"
+import { Cause, Duration, Effect, Exit, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import { AlertRuleUpsertRequest, OrgId, UserId } from "@maple/domain/http"
@@ -31,6 +31,10 @@ import {
 	insertDeliveryEventRow,
 	makeUuidSequence,
 } from "./alerts-service-test-support"
+
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
 
 const trackedDbs: TestDb[] = []
 
@@ -122,7 +126,7 @@ describe("AlertsService", () => {
 		const requests: Array<{ url: string; headers: Headers }> = []
 		const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			requests.push({
-				url: String(input),
+				url: String(input instanceof Request ? input.url : input),
 				headers: new Headers(init?.headers),
 			})
 			return new Response("ok", { status: 200 })
@@ -190,7 +194,7 @@ describe("AlertsService", () => {
 		}
 		const requests: Array<string> = []
 		const fetchImpl = (async (input: RequestInfo | URL) => {
-			requests.push(String(input))
+			requests.push(String(input instanceof Request ? input.url : input))
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 		const sql = (statement: string) => Effect.promise(() => executeSql(testDb, statement))
@@ -265,7 +269,7 @@ describe("AlertsService", () => {
 		}
 		const requests: Array<string> = []
 		const fetchImpl = (async (input: RequestInfo | URL) => {
-			requests.push(String(input))
+			requests.push(String(input instanceof Request ? input.url : input))
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 
@@ -867,20 +871,30 @@ describe("AlertsService", () => {
 
 		const createTieredSetup = (alerts: AlertsServiceApi, orgId: OrgId, userId: UserId) =>
 			Effect.gen(function* () {
-				const warnHook = yield* alerts.createDestination(orgId, userId, adminRoles, {
-					type: "webhook",
-					name: "Team channel",
-					enabled: true,
-					url: "https://example.com/warn",
-					signingSecret: "warn-secret",
-				})
-				const pageHook = yield* alerts.createDestination(orgId, userId, adminRoles, {
-					type: "webhook",
-					name: "Pager",
-					enabled: true,
-					url: "https://example.com/page",
-					signingSecret: "page-secret",
-				})
+				const warnHook = yield* alerts.createDestination(
+					orgId,
+					userId,
+					adminRoles,
+					new WebhookAlertDestinationConfig({
+						type: "webhook",
+						name: "Team channel",
+						enabled: true,
+						url: "https://example.com/warn",
+						signingSecret: "warn-secret",
+					}),
+				)
+				const pageHook = yield* alerts.createDestination(
+					orgId,
+					userId,
+					adminRoles,
+					new WebhookAlertDestinationConfig({
+						type: "webhook",
+						name: "Pager",
+						enabled: true,
+						url: "https://example.com/page",
+						signingSecret: "page-secret",
+					}),
+				)
 				const rule = yield* alerts.createRule(
 					orgId,
 					userId,
@@ -923,7 +937,7 @@ describe("AlertsService", () => {
 			const requests: Array<{ url: string; eventType: string | null }> = []
 			const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
 				requests.push({
-					url: String(input),
+					url: String(input instanceof Request ? input.url : input),
 					eventType: new Headers(init?.headers).get("x-maple-event-type"),
 				})
 				return new Response("ok", { status: 200 })
@@ -994,7 +1008,9 @@ describe("AlertsService", () => {
 
 		const recordingFetch = (requests: Array<string>) =>
 			(async (input: RequestInfo | URL, init?: RequestInit) => {
-				requests.push(`${new Headers(init?.headers).get("x-maple-event-type")} ${String(input)}`)
+				requests.push(
+					`${new Headers(init?.headers).get("x-maple-event-type")} ${String(input instanceof Request ? input.url : input)}`,
+				)
 				return new Response("ok", { status: 200 })
 			}) as typeof fetch
 
@@ -1362,7 +1378,7 @@ describe("AlertsService", () => {
 				assert.isTrue(Exit.isFailure(exit))
 				const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
 				assert.instanceOf(error, AlertValidationError)
-				assert.includeMembers(error instanceof AlertValidationError ? [...error.details] : [], [
+				assert.includeMembers(Schema.is(AlertValidationError)(error) ? [...error.details] : [], [
 					"the critical threshold must be worse than the warning threshold",
 					"thresholds[0].recoveryValue must be on the healthy side of thresholds[0].value",
 				])
@@ -1763,7 +1779,7 @@ describe("AlertsService", () => {
 		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 			requests.push({
 				headers: new Headers(init?.headers),
-				body: String(init?.body ?? ""),
+				body: requestBodyText(init?.body),
 			})
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch

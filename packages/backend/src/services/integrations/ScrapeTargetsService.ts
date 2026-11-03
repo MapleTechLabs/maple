@@ -29,7 +29,19 @@ import {
 	type ScrapeTargetCheckRow,
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
-import { Array as Arr, Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
+import {
+	DateTime,
+	Array as Arr,
+	Cause,
+	Clock,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+} from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	encryptAes256Gcm,
@@ -315,7 +327,7 @@ const encryptCredentials = (
 const decodeAuthTypeEffect = Schema.decodeUnknownEffect(ScrapeAuthType)
 
 const validateAuthType = (authType: string | undefined) => {
-	if (authType === undefined) return Effect.succeed(undefined)
+	if (authType === undefined) return Effect.undefined
 	return decodeAuthTypeEffect(authType).pipe(
 		Effect.mapError(
 			() =>
@@ -426,13 +438,13 @@ const rowToResponse = Effect.fn("ScrapeTargetsService.rowToResponse")(function* 
 		row,
 		"created_at",
 		Schema.decodeUnknownEffect(IsoDateTimeString),
-		new Date(row.createdAt).toISOString(),
+		DateTime.formatIso(DateTime.makeUnsafe(row.createdAt)),
 	)
 	const updatedAt = yield* decodeStored(
 		row,
 		"updated_at",
 		Schema.decodeUnknownEffect(IsoDateTimeString),
-		new Date(row.updatedAt).toISOString(),
+		DateTime.formatIso(DateTime.makeUnsafe(row.updatedAt)),
 	)
 	const lastScrapeAt =
 		row.lastScrapeAt !== null
@@ -440,7 +452,7 @@ const rowToResponse = Effect.fn("ScrapeTargetsService.rowToResponse")(function* 
 					row,
 					"last_scrape_at",
 					Schema.decodeUnknownEffect(IsoDateTimeString),
-					new Date(row.lastScrapeAt).toISOString(),
+					DateTime.formatIso(DateTime.makeUnsafe(row.lastScrapeAt)),
 				)
 			: null
 	return new ScrapeTargetResponse({
@@ -637,12 +649,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const row = yield* selectById(orgId, targetId)
 				if (Option.isSome(row)) return row.value
 
-				return yield* Effect.fail(
-					new ScrapeTargetNotFoundError({
-						targetId,
-						message: "Scrape target not found",
-					}),
-				)
+				return yield* new ScrapeTargetNotFoundError({
+					targetId,
+					message: "Scrape target not found",
+				})
 			})
 
 			// Managed PlanetScale and Supabase targets store no credentials: the org's OAuth grant
@@ -707,32 +717,26 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				if (targetType === "planetscale") {
 					if (request.url) {
-						return yield* Effect.fail(
-							new ScrapeTargetValidationError({
-								message:
-									"PlanetScale targets derive their URL from the organization; do not provide a url",
-							}),
-						)
+						return yield* new ScrapeTargetValidationError({
+							message:
+								"PlanetScale targets derive their URL from the organization; do not provide a url",
+						})
 					}
 					const organization = request.organization?.trim()
 					if (!organization) {
-						return yield* Effect.fail(
-							new ScrapeTargetValidationError({
-								message: "organization is required for PlanetScale targets",
-							}),
-						)
+						return yield* new ScrapeTargetValidationError({
+							message: "organization is required for PlanetScale targets",
+						})
 					}
 					if (
 						request.authType !== undefined &&
 						request.authType !== "token" &&
 						request.authType !== "planetscale_oauth"
 					) {
-						return yield* Effect.fail(
-							new ScrapeTargetValidationError({
-								message:
-									'PlanetScale targets use auth type "token" (service token id + secret) or "planetscale_oauth" (managed by the PlanetScale integration)',
-							}),
-						)
+						return yield* new ScrapeTargetValidationError({
+							message:
+								'PlanetScale targets use auth type "token" (service token id + secret) or "planetscale_oauth" (managed by the PlanetScale integration)',
+						})
 					}
 					const includeBranches = yield* validateBranchPatterns(
 						request.includeBranches,
@@ -747,25 +751,17 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					authType = request.authType ?? "token"
 				} else {
 					if (request.includeBranches !== undefined || request.excludeBranches !== undefined) {
-						return yield* Effect.fail(
-							new ScrapeTargetValidationError({
-								message:
-									"includeBranches/excludeBranches are only valid for PlanetScale targets",
-							}),
-						)
+						return yield* new ScrapeTargetValidationError({
+							message: "includeBranches/excludeBranches are only valid for PlanetScale targets",
+						})
 					}
 					if (request.authType === "planetscale_oauth") {
-						return yield* Effect.fail(
-							new ScrapeTargetValidationError({
-								message:
-									'Auth type "planetscale_oauth" is only valid for PlanetScale targets',
-							}),
-						)
+						return yield* new ScrapeTargetValidationError({
+							message: 'Auth type "planetscale_oauth" is only valid for PlanetScale targets',
+						})
 					}
 					if (!request.url) {
-						return yield* Effect.fail(
-							new ScrapeTargetValidationError({ message: "url is required" }),
-						)
+						return yield* new ScrapeTargetValidationError({ message: "url is required" })
 					}
 					url = yield* validateUrl(request.url)
 					authType = (yield* validateAuthType(request.authType)) ?? "none"
@@ -838,13 +834,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					),
 				)
 				if (inserted.length !== 1) {
-					return yield* Effect.fail(
-						new ScrapeTargetPersistenceError({
-							message: "Failed to create scrape target",
-						}),
-					)
+					return yield* new ScrapeTargetPersistenceError({
+						message: "Failed to create scrape target",
+					})
 				}
-				const createdAt = decodeIsoDateTimeStringSync(new Date(now).toISOString())
+				const createdAt = decodeIsoDateTimeStringSync(DateTime.formatIso(DateTime.makeUnsafe(now)))
 				const scrapeIntervalSeconds =
 					request.scrapeIntervalSeconds ??
 					decodeScrapeIntervalSecondsSync(targetType === "planetscale" ? 30 : 15)
@@ -908,12 +902,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const isPlanetScale = existing.targetType === "planetscale"
 
 				if (isPlanetScale && request.url !== undefined) {
-					return yield* Effect.fail(
-						new ScrapeTargetValidationError({
-							message:
-								"PlanetScale targets derive their URL from the organization; update organization instead",
-						}),
-					)
+					return yield* new ScrapeTargetValidationError({
+						message:
+							"PlanetScale targets derive their URL from the organization; update organization instead",
+					})
 				}
 				if (
 					isPlanetScale &&
@@ -921,36 +913,28 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					request.authType !== "token" &&
 					request.authType !== "planetscale_oauth"
 				) {
-					return yield* Effect.fail(
-						new ScrapeTargetValidationError({
-							message:
-								'PlanetScale targets use auth type "token" (service token id + secret) or "planetscale_oauth" (managed by the PlanetScale integration)',
-						}),
-					)
+					return yield* new ScrapeTargetValidationError({
+						message:
+							'PlanetScale targets use auth type "token" (service token id + secret) or "planetscale_oauth" (managed by the PlanetScale integration)',
+					})
 				}
 				if (!isPlanetScale && request.authType === "planetscale_oauth") {
-					return yield* Effect.fail(
-						new ScrapeTargetValidationError({
-							message: 'Auth type "planetscale_oauth" is only valid for PlanetScale targets',
-						}),
-					)
+					return yield* new ScrapeTargetValidationError({
+						message: 'Auth type "planetscale_oauth" is only valid for PlanetScale targets',
+					})
 				}
 				if (!isPlanetScale && request.organization !== undefined && request.organization !== null) {
-					return yield* Effect.fail(
-						new ScrapeTargetValidationError({
-							message: "organization is only valid for PlanetScale targets",
-						}),
-					)
+					return yield* new ScrapeTargetValidationError({
+						message: "organization is only valid for PlanetScale targets",
+					})
 				}
 				if (
 					!isPlanetScale &&
 					(request.includeBranches !== undefined || request.excludeBranches !== undefined)
 				) {
-					return yield* Effect.fail(
-						new ScrapeTargetValidationError({
-							message: "includeBranches/excludeBranches are only valid for PlanetScale targets",
-						}),
-					)
+					return yield* new ScrapeTargetValidationError({
+						message: "includeBranches/excludeBranches are only valid for PlanetScale targets",
+					})
 				}
 
 				if (request.url !== undefined && request.url !== null) {
@@ -990,11 +974,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							? request.organization?.trim()
 							: existingConfig?.organization
 					if (!organization) {
-						return yield* Effect.fail(
-							new ScrapeTargetValidationError({
-								message: "organization is required for PlanetScale targets",
-							}),
-						)
+						return yield* new ScrapeTargetValidationError({
+							message: "organization is required for PlanetScale targets",
+						})
 					}
 					// Provided lists replace (empty array clears); omitted lists are preserved.
 					const includeBranches =
@@ -1056,12 +1038,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					!credentialsRewritten &&
 					!isSameOrigin(existing.url, nextUrl)
 				) {
-					return yield* Effect.fail(
-						new ScrapeTargetValidationError({
-							message:
-								"Changing a scrape target's scheme, host, or port requires re-supplying authCredentials — stored credentials are never carried to a new origin",
-						}),
-					)
+					return yield* new ScrapeTargetValidationError({
+						message:
+							"Changing a scrape target's scheme, host, or port requires re-supplying authCredentials — stored credentials are never carried to a new origin",
+					})
 				}
 
 				yield* dbExecute((db) =>
@@ -1074,11 +1054,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const row = yield* selectById(orgId, targetId)
 				if (Option.isNone(row)) {
-					return yield* Effect.fail(
-						new ScrapeTargetPersistenceError({
-							message: "Failed to load updated scrape target",
-						}),
-					)
+					return yield* new ScrapeTargetPersistenceError({
+						message: "Failed to load updated scrape target",
+					})
 				}
 
 				// Org or credential changes must take effect on the next scrape, not
@@ -1118,12 +1096,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const deleted = Option.fromNullishOr(rows[0])
 				if (Option.isNone(deleted)) {
-					return yield* Effect.fail(
-						new ScrapeTargetNotFoundError({
-							targetId,
-							message: "Scrape target not found",
-						}),
-					)
+					return yield* new ScrapeTargetNotFoundError({
+						targetId,
+						message: "Scrape target not found",
+					})
 				}
 
 				yield* discovery.invalidate(targetId)
@@ -1453,10 +1429,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 								),
 							)
 						}),
-						Effect.timeout(10_000),
-						Effect.catchTag("TimeoutError", () =>
-							Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),
-						),
+						Effect.timeoutOrElse({
+							duration: 10_000,
+							orElse: () =>
+								Effect.fail(new ScrapeTargetUpstreamError({ message: "Connection failed" })),
+						}),
 						Effect.scoped,
 						Effect.exit,
 					)
@@ -1491,18 +1468,18 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				const updated = Option.fromNullishOr(updatedRows[0])
 				if (Option.isNone(updated)) {
-					return yield* Effect.fail(
-						new ScrapeTargetPersistenceError({
-							message: "Failed to load probed scrape target",
-						}),
-					)
+					return yield* new ScrapeTargetPersistenceError({
+						message: "Failed to load probed scrape target",
+					})
 				}
 
 				return new ScrapeTargetProbeResponse({
 					success: Exit.isSuccess(requestExit),
 					lastScrapeAt:
 						updated.value.lastScrapeAt !== null
-							? decodeIsoDateTimeStringSync(new Date(updated.value.lastScrapeAt).toISOString())
+							? decodeIsoDateTimeStringSync(
+									DateTime.formatIso(DateTime.makeUnsafe(updated.value.lastScrapeAt)),
+								)
 							: null,
 					lastScrapeError: updated.value.lastScrapeError ?? null,
 				})

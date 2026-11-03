@@ -18,7 +18,7 @@ const isValidZone = (zone: string): Effect.Effect<boolean> =>
 	zone.trim().length === 0
 		? Effect.succeed(false)
 		: Effect.try({
-				try: () => new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date()),
+				try: () => new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(0),
 				catch: (cause) => new TimeZoneError({ message: `Unknown time zone ${zone}`, cause }),
 			}).pipe(
 				Effect.as(true),

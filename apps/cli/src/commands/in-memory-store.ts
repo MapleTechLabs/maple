@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SERVER_PID_NAME } from "@maple/local-server/store-version"
 import { isProcessAlive } from "@maple/local-server/store-claim"
-import { ServerStateFileError } from "@maple/local-server/store-errors"
+import { ServerStateFileError, stateFileError } from "@maple/local-server/store-errors"
 
 /**
  * `maple start --in-memory`: a throwaway store for one run.
@@ -40,7 +40,7 @@ const freeBytes = (dir: string): Effect.Effect<Option.Option<number>> =>
 			const stats = statfsSync(dir)
 			return stats.bavail * stats.bsize
 		},
-		catch: (error) => error,
+		catch: stateFileError(dir, "stat"),
 	}).pipe(Effect.option)
 
 /** Where the temp root goes: tmpfs on Linux when it has room, else the OS temp dir. */
@@ -75,11 +75,11 @@ export const isAbandonedStore = (
 const ownerPid = (root: string): Effect.Effect<Option.Option<number>> =>
 	Effect.try({
 		try: () => Number.parseInt(readFileSync(join(root, SERVER_PID_NAME), "utf8").trim(), 10),
-		catch: (error) => error,
+		catch: stateFileError(join(root, SERVER_PID_NAME), "read"),
 	}).pipe(Effect.option, Effect.map(Option.filter((pid) => Number.isInteger(pid) && pid > 0)))
 
 const isAbandonedRoot = (root: string, nowMs: number): Effect.Effect<boolean> =>
-	Effect.try({ try: () => statSync(root).mtimeMs, catch: (error) => error }).pipe(
+	Effect.try({ try: () => statSync(root).mtimeMs, catch: stateFileError(root, "stat") }).pipe(
 		Effect.flatMap((mtimeMs) =>
 			Effect.map(ownerPid(root), (owner) => isAbandonedStore(owner, nowMs - mtimeMs)),
 		),
@@ -89,16 +89,17 @@ const isAbandonedRoot = (root: string, nowMs: number): Effect.Effect<boolean> =>
 const removeTree = (path: string): Effect.Effect<void> =>
 	Effect.try({
 		try: () => rmSync(path, { recursive: true, force: true }),
-		catch: (error) => error,
+		catch: stateFileError(path, "remove"),
 	}).pipe(Effect.ignore)
 
 /** Delete in-memory stores under `parent` whose server is gone. Never fails. */
 export const sweepAbandonedStores = (parent: string): Effect.Effect<ReadonlyArray<string>> =>
 	Effect.gen(function* () {
 		const nowMs = yield* Clock.currentTimeMillis
-		const names = yield* Effect.try({ try: () => readdirSync(parent), catch: (error) => error }).pipe(
-			Effect.orElseSucceed((): Array<string> => []),
-		)
+		const names = yield* Effect.try({
+			try: () => readdirSync(parent),
+			catch: stateFileError(parent, "list"),
+		}).pipe(Effect.orElseSucceed((): Array<string> => []))
 		const abandoned = yield* Effect.filter(
 			names.filter((name) => name.startsWith(IN_MEMORY_STORE_PREFIX)).map((name) => join(parent, name)),
 			(root) => isAbandonedRoot(root, nowMs),
@@ -129,9 +130,10 @@ export const sweepStaleDiscoveryFiles = (
 	alive: (pid: number) => boolean = isProcessAlive,
 ): Effect.Effect<ReadonlyArray<string>> =>
 	Effect.gen(function* () {
-		const names = yield* Effect.try({ try: () => readdirSync(dir), catch: (error) => error }).pipe(
-			Effect.orElseSucceed((): Array<string> => []),
-		)
+		const names = yield* Effect.try({
+			try: () => readdirSync(dir),
+			catch: stateFileError(dir, "list"),
+		}).pipe(Effect.orElseSucceed((): Array<string> => []))
 		const stale = names.flatMap((name) => {
 			const pid = DISCOVERY_FILE.exec(name)?.[1]
 			return pid !== undefined && !alive(Number(pid)) ? [join(dir, name)] : []

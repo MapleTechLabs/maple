@@ -584,7 +584,7 @@ const lockOpenRun = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId, write
 			Effect.flatMap((rows) => {
 				const row = rows[0]
 				if (row === undefined) return Effect.fail(runNotFound(runId))
-				if (row.finishedAt === null) return Effect.succeed(Option.some(row))
+				if (row.finishedAt === null) return Effect.succeedSome(row)
 				return Effect.logInfo("Skipped a write to a finished security audit run").pipe(
 					Effect.annotateLogs({ runId, write }),
 					Effect.as(Option.none<typeof row>()),

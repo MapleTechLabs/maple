@@ -530,7 +530,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				})
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+			assert.ok(Schema.is(VcsWebhookSignatureError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -761,7 +761,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				.webhookToJobs({ headers: { "x-github-event": "push" }, rawBody: pushBody })
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+			assert.ok(Schema.is(VcsWebhookSignatureError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -777,7 +777,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				})
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+			assert.ok(Schema.is(VcsWebhookSignatureError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -793,7 +793,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				})
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+			assert.ok(Schema.is(VcsWebhookSignatureError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayerNoSecret())),
 	)
 
@@ -1370,7 +1370,7 @@ describe("VcsRepository", () => {
 			)
 			const exit = yield* repo.resolveInstallation("github", "55").pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsRepoDecodeError)
+			assert.ok(Schema.is(VcsRepoDecodeError)(findError(exit)))
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 
@@ -3459,7 +3459,7 @@ describe("VcsSyncService orchestrator", () => {
 			const exit = yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job)).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			const error = findError(exit)
-			assert.ok(error instanceof VcsRateLimitedError)
+			assert.ok(Schema.is(VcsRateLimitedError)(error))
 			assert.strictEqual((error as VcsRateLimitedError).retryAfterSeconds, 600)
 		}).pipe(
 			Effect.provide(
@@ -3831,7 +3831,7 @@ describe("VcsSyncService orchestrator", () => {
 				)
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsRateLimitedError)
+			assert.ok(Schema.is(VcsRateLimitedError)(findError(exit)))
 			assert.strictEqual(sent.length, 0)
 		}).pipe(
 			Effect.provide(
@@ -4206,7 +4206,7 @@ describe("git SHA validation (branded type)", () => {
 				})
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsWebhookParseError)
+			assert.ok(Schema.is(VcsWebhookParseError)(findError(exit)))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -4256,7 +4256,7 @@ describe("git SHA validation (branded type)", () => {
 			]).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			const error = findError(exit)
-			assert.ok(error instanceof VcsRepoDecodeError)
+			assert.ok(Schema.is(VcsRepoDecodeError)(error))
 			// The write-side decode pins the offending column so a row-build failure is
 			// distinguishable from a read-side row decode (which carries no column).
 			assert.strictEqual((error as VcsRepoDecodeError).column, "sha")
@@ -4330,7 +4330,7 @@ describe("GithubProvider rate-limit handling", () => {
 			const exit = yield* provider.fetchRepositories(installation).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			const error = findError(exit)
-			assert.ok(error instanceof VcsRateLimitedError)
+			assert.ok(Schema.is(VcsRateLimitedError)(error))
 			assert.strictEqual((error as VcsRateLimitedError).retryAfterSeconds, 600)
 		}).pipe(
 			// token → repos page 1 (429, retry-after 600 → surfaced, not resumable)

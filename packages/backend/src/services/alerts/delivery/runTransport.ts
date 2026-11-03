@@ -191,7 +191,7 @@ const failOnStatus = <Config>(
 			"maple.delivery.destination_id": input.context.destination.id,
 			"maple.delivery.destination_type": transport.type,
 		})
-		return yield* Effect.fail(failure)
+		return yield* failure
 	})
 
 export const runHttpTransport = <Config>(

@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingAccountPersistenceError, BillingCustomerId, OrgId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { CancellationReviewQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
@@ -530,7 +530,7 @@ describe("AutumnWebhookRouter", () => {
 				billingOrgId: () => Effect.succeed(payer),
 				customerFor: () => Effect.succeed(BillingCustomerId.make(payer)),
 				requireOwnBilling: () => Effect.die("not used"),
-				readLink: () => Effect.succeed(Option.some(payer)),
+				readLink: () => Effect.succeedSome(payer),
 				forget: () => Effect.void,
 			})
 			const { handler, dispose } = HttpRouter.toWebHandler(

@@ -35,13 +35,12 @@ const email = process.argv[2] ?? process.env.MAPLE_DEV_SIGNIN_EMAIL ?? DEFAULT_E
 
 // The REST API directly rather than `@clerk/backend`: the SDK is a dependency of
 // `apps/api`, not of the repo root, and two calls do not earn one at the root.
-const clerkFetch = async (path: string, init?: RequestInit) => {
+const clerkFetch = async (path: string, init?: Omit<RequestInit, "headers">) => {
 	const response = await fetch(`${CLERK_API}${path}`, {
 		...init,
 		headers: {
 			authorization: `Bearer ${secretKey}`,
 			"content-type": "application/json",
-			...init?.headers,
 		},
 	})
 	if (!response.ok) {

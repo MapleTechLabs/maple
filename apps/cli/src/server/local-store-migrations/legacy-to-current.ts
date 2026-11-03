@@ -445,8 +445,11 @@ const tableTotalRowCount = async (
 	return numberString(rows[0].rowCount)
 }
 
+/** Key columns are JSON scalars (strings or numbers) from `JSONEachRow`. */
+const keyText = (value: unknown): string => String(value)
+
 const keyOf = (row: Record<string, unknown>): string =>
-	`${String(row.__maple_timestamp ?? "")}\0${String(row.__maple_hash ?? "")}\0${String(row.__maple_tie_break ?? "")}`
+	`${keyText(row.__maple_timestamp ?? "")}\0${keyText(row.__maple_hash ?? "")}\0${keyText(row.__maple_tie_break ?? "")}`
 
 const copyProgressFor = (progress: RawReplayProgress, table: string): CopyProgress =>
 	progress.copied[table] ?? emptyCopyProgress()
@@ -627,12 +630,12 @@ const copyTable = async (
 			table: table.name,
 			rowCount: payload.length,
 			byteLength,
-			firstTimestamp: first.__maple_timestamp === undefined ? null : String(first.__maple_timestamp),
-			firstHash: first.__maple_hash === undefined ? null : String(first.__maple_hash),
-			firstTieBreak: first.__maple_tie_break === undefined ? null : String(first.__maple_tie_break),
-			lastTimestamp: last.__maple_timestamp === undefined ? null : String(last.__maple_timestamp),
-			lastHash: last.__maple_hash === undefined ? null : String(last.__maple_hash),
-			lastTieBreak: last.__maple_tie_break === undefined ? null : String(last.__maple_tie_break),
+			firstTimestamp: first.__maple_timestamp === undefined ? null : keyText(first.__maple_timestamp),
+			firstHash: first.__maple_hash === undefined ? null : keyText(first.__maple_hash),
+			firstTieBreak: first.__maple_tie_break === undefined ? null : keyText(first.__maple_tie_break),
+			lastTimestamp: last.__maple_timestamp === undefined ? null : keyText(last.__maple_timestamp),
+			lastHash: last.__maple_hash === undefined ? null : keyText(last.__maple_hash),
+			lastTieBreak: last.__maple_tie_break === undefined ? null : keyText(last.__maple_tie_break),
 			lastKeyCount,
 			lastKeyExhausted,
 			signature: batchSignature(table.name, payload),

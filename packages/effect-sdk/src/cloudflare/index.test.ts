@@ -49,10 +49,10 @@ describe("MapleCloudflareSDK.make", () => {
 		const telemetry = make({ serviceName: "unit-test" })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 
 		await telemetry.flush(env)
@@ -120,9 +120,7 @@ describe("MapleCloudflareSDK.make", () => {
 		restore = r
 		const telemetry = make({ serviceName: "unit-test" })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		// No MAPLE_ENDPOINT — falls through to public default. Ingest key is
 		// required to avoid the no-op short-circuit; we're testing endpoint
 		// defaulting here, not the no-op behavior.
@@ -141,9 +139,7 @@ describe("MapleCloudflareSDK.make", () => {
 		}
 		const telemetry = make({ serviceName: "unit-test" })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush({}) // no MAPLE_INGEST_KEY — should no-op
 
 		expect(calls.length).toBe(0)
@@ -154,7 +150,7 @@ describe("MapleCloudflareSDK.make", () => {
 		// A second flush within the same isolate should stay silent —
 		// the info log is one-shot.
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush({})
 		expect(calls.length).toBe(0)
@@ -170,9 +166,7 @@ describe("MapleCloudflareSDK.make", () => {
 		}
 		const telemetry = make({ serviceName: "unit-test" })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush({ MAPLE_ENDPOINT: "http://localhost:4318" })
 
 		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
@@ -192,11 +186,11 @@ describe("MapleCloudflareSDK.make", () => {
 
 		// First two flushes happen with no key — buffers should be drained.
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("dropped-1"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("dropped-1"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush({})
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("dropped-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("dropped-2"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush({})
 
@@ -204,7 +198,7 @@ describe("MapleCloudflareSDK.make", () => {
 		// SDK is locked into no-op for this isolate. Confirms (a) no POST,
 		// (b) earlier spans were drained rather than retained.
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("also-dropped"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("also-dropped"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush({ MAPLE_INGEST_KEY: "secret" })
 		expect(calls.length).toBe(0)
@@ -219,9 +213,7 @@ describe("MapleCloudflareSDK.make", () => {
 			ingestKey: "override-key",
 		})
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush(env)
 
 		const call = calls.find((c) => c.url.endsWith("/v1/traces"))
@@ -238,14 +230,12 @@ describe("MapleCloudflareSDK.make", () => {
 		}
 		const telemetry = make({ serviceName: "unit-test" })
 
-		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
-		)
+		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush(env) // first flush — fails, sets cooldown
 		const failedCount = calls.length
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush(env) // second flush — within cooldown, should be a no-op
 		expect(calls.length).toBe(failedCount)
@@ -265,10 +255,7 @@ describe("MapleCloudflareSDK.make", () => {
 		// produced on the next macrotask, after `flush` has already been called.
 		setTimeout(() => {
 			void Effect.runPromise(
-				Effect.succeed(undefined).pipe(
-					Effect.withSpan("deferred-op"),
-					Effect.provide(telemetry.layer),
-				),
+				Effect.undefined.pipe(Effect.withSpan("deferred-op"), Effect.provide(telemetry.layer)),
 			)
 		}, 0)
 
@@ -299,13 +286,13 @@ describe("MapleCloudflareSDK.make", () => {
 		const telemetry = make({ serviceName: "unit-test" })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("overlap-a"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("overlap-a"), Effect.provide(telemetry.layer)),
 		)
 		const first = telemetry.flush(env)
 		// Let the first flush drain and start its POST before the second span ends.
 		await new Promise<void>((resolve) => setTimeout(resolve, 1))
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("overlap-b"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("overlap-b"), Effect.provide(telemetry.layer)),
 		)
 		const second = telemetry.flush(env)
 		await Promise.all([first, second])
@@ -340,12 +327,12 @@ describe("MapleCloudflareSDK.make", () => {
 		const telemetry = make({ serviceName: "unit-test" })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("stuck-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("stuck-op"), Effect.provide(telemetry.layer)),
 		)
 		void telemetry.flush(env)
 		await new Promise<void>((resolve) => setTimeout(resolve, 5))
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("later-op"), Effect.provide(telemetry.layer)),
+			Effect.undefined.pipe(Effect.withSpan("later-op"), Effect.provide(telemetry.layer)),
 		)
 		const settled = await Promise.race([
 			telemetry.flush(env).then(() => true),
@@ -385,7 +372,7 @@ describe("MapleCloudflareSDK.make requestLayer", () => {
 						telemetry.requestLayer.pipe(Layer.provide(Layer.succeed(WorkerEnvironment, env))),
 						scope,
 					)
-					yield* Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(services))
+					yield* Effect.undefined.pipe(Effect.withSpan("op-1"), Effect.provide(services))
 					// Nothing leaves the isolate while the event is still running.
 					expect(calls).toHaveLength(0)
 					yield* Scope.close(scope, Exit.void)

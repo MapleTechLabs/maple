@@ -877,13 +877,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 								}),
 						),
 					)
-					return yield* Effect.fail(
-						new GithubAppError({
-							message: `${context} failed: ${response.status} ${body.slice(0, 300)}`,
-							status: response.status,
-							scope,
-						}),
-					)
+					return yield* new GithubAppError({
+						message: `${context} failed: ${response.status} ${body.slice(0, 300)}`,
+						status: response.status,
+						scope,
+					})
 				})
 
 			const parseJson = (response: HttpClientResponse.HttpClientResponse, context: string) =>
@@ -1091,7 +1089,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					error: RepositoryListingError,
 					commits: ReadonlyArray<GithubApiCommit>,
 				) =>
-					!(error instanceof GithubAppError) || error.retryAfterSeconds === undefined
+					!Schema.is(GithubAppError)(error) || error.retryAfterSeconds === undefined
 						? Effect.fail(error)
 						: Effect.succeed({
 								commits,
@@ -2355,10 +2353,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							{ headers: { "user-agent": USER_AGENT } },
 							"GitHub job log download failed",
 						).pipe(
-							Effect.flatMap((response) =>
-								response.status === 503
-									? failure(response, "Download job log", "repository")
-									: Effect.succeed(response),
+							Effect.filterOrElse(
+								(response) => response.status !== 503,
+								(response) => failure(response, "Download job log", "repository"),
 							),
 							Effect.retry({
 								while: (error) => error.status === 503,

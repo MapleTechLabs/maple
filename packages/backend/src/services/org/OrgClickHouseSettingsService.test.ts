@@ -369,7 +369,7 @@ describe("resolveRuntimeConfig caching", () => {
 	// (it is a required dependency) while making its backend a deliberate miss.
 	const missOnlyBackend: EdgeCacheBackend = {
 		name: "memory",
-		get: () => Effect.succeed(undefined),
+		get: () => Effect.undefined,
 		put: () => Effect.void,
 		delete: () => Effect.void,
 	}
@@ -478,7 +478,7 @@ describe("resolveRuntimeConfig caching", () => {
 			const exit = yield* service.resolveRuntimeConfig(asOrgId(orgId)).pipe(Effect.exit)
 			const error = getError(exit)
 			expect(error).toBeInstanceOf(OrgClickHouseSettingsStoredConfigInvalidError)
-			if (!(error instanceof OrgClickHouseSettingsStoredConfigInvalidError)) return
+			if (!Schema.is(OrgClickHouseSettingsStoredConfigInvalidError)(error)) return
 			expect(error.cause).toBeInstanceOf(OrgClickHouseSettingsValidationError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -990,7 +990,7 @@ describe("resolveRuntimeConfig caching", () => {
 			const exit = yield* service.resolveRuntimeConfig(asOrgId(orgId)).pipe(Effect.exit)
 			const error = getError(exit)
 			expect(error).toBeInstanceOf(OrgClickHouseSettingsStoredConfigInvalidError)
-			if (!(error instanceof OrgClickHouseSettingsStoredConfigInvalidError)) return
+			if (!Schema.is(OrgClickHouseSettingsStoredConfigInvalidError)(error)) return
 			expect(error.cause).toBeInstanceOf(OrgClickHouseSettingsValidationError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -1055,7 +1055,7 @@ describe("applySchema claim lifecycle", () => {
 
 	const missBackend: EdgeCacheBackend = {
 		name: "memory",
-		get: () => Effect.succeed(undefined),
+		get: () => Effect.undefined,
 		put: () => Effect.void,
 		delete: () => Effect.void,
 	}

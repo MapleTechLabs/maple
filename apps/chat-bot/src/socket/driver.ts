@@ -90,8 +90,7 @@ const issueRequest = Effect.fnUntraced(
 			)
 		return effect.pipe(
 			Effect.catchTag("HttpClientError", (error) => dropped(error.reason._tag)),
-			Effect.timeout(REQUEST_TIMEOUT),
-			Effect.catchTag("TimeoutError", () => dropped("TimeoutError")),
+			Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => dropped("TimeoutError") }),
 		)
 	},
 )

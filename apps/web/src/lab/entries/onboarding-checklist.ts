@@ -1,5 +1,5 @@
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as OnboardingChecklist from "../../shell/onboarding-checklist"
 import * as OnboardingChecklistView from "../../shell/onboarding-checklist-view"
@@ -128,7 +128,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 export const lab = defineLabWithFlags("Onboarding checklist", {
 	Model,
 	Flags: Model,
-	flags: Effect.sync(() => ({ nowMs: Date.now() })),
+	flags: Effect.map(Clock.currentTimeMillis, (nowMs) => ({ nowMs })),
 	init: (flags) => ({ model: { nowMs: flags.nowMs } }),
 	update: (model) => ({ model }),
 	view,

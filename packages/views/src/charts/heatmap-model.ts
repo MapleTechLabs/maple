@@ -1,4 +1,5 @@
 import { DateTime, Option } from "effect"
+import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
 
@@ -30,8 +31,8 @@ export const deriveHeatmapPoints = (rows: ReadonlyArray<Row>): ReadonlyArray<Hea
 	if (first === undefined) return []
 	if ("x" in first && "y" in first && "value" in first)
 		return rows.map((row) => ({
-			x: String(row.x ?? ""),
-			y: String(row.y ?? ""),
+			x: cellText(row.x),
+			y: cellText(row.y),
 			value: asFiniteNumber(row.value),
 		}))
 	const numericKeys = Object.keys(first).filter(
@@ -40,7 +41,11 @@ export const deriveHeatmapPoints = (rows: ReadonlyArray<Row>): ReadonlyArray<Hea
 	const labelKey = "name" in first ? "name" : "bucket" in first ? "bucket" : null
 	if (labelKey === null || numericKeys.length === 0) return []
 	return rows.flatMap((row) =>
-		numericKeys.map((xKey) => ({ x: xKey, y: String(row[labelKey] ?? ""), value: asFiniteNumber(row[xKey]) })),
+		numericKeys.map((xKey) => ({
+			x: xKey,
+			y: cellText(row[labelKey]),
+			value: asFiniteNumber(row[xKey]),
+		})),
 	)
 }
 

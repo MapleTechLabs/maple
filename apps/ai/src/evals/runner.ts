@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 import type { Transcript } from "./chat-turn"
 import { passAt1, passAtK, passHatK, type Estimate, type TaskTally } from "./stats"
 import type { Grade } from "./targets"
@@ -220,14 +220,16 @@ const encodePrettyJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknow
 
 export const runSuite = <T extends EvalTask>(options: RunOptions<T>): Effect.Effect<RunSummary> =>
 	Effect.gen(function* () {
-		const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+		const startedAtUtc = yield* DateTime.now
+		const startedAt = DateTime.formatIso(startedAtUtc)
+		const stamp = startedAt.replace(/[:.]/g, "-")
 		const dir = join(APP_ROOT, ".evals", "runs", `${stamp}-${slug(options.suite)}-${slug(options.model)}`)
 		mkdirSync(dir, { recursive: true })
 		const manifest = yield* encodePrettyJson({
 			suite: options.suite,
 			model: options.model,
 			k: options.k,
-			startedAt: new Date().toISOString(),
+			startedAt,
 			revision: git(["rev-parse", "HEAD"]),
 			dirty: git(["status", "--porcelain"]).split("\n").filter(Boolean),
 			tasks: options.tasks.map((task) => task.id),

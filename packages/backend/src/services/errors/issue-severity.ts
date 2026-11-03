@@ -117,12 +117,10 @@ const ensureTriageAgentActor = (
 		const after = yield* select()
 		const row = after[0]
 		if (!row) {
-			return yield* Effect.fail(
-				new TriageActorMissingError({
-					message: "Failed to ensure maple-triage-agent actor row",
-					orgId,
-				}),
-			)
+			return yield* new TriageActorMissingError({
+				message: "Failed to ensure maple-triage-agent actor row",
+				orgId,
+			})
 		}
 		return row.id
 	})

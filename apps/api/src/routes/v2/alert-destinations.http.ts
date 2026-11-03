@@ -222,12 +222,10 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 
 					const destination = response.destinations.find((doc) => doc.id === params.id)
 					if (destination === undefined)
-						return yield* Effect.fail(
-							new AlertDestinationNotFoundError({
-								message: "No such alert destination.",
-								destinationId: params.id,
-							}),
-						)
+						return yield* new AlertDestinationNotFoundError({
+							message: "No such alert destination.",
+							destinationId: params.id,
+						})
 					return toV2Destination(destination)
 				}),
 			)

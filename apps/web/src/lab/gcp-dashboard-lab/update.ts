@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { DashboardVariableSchema } from "@maple/domain/http"
+import { DashboardDocument, DashboardVariableSchema } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"
 import { fromString as urlFromString } from "foldkit/url"
 import type { PageContext, PageOutMessage, PageReturn } from "../../page/contract"
@@ -25,24 +25,54 @@ const decodeSaveArgs = Schema.decodeUnknownOption(SaveArgs)
 /** The API reads and writes the board would make; the lab answers or drops them. */
 const DROPPED = new Set(["FetchDashboardWidget", "FetchDashboardShares"])
 
-const then = (acc: Step, next: Step): Step => ({ model: next.model, commands: [...acc.commands, ...next.commands] })
+const then = (acc: Step, next: Step): Step => ({
+	model: next.model,
+	commands: [...acc.commands, ...next.commands],
+})
 
 const answer = (model: Model, commands: Commands): Step =>
-	commands.reduce<Step>((acc, command) => {
-		if (command.name === "FetchDashboardVariableOptions")
-			return Option.match(decodeOptionsArgs(command.args), {
-				onNone: () => acc,
-				onSome: ({ name, key }) =>
-					then(acc, step(acc.model, Message.CompletedFetchVariableOptions({ name, key, result: Result.succeed(OPTIONS.get(name) ?? []) }))),
-			})
-		if (command.name === "SaveDashboardVariables")
-			return Option.match(Option.all([decodeSaveArgs(command.args), Option.fromNullishOr(acc.model.document)]), {
-				onNone: () => acc,
-				onSome: ([{ variables }, document]) =>
-					then(acc, step(acc.model, Message.UpdatedDashboard({ orgId: CONTEXT.orgId, maybeDocument: Option.some({ ...document, variables }) }))),
-			})
-		return DROPPED.has(command.name) ? acc : { ...acc, commands: [...acc.commands, command] }
-	}, { model, commands: [] })
+	commands.reduce<Step>(
+		(acc, command) => {
+			if (command.name === "FetchDashboardVariableOptions")
+				return Option.match(decodeOptionsArgs(command.args), {
+					onNone: () => acc,
+					onSome: ({ name, key }) =>
+						then(
+							acc,
+							step(
+								acc.model,
+								Message.CompletedFetchVariableOptions({
+									name,
+									key,
+									result: Result.succeed(OPTIONS.get(name) ?? []),
+								}),
+							),
+						),
+				})
+			if (command.name === "SaveDashboardVariables")
+				return Option.match(
+					Option.all([decodeSaveArgs(command.args), Option.fromNullishOr(acc.model.document)]),
+					{
+						onNone: () => acc,
+						onSome: ([{ variables }, document]) =>
+							then(
+								acc,
+								step(
+									acc.model,
+									Message.UpdatedDashboard({
+										orgId: CONTEXT.orgId,
+										maybeDocument: Option.some(
+											new DashboardDocument({ ...document, variables }),
+										),
+									}),
+								),
+							),
+					},
+				)
+			return DROPPED.has(command.name) ? acc : { ...acc, commands: [...acc.commands, command] }
+		},
+		{ model, commands: [] },
+	)
 
 /** A navigation the page asks for re-enters its own route. */
 const navigated = (model: Model, outMessage: PageOutMessage | undefined): PageReturn<Model, Message> => {
@@ -68,6 +98,9 @@ export const update = (model: Model, message: Message): Step => step(model, mess
 
 export const init = (): Step => {
 	const started = pageInit({ dashboardId: DASHBOARD_ID, search: {} }, CONTEXT)
-	const loaded = step(started.model, Message.UpdatedDashboard({ orgId: CONTEXT.orgId, maybeDocument: Option.some(DASHBOARD) }))
+	const loaded = step(
+		started.model,
+		Message.UpdatedDashboard({ orgId: CONTEXT.orgId, maybeDocument: Option.some(DASHBOARD) }),
+	)
 	return { model: loaded.model, commands: [...(started.commands ?? []), ...loaded.commands] }
 }

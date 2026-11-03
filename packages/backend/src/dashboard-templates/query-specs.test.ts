@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Schema } from "effect"
+import { Predicate, Schema } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/domain/http"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import type { BuildSpecResult } from "@maple/query-engine/query-builder"
@@ -153,7 +153,10 @@ describe("dashboard template query specs", () => {
 				const formulas = widget.dataSource.params?.formulas
 				if (!Array.isArray(formulas)) continue
 				for (const formula of formulas) {
-					const expression = String((formula as { expression?: unknown }).expression ?? "")
+					const expression =
+						Predicate.hasProperty(formula, "expression") && Predicate.isString(formula.expression)
+							? formula.expression
+							: ""
 					expect(
 						expression.replace(/\s+/g, ""),
 						`${template.id}/${widget.id}: "${expression}" under unit "percent"`,

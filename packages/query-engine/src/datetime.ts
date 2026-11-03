@@ -258,17 +258,16 @@ export const parseUtc = (value: string): Option.Option<DateTime.Utc> => {
 
 /** Parses the warehouse wire shape (tz-less = UTC), or ISO with `Z`/offset. */
 const warehouseWireToUtc = SchemaGetter.transformEffect<DateTime.Utc, string>((value, options) =>
-	Option.match(parseUtc(value), {
-		onNone: () =>
-			Effect.fail(
+	Effect.fromOption(parseUtc(value)).pipe(
+		Effect.mapError(
+			() =>
 				new SchemaIssue.InvalidValue(
 					{ message: `\`${value}\` is not a warehouse DateTime` },
 					value,
 					options,
 				),
-			),
-		onSome: Effect.succeed,
-	}),
+		),
+	),
 )
 
 /** `DateTime.Utc` -> `YYYY-MM-DD hh:mm:ss[.SSS]`; second precision floors. */

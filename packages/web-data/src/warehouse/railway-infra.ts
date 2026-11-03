@@ -7,6 +7,7 @@ import {
 	resolveInfraWindow,
 	runWarehouseQuery,
 	wireNumber,
+	wireString,
 } from "./effect-utils"
 
 /** /infra/railway data access over the `railway.*` gauges the Railway poller ingests. */
@@ -72,11 +73,11 @@ export const getRailwayServices = Effect.fn("QueryEngine.getRailwayServices")(fu
 	)
 	return {
 		services: result.data.map((row): RailwayServiceRow => ({
-			environmentId: String(row.environmentId ?? ""),
-			serviceId: String(row.serviceId ?? ""),
-			serviceName: String(row.serviceName ?? ""),
-			projectName: String(row.projectName ?? ""),
-			environmentName: String(row.environmentName ?? ""),
+			environmentId: wireString(row.environmentId),
+			serviceId: wireString(row.serviceId),
+			serviceName: wireString(row.serviceName),
+			projectName: wireString(row.projectName),
+			environmentName: wireString(row.environmentName),
 			cpuAvg: wireNumber(row.cpuAvg),
 			cpuMax: wireNumber(row.cpuMax),
 			cpuLimit: wireNumber(row.cpuLimit),
@@ -84,7 +85,7 @@ export const getRailwayServices = Effect.fn("QueryEngine.getRailwayServices")(fu
 			memoryMax: wireNumber(row.memoryMax),
 			memoryLimit: wireNumber(row.memoryLimit),
 			replicas: wireNumber(row.replicas),
-			lastSeen: String(row.lastSeen ?? ""),
+			lastSeen: wireString(row.lastSeen),
 		})),
 	}
 })
@@ -112,7 +113,7 @@ export const getRailwayServiceTimeseries = Effect.fn("QueryEngine.getRailwayServ
 	)
 	return {
 		buckets: result.data.map((row): RailwayServiceTimeseriesRow => ({
-			bucket: String(row.bucket ?? ""),
+			bucket: wireString(row.bucket),
 			cpuAvg: wireNumber(row.cpuAvg),
 			cpuMax: wireNumber(row.cpuMax),
 			cpuLimit: wireNumber(row.cpuLimit),

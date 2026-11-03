@@ -76,15 +76,13 @@ interface ResolvedCloudflareOAuthConfig {
 const resolveConfig = Effect.fn("CloudflareOAuthService.resolveConfig")(function* (env: EnvConfig) {
 	// Only the client id is mandatory. Cloudflare public clients (any-user SaaS) authenticate the
 	// token exchange with PKCE alone and carry no secret; confidential clients add one via env.
-	const clientId = yield* Option.match(env.CLOUDFLARE_OAUTH_CLIENT_ID, {
-		onNone: () =>
-			Effect.fail(
-				new IntegrationsValidationError({
-					message: "CLOUDFLARE_OAUTH_CLIENT_ID is required to use the Cloudflare integration",
-				}),
-			),
-		onSome: (value) => Effect.succeed(value),
-	})
+	const clientId = yield* Effect.fromOption(
+		env.CLOUDFLARE_OAUTH_CLIENT_ID,
+		() =>
+			new IntegrationsValidationError({
+				message: "CLOUDFLARE_OAUTH_CLIENT_ID is required to use the Cloudflare integration",
+			}),
+	)
 
 	return {
 		clientId,
@@ -279,11 +277,9 @@ export class CloudflareOAuthService extends Context.Service<
 			const stateRow = yield* oauth.consumeStateRow(state, initiator)
 
 			if (!stateRow.codeVerifier) {
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "OAuth state is missing its PKCE verifier — restart the connect flow",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message: "OAuth state is missing its PKCE verifier — restart the connect flow",
+				})
 			}
 
 			const tokenResponse = yield* oauth.exchangeAuthorizationCode(config, code, stateRow.redirectUri, {
@@ -300,11 +296,9 @@ export class CloudflareOAuthService extends Context.Service<
 			)
 			if (!Arr.isReadonlyArrayNonEmpty(accounts)) {
 				yield* revokeToken(config, tokenResponse.access_token)
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "The Cloudflare authorization granted access to no accounts",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message: "The Cloudflare authorization granted access to no accounts",
+				})
 			}
 			const primaryAccount = Arr.headNonEmpty(accounts)
 
@@ -329,12 +323,10 @@ export class CloudflareOAuthService extends Context.Service<
 					{ orgId, expiresAt },
 				)
 				yield* revokeToken(config, tokenResponse.access_token)
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message:
-							"Cloudflare returned no refresh token, so this connection would stop working within a day. Confirm the OAuth app grants ‘offline_access’, then reconnect.",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message:
+						"Cloudflare returned no refresh token, so this connection would stop working within a day. Confirm the OAuth app grants ‘offline_access’, then reconnect.",
+				})
 			}
 
 			yield* oauth.upsertConnection(orgId, currentTime, {
@@ -371,11 +363,9 @@ export class CloudflareOAuthService extends Context.Service<
 			// A token is always addressed to one account of the grant. Callers name it — there is
 			// no "the org's account" to fall back to once a grant can cover several.
 			if (!Arr.some(grantedAccountsOfRow(row), (account) => account.id === accountId)) {
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "The Cloudflare grant does not cover the requested account",
-					}),
-				)
+				return yield* new IntegrationsValidationError({
+					message: "The Cloudflare grant does not cover the requested account",
+				})
 			}
 			return { accessToken, accountId, scope: row.scope } satisfies CloudflareAccessToken
 		})

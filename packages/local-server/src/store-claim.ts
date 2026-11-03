@@ -4,7 +4,7 @@ import { Clock, Effect, Option } from "effect"
 import { randomUUID } from "node:crypto"
 import { linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import { errnoCode, type ServerStateFileError, stateFileError } from "./store-errors"
+import { errnoCode, type ServerStateFileError, stateFileError, syscallError } from "./store-errors"
 import {
 	adoptLegacySidecars,
 	legacySidecarPath,
@@ -94,7 +94,7 @@ export const readPidSnapshot = (path: string): Effect.Effect<Option.Option<PidFi
 				mtimeMs: info.mtimeMs,
 			}
 		},
-		catch: (error) => error,
+		catch: syscallError,
 	}).pipe(Effect.option)
 
 export const sameSnapshot = (a: PidFileSnapshot, b: PidFileSnapshot): boolean =>
@@ -108,7 +108,7 @@ const procStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
 				readFileSync(`/proc/${pid}/stat`, "utf8"),
 				readFileSync("/proc/stat", "utf8"),
 			),
-		catch: (error) => error,
+		catch: syscallError,
 	}).pipe(
 		Effect.map(Option.fromUndefinedOr),
 		Effect.orElseSucceed(() => Option.none<number>()),
@@ -118,7 +118,7 @@ const psStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
 	Effect.try({
 		try: () =>
 			Bun.spawnSync(["ps", "-o", "etime=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" }),
-		catch: (error) => error,
+		catch: syscallError,
 	}).pipe(
 		Effect.flatMap((result) => {
 			const seconds = result.success ? parseElapsedSeconds(result.stdout.toString()) : undefined
@@ -132,11 +132,7 @@ const psStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
 /** Wall-clock start of a live process (`/proc`, else `ps -o etime=`), when it can be known.
  *  `/proc` first: slim and distroless container images ship no `ps`. */
 const processStartedAtMs = (pid: number): Effect.Effect<Option.Option<number>> =>
-	procStartedAtMs(pid).pipe(
-		Effect.flatMap((startedAt) =>
-			Option.isSome(startedAt) ? Effect.succeed(startedAt) : psStartedAtMs(pid),
-		),
-	)
+	procStartedAtMs(pid).pipe(Effect.filterOrElse(Option.isSome, () => psStartedAtMs(pid)))
 
 export type PidOwner =
 	| { readonly kind: "stale" }
@@ -168,12 +164,12 @@ const createExclusive = (path: string, content: string): Effect.Effect<boolean, 
 			writeFileSync(path, content, { mode: 0o600, flag: "wx" })
 			return true
 		},
-		catch: (error) => error,
+		catch: syscallError,
 	}).pipe(
 		Effect.catch((error) =>
-			errnoCode(error) === "EEXIST"
+			errnoCode(error.cause) === "EEXIST"
 				? Effect.succeed(false)
-				: Effect.fail(stateFileError(path, "create")(error)),
+				: Effect.fail(stateFileError(path, "create")(error.cause)),
 		),
 	)
 
@@ -189,7 +185,7 @@ const replaceFile = (path: string, content: string): Effect.Effect<void, ServerS
 	})
 
 export const ignoreFailure = (thunk: () => void): Effect.Effect<void> =>
-	Effect.try({ try: thunk, catch: (error) => error }).pipe(Effect.ignore)
+	Effect.try({ try: thunk, catch: syscallError }).pipe(Effect.ignore)
 
 /**
  * Remove a stale PID file without ever deleting a claim that a concurrent
@@ -208,12 +204,12 @@ const takeOverStalePidFile = <E>(
 				renameSync(path, moved)
 				return true
 			},
-			catch: (error) => error,
+			catch: syscallError,
 		}).pipe(
 			Effect.catch((error) =>
-				errnoCode(error) === "ENOENT"
+				errnoCode(error.cause) === "ENOENT"
 					? Effect.succeed(false)
-					: Effect.fail(stateFileError(path, "replace the stale PID file")(error)),
+					: Effect.fail(stateFileError(path, "replace the stale PID file")(error.cause)),
 			),
 		)
 		if (!renamed) return

@@ -303,7 +303,7 @@ const makeRecordingEdge = (
 	},
 	invalidate: () => Effect.void,
 	rawGetDetailed: () => Effect.succeed({ status: "miss" as const, value: Option.none(), readMs: 0 }),
-	rawGet: () => Effect.succeed(Option.none()),
+	rawGet: () => Effect.succeedNone,
 	rawPut: () => Effect.void,
 	rawDelete: () => Effect.void,
 })

@@ -3,7 +3,13 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { OrgId } from "@maple/domain/http"
-import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@maple/backend/sandbox/contract"
+import {
+	Sandbox,
+	SandboxExited,
+	SandboxOutput,
+	SandboxStarted,
+	SandboxResourceUse,
+} from "@maple/backend/sandbox/contract"
 import { Duration, Effect, Layer, Schema, Stream } from "effect"
 import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
@@ -85,11 +91,11 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 							eventVersion: 1,
 							implementation: IMPLEMENTATION,
 							exitCode,
-							resourceUse: {
+							resourceUse: new SandboxResourceUse({
 								wallTime: Duration.millis(1),
 								stdoutBytes: Buffer.byteLength(stdout),
 								stderrBytes: 0,
-							} as ConstructorParameters<typeof SandboxExited>[0]["resourceUse"],
+							}) as ConstructorParameters<typeof SandboxExited>[0]["resourceUse"],
 							artifacts: [],
 						}),
 					])

@@ -168,7 +168,7 @@ const ports = (
 ): RelayPorts => ({
 	outbound,
 	supportsIdentity: false,
-	resolveWorkspace: () => Effect.succeed(Option.some({ orgId: ORG })),
+	resolveWorkspace: () => Effect.succeedSome({ orgId: ORG }),
 	forgetWorkspace: () => Effect.void,
 	chatSession: () => chatSessionClientFromStub(stub),
 	appBaseUrl: "https://app.maple.dev",

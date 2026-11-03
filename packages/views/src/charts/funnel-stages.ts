@@ -1,6 +1,7 @@
 import {
 	asFiniteNumber,
 	type BreakdownRow,
+	cellText,
 	pickValueField,
 	toBreakdownRows,
 } from "@maple/ui/components/charts/_shared/breakdown-rows"
@@ -43,7 +44,7 @@ const toGroupedStages = (source: ReadonlyArray<Row>, valueField: string) => {
 	const order: Array<string> = []
 	const byName = new Map<string, { unnamed: boolean; value: number; byGroup: Map<string, number> }>()
 	source.forEach((row) => {
-		const raw = row.name === null || row.name === undefined ? "" : String(row.name).trim()
+		const raw = cellText(row.name).trim()
 		const name = raw === "" ? "(no value)" : raw
 		const existing = byName.get(name)
 		const stage = existing ?? { unnamed: raw === "", value: 0, byGroup: new Map<string, number>() }

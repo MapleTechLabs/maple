@@ -5,7 +5,7 @@ import { Worker } from "node:worker_threads"
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { lstat, mkdir, readFile, readdir, rm, rmdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { Duration, Effect, Option, Schema } from "effect"
+import { DateTime, Duration, Effect, Option, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "./version"
@@ -601,12 +601,11 @@ export const postCheckpointBackup = (
 }
 
 export const isMissingBackupConfigurationError = (error: unknown): boolean => {
-	const detail =
-		error instanceof LocalQueryError
-			? error.detail
-			: error instanceof Error
-				? error.message
-				: String(error)
+	const detail = Schema.is(LocalQueryError)(error)
+		? error.detail
+		: error instanceof Error
+			? error.message
+			: String(error)
 	const lower = detail.toLowerCase()
 	const backupSpecific =
 		lower.includes("backups.allowed_disk") ||
@@ -2153,13 +2152,13 @@ const readCheckpointFailures = (dataDir: string): Effect.Effect<CheckpointFailur
 	)
 
 const recordCheckpointFailure = (dataDir: string, message: string): Effect.Effect<void> =>
-	Effect.flatMap(readCheckpointFailures(dataDir), (previous) =>
+	Effect.flatMap(Effect.all([readCheckpointFailures(dataDir), DateTime.now]), ([previous, now]) =>
 		Effect.tryPromise({
 			try: () =>
 				durableJson(checkpointFailuresPath(dataDir), {
 					formatVersion: 1,
 					consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
-					lastFailureAt: new Date().toISOString(),
+					lastFailureAt: DateTime.formatIso(now),
 					lastError: message.slice(0, 2048),
 				} satisfies CheckpointFailures),
 			catch: checkpointFileError,
@@ -3000,6 +2999,6 @@ export const resolveChdbConfigFile = (
 				else writeIngestConfig(path)
 				return path
 			},
-			catch: (error) => error,
+			catch: checkpointFileError,
 		}).pipe(Effect.orElseSucceed(() => undefined))
 	})

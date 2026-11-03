@@ -1256,7 +1256,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 												readonly truncated: boolean
 											}>()
 										: yield* readTextPrefix(response, TEST_BODY_READ_BYTES).pipe(
-												Effect.map(Option.some),
+												Effect.asSome,
 											)
 								return {
 									_tag: "response" as const,

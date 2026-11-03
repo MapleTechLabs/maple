@@ -7,7 +7,7 @@ import {
 	OrgId,
 } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
-import { ConfigProvider, DateTime, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, DateTime, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -212,7 +212,7 @@ const stubs = (world: World) =>
 		),
 		Layer.mock(OrgIngestKeysService)({
 			resolveIngestKey: () =>
-				Effect.succeed(Option.some({ orgId: OWN_ORG, keyType: "private" as const, keyId: "key_1" })),
+				Effect.succeedSome({ orgId: OWN_ORG, keyType: "private" as const, keyId: "key_1" }),
 		}),
 		Layer.mock(AutumnClient)({
 			getOrCreateCustomer: (customerId) =>

@@ -79,7 +79,7 @@ const assertRowsFit = (encode: () => ReturnType<typeof encodeTraces>) => {
 		batches = encode()
 	} catch (error) {
 		// The one acceptable failure: a 400 that names the field.
-		expect(error instanceof OtlpFieldError ? "OtlpFieldError" : String(error)).toBe("OtlpFieldError")
+		expect(Schema.is(OtlpFieldError)(error) ? "OtlpFieldError" : String(error)).toBe("OtlpFieldError")
 		return
 	}
 	for (const batch of batches) {

@@ -5,7 +5,7 @@ import {
 	PrReviewRepositoryConfig,
 	type VcsSyncJob,
 } from "@maple/domain/http"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -164,7 +164,7 @@ describe("connecting an existing GitHub installation", () => {
 				const replay = findError(
 					yield* service.selectInstallation("42", selection.state, INITIATOR).pipe(Effect.exit),
 				)
-				assert.ok(replay instanceof IntegrationsValidationError)
+				assert.ok(Schema.is(IntegrationsValidationError)(replay))
 				assert.strictEqual(sent.length, 1)
 			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 		},
@@ -226,9 +226,13 @@ describe("connecting an existing GitHub installation", () => {
 				assert.deepStrictEqual(selection.needsApproval, role.needsApproval)
 				assert.strictEqual(selection.unavailable, role.unavailable)
 				assert.ok(
-					findError(
-						yield* service.selectInstallation("42", selection.state, INITIATOR).pipe(Effect.exit),
-					) instanceof IntegrationsValidationError,
+					Schema.is(IntegrationsValidationError)(
+						findError(
+							yield* service
+								.selectInstallation("42", selection.state, INITIATOR)
+								.pipe(Effect.exit),
+						),
+					),
 				)
 				assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, false)
 				assert.strictEqual(sent.length, 0)
@@ -314,11 +318,13 @@ describe("connecting an existing GitHub installation", () => {
 			assert.notStrictEqual(installState, selection.state)
 			// The install state belongs to the install return only; discovery refuses it.
 			assert.ok(
-				findError(
-					yield* service
-						.discoverInstallations(TEST_CODE, installState, INITIATOR)
-						.pipe(Effect.exit),
-				) instanceof IntegrationsValidationError,
+				Schema.is(IntegrationsValidationError)(
+					findError(
+						yield* service
+							.discoverInstallations(TEST_CODE, installState, INITIATOR)
+							.pipe(Effect.exit),
+					),
+				),
 			)
 			installed = [42]
 			yield* service.completeConnect("42", installState, TEST_CODE, INITIATOR)
@@ -342,7 +348,7 @@ describe("connecting an existing GitHub installation", () => {
 				const error = findError(
 					yield* service.selectInstallation("42", selection.state, other).pipe(Effect.exit),
 				)
-				assert.ok(error instanceof IntegrationsValidationError)
+				assert.ok(Schema.is(IntegrationsValidationError)(error))
 				assert.strictEqual(sent.length, 0)
 				yield* service.selectInstallation("42", selection.state, INITIATOR)
 				assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, true)
@@ -368,7 +374,7 @@ describe("connecting an existing GitHub installation", () => {
 								selection.state,
 								INITIATOR,
 							)
-				assert.ok(findError(yield* attempt.pipe(Effect.exit)) instanceof IntegrationsValidationError)
+				assert.ok(Schema.is(IntegrationsValidationError)(findError(yield* attempt.pipe(Effect.exit))))
 				assert.strictEqual((yield* service.getStatus(INITIATOR.orgId)).connected, false)
 				assert.strictEqual(sent.length, 0)
 			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
@@ -396,9 +402,11 @@ describe("connecting an existing GitHub installation", () => {
 				installedByUserId: INITIATOR.userId,
 			})
 			assert.ok(
-				findError(
-					yield* service.selectInstallation("42", selection.state, INITIATOR).pipe(Effect.exit),
-				) instanceof IntegrationsValidationError,
+				Schema.is(IntegrationsValidationError)(
+					findError(
+						yield* service.selectInstallation("42", selection.state, INITIATOR).pipe(Effect.exit),
+					),
+				),
 			)
 			assert.strictEqual(
 				Option.getOrThrow(yield* repo.resolveInstallation("github", "42")).orgId,
@@ -573,7 +581,7 @@ describe("GithubConnectService", () => {
 			})
 
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 
 			const found = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isNone(found))
@@ -595,7 +603,7 @@ describe("GithubConnectService", () => {
 
 			// No `code` argument → rejected before any installation row is written.
 			const exit = yield* svc.completeConnect("42", state, undefined, INITIATOR).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 			assert.strictEqual(sent.length, 0)
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
@@ -615,7 +623,7 @@ describe("GithubConnectService", () => {
 			})
 
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 			assert.strictEqual(sent.length, 0)
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
@@ -699,7 +707,7 @@ describe("GithubConnectService", () => {
 						c.bound,
 					)
 					assert.strictEqual(sent.length, c.bound ? 1 : 0)
-					if (!c.bound) assert.ok(findError(exit) instanceof IntegrationsValidationError)
+					if (!c.bound) assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 				}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 			},
 		)
@@ -745,7 +753,7 @@ describe("GithubConnectService", () => {
 					.pipe(Effect.withTracer(tracer), Effect.exit)
 
 				const error = findError(exit)
-				assert.ok(error instanceof IntegrationsValidationError)
+				assert.ok(Schema.is(IntegrationsValidationError)(error))
 				assert.include(error.message, c.copy)
 				assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 				assert.strictEqual(sent.length, 0)
@@ -821,7 +829,7 @@ describe("GithubConnectService", () => {
 					userId: asUserId("user_2"),
 				})
 				.pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 			assert.strictEqual(sent.length, 0)
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
@@ -836,7 +844,7 @@ describe("GithubConnectService", () => {
 			const exit = yield* svc
 				.completeConnect("42", "not-a-real-state", undefined, INITIATOR)
 				.pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 			assert.strictEqual(sent.length, 0)
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
@@ -858,7 +866,7 @@ describe("GithubConnectService", () => {
 			yield* TestClock.adjust("11 minutes")
 
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 			assert.strictEqual(sent.length, 0)
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
@@ -881,7 +889,7 @@ describe("GithubConnectService", () => {
 
 			// Replaying the now-consumed state is rejected; no second job is enqueued.
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 			assert.strictEqual(sent.length, 1)
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
@@ -1174,7 +1182,7 @@ describe("GithubConnectService", () => {
 			const repo7 = yield* repo.resolveRepository(orgId, "github", "7")
 			assert.ok(Option.isSome(repo7))
 			const exit = yield* svc.deleteRepository(orgId, repo7.value.id).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 			assert.ok(Option.isSome(yield* repo.resolveRepository(orgId, "github", "7")))
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA))))
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
@@ -1224,7 +1232,7 @@ describe("GithubConnectService", () => {
 		return Effect.gen(function* () {
 			const svc = yield* GithubConnectService
 			const exit = yield* svc.setCiTracesEnabled(asOrgId("org_none"), false).pipe(Effect.exit)
-			assert.ok(findError(exit) instanceof IntegrationsValidationError)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
 
@@ -1376,7 +1384,7 @@ describe("GithubConnectService", () => {
 
 				// An unknown branch is rejected; nothing changes.
 				const bad = yield* svc.setTrackedBranch(orgId, r.id, "nope").pipe(Effect.exit)
-				assert.ok(findError(bad) instanceof IntegrationsValidationError)
+				assert.ok(Schema.is(IntegrationsValidationError)(findError(bad)))
 				assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA))))
 
 				// Selecting the current branch is a no-op: no wipe, no backfill enqueued.

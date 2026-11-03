@@ -433,21 +433,17 @@ export const makeLoginSelfHosted = (
 		SelfHostedAuthDisabledError | SelfHostedInvalidPasswordError
 	> {
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "self_hosted") {
-			return yield* Effect.fail(
-				new SelfHostedAuthDisabledError({
-					message: "Self-hosted password login is disabled",
-				}),
-			)
+			return yield* new SelfHostedAuthDisabledError({
+				message: "Self-hosted password login is disabled",
+			})
 		}
 
 		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
 
 		if (!constantTimeEquals(password, rootPassword)) {
-			return yield* Effect.fail(
-				new SelfHostedInvalidPasswordError({
-					message: "Invalid root password",
-				}),
-			)
+			return yield* new SelfHostedInvalidPasswordError({
+				message: "Invalid root password",
+			})
 		}
 
 		const tenant = makeSelfHostedTenant(env.MAPLE_DEFAULT_ORG_ID)
@@ -480,11 +476,9 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 		token: string,
 	): Effect.fn.Return<SelfHostedLoginResponse, SelfHostedAuthDisabledError | UnauthorizedError> {
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "self_hosted") {
-			return yield* Effect.fail(
-				new SelfHostedAuthDisabledError({
-					message: "Self-hosted session renewal is disabled",
-				}),
-			)
+			return yield* new SelfHostedAuthDisabledError({
+				message: "Self-hosted session renewal is disabled",
+			})
 		}
 
 		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
@@ -594,7 +588,7 @@ const selectRequestedOrg = Effect.fnUntraced(function* (
 	if (!requested) return Option.none()
 
 	const requestedOrgId = yield* decodeOrgId(requested, "Invalid organization selection")
-	if (!verify) return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+	if (!verify) return yield* organizationAccessDenied(requestedOrgId)
 
 	// Stamped only when the header actually decides the organization, so
 	// `maple.auth.org_source` answers "how much traffic selects an organization
@@ -606,7 +600,7 @@ const selectRequestedOrg = Effect.fnUntraced(function* (
 
 	const membership = yield* verify(userId, requestedOrgId)
 	if (Option.isNone(membership)) {
-		return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+		return yield* organizationAccessDenied(requestedOrgId)
 	}
 	return membership
 })
@@ -631,7 +625,7 @@ const applyRequestedOrg = Effect.fnUntraced(function* (
 	// branch here that returns the original tenant: that shape is what a silent
 	// ignore looks like, and it is the failure this whole path exists to avoid.
 	const membership = yield* selectRequestedOrg(tenant.userId, headers, verify)
-	if (Option.isNone(membership)) return yield* Effect.fail(organizationAccessDenied(requestedOrgId))
+	if (Option.isNone(membership)) return yield* organizationAccessDenied(requestedOrgId)
 
 	// The role travels with the organization. Carrying the token's `orgRole`
 	// across would grant an admin of org A admin of org B.
@@ -780,7 +774,7 @@ export const makeResolveTenant = (
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
 				// Outside development, membership the resolver cannot prove (no verifier) is a refusal.
-				return yield* Effect.fail(organizationAccessDenied(pinnedOrgId))
+				return yield* organizationAccessDenied(pinnedOrgId)
 			}
 
 			if (!auth.orgId) {

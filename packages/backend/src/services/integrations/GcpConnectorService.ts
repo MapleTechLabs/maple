@@ -383,7 +383,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					"maple.gcp.scope_id": input.scopeId,
 				})
 				const invalid = capabilityError(input, input.metricsEnabled)
-				if (invalid !== undefined) return yield* Effect.fail(invalid)
+				if (invalid !== undefined) return yield* invalid
 				const id = GcpConnectorId.make(randomUUID())
 				const secret = `maple_gcp_${randomBytes(24).toString("base64url")}`
 				const encrypted = yield* encryptAes256Gcm(
@@ -507,7 +507,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					),
 				)
 				if (outcome === undefined) return yield* notFound()
-				if (outcome.invalid !== undefined) return yield* Effect.fail(outcome.invalid)
+				if (outcome.invalid !== undefined) return yield* outcome.invalid
 				const { row } = outcome
 				return toConnector(row, (yield* projectCounts([row.id])).get(row.id))
 			})

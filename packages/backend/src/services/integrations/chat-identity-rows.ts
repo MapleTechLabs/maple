@@ -159,7 +159,7 @@ export const linkChatIdentity = (
 			),
 		)
 		const row = rows[0]
-		if (row === undefined) return yield* Effect.fail(unreadable("The chat identity was not stored"))
+		if (row === undefined) return yield* unreadable("The chat identity was not stored")
 		return readRow(row)
 	})
 

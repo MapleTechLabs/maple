@@ -328,7 +328,7 @@ describe("AlertsService check intervals", () => {
 			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
 			assert.instanceOf(error, AlertValidationError)
 			assert.include(
-				error instanceof AlertValidationError ? error.details.join("\n") : "",
+				Schema.is(AlertValidationError)(error) ? error.details.join("\n") : "",
 				"must be at least evaluationIntervalMinutes",
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))

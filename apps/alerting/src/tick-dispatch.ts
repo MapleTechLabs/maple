@@ -38,9 +38,9 @@ const MAX_FAILURE_BODY_CHARS = 300
 const thrownMessage = (error: HttpClientError.HttpClientError): string =>
 	error.cause instanceof Error
 		? error.cause.message
-		: error.cause === undefined
-			? error.message
-			: String(error.cause)
+		: typeof error.cause === "string"
+			? error.cause
+			: error.message
 
 /** The tick did not run in the placed handler, so the caller runs it inline. */
 export class TickDispatchUnavailable extends Schema.TaggedError<TickDispatchUnavailable>()(

@@ -440,8 +440,8 @@ export const linearTransport: EffectTransport<Config> = {
 	type: "linear",
 	peerService: "linear",
 	providerLabel: "Linear",
-	send: (input, deps) =>
-		Effect.gen(function* () {
+	send: Effect.fn("LinearTransport.send")(
+		function* (input, deps) {
 			yield* Effect.annotateCurrentSpan({
 				"maple.linear.event_type": input.context.eventType,
 				"maple.linear.team_key": input.config.teamKey,
@@ -470,11 +470,10 @@ export const linearTransport: EffectTransport<Config> = {
 						input.context.sentAtMs ?? (yield* Clock.currentTimeMillis),
 					)
 			}
-		}).pipe(
-			Effect.timeoutOrElse({
-				duration: SEND_TIMEOUT,
-				orElse: () => Effect.fail(makeDeliveryError("Linear delivery timed out", "linear")),
-			}),
-			Effect.withSpan("LinearTransport.send"),
-		),
+		},
+		Effect.timeoutOrElse({
+			duration: SEND_TIMEOUT,
+			orElse: () => Effect.fail(makeDeliveryError("Linear delivery timed out", "linear")),
+		}),
+	),
 }

@@ -19,7 +19,7 @@ import {
 	toWidgetRequest,
 	type WidgetDataSourceTransformSchema,
 } from "@maple/widgets/dashboard"
-import { Duration, Effect, Schedule, Schema } from "effect"
+import { Duration, Effect, Formatter, Schedule, Schema } from "effect"
 import { requestKey } from "@maple/views/data/request-key"
 
 // A widget's data source: the request a widget
@@ -180,6 +180,14 @@ const EXPECTED_EMPTY_MESSAGES = new Set([
 	"No enabled queries to run",
 ])
 
+/** A cell as text: primitives as themselves, objects and arrays as JSON-like text. */
+const cellText = (value: unknown): string =>
+	typeof value === "string"
+		? value
+		: typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
+			? String(value)
+			: Formatter.format(value)
+
 const messageOf = (error: unknown): string | undefined =>
 	typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
 		? error.message
@@ -309,7 +317,7 @@ export const toReadyData = (response: unknown, transform: Transform | undefined)
 		rows = rows.toSorted((a, b) => {
 			const aValue = a[sortBy.field] ?? 0
 			const bValue = b[sortBy.field] ?? 0
-			const cmp = String(aValue) === String(bValue) ? 0 : aValue < bValue ? -1 : 1
+			const cmp = cellText(aValue) === cellText(bValue) ? 0 : aValue < bValue ? -1 : 1
 			return sortBy.direction === "desc" ? -cmp : cmp
 		})
 	if (transform.limit !== undefined && transform.limit > 0) rows = rows.slice(0, transform.limit)
@@ -327,7 +335,7 @@ export const toReadyData = (response: unknown, transform: Transform | undefined)
 		})
 	const ratio = transform.computeRatio
 	if (ratio !== undefined) {
-		const byName = new Map(rows.map((row) => [String(row.name ?? ""), Number(row.value ?? 0)]))
+		const byName = new Map(rows.map((row) => [cellText(row.name ?? ""), Number(row.value ?? 0)]))
 		const numerator = byName.get(ratio.numeratorName) ?? 0
 		const denominator = ratio.denominatorNames.reduce((sum, name) => sum + (byName.get(name) ?? 0), 0)
 		return { _tag: "Value", value: denominator > 0 ? numerator / denominator : 0 }

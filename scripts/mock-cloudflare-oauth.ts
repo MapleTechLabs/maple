@@ -172,8 +172,10 @@ const settingsData = () => ({
 
 /** 5-minute bucket starts (ISO) covering [start, end) from the GraphQL variables. */
 const bucketsInWindow = (variables: Record<string, unknown> | undefined): string[] => {
-	const start = Date.parse(String(variables?.start ?? "")) || Date.now() - 30 * 60_000
-	const end = Date.parse(String(variables?.end ?? "")) || Date.now()
+	const rawStart = variables?.start
+	const rawEnd = variables?.end
+	const start = (typeof rawStart === "string" ? Date.parse(rawStart) : NaN) || Date.now() - 30 * 60_000
+	const end = (typeof rawEnd === "string" ? Date.parse(rawEnd) : NaN) || Date.now()
 	const out: string[] = []
 	for (let t = Math.ceil(start / 300_000) * 300_000; t < end; t += 300_000) {
 		out.push(new Date(t).toISOString().replace(".000Z", "Z"))

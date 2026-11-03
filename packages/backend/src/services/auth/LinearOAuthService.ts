@@ -241,7 +241,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 						config,
 						orgId,
 						(error: E | IntegrationsRevokedError): error is IntegrationsRevokedError =>
-							error instanceof IntegrationsRevokedError,
+							Schema.is(IntegrationsRevokedError)(error),
 						use,
 					)
 				})
@@ -276,8 +276,8 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 			})
 
 			/** Best effort: the grant is dropped on Maple's side whatever Linear answers. */
-			const revokeAtLinear = (orgId: OrgId) =>
-				Effect.gen(function* () {
+			const revokeAtLinear = Effect.fn("LinearOAuthService.revokeAtLinear")(
+				function* (orgId: OrgId) {
 					const row = yield* oauth.loadConnection(orgId)
 					if (row === null) return
 					const accessToken = yield* oauth.decryptValue({
@@ -286,7 +286,9 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 						tag: row.accessTokenTag,
 					})
 					yield* oauth.postForm(REVOKE_URL, { token: accessToken, token_type_hint: "access_token" })
-				}).pipe(Effect.ignore, Effect.withSpan("LinearOAuthService.revokeAtLinear"))
+				},
+				(effect) => Effect.ignore(effect),
+			)
 
 			const disconnect = Effect.fn("LinearOAuthService.disconnect")(function* (orgId: OrgId) {
 				yield* revokeAtLinear(orgId)

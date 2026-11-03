@@ -651,7 +651,7 @@ export const createArchiveGeneration = async (
 			// A refusal is a verdict, not a crash: reconcile the aborted operation
 			// now so it does not linger for the next create to clean up.
 			return await created.catch((error: unknown) =>
-				error instanceof ArchiveCreateRefusedError
+				Schema.is(ArchiveCreateRefusedError)(error)
 					? reconcileArchiveGeneration(dataDir, archiveDir, tuning.scratchRoot).then(() =>
 							Promise.reject(error),
 						)

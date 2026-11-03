@@ -1,4 +1,4 @@
-import { Effect, Layer, Tracer } from "effect"
+import { Effect, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
 import { API_PROXY_PREFIX, apiProxyPath } from "./api-proxy"
 import { handleRequest } from "./handler"
@@ -105,7 +105,7 @@ describe("handleRequest API proxy", () => {
 				headers: { traceparent: `00-${browserTraceId}-b7ad6b7169203331-01` },
 			}),
 			env,
-			(effect) => Effect.runPromise(effect.pipe(Effect.provide(Layer.succeed(Tracer.Tracer, tracer)))),
+			(effect) => Effect.runPromise(effect.pipe(Effect.provideService(Tracer.Tracer, tracer))),
 		)
 		const server = spans.find((span) => span.kind === "server")
 		const client = spans.find((span) => span.kind === "client")

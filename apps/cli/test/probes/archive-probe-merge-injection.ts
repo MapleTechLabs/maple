@@ -63,8 +63,11 @@ try {
 			archived.push(String(r.TraceId))
 	}
 	archived.sort()
-	if (archived.join(",") !== sourceSet.join(",")) h.fail(`source [${sourceSet}] != archived [${archived}]`)
-	h.ok(`injected OPTIMIZE blocked ${blocked}x; exact set archived [${archived}] (${written.length} shards)`)
+	if (archived.join(",") !== sourceSet.join(","))
+		h.fail(`source [${sourceSet.join(",")}] != archived [${archived.join(",")}]`)
+	h.ok(
+		`injected OPTIMIZE blocked ${blocked}x; exact set archived [${archived.join(",")}] (${written.length} shards)`,
+	)
 } catch (e) {
 	h.fail(e instanceof Error ? e.message : String(e))
 }

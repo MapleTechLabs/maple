@@ -44,7 +44,7 @@ describe("MapleFlush.make (server) — resource resolution failure", () => {
 			})
 
 			await Effect.runPromise(
-				Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
+				Effect.undefined.pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
 			)
 
 			// The contract is "never rejects" — an unhandled rejection here is the bug.

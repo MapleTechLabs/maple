@@ -301,12 +301,10 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 				(rule, index) => rules.findIndex((other) => other.severity === rule.severity) !== index,
 			)
 			if (duplicate !== undefined) {
-				return yield* Effect.fail(
-					new ErrorValidationError({
-						message: "Escalation policy has duplicate severity rules",
-						details: [duplicate.severity],
-					}),
-				)
+				return yield* new ErrorValidationError({
+					message: "Escalation policy has duplicate severity rules",
+					details: [duplicate.severity],
+				})
 			}
 
 			// Reject destination IDs that don't belong to this org at write time.
@@ -326,12 +324,10 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 				const owned = HashSet.fromIterable(Arr.map(ownedRows, (row) => row.id))
 				const unknown = Arr.filter(referencedIds, (id) => !HashSet.has(owned, id))
 				if (unknown.length > 0) {
-					return yield* Effect.fail(
-						new ErrorValidationError({
-							message: "Escalation policy references unknown destinations",
-							details: unknown,
-						}),
-					)
+					return yield* new ErrorValidationError({
+						message: "Escalation policy references unknown destinations",
+						details: unknown,
+					})
 				}
 			}
 		}

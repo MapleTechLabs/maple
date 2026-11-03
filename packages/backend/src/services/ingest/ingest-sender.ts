@@ -38,7 +38,7 @@ export const isRefusal = (error: IngestSendError) =>
 	error.status !== undefined && isIngestRefusal(error.status)
 
 export const isIngestSendError = (error: unknown): error is IngestSendError =>
-	error instanceof IngestSendError
+	Schema.is(IngestSendError)(error)
 
 /** A refusal carried out of a span as a value, so the span ends Ok instead of opening an error issue. */
 export class IngestRefused extends Data.TaggedClass("IngestRefused")<{ readonly error: IngestSendError }> {}

@@ -1,4 +1,4 @@
-import { Clock, Config, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Config, DateTime, Duration, Effect, Option, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
@@ -687,7 +687,7 @@ const checkpointRefreshLoop = (
 
 const fileSize = (path: string): number =>
 	Effect.runSync(
-		Effect.try({ try: () => statSync(path).size, catch: (error) => error }).pipe(
+		Effect.try({ try: () => statSync(path).size, catch: stateFileError(path, "stat") }).pipe(
 			Effect.orElseSucceed(() => 0),
 		),
 	)
@@ -712,7 +712,7 @@ const childFailureLine = (logPath: string, fromByte: number): string =>
 					.filter((line) => line.length > 0)
 				return [...lines].reverse().find((line) => line.startsWith("error:")) ?? lines.at(-1) ?? ""
 			},
-			catch: (error) => error,
+			catch: stateFileError(logPath, "read"),
 		}).pipe(Effect.orElseSucceed(() => "")),
 	)
 
@@ -1273,6 +1273,7 @@ export const start = Command.make("start", {
 							.makeDirectory(dirname(discoveryPath), { recursive: true })
 							.pipe(Effect.ignore)
 					}
+					const startedAt = yield* Effect.map(DateTime.now, DateTime.formatIso)
 					yield* Effect.acquireRelease(
 						Effect.tryPromise({
 							try: () =>
@@ -1282,7 +1283,7 @@ export const start = Command.make("start", {
 										pid: process.pid,
 										url: probeAddr,
 										dataDir,
-										startedAt: new Date().toISOString(),
+										startedAt,
 									} satisfies ServerDiscovery)}\n`,
 								),
 							catch: stateFileError(discoveryPath, "write"),
@@ -1369,7 +1370,7 @@ const maintenanceInProgress = (dataDir: string): boolean =>
 	Effect.runSync(
 		Effect.try({
 			try: () => readFileSync(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "utf8"),
-			catch: (error) => error,
+			catch: stateFileError(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "read"),
 		}).pipe(
 			Effect.map((raw) => {
 				const owner = decodeMaintenanceOwner(raw)
@@ -1448,7 +1449,8 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 					process.kill(pid, "SIGTERM")
 					return true
 				},
-				catch: (error) => error,
+				catch: (error) =>
+					new ServerStateError({ message: `could not signal PID ${pid}: ${describeError(error)}` }),
 			}).pipe(Effect.orElseSucceed(() => false))
 			yield* Effect.sync(() =>
 				process.stderr.write(

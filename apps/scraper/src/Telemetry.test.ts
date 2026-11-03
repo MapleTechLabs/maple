@@ -41,7 +41,10 @@ const captureCollector = () => {
 	const original = globalThis.fetch
 	globalThis.fetch = Object.assign(
 		async (input: string | URL | Request, init?: RequestInit) => {
-			if (String(input).endsWith("/v1/traces") && typeof init?.body === "string") {
+			if (
+				(input instanceof Request ? input.url : input.toString()).endsWith("/v1/traces") &&
+				typeof init?.body === "string"
+			) {
 				bodies.push(JSON.parse(init.body))
 			}
 			return new Response(null, { status: 200 })

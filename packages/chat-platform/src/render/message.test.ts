@@ -3,7 +3,8 @@ import {
 	encodeChatEventPayload,
 	makeChatSessionId,
 	type ChatEventInput,
-	type ChatMessage,
+	ChatMessage,
+	ChatToolCall,
 } from "@maple/domain/chat-session"
 import { chartFences, parseChartSpec } from "@maple/domain/chat-chart-spec"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
@@ -228,17 +229,17 @@ describe("renderChatMessage", () => {
 		// `textOffset` is optional on the wire, and a conversation older than it renders
 		// prose-then-calls everywhere else. Defaulting it to 0 here would have declared the
 		// narration before a real call to be the answer.
-		const mixed: ChatMessage = {
+		const mixed = new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: "Narration first. The answer.",
 			toolCalls: [
-				{ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 16 },
-				{ id: "c2", name: "search_traces", input: {}, output: null },
+				new ChatToolCall({ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 16 }),
+				new ChatToolCall({ id: "c2", name: "search_traces", input: {}, output: null }),
 			],
 			createdAt: 0,
 			startSeq: 1,
-		}
+		})
 
 		expect(renderChatMessage(mixed, context)).toEqual([{ kind: "prose", markdown: "The answer." }])
 	})
@@ -246,17 +247,17 @@ describe("renderChatMessage", () => {
 	it("puts a blank line where a call interrupted the model, never running two segments together", () => {
 		// Offsets are not sorted, so a stale one can sit before a later call's and leave a boundary
 		// inside what is shown. Model text carries no separator of its own.
-		const interrupted: ChatMessage = {
+		const interrupted = new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: "Errors are up on checkout.The pool is saturated.",
 			toolCalls: [
-				{ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 26 },
-				{ id: "c2", name: "search_traces", input: {}, output: null, textOffset: 0 },
+				new ChatToolCall({ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 26 }),
+				new ChatToolCall({ id: "c2", name: "search_traces", input: {}, output: null, textOffset: 0 }),
 			],
 			createdAt: 0,
 			startSeq: 1,
-		}
+		})
 
 		expect(renderChatMessage(interrupted, context)).toEqual([
 			{ kind: "prose", markdown: "Errors are up on checkout.\n\nThe pool is saturated." },
@@ -266,17 +267,23 @@ describe("renderChatMessage", () => {
 	it("does not break a chart fence a boundary happens to land inside", () => {
 		// The blank line would stop the fence parsing and put its payload in the channel as JSON.
 		const body = `Latency climbed.\n\`\`\`chart\n${CHART}\n\`\`\`\ncheckout is the worst of them.`
-		const split: ChatMessage = {
+		const split = new ChatMessage({
 			id: "a1",
 			role: "assistant",
 			text: body,
 			toolCalls: [
-				{ id: "c1", name: "query_data", input: {}, output: null, textOffset: body.indexOf(CHART) },
-				{ id: "c2", name: "find_errors", input: {}, output: null, textOffset: 0 },
+				new ChatToolCall({
+					id: "c1",
+					name: "query_data",
+					input: {},
+					output: null,
+					textOffset: body.indexOf(CHART),
+				}),
+				new ChatToolCall({ id: "c2", name: "find_errors", input: {}, output: null, textOffset: 0 }),
 			],
 			createdAt: 0,
 			startSeq: 1,
-		}
+		})
 
 		expect(renderChatMessage(split, context).map((block) => block.kind)).toEqual([
 			"prose",

@@ -79,7 +79,7 @@ const withFetch = async (
 		const text =
 			init?.body === undefined || init.body === null ? "" : await new Response(init.body).text()
 		captured = {
-			url: String(input),
+			url: String(input instanceof Request ? input.url : input),
 			method: String(init?.method),
 			headers: new Headers(init?.headers),
 			body: text.length === 0 ? undefined : JSON.parse(text),
@@ -265,7 +265,7 @@ describe("AutumnClient request construction", () => {
 	it("strips trailing slashes from the configured API url", async () => {
 		let url: string | undefined
 		const fetch = (async (input) => {
-			url = String(input)
+			url = String(input instanceof Request ? input.url : input)
 			return new Response("{}", { status: 200 })
 		}) as typeof globalThis.fetch
 

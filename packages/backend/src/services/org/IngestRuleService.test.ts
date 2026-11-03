@@ -123,10 +123,10 @@ describe("IngestRuleService", () => {
 				Array.from({ length: 48 }, (_, index) => index),
 				(index) => service.create(ORG, { name: `Rule ${index}`, spec: maskEmails }),
 			)
-			const results = yield* Effect.all(
-				[1, 2, 3].map((index) =>
+			const results = yield* Effect.forEach(
+				[1, 2, 3],
+				(index) =>
 					service.create(ORG, { name: `Late ${index}`, spec: maskEmails }).pipe(Effect.result),
-				),
 				{ concurrency: "unbounded" },
 			)
 			expect(results.filter((result) => result._tag === "Success")).toHaveLength(2)

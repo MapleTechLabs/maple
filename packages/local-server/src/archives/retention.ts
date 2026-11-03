@@ -471,7 +471,7 @@ const parseExpireOperation = (value: unknown): ExpireOperation => {
 		(typeof removingSignal !== "string" ||
 			!ARCHIVE_SIGNALS.some((candidate) => candidate.name === removingSignal))
 	)
-		throw new Error(`invalid removingSignal: ${String(removingSignal)}`)
+		throw new Error(`invalid removingSignal: ${encodeJson(removingSignal)}`)
 	const expectedRemoving = ARCHIVE_SIGNALS[completedSignals.length]?.name ?? null
 	if (removingSignal !== null && removingSignal !== expectedRemoving)
 		throw new Error("removingSignal must be the next canonical signal")

@@ -36,7 +36,7 @@ import {
 	type ErrorIssueRow,
 	type ErrorIssueVerificationRow,
 } from "@maple/db/tables"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { DateTime, Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
@@ -477,12 +477,10 @@ const make: Effect.Effect<
 		yield* workflow.requireIssue(orgId, issueId)
 		const parsed = parsePullRequestUrl(url)
 		if (parsed === null) {
-			return yield* Effect.fail(
-				new ErrorIssuePullRequestInvalidError({
-					message: "Not a recognizable GitHub pull request URL",
-					rawUrl: url,
-				}),
-			)
+			return yield* new ErrorIssuePullRequestInvalidError({
+				message: "Not a recognizable GitHub pull request URL",
+				rawUrl: url,
+			})
 		}
 		const nowMs = yield* Clock.currentTimeMillis
 
@@ -525,12 +523,10 @@ const make: Effect.Effect<
 			// the caller their well-formed URL was unrecognizable, and because the
 			// invalid-URL tag is an anticipated error its span exception is suppressed,
 			// so the anomaly would vanish from error dashboards entirely.
-			return yield* Effect.fail(
-				new ErrorPersistenceError({
-					message: "Pull request link could not be stored",
-					cause: `upsert returned no row for ${parsed.url}`,
-				}),
-			)
+			return yield* new ErrorPersistenceError({
+				message: "Pull request link could not be stored",
+				cause: `upsert returned no row for ${parsed.url}`,
+			})
 		}
 		yield* workflow.recordEvent(orgId, issueId, actorId, "pr_linked", {
 			payload: {
@@ -559,12 +555,10 @@ const make: Effect.Effect<
 		const document = response.pullRequests[0]
 		if (document === undefined) {
 			// Same reasoning as the store path above: the link exists, hydration lost it.
-			return yield* Effect.fail(
-				new ErrorPersistenceError({
-					message: "Pull request link could not be rendered",
-					cause: `hydrate returned no document for pull request ${row.id}`,
-				}),
-			)
+			return yield* new ErrorPersistenceError({
+				message: "Pull request link could not be rendered",
+				cause: `hydrate returned no document for pull request ${row.id}`,
+			})
 		}
 		return document
 	})
@@ -583,12 +577,10 @@ const make: Effect.Effect<
 		)
 		const row = existing[0]
 		if (row === undefined) {
-			return yield* Effect.fail(
-				new ErrorIssuePullRequestNotFoundError({
-					message: "Pull request link not found on this issue",
-					pullRequestId,
-				}),
-			)
+			return yield* new ErrorIssuePullRequestNotFoundError({
+				message: "Pull request link not found on this issue",
+				pullRequestId,
+			})
 		}
 		const nowMs = yield* Clock.currentTimeMillis
 		// Abandon any verification riding on this link: without the PR there is
@@ -683,7 +675,7 @@ const make: Effect.Effect<
 				repoFullName: link.repoFullName,
 				number: link.number,
 				windowMs,
-				verifyAfter: new Date(verifyAfterMs).toISOString(),
+				verifyAfter: DateTime.formatIso(DateTime.makeUnsafe(verifyAfterMs)),
 				ratePerHour,
 				baselineVersions: issue.seenVersionsJson,
 			},
@@ -784,7 +776,7 @@ const make: Effect.Effect<
 						repoFullName: link.repoFullName,
 						number: link.number,
 						mergeCommitSha,
-						mergedAt: new Date(mergedAtMs).toISOString(),
+						mergedAt: DateTime.formatIso(DateTime.makeUnsafe(mergedAtMs)),
 					},
 					timestamp: nowMs,
 				})
@@ -1078,7 +1070,7 @@ const make: Effect.Effect<
 						verdict: "inconclusive",
 						note,
 						retrying: true,
-						verifyAfter: new Date(nowMs + extendedMs).toISOString(),
+						verifyAfter: DateTime.formatIso(DateTime.makeUnsafe(nowMs + extendedMs)),
 					},
 				},
 			)

@@ -63,7 +63,7 @@ export type PublicIdPrefix = (typeof PublicIdPrefixes)[keyof typeof PublicIdPref
 
 // Bitcoin base58 alphabet (no 0/O/I/l).
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-const ALPHABET_MAP = new Map([...ALPHABET].map((char, index) => [char, index]))
+const ALPHABET_MAP = new Map(Array.from(ALPHABET).map((char, index) => [char, index]))
 
 const base58Encode = (bytes: Uint8Array): string => {
 	let zeros = 0

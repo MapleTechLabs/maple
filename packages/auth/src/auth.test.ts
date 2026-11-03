@@ -285,7 +285,7 @@ describe("pending Clerk sessions (no organization chosen yet)", () => {
 				clerkEnv,
 				pendingSession,
 				"session_token",
-				(_userId, orgId) => Effect.succeed(Option.some({ orgId, role: asRoleName("org:admin") })),
+				(_userId, orgId) => Effect.succeedSome({ orgId, role: asRoleName("org:admin") }),
 			)
 			const exit = yield* Effect.exit(
 				resolveTenant({ authorization: "Bearer test-token", [ORG_SELECTION_HEADER]: "org_123" }),

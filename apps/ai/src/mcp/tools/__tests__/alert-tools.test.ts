@@ -166,12 +166,14 @@ const layer = (seen: Seen) =>
 			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
 				seen.created = request
 				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
-				return Effect.succeed({
-					...rule,
-					signalType: request.signalType,
-					rawQuerySql: request.rawQuerySql ?? null,
-					minimumSampleCount: request.minimumSampleCount ?? 0,
-				} as never)
+				return Effect.succeed(
+					Schema.decodeUnknownSync(AlertRuleDocument)({
+						...rule,
+						signalType: request.signalType,
+						rawQuerySql: request.rawQuerySql ?? null,
+						minimumSampleCount: request.minimumSampleCount ?? 0,
+					}),
+				)
 			},
 			deleteRule: (_org: unknown, _roles: unknown, id: string) =>
 				id === RULE_ID
@@ -242,14 +244,14 @@ const layer = (seen: Seen) =>
 				return Effect.succeed(
 					id === RULE_ID
 						? rule
-						: {
+						: Schema.decodeUnknownSync(AlertRuleDocument)({
 								...rule,
 								id,
 								name: "Latency",
 								destinationIds: (request.thresholds ?? []).flatMap(
 									(tier) => tier.destinationIds,
 								),
-							},
+							}),
 				)
 			},
 			listDestinations: () =>
@@ -914,7 +916,7 @@ describe("alert tools", () => {
 	it("preview_alert_rule times one raw-SQL check against the interval's limit", async () => {
 		const sql = "SELECT count() AS value\nFROM traces\nWHERE $__orgFilter AND $__timeFilter(Timestamp)"
 		const seen: Seen = {
-			rules: [{ ...slowedRule, rawQuerySql: sql }],
+			rules: [new AlertRuleDocument({ ...slowedRule, rawQuerySql: sql })],
 			queryTiming: {
 				elapsedMs: 7800,
 				failure: null,

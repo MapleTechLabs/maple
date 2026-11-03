@@ -954,7 +954,7 @@ describe("PrReviewService.submitReview", () => {
 				started.reviewId!,
 				new SubmitPrReviewRequest({
 					report: report([
-						{
+						new PrReviewFinding({
 							path: "src/routes/orders.ts",
 							line: 12,
 							category: "observability",
@@ -962,7 +962,7 @@ describe("PrReviewService.submitReview", () => {
 							severity: "warn",
 							title: "POST /orders has no server span",
 							body: "Wrap the handler in withSpan.",
-						},
+						}),
 					]),
 					model: "test-model",
 					inputTokens: 10,
@@ -1007,14 +1007,14 @@ describe("PrReviewService.submitReview", () => {
 				started.reviewId!,
 				new SubmitPrReviewRequest({
 					report: report([
-						{
+						new PrReviewFinding({
 							path: "src/routes/orders.ts",
 							line: 12,
 							category: "observability",
 							severity: "warn",
 							title: "POST /orders has no server span",
 							body: "Wrap the handler in withSpan.",
-						},
+						}),
 					]),
 					partial: true,
 				}),
@@ -1033,14 +1033,14 @@ describe("PrReviewService.submitReview", () => {
 				next.reviewId!,
 				new SubmitPrReviewRequest({
 					report: report([
-						{
+						new PrReviewFinding({
 							path: "src/routes/orders.ts",
 							line: 12,
 							category: "observability",
 							severity: "warn",
 							title: "POST /orders has no server span",
 							body: "Wrap the handler in withSpan.",
-						},
+						}),
 					]),
 				}),
 			)
@@ -1238,7 +1238,7 @@ describe("PrReviewService.submitReview", () => {
 				first.reviewId!,
 				new SubmitPrReviewRequest({
 					report: report([
-						{
+						new PrReviewFinding({
 							path: "a.ts",
 							line: 1,
 							category: "observability",
@@ -1246,7 +1246,7 @@ describe("PrReviewService.submitReview", () => {
 							severity: "warn",
 							title: "stale",
 							body: "b",
-						},
+						}),
 					]),
 				}),
 			)
@@ -1404,9 +1404,24 @@ describe("PrReviewService.submitReview feedback filter", () => {
 				new SubmitPrReviewRequest({
 					report: report([
 						noisyConvention,
-						{ ...noisyConvention, line: 9, category: "security", title: "noisy token log" },
-						{ ...noisyConvention, line: 20, severity: "critical", title: "noisy crash" },
-						{ ...noisyConvention, line: 30, category: "correctness", title: "off by one" },
+						new PrReviewFinding({
+							...noisyConvention,
+							line: 9,
+							category: "security",
+							title: "noisy token log",
+						}),
+						new PrReviewFinding({
+							...noisyConvention,
+							line: 20,
+							severity: "critical",
+							title: "noisy crash",
+						}),
+						new PrReviewFinding({
+							...noisyConvention,
+							line: 30,
+							category: "correctness",
+							title: "off by one",
+						}),
 					]),
 				}),
 			)
@@ -1675,7 +1690,7 @@ describe("buildPublication", () => {
 			partial: false,
 			repositoryUrl: REPO_URL,
 			report: report([
-				{
+				new PrReviewFinding({
 					path: "a.ts",
 					line: 1,
 					category: "observability",
@@ -1683,8 +1698,8 @@ describe("buildPublication", () => {
 					severity: "warn",
 					title: "gap",
 					body: "b",
-				},
-				{
+				}),
+				new PrReviewFinding({
 					path: "a.ts",
 					line: 9,
 					category: "observability",
@@ -1692,7 +1707,7 @@ describe("buildPublication", () => {
 					severity: "info",
 					title: "nicety",
 					body: "b",
-				},
+				}),
 			]),
 		})
 		assert.equal(publication.annotations.length, 2)
@@ -1758,7 +1773,7 @@ describe("buildPublication", () => {
 	it("links each finding to its line at the reviewed commit", () => {
 		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
 			report: report([
-				{
+				new PrReviewFinding({
 					path: "src/a b.ts",
 					line: 4,
 					endLine: 6,
@@ -1767,7 +1782,7 @@ describe("buildPublication", () => {
 					severity: "critical",
 					title: "gap",
 					body: "fix it",
-				},
+				}),
 			]),
 			partial: false,
 			headSha: HEAD,
@@ -1782,7 +1797,7 @@ describe("buildPublication", () => {
 	it("renders the coverage table and the check ids into the summary", () => {
 		const summary = renderCheckSummary({
 			report: report([
-				{
+				new PrReviewFinding({
 					path: "a.ts",
 					line: 1,
 					category: "observability",
@@ -1790,7 +1805,7 @@ describe("buildPublication", () => {
 					severity: "warn",
 					title: "gap",
 					body: "b",
-				},
+				}),
 			]),
 			partial: true,
 			headSha: HEAD,
@@ -1805,15 +1820,22 @@ describe("buildPublication", () => {
 		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
 			report: new PrReviewReport({
 				...report([
-					{ path: "a.ts", line: 1, category: "tests", severity: "info", title: "note", body: "" },
-					{
+					new PrReviewFinding({
+						path: "a.ts",
+						line: 1,
+						category: "tests",
+						severity: "info",
+						title: "note",
+						body: "",
+					}),
+					new PrReviewFinding({
 						path: "b.ts",
 						line: 2,
 						category: "security",
 						severity: "critical",
 						title: "`listKeys` skips the <tenant> filter",
 						body: "b",
-					},
+					}),
 				]),
 				keyChanges: ["`listKeys` reads from the new table"],
 			}),
@@ -1872,7 +1894,14 @@ describe("buildPublication", () => {
 			"🟢 **Confidence 10/10** · safe to merge. Small change, verified end to end.\n<sub>no findings · tests covered · risk low</sub>",
 		)
 		const critical = render([
-			{ path: "a.ts", line: 1, category: "correctness", severity: "critical", title: "t", body: "b" },
+			new PrReviewFinding({
+				path: "a.ts",
+				line: 1,
+				category: "correctness",
+				severity: "critical",
+				title: "t",
+				body: "b",
+			}),
 		])
 		assert.include(
 			critical,
@@ -1915,7 +1944,7 @@ describe("buildPublication", () => {
 			partial: false,
 			repositoryUrl: REPO_URL,
 			report: report([
-				{
+				new PrReviewFinding({
 					path: "a.ts",
 					line: 3,
 					category: "correctness",
@@ -1923,7 +1952,7 @@ describe("buildPublication", () => {
 					title: "t",
 					body: "b",
 					replacement,
-				},
+				}),
 			]),
 		})
 		assert.include(publication.comments[0]!.body, `\`\`\`\`suggestion\n${replacement}\n\`\`\`\`\n`)
@@ -1938,7 +1967,7 @@ describe("buildPublication", () => {
 			partial: false,
 			repositoryUrl: REPO_URL,
 			report: report([
-				{
+				new PrReviewFinding({
 					path: "a.ts",
 					line: 3,
 					endLine: 4,
@@ -1947,7 +1976,7 @@ describe("buildPublication", () => {
 					title: "off by one",
 					body: "The loop skips the last item.",
 					replacement: "for (let i = 0; i <= n; i++) {\n\tvisit(i)",
-				},
+				}),
 			]),
 		})
 		const comment = publication.comments[0]!

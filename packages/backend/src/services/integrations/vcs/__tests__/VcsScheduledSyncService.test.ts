@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { VcsQueueError, type OrgId, type VcsSyncJob } from "@maple/domain/http"
-import { Effect, Exit, Layer } from "effect"
+import { Effect, Exit, Layer, Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
@@ -116,7 +116,7 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			yield* seedInstallation(repo, asOrgId("org_a"), "1")
 			const exit = yield* Effect.exit(svc.runScheduledSync())
 			assert.ok(Exit.isFailure(exit), "the tick surfaces the queue failure")
-			assert.ok(findError(exit) instanceof VcsQueueError)
+			assert.ok(Schema.is(VcsQueueError)(findError(exit)))
 		}).pipe(Effect.provide(schedulerLayer(testDb, sent, { failQueue: true })))
 	})
 })

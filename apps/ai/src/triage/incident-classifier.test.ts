@@ -116,7 +116,12 @@ describe("classifyIncident", () => {
 			// Two questions go out; the body says which one each is.
 			const bodies: Array<string> = []
 			const fetch: typeof globalThis.fetch = async (input, init) => {
-				const body = String(init?.body ?? (input instanceof Request ? await input.text() : ""))
+				const body =
+					init?.body != null
+						? await new Response(init.body).text()
+						: input instanceof Request
+							? await input.text()
+							: ""
 				bodies.push(body)
 				const isPriorQuestion = body.includes("prior_2")
 				return new Response(
@@ -177,7 +182,12 @@ describe("classifyIncident", () => {
 				],
 			})
 			const fetch: typeof globalThis.fetch = async (input, init) => {
-				const body = String(init?.body ?? (input instanceof Request ? await input.text() : ""))
+				const body =
+					init?.body != null
+						? await new Response(init.body).text()
+						: input instanceof Request
+							? await input.text()
+							: ""
 				return new Response(
 					JSON.stringify(
 						body.includes("prior_1")

@@ -18,7 +18,8 @@
  * - `toggle` fails ~15% of the time, and `create` rejects bad input, so the
  *   Errors view has two distinct groups.
  */
-import { Clock, Context, Duration, Effect, Exit, Layer, Metric, Random, Ref } from "effect"
+import { Clock, Context, DateTime, Duration, Effect, Exit, Layer, Metric, Random, Ref } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { NotifyRequest } from "../shared/notifier-api.ts"
 import { InvalidTodoError, Todo, TodoNotFoundError, ToggleFailedError } from "../shared/api.ts"
 import { NotifierClient } from "./NotifierClient.ts"
@@ -111,6 +112,7 @@ const measured = <A, E, R>(op: string, effect: Effect.Effect<A, E, R>) =>
 export class TodoService extends Context.Service<TodoService>()("@maple-examples/todo/TodoService", {
 	make: Effect.gen(function* () {
 		const notifier = yield* NotifierClient
+		const secureRandom = yield* SecureRandom.SecureRandom
 		const store = yield* Ref.make(new Map<string, Todo>(seedTodos.map((t) => [t.id, t])))
 		/** The read-through cache for `list`, dropped on every write. */
 		const listCache = yield* Ref.make<ReadonlyArray<Todo> | undefined>(undefined)
@@ -243,8 +245,9 @@ export class TodoService extends Context.Service<TodoService>()("@maple-examples
 				),
 			)
 
-			const id = crypto.randomUUID()
-			const todo = new Todo({ id, title, completed: false, createdAt: new Date().toISOString() })
+			const id = yield* secureRandom.uuidV4()
+			const now = yield* DateTime.now
+			const todo = new Todo({ id, title, completed: false, createdAt: DateTime.formatIso(now) })
 			yield* Effect.gen(function* () {
 				yield* jitter(20, 90)
 				yield* Ref.update(store, (map) => new Map(map).set(id, todo))
@@ -285,7 +288,12 @@ export class TodoService extends Context.Service<TodoService>()("@maple-examples
 				return yield* new ToggleFailedError({ message: `Transient write conflict toggling ${id}` })
 			}
 
-			const updated = new Todo({ ...existing, completed: !existing.completed })
+			const updated = new Todo({
+				id: existing.id,
+				title: existing.title,
+				completed: !existing.completed,
+				createdAt: existing.createdAt,
+			})
 			yield* Ref.update(store, (m) => new Map(m).set(id, updated)).pipe(
 				Effect.withSpan("db.persist", {
 					kind: "client",
@@ -346,5 +354,5 @@ export class TodoService extends Context.Service<TodoService>()("@maple-examples
 		} as const
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(SecureRandom.layerWebCrypto))
 }

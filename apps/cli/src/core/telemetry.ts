@@ -1,5 +1,6 @@
 import { getAutoPlatformAttributes } from "@maple-dev/effect-sdk/server"
 import { Config, Effect, Layer, Option, Redacted } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { FetchHttpClient, HttpBody } from "effect/http"
 import { OtlpMetrics, OtlpResource, OtlpSerialization, OtlpTracer } from "effect/observability"
 import { MAPLE_VERSION } from "@maple/local-server/version"
@@ -188,13 +189,14 @@ const makeTelemetryLayer = Effect.gen(function* () {
 	const endpoint = yield* resolveEndpoint
 	const environment = yield* resolveEnvironment
 	const key = yield* ingestKey
+	const instanceId = yield* SecureRandom.make(SecureRandom.randomBytesUnsafe).uuidV4()
 	const resource = {
 		serviceName: "maple-cli",
 		serviceVersion: MAPLE_VERSION,
 		attributes: {
 			...getAutoPlatformAttributes(),
 			"maple.sdk.type": "server",
-			"service.instance.id": crypto.randomUUID(),
+			"service.instance.id": instanceId,
 			"service.namespace": "core",
 			"deployment.environment": environment,
 			"deployment.environment.name": environment,

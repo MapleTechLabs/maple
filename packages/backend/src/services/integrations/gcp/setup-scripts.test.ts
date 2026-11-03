@@ -537,7 +537,7 @@ describe("the text that is copied", () => {
 				.some((line) => line.startsWith("#")),
 		).toBe(false)
 		// Plain ASCII survives a paste under any locale; the marks it prints are spelled as bytes.
-		expect([...script].every((character) => character.charCodeAt(0) < 128)).toBe(true)
+		expect(Array.from(script).every((character) => character.charCodeAt(0) < 128)).toBe(true)
 
 		const cleanupLines = cleanup(SCOPES.project).split("\n")
 		expect(cleanupLines[1]).toBe("bash /dev/fd/3 3<<'MAPLE_CLEANUP_SCRIPT'")

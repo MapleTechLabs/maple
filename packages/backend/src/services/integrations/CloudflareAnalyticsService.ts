@@ -1142,14 +1142,12 @@ const observeDatasetFailure = (orgId: OrgId, failure: DatasetPollFailure) =>
 		// Failing inside the span below is what records the exception event that error_events /
 		// find_errors unwrap. Caught immediately after the span boundary so a single bad dataset
 		// never fails the org poll.
-		return yield* Effect.fail(
-			new CloudflareAnalyticsPollError({
-				message: failure.message,
-				orgId,
-				dataset: failure.datasetId,
-				kind: failure.kind,
-			}),
-		)
+		return yield* new CloudflareAnalyticsPollError({
+			message: failure.message,
+			orgId,
+			dataset: failure.datasetId,
+			kind: failure.kind,
+		})
 	}).pipe(
 		Effect.withSpan("CloudflareAnalyticsService.datasetPollFailed", {
 			attributes: {
@@ -1749,17 +1747,20 @@ export class CloudflareAnalyticsService extends Context.Service<
 									if (!dataset) continue
 									const settings = dataset.settingsNode(decoded, row)
 									if (settings === undefined) continue
+									const settingsJson = settings == null ? null : encodeJsonSync(settings)
+									const quantilesAvailable = quantilesFromAvailableFields(
+										settings,
+										dataset.availableFieldsNeedle,
+									)
+									const disabled = settings?.enabled === false
 									const set: StateRowSet = {
-										settingsJson: settings == null ? null : encodeJsonSync(settings),
+										settingsJson,
 										settingsFetchedAt: now,
-										quantilesAvailable: quantilesFromAvailableFields(
-											settings,
-											dataset.availableFieldsNeedle,
-										),
-										...(settings?.enabled === false ? { enabled: false } : undefined),
+										quantilesAvailable,
+										...(disabled ? { enabled: false } : undefined),
 										updatedAt: now,
 									}
-									const key = `${String(set.settingsJson)}|${String(set.quantilesAvailable)}|${String(set.enabled ?? "")}`
+									const key = `${settingsJson}|${quantilesAvailable}|${disabled ? "false" : ""}`
 									const group = updates.get(key)
 									if (group) group.ids.push(row.id)
 									else updates.set(key, { ids: [row.id], set })
@@ -1965,7 +1966,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// Errors typically null the whole `data` — clean parts simply didn't advance; retry
 				// next round. A null data with NO errors is an upstream contract break.
 				if (result.errors.length === 0) {
-					return yield* Effect.fail(decodeError("batched"))
+					return yield* decodeError("batched")
 				}
 				// When every error that nulled `data` is expected per-plan gating, the clean sibling
 				// parts weren't the problem — Cloudflare just voids the whole batch when one selection
@@ -2243,7 +2244,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const tokenResult = yield* Effect.result(oauth.getValidAccessToken(orgId, accountId))
 			if (
 				Result.isFailure(tokenResult) &&
-				tokenResult.failure instanceof IntegrationsNotConnectedError
+				Schema.is(IntegrationsNotConnectedError)(tokenResult.failure)
 			) {
 				return yield* skip("not connected")
 			}
@@ -2277,13 +2278,13 @@ export class CloudflareAnalyticsService extends Context.Service<
 				// transient upstream failures record and retry next tick.
 				if (Result.isFailure(tokenResult)) {
 					const error = tokenResult.failure
-					if (error instanceof IntegrationsRevokedError) {
+					if (Schema.is(IntegrationsRevokedError)(error)) {
 						yield* oauth.markConnectionRevoked(orgId, accountId)
 					}
 					yield* recordConnectionError(orgId, accountId, error.message, now, {
-						disable: error instanceof IntegrationsRevokedError,
+						disable: Schema.is(IntegrationsRevokedError)(error),
 					})
-					const revoked = error instanceof IntegrationsRevokedError
+					const revoked = Schema.is(IntegrationsRevokedError)(error)
 					return yield* skip(`token unavailable: ${error._tag}`, {
 						message: revoked ? GRANT_REVOKED_REASON : error.message,
 						revoked,
@@ -2313,7 +2314,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						// this account's rows is what stops it being re-polled; only a failed token
 						// refresh (above) is grant-wide.
 						yield* recordConnectionError(orgId, accountId, error.message, now, {
-							disable: error instanceof IntegrationsRevokedError,
+							disable: Schema.is(IntegrationsRevokedError)(error),
 						})
 						return yield* skip(`zone discovery failed: ${error._tag}`, {
 							message: error.message,

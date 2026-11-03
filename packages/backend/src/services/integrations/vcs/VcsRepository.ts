@@ -90,7 +90,7 @@ const toPersistenceError = (error: DatabaseError) => new VcsRepoPersistenceError
 
 // A stored row the table codecs reject is a decode failure of that table, not a persistence one.
 const toReadError = (table: string) => (error: DatabaseError) =>
-	error.cause instanceof PG.CompiledQueryDecodeError
+	Schema.is(PG.CompiledQueryDecodeError)(error.cause)
 		? new VcsRepoDecodeError({ message: error.message, table })
 		: toPersistenceError(error)
 

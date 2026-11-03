@@ -2,7 +2,19 @@
 // Maple owns trace mining and its query catalog. Execution lives in the published builder CLI.
 import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { Clock, Config, Console, Context, Effect, FileSystem, Layer, Option, Redacted, Schema } from "effect"
+import {
+	Clock,
+	Config,
+	Console,
+	Context,
+	DateTime,
+	Effect,
+	FileSystem,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+} from "effect"
 import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BunRuntime, BunServices } from "@effect/platform-bun"
@@ -137,18 +149,16 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdApi>()("bench/Ti
 		const { tinybird } = yield* BenchConfig
 		const httpClient = yield* HttpClient.HttpClient
 
-		const requireConfig: Effect.Effect<TinybirdConfig, MissingConfigError> = Option.match(tinybird, {
-			onNone: () =>
-				Effect.fail(
-					new MissingConfigError({
-						what: "TINYBIRD_HOST/TINYBIRD_TOKEN",
-						message:
-							"TINYBIRD_HOST and TINYBIRD_TOKEN are required to mine recent db.query.text spans " +
-							"from production traces.",
-					}),
-				),
-			onSome: (cfg) => Effect.succeed(cfg),
-		})
+		const requireConfig: Effect.Effect<TinybirdConfig, MissingConfigError> = Effect.fromOption(
+			tinybird,
+			() =>
+				new MissingConfigError({
+					what: "TINYBIRD_HOST/TINYBIRD_TOKEN",
+					message:
+						"TINYBIRD_HOST and TINYBIRD_TOKEN are required to mine recent db.query.text spans " +
+						"from production traces.",
+				}),
+		)
 
 		const query = Effect.fn("Tinybird.query")(function* (sql: string) {
 			const cfg = yield* requireConfig
@@ -167,13 +177,11 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdApi>()("bench/Ti
 				Effect.mapError((cause) => new HttpRequestError({ url: cfg.host, message: String(cause) })),
 			)
 			if (response.status < 200 || response.status >= 300) {
-				return yield* Effect.fail(
-					new UpstreamStatusError({
-						source: "Tinybird",
-						status: response.status,
-						message: text.slice(0, 500),
-					}),
-				)
+				return yield* new UpstreamStatusError({
+					source: "Tinybird",
+					status: response.status,
+					message: text.slice(0, 500),
+				})
 			}
 			const parsed = yield* decodeJson(text, Schema.Struct({ data: Schema.Array(JsonRow) })).pipe(
 				Effect.mapError((cause) => new HttpRequestError({ url: cfg.host, message: cause.message })),
@@ -340,7 +348,7 @@ const fetchHandler = Effect.fn("bench.fetch")(function* (config: FetchConfig) {
 
 	const outputPath = Option.getOrElse(config.out, () => defaultOutput("queries"))
 	const output: FetchOutput = {
-		fetchedAt: new Date(nowMs).toISOString(),
+		fetchedAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
 		source: host,
 		criteria: {
 			orgId,

@@ -4,7 +4,19 @@
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
 import { ProjectorRegistry } from "@maple/eventing-core"
-import { Clock, Context, Effect, Exit, Layer, Metric, Result, Schema, type Scope } from "effect"
+import {
+	Clock,
+	Config,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Metric,
+	Option,
+	Result,
+	Schema,
+	type Scope,
+} from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { resolve } from "node:path"
 import { gunzipSync } from "node:zlib"
@@ -454,7 +466,7 @@ const ingest = (
 				stopIngest(
 					text(
 						`decode ${signal}: ${failure.message}`,
-						failure instanceof OtlpBodyTooLarge ? 413 : 400,
+						Schema.is(OtlpBodyTooLarge)(failure) ? 413 : 400,
 					),
 					requestBytes,
 				),
@@ -494,7 +506,7 @@ const ingest = (
 		let batches = yield* Effect.try({
 			try: () => encodeFor(signal, decoded),
 			catch: (error) =>
-				error instanceof OtlpFieldError
+				Schema.is(OtlpFieldError)(error)
 					? stopIngest(text(`decode ${signal}: ${error.message}`, 400), requestBytes)
 					: stopIngest(text(`encode ${signal}: ${describeThrown(error)}`, 500), requestBytes),
 		})
@@ -618,7 +630,7 @@ async function handleQuery(
 	if (Result.isFailure(prepared)) {
 		const failure = prepared.failure
 		return finish(
-			failure instanceof ReadOnlyQueryRejected
+			Schema.is(ReadOnlyQueryRejected)(failure)
 				? text(`${READ_ONLY_REJECTION_PREFIX}${failure.message}`, 400)
 				: text(`query failed: ${failure.message}`, 400),
 			sql.length,
@@ -637,7 +649,7 @@ async function handleQuery(
 		// 400, not 500: a failing statement is a problem with the submitted SQL,
 		// and a 5xx would make the shared warehouse executor retry it.
 		return finish(
-			output.failure instanceof ChdbClosedError
+			Schema.is(ChdbClosedError)(output.failure)
 				? text("server is shutting down", 503)
 				: text(`query failed: ${describeThrown(output.failure)}`, 400),
 			sql.length,
@@ -957,7 +969,7 @@ const readBoundedJsonResult = async (
 }
 
 const bodyFailureResponse = (failure: BodyFailure): Response =>
-	failure instanceof RequestBodyTooLargeError ? text(failure.message, 413) : text("invalid JSON body", 400)
+	Schema.is(RequestBodyTooLargeError)(failure) ? text(failure.message, 413) : text("invalid JSON body", 400)
 
 const readBoundedJson = (req: Request, maximumBytes: number): Effect.Effect<unknown, BodyFailure> =>
 	Effect.promise(() => readBoundedJsonResult(req, maximumBytes)).pipe(Effect.flatMap(Effect.fromResult))
@@ -1691,11 +1703,16 @@ export const startServer = (
 	Scope.Scope
 > =>
 	Effect.gen(function* () {
+		const extraOrigins = yield* Config.String(ALLOWED_ORIGINS_ENV).pipe(
+			Config.option,
+			Effect.map(Option.getOrUndefined),
+			Effect.orElseSucceed(() => undefined),
+		)
 		const policy = yield* Effect.fromResult(
 			makeBrowserOriginPolicy({
 				browserHosts: options.browserHosts,
 				hostedOrigin: options.corsOrigin,
-				extraOrigins: process.env[ALLOWED_ORIGINS_ENV],
+				extraOrigins,
 				anySameOriginHost: options.auth?.accessToken !== undefined,
 			}),
 		)

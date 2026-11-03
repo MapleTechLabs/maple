@@ -187,7 +187,7 @@ const clipBlock = (block: DocBlock, fits: (block: DocBlock) => boolean): Clipped
 		case "text": {
 			const lines = block.text.split("\n")
 			if (lines.length > 1) return clip(lines, "lines", (kept) => ({ ...block, text: kept.join("\n") }))
-			return clip([...block.text], "characters", (kept) => ({ ...block, text: kept.join("") }))
+			return clip(Array.from(block.text), "characters", (kept) => ({ ...block, text: kept.join("") }))
 		}
 		case "heading":
 			return undefined

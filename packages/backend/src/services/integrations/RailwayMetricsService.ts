@@ -25,7 +25,7 @@ import {
 	type RailwayConnectionRow,
 	type RailwayEnvironmentRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
+import { DateTime, Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -535,7 +535,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			) {
 				yield* Effect.annotateCurrentSpan({
 					"maple.railway.environment_id": row.environmentId,
-					"maple.railway.window_start": new Date(window.startMs).toISOString(),
+					"maple.railway.window_start": DateTime.formatIso(DateTime.makeUnsafe(window.startMs)),
 				})
 				const results = yield* fetchEnvironmentMetrics(httpClient, token, {
 					environmentId: row.environmentId,

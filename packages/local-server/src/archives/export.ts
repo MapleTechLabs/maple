@@ -125,6 +125,14 @@ const readRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
 		.filter((line) => line.length > 0)
 		.map((line) => decodeJsonRecord(line))
 
+/** A JSONEachRow scalar cell as text (64-bit ints arrive quoted); anything else is "". */
+const cellText = (value: unknown): string =>
+	typeof value === "string"
+		? value
+		: typeof value === "number" || typeof value === "bigint"
+			? String(value)
+			: ""
+
 const parseCount = (text: string): number => {
 	const row = readRows(text)[0]
 	if (!row) return 0
@@ -475,7 +483,7 @@ const validateShard = (
 			"JSONEachRow",
 		),
 	)[0]
-	if (String(dateRow?.dmn ?? "") !== rangeDate || String(dateRow?.dmx ?? "") !== rangeDate) {
+	if (cellText(dateRow?.dmn) !== rangeDate || cellText(dateRow?.dmx) !== rangeDate) {
 		throw new Error(
 			`archive shard validation failed: ${shardPath} contains rows outside date ${rangeDate}`,
 		)
@@ -500,13 +508,12 @@ const validateShard = (
 	// H-D: multiset complex-value digest. Source slice and reopened Parquet must
 	// produce the identical multiset digest. Detects column swaps, row-value
 	// reassociation, and dup/drop that preserve count and time extrema.
-	const srcDigest = String(
+	const srcDigest = cellText(
 		readRows(db.query(multisetDigestSql(sourceSchema, `${signal.name} WHERE ${pred}`), "JSONEachRow"))[0]
-			?.d ?? "",
+			?.d,
 	)
-	const parDigest = String(
-		readRows(db.query(multisetDigestSql(sourceSchema, `file('${lit}', Parquet)`), "JSONEachRow"))[0]?.d ??
-			"",
+	const parDigest = cellText(
+		readRows(db.query(multisetDigestSql(sourceSchema, `file('${lit}', Parquet)`), "JSONEachRow"))[0]?.d,
 	)
 	if (srcDigest.length === 0 || parDigest.length === 0) {
 		throw new Error(
@@ -534,10 +541,10 @@ const validateShard = (
 			"JSONEachRow",
 		),
 	)[0]
-	const srcMin = String(srcBounds?.mn ?? "")
-	const srcMax = String(srcBounds?.mx ?? "")
-	const parMin = String(parBounds?.mn ?? "")
-	const parMax = String(parBounds?.mx ?? "")
+	const srcMin = cellText(srcBounds?.mn)
+	const srcMax = cellText(srcBounds?.mx)
+	const parMin = cellText(parBounds?.mn)
+	const parMax = cellText(parBounds?.mx)
 	if (srcMin !== parMin || srcMax !== parMax) {
 		throw new Error(
 			`archive shard validation failed: ${shardPath} event-time bounds mismatch: source [${srcMin}, ${srcMax}] != Parquet [${parMin}, ${parMax}] (nanos)`,

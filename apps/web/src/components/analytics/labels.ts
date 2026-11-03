@@ -38,7 +38,7 @@ let languageNames: Intl.DisplayNames | undefined | null = null
 export const countryFlag = (code: string): string | undefined => {
 	if (!/^[A-Za-z]{2}$/.test(code)) return undefined
 	return String.fromCodePoint(
-		...[...code.toUpperCase()].map((char) => 0x1f1e6 + (char.charCodeAt(0) - "A".charCodeAt(0))),
+		...Array.from(code.toUpperCase()).map((char) => 0x1f1e6 + (char.charCodeAt(0) - "A".charCodeAt(0))),
 	)
 }
 

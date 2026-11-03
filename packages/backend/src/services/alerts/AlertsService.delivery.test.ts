@@ -1,6 +1,11 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
-import { AlertDeliveryError, AlertDeliveryRejectedError } from "@maple/domain/http"
+import {
+	AlertDeliveryError,
+	AlertDeliveryRejectedError,
+	ChatAlertDestinationConfig,
+	WebhookAlertDestinationConfig,
+} from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Clock, Duration, Effect, Layer, Schema } from "effect"
@@ -37,6 +42,10 @@ import {
 	okFetch,
 	insertDeliveryEventRow,
 } from "./alerts-service-test-support"
+
+/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
+const requestBodyText = (body: RequestInit["body"]): string =>
+	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
 
 const trackedDbs: TestDb[] = []
 
@@ -135,7 +144,7 @@ describe("AlertsService delivery drain across destinations", () => {
 		let virtualNow = fixedTime
 		const delivered: Array<string> = []
 		const fetchImpl = (async (input: RequestInfo | URL) => {
-			const url = String(input)
+			const url = String(input instanceof Request ? input.url : input)
 			if (url === "https://example.com/maple-alerts") virtualNow += 15_000
 			delivered.push(url)
 			return new Response("ok", { status: 200 })
@@ -147,13 +156,18 @@ describe("AlertsService delivery drain across destinations", () => {
 			const orgId = asOrgId("org_drain_fairness")
 			const userId = asUserId("user_drain_fairness")
 			const slow = yield* createWebhookDestination(alerts, orgId, userId)
-			const fast = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "webhook",
-				name: "Fast webhook",
-				enabled: true,
-				url: "https://example.com/fast",
-				signingSecret: "webhook-secret",
-			})
+			const fast = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new WebhookAlertDestinationConfig({
+					type: "webhook",
+					name: "Fast webhook",
+					enabled: true,
+					url: "https://example.com/fast",
+					signingSecret: "webhook-secret",
+				}),
+			)
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, slow.id)
 			// Break the rule's stored query so the tick queues nothing of its own.
 			yield* Effect.promise(() =>
@@ -292,7 +306,7 @@ describe("AlertsService tick isolation", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: string[] = []
 		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-			sent.push(String(init?.body ?? ""))
+			sent.push(requestBodyText(init?.body))
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 
@@ -466,12 +480,17 @@ describe("AlertsService chat digests", () => {
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_chat_digest")
 			const userId = asUserId("user_chat_digest")
-			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "chat",
-				name: "Incidents",
-				workspaceId,
-				channelId: "channel-1",
-			})
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new ChatAlertDestinationConfig({
+					type: "chat",
+					name: "Incidents",
+					workspaceId,
+					channelId: "channel-1",
+				}),
+			)
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 			yield* Effect.forEach(Arr.range(1, count), (n) =>
 				Effect.promise(() =>
@@ -725,9 +744,10 @@ describe("AlertsService held incidents", () => {
 						return yield* query.decodeFirstRow(state.rows).pipe(Effect.orDie)
 					}
 					if (state.liveness.failProbe) {
-						return yield* Effect.fail(
-							new WarehouseQueryError({ message: "probe failed", pipeName: "liveness" }),
-						)
+						return yield* new WarehouseQueryError({
+							message: "probe failed",
+							pipeName: "liveness",
+						})
 					}
 					const startMs = probeWindowStartMs(query.sql) ?? state.liveness.nowMs
 					const service = /ServiceName = '([^']+)'/.exec(query.sql)?.[1]

@@ -42,7 +42,7 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
-import { Array as Arr, Effect, Match, Result, Schema } from "effect"
+import { DateTime, Array as Arr, Effect, Match, Result, Schema } from "effect"
 import type { AlertRuntimeApi } from "./AlertRuntime"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import { validateBreachWindow, validateThresholds } from "./alert-thresholds"
@@ -503,17 +503,13 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 		sampleCountStrategy = "trace_count"
 	} else if (rule.signalType === "builder_query") {
 		if (rule.queryBuilderDraft == null) {
-			return yield* Effect.fail(
-				makeAlertValidationError("builder_query alerts require a queryBuilderDraft"),
-			)
+			return yield* makeAlertValidationError("builder_query alerts require a queryBuilderDraft")
 		}
 		const built = buildTimeseriesQuerySpec(rule.queryBuilderDraft)
 		if (built.error != null || built.query == null) {
-			return yield* Effect.fail(
-				makeAlertValidationError(built.error ?? "Failed to build query builder spec", [
-					...built.warnings,
-				]),
-			)
+			return yield* makeAlertValidationError(built.error ?? "Failed to build query builder spec", [
+				...built.warnings,
+			])
 		}
 		query = decodeQuerySpecSync({ ...built.query, bucketSeconds })
 		sampleCountStrategy = Match.value(rule.queryBuilderDraft.dataSource).pipe(
@@ -526,11 +522,11 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 	} else if (rule.signalType === "raw_query") {
 		const sql = rule.rawQuerySql?.trim() ?? ""
 		if (sql.length === 0) {
-			return yield* Effect.fail(makeAlertValidationError("raw_query alerts require rawQuerySql"))
+			return yield* makeAlertValidationError("raw_query alerts require rawQuerySql")
 		}
 		if (!sql.includes("$__orgFilter")) {
-			return yield* Effect.fail(
-				makeAlertValidationError("raw_query SQL must reference $__orgFilter for org scoping"),
+			return yield* makeAlertValidationError(
+				"raw_query SQL must reference $__orgFilter for org scoping",
 			)
 		}
 		return new CompiledAlertQueryPlan({
@@ -542,9 +538,9 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			noDataBehavior,
 		})
 	} else if (rule.signalType === "uptime") {
-		return yield* Effect.fail(makeAlertValidationError(UPTIME_RULE_MANAGED_MESSAGE))
+		return yield* makeAlertValidationError(UPTIME_RULE_MANAGED_MESSAGE)
 	} else {
-		return yield* Effect.fail(makeAlertValidationError(`Unsupported signal type: ${rule.signalType}`))
+		return yield* makeAlertValidationError(`Unsupported signal type: ${rule.signalType}`)
 	}
 
 	return new CompiledAlertQueryPlan({
@@ -770,8 +766,12 @@ export const rowToRuleDocument = (
 					lastEvaluatedAt:
 						evaluationState?.evaluatedAt != null ? toIso(evaluationState.evaluatedAt) : null,
 					lastScheduledAt: toIso(row.lastScheduledAt),
-					createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
-					updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+					createdAt: decodeIsoDateTimeStringSync(
+						DateTime.formatIso(DateTime.makeUnsafe(row.createdAt)),
+					),
+					updatedAt: decodeIsoDateTimeStringSync(
+						DateTime.formatIso(DateTime.makeUnsafe(row.updatedAt)),
+					),
 					createdBy: decodeUserIdSync(row.createdBy),
 					updatedBy: decodeUserIdSync(row.updatedBy),
 				})
@@ -867,7 +867,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		options?: { readonly forPreview?: boolean },
 	): Effect.fn.Return<NormalizedRule, AlertValidationError> {
 		if (request.signalType === "uptime") {
-			return yield* Effect.fail(invalidRuleError([UPTIME_RULE_MANAGED_MESSAGE]))
+			return yield* invalidRuleError([UPTIME_RULE_MANAGED_MESSAGE])
 		}
 		const name = request.name.trim()
 		// A builder query's draft carries its own scope and never reads the
@@ -975,7 +975,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		}
 		// A null tier list always left a detail behind; the check is for the narrowing.
 		if (details.length > 0 || requestedThresholds === null) {
-			return yield* Effect.fail(invalidRuleError(details))
+			return yield* invalidRuleError(details)
 		}
 		const thresholds = sortAlertThresholds(requestedThresholds)
 		if (request.signalType === "raw_query") {
@@ -1035,11 +1035,9 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		// A grouped rule's missing group is already held open by its incident's
 		// liveness check; an empty result would breach under no real group.
 		if (normalizedBase.alertOnNoData && planGroupingTokens(compiledPlan) != null) {
-			return yield* Effect.fail(
-				invalidRuleError([
-					"alertOnNoData is not supported on grouped rules: a group that stops reporting is already held open by its incident's telemetry check",
-				]),
-			)
+			return yield* invalidRuleError([
+				"alertOnNoData is not supported on grouped rules: a group that stops reporting is already held open by its incident's telemetry check",
+			])
 		}
 		return { ...normalizedBase, compiledPlan }
 	})

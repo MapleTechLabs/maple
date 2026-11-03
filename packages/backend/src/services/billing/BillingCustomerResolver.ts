@@ -128,7 +128,7 @@ export class BillingCustomerResolver extends Context.Service<
 		billingOrgId: (orgId) => Effect.succeed(orgId),
 		customerFor: (orgId) => Effect.succeed(ownBillingCustomer(orgId)),
 		requireOwnBilling: (orgId) => Effect.succeed(ownBillingCustomer(orgId)),
-		readLink: () => Effect.succeed(Option.none()),
+		readLink: () => Effect.succeedNone,
 		forget: () => Effect.void,
 	})
 }

@@ -37,11 +37,9 @@ export const emailTransport: EffectTransport<Config> = {
 				// Nobody received it — safe to fail retryable; the retry re-sends to
 				// members who all got nothing. Keep the first failure message
 				// verbatim so timeout classification survives the aggregation.
-				return yield* Effect.fail(
-					makeDeliveryError(
-						`Email delivery failed for all ${count} member${count === 1 ? "" : "s"}: ${failures[0]!.error}`,
-						"email",
-					),
+				return yield* makeDeliveryError(
+					`Email delivery failed for all ${count} member${count === 1 ? "" : "s"}: ${failures[0]!.error}`,
+					"email",
 				)
 			}
 

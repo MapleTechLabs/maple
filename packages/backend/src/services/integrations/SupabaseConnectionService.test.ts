@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -179,7 +179,12 @@ describe("SupabaseConnectionService", () => {
 			return Effect.gen(function* () {
 				const service = yield* SupabaseConnectionService
 				yield* connect(fake)
-				yield* service.updateProject(ORG, USER, asRef(REF_B), { metricsEnabled: false })
+				yield* service.updateProject(
+					ORG,
+					USER,
+					asRef(REF_B),
+					new SupabaseProjectUpdateRequest({ metricsEnabled: false }),
+				)
 
 				fake.state.projects = [
 					fakeProject(REF_A, { name: "renamed", status: "INACTIVE" }),
@@ -237,10 +242,20 @@ describe("SupabaseConnectionService", () => {
 		return Effect.gen(function* () {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
-			const status = yield* service.updateProject(ORG, USER, asRef(REF_A), { metricsEnabled: false })
+			const status = yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ metricsEnabled: false }),
+			)
 			assert.isFalse(status.projects[0]?.metricsEnabled ?? true)
 			const error = yield* service
-				.updateProject(ORG, USER, asRef(OTHER_ORG_REF), { metricsEnabled: true })
+				.updateProject(
+					ORG,
+					USER,
+					asRef(OTHER_ORG_REF),
+					new SupabaseProjectUpdateRequest({ metricsEnabled: true }),
+				)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotFoundError")
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -479,9 +494,14 @@ describe("SupabaseConnectionService log drains", () => {
 						[REF_A],
 					),
 				)
-				const status = yield* service.updateProject(ORG, USER, asRef(REF_A), {
-					logDrainEnabled: true,
-				})
+				const status = yield* service.updateProject(
+					ORG,
+					USER,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({
+						logDrainEnabled: true,
+					}),
+				)
 
 				const [create] = drainCalls(fake, "POST")
 				assert.strictEqual(create?.path, `/v2/projects/${REF_A}/analytics/log-drains`)
@@ -561,7 +581,12 @@ describe("SupabaseConnectionService log drains", () => {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
 			const error = yield* service
-				.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+				.updateProject(
+					ORG,
+					USER,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+				)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPlanRequiredError")
 			assert.strictEqual(error.message, "Log drains need a Supabase Pro plan or higher.")
@@ -578,7 +603,12 @@ describe("SupabaseConnectionService log drains", () => {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
 			const error = yield* service
-				.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+				.updateProject(
+					ORG,
+					USER,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+				)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPlanRequiredError")
 			assert.strictEqual(error.message, "Log drains need a Supabase Pro plan or higher.")
@@ -601,7 +631,12 @@ describe("SupabaseConnectionService log drains", () => {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
 			const error = yield* service
-				.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+				.updateProject(
+					ORG,
+					USER,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+				)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			assert.include(error.message, `"maple by hand"`)
@@ -621,7 +656,12 @@ describe("SupabaseConnectionService log drains", () => {
 				const service = yield* SupabaseConnectionService
 				yield* connect(fake)
 				const error = yield* service
-					.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+					.updateProject(
+						ORG,
+						USER,
+						asRef(REF_A),
+						new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+					)
 					.pipe(Effect.flip)
 				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
 				assert.deepStrictEqual(fake.state.drains.get(REF_A), [DATADOG_DRAIN])
@@ -652,7 +692,12 @@ describe("SupabaseConnectionService log drains", () => {
 				connected.projects[0]?.logDrains.map((drain) => [drain.id, drain.managedByMaple]),
 				[["drain-orphan", true]],
 			)
-			const status = yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			const status = yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
 			const stored = fake.state.drains.get(REF_A) ?? []
 			assert.strictEqual(stored.length, 1)
 			assert.notStrictEqual(stored[0]?.id, "drain-orphan")
@@ -683,7 +728,12 @@ describe("SupabaseConnectionService log drains", () => {
 				connected.projects[0]?.logDrains.map((drain) => [drain.managedByMaple, drain.toMaple]),
 				[[false, false]],
 			)
-			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
 			const ids = (fake.state.drains.get(REF_A) ?? []).map((drain) => drain.id)
 			assert.strictEqual(ids.length, 2)
 			assert.include(ids, "drain-other-install")
@@ -703,7 +753,12 @@ describe("SupabaseConnectionService log drains", () => {
 					"UPDATE supabase_projects SET log_drain_enabled = false WHERE project_ref = $1 AND log_drain_id IS NULL",
 					[REF_A],
 				)
-			const status = yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			const status = yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
 			assert.isFalse(status.projects[0]?.logDrainEnabled ?? true)
 			assert.deepStrictEqual(fake.state.drains.get(REF_A), [])
 			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
@@ -716,7 +771,12 @@ describe("SupabaseConnectionService log drains", () => {
 		return Effect.gen(function* () {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
-			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
 			assert.strictEqual(yield* tokenSourceCount(testDb), 1)
 
 			// A token source the customer made themselves, which the switch must leave alone.
@@ -764,7 +824,12 @@ describe("SupabaseConnectionService log drains", () => {
 				const service = yield* SupabaseConnectionService
 				yield* connect(fake)
 				const error = yield* service
-					.updateProject(ORG, USER, asRef(REF_A), { metricsEnabled: false, logsEnabled: true })
+					.updateProject(
+						ORG,
+						USER,
+						asRef(REF_A),
+						new SupabaseProjectUpdateRequest({ metricsEnabled: false, logsEnabled: true }),
+					)
 					.pipe(Effect.flip)
 				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 				assert.isTrue((yield* projectRow(testDb, REF_A))?.metrics_enabled ?? false)
@@ -780,12 +845,22 @@ describe("SupabaseConnectionService log drains", () => {
 			yield* connect(fake)
 			// A refused listing (Free plan) falls back to the snapshot, which knows no drain.
 			fake.state.drainListStatus = 403
-			yield* service.updateProject(ORG, USER, asRef(REF_A), { logsEnabled: true })
+			yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logsEnabled: true }),
+			)
 
 			fake.state.drainListStatus = null
 			fake.state.drains.set(REF_A, [MANUAL_MAPLE_DRAIN])
 			const error = yield* service
-				.updateProject(ORG, USER, asRef(REF_A), { logsEnabled: true })
+				.updateProject(
+					ORG,
+					USER,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({ logsEnabled: true }),
+				)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			// The live listing also refreshed the snapshot the card reads.
@@ -804,7 +879,12 @@ describe("SupabaseConnectionService log drains", () => {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
 			const error = yield* service
-				.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true, logsEnabled: true })
+				.updateProject(
+					ORG,
+					USER,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({ logDrainEnabled: true, logsEnabled: true }),
+				)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			assert.strictEqual(drainCalls(fake, "POST").length, 0)
@@ -888,9 +968,19 @@ describe("SupabaseConnectionService log drains", () => {
 		return Effect.gen(function* () {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
-			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
 			const drainId = (yield* drainRow(testDb, REF_A))?.log_drain_id
-			const status = yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: false })
+			const status = yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: false }),
+			)
 
 			assert.deepStrictEqual(
 				drainCalls(fake, "DELETE").map((call) => call.path),
@@ -914,9 +1004,19 @@ describe("SupabaseConnectionService log drains", () => {
 		return Effect.gen(function* () {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
-			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
 			fake.state.drains.clear()
-			const status = yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: false })
+			const status = yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: false }),
+			)
 			assert.isFalse(status.projects[0]?.logDrainEnabled ?? true)
 			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -931,8 +1031,18 @@ describe("SupabaseConnectionService log drains", () => {
 			return Effect.gen(function* () {
 				const service = yield* SupabaseConnectionService
 				yield* connect(fake)
-				yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
-				yield* service.updateProject(ORG, USER, asRef(REF_B), { logDrainEnabled: true })
+				yield* service.updateProject(
+					ORG,
+					USER,
+					asRef(REF_A),
+					new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+				)
+				yield* service.updateProject(
+					ORG,
+					USER,
+					asRef(REF_B),
+					new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+				)
 				assert.strictEqual(yield* tokenSourceCount(testDb), 2)
 
 				yield* service.disconnect(ORG)
@@ -951,8 +1061,18 @@ describe("SupabaseConnectionService log drains", () => {
 		return Effect.gen(function* () {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
-			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
-			yield* service.updateProject(ORG, USER, asRef(REF_B), { logDrainEnabled: true })
+			yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
+			yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_B),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
 			fake.state.drains.set(REF_A, [])
 			const sourceB = (yield* drainRow(testDb, REF_B))?.log_drain_source_id ?? ""
 			yield* Effect.promise(() => executeSql(testDb, "DELETE FROM sources WHERE id = $1", [sourceB]))
@@ -971,7 +1091,12 @@ describe("SupabaseConnectionService log drains", () => {
 			assert.strictEqual(drainCalls(fake, "POST").length, creates)
 
 			// Turning it on again (the explicit action) recreates the drain and clears the flag.
-			const recreated = yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			const recreated = yield* service.updateProject(
+				ORG,
+				USER,
+				asRef(REF_A),
+				new SupabaseProjectUpdateRequest({ logDrainEnabled: true }),
+			)
 			const again = recreated.projects.find((project) => project.ref === REF_A)
 			assert.deepStrictEqual([again?.logDrainEnabled, again?.logDrainError], [true, null])
 			assert.strictEqual((fake.state.drains.get(REF_A) ?? []).length, 1)

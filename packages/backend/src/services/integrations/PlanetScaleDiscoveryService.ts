@@ -287,20 +287,19 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			// Preserve the OAuth grant's exact public failure. A manual service token
 			// has no integration grant, so it keeps the scrape-target auth tag.
 			if (response.status === 401 || response.status === 403) {
-				return yield* Effect.fail(
-					row.authType === "planetscale_oauth"
-						? new IntegrationsRevokedError({
-								message: `PlanetScale discovery rejected the OAuth token (HTTP ${response.status}). Check the OAuth app's read_metrics_endpoints scope and reconnect.`,
-							})
-						: new ScrapeTargetAuthError({
-								reason: "config",
-								message: `PlanetScale discovery rejected the service token (HTTP ${response.status}). Check the token id/secret and its read_metrics_endpoints permission.`,
-							}),
-				)
+				return yield* row.authType === "planetscale_oauth"
+					? new IntegrationsRevokedError({
+							message: `PlanetScale discovery rejected the OAuth token (HTTP ${response.status}). Check the OAuth app's read_metrics_endpoints scope and reconnect.`,
+						})
+					: new ScrapeTargetAuthError({
+							reason: "config",
+							message: `PlanetScale discovery rejected the service token (HTTP ${response.status}). Check the token id/secret and its read_metrics_endpoints permission.`,
+						})
 			}
 			if (response.status < 200 || response.status >= 300) {
-				return yield* Effect.fail(
-					toUpstreamError(`PlanetScale discovery failed: HTTP ${response.status}`, response.status),
+				return yield* toUpstreamError(
+					`PlanetScale discovery failed: HTTP ${response.status}`,
+					response.status,
 				)
 			}
 
@@ -439,7 +438,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 					return cached.entries
 				}
 
-				return yield* Effect.fail(fresh.failure)
+				return yield* fresh.failure
 			}).pipe(
 				Effect.withSpan("PlanetScaleDiscoveryService.fetchSubTargets", {
 					attributes: { orgId: row.orgId, "maple.scraper.target_id": row.id },

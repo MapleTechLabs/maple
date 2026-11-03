@@ -31,6 +31,14 @@ export const resolveInfraWindow = (input: { startTime?: string; endTime?: string
 /** A wire-row number; a missing column reads as 0. */
 export const wireNumber = (value: unknown): number => Number(value ?? 0)
 
+/** A wire-row string; a missing or non-scalar column reads as `fallback`. */
+export const wireString = (value: unknown, fallback = ""): string => {
+	if (typeof value === "string") return value
+	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
+		return `${value}`
+	return fallback
+}
+
 /** A wire-row number that may be null on purpose (a gap); missing reads as null too. */
 export const wireNumberOrNull = (value: unknown): number | null =>
 	value === null || value === undefined ? null : Number(value)

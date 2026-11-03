@@ -25,7 +25,7 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema, Stream } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Match, Option, Redacted, Schema, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import type {
 	PullRequestDelta,
@@ -327,7 +327,7 @@ const toVcsError = (
 	| VcsRepoUnavailableError
 	| VcsRepositoryBlockedError
 	| VcsRateLimitedError => {
-	if (!(error instanceof GithubAppError)) return error
+	if (!Schema.is(GithubAppError)(error)) return error
 	if (error.retryAfterSeconds !== undefined) {
 		return new VcsRateLimitedError({
 			message: error.message,
@@ -1148,10 +1148,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					const result = yield* client
 						.listCommits(installation.externalInstallationId, repo.owner, repo.name, {
 							sha: opts.branch,
-							sinceIso: new Date(opts.sinceMs).toISOString(),
+							sinceIso: DateTime.formatIso(DateTime.makeUnsafe(opts.sinceMs)),
 							...(!(opts.untilMs === undefined)
 								? {
-										untilIso: new Date(opts.untilMs).toISOString(),
+										untilIso: DateTime.formatIso(DateTime.makeUnsafe(opts.untilMs)),
 									}
 								: undefined),
 						})
@@ -1738,7 +1738,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							},
 						)
 						.pipe(
-							Effect.map((posted) => Option.some(posted)),
+							Effect.asSome,
 							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
 								error.status === 422
 									? Effect.annotateCurrentSpan(

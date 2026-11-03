@@ -13,7 +13,8 @@ import { Effect, Schema, SchemaGetter } from "effect"
 import { CHDB_VERSION } from "./version"
 import { Digest64, Fingerprint16, IsoOrUnknown } from "./identity-schema"
 import { durableRemove, durableRenameSync, durableWrite, durableWriteFileSync } from "./durable-files"
-import { decodeJsonSync, encodeJsonPretty } from "./json"
+import { decodeJsonSync, encodeJson, encodeJsonPretty } from "./json"
+import { errnoCode, syscallError } from "./store-errors"
 
 export const STORE_MARKER_FORMAT_VERSION = 2 as const
 
@@ -126,14 +127,8 @@ const pidFileNamesLiveProcess = (path: string): boolean =>
 				return true
 			},
 			// EPERM still means the PID exists; only a vanished file or ESRCH is "not live".
-			catch: (error) => error,
-		}).pipe(
-			Effect.catch((error) =>
-				Effect.succeed(
-					typeof error === "object" && error !== null && "code" in error && error.code === "EPERM",
-				),
-			),
-		),
+			catch: syscallError,
+		}).pipe(Effect.catch((error) => Effect.succeed(errnoCode(error.cause) === "EPERM"))),
 	)
 
 /**
@@ -163,7 +158,7 @@ export const adoptLegacySidecars = (dataDir: string): ReadonlyArray<string> => {
 // pass through `maple start` (schema, archive) see the same files it does.
 const adoptLegacySidecarsQuietly = (dataDir: string): void =>
 	Effect.runSync(
-		Effect.try({ try: () => adoptLegacySidecars(dataDir), catch: (error) => error }).pipe(Effect.ignore),
+		Effect.try({ try: () => adoptLegacySidecars(dataDir), catch: syscallError }).pipe(Effect.ignore),
 	)
 
 /**
@@ -182,7 +177,7 @@ export const newerStoreSchemaVersion = (dataDir: string, currentVersion: number)
 /** Modification time of a file in ms, or undefined when it is missing. */
 export const fileModifiedAtMs = (path: string): number | undefined =>
 	Effect.runSync(
-		Effect.try({ try: () => statSync(path).mtimeMs, catch: (error) => error }).pipe(
+		Effect.try({ try: () => statSync(path).mtimeMs, catch: syscallError }).pipe(
 			Effect.orElseSucceed(() => undefined),
 		),
 	)
@@ -243,7 +238,7 @@ const LenientProvenance = Schema.Unknown.pipe(
 		decode: SchemaGetter.transform((value) => (typeof value === "string" ? value : "unknown")),
 		encode: SchemaGetter.passthrough(),
 	}),
-	Schema.withDecodingDefaultKey(Effect.succeed(undefined)),
+	Schema.withDecodingDefaultKey(Effect.undefined),
 )
 
 const StoreMigrationStampSchema = Schema.Struct({
@@ -295,7 +290,7 @@ const StoreMarkerV1Schema = Schema.Struct({
 			decode: SchemaGetter.transform((value) => (typeof value === "string" ? value : "")),
 			encode: SchemaGetter.passthrough(),
 		}),
-		Schema.withDecodingDefaultKey(Effect.succeed(undefined)),
+		Schema.withDecodingDefaultKey(Effect.undefined),
 	),
 })
 
@@ -308,7 +303,7 @@ const parseMarker = (value: unknown): StoreMarker => {
 	}
 	const formatVersion = (value as { readonly formatVersion?: unknown }).formatVersion
 	if (formatVersion !== undefined && formatVersion !== 1 && formatVersion !== STORE_MARKER_FORMAT_VERSION) {
-		throw new Error(`unsupported marker format ${String(formatVersion)}`)
+		throw new Error(`unsupported marker format ${encodeJson(formatVersion)}`)
 	}
 	if (formatVersion === STORE_MARKER_FORMAT_VERSION) {
 		const marker = decodeMarkerV2(value)

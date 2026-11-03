@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Stream } from "effect"
+import { Effect, Schema, Stream } from "effect"
 import { decodeRows } from "./protocol"
 import { ClickHouseLimitError, ClickHouseProtocolError, ClickHouseServerError } from "./errors"
 
@@ -107,7 +107,7 @@ describe("errors after HTTP 200", () => {
 				Effect.gen(function* () {
 					const error = yield* Effect.flip(collect(chunksAt(bytes, cut)))
 					assert.instanceOf(error, ClickHouseServerError)
-					if (error instanceof ClickHouseServerError) {
+					if (Schema.is(ClickHouseServerError)(error)) {
 						assert.strictEqual(error.code, "395")
 						assert.strictEqual(error.type, "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO")
 						assert.strictEqual(error.queryId, info.queryId)
@@ -139,7 +139,7 @@ describe("bounds before row assembly", () => {
 			assert.deepStrictEqual(yield* collect([bytes], { maxBytes: bytes.length }), [{ s: "🦊" }])
 			const error = yield* Effect.flip(collect([bytes], { maxBytes: bytes.length - 1 }))
 			assert.instanceOf(error, ClickHouseLimitError)
-			if (error instanceof ClickHouseLimitError) assert.strictEqual(error.kind, "bytes")
+			if (Schema.is(ClickHouseLimitError)(error)) assert.strictEqual(error.kind, "bytes")
 		}),
 	)
 	it.effect("fails before pulling the rest of a never-terminated giant row", () =>
@@ -164,7 +164,7 @@ describe("bounds before row assembly", () => {
 			assert.deepStrictEqual(yield* collect([encode("{}\n{}\n")], { maxRowBytes: 2 }), [{}, {}])
 			const error = yield* Effect.flip(collect([encode('{"x"'), encode(":1}\n")], { maxRowBytes: 5 }))
 			assert.instanceOf(error, ClickHouseLimitError)
-			if (error instanceof ClickHouseLimitError) assert.strictEqual(error.kind, "rowBytes")
+			if (Schema.is(ClickHouseLimitError)(error)) assert.strictEqual(error.kind, "rowBytes")
 		}),
 	)
 	it.effect("enforces zero and exact row counts", () =>

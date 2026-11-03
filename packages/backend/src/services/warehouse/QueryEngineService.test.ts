@@ -15,12 +15,12 @@ import {
 	baselineWarehouseCapabilities,
 	deriveWarehouseCapabilities,
 	type WarehouseCapabilities,
-	type QueryEngineEvaluateRequest,
-	type QueryEngineExecuteRequest,
+	QueryEngineExecuteRequest,
 	type QueryEngineResult,
 	type TimeseriesPoint,
 } from "@maple/query-engine"
 import {
+	type AlertEvaluateRequest,
 	makeQueryEngineEvaluate,
 	makeQueryEngineExecute,
 	withAlertEvaluationScope,
@@ -151,17 +151,20 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const response = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "timeseries",
-					source: "logs",
-					metric: "count",
-					groupBy: ["service"],
-					bucketSeconds: 300,
-				},
-			})
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "timeseries",
+						source: "logs",
+						metric: "count",
+						groupBy: ["service"],
+						bucketSeconds: 300,
+					},
+				}),
+			)
 
 			assert.strictEqual(context, "logsTimeseries")
 			assert.strictEqual(profile, "aggregation")
@@ -200,18 +203,21 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const series = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "timeseries",
-					source: "product_events",
-					metric: "persons",
-					groupBy: ["event_name"],
-					filters: { eventNames: ["signup_completed"], country: "DE" },
-					bucketSeconds: 300,
-				},
-			})
+			const series = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "timeseries",
+						source: "product_events",
+						metric: "persons",
+						groupBy: ["event_name"],
+						filters: { eventNames: ["signup_completed"], country: "DE" },
+						bucketSeconds: 300,
+					},
+				}),
+			)
 			assert.deepStrictEqual(series.result, {
 				kind: "timeseries",
 				source: "product_events",
@@ -221,18 +227,21 @@ describe("makeQueryEngineExecute", () => {
 				],
 			})
 
-			const breakdown = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "breakdown",
-					source: "product_events",
-					metric: "sessions",
-					groupBy: "page_path",
-					filters: { hosts: ["maple.dev"] },
-					limit: 5,
-				},
-			})
+			const breakdown = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "breakdown",
+						source: "product_events",
+						metric: "sessions",
+						groupBy: "page_path",
+						filters: { hosts: ["maple.dev"] },
+						limit: 5,
+					},
+				}),
+			)
 			assert.deepStrictEqual(breakdown.result, {
 				kind: "breakdown",
 				source: "product_events",
@@ -280,15 +289,18 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const response = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "count",
-					source: "logs",
-					filters: { search: "timeout" },
-				},
-			})
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "count",
+						source: "logs",
+						filters: { search: "timeout" },
+					},
+				}),
+			)
 
 			assert.strictEqual(context, "logsCount")
 			assert.strictEqual(profile, "discovery")
@@ -417,7 +429,7 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const request: QueryEngineExecuteRequest = {
+			const request = new QueryEngineExecuteRequest({
 				startTime: "2026-01-01 00:00:00",
 				endTime: "2026-01-01 00:15:00",
 				query: {
@@ -427,7 +439,7 @@ describe("makeQueryEngineExecute", () => {
 					groupBy: ["service"],
 					bucketSeconds: 300,
 				},
-			}
+			})
 
 			const response = yield* execute(tenant, request)
 
@@ -469,7 +481,7 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const request: QueryEngineExecuteRequest = {
+			const request = new QueryEngineExecuteRequest({
 				startTime: "2026-01-01 00:00:00",
 				endTime: "2026-01-01 00:15:00",
 				query: {
@@ -479,7 +491,7 @@ describe("makeQueryEngineExecute", () => {
 					groupBy: ["service"],
 					bucketSeconds: 300,
 				},
-			}
+			})
 
 			const response = yield* execute(tenant, request)
 
@@ -532,18 +544,21 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const response = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "timeseries",
-					source: "traces",
-					metric: "count",
-					allMetrics: true,
-					groupBy: ["service"],
-					bucketSeconds: 300,
-				},
-			})
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "timeseries",
+						source: "traces",
+						metric: "count",
+						allMetrics: true,
+						groupBy: ["service"],
+						bucketSeconds: 300,
+					},
+				}),
+			)
 
 			assert.strictEqual(response.result.kind, "timeseries")
 			const data = timeseriesData(response.result)
@@ -571,7 +586,7 @@ describe("makeQueryEngineExecute", () => {
 	it.effect("rejects timeseries requests that exceed the point budget", () =>
 		Effect.gen(function* () {
 			const execute = makeQueryEngineExecute(makeTinybirdStub())
-			const request: QueryEngineExecuteRequest = {
+			const request = new QueryEngineExecuteRequest({
 				startTime: "2026-01-01 00:00:00",
 				endTime: "2026-01-01 00:33:21",
 				query: {
@@ -580,7 +595,7 @@ describe("makeQueryEngineExecute", () => {
 					metric: "count",
 					bucketSeconds: 1,
 				},
-			}
+			})
 
 			const exit = yield* Effect.exit(execute(tenant, request))
 			const failure = getFailure(exit) as { _tag?: string; message?: string } | undefined
@@ -594,7 +609,7 @@ describe("makeQueryEngineExecute", () => {
 	it.effect("rejects invalid traces attribute grouping when attribute key is missing", () =>
 		Effect.gen(function* () {
 			const execute = makeQueryEngineExecute(makeTinybirdStub())
-			const request: QueryEngineExecuteRequest = {
+			const request = new QueryEngineExecuteRequest({
 				startTime: "2026-01-01 00:00:00",
 				endTime: "2026-01-01 00:05:00",
 				query: {
@@ -603,7 +618,7 @@ describe("makeQueryEngineExecute", () => {
 					metric: "count",
 					groupBy: ["attribute"],
 				},
-			}
+			})
 
 			const exit = yield* Effect.exit(execute(tenant, request))
 			const failure = getFailure(exit) as { _tag?: string; message?: string } | undefined
@@ -632,7 +647,7 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const request: QueryEngineExecuteRequest = {
+			const request = new QueryEngineExecuteRequest({
 				startTime: "2026-01-01 00:00:00",
 				endTime: "2026-01-01 00:05:00",
 				query: {
@@ -642,7 +657,7 @@ describe("makeQueryEngineExecute", () => {
 					groupBy: ["http_method"],
 					bucketSeconds: 300,
 				},
-			}
+			})
 
 			const response = yield* execute(tenant, request)
 
@@ -677,16 +692,19 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const response = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "attributeKeys",
-					source: "metrics",
-					metricName: "http.server.duration",
-					metricType: "gauge",
-				},
-			})
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "attributeKeys",
+						source: "metrics",
+						metricName: "http.server.duration",
+						metricType: "gauge",
+					},
+				}),
+			)
 
 			assert.include(receivedSql ?? "", "metrics_gauge")
 			assert.include(receivedSql ?? "", "arrayJoin(mapKeys(metrics_gauge.Attributes))")
@@ -712,11 +730,14 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: { kind: "attributeKeys", source: "metrics" },
-			})
+			yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: { kind: "attributeKeys", source: "metrics" },
+				}),
+			)
 
 			assert.include(receivedSql ?? "", "attribute_keys_hourly")
 			assert.include(receivedSql ?? "", "AttributeScope = 'metric'")
@@ -736,18 +757,21 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const response = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "attributeValues",
-					source: "metrics",
-					scope: "metric",
-					attributeKey: "region",
-					metricName: "http.server.duration",
-					metricType: "sum",
-				},
-			})
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "attributeValues",
+						source: "metrics",
+						scope: "metric",
+						attributeKey: "region",
+						metricName: "http.server.duration",
+						metricType: "sum",
+					},
+				}),
+			)
 
 			assert.include(receivedSql ?? "", "metrics_sum")
 			assert.include(receivedSql ?? "", "Attributes['region']")
@@ -780,18 +804,21 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const response = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "timeseries",
-					source: "traces",
-					metric: "apdex",
-					groupBy: ["service"],
-					bucketSeconds: 300,
-					apdexThresholdMs: 300,
-				},
-			})
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "timeseries",
+						source: "traces",
+						metric: "apdex",
+						groupBy: ["service"],
+						bucketSeconds: 300,
+						apdexThresholdMs: 300,
+					},
+				}),
+			)
 
 			assert.include(receivedSql ?? "", "300")
 			assert.include(receivedSql ?? "", "apdexScore")
@@ -844,7 +871,7 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const request: QueryEngineExecuteRequest = {
+			const request = new QueryEngineExecuteRequest({
 				startTime: "2026-01-01 00:00:00",
 				endTime: "2026-01-01 00:05:00",
 				query: {
@@ -858,7 +885,7 @@ describe("makeQueryEngineExecute", () => {
 						metricType: "histogram",
 					},
 				},
-			}
+			})
 
 			const response = yield* execute(tenant, request)
 
@@ -911,7 +938,7 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const request: QueryEngineExecuteRequest = {
+			const request = new QueryEngineExecuteRequest({
 				startTime: "2026-01-01 00:00:00",
 				endTime: "2026-01-01 00:05:00",
 				query: {
@@ -925,7 +952,7 @@ describe("makeQueryEngineExecute", () => {
 						metricType: "gauge",
 					},
 				},
-			}
+			})
 
 			const response = yield* execute(tenant, request)
 
@@ -1011,17 +1038,20 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const response = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "list",
-					source: "traces",
-					limit: 100,
-					columns: ["services"],
-					filters: { rootSpansOnly: true },
-				},
-			})
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "list",
+						source: "traces",
+						limit: 100,
+						columns: ["services"],
+						filters: { rootSpansOnly: true },
+					},
+				}),
+			)
 
 			assert.strictEqual(response.result.kind, "list")
 			assert.deepStrictEqual(
@@ -1070,16 +1100,19 @@ describe("makeQueryEngineExecute", () => {
 				}),
 			)
 
-			const response = yield* execute(tenant, {
-				startTime: "2026-01-01 00:00:00",
-				endTime: "2026-01-01 00:05:00",
-				query: {
-					kind: "list",
-					source: "traces",
-					columns: ["services"],
-					filters: { rootSpansOnly: true },
-				},
-			})
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 00:05:00",
+					query: {
+						kind: "list",
+						source: "traces",
+						columns: ["services"],
+						filters: { rootSpansOnly: true },
+					},
+				}),
+			)
 
 			assert.strictEqual(response.result.kind, "list")
 			assert.deepStrictEqual(response.result.data[0]?.services, ["gateway"])
@@ -1095,17 +1128,20 @@ describe("makeQueryEngineExecute", () => {
 			)
 
 			const exit = yield* Effect.exit(
-				execute(tenant, {
-					startTime: "2026-01-01 00:00:00",
-					endTime: "2026-01-31 12:00:00", // 30.5 days — between breakdown cap (30d) and global cap (31d)
-					query: {
-						kind: "breakdown",
-						source: "traces",
-						metric: "count",
-						groupBy: "service",
-						filters: { serviceName: asServiceName("checkout") },
-					},
-				}),
+				execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2026-01-01 00:00:00",
+						endTime: "2026-01-31 12:00:00", // 30.5 days — between breakdown cap (30d) and global cap (31d)
+						query: {
+							kind: "breakdown",
+							source: "traces",
+							metric: "count",
+							groupBy: "service",
+							filters: { serviceName: asServiceName("checkout") },
+						},
+					}),
+				),
 			)
 
 			const failure = getFailure(exit)
@@ -1126,16 +1162,19 @@ describe("makeQueryEngineExecute", () => {
 			)
 
 			const exit = yield* Effect.exit(
-				execute(tenant, {
-					startTime: "2026-01-01 00:00:00",
-					endTime: "2026-01-05 00:00:00", // 4 days, no filters
-					query: {
-						kind: "breakdown",
-						source: "traces",
-						metric: "count",
-						groupBy: "service",
-					},
-				}),
+				execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2026-01-01 00:00:00",
+						endTime: "2026-01-05 00:00:00", // 4 days, no filters
+						query: {
+							kind: "breakdown",
+							source: "traces",
+							metric: "count",
+							groupBy: "service",
+						},
+					}),
+				),
 			)
 
 			const failure = getFailure(exit)
@@ -1160,17 +1199,20 @@ describe("makeQueryEngineExecute", () => {
 			)
 
 			yield* Effect.exit(
-				execute(tenant, {
-					startTime: "2026-01-01 00:00:00",
-					endTime: "2026-01-05 00:00:00",
-					query: {
-						kind: "breakdown",
-						source: "traces",
-						metric: "count",
-						groupBy: "service",
-						filters: { serviceName: asServiceName("checkout") },
-					},
-				}),
+				execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2026-01-01 00:00:00",
+						endTime: "2026-01-05 00:00:00",
+						query: {
+							kind: "breakdown",
+							source: "traces",
+							metric: "count",
+							groupBy: "service",
+							filters: { serviceName: asServiceName("checkout") },
+						},
+					}),
+				),
 			)
 
 			assert.isTrue(called)
@@ -1183,7 +1225,7 @@ describe("raw breakdown span budget", () => {
 		Option.getOrUndefined(Exit.findErrorOption(exit))
 
 	// Four days, span-name grouping: not servable from the entry-span rollup.
-	const spanNameBreakdown: QueryEngineExecuteRequest = {
+	const spanNameBreakdown = new QueryEngineExecuteRequest({
 		startTime: "2026-01-01 00:00:00",
 		endTime: "2026-01-05 00:00:00",
 		query: {
@@ -1193,7 +1235,7 @@ describe("raw breakdown span budget", () => {
 			groupBy: "span_name",
 			filters: { serviceName: asServiceName("checkout") },
 		},
-	}
+	})
 
 	const stubWithVolume = (volume: Effect.Effect<ReadonlyArray<unknown>, WarehouseUpstreamError>) => {
 		const ran: Array<string> = []
@@ -1232,7 +1274,7 @@ describe("raw breakdown span budget", () => {
 
 			const failure = getFailure(yield* Effect.exit(execute(tenant, spanNameBreakdown)))
 
-			assert.ok(failure instanceof QueryEngineValidationError)
+			assert.ok(Schema.is(QueryEngineValidationError)(failure))
 			assert.include(failure.details.join("\n"), "Narrow the time range to 64 hours or less")
 			assert.deepStrictEqual(ran, [])
 		}),
@@ -1284,7 +1326,7 @@ describe("raw breakdown span budget", () => {
 })
 
 describe("makeQueryEngineEvaluate", () => {
-	const countRequest: QueryEngineEvaluateRequest = {
+	const countRequest: AlertEvaluateRequest = {
 		startTime: "2026-01-01 00:00:00",
 		endTime: "2026-01-01 00:05:00",
 		reducer: "sum",
@@ -1554,7 +1596,7 @@ describe("makeQueryEngineEvaluate", () => {
 				}),
 			)
 
-			const request: QueryEngineEvaluateRequest = {
+			const request: AlertEvaluateRequest = {
 				startTime: "2026-01-01 00:00:00",
 				endTime: "2026-01-01 00:05:00",
 				reducer: "identity",

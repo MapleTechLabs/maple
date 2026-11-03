@@ -204,7 +204,7 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 			get: (bucket) =>
 				bucket.startsWith("anomaly-") && bucket.endsWith("base")
 					? Effect.as(Effect.sleep("100 millis"), [])
-					: Effect.succeed(undefined),
+					: Effect.undefined,
 			put: () => Effect.void,
 		}),
 	)
@@ -480,7 +480,7 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 									CACHE_READ_MS,
 									Effect.succeed(options.coldBaselines ? undefined : []),
 								)
-							: Effect.succeed(undefined),
+							: Effect.undefined,
 					put: (bucket) =>
 						isBaselineBucket(bucket) ? model.outbound(CACHE_READ_MS, Effect.void) : Effect.void,
 				}),

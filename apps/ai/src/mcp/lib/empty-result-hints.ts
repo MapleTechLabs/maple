@@ -71,25 +71,24 @@ const spanNames = (window: Window, service: string | undefined) =>
  * Hints for the filters of an empty result whose value does not exist in the
  * window. Best effort: a lookup that fails contributes no hint, never an error.
  */
-export const emptyResultHints = (
+export const emptyResultHints = Effect.fn("McpTool.emptyResultHints")(function* (
 	requested: RequestedFilters,
 	window: Window,
 	options: { readonly traceKeys?: boolean } = {},
-) =>
-	Effect.gen(function* () {
-		const soft = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-			effect.pipe(Effect.orElseSucceed((): KnownValues => ({})))
-		const needsFacets = requested.service !== undefined || (requested.environments?.length ?? 0) > 0
-		const lookups = [
-			needsFacets ? soft(facets(window)) : undefined,
-			requested.attributeKey !== undefined && options.traceKeys !== false
-				? soft(attributeKeys(window, undefined))
-				: undefined,
-			requested.spanName !== undefined ? soft(spanNames(window, requested.service)) : undefined,
-		].filter((lookup) => lookup !== undefined)
-		const known = yield* Effect.all(lookups, { concurrency: "unbounded" })
-		return missingFilterHints(
-			requested,
-			known.reduce<KnownValues>((acc, values) => ({ ...acc, ...values }), {}),
-		)
-	}).pipe(Effect.withSpan("McpTool.emptyResultHints"))
+) {
+	const soft = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+		effect.pipe(Effect.orElseSucceed((): KnownValues => ({})))
+	const needsFacets = requested.service !== undefined || (requested.environments?.length ?? 0) > 0
+	const lookups = [
+		needsFacets ? soft(facets(window)) : undefined,
+		requested.attributeKey !== undefined && options.traceKeys !== false
+			? soft(attributeKeys(window, undefined))
+			: undefined,
+		requested.spanName !== undefined ? soft(spanNames(window, requested.service)) : undefined,
+	].filter((lookup) => lookup !== undefined)
+	const known = yield* Effect.all(lookups, { concurrency: "unbounded" })
+	return missingFilterHints(
+		requested,
+		known.reduce<KnownValues>((acc, values) => ({ ...acc, ...values }), {}),
+	)
+})
