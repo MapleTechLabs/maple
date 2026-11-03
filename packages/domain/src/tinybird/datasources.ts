@@ -1104,10 +1104,10 @@ export const errorFingerprintsMinutely = defineDatasource("error_fingerprints_mi
 export type ErrorFingerprintsMinutelyRow = InferRow<typeof errorFingerprintsMinutely>
 
 /**
- * The hash the previous FINGERPRINT_VERSION gave an error, for the minutes where it
- * differs from today's. The issue evaluator reads it to re-key an existing issue
- * onto a bumped hash instead of opening a new one. Written only while a bump is
- * settling; the short TTL covers the issues that recur within it.
+ * The hashes the previous FINGERPRINT_VERSION gave each fingerprint: every one, since
+ * a bump can fold several old issues into one new hash. The salt rotates every hash, so
+ * every error but a user-keyed one writes a row. The issue evaluator reads it to re-key
+ * existing issues onto the new hash; drop the view once the bump has settled.
  */
 export const errorFingerprintLineage = defineDatasource("error_fingerprint_lineage", {
 	tenantColumn: "OrgId",
@@ -1118,11 +1118,13 @@ export const errorFingerprintLineage = defineDatasource("error_fingerprint_linea
 		OrgId: t.string().lowCardinality().brand(OrgId),
 		Minute: utcDateTime(),
 		FingerprintHash: t.uint64(),
-		PreviousFingerprintHash: t.simpleAggregateFunction("anyLast", t.uint64()),
+		PreviousFingerprintHash: t.uint64(),
 	},
+	// Each (hash, previous hash) pair is its own key, so a bump that folds two old issues
+	// into one hash keeps both; repeats of a pair merge away.
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Minute)",
-		sortingKey: ["OrgId", "Minute", "FingerprintHash"],
+		sortingKey: ["OrgId", "Minute", "FingerprintHash", "PreviousFingerprintHash"],
 		ttl: "toDate(Minute) + INTERVAL 30 DAY",
 	}),
 })

@@ -568,8 +568,8 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// TODO(v45): what changed, whether any part is rewritten or any row
-		// moves, and what this edge does NOT backfill.
+		// v45: error_events views read a maple.fingerprint attribute as the grouping
+		// key. No stored row is rewritten or moved; only new occurrences hash with it.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
@@ -581,16 +581,17 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// TODO(v46): what changed, whether any part is rewritten or any row
-		// moves, and what this edge does NOT backfill.
+		// v46: fingerprint v4 error_events views (in-app frames) and the new
+		// error_fingerprint_lineage table and view. No stored row is rewritten or moved;
+		// lineage fills from new occurrences only.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 46,
-		fingerprint: "6a571fbc96aeaf6f",
-		digest: "6a571fbc96aeaf6fa8d30e2daff76698cbcc22369daf4f65c125568a8764b75c",
-		manifestDigest: "0ebfe935b7e9124c82aa9ce9b580ce255ee30955859d199dff708b36054b12a1",
+		fingerprint: "2ef1eb9be7f93384",
+		digest: "2ef1eb9be7f93384e2f5f5bb3b5d4443d75838630d089b28dc970705ccbcaa6e",
+		manifestDigest: "085196de2ca34b778243b3217c3ab20b2c45e164a7671dddb797b473c64badfe",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

@@ -1285,15 +1285,15 @@ export function errorTickIssuesQuery() {
 }
 
 /**
- * The previous-version hash of each given fingerprint seen in the window, for the
- * ones a fingerprint version bump re-keyed. The tick asks only about the
- * fingerprints it just scanned, so the read stays a key-prefix range.
+ * The previous-version hashes of each given fingerprint seen in the window, for the
+ * ones a fingerprint version bump re-keyed (several when the bump folded issues
+ * together). The tick asks only about the fingerprints it just scanned.
  */
 export function errorFingerprintLineageQuery(opts: { readonly fingerprintHashes: readonly string[] }) {
 	return from(ErrorFingerprintLineage)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
-			previousFingerprintHash: CH.toString_(CH.any_($.PreviousFingerprintHash)),
+			previousFingerprintHash: CH.toString_($.PreviousFingerprintHash),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1301,7 +1301,7 @@ export function errorFingerprintLineageQuery(opts: { readonly fingerprintHashes:
 			$.Minute.lt(utcSecondsParam("endTime")),
 			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
 		])
-		.groupBy("fingerprintHash")
+		.groupBy("fingerprintHash", "previousFingerprintHash")
 		.format("JSON")
 }
 

@@ -1232,13 +1232,13 @@ export const errorFingerprintsMinutelyMv = defineMaterializedView("error_fingerp
 })
 
 /**
- * Each fingerprint's previous-version hash, written only where a fingerprint version
- * bump changed it. Reads `traces` with the same expressions as `error_events_mv`, so
- * the two hashes come from one evaluation of the fingerprint.
+ * Each fingerprint's previous-version hashes, for every error a version bump re-keyed:
+ * all of them but the user-keyed ones, which no bump touches. Reads `traces` with the
+ * same expressions as `error_events_mv`, so both hashes come from one evaluation.
  */
 export const errorFingerprintLineageMv = defineMaterializedView("error_fingerprint_lineage_mv", {
 	description:
-		"Records the previous-version fingerprint hash of each error fingerprint a version bump re-keyed, for the issue evaluator.",
+		"Records the previous-version fingerprint hashes of each error fingerprint a version bump re-keyed, for the issue evaluator.",
 	datasource: errorFingerprintLineage,
 	nodes: [
 		node({
