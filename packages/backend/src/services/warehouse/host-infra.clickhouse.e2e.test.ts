@@ -40,6 +40,7 @@ interface Point {
 	readonly startMs?: number
 	readonly value: number
 	readonly attrs: Record<string, string>
+	readonly delta?: boolean
 }
 
 // One scrape of system.filesystem.usage: a row per state, all at the same time.
@@ -133,6 +134,20 @@ const semconvNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 70 }, (_
 	attrs: { "system.device": "eth0", "network.io.direction": "receive" },
 }))
 
+// Delta temporality: delta-host transmits 6000 B per one-minute point (100 B/s), and its
+// points for minutes 20-39 of the window were lost.
+const deltaNetworkPoints: ReadonlyArray<Point> = Array.from({ length: 60 }, (_, index) => index)
+	.filter((index) => index < 20 || index >= 40)
+	.map((index) => ({
+		host: "delta-host",
+		metric: "system.network.io",
+		ms: START_MS + 30_000 + index * MINUTE_MS,
+		startMs: START_MS + 30_000 + (index - 1) * MINUTE_MS,
+		value: 6000,
+		attrs: { device: "eth0", direction: "transmit" },
+		delta: true,
+	}))
+
 // Every host reports CPU, which is what lists it; utilization-host sends the opt-in gauge.
 const gaugePoints: ReadonlyArray<Point> = [
 	...["receiver-host", "semconv-host", "utilization-host"].map((host) => ({
@@ -153,7 +168,7 @@ const gaugePoints: ReadonlyArray<Point> = [
 
 const sumRow = (point: Point) => {
 	const isNetwork = point.metric === "system.network.io"
-	return `(${quote(point.org ?? ORG)}, '', ${quote(point.metric)}, ${quote(chDateTime(point.startMs ?? START_MS - 120 * MINUTE_MS))}, ${quote(chDateTime(point.ms))}, ${point.value}, 2, ${isNetwork}, ${mapLiteral(point.attrs)}, ${mapLiteral({ "host.name": point.host })})`
+	return `(${quote(point.org ?? ORG)}, '', ${quote(point.metric)}, ${quote(chDateTime(point.startMs ?? START_MS - 120 * MINUTE_MS))}, ${quote(chDateTime(point.ms))}, ${point.value}, ${point.delta ? 1 : 2}, ${isNetwork}, ${mapLiteral(point.attrs)}, ${mapLiteral({ "host.name": point.host })})`
 }
 const gaugeRow = (point: Point) => {
 	const at = quote(chDateTime(point.ms))
@@ -171,7 +186,7 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
 		await clickhouseExec(
-			`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic, Attributes, ResourceAttributes) VALUES\n${[...filesystemPoints, ...networkPoints, ...semconvNetworkPoints].map(sumRow).join(",\n")}`,
+			`INSERT INTO metrics_sum (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, AggregationTemporality, IsMonotonic, Attributes, ResourceAttributes) VALUES\n${[...filesystemPoints, ...networkPoints, ...semconvNetworkPoints, ...deltaNetworkPoints].map(sumRow).join(",\n")}`,
 			database,
 		)
 		await clickhouseExec(
@@ -280,6 +295,17 @@ describe.skipIf(!clickhouseE2eEnabled)("host infra queries against ClickHouse", 
 			rows.map((row) => [row.attributeValue, Math.round(row.rateValue)]),
 			Array.from({ length: 6 }, () => ["receive", 50]),
 		)
+	})
+
+	it("divides a delta point by its own interval, across lost points", async () => {
+		const rows = await run(
+			compileUnsafe(CH.hostNetworkTimeseriesQuery({ hostName: "delta-host" }), {
+				...window,
+				bucketSeconds: 60,
+			}),
+		)
+		assert.strictEqual(rows.length, 40)
+		assert.deepEqual([...new Set(rows.map((row) => Math.round(row.rateValue)))], [100])
 	})
 
 	it("keeps the true rate in buckets narrower than the scrape interval", async () => {

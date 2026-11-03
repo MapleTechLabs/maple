@@ -2030,7 +2030,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:infra:hostNetworkTimeseriesQuery:default  [f76af7f9]
+-- builder:infra:hostNetworkTimeseriesQuery:default  [847302af]
 SELECT
           series_rates.bucket AS bucket,
           series_rates.direction AS attributeValue,
@@ -2045,7 +2045,7 @@ SELECT
           coalesce(nullIf(metrics_sum.Attributes['network.io.direction'], ''), metrics_sum.Attributes['direction']) AS direction,
           cityHash64(metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes))) AS series,
           multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta,
-          toUnixTimestamp64Nano(metrics_sum.TimeUnix) / 1000000000 - (toUnixTimestamp64Nano(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) / 1000000000) AS elapsedSeconds
+          multiIf(((AggregationTemporality = 1 AND toUnixTimestamp64Nano(metrics_sum.StartTimeUnix) > 0) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), toUnixTimestamp64Nano(metrics_sum.TimeUnix) / 1000000000 - (toUnixTimestamp64Nano(metrics_sum.StartTimeUnix) / 1000000000), toUnixTimestamp64Nano(metrics_sum.TimeUnix) / 1000000000 - (toUnixTimestamp64Nano(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) / 1000000000)) AS elapsedSeconds
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL greatest(60, 600) SECOND

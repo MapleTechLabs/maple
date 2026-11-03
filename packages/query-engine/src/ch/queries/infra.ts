@@ -400,6 +400,10 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 				frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
 			})
 			const previousTime = CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), previousSample)
+			const isDelta = CH.dynamicColumn<number>("AggregationTemporality").eq(1)
+			// Each side is divided on its own: the DSL prints `a.sub(b).div(c)` as `a - b / c`.
+			const secondsSince = (from: CH.Expr<DateTime.Utc>) =>
+				CH.toUnixTimestamp64Nano($.TimeUnix).div(1e9).sub(CH.toUnixTimestamp64Nano(from).div(1e9))
 			return {
 				TimeUnix: $.TimeUnix,
 				direction: renamedAttr($.Attributes, "network.io.direction", "direction"),
@@ -410,13 +414,21 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 					startTime: $.StartTimeUnix,
 					previousTime,
 					time: $.TimeUnix,
-					isDeltaTemporality: CH.dynamicColumn<number>("AggregationTemporality").eq(1),
+					isDeltaTemporality: isDelta,
 				}),
-				// 0 for a series' first sample, which has nothing to measure against.
-				// Each side is divided on its own: the DSL prints `a.sub(b).div(c)` as `a - b / c`.
-				elapsedSeconds: CH.toUnixTimestamp64Nano($.TimeUnix)
-					.div(1e9)
-					.sub(CH.toUnixTimestamp64Nano(previousTime).div(1e9)),
+				// A delta point covers its own start..time; a cumulative one the time since the
+				// previous sample, 0 for a series' first, which has nothing to measure against.
+				elapsedSeconds: CH.multiIf(
+					[
+						[
+							isDelta
+								.and(CH.toUnixTimestamp64Nano($.StartTimeUnix).gt(0))
+								.and($.StartTimeUnix.lt($.TimeUnix)),
+							secondsSince($.StartTimeUnix),
+						],
+					],
+					secondsSince(previousTime),
+				),
 			}
 		})
 		.where(($) => [
