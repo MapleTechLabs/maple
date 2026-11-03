@@ -59,6 +59,7 @@ import {
 	type RunCompletion,
 	SUBMIT_REVIEW,
 	type RunUsage,
+	type SessionPullRequest,
 	type SubmitDiagnosis,
 	type StageEdit,
 	type SubmitReply,
@@ -133,6 +134,12 @@ export interface ChatRunInput {
 	 * findings saved so far. Absent, a review run makes its own coverage and offers no `record_finding`.
 	 */
 	readonly review?: ReviewTurnState
+	/**
+	 * The pull request a review or reply session is about. Its diff tools read this one whatever
+	 * repository or number the model passes: a wrong guess there failed the call, and enough of
+	 * those stopped the review.
+	 */
+	readonly pullRequest?: SessionPullRequest
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
 	/** Runs `run_code` programs for an agent that offers it; absent, the tool is not offered. */
@@ -216,6 +223,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			Str.includes("#")(toolCallId)
 				? programCalls.set(toolCallId, { ...call, callId: toolCallId, ui })
 				: uiByCall.set(toolCallId, ui),
+		input.pullRequest,
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
 	// be handed the diagnosis tool or the other way round.

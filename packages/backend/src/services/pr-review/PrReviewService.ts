@@ -224,12 +224,19 @@ export interface PrReviewServiceApi {
 	 * default. Never fails: an unreadable setting reviews on the default.
 	 */
 	readonly reviewModel: (orgId: OrgId) => Effect.Effect<Option.Option<PrReviewModel>>
-	/** The repository and commit a review reads, so its checkout can start before the agent asks. */
+	/**
+	 * The repository, pull request and commit a review reads: its checkout starts before the agent
+	 * asks, and its diff tools are pinned to them.
+	 */
 	readonly reviewTarget: (
 		orgId: OrgId,
 		reviewId: PrReviewId,
 	) => Effect.Effect<
-		Option.Option<{ readonly repository: string; readonly headSha: GitCommitSha }>,
+		Option.Option<{
+			readonly repository: string
+			readonly number: number
+			readonly headSha: GitCommitSha
+		}>,
 		PrReviewPersistenceError
 	>
 	/**
@@ -3017,6 +3024,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.pipe(Effect.mapError(toPersistence))
 				return Option.map(repository, (repo) => ({
 					repository: repo.fullName,
+					number: review.value.number,
 					headSha: review.value.headSha,
 				}))
 			})

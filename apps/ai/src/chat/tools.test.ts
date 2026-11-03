@@ -10,6 +10,7 @@ import { ChatConnectorId, ExternalUserId, OrgId, UserId } from "@maple/domain/pr
 import { Effect, Result, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import {
+	buildChatToolkit,
 	buildDiagnosisCompletion,
 	buildReviewCompletion,
 	makeRunUsage,
@@ -31,6 +32,9 @@ import {
 import type { ReviewCoverage } from "./review-coverage"
 import { makeChildFindings } from "./review-child-findings"
 import { makeReviewLedger } from "./review-ledger"
+import { PR_REVIEW_RULESET } from "./permissions"
+import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 
 const orgId = Schema.decodeSync(OrgId)("org_test")
 const human = Schema.decodeSync(UserId)("user_test")
@@ -632,5 +636,66 @@ describe("savedFindingsRequest", () => {
 		assert.equal(request.report.verdict, "issues")
 		assert.deepStrictEqual(request.report.unreviewed, ["src/b.ts"])
 		assert.lengthOf(request.report.findings, 1)
+	})
+})
+
+describe("buildChatToolkit", () => {
+	const recordingExecutor = () => {
+		const calls: Array<{ readonly name: string; readonly params: unknown }> = []
+		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
+			execute: (_tenant, name, params) => {
+				calls.push({ name, params })
+				return Effect.succeed({ content: [{ type: "text" as const, text: `${name} ran` }] })
+			},
+		}
+		return { executor, calls }
+	}
+	const PULL_REQUEST = { repository: "MapleTechLabs/maple", number: 2175 }
+
+	it("reads the session's pull request whatever repository or number the model passes", async () => {
+		const { executor, calls } = recordingExecutor()
+		const { handlers } = buildChatToolkit(
+			executor,
+			tenantFor(human),
+			PR_REVIEW_RULESET,
+			"chat",
+			undefined,
+			undefined,
+			undefined,
+			PULL_REQUEST,
+		)
+
+		await Effect.runPromise(handlers.pr_changed_files!({ description: "files" }, {} as never))
+		await Effect.runPromise(
+			handlers.pr_file_diff!(
+				{ repository: "MapleLabs/Maple", number: 1, paths: ["a.ts"] },
+				{} as never,
+			),
+		)
+
+		assert.deepEqual(calls, [
+			{ name: "pr_changed_files", params: { description: "files", ...PULL_REQUEST } },
+			{ name: "pr_file_diff", params: { ...PULL_REQUEST, paths: ["a.ts"] } },
+		])
+	})
+
+	it("leaves every other tool's arguments as the model sent them", async () => {
+		const { executor, calls } = recordingExecutor()
+		const { handlers } = buildChatToolkit(
+			executor,
+			tenantFor(human),
+			PR_REVIEW_RULESET,
+			"chat",
+			undefined,
+			undefined,
+			undefined,
+			PULL_REQUEST,
+		)
+		const read = { repository: "MapleTechLabs/other", ref: "main", path: "a.ts" }
+
+		await Effect.runPromise(handlers.sandbox_read_file!(read, {} as never))
+
+		assert.deepEqual(calls, [{ name: "sandbox_read_file", params: read }])
 	})
 })
