@@ -491,6 +491,20 @@ describe("agent-recoverable error messages", () => {
 		expect(text).toContain("start_time: moved to 2026-06-01 22:00:00")
 	})
 
+	it("narrows an unfiltered week-long breakdown past the range cap and then the span budget", async () => {
+		const result = await runToolDirect(rt, "query_data", {
+			source: "traces",
+			kind: "breakdown",
+			group_by: "span_name",
+			start_time: "2026-05-26 00:00:00",
+			end_time: "2026-06-02 00:00:00",
+		})
+		const text = markdown(result)
+		expect(result.isError).not.toBe(true)
+		expect(text).toContain("start_time: moved to 2026-06-01 00:00:00")
+		expect(text).toContain("start_time: moved to 2026-06-01 22:00:00")
+	})
+
 	it("names the valid group_by values for the chosen source", async () => {
 		const text = markdown(
 			await runToolDirect(rt, "query_data", {

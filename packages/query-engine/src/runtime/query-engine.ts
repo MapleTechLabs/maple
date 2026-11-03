@@ -700,6 +700,7 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 				`Breakdown queries support a maximum range of ${formatRangeSeconds(MAX_BREAKDOWN_RANGE_SECONDS)}`,
 				"Narrow the time range or use a timeseries query for wider trends",
 			],
+			fittingRangeSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 		})
 	}
 
@@ -710,6 +711,7 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 				`Breakdowns spanning more than ${formatRangeSeconds(MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS)} require a serviceName, environment, or similar filter`,
 				"Add a filter or narrow the time range",
 			],
+			fittingRangeSeconds: MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 		})
 	}
 })
