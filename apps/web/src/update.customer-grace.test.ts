@@ -18,6 +18,7 @@ import { AppRoute } from "./route"
 import * as Shell from "./shell"
 import * as Toast from "@maple/views/ui/toast"
 import { planGateOf, update } from "./update"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 
@@ -30,6 +31,7 @@ const base = (knownToRenderApp: Record<string, boolean>): Model => ({
 	toasts: Toast.init("toasts"),
 	toastActions: {},
 	toastRootActions: {},
+	tooltip: TooltipHost.init("tooltip"),
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],

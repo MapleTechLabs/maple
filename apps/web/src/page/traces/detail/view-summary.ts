@@ -12,6 +12,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { traceIdBadge } from "@maple/views/ui/trace-badges"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { serviceDot } from "@maple/views/ui/values"
 import { computeServiceShares, type ServiceShare } from "./derive"
 import { Message } from "./message"
@@ -19,7 +20,7 @@ import type { LoadedTrace } from "./select"
 import { typographyClass } from "@maple/views/ui/typography"
 
 // The trace anatomy strip, over the @maple/ui strip.
-// TODO(tooltip): spectrum segment tooltips, the commit hover card and the copy badge's feedback.
+// TODO(tooltip): the commit hover card (interactive, so a hover card, not a tooltip).
 
 const httpStatusColor = (code: number): string => {
 	const tone = httpStatusTone(code)
@@ -61,6 +62,10 @@ const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare
 							h.Class("h-full"),
 							h.DataAttribute("base-ui-tooltip-trigger", ""),
 							h.DataAttribute("slot", "tooltip-trigger"),
+							...tooltipTrigger(
+								h,
+								`${share.serviceName} · ${formatDuration(share.durationMs)} · ${formatPercent(share.percent / 100)}`,
+							),
 							h.Style({
 								width: `${share.percent}%`,
 								"min-width": "4px",

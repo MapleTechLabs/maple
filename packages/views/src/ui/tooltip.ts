@@ -285,6 +285,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const attributesOf = (id: string) =>
 		childAttributes([
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
+			// Owned here: an empty `data-tooltip` keeps the delegated host (`tooltip-host.ts`) off it.
+			h.DataAttribute("tooltip", ""),
 			...(model.isOpen && id === model.triggerId ? [h.DataAttribute("popup-open", "")] : []),
 			h.Id(id),
 			h.OnMouseEnter(Message.EnteredTrigger({ triggerId: id })),

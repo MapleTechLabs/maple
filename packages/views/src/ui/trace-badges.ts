@@ -6,11 +6,11 @@ import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "./display"
 import { icon } from "./icon"
+import { tooltipTrigger } from "./tooltip-host"
 import { serviceDot } from "./values"
 
 // Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and
 // `ServicePills` (packages/ui/src/components/service-pills.tsx).
-// TODO(tooltip): the pills' tooltip listing every service is not ported; the trigger markup is.
 
 /** The root's HTTP status toned by class (3xx keeps its own blue), else OK / Error. */
 export const traceStatusBadge = <M>(
@@ -48,7 +48,12 @@ export const traceStatusBadge = <M>(
 
 const VISIBLE_SERVICES = 3
 
-export const servicePills = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Html | null =>
+/** `tooltipServices`: the services the tooltip lists, when the pills draw only some. */
+export const servicePills = <M>(
+	h: HtmlBuilder<M>,
+	services: ReadonlyArray<string>,
+	tooltipServices: ReadonlyArray<string> = services,
+): Html | null =>
 	services.length === 0
 		? null
 		: h.div(
@@ -56,6 +61,7 @@ export const servicePills = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<strin
 					h.Class("flex min-w-0 flex-wrap gap-1"),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
 					h.DataAttribute("slot", "tooltip-trigger"),
+					...tooltipTrigger(h, tooltipServices.join("\n")),
 				],
 				[
 					...services
@@ -95,6 +101,7 @@ export const traceIdBadge = <M>(
 			),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
+			...(options.onCopy === undefined ? [] : tooltipTrigger(h, "Copy trace ID")),
 			h.Type("button"),
 			...(options.onCopy === undefined ? [] : [h.OnClick(options.onCopy)]),
 		],

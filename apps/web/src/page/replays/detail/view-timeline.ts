@@ -17,6 +17,7 @@ import { iconButton } from "@maple/views/ui/icon-button"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { stableSlice } from "../../kit/stable-slice"
 import { MARKER_LABELS, MARKER_STYLES } from "../kit/replay-meta"
 import { Message } from "./message"
@@ -26,7 +27,6 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The replay editor timeline.
-// TODO(tooltip): the trace and span bars' hover tooltips.
 
 type H = HtmlBuilder<Message>
 
@@ -205,6 +205,10 @@ const rangeOf = (view: TracesView, startTime: string, durationMs: number) =>
 		realTotalMs: view.totalMs,
 	})
 
+/** A bar's tooltip: what fired, when on the recording's clock, and for how long. */
+const firedAt = (name: string, range: ReturnType<typeof rangeOf>, durationMs: number): string =>
+	`${name}: fired at ${formatClock(range.startMs)} · ${Math.round(durationMs)}ms${range.outOfRange ? " · outside recording" : ""}`
+
 const spanRowItem = (h: H, view: TracesView, span: SpanRow): Html => {
 	const range = rangeOf(view, span.startTime, span.durationMs)
 	const leftPct = pct(range.startMs, view.totalMs)
@@ -231,7 +235,11 @@ const spanRowItem = (h: H, view: TracesView, span: SpanRow): Html => {
 			),
 			pressable(
 				h,
-				{ onClick: Message.RequestedSeek({ offsetMs: range.startMs }), className: "relative h-5 flex-1 cursor-pointer" },
+				{
+					onClick: Message.RequestedSeek({ offsetMs: range.startMs }),
+					className: "relative h-5 flex-1 cursor-pointer",
+					attributes: tooltipTrigger(h, firedAt(span.spanName, range, span.durationMs)),
+				},
 				[
 					h.span(
 						[
@@ -332,6 +340,10 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 									h.Class(
 										"group/trace flex min-w-0 flex-1 items-center rounded-sm px-1 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 									),
+									...tooltipTrigger(
+										h,
+										`Open trace in new tab · ${summary.rootServiceName} · ${summary.spanCount} spans`,
+									),
 								],
 								[
 									vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" },
@@ -374,7 +386,14 @@ const traceRow = (h: H, view: TracesView, summary: TraceSummary): Html => {
 					),
 					pressable(
 						h,
-						{ onClick: Message.RequestedSeek({ offsetMs: range.startMs }), className: "relative h-11 flex-1 cursor-pointer" },
+						{
+							onClick: Message.RequestedSeek({ offsetMs: range.startMs }),
+							className: "relative h-11 flex-1 cursor-pointer",
+							attributes: tooltipTrigger(
+								h,
+								firedAt(summary.rootSpanName, range, summary.durationMs),
+							),
+						},
 						[
 							h.span(
 								[

@@ -14,6 +14,7 @@ import { button } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { detailRailField, detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
 import * as SelectView from "@maple/views/ui/select-view"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { serviceDot } from "@maple/views/ui/values"
 import { actorChip } from "../kit/actor"
 import { clampPriority, PRIORITY_LABEL, priorityBarsIcon } from "../kit/priority"
@@ -158,7 +159,7 @@ const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironmen
 /** `shortIssueId`: the first seven hex digits, upper case. */
 const shortIssueId = (id: string): string => id.replace(/-/g, "").slice(0, 7).toUpperCase()
 
-/** `IssueIdCopy`: the short id that copies the full one. TODO(tooltip): its "Copy issue ID" popup. */
+/** `IssueIdCopy`: the short id that copies the full one. */
 const issueIdCopy = (h: H, model: Model, id: string): Html =>
 	button(
 		h,
@@ -173,6 +174,7 @@ const issueIdCopy = (h: H, model: Model, id: string): Html =>
 					Message.GotIssueIdCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: id }) }),
 				),
 				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				...tooltipTrigger(h, "Copy issue ID"),
 			],
 		},
 		[

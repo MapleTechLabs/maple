@@ -1,5 +1,6 @@
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import { MOBILE_QUERY } from "./env"
@@ -51,7 +52,31 @@ const viewportChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery({
 	mapMatches: (isMobile) => Message.ChangedViewport({ isMobile }),
 })
 
+const tooltipTriggers: Stream.Stream<Message> = Stream.map(TooltipHost.triggerEvents, (message) =>
+	Message.GotTooltipMessage({ message }),
+)
+
+const tooltipWhileOpen: Stream.Stream<Message> = Stream.map(TooltipHost.whileOpen, (message) =>
+	Message.GotTooltipMessage({ message }),
+)
+
 export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
+	/** The app-wide tooltip: pointer, press and focus on any `tooltipTrigger`. */
+	tooltipTriggers: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => tooltipTriggers,
+		},
+	),
+	/** Escape and live text for the open tooltip. */
+	tooltipWhileOpen: entry(
+		{ isOpen: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({ isOpen: TooltipHost.isOpen(model.tooltip) }),
+			dependenciesToStream: ({ isOpen }) => (isOpen ? tooltipWhileOpen : Stream.empty),
+		},
+	),
 	viewport: entry(
 		{},
 		{

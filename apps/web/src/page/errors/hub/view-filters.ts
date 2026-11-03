@@ -20,6 +20,12 @@ import { MountFilterRail } from "./command"
 import { type FilterParam, Message } from "./message"
 import type { Model } from "./model"
 
+/** `SourceLegend`: what opened the issue, one line per source. */
+const SOURCE_LEGEND = [
+	"What opened the issue.",
+	...SOURCES.map((source) => `${KIND_LABEL[source]}: ${SOURCE_DESCRIPTION[source]}`),
+].join("\n")
+
 type H = HtmlBuilder<Message>
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
@@ -98,7 +104,7 @@ const railContent = (h: H, model: Model): Html => {
 					SOURCES.map((name) => ({ name, count: 0 })),
 					search.kind,
 					{
-						hasDescription: true,
+						description: SOURCE_LEGEND,
 						colorOf: (name) => (isIssueKind(name) ? SOURCE_COLOR[name] : undefined),
 						getOptionDescription: (name) =>
 							isIssueKind(name) ? SOURCE_DESCRIPTION[name] : undefined,

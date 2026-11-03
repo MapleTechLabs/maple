@@ -162,11 +162,12 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/toggle-group.ts` `view`, `controlledView` (stateful: Model, init, update): Base UI `ToggleGroup`: the pressed values and the roving tab stop (the composite's highlighted index).
 - `packages/views/src/ui/toggle.ts` `togglePrimitive`, `toggle`, `segmentItemHeight` (stateful: Model, init, update): Base UI `Toggle`'s uncontrolled state (`defaultPressed`): pressed or not.
 - `packages/views/src/ui/tone-box.ts` `toneBoxClass`: `toneBoxClass`: a box (badge, pill, chip) tinted in one tone: its `-a2` fill, `-a3` edge and the tone's text, for an element whose shape another kit piece draws.
+- `packages/views/src/ui/tooltip-host.ts` `tooltipTrigger`, `triggerEvents`, `escapes`, `isOpen`, `view` (stateful: Model, init, update): The app's one tooltip: any element carrying `tooltipTrigger` opens it, through events delegated on `document`, so stateless kit helpers get Base UI's tooltip without a Model of...
 - `packages/views/src/ui/tooltip.ts` `view` (stateful: Model, init, update): Base UI `Tooltip` (`@maple/ui/tooltip`): opens after the pointer rests on a trigger (600 ms), closes when it leaves (no close delay), on a press of the trigger and on Escape.
 - `packages/views/src/ui/trace-badges.ts` `traceStatusBadge`, `servicePills`, `traceIdBadge`: Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and `ServicePills` (packages/ui/src/components/service-pills.tsx).
 - `packages/views/src/ui/trace.ts` `trace`, `traceLine`, `traceIcon`, `traceTitle`, `traceCollapsible`, `traceDescription`: Port of packages/ui/src/components/ui/trace.tsx: a list of agent tool-call lines.
 - `packages/views/src/ui/truncated-id.ts` `truncatedId`: Port of packages/ui/src/components/ui/truncated-id.tsx: a shortened id in mono with the full value as the native tooltip.
-- `packages/views/src/ui/truncated-text.ts` `truncatedText`: Port of packages/ui/src/components/ui/truncated-text.tsx, `tooltip="title" | "none"`.
+- `packages/views/src/ui/truncated-text.ts` `truncatedText`: Port of packages/ui/src/components/ui/truncated-text.tsx.
 - `packages/views/src/ui/typography.ts` `typographyClass`, `typography`: `Typography`: a run of text on the type scale and the text tones, instead of a hand-written `text-xs text-muted-foreground` string.
 - `packages/views/src/ui/values.ts` `emptyValue`, `measure`, `latencyValue`, `errorRateValue`, `serviceDot`: Small value components from packages/ui/src/components: LatencyValue, ErrorRateValue, ServiceDot.
 

@@ -8,13 +8,15 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { describeSpan } from "@maple/views/service-map/trace-flow/span-category"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import type { Bar } from "./layout"
 import { Message } from "./message"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 
 // `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
-// TODO(tooltip): event-marker tooltips and the hover span tooltip are not ported (triggers only).
+// TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and pointer-following) is not
+// ported; it also needs the trace's total duration and start, which RowState does not carry.
 
 const MAX_INDENT_DEPTH = 12
 const BAR_LEFT = "clamp(-50%, calc((var(--b0) - var(--vp0)) * var(--vpk) * 1%), 150%)"
@@ -224,8 +226,10 @@ const eventMarkers = (h: H, bar: Bar, state: RowState, events: ReadonlyArray<Tim
 			h.span(
 				[
 					h.AriaLabel(eventLabel(marker)),
-					// A native hover label until the marker tooltip is ported.
-					h.Title(eventLabel(marker)),
+					...tooltipTrigger(
+						h,
+						`${marker.name === "" ? "(unnamed event)" : marker.name} ${marker.offsetLabel}`,
+					),
 					attr(
 						h,
 						"pointer-events-auto absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center",

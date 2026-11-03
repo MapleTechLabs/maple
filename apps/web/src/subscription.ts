@@ -8,6 +8,7 @@ import { SELF_HOSTED_AUTH_EVENT } from "./platform/auth-api"
 import { readEffectiveTimeZone, TIME_ZONE_PREFERENCE_EVENT, TIMEZONE_STORAGE_KEY } from "./platform/time-zone"
 import { rendersShell } from "./page/chrome"
 import * as Preload from "./page/preload"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { pageSubscriptions } from "./page/registry"
 import * as TimeRangePicker from "./page/kit/time-range-picker"
 import { onboardingInputsOf, pageContextOf } from "./update"
@@ -244,6 +245,27 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 							: Message.EndedLinkIntent({ href: intent.href }),
 					),
 					Effect.sync(() => isShellOpen),
+				),
+		},
+	),
+	/** The app-wide tooltip: pointer, press and focus on any `tooltipTrigger`. */
+	tooltipTriggers: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () =>
+				Stream.map(TooltipHost.triggerEvents, (message) => Message.GotTooltipMessage({ message })),
+		},
+	),
+	/** Escape and live text for the open tooltip. */
+	tooltipWhileOpen: entry(
+		{ isOpen: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({ isOpen: TooltipHost.isOpen(model.tooltip) }),
+			dependenciesToStream: ({ isOpen }) =>
+				Stream.when(
+					Stream.map(TooltipHost.whileOpen, (message) => Message.GotTooltipMessage({ message })),
+					Effect.sync(() => isOpen),
 				),
 		},
 	),

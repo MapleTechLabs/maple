@@ -1,5 +1,6 @@
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
+import { tooltipTrigger } from "./tooltip-host"
 
 export type IconButtonOptions<Message> = Readonly<{
 	/** Accessible name, also the tooltip text. */
@@ -15,11 +16,7 @@ export type IconButtonOptions<Message> = Readonly<{
 	attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 }>
 
-/**
- * `<IconButton>`: an icon-only Button that always carries a name and, by default, a tooltip.
- * TODO(tooltip): renders the tooltip trigger attributes; the popup (label + Kbd shortcut) is the
- * overlay port's. A closed Base UI tooltip renders nothing else.
- */
+/** `<IconButton>`: an icon-only Button that always carries a name and, by default, a tooltip. */
 export const iconButton = <Message>(
 	h: HtmlBuilder<Message>,
 	options: IconButtonOptions<Message>,
@@ -39,6 +36,7 @@ export const iconButton = <Message>(
 					? []
 					: [
 							h.DataAttribute("base-ui-tooltip-trigger", ""),
+							...tooltipTrigger(h, options.label, { layout: "icon-button" }),
 							...(options.triggerId === undefined ? [] : [h.Id(options.triggerId)]),
 						]),
 				...(options.attributes ?? []),

@@ -2,6 +2,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Popover from "@maple/views/ui/popover"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -56,6 +57,8 @@ export const Model = Schema.Struct({
 	/** The connect popover's copy buttons. */
 	copies: Copies,
 	toasts: Toast.Model,
+	/** The app-wide tooltip every `tooltipTrigger` opens. */
+	tooltip: TooltipHost.Model,
 	page: PageModel,
 })
 export type Model = typeof Model.Type

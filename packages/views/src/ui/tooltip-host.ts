@@ -1,0 +1,267 @@
+import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Command, Dom, type Update } from "foldkit"
+import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"
+import { defineMessageUnion } from "foldkit/message"
+import { Side } from "./overlay/position"
+import * as Tooltip from "./tooltip"
+
+/**
+ * The app's one tooltip: any element carrying `tooltipTrigger` opens it, through events delegated
+ * on `document`, so stateless kit helpers get Base UI's tooltip without a Model of their own.
+ */
+
+const CONTENT_ATTRIBUTE = "data-tooltip"
+const LAYOUT_ATTRIBUTE = "data-tooltip-layout"
+const SIDE_ATTRIBUTE = "data-tooltip-side"
+const OVERFLOW_ATTRIBUTE = "data-tooltip-overflow"
+const ID_PREFIX = "maple-tooltip-trigger-"
+
+export type TriggerOptions = Readonly<{
+	/** `Tooltip.view`'s `layout`. */
+	layout?: "icon-button"
+	/** `<TooltipPopup side>`; above the trigger by default. */
+	side?: Side
+	/** Opens only while the trigger's text is cut off (`TruncatedText tooltip="overflow"`). */
+	isOverflowOnly?: boolean
+}>
+
+/** `<TooltipTrigger>` + `<TooltipPopup>{content}</TooltipPopup>`. */
+export const tooltipTrigger = <Message>(
+	h: HtmlBuilder<Message>,
+	content: string,
+	options: TriggerOptions = {},
+): ReadonlyArray<Attribute<Message>> => [
+	h.DataAttribute("tooltip", content),
+	...(options.layout === undefined ? [] : [h.DataAttribute("tooltip-layout", options.layout)]),
+	...(options.side === undefined ? [] : [h.DataAttribute("tooltip-side", options.side)]),
+	...(options.isOverflowOnly === true ? [h.DataAttribute("tooltip-overflow", "")] : []),
+]
+
+// MODEL
+
+const Shown = Schema.Struct({ text: Schema.String, isIconButton: Schema.Boolean, side: Side })
+type Shown = typeof Shown.Type
+
+export const Model = Schema.Struct({
+	tooltip: Tooltip.Model,
+	/** The content by trigger id: the anchored trigger's and the one taking over. */
+	shown: Schema.Record(Schema.String, Shown),
+})
+export type Model = typeof Model.Type
+
+export const init = (id: string, options: Tooltip.InitOptions = {}): Model => ({
+	tooltip: Tooltip.init(id, options),
+	shown: {},
+})
+
+// MESSAGE
+
+export const Message = defineMessageUnion({
+	EnteredTrigger: { triggerId: Schema.String, shown: Shown },
+	FocusedTrigger: { triggerId: Schema.String, shown: Shown },
+	/** A shown trigger's text changed under it (Copy, then Copied). */
+	ChangedTriggerText: { triggerId: Schema.String, text: Schema.String },
+	GotTooltipMessage: { message: Tooltip.Message },
+})
+export type Message = typeof Message.Type
+
+// UPDATE
+
+type UpdateReturn = Update.Return<Model, Message>
+
+const lift = (model: Model, step: ReturnType<typeof Tooltip.update>): UpdateReturn => ({
+	model: { ...model, tooltip: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotTooltipMessage({ message })),
+})
+
+/** Keeps the anchored trigger's content until the next one is anchored, and drops the rest. */
+const remember = (model: Model, triggerId: string, shown: Shown): Model => {
+	const anchored = model.shown[model.tooltip.triggerId]
+	const kept: ReadonlyArray<readonly [string, Shown]> =
+		anchored === undefined
+			? [[triggerId, shown]]
+			: [
+					[model.tooltip.triggerId, anchored],
+					[triggerId, shown],
+				]
+	return { tooltip: { ...model.tooltip, requestedSide: shown.side }, shown: Object.fromEntries(kept) }
+}
+
+export const update = (model: Model, message: Message): UpdateReturn =>
+	Message.match<UpdateReturn>(message, {
+		EnteredTrigger: ({ triggerId, shown }) => {
+			const next = remember(model, triggerId, shown)
+			return lift(next, Tooltip.update(next.tooltip, Tooltip.Message.EnteredTrigger({ triggerId })))
+		},
+		FocusedTrigger: ({ triggerId, shown }) => {
+			const next = remember(model, triggerId, shown)
+			return lift(next, Tooltip.update(next.tooltip, Tooltip.Message.FocusedTrigger({ triggerId })))
+		},
+		ChangedTriggerText: ({ triggerId, text }) => {
+			const shown = model.shown[triggerId]
+			return shown === undefined
+				? { model }
+				: { model: { ...model, shown: { ...model.shown, [triggerId]: { ...shown, text } } } }
+		},
+		GotTooltipMessage: ({ message: inner }) => lift(model, Tooltip.update(model.tooltip, inner)),
+	})
+
+// SUBSCRIPTION
+
+/** The trigger an event lands in: its own text, and for an overflow-only one, cut off. */
+const triggerOf = (target: EventTarget | null): Option.Option<HTMLElement> => {
+	if (!(target instanceof Element)) return Option.none()
+	const trigger = target.closest(`[${CONTENT_ATTRIBUTE}]`)
+	if (!(trigger instanceof HTMLElement) || trigger.getAttribute(CONTENT_ATTRIBUTE) === "")
+		return Option.none()
+	if (trigger.hasAttribute(OVERFLOW_ATTRIBUTE) && trigger.scrollWidth <= trigger.clientWidth) {
+		return Option.none()
+	}
+	return Option.some(trigger)
+}
+
+/** The trigger's id to anchor to, assigned once when the view gave it none. */
+const anchorIdOf = (trigger: HTMLElement): string => {
+	if (trigger.id === "")
+		trigger.id = `${ID_PREFIX}${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+	return trigger.id
+}
+
+const isInside = (trigger: Element, node: EventTarget | null) =>
+	node instanceof Node && trigger.contains(node)
+
+const decodeSide = Schema.decodeUnknownOption(Side)
+
+const shownOf = (trigger: HTMLElement) => ({
+	triggerId: anchorIdOf(trigger),
+	shown: {
+		text: trigger.getAttribute(CONTENT_ATTRIBUTE) ?? "",
+		isIconButton: trigger.getAttribute(LAYOUT_ATTRIBUTE) === "icon-button",
+		side: Option.getOrElse(decodeSide(trigger.getAttribute(SIDE_ATTRIBUTE)), (): Side => "top"),
+	},
+})
+
+const toTooltip = (message: Tooltip.Message) => Message.GotTooltipMessage({ message })
+
+/** Base UI opens on a mouse or pen resting on the trigger, never on touch. */
+const isHoverPointer = (event: PointerEvent) => event.pointerType !== "touch"
+
+const triggerStreams: ReadonlyArray<Stream.Stream<Message>> = [
+	Dom.streamFromEventFilterMap({
+		target: () => document,
+		type: "pointerover",
+		filterMapEvent: (event) =>
+			Option.map(
+				Option.filter(
+					triggerOf(event.target),
+					(trigger) => isHoverPointer(event) && !isInside(trigger, event.relatedTarget),
+				),
+				(trigger) => Message.EnteredTrigger(shownOf(trigger)),
+			),
+	}),
+	Dom.streamFromEventFilterMap({
+		target: () => document,
+		type: "pointerout",
+		filterMapEvent: (event) =>
+			Option.map(
+				Option.filter(triggerOf(event.target), (trigger) => !isInside(trigger, event.relatedTarget)),
+				() => toTooltip(Tooltip.Message.LeftTrigger()),
+			),
+	}),
+	Dom.streamFromEventFilterMap({
+		target: () => document,
+		type: "pointerdown",
+		filterMapEvent: (event) =>
+			Option.map(triggerOf(event.target), () => toTooltip(Tooltip.Message.PressedTrigger())),
+	}),
+	Dom.streamFromEventFilterMap({
+		target: () => document,
+		type: "focusin",
+		filterMapEvent: (event) =>
+			Option.map(triggerOf(event.target), (trigger) => Message.FocusedTrigger(shownOf(trigger))),
+	}),
+	Dom.streamFromEventFilterMap({
+		target: () => document,
+		type: "focusout",
+		filterMapEvent: (event) =>
+			Option.map(
+				Option.filter(triggerOf(event.target), (trigger) => !isInside(trigger, event.relatedTarget)),
+				() => toTooltip(Tooltip.Message.BlurredTrigger()),
+			),
+	}),
+]
+
+/** Pointer, press and focus on any trigger; children moving under the pointer do not count. */
+export const triggerEvents: Stream.Stream<Message> = Stream.mergeAll(triggerStreams, {
+	concurrency: "unbounded",
+})
+
+const escapes: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
+	target: () => document,
+	type: "keydown",
+	filterMapEvent: (event) =>
+		event.key === "Escape" ? Option.some(toTooltip(Tooltip.Message.PressedEscape())) : Option.none(),
+})
+
+/** Triggers whose text changed; the update keeps only the ones it shows. */
+const textChanges: Stream.Stream<Message> = Stream.callback<Message>((queue) =>
+	Effect.acquireRelease(
+		Effect.sync(() => {
+			const observer = new MutationObserver((records) =>
+				records.forEach(({ target }) => {
+					if (!(target instanceof HTMLElement) || target.id === "") return
+					Queue.offerUnsafe(
+						queue,
+						Message.ChangedTriggerText({
+							triggerId: target.id,
+							text: target.getAttribute(CONTENT_ATTRIBUTE) ?? "",
+						}),
+					)
+				}),
+			)
+			observer.observe(document.body, { subtree: true, attributeFilter: [CONTENT_ATTRIBUTE] })
+			return observer
+		}),
+		(observer) => Effect.sync(() => observer.disconnect()),
+	).pipe(Effect.flatMap(() => Effect.never)),
+)
+
+/** Escape, and text changes on the shown trigger; subscribe only while `isOpen`. */
+export const whileOpen: Stream.Stream<Message> = Stream.merge(escapes, textChanges)
+
+export const isOpen = (model: Model): boolean => model.tooltip.isOpen
+
+// VIEW
+
+/**
+ * The portal, inside a wrapper that keeps its place in the parent: place it before any sibling
+ * whose children change, since the portal itself moves to `<body>`.
+ */
+export const view = <ParentMessage>(
+	h: HtmlBuilder<ParentMessage>,
+	model: Model,
+	toParentMessage: (message: Message) => ParentMessage,
+): Html =>
+	h.div(
+		[h.Class("contents"), h.DataAttribute("slot", "tooltip-host")],
+		[
+			h.submodel({
+				slotId: `${model.tooltip.id}-host`,
+				model: model.tooltip,
+				view: Tooltip.view,
+				toParentMessage: (message: Tooltip.Message) => toParentMessage(toTooltip(message)),
+				viewInputs: {
+					// Every trigger is delegated: the triggers' attributes are never asked for.
+					triggerIds: [],
+					layout:
+						model.shown[model.tooltip.triggerId]?.isIconButton === true
+							? "icon-button"
+							: undefined,
+					// A description's lines (a legend) stay lines.
+					className: "whitespace-pre-line",
+					toContent: (triggerId) => [model.shown[triggerId]?.text ?? ""],
+					toView: ({ portal }) => portal ?? h.empty,
+				},
+			}),
+		],
+	)

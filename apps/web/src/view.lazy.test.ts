@@ -18,6 +18,7 @@ import * as Shell from "./shell"
 import * as Toast from "@maple/views/ui/toast"
 import { settle } from "./update"
 import { view } from "./view"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const NOW = Date.parse("2026-10-01T12:00:00Z")
@@ -121,6 +122,7 @@ const entered = (path: string): Model =>
 		toasts: Toast.init("toasts"),
 		toastActions: {},
 		toastRootActions: {},
+		tooltip: TooltipHost.init("tooltip"),
 		page: null,
 		pageInstances: 0,
 		parkedPages: [],

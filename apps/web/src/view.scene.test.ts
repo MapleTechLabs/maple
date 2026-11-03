@@ -22,6 +22,7 @@ import { MountSuggestions, MountWhereEditor } from "./page/traces/list/command"
 import { Message as TracesMessage } from "./page/traces/list/message"
 import { settle, update } from "./update"
 import { view } from "./view"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const body = (model: Model, h: HtmlBuilder<Message>) => view(model, h).body
@@ -35,6 +36,7 @@ const signedIn = (): Model => ({
 	toasts: Toast.init("toasts"),
 	toastActions: {},
 	toastRootActions: {},
+	tooltip: TooltipHost.init("tooltip"),
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],

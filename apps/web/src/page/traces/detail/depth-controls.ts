@@ -1,9 +1,10 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon, type IconName } from "@maple/views/ui/icon"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
 // `TraceDepthControls` (packages/ui/src/components/traces/trace-depth-controls.tsx), shared by the
-// Timeline and the Waterfall. TODO(tooltip): the trigger markup is ported; the label popup is not.
+// Timeline and the Waterfall.
 
 export type DepthControlsOptions<M> = Readonly<{
 	onCollapseOneLevel: M
@@ -12,6 +13,8 @@ export type DepthControlsOptions<M> = Readonly<{
 	onExpandAll: M
 	/** Base UI `useId`s of the four tooltip triggers, in order. */
 	triggerIds: readonly [string, string, string, string]
+	/** Only the Timeline binds E / ⇧E, so only it advertises them. */
+	showShortcuts?: boolean
 }>
 
 const depthButton = <M>(
@@ -20,6 +23,7 @@ const depthButton = <M>(
 	label: string,
 	onClick: M,
 	triggerId: string,
+	shortcut?: string,
 ): Html =>
 	button(
 		h,
@@ -34,13 +38,18 @@ const depthButton = <M>(
 				h.DataAttribute("base-ui-tooltip-trigger", ""),
 				h.Id(triggerId),
 				h.OnClick(onClick),
+				// Below, so the tab strip above does not cover it.
+				...tooltipTrigger(h, shortcut === undefined ? label : `${label} (${shortcut})`, {
+					side: "bottom",
+				}),
 			],
 		},
 		[icon(h, name, { size: 12 })],
 	)
 
-export const depthControls = <M>(h: HtmlBuilder<M>, options: DepthControlsOptions<M>): Html =>
-	h.div(
+export const depthControls = <M>(h: HtmlBuilder<M>, options: DepthControlsOptions<M>): Html => {
+	const showShortcuts = options.showShortcuts ?? false
+	return h.div(
 		[h.Class("flex items-center gap-px rounded-md bg-background/70 p-px")],
 		[
 			depthButton(
@@ -49,10 +58,19 @@ export const depthControls = <M>(h: HtmlBuilder<M>, options: DepthControlsOption
 				"Collapse one level",
 				options.onCollapseOneLevel,
 				options.triggerIds[0],
+				showShortcuts ? "⇧E" : undefined,
 			),
-			depthButton(h, "PlusIcon", "Expand one level", options.onExpandOneLevel, options.triggerIds[1]),
+			depthButton(
+				h,
+				"PlusIcon",
+				"Expand one level",
+				options.onExpandOneLevel,
+				options.triggerIds[1],
+				showShortcuts ? "E" : undefined,
+			),
 			h.span([h.AriaHidden(true), h.Class("mx-0.5 h-3.5 w-px shrink-0 bg-border")], []),
 			depthButton(h, "SquareMinusIcon", "Collapse all", options.onCollapseAll, options.triggerIds[2]),
 			depthButton(h, "SquarePlusIcon", "Expand all", options.onExpandAll, options.triggerIds[3]),
 		],
 	)
+}

@@ -76,6 +76,7 @@ import * as OrgSwitcher from "./shell/clerk-org-switcher"
 import { presenceOf } from "./shell/view-nav"
 import { isResolved } from "./shell/source-link"
 import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -186,6 +187,13 @@ const foldToasts = Update.foldChild({
 	read: (model: Model) => Option.some(model.toasts),
 	write: (model, toasts) => modifyFields(model, { toasts: () => toasts }),
 	toParentMessage: (message: Toast.Message) => Message.GotToastMessage({ message }),
+})
+
+const foldTooltip = Update.foldChild({
+	update: TooltipHost.update,
+	read: (model: Model) => Option.some(model.tooltip),
+	write: (model, tooltip) => modifyFields(model, { tooltip: () => tooltip }),
+	toParentMessage: (message: TooltipHost.Message) => Message.GotTooltipMessage({ message }),
 })
 
 // PAGES
@@ -1059,6 +1067,7 @@ const foldMessage = (model: Model, message: Message) =>
 		CompletedIdentifySession: () => ({ model }),
 		GotSignInMessage: ({ message }) => foldSignIn(model, message),
 		GotShellMessage: ({ message }) => foldShell(model, message),
+		GotTooltipMessage: ({ message }) => foldTooltip(model, message),
 		GotToastMessage: ({ message }) =>
 			message._tag === "ClickedToastAction" && model.toastActions[message.toastId] !== undefined
 				? toPage(model, model.toastActions[message.toastId])

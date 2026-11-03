@@ -14,6 +14,7 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
 import { textLink } from "@maple/views/ui/text-link"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { relativeTime } from "../../kit/relative-time"
 import type { SessionRow } from "./session-row"
@@ -47,6 +48,7 @@ const orgButton = <M>(
 			onClick: onFilter(name),
 			clickOptions: { propagation: "Stop" },
 			className: cn(className, "block rounded-sm text-left"),
+			attributes: tooltipTrigger(h, `Only sessions from ${name}`),
 		},
 		[name],
 	)
@@ -80,6 +82,7 @@ const sessionTags = <M>(
 						),
 						onClick: onFilter(tag),
 						clickOptions: { propagation: "Stop" },
+						attributes: tooltipTrigger(h, `${SESSION_TAG_DESCRIPTIONS[tag]}. Click to filter.`),
 					},
 					[SESSION_TAG_LABELS[tag]],
 				)

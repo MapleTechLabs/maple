@@ -3,6 +3,7 @@ import * as Popover from "@maple/views/ui/popover"
 import { INSTALL_METHODS } from "./lib/links"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, type Runtime } from "foldkit"
 import type { Url } from "foldkit/url"
@@ -71,6 +72,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		hasCache: flags.hasSavedResults,
 		copies: {},
 		toasts: Toast.init("toasts"),
+		tooltip: TooltipHost.init("tooltip"),
 		page: placeholder(""),
 	}
 	const entered = enterLocation(model, null)

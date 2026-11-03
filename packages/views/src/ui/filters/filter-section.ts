@@ -13,6 +13,7 @@ import { icon, iconColor, type IconName } from "../icon"
 import { label } from "../label"
 import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
 import { searchInput } from "../search-input"
+import { tooltipTrigger } from "../tooltip-host"
 
 // Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
 // Alt+click on a label toggles the exclusion: `OnClick` carries no modifiers, so the root's
@@ -83,8 +84,8 @@ export type FilterSectionConfig<M> = Readonly<{
 	/** The label's `title` when it is more than the label. */
 	getOptionDescription?: (name: string) => string | undefined
 	showCounts?: boolean
-	/** The info mark beside the title (`FilterDescription`'s closed trigger). */
-	hasDescription?: boolean
+	/** `FilterDescription`: the info mark beside the title, this text in its tooltip. */
+	description?: string
 }>
 
 /** `FilterRowAction`: the `tag` badge as a button, transparent until the row is hovered. */
@@ -136,11 +137,12 @@ const countText = <M>(h: HtmlBuilder<M>, option: FilterOption, isTriState: boole
 		[formatNumber(option.count)],
 	)
 
-/** `FilterDescription`'s closed trigger: the info mark (TODO(tooltip): the popup is not ported). */
-export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string): Html =>
+/** `FilterDescription`: the info mark beside a filter's title, its description in a tooltip. */
+export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string, description: string): Html =>
 	h.span(
 		[
 			h.AriaLabel(`About ${title}`),
+			...tooltipTrigger(h, description),
 			h.Class("inline-flex shrink-0 text-foreground-faint hover:text-muted-foreground active:text-muted-foreground"),
 			h.DataAttribute("base-ui-tooltip-trigger", ""),
 			h.DataAttribute("slot", "tooltip-trigger"),
@@ -336,9 +338,9 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 						[h.Class("flex min-w-0 items-center gap-1.5")],
 						[
 							h.span([h.Class("truncate")], [config.title]),
-							...(config.hasDescription === true
-								? [filterDescriptionMark(h, config.title)]
-								: []),
+							...(config.description === undefined
+								? []
+								: [filterDescriptionMark(h, config.title, config.description)]),
 						],
 					),
 					h.span(

@@ -14,6 +14,7 @@ import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { pressable } from "@maple/views/ui/pressable"
 import { statusDot } from "@maple/views/ui/status-dot"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disclosureChevron } from "./view-kit"
@@ -23,7 +24,6 @@ import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // The session checks: the verdict, what needs attention, the rest.
 // Headlines and actions are sentences, so they read in the prose face; codes and values stay mono.
-// TODO(tooltip): the coverage signals' explanations are drawn as their triggers.
 
 type H = HtmlBuilder<Message>
 
@@ -291,19 +291,61 @@ const SIGNAL_MARK = {
 	absent: { glyph: "–", tone: "text-foreground-subtle", says: "nothing to capture:" },
 } satisfies Record<SessionCoverageSignal, { glyph: string; tone: string; says: string }>
 
-/** `coverageSignals`, labels and states only (the explanations live in the tooltips). */
+const NO_MODEL_CALL = "No model call in this session."
+
+/** `coverageSignals`: each signal's label and state, with the title and explanation its tooltip shows. */
 const coverageSignals = (
 	coverage: SessionCoverage,
-): ReadonlyArray<Readonly<{ label: string; state: SessionCoverageSignal }>> => {
+): ReadonlyArray<
+	Readonly<{ label: string; state: SessionCoverageSignal; title: string; explains: string }>
+> => {
 	const { usage, turns } = coverage
 	return [
-		{ label: "messages", state: coverage.messages },
-		{ label: "tool args & results", state: coverage.toolPayloads },
+		{
+			label: "messages",
+			state: coverage.messages,
+			title: "Messages",
+			explains: {
+				captured:
+					"Each model call's prompts and replies were recorded. Refusals and Reply length read them.",
+				missing:
+					"No model call recorded its prompts or replies. Refusals and Reply length go by status codes only.",
+				absent: NO_MODEL_CALL,
+			}[coverage.messages],
+		},
+		{
+			label: "tool args & results",
+			state: coverage.toolPayloads,
+			title: "Tool arguments and results",
+			explains: {
+				captured: "Each tool call's arguments and result were recorded. Tool errors reads them.",
+				missing: "No tool call recorded its arguments or result. A failed call has only its status.",
+				absent: "No tool was called in this session.",
+			}[coverage.toolPayloads],
+		},
 		{
 			label: usage === "absent" || usage === "none" ? "token usage" : `token usage ${usage}`,
 			state: usage === "absent" ? "absent" : usage === "none" ? "missing" : "captured",
+			title: "Token usage",
+			explains:
+				usage === "per-call" || usage === "roll-up"
+					? "Every model call reported its tokens. Context window and Prompt cache read them."
+					: usage === "session-level"
+						? "Tokens were reported once for the whole session, not per call. Context window and Prompt cache cannot follow them."
+						: usage === "none"
+							? "No span reported token usage."
+							: NO_MODEL_CALL,
 		},
-		{ label: "cost", state: coverage.cost },
+		{
+			label: "cost",
+			state: coverage.cost,
+			title: "Cost",
+			explains: {
+				captured: "Each call carries the cost its instrumentation reported. Not a bill.",
+				missing: "No span reported a cost. Maple prices nothing itself.",
+				absent: NO_MODEL_CALL,
+			}[coverage.cost],
+		},
 		{
 			label:
 				turns === "conversation"
@@ -311,7 +353,15 @@ const coverageSignals = (
 					: turns === "agent-root"
 						? "turns by agent root"
 						: "turns by trace",
+			// One turn per trace is the floor, not a turn key; the other two found real turn boundaries.
 			state: turns === "conversation" || turns === "agent-root" ? "captured" : "missing",
+			title: "Turns",
+			explains:
+				turns === "conversation"
+					? "Turns follow the conversation id on the spans."
+					: turns === "agent-root"
+						? "Turns follow each agent's root span."
+						: "No conversation id or agent root on the spans, so each trace is one turn. Stalls reads a guess.",
 		},
 	]
 }
@@ -340,6 +390,7 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 							),
 							h.DataAttribute("base-ui-tooltip-trigger", ""),
 							h.DataAttribute("slot", "tooltip-trigger"),
+							...tooltipTrigger(h, `${signal.title}\n${signal.explains}`),
 						],
 						[
 							h.span([h.AriaHidden(true), h.Class(mark.tone)], [mark.glyph]),

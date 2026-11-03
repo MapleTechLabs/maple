@@ -27,8 +27,6 @@ import { type ListFacet, Message } from "./message"
 import type { Distributions, Facets, Model, RangeKey } from "./model"
 import { RANGE_UNITS } from "./update"
 
-// TODO(tooltip): the sections' description popovers are drawn as their closed info marks.
-
 type H = HtmlBuilder<Message>
 
 const QUICK_PRESET: RangePreset = { key: "quick", label: "Quick", value: "<10s", max: 10 }
@@ -137,7 +135,7 @@ type FacetSpec = Readonly<{
 	title: string
 	facet: ListFacet
 	isSearchable: boolean
-	hasDescription: boolean
+	description?: string
 }>
 
 const facetSection = (
@@ -152,7 +150,7 @@ const facetSection = (
 		options,
 		selected: model.search[spec.facet] ?? [],
 		isSearchable: spec.isSearchable,
-		hasDescription: spec.hasDescription,
+		description: spec.description,
 		sections: model.filterSections,
 		toSectionsMessage: toSections,
 		onToggle: (name) => Message.ToggledFacetOption({ facet: spec.facet, name }),
@@ -160,7 +158,13 @@ const facetSection = (
 	})
 
 /** `SingleCheckboxFilter`. */
-const singleCheckbox = (h: H, title: string, isChecked: boolean, onToggle: Message): Html => {
+const singleCheckbox = (
+	h: H,
+	title: string,
+	description: string,
+	isChecked: boolean,
+	onToggle: Message,
+): Html => {
 	const inputId = `filter-${title}`
 	return h.div(
 		[h.Class("flex items-center gap-2 py-1.5")],
@@ -178,7 +182,7 @@ const singleCheckbox = (h: H, title: string, isChecked: boolean, onToggle: Messa
 						"flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal sm:text-xs",
 					attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId)), h.Title(title)],
 				},
-				[h.span([h.Class("truncate")], [title]), filterDescriptionMark(h, title)],
+				[h.span([h.Class("truncate")], [title]), filterDescriptionMark(h, title, description)],
 			),
 		],
 	)
@@ -197,33 +201,54 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 			facetSection(
 				h,
 				model,
-				{ title: "Agent", facet: "agents", isSearchable: true, hasDescription: true },
+				{
+					title: "Agent",
+					facet: "agents",
+					isSearchable: true,
+					description: "Sessions where any agent span carries this agent name.",
+				},
 				facets.agents,
 			),
 			facetSection(
 				h,
 				model,
-				{ title: "Tool", facet: "tools", isSearchable: true, hasDescription: true },
+				{
+					title: "Tool",
+					facet: "tools",
+					isSearchable: true,
+					description: "Sessions that called this tool at least once.",
+				},
 				facets.tools,
 			),
 			facetSection(
 				h,
 				model,
-				{ title: "Service", facet: "services", isSearchable: true, hasDescription: false },
+				{ title: "Service", facet: "services", isSearchable: true },
 				facets.services,
 				{ colorOf: getServiceColor },
 			),
 			facetSection(
 				h,
 				model,
-				{ title: "Framework", facet: "vendors", isSearchable: false, hasDescription: true },
+				{
+					title: "Framework",
+					facet: "vendors",
+					isSearchable: false,
+					description:
+						"The agent framework that ran the session, recognised at ingest from the attributes its instrumentation writes. Unidentified is AI telemetry no known framework matched.",
+				},
 				facets.vendors,
 				{ getOptionLabel: vendorLabel, getOptionIcon: vendorIcon, getOptionIconColor: vendorColor },
 			),
 			facetSection(
 				h,
 				model,
-				{ title: "Model", facet: "models", isSearchable: true, hasDescription: true },
+				{
+					title: "Model",
+					facet: "models",
+					isSearchable: true,
+					description: "Sessions where any agent span ran on this model.",
+				},
 				facets.models,
 				{
 					getOptionLabel: (name) => detect(name).displayName,
@@ -234,7 +259,7 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 			facetSection(
 				h,
 				model,
-				{ title: "Environment", facet: "environments", isSearchable: false, hasDescription: false },
+				{ title: "Environment", facet: "environments", isSearchable: false },
 				facets.environments,
 			),
 			filterSidebarDivider(h),
@@ -243,6 +268,7 @@ const loadedRail = (h: H, model: Model, facets: Facets): Html => {
 			singleCheckbox(
 				h,
 				"Hide single-trace sessions",
+				"A framework that reports no session ID gets one session per trace. This hides those; a session with its own ID stays, however many traces it spans.",
 				search.grouped === true,
 				Message.ToggledGrouped(),
 			),

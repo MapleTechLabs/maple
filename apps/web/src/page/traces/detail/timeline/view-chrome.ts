@@ -185,6 +185,7 @@ export const toolbar = (h: H, model: Model, visibleSpanCount: number, ids: Toolb
 				onCollapseAll: Message.ClickedCollapseAll(),
 				onExpandAll: Message.ClickedExpandAll(),
 				triggerIds: ids.depth,
+				showShortcuts: true,
 			}),
 			button(
 				h,

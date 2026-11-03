@@ -2,6 +2,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Popover from "@maple/views/ui/popover"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as Toast from "@maple/views/ui/toast"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { Schema } from "effect"
 import { Command } from "foldkit"
@@ -38,6 +39,7 @@ export const Message = defineMessageUnion({
 	ReusedSignalPresence: {},
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 	GotToastMessage: { message: Toast.Message },
+	GotTooltipMessage: { message: TooltipHost.Message },
 	GotPageMessage: { message: PageMessage },
 	/** A request the open page superseded or left behind was stopped. */
 	CompletedCancelPageFetch: { outcome: Command.Interruptible.Outcome },

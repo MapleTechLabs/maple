@@ -3,9 +3,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { type CopyStatus, copyButton } from "./copy-button"
 import { eyebrow } from "./eyebrow"
 import { icon, type IconName } from "./icon"
+import { tooltipTrigger } from "./tooltip-host"
 
 // Port of `DetailRail` (packages/ui/src/components/detail-rail.tsx): Group, Row and Field.
-// TODO(tooltip): `MetaRow` has no value tooltip.
 
 type Children = ReadonlyArray<Html | string>
 
@@ -107,7 +107,7 @@ export const detailRailField = <M>(
 		],
 	)
 
-const tooltipTrigger = <M>(h: HtmlBuilder<M>, tooltip: string | undefined, value: Html): Html =>
+const withTooltip = <M>(h: HtmlBuilder<M>, tooltip: string | undefined, value: Html): Html =>
 	tooltip === undefined || tooltip === ""
 		? value
 		: h.span(
@@ -115,6 +115,7 @@ const tooltipTrigger = <M>(h: HtmlBuilder<M>, tooltip: string | undefined, value
 					h.Class("cursor-default"),
 					h.DataAttribute("base-ui-tooltip-trigger", ""),
 					h.DataAttribute("slot", "tooltip-trigger"),
+					...tooltipTrigger(h, tooltip),
 				],
 				[value],
 			)
@@ -130,7 +131,7 @@ export const detailRailMetaRow = <M>(
 		icon?: IconName
 		/** `copyable`: the hover-revealed copy button, its status and click owned by the page. */
 		copy?: Readonly<{ status: CopyStatus; onClick: M }>
-		/** `tooltip`: the value is a tooltip trigger (the page Tooltip draws the text). */
+		/** `tooltip`: shown over the value on hover. */
 		tooltip?: string
 	}>,
 ): Html | null =>
@@ -165,7 +166,7 @@ export const detailRailMetaRow = <M>(
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-1.5 text-2xs")],
 						[
-							tooltipTrigger(
+							withTooltip(
 								h,
 								options.tooltip,
 								h.span(
