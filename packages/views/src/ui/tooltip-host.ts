@@ -49,6 +49,8 @@ export const Model = Schema.Struct({
 	/** A tooltip closed by leaving its trigger moments ago: the next trigger opens at once. */
 	isWarm: Schema.Boolean,
 	warmGeneration: Schema.Number,
+	/** A trigger is hovered or focused: its tooltip is pending or open. */
+	isEngaged: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -60,6 +62,7 @@ export const init = (id: string, options: Tooltip.InitOptions = {}): Model => ({
 	shown: {},
 	isWarm: false,
 	warmGeneration: 0,
+	isEngaged: false,
 })
 
 // MESSAGE
@@ -69,6 +72,8 @@ export const Message = defineMessageUnion({
 	FocusedTrigger: { triggerId: Schema.String, shown: Shown },
 	/** A shown trigger's text changed under it (Copy, then Copied). */
 	ChangedTriggerText: { triggerId: Schema.String, text: Schema.String },
+	/** A trigger left the page without a leave or blur: a re-render or a closing panel. */
+	RemovedTrigger: { triggerId: Schema.String },
 	ElapsedWarmWindow: { generation: Schema.Number },
 	GotTooltipMessage: { message: Tooltip.Message },
 })
@@ -95,6 +100,7 @@ const remember = (model: Model, triggerId: string, shown: Shown): Model => {
 				]
 	return {
 		...model,
+		isEngaged: true,
 		tooltip: { ...model.tooltip, requestedSide: shown.side },
 		shown: Object.fromEntries(kept),
 	}
@@ -131,6 +137,13 @@ const leave = (model: Model): UpdateReturn => {
 	}
 }
 
+const DISENGAGING: ReadonlySet<Tooltip.Message["_tag"]> = new Set([
+	"LeftTrigger",
+	"PressedTrigger",
+	"BlurredTrigger",
+	"PressedEscape",
+])
+
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		EnteredTrigger: ({ triggerId, shown }) => {
@@ -146,10 +159,21 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				? { model }
 				: { model: { ...model, shown: { ...model.shown, [triggerId]: { ...shown, text } } } }
 		},
+		RemovedTrigger: ({ triggerId }) =>
+			triggerId === model.tooltip.triggerId && model.isEngaged
+				? lift(
+						{ ...model, isEngaged: false },
+						Tooltip.update(model.tooltip, Tooltip.Message.LeftTrigger()),
+					)
+				: { model },
 		ElapsedWarmWindow: ({ generation }) =>
 			generation === model.warmGeneration ? { model: { ...model, isWarm: false } } : { model },
-		GotTooltipMessage: ({ message: inner }) =>
-			inner._tag === "LeftTrigger" ? leave(model) : lift(model, Tooltip.update(model.tooltip, inner)),
+		GotTooltipMessage: ({ message: inner }) => {
+			const disengaged = DISENGAGING.has(inner._tag) ? { ...model, isEngaged: false } : model
+			return inner._tag === "LeftTrigger"
+				? leave(disengaged)
+				: lift(disengaged, Tooltip.update(model.tooltip, inner))
+		},
 	})
 
 // SUBSCRIPTION
@@ -259,12 +283,29 @@ const escapes: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 		event.key === "Escape" ? Option.some(toTooltip(Tooltip.Message.PressedEscape())) : Option.none(),
 })
 
-/** Triggers whose text changed; the update keeps only the ones it shows. */
-const textChanges: Stream.Stream<Message> = Stream.callback<Message>((queue) =>
+/** The triggers in a removed subtree that have an id to match. */
+const removedTriggerIds = (node: Node): ReadonlyArray<string> =>
+	node instanceof Element
+		? [node, ...node.querySelectorAll(`[${CONTENT_ATTRIBUTE}]`)]
+				.filter((element) => element.matches(`[${CONTENT_ATTRIBUTE}]`) && element.id !== "")
+				.map((element) => element.id)
+		: []
+
+/** Trigger text changes and removals; the update keeps only the shown trigger's. */
+const triggerMutations: Stream.Stream<Message> = Stream.callback<Message>((queue) =>
 	Effect.acquireRelease(
 		Effect.sync(() => {
 			const observer = new MutationObserver((records) =>
-				records.forEach(({ target }) => {
+				records.forEach((record) => {
+					if (record.type === "childList") {
+						record.removedNodes.forEach((node) =>
+							removedTriggerIds(node).forEach((triggerId) =>
+								Queue.offerUnsafe(queue, Message.RemovedTrigger({ triggerId })),
+							),
+						)
+						return
+					}
+					const { target } = record
 					if (!(target instanceof HTMLElement) || target.id === "") return
 					Queue.offerUnsafe(
 						queue,
@@ -275,17 +316,22 @@ const textChanges: Stream.Stream<Message> = Stream.callback<Message>((queue) =>
 					)
 				}),
 			)
-			observer.observe(document.body, { subtree: true, attributeFilter: [CONTENT_ATTRIBUTE] })
+			observer.observe(document.body, {
+				subtree: true,
+				childList: true,
+				attributeFilter: [CONTENT_ATTRIBUTE],
+			})
 			return observer
 		}),
 		(observer) => Effect.sync(() => observer.disconnect()),
 	).pipe(Effect.flatMap(() => Effect.never)),
 )
 
-/** Escape, and text changes on the shown trigger; subscribe only while `isOpen`. */
-export const whileOpen: Stream.Stream<Message> = Stream.merge(escapes, textChanges)
+/** Escape, text changes and removal of the trigger; subscribe only while `isEngaged`. */
+export const whileEngaged: Stream.Stream<Message> = Stream.merge(escapes, triggerMutations)
 
-export const isOpen = (model: Model): boolean => model.tooltip.isOpen
+/** A tooltip is pending or open, so its trigger is worth watching. */
+export const isEngaged = (model: Model): boolean => model.isEngaged || model.tooltip.isOpen
 
 // VIEW
 

@@ -94,6 +94,32 @@ describe("tooltip host", () => {
 		scene({ update, view: sceneView }, given(copied), mounted, expect(text("Copied")).toExist())
 	})
 
+	test("removing the hovered trigger cancels its pending open; another trigger's removal does not", () => {
+		const hovered = entered(init(ID), "a", "First").model
+		const unrelated = update(hovered, Message.RemovedTrigger({ triggerId: "b" })).model
+		const removed = update(unrelated, Message.RemovedTrigger({ triggerId: "a" })).model
+		const elapsedLate = update(
+			removed,
+			Message.GotTooltipMessage({
+				message: Tooltip.Message.ElapsedOpenDelay({ generation: hovered.tooltip.hoverGeneration }),
+			}),
+		)
+		assert({
+			unrelatedEngaged: unrelated.isEngaged,
+			removedEngaged: removed.isEngaged,
+			isOpen: elapsedLate.model.tooltip.isOpen,
+		}).toEqual({ unrelatedEngaged: true, removedEngaged: false, isOpen: false })
+	})
+
+	test("removing the open tooltip's trigger closes it without warming the next one", () => {
+		const open = elapsed(entered(init(ID), "a", "First").model).model
+		const removed = update(open, Message.RemovedTrigger({ triggerId: "a" })).model
+		assert({ isOpen: removed.tooltip.isOpen, isWarm: removed.isWarm }).toEqual({
+			isOpen: false,
+			isWarm: false,
+		})
+	})
+
 	test("leaving before the delay ends drops the pending open", () => {
 		const hovered = entered(init(ID), "a", "First").model
 		const left = update(

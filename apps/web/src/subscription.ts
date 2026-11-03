@@ -257,15 +257,15 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				Stream.map(TooltipHost.triggerEvents, (message) => Message.GotTooltipMessage({ message })),
 		},
 	),
-	/** Escape and live text for the open tooltip. */
-	tooltipWhileOpen: entry(
-		{ isOpen: Schema.Boolean },
+	/** Escape, live text and trigger removal while a tooltip is pending or open. */
+	tooltipWhileEngaged: entry(
+		{ isEngaged: Schema.Boolean },
 		{
-			modelToDependencies: (model) => ({ isOpen: TooltipHost.isOpen(model.tooltip) }),
-			dependenciesToStream: ({ isOpen }) =>
+			modelToDependencies: (model) => ({ isEngaged: TooltipHost.isEngaged(model.tooltip) }),
+			dependenciesToStream: ({ isEngaged }) =>
 				Stream.when(
-					Stream.map(TooltipHost.whileOpen, (message) => Message.GotTooltipMessage({ message })),
-					Effect.sync(() => isOpen),
+					Stream.map(TooltipHost.whileEngaged, (message) => Message.GotTooltipMessage({ message })),
+					Effect.sync(() => isEngaged),
 				),
 		},
 	),

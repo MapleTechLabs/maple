@@ -56,7 +56,7 @@ const tooltipTriggers: Stream.Stream<Message> = Stream.map(TooltipHost.triggerEv
 	Message.GotTooltipMessage({ message }),
 )
 
-const tooltipWhileOpen: Stream.Stream<Message> = Stream.map(TooltipHost.whileOpen, (message) =>
+const tooltipWhileEngaged: Stream.Stream<Message> = Stream.map(TooltipHost.whileEngaged, (message) =>
 	Message.GotTooltipMessage({ message }),
 )
 
@@ -69,12 +69,12 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 			dependenciesToStream: () => tooltipTriggers,
 		},
 	),
-	/** Escape and live text for the open tooltip. */
-	tooltipWhileOpen: entry(
-		{ isOpen: Schema.Boolean },
+	/** Escape, live text and trigger removal while a tooltip is pending or open. */
+	tooltipWhileEngaged: entry(
+		{ isEngaged: Schema.Boolean },
 		{
-			modelToDependencies: (model) => ({ isOpen: TooltipHost.isOpen(model.tooltip) }),
-			dependenciesToStream: ({ isOpen }) => (isOpen ? tooltipWhileOpen : Stream.empty),
+			modelToDependencies: (model) => ({ isEngaged: TooltipHost.isEngaged(model.tooltip) }),
+			dependenciesToStream: ({ isEngaged }) => (isEngaged ? tooltipWhileEngaged : Stream.empty),
 		},
 	),
 	viewport: entry(
