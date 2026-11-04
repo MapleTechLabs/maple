@@ -367,9 +367,9 @@ export const chartWidgetTile = <M>(
 	const options_ = frame(ctx, widget, { loadingSkeleton: skeleton, legendItems })
 	return widgetFrame(h, options_, () => {
 		if (category === undefined) return []
-		if (data === undefined || data.length === 0) return [widgetEmptyState(h)]
 		if (isServiceChart(chartId) && ctx.chartRuntime._tag === "Failed")
 			return [chartRuntimeFailedState(h, ctx.reloadPage ?? null)]
+		if (data === undefined || data.length === 0) return [widgetEmptyState(h)]
 		if (isServiceChart(chartId))
 			return theme === null || ctx.nowMs === null || !isChartRuntimeReady(ctx.chartRuntime)
 				? [skeleton]

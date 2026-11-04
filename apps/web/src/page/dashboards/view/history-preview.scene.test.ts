@@ -96,6 +96,20 @@ describe("previewing a version", () => {
 		expect(keyOf(pageUpdate(revealed, Message.ClickedCancelPreview()).model, "w")).toBe(liveKey)
 	})
 
+	test("a failed export says so instead of doing nothing", () => {
+		const failed = pageUpdate(previewed().model, Message.CompletedExport({ error: "Disk full" }))
+		expect(failed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Couldn't export the dashboard",
+				description: "Disk full",
+			}),
+		)
+		expect(
+			pageUpdate(previewed().model, Message.CompletedExport({ error: null })).outMessage,
+		).toBeUndefined()
+	})
+
 	test("Export JSON during a preview exports the previewed version, not the live board", () => {
 		const exported = pageUpdate(
 			previewed().model,
