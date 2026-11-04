@@ -28,6 +28,7 @@ import {
 	MAX_AUTO_DATA_POINTS,
 	snapRangeForCache,
 	isCalendarAlignedShorthand,
+	isZoneDependentShorthand,
 	startOfDayInTimeZone,
 	timeZoneOffsetMs,
 	warehouseDateTimeToIso,
@@ -865,6 +866,17 @@ describe("calendar arithmetic in an IANA zone", () => {
 		// A month start keeps the time of day, so it must slide with the snapped end.
 		expect(isCalendarAlignedShorthand("1mo")).toBe(false)
 	})
+
+	it.each(["today", "7d", "2w", "1mo", "15m", "12h"])(
+		"flags %s as zone-dependent exactly when its window differs across zones",
+		(shorthand) => {
+			// Nov 10 2026, after LA's DST change, so a month start differs by an hour too.
+			const now = Date.parse("2026-11-10T18:00:00Z")
+			const la = resolveRelativeRange(shorthand, now, "America/Los_Angeles")
+			const tokyo = resolveRelativeRange(shorthand, now, "Asia/Tokyo")
+			expect(isZoneDependentShorthand(shorthand)).toBe(la?.startMs !== tokyo?.startMs)
+		},
+	)
 
 	it("disambiguates a day start that rolled into the previous month", () => {
 		// "2w" on 2026-11-07 starts on 2026-10-25, the day Berlin falls back; its

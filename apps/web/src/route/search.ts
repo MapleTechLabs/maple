@@ -457,6 +457,8 @@ export const ShareSearch = Schema.StructWithRest(
 		from: Schema.optional(Schema.String),
 		to: Schema.optional(Schema.String),
 		range: Schema.optional(Schema.String),
+		/** The link creator's IANA zone; a calendar range ("today", "7d") resolves in it. */
+		tz: Schema.optional(Schema.String),
 		refresh: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
 	}),
 	[variableSearchRest],
