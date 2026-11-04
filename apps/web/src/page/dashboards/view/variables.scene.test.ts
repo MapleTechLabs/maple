@@ -1,12 +1,13 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../../contract"
 import * as Manager from "../kit/variables-manager/model"
-import { SaveVariables } from "./command"
+import { dataStateOf } from "../kit/data-state"
+import { FetchWidget, SaveVariables } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -43,7 +44,84 @@ const ready = (variables: ReadonlyArray<unknown>): Model =>
 		(model, message) => pageUpdate(model, message).model,
 	)
 
+const SERVICE = { name: "service", type: "query", source: { kind: "facet", facet: "service" } }
+
+/** A tile filtered by `$service`, revealed on a board whose `service` options are being fetched. */
+const throughputBoard = () => {
+	const board = Schema.decodeUnknownSync(DashboardDocument)({
+		...Schema.encodeSync(DashboardDocument)(document([SERVICE])),
+		widgets: [
+			{
+				id: "throughput",
+				visualization: "chart",
+				dataSource: {
+					kind: "query",
+					resultShape: "timeseries",
+					queries: [
+						{
+							id: "q",
+							name: "Throughput",
+							dataSource: "traces",
+							aggregation: "count",
+							whereClause: 'service.name = "$service"',
+							addOns: {
+								groupBy: false,
+								having: false,
+								orderBy: false,
+								limit: false,
+								legend: false,
+							},
+							groupBy: [],
+						},
+					],
+				},
+				display: { title: "Throughput", chartId: "query-builder-area" },
+				layout: { x: 0, y: 0, w: 6, h: 6 },
+			},
+		],
+	})
+	const entered = pageUpdate(
+		ready([SERVICE]),
+		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(board) }),
+	).model
+	return { board, revealed: pageUpdate(entered, Message.RevealedWidget({ widgetId: "throughput" })) }
+}
+
 describe("dashboard variables", () => {
+	test("a failed options fetch makes its tiles say the variable is unavailable, not load forever", () => {
+		const { board, revealed } = throughputBoard()
+		expect(names(revealed.commands)).not.toContain(FetchWidget.name)
+		const key = revealed.model.variableOptions.service?.key ?? ""
+		expect(key).not.toBe("")
+		const failed = pageUpdate(
+			revealed.model,
+			Message.CompletedFetchVariableOptions({
+				name: "service",
+				key,
+				result: Result.fail({ title: null, message: "Warehouse timed out", kind: "runtime" }),
+			}),
+		)
+		// The variable no longer resolves to "" and runs the tile with an empty filter.
+		expect(names(failed.commands)).not.toContain(FetchWidget.name)
+		const widget = board.widgets[0]
+		const state =
+			widget === undefined
+				? null
+				: dataStateOf(failed.model.requests, widget, failed.model.widgets.throughput?.gate ?? null)
+		expect(state).toEqual({
+			_tag: "Error",
+			title: "Variable $service unavailable",
+			message: "Warehouse timed out",
+			kind: null,
+		})
+	})
+
+	test("a tile reading a variable whose options are still loading waits for them", () => {
+		const { revealed } = throughputBoard()
+		expect(names(revealed.commands)).not.toContain(FetchWidget.name)
+		expect(revealed.model.widgets.throughput?.gate?._tag).toBe("WaitingOnVariables")
+	})
+
 	test("a picked value rides var-<name> in the URL", () => {
 		const combo = (message: Combobox.Message) => Message.GotVariableComboMessage({ name: "env", message })
 		const picked = pageUpdate(ready([ENV]), combo(Combobox.Message.ClickedItem({ value: "staging" })))
