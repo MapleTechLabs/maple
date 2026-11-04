@@ -429,7 +429,26 @@ static WAL_APPEND_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| 
     METER
         .f64_histogram("ingest_wal_append_duration_seconds")
         .with_unit("s")
-        .with_description("Total WAL append latency: lock wait, write and fsync")
+        .with_description("Total WAL append latency: lock wait, write and the covering sync")
+        .build()
+});
+
+/// From an append's write to the sync that covers it: the in-flight sync it
+/// queued behind, plus its own batch's sync.
+static WAL_SYNC_WAIT_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
+    METER
+        .f64_histogram("ingest_wal_sync_wait_duration_seconds")
+        .with_unit("s")
+        .with_description("Time a written WAL frame waited for the sync that made it durable")
+        .build()
+});
+
+/// Frames one group-commit sync made durable. Its count is the fsync count.
+static WAL_SYNC_BATCH_FRAMES: LazyLock<Histogram<u64>> = LazyLock::new(|| {
+    METER
+        .u64_histogram("ingest_wal_sync_batch_frames")
+        .with_description("WAL frames made durable by one group-commit sync")
+        .with_boundaries(vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0])
         .build()
 });
 
@@ -445,7 +464,7 @@ static WAL_FSYNC_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
     METER
         .f64_histogram("ingest_wal_fsync_duration_seconds")
         .with_unit("s")
-        .with_description("Time spent in sync_data on a WAL segment")
+        .with_description("Time spent in one sync_data on a WAL segment, once per batch")
         .build()
 });
 
@@ -777,7 +796,7 @@ pub fn wal_append_durations(
     shard: usize,
     destination: &str,
     lock_wait_seconds: f64,
-    fsync_seconds: f64,
+    sync_wait_seconds: f64,
     total_seconds: f64,
 ) {
     let labels = [
@@ -785,8 +804,18 @@ pub fn wal_append_durations(
         KeyValue::new("destination", destination.to_owned()),
     ];
     WAL_LOCK_WAIT_DURATION_SECONDS.record(lock_wait_seconds, &labels);
-    WAL_FSYNC_DURATION_SECONDS.record(fsync_seconds, &labels);
+    WAL_SYNC_WAIT_DURATION_SECONDS.record(sync_wait_seconds, &labels);
     WAL_APPEND_DURATION_SECONDS.record(total_seconds, &labels);
+}
+
+/// One group-commit sync on a WAL lane and how many frames it covered.
+pub fn wal_sync(shard: usize, destination: &str, fsync_seconds: f64, frames: u64) {
+    let labels = [
+        KeyValue::new("shard", shard.to_string()),
+        KeyValue::new("destination", destination.to_owned()),
+    ];
+    WAL_FSYNC_DURATION_SECONDS.record(fsync_seconds, &labels);
+    WAL_SYNC_BATCH_FRAMES.record(frames, &labels);
 }
 
 /// Bytes a WAL lane currently holds on disk, exported prefix included.

@@ -326,7 +326,7 @@ describe("convertPersesDashboardToPortable", () => {
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
 			const converted = yield* convertPersesDashboardToPortable(persesDashboard())
-			const created = yield* persistence.create(
+			const { document: created } = yield* persistence.create(
 				asOrgId("org_perses"),
 				asUserId("user_perses"),
 				converted.dashboard,
@@ -336,7 +336,7 @@ describe("convertPersesDashboardToPortable", () => {
 			assert.strictEqual(created.name, "System Overview")
 			assert.strictEqual(created.widgets.length, 1)
 			assert.strictEqual(listed.dashboards.length, 1)
-			assert.strictEqual(listed.dashboards[0]?.name, "System Overview")
+			assert.strictEqual(listed.dashboards[0]?.document.name, "System Overview")
 		}).pipe(Effect.provide(makePersistenceLayer(testDb)))
 	})
 })
