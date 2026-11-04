@@ -7,6 +7,9 @@ import {
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { input } from "@maple/views/ui/input"
 import { toSeriesFieldOptions } from "./drafts"
+import { ROW_LIMIT_MAX, statValueFieldOf } from "./lowering"
+import { SQL_VALUE_FIELD } from "./raw-sql"
+import { isSqlSource } from "./update"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import { ProductEdit } from "./product-edit"
@@ -32,13 +35,40 @@ type H = HtmlBuilder<Message>
 
 const titleCase = (value: string): string => `${Str.toUpperCase(value.charAt(0))}${Str.slice(1)(value)}`
 
+/** The SQL column a stat or gauge reduces, typed since the editor cannot list a query's columns. */
+const sqlValueField = (h: H, state: EditorState): Html =>
+	railSetting(h, "stat-value-field", "Value column", state.statValueField !== "", [
+		input(h, {
+			id: "widget-editor-stat-value-field",
+			attributes: [
+				h.Value(state.statValueField),
+				h.Placeholder(SQL_VALUE_FIELD),
+				h.OnInput((value) => Message.ChangedStatValueField({ value })),
+			],
+		}),
+	])
+
 /** `ScalarReduction`: the aggregate, and the series it reduces (the first while unset or gone). */
 const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
 	const fields = toSeriesFieldOptions(state)
-	const valueField =
-		fields.length > 0 && (state.statValueField === "" || !fields.includes(state.statValueField))
-			? (fields[0] ?? "")
-			: state.statValueField
+	// A fixed endpoint reduces its own field, which the stand-in queries cannot name.
+	const valueField = isSqlSource(model)
+		? [sqlValueField(h, state)]
+		: state.keepsStoredSource
+			? []
+			: [
+					pageSelect(
+						h,
+						model,
+						"stat-value-field",
+						statValueFieldOf(state),
+						Arr.map(fields, (field) => ({ value: field, label: field })),
+						{
+							className: "w-full",
+							toView: (parts) => railSetting(h, "stat-value-field", "Value field", true, parts),
+						},
+					),
+				]
 	return [
 		pageSelect(
 			h,
@@ -51,17 +81,7 @@ const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<
 				toView: (parts) => railSetting(h, "stat-aggregate", "Aggregate", true, parts),
 			},
 		),
-		pageSelect(
-			h,
-			model,
-			"stat-value-field",
-			valueField,
-			Arr.map(fields, (field) => ({ value: field, label: field })),
-			{
-				className: "w-full",
-				toView: (parts) => railSetting(h, "stat-value-field", "Value field", true, parts),
-			},
-		),
+		...valueField,
 	]
 }
 
@@ -113,7 +133,7 @@ const rowLimit = (h: H, state: EditorState): Html =>
 	railSetting(h, "row-limit", "Row limit", state.tableLimit !== "", [
 		numberInput(h, "row-limit", state.tableLimit, "50", (value) => Message.ChangedTableLimit({ value }), [
 			h.Min("1"),
-			h.Max("1000"),
+			h.Max(String(ROW_LIMIT_MAX)),
 		]),
 	])
 

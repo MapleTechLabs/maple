@@ -10,14 +10,14 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { WhereFieldMessage } from "../../kit/where-field"
 import { updateWhereFields } from "../../kit/where-field-update"
 import { toPanelType } from "../kit/chart-registry"
-import { SaveTimeRange, SaveWidget } from "./command"
+import { SaveWidget } from "./command"
 import { addFormula, addQuery, cloneQuery, removeFormula, setPanelType } from "./edits"
 import type { EditorState } from "./editor-state"
-import { validationErrorOf } from "./lowering"
+import { trackStoredSource, validationErrorOf } from "./lowering"
 import { ProductEdit } from "./product-edit"
 import { applyEdit, stepComboStep } from "./product-step"
 import { whereFieldsInputsOf, whereFieldsOf } from "./where-fields"
-import { rawSqlErrorOf, reseedForType } from "./raw-sql"
+import { isRunnableSql, reseedForType } from "./raw-sql"
 import { withDefaultMetric } from "./metric-options"
 import { runSqlPreview, sqlStep } from "./sql-step"
 import { Message } from "./message"
@@ -73,14 +73,13 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 		model.timeRange.value === timeRange.value
 	)
 		return { model: updated, commands }
+	// The editor's range is local: previewing at another window never moves the board's default.
 	const previewed = planPreview({ ...updated, timeRange }, context)
 	const looked = requestAutocomplete(previewed.model, context)
-	const planned = {
+	return {
 		model: looked.model,
-		commands: [...(previewed.commands ?? []), ...(looked.commands ?? [])],
+		commands: [...commands, ...(previewed.commands ?? []), ...(looked.commands ?? [])],
 	}
-	const save = SaveTimeRange({ orgId: context.orgId, dashboardId: model.dashboardId, timeRange })
-	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
 /** The Custom picker: a picked preset or range is the widget's own window. */
@@ -153,8 +152,7 @@ const apply = (model: Model, context: PageContext, listQueryId: string | null): 
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
 	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
-	if (rawSql === null ? validationErrorOf(model.state) !== null : rawSqlErrorOf(rawSql) !== null)
-		return { model }
+	if (rawSql === null ? validationErrorOf(model.state) !== null : !isRunnableSql(rawSql)) return { model }
 	if (listQueryId === null && isEngineList(model, model.state))
 		return { model, commands: generate("applyList", "") }
 	return {
@@ -169,11 +167,15 @@ const apply = (model: Model, context: PageContext, listQueryId: string | null): 
 	}
 }
 
-const edit = (model: Model, context: PageContext, change: (state: EditorState) => EditorState): Return =>
-	editState(model, context, change)
-
-const productEdit = (model: Model, context: PageContext, change: ProductEdit): Return =>
-	planPreview(applyEdit(model, change), context)
+const productEdit = (model: Model, context: PageContext, change: ProductEdit): Return => {
+	const edited = applyEdit(model, change)
+	return planPreview(
+		model.state === null || edited.state === null
+			? edited
+			: { ...edited, state: trackStoredSource(model.state, edited.state) },
+		context,
+	)
+}
 
 /** A where field's step; an applied suggestion edits its text like typing. */
 const whereFieldStep = (model: Model, context: PageContext, message: WhereFieldMessage): Return => {
@@ -249,9 +251,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSortColumn: ({ field, isText }) => sortStep(model, field, isText),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, context, inner),
 		GotRangePickerMessage: ({ message: inner }) => rangePickerStep(model, context, inner),
-		// The editor has no persistence banner, so the failure toasts.
-		CompletedSaveTimeRange: ({ error }) =>
-			error === null ? { model } : { model, outMessage: errorToast(error) },
 		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, context, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
 		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
@@ -260,7 +259,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GeneratedId: ({ purpose, source, id }) =>
 			purpose === "applyList"
 				? apply(model, context, id)
-				: edit(model, context, (state) =>
+				: editState(model, context, (state) =>
 						purpose === "addQuery"
 							? addQuery(state, id)
 							: purpose === "cloneQuery"
@@ -268,21 +267,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								: addFormula(state, id),
 					),
 		ToggledFormulaVisible: ({ formulaId }) =>
-			edit(model, context, (state) => ({
+			editState(model, context, (state) => ({
 				...state,
 				formulas: Arr.map(state.formulas, (formula) =>
 					formula.id === formulaId ? { ...formula, hidden: !formula.hidden } : formula,
 				),
 			})),
 		ChangedFormulaText: ({ formulaId, field, value }) =>
-			edit(model, context, (state) => ({
+			editState(model, context, (state) => ({
 				...state,
 				formulas: Arr.map(state.formulas, (formula) =>
 					formula.id === formulaId ? { ...formula, [field]: value } : formula,
 				),
 			})),
 		ClickedRemoveFormula: ({ formulaId }) =>
-			edit(model, context, (state) => removeFormula(state, formulaId)),
+			editState(model, context, (state) => removeFormula(state, formulaId)),
 		ClickedRunPreview: () =>
 			isSqlSource(model) ? runSqlPreview(model, context) : runPreview(model, context),
 		ChangedSql: (m) => sqlStep(model, m),
@@ -300,15 +299,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		ChangedTitle: ({ value }) => edit(model, context, (state) => ({ ...state, title: value })),
+		ChangedTitle: ({ value }) => editState(model, context, (state) => ({ ...state, title: value })),
 		ChangedMarkdown: ({ value }) =>
-			edit(model, context, (state) => ({ ...state, markdownContent: value })),
+			editState(model, context, (state) => ({ ...state, markdownContent: value })),
 		ChangedDescription: ({ value }) =>
-			edit(model, context, (state) => ({ ...state, description: value })),
+			editState(model, context, (state) => ({ ...state, description: value })),
 		ChangedTimeRangeMode: ({ mode }) => timeRangeModeStep(model, context, mode),
 		ClickedPanelType: ({ panel }) =>
 			isConfigurablePanel(panel)
-				? edit(
+				? editState(
 						model.state === null || model.rawSql === null
 							? model
 							: {
@@ -324,25 +323,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					)
 				: { model },
 		ChangedStacked: ({ isStacked }) =>
-			edit(model, context, (state) => ({ ...state, stacked: isStacked })),
-		ChangedCurve: ({ curveType }) => edit(model, context, (state) => ({ ...state, curveType })),
-		ChangedPoints: ({ pointsMode }) => edit(model, context, (state) => ({ ...state, pointsMode })),
+			editState(model, context, (state) => ({ ...state, stacked: isStacked })),
+		ChangedCurve: ({ curveType }) => editState(model, context, (state) => ({ ...state, curveType })),
+		ChangedPoints: ({ pointsMode }) => editState(model, context, (state) => ({ ...state, pointsMode })),
 		ChangedLegend: ({ legendPosition }) =>
-			edit(model, context, (state) => ({ ...state, legendPosition })),
+			editState(model, context, (state) => ({ ...state, legendPosition })),
 		// Stats live inside the legend: enabling them with the legend hidden turns it on.
 		ToggledSeriesStats: () =>
-			edit(model, context, (state) =>
+			editState(model, context, (state) =>
 				!state.seriesStatsEnabled && state.legendPosition === "hidden"
 					? { ...state, seriesStatsEnabled: true, legendPosition: "bottom" }
 					: { ...state, seriesStatsEnabled: !state.seriesStatsEnabled },
 			),
 		ClickedAddThreshold: () =>
-			edit(model, context, (state) => ({
+			editState(model, context, (state) => ({
 				...state,
 				thresholds: [...state.thresholds, { value: 0, color: "#ef4444" }],
 			})),
 		ChangedThresholdValue: ({ index, value }) =>
-			edit(model, context, (state) => ({
+			editState(model, context, (state) => ({
 				...state,
 				thresholds: Arr.map(state.thresholds, (threshold, i) =>
 					i === index
@@ -351,29 +350,32 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			})),
 		ChangedThresholdColor: ({ index, color }) =>
-			edit(model, context, (state) => ({
+			editState(model, context, (state) => ({
 				...state,
 				thresholds: Arr.map(state.thresholds, (threshold, i) =>
 					i === index ? { ...threshold, color } : threshold,
 				),
 			})),
 		ClickedRemoveThreshold: ({ index }) =>
-			edit(model, context, (state) => ({
+			editState(model, context, (state) => ({
 				...state,
 				thresholds: Arr.filter(state.thresholds, (_, i) => i !== index),
 			})),
-		ChangedUnit: ({ unit }) => edit(model, context, (state) => ({ ...state, unit })),
+		ChangedUnit: ({ unit }) => editState(model, context, (state) => ({ ...state, unit })),
 		ToggledSparkline: () =>
-			edit(model, context, (state) => ({ ...state, sparklineEnabled: !state.sparklineEnabled })),
+			editState(model, context, (state) => ({ ...state, sparklineEnabled: !state.sparklineEnabled })),
 		ChangedGaugeBound: ({ bound, value }) =>
-			edit(model, context, (state) =>
+			editState(model, context, (state) =>
 				bound === "min" ? { ...state, gaugeMin: value } : { ...state, gaugeMax: value },
 			),
-		ChangedTableLimit: ({ value }) => edit(model, context, (state) => ({ ...state, tableLimit: value })),
+		ChangedTableLimit: ({ value }) =>
+			editState(model, context, (state) => ({ ...state, tableLimit: value })),
+		ChangedStatValueField: ({ value }) =>
+			editState(model, context, (state) => ({ ...state, statValueField: value })),
 		ChangedHeatmapScaleType: ({ scaleType }) =>
-			edit(model, context, (state) => ({ ...state, heatmapScaleType: scaleType })),
+			editState(model, context, (state) => ({ ...state, heatmapScaleType: scaleType })),
 		ToggledPercentChange: () =>
-			edit(model, context, (state) => ({
+			editState(model, context, (state) => ({
 				...state,
 				includePercentChange: !state.includePercentChange,
 			})),
@@ -453,12 +455,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (!Result.isSuccess(result)) return { model: { ...model, metricRequested: null } }
 			const listed = { ...model, metricOptions: { search, ...result.success } }
 			// A metrics query without a metric yet takes the first one listed.
+			// Not a user edit, so a fixed endpoint keeps its stored source.
 			return listed.state !== null &&
 				Arr.some(
 					listed.state.queries,
 					(query) => query.dataSource === "metrics" && query.metricName === "",
 				)
-				? edit(listed, context, (state) => withDefaultMetric(state, result.success.options))
+				? planPreview(
+						{ ...listed, state: withDefaultMetric(listed.state, result.success.options) },
+						context,
+					)
 				: { model: listed }
 		},
 		CompletedFetchAutocomplete: ({ key, lookup, result }) => {

@@ -81,7 +81,6 @@ const timeLabel = (model: Model): string =>
 			? presetLabel(model.timeRange.value)
 			: `${model.timeRange.startTime} - ${model.timeRange.endTime}`
 
-/** The preview hero: the board's range picker over the widget as it would render. */
 /** The previewed stat's sparkline series, read like any tile's data (its own data source). */
 const sparklineState = (model: Model, widget: Widget) => {
 	const source = widget.display.sparkline?.dataSource
@@ -90,6 +89,7 @@ const sparklineState = (model: Model, widget: Widget) => {
 		: dataStateOf(model.requests, { ...widget, dataSource: source }, model.sparkGate)
 }
 
+/** The preview hero: the editor's range picker over the widget as it would render. */
 const preview = (h: H, model: Model, timeZone: string): Html => {
 	const widget = previewWidgetOf(model)
 	return h.div(

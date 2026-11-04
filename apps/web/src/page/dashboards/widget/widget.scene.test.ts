@@ -7,7 +7,8 @@ import { expect as expectView, given, Mount, scene, text, withViewInputs } from 
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchAutocomplete, FetchWidget, SaveWidget } from "./command"
-import { setPanelType, withRootOnly } from "./edits"
+import { setPanelType } from "./edits"
+import { withRootOnly } from "../../kit/query-builder/change"
 import { buildDataSource, buildDisplay, toInitialState, validationErrorOf } from "./lowering"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import { Message } from "./message"
@@ -140,22 +141,6 @@ describe("widget editor", () => {
 		const dirty = pageUpdate(renamed, Message.ClickedCancel())
 		expect(dirty.outMessage).toBeUndefined()
 		expect(dirty.model.leaveDialog.isOpen).toBe(true)
-	})
-
-	test("a failed time-range save is reported, a saved one is quiet", () => {
-		const model = opened().model
-		expect(pageUpdate(model, Message.CompletedSaveTimeRange({ error: null })).outMessage).toBeUndefined()
-		expect(
-			pageUpdate(model, Message.CompletedSaveTimeRange({ error: "Dashboard is read-only" })).outMessage,
-		).toEqual(
-			PageOutMessage.RequestedToast({
-				type: "error",
-				title: "Dashboard is read-only",
-				description: "",
-				timeoutMs: null,
-				action: null,
-			}),
-		)
 	})
 
 	test("the first focus in the query editor starts every autocomplete lookup, once", () => {

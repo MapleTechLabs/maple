@@ -10,6 +10,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { toPanelType } from "../kit/chart-registry"
 import { widgetTimeRangeLabel } from "../kit/time-range-label"
 import type { EditorState } from "./editor-state"
+import { queryCapabilitiesOf } from "./lowering"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { thresholds } from "./view-rail-thresholds"
@@ -234,8 +235,11 @@ const seriesStats = (h: H, state: EditorState): Html =>
 		],
 	)
 
-/** `QueryOptions`: comparison and its % change. */
-export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [
+/** `QueryOptions`: comparison and its % change, on the panels whose lowering keeps a comparison. */
+export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> =>
+	queryCapabilitiesOf(state).comparison ? comparisonOptions(h, model, state) : []
+
+const comparisonOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [
 	divider(h),
 	pageSelect(
 		h,

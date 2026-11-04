@@ -11,7 +11,7 @@ import { queryPanelView } from "../../kit/query-builder/view"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 import { toPanelType } from "../kit/chart-registry"
 import type { EditorState } from "./editor-state"
-import { isNote, isProductEventsFunnel, validationErrorOf } from "./lowering"
+import { isNote, isProductEventsFunnel, queryCapabilitiesOf, validationErrorOf } from "./lowering"
 import { listPanel } from "./view-list"
 import { funnelPanel, pathsPanel } from "./view-panels"
 import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
@@ -223,15 +223,20 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 				},
 				["+ Query"],
 			),
-			button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					attributes: [h.OnClick(Message.ClickedAddFormula())],
-				},
-				["+ Formula"],
-			),
+			// Breakdown rows, grouped tables and histograms drop formulas, so none is offered there.
+			...(queryCapabilitiesOf(state).formulas
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedAddFormula())],
+							},
+							["+ Formula"],
+						),
+					]
+				: []),
 			button(
 				h,
 				{

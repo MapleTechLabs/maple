@@ -1,13 +1,6 @@
-import {
-	HEATMAP_COLOR_SCALES,
-	IsoDateTimeString,
-	isPanelType,
-	type PanelType,
-	STAT_AGGREGATES,
-} from "@maple/domain/http"
-import { resolveTimeRangeWindow } from "@maple/query-engine"
+import { HEATMAP_COLOR_SCALES, isPanelType, type PanelType, STAT_AGGREGATES } from "@maple/domain/http"
 import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
-import { Option, Schema } from "effect"
+import { Option } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
@@ -159,31 +152,13 @@ export const leaveDialogStep = (model: Model, message: Dialog.Message): Return =
 	}
 }
 
-/** `WidgetTimeRange`: Custom seeds an absolute override from the board's window. */
+/** `WidgetTimeRange`: Custom starts from the board's range, so a relative preset keeps moving. */
 export const timeRangeModeStep = (model: Model, context: PageContext, mode: "dashboard" | "custom"): Return =>
 	editState(model, context, (state): EditorState => {
 		if (mode === "dashboard") return { ...state, timeRange: null }
 		if (state.timeRange !== null) return state
-		const window =
-			model.timeRange === null || model.nowMs === null
-				? null
-				: resolveTimeRangeWindow(model.timeRange, {
-						snap: true,
-						timeZone: context.timeZone,
-						nowMs: model.nowMs,
-					})
-		const startTime = Option.flatMap(Option.fromNullishOr(window?.startTime), decodeIso)
-		const endTime = Option.flatMap(Option.fromNullishOr(window?.endTime), decodeIso)
-		return {
-			...state,
-			timeRange:
-				Option.isSome(startTime) && Option.isSome(endTime)
-					? { type: "absolute", startTime: startTime.value, endTime: endTime.value }
-					: { type: "relative", value: "1h" },
-		}
+		return { ...state, timeRange: model.timeRange ?? { type: "relative", value: "1h" } }
 	})
-
-const decodeIso = Schema.decodeUnknownOption(IsoDateTimeString)
 
 /** `TypePicker`: every panel type. */
 export const isConfigurablePanel = (panel: string): panel is PanelType => isPanelType(panel)

@@ -1,4 +1,5 @@
 import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/http"
+import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 import { Schema, String as Str } from "effect"
@@ -54,23 +55,32 @@ export const reseedForType = (rawSql: RawSqlState, before: TypePair, after: Type
 	return { ...rawSql, draft: reseeded, staged: reseeded }
 }
 
-/** `buildRawSqlDataSource`: a stat or gauge without a reduction reads the first row's `value`. */
+/** The column a SQL stat or gauge reduces while none is typed: the templates' `value`. */
+export const SQL_VALUE_FIELD = "value"
+
+/** `buildRawSqlDataSource`: the transform follows the picked type, so only a stat or gauge reduces. */
 export const rawSqlDataSourceOf = (
 	widget: Widget,
 	draft: RawSqlDraft,
-	state: TypePair,
+	state: Pick<EditorState, "visualization" | "chartId" | "statAggregate" | "statValueField">,
 ): Widget["dataSource"] => {
-	const existing = dataSourceTransform(widget.dataSource)
-	const needsScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
-	const transform =
-		needsScalar && existing?.reduceToValue === undefined
-			? { ...existing, reduceToValue: { field: "value", aggregate: "first" as const } }
-			: existing
+	const { reduceToValue: _previous, ...kept } = dataSourceTransform(widget.dataSource) ?? {}
+	const isScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
+	const field = Str.trim(state.statValueField)
+	const transform = isScalar
+		? {
+				...kept,
+				reduceToValue: {
+					field: field === "" ? SQL_VALUE_FIELD : field,
+					aggregate: state.statAggregate,
+				},
+			}
+		: kept
 	return makeRawSqlDataSource({
 		sql: draft.sql,
 		displayType: displayTypeOf(state),
 		...(draft.granularitySeconds === null ? undefined : { granularitySeconds: draft.granularitySeconds }),
-		...(transform === undefined ? undefined : { transform }),
+		...(Object.keys(transform).length === 0 ? undefined : { transform }),
 	})
 }
 
@@ -79,3 +89,6 @@ export const rawSqlErrorOf = (draft: RawSqlDraft): string | null =>
 	Str.includes("$__orgFilter")(draft.sql)
 		? null
 		: "SQL must include $__orgFilter so the query is scoped to your organization"
+
+/** What blocks both Run preview and Apply: the warehouse's own checks, org filter included. */
+export const isRunnableSql = (draft: RawSqlDraft): boolean => rawSqlIssue(draft.sql) === null

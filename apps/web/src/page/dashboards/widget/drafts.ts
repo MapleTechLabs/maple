@@ -168,12 +168,15 @@ const uniqueName = (taken: ReadonlyArray<string>, base: string): string => {
 	return `${base} (${suffix ?? taken.length + 2})`
 }
 
-/** `toSeriesFieldOptions`: the visible series a stat can reduce, named as the chart names them. */
+/** `toSeriesFieldOptions`: the enabled, visible series a stat can reduce, named as the chart names them. */
 export const toSeriesFieldOptions = (
 	state: Readonly<{ queries: ReadonlyArray<QueryDraft>; formulas: ReadonlyArray<FormulaDraft> }>,
 ): ReadonlyArray<string> =>
 	Arr.map(
-		Arr.filter([...state.queries, ...state.formulas], (entry) => !entry.hidden),
+		[
+			...Arr.filter(state.queries, isVisibleQuery),
+			...Arr.filter(state.formulas, (formula) => !formula.hidden),
+		],
 		(entry) => Str.trim(entry.legend) || entry.name,
 	).reduce<ReadonlyArray<string>>((options, base) => [...options, uniqueName(options, base)], [])
 

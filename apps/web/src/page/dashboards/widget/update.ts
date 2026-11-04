@@ -1,5 +1,8 @@
 import { initWhereFields } from "../../kit/where-field"
-import { pickDashboardControlParams } from "../../../lib/dashboard-controls/search-params"
+import {
+	pickDashboardControlParams,
+	variableValuesFromSearch,
+} from "../../../lib/dashboard-controls/search-params"
 import {
 	computeBucketSecondsForWidthRange,
 	formatBucketSecondsShort,
@@ -25,7 +28,15 @@ import { planWidget } from "../kit/widget-data"
 import { FetchAutocomplete, FetchVariableOptions, FetchWidget, ReadClock } from "./command"
 import { planOptionRequests, planVariablesOf } from "../kit/variables"
 import type { EditorState } from "./editor-state"
-import { buildDataSource, buildDisplay, toInitialState, validationErrorOf, type Widget } from "./lowering"
+import {
+	buildDisplay,
+	buildSqlDisplay,
+	builderDataSourceOf,
+	toInitialState,
+	trackStoredSource,
+	validationErrorOf,
+	type Widget,
+} from "./lowering"
 import { initRawSql, type RawSqlDraft, rawSqlDataSourceOf } from "./raw-sql"
 import { askMetricOptions } from "./metric-options"
 import { eventNamesKeyOf, requestSuggestions } from "./product-step"
@@ -118,23 +129,33 @@ export const backHref = (model: Model): string =>
 		}),
 	)
 
-/**
- * `previewWidget`: the staged queries with the live presentation (type, legend, stats, points),
- * so those apply without Run preview.
- */
+/** The fields that shape the preview's request: they wait for Run preview. Every other field is live. */
+const stagedFieldsOf = (staged: EditorState) => ({
+	queries: staged.queries,
+	keepsStoredSource: staged.keepsStoredSource,
+	formulas: staged.formulas,
+	comparisonMode: staged.comparisonMode,
+	includePercentChange: staged.includePercentChange,
+	statAggregate: staged.statAggregate,
+	statValueField: staged.statValueField,
+	tableLimit: staged.tableLimit,
+	listDataSource: staged.listDataSource,
+	listWhereClause: staged.listWhereClause,
+	listLimit: staged.listLimit,
+	listColumns: staged.listColumns,
+	listRootOnly: staged.listRootOnly,
+	paths: staged.paths,
+})
+
+/** `previewWidget`: the staged query fields under the live display, so presentation edits apply without Run preview. */
 export const previewWidgetOf = (model: Model): Widget | null => {
 	const widget = widgetOf(model)
 	if (widget === null || model.state === null || model.staged === null) return null
 	const state = model.state
 	const preview: EditorState = {
-		...model.staged,
-		visualization: state.visualization,
-		chartId: state.chartId,
-		legendPosition: state.legendPosition,
-		seriesStatsEnabled: state.seriesStatsEnabled,
-		pointsMode: state.pointsMode,
-		markdownContent: state.markdownContent,
-		// The funnel's view and step labels are presentation too; its steps stay staged.
+		...state,
+		...stagedFieldsOf(model.staged),
+		// The funnel's view and step labels are presentation; its steps stay staged.
 		funnel: {
 			...model.staged.funnel,
 			variant: state.funnel.variant,
@@ -142,16 +163,16 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 		},
 		queries: listPreviewQueries(model.staged.queries, state, model.staged, widget),
 	}
+	const isSql = isSqlSource(model) && model.rawSql !== null
 	return {
 		...widget,
 		timeRange: state.timeRange ?? undefined,
 		visualization: state.visualization,
 		dataSource:
-			isSqlSource(model) && model.rawSql !== null
+			isSql && model.rawSql !== null
 				? rawSqlDataSourceOf(widget, model.rawSql.staged, state)
-				: buildDataSource(preview),
-		// The SQL's display follows the editing state; the builder's, its staged queries.
-		display: buildDisplay(widget, isSqlSource(model) ? state : preview),
+				: builderDataSourceOf(widget, preview),
+		display: isSql ? buildSqlDisplay(widget, state) : buildDisplay(widget, preview),
 	}
 }
 
@@ -197,10 +218,11 @@ const planWidgetPreview = (model: Model, context: PageContext): Return => {
 		timeZone: context.timeZone,
 		nowMs: model.nowMs,
 	})
-	// `DashboardVariablesProvider` with no URL values: `$name` previews at the variable's default.
+	// The board's current selections, carried in the editor's search; an unset one previews at its default.
 	const definitions = model.document?.variables ?? []
 	const options = planOptionRequests(context.orgId, definitions, model.variableOptions, window, "Load")
-	const variables = planVariablesOf(context.orgId, definitions, {}, options.slots, window)
+	const values = variableValuesFromSearch(model.search)
+	const variables = planVariablesOf(context.orgId, definitions, values, options.slots, window)
 	const optionCommands = Arr.map(options.requests, (request) => FetchVariableOptions(request))
 	const planned = planWidgetGates(
 		{ ...model, variableOptions: options.slots },
@@ -331,7 +353,10 @@ export const editState = (
 	model: Model,
 	context: PageContext,
 	edit: (state: EditorState) => EditorState,
-): Return => (model.state === null ? { model } : planPreview({ ...model, state: edit(model.state) }, context))
+): Return =>
+	model.state === null
+		? { model }
+		: planPreview({ ...model, state: trackStoredSource(model.state, edit(model.state)) }, context)
 
 /** `isDirty`: the source tab moved, or the state (or, in Raw SQL, the SQL) differs from what was opened. */
 export const isDirty = (model: Model): boolean =>
@@ -364,14 +389,14 @@ export const askToLeave = (model: Model, url: string): Return => {
 	}
 }
 
-/** The widget Apply writes: the stored widget with the edited type, source and display. */
-/** `rawSql` set: the Raw SQL source, built for the type picked in the editor. */
+/** The widget Apply writes; with `rawSql`, the Raw SQL source built for the type picked in the editor. */
 export const editedWidget = (widget: Widget, state: EditorState, rawSql: RawSqlDraft | null): Widget => {
 	const edited: Widget = {
 		...widget,
 		visualization: state.visualization,
-		dataSource: rawSql === null ? buildDataSource(state) : rawSqlDataSourceOf(widget, rawSql, state),
-		display: buildDisplay(widget, state),
+		dataSource:
+			rawSql === null ? builderDataSourceOf(widget, state) : rawSqlDataSourceOf(widget, rawSql, state),
+		display: rawSql === null ? buildDisplay(widget, state) : buildSqlDisplay(widget, state),
 	}
 	if (state.timeRange !== null) return { ...edited, timeRange: state.timeRange }
 	// No override: the key goes, so the widget follows the dashboard again.
