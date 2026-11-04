@@ -171,11 +171,18 @@ const navigate = (model: Model, url: string, isReplace = false): Return => ({
 })
 
 /** `handleToggleEdit`: the per-viewer controls survive, except a viewer's range, which editing replaces. */
-const toggleEdit = (model: Model): Return => {
-	const controls = pickDashboardControlParams(model.search)
-	if (isEditing(model)) return navigate(model, dashboardHref(model, controls))
-	const { range: _range, from: _from, to: _to, ...kept } = controls
-	return navigate(model, dashboardHref(model, { ...kept, mode: "edit" }))
+const toggleEdit = (model: Model): Return =>
+	navigate(
+		model,
+		isEditing(model)
+			? dashboardHref(model, pickDashboardControlParams(model.search))
+			: editModeHref(model),
+	)
+
+/** Entering edit mode: the viewer controls survive, except a viewer's range (edit works on the board's). */
+const editModeHref = (model: Model): string => {
+	const { range: _range, from: _from, to: _to, ...kept } = pickDashboardControlParams(model.search)
+	return dashboardHref(model, { ...kept, mode: "edit" })
 }
 
 /** `PageRefreshProvider.reload`: a new clock, an unsnapped window and the Reload spinner. */
@@ -240,7 +247,7 @@ const addPicked = (
 				model: updated,
 				commands,
 				outMessage: PageOutMessage.RequestedNavigation({
-					url: dashboardHref(model, { ...pickDashboardControlParams(model.search), mode: "edit" }),
+					url: editModeHref(model),
 					isReplace: false,
 				}),
 			}

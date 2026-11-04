@@ -445,6 +445,14 @@ describe("dashboard view", () => {
 				isReplace: false,
 			}),
 		)
+		// A viewer's own range stays behind: edit mode works on the board's saved range.
+		const ranged = routeChanged(ready(), { ...ROUTE, search: { range: "7d", tab: "a" } }, context).model
+		expect(pageUpdate(ranged, pick).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_platform?mode=edit&tab=a",
+				isReplace: false,
+			}),
+		)
 	})
 
 	test("Tags opens the editor on the board's tags; Save writes what it holds", () => {
