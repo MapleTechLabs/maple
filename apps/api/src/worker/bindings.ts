@@ -28,6 +28,7 @@ import {
 	type RateLimiter,
 	ReplayBlobBucket,
 	SchemaApplyWorkflow,
+	ShareLinkRateLimit,
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 	WorkflowStartError,
@@ -41,6 +42,10 @@ import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import {
+	SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS,
+	SHARE_LINK_RATE_LIMIT_REQUESTS,
+} from "@maple/backend/services/auth/ShareRateLimiter"
 import {
 	AuditEventsQueue,
 	CancellationReviewsQueue,
@@ -71,6 +76,10 @@ export const bindApiClients = Effect.gen(function* () {
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
 			namespaceId: 2026071801,
 			simple: { limit: API_V2_RATE_LIMIT_REQUESTS, period: API_V2_RATE_LIMIT_PERIOD_SECONDS },
+		}),
+		shareLinkRateLimit: yield* Cloudflare.RateLimit("SHARE_LINK_RATE_LIMITER", {
+			namespaceId: 2026110401,
+			simple: { limit: SHARE_LINK_RATE_LIMIT_REQUESTS, period: SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS },
 		}),
 		cliAuthRateLimit: yield* Cloudflare.RateLimit("CLI_AUTH_RATE_LIMITER", {
 			namespaceId: 2026072101,
@@ -187,6 +196,7 @@ export const apiPorts = (
 		Layer.succeed(AuditEventsQueueProducer, producer(clients.auditEvents)),
 		Layer.succeed(CancellationReviewQueueProducer, producer(clients.cancellationReviews)),
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
+		Layer.succeed(ShareLinkRateLimit, limiter(clients.shareLinkRateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),

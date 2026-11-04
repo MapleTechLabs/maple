@@ -39,6 +39,7 @@ import { TelemetryReadService } from "@maple/backend/services/warehouse/Telemetr
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 import { ReplayBlobStore } from "@maple/backend/platform/ReplayBlobStore"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { HttpV2AlertDeliveriesLive } from "./alert-deliveries.http"
@@ -297,6 +298,9 @@ const v2GroupLayersExceptOnboardingChecklist = (
 						Effect.die("organization regions are not exercised by v2 route harnesses"),
 					delete: () => Effect.die("organization deletion is not exercised by v2 route harnesses"),
 				}),
+			),
+			Layer.provide(
+				Layer.succeed(ShareRateLimiter, { check: () => Effect.succeed("allowed" as const) }),
 			),
 		),
 	)
