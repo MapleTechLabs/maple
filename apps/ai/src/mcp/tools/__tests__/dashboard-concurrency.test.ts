@@ -3,8 +3,8 @@
 // by the MCP tools (add_dashboard_widget, remove_dashboard_widget,
 // reorder_dashboard_widgets, update_dashboard_widget, update_dashboard).
 //
-// These tests exercise `DashboardPersistenceService.mutate` and `.upsert`,
-// which the MCP tools delegate to via `withDashboardMutation`. The previous
+// These tests exercise `DashboardPersistenceService.mutate`, which the MCP
+// tools delegate to via `withDashboardMutation`. The previous
 // implementation was a read-modify-write with no compare-and-swap, so two
 // concurrent calls could silently lose one update. The new implementation
 // uses a `(id, version)` CAS with bounded retry; these tests guard against
@@ -15,9 +15,9 @@ import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Ar
 import {
 	DashboardConcurrencyError,
 	DashboardDocument,
-	DashboardId,
 	IsoDateTimeString,
 	OrgId,
+	PortableDashboardDocument,
 	UserId,
 } from "@maple/domain/http"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -50,15 +50,12 @@ const makeLayer = (testDb: TestDb) =>
 		Layer.provide(testConfig()),
 	)
 
-const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 
 const ORG = asOrgId("org_a")
 const USER = asUserId("user_a")
-const DASHBOARD = asDashboardId("dash-1")
-const NOW = asIsoDateTimeString("2026-01-01T00:00:00.000Z")
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -70,16 +67,11 @@ const widget = (id: string): Widget => ({
 	layout: { x: 0, y: 0, w: 3, h: 4 },
 })
 
-const seed = (overrides: Partial<DashboardDocument> = {}): DashboardDocument =>
-	new DashboardDocument({
-		id: DASHBOARD,
-		name: "Dashboard",
-		timeRange: { type: "relative", value: "12h" },
-		widgets: [],
-		createdAt: NOW,
-		updatedAt: NOW,
-		...overrides,
-	})
+const seed = (name = "Dashboard") =>
+	new PortableDashboardDocument({ name, timeRange: { type: "relative", value: "12h" }, widgets: [] })
+
+const rename = (name: string) => (existing: DashboardDocument) =>
+	Effect.succeed(new DashboardDocument({ ...existing, name }))
 
 const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 	if (!Exit.isFailure(exit)) return undefined
@@ -95,10 +87,10 @@ describe("dashboard concurrency", () => {
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			yield* persistence.upsert(ORG, USER, seed())
+			const { document: created } = yield* persistence.create(ORG, USER, seed())
 
 			const addWidget = (widgetId: string) =>
-				persistence.mutate(ORG, USER, DASHBOARD, (existing) =>
+				persistence.mutate(ORG, USER, created.id, (existing) =>
 					Effect.succeed(
 						new DashboardDocument({
 							...existing,
@@ -113,137 +105,56 @@ describe("dashboard concurrency", () => {
 			const listed = yield* persistence.list(ORG)
 
 			assert.strictEqual(listed.dashboards.length, 1)
-			const widgets = Arr.map(listed.dashboards[0]!.widgets, (w) => w.id).sort()
+			const widgets = Arr.map(listed.dashboards[0]!.document.widgets, (w) => w.id).sort()
 			assert.deepStrictEqual(widgets, ["w-a", "w-b"])
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("`upsert` rejects a stale write with DashboardConcurrencyError", () => {
+	it.effect("two writers based on the same version: one lands, the other is a typed conflict", () => {
 		const testDb = createTestDb(trackedDbs)
 		const layer = makeLayer(testDb)
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			// Establish baseline at version=1.
-			yield* persistence.upsert(ORG, USER, seed({ name: "Initial" }))
+			const { document: created } = yield* persistence.create(ORG, USER, seed("Initial"))
 
-			// Fire two upserts concurrently. Both will read the same version
-			// before either writes. The first commit wins the CAS; the second
-			// must surface a DashboardConcurrencyError instead of clobbering.
+			// Both loaded version 1. Whichever commits second must not clobber the first.
 			const exits = yield* Effect.all(
-				[
+				Arr.map(["From writer A", "From writer B"], (name) =>
 					Effect.exit(
-						persistence.upsert(
-							ORG,
-							USER,
-							seed({
-								name: "From writer A",
-								updatedAt: asIsoDateTimeString("2026-01-01T00:00:01.000Z"),
-							}),
-						),
+						persistence.mutate(ORG, USER, created.id, rename(name), { expectedVersion: 1 }),
 					),
-					Effect.exit(
-						persistence.upsert(
-							ORG,
-							USER,
-							seed({
-								name: "From writer B",
-								updatedAt: asIsoDateTimeString("2026-01-01T00:00:02.000Z"),
-							}),
-						),
-					),
-				],
+				),
 				{ concurrency: 2 },
 			)
 
-			const exitsAndListed = { exits, listed: yield* persistence.list(ORG) }
-
-			const successes = Arr.filter(exitsAndListed.exits, Exit.isSuccess)
-			const failures = Arr.filter(exitsAndListed.exits, Exit.isFailure)
-			assert.strictEqual(successes.length + failures.length, 2)
-			// At least one writer must hit the CAS conflict path. Under serialized
-			// scheduling both could conceivably succeed; a regression that makes
-			// both *always* succeed by silently overwriting is what we're guarding
-			// against, so this assertion is "at least one failed OR ordering was
-			// strictly serialized". We assert the surviving state is internally
-			// consistent and the failure (if any) is the typed concurrency error.
-			assert.strictEqual(exitsAndListed.listed.dashboards.length, 1)
-			assert.include(["From writer A", "From writer B"], exitsAndListed.listed.dashboards[0]!.name)
-
-			for (const exit of failures) {
-				const error = findError(exit)
-				assert.instanceOf(error, DashboardConcurrencyError)
-			}
+			const successes = Arr.filter(exits, Exit.isSuccess)
+			const failures = Arr.filter(exits, Exit.isFailure)
+			assert.strictEqual(successes.length, 1)
+			assert.strictEqual(failures.length, 1)
+			assert.instanceOf(findError(failures[0]!), DashboardConcurrencyError)
+			const { document: stored } = yield* persistence.get(ORG, created.id)
+			assert.strictEqual(stored.name, successes[0]!.value.document.name)
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("after an upsert conflict, a refetch+retry resolves", () => {
+	it.effect("after a conflict, a retry based on the fresh version resolves", () => {
 		const testDb = createTestDb(trackedDbs)
 		const layer = makeLayer(testDb)
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			yield* persistence.upsert(ORG, USER, seed({ name: "Initial" }))
-
-			// Race two upserts so we deterministically observe at least one
-			// CAS conflict. (`upsert` re-reads on every call, so the only way
-			// to trigger the failure path is genuine overlap — which is
-			// exactly the bug the version column was added to detect.)
-			const exits = yield* Effect.all(
-				[
-					Effect.exit(
-						persistence.upsert(
-							ORG,
-							USER,
-							seed({
-								name: "Writer A",
-								updatedAt: asIsoDateTimeString("2026-01-01T00:00:01.000Z"),
-							}),
-						),
-					),
-					Effect.exit(
-						persistence.upsert(
-							ORG,
-							USER,
-							seed({
-								name: "Writer B",
-								updatedAt: asIsoDateTimeString("2026-01-01T00:00:02.000Z"),
-							}),
-						),
-					),
-				],
-				{ concurrency: 2 },
+			const { document: created } = yield* persistence.create(ORG, USER, seed("Initial"))
+			yield* persistence.mutate(ORG, USER, created.id, rename("Writer A"), { expectedVersion: 1 })
+			const stale = yield* Effect.exit(
+				persistence.mutate(ORG, USER, created.id, rename("Writer B"), { expectedVersion: 1 }),
 			)
+			assert.instanceOf(findError(stale), DashboardConcurrencyError)
 
-			// Recovery path: refetch fresh state and re-apply the loser's
-			// edit on top of it. This is exactly what the web hook does in
-			// response to a `DashboardConcurrencyError`.
-			const fresh = yield* persistence.list(ORG)
-			const current = fresh.dashboards[0]!
+			// What the web store does on a 409: re-read, re-apply on top, send the new version.
+			yield* persistence.mutate(ORG, USER, created.id, rename("Recovered"), { expectedVersion: 2 })
 
-			yield* persistence.upsert(
-				ORG,
-				USER,
-				new DashboardDocument({
-					...current,
-					name: "Recovered",
-					updatedAt: asIsoDateTimeString("2026-01-01T00:00:03.000Z"),
-				}),
-			)
-
-			const listed = yield* persistence.list(ORG)
-
-			// At least one writer should have hit a CAS conflict. We don't assert
-			// on which — under serialized scheduling either A or B can win — only
-			// that the loser surfaced as a typed concurrency error rather than
-			// silently dropping the update.
-			const failures = Arr.filter(exits, Exit.isFailure)
-			for (const exit of failures) {
-				assert.instanceOf(findError(exit), DashboardConcurrencyError)
-			}
-
-			assert.strictEqual(listed.dashboards.length, 1)
-			assert.strictEqual(listed.dashboards[0]!.name, "Recovered")
+			assert.strictEqual((yield* persistence.get(ORG, created.id)).document.name, "Recovered")
 		}).pipe(Effect.provide(layer))
 	})
 })

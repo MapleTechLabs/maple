@@ -12,6 +12,8 @@ pub struct ResourceConfig {
     pub service_instance_id: String,
     pub deployment_env: String,
     pub internal_org_id: String,
+    /// Host identity from `host_identity::detect`, read once at startup.
+    pub host_attributes: Vec<KeyValue>,
 }
 
 pub fn build_resource(cfg: ResourceConfig) -> Resource {
@@ -46,6 +48,8 @@ pub fn build_resource(cfg: ResourceConfig) -> Resource {
         attrs.push(KeyValue::new("vcs.ref.head.revision", revision));
     }
     attrs.extend(detect_platform());
+    // Last, so ECS task metadata overrides the env-derived platform keys.
+    attrs.extend(cfg.host_attributes);
     Resource::builder().with_attributes(attrs).build()
 }
 
@@ -436,6 +440,11 @@ pub fn wal_commit_internal_span(destination: &'static str) -> Span {
         // "nothing landed" and "half the payload landed".
         "maple.ingest.frames_committed" = Empty,
         "maple.ingest.queued_bytes" = Empty,
+        // Group commit: the largest sync batch a frame joined, and the time
+        // spent on the lane lock and waiting for covering syncs, summed.
+        "maple.ingest.wal_batch_frames" = Empty,
+        "maple.ingest.wal_lock_wait_ms" = Empty,
+        "maple.ingest.wal_sync_wait_ms" = Empty,
         // Only set on the failing frame.
         "maple.ingest.shard" = Empty,
         "maple.ingest.lane" = Empty,
@@ -724,6 +733,7 @@ mod tests {
             service_instance_id: "test-instance".to_owned(),
             deployment_env: "test".to_owned(),
             internal_org_id: "internal".to_owned(),
+            host_attributes: Vec::new(),
         });
         assert_eq!(
             find_attr(&resource, "process.runtime.name").as_deref(),

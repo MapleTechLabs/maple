@@ -530,7 +530,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const persistence = yield* DashboardPersistenceService
 
-			const dashboard = yield* persistence
+			const { document: dashboard } = yield* persistence
 				.create(tenant.orgId, tenant.userId, portable)
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 

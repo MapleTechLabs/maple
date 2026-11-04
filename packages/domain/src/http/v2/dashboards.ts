@@ -86,7 +86,31 @@ const dashboardFields = {
 	updatedAt: Timestamp,
 }
 
-export const V2Dashboard = Schema.Struct(dashboardFields)
+// The stored row's CAS counter, which history snapshots do not carry.
+const liveDashboardFields = {
+	...dashboardFields,
+	version: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).annotate({
+		description:
+			"The dashboard's current version. Send it as `expected_version` on an update so a newer change is never overwritten.",
+	}),
+}
+
+const DashboardSnapshot = Schema.Struct(dashboardFields)
+	.pipe(
+		Schema.encodeKeys({
+			timeRange: "time_range",
+			refreshIntervalSeconds: "refresh_interval_seconds",
+			createdAt: "created_at",
+			updatedAt: "updated_at",
+		}),
+	)
+	.annotate({
+		identifier: "DashboardSnapshot",
+		title: "Dashboard snapshot",
+		description: "A dashboard definition as it was saved in a version.",
+	})
+
+export const V2Dashboard = Schema.Struct(liveDashboardFields)
 	.pipe(
 		Schema.encodeKeys({
 			timeRange: "time_range",
@@ -103,7 +127,7 @@ export const V2Dashboard = Schema.Struct(dashboardFields)
 export type V2Dashboard = Schema.Schema.Type<typeof V2Dashboard>
 
 export const V2DashboardMutation = Schema.Struct({
-	...dashboardFields,
+	...liveDashboardFields,
 	txid: optional(PostgresTransactionId),
 })
 	.pipe(
@@ -131,11 +155,18 @@ export const V2DashboardUpdateParams = Schema.Struct({
 	sections: optional(Schema.Array(V2DashboardSection)),
 	variables: optional(Schema.Array(V2DashboardVariable)),
 	refreshIntervalSeconds: optional(Schema.NullOr(DashboardRefreshIntervalSeconds)),
+	expectedVersion: optional(
+		Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({
+			description:
+				"The dashboard version this edit was based on. When the stored version differs, the update fails with 409 instead of overwriting the newer change. Omit for last-write-wins.",
+		}),
+	),
 })
 	.pipe(
 		Schema.encodeKeys({
 			timeRange: "time_range",
 			refreshIntervalSeconds: "refresh_interval_seconds",
+			expectedVersion: "expected_version",
 		}),
 	)
 	.annotate({
@@ -188,7 +219,7 @@ export type V2DashboardVersion = Schema.Schema.Type<typeof V2DashboardVersion>
 
 export const V2DashboardVersionDetail = Schema.Struct({
 	...versionFields,
-	snapshot: V2Dashboard,
+	snapshot: DashboardSnapshot,
 })
 	.pipe(
 		Schema.encodeKeys({
@@ -609,7 +640,8 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			OpenApi.annotations({
 				identifier: "updateDashboard",
 				summary: "Update a dashboard",
-				description: "Applies a partial JSON update; omitted fields retain their current values.",
+				description:
+					"Applies a partial JSON update; omitted fields retain their current values. Send `expected_version` to fail with 409 rather than overwrite a newer change.",
 			}),
 		),
 	)
