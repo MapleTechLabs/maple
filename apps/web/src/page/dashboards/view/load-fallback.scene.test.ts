@@ -24,6 +24,7 @@ import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { FetchShares } from "./command"
 import { FetchDashboardFallback } from "./command-fallback"
+import { boardBreadcrumbLabel } from "./index"
 import { ShareMessage } from "./share"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -176,6 +177,7 @@ describe("dashboard board load fallback", () => {
 			}),
 		).model
 		expect(missing.status).toBe("Missing")
+		expect(boardBreadcrumbLabel(missing)).toBe("Not found")
 	})
 
 	test("any other failure shows an error, and Retry reads the board again", () => {
@@ -188,6 +190,8 @@ describe("dashboard board load fallback", () => {
 		).model
 		expect(failed.status).toBe("Failed")
 		expect(failed.snapshot._tag).toBe("Failed")
+		// An outage is not a missing board.
+		expect(boardBreadcrumbLabel(failed)).toBe("Couldn't load")
 		const retried = pageUpdate(failed, Message.ClickedRetrySync())
 		expect(retried.model.status).toBe("Loading")
 		expect(names(retried.commands)).toEqual([FetchDashboardFallback.name])
