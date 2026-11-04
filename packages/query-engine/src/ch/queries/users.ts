@@ -4,8 +4,15 @@
 
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { from, fromQuery, fromUnion, param, unionAll } from "@maple-dev/effect-orm/clickhouse"
-import { ProductEvents, SessionReplays, Traces, orgIdParam } from "../tables"
+import {
+	from,
+	fromQuery,
+	fromUnion,
+	param,
+	unionAll,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
+import { IdentityLinks, ProductEvents, SessionReplays, Traces, orgIdParam } from "../tables"
 import { method as mcpMethod, userId as mcpUserId } from "./mcp"
 import { serviceOverviewWindows } from "./services"
 import { Array as Arr } from "effect"
@@ -52,7 +59,7 @@ const namespaceOf = (service: CH.Expr<string>, scope: UsersScope): CH.Expr<strin
 			)
 
 /** Replays and events are in scope when unscoped or some service resolved; else they are skipped. */
-const readsServiceSources = (scope: UsersScope): boolean =>
+export const readsServiceSources = (scope: UsersScope): boolean =>
 	scope.namespaces.length === 0 || scope.services.length > 0
 
 const serviceScope = (service: CH.Expr<string>, scope: UsersScope) =>
@@ -299,5 +306,195 @@ export function usersServiceNamespacesQuery() {
 		.groupBy("service", "namespace")
 		.orderBy(["spans", "desc"])
 		.limit(2_000)
+		.format("JSON")
+}
+
+// One user (`/users/$userId`): every read filters the exact `userId` param and the same scope as the
+// directory, so the page never shows a row from a service outside the namespace in effect.
+
+const userIdParam = param.string("userId")
+
+/** The user's replay sessions, one row each, every field at its latest version. */
+const userReplaySessions = (scope: UsersScope) =>
+	from(SessionReplays)
+		.select(($) => ({
+			sessionId: $.SessionId,
+			userName: CH.argMax($.UserName, $.Version),
+			userEmail: CH.argMax($.UserEmail, $.Version),
+			groupId: CH.argMax($.GroupId, $.Version),
+			traitKeys: CH.argMax(CH.mapKeys($.UserTraits), $.Version),
+			traitValues: CH.argMax(CH.mapValues($.UserTraits), $.Version),
+			browser: CH.argMax($.BrowserName, $.Version),
+			os: CH.argMax($.OsName, $.Version),
+			country: CH.argMax($.Country, $.Version),
+			durationMs: CH.ifNull(CH.argMax($.DurationMs, $.Version), CH.lit(0)),
+			errors: CH.max_($.ErrorCount),
+			startTime: CH.min_($.StartTime),
+			lastActivity: CH.max_(CH.ifNull($.LastActivityAt, $.StartTime)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.lte(param.dateTime("endTime")),
+			$.UserId.eq(userIdParam),
+			serviceScope($.ServiceName, scope),
+		])
+		.groupBy("sessionId")
+
+/** The user's identity and replay totals: the latest name, email, group and traits. */
+export function userReplayProfileQuery(scope: UsersScope) {
+	return fromQuery(userReplaySessions(scope), "sessions")
+		.select(($) => ({
+			name: CH.argMax($.userName, $.lastActivity),
+			email: CH.argMax($.userEmail, $.lastActivity),
+			groupId: CH.argMax($.groupId, $.lastActivity),
+			traitKeys: CH.argMax($.traitKeys, $.lastActivity),
+			traitValues: CH.argMax($.traitValues, $.lastActivity),
+			country: nonEmpty($.country),
+			sessions: CH.count(),
+			recordedMs: CH.toUInt64(CH.sum($.durationMs)),
+			errors: CH.toUInt64(CH.sum($.errors)),
+			firstSeen: CH.min_($.startTime),
+			lastSeen: CH.max_($.lastActivity),
+		}))
+		.format("JSON")
+}
+
+/** The browsers and systems the user's sessions ran on, the most used first. */
+export function userDevicesQuery(scope: UsersScope) {
+	return fromQuery(userReplaySessions(scope), "sessions")
+		.select(($) => ({ browser: $.browser, os: $.os, sessions: CH.count() }))
+		.where(($) => [$.browser.neq("").or($.os.neq(""))])
+		.groupBy("browser", "os")
+		.orderBy(["sessions", "desc"])
+		.limit(10)
+		.format("JSON")
+}
+
+const userEventRows = ($: ColumnAccessor<typeof ProductEvents.columns>, scope: UsersScope) => [
+	$.OrgId.eq(orgIdParam),
+	$.Timestamp.gte(param.dateTime("startTime")),
+	$.Timestamp.lte(param.dateTime("endTime")),
+	$.UserId.eq(userIdParam),
+	serviceScope($.ServiceName, scope),
+]
+
+/** The user's product event totals: how many, how many distinct names, and when. */
+export function userEventsSummaryQuery(scope: UsersScope) {
+	return from(ProductEvents)
+		.select(($) => ({
+			events: CH.count(),
+			distinctEvents: CH.uniqExact($.EventName),
+			firstSeen: CH.min_($.Timestamp),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => userEventRows($, scope))
+		.format("JSON")
+}
+
+/** The user's product events, the latest first, with their page and properties. */
+export function userEventsQuery(scope: UsersScope, limit = 200) {
+	return from(ProductEvents)
+		.select(($) => ({
+			timestamp: $.Timestamp,
+			name: $.EventName,
+			source: $.Source,
+			service: $.ServiceName,
+			pagePath: $.PagePath,
+			propertyKeys: CH.mapKeys($.Attributes),
+			propertyValues: CH.mapValues($.Attributes),
+		}))
+		.where(($) => userEventRows($, scope))
+		.orderBy(["timestamp", "desc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+const userMcpSpans = ($: ColumnAccessor<typeof Traces.columns>, scope: UsersScope) => [
+	$.OrgId.eq(orgIdParam),
+	$.Timestamp.gte(param.dateTime("startTime")),
+	$.Timestamp.lte(param.dateTime("endTime")),
+	$.SpanKind.eq("Server"),
+	CH.inList($.ServiceName, scope.mcpServices),
+	mcpMethod($).neq(""),
+	mcpUserId($).eq(userIdParam),
+	scope.namespaces.length === 0
+		? undefined
+		: CH.inList($.ResourceAttributes.get("service.namespace"), scope.namespaces),
+]
+
+/** The user's MCP requests over every MCP server. Callers skip it when no service answers MCP. */
+export function userMcpSummaryQuery(scope: UsersScope) {
+	return from(Traces)
+		.select(($) => ({
+			name: nonEmpty($.SpanAttributes.get("user.name")),
+			email: nonEmpty($.SpanAttributes.get("user.email")),
+			requests: CH.count(),
+			calls: CH.countIf(mcpMethod($).eq("tools/call")),
+			firstSeen: CH.min_($.Timestamp),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => userMcpSpans($, scope))
+		.format("JSON")
+}
+
+/** The services the user's signals came from, with each one's namespace and signal count. */
+export function userServicesQuery(scope: UsersScope) {
+	const replays = fromQuery(
+		from(SessionReplays)
+			.select(($) => ({ sessionId: $.SessionId, service: CH.any_($.ServiceName) }))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.StartTime.gte(param.dateTime("startTime")),
+				$.StartTime.lte(param.dateTime("endTime")),
+				$.UserId.eq(userIdParam),
+				serviceScope($.ServiceName, scope),
+			])
+			.groupBy("sessionId"),
+		"sessions",
+	)
+		.select(($) => ({
+			service: $.service,
+			namespace: namespaceOf($.service, scope),
+			signals: CH.count(),
+		}))
+		.groupBy("service", "namespace")
+	const events = from(ProductEvents)
+		.select(($) => ({
+			service: $.ServiceName,
+			namespace: namespaceOf($.ServiceName, scope),
+			signals: CH.count(),
+		}))
+		.where(($) => [...userEventRows($, scope), $.ServiceName.neq("")])
+		.groupBy("service", "namespace")
+	const mcp = from(Traces)
+		.select(($) => ({
+			service: $.ServiceName,
+			namespace: $.ResourceAttributes.get("service.namespace"),
+			signals: CH.count(),
+		}))
+		.where(($) => userMcpSpans($, scope))
+		.groupBy("service", "namespace")
+	const [first, ...rest] = [
+		...(readsServiceSources(scope) ? [replays, events] : []),
+		...(scope.mcpServices.length > 0 ? [mcp] : []),
+	]
+	return fromUnion(unionAll(first ?? replays, ...rest), "signals")
+		.select(($) => ({ service: $.service, namespace: $.namespace, signals: CH.sum($.signals) }))
+		.where(($) => [$.service.neq("")])
+		.groupBy("service", "namespace")
+		.orderBy(["signals", "desc"])
+		.limit(50)
+		.format("JSON")
+}
+
+/** The visitor ids the user signed in from, the first linked first. */
+export function userVisitorIdsQuery(limit = 50) {
+	return from(IdentityLinks)
+		.select(($) => ({ visitorId: $.VisitorId, firstSeen: CH.min_($.FirstSeen) }))
+		.where(($) => [$.OrgId.eq(orgIdParam), $.UserId.eq(userIdParam)])
+		.groupBy("visitorId")
+		.orderBy(["firstSeen", "asc"])
+		.limit(limit)
 		.format("JSON")
 }

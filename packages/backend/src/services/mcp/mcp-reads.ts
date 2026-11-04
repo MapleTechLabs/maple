@@ -668,6 +668,75 @@ export const stitchUserSessions = (
 		}, [])
 		.map(({ toolSet: _toolSet, ...session }) => session)
 
+type IssuedRow = Readonly<{
+	sessionId: string
+	client: string
+	kind: string
+	user: string
+	userName: string
+	requests: number
+	calls: number
+	errors: number
+	tools: number
+	firstSeen: DateTime.Utc
+	lastSeen: DateTime.Utc
+}>
+
+/** A session the server issued (`mcp.session.id`), as the lists show it. */
+export const issuedSession = (row: IssuedRow): McpSessionItem => ({
+	sessionId: row.sessionId,
+	source: "issued",
+	user: row.user === "" ? null : row.user,
+	userName: row.userName === "" ? null : row.userName,
+	client: row.client === "" ? UNKNOWN_MCP_CLIENT : row.client,
+	kind: kindOf(row.kind),
+	requests: row.requests,
+	calls: row.calls,
+	errors: row.errors,
+	tools: row.tools,
+	firstSeenMs: toMs(row.firstSeen),
+	lastSeenMs: toMs(row.lastSeen),
+})
+
+/** User session rows one server's read stitches at most for one user. */
+const ONE_USER_ACTIVITY_LIMIT = 5_000
+
+/**
+ * One user's sessions on one MCP server, issued and stitched from stateless requests the way the
+ * sessions list builds them, so each id opens on that server's session page. The latest first.
+ */
+export const readUserSessionsOnServer = Effect.fn("McpReads.userSessionsOnServer")(function* (
+	tenant: TenantContext,
+	window: Readonly<{ startTime: string; endTime: string }>,
+	service: string,
+	user: string,
+	limit: number,
+) {
+	const warehouse = yield* WarehouseQueryService
+	const params = { orgId: tenant.orgId, serviceName: service, ...window }
+	const selection: CH.McpSessionFilter = { user }
+	const [issued, activityRows] = yield* Effect.all(
+		[
+			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSessionListQuery(selection, limit), params), {
+				profile: "list",
+				context: "userMcpSessionList",
+			}),
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(CH.mcpUserActivityQuery(selection, ONE_USER_ACTIVITY_LIMIT + 1), params),
+				{ profile: "list", context: "userMcpActivity" },
+			),
+		],
+		{ concurrency: 2 },
+	)
+	return [
+		...issued.map(issuedSession),
+		...stitchUserSessions(activityRows.slice(0, ONE_USER_ACTIVITY_LIMIT)),
+	]
+		.sort((a, b) => b.lastSeenMs - a.lastSeenMs)
+		.slice(0, limit)
+})
+
 export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 	tenant: TenantContext,
 	payload: McpSessionsRequest,
@@ -726,20 +795,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 	const calls = summary.filter((row) => row.method === TOOLS_CALL)
 	const total = totals[0]
 	const sessions = [
-		...issued.map((row): McpSessionItem => ({
-			sessionId: row.sessionId,
-			source: "issued",
-			user: row.user === "" ? null : row.user,
-			userName: row.userName === "" ? null : row.userName,
-			client: row.client === "" ? UNKNOWN_MCP_CLIENT : row.client,
-			kind: kindOf(row.kind),
-			requests: row.requests,
-			calls: row.calls,
-			errors: row.errors,
-			tools: row.tools,
-			firstSeenMs: toMs(row.firstSeen),
-			lastSeenMs: toMs(row.lastSeen),
-		})),
+		...issued.map(issuedSession),
 		...(payload.failingOnly === true ? failingUserSessions : userSessions),
 	]
 		.sort((a, b) => b.lastSeenMs - a.lastSeenMs)
