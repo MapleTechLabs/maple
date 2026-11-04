@@ -298,6 +298,7 @@ describe("V2Dashboard wire format", () => {
 			refresh_interval_seconds: null,
 			created_at: "2026-07-15T00:00:00.000Z",
 			updated_at: "2026-07-16T00:00:00.000Z",
+			version: 3,
 			txid: "81234",
 		})
 

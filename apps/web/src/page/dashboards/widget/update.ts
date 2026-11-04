@@ -162,8 +162,9 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 			showStepPercent: state.funnel.showStepPercent,
 		},
 		queries: listPreviewQueries(model.staged.queries, state, model.staged, widget),
-		// A type switch releases the stored source at once, like Apply does; a fixed query has nothing staged.
-		keepsStoredSource: state.queryFixed || (state.keepsStoredSource && model.staged.keepsStoredSource),
+		// The live flag, like Apply: a type switch releases it, an edit undone restores it.
+		// A fixed query always previews its stored route.
+		keepsStoredSource: state.queryFixed || state.keepsStoredSource,
 	}
 	const isSql = isSqlSource(model) && model.rawSql !== null
 	return {

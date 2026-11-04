@@ -8,7 +8,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { input } from "@maple/views/ui/input"
 import { toSeriesFieldOptions } from "./drafts"
 import { ROW_LIMIT_MAX, statValueFieldOf } from "./lowering"
-import { SQL_VALUE_FIELD } from "./raw-sql"
+import { SQL_VALUE_FIELD, sqlValueFieldOf } from "./raw-sql"
 import { isSqlSource, widgetOf } from "./update"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
@@ -37,11 +37,11 @@ const titleCase = (value: string): string => `${Str.toUpperCase(value.charAt(0))
 
 /** The SQL column a stat or gauge reduces, typed since the editor cannot list a query's columns. */
 const sqlValueField = (h: H, state: EditorState): Html =>
-	railSetting(h, "stat-value-field", "Value column", state.statValueField !== "", [
+	railSetting(h, "stat-value-field", "Value column", sqlValueFieldOf(state) !== "", [
 		input(h, {
 			id: "widget-editor-stat-value-field",
 			attributes: [
-				h.Value(state.statValueField),
+				h.Value(sqlValueFieldOf(state)),
 				h.Placeholder(SQL_VALUE_FIELD),
 				h.OnInput((value) => Message.ChangedStatValueField({ value })),
 			],
