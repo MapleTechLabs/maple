@@ -136,7 +136,9 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const { id: dashboardId } = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
+			const {
+				document: { id: dashboardId },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
 
 			const dashboard = yield* withDashboardMutation(
 				dashboardId,
@@ -149,7 +151,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			const listed = yield* persistence.list(asOrgId(ORG))
 			assert.strictEqual(listed.dashboards.length, 1)
 			assert.deepStrictEqual(
-				Arr.map(listed.dashboards[0]!.widgets, (w) => w.id),
+				Arr.map(listed.dashboards[0]!.document.widgets, (w) => w.id),
 				["w-new"],
 			)
 		}).pipe(Effect.provide(layer))
@@ -166,17 +168,15 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const { id: dashboardId } = yield* persistence.create(
-				asOrgId(ORG),
-				asUserId("seed-user"),
-				grouped(),
-			)
+			const {
+				document: { id: dashboardId },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), grouped())
 
 			yield* withDashboardMutation(dashboardId, "add_dashboard_widget", (widgets) =>
 				Effect.succeed([...widgets, { ...widget("w-new"), sectionId: "sec-1", tabId: "tab-1" }]),
 			)
 
-			const [stored] = (yield* persistence.list(asOrgId(ORG))).dashboards
+			const stored = (yield* persistence.list(asOrgId(ORG))).dashboards[0]?.document
 			assert.isDefined(stored)
 
 			assert.deepStrictEqual(stored.sections, grouped().sections)
@@ -215,12 +215,14 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const { id: dashboardId } = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
+			const {
+				document: { id: dashboardId },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
 
 			yield* invoke({ dashboard_id: dashboardId, name: "Renamed" })
 
 			const listed = yield* persistence.list(asOrgId(ORG))
-			assert.strictEqual(listed.dashboards[0]!.name, "Renamed")
+			assert.strictEqual(listed.dashboards[0]!.document.name, "Renamed")
 		}).pipe(Effect.provide(layer.pipe(Layer.provideMerge(makeToolServicesLayer(testDb)))))
 	})
 
@@ -244,7 +246,9 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const { id: dashboardId } = yield* persistence.create(
+			const {
+				document: { id: dashboardId },
+			} = yield* persistence.create(
 				asOrgId(ORG),
 				asUserId("seed-user"),
 				new PortableDashboardDocument({
@@ -260,7 +264,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 				patch_json: '{"display":{"unit":null,"chartId":"bar-chart"}}',
 			})
 
-			const [stored] = (yield* persistence.list(asOrgId(ORG))).dashboards
+			const stored = (yield* persistence.list(asOrgId(ORG))).dashboards[0]?.document
 			assert.deepStrictEqual(stored!.widgets[0]!.display, { title: "Short", chartId: "bar-chart" })
 			assert.deepStrictEqual(stored!.widgets[0]!.layout, widget("w-1").layout)
 
@@ -302,11 +306,13 @@ describe("MCP dashboard tools carry the whole document forward", () => {
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const { id } = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), grouped())
+			const {
+				document: { id },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), grouped())
 
 			yield* invoke({ dashboard_id: id, name: "Renamed", time_range: "6h" })
 
-			const stored = yield* persistence.get(asOrgId(ORG), id)
+			const { document: stored } = yield* persistence.get(asOrgId(ORG), id)
 			assert.strictEqual(stored.name, "Renamed")
 			assert.deepStrictEqual(stored.timeRange, { type: "relative", value: "6h" })
 			assert.deepStrictEqual(stored.sections, grouped().sections)
@@ -322,13 +328,15 @@ describe("MCP dashboard tools carry the whole document forward", () => {
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const { id } = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
+			const {
+				document: { id },
+			} = yield* persistence.create(asOrgId(ORG), asUserId("seed-user"), seed())
 
 			const { schemaVersion: _version, ...portable } =
 				Schema.encodeSync(PortableDashboardDocument)(grouped())
 			yield* invoke({ dashboard_id: id, dashboard_json: JSON.stringify(portable) })
 
-			const stored = yield* persistence.get(asOrgId(ORG), id)
+			const { document: stored } = yield* persistence.get(asOrgId(ORG), id)
 			assert.strictEqual(stored.name, "Grouped dashboard")
 			assert.deepStrictEqual(stored.sections, grouped().sections)
 			assert.deepStrictEqual(stored.variables, grouped().variables)
@@ -376,7 +384,9 @@ describe("MCP dashboard tools carry the whole document forward", () => {
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const { id } = yield* persistence.create(
+			const {
+				document: { id },
+			} = yield* persistence.create(
 				asOrgId(ORG),
 				asUserId("seed-user"),
 				new PortableDashboardDocument({
@@ -387,7 +397,7 @@ describe("MCP dashboard tools carry the whole document forward", () => {
 
 			yield* invoke({ dashboard_id: id, widget_id: "w-1", title: "Short" })
 
-			const stored = yield* persistence.get(asOrgId(ORG), id)
+			const { document: stored } = yield* persistence.get(asOrgId(ORG), id)
 			assert.deepStrictEqual(stored.widgets[0]?.display, { title: "Short", unit: "s" })
 		}).pipe(
 			Effect.provide(

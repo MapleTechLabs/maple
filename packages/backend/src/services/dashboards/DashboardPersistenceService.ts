@@ -7,7 +7,6 @@ import {
 	DashboardStoredConfigInvalidError,
 	DashboardValidationError,
 	DashboardDocument,
-	DashboardsListResponse,
 	DashboardVersionDetail,
 	DashboardVersionId,
 	DashboardVersionNotFoundError,
@@ -209,8 +208,14 @@ export interface DashboardPageCursor {
 	readonly id: DashboardId
 }
 
+/** A stored document with its `dashboards.version`, the CAS token a client sends back as `expected_version`. */
+export interface StoredDashboard {
+	readonly document: DashboardDocument
+	readonly version: number
+}
+
 export interface DashboardPage {
-	readonly dashboards: ReadonlyArray<DashboardDocument>
+	readonly dashboards: ReadonlyArray<StoredDashboard>
 	/** Where the next page starts, `null` on the last page. */
 	readonly next: DashboardPageCursor | null
 }
@@ -220,9 +225,11 @@ export interface DashboardPersistenceServiceApi {
 		orgId: OrgId,
 		userId: UserId,
 		dashboard: PortableDashboardDocument,
-	) => Effect.Effect<DashboardDocument, DashboardValidationError | DashboardPersistenceError>
+	) => Effect.Effect<StoredDashboard, DashboardValidationError | DashboardPersistenceError>
 	/** Every dashboard of the org, newest first; a row that does not decode is logged and skipped. */
-	readonly list: (orgId: OrgId) => Effect.Effect<DashboardsListResponse, DashboardPersistenceError>
+	readonly list: (
+		orgId: OrgId,
+	) => Effect.Effect<{ readonly dashboards: ReadonlyArray<StoredDashboard> }, DashboardPersistenceError>
 	/** One page of `list`, paginated in SQL on (updatedAt, id). */
 	readonly listPage: (
 		orgId: OrgId,
@@ -232,7 +239,7 @@ export interface DashboardPersistenceServiceApi {
 		orgId: OrgId,
 		dashboardId: DashboardId,
 	) => Effect.Effect<
-		DashboardDocument,
+		StoredDashboard,
 		DashboardPersistenceError | DashboardNotFoundError | DashboardStoredConfigInvalidError
 	>
 	readonly mutate: <E>(
@@ -242,7 +249,7 @@ export interface DashboardPersistenceServiceApi {
 		transform: (dashboard: DashboardDocument) => Effect.Effect<DashboardDocument, E>,
 		options?: MutateOptions,
 	) => Effect.Effect<
-		DashboardDocument,
+		StoredDashboard,
 		| E
 		| DashboardNotFoundError
 		| DashboardValidationError
@@ -279,7 +286,7 @@ export interface DashboardPersistenceServiceApi {
 		dashboardId: DashboardId,
 		versionId: DashboardVersionId,
 	) => Effect.Effect<
-		DashboardDocument,
+		StoredDashboard,
 		| DashboardPersistenceError
 		| DashboardNotFoundError
 		| DashboardVersionNotFoundError
@@ -319,7 +326,7 @@ export class DashboardPersistenceService extends Context.Service<
 				dashboardId,
 				component: "document",
 			})
-			return { document, version: row.version }
+			return { document, version: row.version } satisfies StoredDashboard
 		})
 
 		// Runs inside the dashboard write's transaction, after its row is written and
@@ -387,15 +394,21 @@ export class DashboardPersistenceService extends Context.Service<
 
 		/** Decode listed rows, logging and dropping any that `get` would refuse. */
 		const decodeListed = (
-			rows: ReadonlyArray<{ readonly id: DashboardId; readonly payloadJson: unknown }>,
+			rows: ReadonlyArray<{
+				readonly id: DashboardId
+				readonly payloadJson: unknown
+				readonly version: number
+			}>,
 		) =>
 			Effect.forEach(rows, (row) =>
 				parsePayload(row.payloadJson, { dashboardId: row.id, component: "document" }).pipe(
-					Effect.asSome,
+					Effect.map((document): Option.Option<StoredDashboard> =>
+						Option.some({ document, version: row.version }),
+					),
 					Effect.catchTag("@maple/http/errors/DashboardStoredConfigInvalidError", () =>
 						Effect.logWarning("Skipping undecodable dashboard in list").pipe(
 							Effect.annotateLogs({ "maple.dashboard.id": row.id }),
-							Effect.as(Option.none<DashboardDocument>()),
+							Effect.as(Option.none<StoredDashboard>()),
 						),
 					),
 				),
@@ -406,10 +419,11 @@ export class DashboardPersistenceService extends Context.Service<
 			const rows: ReadonlyArray<{
 				readonly id: DashboardId
 				readonly payloadJson: unknown
+				readonly version: number
 			}> = yield* dbExecute((db) =>
 				db.run(
 					PG.from(Dashboards)
-						.select("id", "payloadJson")
+						.select("id", "payloadJson", "version")
 						.where(($) => [$.orgId.eq(orgId)])
 						.orderBy(($) => [
 							[$.updatedAt, "desc"],
@@ -418,7 +432,7 @@ export class DashboardPersistenceService extends Context.Service<
 				),
 			)
 
-			return new DashboardsListResponse({ dashboards: yield* decodeListed(rows) })
+			return { dashboards: yield* decodeListed(rows) }
 		})
 
 		const listPage = Effect.fn("DashboardPersistenceService.listPage")(function* (
@@ -431,11 +445,12 @@ export class DashboardPersistenceService extends Context.Service<
 			const rows: ReadonlyArray<{
 				readonly id: DashboardId
 				readonly payloadJson: unknown
+				readonly version: number
 				readonly updatedAt: number
 			}> = yield* dbExecute((db) =>
 				db.run(
 					PG.from(Dashboards)
-						.select("id", "payloadJson", "updatedAt")
+						.select("id", "payloadJson", "version", "updatedAt")
 						.where(($) => [
 							$.orgId.eq(orgId),
 							after === undefined
@@ -472,7 +487,7 @@ export class DashboardPersistenceService extends Context.Service<
 			if (current === null) {
 				return yield* new DashboardNotFoundError({ dashboardId, message: "Dashboard not found" })
 			}
-			return current.document
+			return current
 		})
 
 		// Compare-and-swap on `dashboards.version` and the history row, in one
@@ -565,9 +580,9 @@ export class DashboardPersistenceService extends Context.Service<
 				),
 			)
 
-			return txid === undefined
-				? createdDashboard
-				: new DashboardDocument({ ...createdDashboard, txid })
+			const document =
+				txid === undefined ? createdDashboard : new DashboardDocument({ ...createdDashboard, txid })
+			return { document, version: 1 } satisfies StoredDashboard
 		})
 
 		// Read-modify-write behind every edit: load, run the caller's transform, CAS.
@@ -620,7 +635,9 @@ export class DashboardPersistenceService extends Context.Service<
 					options,
 				)
 
-				return txid === undefined ? next : new DashboardDocument({ ...next, txid })
+				const document = txid === undefined ? next : new DashboardDocument({ ...next, txid })
+				// writeVersioned committed `current.version + 1`.
+				return { document, version: current.version + 1 } satisfies StoredDashboard
 			})
 
 			return yield* attempt.pipe(

@@ -60,10 +60,6 @@ export {
 	withWidgets,
 } from "@maple/widgets/dashboard"
 
-export class DashboardsListResponse extends Schema.Class<DashboardsListResponse>("DashboardsListResponse")({
-	dashboards: Schema.Array(DashboardDocument),
-}) {}
-
 export class DashboardDeleteResponse extends Schema.Class<DashboardDeleteResponse>("DashboardDeleteResponse")(
 	{
 		id: DashboardId,

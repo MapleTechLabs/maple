@@ -87,7 +87,7 @@ describe("dashboard concurrency", () => {
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const created = yield* persistence.create(ORG, USER, seed())
+			const { document: created } = yield* persistence.create(ORG, USER, seed())
 
 			const addWidget = (widgetId: string) =>
 				persistence.mutate(ORG, USER, created.id, (existing) =>
@@ -105,7 +105,7 @@ describe("dashboard concurrency", () => {
 			const listed = yield* persistence.list(ORG)
 
 			assert.strictEqual(listed.dashboards.length, 1)
-			const widgets = Arr.map(listed.dashboards[0]!.widgets, (w) => w.id).sort()
+			const widgets = Arr.map(listed.dashboards[0]!.document.widgets, (w) => w.id).sort()
 			assert.deepStrictEqual(widgets, ["w-a", "w-b"])
 		}).pipe(Effect.provide(layer))
 	})
@@ -116,7 +116,7 @@ describe("dashboard concurrency", () => {
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const created = yield* persistence.create(ORG, USER, seed("Initial"))
+			const { document: created } = yield* persistence.create(ORG, USER, seed("Initial"))
 
 			// Both loaded version 1. Whichever commits second must not clobber the first.
 			const exits = yield* Effect.all(
@@ -133,8 +133,8 @@ describe("dashboard concurrency", () => {
 			assert.strictEqual(successes.length, 1)
 			assert.strictEqual(failures.length, 1)
 			assert.instanceOf(findError(failures[0]!), DashboardConcurrencyError)
-			const stored = yield* persistence.get(ORG, created.id)
-			assert.strictEqual(stored.name, successes[0]!.value.name)
+			const { document: stored } = yield* persistence.get(ORG, created.id)
+			assert.strictEqual(stored.name, successes[0]!.value.document.name)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -144,7 +144,7 @@ describe("dashboard concurrency", () => {
 
 		return Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const created = yield* persistence.create(ORG, USER, seed("Initial"))
+			const { document: created } = yield* persistence.create(ORG, USER, seed("Initial"))
 			yield* persistence.mutate(ORG, USER, created.id, rename("Writer A"), { expectedVersion: 1 })
 			const stale = yield* Effect.exit(
 				persistence.mutate(ORG, USER, created.id, rename("Writer B"), { expectedVersion: 1 }),
@@ -154,7 +154,7 @@ describe("dashboard concurrency", () => {
 			// What the web store does on a 409: re-read, re-apply on top, send the new version.
 			yield* persistence.mutate(ORG, USER, created.id, rename("Recovered"), { expectedVersion: 2 })
 
-			assert.strictEqual((yield* persistence.get(ORG, created.id)).name, "Recovered")
+			assert.strictEqual((yield* persistence.get(ORG, created.id)).document.name, "Recovered")
 		}).pipe(Effect.provide(layer))
 	})
 })

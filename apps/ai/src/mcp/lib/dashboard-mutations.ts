@@ -273,7 +273,11 @@ export const loadDashboard = Effect.fn("McpDashboardMutations.loadDashboard")(fu
 	const id = yield* decodeDashboardId(dashboardId).pipe(
 		Effect.mapError(() => dashboardNotFound(dashboardId)),
 	)
-	return yield* persistence.get(tenant.orgId, id).pipe(Effect.mapError(toMcpDashboardError(tool)))
+	return yield* persistence
+		.get(tenant.orgId, id)
+		.pipe(
+			Effect.mapBoth({ onSuccess: (stored) => stored.document, onFailure: toMcpDashboardError(tool) }),
+		)
 })
 
 /**
@@ -325,8 +329,10 @@ export const withDashboardMutation = Effect.fn("McpDashboardMutations.withDashbo
 			}),
 		)
 		.pipe(
-			Effect.mapError((error) =>
-				Schema.is(McpInvalidInputError)(error) ? error : toMcpDashboardError(tool)(error),
-			),
+			Effect.mapBoth({
+				onSuccess: (stored) => stored.document,
+				onFailure: (error) =>
+					Schema.is(McpInvalidInputError)(error) ? error : toMcpDashboardError(tool)(error),
+			}),
 		)
 })

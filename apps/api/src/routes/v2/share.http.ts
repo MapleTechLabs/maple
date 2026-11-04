@@ -83,6 +83,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		// "no such link", identical to an unknown token; a database failure stays a 503.
 		const sharedDocument = (orgId: OrgId, dashboardId: DashboardId) =>
 			persistence.get(orgId, dashboardId).pipe(
+				Effect.map((stored) => stored.document),
 				Effect.catchTags({
 					"@maple/http/errors/DashboardNotFoundError": () => notFound,
 					"@maple/http/errors/DashboardStoredConfigInvalidError": () => notFound,

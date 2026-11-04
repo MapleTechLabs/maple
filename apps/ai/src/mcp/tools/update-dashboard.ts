@@ -76,7 +76,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 			const nowMillis = yield* Clock.currentTimeMillis
 			const now = decodeIsoDateTimeString(DateTime.formatIso(DateTime.makeUnsafe(nowMillis)))
 
-			const dashboard = yield* persistence
+			const { document: dashboard } = yield* persistence
 				.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
 					Effect.sync(() =>
 						// Both branches carry the stored document forward through the shared

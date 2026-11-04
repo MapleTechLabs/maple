@@ -240,6 +240,8 @@ describe("v2 dashboards over HTTP", () => {
 		expect(detail.status).toBe(200)
 		expect(detail.body.snapshot.object).toBe("dashboard")
 		expect(detail.body.snapshot.name).toBe("Operations")
+		// The CAS counter belongs to the live row, never to a history snapshot.
+		expect("version" in detail.body.snapshot).toBe(false)
 
 		const restored = await harness.request(
 			"POST",
@@ -290,6 +292,36 @@ describe("v2 dashboards over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("hands out the version an API client sends back as expected_version", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "v1",
+			widgets: [],
+		})
+		expect(created.body.version).toBe(1)
+		const path = `/v2/dashboards/${created.body.id}`
+
+		const retrieved = await harness.request("GET", path, key.secret)
+		const listed = await harness.request("GET", "/v2/dashboards", key.secret)
+		expect(listed.body.data[0].version).toBe(retrieved.body.version)
+
+		const saved = await harness.request("PATCH", path, key.secret, {
+			name: "edited",
+			expected_version: retrieved.body.version,
+		})
+		expect(saved.status).toBe(200)
+		expect(saved.body.version).toBe(retrieved.body.version + 1)
+		expect((await harness.request("GET", path, key.secret)).body.version).toBe(saved.body.version)
+
+		const resent = await harness.request("PATCH", path, key.secret, {
+			name: "stale",
+			expected_version: retrieved.body.version,
+		})
+		expect(resent.status).toBe(409)
+		await harness.dispose()
+	})
+
 	it("pages the list newest first through an opaque cursor", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])
@@ -313,9 +345,17 @@ describe("v2 dashboards over HTTP", () => {
 		)
 		expect([...seen].sort()).toEqual(names)
 
-		const invalid = await harness.request("GET", "/v2/dashboards?cursor=off_2", key.secret)
-		expect(invalid.status).toBe(400)
-		expect(invalid.body.error.param).toBe("cursor")
+		// A foreign scheme, an id that is not base64url, and a timestamp past the safe range.
+		const tampered = ["off_2", "dsh_1_A", `dsh_${"z".repeat(16)}_${first.body.next_cursor.split("_")[2]}`]
+		for (const cursor of tampered) {
+			const invalid = await harness.request(
+				"GET",
+				`/v2/dashboards?cursor=${encodeURIComponent(cursor)}`,
+				key.secret,
+			)
+			expect(invalid.status).toBe(400)
+			expect(invalid.body.error.param).toBe("cursor")
+		}
 		await harness.dispose()
 	})
 

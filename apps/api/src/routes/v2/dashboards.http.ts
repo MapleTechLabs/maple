@@ -46,6 +46,7 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import {
 	DashboardPersistenceService,
 	type DashboardPageCursor,
+	type StoredDashboard,
 } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
@@ -98,7 +99,7 @@ const requireRawSqlScopes = (
 			)
 }
 
-const toV2Dashboard = (dashboard: DashboardDocument): V2Dashboard => ({
+const toV2DashboardSnapshot = (dashboard: DashboardDocument): V2DashboardVersionDetail["snapshot"] => ({
 	id: dashboard.id,
 	object: "dashboard",
 	name: dashboard.name,
@@ -111,6 +112,11 @@ const toV2Dashboard = (dashboard: DashboardDocument): V2Dashboard => ({
 	refreshIntervalSeconds: dashboard.refreshIntervalSeconds ?? null,
 	createdAt: dashboard.createdAt,
 	updatedAt: dashboard.updatedAt,
+})
+
+const toV2Dashboard = (stored: StoredDashboard): V2Dashboard => ({
+	...toV2DashboardSnapshot(stored.document),
+	version: stored.version,
 })
 
 const toV2DashboardShare = (share: DashboardShare): V2DashboardShare => ({
@@ -137,9 +143,9 @@ const toV2WidgetDataOutcome = (outcome: ShareWidgetDataOutcome): V2DashboardWidg
 			}
 		: { widget_id: outcome.widgetId, ok: false, reason: outcome.reason, message: outcome.message }
 
-const toV2DashboardMutation = (dashboard: DashboardDocument): V2DashboardMutation => ({
-	...toV2Dashboard(dashboard),
-	...(dashboard.txid !== undefined ? { txid: dashboard.txid } : undefined),
+const toV2DashboardMutation = (stored: StoredDashboard): V2DashboardMutation => ({
+	...toV2Dashboard(stored),
+	...(stored.document.txid !== undefined ? { txid: stored.document.txid } : undefined),
 })
 
 const toV2Version = (version: {
@@ -162,7 +168,7 @@ const toV2VersionDetail = (
 	},
 ): V2DashboardVersionDetail => ({
 	...toV2Version(version),
-	snapshot: toV2Dashboard(version.snapshot),
+	snapshot: toV2DashboardSnapshot(version.snapshot),
 })
 
 const toV2Template = (template: DashboardTemplateMetadata): V2DashboardTemplate => ({
@@ -319,7 +325,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 			// table's own queries are org-scoped too, so this is the outer of two
 			// checks, not the only one.
 			const tenant = yield* CurrentTenant.Context
-			const dashboard = yield* persistence.get(tenant.orgId, dashboardId)
+			const { document: dashboard } = yield* persistence.get(tenant.orgId, dashboardId)
 			return { tenant, dashboard, scope: { dashboardId, widgetId } }
 		})
 
@@ -471,15 +477,15 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("retrieve", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const dashboard = yield* persistence.get(tenant.orgId, params.id)
+						const stored = yield* persistence.get(tenant.orgId, params.id)
 
-						return toV2Dashboard(dashboard)
+						return toV2Dashboard(stored)
 					}),
 				)
 				.handle("widgetData", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const document = yield* persistence.get(tenant.orgId, params.id)
+						const { document } = yield* persistence.get(tenant.orgId, params.id)
 						// Relative ranges resolve and snap the way the web dashboard's picker does.
 						const nowMs = yield* Clock.currentTimeMillis
 						const window = resolveTimeRangeWindow(payload.time_range, { nowMs })
@@ -530,13 +536,14 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const tenant = yield* CurrentTenant.Context
 						const portable = toPortable(payload)
 						yield* requireRawSqlScopes(tenant.scopes, [], portable.widgets)
-						const dashboard = yield* persistence.create(tenant.orgId, tenant.userId, portable)
+						const stored = yield* persistence.create(tenant.orgId, tenant.userId, portable)
+						const dashboard = stored.document
 						yield* recordHttpAudit("dashboard.created", {
 							resourceId: dashboard.id,
 							metadata: { name: dashboard.name },
 						})
 
-						return toV2DashboardMutation(dashboard)
+						return toV2DashboardMutation(stored)
 					}),
 				)
 				.handle("update", ({ params, payload }) =>
@@ -546,7 +553,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const updatedAt = asIsoDateTime(DateTime.formatIso(DateTime.makeUnsafe(now)))
 						// Capture the pre-state the mutate callback already reads, for the diff.
 						const previous = yield* Ref.make(Option.none<DashboardDocument>())
-						const dashboard = yield* persistence.mutate(
+						const stored = yield* persistence.mutate(
 							tenant.orgId,
 							tenant.userId,
 							params.id,
@@ -563,11 +570,16 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								? undefined
 								: { expectedVersion: payload.expectedVersion },
 						)
+						const dashboard = stored.document
 						const previousDashboard = yield* Ref.get(previous)
 						const changes = Option.match(previousDashboard, {
 							onNone: () => undefined,
 							onSome: (before) =>
-								dashboardAuditDiff(payload, toV2Dashboard(before), toV2Dashboard(dashboard)),
+								dashboardAuditDiff(
+									payload,
+									toV2DashboardSnapshot(before),
+									toV2DashboardSnapshot(dashboard),
+								),
 						})
 						yield* recordHttpAudit("dashboard.updated", {
 							resourceId: dashboard.id,
@@ -575,7 +587,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							metadata: { name: dashboard.name },
 						})
 
-						return toV2DashboardMutation(dashboard)
+						return toV2DashboardMutation(stored)
 					}),
 				)
 				.handle("delete", ({ params }) =>
@@ -599,11 +611,12 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const converted = yield* convertPersesDashboardToPortable(payload.dashboard)
 						const tenant = yield* CurrentTenant.Context
 						yield* requireRawSqlScopes(tenant.scopes, [], converted.dashboard.widgets)
-						const dashboard = yield* persistence.create(
+						const stored = yield* persistence.create(
 							tenant.orgId,
 							tenant.userId,
 							converted.dashboard,
 						)
+						const dashboard = stored.document
 						yield* recordHttpAudit("dashboard.created", {
 							resourceId: dashboard.id,
 							metadata: { name: dashboard.name, source: "perses_import" },
@@ -611,7 +624,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 
 						return {
 							object: "dashboard_import" as const,
-							dashboard: toV2DashboardMutation(dashboard),
+							dashboard: toV2DashboardMutation(stored),
 							warnings: [...converted.warnings],
 						}
 					}),
@@ -659,7 +672,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						if (!canReadTelemetry(tenant.scopes)) {
-							const current = yield* persistence.get(tenant.orgId, params.id)
+							const { document: current } = yield* persistence.get(tenant.orgId, params.id)
 							const version = yield* persistence.getVersion(
 								tenant.orgId,
 								params.id,
@@ -671,12 +684,13 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								version.snapshot.widgets,
 							)
 						}
-						const dashboard = yield* persistence.restoreVersion(
+						const stored = yield* persistence.restoreVersion(
 							tenant.orgId,
 							tenant.userId,
 							params.id,
 							params.version_id,
 						)
+						const dashboard = stored.document
 						yield* recordHttpAudit("dashboard.version_restored", {
 							resourceId: dashboard.id,
 							metadata: {
@@ -688,7 +702,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							},
 						})
 
-						return toV2DashboardMutation(dashboard)
+						return toV2DashboardMutation(stored)
 					}),
 				)
 				.handle("listTemplates", ({ query }) =>
@@ -772,7 +786,8 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							name: payload.name ?? built.name,
 						})
 						const tenant = yield* CurrentTenant.Context
-						const dashboard = yield* persistence.create(tenant.orgId, tenant.userId, portable)
+						const stored = yield* persistence.create(tenant.orgId, tenant.userId, portable)
+						const dashboard = stored.document
 						yield* recordHttpAudit("dashboard.created", {
 							resourceId: dashboard.id,
 							metadata: {
@@ -782,7 +797,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							},
 						})
 
-						return toV2DashboardMutation(dashboard)
+						return toV2DashboardMutation(stored)
 					}),
 				)
 				// Share management. Every operation is `<verb>Share(id, widgetId)` —
