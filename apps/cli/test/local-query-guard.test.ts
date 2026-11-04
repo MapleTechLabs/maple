@@ -32,13 +32,37 @@ describe("read-only statement preparation", () => {
 		)
 		expect(rejection("SELECT `file`('/x')", "SELECT `file`('/x')")).toBe("function file is not allowed")
 		expect(rejection("EXPLAIN INSERT", "EXPLAIN INSERT INTO t SELECT 1")).toMatch(/EXPLAIN/)
-		expect(rejection("DESC url(...)", "DESCRIBE TABLE url('http://h/x', 'CSVWithNames')")).toMatch(
+		expect(rejection("DESC (SELECT 1)", "DESCRIBE TABLE (SELECT 1)")).toMatch(
 			/DESCRIBE only accepts a table name/,
 		)
 		expect(rejection("SELECT 1 SETTINGS readonly = 0", "SELECT 1 SETTINGS readonly = 0")).toBe(
 			"setting readonly is not allowed",
 		)
 		expect(rejection("SELECT '\0'", "SELECT 1")).toBe("NUL bytes are not allowed")
+	})
+
+	test("allows only in-memory generators as table functions and refuses readers anywhere", () => {
+		for (const canonical of [
+			"SELECT number FROM numbers(10)",
+			"SELECT * FROM numbers(1, 3)",
+			"SELECT * FROM generateSeries(1, 3)",
+			"SELECT * FROM system.numbers LIMIT 1",
+			"SELECT urlHash('x'), cityHash64(1) FROM t",
+		])
+			expect(rejection(canonical, canonical)).toBeUndefined()
+		for (const [canonical, name] of [
+			["SELECT * FROM url('http://h/x', 'CSV')", "url"],
+			["SELECT * FROM t JOIN s3('http://h/b/k', 'CSV') AS s ON 1", "s3"],
+			["SELECT * FROM t, remoteSecure('h', system.one)", "remotesecure"],
+			["SELECT * FROM values('a UInt8', 1)", "values"],
+			["SELECT * FROM (SELECT * FROM merge('default', '.*'))", "merge"],
+			["SELECT 1 WHERE 1 IN (SELECT * FROM `input`('a String'))", "input"],
+			["EXPLAIN SELECT * FROM urlCluster('c', 'http://h/x')", "urlcluster"],
+			["SELECT file('/etc/hosts')", "file"],
+			["SELECT * FROM numbers(1) AS limit, filesystem('/') AS f", "filesystem"],
+			["SELECT * FROM numbers(1) AS limit, values('a UInt8', 1) AS f", "values"],
+		] as const)
+			expect(rejection(canonical, canonical)).toBe(`function ${name} is not allowed`)
 	})
 
 	test("maps a multi-statement body to a read-only rejection", () => {
@@ -122,10 +146,22 @@ describeWithChdb("read-only /local/query against the engine", () => {
 				expect(body).toStartWith(READ_ONLY_REJECTION_PREFIX)
 			}
 			expect(existsSync(outfile)).toBe(false)
-			// Table functions are refused by the engine's readonly mode.
 			const url = await run("SELECT * FROM url('http://127.0.0.1:1/x', 'CSVWithNames')")
 			expect(url.status).toBe(400)
-			expect(url.body).toContain("READONLY")
+			expect(url.body).toBe(`${READ_ONLY_REJECTION_PREFIX}function url is not allowed`)
+			// Settings are only taken from the trailing clause, where the caps hold.
+			const inner = await run(
+				"SELECT x FROM (SELECT getSetting('readonly') AS x SETTINGS readonly = 0)",
+			)
+			expect(inner.body).toBe(
+				`${READ_ONLY_REJECTION_PREFIX}SETTINGS is only allowed once, at the end of the query`,
+			)
+			const union = await run("SELECT 1 AS a SETTINGS readonly = 0 UNION ALL SELECT 2 AS a")
+			expect(union.status).toBe(400)
+			const outer = await run("SELECT getSetting('readonly') AS r SETTINGS max_threads = 1")
+			expect(JSON.parse(outer.body)).toEqual([{ r: 1 }])
+			const generated = await run("SELECT count() AS c FROM generateSeries(1, 3)")
+			expect(JSON.parse(generated.body)).toEqual([{ c: 3 }])
 
 			const read = await run("SELECT a FROM t ORDER BY a FORMAT JSON")
 			expect(read.status).toBe(200)

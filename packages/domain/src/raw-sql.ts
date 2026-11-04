@@ -129,6 +129,17 @@ const READER_NAMES = new Set([
 	"timeseriesmetrics",
 	"timeseriestags",
 	"primes",
+	"filesystem",
+	"eval",
+	"arrowstream",
+	"prometheusquery",
+	"prometheusqueryrange",
+	"timeseriessamples",
+	"timeseriesselector",
+	"viewexplain",
+	"viewifpermitted",
+	"fuzzjson",
+	"fuzzquery",
 ])
 const isReaderName = (name: string): boolean =>
 	READER_NAMES.has(name) || Arr.some(READER_PREFIXES, (prefix) => Str.startsWith(prefix)(name))
@@ -278,7 +289,7 @@ const CLAUSE_BOUNDARY = new Set([
  * `FROM traces` a table, and `urlHash(...)` or `EXTRACT(x FROM y)` sit in an
  * expression (inside a call paren), never in a table position.
  */
-const disallowedTableFunction = (sql: string): string | null => {
+export const disallowedTableFunction = (sql: string): string | null => {
 	const tokens = tokenizeSql(sql)
 	const parenKind: Array<"call" | "sub" | "group"> = []
 	// The enclosing FROM list survives a paren: a subquery closing must not end it.
@@ -347,7 +358,10 @@ const disallowedTableFunction = (sql: string): string | null => {
 			i = j
 			continue
 		}
-		if (CLAUSE_BOUNDARY.has(t.v) && depth === fromListDepth) fromListDepth = -1
+		// `AS limit` and `a.limit` name an alias or column; they do not end the FROM list.
+		const prev = tokens[i - 1]?.v
+		if (CLAUSE_BOUNDARY.has(t.v) && depth === fromListDepth && prev !== "as" && prev !== ".")
+			fromListDepth = -1
 	}
 	return null
 }

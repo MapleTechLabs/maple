@@ -17,6 +17,10 @@ describe("rawSqlIssue table sources", () => {
 		"SELECT * FROM traces t, numbers(1) n, primes(2) p WHERE $__orgFilter(t)",
 		"SELECT * FROM traces t LEFT JOIN timeSeriesData('d', 't') s ON 1 = 1 WHERE $__orgFilter(t)",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT * FROM view(SELECT * FROM loop('d', 't')))",
+		// An alias spelled like a clause keyword does not end the FROM list.
+		"SELECT * FROM traces t, numbers(1) AS limit, values('a UInt8', 1) AS f WHERE $__orgFilter(t)",
+		"SELECT * FROM traces t, filesystem('/') f WHERE $__orgFilter(t)",
+		"SELECT * FROM traces t JOIN logs l ON t.limit = l.x, values('a UInt8', 1) AS v WHERE $__orgFilter(t)",
 	])("rejects table functions outside the allow list: %s", (sql) => {
 		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
 	})
