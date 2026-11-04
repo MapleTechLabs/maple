@@ -380,6 +380,7 @@ pub fn parse_internal_span(payload_format: &'static str, signal_path: &'static s
         "maple.ingest.payload_format" = payload_format,
         "maple.signal" = signal_path,
         "maple.ingest.item_count" = Empty,
+        "maple.ingest.decode_heap_estimate" = Empty,
     )
 }
 
