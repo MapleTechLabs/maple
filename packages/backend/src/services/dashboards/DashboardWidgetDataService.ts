@@ -58,7 +58,6 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
-import { dataSourceQuerySet } from "@maple/widgets/dashboard"
 import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
