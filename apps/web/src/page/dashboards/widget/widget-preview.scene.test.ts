@@ -69,6 +69,16 @@ describe("widget editor over a fixed-endpoint widget", () => {
 		expect(widget?.display.title).toBe("All traces")
 	})
 
+	test("an edit run in the preview and then undone previews what Apply saves: the stored endpoint", () => {
+		const undone = run(opened(), [
+			Message.ClickedPanelType({ panel: "line" }),
+			Message.ClickedRunPreview(),
+			Message.ClickedPanelType({ panel: "stat" }),
+		])
+		expect(previewWidgetOf(undone)?.dataSource).toEqual(totalTraces.dataSource)
+		expect(savedWidget(undone)?.dataSource).toEqual(totalTraces.dataSource)
+	})
+
 	test("display-only edits reach the preview without Run preview", () => {
 		const edited = run(opened(), [
 			Message.ChangedTitle({ value: "Traces" }),
