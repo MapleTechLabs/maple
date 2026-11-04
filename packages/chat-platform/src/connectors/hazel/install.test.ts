@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Redacted, Record as Rec } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import type { ChatConnectorConfig } from "../../install"
-import { BOT_ID_CONFIG, BOT_TOKEN_CONFIG } from "./api"
+import { BOT_ID_CONFIG, BOT_TOKEN_CONFIG, REGION_CONFIG } from "./api"
 import { hazelInstall, hazelInstallUrl } from "./install"
 
 const config: ChatConnectorConfig = new Map([
@@ -66,6 +66,21 @@ describe("hazel install", () => {
 			expect(request?.url).toBe("https://api.hazel.sh/api/v1/bot-installs/token")
 			expect(request?.headers["authorization"]).toBe("Bearer hzl_bot_token")
 			expect(sentBody(request!)).toEqual({ code: "org-1.secret", redirectUri })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("redeems with this instance's region, so the workspace's events reach its session", () => {
+		const http = stub(
+			200,
+			JSON.stringify({ organizationId: "org-1", organizationName: "Acme", installedBy: "u" }),
+		)
+		return Effect.gen(function* () {
+			yield* hazelInstall.complete({
+				config: new Map([...config, [REGION_CONFIG, Redacted.make("eu")]]),
+				params: new URLSearchParams({ code: "org-1.secret", state: "nonce" }),
+				redirectUri,
+			})
+			expect(sentBody(http.seen[0]!)).toEqual({ code: "org-1.secret", redirectUri, region: "eu" })
 		}).pipe(Effect.provide(http.layer))
 	})
 

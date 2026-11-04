@@ -60,9 +60,14 @@ export const resolveConnectorConfig = (connector: IngressConnector): Effect.Effe
 		Effect.map((entries): ConnectorConfigResult => {
 			const config = new Map<string, string>()
 			const missing: string[] = []
+			const optional = new Set(
+				connector.ingress.requiredConfig
+					.filter((key) => key.optional === true)
+					.map((key) => key.name),
+			)
 			for (const [name, value] of entries) {
 				if (Option.isSome(value)) config.set(name, value.value)
-				else missing.push(name)
+				else if (!optional.has(name)) missing.push(name)
 			}
 			return missing.length === 0 ? { _tag: "ready", config } : { _tag: "missing", names: missing }
 		}),

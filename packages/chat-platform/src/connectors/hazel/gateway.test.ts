@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ConnectorConfig } from "../../ingress.ts"
 import { socketIngress } from "../../ingress.ts"
-import { BOT_TOKEN_CONFIG, GATEWAY_URL } from "./api.ts"
+import { BOT_TOKEN_CONFIG, GATEWAY_URL, REGION_CONFIG } from "./api.ts"
 import { gatewayProtocol, type GatewayState } from "./gateway.ts"
 import { SESSION_CONFLICT_REASON } from "./gateway-payloads.ts"
 import { Array as Arr } from "effect"
@@ -67,6 +67,26 @@ describe("the handshake", () => {
 		])
 		expect(hello.heartbeatAt).toBe(NOW + 25_000)
 		expect(gatewayProtocol.connectUrl(hello.state, config)).toBe(GATEWAY_URL)
+	})
+
+	it("identifies and resumes as its region's session when the deployment names one", () => {
+		const regional: ConnectorConfig = new Map([...config, [REGION_CONFIG, "eu"]])
+		const fresh = gatewayProtocol.onFrame(
+			{ awaitingAck: false },
+			frame({ op: "HELLO", heartbeatIntervalMs: 25_000 }),
+			NOW,
+			regional,
+		)
+		expect(fresh.send?.map(sent)).toEqual([
+			{ op: "IDENTIFY", botToken: "hzl_bot_token", resumeOffset: "now", region: "eu" },
+		])
+		const resumed = gatewayProtocol.onFrame(
+			ready({ heartbeatIntervalMs: undefined }),
+			frame({ op: "HELLO", heartbeatIntervalMs: 25_000 }),
+			NOW,
+			regional,
+		)
+		expect(resumed.send?.map(sent)).toMatchObject([{ op: "RESUME", region: "eu" }])
 	})
 
 	it("resumes a held session from the last acknowledged offset", () => {

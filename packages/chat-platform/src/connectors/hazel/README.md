@@ -14,22 +14,31 @@ declared once, in `api.ts`.
 | ----------------------- | -------------------------------------------- | ------------------------------- |
 | `MAPLE_HAZEL_BOT_TOKEN` | The token shown once when the bot is created | ingress, outbound and install   |
 | `MAPLE_HAZEL_BOT_ID`    | The bot's id (not a secret)                  | install, as the link's `bot_id` |
+| `MAPLE_HAZEL_REGION`    | `eu` on the EU instance; unset on US         | ingress and install (optional)  |
 
 A half whose names are unset is skipped rather than fatal, as for every connector.
 
 1. **Create the bot** with the scopes `messages:read`, `messages:write`, `channels:write` (opens
    threads) and `channels:read` (lists the channels an alert can go to), mark it **public**, and
    make it **mentionable**.
-   A bot created before alerts came through it lacks `channels:read`: add it on each instance's
-   bot (US and EU), or its channel list answers `auth` and no Hazel channel can be picked.
+   A bot created before alerts came through it lacks `channels:read`: add it, or its channel list
+   answers `auth` and no Hazel channel can be picked.
 2. **Register the install redirect URIs** on the bot (Edit Application → Install redirect URIs):
-   `https://api.maple.dev/oauth/chat/hazel/callback`, plus the equivalent origin of any other
-   stage that shares this bot. Hazel compares them exactly.
-3. **Put the two values on the deployment.** The token reaches `chat-bot` and `api`, the id reaches
-   `api`.
+   `https://api.maple.dev/oauth/chat/hazel/callback`, the EU instance's equivalent, plus the
+   origin of any other stage that shares this bot. Hazel compares them exactly.
+3. **Put the values on the deployment.** The token reaches `chat-bot` and `api`, the id reaches
+   `api`, and the EU instance also sets `MAPLE_HAZEL_REGION=eu` on both.
 
-**One bot per instance.** Hazel allows one gateway session per bot token, so the EU instance runs
-its own bot, with its own redirect URI.
+**One bot for every instance.** Hazel's gateway holds one session per bot and region. Each
+instance identifies with its own region (none for US), and redeems installs with it, so a
+workspace installed from the EU instance sends its events only to the EU session: EU data never
+passes through the US instance, and neither depends on the other being up. In Hazel the bot is
+the Maple integration (Settings → Integrations → Maple), not an entry in Installed Apps.
+
+Moving an instance onto the shared bot: set its token, id and region, then reconnect its Hazel
+workspaces (Settings → Integrations → Hazel → Connect), which redeems each install with the region.
+The instance's saved gateway session and offset belong to its old bot's log: clear them when
+switching, so its first session on the shared bot identifies from new events (`now`).
 
 ## Trying it end to end
 

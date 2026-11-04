@@ -17,7 +17,7 @@
  */
 import { Option, Schema } from "effect"
 import type { ConnectorConfig, SocketDirective, SocketIngressDefinition, SocketStep } from "../../ingress.ts"
-import { BOT_TOKEN_CONFIG, GATEWAY_URL } from "./api.ts"
+import { BOT_TOKEN_CONFIG, GATEWAY_URL, REGION_CONFIG, REGION_CONFIG_KEY } from "./api.ts"
 import { mapEvents } from "./gateway-events.ts"
 import {
 	decodeServerFrame,
@@ -59,10 +59,19 @@ const token = (config: ConnectorConfig): string => config.get(BOT_TOKEN_CONFIG) 
 
 const handshakeFrame = (state: GatewayState, config: ConnectorConfig): string => {
 	const resumeOffset = state.offset ?? FIRST_OFFSET
+	// This instance's session: the gateway sends it only the installs this region redeemed.
+	const region = config.get(REGION_CONFIG)
+	const regional = region === undefined ? {} : { region }
 	return encodeJson(
 		state.sessionId === undefined
-			? { op: "IDENTIFY", botToken: token(config), resumeOffset }
-			: { op: "RESUME", botToken: token(config), sessionId: state.sessionId, resumeOffset },
+			? { op: "IDENTIFY", botToken: token(config), resumeOffset, ...regional }
+			: {
+					op: "RESUME",
+					botToken: token(config),
+					sessionId: state.sessionId,
+					resumeOffset,
+					...regional,
+				},
 	)
 }
 
@@ -150,7 +159,7 @@ const heartbeat = (state: GatewayState, now: number): SocketStep<GatewayState> =
 }
 
 export const gatewayProtocol: SocketIngressDefinition<GatewayState> = {
-	requiredConfig: [{ name: BOT_TOKEN_CONFIG, secret: true }],
+	requiredConfig: [{ name: BOT_TOKEN_CONFIG, secret: true }, REGION_CONFIG_KEY],
 	stateSchema: Schema.fromJsonString(GatewayState),
 	initialState,
 	connectUrl: () => GATEWAY_URL,

@@ -46,6 +46,11 @@ import { ChatConnectorId } from "./connector.ts"
 export interface ConnectorConfigKey {
 	readonly name: string
 	readonly secret: boolean
+	/**
+	 * A setting the connector works without (a region, a tuning knob): its absence leaves the
+	 * connector configured. Unset means required.
+	 */
+	readonly optional?: boolean
 }
 
 /**

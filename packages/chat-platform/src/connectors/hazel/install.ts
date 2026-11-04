@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
@@ -9,7 +9,16 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { API_BASE, API_HOST, BOT_ID_CONFIG, BOT_SETTINGS_URL, BOT_TOKEN_CONFIG, INSTALL_URL } from "./api"
+import {
+	API_BASE,
+	API_HOST,
+	BOT_ID_CONFIG,
+	BOT_SETTINGS_URL,
+	BOT_TOKEN_CONFIG,
+	INSTALL_URL,
+	REGION_CONFIG,
+	REGION_CONFIG_KEY,
+} from "./api"
 import { HAZEL_CONNECTOR_ID } from "./id"
 
 /**
@@ -42,6 +51,7 @@ const redeem = Effect.fn("Hazel.request", { kind: "client" })(function* (
 	token: string,
 	code: string,
 	redirectUri: string,
+	region: string | undefined,
 ) {
 	yield* Effect.annotateCurrentSpan({
 		"peer.service": "hazel",
@@ -54,7 +64,11 @@ const redeem = Effect.fn("Hazel.request", { kind: "client" })(function* (
 		.execute(
 			HttpClientRequest.post(`${API_BASE}/bot-installs/token`, {
 				headers: { accept: "application/json", authorization: `Bearer ${token}` },
-			}).pipe(HttpClientRequest.bodyJsonUnsafe({ code, redirectUri })),
+			}).pipe(
+				HttpClientRequest.bodyJsonUnsafe(
+					region === undefined ? { code, redirectUri } : { code, redirectUri, region },
+				),
+			),
 		)
 		// The message only: the request carries the bot token.
 		.pipe(
@@ -112,7 +126,14 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const code = input.params.get("code")
 	if (code === null) return yield* installFailed("Hazel's callback carried no install code")
 	const token = yield* requireConfig(input.config, HAZEL_CONNECTOR_ID, BOT_TOKEN_CONFIG)
-	const response = yield* redeem(token, code, input.redirectUri)
+	// Redeeming with this instance's region routes the workspace's events to its gateway session.
+	const region = input.config.get(REGION_CONFIG)
+	const response = yield* redeem(
+		token,
+		code,
+		input.redirectUri,
+		region === undefined ? undefined : Redacted.value(region),
+	)
 	if (response.status === 400) {
 		return yield* installFailed("Hazel refused the install code: it expired or was already used")
 	}
@@ -147,6 +168,7 @@ export const hazelInstall: ChatConnectorInstall = {
 	requiredConfig: [
 		{ name: BOT_ID_CONFIG, secret: false },
 		{ name: BOT_TOKEN_CONFIG, secret: true },
+		REGION_CONFIG_KEY,
 	],
 	authorizeUrl,
 	complete,
