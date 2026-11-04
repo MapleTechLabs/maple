@@ -1,6 +1,7 @@
 //! What decoding an OTLP payload will allocate, estimated without allocating: each
 //! element's decoded size, list growth and strings. Malformed input is left to the
 //! decoder; the walker is never stricter, so all it would allocate for was charged.
+//! Also the process-wide memory budget request bodies are decoded inside.
 
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
@@ -17,6 +18,113 @@ use opentelemetry_proto::tonic::metrics::v1::{
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use opentelemetry_proto::tonic::trace::v1::{span, ResourceSpans, ScopeSpans, Span, Status};
 use std::mem::size_of;
+use std::sync::Arc;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+/// The process-wide budget for request bodies being decoded: their raw bytes, the
+/// inflated bytes and the decoded form, reserved before each is allocated. A
+/// reservation that does not fit fails at once, so the caller can shed the request.
+#[derive(Clone, Debug)]
+pub struct DecodeMemory {
+    kibibytes: Arc<Semaphore>,
+    total_bytes: u64,
+}
+
+/// Memory reserved for one request's decode, returned when dropped.
+#[derive(Debug)]
+pub struct DecodeReservation {
+    memory: DecodeMemory,
+    held: Option<OwnedSemaphorePermit>,
+}
+
+impl DecodeMemory {
+    const UNIT: u64 = 1024;
+
+    /// `total_bytes`, rounded down to whole KiB.
+    pub fn new(total_bytes: u64) -> Self {
+        let kibibytes = usize::try_from(total_bytes / Self::UNIT)
+            .unwrap_or(Semaphore::MAX_PERMITS)
+            .min(Semaphore::MAX_PERMITS);
+        Self {
+            kibibytes: Arc::new(Semaphore::new(kibibytes)),
+            total_bytes,
+        }
+    }
+
+    pub const fn total_bytes(&self) -> u64 {
+        self.total_bytes
+    }
+
+    /// An empty reservation against this budget.
+    pub fn reservation(&self) -> DecodeReservation {
+        DecodeReservation {
+            memory: self.clone(),
+            held: None,
+        }
+    }
+
+    /// Bytes reserved right now, across every request.
+    pub fn reserved_bytes(&self) -> u64 {
+        let total = self.total_bytes / Self::UNIT;
+        total.saturating_sub(self.kibibytes.available_permits() as u64) * Self::UNIT
+    }
+
+    fn report(&self) {
+        crate::metrics::decode_memory_reserved(self.reserved_bytes());
+    }
+}
+
+impl DecodeReservation {
+    /// Adds `bytes`, rounded up to whole KiB; `false` when they are not free now.
+    pub fn try_add(&mut self, bytes: u64) -> bool {
+        let Ok(kibibytes) = u32::try_from(bytes.div_ceil(DecodeMemory::UNIT)) else {
+            return false;
+        };
+        if kibibytes == 0 {
+            return true;
+        }
+        let Ok(permit) = Arc::clone(&self.memory.kibibytes).try_acquire_many_owned(kibibytes)
+        else {
+            return false;
+        };
+        match &mut self.held {
+            Some(held) => held.merge(permit),
+            None => self.held = Some(permit),
+        }
+        self.memory.report();
+        true
+    }
+
+    /// Gives back all but `keep` bytes (rounded up to whole KiB) of what is held.
+    pub fn shrink_to(&mut self, keep: u64) {
+        let keep = usize::try_from(keep.div_ceil(DecodeMemory::UNIT)).unwrap_or(usize::MAX);
+        if let Some(held) = &mut self.held {
+            if let Some(release) = held.num_permits().checked_sub(keep) {
+                drop(held.split(release));
+                self.memory.report();
+            }
+        }
+    }
+}
+
+impl Drop for DecodeReservation {
+    fn drop(&mut self) {
+        if self.held.take().is_some() {
+            self.memory.report();
+        }
+    }
+}
+
+/// The uncompressed size a gzip body declares in its trailer, or `None` when it is
+/// not gzip. The decoder verifies it, so a stream inflating past it is refused.
+pub fn gzip_declared_len(body: &[u8]) -> Option<u64> {
+    let (Some([0x1f, 0x8b, 0x08]), Some(trailer)) =
+        (body.first_chunk::<3>(), body.last_chunk::<4>())
+    else {
+        return None;
+    };
+    (body.len() >= 18).then(|| u64::from(u32::from_le_bytes(*trailer)))
+}
 
 /// The OTLP export requests this module can cost.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -578,6 +686,54 @@ mod tests {
     /// `count` copies of field 1 holding an empty message.
     fn empty_entries(count: usize) -> Vec<u8> {
         [0x0a, 0x00].repeat(count)
+    }
+
+    #[test]
+    fn a_reservation_shrinks_to_what_is_still_live() {
+        let memory = DecodeMemory::new(64 * 1024);
+        let mut held = memory.reservation();
+        assert!(held.try_add(40 * 1024));
+        held.shrink_to(10 * 1024 + 1);
+        assert_eq!(memory.reserved_bytes(), 11 * 1024);
+        held.shrink_to(20 * 1024);
+        assert_eq!(memory.reserved_bytes(), 11 * 1024, "shrinking never grows");
+        drop(held);
+        assert_eq!(memory.reserved_bytes(), 0);
+    }
+
+    #[test]
+    fn decode_memory_is_reserved_in_whole_kibibytes_and_returned_on_drop() {
+        let kib = 1024;
+        let memory = DecodeMemory::new(4 * kib);
+        let mut first = memory.reservation();
+        assert!(first.try_add(1));
+        assert!(first.try_add(2 * kib));
+        assert_eq!(
+            memory.reserved_bytes(),
+            3 * kib,
+            "rounded up per reservation"
+        );
+        let mut second = memory.reservation();
+        assert!(!second.try_add(2 * kib), "only one KiB is free");
+        assert!(second.try_add(kib));
+        drop(first);
+        assert_eq!(memory.reserved_bytes(), kib);
+        assert!(second.try_add(0), "nothing to reserve always fits");
+        assert!(!second.try_add(u64::MAX));
+    }
+
+    #[test]
+    fn gzip_declared_len_reads_the_trailer_of_a_gzip_stream_only() {
+        use std::io::Write as _;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&[7; 5000]).unwrap();
+        let gzip = encoder.finish().unwrap();
+        assert_eq!(gzip_declared_len(&gzip), Some(5000));
+        assert_eq!(
+            gzip_declared_len(b"neither gzip nor protobuf nor json"),
+            None
+        );
+        assert_eq!(gzip_declared_len(&gzip[..10]), None);
     }
 
     #[test]

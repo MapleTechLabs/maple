@@ -49,8 +49,8 @@ use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
 use maple_ingest::aws_metric_stream;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
-use maple_ingest::decode_budget::{self, OtlpSignal};
-use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
+use maple_ingest::decode_budget::{self, DecodeMemory, DecodeReservation, OtlpSignal};
+use maple_ingest::decompress::{gunzip_bounded, gunzip_declared, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
 use maple_ingest::host_identity;
@@ -177,6 +177,9 @@ struct AppConfig {
     /// Ceiling on what decoding one OTLP payload may allocate, estimated before
     /// decoding (`decode_budget`); past it the request is a 413.
     max_decode_heap_bytes: u64,
+    /// Process-wide memory for request bodies being decoded, shared by every
+    /// request; past it a request is shed with a retryable 503.
+    decode_memory_bytes: u64,
     org_max_in_flight: u64,
     /// Gateway instances sharing each source's requests/second limit.
     rate_limit_fleet_size: u32,
@@ -481,6 +484,18 @@ impl AppConfig {
             std::env::var("INGEST_MAX_DECODE_HEAP_BYTES").ok(),
             768 * 1024 * 1024,
         )?;
+        // Holds one request at every ceiling at once, inside the 1536 MiB task; raised
+        // to that if set lower (plus a KiB per part for rounding), so it always admits one.
+        let largest_request = (max_request_body_bytes as u64)
+            .saturating_add(max_decoded_body_bytes as u64)
+            .saturating_add(max_decode_heap_bytes)
+            .saturating_add(3 * 1024);
+        let decode_memory_bytes = parse_u64(
+            "INGEST_DECODE_MEMORY_BYTES",
+            std::env::var("INGEST_DECODE_MEMORY_BYTES").ok(),
+            1024 * 1024 * 1024,
+        )?
+        .max(largest_request);
         let org_max_in_flight = parse_u64(
             "INGEST_ORG_MAX_IN_FLIGHT",
             std::env::var("INGEST_ORG_MAX_IN_FLIGHT").ok(),
@@ -747,6 +762,7 @@ impl AppConfig {
             max_request_body_bytes,
             max_decoded_body_bytes,
             max_decode_heap_bytes,
+            decode_memory_bytes,
             org_max_in_flight,
             rate_limit_fleet_size,
             gcp_org_max_in_flight,
@@ -1531,6 +1547,8 @@ struct AppState {
     key_store_ready: Arc<AtomicBool>,
     resolver: IngestKeyResolver,
     org_inflight_limiter: OrgInFlightLimiter,
+    /// Memory every request's body is decoded inside; see `decode_otlp_body`.
+    decode_memory: DecodeMemory,
     key_rate_limiter: SourceRateLimiter,
     /// GCP pushes only, taken before `org_inflight_limiter`.
     gcp_inflight_limiter: OrgInFlightLimiter,
@@ -3087,6 +3105,7 @@ async fn main() {
             blocked_keys: Arc::clone(&config.blocked_ingest_keys),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
+        decode_memory: DecodeMemory::new(config.decode_memory_bytes),
         key_rate_limiter: SourceRateLimiter::new(config.rate_limit_fleet_size),
         gcp_inflight_limiter: OrgInFlightLimiter::for_route(
             config.gcp_org_max_in_flight,
@@ -3402,12 +3421,21 @@ async fn grpc_admission(
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
             Ok((resolved, admission)) => {
+                // Held until tonic has answered: the org's in-flight slot, taken before
+                // the body is read as on the HTTP path, and the export's decode memory.
+                let mut in_flight = None;
                 // Paused, or the public placeholder token whose upload is never
                 // kept: nothing is read or decoded and the client still gets an OK reply.
                 if admission != KeyAdmission::Drop && resolved.org_id != SENTINEL_ORG_ID {
+                    let Some(org_permit) = state.org_inflight_limiter.try_acquire(&resolved.org_id)
+                    else {
+                        return tonic::Status::resource_exhausted("Per-org ingest limit exceeded")
+                            .into_http();
+                    };
                     match decode_grpc_export(&state, &mut request, signal).await {
-                        Ok(export) => {
+                        Ok((export, memory)) => {
                             request.extensions_mut().insert(GrpcExportSlot::new(export));
+                            in_flight = Some((org_permit, memory));
                         }
                         Err(status) => return status.into_http(),
                     }
@@ -3419,7 +3447,9 @@ async fn grpc_admission(
                     .remove(axum::http::header::CONTENT_LENGTH);
                 request.extensions_mut().insert(resolved);
                 request.extensions_mut().insert(admission);
-                next.run(request).await
+                let response = next.run(request).await;
+                drop(in_flight);
+                response
             }
             Err(status) => status.into_http(),
         }
@@ -3468,26 +3498,27 @@ impl GrpcExportSlot {
     }
 }
 
-/// Reads an export's one gRPC message and decodes it under the HTTP path's limits:
-/// the raw body cap, the bounded gunzip and the decode memory budget.
+/// Reads an export's one gRPC message and decodes it as the HTTP path does
+/// (`decode_otlp_body`), returning the decode memory it holds.
 async fn decode_grpc_export(
     state: &AppState,
     request: &mut Request,
     signal: Signal,
-) -> Result<GrpcExport, tonic::Status> {
+) -> Result<(GrpcExport, DecodeReservation), tonic::Status> {
     limit_grpc_body(request, state.config.max_request_body_bytes)?;
     let frame = axum::body::to_bytes(std::mem::take(request.body_mut()), usize::MAX)
         .await
         .map_err(|error| tonic::Status::from_error(error.into_inner()))?;
     let truncated = || tonic::Status::internal("Unexpected end of the gRPC message");
-    let (header, message) = frame.split_first_chunk::<5>().ok_or_else(truncated)?;
-    let [compressed, len @ ..] = *header;
-    if usize::try_from(u32::from_be_bytes(len)).ok() != Some(message.len()) {
+    let Some(&[compressed, a, b, c, d]) = frame.first_chunk::<5>() else {
+        return Err(truncated());
+    };
+    let message = frame.slice(5..);
+    if usize::try_from(u32::from_be_bytes([a, b, c, d])).ok() != Some(message.len()) {
         return Err(truncated());
     }
-    let inflated;
-    let payload = match compressed {
-        0 => message,
+    let gzip = match compressed {
+        0 => false,
         1 => {
             match request
                 .headers()
@@ -3505,45 +3536,35 @@ async fn decode_grpc_export(
                     let mut status = tonic::Status::unimplemented(format!(
                         "Message compression `{other}` is not supported; use gzip"
                     ));
-                    status
-                        .metadata_mut()
-                        .insert("grpc-accept-encoding", tonic::metadata::MetadataValue::from_static("gzip"));
+                    status.metadata_mut().insert(
+                        "grpc-accept-encoding",
+                        tonic::metadata::MetadataValue::from_static("gzip"),
+                    );
                     return Err(status);
                 }
             }
-            let max_decoded = state.config.max_decoded_body_bytes;
-            inflated = gunzip_bounded(message, max_decoded).map_err(|error| match error {
-                GunzipError::Invalid(_) => tonic::Status::invalid_argument("Invalid gzip message"),
-                GunzipError::TooLarge => tonic::Status::resource_exhausted(format!(
-                    "Decompressed message exceeds {max_decoded} bytes"
-                )),
-            })?;
-            &inflated[..]
+            true
         }
         _ => return Err(tonic::Status::internal("Invalid gRPC compression flag")),
     };
-    let parse_span = parse_internal_span(PayloadFormat::Protobuf.label(), signal.path());
-    let _guard = parse_span.enter();
-    let decoded = decode_otlp_payload(
-        signal,
-        PayloadFormat::Protobuf,
+    let DecodedBody {
         payload,
-        state.config.max_decode_heap_bytes,
-    )
-    .map_err(|error| {
-        if error.status == StatusCode::PAYLOAD_TOO_LARGE {
-            record_stage_error(&parse_span, "payload_too_large", &error.message, false);
-            tonic::Status::resource_exhausted(error.message)
-        } else {
-            record_stage_error(&parse_span, "enrich", &error.message, false);
-            tonic::Status::invalid_argument(error.message)
-        }
-    })?;
-    parse_span.record("maple.ingest.item_count", decoded.item_count());
-    Ok(GrpcExport {
-        decoded,
-        decoded_bytes: payload.len(),
-    })
+        decoded_bytes,
+        memory,
+    } = decode_otlp_body(state, message, gzip, signal, PayloadFormat::Protobuf)
+        .await
+        .map_err(|DecodeRefusal { error, .. }| match error.status {
+            StatusCode::PAYLOAD_TOO_LARGE => tonic::Status::resource_exhausted(error.message),
+            status if status.is_server_error() => tonic::Status::unavailable(error.message),
+            _ => tonic::Status::invalid_argument(error.message),
+        })?;
+    Ok((
+        GrpcExport {
+            decoded: payload,
+            decoded_bytes,
+        },
+        memory,
+    ))
 }
 
 /// The HTTP path's raw body cap, and one message per export (`SingleGrpcFrame`).
@@ -3835,10 +3856,7 @@ async fn accept_grpc_decoded(
         return Ok(());
     }
 
-    let _org_inflight_permit = state
-        .org_inflight_limiter
-        .try_acquire(&resolved.org_id)
-        .ok_or_else(|| tonic::Status::resource_exhausted("Per-org ingest limit exceeded"))?;
+    // The org's in-flight slot is held by `grpc_admission`.
     let item_count = decoded.item_count();
     let mut retained = claims.retained;
 
@@ -5545,81 +5563,45 @@ async fn handle_signal_inner(
         }
     }
 
-    let encoding_label = content_encoding.as_deref().unwrap_or("identity");
-    // Synchronous, so the span is entered rather than instrumented. Scoped so the
-    // span closes on the decompress itself and not on the rest of the handler.
-    let decoded_payload = {
-        let decode_span = decode_internal_span(encoding_label, body.len());
-        let _guard = decode_span.enter();
-        let decoded_payload = decode_payload(
-            &body,
-            content_encoding.as_deref(),
-            state.config.max_decoded_body_bytes,
-        )
-        .map_err(|e| {
-            // Over the decoded ceiling is the same refusal as an oversized body.
-            if e.status == StatusCode::PAYLOAD_TOO_LARGE {
-                warn!(body_bytes = body.len(), "Decoded payload too large");
-                record_stage_error(&decode_span, "payload_too_large", &e.message, false);
-                return (e, "payload_too_large");
-            }
-            warn!(body_bytes = body.len(), "Failed to decode payload");
-            record_stage_error(&decode_span, "decode", &e.message, false);
+    let gzip = match content_encoding.as_deref() {
+        None => false,
+        Some("gzip") => true,
+        Some(_) => {
             metrics::org_data_loss(&resolved_key.org_id, signal.path(), "decode");
-            (e, "decode")
-        })?;
-        decode_span.record("maple.ingest.decoded_bytes", decoded_payload.len());
-        decoded_payload
+            return Err((
+                ApiError::unsupported_media_type("Unsupported content-encoding"),
+                "decode",
+            ));
+        }
     };
-
-    Span::current().record("maple.ingest.decoded_bytes", decoded_payload.len());
-    debug!(
-        decoded_bytes = decoded_payload.len(),
-        encoding = encoding_label,
-        "Payload decoded"
-    );
-    metrics::decoded_body_bytes(signal.path(), decoded_payload.len() as u64);
-
-    let mut decoded = {
-        let parse_span = parse_internal_span(payload_format.label(), signal.path());
-        let _guard = parse_span.enter();
-        let decoded = decode_otlp_payload(
-            signal,
-            payload_format,
-            &decoded_payload,
-            state.config.max_decode_heap_bytes,
-        )
-        .map_err(|e| {
-            // Past the memory budget is the same refusal as an oversized body.
-            if e.status == StatusCode::PAYLOAD_TOO_LARGE {
-                warn!(
-                    format = payload_format.label(),
-                    signal = signal.path(),
-                    org_id = resolved_key.org_id.as_str(),
-                    decoded_bytes = decoded_payload.len(),
-                    "Payload decodes past the memory budget"
-                );
-                record_stage_error(&parse_span, "payload_too_large", &e.message, false);
-                return (e, "payload_too_large");
-            }
+    let body_bytes = body.len();
+    let DecodedBody {
+        payload: mut decoded,
+        decoded_bytes,
+        memory: _decode_memory,
+    } = decode_otlp_body(state, body, gzip, signal, payload_format)
+        .await
+        .map_err(|DecodeRefusal { error, stage }| {
             warn!(
                 format = payload_format.label(),
                 signal = signal.path(),
                 org_id = resolved_key.org_id.as_str(),
                 key_type = resolved_key.key_type.as_str(),
-                decoded_bytes = decoded_payload.len(),
-                reason = %e.message,
-                "Invalid OTLP payload"
+                body_bytes,
+                stage,
+                reason = %error.message,
+                "OTLP payload refused while decoding"
             );
-            // The reason previously only reached the log; on the span it
-            // is what tells you *why* a customer's SDK is being rejected.
-            record_stage_error(&parse_span, "enrich", &e.message, false);
-            metrics::org_data_loss(&resolved_key.org_id, signal.path(), "enrich");
-            (e, "enrich")
+            if matches!(stage, "decode" | "enrich") {
+                metrics::org_data_loss(&resolved_key.org_id, signal.path(), stage);
+            }
+            (error, stage)
         })?;
-        parse_span.record("maple.ingest.item_count", decoded.item_count());
-        decoded
-    };
+
+    Span::current().record("maple.ingest.decoded_bytes", decoded_bytes);
+    debug!(decoded_bytes, "Payload decoded");
+    metrics::decoded_body_bytes(signal.path(), decoded_bytes as u64);
+
     let mut claims = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
     if claims.all_paused {
         // Like a paused token source: success to the sender, nothing written or billed.
@@ -5648,7 +5630,7 @@ async fn handle_signal_inner(
     )
     .await;
     // Only the share left after paused-source drops and ingest rules is metered.
-    let decoded_bytes = claims.metered_bytes(decoded_payload.len());
+    let decoded_bytes = claims.metered_bytes(decoded_bytes);
     let item_count = claims.retained.metered_items(item_count);
 
     let response = response_result.map_err(|error| (error, "forward"))?;
@@ -7047,16 +7029,15 @@ fn encode_payload(payload: &[u8], content_encoding: Option<&str>) -> Result<Vec<
     }
 }
 
-/// Decodes an OTLP export, refusing one whose decoded form would allocate more
-/// than `heap_budget` before any of it is allocated.
-#[hotpath::measure]
-fn decode_otlp_payload(
+/// What decoding `payload` would allocate, refused past `heap_budget` before any
+/// of it is allocated.
+fn otlp_decode_cost(
     signal: Signal,
     payload_format: PayloadFormat,
     payload: &[u8],
     heap_budget: u64,
-) -> Result<DecodedPayload, ApiError> {
-    let estimate = match payload_format {
+) -> Result<u64, ApiError> {
+    match payload_format {
         PayloadFormat::Protobuf => {
             decode_budget::protobuf_cost(signal.otlp_signal(), payload, heap_budget)
         }
@@ -7067,8 +7048,135 @@ fn decode_otlp_payload(
             "Request decodes past the {} MiB the gateway allows one request; send smaller batches",
             heap_budget / (1024 * 1024)
         ))
-    })?;
-    Span::current().record("maple.ingest.decode_heap_estimate", estimate);
+    })
+}
+
+/// Why `decode_otlp_body` refused a body, and the stage that refused it, named as
+/// the ingest spans' `error.type`.
+struct DecodeRefusal {
+    error: ApiError,
+    stage: &'static str,
+}
+
+/// An OTLP body inflated and decoded, and the decode memory it holds until dropped.
+struct DecodedBody {
+    payload: DecodedPayload,
+    decoded_bytes: usize,
+    memory: DecodeReservation,
+}
+
+static INGEST_DECODE_BUSY: FailureKind = FailureKind {
+    tag: "@maple/ingest/DecodeBusy",
+    code: "ingest_decode_busy",
+    title: "Ingest gateway busy",
+    recovery: "retry",
+    retryable: true,
+    error_kind: "decode_busy",
+    retry_after_seconds: Some(1),
+};
+
+/// Inflates and decodes an OTLP body on the blocking pool, inside the process-wide
+/// decode memory budget: the inflated size and the decode estimate are reserved
+/// before they are allocated, and a request that does not fit is shed with a 503.
+async fn decode_otlp_body(
+    state: &AppState,
+    body: Bytes,
+    gzip: bool,
+    signal: Signal,
+    payload_format: PayloadFormat,
+) -> Result<DecodedBody, DecodeRefusal> {
+    let mut reservation = state.decode_memory.reservation();
+    let (max_decoded, heap_budget) = (
+        state.config.max_decoded_body_bytes,
+        state.config.max_decode_heap_bytes,
+    );
+    let parent = Span::current();
+    tokio::task::spawn_blocking(move || {
+        let refuse = |span: &Span, error: ApiError, stage: &'static str| {
+            record_stage_error(span, stage, &error.message, error.status.is_server_error());
+            DecodeRefusal { error, stage }
+        };
+        let busy = || {
+            ApiError::tagged(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &INGEST_DECODE_BUSY,
+                "Ingest gateway is busy decoding other requests; retry shortly",
+            )
+        };
+        let encoding = if gzip { "gzip" } else { "identity" };
+        let decode_span = parent.in_scope(|| decode_internal_span(encoding, body.len()));
+        let payload = {
+            let _guard = decode_span.enter();
+            // The body is already buffered; counting it sheds the rest of a burst.
+            if !reservation.try_add(body.len() as u64) {
+                return Err(refuse(&decode_span, busy(), "decode_busy"));
+            }
+            let payload = if gzip {
+                let invalid = || ApiError::bad_request("Invalid gzip body");
+                let declared = decode_budget::gzip_declared_len(&body)
+                    .ok_or_else(|| refuse(&decode_span, invalid(), "decode"))?;
+                let declared = usize::try_from(declared).unwrap_or(usize::MAX);
+                if declared > max_decoded {
+                    return Err(refuse(&decode_span, too_large_decoded(), "payload_too_large"));
+                }
+                if !reservation.try_add(declared as u64) {
+                    return Err(refuse(&decode_span, busy(), "decode_busy"));
+                }
+                let inflated = gunzip_declared(&body, declared).map_err(|error| match error {
+                    GunzipError::Invalid(_) => refuse(&decode_span, invalid(), "decode"),
+                    GunzipError::TooLarge => {
+                        refuse(&decode_span, too_large_decoded(), "payload_too_large")
+                    }
+                })?;
+                drop(body);
+                Bytes::from(inflated)
+            } else {
+                body
+            };
+            decode_span.record("maple.ingest.decoded_bytes", payload.len());
+            payload
+        };
+        let parse_span =
+            parent.in_scope(|| parse_internal_span(payload_format.label(), signal.path()));
+        let _guard = parse_span.enter();
+        let estimate = otlp_decode_cost(signal, payload_format, &payload, heap_budget)
+            .map_err(|error| refuse(&parse_span, error, "payload_too_large"))?;
+        parse_span.record("maple.ingest.decode_heap_estimate", estimate);
+        if !reservation.try_add(estimate) {
+            return Err(refuse(&parse_span, busy(), "decode_busy"));
+        }
+        let decoded = decode_otlp_payload(signal, payload_format, &payload)
+            .map_err(|error| refuse(&parse_span, error, "enrich"))?;
+        parse_span.record("maple.ingest.item_count", decoded.item_count());
+        // Only the decoded form outlives this closure; the buffers go with it.
+        let decoded_bytes = payload.len();
+        drop(payload);
+        reservation.shrink_to(estimate);
+        Ok(DecodedBody {
+            payload: decoded,
+            decoded_bytes,
+            memory: reservation,
+        })
+    })
+    .await
+    .unwrap_or_else(|_| {
+        Err(DecodeRefusal {
+            error: ApiError::service_unavailable("Ingest gateway failed to decode the request"),
+            stage: "decode_panic",
+        })
+    })
+}
+
+fn too_large_decoded() -> ApiError {
+    ApiError::payload_too_large("Decompressed request body too large")
+}
+
+#[hotpath::measure]
+fn decode_otlp_payload(
+    signal: Signal,
+    payload_format: PayloadFormat,
+    payload: &[u8],
+) -> Result<DecodedPayload, ApiError> {
     match (signal, payload_format) {
         (Signal::Traces, PayloadFormat::Protobuf) => {
             let request = ExportTraceServiceRequest::decode(payload)
@@ -10616,7 +10724,7 @@ mod tests {
     }
 
     fn decode_json(signal: Signal, payload: &str) -> Result<DecodedPayload, ApiError> {
-        decode_otlp_payload(signal, PayloadFormat::Json, payload.as_bytes(), u64::MAX).map(|mut decoded| {
+        decode_otlp_payload(signal, PayloadFormat::Json, payload.as_bytes()).map(|mut decoded| {
             enrich_decoded_payload(&mut decoded, &test_key(), &[]);
             decoded
         })
@@ -11618,6 +11726,7 @@ mod tests {
                 max_request_body_bytes: 1024 * 1024,
                 max_decoded_body_bytes: 8 * 1024 * 1024,
                 max_decode_heap_bytes: 64 * 1024 * 1024,
+                decode_memory_bytes: 128 * 1024 * 1024,
                 org_max_in_flight: 100,
                 rate_limit_fleet_size: 1,
                 gcp_org_max_in_flight: 100,
@@ -11670,6 +11779,7 @@ mod tests {
                 blocked_keys: Arc::default(),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
+            decode_memory: DecodeMemory::new(128 * 1024 * 1024),
             key_rate_limiter: SourceRateLimiter::new(1),
             gcp_inflight_limiter: OrgInFlightLimiter::for_route(100, "gcp_in_flight"),
             sampling_resolver: SamplingPolicyResolver {
@@ -12512,6 +12622,90 @@ mod tests {
         .await
         .expect("a batch within the budget is accepted");
         assert_eq!((response.status(), item_count), (StatusCode::OK, 1));
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn otlp_sheds_a_body_the_shared_decode_memory_cannot_hold() {
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("otlp-decode-memory");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_decode_memory";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_decode_memory".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        let batch = || Bytes::from(test_log_request("shared memory").encode_to_vec());
+
+        // Other requests hold all but a sliver of the shared memory.
+        let memory = state.decode_memory.clone();
+        let mut others = memory.reservation();
+        assert!(others.try_add(memory.total_bytes()));
+        let (error, error_kind) =
+            handle_signal_inner(&state, &test_headers(raw_key), batch(), Signal::Logs)
+                .await
+                .expect_err("no memory is free");
+        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error_kind, "decode_busy");
+        let response = error.into_response();
+        assert_eq!(response.headers()[RETRY_AFTER], "1", "the client retries");
+
+        drop(others);
+        let (response, item_count, _, _) =
+            handle_signal_inner(&state, &test_headers(raw_key), batch(), Signal::Logs)
+                .await
+                .expect("accepted once memory frees up");
+        assert_eq!((response.status(), item_count), (StatusCode::OK, 1));
+        assert_eq!(memory.reserved_bytes(), 0, "a finished request returns its memory");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn otlp_gzip_is_inflated_only_up_to_the_size_it_declares() {
+        let queue_dir = unique_main_test_dir("otlp-gzip-declared");
+        let (raw_key, org_id) = ("maple_sk_test_gzip_declared", "org_gzip_declared");
+        let state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        let mut headers = test_headers(raw_key);
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let gzip = gzip_bytes(test_log_request("declared").encode_to_vec());
+
+        // A trailer declaring more than the decoded ceiling is refused unread.
+        let mut overdeclared = gzip.to_vec();
+        let at = overdeclared.len() - 4;
+        overdeclared[at..].copy_from_slice(&u32::MAX.to_le_bytes());
+        // One declaring less than it inflates to is cut off at what it declared.
+        let mut underdeclared = gzip.to_vec();
+        underdeclared[at..].copy_from_slice(&1_u32.to_le_bytes());
+        for (case, body) in [("over", overdeclared), ("under", underdeclared)] {
+            let (error, error_kind) =
+                handle_signal_inner(&state, &headers, Bytes::from(body), Signal::Logs)
+                    .await
+                    .expect_err(case);
+            assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE, "{case}");
+            assert_eq!(error_kind, "payload_too_large", "{case}");
+        }
+        // A second member used to be dropped silently; now the request is refused.
+        let mut two_members = gzip.to_vec();
+        two_members.extend_from_slice(&gzip);
+        let (error, error_kind) =
+            handle_signal_inner(&state, &headers, Bytes::from(two_members), Signal::Logs)
+                .await
+                .expect_err("two members");
+        assert_eq!((error.status, error_kind), (StatusCode::BAD_REQUEST, "decode"));
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -13864,8 +14058,8 @@ mod tests {
 
     impl SpanTreeCapture {
         /// Scoped to the calling thread. `#[tokio::test]` uses a current-thread
-        /// runtime, so the handler and the export worker it spawns both run here,
-        /// while other tests' spans are filtered out.
+        /// runtime, so the handler and the export worker it spawns both run here
+        /// (and children inherit it), while other tests' spans are filtered out.
         #[expect(
             clippy::option_option,
             reason = "the two levels are distinct answers: the outer is whether the span was \
@@ -13906,12 +14100,19 @@ mod tests {
             let Some(span) = ctx.span(id) else {
                 return;
             };
-            let parent = span.parent().map(|parent| parent.name().to_owned());
-            self.spans.lock().unwrap().push((
-                std::thread::current().id(),
-                span.name().to_owned(),
-                parent,
-            ));
+            // A child keeps its parent's thread, so a test's tree stays together
+            // across work moved to the blocking pool.
+            let parent = span.parent();
+            let thread = parent
+                .as_ref()
+                .and_then(|parent| parent.extensions().get::<std::thread::ThreadId>().copied())
+                .unwrap_or_else(|| std::thread::current().id());
+            span.extensions_mut().insert(thread);
+            let parent = parent.map(|parent| parent.name().to_owned());
+            self.spans
+                .lock()
+                .unwrap()
+                .push((thread, span.name().to_owned(), parent));
         }
     }
 
@@ -14588,6 +14789,80 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(grpc_header_status(&within), None, "a batch within the budget is accepted");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn grpc_admission_holds_the_org_slot_and_decode_memory_before_reading() {
+        use tonic::codegen::Service as _;
+
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("grpc-org-slot");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_org_slot";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_org_slot".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.org_inflight_limiter = OrgInFlightLimiter::new(1);
+        let state = Arc::new(state);
+        let mut router = grpc_router(Arc::clone(&state));
+        let undecodable_gzip = || {
+            let mut request = grpc_export_request(raw_key, UNDECODABLE_BODY.to_vec());
+            request
+                .headers_mut()
+                .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+            request
+        };
+
+        // The org's one slot is taken: refused before its bytes are read, so not a
+        // decode error.
+        let slot = state
+            .org_inflight_limiter
+            .try_acquire("org_grpc_org_slot")
+            .unwrap();
+        let refused = router.call(undecodable_gzip()).await.unwrap();
+        assert_eq!(grpc_header_status(&refused), Some("8"), "RESOURCE_EXHAUSTED");
+        drop(slot);
+
+        // No decode memory is free: UNAVAILABLE, which exporters retry.
+        let mut others = state.decode_memory.reservation();
+        assert!(others.try_add(state.decode_memory.total_bytes()));
+        let busy = router
+            .call(grpc_export_request(
+                raw_key,
+                grpc_frame(&test_log_request("busy").encode_to_vec()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&busy), Some("14"), "UNAVAILABLE");
+        drop(others);
+
+        let accepted = router
+            .call(grpc_export_request(
+                raw_key,
+                grpc_frame(&test_log_request("accepted").encode_to_vec()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&accepted), None);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        assert!(
+            state.org_inflight_limiter.try_acquire("org_grpc_org_slot").is_some(),
+            "the slot is returned after the reply"
+        );
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
