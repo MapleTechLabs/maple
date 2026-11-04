@@ -243,9 +243,17 @@ export const toWidgetFailure = (error: unknown): WidgetFailure => {
 }
 
 /**
- * `fetchWidgetData`: the endpoint's server function, retried twice unless the window was empty or the read
- * hit its deadline (retrying a timeout would hold the tile on its skeleton for three deadlines).
+ * Worth asking again: a dropped connection or a failure the backend marks retryable (a 5xx). Not an
+ * empty window, a bad query, an unreadable answer or a read past its deadline (retrying a timeout
+ * would hold the tile on its skeleton for three deadlines).
  */
+export const isTransientWidgetError = (error: unknown): boolean =>
+	!EXPECTED_EMPTY_MESSAGES.has(messageOf(error) ?? "") &&
+	!isRequestTimeout(error) &&
+	!isDecodeError(error) &&
+	displayError(error).retryable
+
+/** `fetchWidgetData`: the endpoint's server function, retried twice on a transient failure. */
 export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string, unknown>>) => {
 	const serverFn = getWidgetServerFunction(endpoint)
 	return serverFn === undefined
@@ -254,8 +262,7 @@ export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string
 				Effect.retry({
 					times: 2,
 					schedule: Schedule.exponential(Duration.millis(500)),
-					while: (error) =>
-						!EXPECTED_EMPTY_MESSAGES.has(messageOf(error) ?? "") && !isRequestTimeout(error),
+					while: isTransientWidgetError,
 				}),
 			)
 }
