@@ -326,6 +326,8 @@ export const SecurityAuditRunFindingTotals = Schema.Struct({
 	high: Schema.Number,
 	medium: Schema.Number,
 	low: Schema.Number,
+	/** Confirmed without an overall severity. */
+	informational: Schema.Number,
 	/** Of the severity counts, unconfirmed leads. */
 	leads: Schema.Number,
 	rejected: Schema.Number,

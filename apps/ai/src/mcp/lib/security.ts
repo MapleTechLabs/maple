@@ -192,6 +192,7 @@ export const runSummaryOf = (
 					high: counts.high,
 					medium: counts.medium,
 					low: counts.low,
+					informational: counts.informational,
 					leads: counts.unverified + counts.needsValidation,
 					rejected: counts.rejected,
 				},

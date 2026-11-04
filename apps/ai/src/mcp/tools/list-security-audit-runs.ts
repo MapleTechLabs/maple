@@ -52,14 +52,20 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 						params.repository === undefined ||
 						Str.toLowerCase(t.repository) === Str.toLowerCase(params.repository),
 				)
-				const runs = yield* store.listRuns({
-					...(wanted.length === 1 && wanted[0] !== undefined
-						? { targetId: wanted[0].id }
-						: undefined),
-					...(params.status === undefined ? undefined : { statuses: [params.status] }),
-					limit: params.repository !== undefined && wanted.length !== 1 ? 100 : params.limit,
-				})
-				const kept = Arr.filter(runs, (run) => Arr.some(wanted, (t) => t.id === run.targetId))
+				const statuses = params.status === undefined ? undefined : { statuses: Arr.of(params.status) }
+				// A repository can have one target per branch: page each, so a busier target elsewhere cannot crowd them out.
+				const pages =
+					params.repository === undefined
+						? [yield* store.listRuns({ ...statuses, limit: params.limit })]
+						: yield* Effect.forEach(
+								wanted,
+								(t) => store.listRuns({ targetId: t.id, ...statuses, limit: params.limit }),
+								{ concurrency: 4 },
+							)
+				const kept = Arr.take(
+					Arr.flatten(pages).toSorted((a, b) => b.startedAt - a.startedAt),
+					params.limit,
+				)
 				// Members may list runs but not read what they reported, as in the dashboard.
 				const counts = admin
 					? yield* store.countRunFindings(Arr.map(kept, (run) => run.id))
@@ -91,7 +97,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 			)
 			const { targets, wanted, kept, counts, perTarget, now, window, spentUsd, settings, limits } =
 				yield* read
-			const runs = Arr.map(Arr.take(kept, params.limit), (run) =>
+			const runs = Arr.map(kept, (run) =>
 				runSummaryOf(
 					run,
 					targets.find((t) => t.id === run.targetId),
@@ -206,7 +212,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 									"Stopped because",
 									"Agents",
 									"Cost",
-									"Reported (crit/high/med/low, leads, rejected)",
+									"Reported (crit/high/med/low/info, leads, rejected)",
 								],
 								Arr.map(output.runs, (run) => [
 									run.runId,
@@ -223,7 +229,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 									run.costUsd === null ? "pending" : usd(run.costUsd),
 									run.findings === null
 										? "admins only"
-										: `${run.findings.critical}/${run.findings.high}/${run.findings.medium}/${run.findings.low}, ${run.findings.leads}, ${run.findings.rejected}`,
+										: `${run.findings.critical}/${run.findings.high}/${run.findings.medium}/${run.findings.low}/${run.findings.informational}, ${run.findings.leads}, ${run.findings.rejected}`,
 								]),
 							),
 					...(output.notes.length === 0 ? [] : [doc.heading("Notes"), doc.list(output.notes)]),
