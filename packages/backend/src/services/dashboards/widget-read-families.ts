@@ -1,7 +1,8 @@
 /**
  * Which telemetry families a widget's data source reads, so a scoped API key is
- * served only the tiles it could have queried itself. Anything not known to stay
- * inside one family (raw SQL, product events, an unlisted route) needs all three.
+ * served only the tiles it could have queried itself. Raw SQL and query sets on
+ * other sources need all three. A route reads what its plan declares; a route with
+ * no plan reads nothing and is refused as unsupported, whatever the caller's scopes.
  */
 import { TELEMETRY_READ_FAMILIES } from "@maple/domain/http/v2"
 import {
@@ -13,21 +14,13 @@ import {
 } from "@maple/widgets/dashboard"
 import type { DashboardDocument } from "@maple/domain/http"
 import { Array as Arr } from "effect"
+import { ROUTE_ENDPOINT_PLANS, type TelemetryReadFamily } from "./route-endpoint-plans"
 
-export type TelemetryReadFamily = (typeof TELEMETRY_READ_FAMILIES)[number]
+export type { TelemetryReadFamily }
 
 type WidgetDataSource = DashboardDocument["widgets"][number]["dataSource"]
 
 const ALL_FAMILIES: ReadonlyArray<TelemetryReadFamily> = TELEMETRY_READ_FAMILIES
-
-// The route endpoints `ROUTE_ENDPOINT_PLANS` serves. Error events derive from spans and logs.
-const ROUTE_ENDPOINT_FAMILIES = new Map<string, ReadonlyArray<TelemetryReadFamily>>([
-	["errors_by_type", ["traces", "logs"]],
-	["errors_summary", ["traces", "logs"]],
-	["service_overview", ["traces"]],
-	["service_usage", ALL_FAMILIES],
-	["list_logs", ["logs"]],
-])
 
 const isFamily = (value: unknown): value is TelemetryReadFamily =>
 	Arr.some(ALL_FAMILIES, (family) => family === value)
@@ -48,5 +41,5 @@ export const widgetReadFamilies = (
 	const lowered = toWidgetRequest(dataSource)
 	if (lowered === null || lowered.endpoint === MARKDOWN_STATIC_ENDPOINT) return []
 	const endpoint = dataSourceEndpoint(dataSource) ?? lowered.endpoint
-	return ROUTE_ENDPOINT_FAMILIES.get(endpoint) ?? ALL_FAMILIES
+	return ROUTE_ENDPOINT_PLANS[endpoint]?.families ?? []
 }

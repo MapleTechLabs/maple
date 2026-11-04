@@ -74,7 +74,8 @@ import { resolveShareVariables } from "./share-variables"
 import { resolveShareWindow } from "./share-window"
 import { type TelemetryReadFamily, widgetReadFamilies } from "./widget-read-families"
 
-const UNSUPPORTED_WIDGET_MESSAGE = "This widget isn't available in shared views."
+// Shares and the API's widget data read both land here, so the wording names neither.
+const UNSUPPORTED_WIDGET_MESSAGE = "This widget type can't be read outside the dashboard yet."
 const EXECUTION_FAILED_MESSAGE = "This widget couldn't be loaded. Try again shortly."
 
 /**

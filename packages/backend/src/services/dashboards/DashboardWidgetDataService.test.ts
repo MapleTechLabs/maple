@@ -298,6 +298,62 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 		await runtime.dispose()
 	})
 
+	const routeWidget = (id: string, endpoint: string) => widget(id, { kind: "route", endpoint, params: {} })
+	const UNSUPPORTED = {
+		ok: false,
+		reason: "unsupported",
+		message: "This widget type can't be read outside the dashboard yet.",
+	}
+
+	it.each([
+		["a key without traces:read", (family: string) => family === "logs"],
+		["a full key", () => true],
+	])("refuses a route with no server plan as unsupported for %s", async (_label, canRead) => {
+		const { runtime, windows } = makeHarness(timeseries)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, document([routeWidget("w-traces", "list_traces")]), {
+					requests: [{ widgetId: "w-traces", source: "primary" }],
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead,
+				}),
+			),
+		)
+
+		// No scope can make this widget readable, so a missing scope is not the answer.
+		expect(results).toEqual([{ widgetId: "w-traces", ...UNSUPPORTED }])
+		expect(windows).toHaveLength(0)
+		await runtime.dispose()
+	})
+
+	it("refuses a servable traces route for a key without traces:read", async () => {
+		const { runtime, windows } = makeHarness(timeseries)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, document([routeWidget("w-overview", "service_overview")]), {
+					requests: [{ widgetId: "w-overview", source: "primary" }],
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead: (family) => family === "logs",
+				}),
+			),
+		)
+
+		expect(results).toEqual([
+			{
+				widgetId: "w-overview",
+				ok: false,
+				reason: "unsupported",
+				message: 'This widget requires the "traces:read" scope.',
+			},
+		])
+		expect(windows).toHaveLength(0)
+		await runtime.dispose()
+	})
+
 	it("resolves up to four widgets of a batch at once, keeping request order", async () => {
 		let inFlight = 0
 		let peak = 0
