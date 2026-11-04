@@ -867,6 +867,20 @@ describe("runAudit, answers without a tool call", () => {
 	})
 })
 
+describe("runAudit, synthesis retry", () => {
+	it("asks a second synthesis for a smaller plan without exploring when the first fails", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "synthesis-1" ? agentFailure(i) : happy()(i),
+		)
+		const prompts = Arr.filter(recorded.invocations, (i) => i.role === "synthesis")
+		expect(Arr.map(prompts, (i) => i.agentId)).toEqual(["synthesis-1", "synthesis-2"])
+		expect(prompts[0]?.prompt).toContain("Seed at most 40 units")
+		expect(prompts[1]?.prompt).toContain("Seed at most 20 units")
+		expect(prompts[1]?.prompt).toContain("Do not explore the repository again")
+		expect(result.status).toBe("complete")
+	})
+})
+
 describe("runAudit, critic repair", () => {
 	const broken = json({ ...emptyCritic, missing_units: "secret-XYZ789" })
 
