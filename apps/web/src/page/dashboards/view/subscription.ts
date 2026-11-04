@@ -118,13 +118,17 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					),
 			},
 		),
-		/** The org's tags, for the tag editor's suggestions. */
+		/** The org's tags, for the tag editor's suggestions: read only while the editor is open. */
 		orgTags: entry(
-			{ orgId: Schema.String },
+			{ orgId: Schema.NullOr(Schema.String) },
 			{
-				modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
+				modelToDependencies: ({ model, context }) => ({
+					orgId: model.tagEditor.dialog.isOpen ? context.orgId : null,
+				}),
 				dependenciesToStream: ({ orgId }) =>
-					orgTagsStream(orgId, (tags) => Message.UpdatedOrgTags({ tags })),
+					orgId === null
+						? Stream.empty
+						: orgTagsStream(orgId, (tags) => Message.UpdatedOrgTags({ tags })),
 			},
 		),
 		/** `useGridInteraction`'s window listeners, attached for the life of a pointer gesture. */

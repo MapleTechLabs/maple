@@ -283,7 +283,7 @@ const withReplan = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 	return { model: planned.model, commands: planned.commands }
 }
 
-/** The live document arrived (or changed): seed the range once, then plan the revealed tiles. */
+/** The live document arrived (or changed): plan the revealed tiles against it. */
 const receiveDocument = (
 	model: Model,
 	context: PageContext,
