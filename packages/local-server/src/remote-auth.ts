@@ -152,23 +152,34 @@ export const accessDenied = (
 	req: Request,
 	url: URL,
 	nowMs: number,
+	attempts: CredentialAttempts,
 ): Response | null => {
 	if (url.pathname === "/health") return null
 	if (OTLP_PATHS.has(url.pathname))
 		return auth.ingestKey === undefined || secretMatches(auth.ingestKey, presentedIngestKey(req))
 			? null
 			: unauthorized("ingest key required")
+	// SDKs send their ingest key to other hosted `/v1/*` routes; that is no access-token guess.
+	if (auth.accessToken !== undefined && Str.startsWith("/v1/")(url.pathname))
+		return new Response("not found", { status: 404, headers: { "content-type": "text/plain" } })
 	if (auth.accessToken === undefined) return null
 	if (url.pathname === LOGIN_PATH || url.pathname === LOGIN_ACTION_PATH) return null
 	if (
 		hasValidSession(auth, req, nowMs) ||
-		secretMatches(auth.accessToken, bearerToken(req)) ||
 		(Str.startsWith("/local/")(url.pathname) &&
 			secretMatches(credentials.maintenanceToken, req.headers.get("x-maple-maintenance-token"))) ||
 		(CONSUMER_PATHS.has(url.pathname) &&
 			secretMatches(credentials.consumerToken, req.headers.get("x-maple-event-consumer-token")))
 	)
 		return null
+	const bearer = bearerToken(req)
+	if (bearer !== null) {
+		// A Bearer guess counts against the same limit as a sign-in, checked before the compare.
+		const retryAfterMs = attempts.throttle.retryAfterMs(attempts.client, nowMs)
+		if (retryAfterMs > 0) return tooManyAttempts(retryAfterMs)
+		if (secretMatches(auth.accessToken, bearer)) return null
+		attempts.throttle.recordFailure(attempts.client, nowMs)
+	}
 	// A page load goes to the sign-in page; API calls get a 401 their client can act on.
 	if (req.method === "GET" && !Str.startsWith("/local/")(url.pathname))
 		return new Response(null, { status: 303, headers: { location: LOGIN_PATH } })
@@ -176,34 +187,76 @@ export const accessDenied = (
 }
 
 /**
- * Failed sign-ins across all clients: behind a proxy every client shares one
- * address, so the window is global. Past the limit, sign-in answers 429 until
- * the oldest failure leaves the window.
+ * Failed credential attempts (sign-ins and Bearer tokens) per client, under a
+ * higher server-wide ceiling. Past either limit, attempts answer 429 until the
+ * oldest counted failure leaves the window.
  */
 export class LoginThrottle {
-	readonly #failures: Array<number> = []
+	readonly #failures: Array<{ readonly client: string; readonly atMs: number }> = []
 	constructor(
-		readonly limit = 10,
+		readonly perClientLimit = 10,
+		readonly serverLimit = 100,
 		readonly windowMs = 60_000,
 	) {}
 
 	#prune(nowMs: number): void {
-		while (this.#failures.length > 0 && (this.#failures[0] ?? 0) <= nowMs - this.windowMs)
+		while (this.#failures.length > 0 && (this.#failures[0]?.atMs ?? 0) <= nowMs - this.windowMs)
 			this.#failures.shift()
 	}
 
-	/** Milliseconds until another attempt is allowed; 0 when allowed now. */
-	retryAfterMs(nowMs: number): number {
-		this.#prune(nowMs)
-		if (this.#failures.length < this.limit) return 0
-		return (this.#failures[0] ?? nowMs) + this.windowMs - nowMs
+	#retryAfter(failures: ReadonlyArray<{ readonly atMs: number }>, limit: number, nowMs: number): number {
+		const oldest = failures[0]
+		return failures.length < limit || oldest === undefined ? 0 : oldest.atMs + this.windowMs - nowMs
 	}
 
-	recordFailure(nowMs: number): void {
+	/** Milliseconds until `client` may try again; 0 when allowed now. */
+	retryAfterMs(client: string, nowMs: number): number {
 		this.#prune(nowMs)
-		this.#failures.push(nowMs)
+		// Failures are only recorded below the server limit, so this scan stays short.
+		const own = this.#failures.filter((failure) => failure.client === client)
+		return Math.max(
+			this.#retryAfter(this.#failures, this.serverLimit, nowMs),
+			this.#retryAfter(own, this.perClientLimit, nowMs),
+		)
+	}
+
+	recordFailure(client: string, nowMs: number): void {
+		this.#prune(nowMs)
+		this.#failures.push({ client, atMs: nowMs })
 	}
 }
+
+/** Who is guessing, for {@link LoginThrottle}: see {@link throttleClientKey}. */
+export interface CredentialAttempts {
+	readonly throttle: LoginThrottle
+	readonly client: string
+}
+
+/** The peer address as a throttle key: IPv4 as is (mapped too), IPv6 by its /64,
+ * since one host usually holds a whole /64. */
+export const throttleClientKey = (address: string): string => {
+	const bare = Str.split("%")(address)[0] ?? address
+	const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(bare)?.[1]
+	if (mapped !== undefined) return mapped
+	if (!Str.includes(":")(bare)) return bare
+	const [head = "", tail] = Str.split("::")(bare)
+	const left = head === "" ? [] : Str.split(":")(head)
+	const right = tail === undefined || tail === "" ? [] : Str.split(":")(tail)
+	const fill = Arr.makeBy(Math.max(0, 8 - left.length - right.length), () => "0")
+	const groups = tail === undefined ? left : [...left, ...fill, ...right]
+	return `${Arr.join(
+		Arr.map(groups.slice(0, 4), (group) => Number.parseInt(group, 16).toString(16)),
+		":",
+	)}::/64`
+}
+
+export const retryAfterSeconds = (retryAfterMs: number): string => String(Math.ceil(retryAfterMs / 1000))
+
+const tooManyAttempts = (retryAfterMs: number): Response =>
+	new Response("too many failed attempts", {
+		status: 429,
+		headers: { "content-type": "text/plain", "retry-after": retryAfterSeconds(retryAfterMs) },
+	})
 
 /** Only same-site paths survive as a post-login destination. */
 export const safeNextPath = (value: string | null | undefined): string =>

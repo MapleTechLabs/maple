@@ -74,6 +74,7 @@ import {
 } from "./query-guard"
 import {
 	accessDenied,
+	type CredentialAttempts,
 	issueSession,
 	LOGIN_ACTION_PATH,
 	LOGIN_PATH,
@@ -82,6 +83,8 @@ import {
 	hasValidSession,
 	NO_REMOTE_AUTH,
 	type RemoteAuth,
+	retryAfterSeconds,
+	throttleClientKey,
 	safeNextPath,
 	secretMatches,
 	sessionCookie,
@@ -240,7 +243,17 @@ export const isBrowserOriginAllowed = (
 	origin: string | null,
 	policy: BrowserOriginPolicy,
 ): boolean => {
-	if (origin === null) return true // SDKs, collectors, and other non-browser clients
+	// SDKs, collectors, the CLI, and same-origin browser GETs (which send no Origin).
+	// OTLP and /health stay open to any Host; elsewhere the Host must be one this
+	// server answers to, so a DNS-rebinding page's plain GET is refused too.
+	if (origin === null)
+		return (
+			Str.startsWith("/v1/")(requestUrl.pathname) ||
+			requestUrl.pathname === "/health" ||
+			policy.anySameOriginHost ||
+			isLoopbackHostname(requestUrl.hostname) ||
+			policy.browserHosts.includes(requestUrl.hostname)
+		)
 	const parsed = Result.try(() => new URL(origin))
 	if (Result.isFailure(parsed)) return false
 	const originUrl = parsed.success
@@ -1508,7 +1521,7 @@ const signInPage = (auth: RemoteAuth, req: Request, url: URL): Response => {
 /** `POST /local/auth/login`: exchange the access token for a session cookie. */
 const loginSpan = (
 	auth: RemoteAuth,
-	throttle: LoginThrottle,
+	attempts: CredentialAttempts,
 	req: Request,
 	url: URL,
 ): Effect.Effect<Response> =>
@@ -1522,10 +1535,10 @@ const loginSpan = (
 		const nowMs = yield* Clock.currentTimeMillis
 		// Check, compare and record in one synchronous step, so parallel attempts cannot pass together.
 		const attempt = yield* Effect.sync(() => {
-			const retryAfterMs = throttle.retryAfterMs(nowMs)
+			const retryAfterMs = attempts.throttle.retryAfterMs(attempts.client, nowMs)
 			if (retryAfterMs > 0) return { outcome: "throttled" as const, retryAfterMs }
 			if (secretMatches(accessToken, form.get("token"))) return { outcome: "ok" as const }
-			throttle.recordFailure(nowMs)
+			attempts.throttle.recordFailure(attempts.client, nowMs)
 			return { outcome: "invalid" as const }
 		})
 		yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": attempt.outcome })
@@ -1535,7 +1548,7 @@ const loginSpan = (
 				next,
 				status: 429,
 			})
-			response.headers.set("retry-after", String(Math.ceil(attempt.retryAfterMs / 1000)))
+			response.headers.set("retry-after", retryAfterSeconds(attempt.retryAfterMs))
 			return response
 		}
 		if (attempt.outcome === "invalid")
@@ -1584,22 +1597,40 @@ const statusResponse = (status: ServerStatus): Response =>
 		lastDeleteAtMs: status.lastDeleteAtMs,
 	})
 
+/** The part of Bun's `Server` the handler uses: the connection's peer address. */
+interface PeerAddress {
+	readonly requestIP: (req: Request) => { readonly address: string } | null
+}
+
 /** The `Bun.serve` fetch handler, closed over the chDB connection. Each ingest
  *  and query request is run through `runSpan` so it leaves a trace; `/health`,
  *  `/local/status` and `OPTIONS` are skipped (no health-check noise). */
 const makeFetch =
 	(context: ServerContext) =>
-	async (req: Request): Promise<Response> => {
+	async (req: Request, server: PeerAddress): Promise<Response> => {
 		const { db, options, runSpan, authority, gate, maintenanceToken, consumerToken } = context
 		const url = new URL(req.url)
 		const origin = req.headers.get("origin")
 		if (!isBrowserOriginAllowed(url, origin, context.policy)) {
-			return text("browser origin not allowed", 403)
+			return origin === null
+				? text("request host not allowed; use the advertised host (--advertise-host)", 403)
+				: text("browser origin not allowed", 403)
+		}
+		const attempts: CredentialAttempts = {
+			throttle: context.loginThrottle,
+			client: throttleClientKey(server.requestIP(req)?.address ?? "unknown"),
 		}
 		const corsHeaders = corsHeadersForAllowedOrigin(origin)
 		const respond = (response: Response): Response => withCors(response, corsHeaders)
 		if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders })
-		const denied = accessDenied(context.auth, { maintenanceToken, consumerToken }, req, url, Date.now())
+		const denied = accessDenied(
+			context.auth,
+			{ maintenanceToken, consumerToken },
+			req,
+			url,
+			Date.now(),
+			attempts,
+		)
 		if (denied !== null) {
 			if (denied.status === 401)
 				context.countRejection(Str.startsWith("/v1/")(url.pathname) ? "ingest" : "read")
@@ -1611,12 +1642,10 @@ const makeFetch =
 		if (url.pathname === LOGIN_ACTION_PATH)
 			return respond(
 				req.method === "POST"
-					? await runSpan(loginSpan(context.auth, context.loginThrottle, req, url)).then(
-							(response) => {
-								if (response.status === 401) context.countRejection("read")
-								return response
-							},
-						)
+					? await runSpan(loginSpan(context.auth, attempts, req, url)).then((response) => {
+							if (response.status === 401) context.countRejection("read")
+							return response
+						})
 					: // A reload of a failed sign-in lands here; show the form again.
 						new Response(null, { status: 303, headers: { location: LOGIN_PATH } }),
 			)
