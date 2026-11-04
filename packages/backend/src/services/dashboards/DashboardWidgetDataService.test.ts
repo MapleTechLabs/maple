@@ -4,7 +4,7 @@ import { MAX_LIST_RANGE_SECONDS } from "@maple/query-engine"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { DashboardWidgetDataService } from "./DashboardWidgetDataService"
+import { DashboardWidgetDataService, type WidgetDataRequest } from "./DashboardWidgetDataService"
 
 const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -250,6 +250,81 @@ describe("DashboardWidgetDataService", () => {
 
 		expect(outcome.narrowedToSeconds).toBeUndefined()
 		expect(windows[0]).toMatchObject({ startTime: WINDOW.startTime, endTime: WINDOW.endTime })
+		await runtime.dispose()
+	})
+})
+
+describe("DashboardWidgetDataService.resolveBatch", () => {
+	const BATCH_WINDOW = { startTime: "2026-01-01 00:00:00", endTime: "2026-01-01 01:00:00" }
+	const queryWidget = (id: string, dataSource: string) =>
+		widget(id, {
+			kind: "query",
+			resultShape: "timeseries",
+			queries: [{ id: "q1", name: "A", aggregation: "count", dataSource }],
+		})
+	const timeseries = () =>
+		Effect.succeed({ kind: "timeseries", data: [{ bucket: "2026-01-01 00:00:00", series: { A: 1 } }] })
+
+	it("refuses only the widgets whose telemetry the caller cannot read", async () => {
+		const { runtime, windows } = makeHarness(timeseries)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(
+					ORG,
+					document([queryWidget("w-traces", "traces"), queryWidget("w-logs", "logs")]),
+					{
+						requests: [
+							{ widgetId: "w-traces", source: "primary" },
+							{ widgetId: "w-logs", source: "primary" },
+						],
+						window: BATCH_WINDOW,
+						variableValues: {},
+						canRead: (family) => family === "traces",
+					},
+				),
+			),
+		)
+
+		expect(results[0]).toMatchObject({ widgetId: "w-traces", ok: true })
+		expect(results[1]).toEqual({
+			widgetId: "w-logs",
+			ok: false,
+			reason: "unsupported",
+			message: 'This widget requires the "logs:read" scope.',
+		})
+		// The refused widget never reached the warehouse.
+		expect(windows).toHaveLength(1)
+		await runtime.dispose()
+	})
+
+	it("resolves up to four widgets of a batch at once, keeping request order", async () => {
+		let inFlight = 0
+		let peak = 0
+		const { runtime } = makeHarness(() =>
+			Effect.gen(function* () {
+				inFlight += 1
+				peak = Math.max(peak, inFlight)
+				yield* Effect.sleep("20 millis")
+				inFlight -= 1
+				return { kind: "timeseries", data: [{ bucket: "2026-01-01 00:00:00", series: { A: 1 } }] }
+			}),
+		)
+		const ids = ["w1", "w2", "w3", "w4", "w5", "w6"]
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, document(ids.map((id) => queryWidget(id, "traces"))), {
+					requests: ids.map((widgetId): WidgetDataRequest => ({ widgetId, source: "primary" })),
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead: () => true,
+				}),
+			),
+		)
+
+		expect(peak).toBe(4)
+		expect(results.map((result) => result.widgetId)).toEqual(ids)
 		await runtime.dispose()
 	})
 })

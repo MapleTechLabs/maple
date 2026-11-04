@@ -3,12 +3,11 @@ import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { InspectChartDataOutput } from "@maple/domain/mcp-outputs"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { inspectWidget, type InspectWidgetTimeRange } from "../lib/inspect-widget"
 import { truncate } from "../lib/format"
 import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "../lib/resolve-dashboard-time-range"
 import { resolveTimeRange } from "../lib/time"
-import { dashboardNotFound, toMcpDashboardError } from "../lib/dashboard-mutations"
+import { loadDashboard } from "../lib/dashboard-mutations"
 import { stringifyJson, stringifyJsonPretty } from "../lib/json"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -117,14 +116,8 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			}
 
 			const tenant = yield* CurrentMcpTenant
-			const persistence = yield* DashboardPersistenceService
-
-			const list = yield* persistence
-				.list(tenant.orgId)
-				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
-
-			const dashboard = list.dashboards.find((d) => d.id === dashboard_id)
-			if (!dashboard) return yield* dashboardNotFound(dashboard_id)
+			// The single-board read, so an undecodable board reports its real error, not "not found".
+			const dashboard = yield* loadDashboard(dashboard_id, TOOL)
 
 			const widget = dashboard.widgets.find((w) => w.id === widget_id)
 			if (!widget) {
