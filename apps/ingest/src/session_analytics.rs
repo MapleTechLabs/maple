@@ -598,6 +598,21 @@ mod tests {
     }
 
     #[test]
+    fn rows_past_the_cap_or_already_counted_still_lose_the_marker() {
+        let mut starts = BillableSessionStarts::default();
+        for n in 0..=MAX_BILLABLE_SESSIONS_PER_REQUEST {
+            let mut row = meta_row(&format!(
+                r#"{{"session_id":"sess_{n}","version":1,"billable_start":1}}"#
+            ));
+            starts.note(&mut row);
+            assert!(!row.contains_key("billable_start"), "row {n}");
+        }
+        let mut repeat = meta_row(r#"{"session_id":"sess_0","version":1,"billable_start":1}"#);
+        starts.note(&mut repeat);
+        assert!(!repeat.contains_key("billable_start"));
+    }
+
+    #[test]
     fn rows_that_are_not_a_billable_start_do_not_count() {
         assert_eq!(
             billed(&[
