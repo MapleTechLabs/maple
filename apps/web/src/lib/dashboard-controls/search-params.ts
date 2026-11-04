@@ -66,8 +66,13 @@ const VIEW_PARAM_KEYS = [
 
 const decodeIso = Schema.decodeUnknownOption(IsoDateTimeString)
 
+// The resolver's date formatter throws on an out-of-range preset (`?range=1000000000000m`).
+const resolvePreset = Option.liftThrowable((value: string) =>
+	resolveRelativeRangeToWarehouse(value, 0, "UTC"),
+)
+
 const isPreset = (value: unknown): value is string =>
-	typeof value === "string" && resolveRelativeRangeToWarehouse(value, 0, "UTC") !== null
+	typeof value === "string" && Option.isSome(Option.flatMap(resolvePreset(value), Option.fromNullishOr))
 
 /**
  * This viewer's picked range: `?from=&to=` (both ISO), else `?range=` (a preset the resolver reads).

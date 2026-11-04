@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { pickDashboardControlParams, resolveRefreshIntervalSeconds } from "./search-params"
+import {
+	pickDashboardControlParams,
+	resolveRefreshIntervalSeconds,
+	timeRangeFromSearch,
+} from "./search-params"
 
 describe("pickDashboardControlParams", () => {
 	it("retains every `var-*` selection", () => {
@@ -101,5 +105,19 @@ describe("resolveRefreshIntervalSeconds", () => {
 
 	it("ignores a stored value outside the allowed set", () => {
 		expect(resolveRefreshIntervalSeconds(undefined, 7)).toBe(0)
+	})
+})
+
+describe("timeRangeFromSearch", () => {
+	it("reads a preset the resolver understands", () => {
+		expect(timeRangeFromSearch({ range: "1h" })).toEqual({ type: "relative", value: "1h" })
+	})
+
+	it("falls back to the saved range for a preset too large to resolve", () => {
+		expect(timeRangeFromSearch({ range: "1000000000000m" })).toBeUndefined()
+	})
+
+	it("falls back to the saved range for an unreadable preset", () => {
+		expect(timeRangeFromSearch({ range: "soon" })).toBeUndefined()
 	})
 })
