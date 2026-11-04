@@ -119,3 +119,14 @@ export const getUserLogs = Effect.fn("Users.logs")(function* ({ data }: { data: 
 		}),
 	)
 })
+
+/** The issues one user hit, most hits first; `attributed` is false where errors carry no user id. */
+export const getUserIssues = Effect.fn("Users.issues")(function* ({ data }: { data: UserDetailInput }) {
+	const input = yield* decodeInput(UserDetailInput, data, "userIssues")
+	return yield* runWarehouseQuery("userIssues", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.usersInternal.issues({ payload: detailRequest(input) })
+		}),
+	)
+})

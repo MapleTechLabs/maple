@@ -37,12 +37,14 @@ describe("error issue", () => {
 		expect(commands).not.toContain("FetchGithubStatus")
 	})
 
-	test("the resolved window asks the detail with 48 buckets in ISO", () => {
+	test("the resolved window asks the detail with 48 buckets in ISO, and the affected users", () => {
 		const resolved = pageUpdate(
 			entered().model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual(["FetchErrorIssueDetail"])
+		expect(names(resolved.commands)).toContain("FetchErrorIssueDetail")
+		expect(names(resolved.commands)).toContain("FetchErrorIssueAffectedUsers")
+		expect(resolved.model.affectedUsers.key).toContain("2026-10-01 12:00:00")
 		expect(resolved.model.detail.key).toContain("2026-10-01T00:00:00")
 		expect(resolved.model.detail.key).toContain("900")
 	})

@@ -21,6 +21,7 @@ import {
 	CreateInvestigation,
 	UnlinkPullRequest,
 	CommentOnIssue,
+	FetchAffectedUsers,
 	FetchAnomalies,
 	FetchDetail,
 	FetchEscalations,
@@ -192,6 +193,18 @@ const detailStep =
 		)
 	}
 
+/** The rail's affected users, over the same window as the detail. */
+const affectedUsersStep =
+	(context: PageContext, window: TimeWindow, mode: Keyed.ReadMode) =>
+	(model: Model): Step =>
+		keyed(
+			model.affectedUsers,
+			requestKey(context.orgId, "errors.listIssueAffectedUsers", { id: model.issueId, window }),
+			mode,
+			(affectedUsers) => ({ affectedUsers }),
+			(key) => FetchAffectedUsers({ key, issueId: model.issueId, ...window }),
+		)
+
 const selectedRepository = (model: Model): string | null => githubOf(model).repository
 
 /** `vcsPullRequests` for the selected repository; a query without one is never sent. */
@@ -234,6 +247,7 @@ export const init = (
 		leaseNowMs: 0,
 		detail: Keyed.idle(),
 		events: Keyed.idle(),
+		affectedUsers: Keyed.idle(),
 		investigations: Keyed.idle(),
 		pullRequests: Keyed.idle(),
 		verifications: Keyed.idle(),
@@ -392,7 +406,10 @@ const navigateSearch = (model: Model, search: Search): Return => ({
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
-			applySteps({ ...model, window, nowMs }, [detailStep(context, window, mode)]),
+			applySteps({ ...model, window, nowMs }, [
+				detailStep(context, window, mode),
+				affectedUsersStep(context, window, mode),
+			]),
 		CompletedFetchDetail: ({ key, result }) =>
 			applySteps(syncSelects({ ...model, detail: Keyed.accept(model.detail, key, result) }), [
 				loadedReads(context),
@@ -407,6 +424,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					]),
 		CompletedFetchEvents: ({ key, result }) => ({
 			model: { ...model, events: Keyed.accept(model.events, key, result) },
+		}),
+		CompletedFetchAffectedUsers: ({ key, result }) => ({
+			model: { ...model, affectedUsers: Keyed.accept(model.affectedUsers, key, result) },
 		}),
 		CompletedFetchInvestigations: ({ key, result }) => ({
 			model: { ...model, investigations: Keyed.accept(model.investigations, key, result) },

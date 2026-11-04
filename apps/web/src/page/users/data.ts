@@ -1,3 +1,4 @@
+import { USER_ERRORS_ATTRIBUTED_FROM_MS, type WorkflowState } from "@maple/domain/http"
 import type { McpClientKind } from "@maple/domain/mcp-clients"
 import { Array as Arr } from "effect"
 import { USER_DETAIL_TABS, type UserDetailTab } from "../../route/search"
@@ -35,7 +36,8 @@ export type UserDevice = Readonly<{ browser: string; os: string; sessions: numbe
 
 /**
  * One user's profile. The request figures (`requests`, `failedRate`, `p95Ms`, `traces`, `logs`) are
- * `null` where the org's warehouse has no per-user rollup, and `issues` until issues by user land.
+ * `null` where the org's warehouse has no per-user rollup, the issue figures where its errors carry
+ * no user id. `errors` is the replay errors; `issueHits` the error occurrences that named the user.
  */
 export type UserProfile = Omit<UserRow, "requests"> &
 	Readonly<{
@@ -50,6 +52,7 @@ export type UserProfile = Omit<UserRow, "requests"> &
 		mcpCalls: number
 		requests: number | null
 		issues: number | null
+		issueHits: number | null
 		failedRate: number | null
 		p95Ms: number | null
 		logs: number | null
@@ -83,17 +86,27 @@ export type UserSession = Readonly<{
 	device: string
 }>
 
-export type UserIssueStatus = "open" | "investigating" | "resolved"
-
+/** One issue the user hit; `issueId`, `status` and `href` are `null` until its fingerprint is promoted. */
 export type UserIssue = Readonly<{
-	issueId: string
+	issueId: string | null
 	type: string
 	message: string
 	service: string
+	/** Occurrences that named this user. */
 	hits: number
 	lastSeenMs: number
-	status: UserIssueStatus
+	status: WorkflowState | null
+	/** The issue page. */
+	href: string | null
 }>
+
+/** "5 Nov 2026": the day errors started carrying the user that hit them. */
+export const ERRORS_ATTRIBUTED_FROM = new Intl.DateTimeFormat("en-GB", {
+	day: "numeric",
+	month: "short",
+	year: "numeric",
+	timeZone: "UTC",
+}).format(USER_ERRORS_ATTRIBUTED_FROM_MS)
 
 /** One request of the user: its entry span, and the trace page it opens. */
 export type UserTrace = Readonly<{

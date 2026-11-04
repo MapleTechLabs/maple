@@ -82,7 +82,7 @@ export const scopeDetail = (detail: UserDetail, namespace: string | null): UserD
 			recordedMs: sessions.length === 0 ? 0 : detail.profile.recordedMs,
 			requests: detail.profile.requests === null ? null : Math.round(detail.profile.requests * share),
 			activity: Arr.map(detail.profile.activity, (value) => Math.round(value * share)),
-			errors: Arr.reduce(issues, 0, (sum, issue) => sum + issue.hits),
+			issueHits: Arr.reduce(issues, 0, (sum, issue) => sum + issue.hits),
 			issues: issues.length,
 			traces: traces.length,
 			logs: logs.length,

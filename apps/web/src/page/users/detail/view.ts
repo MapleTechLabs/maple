@@ -61,7 +61,7 @@ const actions = (h: H, model: Model): Html =>
 			}),
 	})
 
-/** The tabs read from the activity answer; Traces and Logs have their own reads, Errors none yet. */
+/** The tabs read from the activity answer; Errors, Traces and Logs have their own reads. */
 const ACTIVITY_TABS: ReadonlySet<UserTab> = new Set(["activity", "sessions", "events", "mcp"])
 
 /** A loading or failed read, drawn in place of the tab's rows. */
@@ -73,9 +73,10 @@ const readState = <A>(h: H, data: AsyncData.AsyncData<A, LoadFailure>, title: st
 		onData: (): Html | undefined => undefined,
 	})
 
-/** The open tab's read state: the activity read's tabs, Traces and Logs; none for the others. */
+/** The open tab's read state: the activity read's tabs, Errors, Traces and Logs. */
 const tabState = (h: H, model: Model, tab: UserTab): Html | undefined => {
 	if (ACTIVITY_TABS.has(tab)) return readState(h, model.activity.data, "Couldn't load this user's activity")
+	if (tab === "errors") return readState(h, model.issues.data, "Couldn't load this user's errors")
 	if (tab === "traces") return readState(h, model.traces.data, "Couldn't load this user's requests")
 	if (tab === "logs") return readState(h, model.logs.data, "Couldn't load this user's logs")
 	return undefined
@@ -97,6 +98,7 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 		Option.getOrUndefined(AsyncData.getData(model.activity.data)),
 		model.search,
 		{
+			issues: Option.getOrUndefined(AsyncData.getData(model.issues.data)),
 			traces: Option.getOrUndefined(AsyncData.getData(model.traces.data)),
 			logs: Option.getOrUndefined(AsyncData.getData(model.logs.data)),
 		},

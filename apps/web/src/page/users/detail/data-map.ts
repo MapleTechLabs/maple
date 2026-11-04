@@ -1,8 +1,17 @@
 import type { UserActivityItem, UserProfileItem } from "@maple/domain/http"
-import { Array as Arr } from "effect"
+import { ErrorIssueId } from "@maple/domain/http"
+import { Array as Arr, Schema } from "effect"
 import { AppRoute, hrefOf } from "../../../route"
-import type { ActivityItem, UserDetail, UserLog, UserMcpSession, UserProfile, UserTrace } from "../data"
-import type { ActivityData, LogsData, Search, TracesData } from "./model"
+import type {
+	ActivityItem,
+	UserDetail,
+	UserIssue,
+	UserLog,
+	UserMcpSession,
+	UserProfile,
+	UserTrace,
+} from "../data"
+import type { ActivityData, IssuesData, LogsData, Search, TracesData } from "./model"
 import { windowSearch } from "./update"
 
 // The API's answers as the kit views draw them, with each row's link built from the app's routes.
@@ -14,8 +23,14 @@ export const mcpSessionHref = (service: string, sessionId: string, search: Searc
 /** One replay's page. */
 export const replayHref = (sessionId: string): string => hrefOf(AppRoute.Replay({ sessionId, search: {} }))
 
+/** One issue's page, as the errors hub links it. */
+export const issueHref = (issueId: string): string =>
+	hrefOf(AppRoute.ErrorIssue({ issueId: decodeIssueId(issueId), search: {} }))
+
 /** One trace's page. */
 export const traceHref = (traceId: string): string => hrefOf(AppRoute.Trace({ traceId, search: {} }))
+
+const decodeIssueId = Schema.decodeSync(ErrorIssueId)
 
 const EMPTY_ACTIVITY: ActivityData = { sessions: [], events: [], mcpSessions: [], activity: [] }
 
@@ -48,14 +63,16 @@ export const toProfile = (profile: UserProfileItem): UserProfile => ({
 	mcpCalls: profile.mcpCalls,
 	requests: profile.requests,
 	issues: profile.issues,
+	issueHits: profile.issueHits,
 	failedRate: profile.failedRate,
 	p95Ms: profile.p95Ms,
 	logs: profile.logs,
 	traces: profile.traces,
 })
 
-/** The page a timeline row opens: a replay, an MCP session on its server, a trace, else none. */
+/** The page a timeline row opens: an issue, a replay, an MCP session on its server, a trace, else none. */
 export const activityHref = (item: UserActivityItem, search: Search): string | null => {
+	if (item.issueId !== null) return issueHref(item.issueId)
 	if (item.traceId !== null) return traceHref(item.traceId)
 	if (item.sessionId === null) return null
 	switch (item.kind) {
@@ -68,8 +85,23 @@ export const activityHref = (item: UserActivityItem, search: Search): string | n
 	}
 }
 
-/** What the Traces and Logs tabs draw; each read may still be out (no rows yet). */
-export type TabReads = Readonly<{ traces: TracesData | undefined; logs: LogsData | undefined }>
+/** What the Errors, Traces and Logs tabs draw; each read may still be out (no rows yet). */
+export type TabReads = Readonly<{
+	issues?: IssuesData | undefined
+	traces: TracesData | undefined
+	logs: LogsData | undefined
+}>
+
+export const toUserIssue = (issue: IssuesData["issues"][number]): UserIssue => ({
+	issueId: issue.issueId,
+	type: issue.type === "" ? "Unknown Error" : issue.type,
+	message: issue.message,
+	service: issue.service,
+	hits: issue.hits,
+	lastSeenMs: issue.lastSeenMs,
+	status: issue.status,
+	href: issue.issueId === null ? null : issueHref(issue.issueId),
+})
 
 /** Everything the kit body draws; the activity read may still be out (no rows yet). */
 export const toUserDetail = (
@@ -101,7 +133,7 @@ export const toUserDetail = (
 			exit: null,
 			device: session.device,
 		})),
-		issues: [],
+		issues: Arr.map(tabs.issues?.issues ?? [], toUserIssue),
 		traces: Arr.map(tabs.traces?.traces ?? [], (trace): UserTrace => ({
 			traceId: trace.traceId,
 			atMs: trace.atMs,

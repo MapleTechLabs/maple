@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import {
 	UserActivityItem,
 	UserEventItem,
+	UserIssueItem,
 	UserLogItem,
 	UserMcpSessionItem,
 	UserProfileItem,
@@ -35,6 +36,10 @@ export type ActivityData = typeof ActivityData.Type
 export const TracesData = Schema.Struct({ traces: Schema.Array(UserTraceItem) })
 export type TracesData = typeof TracesData.Type
 
+/** `getUserIssues`: the Errors tab's issues, read only while the tab is open. */
+export const IssuesData = Schema.Struct({ issues: Schema.Array(UserIssueItem), attributed: Schema.Boolean })
+export type IssuesData = typeof IssuesData.Type
+
 /** `getUserLogs`: the Logs tab's lines, read only while the tab is open. */
 export const LogsData = Schema.Struct({ logs: Schema.Array(UserLogItem) })
 export type LogsData = typeof LogsData.Type
@@ -46,6 +51,7 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	profile: KeyedSchema(ProfileData, LoadFailure),
 	activity: KeyedSchema(ActivityData, LoadFailure),
+	issues: KeyedSchema(IssuesData, LoadFailure),
 	traces: KeyedSchema(TracesData, LoadFailure),
 	logs: KeyedSchema(LogsData, LoadFailure),
 	timePicker: TimeRangePicker.Model,

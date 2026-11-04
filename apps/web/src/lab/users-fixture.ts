@@ -170,6 +170,7 @@ export const USER_DETAIL: UserDetail = {
 		location: "Stockholm, SE",
 		recordedMs: 2 * HOUR + 41 * MIN,
 		issues: 3,
+		issueHits: 4,
 		failedRate: 0.014,
 		p95Ms: 640,
 		events: 230,
@@ -335,7 +336,8 @@ export const USER_DETAIL: UserDetail = {
 			service: "web",
 			hits: 2,
 			lastSeenMs: ago(2 * MIN),
-			status: "open",
+			status: "triage",
+			href: "/errors/issues/iss_412",
 		},
 		{
 			issueId: "iss_398",
@@ -344,7 +346,8 @@ export const USER_DETAIL: UserDetail = {
 			service: "billing",
 			hits: 1,
 			lastSeenMs: ago(2 * MIN),
-			status: "investigating",
+			status: "in_progress",
+			href: "/errors/issues/iss_398",
 		},
 		{
 			issueId: "iss_377",
@@ -353,7 +356,8 @@ export const USER_DETAIL: UserDetail = {
 			service: "web",
 			hits: 1,
 			lastSeenMs: ago(2 * DAY + 3 * HOUR),
-			status: "resolved",
+			status: "done",
+			href: "/errors/issues/iss_377",
 		},
 	],
 	traces: [

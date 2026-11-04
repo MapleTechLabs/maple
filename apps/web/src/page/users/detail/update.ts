@@ -14,6 +14,7 @@ import {
 	CompleteReloadSpin,
 	detailInputs,
 	FetchActivity,
+	FetchIssues,
 	FetchLogs,
 	FetchProfile,
 	FetchTraces,
@@ -57,18 +58,20 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 	})
 
 /**
- * The profile and activity always; the Traces and Logs tabs' raw reads only while their tab is
- * open, so a page view never scans spans it does not show.
+ * The profile and activity always; the Errors, Traces and Logs tabs' reads only while their tab is
+ * open, so a page view never scans rows it does not show.
  */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const inputs = detailInputs(model.userId, model.search, window, context.pinnedNamespace)
 	const tab = tabOf(model.search)
 	const profileKey = requestKey(context.orgId, "getUserProfile", { data: inputs })
 	const activityKey = requestKey(context.orgId, "getUserActivity", { data: inputs })
+	const issuesKey = requestKey(context.orgId, "getUserIssues", { data: inputs })
 	const tracesKey = requestKey(context.orgId, "getUserTraces", { data: inputs })
 	const logsKey = requestKey(context.orgId, "getUserLogs", { data: inputs })
 	const profile = Keyed.request(model.profile, profileKey, mode)
 	const activity = Keyed.request(model.activity, activityKey, mode)
+	const issues = tab === "errors" ? Keyed.request(model.issues, issuesKey, mode) : Option.none()
 	const traces = tab === "traces" ? Keyed.request(model.traces, tracesKey, mode) : Option.none()
 	const logs = tab === "logs" ? Keyed.request(model.logs, logsKey, mode) : Option.none()
 	const refresh = mode === "Refresh"
@@ -78,12 +81,14 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			window,
 			profile: Option.getOrElse(profile, () => model.profile),
 			activity: Option.getOrElse(activity, () => model.activity),
+			issues: Option.getOrElse(issues, () => model.issues),
 			traces: Option.getOrElse(traces, () => model.traces),
 			logs: Option.getOrElse(logs, () => model.logs),
 		},
 		commands: [
 			...(Option.isSome(profile) ? [FetchProfile({ key: profileKey, refresh, ...inputs })] : []),
 			...(Option.isSome(activity) ? [FetchActivity({ key: activityKey, refresh, ...inputs })] : []),
+			...(Option.isSome(issues) ? [FetchIssues({ key: issuesKey, refresh, ...inputs })] : []),
 			...(Option.isSome(traces) ? [FetchTraces({ key: tracesKey, refresh, ...inputs })] : []),
 			...(Option.isSome(logs) ? [FetchLogs({ key: logsKey, refresh, ...inputs })] : []),
 		],
@@ -108,6 +113,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		nowMs: 0,
 		profile: Keyed.idle(),
 		activity: Keyed.idle(),
+		issues: Keyed.idle(),
 		traces: Keyed.idle(),
 		logs: Keyed.idle(),
 		timePicker: TimeRangePicker.init("user-time-range"),
@@ -117,7 +123,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	return { model, commands: [resolveCommand(model, context, "Load")] }
 }
 
-/** The route loader warms the profile and the activity, and the open tab's spans or logs. */
+/** The route loader warms the profile and the activity, and the open tab's issues, spans or logs. */
 export const preload = (route: Route, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
 	const window = resolveWindow(
@@ -133,12 +139,13 @@ export const preload = (route: Route, context: PageContext, nowMs: number) => {
 	return pickCommands(requestAll(model, context, window, "Load"), [
 		FetchProfile.name,
 		FetchActivity.name,
+		FetchIssues.name,
 		FetchTraces.name,
 		FetchLogs.name,
 	])
 }
 
-/** A tab or namespace pick keeps the reads it can; opening Traces or Logs starts that tab's read. */
+/** A tab or namespace pick keeps the reads it can; opening Errors, Traces or Logs starts that tab's read. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	const { search } = route
 	if (userDetailHref(model.userId, model.search) === userDetailHref(route.userId, search)) return { model }
@@ -186,6 +193,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchActivity: ({ key, result }) => ({
 			model: { ...model, activity: Keyed.accept(model.activity, key, result) },
+		}),
+		CompletedFetchIssues: ({ key, result }) => ({
+			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
 		}),
 		CompletedFetchTraces: ({ key, result }) => ({
 			model: { ...model, traces: Keyed.accept(model.traces, key, result) },
