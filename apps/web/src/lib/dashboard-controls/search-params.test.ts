@@ -120,4 +120,11 @@ describe("timeRangeFromSearch", () => {
 	it("falls back to the saved range for an unreadable preset", () => {
 		expect(timeRangeFromSearch({ range: "soon" })).toBeUndefined()
 	})
+
+	it("reads an ordered absolute window and ignores an inverted one", () => {
+		const from = "2026-11-01T00:00:00.000Z"
+		const to = "2026-11-02T00:00:00.000Z"
+		expect(timeRangeFromSearch({ from, to })).toEqual({ type: "absolute", startTime: from, endTime: to })
+		expect(timeRangeFromSearch({ from: to, to: from })).toBeUndefined()
+	})
 })

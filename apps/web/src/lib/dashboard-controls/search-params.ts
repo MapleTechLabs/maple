@@ -1,6 +1,6 @@
 import { DashboardRefreshIntervalSeconds, IsoDateTimeString, type TimeRange } from "@maple/domain/http"
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
-import { Option, Record as Rec, Schema, String as Str } from "effect"
+import { DateTime, Option, Record as Rec, Schema, String as Str } from "effect"
 
 // Cross-widget dashboard controls live in the URL so a view is shareable and
 // deep-linkable. Two families share that space:
@@ -79,7 +79,14 @@ const isPreset = (value: unknown): value is string =>
  * A hand-edited value it cannot read is ignored, so the board's saved range applies instead.
  */
 export function timeRangeFromSearch(search: Record<string, unknown>): TimeRange | undefined {
-	const bounds = Option.all({ startTime: decodeIso(search.from), endTime: decodeIso(search.to) })
+	// An inverted window (`from` after `to`) is unreadable too, so the saved range applies.
+	const bounds = Option.filter(
+		Option.all({ startTime: decodeIso(search.from), endTime: decodeIso(search.to) }),
+		({ startTime, endTime }) =>
+			Option.exists(Option.all([DateTime.make(startTime), DateTime.make(endTime)]), ([start, end]) =>
+				DateTime.isLessThan(start, end),
+			),
+	)
 	if (Option.isSome(bounds)) return { type: "absolute", ...bounds.value }
 	return isPreset(search.range) ? { type: "relative", value: search.range } : undefined
 }
