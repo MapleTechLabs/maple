@@ -106,7 +106,8 @@ export const commandArgv = (command: string, timeoutMs?: number): ReadonlyArray<
 export const isTimedOut = (exitCode: number, durationMs: number, timeoutMs?: number): boolean =>
 	timeoutMs !== undefined && (exitCode === 124 || exitCode === 137) && durationMs >= timeoutMs
 
-const utf8 = new TextEncoder()
+/** The byte bound {@link wrapCommand} cuts each stream at. */
+const outputLimit = (maxOutputBytes: number): number => Math.max(1, Math.floor(maxOutputBytes))
 
 /**
  * A shell program that runs `command` as the unprivileged account, bounds each
@@ -135,7 +136,7 @@ export const wrapCommand = (
 	// `env -i` has run, so the command would see five names while `admit` promised
 	// three, and `runuser` itself would have to be found on the command's PATH.
 	const dropped = `runuser -u ${SANDBOX_RUN_AS_USER} -- env -i ${environment} ${shellCommand(request.command, request.args)}`
-	const limit = String(Math.max(1, Math.floor(request.maxOutputBytes)))
+	const limit = String(outputLimit(request.maxOutputBytes))
 	// Streams land in files, are cut to the bound, and the real exit status rides
 	// the trailer — piping through `head` directly would report `head`'s status.
 	// The command runs only if its own network namespace could be opened, so one
@@ -423,14 +424,17 @@ export const runExec = (
 					"this container cannot open a network namespace, so a command requiring no egress was refused",
 			})
 		const stderr = result.stderr
+		// Decided from the byte counts the wrapper measured: the decoded text's length says
+		// nothing about bytes once invalid UTF-8 became replacement characters.
+		const limit = outputLimit(request.maxOutputBytes)
 		return new SandboxRunExited({
 			exitCode: trailer.exitCode,
 			stdout: body,
 			stderr,
 			stdoutBytes: trailer.stdoutBytes,
 			stderrBytes: trailer.stderrBytes,
-			stdoutTruncated: trailer.stdoutBytes > utf8.encode(body).length,
-			stderrTruncated: trailer.stderrBytes > utf8.encode(stderr).length,
+			stdoutTruncated: trailer.stdoutBytes > limit,
+			stderrTruncated: trailer.stderrBytes > limit,
 			wallTimeMs: result.duration,
 		})
 	})

@@ -31,6 +31,8 @@ const exited = (overrides: Partial<ConstructorParameters<typeof ExecutorRunExite
 		stderr: "",
 		stdoutBytes: 0,
 		stderrBytes: 0,
+		stdoutTruncated: false,
+		stderrTruncated: false,
 		wallTimeMs: 12,
 		promoted: [],
 		rejected: [],
@@ -59,6 +61,7 @@ describe("run_in_sandbox", () => {
 					stdoutBytes: 12,
 					stderr: Str.repeat(10)("x"),
 					stderrBytes: 90_000,
+					stderrTruncated: true,
 					promoted: [
 						new ExecutorArtifact({
 							path: "poc/out.txt",
@@ -102,6 +105,27 @@ describe("run_in_sandbox", () => {
 		expect(text).toContain(
 			`poc/out.txt: 13 bytes, sha256 ${Str.repeat(32)("ab")}; cite it in a local check as agents/hunter-2/artifacts/poc/out.txt`,
 		)
+	})
+
+	it("says a stream was cut when the sandbox cut it, whatever its text re-encodes to", async () => {
+		// Binary output decodes to U+FFFD, which re-encodes larger than the bytes it replaced.
+		const shown = EXECUTOR_LIMITS.outputBytes
+		const { execution } = recording(
+			Effect.succeed(
+				exited({
+					stdout: Str.repeat(shown)("\uFFFD"),
+					stdoutBytes: shown * 2,
+					stdoutTruncated: true,
+					stderr: "plain",
+					stderrBytes: 5,
+				}),
+			),
+		)
+		const { handlers } = executionToolHandlers(source, execution, "hunter-2")
+		const result = await run(handlers.run_in_sandbox({ command: "cat fixture.bin" }))
+		const text = result._tag === "Success" ? result.success : ""
+		expect(text).toContain(`--- stdout (${shown * 2} bytes, first 32 KiB shown) ---`)
+		expect(text).toContain("--- stderr ---")
 	})
 
 	it("clamps the wall clock and promotion limits to the sandbox's own", async () => {

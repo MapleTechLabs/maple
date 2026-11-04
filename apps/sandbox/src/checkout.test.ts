@@ -441,6 +441,38 @@ describe("runExec", () => {
 		}),
 	)
 
+	it.effect("marks a cut binary stream, whose lossy text re-encodes past its byte count", () =>
+		Effect.gen(function* () {
+			// 1024 invalid bytes kept of 2000: decoded, 1024 U+FFFD that re-encode to 3072 bytes.
+			const response = yield* runExec(
+				fakeContainer({
+					execs: [
+						status("ready"),
+						{ stdout: `${Str.repeat(1024)("\uFFFD")}${trailer(0, 2000, 0)}` },
+					],
+				}),
+				request({ maxOutputBytes: 1024 }),
+			)
+			assert.strictEqual(response._tag, "SandboxRunExited")
+			if (response._tag === "SandboxRunExited") {
+				assert.isTrue(response.stdoutTruncated)
+				assert.isFalse(response.stderrTruncated)
+			}
+		}),
+	)
+
+	it.effect("reports a stream of exactly the bound as whole", () =>
+		Effect.gen(function* () {
+			const response = yield* runExec(
+				fakeContainer({
+					execs: [status("ready"), { stdout: `${Str.repeat(1024)("a")}${trailer(0, 1024, 0)}` }],
+				}),
+				request({ maxOutputBytes: 1024 }),
+			)
+			assert.isTrue(response._tag === "SandboxRunExited" && !response.stdoutTruncated)
+		}),
+	)
+
 	it.effect("refuses a no-egress command the container could not isolate", () =>
 		Effect.gen(function* () {
 			const response = yield* runExec(
