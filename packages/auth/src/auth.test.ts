@@ -373,6 +373,35 @@ describe("makeResolveMcpTenant", () => {
 		}),
 	)
 
+	it.effect("refuses a user API key on a development MAPLE_ORG_ID_OVERRIDE without the opt-in", () =>
+		Effect.gen(function* () {
+			const resolveMcpTenant = makeResolveMcpTenant(
+				{
+					...baseEnv,
+					MAPLE_AUTH_MODE: "clerk",
+					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+					MAPLE_ORG_ID_OVERRIDE: Option.some("org_override"),
+					MAPLE_ENVIRONMENT: "development",
+				},
+				async () => ({
+					isAuthenticated: true,
+					message: null,
+					toAuth: () => ({
+						isAuthenticated: true,
+						tokenType: "api_key",
+						userId: "user_abc",
+						orgId: null,
+						orgRole: null,
+					}),
+				}),
+			)
+
+			const exit = yield* Effect.exit(resolveMcpTenant({ authorization: "Bearer maple_key_xxx" }))
+			assert.strictEqual(getFailure(exit)?._tag, "@maple/http/errors/OrganizationAccessDeniedError")
+		}),
+	)
+
 	it.effect("rejects a user API key without org context", () =>
 		Effect.gen(function* () {
 			const resolveMcpTenant = makeResolveMcpTenant(

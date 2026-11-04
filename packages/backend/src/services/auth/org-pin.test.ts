@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { makeResolveTenant } from "@maple/auth"
-import { ConfigProvider, Effect, Exit, Layer } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 
 // A session in org_123 that is not a member of the pinned org.
@@ -44,10 +44,14 @@ const resolvePinned = Effect.gen(function* () {
 })
 
 describe("MAPLE_ORG_ID_OVERRIDE with the deployment's Env", () => {
-	it.effect("refuses a non-member when MAPLE_ENVIRONMENT is unset", () =>
+	// MAPLE_ENVIRONMENT is unset in both cases, so the Env reads it as development.
+	it.effect("refuses a non-member without the opt-in", () =>
 		Effect.gen(function* () {
 			const exit = yield* resolvePinned
 			assert.isTrue(Exit.isFailure(exit))
+			if (Exit.isFailure(exit)) {
+				assert.include(Cause.pretty(exit.cause), "OrganizationAccessDeniedError")
+			}
 		}).pipe(Effect.provide(envWith({}))),
 	)
 
