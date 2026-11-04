@@ -1944,6 +1944,16 @@ impl WalLane {
     }
 }
 
+/// What WAL orphan recovery did with one segment's source object.
+enum SegmentRecovery {
+    /// Re-committed, re-shipped under this owner, and deleted.
+    Released,
+    /// Left in the bucket for a later boot.
+    Kept,
+    /// Left in the bucket, and recovery of this owner stops here.
+    Halted,
+}
+
 impl ShardedWal {
     fn open(cfg: &TinybirdConfig) -> Result<Self, String> {
         let num_lanes = cfg.wal_shards * LANES_PER_SHARD;
@@ -2182,9 +2192,13 @@ impl ShardedWal {
                 return;
             }
         };
-        // Per lane, the first local segment not yet re-shipped. Recovery is the
-        // only appender, so a lane's sealed segments past it are ours to ship.
-        let mut reshipped_below = vec![0u64; self.lanes.len()];
+        // Per lane, the first segment recovery has not re-shipped, seeded at the
+        // active segment: every segment from there on is one recovery wrote.
+        let mut reshipped_below: Vec<u64> = self
+            .lanes
+            .iter()
+            .map(|lane| lane.active_seq.load(Ordering::Acquire))
+            .collect();
         for owner in owners {
             match store.claim(&owner, now).await {
                 Ok(true) => {}
@@ -2209,12 +2223,20 @@ impl ShardedWal {
             // owner discoverable so a later boot retries them.
             let mut left_behind = 0usize;
             for segment in segments {
-                let (frames, released) = self
+                let (frames, outcome) = self
                     .recover_segment(cfg, store, &owner, &segment, &mut reshipped_below)
                     .await;
                 recovered_frames += frames;
-                if !released {
-                    left_behind += 1;
+                match outcome {
+                    SegmentRecovery::Released => {}
+                    SegmentRecovery::Kept => left_behind += 1,
+                    // Local disk or re-shipping is failing: carrying on would
+                    // only pile the rest onto this disk for a later boot to
+                    // replay again.
+                    SegmentRecovery::Halted => {
+                        left_behind += 1;
+                        break;
+                    }
                 }
             }
             if left_behind > 0 {
@@ -2238,8 +2260,8 @@ impl ShardedWal {
     }
 
     /// Re-commit one orphaned segment to its local lane, re-ship that lane, and
-    /// only then delete the source. Returns the frames committed and whether the
-    /// source object is gone.
+    /// only then delete the source. Returns the frames committed and what became
+    /// of the source object.
     #[expect(
         clippy::cognitive_complexity,
         reason = "WAL recovery: each early return is a case where the source must stay"
@@ -2251,14 +2273,14 @@ impl ShardedWal {
         owner: &str,
         segment: &OrphanedSegment,
         reshipped_below: &mut [u64],
-    ) -> (usize, bool) {
+    ) -> (usize, SegmentRecovery) {
         let Some(lane) = Self::lane_for_key(&segment.lane_key, cfg) else {
             warn!(
                 owner,
                 lane_key = segment.lane_key,
                 "Skipping an orphaned WAL segment for an unknown lane"
             );
-            return (0, false);
+            return (0, SegmentRecovery::Kept);
         };
         let frames = match store.fetch_segment(segment).await {
             Ok(bytes) => decode_segment_frames(&bytes),
@@ -2269,7 +2291,7 @@ impl ShardedWal {
                     error = %error,
                     "Failed to read an orphaned WAL segment"
                 );
-                return (0, false);
+                return (0, SegmentRecovery::Kept);
             }
         };
         let mut recovered = 0usize;
@@ -2288,7 +2310,12 @@ impl ShardedWal {
             // died, and rejecting them here is the loss this whole tier exists
             // to prevent.
             if let Err(error) = self.append_relocated(lane, &encoded).await {
-                warn!(owner, error = %error, "Failed to re-commit an orphaned WAL frame");
+                warn!(
+                    owner,
+                    key = segment.key,
+                    error = %error,
+                    "Failed to re-commit an orphaned WAL frame"
+                );
                 committed = false;
                 break;
             }
@@ -2300,7 +2327,7 @@ impl ShardedWal {
             .reship_lane(store, lane, &mut reshipped_below[lane])
             .await;
         if !(committed && reshipped) {
-            return (recovered, false);
+            return (recovered, SegmentRecovery::Halted);
         }
         if let Err(error) = store.release_key(&segment.key).await {
             warn!(
@@ -2309,14 +2336,14 @@ impl ShardedWal {
                 error = %error,
                 "Failed to delete a recovered WAL segment"
             );
-            return (recovered, false);
+            return (recovered, SegmentRecovery::Kept);
         }
-        (recovered, true)
+        (recovered, SegmentRecovery::Released)
     }
 
-    /// Seal `lane` and ship its sealed segments from `*reshipped_below` on,
-    /// advancing it past each one that lands. False when any did not, so the
-    /// caller keeps the source object those frames came from.
+    /// Seal `lane` and ship every segment from `*reshipped_below` up to the new
+    /// active one, advancing it past each that lands. False when any did not,
+    /// so the caller keeps the source object those frames came from.
     async fn reship_lane(
         &self,
         store: &WalSegmentStore,
@@ -2335,10 +2362,9 @@ impl ShardedWal {
             );
             return false;
         }
-        for seq in lane.unexported_segments() {
-            if seq < *reshipped_below {
-                continue;
-            }
+        // Nothing exports during recovery, so each of these is still on disk.
+        let active = lane.active_seq.load(Ordering::Acquire);
+        for seq in *reshipped_below..active {
             let Some(bytes) = lane.read_segment(seq) else {
                 return false;
             };
@@ -8284,11 +8310,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_source_that_spans_two_local_segments_re_ships_both() {
+        // A segment cap under one frame seals after every append, so the source's
+        // two frames land in two local segments and both must ship first.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let keys = stage_dead_owner(&bucket, "task-that-died", &[3]);
+
+        let queue_dir = unique_test_dir("wal-recovery-two-segments");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 16);
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        let reship_prefix = format!("PUT wal/v1/segments/{}/", store.owner());
+        wal.recover_orphans(&cfg, &store).await;
+
+        assert_eq!(wal.replay(0).await.expect("replay").len(), 2);
+        let requests = bucket.requests();
+        let deleted = requests
+            .iter()
+            .position(|request| *request == format!("DELETE {}", keys[0]))
+            .unwrap_or_else(|| panic!("the source is released: {requests:?}"));
+        let reshipped = requests[..deleted]
+            .iter()
+            .filter(|request| request.starts_with(&reship_prefix))
+            .count();
+        assert_eq!(reshipped, 2, "{requests:?}");
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
     async fn a_segment_that_fails_to_re_ship_keeps_its_source() {
         // Deleting the source after a failed re-ship left the frames only on this
         // task's disk, which is exactly what the durability tier rules out.
         let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
-        let keys = stage_dead_owner(&bucket, "task-that-died", &[3]);
+        let keys = stage_dead_owner(&bucket, "task-that-died", &[3, 4]);
 
         let queue_dir = unique_test_dir("wal-reship-fails");
         std::fs::create_dir_all(&queue_dir).unwrap();
@@ -8305,6 +8361,11 @@ mod tests {
         );
         let remaining = bucket.keys();
         assert!(remaining.contains(&keys[0]), "{remaining:?}");
+        assert!(remaining.contains(&keys[1]), "{remaining:?}");
+        assert!(
+            !bucket.requests().contains(&format!("GET {}", keys[1])),
+            "recovery of the owner stops at the first failed re-ship"
+        );
         assert!(
             remaining.contains(&"wal/v1/owners/task-that-died".to_owned()),
             "the owner stays discoverable for a later retry: {remaining:?}"

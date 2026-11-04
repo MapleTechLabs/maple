@@ -92,7 +92,8 @@ lists that owner's segments and takes them **one at a time**: download, re-commi
 own lane, seal that lane and **re-ship it under its own owner id, and only then** delete the source
 object, so the frames are never only on one task's disk. Memory holds one segment however large the
 dead owner's backlog is. A segment that fails any step keeps its source object and the owner stays
-claimable, so a later boot retries it (at-least-once). A claim older than 30 minutes is taken over
+claimable, so a later boot retries it (at-least-once); a failed re-commit or re-ship also stops that
+owner's recovery, so the rest is not piled onto local disk only to be replayed again. A claim older than 30 minutes is taken over
 unconditionally, because the task that wrote it evidently died before finishing.
 
 **Shutdown.** After `INGEST_SHUTDOWN_DRAIN_SECS`, whatever did not export is sealed and shipped, and
