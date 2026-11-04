@@ -190,6 +190,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/infra-correlation/view.ts` `view`: The panel; keyed by the record, so another record remounts it and reads its own window.
 - `apps/web/src/page/kit/infra-correlation/window.ts` `anchoredWindow`: `infraCorrelationWindow` for a parseable anchor: 15 minutes either side, covering the span, on snapped to a 15 s grid before the request is sent.
 - `apps/web/src/page/kit/keyed-step.ts` `slotStep`, `chain`, `chainAll`: One request slot's step and the way steps compose: the Model threaded through, the Commands concatenated, the last OutMessage kept.
+- `apps/web/src/page/kit/last-by.ts` `lastBy`: A derivation that views call on every message, recomputed only when one of its inputs changes.
 - `apps/web/src/page/kit/list-toolbar.ts` `listToolbar`, `toolbarCount`, `toolbarStat`: `ListToolbar`: a list page's row of view tabs, then search, filters and the count readout.
 - `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown over Streamdown: laid out with Streamdown's element classes.

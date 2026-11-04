@@ -8,6 +8,7 @@ import {
 } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
+import { lastBy } from "../../kit/last-by"
 import type { RuleBucket } from "./message"
 import type { Model } from "./model"
 
@@ -18,19 +19,6 @@ type OverviewKey = readonly [
 	Model["deliveries"]["data"],
 	Model["nowMs"],
 ]
-
-/** Keeps the last result while every input is the same reference: views call this on every message. */
-const lastBy = <K extends ReadonlyArray<unknown>, A>(compute: (key: K) => A): ((key: K) => A) => {
-	const last: Array<{ key: K; value: A }> = []
-	return (key) => {
-		const previous = last[0]
-		if (previous !== undefined && Arr.every(key, (part, index) => part === previous.key[index]))
-			return previous.value
-		const value = compute(key)
-		last[0] = { key, value }
-		return value
-	}
-}
 
 const overviewFor = lastBy(
 	([rules, states, incidents, deliveries, nowMs]: OverviewKey): Option.Option<AlertsOverviewReady> => {
