@@ -2307,7 +2307,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					)
 					if (!isOk(response)) return yield* failure(response, "Read tree", "repository")
 					const listing = yield* decodeTreeResponse(response)
-					const total = yield* Ref.updateAndGet(entries, (n) => n + listing.tree.length)
+					// A truncated recursive read is discarded and re-listed level by level, so it is not held.
+					const held = recursive && listing.truncated ? 0 : listing.tree.length
+					const total = yield* Ref.updateAndGet(entries, (n) => n + held)
 					return total > MAX_TREE_WALK_ENTRIES
 						? Option.none<GithubRecursiveTree>()
 						: Option.some(listing)
