@@ -130,8 +130,14 @@ export const settled = <A>(promise: () => Promise<A>): Effect.Effect<WriteSync, 
 	)
 
 /** The API's 409: the PATCH was based on a version someone else's save has replaced. */
+/** The v2 client fails with the decoded public envelope, not the error class: match its stable code. */
+const isConflictEnvelope = Schema.is(
+	Schema.Struct({ error: Schema.Struct({ code: Schema.Literal("dashboard_concurrent_update") }) }),
+)
+
 const isVersionConflict = (error: unknown, depth = 0): boolean => {
 	if (depth > 5 || typeof error !== "object" || error === null) return false
+	if (isConflictEnvelope(error)) return true
 	if ("_tag" in error && error._tag === "@maple/http/errors/DashboardConcurrencyError") return true
 	return Option.exists(causeOf(error), (inner) => isVersionConflict(inner, depth + 1))
 }

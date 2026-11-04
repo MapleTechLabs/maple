@@ -1,8 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db"
-import { DashboardConcurrencyError, DashboardId } from "@maple/domain/http"
+import { UpdateError } from "@maple/effect-db/electric"
+import { DashboardConcurrencyError, DashboardId, publicHttpErrorBody } from "@maple/domain/http"
+import { publicError } from "@maple/domain/http/v2"
 import type { DashboardRow } from "@maple/web-data/collections/dashboards"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { DashboardConflictError, DashboardWriteError, mutateDocumentIn, settled } from "./store"
 
 interface Row {
@@ -73,10 +75,17 @@ describe("mutateDocumentIn when someone else saved first", () => {
 		updated_by: "user_a",
 		version,
 	})
+	// A 409 as the collection sees it: effect-db's `UpdateError` around the v2 client's decoded envelope.
 	const conflict = () =>
-		new DashboardConcurrencyError({
-			dashboardId: DashboardId.make(ID),
-			message: "Someone else changed this dashboard since it was loaded.",
+		new UpdateError({ message: "Update operation failed", key: ID, cause: conflictEnvelope() })
+	const conflictEnvelope = () =>
+		Schema.decodeUnknownSync(publicError(DashboardConcurrencyError))({
+			error: publicHttpErrorBody(
+				new DashboardConcurrencyError({
+					dashboardId: DashboardId.make(ID),
+					message: "Someone else changed this dashboard since it was loaded.",
+				}),
+			),
 		})
 
 	/**
