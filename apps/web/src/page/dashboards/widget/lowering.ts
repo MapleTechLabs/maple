@@ -6,6 +6,7 @@ import {
 	resetQueryForDataSource,
 } from "@maple/query-engine/query-builder"
 import {
+	dataSourceEndpoint,
 	dataSourceQuerySet,
 	dataSourceRawSql,
 	dataSourceRouteParams,
@@ -33,6 +34,7 @@ import {
 	pointsModeFromShowPoints,
 	showPointsFromPointsMode,
 } from "./editor-state"
+import { type RouteStandIn, routeStandInOf } from "./route-equivalents"
 import { listDataSourceOf, listDisplayOf, listInitialState, parsePositiveNumber } from "./lowering-list"
 import {
 	defaultFunnelDraft,
@@ -84,6 +86,25 @@ const parseFiniteNumber = (raw: string): number | undefined => {
 	return Number.isFinite(parsed) ? parsed : undefined
 }
 
+/** A route widget's endpoint, params and the field its stat reduces. */
+const routeOf = (widget: Widget) => {
+	const reduce = dataSourceTransform(widget.dataSource)?.reduceToValue
+	return {
+		endpoint: dataSourceEndpoint(widget.dataSource),
+		params: dataSourceRouteParams(widget.dataSource) ?? {},
+		reduce:
+			typeof reduce?.field === "string"
+				? { field: reduce.field, aggregate: toStatAggregate(reduce.aggregate) }
+				: null,
+	}
+}
+
+/** A builder equivalent reduces its series its own way (a summary row's `first` is a bucket `sum`). */
+const statAggregateOf = (standIn: RouteStandIn | null, stored: unknown): EditorState["statAggregate"] =>
+	standIn?.kind === "builder" && standIn.statAggregate !== null
+		? standIn.statAggregate
+		: toStatAggregate(stored)
+
 /** `toInitialState`, normalizing the (visualization, chartId) pair through the panel type. */
 export const toInitialState = (widget: Widget): EditorState => {
 	const querySet = dataSourceQuerySet(widget.dataSource)
@@ -104,6 +125,11 @@ export const toInitialState = (widget: Widget): EditorState => {
 		panel !== "paths" &&
 		!isProductFunnel &&
 		(loaded === null || loaded.queries.length === 0)
+	const routeStandIn = isStandIn && querySet === null ? routeStandInOf(routeOf(widget)) : null
+	const standInQuery =
+		routeStandIn?.kind === "builder"
+			? routeStandIn.query
+			: legacyQueryDraft(dataSourceRouteParams(widget.dataSource) ?? {})
 	// A list's draft query only satisfies the state shape; a product-event funnel's placeholder reads product events.
 	const queries =
 		panel === "list"
@@ -112,7 +138,7 @@ export const toInitialState = (widget: Widget): EditorState => {
 				? loaded.queries
 				: isProductFunnel
 					? [resetQueryForDataSource(createQueryDraft(0), "product_events")]
-					: [legacyQueryDraft(dataSourceRouteParams(widget.dataSource) ?? {})]
+					: [standInQuery]
 	return {
 		visualization: normalized.visualization,
 		title: widget.display.title ?? "",
@@ -123,6 +149,7 @@ export const toInitialState = (widget: Widget): EditorState => {
 		curveType: widget.display.curveType ?? "linear",
 		queries,
 		keepsStoredSource: isStandIn && dataSourceRawSql(widget.dataSource) === null,
+		queryFixed: routeStandIn?.kind === "fixed",
 		formulas: panel === "list" ? [] : (loaded?.formulas ?? []),
 		comparisonMode: comparison.mode === "previous_period" ? "previous_period" : "none",
 		includePercentChange: comparison.includePercentChange ?? true,
@@ -133,7 +160,9 @@ export const toInitialState = (widget: Widget): EditorState => {
 		seriesStatsEnabled: presentation?.seriesStats ?? false,
 		pointsMode: pointsModeFromShowPoints(presentation?.showPoints),
 		thresholds: Arr.map(widget.display.thresholds ?? [], ({ value, color }) => ({ value, color })),
-		statAggregate: isScalar ? toStatAggregate(transform?.reduceToValue?.aggregate) : "first",
+		statAggregate: isScalar
+			? statAggregateOf(routeStandIn, transform?.reduceToValue?.aggregate)
+			: "first",
 		statValueField: isScalar ? (transform?.reduceToValue?.field ?? "") : "",
 		sparklineEnabled: panel === "stat" && widget.display.sparkline?.enabled === true,
 		gaugeMin: gauge?.min == null ? "" : String(gauge.min),
@@ -154,8 +183,9 @@ const NO_QUERY_CAPABILITIES: QueryCapabilities = { comparison: false, formulas: 
 
 /** What a panel's query set keeps when lowered: the rail offers comparison and formulas only here. */
 export const queryCapabilitiesOf = (
-	state: Pick<EditorState, "visualization" | "chartId" | "queries">,
+	state: Pick<EditorState, "visualization" | "chartId" | "queries" | "queryFixed">,
 ): QueryCapabilities => {
+	if (state.queryFixed) return NO_QUERY_CAPABILITIES
 	switch (panelOf(state)) {
 		case "line":
 		case "bar":
@@ -285,7 +315,12 @@ export const buildDataSource = (state: EditorState): DataSource => {
 const storedSourceOf = (widget: Widget, state: EditorState): DataSource => {
 	const transform = dataSourceTransform(widget.dataSource)
 	const reduce = transform?.reduceToValue
-	if (reduce === undefined || !WIDGET_TYPES[panelOf(state)].isScalar) return widget.dataSource
+	if (reduce === undefined) return widget.dataSource
+	// A fixed endpoint shown as a chart or table reads its rows, not one reduced value.
+	if (!WIDGET_TYPES[panelOf(state)].isScalar) {
+		const { reduceToValue: _dropped, ...rows } = transform ?? {}
+		return { ...widget.dataSource, transform: rows }
+	}
 	return {
 		...widget.dataSource,
 		transform: { ...transform, reduceToValue: { ...reduce, aggregate: state.statAggregate } },
@@ -303,6 +338,8 @@ const sameJson = (a: unknown, b: unknown): boolean =>
 /** The stored source holds while the queries, formulas, comparison, row limit and type match the opened state. */
 export const trackStoredSource = (initial: EditorState | null, after: EditorState): EditorState => {
 	if (initial === null || !initial.keepsStoredSource) return after
+	// No builder query computes a fixed endpoint's metric, so no edit may replace its source.
+	if (initial.queryFixed) return after.keepsStoredSource ? after : { ...after, keepsStoredSource: true }
 	const keeps =
 		sameJson(after.queries, initial.queries) &&
 		sameJson(after.formulas, initial.formulas) &&
