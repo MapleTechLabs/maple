@@ -175,7 +175,13 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 	const meta = [
 		...(location === null
 			? []
-			: [middleTruncate(h, { text: location, tail: Math.min(28, location.length), mono: true })]),
+			: [
+					middleTruncate(h, {
+						text: location,
+						tail: Math.min(28, location.length - location.lastIndexOf("/")),
+						mono: true,
+					}),
+				]),
 		...(note === null ? [] : [typography(h, { truncate: true, attributes: [h.Title(note)] }, [note])]),
 	]
 	const children = [
@@ -193,7 +199,17 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 			),
 			...(meta.length === 0
 				? []
-				: [hstack(h, { gap: "2", shrink: true, className: "text-xs text-muted-foreground" }, meta)]),
+				: [
+						hstack(
+							h,
+							{
+								gap: "2",
+								shrink: true,
+								className: "hidden text-xs text-muted-foreground md:flex",
+							},
+							meta,
+						),
+					]),
 		]),
 		hstack(h, { gap: "3", className: "shrink-0" }, [
 			...(isUnverified(finding) ? [unverifiedChip(h)] : []),
