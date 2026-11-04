@@ -335,7 +335,7 @@ describe("makeResolveMcpTenant", () => {
 	)
 
 	// The pin is a development-only setting; elsewhere an unprovable membership is refused.
-	it.effect("resolves tenant from a user API key with MAPLE_ORG_ID_OVERRIDE in development", () =>
+	it.effect("resolves tenant from a user API key with an opted-in development MAPLE_ORG_ID_OVERRIDE", () =>
 		Effect.gen(function* () {
 			const resolveMcpTenant = makeResolveMcpTenant(
 				{
@@ -344,6 +344,7 @@ describe("makeResolveMcpTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 					MAPLE_ORG_ID_OVERRIDE: Option.some("org_override"),
+					MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: true,
 					MAPLE_ENVIRONMENT: "development",
 				},
 				async () => ({
@@ -369,6 +370,35 @@ describe("makeResolveMcpTenant", () => {
 				roles: [],
 				authMode: "clerk",
 			})
+		}),
+	)
+
+	it.effect("refuses a user API key on a development MAPLE_ORG_ID_OVERRIDE without the opt-in", () =>
+		Effect.gen(function* () {
+			const resolveMcpTenant = makeResolveMcpTenant(
+				{
+					...baseEnv,
+					MAPLE_AUTH_MODE: "clerk",
+					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+					MAPLE_ORG_ID_OVERRIDE: Option.some("org_override"),
+					MAPLE_ENVIRONMENT: "development",
+				},
+				async () => ({
+					isAuthenticated: true,
+					message: null,
+					toAuth: () => ({
+						isAuthenticated: true,
+						tokenType: "api_key",
+						userId: "user_abc",
+						orgId: null,
+						orgRole: null,
+					}),
+				}),
+			)
+
+			const exit = yield* Effect.exit(resolveMcpTenant({ authorization: "Bearer maple_key_xxx" }))
+			assert.strictEqual(getFailure(exit)?._tag, "@maple/http/errors/OrganizationAccessDeniedError")
 		}),
 	)
 
@@ -1290,13 +1320,50 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 		}),
 	)
 
-	it.effect("MAPLE_ORG_ID_OVERRIDE keeps a non-member's session role in development", () =>
+	it.effect("MAPLE_ORG_ID_OVERRIDE refuses a non-member in development without the opt-in", () =>
 		Effect.gen(function* () {
 			const membership = verifier([])
 			const resolveTenant = makeResolveTenant(
 				{
 					...clerkEnv,
 					MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned"),
+					MAPLE_ENVIRONMENT: "development",
+				},
+				clerkAuth(),
+				undefined,
+				membership.verify,
+			)
+
+			assertDenied(yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" })))
+		}),
+	)
+
+	it.effect("MAPLE_ORG_ID_OVERRIDE ignores the non-member opt-in outside development", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(
+				{
+					...clerkEnv,
+					MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned"),
+					MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: true,
+					MAPLE_ENVIRONMENT: "production",
+				},
+				clerkAuth(),
+				undefined,
+				verifier([]).verify,
+			)
+
+			assertDenied(yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" })))
+		}),
+	)
+
+	it.effect("MAPLE_ORG_ID_OVERRIDE keeps a non-member's session role on an opted-in development pin", () =>
+		Effect.gen(function* () {
+			const membership = verifier([])
+			const resolveTenant = makeResolveTenant(
+				{
+					...clerkEnv,
+					MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned"),
+					MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: true,
 					MAPLE_ENVIRONMENT: "development",
 				},
 				clerkAuth(),
@@ -1327,12 +1394,13 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 		}),
 	)
 
-	it.effect("MAPLE_ORG_ID_OVERRIDE without a verifier still admits a development session", () =>
+	it.effect("MAPLE_ORG_ID_OVERRIDE without a verifier still admits an opted-in development session", () =>
 		Effect.gen(function* () {
 			const resolveTenant = makeResolveTenant(
 				{
 					...clerkEnv,
 					MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned"),
+					MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: true,
 					MAPLE_ENVIRONMENT: "development",
 				},
 				clerkAuth(),

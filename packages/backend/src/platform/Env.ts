@@ -66,6 +66,8 @@ export interface EnvConfig {
 	/** Shared access key for PR-preview sign-in; bound on `pr-<n>` stages only (`PreviewSignInService`). */
 	readonly PREVIEW_SIGNIN_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
+	/** Dev-only opt-in: the org pin admits a non-member with their session role. */
+	readonly MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: boolean
 	readonly AUTUMN_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly AUTUMN_API_URL: string
 	/** Svix signing secret (`whsec_…`) for `POST /webhooks/autumn`; the route answers 503 while unset. */
@@ -247,6 +249,10 @@ const envConfig = Config.all({
 	CLERK_WEBHOOK_SECRET: optionalRedacted("CLERK_WEBHOOK_SECRET"),
 	PREVIEW_SIGNIN_KEY: optionalRedacted("PREVIEW_SIGNIN_KEY"),
 	MAPLE_ORG_ID_OVERRIDE: optionalString("MAPLE_ORG_ID_OVERRIDE"),
+	MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: stringWithDefault(
+		"MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS",
+		"false",
+	).pipe(Config.map((value) => value === "1" || value === "true")),
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
 	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", "https://api.useautumn.com"),
 	AUTUMN_WEBHOOK_SECRET: optionalRedacted("AUTUMN_WEBHOOK_SECRET"),
