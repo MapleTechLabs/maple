@@ -1,4 +1,4 @@
-import { Effect, Option, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Option, Array as Arr, String as Str } from "effect"
 
 /**
  * The browser's own timing of one API request, on the span around it.
@@ -76,6 +76,20 @@ export const resourceTimingAttributes = (
 	"maple.http.timing.protocol": entry.nextHopProtocol,
 })
 
+const lookup = (path: string, startedAt: number, doneAt: number): ResourceTimingEntry | undefined =>
+	findResourceTiming(
+		performance.getEntriesByType("resource").filter(isResourceTiming),
+		path,
+		startedAt,
+		doneAt,
+	) ?? findResourceTiming(recent, path, startedAt, doneAt)
+
+const annotate = (entry: ResourceTimingEntry | undefined, startedAt: number, doneAt: number) => {
+	if (entry === undefined) return Effect.annotateCurrentSpan("maple.http.timing.missing", true)
+	claimed.add(entry)
+	return Effect.annotateCurrentSpan(resourceTimingAttributes(entry, startedAt, doneAt))
+}
+
 /** Annotates the current span with the Resource Timing of the one request `effect` makes to `path`. */
 export const withResourceTiming =
 	(path: string) =>
@@ -86,14 +100,16 @@ export const withResourceTiming =
 			return Effect.onExit(effect, () =>
 				Effect.suspend(() => {
 					const doneAt = performance.now()
-					const live = performance.getEntriesByType("resource").filter(isResourceTiming)
-					const entry =
-						findResourceTiming(live, path, startedAt, doneAt) ??
-						findResourceTiming(recent, path, startedAt, doneAt)
-					if (entry === undefined)
-						return Effect.annotateCurrentSpan("maple.http.timing.missing", true)
-					claimed.add(entry)
-					return Effect.annotateCurrentSpan(resourceTimingAttributes(entry, startedAt, doneAt))
+					const entry = lookup(path, startedAt, doneAt)
+					if (entry !== undefined) return annotate(entry, startedAt, doneAt)
+					// With the timeline buffer full only the observer has it, and it delivers a task later.
+					return Effect.sleep(Duration.zero).pipe(
+						Effect.andThen(
+							Effect.suspend(() =>
+								annotate(lookup(path, startedAt, doneAt), startedAt, doneAt),
+							),
+						),
+					)
 				}),
 			)
 		})

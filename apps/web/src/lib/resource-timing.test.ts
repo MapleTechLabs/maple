@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest"
-import { findResourceTiming, type ResourceTimingEntry, resourceTimingAttributes } from "./resource-timing"
+import { Effect } from "effect"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import {
+	findResourceTiming,
+	type ResourceTimingEntry,
+	resourceTimingAttributes,
+	withResourceTiming,
+} from "./resource-timing"
 
 const PATH = "/internal/query-engine/execute-batch"
 
@@ -36,5 +42,55 @@ describe("resourceTimingAttributes", () => {
 		expect(attributes["maple.http.timing.download_ms"]).toBe(10)
 		// Bytes in at 320, the caller resumed at 450.
 		expect(attributes["maple.http.timing.after_response_ms"]).toBe(130)
+	})
+})
+
+describe("withResourceTiming", () => {
+	afterEach(() => {
+		vi.restoreAllMocks()
+	})
+
+	/** Runs a fake request inside a span; `visibleFrom` is the lookup that first sees its entry. */
+	const run = (visibleFrom: number | undefined) => {
+		let lookups = 0
+		let request: PerformanceEntry | undefined
+		vi.spyOn(performance, "getEntriesByType").mockImplementation(() => {
+			lookups += 1
+			return request !== undefined && visibleFrom !== undefined && lookups >= visibleFrom
+				? [request]
+				: []
+		})
+		const fakeRequest = Effect.sync(() => {
+			const startTime = performance.now()
+			request = {
+				...entry(startTime, { responseEnd: startTime }),
+				entryType: "resource",
+				duration: 0,
+				toJSON: () => ({}),
+			}
+		})
+		return Effect.runPromise(
+			Effect.gen(function* () {
+				yield* fakeRequest.pipe(withResourceTiming(PATH))
+				const span = yield* Effect.currentSpan
+				return span.attributes
+			}).pipe(Effect.withSpan("QueryEngine.executeBatch")),
+		)
+	}
+
+	it("writes the request's timing on the span", async () => {
+		const attributes = await run(1)
+		expect(attributes.get("maple.http.timing.protocol")).toBe("h2")
+		expect(attributes.has("maple.http.timing.missing")).toBe(false)
+	})
+
+	it("finds an entry the browser delivers a task later", async () => {
+		const attributes = await run(2)
+		expect(attributes.get("maple.http.timing.protocol")).toBe("h2")
+	})
+
+	it("marks the span when no entry ever matches", async () => {
+		const attributes = await run(undefined)
+		expect(attributes.get("maple.http.timing.missing")).toBe(true)
 	})
 })
