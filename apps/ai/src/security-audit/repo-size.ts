@@ -55,8 +55,9 @@ export const REPO_SIZE_COMMAND = {
 				"set -euo pipefail",
 				"commits=$(git --no-optional-locks rev-list --count HEAD)",
 				`tree=$(git --no-optional-locks ls-tree -r -l HEAD | awk '$2 == "blob" { n++; s += $4 } END { printf "%d %.0f", n, s }')`,
-				// NUL-delimited, so a path git would quote (a `"`, a backslash) is matched as is, not quoted.
-				`lfs=$(git --no-optional-locks ls-files -z -- ':(attr:filter=lfs)' | tr '\\0' '\\n' | awk '{ n++; if (tolower($0) ~ /${SOURCE_PATH}/) { s++; if (s <= ${MAX_LFS_SOURCE_EXAMPLES}) ex[s] = $0 } } END { printf "%d %d", n, s; for (i = 1; i <= s && i <= ${MAX_LFS_SOURCE_EXAMPLES}; i++) printf "\\n%s", ex[i] }')`,
+				// NUL-delimited, so a path git would quote is matched as is; a newline inside a path
+				// becomes `?`, keeping one record per file.
+				`lfs=$(git --no-optional-locks ls-files -z -- ':(attr:filter=lfs)' | tr '\\n\\0' '?\\n' | awk '{ n++; if (tolower($0) ~ /${SOURCE_PATH}/) { s++; if (s <= ${MAX_LFS_SOURCE_EXAMPLES}) ex[s] = $0 } } END { printf "%d %d", n, s; for (i = 1; i <= s && i <= ${MAX_LFS_SOURCE_EXAMPLES}; i++) printf "\\n%s", ex[i] }')`,
 				'echo "$commits $tree $lfs"',
 			],
 			"\n",

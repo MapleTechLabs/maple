@@ -150,7 +150,7 @@ describe("the size probe", () => {
 			mkdirSync(join(repo, "pkg"))
 			mkdirSync(join(repo, "certs"))
 			// LFS data JSON is skipped; an LFS manifest, key, uppercase .TS and a path git would
-			// quote are source.
+			// quote are source; a PNG whose name holds a newline after ".ts" stays one media file.
 			const paths = [
 				"assets/a.png",
 				"assets/b.png",
@@ -160,6 +160,7 @@ describe("the size probe", () => {
 				"certs/tls.pem",
 				"src/Gen.TS",
 				'src/we"ird.ts',
+				"assets/image.ts\ncover.png",
 				"src/main.ts",
 			]
 			Arr.forEach(paths, (p) => writeFileSync(join(repo, p), "x"))
@@ -177,7 +178,7 @@ describe("the size probe", () => {
 					size.lfsSourceFiles,
 					size.lfsSourceExamples,
 				]),
-			).toEqual(Option.some([10, 8, 4, ["certs/tls.pem", "pkg/package.json", "src/Gen.TS"]]))
+			).toEqual(Option.some([11, 9, 4, ["certs/tls.pem", "pkg/package.json", "src/Gen.TS"]]))
 		} finally {
 			rmSync(repo, { recursive: true, force: true })
 		}
