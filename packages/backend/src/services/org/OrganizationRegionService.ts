@@ -160,6 +160,12 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	// A counter, not the clock, names a read: Workers' clock stands still between I/O.
 	const readIds = yield* Ref.make(0)
 	const coalescing = yield* Ref.make<Coalescing>({ running: HashMap.empty(), settled: HashMap.empty() })
+	// Bumped by `forget`: a read that started before it must not cache its answer after it.
+	const generations = yield* Ref.make(HashMap.empty<OrgId, number>())
+	const generationOf = (orgId: OrgId) =>
+		Effect.map(Ref.get(generations), (map) => Option.getOrElse(HashMap.get(map, orgId), () => 0))
+	const ifStillCurrent = (orgId: OrgId, generation: number, write: Effect.Effect<void>) =>
+		Effect.flatMap(generationOf(orgId), (now) => (now === generation ? write : Effect.void))
 
 	const readDirectory = Effect.fnUntraced(function* (read: ReadDirectoryOrganization, orgId: OrgId) {
 		const readAtMs = yield* Clock.currentTimeMillis
@@ -186,24 +192,28 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 
 	// Only a yes is shared. An organization whose region was just chosen in onboarding arrives
 	// here straight away, and a cached no would refuse it.
-	const readOrigin = (read: ReadDirectoryOrganization, orgId: OrgId) =>
+	const readOrigin = (read: ReadDirectoryOrganization, orgId: OrgId, generation: number) =>
 		readDirectory(read, orgId).pipe(
 			Effect.tap((entry) =>
 				Option.isSome(entry) && organizationServedIn(entry.value.metadata, region)
-					? edgeCache
-							.rawPut(
-								REGIONS_CACHE_BUCKET,
-								orgId,
-								entry.value,
-								Math.ceil(regionTtlMs(entry.value, entry.value.readAtMs, "edge") / 1000),
-							)
-							.pipe(
-								Effect.catch((error) =>
-									Effect.logWarning("Could not share the organization's regions").pipe(
-										Effect.annotateLogs({ orgId, error: error.message }),
+					? ifStillCurrent(
+							orgId,
+							generation,
+							edgeCache
+								.rawPut(
+									REGIONS_CACHE_BUCKET,
+									orgId,
+									entry.value,
+									Math.ceil(regionTtlMs(entry.value, entry.value.readAtMs, "edge") / 1000),
+								)
+								.pipe(
+									Effect.catch((error) =>
+										Effect.logWarning("Could not share the organization's regions").pipe(
+											Effect.annotateLogs({ orgId, error: error.message }),
+										),
 									),
 								),
-							)
+						)
 					: Effect.void,
 			),
 			Effect.map(Option.map((entry) => answer(entry, "origin"))),
@@ -213,13 +223,14 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		read: ReadDirectoryOrganization,
 		orgId: OrgId,
 		nowMs: number,
+		generation: number,
 	) {
 		const shared = yield* Effect.forkChild(readEdge(orgId, nowMs))
 		const early = yield* Fiber.join(shared).pipe(Effect.timeoutOption(CLERK_HEDGE_AFTER_MS))
 		if (Option.isSome(early)) {
 			return Option.isSome(early.value)
 				? Option.some(answer(early.value.value, "edge"))
-				: yield* readOrigin(read, orgId)
+				: yield* readOrigin(read, orgId, generation)
 		}
 		// Usually a fresh isolate's first read. Ask Clerk as well and take whichever answers first.
 		yield* Effect.annotateCurrentSpan("cache.hedged", true)
@@ -231,11 +242,14 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 				}),
 			),
 		)
-		return yield* Effect.race(lateHit, readOrigin(read, orgId))
+		return yield* Effect.race(lateHit, readOrigin(read, orgId, generation))
 	})
 
 	const readTiers = (read: ReadDirectoryOrganization, orgId: OrgId, nowMs: number) =>
-		readShared(read, orgId, nowMs).pipe(
+		Effect.flatMap(generationOf(orgId), (generation) => readTiersAt(read, orgId, nowMs, generation))
+
+	const readTiersAt = (read: ReadDirectoryOrganization, orgId: OrgId, nowMs: number, generation: number) =>
+		readShared(read, orgId, nowMs, generation).pipe(
 			Effect.flatMap(
 				Option.match({
 					onNone: () =>
@@ -249,7 +263,14 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 								"cache.layer": layer,
 							}),
 							organizationServedIn(entry.metadata, region)
-								? Ref.update(remembered, HashMap.set(orgId, { entry, heldAtMs: nowMs }))
+								? ifStillCurrent(
+										orgId,
+										generation,
+										Ref.update(
+											remembered,
+											HashMap.set(orgId, { entry, heldAtMs: nowMs }),
+										),
+									)
 								: Effect.void,
 						).pipe(Effect.as(found(entry.metadata))),
 				}),
@@ -375,6 +396,9 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 
 	const forget: OrganizationRegionServiceApi["forget"] = Effect.fn("OrganizationRegionService.forget")(
 		function* (orgId) {
+			yield* Ref.update(generations, (map) =>
+				HashMap.set(map, orgId, Option.getOrElse(HashMap.get(map, orgId), () => 0) + 1),
+			)
 			yield* Ref.update(remembered, HashMap.remove(orgId))
 			// A read started before the write must not hand its answer to anyone after it.
 			yield* Ref.update(coalescing, (state) => ({

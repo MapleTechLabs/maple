@@ -122,6 +122,28 @@ describe("OrganizationRegionService", () => {
 		}),
 	)
 
+	it.effect("a read in flight when the region is forgotten caches nothing", () =>
+		Effect.gen(function* () {
+			const backend = makeMemoryBackend()
+			const gate = yield* Deferred.make<void>()
+			const reads = yield* Ref.make(0)
+			const read: ReadDirectoryOrganization = () =>
+				Ref.updateAndGet(reads, (n) => n + 1).pipe(
+					Effect.tap((n) => (n === 1 ? Deferred.await(gate) : Effect.void)),
+					Effect.as(Option.some(chosen("us"))),
+				)
+			const regions = yield* isolate(backend, { read })
+			const inFlight = yield* Effect.forkChild(regions.ensureServedHere(orgId))
+			yield* TestClock.adjust("50 millis")
+			yield* regions.forget(orgId)
+			yield* Deferred.succeed(gate, undefined)
+			yield* Fiber.join(inFlight)
+			// Neither the isolate nor the shared cache kept the pre-forget answer.
+			yield* regions.ensureServedHere(orgId)
+			assert.strictEqual(yield* Ref.get(reads), 2)
+		}),
+	)
+
 	it.effect("a chosen region expires an hour after Clerk was read, in every tier", () =>
 		Effect.gen(function* () {
 			const backend = makeMemoryBackend()
