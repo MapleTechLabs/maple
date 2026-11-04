@@ -313,8 +313,21 @@ export const buildDataSource = (state: EditorState): DataSource => {
 	}
 }
 
-/** A fixed endpoint's stored source, with the stat or gauge aggregate picked in the editor. */
+/** A table's row limit as edited in the rail; an untouched one leaves the source as stored. */
+const withRowLimit = (source: DataSource, limit: number | undefined): DataSource => {
+	const transform = dataSourceTransform(source)
+	if (transform?.limit === limit) return source
+	const { limit: _previous, ...rest } = transform ?? {}
+	return { ...source, transform: limit === undefined ? rest : { ...rest, limit } }
+}
+
+/** A fixed endpoint's stored source, with the stat aggregate and table row limit picked in the editor. */
 const storedSourceOf = (widget: Widget, state: EditorState): DataSource => {
+	const reduced = storedReductionOf(widget, state)
+	return panelOf(state) === "table" ? withRowLimit(reduced, parseRowLimit(state.tableLimit)) : reduced
+}
+
+const storedReductionOf = (widget: Widget, state: EditorState): DataSource => {
 	const transform = dataSourceTransform(widget.dataSource)
 	const reduce = transform?.reduceToValue
 	if (reduce === undefined) return widget.dataSource

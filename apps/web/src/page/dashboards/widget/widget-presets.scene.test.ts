@@ -306,6 +306,19 @@ describe("preset widgets in the editor", () => {
 		expect(pickedType(stat, "table").state?.queryFixed).toBe(true)
 	})
 
+	test("a fixed table saves its edited row limit and keeps its stored route", () => {
+		const board = openedPreset("table-traces")
+		expect(board.model.state?.queryFixed).toBe(true)
+		const limited = update(board.model, Message.ChangedTableLimit({ value: "50" }), context).model
+		const saved = savedSourceOf(board, limited)
+		expect(dataSourceTransform(saved)?.limit).toBe(50)
+		expect({ ...saved, transform: undefined }).toEqual({
+			...board.widget.dataSource,
+			transform: undefined,
+		})
+		expect(savedSourceOf(board, board.model)).toEqual(board.widget.dataSource)
+	})
+
 	test("a fixed preset grouped as a pie stays a builder query back as a stat", () => {
 		const board = openedPreset("stat-total-services")
 		const back = pickedType(groupedBy(pickedType(board.model, "pie"), "service.name"), "stat")
