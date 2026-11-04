@@ -119,17 +119,20 @@ const toV2Dashboard = (stored: StoredDashboard): V2Dashboard => ({
 	version: stored.version,
 })
 
-const toV2DashboardShare = (share: DashboardShare): V2DashboardShare => ({
-	id: share.id,
-	object: "dashboard_share",
-	dashboardId: share.dashboardId,
-	...(share.widgetId === undefined ? undefined : { widgetId: share.widgetId }),
-	mode: share.mode,
-	token: share.token,
-	tokenSuffix: share.tokenSuffix,
-	createdAt: share.createdAt,
-	updatedAt: share.updatedAt,
-})
+/** The token is a credential for the board's telemetry, so only a caller that could mint the link sees it. */
+const toV2DashboardShare =
+	(scopes: ReadonlyArray<string> | undefined) =>
+	(share: DashboardShare): V2DashboardShare => ({
+		id: share.id,
+		object: "dashboard_share",
+		dashboardId: share.dashboardId,
+		...(share.widgetId === undefined ? undefined : { widgetId: share.widgetId }),
+		mode: share.mode,
+		...(canReadTelemetry(scopes) ? { token: share.token } : undefined),
+		tokenSuffix: share.tokenSuffix,
+		createdAt: share.createdAt,
+		updatedAt: share.updatedAt,
+	})
 
 const toV2WidgetDataOutcome = (outcome: ShareWidgetDataOutcome): V2DashboardWidgetDataOutcome =>
 	outcome.ok
@@ -363,7 +366,10 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				const context = yield* openScope(dashboardId, widgetId)
 				const share = yield* shares.get(context.tenant.orgId, context.scope)
 
-				return Option.match(share, { onNone: () => null, onSome: toV2DashboardShare })
+				return Option.match(share, {
+					onNone: () => null,
+					onSome: toV2DashboardShare(context.tenant.scopes),
+				})
 			})
 
 		/**
@@ -400,7 +406,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					},
 				})
 
-				return toV2DashboardShare(created)
+				return toV2DashboardShare(context.tenant.scopes)(created)
 			})
 
 		const rotateShare = (dashboardId: DashboardId, widgetId: string | null) =>
@@ -423,7 +429,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					},
 				})
 
-				return toV2DashboardShare(rotated)
+				return toV2DashboardShare(context.tenant.scopes)(rotated)
 			})
 
 		const revokeShare = (dashboardId: DashboardId, widgetId: string | null) =>
@@ -808,7 +814,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						yield* persistence.get(tenant.orgId, params.id)
 						const live = yield* shares.listForDashboard(tenant.orgId, params.id)
 
-						return Arr.map(live, toV2DashboardShare)
+						return Arr.map(live, toV2DashboardShare(tenant.scopes))
 					}),
 				)
 				.handle("retrieveShare", ({ params }) => retrieveShare(params.id, null))

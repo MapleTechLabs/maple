@@ -66,7 +66,12 @@ import { makeServerQuerySetExecutor } from "./server-query-set-executor"
 import type { RouteEndpointContext } from "./route-endpoint-plans"
 import { resolveShareVariables } from "./share-variables"
 import { resolveShareWindow } from "./share-window"
-import { type TelemetryReadFamily, widgetReadFamilies, widgetReadPath } from "./widget-read-families"
+import {
+	sourceReadFamilies,
+	type TelemetryReadFamily,
+	widgetReadFamilies,
+	widgetReadPath,
+} from "./widget-read-families"
 
 // Shares and the API's widget data read both land here, so the wording names neither.
 const UNSUPPORTED_WIDGET_MESSAGE = "This widget type can't be read outside the dashboard yet."
@@ -222,12 +227,14 @@ export interface DashboardWidgetDataServiceApi {
 	 * The option lists of the document's `query` variables over a window — the
 	 * same facet / attribute-value queries the signed-in provider runs, so the
 	 * share's "first option" and "All" expansion are the board's. A source that
-	 * fails to list resolves to no options, as it does in the browser.
+	 * fails to list resolves to no options, as it does in the browser. A variable
+	 * whose source the caller may not read is not listed: its options are telemetry.
 	 */
 	readonly variableOptions: (
 		orgId: OrgId,
 		definitions: ReadonlyArray<DashboardVariable>,
 		window: ResolvedWindow,
+		canRead: (family: TelemetryReadFamily) => boolean,
 	) => Effect.Effect<Readonly<Record<string, ReadonlyArray<string>>>>
 	readonly resolve: (
 		orgId: OrgId,
@@ -499,6 +506,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			orgId: OrgId,
 			definitions: ReadonlyArray<DashboardVariable>,
 			window: ResolvedWindow,
+			canRead: (family: TelemetryReadFamily) => boolean,
 		) {
 			const tenant = shareViewerTenant(orgId)
 			// Several variables sharing a source share one query, as the browser's
@@ -509,7 +517,8 @@ export class DashboardWidgetDataService extends Context.Service<
 			>()
 			for (const definition of definitions) {
 				const query = dashboardVariableOptionsQuery(definition)
-				if (query === null) continue
+				// Unlisted, the variable falls back to free text, so a value is never checked against rows.
+				if (query === null || !Arr.every(sourceReadFamilies(query.source), canRead)) continue
 				const key = encodeJsonSync(query)
 				const entry = byQuery.get(key) ?? { query, names: [] }
 				entry.names.push(definition.name)
@@ -570,7 +579,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			// Query-variable options are listed over the same window, so the board's
 			// ladder (selection, default, All, first option) resolves as it does there.
 			const definitions = document.variables ?? []
-			const queryOptions = yield* variableOptions(orgId, definitions, window)
+			const queryOptions = yield* variableOptions(orgId, definitions, window, input.canRead)
 			const variableValues = yield* resolveShareVariables(
 				definitions,
 				input.variableValues,

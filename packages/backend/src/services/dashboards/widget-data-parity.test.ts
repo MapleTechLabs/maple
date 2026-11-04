@@ -33,7 +33,11 @@ import { dataSourceQuerySet, toWidgetRequest } from "@maple/widgets/dashboard"
 import { Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { DashboardWidgetDataService, shareViewerTenant } from "./DashboardWidgetDataService"
+import {
+	type DashboardVariable,
+	DashboardWidgetDataService,
+	shareViewerTenant,
+} from "./DashboardWidgetDataService"
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
 
@@ -146,6 +150,15 @@ const makeHarness = () => {
 		),
 	)
 	return { runtime, captured, queryEngineLayer: queryEngine, warehouseLayer: warehouse }
+}
+
+/** One string field of a captured, untyped query-engine request. */
+const fieldOf = (query: unknown, field: string): string | undefined => {
+	const value =
+		typeof query === "object" && query !== null
+			? Object.getOwnPropertyDescriptor(query, field)?.value
+			: undefined
+	return typeof value === "string" ? value : undefined
 }
 
 const document = (widgets: ReadonlyArray<Record<string, unknown>>): DashboardDocument =>
@@ -427,7 +440,7 @@ describe("shared widget data parity with the signed-in board", () => {
 		const options = await shared.runtime.runPromise(
 			DashboardWidgetDataService.use((service) =>
 				// oxlint-disable-next-line typescript/no-explicit-any -- fixture definitions in stored shape
-				service.variableOptions(ORG, definitions as any, WINDOW),
+				service.variableOptions(ORG, definitions as any, WINDOW, () => true),
 			),
 		)
 
@@ -451,6 +464,66 @@ describe("shared widget data parity with the signed-in board", () => {
 			),
 		).toBe(true)
 
+		await shared.runtime.dispose()
+	})
+
+	it("variable options: lists only the sources the caller may read", async () => {
+		const shared = makeHarness()
+		const definitions: ReadonlyArray<DashboardVariable> = [
+			{ name: "service", type: "query", source: { kind: "facet", facet: "service" } },
+			{ name: "sev", type: "query", source: { kind: "facet", facet: "log_severity" } },
+			{
+				name: "host",
+				type: "query",
+				source: {
+					kind: "metric",
+					metricType: "gauge",
+					metricNames: ["cpu"],
+					scope: "resource",
+					attributeKey: "host",
+				},
+			},
+		]
+
+		const options = await shared.runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.variableOptions(ORG, definitions, WINDOW, (family) => family === "metrics"),
+			),
+		)
+
+		expect(options).toEqual({ host: ["host-a"] })
+		expect(Arr.map(shared.captured.execute, (r) => fieldOf(r.query, "source"))).toEqual(["metrics"])
+		await shared.runtime.dispose()
+	})
+
+	it("a key that cannot read a variable's source learns nothing about its values", async () => {
+		const shared = makeHarness()
+		const board = new DashboardDocument({
+			...document([
+				widget("w-logs", {
+					...TIMESERIES_SOURCE,
+					queries: [{ ...TIMESERIES_SOURCE.queries[0], dataSource: "logs" }],
+				}),
+			]),
+			variables: [{ name: "service", type: "query", source: { kind: "facet", facet: "service" } }],
+		})
+		const batch = (variableValues: Record<string, string>) =>
+			shared.runtime.runPromise(
+				DashboardWidgetDataService.use((service) =>
+					service.resolveBatch(ORG, board, {
+						requests: [{ widgetId: "w-logs", source: "primary" }],
+						window: WINDOW,
+						variableValues,
+						canRead: (family) => family === "logs",
+					}),
+				),
+			)
+
+		// No fallback to the first live service, and a real value and a made-up one resolve alike.
+		expect((await batch({})).variables).toEqual({ service: "" })
+		expect((await batch({ service: "checkout" })).variables).toEqual({ service: "checkout" })
+		expect((await batch({ service: "made-up" })).variables).toEqual({ service: "made-up" })
+		expect(Arr.some(shared.captured.execute, (r) => fieldOf(r.query, "kind") === "facets")).toBe(false)
 		await shared.runtime.dispose()
 	})
 })

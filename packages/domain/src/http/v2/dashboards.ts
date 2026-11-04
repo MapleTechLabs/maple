@@ -353,9 +353,10 @@ export const V2DashboardPersesImportResponse = Schema.Struct({
 /**
  * A dashboard's share link, as its owner sees it.
  *
- * Carries the raw `token` on every response, not only the one that mints it:
- * a caller who can read this can already rotate the link, so withholding the
- * token bought no safety and meant you had to break a live link to see it.
+ * Carries the raw `token` to any caller that could mint or rotate the link,
+ * on every response, so seeing a live link never means breaking it. A key
+ * without the telemetry read scopes gets the share without its `token`: the
+ * link serves telemetry the key itself cannot read.
  */
 export const V2DashboardShare = Schema.Struct({
 	id: DashboardSharePublicId,
@@ -367,8 +368,11 @@ export const V2DashboardShare = Schema.Struct({
 	 */
 	widgetId: optional(Schema.String),
 	mode: DashboardShareMode,
-	/** The link's credential. The viewer URL is `/share/<token>`. */
-	token: Schema.String,
+	/**
+	 * The link's credential. The viewer URL is `/share/<token>`. Absent for a key
+	 * without the "traces:read", "logs:read" and "metrics:read" scopes.
+	 */
+	token: optional(Schema.String),
 	/** Trailing characters of `token`, for naming a link compactly. */
 	tokenSuffix: Schema.String,
 	createdAt: Timestamp,
@@ -387,7 +391,7 @@ export const V2DashboardShare = Schema.Struct({
 		identifier: "DashboardShare",
 		title: "Dashboard share link",
 		description:
-			"A share link for a dashboard, including its `token`. `mode` is `public` (anyone with the link) or `org` (signed-in members of the owning organization).",
+			"A share link for a dashboard, including its `token` when the caller can read the telemetry it serves. `mode` is `public` (anyone with the link) or `org` (signed-in members of the owning organization).",
 	})
 export type V2DashboardShare = Schema.Schema.Type<typeof V2DashboardShare>
 
@@ -719,7 +723,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				identifier: "listDashboardShares",
 				summary: "List a dashboard's share links",
 				description:
-					"Returns every live share on the dashboard — the board's own link, plus one per shared widget, each with its token.",
+					"Returns every live share on the dashboard: the board's own link, plus one per shared widget. Each carries its token when the key has traces:read, logs:read and metrics:read.",
 			}),
 		),
 	)
@@ -806,7 +810,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				identifier: "getDashboardShare",
 				summary: "Retrieve a dashboard's share link",
 				description:
-					"Returns the dashboard's live share link and its token, or `null` when it is not shared.",
+					"Returns the dashboard's live share link, or `null` when it is not shared. The token is included when the key has traces:read, logs:read and metrics:read.",
 			}),
 		),
 	)
