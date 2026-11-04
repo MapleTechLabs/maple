@@ -25,9 +25,10 @@ import { type ClerkRequestError, clerkRequest } from "@maple/backend/services/au
 
 /**
  * A region that can no longer change: chosen, or past the choice window (`REGION_CHOICE_WINDOW_MS`,
- * enforced where the choice is written). A minute of reuse is safe.
+ * enforced where the choice is written), so long reuse is safe. At a minute for both tiers, about
+ * one region read in seven still went to Clerk (2026-11).
  */
-const REGIONS_TTL_MS = 60_000
+const SETTLED_TTL_MS = { isolate: 10 * 60_000, edge: 60 * 60_000 } as const
 /**
  * An organization still inside its choice window may pick EU in onboarding, after which this
  * instance must stop serving it. Short enough to close that window.
@@ -36,7 +37,7 @@ const OPEN_REGION_TTL_MS = 5_000
 
 /**
  * The Workers cache tier, shared by every isolate in a data center, so a fresh isolate can skip
- * the Clerk call. Holds only answers that let this instance serve. Same TTLs as the isolate tier.
+ * the Clerk call. Holds only answers that let this instance serve.
  */
 const REGIONS_CACHE_BUCKET = "org-regions"
 /**
@@ -70,8 +71,12 @@ class RegionNotShared extends Schema.TaggedError<RegionNotShared>()(
 	{ message: Schema.String },
 ) {}
 
-const regionTtlMs = (entry: RegionRead, nowMs: number): number =>
-	organizationRegionOpen(entry.metadata, entry.createdAtMs, nowMs) ? OPEN_REGION_TTL_MS : REGIONS_TTL_MS
+type Tier = keyof typeof SETTLED_TTL_MS
+
+const regionTtlMs = (entry: RegionRead, nowMs: number, tier: Tier): number =>
+	organizationRegionOpen(entry.metadata, entry.createdAtMs, nowMs)
+		? OPEN_REGION_TTL_MS
+		: SETTLED_TTL_MS[tier]
 
 /** Where a region answer came from, for the `cache.layer` span attribute. */
 interface RegionAnswer {
@@ -81,8 +86,8 @@ interface RegionAnswer {
 
 const answer = (entry: RegionRead, layer: RegionAnswer["layer"]): RegionAnswer => ({ entry, layer })
 
-const isFresh = (entry: RegionRead, nowMs: number): boolean =>
-	nowMs - entry.readAtMs < regionTtlMs(entry, nowMs)
+const isFresh = (entry: RegionRead, nowMs: number, tier: Tier): boolean =>
+	nowMs - entry.readAtMs < regionTtlMs(entry, nowMs, tier)
 
 /** The organization fields a region decision needs, as the directory returns them. */
 export interface DirectoryOrganization {
@@ -158,7 +163,9 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 			.rawGetDetailed<unknown>(REGIONS_CACHE_BUCKET, orgId, { readTimeoutMs: SHARED_READ_DEADLINE_MS })
 			.pipe(
 				Effect.map(({ value }) =>
-					Option.filter(Option.flatMap(value, decodeRegionRead), (entry) => isFresh(entry, nowMs)),
+					Option.filter(Option.flatMap(value, decodeRegionRead), (entry) =>
+						isFresh(entry, nowMs, "edge"),
+					),
 				),
 				// A failed read is a miss. Clerk still answers.
 				Effect.orElseSucceed(() => Option.none<RegionRead>()),
@@ -175,7 +182,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 								REGIONS_CACHE_BUCKET,
 								orgId,
 								entry.value,
-								Math.ceil(regionTtlMs(entry.value, entry.value.readAtMs) / 1000),
+								Math.ceil(regionTtlMs(entry.value, entry.value.readAtMs, "edge") / 1000),
 							)
 							.pipe(
 								Effect.catch((error) =>
@@ -289,7 +296,9 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		if (Option.isNone(readOrganization)) return { _tag: "Unreachable" }
 		const nowMs = yield* Clock.currentTimeMillis
 		const rememberedMap = yield* Ref.get(remembered)
-		const local = Option.filter(HashMap.get(rememberedMap, orgId), (entry) => isFresh(entry, nowMs))
+		const local = Option.filter(HashMap.get(rememberedMap, orgId), (entry) =>
+			isFresh(entry, nowMs, "isolate"),
+		)
 		if (Option.isSome(local)) {
 			yield* Effect.annotateCurrentSpan({ "cache.hit": true, "cache.layer": "isolate" })
 			return found(local.value.metadata)

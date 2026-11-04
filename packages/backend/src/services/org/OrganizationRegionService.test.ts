@@ -82,16 +82,32 @@ describe("OrganizationRegionService", () => {
 		}),
 	)
 
-	it.effect("a chosen region expires 60 s after Clerk was read, in every tier", () =>
+	it.effect("a chosen region stays 10 min in the isolate, then comes from the shared cache", () =>
+		Effect.gen(function* () {
+			const backend = makeMemoryBackend()
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			const regions = yield* isolate(backend, directory)
+			yield* regions.ensureServedHere(orgId)
+			yield* TestClock.adjust("9 minutes")
+			yield* regions.ensureServedHere(orgId)
+			// Past the isolate's 10 min, the shared copy (still under its hour) answers.
+			yield* TestClock.adjust("2 minutes")
+			yield* regions.ensureServedHere(orgId)
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+		}),
+	)
+
+	it.effect("a chosen region expires an hour after Clerk was read, in every tier", () =>
 		Effect.gen(function* () {
 			const backend = makeMemoryBackend()
 			const directory = yield* makeDirectory(Option.some(chosen("us")))
 			yield* (yield* isolate(backend, directory)).ensureServedHere(orgId)
-			yield* TestClock.adjust("30 seconds")
+			yield* TestClock.adjust("55 minutes")
 			const second = yield* isolate(backend, directory)
 			yield* second.ensureServedHere(orgId)
-			// The second isolate got the answer at 30 s, but it was read at 0 s.
-			yield* TestClock.adjust("30 seconds")
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+			// The second isolate got the answer at 55 min, but it was read at 0.
+			yield* TestClock.adjust("6 minutes")
 			yield* second.ensureServedHere(orgId)
 			assert.strictEqual(yield* Ref.get(directory.reads), 2)
 		}),

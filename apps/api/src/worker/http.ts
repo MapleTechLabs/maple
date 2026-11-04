@@ -1,3 +1,6 @@
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { AfterResponse } from "@maple/backend/platform/after-response"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
 /**
@@ -134,6 +137,16 @@ export const makeAppGraphs = (isolate: Context.Context<never>, ports: ApiPortsLa
 		}
 	})
 
+/**
+ * The event's `waitUntil`, as the request's after-response runner. Read per event: the isolate
+ * context omits the execution context, so a captured one could never bind another request.
+ */
+const afterResponseOfEvent = Effect.gen(function* () {
+	const execution = yield* Cloudflare.WorkerExecutionContext
+	const runtime = yield* Effect.context<RuntimeContext>()
+	return (work: Effect.Effect<void>) => execution.waitUntil(work).pipe(Effect.provideContext(runtime))
+})
+
 const pathOf = (url: string): string => {
 	const query = url.indexOf("?")
 	return query === -1 ? url : Str.slice(0, query)(url)
@@ -243,8 +256,10 @@ export const makeFetch = (
 				return unavailableResponse(path)
 			}
 
+			const afterResponse = yield* afterResponseOfEvent
 			const response = yield* withPgConnectionScope(built.value).pipe(
 				Effect.tapCause((cause) => recordEscapedCause(request.method, path, cause)),
+				Effect.provideService(AfterResponse, afterResponse),
 			)
 
 			return response
