@@ -5,6 +5,7 @@ import { PageOutMessage, type PageReturn } from "../../contract"
 import { FetchSnapshot, FetchVersions, RestoreVersion } from "./command-history"
 import type { HistoryState } from "./history"
 import { Message } from "./message"
+import { isWriteBlocked } from "./mode"
 import type { Model } from "./model"
 
 // The history panel's steps: open and close, preview a version, restore it.
@@ -110,11 +111,12 @@ export const historyStep = (model: Model, message: HistoryMessage): Return => {
 		case "ClickedCancelPreview":
 			return { model: closePreview(model) }
 		case "ClickedRestoreVersion":
-			return dialogStep(model, Dialog.open(history.restoreDialog))
+			return isWriteBlocked(model) ? { model } : dialogStep(model, Dialog.open(history.restoreDialog))
 		case "GotRestoreDialogMessage":
 			return dialogStep(model, Dialog.update(history.restoreDialog, message.message))
 		case "ConfirmedRestore":
-			return history.previewed === null || history.isRestoring
+			// A restore is a write: off while the board is a snapshot or a write failed.
+			return history.previewed === null || history.isRestoring || isWriteBlocked(model)
 				? { model }
 				: {
 						model: withHistory(model, { isRestoring: true }),

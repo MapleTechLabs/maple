@@ -38,15 +38,21 @@ const makeHarness = (
 		// oxlint-disable-next-line typescript/no-explicit-any
 	} as any)
 
-	// oxlint-disable-next-line typescript/no-explicit-any
-	const warehouse = Layer.succeed(WarehouseQueryService, { rawSqlQuery: die } as any)
+	const rawSql: Array<string> = []
+	const warehouse = Layer.succeed(WarehouseQueryService, {
+		rawSqlQuery: (_tenant: unknown, sql: string) => {
+			rawSql.push(sql)
+			return Effect.succeed([{ value: 1 }])
+		},
+		// oxlint-disable-next-line typescript/no-explicit-any
+	} as any)
 
 	const runtime = ManagedRuntime.make(
 		Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make).pipe(
 			Layer.provide(Layer.mergeAll(queryEngine, warehouse)),
 		),
 	)
-	return { runtime, windows }
+	return { runtime, windows, rawSql }
 }
 
 const document = (widgets: ReadonlyArray<Record<string, unknown>>): DashboardDocument =>
@@ -295,6 +301,131 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 		})
 		// The refused widget never reached the warehouse.
 		expect(windows).toHaveLength(1)
+		await runtime.dispose()
+	})
+
+	const routeWidget = (id: string, endpoint: string) => widget(id, { kind: "route", endpoint, params: {} })
+	const UNSUPPORTED = {
+		ok: false,
+		reason: "unsupported",
+		message: "This widget type can't be read outside the dashboard yet.",
+	}
+
+	it.each([
+		["a key without traces:read", (family: string) => family === "logs"],
+		["a full key", () => true],
+	])("refuses a route with no server plan as unsupported for %s", async (_label, canRead) => {
+		const { runtime, windows } = makeHarness(timeseries)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, document([routeWidget("w-traces", "list_traces")]), {
+					requests: [{ widgetId: "w-traces", source: "primary" }],
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead,
+				}),
+			),
+		)
+
+		// No scope can make this widget readable, so a missing scope is not the answer.
+		expect(results).toEqual([{ widgetId: "w-traces", ...UNSUPPORTED }])
+		expect(windows).toHaveLength(0)
+		await runtime.dispose()
+	})
+
+	it("refuses a servable traces route for a key without traces:read", async () => {
+		const { runtime, windows } = makeHarness(timeseries)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, document([routeWidget("w-overview", "service_overview")]), {
+					requests: [{ widgetId: "w-overview", source: "primary" }],
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead: (family) => family === "logs",
+				}),
+			),
+		)
+
+		expect(results).toEqual([
+			{
+				widgetId: "w-overview",
+				ok: false,
+				reason: "unsupported",
+				message: 'This widget requires the "traces:read" scope.',
+			},
+		])
+		expect(windows).toHaveLength(0)
+		await runtime.dispose()
+	})
+
+	const RAW_SQL = "SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+	const ALL_SCOPES_MESSAGE = 'This widget requires the "traces:read", "metrics:read" scopes.'
+
+	// v1, MCP and imports accept a route-shaped raw SQL source, so it must be gated like the explicit one.
+	it.each([
+		["route-shaped", { kind: "route", endpoint: "raw_sql_chart", params: { sql: RAW_SQL } }],
+		["explicit", { kind: "raw_sql", sql: RAW_SQL }],
+	])("refuses %s raw SQL to a logs-only key without running it", async (_label, dataSource) => {
+		const { runtime, rawSql } = makeHarness(timeseries)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, document([widget("w-sql", dataSource)]), {
+					requests: [{ widgetId: "w-sql", source: "primary" }],
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead: (family) => family === "logs",
+				}),
+			),
+		)
+
+		expect(results).toEqual([
+			{ widgetId: "w-sql", ok: false, reason: "unsupported", message: ALL_SCOPES_MESSAGE },
+		])
+		expect(rawSql).toHaveLength(0)
+		await runtime.dispose()
+	})
+
+	it.each([
+		["route-shaped", { kind: "route", endpoint: "raw_sql_chart", params: { sql: RAW_SQL } }],
+		["explicit", { kind: "raw_sql", sql: RAW_SQL }],
+	])("runs %s raw SQL for a full key", async (_label, dataSource) => {
+		const { runtime, rawSql } = makeHarness(timeseries)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, document([widget("w-sql", dataSource)]), {
+					requests: [{ widgetId: "w-sql", source: "primary" }],
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead: () => true,
+				}),
+			),
+		)
+
+		expect(results[0]).toMatchObject({ widgetId: "w-sql", ok: true })
+		expect(rawSql).toHaveLength(1)
+		await runtime.dispose()
+	})
+
+	it("refuses an endpoint named after an Object prototype key as unsupported", async () => {
+		const { runtime, windows } = makeHarness(timeseries)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, document([routeWidget("w-proto", "constructor")]), {
+					requests: [{ widgetId: "w-proto", source: "primary" }],
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead: () => true,
+				}),
+			),
+		)
+
+		expect(results).toEqual([{ widgetId: "w-proto", ...UNSUPPORTED }])
+		expect(windows).toHaveLength(0)
 		await runtime.dispose()
 	})
 

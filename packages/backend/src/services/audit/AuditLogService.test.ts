@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { AfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
 import { CurrentTenant } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
@@ -161,6 +162,41 @@ describe("AuditLogService (warehouse-backed)", () => {
 			expect(sent[0]).toMatchObject({ orgId: ORG, action: "dashboard.created" })
 			// The consumer performs the write; nothing reaches the warehouse directly.
 			expect(warehouse.ingested).toEqual([])
+		}),
+	)
+
+	it.effect("sends the entry after the response when the request can defer it", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			const sent: unknown[] = []
+			const deferred: Array<Effect.Effect<void>> = []
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "dashboard",
+					action: "dashboard.created",
+				})
+			}).pipe(
+				Effect.provideService(AfterResponse, (work) => Effect.sync(() => deferred.push(work))),
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(
+						Layer.provide(warehouse.layer),
+						Layer.provide(
+							Layer.succeed(AuditEventsQueueProducer, {
+								sendBatch: (messages) =>
+									Effect.sync(() => Arr.forEach(messages, (m) => sent.push(m.body))),
+							}),
+						),
+					),
+				),
+			)
+			// The response is not held for the send.
+			expect(sent).toEqual([])
+			yield* Effect.forEach(deferred, (work) => work, { discard: true })
+			expect(sent).toHaveLength(1)
+			expect(sent[0]).toMatchObject({ orgId: ORG, action: "dashboard.created" })
 		}),
 	)
 

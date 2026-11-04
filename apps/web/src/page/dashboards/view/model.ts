@@ -4,6 +4,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
+import { LoadFailure } from "@maple/views/data/load-failure"
 import { DashboardSearch } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -21,7 +22,7 @@ import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
 // The dashboard view and builder.
 
-export const Status = Schema.Literals(["Loading", "Ready", "Missing"])
+export const Status = Schema.Literals(["Loading", "Ready", "Missing", "Failed"])
 export type Status = typeof Status.Type
 
 /** One tile: lazily revealed (`useInViewportSticky`), measured, and what it asked for. */
@@ -106,11 +107,25 @@ export type KeyboardMove = typeof KeyboardMove.Type
 
 export const SectionTargetSchema = Schema.Struct({ sectionId: Schema.String, tabId: Schema.String })
 
+/**
+ * The HTTP snapshot read while live sync is down: `Shown` is a read-only board the stream
+ * replaces once it delivers, `Failed` holds why the board could not be read at all.
+ */
+export const Snapshot = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("Loading", {}),
+	Schema.TaggedStruct("Shown", {}),
+	Schema.TaggedStruct("Failed", { failure: LoadFailure }),
+])
+export type Snapshot = typeof Snapshot.Type
+
 export const Model = Schema.Struct({
 	dashboardId: Schema.String,
 	search: DashboardSearch,
 	status: Status,
 	document: Schema.NullOr(DashboardDocument),
+	/** The live board never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */
+	snapshot: Snapshot,
 	/** The clock the window is resolved against: read on entry, Reload and a time range change. */
 	nowMs: Schema.NullOr(Schema.Number),
 	/** `PageRefreshProvider.refreshVersion`: 0 snaps the window to the cache grid. */
