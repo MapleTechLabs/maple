@@ -1,3 +1,4 @@
+import { IsoDateTimeString } from "@maple/domain/http"
 import { describe, expect, test } from "vitest"
 import { embedUrl, shareUrl } from "./share"
 
@@ -9,11 +10,11 @@ describe("share links", () => {
 		expect(
 			embedUrl("https://app.maple.dev", "tok", {
 				type: "absolute",
-				startTime: "2026-11-01 00:00:00",
-				endTime: "2026-11-02 00:00:00",
+				startTime: IsoDateTimeString.make("2026-11-01T00:00:00.000Z"),
+				endTime: IsoDateTimeString.make("2026-11-02T00:00:00.000Z"),
 			}),
 		).toBe(
-			"https://app.maple.dev/share/tok?embed=true&from=2026-11-01+00%3A00%3A00&to=2026-11-02+00%3A00%3A00",
+			"https://app.maple.dev/share/tok?embed=true&from=2026-11-01T00%3A00%3A00.000Z&to=2026-11-02T00%3A00%3A00.000Z",
 		)
 	})
 
