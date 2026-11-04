@@ -24,24 +24,27 @@ A half whose names are unset is skipped rather than fatal, as for every connecto
    A bot created before alerts came through it lacks `channels:read`: add it, or its channel list
    answers `auth` and no Hazel channel can be picked.
 2. **Register the install redirect URIs** on the bot (Edit Application → Install redirect URIs):
-   `https://api.maple.dev/oauth/chat/hazel/callback`, the EU instance's equivalent, plus the
-   origin of any other stage that shares this bot. Hazel compares them exactly.
+   `https://api.maple.dev/oauth/chat/hazel/callback`, the EU instance's with its region
+   (`https://<eu api origin>/oauth/chat/hazel/callback?region=eu`), plus the origin of any other
+   stage that shares this bot. Hazel compares them exactly.
 3. **Put the values on the deployment.** The token reaches `chat-bot` and `api`, the id reaches
    `api`, and the EU instance also sets `MAPLE_HAZEL_REGION=eu` on both.
 
 **One bot for every instance.** Hazel's gateway holds one session per bot and region. Each
-instance identifies with its own region (none for US) and puts it on its install links
-(`&region=eu`), so Hazel routes a workspace installed from the EU instance to the EU session
-before the install even exists. A workspace can be installed from one region at a time: Hazel
-refuses a link from another region until the bot is removed there. Its events go only to the EU
-session: EU data never
-passes through the US instance, and neither depends on the other being up. In Hazel the bot is
+instance identifies with its own region (none for US), and its callback carries the region
+(`?region=eu`, `hazelRedirectUri`). That URI is registered on the bot and matched exactly, so
+Hazel routes a workspace installed from the EU instance to the EU session before the install
+even exists, and no edited link can name another region. A workspace can be installed from one
+region at a time: Hazel refuses another region's callback until the bot is removed there. Its
+events go only to the EU session: EU data never passes through the US instance, and neither depends on the other being up. In Hazel the bot is
 the Maple integration (Settings → Integrations → Maple), not an entry in Installed Apps.
 
-Moving an instance onto the shared bot: set its token, id and region, then reconnect its Hazel
-workspaces (Settings → Integrations → Hazel → Connect), which installs the shared bot for the region.
-The instance's saved gateway session and offset belong to its old bot's log: clear them when
-switching, so its first session on the shared bot identifies from new events (`now`).
+Moving an instance onto the shared bot: deploy Hazel with regional install support first. Then set
+the instance's token, id and region, and clear its saved gateway session and offset (they belong to
+the old bot's log) before reconnecting its Hazel workspaces (Settings → Integrations → Hazel →
+Connect), which installs the shared bot for the region. The chat-bot reconnects on its own, so do
+not count on the instance staying disconnected meanwhile; its first session on the shared bot
+identifies from new events (`now`).
 
 ## Trying it end to end
 

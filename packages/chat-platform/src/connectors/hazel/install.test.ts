@@ -5,7 +5,7 @@ import type { ChatConnectorConfig } from "../../install"
 import { BOT_ID_CONFIG, BOT_TOKEN_CONFIG, REGION_CONFIG } from "./api"
 import { isConnectorConfigured } from "../../index"
 import { hazel } from "./index"
-import { hazelInstall, hazelInstallUrl } from "./install"
+import { hazelInstall, hazelInstallUrl, hazelRedirectUri } from "./install"
 
 const config: ChatConnectorConfig = new Map([
 	[BOT_ID_CONFIG, Redacted.make("bot-1")],
@@ -56,24 +56,31 @@ describe("hazel install", () => {
 		expect(isConnectorConfigured(hazel, new Map([[BOT_ID_CONFIG, Redacted.make("bot-1")]]))).toBe(false)
 	})
 
-	it("names this instance's region on the link, so Hazel routes the workspace to it", () => {
-		const url = new URL(hazelInstallUrl("bot-1", { state: "nonce", redirectUri, region: "eu" }))
-		expect(url.searchParams.get("region")).toBe("eu")
-		expect(
-			new URL(hazelInstallUrl("bot-1", { state: "nonce", redirectUri })).searchParams.has("region"),
-		).toBe(false)
-	})
-
-	it.effect("builds the link with the deployment's region", () =>
-		Effect.gen(function* () {
-			const link = yield* hazelInstall.authorizeUrl({
-				config: new Map([...config, [REGION_CONFIG, Redacted.make("eu")]]),
-				state: "nonce",
+	it.effect("names this instance's region in its callback, on the link and the redemption", () => {
+		const http = stub(
+			200,
+			JSON.stringify({ organizationId: "org-1", organizationName: "Acme", installedBy: "u" }),
+		)
+		const regional = new Map([...config, [REGION_CONFIG, Redacted.make("eu")]])
+		const regionalUri = `${redirectUri}?region=eu`
+		return Effect.gen(function* () {
+			const link = new URL(
+				yield* hazelInstall.authorizeUrl({ config: regional, state: "nonce", redirectUri }),
+			)
+			expect(link.searchParams.get("redirect_uri")).toBe(regionalUri)
+			expect(link.searchParams.has("region")).toBe(false)
+			yield* hazelInstall.complete({
+				config: regional,
+				params: new URLSearchParams({ code: "org-1.secret", state: "nonce", region: "eu" }),
 				redirectUri,
 			})
-			expect(new URL(link).searchParams.get("region")).toBe("eu")
-		}),
-	)
+			expect(sentBody(http.seen[0]!)).toEqual({ code: "org-1.secret", redirectUri: regionalUri })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it("leaves the callback alone without a region", () => {
+		expect(hazelRedirectUri(redirectUri, config)).toBe(redirectUri)
+	})
 
 	it.effect("redeems the code with the bot's own token for the workspace it names", () => {
 		const http = stub(
