@@ -7,7 +7,7 @@ import {
 	parseMergeStepTicks,
 	type PullRequestFile,
 } from "@maple/domain/http"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	buildChecklist,
@@ -133,8 +133,7 @@ describe("detectMergeSteps", () => {
 	})
 
 	it("skips names only a test run reads, by whole TEST or E2E token", () => {
-		const read = (name: string) =>
-			file("src/checkout.ts", `@@ -1 +1 @@\n+const v = process.env.${name}`)
+		const read = (name: string) => file("src/checkout.ts", `@@ -1 +1 @@\n+const v = process.env.${name}`)
 		assert.deepEqual(
 			names([
 				read("STRIPE_E2E_TEST_SECRET_KEY"),
@@ -309,7 +308,10 @@ describe("the Before merge section", () => {
 			body,
 			`- [ ] **Secret** · Add secret \`STRIPE_KEY\` to every environment · [\`src/env.ts:1\`](https://github.com/acme/shop/blob/${Str.repeat(40)("a")}/src/env.ts#L1)`,
 		)
-		assert.isBelow(body.indexOf("Adds Stripe webhooks."), body.indexOf("### Before merge"))
+		assert.isBelow(
+			Option.getOrElse(Str.indexOf("Adds Stripe webhooks.")(body), () => -1),
+			Option.getOrElse(Str.indexOf("### Before merge")(body), () => -1),
+		)
 	})
 })
 
