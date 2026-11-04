@@ -19,6 +19,7 @@ import {
 } from "../kit/portable"
 import {
 	awaitTxid,
+	DashboardConflictError,
 	DashboardUnreadableError,
 	deleteDashboard,
 	errorMessageOf,
@@ -138,7 +139,12 @@ export const refusalMessageOf = (error: unknown, depth = 0): Option.Option<strin
 /** The API refused this write (anywhere down the `cause` chain): the store itself is still healthy. */
 export const isRejected = (error: unknown, depth = 0): boolean => {
 	if (depth > 5 || typeof error !== "object" || error === null) return false
-	if (error instanceof DashboardUnreadableError || isRefusalEnvelope(error)) return true
+	if (
+		error instanceof DashboardUnreadableError ||
+		error instanceof DashboardConflictError ||
+		isRefusalEnvelope(error)
+	)
+		return true
 	return "cause" in error && isRejected(error.cause, depth + 1)
 }
 
