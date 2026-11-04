@@ -471,7 +471,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 						commands: [SetPrReview({ repositoryId, fullName, isEnabled })],
 					},
-		CompletedSetPrReview: ({ repositoryId, fullName, isEnabled, result }) => {
+		CompletedSetPrReview: ({ repositoryId, result }) => {
 			const busy = Arr.filter(model.busy, (id) => id !== repositoryId)
 			if (result._tag === "Failure")
 				return {
@@ -488,15 +488,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						result.failure.message,
 					),
 				}
-			return {
-				...readStatus({ ...model, busy }, context, "Supersede"),
-				outMessage: toast(
-					"success",
-					isEnabled
-						? `Maple will review pull requests on ${fullName}`
-						: `Reviews off for ${fullName}`,
-				),
-			}
+			// No success toast: the switch already shows the state, and a toast over the
+			// bottom-right rows (held open while hovered) blocks toggling the next repo.
+			return readStatus({ ...model, busy }, context, "Supersede")
 		},
 		ClickedConfigure: ({ repositoryId }) => {
 			const isSameRepo = model.configuring === repositoryId

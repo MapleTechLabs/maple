@@ -23,6 +23,8 @@ import { registerAuditSetupTool } from "./audit-setup"
 import { registerListIntegrationsTool } from "./list-integrations"
 import { registerListSecurityFindingsTool } from "./list-security-findings"
 import { registerInspectSecurityFindingTool } from "./inspect-security-finding"
+import { registerListSecurityAuditRunsTool } from "./list-security-audit-runs"
+import { registerInspectSecurityAuditRunTool } from "./inspect-security-audit-run"
 import { registerListSourcesTool } from "./list-sources"
 import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
@@ -448,6 +450,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerListIntegrationsTool(registrar)
 	registerListSecurityFindingsTool(registrar)
 	registerInspectSecurityFindingTool(registrar)
+	registerListSecurityAuditRunsTool(registrar)
+	registerInspectSecurityAuditRunTool(registrar)
 	registerListSourcesTool(registrar)
 	registerCiRunsTool(registrar)
 	registerCompareCommitsTool(registrar)

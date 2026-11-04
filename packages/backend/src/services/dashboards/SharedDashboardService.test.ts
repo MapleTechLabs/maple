@@ -104,7 +104,7 @@ const createDashboard = (
 	runtime.runPromise(
 		Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const dashboard = yield* persistence.create(
+			const { document: dashboard } = yield* persistence.create(
 				orgId,
 				userId,
 				new PortableDashboardDocument({

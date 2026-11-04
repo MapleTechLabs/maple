@@ -1,5 +1,5 @@
 import { DashboardDocument, DashboardId, DashboardVersionId } from "@maple/domain/http"
-import type { V2Dashboard } from "@maple/domain/http/v2"
+import type { V2DashboardVersionDetail } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -14,7 +14,7 @@ const decodeVersionId = Schema.decodeUnknownEffect(DashboardVersionId)
 const decodeDocument = Schema.decodeUnknownEffect(DashboardDocument)
 
 /** A version's snapshot read as the board document the canvas renders. */
-export const documentOf = (snapshot: V2Dashboard) =>
+export const documentOf = (snapshot: V2DashboardVersionDetail["snapshot"]) =>
 	decodeDocument({
 		id: snapshot.id,
 		name: snapshot.name,

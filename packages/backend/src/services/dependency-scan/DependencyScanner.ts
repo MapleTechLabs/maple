@@ -127,7 +127,7 @@ export class DependencySources extends Context.Service<
 	).pipe(Layer.provide(VcsProviderRegistry.layer))
 }
 
-const TREE_TOO_LARGE = "The repository tree is too large to list in one read"
+const TREE_TOO_LARGE = "The repository tree is too large to list, even directory by directory"
 
 interface ReadLockfile {
 	readonly lockfile: DependencyScanLockfile
