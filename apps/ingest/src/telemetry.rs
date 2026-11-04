@@ -1159,20 +1159,20 @@ impl TelemetryPipeline {
                 let queued_bytes = frame.payload.len() as u64;
                 self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)
                     .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
-                let datasource = frame.datasource.clone();
-                let encoded = encode_wal_frame(&frame).map_err(|error| {
-                    record_failing_frame(shard, lane, &datasource);
-                    PipelineError::QueueUnavailable(error)
-                })?;
                 // The delivery owns the reservation: it commits when the frame
-                // reaches the lane, and dropping the delivery instead (a refused
-                // or failed append) releases it.
+                // reaches the lane, and dropping it instead (a failed encode, or a
+                // refused or failed append) releases it.
                 let reservation = OrgBytesReservation {
                     counters: Arc::clone(&self.inner.org_queue_bytes),
                     org_id: frame.org_id.clone(),
                     bytes: queued_bytes,
                     committed: false,
                 };
+                let datasource = frame.datasource.clone();
+                let encoded = encode_wal_frame(&frame).map_err(|error| {
+                    record_failing_frame(shard, lane, &datasource);
+                    PipelineError::QueueUnavailable(error)
+                })?;
                 let deliver =
                     queued_delivery(frame, shard, permit, reservation, source_span.clone());
                 let appended = self
