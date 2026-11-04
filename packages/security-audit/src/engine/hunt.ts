@@ -208,7 +208,7 @@ const informative = (value: unknown, key: string) =>
 
 /**
  * A compact ledger for the critic: every unit and block map, without check prose, owners,
- * bookkeeping or empty fields. `coverage_id` is its canonical refs encoded, so a short alias
+ * scheduling bookkeeping (`priority`, `failed_attempts`) or empty fields. `coverage_id` is its canonical refs encoded, so a short alias
  * stands in for it. A 150-unit ledger was 113k tokens with all of it.
  */
 export const criticLedger = (ledger: ReadonlyArray<LedgerUnit>) =>
@@ -234,6 +234,8 @@ export const criticLedger = (ledger: ReadonlyArray<LedgerUnit>) =>
 				result_fingerprints: unit.result_fingerprints,
 				carried_fingerprint: unit.carried_fingerprint,
 				resolved_prior_leads: unit.resolved_prior_leads,
+				not_rechecked: unit.not_rechecked,
+				decisions: unit.decisions,
 				unresolved: unit.unresolved,
 				attempts: unit.attempts.length,
 			} satisfies Record<string, unknown>,

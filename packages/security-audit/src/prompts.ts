@@ -383,7 +383,7 @@ export const criticPrompt = (input: CriticInput, context: AgentContext): string 
 			VERBATIM.coverageCritic,
 			`## architecture.md\n\n${input.architectureMd}`,
 			...repoTreeSection(input.repoTree),
-			`## Coverage ledger\n\nOne unit per line. Each unit's \`id\` is the name to use in \`reassign_ids\`; fields that are empty, null or unchanged from a new unit are left out.\n\n${encodeData(input.ledger)}`,
+			`## Coverage ledger\n\nOne unit per line. Each unit's \`id\` is the name to use in \`reassign_ids\`; left out are each unit's owner (\`agent_id\`), its scheduling (\`priority\`, \`failed_attempts\`), check prose (only each check's invariant is listed, as \`checks\`), archived attempts (only their count), and any field that is empty, null or unchanged from a new unit (\`prior_status\` none, \`wave\` 1, no attempts).\n\n${encodeData(input.ledger)}`,
 			`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : encodeData(input.candidateStates)}`,
 			`## Prior-ledger gaps\n\n${input.priorGapSummary}`,
 			`## Surfaces hunters reported as uncovered\n\n${input.hunterUncovered.length === 0 ? "None." : encodeData(input.hunterUncovered)}\nAccept each one that is a real, unmapped coverage gap as a missing unit; ignore the rest.`,
