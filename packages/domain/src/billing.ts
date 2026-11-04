@@ -111,6 +111,11 @@ export interface FeatureUsagePricing {
 	 * it per feature on the customer's balances.
 	 */
 	readonly overageAllowed?: boolean
+	/**
+	 * The org's overage cap for this feature, in units past the allotment. Usage
+	 * beyond it is rejected at the gateway, so it bounds both spend and projection.
+	 */
+	readonly overageLimit?: number | undefined
 }
 
 export interface CycleSpend {
@@ -139,11 +144,12 @@ export const meteredUsage = (
 	aggregate: number | null | undefined,
 ): number => balance?.usage ?? aggregate ?? 0
 
-/** Units of `feature` beyond its included allotment. Never negative. */
+/** Units of `feature` beyond its included allotment, up to its overage cap. Never negative. */
 export function overageUnits(feature: FeatureUsagePricing): number {
 	if (feature.unlimited) return 0
 	if (feature.included == null) return 0
-	return Math.max(0, feature.used - feature.included)
+	const over = Math.max(0, feature.used - feature.included)
+	return feature.overageLimit === undefined ? over : Math.min(over, Math.max(0, feature.overageLimit))
 }
 
 /** Can this feature bill past its allotment at all? */
