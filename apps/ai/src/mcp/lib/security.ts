@@ -7,7 +7,14 @@ import { DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
 import type { DependencyFindingId } from "@maple/domain/dependency-scan"
-import type { SecurityArea, SecurityFindingRow, SecuritySeverity } from "@maple/domain/mcp-outputs"
+import type {
+	SecurityArea,
+	SecurityAuditRunSummary,
+	SecurityFindingRow,
+	SecurityRepositoryCoverage,
+	SecuritySeverity,
+} from "@maple/domain/mcp-outputs"
+import { aiCreditsUsd } from "@maple/domain/billing"
 import {
 	advisoryKey,
 	advisoryTargetOf,
@@ -28,7 +35,11 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { isAdmin } from "@maple/backend/services/auth/auth"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import {
+	type SecurityAuditOrgStore,
+	type SecurityAuditRunFindingCounts,
+	SecurityAuditStore,
+} from "@maple/backend/services/security-audit/SecurityAuditStore"
 import {
 	DependencyScanReader,
 	FINDINGS_LIMIT,
@@ -72,7 +83,9 @@ export interface CodeTarget {
 export type CodeRead = { readonly _tag: "read"; readonly targets: ReadonlyArray<CodeTarget> } | AreaGate
 
 /** A lead is ranked by its estimate; one stored before the engine estimated reads as unknown. */
-export const codeSeverityOf = (row: SecurityAuditFindingRow): SecuritySeverity =>
+export const codeSeverityOf = (
+	row: Pick<SecurityAuditFindingRow, "verdict" | "overallSeverity" | "estimatedSeverity">,
+): SecuritySeverity =>
 	row.verdict === "confirmed"
 		? (row.overallSeverity ?? "unknown")
 		: row.verdict === "needs_validation"
@@ -129,6 +142,61 @@ export const readCode = (tenant: TenantContext) =>
 			),
 		),
 	)
+
+/** The org's audit store once the audit is enabled; `admin` says whether findings may be read. */
+export type AuditAccess =
+	| { readonly _tag: "read"; readonly store: SecurityAuditOrgStore; readonly admin: boolean }
+	| Extract<AreaGate, { readonly _tag: "not_enabled" }>
+
+export const auditAccess = (tenant: TenantContext) =>
+	Effect.gen(function* () {
+		const flags = yield* (yield* OrganizationFeatureFlagsService).flags(tenant.orgId)
+		if (!flags.securityAudit) {
+			return {
+				_tag: "not_enabled",
+				message: "The code security audit is not enabled for this organization.",
+			} satisfies AuditAccess
+		}
+		return {
+			_tag: "read",
+			store: (yield* SecurityAuditStore).forOrg(tenant.orgId),
+			admin: isAdmin(tenant.roles),
+		} satisfies AuditAccess
+	})
+
+/** A run as the tools show it; `counts` is absent for a caller who may not read findings. */
+export const runSummaryOf = (
+	run: SecurityAuditRunRow,
+	target: Pick<SecurityAuditTargetRow, "repository" | "branch"> | undefined,
+	counts: SecurityAuditRunFindingCounts | undefined,
+): SecurityAuditRunSummary => ({
+	runId: run.id,
+	repository: target?.repository ?? "(deleted target)",
+	branch: target?.branch ?? "",
+	kind: run.kind,
+	status: run.status,
+	sourceRef: run.sourceRef,
+	startedAt: isoOf(run.startedAt),
+	finishedAt: run.finishedAt === null ? null : isoOf(run.finishedAt),
+	durationMinutes: run.finishedAt === null ? null : Math.round((run.finishedAt - run.startedAt) / 60_000),
+	stopReason: run.incompleteReason ?? run.error,
+	agentInvocations: run.invocationsSpent,
+	budget: run.budget,
+	costUsd:
+		run.costUsd === null ? null : Math.round((aiCreditsUsd(run.costUsd) + run.sandboxUsd) * 100) / 100,
+	findings:
+		counts === undefined
+			? null
+			: {
+					critical: counts.critical,
+					high: counts.high,
+					medium: counts.medium,
+					low: counts.low,
+					informational: counts.informational,
+					leads: counts.unverified + counts.needsValidation,
+					rejected: counts.rejected,
+				},
+})
 
 const firstLocation = (row: SecurityAuditFindingRow): string => {
 	const sink = row.record.trace.find((step) => step.kind === "sink") ?? row.record.trace[0]
@@ -918,4 +986,103 @@ export const runtimeArea = (read: RuntimesRead | AreaGate): AreaResult => {
 				? []
 				: [`Not checked for CVEs this time: ${Arr.join(read.skipped, ", ")}.`],
 	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// Repositories: what audits and scans each one, and whether a filtered one was ever read
+
+/** Every audited or connected repository with its latest audit run and dependency scan. */
+export const repositoryCoverage = (
+	code: CodeRead | undefined,
+	dependencies: DependencyRead | undefined,
+): ReadonlyArray<SecurityRepositoryCoverage> => {
+	const targets = code?._tag === "read" ? code.targets : []
+	const repos = dependencies?._tag === "read" ? dependencies.repositories : []
+	const names = Arr.dedupe([
+		...Arr.map(targets, ({ target }) => target.repository),
+		...Arr.map(repos, (repo) => repo.fullName),
+	])
+	const sameName = (a: string, b: string) => Str.toLowerCase(a) === Str.toLowerCase(b)
+	return Arr.flatMap(names, (name, i): ReadonlyArray<SecurityRepositoryCoverage> => {
+		// Keep the first spelling of each name.
+		if (names.findIndex((other) => sameName(other, name)) !== i) return []
+		// One target per branch: show the branch that ran last (a run beats none), else the first.
+		const audited = Arr.filter(targets, ({ target }) => sameName(target.repository, name)).reduce<
+			CodeTarget | undefined
+		>(
+			(best, next) =>
+				best === undefined ||
+				(next.latestRun !== undefined &&
+					(best.latestRun === undefined || next.latestRun.startedAt > best.latestRun.startedAt))
+					? next
+					: best,
+			undefined,
+		)
+		const repo = repos.find((r) => sameName(r.fullName, name))
+		const run = audited?.latestRun
+		const scan = repo?.latestScan ?? null
+		return [
+			{
+				repository: name,
+				// No target at all is known, not unreadable.
+				auditReadable: code?._tag === "read" || code?._tag === "not_connected",
+				audit:
+					audited === undefined
+						? null
+						: {
+								branch: audited.target.branch,
+								enabled: audited.target.enabled,
+								lastRunId: run?.id ?? null,
+								lastRunStatus: run?.status ?? null,
+								lastRunAt: run === undefined ? null : isoOf(run.finishedAt ?? run.startedAt),
+								lastRunStopReason:
+									run === undefined ? null : (run.incompleteReason ?? run.error),
+							},
+				dependencyScan:
+					repo === undefined
+						? null
+						: {
+								status: scan?.status ?? null,
+								at: scan === null ? null : isoOf(scan.finishedAt ?? scan.startedAt),
+								commit: scan === null ? null : Str.slice(0, 12)(scan.commitSha),
+							},
+			},
+		]
+	})
+}
+
+/**
+ * Why a repository filter read nothing in a code or dependency area: the repository was never
+ * audited or scanned, or is not set up at all. Undefined when it was read, so its empty area is clear.
+ */
+export const unreadRepository = (
+	area: "code" | "dependencies",
+	repository: string,
+	coverage: ReadonlyArray<SecurityRepositoryCoverage>,
+): { readonly state: "not_scanned" | "not_connected"; readonly note: string } | undefined => {
+	const row = coverage.find((r) => Str.toLowerCase(r.repository) === Str.toLowerCase(repository))
+	if (area === "code") {
+		if (row === undefined || row.audit === null)
+			return {
+				state: "not_connected",
+				note: `${repository} is not set up for the code audit, so no code finding is not the same as clear.`,
+			}
+		return row.audit.lastRunId === null
+			? {
+					state: "not_scanned",
+					note: `${repository} has never been audited, so no code finding is not the same as clear.`,
+				}
+			: undefined
+	}
+	if (row === undefined || row.dependencyScan === null)
+		return {
+			state: "not_connected",
+			note: `${repository} is not a connected GitHub repository, so its lockfiles are not scanned.`,
+		}
+	return row.dependencyScan.status === null
+		? {
+				state: "not_scanned",
+				note: `${repository} has never had a dependency scan, so no dependency finding is not the same as clear.`,
+			}
+		: undefined
 }
