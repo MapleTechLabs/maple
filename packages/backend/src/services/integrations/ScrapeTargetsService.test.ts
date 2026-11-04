@@ -184,6 +184,27 @@ describe("ScrapeTargetsService", () => {
 			yield* create("org_other", "node")
 			yield* service.delete(asOrgId("org_full"), full[0]!.id)
 			yield* create("org_full", "replacement")
+
+			// Integration-owned rows are bounded by their integration: not counted, not refused.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1",
+					[full[1]!.id],
+				),
+			)
+			yield* create("org_full", "after-managed")
+			yield* service.create(
+				asOrgId("org_full"),
+				new CreateScrapeTargetRequest({
+					name: "PlanetScale (acme)",
+					targetType: "planetscale",
+					organization: "acme",
+					authType: "planetscale_oauth",
+					enabled: false,
+				}),
+				{ allowManaged: true },
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

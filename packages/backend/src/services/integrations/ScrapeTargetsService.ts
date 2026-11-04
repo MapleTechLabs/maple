@@ -159,7 +159,8 @@ export const summarizeScrapeResults = (
  * Mutation options for the scrape-target write paths. Integration-owned rows
  * (`managedBy` set) are refused by default so a generic `scrape_targets:write`
  * caller cannot delete, disable, or re-credential a row an integration owns;
- * the owning integration passes `allowManaged` for its own writes.
+ * the owning integration passes `allowManaged` for its own writes. On create it
+ * marks the row as one the integration will own, which the per-org limit skips.
  */
 export interface ScrapeTargetMutationOptions {
 	readonly allowManaged?: boolean
@@ -182,6 +183,7 @@ export interface ScrapeTargetsServiceApi {
 	readonly create: (
 		orgId: OrgId,
 		request: CreateScrapeTargetRequest,
+		options?: ScrapeTargetMutationOptions,
 	) => Effect.Effect<
 		ScrapeTargetResponse,
 		| ScrapeTargetValidationError
@@ -300,8 +302,9 @@ const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const ScrapeLabelsSchema = Schema.Record(Schema.String, Schema.String)
 
 /**
- * Targets one org may hold, enabled or not. Every org's scrapes share one
- * scraper, so this bounds any one org's share of its work.
+ * User-created targets one org may hold, enabled or not. Every org's scrapes
+ * share one scraper; this keeps one org from registering targets without bound.
+ * Integration-owned rows are bounded by their integration and not counted.
  */
 export const MAX_SCRAPE_TARGETS_PER_ORG = 50
 
@@ -719,6 +722,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const create = Effect.fn("ScrapeTargetsService.create")(function* (
 				orgId: OrgId,
 				request: CreateScrapeTargetRequest,
+				options?: ScrapeTargetMutationOptions,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const targetType = request.targetType ?? "prometheus"
@@ -820,17 +824,19 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const inserted = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							// Counted under a per-org lock, so concurrent creates cannot both take the last slot.
-							yield* db.execute(
-								Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('scrape_targets'))`,
-							)
-							const existing = yield* db.run(
-								PG.from(ScrapeTargets)
-									.select(() => ({ count: PG.count() }))
-									.where(($) => [$.orgId.eq(orgId)]),
-							)
-							if (Number(existing[0]?.count ?? 0) >= MAX_SCRAPE_TARGETS_PER_ORG) {
-								return yield* targetLimitReached()
+							if (options?.allowManaged !== true) {
+								// Counted under a per-org lock, so concurrent creates cannot both take the last slot.
+								yield* db.execute(
+									Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('scrape_targets'))`,
+								)
+								const existing = yield* db.run(
+									PG.from(ScrapeTargets)
+										.select(() => ({ count: PG.count() }))
+										.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
+								)
+								if (Number(existing[0]?.count ?? 0) >= MAX_SCRAPE_TARGETS_PER_ORG) {
+									return yield* targetLimitReached()
+								}
 							}
 							const sourceId = yield* createIntegrationSource(
 								db,

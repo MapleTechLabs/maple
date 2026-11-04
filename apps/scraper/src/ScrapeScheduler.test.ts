@@ -7,7 +7,7 @@ import { ScraperEnv, type ScraperEnvConfig } from "./Env"
 import { DELIVERY_BLOCKED_BACKOFF, startJitterMs } from "./policy"
 import { ResultReporter } from "./ResultReporter"
 import { scrapeError, type ScrapeError, type ScrapeFailureReason } from "./ScrapeError"
-import { ORG_SCRAPE_PERMITS, ScrapeScheduler, StartJitter } from "./ScrapeScheduler"
+import { orgScrapePermits, ScrapeScheduler, StartJitter } from "./ScrapeScheduler"
 import type { OtlpExportRequest } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
 import { Scraper } from "./Scraper"
@@ -398,7 +398,7 @@ describe("ScrapeScheduler", () => {
 				// Queued behind twelve 9s scrapes on one shared pool, it would wait until t=9.
 				assert.strictEqual(scrapesOf(harness, TARGET_B), 1)
 				yield* TestClock.adjust(Duration.seconds(30))
-				assert.strictEqual(peak, ORG_SCRAPE_PERMITS)
+				assert.strictEqual(peak, orgScrapePermits(testEnv.SCRAPER_CONCURRENCY))
 				// t=0, 10, 20, 30: its cadence holds while the busy org stays capped.
 				assert.strictEqual(scrapesOf(harness, TARGET_B), 4)
 			}),

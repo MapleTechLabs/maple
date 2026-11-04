@@ -39,10 +39,11 @@ export interface ScrapeSchedulerApi {
 const STALE_RECONCILES = 3
 
 /**
- * Scrape permits one org may hold at once. All orgs share the scraper's pool,
- * so without this one org's slow targets could hold every permit.
+ * Scrape permits one org may hold at once out of `total`. All orgs share the
+ * scraper's pool, so without this one org's slow targets could hold every
+ * permit. A fifth of the pool, and at least 2: 2 at the default of 10.
  */
-export const ORG_SCRAPE_PERMITS = 2
+export const orgScrapePermits = (total: number): number => Math.max(2, Math.floor(total / 5))
 
 /** Start offset for a new loop. A reference so tests can pin cadence to t=0. */
 export class StartJitter extends Context.Reference<(key: string, baseMs: number) => number>(
@@ -129,11 +130,12 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 			const startJitter = yield* StartJitter
 
 			const sharedPermits = yield* Semaphore.make(env.SCRAPER_CONCURRENCY)
+			const perOrg = orgScrapePermits(env.SCRAPER_CONCURRENCY)
 			const orgPermits = new Map<string, Semaphore.Semaphore>()
 			// The org's permit first: a scrape queued behind its own org's cap holds no shared one.
 			const permitFor = (orgId: string) =>
 				Effect.sync((): ScrapePermit => {
-					const org = orgPermits.get(orgId) ?? Semaphore.makeUnsafe(ORG_SCRAPE_PERMITS)
+					const org = orgPermits.get(orgId) ?? Semaphore.makeUnsafe(perOrg)
 					orgPermits.set(orgId, org)
 					return (effect) => org.withPermits(1)(sharedPermits.withPermits(1)(effect))
 				})
