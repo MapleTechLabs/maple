@@ -15,6 +15,8 @@ import {
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import { AlertRuleId } from "@maple/domain/primitives"
+import { alertChartId } from "@maple/db"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -1366,6 +1368,32 @@ describe("v2 share previews", () => {
 		})
 		expect(forged.status).toBe(404)
 
+		await harness.dispose()
+	})
+})
+
+describe("v2 alert chart images", () => {
+	it("answers a warehouse that cannot serve the series with a retryable 503, not a missing chart", async () => {
+		const harness = makeHarness()
+		const chartId = alertChartId(
+			{
+				orgId: harness.ORG,
+				ruleId: Schema.decodeSync(AlertRuleId)("00000000-0000-4000-8000-000000000001"),
+				groupKey: null,
+				fromMs: Date.UTC(2026, 7, 18, 13, 0),
+				toMs: Date.UTC(2026, 7, 18, 14, 0),
+				title: "Error rate",
+				unit: "percent",
+				threshold: 5,
+				breachSide: "above",
+			},
+			"maple-test-share-secret",
+		)
+
+		// The harness warehouse refuses every query, as an outage or timeout would.
+		const response = await harness.request("POST", "/v2/share/alert-chart", undefined, { chartId })
+		expect(response.status).toBe(503)
+		expect(response.body.error._tag).toBe("@maple/http/errors/SharePersistenceError")
 		await harness.dispose()
 	})
 })
