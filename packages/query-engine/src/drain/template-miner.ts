@@ -3,7 +3,7 @@ import { Drain, type FullSearchStrategy } from "./drain"
 import { LogCluster } from "./log-cluster"
 import { LruCache } from "./lru-cache"
 import { LogMasker, MaskingInstruction } from "./masking"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 export interface ExtractedParameter {
 	value: string
@@ -84,14 +84,15 @@ export class TemplateMiner {
 			exactMatching,
 		)
 
-		const parameterMatch = message.match(new RegExp(templateRegex))
-		if (!parameterMatch || !parameterMatch.groups) {
+		const parameterMatch = Str.match(new RegExp(templateRegex))(message)
+		if (Option.isNone(parameterMatch) || !parameterMatch.value.groups) {
 			return null
 		}
+		const groups = parameterMatch.value.groups
 
 		const extracted: ExtractedParameter[] = []
 		for (const [groupName, maskName] of paramMap) {
-			const value = parameterMatch.groups[groupName]
+			const value = groups[groupName]
 			if (value !== undefined) {
 				extracted.push({ value, maskName })
 			}
@@ -100,8 +101,8 @@ export class TemplateMiner {
 		// Sort by position in input string (left-to-right) to match Python Drain3 behavior,
 		// which depends on CPython's set iteration order for mask name processing.
 		extracted.sort((a, b) => {
-			const posA = message.indexOf(a.value)
-			const posB = message.indexOf(b.value)
+			const posA = Option.getOrElse(Str.indexOf(a.value)(message), () => -1)
+			const posB = Option.getOrElse(Str.indexOf(b.value)(message), () => -1)
 			return posA - posB
 		})
 

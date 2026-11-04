@@ -129,5 +129,8 @@ export function dashboardVariableOptionsFromResult(
 	}
 	if (result.kind !== "facets") return []
 	const rows = Arr.filter(result.data, (row) => row.facetType === query.facet)
-	return Arr.map(query.source === "logs" ? rows.filter((row) => row.name) : rows, (row) => row.name)
+	return Arr.map(
+		query.source === "logs" ? Arr.filter(rows, (row) => row.name !== "") : rows,
+		(row) => row.name,
+	)
 }

@@ -16,7 +16,7 @@ import {
 	type ServiceEndpointsWithHttpOpts,
 	type ServiceEndpointsWithHttpOutput,
 } from "./service-api"
-import { String as Str } from "effect"
+import { String as Str, Option } from "effect"
 
 export type ServiceEndpointsSummaryOpts = Omit<ServiceEndpointsWithHttpOpts, "tiers">
 
@@ -51,7 +51,14 @@ export interface EndpointName {
  * so a malformed row renders as a route rather than throwing.
  */
 export function splitEndpointName(spanName: string): EndpointName {
-	const separator = spanName.indexOf(" ")
-	if (separator <= 0) return { method: "", route: spanName }
-	return { method: Str.slice(0, separator)(spanName), route: Str.slice(separator + 1)(spanName) }
+	return Option.match(
+		Option.filter(Str.indexOf(" ")(spanName), (separator) => separator > 0),
+		{
+			onNone: () => ({ method: "", route: spanName }),
+			onSome: (separator) => ({
+				method: Str.slice(0, separator)(spanName),
+				route: Str.slice(separator + 1)(spanName),
+			}),
+		},
+	)
 }

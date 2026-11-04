@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, String as Str } from "effect"
+import { DateTime, Effect, String as Str, Option } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	webAnalyticsAiCrawledPagesQuery,
@@ -80,9 +80,9 @@ describe("AI crawler queries", () => {
 
 	it("classifies Markdown and llms.txt ahead of HTML", () => {
 		const flat = oneLine(compileUnsafe(webAnalyticsAiCrawlerFormatsQuery({}), params).sql)
-		const markdown = flat.indexOf("'markdown'")
-		const llms = flat.indexOf("'llms'")
-		const html = flat.indexOf("'html'")
+		const markdown = Option.getOrThrow(Str.indexOf("'markdown'")(flat))
+		const llms = Option.getOrThrow(Str.indexOf("'llms'")(flat))
+		const html = Option.getOrThrow(Str.indexOf("'html'")(flat))
 		expect(markdown).toBeGreaterThan(-1)
 		expect(markdown).toBeLessThan(llms)
 		expect(llms).toBeLessThan(html)

@@ -485,8 +485,9 @@ WHERE name = 'enable_full_text_index'`,
 		// `compile()` now refuses to leave a placeholder behind, so this only fires
 		// for SQL that reached the executor without going through it — a raw
 		// template, or a splice compiled with `deferParams` that nothing resolved.
-		const leftoverParam = sql.match(/__PARAM_[A-Za-z]+_(\w+)__/)
-		if (leftoverParam) {
+		const leftoverMatch = Str.match(/__PARAM_[A-Za-z]+_(\w+)__/)(sql)
+		if (Option.isSome(leftoverMatch)) {
+			const leftoverParam = leftoverMatch.value
 			// An unresolved placeholder means the SQL reached the executor without
 			// going through `compile()` — a bug in Maple's own query construction. No
 			// request could be rewritten to avoid it and no caller could handle it.

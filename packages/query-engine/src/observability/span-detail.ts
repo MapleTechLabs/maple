@@ -11,7 +11,7 @@ const parseAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
 			pipe(
 				Rec.toEntries(parsed),
 				Arr.filter(([, v]) => v !== ""),
-				Object.fromEntries,
+				Rec.fromEntries,
 			),
 		),
 		Effect.orElseSucceed(() => ({})),

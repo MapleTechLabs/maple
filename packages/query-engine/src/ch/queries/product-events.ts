@@ -26,7 +26,7 @@ import type {
 	ColumnDefs,
 	JoinedColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
-import { type DateTime, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { type DateTime, Result, Schema, Array as Arr, Record as Rec, String as Str, Option } from "effect"
 import { ProductEvents, IdentityLinks, SessionReplays, orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { replaysWhere, needsSessionSemiJoin, type ProductEventsFilters } from "./web-analytics"
@@ -198,11 +198,14 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			message: `a funnel has at most ${FUNNEL_MAX_STEPS} steps, got ${opts.steps.length}`,
 		})
 	}
-	const misplacedSession = opts.steps.findIndex((step, index) => step.kind === "session" && index !== 0)
-	if (misplacedSession !== -1) {
+	const misplacedSession = Arr.findFirstIndex(
+		opts.steps,
+		(step, index) => step.kind === "session" && index !== 0,
+	)
+	if (Option.isSome(misplacedSession)) {
 		return new ProductEventsFunnelError({
 			reason: "SessionStepNotFirst",
-			message: `a session step is only valid as step 1, found one at step ${misplacedSession + 1}`,
+			message: `a session step is only valid as step 1, found one at step ${misplacedSession.value + 1}`,
 		})
 	}
 	if (!Number.isFinite(opts.windowSeconds) || opts.windowSeconds <= 0) {

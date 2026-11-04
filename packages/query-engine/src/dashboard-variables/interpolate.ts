@@ -19,7 +19,7 @@
 
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
 import { parseWhereClause, splitWhereClause } from "@maple/domain/where-clause"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str, Predicate } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -65,7 +65,7 @@ function replaceRefs(input: string, resolve: (name: string) => string | null): s
 /** Extract every `$name` / `${name}` reference in a string. */
 export function collectVariableRefs(input: string): string[] {
 	const names: string[] = []
-	for (const match of input.matchAll(VAR_REF)) {
+	for (const match of Str.matchAll(VAR_REF)(input)) {
 		const name = match[1] ?? match[2]
 		if (name && !names.includes(name)) names.push(name)
 	}
@@ -76,9 +76,11 @@ export function collectVariableRefs(input: string): string[] {
 const expandedStrings = (value: unknown, key?: string): string[] => {
 	if (key !== undefined && WHERE_CLAUSE_KEY.test(key)) return []
 	if (typeof value === "string") return [value]
-	if (Array.isArray(value)) return value.flatMap((item) => expandedStrings(item, key))
-	if (typeof value === "object" && value !== null)
-		return Object.entries(value).flatMap(([childKey, child]) => expandedStrings(child, childKey))
+	if (Arr.isArray(value)) return Arr.flatMap(value, (item) => expandedStrings(item, key))
+	if (Predicate.isObject(value))
+		return Arr.flatMap(Rec.toEntries<string, unknown>(value), ([childKey, child]) =>
+			expandedStrings(child, childKey),
+		)
 	return []
 }
 
@@ -87,7 +89,7 @@ const expandedStrings = (value: unknown, key?: string): string[] => {
  * drops the clause for "All" instead, so it needs no options.
  */
 export function collectExpandedVariableRefs(params: unknown): string[] {
-	return collectVariableRefs(expandedStrings(params).join("\n"))
+	return collectVariableRefs(Arr.join(expandedStrings(params), "\n"))
 }
 
 /** Each resolved reference replaced by its value, or by `placeholder` when given; unknown ones stay literal. */

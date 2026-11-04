@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, Array as Arr, Option } from "effect"
 
 /**
  * A query-builder draft: the editable description of one warehouse query.
@@ -31,10 +31,10 @@ export type QueryBuilderSignalSource = (typeof QUERY_BUILDER_SIGNAL_SOURCES)[num
  * `metric_type: "counter"` should be told, not quietly given a gauge.
  */
 export const toQueryBuilderDataSource = (value: unknown): QueryBuilderDataSource | null =>
-	QUERY_BUILDER_DATA_SOURCES.find((candidate) => candidate === value) ?? null
+	Option.getOrNull(Arr.findFirst(QUERY_BUILDER_DATA_SOURCES, (candidate) => candidate === value))
 
 export const toQueryBuilderMetricType = (value: unknown): QueryBuilderMetricType | null =>
-	QUERY_BUILDER_METRIC_TYPES.find((candidate) => candidate === value) ?? null
+	Option.getOrNull(Arr.findFirst(QUERY_BUILDER_METRIC_TYPES, (candidate) => candidate === value))
 
 export const QueryBuilderAddOnsSchema = Schema.Struct({
 	groupBy: Schema.Boolean,

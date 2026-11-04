@@ -4,7 +4,7 @@
  * useful context, but an optimization is enabled only when the matching live
  * column/index is present.
  */
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 
 export type WarehouseSearchFeature =
 	| "logs.body.tokenbf"
@@ -85,7 +85,10 @@ const hasIndexType = (
 	table: string,
 	name: string,
 	typePrefix: string,
-): boolean => indexes.get(indexKey(table, name))?.type.toLowerCase().startsWith(typePrefix) ?? false
+): boolean => {
+	const index = indexes.get(indexKey(table, name))
+	return index !== undefined && Str.startsWith(typePrefix)(Str.toLowerCase(index.type))
+}
 
 const hasColumn = (columns: ReadonlySet<string>, table: string, name: string): boolean =>
 	columns.has(columnKey(table, name))
@@ -111,11 +114,18 @@ export const deriveWarehouseCapabilities = (input: {
 	}
 	const columns = new Set(Arr.map(input.columns, (row) => columnKey(row.table, row.name)))
 	const features = new Set<WarehouseSearchFeature>()
-	const fullTextSetting = input.settings?.find((row) => row.name === "enable_full_text_index")
+	const fullTextSetting = Arr.findFirst(
+		input.settings ?? [],
+		(row) => row.name === "enable_full_text_index",
+	)
+	const fullTextValue = Option.match(fullTextSetting, {
+		onNone: () => "0",
+		onSome: (row) => row.value ?? "0",
+	})
 	const fullTextSearchSetting =
-		String(fullTextSetting?.value ?? "0") === "1"
+		String(fullTextValue) === "1"
 			? "enabled"
-			: fullTextSetting && input.allowSettingOverrides
+			: Option.isSome(fullTextSetting) && input.allowSettingOverrides
 				? "available"
 				: "unavailable"
 
