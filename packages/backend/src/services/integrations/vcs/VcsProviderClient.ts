@@ -78,6 +78,9 @@ export interface VcsProviderClient {
 	/** How people address the review bot on this provider, e.g. `@maple-review-bot`. */
 	readonly reviewerMention: string
 
+	/** The header carrying the webhook signature; a delivery without it is refused unread. */
+	readonly webhookSignatureHeader: string
+
 	/** Verify the webhook signature, parse the event, and map it to generic jobs. */
 	readonly webhookToJobs: (
 		input: VcsWebhookRequest,

@@ -90,13 +90,21 @@ export const signSvix = (secret: string, id: string, timestamp: string, body: st
 		return encodeBase64(mac)
 	})
 
-export const verifySvixSignature = (options: {
-	readonly secret: string
+interface CheckedSvixHeaders {
+	readonly id: string
+	readonly timestamp: string
+	readonly signature: string
+}
+
+/**
+ * The checks that need no body: all three headers present and the timestamp inside the tolerance.
+ * A receiver runs this before reading the body.
+ */
+export const checkSvixHeaders = (options: {
 	readonly headers: SvixHeaders
-	readonly body: string
 	readonly nowMs: number
 	readonly toleranceSeconds?: number | undefined
-}): Effect.Effect<void, SvixVerificationError> =>
+}): Effect.Effect<CheckedSvixHeaders, SvixVerificationError> =>
 	Effect.gen(function* () {
 		const { id, timestamp, signature } = options.headers
 		if (!id || !timestamp || !signature) {
@@ -119,6 +127,18 @@ export const verifySvixSignature = (options: {
 				reason: "stale_timestamp",
 			})
 		}
+		return { id, timestamp, signature }
+	})
+
+export const verifySvixSignature = (options: {
+	readonly secret: string
+	readonly headers: SvixHeaders
+	readonly body: string
+	readonly nowMs: number
+	readonly toleranceSeconds?: number | undefined
+}): Effect.Effect<void, SvixVerificationError> =>
+	Effect.gen(function* () {
+		const { id, timestamp, signature } = yield* checkSvixHeaders(options)
 		const expected = yield* signSvix(options.secret, id, timestamp, options.body)
 		const provided = Arr.map(
 			Arr.filter(
