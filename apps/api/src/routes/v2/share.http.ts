@@ -51,7 +51,7 @@ import {
 	shareOgRateLimitKey,
 	shareTokenRateLimitKey,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
-import { loadChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
+import { readChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
 import { chatChartFrom, chatChartSession } from "@maple/backend/services/chat/chat-chart"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
@@ -83,6 +83,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		// "no such link", identical to an unknown token; a database failure stays a 503.
 		const sharedDocument = (orgId: OrgId, dashboardId: DashboardId) =>
 			persistence.get(orgId, dashboardId).pipe(
+				Effect.map((stored) => stored.document),
 				Effect.catchTags({
 					"@maple/http/errors/DashboardNotFoundError": () => notFound,
 					"@maple/http/errors/DashboardStoredConfigInvalidError": () => notFound,
@@ -305,9 +306,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						window: payload.timeRange,
 						variableValues: payload.variableValues ?? {},
 						...(share.widgetId === undefined ? undefined : { onlyWidgetId: share.widgetId }),
-						// Stored SQL is only ever written by a caller that can read the telemetry
-						// (see the dashboards write routes), the same bar as minting the share.
-						rawSqlAllowed: true,
+						// Minting a share already required reading all of its telemetry, and stored
+						// SQL is only written by a caller that can (see the dashboards write routes).
+						canRead: () => true,
 					})
 					return new ShareWidgetDataResponse({ results, variables })
 				}),
@@ -438,7 +439,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// threshold, which side to shade — is pinned in the signed id, so a
 					// rule renamed or deleted after delivery cannot change what an
 					// already-sent alert's picture says.
-					const series = yield* loadChartSeries(warehouse, systemTenant(orgId), {
+					const series = yield* readChartSeries(warehouse, systemTenant(orgId), {
 						orgId,
 						ruleId,
 						groupKey: claims.groupKey,
@@ -448,10 +449,14 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						threshold: claims.threshold ?? 0,
 						fromMs: claims.fromMs,
 						toMs: claims.toMs,
-					})
-					// A window whose checks have aged out of `alert_checks` retention,
-					// or a warehouse that would not answer. Either way there is no
-					// picture to draw, and the uniform not-found is the honest reply.
+					}).pipe(
+						// A slow or failing warehouse is a retryable 503, not a missing chart.
+						Effect.catchTag("@maple/backend/alerts/AlertChartSeriesUnavailableError", (error) =>
+							Effect.fail(new SharePersistenceError({ message: error.message, cause: error })),
+						),
+					)
+					// A window whose checks have aged out of `alert_checks` retention:
+					// there is no picture to draw, and the uniform not-found is the honest reply.
 					if (series === null) return yield* notFound
 
 					// One series, because that is what a rule measures. The card puts

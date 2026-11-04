@@ -162,8 +162,8 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 			showStepPercent: state.funnel.showStepPercent,
 		},
 		queries: listPreviewQueries(model.staged.queries, state, model.staged, widget),
-		// A type switch releases the stored source at once, like Apply does.
-		keepsStoredSource: state.keepsStoredSource && model.staged.keepsStoredSource,
+		// The live flag, like Apply: a type switch releases it, an edit undone restores it.
+		keepsStoredSource: state.keepsStoredSource,
 	}
 	const isSql = isSqlSource(model) && model.rawSql !== null
 	return {

@@ -13,6 +13,7 @@ import { buildDataSource, buildDisplay, toInitialState, validationErrorOf } from
 import * as QueryPanel from "../../kit/query-builder/panel"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { sqlValueFieldOf } from "./raw-sql"
 import { update } from "./page-update"
 import { init, isDirty, previewWidgetOf } from "./update"
 import * as Tabs from "@maple/views/ui/tabs"
@@ -186,19 +187,19 @@ describe("widget lowering", () => {
 		expect(names(pageUpdate(sqlTab, Message.ClickedApply()).commands)).toEqual([SaveWidget.name])
 	})
 
-	test("a Builder series picked as the stat value never becomes the SQL column", () => {
+	test("a Builder series pick survives a Raw SQL round trip and never becomes the SQL column", () => {
 		const tab = (model: Model, index: number) =>
 			pageUpdate(model, Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index }) }))
 				.model
 		const series = opened().model.state?.queries[0]?.name ?? expect.unreachable("the fixture has a query")
 		const picked = pageUpdate(opened().model, Message.ChangedStatValueField({ value: series })).model
 		const sql = tab(picked, 1)
-		expect(sql.state?.statValueField).toBe("")
-		const back = pageUpdate(tab(sql, 0), Message.ChangedStatValueField({ value: series })).model
-		expect(tab(back, 1).state?.statValueField).toBe("")
+		expect(sql.state === null ? null : sqlValueFieldOf(sql.state)).toBe("")
+		expect(tab(sql, 0).state?.statValueField).toBe(series)
 		// A column typed in the SQL tab survives a visit to the Builder.
 		const typed = pageUpdate(sql, Message.ChangedStatValueField({ value: "duration_ms" })).model
-		expect(tab(tab(typed, 0), 1).state?.statValueField).toBe("duration_ms")
+		const roundTrip = tab(tab(typed, 0), 1).state
+		expect(roundTrip === null ? null : sqlValueFieldOf(roundTrip)).toBe("duration_ms")
 	})
 
 	test("the spans select rewrites root_only in the where clause", () => {

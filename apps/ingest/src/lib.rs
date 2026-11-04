@@ -5,6 +5,7 @@ pub mod clickhouse_insert_mappings;
 pub mod decompress;
 pub mod gcp_logging;
 pub mod gcp_push_auth;
+pub mod host_identity;
 pub mod ingest_rules;
 pub mod metrics;
 pub mod otel;

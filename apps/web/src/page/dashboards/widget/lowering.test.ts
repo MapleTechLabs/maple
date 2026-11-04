@@ -106,6 +106,8 @@ describe("widget editor lowering", () => {
 			chartId: "",
 			statAggregate: "max" as const,
 			statValueField: "total",
+			queries: [],
+			formulas: [],
 		}
 		expect(dataSourceTransform(rawSqlDataSourceOf(widget, sql, stat))?.reduceToValue).toEqual({
 			field: "total",
@@ -133,6 +135,8 @@ describe("widget editor lowering", () => {
 			chartId: "query-builder-line",
 			statAggregate: "first" as const,
 			statValueField: "",
+			queries: [],
+			formulas: [],
 		}
 		expect(dataSourceTransform(rawSqlDataSourceOf(widget, sql, line))).toBeUndefined()
 	})
