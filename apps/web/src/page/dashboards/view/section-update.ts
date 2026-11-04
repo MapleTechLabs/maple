@@ -12,7 +12,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { EditSections } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { isEditing } from "./mode"
+import { isEditing, isWriteBlocked } from "./mode"
 import { menuStep } from "./menu-step"
 import { SectionEdit } from "./section-edit"
 import { Array as Arr, String as Str } from "effect"
@@ -75,7 +75,7 @@ const applySectionView = (model: Model, update: (search: SectionViewSearch) => S
 }
 
 const write = (model: Model, context: PageContext, edit: SectionEdit): Return =>
-	model.persistenceError !== null
+	isWriteBlocked(model)
 		? { model }
 		: { model, commands: [EditSections({ orgId: context.orgId, dashboardId: model.dashboardId, edit })] }
 
@@ -169,7 +169,7 @@ const submitRename = (model: Model, context: PageContext): Return => {
 }
 
 const startRename = (model: Model, sectionId: string, tabId: string | null): Return => {
-	if (!isEditing(model) || model.persistenceError !== null) return { model }
+	if (!isEditing(model)) return { model }
 	const section = sectionsOf(model).find((candidate) => candidate.id === sectionId)
 	const title = tabId === null ? section?.title : section?.tabs.find((tab) => tab.id === tabId)?.title
 	return title === undefined

@@ -23,6 +23,14 @@ const WriteResult = Schema.Result(WriteSync, Schema.String)
 
 export const Message = defineMessageUnion({
 	UpdatedDashboard: { orgId: Schema.String, maybeDocument: Schema.Option(DashboardDocument) },
+	/** The live board sat loading past the timeout (`useCollectionLoadFailed`). */
+	TimedOutLiveDashboard: { orgId: Schema.String },
+	CompletedFetchDashboardFallback: {
+		dashboardId: Schema.String,
+		result: Schema.Result(DashboardDocument, LoadFailure),
+	},
+	/** "Retry sync" on the snapshot banner, or Try again on the load error: reconnect, read again. */
+	ClickedRetrySync: {},
 	CompletedReadClock: { nowMs: Schema.Number },
 	MeasuredGrid: { width: Schema.Number },
 	MeasuredWidget: { widgetId: Schema.String, widthPx: Schema.Number },
