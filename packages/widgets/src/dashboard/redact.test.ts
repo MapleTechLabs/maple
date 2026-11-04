@@ -125,10 +125,56 @@ describe("redactForShare", () => {
 			title: "Requests",
 			sparkline: {
 				enabled: true,
-				color: "primary",
 				dataSource: { kind: "query", resultShape: "timeseries" },
 			},
 		})
+	})
+
+	it("publishes the display config by allowlist: presentation only", () => {
+		const SECRET_LIST_CLAUSE = "service.name = 'quiet-pilot'"
+		const SECRET_EVENT = "upgraded_to_enterprise"
+		const display = {
+			title: "Checkout",
+			unit: "ms",
+			yAxis: { label: "Latency", logScale: true },
+			thresholds: [{ value: 500, color: "red" }],
+			columns: [{ field: "duration", header: "Duration" }],
+			markdown: { content: "Notes" },
+			listDataSource: "traces",
+			listWhereClause: SECRET_LIST_CLAUSE,
+			listLimit: 50,
+			funnel: {
+				showStepPercent: true,
+				variant: "dropoff",
+				steps: [{ kind: "event", eventName: SECRET_EVENT }],
+				keyBy: "person",
+				filters: { country: ["NZ"] },
+			},
+			paths: {
+				anchor: { kind: "event", eventName: SECRET_EVENT },
+				direction: "after",
+				exclude: ["internal_ping"],
+			},
+			futureField: "not yet reviewed",
+		}
+		const redacted = redactForShare({
+			...document,
+			widgets: [{ ...document.widgets[1], display }],
+		})
+
+		expect(redacted?.widgets[0]?.display).toEqual({
+			title: "Checkout",
+			unit: "ms",
+			yAxis: { label: "Latency", logScale: true },
+			thresholds: [{ value: 500, color: "red" }],
+			columns: [{ field: "duration", header: "Duration" }],
+			markdown: { content: "Notes" },
+			funnel: { showStepPercent: true, variant: "dropoff" },
+			paths: { direction: "after" },
+		})
+		const serialized = JSON.stringify(redacted)
+		expect(serialized).not.toContain(SECRET_LIST_CLAUSE)
+		expect(serialized).not.toContain(SECRET_EVENT)
 	})
 
 	// A share renders through the same canvas the authed dashboard does, so these

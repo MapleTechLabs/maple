@@ -16,7 +16,7 @@
  * denylist would leak every future field by default, which is exactly the wrong
  * direction for a payload served without a session.
  */
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "./access"
 import type { DashboardVariable } from "./shared/variables"
@@ -106,22 +106,65 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /**
- * The display config, with the one field that embeds a data source redacted.
- *
- * `display` is otherwise passed through — titles, units, thresholds, chart
- * ids are what a viewer needs to draw the tile. But `display.sparkline` carries
- * a whole `dataSource` (a stat's trend query), and shipping it verbatim would
- * publish exactly the where-clauses the widget's own redaction withholds. The
- * server resolves the sparkline from the stored document, never from this.
+ * Display keys a viewer needs to draw a tile: titles, units, axes, thresholds, colours,
+ * columns and per-chart styling. Anything else (`listWhereClause`, a funnel's steps and
+ * filters, a paths anchor) describes the query and stays on the server.
+ */
+export const SHARE_PRESENTATION_KEYS = [
+	"title",
+	"description",
+	"chartId",
+	"chartPresentation",
+	"xAxis",
+	"yAxis",
+	"seriesMapping",
+	"colorOverrides",
+	"stacked",
+	"curveType",
+	"unit",
+	"thresholds",
+	"prefix",
+	"suffix",
+	"columns",
+	"pie",
+	"histogram",
+	"heatmap",
+	"gauge",
+	"markdown",
+] as const
+
+/** The listed keys of `value`, when it is a record; `undefined` when none are present. */
+const pick = (value: unknown, keys: ReadonlyArray<string>): Record<string, unknown> | undefined => {
+	if (!isRecord(value)) return undefined
+	const picked = Rec.filter(value, (field, key) => field !== undefined && keys.includes(key))
+	return Rec.isEmptyRecord(picked) ? undefined : picked
+}
+
+/**
+ * The display config as a viewer sees it, by allowlist. The funnel and paths blocks keep
+ * only their rendering flags, and `sparkline.dataSource` is classified like the widget's
+ * own; the server resolves the sparkline from the stored document, never from this.
  */
 const redactDisplay = (display: unknown): Record<string, unknown> => {
 	if (!isRecord(display)) return {}
-	if (!isRecord(display.sparkline)) return display
-	const { dataSource, ...sparkline } = display.sparkline
+	const funnel = pick(display.funnel, ["showStepPercent", "variant"])
+	const paths = pick(display.paths, ["direction"])
+	const sparkline = isRecord(display.sparkline) ? display.sparkline : undefined
 	return {
-		...display,
-		sparkline:
-			dataSource === undefined ? sparkline : { ...sparkline, dataSource: redactDataSource(dataSource) },
+		...pick(display, SHARE_PRESENTATION_KEYS),
+		...(funnel === undefined ? undefined : { funnel }),
+		...(paths === undefined ? undefined : { paths }),
+		...(sparkline === undefined
+			? undefined
+			: {
+					sparkline:
+						sparkline.dataSource === undefined
+							? { enabled: sparkline.enabled }
+							: {
+									enabled: sparkline.enabled,
+									dataSource: redactDataSource(sparkline.dataSource),
+								},
+				}),
 	}
 }
 

@@ -66,7 +66,12 @@ export {
 	WidgetDataSourceV3,
 } from "./v3/data-source"
 export { DashboardDocumentV3, PortableDashboardDocumentV3 } from "./v3/document"
-export { DashboardWidgetV3, WidgetDisplayConfigV3 } from "./v3/widget"
+export {
+	DashboardWidgetV3,
+	SharedDataSource,
+	SharedWidgetDisplayV3,
+	WidgetDisplayConfigV3,
+} from "./v3/widget"
 export { MARKDOWN_STATIC_ENDPOINT, QUERY_ENDPOINT_RESULT_KINDS } from "./legacy-endpoints"
 // The v2 -> v3 data-source conversion; see the header of `upgrade-to-v3.ts`.
 export { fromLegacyDataSource, isV3DataSource } from "./upgrade-to-v3"

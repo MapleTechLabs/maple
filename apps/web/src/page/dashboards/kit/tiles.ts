@@ -3,7 +3,7 @@ import type { DashboardDocument } from "@maple/domain/http"
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
-import { dataSourceTransform } from "@maple/widgets/dashboard"
+import { dataSourceTransform, type SharedWidgetDisplayV3 } from "@maple/widgets/dashboard"
 import { Formatter, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
@@ -36,8 +36,8 @@ export { formatStatValue } from "./tiles-stat"
 // chart through `chartWidgetTile` (./tiles-chart.ts).
 
 /** What a tile reads of its widget; a share's redacted widget satisfies it too. */
-export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display" | "timeRange"> &
-	Readonly<{ visualization: string; dataSource: unknown }>
+export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "timeRange"> &
+	Readonly<{ visualization: string; dataSource: unknown; display: typeof SharedWidgetDisplayV3.Type }>
 type Widget = TileWidget
 type Row = Readonly<Record<string, unknown>>
 
