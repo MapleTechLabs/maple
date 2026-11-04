@@ -1006,14 +1006,26 @@ export const repositoryCoverage = (
 	return Arr.flatMap(names, (name, i): ReadonlyArray<SecurityRepositoryCoverage> => {
 		// Keep the first spelling of each name.
 		if (names.findIndex((other) => sameName(other, name)) !== i) return []
-		const audited = targets.find(({ target }) => sameName(target.repository, name))
+		// One target per branch: show the branch that ran last (a run beats none), else the first.
+		const audited = Arr.filter(targets, ({ target }) => sameName(target.repository, name)).reduce<
+			CodeTarget | undefined
+		>(
+			(best, next) =>
+				best === undefined ||
+				(next.latestRun !== undefined &&
+					(best.latestRun === undefined || next.latestRun.startedAt > best.latestRun.startedAt))
+					? next
+					: best,
+			undefined,
+		)
 		const repo = repos.find((r) => sameName(r.fullName, name))
 		const run = audited?.latestRun
 		const scan = repo?.latestScan ?? null
 		return [
 			{
 				repository: name,
-				auditReadable: code?._tag === "read",
+				// No target at all is known, not unreadable.
+				auditReadable: code?._tag === "read" || code?._tag === "not_connected",
 				audit:
 					audited === undefined
 						? null

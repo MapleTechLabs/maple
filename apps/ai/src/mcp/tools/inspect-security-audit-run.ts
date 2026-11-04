@@ -136,7 +136,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 					: []),
 				...(units.length === 0 ? ["The run saved no coverage ledger."] : []),
 			]
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.security.runId": run.id })
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.security_audit.run_id": run.id })
 			return {
 				run: runSummaryOf(
 					run,
