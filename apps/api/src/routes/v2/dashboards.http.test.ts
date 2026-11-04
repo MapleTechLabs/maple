@@ -262,6 +262,61 @@ describe("v2 dashboards over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("refuses a PATCH based on a stale expected_version, and keeps last-write-wins without one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "v1",
+			widgets: [],
+		})
+		const path = `/v2/dashboards/${created.body.id}`
+
+		// Two editors both loaded version 1: the first save lands, the second is a 409.
+		const first = await harness.request("PATCH", path, key.secret, { name: "first", expected_version: 1 })
+		expect(first.status).toBe(200)
+		const stale = await harness.request("PATCH", path, key.secret, {
+			name: "second",
+			expected_version: 1,
+		})
+		expect(stale.status).toBe(409)
+		expect(stale.body.error.code).toBe("dashboard_concurrent_update")
+		expect((await harness.request("GET", path, key.secret)).body.name).toBe("first")
+
+		const blind = await harness.request("PATCH", path, key.secret, { name: "third" })
+		expect(blind.status).toBe(200)
+		expect((await harness.request("GET", path, key.secret)).body.name).toBe("third")
+		await harness.dispose()
+	})
+
+	it("pages the list newest first through an opaque cursor", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const names = ["a", "b", "c"]
+		for (const name of names) {
+			expect(
+				(await harness.request("POST", "/v2/dashboards", key.secret, { name, widgets: [] })).status,
+			).toBe(200)
+		}
+
+		const first = await harness.request("GET", "/v2/dashboards?limit=2", key.secret)
+		expect(first.body).toMatchObject({ object: "list", has_more: true })
+		const second = await harness.request(
+			"GET",
+			`/v2/dashboards?limit=2&cursor=${encodeURIComponent(first.body.next_cursor)}`,
+			key.secret,
+		)
+		expect(second.body).toMatchObject({ has_more: false, next_cursor: null })
+		const seen = [...first.body.data, ...second.body.data].map(
+			(dashboard: { name: string }) => dashboard.name,
+		)
+		expect([...seen].sort()).toEqual(names)
+
+		const invalid = await harness.request("GET", "/v2/dashboards?cursor=off_2", key.secret)
+		expect(invalid.status).toBe(400)
+		expect(invalid.body.error.param).toBe("cursor")
+		await harness.dispose()
+	})
+
 	it("reports corrupt stored dashboards separately from retryable persistence failures", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])
@@ -569,6 +624,44 @@ describe("v2 dashboard widget data", () => {
 		// The harness query engine refuses to run, so this tile fails, retryably, on its own.
 		expect(emptyQuery).toMatchObject({ widget_id: "empty-query", ok: false, reason: "failed" })
 		expect(unknown).toMatchObject({ widget_id: "nope", ok: false, reason: "not_found" })
+		await harness.dispose()
+	})
+
+	it("serves a widget only to keys that can read the telemetry it queries", async () => {
+		const harness = makeHarness()
+		const writer = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", writer.secret, {
+			name: "Logs",
+			widgets: [
+				{
+					id: "log-volume",
+					visualization: "chart",
+					data_source: {
+						kind: "query",
+						result_shape: "timeseries",
+						queries: [{ id: "a", name: "A", aggregation: "count", data_source: "logs" }],
+					},
+					display: {},
+					layout: { x: 0, y: 0, w: 6, h: 4 },
+				},
+			],
+		})
+		expect(created.status).toBe(200)
+		const read = (token: string) =>
+			harness.request("POST", `/v2/dashboards/${created.body.id}/widget_data`, token, {
+				requests: [{ widget_id: "log-volume" }],
+				time_range: { type: "relative", value: "1h" },
+			})
+
+		const reader = await harness.bootstrapKey(["dashboards:read"])
+		const refused = await read(reader.secret)
+		expect(refused.status).toBe(200)
+		expect(refused.body.results[0]).toMatchObject({ ok: false, reason: "unsupported" })
+		expect(refused.body.results[0].message).toContain("logs:read")
+
+		// An admitted key reaches the harness query engine, which refuses to run: retryable.
+		const logsReader = await harness.bootstrapKey(["dashboards:read", "logs:read"])
+		expect((await read(logsReader.secret)).body.results[0]).toMatchObject({ ok: false, reason: "failed" })
 		await harness.dispose()
 	})
 

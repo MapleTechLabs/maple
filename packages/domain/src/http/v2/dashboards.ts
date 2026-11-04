@@ -131,11 +131,18 @@ export const V2DashboardUpdateParams = Schema.Struct({
 	sections: optional(Schema.Array(V2DashboardSection)),
 	variables: optional(Schema.Array(V2DashboardVariable)),
 	refreshIntervalSeconds: optional(Schema.NullOr(DashboardRefreshIntervalSeconds)),
+	expectedVersion: optional(
+		Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({
+			description:
+				"The dashboard version this edit was based on. When the stored version differs, the update fails with 409 instead of overwriting the newer change. Omit for last-write-wins.",
+		}),
+	),
 })
 	.pipe(
 		Schema.encodeKeys({
 			timeRange: "time_range",
 			refreshIntervalSeconds: "refresh_interval_seconds",
+			expectedVersion: "expected_version",
 		}),
 	)
 	.annotate({
@@ -609,7 +616,8 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			OpenApi.annotations({
 				identifier: "updateDashboard",
 				summary: "Update a dashboard",
-				description: "Applies a partial JSON update; omitted fields retain their current values.",
+				description:
+					"Applies a partial JSON update; omitted fields retain their current values. Send `expected_version` to fail with 409 rather than overwrite a newer change.",
 			}),
 		),
 	)

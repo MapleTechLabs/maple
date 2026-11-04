@@ -34,15 +34,19 @@ import type {
 	V2DashboardWidgetDataOutcome,
 } from "@maple/domain/http/v2"
 import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
-import type { DashboardId } from "@maple/domain/primitives"
-import { Clock, DateTime, Effect, Option, Ref, Schema, Array as Arr } from "effect"
+import { DashboardId } from "@maple/domain/primitives"
+import { Clock, DateTime, Effect, Option, Ref, Result, Schema, Array as Arr } from "effect"
+import { Base64Url } from "effect/encoding"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-templates"
 import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import {
+	DashboardPersistenceService,
+	type DashboardPageCursor,
+} from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import { convertPersesDashboardToPortable } from "@maple/backend/services/dashboards/perses-dashboard-import"
@@ -262,6 +266,25 @@ const dashboardAuditDiff = auditDiff<keyof V2DashboardUpdateParams & keyof V2Das
 	summarize: { widgets: "<updated>", sections: "<updated>", variables: "<updated>" },
 })
 
+// Keyset over (updatedAt, id), so a board saved while a client pages cannot shift a later page.
+const DASHBOARD_CURSOR = /^dsh_([0-9a-z]+)_([A-Za-z0-9_-]+)$/
+const decodeDashboardIdOption = Schema.decodeUnknownOption(DashboardId)
+
+const encodeDashboardCursor = (cursor: DashboardPageCursor): string =>
+	`dsh_${cursor.updatedAt.toString(36)}_${Base64Url.encode(cursor.id)}`
+
+const decodeDashboardCursor = (cursor: string | undefined) => {
+	if (cursor === undefined) return Effect.undefined
+	const invalid = Effect.fail(V2ParameterInvalid.make("Invalid pagination cursor.", { param: "cursor" }))
+	const [, rawUpdatedAt, rawId] = DASHBOARD_CURSOR.exec(cursor) ?? []
+	if (rawUpdatedAt === undefined || rawId === undefined) return invalid
+	const updatedAt = Number.parseInt(rawUpdatedAt, 36)
+	const id = Option.flatMap(Result.getSuccess(Base64Url.decodeString(rawId)), decodeDashboardIdOption)
+	return Number.isSafeInteger(updatedAt) && Option.isSome(id)
+		? Effect.succeed<DashboardPageCursor | undefined>({ updatedAt, id: id.value })
+		: invalid
+}
+
 const encodeVersionCursor = (versionNumber: number): string => `ver_${versionNumber.toString(36)}`
 
 const decodeVersionCursor = (cursor: string): number | null => {
@@ -431,10 +454,18 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("list", ({ query }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const response = yield* persistence.list(tenant.orgId)
+						const after = yield* decodeDashboardCursor(query.cursor)
+						const page = yield* persistence.listPage(tenant.orgId, {
+							limit: query.limit ?? LIST_LIMIT_DEFAULT,
+							...(after === undefined ? undefined : { after }),
+						})
 
-						const page = yield* paginateArray(Arr.map(response.dashboards, toV2Dashboard), query)
-						return { object: "list" as const, ...page }
+						return {
+							object: "list" as const,
+							data: Arr.map(page.dashboards, toV2Dashboard),
+							has_more: page.next !== null,
+							next_cursor: page.next === null ? null : encodeDashboardCursor(page.next),
+						}
 					}),
 				)
 				.handle("retrieve", ({ params }) =>
@@ -468,7 +499,8 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 								})),
 								window,
 								variableValues: payload.variable_values ?? {},
-								rawSqlAllowed: canReadTelemetry(tenant.scopes),
+								// Per widget: a key reads only the tiles whose telemetry it could query.
+								canRead: (family) => missingReadScopes(tenant.scopes, [family]).length === 0,
 							})
 							.pipe(
 								Effect.catchTags({
@@ -527,6 +559,9 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 									Effect.as(next),
 								)
 							},
+							payload.expectedVersion === undefined
+								? undefined
+								: { expectedVersion: payload.expectedVersion },
 						)
 						const previousDashboard = yield* Ref.get(previous)
 						const changes = Option.match(previousDashboard, {
