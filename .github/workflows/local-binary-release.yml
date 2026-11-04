@@ -250,8 +250,10 @@ jobs:
               run: |
                   set -euo pipefail
                   tarball="$TARBALL"
-                  if gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' 2>/dev/null \
-                    | grep -Fqx "$(basename "$tarball")"; then
+                  # Only a completed upload counts; a broken one is retried.
+                  published="$(gh release view "$TAG" --repo "$REPO" --json assets \
+                    --jq '.assets[] | select(.state == "uploaded") | .name' 2>/dev/null || true)"
+                  if grep -Fqx "$(basename "$tarball")" <<<"$published"; then
                     echo "::notice::$(basename "$tarball") is already on release $TAG; leaving it as published."
                     exit 0
                   fi
