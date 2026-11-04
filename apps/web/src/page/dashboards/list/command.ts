@@ -25,11 +25,6 @@ import {
 	mutateDashboard,
 	readDocument,
 } from "../kit/store"
-import {
-	DashboardConcurrencyError,
-	DashboardNotFoundError,
-	DashboardValidationError,
-} from "@maple/domain/http"
 import { readLocale } from "@maple/views/lib/locale"
 import type { V2Dashboard } from "@maple/domain/http/v2"
 import { documentOf } from "../view/command-history"
@@ -123,16 +118,19 @@ const createFromPortable = (orgId: string, portable: PortableDashboard) =>
 const toResult = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.result(Effect.mapError(effect, (error) => errorMessageOf(error)))
 
-/** The API refused this write (invalid, conflicting or gone): the store itself is still healthy. */
-const isRejected = (error: unknown, depth = 0): boolean => {
+/** A v2 error envelope for a refused request: invalid, missing or conflicting, not auth or outage. */
+const isRefusalEnvelope = Schema.is(
+	Schema.Struct({
+		error: Schema.Struct({
+			type: Schema.Literals(["invalid_request_error", "not_found_error", "conflict_error"]),
+		}),
+	}),
+)
+
+/** The API refused this write (anywhere down the `cause` chain): the store itself is still healthy. */
+export const isRejected = (error: unknown, depth = 0): boolean => {
 	if (depth > 5 || typeof error !== "object" || error === null) return false
-	if (
-		error instanceof DashboardValidationError ||
-		error instanceof DashboardConcurrencyError ||
-		error instanceof DashboardNotFoundError ||
-		error instanceof DashboardUnreadableError
-	)
-		return true
+	if (error instanceof DashboardUnreadableError || isRefusalEnvelope(error)) return true
 	return "cause" in error && isRejected(error.cause, depth + 1)
 }
 
