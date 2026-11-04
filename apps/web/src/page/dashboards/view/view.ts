@@ -229,7 +229,8 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 	if (model.snapshot._tag === "Failed")
 		return [
 			errorState(h, {
-				failure: model.snapshot.failure,
+				// Reading the board again is always worth offering: live sync may be back.
+				failure: { ...model.snapshot.failure, recovery: "retry" },
 				title: "Couldn't load dashboard",
 				onRetry: Message.ClickedRetrySync(),
 				className: "min-h-64",
