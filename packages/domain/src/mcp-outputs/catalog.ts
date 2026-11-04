@@ -5,7 +5,12 @@
 import { SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { ListSourcesOutput } from "./sources"
-import { InspectSecurityFindingOutput, ListSecurityFindingsOutput } from "./security"
+import {
+	InspectSecurityAuditRunOutput,
+	InspectSecurityFindingOutput,
+	ListSecurityAuditRunsOutput,
+	ListSecurityFindingsOutput,
+} from "./security"
 import { DeleteUptimeMonitorOutput, ListUptimeMonitorsOutput, UptimeMonitorMutationOutput } from "./uptime"
 import {
 	ApplyStatusPageConfigOutput,
@@ -165,6 +170,7 @@ export const McpToolOutputs = {
 	ingest_usage: IngestUsageOutput,
 	inspect_chart_data: InspectChartDataOutput,
 	inspect_infra: InspectInfraOutput,
+	inspect_security_audit_run: InspectSecurityAuditRunOutput,
 	inspect_security_finding: InspectSecurityFindingOutput,
 	inspect_span: InspectSpanOutput,
 	inspect_trace: InspectTraceOutput,
@@ -182,6 +188,7 @@ export const McpToolOutputs = {
 	list_error_issues: ListErrorIssuesOutput,
 	list_infra: ListInfraOutput,
 	list_integrations: ListIntegrationsOutput,
+	list_security_audit_runs: ListSecurityAuditRunsOutput,
 	list_security_findings: ListSecurityFindingsOutput,
 	list_sources: ListSourcesOutput,
 	list_status_pages: ListStatusPagesOutput,

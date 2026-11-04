@@ -1,14 +1,11 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Ref, Result, Schema, Array as Arr, String as Str } from "effect"
 import { UpdateDashboardWidgetOutput } from "@maple/domain/mcp-outputs"
-import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
 	type DashboardWidget,
-	dashboardNotFound,
 	optionalJsonText,
 	optionalWidgetJson,
 	toDashboardRow,
-	toMcpDashboardError,
 	withDashboardMutation,
 } from "../lib/dashboard-mutations"
 import { hasWidgetPatch, patchWidget, type WidgetPatch } from "../lib/dashboard-widget-patch"
@@ -34,41 +31,80 @@ const widgetNotFound = (widgetId: string) =>
 		parameter: "widget_id",
 	})
 
-/** The widget to save: `widget_json` as given, or the saved widget with the patch merged in. */
-const resolveReplacement = Effect.fn("McpUpdateDashboardWidget.resolve")(function* (
-	dashboardId: string,
-	widgetId: string,
-	widgetJson: DashboardWidget | undefined,
-	patch: WidgetPatch,
-) {
+/** Refuse an argument set that names both, or neither, of a replacement and a patch. */
+const checkArguments = (widgetJson: DashboardWidget | undefined, patch: WidgetPatch) => {
 	const patching = hasWidgetPatch(patch)
 	if (widgetJson !== undefined && patching) {
+		return Effect.fail(
+			new McpInvalidInputError({
+				message:
+					"Pass widget_json to replace the whole widget, or patch_json/title/chart_id to edit part of it, not both.",
+				parameter: "widget_json",
+			}),
+		)
+	}
+	if (widgetJson === undefined && !patching) {
+		return Effect.fail(
+			new McpInvalidInputError({
+				message:
+					"Nothing to change: pass patch_json, title or chart_id for a partial edit, or widget_json to replace the widget.",
+				parameter: "patch_json",
+			}),
+		)
+	}
+	return Effect.void
+}
+
+/** The widget to save: `widget_json` as given, or the stored widget with the patch merged in. */
+const resolveReplacement = (
+	existing: DashboardWidget,
+	widgetJson: DashboardWidget | undefined,
+	patch: WidgetPatch,
+) => {
+	if (widgetJson !== undefined) return Effect.succeed(widgetJson)
+	const patched = patchWidget(existing, patch)
+	return Result.isFailure(patched)
+		? Effect.fail(new McpInvalidInputError({ message: patched.failure, parameter: "patch_json" }))
+		: Effect.succeed(patched.success)
+}
+
+/**
+ * Repair rather than reject a scalar tile missing `transform.reduceToValue` (plenty of
+ * stored stats predate that check, and blocking would make them uneditable), then refuse
+ * clauses the engine can't honor and combinations the renderer cannot draw.
+ */
+const prepareWidget = Effect.fn("McpUpdateDashboardWidget.prepare")(function* (
+	decodedWidget: DashboardWidget,
+) {
+	const panel = resolvePanelType({
+		visualization: decodedWidget.visualization,
+		chartId: decodedWidget.display.chartId,
+	})
+	const parsedWidget = panel.ok
+		? {
+				...decodedWidget,
+				dataSource: withScalarReduction(decodedWidget.dataSource, panel.resolved.meta.isScalar),
+			}
+		: decodedWidget
+	const repairedScalar = parsedWidget.dataSource !== decodedWidget.dataSource
+
+	const blockingWarnings = yield* collectBlockingBuilderWarnings(parsedWidget.dataSource)
+	if (blockingWarnings.length > 0) {
 		return yield* new McpInvalidInputError({
-			message:
-				"Pass widget_json to replace the whole widget, or patch_json/title/chart_id to edit part of it, not both.",
+			message: `This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT updated):\n- ${Arr.join(blockingWarnings, "\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
 			parameter: "widget_json",
 		})
 	}
-	if (widgetJson !== undefined) return widgetJson
-	if (!patching) {
+
+	const renderIssues = validateWidgetRenderability({ widget: parsedWidget })
+	if (renderIssues.fatal.length > 0) {
 		return yield* new McpInvalidInputError({
-			message:
-				"Nothing to change: pass patch_json, title or chart_id for a partial edit, or widget_json to replace the widget.",
-			parameter: "patch_json",
+			message: `This widget cannot render as configured (it was NOT updated):\n${formatRenderIssues({ fatal: renderIssues.fatal, warnings: [] })}`,
+			parameter: "widget_json",
 		})
 	}
-	const tenant = yield* CurrentMcpTenant
-	const persistence = yield* DashboardPersistenceService
-	const list = yield* persistence.list(tenant.orgId).pipe(Effect.mapError(toMcpDashboardError(TOOL)))
-	const dashboard = list.dashboards.find((d) => d.id === dashboardId)
-	if (dashboard === undefined) return yield* dashboardNotFound(dashboardId)
-	const existing = dashboard.widgets.find((w) => w.id === widgetId)
-	if (existing === undefined) return yield* widgetNotFound(widgetId)
-	const patched = patchWidget(existing, patch)
-	if (Result.isFailure(patched)) {
-		return yield* new McpInvalidInputError({ message: patched.failure, parameter: "patch_json" })
-	}
-	return patched.success
+
+	return { widget: parsedWidget, repairedScalar, renderWarnings: renderIssues.warnings }
 })
 
 export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
@@ -112,56 +148,32 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 				...(title === undefined ? undefined : { title }),
 				...(chart_id === undefined ? undefined : { chartId: chart_id }),
 			}
-			const decodedWidget = yield* resolveReplacement(dashboard_id, widget_id, widget_json, patch)
+			yield* checkArguments(widget_json, patch)
 
-			// Repair rather than reject. A scalar tile needs `transform.reduceToValue`
-			// to read `data[0].value`, and plenty of stored stats predate that being
-			// checked — blocking here would make a legacy widget uneditable, so you
-			// could not even fix its title. `add_dashboard_widget` injects the same
-			// default, so both paths agree.
-			const panel = resolvePanelType({
-				visualization: decodedWidget.visualization,
-				chartId: decodedWidget.display.chartId,
-			})
-			const parsedWidget = panel.ok
-				? {
-						...decodedWidget,
-						dataSource: withScalarReduction(
-							decodedWidget.dataSource,
-							panel.resolved.meta.isScalar,
-						),
-					}
-				: decodedWidget
-			const repairedScalar = parsedWidget.dataSource !== decodedWidget.dataSource
-
-			// Reject clauses the engine can't honor before persisting the replacement.
-			const blockingWarnings = yield* collectBlockingBuilderWarnings(parsedWidget.dataSource)
-			if (blockingWarnings.length > 0) {
-				return yield* new McpInvalidInputError({
-					message: `This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT updated):\n- ${Arr.join(blockingWarnings, "\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
-					parameter: "widget_json",
-				})
-			}
-
-			// Combinations the renderer cannot draw — a scalar with no reduction, a
-			// note wired to a query, a list backed by SQL.
-			const renderIssues = validateWidgetRenderability({ widget: parsedWidget })
-			if (renderIssues.fatal.length > 0) {
-				return yield* new McpInvalidInputError({
-					message: `This widget cannot render as configured (it was NOT updated):\n${formatRenderIssues({ fatal: renderIssues.fatal, warnings: [] })}`,
-					parameter: "widget_json",
-				})
-			}
-
-			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) => {
-				const index = existingWidgets.findIndex((w) => w.id === widget_id)
-				if (index === -1) return Effect.fail(widgetNotFound(widget_id))
-				// A patch was merged onto the widget as read above; a concurrent edit to this
-				// same widget in between is overwritten, as a whole-widget replace would be.
-				const next = existingWidgets.slice()
-				next[index] = { ...parsedWidget, id: widget_id }
-				return Effect.succeed(next)
-			})
+			// Resolved inside the CAS transform, so a patch merges onto the widget as it is
+			// stored at write time and a concurrent edit to it is kept, not overwritten.
+			const prepared = yield* Ref.make(Option.none<Effect.Success<ReturnType<typeof prepareWidget>>>())
+			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) =>
+				Effect.gen(function* () {
+					const index = Arr.findFirstIndex(existingWidgets, (w) => w.id === widget_id)
+					if (Option.isNone(index)) return yield* widgetNotFound(widget_id)
+					const replacement = yield* resolveReplacement(
+						existingWidgets[index.value]!,
+						widget_json,
+						patch,
+					)
+					const result = yield* prepareWidget(replacement)
+					yield* Ref.set(prepared, Option.some(result))
+					return Arr.map(existingWidgets, (w, i) =>
+						i === index.value ? { ...result.widget, id: widget_id } : w,
+					)
+				}),
+			)
+			const {
+				widget: parsedWidget,
+				repairedScalar,
+				renderWarnings,
+			} = yield* Ref.get(prepared).pipe(Effect.flatMap(Effect.fromOption), Effect.orDie)
 
 			const updated = dashboard.widgets.find((w) => w.id === widget_id)
 
@@ -179,7 +191,7 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 				...(validation.ran ? { validation } : undefined),
 				visualization: updated?.visualization ?? parsedWidget.visualization,
 				repairedScalar,
-				renderWarnings: [...renderIssues.warnings],
+				renderWarnings: [...renderWarnings],
 			}
 		}),
 		render: (output) => {

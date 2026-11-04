@@ -6,7 +6,8 @@
  * - Code audit, `acme/shop@main` (complete run a day ago): a confirmed critical cross-tenant order
  *   export (`orders/export-missing-org-scope`), a confirmed high reset-token timing leak, an
  *   unconfirmed high lead (avatar path traversal), a dismissed coupon replay, a rejected SSRF claim
- *   and a fixed JWT `alg: none` finding. `acme/api@main` stopped at the org's spend limit.
+ *   and a fixed JWT `alg: none` finding. `acme/api@main` stopped at the org's $25 spend limit with
+ *   its webhooks unit deferred, admin unit blocked and exports unit never reached (run `run-api-1`).
  * - Dependencies, `acme/shop` scanned at the deployed commit: `next` 14.1.0 (CVE-2025-29927,
  *   critical, direct, runs in checkout production), `axios` 1.6.0 (CVE-2024-39338, high,
  *   transitive), `cookie` 0.5.0 (medium), `vitest` (low, dev). `acme/api` has no scan.
@@ -221,6 +222,13 @@ const CODE_FINDINGS = [
 	},
 ] as const
 
+interface UnitFields {
+	readonly subsystem: string
+	readonly surface: string
+	readonly boundary: string
+	readonly attack_class: string
+}
+
 export const seedSecurityWorld = async (rt: EvalRuntime) => {
 	const now = Date.now()
 	const at = (hoursAgo: number) => new Date(now - hoursAgo * HOUR).toISOString()
@@ -261,6 +269,177 @@ export const seedSecurityWorld = async (rt: EvalRuntime) => {
 		)
 	await run("run-shop-1", SECURITY_WORLD.shopTarget, "complete", 26, null)
 	await run("run-api-1", SECURITY_WORLD.apiTarget, "incomplete", 50, "org_spend_limit_reached")
+	// The shop's first audit, ten days back, so the history has more than one run.
+	await run("run-shop-0", SECURITY_WORLD.shopTarget, "complete", 24 * 10, null)
+
+	// A $25 monthly limit the two runs' agents used up (reserved within the month): why run-api-1 stopped.
+	await sql(
+		`INSERT INTO security_audit_org_settings (org_id, monthly_spend_limit_usd, discovery_model, validation_model, updated_by, updated_at)
+		 VALUES ($1, 25, 'anthropic/claude-sonnet-4.5', 'openai/gpt-5', 'user_eval', $2)`,
+		[org, at(24 * 20)],
+	)
+	for (const [runId, agentId] of [
+		["run-shop-1", "hunter-1"],
+		["run-api-1", "hunter-1"],
+	]) {
+		await sql(
+			`INSERT INTO security_audit_org_reservations (run_id, agent_id, org_id, cost_usd, sandbox_fee_usd, created_at)
+			 VALUES ($1, $2, $3, 12.5, 0.02, $4)`,
+			[runId, agentId, org, at(1)],
+		)
+	}
+
+	// Coverage ledgers: the shop's run covered everything; the api's stopped with units unsettled.
+	const unit = (
+		runId: string,
+		coverageId: string,
+		status: string,
+		wave: number,
+		fields: UnitFields & {
+			readonly result_fingerprints?: ReadonlyArray<string>
+			readonly unresolved?: ReadonlyArray<string>
+		},
+	) =>
+		sql(
+			`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			[
+				runId,
+				coverageId,
+				org,
+				status,
+				wave,
+				status === "planned" ? null : `hunter-${wave}`,
+				JSON.stringify({ prior_status: "new", result_fingerprints: [], unresolved: [], ...fields }),
+			],
+		)
+	const UNIT = (subsystem: string, surface: string, attack: string): UnitFields => ({
+		subsystem,
+		surface,
+		boundary: "authenticated user -> server",
+		attack_class: attack,
+	})
+	await unit("run-shop-1", "orders-export", "covered", 1, {
+		...UNIT("orders", "GET /api/orders/export", "tenant isolation"),
+		result_fingerprints: [SECURITY_WORLD.criticalFingerprint],
+	})
+	await unit("run-shop-1", "auth-reset", "covered", 1, {
+		...UNIT("auth", "POST /api/auth/reset", "authentication"),
+		result_fingerprints: ["auth/reset-token-timing"],
+	})
+	await unit("run-shop-1", "account-avatar", "candidate", 2, {
+		...UNIT("account", "POST /api/account/avatar", "path traversal"),
+		result_fingerprints: [SECURITY_WORLD.leadFingerprint],
+	})
+	await unit(
+		"run-shop-1",
+		"checkout-webhook",
+		"covered",
+		2,
+		UNIT("checkout", "POST /webhooks/payment", "ssrf"),
+	)
+	await unit("run-api-1", "api-auth", "covered", 1, UNIT("auth", "API key middleware", "authentication"))
+	await unit(
+		"run-api-1",
+		"api-billing",
+		"covered",
+		1,
+		UNIT("billing", "POST /v1/invoices", "tenant isolation"),
+	)
+	await unit("run-api-1", "api-webhooks", "deferred", 2, {
+		...UNIT("webhooks", "POST /v1/webhooks", "ssrf"),
+		unresolved: ["Stopped at the org spend limit before the outbound fetch could be traced."],
+	})
+	await unit("run-api-1", "api-admin", "blocked", 2, {
+		...UNIT("admin", "/v1/admin/*", "authorization"),
+		unresolved: ["The admin router is generated at build time; its source is not in the repository."],
+	})
+	await unit(
+		"run-api-1",
+		"api-exports",
+		"planned",
+		3,
+		UNIT("exports", "GET /v1/exports", "tenant isolation"),
+	)
+
+	// What run-shop-1 reported, the verifier's rejected SSRF claim included.
+	for (const f of CODE_FINDINGS) {
+		await sql(
+			`INSERT INTO security_audit_run_findings (run_id, fingerprint, org_id, verdict, overall_severity, estimated_severity, record)
+			 VALUES ('run-shop-1', $1, $2, $3, $4, $5, $6)`,
+			[f.fingerprint, org, f.verdict, f.overall, f.estimated, JSON.stringify(f.record)],
+		)
+	}
+
+	// run-api-1's log: prepare, two hunters, then the spend limit.
+	const event = (
+		id: string,
+		hoursAgo: number,
+		kind: string,
+		fields: {
+			runId?: string
+			role?: string
+			agentId?: string
+			outcome?: string
+			phase?: string
+			message?: string
+			costUsd?: number
+		},
+	) =>
+		sql(
+			`INSERT INTO security_audit_events (id, run_id, org_id, at, kind, role, agent_id, outcome, detail, input_tokens, output_tokens)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, null, null)`,
+			[
+				id,
+				fields.runId ?? "run-api-1",
+				org,
+				at(hoursAgo),
+				kind,
+				fields.role ?? null,
+				fields.agentId ?? null,
+				fields.outcome ?? null,
+				JSON.stringify({
+					message: fields.message ?? null,
+					phase: fields.phase ?? null,
+					detail: null,
+					costUsd: fields.costUsd ?? null,
+				}),
+			],
+		)
+	await event("ev-1", 50, "Phase", { phase: "prepare", message: "Cloned acme/api at the deployed commit." })
+	await event("ev-2", 49.5, "Phase", { phase: "map", message: "Planned 5 coverage units." })
+	await event("ev-3", 49, "Agent", {
+		role: "hunter",
+		agentId: "hunter-1",
+		outcome: "covered",
+		message: "Covered api-auth and api-billing; nothing to report.",
+		costUsd: 9.8,
+	})
+	await event("ev-4", 48.5, "Agent", {
+		role: "hunter",
+		agentId: "hunter-2",
+		outcome: "refused",
+		message: "Not granted: the org reached its monthly spend limit.",
+	})
+	await event("ev-5", 48, "Note", { message: "Run stopped: org_spend_limit_reached." })
+	await event("ev-shop-1", 26, "Phase", {
+		runId: "run-shop-1",
+		phase: "prepare",
+		message: "Cloned acme/shop.",
+	})
+	await event("ev-shop-2", 25, "Agent", {
+		runId: "run-shop-1",
+		role: "verifier",
+		agentId: "verifier-1",
+		outcome: "rejected",
+		message: "checkout/webhook-ssrf: callbackUrl comes from server config.",
+		costUsd: 2.1,
+	})
+	await event("ev-shop-3", 24, "Phase", {
+		runId: "run-shop-1",
+		phase: "report",
+		message: "5 findings kept, 1 rejected.",
+	})
 
 	for (const [i, f] of CODE_FINDINGS.entries()) {
 		await sql(

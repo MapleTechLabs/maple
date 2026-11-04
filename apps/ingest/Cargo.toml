@@ -147,6 +147,10 @@ harness = false
 name = "ingest_rules_bench"
 harness = false
 
+[[bench]]
+name = "wal_append_bench"
+harness = false
+
 # Reads fixture-shaped cases as JSON lines on stdin and prints each outcome; driven by
 # `bun run --cwd packages/ingest-rules fuzz` to diff this engine against the TS one.
 [[example]]

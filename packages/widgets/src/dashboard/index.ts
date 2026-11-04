@@ -68,15 +68,8 @@ export {
 export { DashboardDocumentV3, PortableDashboardDocumentV3 } from "./v3/document"
 export { DashboardWidgetV3, WidgetDisplayConfigV3 } from "./v3/widget"
 export { MARKDOWN_STATIC_ENDPOINT, QUERY_ENDPOINT_RESULT_KINDS } from "./legacy-endpoints"
-// The one-shot upgrade the backfill script runs against Postgres. Deliberately
-// not a `DashboardMigration` — see the header of `upgrade-to-v3.ts`.
-export {
-	fromLegacyDataSource,
-	isDocumentV3,
-	isV3DataSource,
-	upgradeDocumentToV3,
-	upgradeStoredDocument,
-} from "./upgrade-to-v3"
+// The v2 -> v3 data-source conversion; see the header of `upgrade-to-v3.ts`.
+export { fromLegacyDataSource, isV3DataSource } from "./upgrade-to-v3"
 export { type DashboardParseOutcome, parseStoredDashboard, stampCurrentVersion } from "./parse"
 export { CURRENT_DASHBOARD_SCHEMA_VERSION, DashboardSchemaVersion } from "./version"
 export { makeWidgetDisplayConfigSchema } from "./shared/display"
@@ -126,7 +119,12 @@ export {
 	DashboardDocumentV3 as DashboardDocument,
 	PortableDashboardDocumentV3 as PortableDashboardDocument,
 } from "./v3/document"
-export { withWidgets } from "./document-helpers"
+export {
+	type DashboardContentFields,
+	withDocumentFields,
+	withPortableContent,
+	withWidgets,
+} from "./document-helpers"
 export { DASHBOARD_GRID_COLS, findNextPosition, type PlaceableWidget } from "./placement"
 export { DashboardDocumentV2 } from "./v2/document"
 export { WidgetDataSourceV3 as WidgetDataSourceSchema } from "./v3/data-source"
