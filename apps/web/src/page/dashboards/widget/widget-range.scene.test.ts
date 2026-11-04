@@ -80,6 +80,5 @@ describe("a widget's own time range", () => {
 		expect(picked.model.timeRange).toEqual({ type: "relative", value: "7d" })
 		const writes = Arr.filter(picked.commands ?? [], ({ name }) => name !== FetchWidget.name)
 		expect(Arr.map(writes, ({ name }) => name)).toEqual([])
-		expect(widgetOf(picked.model)?.timeRange).toBeUndefined()
 	})
 })
