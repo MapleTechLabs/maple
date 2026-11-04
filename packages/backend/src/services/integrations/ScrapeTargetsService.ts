@@ -160,7 +160,7 @@ export const summarizeScrapeResults = (
  * (`managedBy` set) are refused by default so a generic `scrape_targets:write`
  * caller cannot delete, disable, or re-credential a row an integration owns;
  * the owning integration passes `allowManaged` for its own writes. On create it
- * marks the row as one the integration will own, which the per-org limit skips.
+ * only skips the per-org limit; the integration still sets `managedBy` itself.
  */
 export interface ScrapeTargetMutationOptions {
 	readonly allowManaged?: boolean
