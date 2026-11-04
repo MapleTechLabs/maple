@@ -97,6 +97,31 @@ describe("OrganizationRegionService", () => {
 		}),
 	)
 
+	it.effect("an answer from the shared cache is held 10 min from when it arrived", () =>
+		Effect.gen(function* () {
+			const memory = makeMemoryBackend()
+			let edgeReads = 0
+			const backend: EdgeCacheBackend = {
+				...memory,
+				get: (bucket, hash, nowMs) => {
+					edgeReads += 1
+					return memory.get(bucket, hash, nowMs)
+				},
+			}
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			yield* (yield* isolate(backend, directory)).ensureServedHere(orgId)
+			yield* TestClock.adjust("30 minutes")
+			const second = yield* isolate(backend, directory)
+			yield* second.ensureServedHere(orgId)
+			const afterArrival = edgeReads
+			// Read from Clerk 39 min ago, but here for only 9: the isolate still answers.
+			yield* TestClock.adjust("9 minutes")
+			yield* second.ensureServedHere(orgId)
+			assert.strictEqual(edgeReads, afterArrival)
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+		}),
+	)
+
 	it.effect("a chosen region expires an hour after Clerk was read, in every tier", () =>
 		Effect.gen(function* () {
 			const backend = makeMemoryBackend()

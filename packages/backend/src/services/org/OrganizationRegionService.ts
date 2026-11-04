@@ -86,8 +86,21 @@ interface RegionAnswer {
 
 const answer = (entry: RegionRead, layer: RegionAnswer["layer"]): RegionAnswer => ({ entry, layer })
 
+// The TTL is picked as of the read: an entry read while the choice window was open must not
+// become a settled answer when the window closes.
 const isFresh = (entry: RegionRead, nowMs: number, tier: Tier): boolean =>
-	nowMs - entry.readAtMs < regionTtlMs(entry, nowMs, tier)
+	nowMs - entry.readAtMs < regionTtlMs(entry, entry.readAtMs, tier)
+
+/** An answer this isolate holds, and since when: an edge hit counts from when it arrived here. */
+interface Held {
+	readonly entry: RegionRead
+	readonly heldAtMs: number
+}
+
+/** Within the isolate tier from arrival, and never past the answer's own edge age. */
+const isHeldFresh = (held: Held, nowMs: number): boolean =>
+	isFresh(held.entry, nowMs, "edge") &&
+	nowMs - held.heldAtMs < regionTtlMs(held.entry, held.entry.readAtMs, "isolate")
 
 /** The organization fields a region decision needs, as the directory returns them. */
 export interface DirectoryOrganization {
@@ -143,7 +156,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	readOrganization: Option.Option<ReadDirectoryOrganization>,
 ) {
 	const edgeCache = yield* EdgeCacheService
-	const remembered = yield* Ref.make(HashMap.empty<OrgId, RegionRead>())
+	const remembered = yield* Ref.make(HashMap.empty<OrgId, Held>())
 	// A counter, not the clock, names a read: Workers' clock stands still between I/O.
 	const readIds = yield* Ref.make(0)
 	const coalescing = yield* Ref.make<Coalescing>({ running: HashMap.empty(), settled: HashMap.empty() })
@@ -236,7 +249,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 								"cache.layer": layer,
 							}),
 							organizationServedIn(entry.metadata, region)
-								? Ref.update(remembered, HashMap.set(orgId, entry))
+								? Ref.update(remembered, HashMap.set(orgId, { entry, heldAtMs: nowMs }))
 								: Effect.void,
 						).pipe(Effect.as(found(entry.metadata))),
 				}),
@@ -296,12 +309,10 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		if (Option.isNone(readOrganization)) return { _tag: "Unreachable" }
 		const nowMs = yield* Clock.currentTimeMillis
 		const rememberedMap = yield* Ref.get(remembered)
-		const local = Option.filter(HashMap.get(rememberedMap, orgId), (entry) =>
-			isFresh(entry, nowMs, "isolate"),
-		)
+		const local = Option.filter(HashMap.get(rememberedMap, orgId), (held) => isHeldFresh(held, nowMs))
 		if (Option.isSome(local)) {
 			yield* Effect.annotateCurrentSpan({ "cache.hit": true, "cache.layer": "isolate" })
-			return found(local.value.metadata)
+			return found(local.value.entry.metadata)
 		}
 		const id = yield* Ref.updateAndGet(readIds, (n) => n + 1)
 		// Claim the read, or learn which read is already running. No yield between check and set.
