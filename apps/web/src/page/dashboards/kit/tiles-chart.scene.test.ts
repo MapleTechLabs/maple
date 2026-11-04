@@ -9,7 +9,7 @@ import { type TileContext, widgetTile } from "./tiles"
 
 // A chart tile when the chart code itself could not load.
 
-type Model = Readonly<{ runtime: ChartRuntime; reloads: number }>
+type Model = Readonly<{ runtime: ChartRuntime; reloads: number; dataLoading?: boolean }>
 type Message = "ClickedReloadPage" | "Ignored"
 
 const [widget] = Schema.decodeUnknownSync(DashboardDocument)({
@@ -34,10 +34,13 @@ const tile = withViewInputs(
 	Submodel.defineView<Model, Message, Record<string, never>>((model, _inputs, h) => {
 		const ctx: TileContext<Message> = {
 			h,
-			state: {
-				_tag: "Ready",
-				data: { _tag: "Rows", rows: [{ bucket: "2026-10-01 12:00:00", value: 3 }] },
-			},
+			state:
+				model.dataLoading === true
+					? { _tag: "Loading" }
+					: {
+							_tag: "Ready",
+							data: { _tag: "Rows", rows: [{ bucket: "2026-10-01 12:00:00", value: 3 }] },
+						},
 			isEdit: false,
 			menu: null,
 			isMenuOpen: false,
@@ -79,6 +82,15 @@ describe("a chart tile whose chart code failed to load", () => {
 			expect(text("Charts couldn't load")).toExist(),
 			click(role("button", { name: "Reload page" })),
 			expect(text("reloads 1")).toExist(),
+		)
+	})
+
+	test("says so while the tile's data is still loading", () => {
+		scene(
+			config,
+			given({ runtime: { _tag: "Failed", reason: "chunk 404" }, reloads: 0, dataLoading: true }),
+			expect(text("Charts couldn't load")).toExist(),
+			expect(role("button", { name: "Reload page" })).toExist(),
 		)
 	})
 

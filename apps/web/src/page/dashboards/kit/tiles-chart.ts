@@ -364,7 +364,15 @@ export const chartWidgetTile = <M>(
 								: item,
 						)
 					: hoistedSeries(data, theme)
-	const options_ = frame(ctx, widget, { loadingSkeleton: skeleton, legendItems })
+	// A tile that needs the chart runtime says it failed even while its data is still loading.
+	const runtimeFailed =
+		category !== undefined &&
+		(isCanvas(category) || isServiceChart(chartId)) &&
+		ctx.chartRuntime._tag === "Failed"
+	const options_ = frame(ctx, widget, {
+		loadingSkeleton: runtimeFailed ? chartRuntimeFailedState(h, ctx.reloadPage ?? null) : skeleton,
+		legendItems,
+	})
 	return widgetFrame(h, options_, () => {
 		if (category === undefined) return []
 		if (isServiceChart(chartId) && ctx.chartRuntime._tag === "Failed")
