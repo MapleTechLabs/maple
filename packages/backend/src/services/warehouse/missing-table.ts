@@ -88,3 +88,17 @@ export const isMissingServiceApiColumns = (error: unknown): boolean =>
 	"message" in error &&
 	typeof error.message === "string" &&
 	MIGRATION_0048_COLUMNS.test(error.message)
+
+/**
+ * `error_events.UserId` ships in migration 0057: a cluster without it classifies a query naming the
+ * column as schema drift. The users pages' issue reads and an issue's affected users then answer
+ * empty. Only `UserId` qualifies, so every other drift still surfaces.
+ */
+export const isMissingErrorEventsUserId = (error: unknown): boolean =>
+	typeof error === "object" &&
+	error !== null &&
+	"_tag" in error &&
+	error._tag === "@maple/http/errors/WarehouseSchemaDriftError" &&
+	"message" in error &&
+	typeof error.message === "string" &&
+	/\bUserId\b/.test(error.message)

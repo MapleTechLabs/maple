@@ -1,7 +1,8 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { McpClientKind, McpSessionSource } from "./mcp"
-import { ServiceNamespace } from "../primitives"
+import { ErrorIssueId, ServiceNamespace } from "../primitives"
+import { ErrorPersistenceError, WorkflowState } from "./errors"
 import { TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
@@ -103,8 +104,14 @@ export type UserService = typeof UserService.Type
 const UserDevice = Schema.Struct({ browser: Schema.String, os: Schema.String, sessions: Schema.Number })
 
 /**
- * A user's identity and totals. The request numbers read `user_activity_hourly`; they are `null`
- * where a cluster lacks it (never a fake zero). `issues` arrives with the per-user issues read.
+ * Errors carry the user that hit them from this instant on (migration 0057, no backfill), so a
+ * user's issues and an issue's affected users start here. Update it to the deploy date on release.
+ */
+export const USER_ERRORS_ATTRIBUTED_FROM_MS = Date.UTC(2026, 10, 5)
+
+/**
+ * A user's identity and totals. The request numbers read `user_activity_hourly`, the issue numbers
+ * `error_events.UserId`; each is `null` where a cluster lacks it (never a fake zero).
  */
 export const UserProfileItem = Schema.Struct({
 	userId: Schema.String,
@@ -139,7 +146,10 @@ export const UserProfileItem = Schema.Struct({
 	/** Distinct traces the user's spans belong to. */
 	traces: Schema.NullOr(Schema.Number),
 	logs: Schema.NullOr(Schema.Number),
+	/** Distinct issues the user hit. */
 	issues: Schema.NullOr(Schema.Number),
+	/** Error occurrences that named the user, across those issues. */
+	issueHits: Schema.NullOr(Schema.Number),
 	/** The busiest route, `null` without requests. */
 	topRoute: Schema.NullOr(Schema.String),
 	/** Requests in 7 equal slices of the window, oldest first. */
@@ -206,6 +216,8 @@ export const UserActivityItem = Schema.Struct({
 	sessionId: Schema.NullOr(Schema.String),
 	/** The trace a request or log row opens; `null` when it has none. */
 	traceId: Schema.NullOr(Schema.String),
+	/** The issue an error row opens; `null` for other rows and errors not yet an issue. */
+	issueId: Schema.NullOr(ErrorIssueId),
 })
 export type UserActivityItem = typeof UserActivityItem.Type
 
@@ -253,6 +265,32 @@ export class UserLogsResponse extends Schema.Class<UserLogsResponse>("UserLogsRe
 	logs: Schema.Array(UserLogItem),
 }) {}
 
+/**
+ * One issue the user hit, by the issue its fingerprint lands on (an alias first, as the errors
+ * tick routes it). `issueId` and `status` are `null` for a fingerprint not yet promoted to one.
+ */
+export const UserIssueItem = Schema.Struct({
+	issueId: Schema.NullOr(ErrorIssueId),
+	/** The issue's own fingerprint, else the warehouse's. */
+	fingerprintHash: Schema.String,
+	type: Schema.String,
+	message: Schema.String,
+	service: Schema.String,
+	/** Occurrences that named this user. */
+	hits: Schema.Number,
+	firstSeenMs: Schema.Number,
+	lastSeenMs: Schema.Number,
+	status: Schema.NullOr(WorkflowState),
+})
+export type UserIssueItem = typeof UserIssueItem.Type
+
+export class UserIssuesResponse extends Schema.Class<UserIssuesResponse>("UserIssuesResponse")({
+	/** Most hits first, capped. */
+	issues: Schema.Array(UserIssueItem),
+	/** `false` on a cluster whose `error_events` predates `UserId`: no errors can name a user. */
+	attributed: Schema.Boolean,
+}) {}
+
 export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 	.add(
 		HttpApiEndpoint.post("list", "/list", {
@@ -272,14 +310,16 @@ export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 		HttpApiEndpoint.post("profile", "/profile", {
 			payload: UserDetailRequest,
 			success: UserProfileResponse,
-			error: warehouseReadHttpErrors,
+			// The issue reads resolve fingerprints to issues in Postgres.
+			error: [...warehouseReadHttpErrors, ErrorPersistenceError],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("activity", "/activity", {
 			payload: UserDetailRequest,
 			success: UserActivityResponse,
-			error: warehouseReadHttpErrors,
+			// The issue reads resolve fingerprints to issues in Postgres.
+			error: [...warehouseReadHttpErrors, ErrorPersistenceError],
 		}),
 	)
 	.add(
@@ -294,6 +334,14 @@ export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 			payload: UserDetailRequest,
 			success: UserLogsResponse,
 			error: warehouseReadHttpErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("issues", "/issues", {
+			payload: UserDetailRequest,
+			success: UserIssuesResponse,
+			// The issue reads resolve fingerprints to issues in Postgres.
+			error: [...warehouseReadHttpErrors, ErrorPersistenceError],
 		}),
 	)
 	.prefix("/internal/users")

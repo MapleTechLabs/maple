@@ -390,6 +390,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		countOpenIssuesByService: die,
 		countIssues: die,
 		getIssue: die,
+		listIssueAffectedUsers: die,
 		listIssueIncidents: die,
 		listOpenIncidents: die,
 	}),

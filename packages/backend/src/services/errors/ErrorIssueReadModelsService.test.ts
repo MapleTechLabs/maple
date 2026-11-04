@@ -341,4 +341,42 @@ describe("ErrorIssueReadModelsService", () => {
 			)
 		}).pipe(Effect.provide(makeLayer([], sqls)))
 	})
+
+	it.effect("reads an issue's affected users over its aliases, and none for an alert issue", () => {
+		const contexts: Array<string> = []
+		const sqls: Array<string> = []
+		return Effect.gen(function* () {
+			const database = yield* Database
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const owner = asIssueId(randomUUID())
+			const alert = asIssueId(randomUUID())
+			yield* seedIssue(ORG, owner, now, { fingerprintHash: "5555555555555555555" })
+			yield* seedIssue(ORG, alert, now, { fingerprintHash: "alert:rule:group", kind: "alert" })
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: "6666666666666666666",
+						issueId: owner,
+						source: "merge",
+						createdAt: now,
+					}),
+				),
+			)
+			const window = { startTime: "2026-11-05 00:00:00", endTime: "2026-11-06 00:00:00" }
+
+			const users = yield* readModels.listIssueAffectedUsers(ORG, owner, window)
+			assert.isTrue(users.attributed)
+			assert.deepStrictEqual(contexts.toSorted(), ["issueAffectedUserCount", "issueAffectedUsers"])
+			for (const sql of sqls) {
+				expect(sql).toContain("5555555555555555555")
+				expect(sql).toContain("6666666666666666666")
+			}
+
+			const none = yield* readModels.listIssueAffectedUsers(ORG, alert, window)
+			assert.isFalse(none.attributed)
+			assert.lengthOf(contexts, 2)
+		}).pipe(Effect.provide(makeLayer(contexts, sqls)))
+	})
 })
