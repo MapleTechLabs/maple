@@ -4,7 +4,8 @@ import { UpdateError } from "@maple/effect-db/electric"
 import { DashboardConcurrencyError, DashboardId, publicHttpErrorBody } from "@maple/domain/http"
 import { publicError } from "@maple/domain/http/v2"
 import type { DashboardRow } from "@maple/web-data/collections/dashboards"
-import { Effect, Schema } from "effect"
+import { Effect, Fiber, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { DashboardConflictError, DashboardWriteError, mutateDocumentIn, settled } from "./store"
 
 interface Row {
@@ -153,6 +154,37 @@ describe("mutateDocumentIn when someone else saved first", () => {
 
 			expect(error).toBeInstanceOf(DashboardConflictError)
 			expect(error.message).toContain("This dashboard changed before your edit was saved")
+		}),
+	)
+
+	it.effect("gives up with the conflict message when the newer version never syncs in", () =>
+		Effect.gen(function* () {
+			let calls = 0
+			const collection = createCollection(
+				localOnlyCollectionOptions<DashboardRow, string>({
+					getKey: (r) => r.id,
+					initialData: [row(1)],
+					onUpdate: () => {
+						calls += 1
+						return Promise.reject(conflict())
+					},
+				}),
+			)
+			const fiber = yield* Effect.forkChild(
+				Effect.flip(
+					mutateDocumentIn(collection, ID, (document, nowIso) => ({
+						...document,
+						tags: ["prod"],
+						updatedAt: nowIso,
+					})),
+				),
+			)
+			yield* TestClock.adjust("3 seconds")
+			const error = yield* Fiber.join(fiber)
+
+			expect(error).toBeInstanceOf(DashboardConflictError)
+			// No second PATCH: without the newer version there is nothing to re-apply on.
+			expect(calls).toBe(1)
 		}),
 	)
 
