@@ -15,6 +15,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { isDegraded, isLoadFailed, listedOf } from "./update"
 import { listBody, listSkeleton } from "./view-list"
+import { snapshotBanner } from "../kit/live-sync"
 import { String as Str } from "effect"
 
 // The dashboards list page: `PageShell` around the list.
@@ -134,35 +135,6 @@ const listLoadError = (h: H, isReadOnly: boolean): Html =>
 		className: "min-h-64",
 	})
 
-/** `SyncDegradedBanner`: the rows are a frozen HTTP snapshot and writes are off. */
-const degradedBanner = (h: H): Html =>
-	h.div(
-		[
-			h.Class(
-				"mb-3 flex items-start gap-2 rounded-md border border-border bg-surface-sunken p-2.5 text-xs text-muted-foreground",
-			),
-		],
-		[
-			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0" }),
-			h.span(
-				[h.Class("flex-1")],
-				[
-					"Live sync is unavailable, so this is a snapshot loaded over HTTP. It won’t update on its own and editing is disabled.",
-				],
-			),
-			button(
-				h,
-				{
-					size: "xs",
-					variant: "ghost",
-					className: "-my-1 shrink-0 hover:text-foreground active:text-foreground",
-					attributes: [h.OnClick(Message.ClickedRetrySync())],
-				},
-				["Retry sync"],
-			),
-		],
-	)
-
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const listed = listedOf(model)
 	const isReady = listed !== null && model.nowMs !== null && model.isPrefsLoaded
@@ -187,7 +159,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		isLoadFailed(model)
 			? [listLoadError(h, reason !== null)]
 			: [
-					...(isDegraded(model) ? [degradedBanner(h)] : []),
+					...(isDegraded(model) ? [snapshotBanner(h, "this", Message.ClickedRetrySync())] : []),
 					isReady && listed !== null && model.nowMs !== null
 						? listBody(h, model, listed, model.nowMs, inputs.context.timeZone)
 						: listSkeleton(h),
