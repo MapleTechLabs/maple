@@ -86,9 +86,13 @@ export type OptionsState = Readonly<{
 
 export const NO_OPTIONS: OptionsState = { options: [], loading: false, error: null }
 
-/** A query variable whose options failed: its empty fallback and "All" (an empty expansion) are no value. */
+/** A query variable whose options failed: its empty fallback is no value. */
 const isUnavailable = (variable: Variable, options: OptionsState, value: string | undefined) =>
-	variable.type === "query" && options.error !== null && (value === "" || value === ALL_VALUE)
+	variable.type === "query" && options.error !== null && value === ""
+
+/** "All" over failed options: fine where it drops a where clause, no value where it expands to the options. */
+const isUnexpandable = (variable: Variable, options: OptionsState, value: string | undefined) =>
+	variable.type === "query" && options.error !== null && value === ALL_VALUE
 
 /** `values`: each variable's resolved value; one waiting on (or failed by) its options is absent. */
 export const resolveVariableValues = (
@@ -117,6 +121,22 @@ export const unavailableVariables = (
 			const options = optionsByName[variable.name] ?? NO_OPTIONS
 			const value = resolveDashboardVariableValue(variable, urlValues[variable.name], options)
 			return isUnavailable(variable, options, value) && options.error !== null
+				? [[variable.name, options.error]]
+				: []
+		}),
+	)
+
+/** Variables set to "All" whose options failed, with why: tiles expanding them (SQL) cannot run. */
+export const unexpandableVariables = (
+	variables: ReadonlyArray<Variable>,
+	urlValues: Readonly<Record<string, string>>,
+	optionsByName: Readonly<Record<string, OptionsState>>,
+): Readonly<Record<string, string>> =>
+	Rec.fromEntries(
+		Arr.flatMap(variables, (variable) => {
+			const options = optionsByName[variable.name] ?? NO_OPTIONS
+			const value = resolveDashboardVariableValue(variable, urlValues[variable.name], options)
+			return isUnexpandable(variable, options, value) && options.error !== null
 				? [[variable.name, options.error]]
 				: []
 		}),
@@ -197,5 +217,6 @@ export const planVariablesOf = (
 		names: Arr.map(variables, (variable) => variable.name),
 		values: resolveVariableValues(variables, urlValues, optionsByName),
 		unavailable: unavailableVariables(variables, urlValues, optionsByName),
+		unexpandable: unexpandableVariables(variables, urlValues, optionsByName),
 	}
 }

@@ -1,6 +1,7 @@
 // BOUNDARY: widget endpoints answer untyped JSON; this module narrows it into rows and values.
 import { QueryEngineValidationError } from "@maple/domain/http"
 import {
+	collectExpandedVariableRefs,
 	collectVariableRefs,
 	computeBucketSecondsForWidthRange,
 	formatRangeSeconds,
@@ -75,6 +76,8 @@ export interface PlanInput {
 		values: VariableValues
 		/** Variables no value can come from, with why (`unavailableVariables`). */
 		unavailable?: Readonly<Record<string, string>>
+		/** "All" over failed options: blocks only references outside where clauses (`unexpandableVariables`). */
+		unexpandable?: Readonly<Record<string, string>>
 	}>
 	/** `narrowedToCap`: the viewer pulled this list back to the cap (per tile, not persisted). */
 	readonly isNarrowed?: boolean
@@ -110,11 +113,21 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 	if (request === null) return { _tag: "Disabled", message: "Unsupported data source" }
 	if (request.endpoint === "markdown_static") return { _tag: "Static" }
 	const unavailable = input.variables?.unavailable ?? {}
+	const unexpandable = input.variables?.unexpandable ?? {}
 	const broken = Arr.findFirst(collectVariableRefs(encodeParams(request.params ?? {})), (name) =>
 		Rec.has(unavailable, name),
 	)
 	if (broken._tag === "Some")
 		return { _tag: "VariableUnavailable", name: broken.value, message: unavailable[broken.value] ?? "" }
+	const unexpanded = Arr.findFirst(collectExpandedVariableRefs(request.params ?? {}), (name) =>
+		Rec.has(unexpandable, name),
+	)
+	if (unexpanded._tag === "Some")
+		return {
+			_tag: "VariableUnavailable",
+			name: unexpanded.value,
+			message: unexpandable[unexpanded.value] ?? "",
+		}
 	// A literal `$service` must never reach the API: wait until every referenced variable resolves.
 	if (
 		input.variables !== undefined &&
