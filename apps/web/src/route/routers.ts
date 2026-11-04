@@ -273,6 +273,7 @@ const routers = {
 	Replays: pipe(path("replays"), search(Search.ReplaysSearch), Route.mapTo(AppRoute.Replays)),
 	Services: pipe(path("services"), search(Search.ServicesSearch), Route.mapTo(AppRoute.Services)),
 	Traces: pipe(path("traces"), search(Search.TracesSearch), Route.mapTo(AppRoute.Traces)),
+	Users: pipe(path("users"), search(Search.UsersSearch), Route.mapTo(AppRoute.Users)),
 	AgentSessionTool: pipe(
 		path("agent-sessions", "tools"),
 		slash(segment("toolName")),

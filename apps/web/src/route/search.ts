@@ -623,6 +623,16 @@ export const ReplaysSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
+/** `/users`: the directory's search, toggles and facet picks (a pinned namespace overrides `namespaces`). */
+export const UsersSearch = Schema.Struct({
+	q: Schema.optional(Schema.String),
+	hasErrors: BooleanParam,
+	hasReplay: BooleanParam,
+	namespaces: OptionalStringArrayParam,
+	groups: OptionalStringArrayParam,
+	...TimeRangeSearchFields,
+})
+
 // sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ServicesSearch = Schema.Struct({
 	environments: OptionalStringArrayParam,

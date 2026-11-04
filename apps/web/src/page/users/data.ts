@@ -7,7 +7,7 @@ import { Array as Arr } from "effect"
 // through the service.
 
 /** A signal Maple holds for a user, shown as a tag in the directory. */
-export type UserSignal = "replay" | "traces" | "logs" | "events"
+export type UserSignal = "replay" | "traces" | "logs" | "events" | "mcp"
 
 export type UserRow = Readonly<{
 	userId: string

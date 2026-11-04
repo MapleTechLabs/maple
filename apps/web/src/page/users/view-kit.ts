@@ -53,6 +53,7 @@ const SIGNAL_LABEL = {
 	traces: "Traces",
 	logs: "Logs",
 	events: "Events",
+	mcp: "MCP",
 } satisfies { readonly [K in UserSignal]: string }
 
 /** Which signals carry this user, as quiet tags. */

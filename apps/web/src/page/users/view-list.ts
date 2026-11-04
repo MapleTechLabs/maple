@@ -66,7 +66,8 @@ export type UsersListOptions<M> = Readonly<{
 	scope: ReadonlyArray<string>
 	onSearch: (value: string) => M
 	onClearSearch: M
-	onOpenUser: (userId: string) => M
+	/** The user page a row links to. */
+	userHref: (userId: string) => string
 }>
 
 export type UsersRailOptions<M> = Readonly<{
@@ -227,7 +228,7 @@ const namespaceCell = <M>(h: HtmlBuilder<M>, namespaces: ReadonlyArray<string>):
 }
 
 const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M>): Html =>
-	toolTableRow(h, { onClick: options.onOpenUser(row.userId), className: "h-12" }, [
+	toolTableRow(h, { href: options.userHref(row.userId), className: "h-12" }, [
 		hstack(
 			h,
 			{ gap: "2.5", shrink: true, grow: true, as: "span", className: columnClass({ min: "48" }) },

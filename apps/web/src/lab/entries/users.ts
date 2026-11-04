@@ -228,7 +228,7 @@ const view = (model: Model, h: H): Html => {
 						scope: scopeOf(filtersOf(model), model.pinnedNamespace),
 						onSearch: (value) => Message.ChangedSearch({ value }),
 						onClearSearch: Message.ChangedSearch({ value: "" }),
-						onOpenUser: () => Message.ClickedView({ view: "detail" }),
+						userHref: () => "?view=detail",
 					},
 				),
 			)
