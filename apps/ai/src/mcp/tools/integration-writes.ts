@@ -277,11 +277,21 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 					}),
 				)
 				.pipe(
-					Effect.catchTag("@maple/http/errors/ScrapeTargetValidationError", (error) =>
-						Effect.fail(new McpInvalidInputError({ message: error.message, parameter: "url" })),
-					),
+					Effect.catchTags({
+						"@maple/http/errors/ScrapeTargetValidationError": (error) =>
+							Effect.fail(
+								new McpInvalidInputError({ message: error.message, parameter: "url" }),
+							),
+						"@maple/http/errors/ScrapeTargetLimitReachedError": (error) =>
+							Effect.fail(
+								new McpUnavailableError({
+									message: error.message,
+									capability: "scrape_target_limit",
+								}),
+							),
+					}),
 					Effect.mapError((error) =>
-						Schema.is(McpInvalidInputError)(error)
+						Schema.is(McpInvalidInputError)(error) || Schema.is(McpUnavailableError)(error)
 							? error
 							: queryError("create_scrape_target")(error),
 					),

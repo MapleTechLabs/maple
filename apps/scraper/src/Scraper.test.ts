@@ -73,7 +73,7 @@ const scraperLayer = (harness: Harness) =>
 const cycle = (harness: Harness, targets: TargetGroup, failing?: ReadonlyMap<string, ScrapeFailureReason>) =>
 	Effect.gen(function* () {
 		const scraper = yield* Scraper
-		return yield* scraper.scrapeCycle(targets, yield* Semaphore.make(10), failing)
+		return yield* scraper.scrapeCycle(targets, (yield* Semaphore.make(10)).withPermits(1), failing)
 	}).pipe(Effect.provide(scraperLayer(harness)))
 
 /** A one-target cycle, failing with that target's result. */

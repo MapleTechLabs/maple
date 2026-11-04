@@ -663,7 +663,13 @@ describe("MapleApiV2 OpenAPI", () => {
 			expect(responseErrorTags("post", path, "503")).toContain(
 				"@maple/http/errors/ScrapeTargetPersistenceError",
 			)
+			expect(responseErrorTags("post", path, "409")).toContain(
+				"@maple/http/errors/ScrapeTargetLimitReachedError",
+			)
 		}
+		expect(responseErrorTags("post", "/v2/scrape_targets", "409")).toContain(
+			"@maple/http/errors/ScrapeTargetLimitReachedError",
+		)
 		expect(responseErrorTags("delete", "/v2/integrations/planetscale", "503")).toContain(
 			"@maple/http/errors/ScrapeTargetPersistenceError",
 		)

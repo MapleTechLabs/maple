@@ -11,6 +11,7 @@ import {
 } from "../integrations"
 import {
 	ScrapeTargetEncryptionError,
+	ScrapeTargetLimitReachedError,
 	ScrapeTargetNotFoundError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetStoredConfigInvalidError,
@@ -345,14 +346,21 @@ export const V2ScrapeTargetChecksQuery = Schema.Struct({
 })
 export type V2ScrapeTargetChecksQuery = Schema.Schema.Type<typeof V2ScrapeTargetChecksQuery>
 
-const [scrapeNotFound, scrapeValidation, scrapePersistence, scrapeEncryption, scrapeStoredConfigInvalid] =
-	publicErrors(
-		ScrapeTargetNotFoundError,
-		ScrapeTargetValidationError,
-		ScrapeTargetPersistenceError,
-		ScrapeTargetEncryptionError,
-		ScrapeTargetStoredConfigInvalidError,
-	)
+const [
+	scrapeNotFound,
+	scrapeValidation,
+	scrapePersistence,
+	scrapeEncryption,
+	scrapeStoredConfigInvalid,
+	scrapeLimitReached,
+] = publicErrors(
+	ScrapeTargetNotFoundError,
+	ScrapeTargetValidationError,
+	ScrapeTargetPersistenceError,
+	ScrapeTargetEncryptionError,
+	ScrapeTargetStoredConfigInvalidError,
+	ScrapeTargetLimitReachedError,
+)
 const planetScaleAccessTokenErrors = publicErrors(
 	IntegrationsNotConnectedError,
 	IntegrationsRevokedError,
@@ -393,13 +401,19 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2ScrapeTargetCreateParams,
 			success: V2ScrapeTarget,
-			error: [V2InsufficientPermissions.schema, scrapeValidation, scrapePersistence, scrapeEncryption],
+			error: [
+				V2InsufficientPermissions.schema,
+				scrapeValidation,
+				scrapePersistence,
+				scrapeEncryption,
+				scrapeLimitReached,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createScrapeTarget",
 				summary: "Create a scrape target",
 				description:
-					"Creates a scrape target. `prometheus` targets need a `url`; `planetscale` targets need an `organization` (the URL is derived). Requires the `scrape_targets:write` scope and an org-admin caller.",
+					"Creates a scrape target. `prometheus` targets need a `url`; `planetscale` targets need an `organization` (the URL is derived). Fails with 409 when the organization already has the most scrape targets one organization can hold (50). Requires the `scrape_targets:write` scope and an org-admin caller.",
 			}),
 		),
 	)

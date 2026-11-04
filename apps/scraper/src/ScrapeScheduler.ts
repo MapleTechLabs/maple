@@ -19,7 +19,7 @@ import { activeTargets, scrapeDurationMs, scrapesTotal } from "./Metrics"
 import { backoffLogMessage, nextScrapeDelayMs, shouldBackOff, startJitterMs } from "./policy"
 import { ResultReporter } from "./ResultReporter"
 import type { ScrapeFailureReason } from "./ScrapeError"
-import { Scraper, type SubTargetScrape } from "./Scraper"
+import { type ScrapePermit, Scraper, type SubTargetScrape } from "./Scraper"
 import { type TargetGroup, TargetRegistry, targetKey } from "./TargetRegistry"
 
 export interface SchedulerStats {
@@ -37,6 +37,12 @@ export interface ScrapeSchedulerApi {
 }
 
 const STALE_RECONCILES = 3
+
+/**
+ * Scrape permits one org may hold at once. All orgs share the scraper's pool,
+ * so without this one org's slow targets could hold every permit.
+ */
+export const ORG_SCRAPE_PERMITS = 2
 
 /** Start offset for a new loop. A reference so tests can pin cadence to t=0. */
 export class StartJitter extends Context.Reference<(key: string, baseMs: number) => number>(
@@ -122,7 +128,15 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 			const reporter = yield* ResultReporter
 			const startJitter = yield* StartJitter
 
-			const semaphore = yield* Semaphore.make(env.SCRAPER_CONCURRENCY)
+			const sharedPermits = yield* Semaphore.make(env.SCRAPER_CONCURRENCY)
+			const orgPermits = new Map<string, Semaphore.Semaphore>()
+			// The org's permit first: a scrape queued behind its own org's cap holds no shared one.
+			const permitFor = (orgId: string) =>
+				Effect.sync((): ScrapePermit => {
+					const org = orgPermits.get(orgId) ?? Semaphore.makeUnsafe(ORG_SCRAPE_PERMITS)
+					orgPermits.set(orgId, org)
+					return (effect) => org.withPermits(1)(sharedPermits.withPermits(1)(effect))
+				})
 			const startedAt = yield* Clock.currentTimeMillis
 			const activeLoops = yield* Ref.make(0)
 
@@ -168,12 +182,14 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 					const notBefore = (target: InternalScrapeTarget) =>
 						current.get(targetKey(target))?.notBefore ?? 0
 					const [firstDue, ...restDue] = group.filter((target) => notBefore(target) <= cycleStart)
+					// A parent's sub-targets all belong to its org.
+					const permit = yield* permitFor(group[0].orgId)
 					const outcome =
 						firstDue === undefined
 							? { scrapes: [], deliveryFailure: null }
 							: yield* scraper.scrapeCycle(
 									[firstDue, ...restDue],
-									semaphore,
+									permit,
 									new Map(Array.from(current, ([key, backoff]) => [key, backoff.reason])),
 								)
 					yield* Effect.forEach(outcome.scrapes, record, { discard: true })

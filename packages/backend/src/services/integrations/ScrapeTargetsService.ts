@@ -8,6 +8,7 @@ import {
 	ScrapeTargetDeleteResponse,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetId,
+	ScrapeTargetLimitReachedError,
 	ScrapeTargetNotFoundError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetProbeResponse,
@@ -183,7 +184,10 @@ export interface ScrapeTargetsServiceApi {
 		request: CreateScrapeTargetRequest,
 	) => Effect.Effect<
 		ScrapeTargetResponse,
-		ScrapeTargetValidationError | ScrapeTargetPersistenceError | ScrapeTargetEncryptionError
+		| ScrapeTargetValidationError
+		| ScrapeTargetPersistenceError
+		| ScrapeTargetEncryptionError
+		| ScrapeTargetLimitReachedError
 	>
 	readonly update: (
 		orgId: OrgId,
@@ -294,6 +298,18 @@ const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 const decodeScrapeIntervalSecondsSync = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
 const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const ScrapeLabelsSchema = Schema.Record(Schema.String, Schema.String)
+
+/**
+ * Targets one org may hold, enabled or not. Every org's scrapes share one
+ * scraper, so this bounds any one org's share of its work.
+ */
+export const MAX_SCRAPE_TARGETS_PER_ORG = 50
+
+const targetLimitReached = () =>
+	new ScrapeTargetLimitReachedError({
+		message: `This organization already has ${MAX_SCRAPE_TARGETS_PER_ORG} scrape targets, the most one organization can have. Delete one to add another.`,
+		limit: MAX_SCRAPE_TARGETS_PER_ORG,
+	})
 
 /** Cap pattern lists so a target config stays small and bounded. */
 const MAX_BRANCH_PATTERNS = 50
@@ -804,6 +820,18 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const inserted = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// Counted under a per-org lock, so concurrent creates cannot both take the last slot.
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('scrape_targets'))`,
+							)
+							const existing = yield* db.run(
+								PG.from(ScrapeTargets)
+									.select(() => ({ count: PG.count() }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							if (Number(existing[0]?.count ?? 0) >= MAX_SCRAPE_TARGETS_PER_ORG) {
+								return yield* targetLimitReached()
+							}
 							const sourceId = yield* createIntegrationSource(
 								db,
 								orgId,

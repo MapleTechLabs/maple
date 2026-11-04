@@ -7,7 +7,7 @@ import { ScraperEnv, type ScraperEnvConfig } from "./Env"
 import { DELIVERY_BLOCKED_BACKOFF, startJitterMs } from "./policy"
 import { ResultReporter } from "./ResultReporter"
 import { scrapeError, type ScrapeError, type ScrapeFailureReason } from "./ScrapeError"
-import { ScrapeScheduler, StartJitter } from "./ScrapeScheduler"
+import { ORG_SCRAPE_PERMITS, ScrapeScheduler, StartJitter } from "./ScrapeScheduler"
 import type { OtlpExportRequest } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
 import { Scraper } from "./Scraper"
@@ -24,6 +24,7 @@ const mkTarget = (
 	id: string,
 	intervalSeconds: number,
 	overrides: Partial<{
+		orgId: string
 		url: string
 		scrapeUrl: string
 		ingestKey: string
@@ -32,7 +33,7 @@ const mkTarget = (
 ): InternalScrapeTarget =>
 	decodeTarget({
 		id,
-		orgId: "org_test",
+		orgId: overrides.orgId ?? "org_test",
 		name: `target-${Str.slice(0, 4)(id)}`,
 		serviceName: null,
 		targetType: "prometheus",
@@ -364,6 +365,41 @@ describe("ScrapeScheduler", () => {
 				yield* TestClock.adjust(Duration.seconds(30))
 
 				assert.strictEqual(scrapesOf(harness, TARGET_A), 4)
+				assert.strictEqual(scrapesOf(harness, TARGET_B), 4)
+			}),
+		)
+	})
+
+	describe("fair share", () => {
+		// More slow targets in one org than the whole pool has permits.
+		const busyOrgTargets = Arr.makeBy(12, (n) =>
+			mkTarget(`aaaaaaaa-aaaa-4aaa-8aaa-${String(n).padStart(12, "0")}`, 10, { orgId: "org_busy" }),
+		)
+		const quietTarget = mkTarget(TARGET_B, 10, { orgId: "org_quiet" })
+
+		it.effect("one org's slow targets leave permits for another org", () =>
+			Effect.gen(function* () {
+				const harness = makeHarness([...busyOrgTargets, quietTarget])
+				let inFlight = 0
+				let peak = 0
+				harness.scrapeImpl = (target) =>
+					target.orgId === "org_busy"
+						? Effect.acquireUseRelease(
+								Effect.sync(() => {
+									inFlight += 1
+									peak = Math.max(peak, inFlight)
+								}),
+								() => Effect.as(Effect.sleep(Duration.seconds(9)), OK_BODY),
+								() => Effect.sync(() => void (inFlight -= 1)),
+							)
+						: Effect.succeed(OK_BODY)
+				yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
+
+				// Queued behind twelve 9s scrapes on one shared pool, it would wait until t=9.
+				assert.strictEqual(scrapesOf(harness, TARGET_B), 1)
+				yield* TestClock.adjust(Duration.seconds(30))
+				assert.strictEqual(peak, ORG_SCRAPE_PERMITS)
+				// t=0, 10, 20, 30: its cadence holds while the busy org stays capped.
 				assert.strictEqual(scrapesOf(harness, TARGET_B), 4)
 			}),
 		)
