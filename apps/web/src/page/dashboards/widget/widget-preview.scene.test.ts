@@ -74,12 +74,10 @@ describe("widget editor over a fixed-endpoint widget", () => {
 			Message.ChangedTitle({ value: "Traces" }),
 			Message.ChangedUnit({ unit: "percent" }),
 			Message.ClickedAddThreshold(),
-			Message.ToggledSparkline(),
 		])
 		const display = previewWidgetOf(edited)?.display
 		expect(display?.title).toBe("Traces")
 		expect(display?.unit).toBe("percent")
 		expect(display?.thresholds).toHaveLength(1)
-		expect(display?.sparkline?.enabled).toBe(true)
 	})
 })

@@ -139,11 +139,27 @@ describe("widget editor lowering", () => {
 
 	test("a Raw SQL stat writes no builder sparkline and no title derived from builder queries", () => {
 		const widget = widgetOf("stat", {})
-		const state = { ...toInitialState(widget), title: "", sparklineEnabled: true }
+		const state = {
+			...toInitialState(widget),
+			title: "",
+			sparklineEnabled: true,
+			keepsStoredSource: false,
+		}
 		expect(buildDisplay(widget, state).sparkline?.enabled).toBe(true)
 		const sqlDisplay = buildSqlDisplay(widget, state)
 		expect(sqlDisplay.sparkline).toBeUndefined()
 		expect(sqlDisplay.title).toBeUndefined()
+	})
+
+	test("a preset stat keeps its stored sparkline source, never one built from its stand-in queries", () => {
+		const trend = makeRouteDataSource("service_usage_timeseries", undefined, undefined)
+		const widget = widgetOf("stat", { sparkline: { enabled: true, dataSource: trend } })
+		const state = { ...toInitialState(widget), title: "Renamed" }
+		expect(state.keepsStoredSource).toBe(true)
+		expect(buildDisplay(widget, state).sparkline).toEqual({ enabled: true, dataSource: trend })
+		const bare = widgetOf("stat", {})
+		const enabled = { ...toInitialState(bare), sparklineEnabled: true }
+		expect(buildDisplay(bare, enabled).sparkline).toBeUndefined()
 	})
 
 	test("comparison and formulas are offered only where the lowered source keeps them", () => {

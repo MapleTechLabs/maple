@@ -9,7 +9,7 @@ import { input } from "@maple/views/ui/input"
 import { toSeriesFieldOptions } from "./drafts"
 import { ROW_LIMIT_MAX, statValueFieldOf } from "./lowering"
 import { SQL_VALUE_FIELD } from "./raw-sql"
-import { isSqlSource } from "./update"
+import { isSqlSource, widgetOf } from "./update"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import { ProductEdit } from "./product-edit"
@@ -114,9 +114,10 @@ const gaugeRange = (h: H, state: EditorState): Html =>
 		]),
 	])
 
-/** `Sparkline`: only in builder mode, since it re-runs the builder's queries. */
+/** `Sparkline`: builder mode only; a fixed endpoint offers it only when it stored a trend source of its own. */
 const sparkline = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> =>
-	model.sourceMode === "builder"
+	model.sourceMode === "builder" &&
+	(!state.keepsStoredSource || widgetOf(model)?.display.sparkline?.dataSource !== undefined)
 		? [
 				checkboxRow(
 					h,

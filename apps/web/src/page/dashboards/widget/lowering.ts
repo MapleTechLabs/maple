@@ -350,18 +350,23 @@ const funnelDisplayOf = (state: EditorState): Display["funnel"] => {
 		: undefined
 }
 
+/** A stat's trend line: the builder series, or a fixed endpoint's stored one (its stand-in queries are not its data). */
+const sparklineOf = (widget: Widget, state: EditorState, isSql: boolean): Display["sparkline"] => {
+	if (!state.sparklineEnabled || isSql) return undefined
+	if (!state.keepsStoredSource) return { enabled: true, dataSource: timeseriesOf(state).base }
+	const stored = widget.display.sparkline
+	return stored?.dataSource === undefined ? undefined : { ...stored, enabled: true }
+}
+
 /** Each type's `buildDisplay` additions (`extendDisplay`); the sparkline re-runs builder queries, so SQL has none. */
-const ownDisplayOf = (state: EditorState, isSql: boolean): Partial<Display> => {
+const ownDisplayOf = (widget: Widget, state: EditorState, isSql: boolean): Partial<Display> => {
 	switch (panelOf(state)) {
 		case "markdown":
 			return { markdown: { content: state.markdownContent } }
 		case "stat":
 			return {
 				unit: state.unit,
-				sparkline:
-					state.sparklineEnabled && !isSql
-						? { enabled: true, dataSource: timeseriesOf(state).base }
-						: undefined,
+				sparkline: sparklineOf(widget, state, isSql),
 				thresholds: thresholdsOf(state),
 			}
 		case "gauge":
@@ -436,7 +441,7 @@ const displayOf = (widget: Widget, state: EditorState, isSql: boolean): Display 
 			showPoints,
 		},
 		...(chartId === undefined ? undefined : { chartId }),
-		...ownDisplayOf(state, isSql),
+		...ownDisplayOf(widget, state, isSql),
 	}
 }
 
