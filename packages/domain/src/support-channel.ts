@@ -86,7 +86,7 @@ export const supportChannelName = (orgName: string | null, orgId: string, attemp
 			Str.replace(
 				/[^a-z0-9_-]+/g,
 				"-",
-			)(Str.toLowerCase(Str.replace(/\p{M}+/gu, "")((orgName ?? "").normalize("NFKD")))),
+			)(Str.toLowerCase(Str.replace(/\p{M}+/gu, "")(Str.normalize("NFKD")(orgName ?? "")))),
 		),
 	)
 	const base = `maple-${slug.length > 0 ? slug : Str.replace(/[^a-z0-9_-]+/g, "")(Str.toLowerCase(orgId))}`

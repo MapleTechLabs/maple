@@ -108,11 +108,13 @@ export const gcpInfraServiceName = (source: GcpInfraSourceId, keys: ReadonlyArra
 	gcpInfraNamesService(source) ? (keys[0] ?? "") : `gcp/${GCP_INFRA_SOURCES[source].resourceType}`
 
 /** The curated metrics behind a tab or a chart source, with those stored under its workloads. */
-export const gcpInfraMetrics = (source: GcpInfraSourceId): ReadonlyArray<GcpMetric> =>
-	Arr.filter(
+export const gcpInfraMetrics = (source: GcpInfraSourceId): ReadonlyArray<GcpMetric> => {
+	const groups = Arr.filter(
 		GCP_METRIC_GROUPS,
 		(group) => (group.workloadOf ?? group.resourceType) === GCP_INFRA_SOURCES[source].resourceType,
-	).flatMap((group) => group.metrics)
+	)
+	return Arr.flatMap(groups, (group) => group.metrics)
+}
 
 /** Cap on the rows of one query: one row per workload or time bucket, metric and label value. */
 export const GCP_INFRA_ROW_LIMIT = 10_000

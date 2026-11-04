@@ -4,7 +4,7 @@ import {
 	type RuntimeProduct,
 	runtimePosture,
 } from "./runtime-posture"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // Known vulnerabilities in a runtime version for the Security Center's Runtimes tab. Pure, so the
 // web bundle and the API share it.
@@ -68,7 +68,10 @@ export function severityOf(raw: string | null | undefined): AdvisorySeverity {
 	const severity = Str.toLowerCase(Str.trim(raw ?? ""))
 	// GitHub's advisory database says MODERATE for medium.
 	if (severity === "moderate") return "medium"
-	return ADVISORY_SEVERITIES.find((known) => known === severity) ?? "unknown"
+	return Option.getOrElse(
+		Arr.findFirst(ADVISORY_SEVERITIES, (known) => known === severity),
+		(): AdvisorySeverity => "unknown",
+	)
 }
 
 type RangeClause = { readonly op: string; readonly bound: string }
@@ -171,14 +174,15 @@ export function fixedVersionFor(
 	version: string,
 	compare: VersionComparator = compareVersions,
 ): string | null {
-	const spans = events.reduce<{ introduced: string | null; fixes: ReadonlyArray<string> }>(
+	const spans = Arr.reduce<OsvRangeEvent, { introduced: string | null; fixes: ReadonlyArray<string> }>(
+		events,
+		{ introduced: null, fixes: [] },
 		(state, event) => {
 			if (event.introduced !== undefined) return { ...state, introduced: event.introduced }
 			if (event.fixed === undefined || state.introduced === null) return state
 			const holds = compare(version, state.introduced) >= 0 && compare(version, event.fixed) < 0
 			return { introduced: null, fixes: holds ? [...state.fixes, event.fixed] : state.fixes }
 		},
-		{ introduced: null, fixes: [] },
 	)
 	return spans.fixes[0] ?? null
 }
@@ -205,9 +209,8 @@ export const lowestVersion = (
 	versions: ReadonlyArray<string>,
 	compare: VersionComparator = compareVersions,
 ): string | null =>
-	versions.reduce<string | null>(
-		(lowest, version) => (lowest === null || compare(version, lowest) < 0 ? version : lowest),
-		null,
+	Arr.reduce<string, string | null>(versions, null, (lowest, version) =>
+		lowest === null || compare(version, lowest) < 0 ? version : lowest,
 	)
 
 export interface AdvisorySummary {
@@ -240,11 +243,10 @@ export function summarizeAdvisories(advisories: ReadonlyArray<RuntimeAdvisory>):
 	return {
 		total: advisories.length,
 		counts,
-		worst: ADVISORY_SEVERITIES.find((severity) => counts[severity] > 0) ?? null,
+		worst: Option.getOrNull(Arr.findFirst(ADVISORY_SEVERITIES, (severity) => counts[severity] > 0)),
 		urgent: counts.critical + counts.high > 0,
-		upgradeTo: fixes.reduce<string | null>(
-			(highest, fix) => (highest === null || compareVersions(fix, highest) > 0 ? fix : highest),
-			null,
+		upgradeTo: Arr.reduce<string, string | null>(fixes, null, (highest, fix) =>
+			highest === null || compareVersions(fix, highest) > 0 ? fix : highest,
 		),
 		unfixed: urgent.length - fixes.length,
 	}

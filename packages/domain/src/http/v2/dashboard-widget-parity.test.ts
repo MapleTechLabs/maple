@@ -1,4 +1,4 @@
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Schema, Struct, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
 import { DashboardWidgetSchema, WidgetDisplayConfigSchema } from "../dashboards"
@@ -16,7 +16,14 @@ import { V2DashboardWidget, V2WidgetDataSource, V2WidgetDisplay } from "./dashbo
 // `tsc` when either side gains a field, and the encode tests fail when a field is
 // present in the type but dropped on the wire or spelled differently there.
 
-const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
+// Splitting on a capture group puts each captured character at an odd index.
+const snakeCase = (key: string): string =>
+	Arr.join(
+		Arr.map(Str.split(/([A-Z])/)(key), (part, index) =>
+			index % 2 === 1 ? `_${Str.toLowerCase(part)}` : part,
+		),
+		"",
+	)
 
 /** Fails to compile unless `A` is assignable to `B`. */
 type AssertAssignable<A extends B, B> = [A, B]
@@ -141,7 +148,7 @@ describe("the v2 widget display mirrors the stored one", () => {
 	it("puts every stored field on the wire, in mechanical snake_case", () => {
 		const encoded = Schema.encodeUnknownSync(V2WidgetDisplay)(fullDisplay)
 
-		expect(Object.keys(encoded).sort()).toEqual(
+		expect(Struct.keys(encoded).sort()).toEqual(
 			Arr.map(Rec.keys(WidgetDisplayConfigSchema.fields), snakeCase).sort(),
 		)
 	})
@@ -188,7 +195,7 @@ describe("the v2 widget display mirrors the stored one", () => {
 	it("keeps the interpolation-sensitive listWhereClause name on both sides", () => {
 		expect(WidgetDisplayConfigSchema.fields).toHaveProperty("listWhereClause")
 		const encoded = Schema.encodeUnknownSync(V2WidgetDisplay)(fullDisplay)
-		expect(Object.keys(encoded)).toContain("list_where_clause")
+		expect(Struct.keys(encoded)).toContain("list_where_clause")
 	})
 })
 
@@ -224,7 +231,7 @@ describe("the v2 widget mirrors the stored one", () => {
 	it("puts every stored field on the wire, in mechanical snake_case", () => {
 		const encoded = Schema.encodeUnknownSync(V2DashboardWidget)(fullWidget)
 
-		expect(Object.keys(encoded).sort()).toEqual(
+		expect(Struct.keys(encoded).sort()).toEqual(
 			Arr.map(Rec.keys(DashboardWidgetSchema.fields), snakeCase).sort(),
 		)
 	})
