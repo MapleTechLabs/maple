@@ -1,6 +1,6 @@
 import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
-import { Subscription } from "foldkit"
+import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
 import { documentStream, orgTagsStream } from "../kit/document-stream"
@@ -134,6 +134,21 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ widgetId: model.gesture?.widgetId ?? null }),
 				dependenciesToStream: ({ widgetId }) =>
 					widgetId === null ? Stream.empty : pointerEvents(widgetId),
+			},
+		),
+		/** While a write failure blocks editing: the browser's return online lifts it. */
+		reconnect: entry(
+			{ isBlocked: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isBlocked: model.persistenceError !== null }),
+				dependenciesToStream: ({ isBlocked }) =>
+					!isBlocked || typeof window === "undefined"
+						? Stream.empty
+						: Dom.streamFromEvent({
+								target: window,
+								type: "online",
+								mapEvent: () => Message.CameBackOnline(),
+							}),
 			},
 		),
 		/** `useIntervalRefresh`: paused in edit mode and in a preview; paused while hidden or offline. */

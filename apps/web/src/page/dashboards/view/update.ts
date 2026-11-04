@@ -723,6 +723,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						? { model, outMessage: behindToast() }
 						: { model: { ...model, persistenceError: null } },
 			}),
+		ClickedRetryPersistence: () => ({ model: { ...model, persistenceError: null } }),
+		CameBackOnline: () => ({ model: { ...model, persistenceError: null } }),
 		CompletedExport: () => ({ model }),
 		GotErrorDetailsMessage: ({ widgetId, message: inner }) => {
 			const next = Popover.update(
