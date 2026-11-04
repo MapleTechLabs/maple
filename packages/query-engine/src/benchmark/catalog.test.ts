@@ -37,6 +37,7 @@ import * as signalPresenceQueries from "../ch/queries/signal-presence"
 import * as sourceUsageQueries from "../ch/queries/source-usage"
 import * as logQueries from "../ch/queries/logs"
 import * as mcpQueries from "../ch/queries/mcp"
+import * as userQueries from "../ch/queries/users"
 import * as metricQueries from "../ch/queries/metrics"
 import * as serviceInfraQueries from "../ch/queries/service-infra"
 import * as serviceMapRollupQueries from "../ch/queries/service-map-rollup"
@@ -308,6 +309,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"product-events-paths": productEventPathQueries,
 	"product-events-explore": productEventExploreQueries,
 	traces: traceQueries,
+	users: userQueries,
 } satisfies Record<string, Record<string, unknown>>
 
 /**

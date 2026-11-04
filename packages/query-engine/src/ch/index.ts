@@ -709,6 +709,18 @@ export {
 	type McpSessionFilter,
 } from "./queries/mcp"
 
+// Queries - end users (`/users`: replays, product events and MCP spans per user id)
+export {
+	hasUserSources,
+	usersAnonymousVisitorsQuery,
+	usersFacetsQuery,
+	usersListQuery,
+	usersServiceNamespacesQuery,
+	usersSummaryQuery,
+	type UsersListFilter,
+	type UsersScope,
+} from "./queries/users"
+
 // Queries — Infrastructure (host-centric aggregations over hostmetrics)
 export {
 	listHostsQuery,
