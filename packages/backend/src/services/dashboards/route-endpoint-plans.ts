@@ -99,6 +99,10 @@ interface RouteEndpointPlanRegistry {
 	readonly [endpoint: string]: RouteEndpointPlan
 }
 
+/** Own keys only, so a stored endpoint like "constructor" finds no plan instead of `Object`. */
+export const routeEndpointPlan = (endpoint: string): RouteEndpointPlan | undefined =>
+	Object.hasOwn(ROUTE_ENDPOINT_PLANS, endpoint) ? ROUTE_ENDPOINT_PLANS[endpoint] : undefined
+
 /**
  * What a plan hands the tile: the browser's server function's return value for
  * the same endpoint, `{ data, …extras }`. The client unwraps `data` through the

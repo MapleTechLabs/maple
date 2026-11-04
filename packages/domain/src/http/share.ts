@@ -222,8 +222,8 @@ export class ShareUnsupportedWidgetError extends HttpTaggedError<ShareUnsupporte
 		// arriving through a 5xx side door.
 		status: 422,
 		code: "share_widget_unsupported",
-		title: "Widget unavailable in shared views",
-		message: "This widget isn't available in shared views.",
+		title: "Widget type unsupported",
+		message: "This widget type can't be read outside the dashboard yet.",
 		retry: "never",
 		recovery: "none",
 		exposure: "redacted",
