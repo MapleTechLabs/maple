@@ -252,6 +252,14 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 		render: (output) => {
 			const matched = Arr.reduce(output.areas, 0, (n, area) => n + area.matched)
 			const nextCalls: Array<NextCall> = []
+			// A caller who could not read the code audit must not be told a repository is "not set up".
+			const codeState = output.areas.find((area) => area.area === "code")?.state
+			const auditUnknown =
+				codeState === "forbidden"
+					? "admins only"
+					: codeState === "not_enabled"
+						? "not enabled"
+						: "unknown"
 			// Telemetry ids resolve over a window: hand inspect the one this listing read.
 			const inspectArgs = (row: Output["findings"][number]) =>
 				row.area === "exposure" || row.area === "runtimes"
@@ -461,9 +469,11 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 									["Repository", "Code audit", "Latest audit run", "Dependency scan"],
 									Arr.map(output.repositories, (r) => [
 										r.repository,
-										r.audit === null
-											? "not set up"
-											: `${r.audit.branch}${r.audit.enabled ? "" : " (disabled)"}`,
+										!r.auditReadable
+											? auditUnknown
+											: r.audit === null
+												? "not set up"
+												: `${r.audit.branch}${r.audit.enabled ? "" : " (disabled)"}`,
 										r.audit === null
 											? ""
 											: r.audit.lastRunId === null

@@ -76,7 +76,9 @@ export type SecurityFindingRow = typeof SecurityFindingRow.Type
 /** One repository's place in the Security Center: what audits and scans it, and when each last ran. */
 export const SecurityRepositoryCoverage = Schema.Struct({
 	repository: Schema.String,
-	/** Null when no code audit target is set up for it. */
+	/** False when this caller could not read the code audit (members, audit not enabled): `audit` is then unknown. */
+	auditReadable: Schema.Boolean,
+	/** Null when no code audit target is set up for it, or when `auditReadable` is false. */
 	audit: Schema.NullOr(
 		Schema.Struct({
 			branch: Schema.String,
@@ -375,6 +377,7 @@ export const ListSecurityAuditRunsOutput = Schema.Struct({
 			branch: Schema.String,
 			enabled: Schema.Boolean,
 			profile: Schema.String,
+			/** Counted up to 100. */
 			runs: Schema.Number,
 		}),
 	),

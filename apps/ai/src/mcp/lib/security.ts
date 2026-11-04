@@ -1012,6 +1012,7 @@ export const repositoryCoverage = (
 		return [
 			{
 				repository: name,
+				auditReadable: code?._tag === "read",
 				audit:
 					audited === undefined
 						? null

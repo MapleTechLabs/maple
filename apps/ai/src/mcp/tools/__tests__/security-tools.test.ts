@@ -119,6 +119,17 @@ describe("list_security_findings", () => {
 		])
 	})
 
+	it("does not tell a member that an audited repository is not set up", async () => {
+		const { output, text } = await list(member, {})
+		expect(output.repositories?.find((r) => r.repository === "acme/shop")).toMatchObject({
+			repository: "acme/shop",
+			auditReadable: false,
+			audit: null,
+		})
+		expect(text).toContain("admins only")
+		expect(text).not.toContain("not set up")
+	})
+
 	it("keeps code findings from members, as the dashboard does", async () => {
 		const { output } = await list(member, { area: "code" })
 		expect(output.areas[0]).toMatchObject({ area: "code", state: "forbidden" })

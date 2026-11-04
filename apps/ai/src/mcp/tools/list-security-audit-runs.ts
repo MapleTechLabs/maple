@@ -10,6 +10,8 @@ import { McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./typ
 
 const TOOL = "list_security_audit_runs"
 const RUN_STATUSES = ["in_progress", "complete", "incomplete", "failed"] as const
+/** Runs counted per target; a target with more shows `100+`. */
+const RUN_COUNT_CAP = 100
 
 type Output = typeof ListSecurityAuditRunsOutput.Type
 
@@ -62,7 +64,16 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 				const counts = admin
 					? yield* store.countRunFindings(Arr.map(kept, (run) => run.id))
 					: undefined
-				const perTarget = yield* store.listRuns({ limit: 100 })
+				// Counted per target, so one busy target cannot push another's runs off a shared page.
+				const runCounts = yield* Effect.forEach(
+					wanted,
+					(t) =>
+						store
+							.listRuns({ targetId: t.id, limit: RUN_COUNT_CAP })
+							.pipe(Effect.map((rows) => [t.id, rows.length] as const)),
+					{ concurrency: 4 },
+				)
+				const perTarget = new Map(runCounts)
 				const now = yield* Clock.currentTimeMillis
 				const window = securityAuditSpendWindow(now)
 				const spentUsd = yield* store.orgSpendUsd(window.since)
@@ -101,7 +112,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 						]
 					: []),
 				...Arr.flatMap(wanted, (t) =>
-					Arr.some(perTarget, (run) => run.targetId === t.id)
+					(perTarget.get(t.id) ?? 0) > 0
 						? []
 						: [`${t.repository}@${t.branch} has never been audited.`],
 				),
@@ -130,7 +141,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 					branch: t.branch,
 					enabled: t.enabled,
 					profile: t.profile,
-					runs: Arr.filter(perTarget, (run) => run.targetId === t.id).length,
+					runs: perTarget.get(t.id) ?? 0,
 				})),
 				runs,
 				notes,
@@ -177,7 +188,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 										t.branch,
 										t.enabled ? "yes" : "no",
 										t.profile,
-										String(t.runs),
+										t.runs >= RUN_COUNT_CAP ? `${RUN_COUNT_CAP}+` : String(t.runs),
 									]),
 								),
 							]),
