@@ -96,10 +96,14 @@ const rangePickerStep = (model: Model, context: PageContext, message: TimeRangeP
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 
-/** A builder widget's stat field names a query series; opened in SQL it reduces the templates' `value`. */
+/** The Builder's stat field names a query series, never a SQL column: back in SQL, the opened column (or `value`). */
 const clearsBuilderValueField = (model: Model, selected: string): Model["state"] =>
-	model.state !== null && selected === "rawSql" && model.initialSourceMode === "builder"
-		? { ...model.state, statValueField: "" }
+	model.state !== null && selected === "rawSql"
+		? {
+				...model.state,
+				statValueField:
+					model.initialSourceMode === "builder" ? "" : (model.initial?.statValueField ?? ""),
+			}
 		: model.state
 
 /** The Source tabs: the preview switches to what the picked source runs. */

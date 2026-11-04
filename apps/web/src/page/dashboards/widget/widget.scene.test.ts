@@ -186,6 +186,17 @@ describe("widget lowering", () => {
 		expect(names(pageUpdate(sqlTab, Message.ClickedApply()).commands)).toEqual([SaveWidget.name])
 	})
 
+	test("a Builder series picked as the stat value never becomes the SQL column", () => {
+		const tab = (model: Model, index: number) =>
+			pageUpdate(model, Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index }) }))
+				.model
+		const picked = pageUpdate(opened().model, Message.ChangedStatValueField({ value: "A" })).model
+		const sql = tab(picked, 1)
+		expect(sql.state?.statValueField).toBe("")
+		const back = pageUpdate(tab(sql, 0), Message.ChangedStatValueField({ value: "B" })).model
+		expect(tab(back, 1).state?.statValueField).toBe("")
+	})
+
 	test("the spans select rewrites root_only in the where clause", () => {
 		expect(withRootOnly('service.name = "api"', true)).toBe('service.name = "api" AND root_only = true')
 		expect(withRootOnly('service.name = "api" AND root_only = true', false)).toBe('service.name = "api"')
