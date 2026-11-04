@@ -88,10 +88,13 @@ traffic. When a segment exports, its object is deleted.
 **Claiming.** On boot, a task lists `owners/`, takes every owner whose heartbeat is older than
 `INGEST_WAL_S3_ORPHAN_AFTER_SECS` (10 min), and claims it with a conditional `PUT … If-None-Match: *`.
 S3 answers 412 when the key exists, so exactly one task wins without a lock service. The winner
-downloads that owner's segments, re-commits their frames to its own lanes, **re-ships them under its
-own owner id, and only then** deletes the source objects, so the frames are never only on one
-task's disk. A claim older than 30 minutes is taken over unconditionally, because the task that
-wrote it evidently died before finishing.
+lists that owner's segments and takes them **one at a time**: download, re-commit the frames to its
+own lane, seal that lane and **re-ship it under its own owner id, and only then** delete the source
+object, so the frames are never only on one task's disk. Memory holds one segment however large the
+dead owner's backlog is. A segment that fails any step keeps its source object and the owner stays
+claimable, so a later boot retries it (at-least-once); a failed re-commit or re-ship also stops that
+owner's recovery, so the rest is not piled onto local disk only to be replayed again. A claim older than 30 minutes is taken over
+unconditionally, because the task that wrote it evidently died before finishing.
 
 **Shutdown.** After `INGEST_SHUTDOWN_DRAIN_SECS`, whatever did not export is sealed and shipped, and
 the owner heartbeat is deleted, so the next task claims it immediately instead of waiting out the
