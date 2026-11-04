@@ -194,7 +194,7 @@ describe("dashboards list write feedback", () => {
 		expect(isReadOnly(failed)).toBe(true)
 		expect(isReadOnly(pageUpdate(failed, Message.ClickedRetrySync()).model)).toBe(false)
 		const whileDown = pageUpdate(
-			waiting(),
+			listed(),
 			Message.CompletedCreateDashboard({
 				result: Result.fail({ message: "Failed to fetch", isRejected: false }),
 			}),

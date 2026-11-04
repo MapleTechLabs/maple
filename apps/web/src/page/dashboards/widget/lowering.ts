@@ -44,7 +44,7 @@ import {
 	pathsInitialState,
 	pathsValidationError,
 } from "./lowering-product"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 
 // The editor state read out of a stored widget and lowered back (`toInitialState`,
 // `buildWidgetDataSource`, `buildWidgetDisplay`, `validateQueries`, with each type's halves).
@@ -296,7 +296,9 @@ const storedSourceOf = (widget: Widget, state: EditorState): DataSource => {
 export const builderDataSourceOf = (widget: Widget, state: EditorState): DataSource =>
 	state.keepsStoredSource ? storedSourceOf(widget, state) : buildDataSource(state)
 
-const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const sameJson = (a: unknown, b: unknown): boolean =>
+	Option.getOrNull(encodeJsonOption(a)) === Option.getOrNull(encodeJsonOption(b))
 
 /** The stored source holds while the queries, formulas, comparison, row limit and type match the opened state. */
 export const trackStoredSource = (initial: EditorState | null, after: EditorState): EditorState => {

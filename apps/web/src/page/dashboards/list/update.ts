@@ -269,17 +269,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadPreferences: ({ favorites, sort }) => ({
 			model: { ...model, favorites, storedSort: sort, isPrefsLoaded: true },
 		}),
-		// The live list answering after it was down is a healthy sync: writes come back on.
+		// A live update is a healthy sync: writes come back on.
 		UpdatedDashboards: ({ orgId, dashboards }) =>
-			orgId !== context.orgId
-				? { model }
-				: {
-						model: {
-							...model,
-							dashboards,
-							persistenceError: model.dashboards === null ? null : model.persistenceError,
-						},
-					},
+			orgId !== context.orgId ? { model } : { model: { ...model, dashboards, persistenceError: null } },
 		// `handleCollectionStuck` recreates the collections while the snapshot loads.
 		TimedOutLiveDashboards: ({ orgId }) =>
 			orgId !== context.orgId || model.dashboards !== null || model.fallback._tag !== "Idle"
