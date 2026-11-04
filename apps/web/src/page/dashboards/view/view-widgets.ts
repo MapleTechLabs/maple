@@ -71,7 +71,8 @@ const tileInputsOf = (model: Model, widget: Widget): TileInputs => {
 		sparkRequest: requestOf(model, slot.sparkGate),
 		isEdit,
 		sections: isEdit ? model.document?.sections : undefined,
-		isSharesLoaded: model.shares === "Loaded",
+		// A previewed version's widgets may not exist on the live board, so they are not embeddable.
+		isSharesLoaded: model.shares === "Loaded" && model.history.previewed === null,
 		menu: model.widgetMenuId === widget.id ? model.widgetMenu : null,
 		chart: model.charts[widget.id],
 		sparklineChart: model.charts[`${widget.id}:spark`],

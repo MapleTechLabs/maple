@@ -1,4 +1,5 @@
 import {
+	DashboardDocument,
 	DashboardId,
 	defaultWidgetLayout,
 	DashboardRefreshIntervalSeconds,
@@ -200,13 +201,16 @@ export const UpdateWidgetLayouts = Command.define("UpdateDashboardWidgetLayouts"
 })
 
 export const ExportDashboard = Command.define("ExportDashboardJson", {
-	args: { orgId: Schema.String, dashboardId: Schema.String },
+	/** `snapshot`: a previewed version exports as shown, not the live board. */
+	args: { orgId: Schema.String, dashboardId: Schema.String, snapshot: Schema.NullOr(DashboardDocument) },
 	messages: [Message.CompletedExport],
-	execute: ({ orgId, dashboardId }) =>
-		readDocument(orgId, dashboardId).pipe(
+	execute: ({ orgId, dashboardId, snapshot }) =>
+		(snapshot === null ? readDocument(orgId, dashboardId) : Effect.succeed(snapshot)).pipe(
 			Effect.flatMap(downloadPortable),
-			Effect.ignore,
-			Effect.as(Message.CompletedExport()),
+			Effect.as(Message.CompletedExport({ error: null })),
+			Effect.catch((error) =>
+				Effect.succeed(Message.CompletedExport({ error: errorMessageOf(error) })),
+			),
 		),
 })
 

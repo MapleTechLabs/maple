@@ -3,7 +3,7 @@ import { DashboardDocument } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { FetchWidget } from "./command"
+import { CloneWidget, ExportDashboard, FetchWidget, RemoveWidget } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { slotOf } from "./plan"
@@ -94,6 +94,41 @@ describe("previewing a version", () => {
 		const revealed = pageUpdate(loaded.model, Message.RevealedWidget({ widgetId: "gone" })).model
 		expect(keyOf(revealed, "gone")).not.toBeNull()
 		expect(keyOf(pageUpdate(revealed, Message.ClickedCancelPreview()).model, "w")).toBe(liveKey)
+	})
+
+	test("Export JSON during a preview exports the previewed version, not the live board", () => {
+		const exported = pageUpdate(
+			previewed().model,
+			Message.GotMoreMenuMessage({
+				message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value: "export" } },
+			}),
+		)
+		const command = exported.commands?.find(({ name }) => name === ExportDashboard.name)
+		const sent = command?.args?.snapshot
+		expect(Schema.is(DashboardDocument)(sent) ? Arr.map(sent.widgets, ({ id }) => id) : null).toEqual([
+			"w",
+			"gone",
+		])
+	})
+
+	test("a preview offers no writes and no embeds on its tiles", () => {
+		const loaded = run(previewed().model, [
+			Message.GotShareMessage({
+				message: { _tag: "CompletedFetchShares", seq: 1, result: Result.succeed([]) },
+			}),
+		])
+		const pick = (value: string) =>
+			pageUpdate(
+				loaded,
+				Message.GotWidgetMenuMessage({
+					widgetId: "w",
+					message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value } },
+				}),
+			)
+		const names = (value: string) => Arr.map(pick(value).commands ?? [], ({ name }) => name)
+		expect(names("delete")).not.toContain(RemoveWidget.name)
+		expect(names("clone")).not.toContain(CloneWidget.name)
+		expect(pick("embed").model.sharing).toEqual(loaded.sharing)
 	})
 
 	test("auto-refresh pauses while a version is previewed", () => {

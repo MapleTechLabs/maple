@@ -40,7 +40,16 @@ import {
 import { cancelStaleGesture, gestureStep } from "./gesture"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { awaitsRefresh, isSameTimeRange, replan, replanTile, slotOf, timeRangeOf, withCharts } from "./plan"
+import {
+	awaitsRefresh,
+	isSameTimeRange,
+	replan,
+	replanTile,
+	shownDocumentOf,
+	slotOf,
+	timeRangeOf,
+	withCharts,
+} from "./plan"
 import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
@@ -386,7 +395,7 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 const moreAction = (model: Model, context: PageContext, value: string): Return => {
 	switch (value) {
 		case "tags": {
-			if (model.persistenceError !== null || model.document === null) return { model }
+			if (!isEditing(model) || model.document === null) return { model }
 			const opened = TagEditor.open(model.tagEditor, model.document.name, model.document.tags ?? [])
 			return {
 				model: { ...model, tagEditor: opened.model },
@@ -396,9 +405,9 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 		case "history":
 			return openHistory(model)
 		case "variables":
-			return model.persistenceError === null ? openVariablesManager(model) : { model }
+			return isEditing(model) ? openVariablesManager(model) : { model }
 		case "add-group":
-			return model.persistenceError === null
+			return isEditing(model)
 				? {
 						model,
 						commands: [
@@ -411,7 +420,7 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 					}
 				: { model }
 		case "auto-layout":
-			return model.persistenceError === null
+			return isEditing(model)
 				? { model, commands: [AutoLayout({ orgId: context.orgId, dashboardId: model.dashboardId })] }
 				: { model }
 		case "share":
@@ -419,7 +428,13 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 		case "export":
 			return {
 				model,
-				commands: [ExportDashboard({ orgId: context.orgId, dashboardId: model.dashboardId })],
+				commands: [
+					ExportDashboard({
+						orgId: context.orgId,
+						dashboardId: model.dashboardId,
+						snapshot: model.history.previewed === null ? null : shownDocumentOf(model),
+					}),
+				],
 			}
 		default:
 			return { model }
@@ -431,7 +446,7 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 	const target = { orgId: context.orgId, dashboardId: model.dashboardId, widgetId }
 	const move = moveTargetOf(value)
 	if (move !== undefined)
-		return model.persistenceError !== null
+		return !isEditing(model)
 			? { model }
 			: {
 					model,
@@ -456,10 +471,10 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 				),
 			)
 		case "clone":
-			return { model, commands: [CloneWidget(target)] }
+			return isEditing(model) ? { model, commands: [CloneWidget(target)] } : { model }
 		case "delete": {
 			const removed = model.document?.widgets.find((candidate) => candidate.id === widgetId)
-			return removed === undefined
+			return removed === undefined || !isEditing(model)
 				? { model }
 				: {
 						model,
@@ -483,7 +498,7 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 					}
 		}
 		case "alert": {
-			const widget = model.document?.widgets.find((candidate) => candidate.id === widgetId)
+			const widget = shownDocumentOf(model)?.widgets.find((candidate) => candidate.id === widgetId)
 			return widget === undefined
 				? { model }
 				: navigate(
@@ -494,7 +509,7 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 					)
 		}
 		case "embed":
-			return openEmbed(model, widgetId)
+			return model.history.previewed === null ? openEmbed(model, widgetId) : { model }
 		default:
 			return { model }
 	}
@@ -734,7 +749,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		ClickedRetryPersistence: () => ({ model: { ...model, persistenceError: null } }),
 		CameBackOnline: () => ({ model: { ...model, persistenceError: null } }),
-		CompletedExport: () => ({ model }),
+		CompletedExport: ({ error }) =>
+			error === null
+				? { model }
+				: {
+						model,
+						outMessage: PageOutMessage.RequestedToast({
+							type: "error",
+							title: "Couldn't export the dashboard",
+							description: error,
+						}),
+					},
 		GotErrorDetailsMessage: ({ widgetId, message: inner }) => {
 			const next = Popover.update(
 				model.errorDetails[widgetId] ?? Popover.init(errorDetailsIdOf(widgetId)),

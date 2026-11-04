@@ -106,9 +106,8 @@ export const Message = defineMessageUnion({
 	ClickedRetryPersistence: {},
 	/** The browser came back online while the banner shows: editing comes back as with Retry. */
 	CameBackOnline: {},
-	/** "Undo" on the "Widget removed" toast: the removed tile, as it was stored. */
-	/** "Undo" after a group was deleted with its widgets: they come back on the board, the group does not. */
-	CompletedExport: {},
+	/** Export JSON's download: `error` is why it could not be written. */
+	CompletedExport: { error: Schema.NullOr(Schema.String) },
 	/** A group's chevron: this viewer's collapse, in the URL. */
 	ClickedSectionChevron: { sectionId: Schema.String, collapsed: Schema.Boolean },
 	ClickedSectionTab: { sectionId: Schema.String, tabId: Schema.String },
