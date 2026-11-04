@@ -125,7 +125,9 @@ export const toInitialState = (widget: Widget): EditorState => {
 		panel !== "paths" &&
 		!isProductFunnel &&
 		(loaded === null || loaded.queries.length === 0)
-	const routeStandIn = isStandIn && querySet === null ? routeStandInOf(routeOf(widget)) : null
+	// A SQL widget is not a preset: it switches to the builder like any other query.
+	const isSql = dataSourceRawSql(widget.dataSource) !== null
+	const routeStandIn = isStandIn && querySet === null && !isSql ? routeStandInOf(routeOf(widget)) : null
 	const standInQuery =
 		routeStandIn?.kind === "builder"
 			? routeStandIn.query
@@ -148,7 +150,7 @@ export const toInitialState = (widget: Widget): EditorState => {
 		stacked: widget.display.stacked ?? false,
 		curveType: widget.display.curveType ?? "linear",
 		queries,
-		keepsStoredSource: isStandIn && dataSourceRawSql(widget.dataSource) === null,
+		keepsStoredSource: isStandIn && !isSql,
 		queryFixed: routeStandIn?.kind === "fixed",
 		formulas: panel === "list" ? [] : (loaded?.formulas ?? []),
 		comparisonMode: comparison.mode === "previous_period" ? "previous_period" : "none",

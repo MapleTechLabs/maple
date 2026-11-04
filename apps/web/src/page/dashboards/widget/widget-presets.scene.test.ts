@@ -1,17 +1,25 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { statPresets, tablePresets } from "@maple/web-data/dashboards/widget-presets"
-import { dataSourceQuerySet, dataSourceTransform, makeRouteDataSource } from "@maple/widgets/dashboard"
+import {
+	dataSourceQuerySet,
+	dataSourceTransform,
+	makeRawSqlDataSource,
+	makeRouteDataSource,
+} from "@maple/widgets/dashboard"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { Option, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
+import { CaretMessage } from "../../kit/where-autocomplete"
+import { WhereFieldMessage } from "../../kit/where-field"
+import { MountWhereFieldCaret } from "../../kit/where-field-command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
-import { editedWidget, init } from "./update"
+import { editedWidget, init, previewWidgetOf } from "./update"
 import * as Tabs from "@maple/views/ui/tabs"
 import { MeasurePreview } from "./command"
 import { view as pageView } from "./view"
@@ -98,7 +106,15 @@ describe("preset widgets in the editor", () => {
 			whereClause: "root_only = true AND has_error = true",
 		})
 		expect(rootErrors?.statAggregate).toBe("sum")
-		expect(openedPreset("stat-error-rate").model.state?.queries[0]?.aggregation).toBe("error_rate")
+	})
+
+	test("Error Rate stays fixed: a mean of bucket rates is not errors over spans", () => {
+		for (const id of ["stat-error-rate", "stat-root-error-rate"]) {
+			const board = openedPreset(id)
+			expect(board.model.state?.queryFixed).toBe(true)
+			const edited = typedWhere(board.model, 'service.name = "api"')
+			expect(savedSourceOf(board, edited)).toEqual(board.widget.dataSource)
+		}
 	})
 
 	test("a service's P95 latency stat edits as p95 duration of that service", () => {
@@ -129,6 +145,50 @@ describe("preset widgets in the editor", () => {
 			context,
 		).model
 		expect(savedSourceOf(board, edited)).toEqual(board.widget.dataSource)
+	})
+
+	test("a SQL widget is not a preset: the Builder edits a query and the SQL tab keeps its SQL", () => {
+		const sql =
+			"SELECT toStartOfHour(Timestamp) AS bucket, count() AS value FROM traces WHERE OrgId = {orgId:String} GROUP BY bucket"
+		const board = opened("stat", makeRawSqlDataSource({ sql }), { title: "Spans" })
+		const tab = (model: Model, index: number) =>
+			update(
+				model,
+				Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index }) }),
+				context,
+			).model
+		const builder = tab(board.model, 0)
+		expect(builder.state?.queryFixed).toBe(false)
+		const filtered = typedWhere(builder, 'service.name = "api"')
+		expect(dataSourceQuerySet(savedSourceOf(board, filtered))?.queries[0]).toMatchObject({
+			whereClause: 'service.name = "api"',
+		})
+		expect(previewWidgetOf(tab(filtered, 1))?.dataSource).toMatchObject({ kind: "raw_sql", sql })
+		scene(
+			{ update: (model: Model, message: Message) => update(model, message, context), view },
+			given(builder),
+			Mount.resolve(ResolveThemeColors, Message.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(MeasurePreview, Message.MeasuredPreview({ widthPx: 800 })),
+			Mount.resolve<string, Tabs.Message>(
+				Tabs.MeasureTabIndicator,
+				Tabs.Message.MeasuredIndicator({
+					rect: { left: 0, right: 225, top: 4, bottom: 5, width: 112, height: 32 },
+				}),
+			),
+			// Resolved with the query panel's message: the page's submodel wraps it.
+			Mount.resolve<string, QueryPanel.Message>(
+				MountWhereFieldCaret,
+				QueryPanel.Message.GotWhereField({
+					message: WhereFieldMessage.GotCaret({
+						fieldId:
+							builder.state?.queries[0]?.id ?? expect.unreachable("the Builder has query A"),
+						message: CaretMessage.BlurredEditor(),
+					}),
+				}),
+			),
+			expectView(text("+ Formula")).toExist(),
+			expectView(text("This preset's query can't be edited")).not.toExist(),
+		)
 	})
 
 	test("a fixed query says it can't be edited instead of showing query A", () => {

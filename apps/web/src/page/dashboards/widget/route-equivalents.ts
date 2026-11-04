@@ -98,11 +98,10 @@ const errorsSummary = (route: RouteWidget): RouteStandIn => {
 	if (serviceName === null) return FIXED
 	const filters = { serviceName, rootSpansOnly: route.params.rootOnly === true }
 	switch (route.reduce?.field) {
-		case "errorRate":
-			return builder("traces", "error_rate", filters, "avg")
 		case "totalErrors":
 			return builder("traces", "count", { ...filters, errorsOnly: true }, "sum")
-		// `affectedServicesCount` is a distinct count the builder cannot express.
+		// `errorRate` is errors over spans for the whole window; the builder only reduces per-bucket
+		// rates, which drift from it under uneven traffic. `affectedServicesCount` is a distinct count.
 		default:
 			return FIXED
 	}
@@ -158,11 +157,12 @@ const ROUTE_STAND_INS = {
 	error_rate_by_service: fixed,
 	list_metrics: fixed,
 	metrics_summary: fixed,
-	// Query sets, SQL, product events and notes never reach here: they are not route sources.
+	// Query sets, product events and notes never reach here: they are not route sources.
 	custom_query_builder_timeseries: fixed,
 	custom_query_builder_breakdown: fixed,
 	custom_query_builder_list: fixed,
-	raw_sql_chart: fixed,
+	// A `kind: "route"` SQL widget is not a preset; it reads as a builder query, as before presets mapped.
+	raw_sql_chart: legacyChart,
 	product_events_funnel: fixed,
 	product_events_paths: fixed,
 	markdown_static: fixed,
