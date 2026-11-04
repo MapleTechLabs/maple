@@ -3417,8 +3417,9 @@ async fn grpc_admission(
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
             Ok((resolved, admission)) => {
-                if admission == KeyAdmission::Drop {
-                    // Paused: hand tonic one empty message instead of the upload, so
+                if admission == KeyAdmission::Drop || resolved.org_id == SENTINEL_ORG_ID {
+                    // Paused, or the public placeholder token whose upload is never
+                    // kept: hand tonic one empty message instead of the upload, so
                     // nothing is read or decoded and the client still gets an OK reply.
                     *request.body_mut() = axum::body::Body::from(EMPTY_GRPC_MESSAGE);
                     request.headers_mut().remove("grpc-encoding");
@@ -3727,8 +3728,8 @@ async fn admit_grpc_claims(
     decoded: &mut DecodedPayload,
     resolved: &ResolvedIngestKey,
 ) -> (KeyAdmission, ClaimOutcome) {
-    // A paused source's export reaches here empty (see `grpc_admission`).
-    if admission != KeyAdmission::Ingest {
+    // A paused source's or the sentinel's export reaches here empty (see `grpc_admission`).
+    if admission != KeyAdmission::Ingest || resolved.org_id == SENTINEL_ORG_ID {
         return (admission, ClaimOutcome::default());
     }
     let claims = verify_claims_and_enrich(state, decoded, resolved).await;
@@ -3753,10 +3754,9 @@ async fn accept_grpc_decoded(
     decoded_bytes: usize,
     claims: &ClaimOutcome,
 ) -> Result<(), tonic::Status> {
-    // The sentinel token is a PUBLIC constant, so anything it carries is
-    // attacker-authored and must never be stored. Discarded here for the same
-    // reasons and with the same shape as `handle_signal_inner`'s HTTP
-    // short-circuit: success to the client, nothing resolved, nothing forwarded.
+    // The sentinel token is a PUBLIC constant, so anything it carries is never
+    // stored. `grpc_admission` already swapped its upload for an empty message;
+    // this answers it like `handle_signal_inner`'s HTTP short-circuit.
     if resolved.org_id == SENTINEL_ORG_ID {
         metrics::sentinel(signal.path());
         Span::current().record("maple.ingest.key_type", "sentinel");
@@ -14299,15 +14299,23 @@ mod tests {
             "an unknown key is UNAUTHENTICATED"
         );
 
-        // The sentinel token has no org to bill, so it is never gated.
-        let sentinel = router
-            .call(grpc_export_request(
-                "MAPLE_TEST",
-                grpc_frame(&test_log_request("sentinel").encode_to_vec()),
-            ))
+        // The sentinel token has no org to bill, so it is never gated, and its
+        // upload is never kept, so it is never decoded either: undecodable bytes
+        // that claim gzip still get one empty OK reply.
+        let mut sentinel_request = grpc_export_request("MAPLE_TEST", UNDECODABLE_BODY.to_vec());
+        sentinel_request
+            .headers_mut()
+            .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+        let sentinel = router.call(sentinel_request).await.unwrap();
+        assert_eq!(grpc_header_status(&sentinel), None);
+        let body = axum::body::to_bytes(sentinel.into_body(), 1024)
             .await
             .unwrap();
-        assert_eq!(grpc_header_status(&sentinel), None);
+        assert_eq!(
+            body.as_ref(),
+            EMPTY_GRPC_MESSAGE,
+            "one empty export response"
+        );
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -14330,12 +14338,23 @@ mod tests {
     async fn grpc_export_takes_gzip_within_the_http_body_limits() {
         use tonic::codegen::Service as _;
 
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
         let queue_dir = unique_main_test_dir("grpc-gzip-limit");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_gzip";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_gzip".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
         let state = test_app_state(
-            Arc::new(FakeKeyStore::default()),
+            store,
             queue_dir.clone(),
-            "http://127.0.0.1:1".to_owned(),
-            Duration::from_secs(30),
+            forward_url,
+            Duration::from_millis(5),
         )
         .await;
         let (raw_limit, decoded_limit) = (
@@ -14344,13 +14363,26 @@ mod tests {
         );
         let mut router = grpc_router(Arc::new(state));
         let message = |len: usize| test_log_request(&"x".repeat(len)).encode_to_vec();
-        let gzip_request = |message: &[u8]| {
-            let mut request = grpc_export_request("MAPLE_TEST", gzip_grpc_frame(message));
+        let gzip_request_as = |raw_key: &str, message: &[u8]| {
+            let mut request = grpc_export_request(raw_key, gzip_grpc_frame(message));
             request
                 .headers_mut()
                 .insert("grpc-encoding", HeaderValue::from_static("gzip"));
             request
         };
+        let gzip_request = |message: &[u8]| gzip_request_as(raw_key, message);
+
+        // The sentinel's upload is swapped out before tonic reads it, so even one
+        // that would inflate past the decoded ceiling is never inflated.
+        let sentinel = router
+            .call(gzip_request_as("MAPLE_TEST", &message(decoded_limit)))
+            .await
+            .unwrap();
+        assert_eq!(
+            grpc_header_status(&sentinel),
+            None,
+            "a sentinel export is answered without being inflated"
+        );
 
         // Past tonic's 4 MiB default, inside the decoded ceiling, compressed under the raw one.
         let accepted = router
@@ -14377,7 +14409,7 @@ mod tests {
         let mut two_frames = gzip_grpc_frame(&message(16));
         two_frames.extend(gzip_grpc_frame(&message(16)));
         let extra_frame = {
-            let mut request = grpc_export_request("MAPLE_TEST", two_frames);
+            let mut request = grpc_export_request(raw_key, two_frames);
             request
                 .headers_mut()
                 .insert("grpc-encoding", HeaderValue::from_static("gzip"));
@@ -14391,7 +14423,7 @@ mod tests {
 
         let oversized = grpc_frame(&message(2 * raw_limit));
         let streamed = router
-            .call(grpc_export_request("MAPLE_TEST", oversized.clone()))
+            .call(grpc_export_request(raw_key, oversized.clone()))
             .await
             .unwrap();
         assert_eq!(
@@ -14400,7 +14432,7 @@ mod tests {
             "a body past the raw limit is RESOURCE_EXHAUSTED"
         );
         let declared = {
-            let mut request = grpc_export_request("MAPLE_TEST", oversized.clone());
+            let mut request = grpc_export_request(raw_key, oversized.clone());
             request
                 .headers_mut()
                 .insert(axum::http::header::CONTENT_LENGTH, oversized.len().into());
@@ -14420,8 +14452,18 @@ mod tests {
         use tonic::codegen::Service as _;
 
         let queue_dir = unique_main_test_dir("grpc-deadline");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_deadline";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_deadline".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
         let mut state = test_app_state(
-            Arc::new(FakeKeyStore::default()),
+            store,
             queue_dir.clone(),
             "http://127.0.0.1:1".to_owned(),
             Duration::from_secs(30),
@@ -14437,7 +14479,7 @@ mod tests {
             futures_util::stream::once(async move { Ok::<_, std::io::Error>(half) }),
             futures_util::stream::pending(),
         );
-        let mut request = grpc_export_request("MAPLE_TEST", Vec::new());
+        let mut request = grpc_export_request(raw_key, Vec::new());
         *request.body_mut() = axum::body::Body::from_stream(stalled);
 
         let response = tokio::time::timeout(Duration::from_secs(5), router.call(request))
