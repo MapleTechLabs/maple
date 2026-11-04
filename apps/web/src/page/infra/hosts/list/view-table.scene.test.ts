@@ -8,7 +8,8 @@ import { hostTable } from "./view-table"
 // Rows are cached per host: a second frame must still show what changed and keep what did not.
 
 type Model = ReadonlyArray<HostRow>
-type Message = "Refetched"
+type Message = Readonly<{ _tag: "Refetched" }>
+const Refetched: Message = { _tag: "Refetched" }
 
 const host = (hostName: string, cpuPct: number): HostRow => ({
 	hostName,
@@ -31,12 +32,13 @@ const view = (model: Model, h: HtmlBuilder<Message>) =>
 	h.div(
 		[],
 		[
-			h.button([h.OnClick("Refetched")], ["Refetch"]),
+			h.button([h.OnClick(Refetched)], ["Refetch"]),
 			hostTable(h, model, {
 				nowMs: Date.parse("2026-10-01T12:00:00Z"),
 				timeZone: "UTC",
 				isWaiting: false,
 				sort: { key: null, dir: "desc" },
+				onSort: () => Refetched,
 			}),
 		],
 	)
