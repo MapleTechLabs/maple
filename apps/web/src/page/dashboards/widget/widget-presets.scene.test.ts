@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { DashboardDocument } from "@maple/domain/http"
+import { DashboardDocument, type PanelType } from "@maple/domain/http"
 import { statPresets, tablePresets } from "@maple/web-data/dashboards/widget-presets"
 import {
 	dataSourceQuerySet,
@@ -13,13 +13,15 @@ import { expect as expectView, given, Mount, scene, text, withViewInputs } from 
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
+import * as Combobox from "@maple/views/ui/combobox"
 import { CaretMessage } from "../../kit/where-autocomplete"
 import { WhereFieldMessage } from "../../kit/where-field"
 import { MountWhereFieldCaret } from "../../kit/where-field-command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
-import { editedWidget, init, previewWidgetOf } from "./update"
+import { canApply, editedWidget, init, previewWidgetOf } from "./update"
+import { listDataSourceOf } from "./lowering-list"
 import * as Tabs from "@maple/views/ui/tabs"
 import { MeasurePreview } from "./command"
 import { view as pageView } from "./view"
@@ -71,6 +73,37 @@ const typedWhere = (model: Model, value: string): Model => {
 		context,
 	).model
 }
+
+const pickedType = (model: Model, panel: PanelType): Model =>
+	update(model, Message.ClickedPanelType({ panel }), context).model
+
+const groupedBy = (model: Model, field: string): Model => {
+	const queryId = model.state?.queries[0]?.id ?? expect.unreachable("the editor has query A")
+	return Arr.reduce(
+		[
+			QueryPanel.Message.ToggledAddOn({ queryId, key: "groupBy" }),
+			QueryPanel.Message.GotGroupByMessage({
+				queryId,
+				message: Combobox.Message.ClickedItem({ value: field }),
+			}),
+		],
+		model,
+		(current, message) => update(current, Message.GotQueryPanelMessage({ message }), context).model,
+	)
+}
+
+const mounted = (model: Model) =>
+	[
+		given(model),
+		Mount.resolve(ResolveThemeColors, Message.ResolvedThemeColors({ colors: {} })),
+		Mount.resolve(MeasurePreview, Message.MeasuredPreview({ widthPx: 800 })),
+		Mount.resolve<string, Tabs.Message>(
+			Tabs.MeasureTabIndicator,
+			Tabs.Message.MeasuredIndicator({
+				rect: { left: 0, right: 225, top: 4, bottom: 5, width: 112, height: 32 },
+			}),
+		),
+	] as const
 
 const savedSourceOf = (board: ReturnType<typeof opened>, model: Model) =>
 	editedWidget(board.widget, model.state ?? expect.unreachable("the editor is ready"), null).dataSource
@@ -205,5 +238,72 @@ describe("preset widgets in the editor", () => {
 			),
 			expectView(text("This preset's query can't be edited")).toExist(),
 		)
+	})
+
+	test("a fixed preset switched to a pie edits a builder query that saves once grouped", () => {
+		const board = openedPreset("stat-total-services")
+		const pie = pickedType(board.model, "pie")
+		expect(pie.state?.queryFixed).toBe(false)
+		expect(pie.state?.queries[0]?.aggregation).toBe("count")
+		expect(canApply(pie)).toBe(false)
+		const grouped = groupedBy(pie, "service.name")
+		expect(canApply(grouped)).toBe(true)
+		const saved = savedSourceOf(board, grouped)
+		expect(dataSourceQuerySet(saved)?.queries[0]).toMatchObject({ aggregation: "count" })
+		expect(saved).not.toEqual(board.widget.dataSource)
+		scene(
+			{ update: (model: Model, message: Message) => update(model, message, context), view },
+			...mounted(pie),
+			Mount.resolve<string, QueryPanel.Message>(
+				MountWhereFieldCaret,
+				QueryPanel.Message.GotWhereField({
+					message: WhereFieldMessage.GotCaret({
+						fieldId: pie.state?.queries[0]?.id ?? expect.unreachable("the pie has query A"),
+						message: CaretMessage.BlurredEditor(),
+					}),
+				}),
+			),
+			expectView(
+				text("This visualization groups data into categories. Add a group-by field"),
+			).toExist(),
+			expectView(text("+ Query")).toExist(),
+			expectView(text("This preset's query can't be edited")).not.toExist(),
+		)
+	})
+
+	test("a fixed preset switched to a list saves the list's own source", () => {
+		const board = openedPreset("stat-total-services")
+		const list = pickedType(board.model, "list")
+		const state = list.state ?? expect.unreachable("the editor is ready")
+		expect(canApply(list)).toBe(true)
+		expect(savedSourceOf(board, list)).toEqual(listDataSourceOf(state))
+	})
+
+	test("a fixed preset stays fixed as a table, and back from a pie or a previewed list untouched", () => {
+		const board = openedPreset("stat-total-services")
+		const table = pickedType(board.model, "table")
+		expect(table.state?.queryFixed).toBe(true)
+		expect(dataSourceTransform(savedSourceOf(board, table))?.reduceToValue).toBeUndefined()
+		expect(pickedType(pickedType(board.model, "pie"), "stat").state?.queryFixed).toBe(true)
+		// Previewed as a list (its own source), then back: the preview reads the stored route again.
+		const previewed = update(pickedType(board.model, "list"), Message.ClickedRunPreview(), context).model
+		const back = pickedType(previewed, "stat")
+		expect(back.state?.queryFixed).toBe(true)
+		expect(savedSourceOf(board, back)).toEqual(board.widget.dataSource)
+		expect(previewWidgetOf(back)?.dataSource).toEqual(board.widget.dataSource)
+		scene(
+			{ update: (model: Model, message: Message) => update(model, message, context), view },
+			...mounted(back),
+			expectView(text("This preset's query can't be edited")).toExist(),
+		)
+	})
+
+	test("a fixed preset grouped as a pie stays a builder query back as a stat", () => {
+		const board = openedPreset("stat-total-services")
+		const back = pickedType(groupedBy(pickedType(board.model, "pie"), "service.name"), "stat")
+		expect(back.state?.queryFixed).toBe(false)
+		expect(dataSourceQuerySet(savedSourceOf(board, back))?.queries[0]).toMatchObject({
+			aggregation: "count",
+		})
 	})
 })

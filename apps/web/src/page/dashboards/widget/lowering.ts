@@ -337,15 +337,49 @@ const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknow
 const sameJson = (a: unknown, b: unknown): boolean =>
 	Option.getOrNull(encodeJsonOption(a)) === Option.getOrNull(encodeJsonOption(b))
 
+/** Types that lower a source of their own, never a route's rows. Exhaustive, so a new type decides. */
+const OWNS_SOURCE = {
+	line: false,
+	bar: false,
+	area: false,
+	stat: false,
+	gauge: false,
+	table: false,
+	histogram: false,
+	pie: false,
+	hbar: false,
+	heatmap: false,
+	funnel: true,
+	list: true,
+	paths: true,
+	markdown: true,
+} satisfies Record<PanelType, boolean>
+
+/** A fixed route's rows render as this type: its stored type, or one with no group-by to add and no source of its own. */
+const rendersRouteRows = (stored: PanelType, panel: PanelType): boolean =>
+	panel === stored || (!WIDGET_TYPES[panel].requiresGroupBy && !OWNS_SOURCE[panel])
+
+const sameQueries = (initial: EditorState, after: EditorState): boolean =>
+	sameJson(after.queries, initial.queries) &&
+	sameJson(after.formulas, initial.formulas) &&
+	after.comparisonMode === initial.comparisonMode
+
+/** A fixed query holds while its type renders the route's rows; outside them it is a builder query, back untouched it is fixed again. */
+const trackFixedQuery = (initial: EditorState, after: EditorState): EditorState => {
+	const fixed =
+		rendersRouteRows(panelOf(initial), panelOf(after)) &&
+		(after.queryFixed || sameQueries(initial, after))
+	return after.queryFixed === fixed && after.keepsStoredSource === fixed
+		? after
+		: { ...after, queryFixed: fixed, keepsStoredSource: fixed }
+}
+
 /** The stored source holds while the queries, formulas, comparison, row limit and type match the opened state. */
 export const trackStoredSource = (initial: EditorState | null, after: EditorState): EditorState => {
 	if (initial === null || !initial.keepsStoredSource) return after
-	// No builder query computes a fixed endpoint's metric, so no edit may replace its source.
-	if (initial.queryFixed) return after.keepsStoredSource ? after : { ...after, keepsStoredSource: true }
+	if (initial.queryFixed) return trackFixedQuery(initial, after)
 	const keeps =
-		sameJson(after.queries, initial.queries) &&
-		sameJson(after.formulas, initial.formulas) &&
-		after.comparisonMode === initial.comparisonMode &&
+		sameQueries(initial, after) &&
 		after.tableLimit === initial.tableLimit &&
 		panelOf(after) === panelOf(initial)
 	return after.keepsStoredSource === keeps ? after : { ...after, keepsStoredSource: keeps }
@@ -495,6 +529,8 @@ export const validationErrorOf = (state: EditorState): string | null => {
 	if (panelType === "paths") return pathsValidationError(state.paths)
 	// A list is configured by its own panel and a note never queries: neither has a query to check.
 	if (isNote(state) || panelType === "list") return null
+	// A fixed query hides its panels and saves the stored route, so there is nothing to satisfy.
+	if (state.queryFixed) return null
 	if (isProductEventsFunnel(state)) return funnelValidationError(state.funnel)
 	const active = Arr.filter(state.queries, (query) => query.enabled !== false)
 	if (active.length === 0) return "Add at least one query"
