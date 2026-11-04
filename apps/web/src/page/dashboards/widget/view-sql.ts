@@ -13,7 +13,7 @@ import { input } from "@maple/views/ui/input"
 import { sqlEditor } from "@maple/views/ui/sql-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { type RawSqlState, rawSqlErrorOf } from "./raw-sql"
+import { isRunnableSql, type RawSqlState, rawSqlErrorOf } from "./raw-sql"
 import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -201,7 +201,6 @@ const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 /** The Raw SQL tab's body: the `$__orgFilter` message, the panel, and Run preview. */
 export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyArray<Html> => {
 	const error = rawSqlErrorOf(rawSql.draft)
-	const issue = rawSqlIssue(rawSql.draft.sql)
 	return [
 		...(error === null ? [] : [fieldErrorText(h, { className: "font-medium" }, error)]),
 		h.div(
@@ -226,14 +225,16 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 						h,
 						{
 							size: "sm",
-							isDisabled: issue !== null,
+							isDisabled: !isRunnableSql(rawSql.draft),
 							attributes: [h.OnClick(Message.ClickedRunPreview())],
 						},
 						["Run preview"],
 					),
 					typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
 						"Targets ",
-						inlineCode(h, {}, [widgetOf(model)?.visualization ?? ""]),
+						inlineCode(h, {}, [
+							model.state?.visualization ?? widgetOf(model)?.visualization ?? "",
+						]),
 					]),
 				]),
 			],

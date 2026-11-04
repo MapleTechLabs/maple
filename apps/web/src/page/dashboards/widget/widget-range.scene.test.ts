@@ -4,6 +4,7 @@ import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { PageContext } from "../../contract"
+import { FetchWidget } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
@@ -46,8 +47,8 @@ const custom = () =>
 	])
 
 describe("a widget's own time range", () => {
-	test("Custom seeds the board's window, then a picked preset makes it a moving window", () => {
-		expect(custom().state?.timeRange?.type).toBe("absolute")
+	test("Custom starts from the board's preset as a moving window, and a picked preset replaces it", () => {
+		expect(custom().state?.timeRange).toEqual({ type: "relative", value: "1h" })
 		const picked = run(custom(), [
 			Message.GotRangePickerMessage({
 				message: TimeRangePicker.Message.ClickedPreset({ value: "1d" }),
@@ -61,5 +62,23 @@ describe("a widget's own time range", () => {
 			type: "relative",
 			value: "1d",
 		})
+	})
+
+	test("the editor's own range picker previews locally and never writes the board", () => {
+		const model = run(
+			init({ dashboardId: "dash_range", widgetId: "errors", search: {} }, context).model,
+			[
+				Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
+				Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
+			],
+		)
+		const picked = update(
+			model,
+			Message.GotTimePickerMessage({ message: TimeRangePicker.Message.ClickedPreset({ value: "7d" }) }),
+			context,
+		)
+		expect(picked.model.timeRange).toEqual({ type: "relative", value: "7d" })
+		const writes = Arr.filter(picked.commands ?? [], ({ name }) => name !== FetchWidget.name)
+		expect(Arr.map(writes, ({ name }) => name)).toEqual([])
 	})
 })

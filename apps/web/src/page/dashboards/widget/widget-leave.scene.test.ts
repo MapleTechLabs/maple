@@ -4,7 +4,7 @@ import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { AppRoute } from "../../../route"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { blockNavigation, type PageSlot } from "../../registry"
+import { blockNavigation, isBlockingUnload, type PageSlot } from "../../registry"
 import { SaveWidget } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -54,6 +54,13 @@ const isHeld = (model: Model, route: AppRoute = away) =>
 	Option.isSome(blockNavigation(slotOf(model), route, "/services", context))
 
 describe("leaving the widget editor", () => {
+	test("a reload or tab close asks only while there are unsaved edits", () => {
+		const edited = run(opened(), [Message.ChangedTitle({ value: "Renamed" })])
+		expect(isBlockingUnload(slotOf(opened()))).toBe(false)
+		expect(isBlockingUnload(slotOf(edited))).toBe(true)
+		expect(isBlockingUnload(null)).toBe(false)
+	})
+
 	test("a navigation away from unsaved edits is held and asks", () => {
 		const edited = run(opened(), [Message.ChangedTitle({ value: "Renamed" })])
 		expect(isHeld(opened())).toBe(false)

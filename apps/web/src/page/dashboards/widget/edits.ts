@@ -94,8 +94,6 @@ export const removeFormula = (state: EditorState, formulaId: string): EditorStat
 	),
 })
 
-export { withRootOnly } from "../../kit/query-builder/change"
-
 /**
  * `reconcileFunnelSource` (funnel-source.ts): on a funnel, a product-event query A means the step
  * editor; leaving the funnel type turns those steps back into a product-event count query.

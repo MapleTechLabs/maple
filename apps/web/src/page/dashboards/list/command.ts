@@ -17,12 +17,20 @@ import {
 	parsePortable,
 	toPortable,
 } from "../kit/portable"
-import { awaitTxid, deleteDashboard, errorMessageOf, mutateDashboard, readDocument } from "../kit/store"
+import {
+	awaitTxid,
+	DashboardConflictError,
+	DashboardUnreadableError,
+	deleteDashboard,
+	errorMessageOf,
+	mutateDashboard,
+	readDocument,
+} from "../kit/store"
 import { readLocale } from "@maple/views/lib/locale"
 import type { V2Dashboard } from "@maple/domain/http/v2"
 import { documentOf } from "../view/command-history"
 import { toListDashboard } from "./derive"
-import { Message } from "./message"
+import { Message, type WriteFailure } from "./message"
 
 /** `dashboardSortAtom`'s key: the default sort for a URL without `?sort`. */
 const SORT_KEY = "maple.dashboards.sort"
@@ -111,13 +119,50 @@ const createFromPortable = (orgId: string, portable: PortableDashboard) =>
 const toResult = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.result(Effect.mapError(effect, (error) => errorMessageOf(error)))
 
+/** A v2 error envelope for a refused request: invalid, missing or conflicting, not auth or outage. */
+const isRefusalEnvelope = Schema.is(
+	Schema.Struct({
+		error: Schema.Struct({
+			type: Schema.Literals(["invalid_request_error", "not_found_error", "conflict_error"]),
+			message: Schema.String,
+		}),
+	}),
+)
+
+/** The refusal's own message (name taken, conflict), found anywhere down the `cause` chain. */
+export const refusalMessageOf = (error: unknown, depth = 0): Option.Option<string> => {
+	if (depth > 5 || typeof error !== "object" || error === null) return Option.none()
+	if (isRefusalEnvelope(error)) return Option.some(error.error.message)
+	return "cause" in error ? refusalMessageOf(error.cause, depth + 1) : Option.none()
+}
+
+/** The API refused this write (anywhere down the `cause` chain): the store itself is still healthy. */
+export const isRejected = (error: unknown, depth = 0): boolean => {
+	if (depth > 5 || typeof error !== "object" || error === null) return false
+	if (
+		error instanceof DashboardUnreadableError ||
+		error instanceof DashboardConflictError ||
+		isRefusalEnvelope(error)
+	)
+		return true
+	return "cause" in error && isRejected(error.cause, depth + 1)
+}
+
+const toWriteResult = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+	Effect.result(
+		Effect.mapError(effect, (error): WriteFailure => ({
+			message: Option.getOrElse(refusalMessageOf(error), () => errorMessageOf(error)),
+			isRejected: isRejected(error),
+		})),
+	)
+
 /** `createDashboard("Untitled Dashboard")`. */
 export const CreateDashboard = Command.define("CreateDashboard", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedCreateDashboard],
 	execute: ({ orgId }) =>
 		Effect.map(
-			toResult(
+			toWriteResult(
 				createFromPortable(orgId, {
 					name: "Untitled Dashboard",
 					timeRange: { type: "relative", value: "12h" },
@@ -135,7 +180,7 @@ export const DuplicateDashboard = Command.define("DuplicateDashboard", {
 	messages: [Message.CompletedDuplicateDashboard],
 	execute: ({ orgId, id }) =>
 		Effect.map(
-			toResult(
+			toWriteResult(
 				Effect.flatMap(readDocument(orgId, id), (document) =>
 					createFromPortable(orgId, { ...toPortable(document), name: `${document.name} copy` }),
 				),
@@ -150,8 +195,10 @@ export const ExportDashboard = Command.define("ExportDashboard", {
 	execute: ({ orgId, id }) =>
 		readDocument(orgId, id).pipe(
 			Effect.flatMap(downloadPortable),
-			Effect.ignore,
-			Effect.as(Message.CompletedExportDashboard()),
+			Effect.match({
+				onFailure: (error) => Message.CompletedExportDashboard({ error: errorMessageOf(error) }),
+				onSuccess: () => Message.CompletedExportDashboard({ error: null }),
+			}),
 		),
 })
 
@@ -197,7 +244,7 @@ export const DeleteDashboard = Command.define("DeleteDashboard", {
 	args: { orgId: Schema.String, id: Schema.String },
 	messages: [Message.CompletedDeleteDashboard],
 	execute: ({ orgId, id }) =>
-		Effect.map(toResult(deleteDashboard(orgId, id)), (result) =>
+		Effect.map(toWriteResult(deleteDashboard(orgId, id)), (result) =>
 			Message.CompletedDeleteDashboard({ result }),
 		),
 })
@@ -208,7 +255,7 @@ export const SaveTags = Command.define("SaveDashboardTags", {
 	messages: [Message.CompletedSaveTags],
 	execute: ({ orgId, id, tags }) =>
 		Effect.map(
-			toResult(
+			toWriteResult(
 				mutateDashboard(orgId, id, (document, nowIso) => ({ ...document, tags, updatedAt: nowIso })),
 			),
 			(result) => Message.CompletedSaveTags({ result }),

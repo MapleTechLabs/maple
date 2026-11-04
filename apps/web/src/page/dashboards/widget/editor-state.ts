@@ -118,6 +118,8 @@ export const EditorState = Schema.Struct({
 	stacked: Schema.Boolean,
 	curveType: Schema.Literals(["linear", "monotone"]),
 	queries: Schema.Array(QueryDraft),
+	/** A fixed-endpoint widget whose stand-in queries are untouched: Apply and the preview keep its source. */
+	keepsStoredSource: Schema.Boolean,
 	formulas: Schema.Array(FormulaDraft),
 	comparisonMode: Schema.Literals(QUERY_COMPARISON_MODES),
 	includePercentChange: Schema.Boolean,

@@ -67,6 +67,14 @@ export const WaitPreviewDelay = Command.define("WaitTemplatePreviewDelay", {
 		Effect.as(Effect.sleep(Duration.millis(250)), Message.ElapsedPreviewDelay({ generation })),
 })
 
+/** A parameter edit settles for 300 ms (the search box's debounce) before the preview asks again. */
+export const WaitParameterDebounce = Command.define("WaitTemplateParameterDebounce", {
+	args: { generation: Schema.Number },
+	messages: [Message.ElapsedParameterDebounce],
+	execute: ({ generation }) =>
+		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedParameterDebounce({ generation })),
+})
+
 /** `ToolbarSearch`'s 300 ms debounce before the query applies. */
 export const WaitSearchDebounce = Command.define("WaitTemplatesSearchDebounce", {
 	args: { generation: Schema.Number },

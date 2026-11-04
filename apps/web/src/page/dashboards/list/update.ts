@@ -27,7 +27,7 @@ import * as TagEditor from "../kit/tag-editor"
 import { displayName, queryOf, tagsOf } from "./derive"
 import * as Combobox from "@maple/views/ui/combobox"
 import { INITIAL_LOCALE } from "@maple/views/lib/locale"
-import { Message } from "./message"
+import { Message, type WriteFailure } from "./message"
 import type { ListDashboard, Model } from "./model"
 
 export type Return = PageReturn<Model, Message>
@@ -248,11 +248,13 @@ const warningsToast = (warnings: ReadonlyArray<string>): WarningToast => ({
 })
 
 /**
- * A failed write turns the list read-only; the banner says so, so no toast repeats it. A list still
- * waiting on live sync reads the HTTP snapshot now, so the skeleton resolves instead of waiting out the timer.
+ * A refused write (a taken name, a stale edit) only toasts. A store failure turns the list read-only;
+ * the banner says so, so no toast repeats it. A list still waiting on live sync reads the HTTP snapshot
+ * now, so the skeleton resolves instead of waiting out the timer.
  */
-const failedWrite = (model: Model, message: string, orgId: string): Return => {
-	const next: Model = { ...model, persistenceError: message, isCreating: false }
+const failedWrite = (model: Model, failure: WriteFailure, orgId: string): Return => {
+	if (failure.isRejected) return toastFailure({ ...model, isCreating: false }, failure.message)
+	const next: Model = { ...model, persistenceError: failure.message, isCreating: false }
 	return model.dashboards === null && model.fallback._tag === "Idle"
 		? {
 				model: { ...next, fallback: { _tag: "Loading" } },
@@ -267,8 +269,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadPreferences: ({ favorites, sort }) => ({
 			model: { ...model, favorites, storedSort: sort, isPrefsLoaded: true },
 		}),
+		// A live update is a healthy sync: writes come back on.
 		UpdatedDashboards: ({ orgId, dashboards }) =>
-			orgId === context.orgId ? { model: { ...model, dashboards } } : { model },
+			orgId !== context.orgId ? { model } : { model: { ...model, dashboards, persistenceError: null } },
 		// `handleCollectionStuck` recreates the collections while the snapshot loads.
 		TimedOutLiveDashboards: ({ orgId }) =>
 			orgId !== context.orgId || model.dashboards !== null || model.fallback._tag !== "Idle"
@@ -290,9 +293,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							}),
 						},
 					},
-		// `retryOrgCollections`: a failed snapshot may be read again after the reconnect.
+		// `retryOrgCollections`: writes come back on, and a failed snapshot may be read again after the reconnect.
 		ClickedRetrySync: () => ({
-			model: model.fallback._tag === "Failed" ? { ...model, fallback: { _tag: "Idle" } } : model,
+			model: {
+				...model,
+				persistenceError: null,
+				fallback: model.fallback._tag === "Failed" ? { _tag: "Idle" } : model.fallback,
+			},
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
 		}),
 		ChangedSearchDraft: ({ value }) => {
@@ -365,7 +372,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedSavePreferences: () => ({ model }),
 		GotSortMenuMessage: ({ message: inner }) => sortMenuStep(model, inner),
 		GotRowMenuMessage: ({ rowId, message: inner }) => rowMenuStep(model, context, rowId, inner),
-		CompletedExportDashboard: () => ({ model }),
+		CompletedExportDashboard: ({ error }) => (error === null ? { model } : toastFailure(model, error)),
 		CompletedDuplicateDashboard: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => failedWrite(model, error, context.orgId),

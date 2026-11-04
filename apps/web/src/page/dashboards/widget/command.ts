@@ -1,4 +1,4 @@
-import { DashboardVariableSchema, DashboardWidgetSchema, TimeRangeSchema } from "@maple/domain/http"
+import { DashboardVariableSchema, DashboardWidgetSchema } from "@maple/domain/http"
 import { Clock, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
@@ -68,23 +68,6 @@ export const GenerateId = Command.define("GenerateWidgetEditorId", {
 })
 
 const Target = { orgId: Schema.String, dashboardId: Schema.String }
-
-/** `updateDashboardTimeRange` (`DashboardTimeRangeSync`): the picked range is the board's. */
-export const SaveTimeRange = Command.define("SaveWidgetEditorTimeRange", {
-	args: { ...Target, timeRange: TimeRangeSchema },
-	messages: [Message.CompletedSaveTimeRange],
-	execute: ({ orgId, dashboardId, timeRange }) =>
-		mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
-			...document,
-			timeRange,
-			updatedAt: nowIso,
-		})).pipe(
-			Effect.match({
-				onFailure: (error) => Message.CompletedSaveTimeRange({ error: errorMessageOf(error) }),
-				onSuccess: () => Message.CompletedSaveTimeRange({ error: null }),
-			}),
-		),
-})
 
 /** `updateWidget`: the edited widget replaces the stored one; no override drops the key. */
 export const SaveWidget = Command.define("SaveDashboardWidget", {

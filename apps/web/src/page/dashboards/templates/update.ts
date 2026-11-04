@@ -21,10 +21,11 @@ import {
 	FetchTemplates,
 	FetchWidget,
 	ReadClock,
+	WaitParameterDebounce,
 	WaitPreviewDelay,
 	WaitSearchDebounce,
 } from "./command"
-import { previewVariableValues } from "./derive"
+import { filledParametersOf, missingRequiredOf, previewVariableValues } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -118,19 +119,22 @@ export const routeChanged = (model: Model, route: Route): Return =>
 		? { model: { ...model, search: route.search } }
 		: reselect({ ...model, search: route.search })
 
-/** The preview request for the selection and its current parameters (`useDeferredValue`). */
+/** The preview request for the selection and its filled parameters; none while a required one is empty. */
 const requestPreview = (model: Model, context: PageContext): Return => {
 	const selected = selectedOf(model)
 	if (selected === null || !model.isPreviewArmed) return { model }
+	if (missingRequiredOf(selected, model.parameters).length > 0)
+		return { model: { ...model, preview: Keyed.idle() } }
+	const parameters = filledParametersOf(model.parameters)
 	const key = requestKey(context.orgId, "dashboards.previewTemplate", {
 		templateId: selected.id,
-		parameters: model.parameters,
+		parameters,
 	})
 	return Option.match(Keyed.request(model.preview, key, "Load"), {
 		onNone: () => ({ model }),
 		onSome: (preview) => ({
 			model: { ...model, preview },
-			commands: [FetchPreview({ key, templateId: selected.id, parameters: model.parameters })],
+			commands: [FetchPreview({ key, templateId: selected.id, parameters })],
 		}),
 	})
 }
@@ -199,12 +203,7 @@ const selectionHref = (templateId: string | undefined) =>
 /** `createFromTemplate`: only filled parameters are sent. */
 const create = (model: Model, templateId: string): Return => {
 	if (model.isCreating) return { model }
-	const parameters = Rec.fromEntries(
-		Arr.filter(
-			Arr.map(Rec.toEntries(model.parameters), ([key, value]) => [key, Str.trim(value)] as const),
-			([, value]) => value.length > 0,
-		),
-	)
+	const parameters = filledParametersOf(model.parameters)
 	return {
 		model: { ...model, isCreating: true },
 		commands: [CreateFromTemplate({ templateId, parameters })],
@@ -312,8 +311,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					commands: [FetchTemplates({ key: templatesKey(context) })],
 				}),
 			}),
-		ChangedParameter: ({ key, value }) =>
-			requestPreview({ ...model, parameters: { ...model.parameters, [key]: value } }, context),
+		// The preview asks once typing settles; a new selection's generation drops a pending one.
+		ChangedParameter: ({ key, value }) => {
+			const previewGeneration = model.previewGeneration + 1
+			const parameters = { ...model.parameters, [key]: value }
+			const selected = selectedOf(model)
+			// A missing required value drops the old preview now, not after the debounce.
+			const preview: Model["preview"] =
+				selected !== null && missingRequiredOf(selected, parameters).length > 0
+					? Keyed.idle()
+					: model.preview
+			return {
+				model: { ...model, previewGeneration, parameters, preview },
+				commands: [WaitParameterDebounce({ generation: previewGeneration })],
+			}
+		},
+		ElapsedParameterDebounce: ({ generation }) =>
+			generation === model.previewGeneration
+				? requestPreview({ ...model, isPreviewArmed: true }, context)
+				: { model },
 		ClickedCreate: ({ templateId }) => create(model, templateId),
 		CompletedCreate: ({ result }) =>
 			Result.match(result, {

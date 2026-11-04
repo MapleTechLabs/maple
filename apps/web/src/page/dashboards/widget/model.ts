@@ -46,7 +46,7 @@ export const Model = Schema.Struct({
 	/** The source the widget was opened in: switching tabs is an unsaved change. */
 	initialSourceMode: SourceMode,
 	rawSql: Schema.NullOr(RawSqlState),
-	/** `DashboardTimeRange`: the board's range, which the preview follows. */
+	/** The preview's window: the board's range on open, then the editor's own picker (never saved). */
 	timeRange: Schema.NullOr(TimeRangeSchema),
 	nowMs: Schema.NullOr(Schema.Number),
 	/** The preview pane's quantized width (`useWidgetMaxDataPoints`); `null` until measured. */
@@ -70,7 +70,6 @@ export const Model = Schema.Struct({
 	selects: Schema.Record(Schema.String, Select.Model),
 	/** The query panels' selects, group-by chips and collapsed set. */
 	queryPanels: QueryPanel.Model,
-	/** `AutocompleteValuesProvider lazy`: the lookups start once the query editor takes focus. */
 	/** `listMetricsResultAtom`: the metric picker's page for `metricSearch`, once a query reads metrics. */
 	metricSearch: Schema.String,
 	metricOptions: Schema.NullOr(Schema.Struct({ search: Schema.String, ...MetricPageSchema.fields })),
@@ -78,6 +77,7 @@ export const Model = Schema.Struct({
 	/** `useMetricScopedAutocomplete`: each picked metric's attribute keys (`name::type`), the "by" choices. */
 	metricKeys: Schema.Record(Schema.String, Schema.Array(Schema.String)),
 	metricKeysRequested: Schema.Array(Schema.String),
+	/** `AutocompleteValuesProvider lazy`: the lookups start once the query editor takes focus. */
 	isAutocompleteActive: Schema.Boolean,
 	autocomplete: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
 	/** `useFunnelSuggestions`: event names, page paths and facets, by lookup. */

@@ -416,6 +416,11 @@ export const definePage = <
 				return Option.none<PageStep<SlotType, WrappedType>>()
 			return Option.some(step(slot.key, instance, context, revive(slot.model, route, context)))
 		},
+		/** The instance holds unsaved state: leaving it, by link or by closing the tab, asks first. */
+		isBlockingNavigation: (slot: PageSlotBase): boolean =>
+			isOwnSlot(slot) &&
+			spec.isBlockingNavigation !== undefined &&
+			spec.isBlockingNavigation(slot.model),
 		/** A navigation away from this instance, held: the page's confirm step, or `None` if it allows it. */
 		blockedNavigation: (slot: PageSlotBase, url: string, context: PageContext) =>
 			isOwnSlot(slot) &&

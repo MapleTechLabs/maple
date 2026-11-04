@@ -7,6 +7,7 @@ import {
 } from "@maple/query-engine/query-builder"
 import {
 	dataSourceQuerySet,
+	dataSourceRawSql,
 	dataSourceRouteParams,
 	dataSourceTransform,
 	makeProductEventsFunnelDataSource,
@@ -32,7 +33,7 @@ import {
 	pointsModeFromShowPoints,
 	showPointsFromPointsMode,
 } from "./editor-state"
-import { listDataSourceOf, listDisplayOf, listInitialState } from "./lowering-list"
+import { listDataSourceOf, listDisplayOf, listInitialState, parsePositiveNumber } from "./lowering-list"
 import {
 	defaultFunnelDraft,
 	defaultPathsDraft,
@@ -43,7 +44,7 @@ import {
 	pathsInitialState,
 	pathsValidationError,
 } from "./lowering-product"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 
 // The editor state read out of a stored widget and lowered back (`toInitialState`,
 // `buildWidgetDataSource`, `buildWidgetDisplay`, `validateQueries`, with each type's halves).
@@ -68,10 +69,12 @@ const legendOf = (legend: string | undefined): LegendPosition =>
 const toStatAggregate = (value: unknown): EditorState["statAggregate"] =>
 	STAT_AGGREGATES.find((candidate) => candidate === value) ?? "first"
 
-/** `parsePositiveNumber` / `parseRowLimit` (capped at `ROW_LIMIT_MAX`). */
+/** The table's row limit input caps at this many rows. */
+export const ROW_LIMIT_MAX = 1000
+
 const parseRowLimit = (raw: string): number | undefined => {
-	const parsed = Number.parseInt(Str.trim(raw), 10)
-	return !Number.isFinite(parsed) || parsed <= 0 ? undefined : Math.min(parsed, 1000)
+	const parsed = parsePositiveNumber(raw)
+	return parsed === undefined ? undefined : Math.min(parsed, ROW_LIMIT_MAX)
 }
 
 const parseFiniteNumber = (raw: string): number | undefined => {
@@ -93,16 +96,23 @@ export const toInitialState = (widget: Widget): EditorState => {
 	const isScalar = panel === "stat" || panel === "gauge"
 	const gauge = panel === "gauge" ? widget.display.gauge : undefined
 	const funnel = panel === "funnel" ? funnelInitialState(widget) : defaultFunnelDraft()
+	const isProductFunnel = panel === "funnel" && funnel.source === "product_events"
+	// A fixed-endpoint widget reads its route params as a stand-in query A.
+	const isStandIn =
+		panel !== "list" &&
+		panel !== "markdown" &&
+		panel !== "paths" &&
+		!isProductFunnel &&
+		(loaded === null || loaded.queries.length === 0)
 	// A list's draft query only satisfies the state shape; a product-event funnel's placeholder reads product events.
 	const queries =
 		panel === "list"
 			? [createQueryDraft(0)]
 			: loaded !== null && loaded.queries.length > 0
 				? loaded.queries
-				: panel === "funnel" && funnel.source === "product_events"
+				: isProductFunnel
 					? [resetQueryForDataSource(createQueryDraft(0), "product_events")]
-					: // A widget from before the query builder reads its route params as query A.
-						[legacyQueryDraft(dataSourceRouteParams(widget.dataSource) ?? {})]
+					: [legacyQueryDraft(dataSourceRouteParams(widget.dataSource) ?? {})]
 	return {
 		visualization: normalized.visualization,
 		title: widget.display.title ?? "",
@@ -112,6 +122,7 @@ export const toInitialState = (widget: Widget): EditorState => {
 		stacked: widget.display.stacked ?? false,
 		curveType: widget.display.curveType ?? "linear",
 		queries,
+		keepsStoredSource: isStandIn && dataSourceRawSql(widget.dataSource) === null,
 		formulas: panel === "list" ? [] : (loaded?.formulas ?? []),
 		comparisonMode: comparison.mode === "previous_period" ? "previous_period" : "none",
 		includePercentChange: comparison.includePercentChange ?? true,
@@ -134,6 +145,31 @@ export const toInitialState = (widget: Widget): EditorState => {
 		...listInitialState(panel === "list" ? widget : null),
 		funnel,
 		paths: panel === "paths" ? pathsInitialState(widget) : defaultPathsDraft(),
+	}
+}
+
+type QueryCapabilities = Readonly<{ comparison: boolean; formulas: boolean }>
+
+const NO_QUERY_CAPABILITIES: QueryCapabilities = { comparison: false, formulas: false }
+
+/** What a panel's query set keeps when lowered: the rail offers comparison and formulas only here. */
+export const queryCapabilitiesOf = (
+	state: Pick<EditorState, "visualization" | "chartId" | "queries">,
+): QueryCapabilities => {
+	switch (panelOf(state)) {
+		case "line":
+		case "bar":
+		case "area":
+		case "stat":
+		case "gauge":
+			return { comparison: true, formulas: true }
+		// A grouped table is breakdown rows, which carry neither.
+		case "table": {
+			const isGrouped = Arr.some(Arr.filter(state.queries, isVisibleQuery), hasActiveGroupBy)
+			return isGrouped ? NO_QUERY_CAPABILITIES : { comparison: true, formulas: true }
+		}
+		default:
+			return NO_QUERY_CAPABILITIES
 	}
 }
 
@@ -162,13 +198,21 @@ const breakdownOf = (state: EditorState, defaultLimit?: number): DataSource => {
 	})
 }
 
+/** The series a stat or gauge reduces: the picked one while it is still listed, else the first. */
+export const statValueFieldOf = (state: EditorState): string => {
+	const fields = toSeriesFieldOptions(state)
+	return fields.includes(state.statValueField) ? state.statValueField : (fields[0] ?? "A")
+}
+
 /** The scalar reduction a stat and a gauge share. */
 const scalarOf = (state: EditorState): DataSource => {
 	const { base, sharedTransform } = timeseriesOf(state)
-	const field = state.statValueField || toSeriesFieldOptions(state)[0] || "A"
 	return {
 		...base,
-		transform: { ...sharedTransform, reduceToValue: { field, aggregate: state.statAggregate } },
+		transform: {
+			...sharedTransform,
+			reduceToValue: { field: statValueFieldOf(state), aggregate: state.statAggregate },
+		},
 	}
 }
 
@@ -237,6 +281,37 @@ export const buildDataSource = (state: EditorState): DataSource => {
 	}
 }
 
+/** A fixed endpoint's stored source, with the stat or gauge aggregate picked in the editor. */
+const storedSourceOf = (widget: Widget, state: EditorState): DataSource => {
+	const transform = dataSourceTransform(widget.dataSource)
+	const reduce = transform?.reduceToValue
+	if (reduce === undefined || !WIDGET_TYPES[panelOf(state)].isScalar) return widget.dataSource
+	return {
+		...widget.dataSource,
+		transform: { ...transform, reduceToValue: { ...reduce, aggregate: state.statAggregate } },
+	}
+}
+
+/** The builder's source: the stored one while a fixed endpoint's stand-in queries are untouched. */
+export const builderDataSourceOf = (widget: Widget, state: EditorState): DataSource =>
+	state.keepsStoredSource ? storedSourceOf(widget, state) : buildDataSource(state)
+
+const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
+const sameJson = (a: unknown, b: unknown): boolean =>
+	Option.getOrNull(encodeJsonOption(a)) === Option.getOrNull(encodeJsonOption(b))
+
+/** The stored source holds while the queries, formulas, comparison, row limit and type match the opened state. */
+export const trackStoredSource = (initial: EditorState | null, after: EditorState): EditorState => {
+	if (initial === null || !initial.keepsStoredSource) return after
+	const keeps =
+		sameJson(after.queries, initial.queries) &&
+		sameJson(after.formulas, initial.formulas) &&
+		after.comparisonMode === initial.comparisonMode &&
+		after.tableLimit === initial.tableLimit &&
+		panelOf(after) === panelOf(initial)
+	return after.keepsStoredSource === keeps ? after : { ...after, keepsStoredSource: keeps }
+}
+
 /** Display keys a panel type owns: cleared first so nothing leaks across a type switch. */
 const OWNED_DISPLAY_KEYS = new Set<string>(
 	Arr.flatMap(Rec.values(WIDGET_TYPES), (meta) => meta.ownedDisplayKeys),
@@ -275,17 +350,23 @@ const funnelDisplayOf = (state: EditorState): Display["funnel"] => {
 		: undefined
 }
 
-/** Each type's `buildDisplay` additions (`extendDisplay`). */
-const ownDisplayOf = (state: EditorState): Partial<Display> => {
+/** A stat's trend line: the builder series, or a fixed endpoint's stored one (its stand-in queries are not its data). */
+const sparklineOf = (widget: Widget, state: EditorState, isSql: boolean): Display["sparkline"] => {
+	if (!state.sparklineEnabled || isSql) return undefined
+	if (!state.keepsStoredSource) return { enabled: true, dataSource: timeseriesOf(state).base }
+	const stored = widget.display.sparkline
+	return stored?.dataSource === undefined ? undefined : { ...stored, enabled: true }
+}
+
+/** Each type's `buildDisplay` additions (`extendDisplay`); the sparkline re-runs builder queries, so SQL has none. */
+const ownDisplayOf = (widget: Widget, state: EditorState, isSql: boolean): Partial<Display> => {
 	switch (panelOf(state)) {
 		case "markdown":
 			return { markdown: { content: state.markdownContent } }
 		case "stat":
 			return {
 				unit: state.unit,
-				sparkline: state.sparklineEnabled
-					? { enabled: true, dataSource: timeseriesOf(state).base }
-					: undefined,
+				sparkline: sparklineOf(widget, state, isSql),
 				thresholds: thresholdsOf(state),
 			}
 		case "gauge":
@@ -331,7 +412,7 @@ const ownDisplayOf = (state: EditorState): Partial<Display> => {
 }
 
 /** `buildWidgetDisplay`: the shared base, then the panel type's own keys. */
-export const buildDisplay = (widget: Widget, state: EditorState): Display => {
+const displayOf = (widget: Widget, state: EditorState, isSql: boolean): Display => {
 	// A list owns its whole display: nothing of the previous type survives.
 	if (panelOf(state) === "list") return listDisplayOf(state)
 	const showPoints = showPointsFromPointsMode(state.pointsMode)
@@ -345,11 +426,11 @@ export const buildDisplay = (widget: Widget, state: EditorState): Display => {
 	// An absent preference is an `undefined` key here; the write's JSON round trip drops it.
 	return {
 		...kept,
-		// Query-driven widgets saved untitled get a derived title; notes and paths have no query to derive from.
+		// Builder widgets saved untitled get a derived title; notes, paths and SQL have no query to derive from.
 		title:
 			title !== ""
 				? title
-				: isNote(state) || panelOf(state) === "paths"
+				: isSql || isNote(state) || panelOf(state) === "paths"
 					? undefined
 					: deriveDefaultWidgetTitle(state.queries),
 		description: description === "" ? undefined : description,
@@ -360,9 +441,14 @@ export const buildDisplay = (widget: Widget, state: EditorState): Display => {
 			showPoints,
 		},
 		...(chartId === undefined ? undefined : { chartId }),
-		...ownDisplayOf(state),
+		...ownDisplayOf(widget, state, isSql),
 	}
 }
+
+export const buildDisplay = (widget: Widget, state: EditorState): Display => displayOf(widget, state, false)
+
+/** The display a Raw SQL source writes: no builder sparkline, no title derived from builder queries. */
+export const buildSqlDisplay = (widget: Widget, state: EditorState): Display => displayOf(widget, state, true)
 
 /** `validateQueries` for a query-builder panel: the message that blocks Apply, or `null`. */
 export const validationErrorOf = (state: EditorState): string | null => {

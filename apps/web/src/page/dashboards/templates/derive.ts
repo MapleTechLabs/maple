@@ -167,3 +167,27 @@ export const previewVariableValues = (variables: V2DashboardTemplatePreview["var
 					: [],
 		),
 	)
+
+/** The parameters a template is asked with: trimmed, and only those filled in. */
+export const filledParametersOf = (
+	parameters: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> =>
+	Rec.fromEntries(
+		Arr.filter(
+			Arr.map(Rec.toEntries(parameters), ([key, value]) => [key, Str.trim(value)] as const),
+			([, value]) => value.length > 0,
+		),
+	)
+
+/** The labels of the required parameters still empty. */
+export const missingRequiredOf = (
+	template: Pick<V2DashboardTemplate, "parameters">,
+	parameters: Readonly<Record<string, string>>,
+): ReadonlyArray<string> =>
+	Arr.map(
+		Arr.filter(
+			template.parameters,
+			(parameter) => parameter.required && Str.trim(parameters[parameter.key] ?? "") === "",
+		),
+		(parameter) => parameter.label,
+	)

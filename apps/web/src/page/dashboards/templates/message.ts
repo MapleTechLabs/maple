@@ -18,6 +18,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchTemplates: result(Schema.Array(V2DashboardTemplate)),
 	CompletedFetchMetrics: result(Schema.Array(MetricSeen)),
 	ElapsedPreviewDelay: { generation: Schema.Number },
+	ElapsedParameterDebounce: { generation: Schema.Number },
 	CompletedFetchPreview: result(V2DashboardTemplatePreview),
 	CompletedFetchWidget: { key: Schema.String, result: Schema.Result(Schema.Unknown, WidgetFailure) },
 	MeasuredPreview: { width: Schema.Number },
