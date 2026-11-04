@@ -197,6 +197,12 @@ export const makeFetch = (
 		never,
 		HttpServerRequest.HttpServerRequest
 	>,
+	/** How this event defers work past its response; tests pass a recorder. */
+	afterResponseRunner: Effect.Effect<
+		(work: Effect.Effect<void>) => Effect.Effect<void>,
+		never,
+		RuntimeContext
+	> = afterResponseOfEvent,
 ) =>
 	IsolateAge.useSync((isolateAge) => {
 		const serve = Effect.gen(function* () {
@@ -256,7 +262,7 @@ export const makeFetch = (
 				return unavailableResponse(path)
 			}
 
-			const afterResponse = yield* afterResponseOfEvent
+			const afterResponse = yield* afterResponseRunner
 			const response = yield* withPgConnectionScope(built.value).pipe(
 				Effect.tapCause((cause) => recordEscapedCause(request.method, path, cause)),
 				Effect.provideService(AfterResponse, afterResponse),
