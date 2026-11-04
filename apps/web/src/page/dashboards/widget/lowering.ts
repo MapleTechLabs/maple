@@ -356,8 +356,12 @@ const OWNS_SOURCE = {
 } satisfies Record<PanelType, boolean>
 
 /** A fixed route's rows render as this type: its stored type, or one with no group-by to add and no source of its own. */
-const rendersRouteRows = (stored: PanelType, panel: PanelType): boolean =>
-	panel === stored || (!WIDGET_TYPES[panel].requiresGroupBy && !OWNS_SOURCE[panel])
+const rendersRouteRows = (initial: EditorState, panel: PanelType): boolean => {
+	if (panel === panelOf(initial)) return true
+	if (WIDGET_TYPES[panel].requiresGroupBy || OWNS_SOURCE[panel]) return false
+	// A stat or gauge shows one value, which only a stored reduction gives the route's rows.
+	return !WIDGET_TYPES[panel].isScalar || initial.statValueField !== ""
+}
 
 const sameQueries = (initial: EditorState, after: EditorState): boolean =>
 	sameJson(after.queries, initial.queries) &&
@@ -367,8 +371,7 @@ const sameQueries = (initial: EditorState, after: EditorState): boolean =>
 /** A fixed query holds while its type renders the route's rows; outside them it is a builder query, back untouched it is fixed again. */
 const trackFixedQuery = (initial: EditorState, after: EditorState): EditorState => {
 	const fixed =
-		rendersRouteRows(panelOf(initial), panelOf(after)) &&
-		(after.queryFixed || sameQueries(initial, after))
+		rendersRouteRows(initial, panelOf(after)) && (after.queryFixed || sameQueries(initial, after))
 	return after.queryFixed === fixed && after.keepsStoredSource === fixed
 		? after
 		: { ...after, queryFixed: fixed, keepsStoredSource: fixed }

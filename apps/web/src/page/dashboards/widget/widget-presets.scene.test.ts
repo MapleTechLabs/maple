@@ -298,6 +298,14 @@ describe("preset widgets in the editor", () => {
 		)
 	})
 
+	test("a fixed table switched to a stat edits a builder query instead of keeping rows it can't reduce", () => {
+		const board = openedPreset("table-errors")
+		const stat = pickedType(board.model, "stat")
+		expect(stat.state?.queryFixed).toBe(false)
+		expect(savedSourceOf(board, stat)).not.toEqual(board.widget.dataSource)
+		expect(pickedType(stat, "table").state?.queryFixed).toBe(true)
+	})
+
 	test("a fixed preset grouped as a pie stays a builder query back as a stat", () => {
 		const board = openedPreset("stat-total-services")
 		const back = pickedType(groupedBy(pickedType(board.model, "pie"), "service.name"), "stat")
