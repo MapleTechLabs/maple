@@ -9,7 +9,7 @@
 // the next tick and go into one insert. So a lone export waits for nothing,
 // and the busier the server, the larger each insert.
 
-import { Effect, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr } from "effect"
 import type { Chdb } from "./chdb"
 import {
 	buildBatchedInsertStatements,
@@ -80,10 +80,10 @@ export class InsertBatcher {
 	}
 
 	#enqueue(batches: ReadonlyArray<InsertBatch>): Promise<Result.Result<number, LocalInsertError>> {
-		const unknown = batches.find((batch) => !hasInsertTemplate(batch.datasource))
-		if (unknown !== undefined)
+		const unknown = Arr.findFirst(batches, (batch) => !hasInsertTemplate(batch.datasource))
+		if (Option.isSome(unknown))
 			return Promise.resolve(
-				Result.fail(failed(0, { datasource: unknown.datasource, cause: "no insert mapping" })),
+				Result.fail(failed(0, { datasource: unknown.value.datasource, cause: "no insert mapping" })),
 			)
 		if (batches.length === 0) return Promise.resolve(Result.succeed(0))
 		const { promise, resolve } = Promise.withResolvers<Result.Result<number, LocalInsertError>>()

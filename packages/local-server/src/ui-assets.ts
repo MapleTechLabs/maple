@@ -32,7 +32,7 @@ const MIME: Record<string, string> = {
 } satisfies Record<string, string>
 
 const mimeFor = (path: string): string =>
-	MIME[Str.split(".")(path).pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
+	MIME[Str.toLowerCase(Arr.lastNonEmpty(Str.split(".")(path)))] ?? "application/octet-stream"
 
 /**
  * Build an `AssetResolver`, or `undefined` when no SPA is available.

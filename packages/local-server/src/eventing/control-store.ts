@@ -360,7 +360,10 @@ const validateOpenDatabase = (
 	const schemaVersion = asNumber(version.user_version)
 	if (!acceptedSchemaVersions.includes(schemaVersion))
 		throw storeError(
-			`unsupported eventing control schema ${schemaVersion}; expected ${acceptedSchemaVersions.join(" or ")}`,
+			`unsupported eventing control schema ${schemaVersion}; expected ${Arr.join(
+				Arr.map(acceptedSchemaVersions, (v) => `${v}`),
+				" or ",
+			)}`,
 		)
 	// Full accounting verification belongs at open/restore, never on the ingest hot path.
 	const accounting = db.prepare<CountRow, []>(`
