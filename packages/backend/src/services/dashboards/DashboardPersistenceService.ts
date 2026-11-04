@@ -112,7 +112,10 @@ const duplicatesOf = (values: ReadonlyArray<string>) => [
 	...new Set(Arr.filter(values, (value, index) => values.indexOf(value) !== index)),
 ]
 
-const validatePayload = Effect.fnUntraced(function* (dashboard: DashboardDocument) {
+const validatePayload = Effect.fnUntraced(function* (
+	dashboard: DashboardDocument,
+	previous?: DashboardDocument,
+) {
 	const duplicateNames = duplicatesOf(Arr.map(dashboard.variables ?? [], (variable) => variable.name))
 	if (duplicateNames.length > 0) {
 		return yield* new DashboardValidationError({
@@ -122,7 +125,12 @@ const validatePayload = Effect.fnUntraced(function* (dashboard: DashboardDocumen
 	}
 
 	// Widget ids address shares, patches and widget_data requests; a duplicate makes them ambiguous.
-	const duplicateWidgetIds = duplicatesOf(Arr.map(dashboard.widgets, (widget) => widget.id))
+	// Boards stored with duplicates before this rule stay editable: only a new duplicate is refused.
+	const storedDuplicates = new Set(duplicatesOf(Arr.map(previous?.widgets ?? [], (widget) => widget.id)))
+	const duplicateWidgetIds = Arr.filter(
+		duplicatesOf(Arr.map(dashboard.widgets, (widget) => widget.id)),
+		(id) => !storedDuplicates.has(id),
+	)
 	if (duplicateWidgetIds.length > 0) {
 		return yield* new DashboardValidationError({
 			message: "Dashboard widget ids must be unique",
@@ -483,7 +491,7 @@ export class DashboardPersistenceService extends Context.Service<
 				"tenant.userId": userId,
 				"maple.dashboard.id": next.id,
 			})
-			const payloadJson = yield* validatePayload(next)
+			const payloadJson = yield* validatePayload(next, previous)
 			const updatedAt = yield* parseTimestamp("updatedAt", next.updatedAt)
 			const now = yield* Clock.currentTimeMillis
 			return yield* dbExecute((db) =>

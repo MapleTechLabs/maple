@@ -522,6 +522,45 @@ describe("DashboardPersistenceService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("keeps a board stored with duplicate widget ids editable", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const persistence = yield* DashboardPersistenceService
+			const created = yield* persistence.create(
+				org,
+				user,
+				makePortableDashboard({
+					widgets: [
+						{
+							id: "same",
+							visualization: "chart",
+							dataSource: { kind: "query", resultShape: "timeseries", queries: [] },
+							display: {},
+							layout: { x: 0, y: 0, w: 4, h: 4 },
+						},
+					],
+				}),
+			)
+			// Stored before the rule existed: the widget appears twice.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE dashboards SET payload_json = jsonb_set(payload_json, '{widgets}', (payload_json->'widgets') || (payload_json->'widgets')) WHERE id = $1`,
+					[created.id],
+				),
+			)
+
+			yield* persistence.mutate(org, user, created.id, (current) =>
+				Effect.succeed(new DashboardDocument({ ...current, name: "renamed" })),
+			)
+
+			const stored = yield* persistence.get(org, created.id)
+			assert.strictEqual(stored.name, "renamed")
+			assert.strictEqual(stored.widgets.length, 2)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("deletes a dashboard together with its version history", () => {
 		const testDb = createTestDb(trackedDbs)
 
