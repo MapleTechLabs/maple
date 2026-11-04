@@ -39,7 +39,8 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
 ] }
 opentelemetry-proto = { version = "0.32", features = ["gen-tonic", "trace", "logs", "metrics", "with-serde"] }
 prost = "0.14.3"
-regex = "1.12"
+# The `regex` crate's engine; ingest rules use it directly to read each regex's compiled size.
+regex-automata = { version = "0.4.14", default-features = false, features = ["std", "syntax", "meta", "perf", "unicode", "hybrid", "nfa-backtrack"] }
 crc32fast = "1.5"
 dashmap = "6.1"
 num_cpus = "1.17"

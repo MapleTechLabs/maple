@@ -37,7 +37,7 @@ span_handle.record("otel.status_code", otel_status_for_rejection(status, error_k
 **HTTP SERVER spans: 5xx is `Error`; a 4xx is `Error` only when it drops a healthy sender's data.** Per OTel HTTP semconv, a server span sets `Error` for 5xx and leaves caller faults alone. The ingest gateway centralizes this in `otel_status_for_rejection(status, error_kind)` (`apps/ingest/src/main.rs`), which returns `Error` when `status >= 500` or `rejection_loses_data(error_kind)` (`apps/ingest/src/otel.rs`), else `Ok`.
 
 - **Caller faults stay `Ok`:** `auth` (401), `billing` (402), `throttle` (429), `payload_too_large`, `unsupported_media`. These are expected and high-volume, and must not flood `StatusCode = 'Error'` dashboards.
-- **Data loss is `Error`:** `decode`, `enrich`, `bad_request`. The sender believes it is shipping telemetry and none of it is stored. A bug that rejected 99.2% of one org's logs for over 24h hid behind a 0% error rate under the old 5xx-only rule.
+- **Data loss is `Error`:** `decode`, `enrich`, `bad_request`, `rules_scan_budget`. The sender believes it is shipping telemetry and none of it is stored. A bug that rejected 99.2% of one org's logs for over 24h hid behind a 0% error rate under the old 5xx-only rule.
 - **Server faults are `Error`:** any 5xx, e.g. auth resolver unavailable (503).
 
 The status code, `error.type`, and `maple.ingest.reject_reason` are recorded for every rejection, so 4xx stays observable. Stage spans use the same rule through `record_stage_error` (`otel.rs`). Non-HTTP spans (forward and export `Client` spans, internal stages) record `Error` on any failure.

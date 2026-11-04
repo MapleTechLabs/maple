@@ -7,7 +7,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use maple_ingest::ingest_rules::{CompiledRules, IngestRuleSpec, RuleCounters, RuleStats};
+use maple_ingest::ingest_rules::{
+    CompiledRules, IngestRuleSpec, RegexBudgetExceeded, RuleCounters, RuleStats, ORG_REGEX_BYTES,
+    REQUEST_SCAN_BYTES, REQUEST_SCAN_TIME,
+};
 use maple_ingest::metrics;
 use moka::future::Cache;
 use tracing::warn;
@@ -63,9 +66,17 @@ impl OrgRules {
     }
 }
 
-/// The org's rules could not be loaded and none were loaded before: refuse rather than store raw data.
-#[derive(Debug)]
-pub(crate) struct RulesUnavailable;
+/// The org's rules cannot be applied, so its payloads are refused rather than stored unredacted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RulesUnavailable {
+    /// The lookup failed and no rules were loaded before.
+    Store,
+    /// The org's regexes compile past `ORG_REGEX_BYTES` together.
+    RegexBudget,
+}
+
+/// A load's outcome; an over-budget org is cached too, so it is not recompiled per request.
+type Loaded = Result<Arc<OrgRules>, RegexBudgetExceeded>;
 
 /// Each org's compiled rules: cached for a TTL, concurrent misses share one fetch,
 /// and a failing store serves the last good load (or refuses when there is none).
@@ -73,13 +84,15 @@ pub(crate) struct IngestRuleResolver {
     store: Arc<dyn KeyStore>,
     /// `INGEST_RULES_ENABLED`; when false the store is never queried.
     enabled: bool,
-    /// Successful loads only.
-    cache: Cache<String, Arc<OrgRules>>,
+    /// Successful lookups only.
+    cache: Cache<String, Loaded>,
     /// Bounded, so orgs that stop sending age out.
-    last_known: Cache<String, Arc<OrgRules>>,
+    last_known: Cache<String, Loaded>,
     /// Orgs whose last lookup failed less than `FETCH_RETRY_BACKOFF` ago.
     recent_failures: Cache<String, ()>,
     disabled: Arc<OrgRules>,
+    /// Per-payload scan budget of every load; `REQUEST_SCAN_BYTES` outside tests.
+    scan_bytes: u64,
 }
 
 impl IngestRuleResolver {
@@ -100,7 +113,14 @@ impl IngestRuleResolver {
                 .max_capacity(capacity)
                 .build(),
             disabled: Arc::new(OrgRules::new("", CompiledRules::default())),
+            scan_bytes: REQUEST_SCAN_BYTES,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_scan_budget(mut self, bytes: u64) -> Self {
+        self.scan_bytes = bytes;
+        self
     }
 
     pub(crate) fn enabled(&self) -> bool {
@@ -112,8 +132,8 @@ impl IngestRuleResolver {
         if !self.enabled {
             return Ok(Arc::clone(&self.disabled));
         }
-        if let Some(rules) = self.cache.get(org_id).await {
-            return Ok(rules);
+        if let Some(loaded) = self.cache.get(org_id).await {
+            return usable(loaded);
         }
         if self.recent_failures.contains_key(org_id) {
             return self.fallback(org_id).await;
@@ -121,18 +141,22 @@ impl IngestRuleResolver {
         let store = Arc::clone(&self.store);
         let last_known = self.last_known.clone();
         let key = org_id.to_owned();
+        let scan_bytes = self.scan_bytes;
         // `try_get_with` runs one fetch per org however many requests miss at once; errors are not cached.
         let loaded = self
             .cache
             .try_get_with(org_id.to_owned(), async move {
                 let rows = store.fetch_ingest_rules(&key).await?;
-                let rules = Arc::new(OrgRules::new(&key, compile_rows(&key, rows)));
-                last_known.insert(key, Arc::clone(&rules)).await;
-                Ok::<_, String>(rules)
+                let loaded = compile_rows(&key, rows)
+                    .map(|compiled| {
+                        Arc::new(OrgRules::new(&key, compiled.with_scan_budget(scan_bytes, REQUEST_SCAN_TIME)))
+                    });
+                last_known.insert(key, loaded.clone()).await;
+                Ok::<_, String>(loaded)
             })
             .await;
         match loaded {
-            Ok(rules) => Ok(rules),
+            Ok(loaded) => usable(loaded),
             Err(error) => {
                 metrics::ingest_rules_fetch_failed(org_id);
                 warn!(org_id, error = %error, "Ingest rule lookup failed");
@@ -143,7 +167,10 @@ impl IngestRuleResolver {
     }
 
     async fn fallback(&self, org_id: &str) -> Result<Arc<OrgRules>, RulesUnavailable> {
-        self.last_known.get(org_id).await.ok_or(RulesUnavailable)
+        self.last_known
+            .get(org_id)
+            .await
+            .map_or(Err(RulesUnavailable::Store), usable)
     }
 
     /// Ends the cached entry and any failure backoff early, so the next request reloads.
@@ -154,8 +181,13 @@ impl IngestRuleResolver {
     }
 }
 
-/// Parses and compiles stored rules; one that fails is skipped, logged and counted.
-fn compile_rows(org_id: &str, rows: IngestRuleRows) -> CompiledRules {
+fn usable(loaded: Loaded) -> Result<Arc<OrgRules>, RulesUnavailable> {
+    loaded.map_err(|_| RulesUnavailable::RegexBudget)
+}
+
+/// Parses and compiles stored rules; one that fails is skipped, logged and counted. Regexes
+/// past the org's budget refuse every rule: applying only some could store what a rule redacts.
+fn compile_rows(org_id: &str, rows: IngestRuleRows) -> Result<CompiledRules, RegexBudgetExceeded> {
     let mut unparsable = 0u64;
     let specs = rows
         .rules
@@ -169,7 +201,14 @@ fn compile_rows(org_id: &str, rows: IngestRuleRows) -> CompiledRules {
             }
         })
         .collect();
-    let (compiled, invalid) = CompiledRules::compile(specs, rows.hash_salt);
+    let (compiled, invalid) = CompiledRules::compile(specs, rows.hash_salt).inspect_err(|exceeded| {
+        warn!(
+            org_id,
+            bytes = exceeded.bytes,
+            limit = ORG_REGEX_BYTES,
+            "Ingest rule regexes exceed the org's compiled-size budget; refusing its payloads"
+        );
+    })?;
     for rule in &invalid {
         warn!(org_id, rule_id = %rule.id, reason = %rule.reason, "Ingest rule does not compile; skipped");
     }
@@ -177,7 +216,7 @@ fn compile_rows(org_id: &str, rows: IngestRuleRows) -> CompiledRules {
     if skipped > 0 {
         metrics::ingest_rules_invalid(org_id, skipped);
     }
-    compiled
+    Ok(compiled)
 }
 
 /// (org, rule, UTC hour in epoch ms, signal); the ids are shared with `OrgRules`.
@@ -305,7 +344,8 @@ mod tests {
             "action": {"_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [], "scopes": ["attributes"], "method": "mask"}
         }))
         .unwrap_or_else(|error| panic!("rule spec: {error}"));
-        let (compiled, invalid) = CompiledRules::compile(vec![("rule_1".to_owned(), spec)], "salt".to_owned());
+        let (compiled, invalid) = CompiledRules::compile(vec![("rule_1".to_owned(), spec)], "salt".to_owned())
+            .unwrap_or_else(|error| panic!("within the regex budget: {error:?}"));
         assert!(invalid.is_empty());
         OrgRules::new("org_1", compiled)
     }

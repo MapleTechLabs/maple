@@ -230,7 +230,7 @@ fn rustc_version() -> &'static str {
 /// happened and can batch smaller — rather than a healthy exporter shipping into
 /// a void.
 pub fn rejection_loses_data(error_type: &str) -> bool {
-    matches!(error_type, "bad_request" | "decode" | "enrich")
+    matches!(error_type, "bad_request" | "decode" | "enrich" | "rules_scan_budget")
 }
 
 /// Record a failed stage on `span`.
