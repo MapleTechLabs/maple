@@ -100,11 +100,12 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
 			const shares = yield* client.dashboards.listShares({ params: { id } })
-			return Arr.map(shares, (share) => ({
-				widgetId: share.widgetId ?? null,
-				mode: share.mode,
-				token: share.token,
-			}))
+			// A session always reads the token; a share without one cannot be linked to.
+			return Arr.flatMap(shares, (share) =>
+				share.token === undefined
+					? []
+					: [{ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }],
+			)
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,

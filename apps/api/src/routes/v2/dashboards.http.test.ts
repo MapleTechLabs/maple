@@ -1000,6 +1000,49 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
+	it("hides a share's token from a key that cannot read the telemetry it serves", async () => {
+		const harness = makeHarness()
+		const readOnly = await harness.bootstrapKey(["dashboards:read"])
+		const reader = await harness.bootstrapKey([
+			"dashboards:read",
+			"traces:read",
+			"logs:read",
+			"metrics:read",
+		])
+		const writer = await harness.bootstrapKey(SHARE_SCOPES)
+		const id = await createDashboard(harness, writer.secret)
+		const widgetId = "w-1"
+		const board = await harness.request("PUT", `/v2/dashboards/${id}/share`, writer.secret, {
+			mode: "public",
+		})
+		await harness.request("PUT", `/v2/dashboards/${id}/widgets/${widgetId}/share`, writer.secret, {
+			mode: "public",
+		})
+
+		const reads = (key: string) =>
+			Promise.all([
+				harness.request("GET", `/v2/dashboards/${id}/share`, key),
+				harness.request("GET", `/v2/dashboards/${id}/widgets/${widgetId}/share`, key),
+				harness.request("GET", `/v2/dashboards/${id}/shares`, key),
+			])
+
+		const [hiddenBoard, hiddenWidget, hiddenList] = await reads(readOnly.secret)
+		for (const share of [hiddenBoard.body, hiddenWidget.body, ...hiddenList.body]) {
+			expect(share.token).toBeUndefined()
+			expect(typeof share.token_suffix).toBe("string")
+		}
+
+		const [shownBoard, shownWidget, shownList] = await reads(reader.secret)
+		expect(shownBoard.body.token).toBe(board.body.token)
+		expect(typeof shownWidget.body.token).toBe("string")
+		expect(Arr.map(shownList.body, (share: { token?: string }) => typeof share.token)).toEqual([
+			"string",
+			"string",
+		])
+
+		await harness.dispose()
+	})
+
 	it("enforces dashboard scopes on share management", async () => {
 		const harness = makeHarness()
 		const readOnly = await harness.bootstrapKey(["dashboards:read"])
