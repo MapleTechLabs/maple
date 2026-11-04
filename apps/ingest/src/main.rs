@@ -49,6 +49,7 @@ use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
 use maple_ingest::aws_metric_stream;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
+use maple_ingest::decode_budget::{self, OtlpSignal};
 use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
@@ -173,6 +174,9 @@ struct AppConfig {
     max_request_body_bytes: usize,
     /// Ceiling on a gzip body after decompression; past it the request is a 413.
     max_decoded_body_bytes: usize,
+    /// Ceiling on what decoding one OTLP payload may allocate, estimated before
+    /// decoding (`decode_budget`); past it the request is a 413.
+    max_decode_heap_bytes: u64,
     org_max_in_flight: u64,
     /// Gateway instances sharing each source's requests/second limit.
     rate_limit_fleet_size: u32,
@@ -470,6 +474,13 @@ impl AppConfig {
                     .to_owned(),
             );
         }
+        // Real protobuf telemetry is estimated at 5-13x its size: this admits the largest
+        // batches seen in prd (~50 MB) while one request stays well inside the task.
+        let max_decode_heap_bytes = parse_u64(
+            "INGEST_MAX_DECODE_HEAP_BYTES",
+            std::env::var("INGEST_MAX_DECODE_HEAP_BYTES").ok(),
+            768 * 1024 * 1024,
+        )?;
         let org_max_in_flight = parse_u64(
             "INGEST_ORG_MAX_IN_FLIGHT",
             std::env::var("INGEST_ORG_MAX_IN_FLIGHT").ok(),
@@ -735,6 +746,7 @@ impl AppConfig {
             tinybird,
             max_request_body_bytes,
             max_decoded_body_bytes,
+            max_decode_heap_bytes,
             org_max_in_flight,
             rate_limit_fleet_size,
             gcp_org_max_in_flight,
@@ -1722,6 +1734,14 @@ impl Signal {
             Self::Traces => IngestSignal::Traces,
             Self::Logs => IngestSignal::Logs,
             Self::Metrics => IngestSignal::Metrics,
+        }
+    }
+
+    fn otlp_signal(self) -> OtlpSignal {
+        match self {
+            Self::Traces => OtlpSignal::Traces,
+            Self::Logs => OtlpSignal::Logs,
+            Self::Metrics => OtlpSignal::Metrics,
         }
     }
 }
@@ -3353,39 +3373,22 @@ async fn run_grpc_server(state: Arc<AppState>, port: u16) {
     }
 }
 
-/// The three OTLP services behind `grpc_admission`.
-///
-/// gzip is the OTel Collector's default exporter compression. Admission caps the
-/// body at the HTTP path's raw limit; tonic's message limit (frame and
-/// decompressed) is its decoded ceiling. tonic's own default is 4 MiB.
+/// The three OTLP services behind `grpc_admission`, which decodes every export
+/// itself and hands tonic one empty message, so tonic never parses client bytes.
 fn grpc_router(state: Arc<AppState>) -> Router {
     use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer;
     use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
     use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceServiceServer;
-    use tonic::codec::CompressionEncoding;
 
-    let max_message_bytes = state.config.max_decoded_body_bytes;
-    tonic::service::Routes::new(
-        TraceServiceServer::new(GrpcTraceService {
-            state: Arc::clone(&state),
-        })
-        .accept_compressed(CompressionEncoding::Gzip)
-        .max_decoding_message_size(max_message_bytes),
-    )
-    .add_service(
-        LogsServiceServer::new(GrpcLogsService {
-            state: Arc::clone(&state),
-        })
-        .accept_compressed(CompressionEncoding::Gzip)
-        .max_decoding_message_size(max_message_bytes),
-    )
-    .add_service(
-        MetricsServiceServer::new(GrpcMetricsService {
-            state: Arc::clone(&state),
-        })
-        .accept_compressed(CompressionEncoding::Gzip)
-        .max_decoding_message_size(max_message_bytes),
-    )
+    tonic::service::Routes::new(TraceServiceServer::new(GrpcTraceService {
+        state: Arc::clone(&state),
+    }))
+    .add_service(LogsServiceServer::new(GrpcLogsService {
+        state: Arc::clone(&state),
+    }))
+    .add_service(MetricsServiceServer::new(GrpcMetricsService {
+        state: Arc::clone(&state),
+    }))
     .into_axum_router()
     .layer(axum::middleware::from_fn_with_state(state, grpc_admission))
 }
@@ -3393,13 +3396,9 @@ fn grpc_router(state: Arc<AppState>) -> Router {
 /// A gRPC frame holding one zero-length (all-default) message, uncompressed.
 const EMPTY_GRPC_MESSAGE: &[u8] = &[0, 0, 0, 0, 0];
 
-/// Authenticate and entitlement-gate an OTLP/gRPC export on its headers alone.
-///
-/// tonic reads and decodes the whole message before a service method runs, so a
-/// check inside `export` runs only after the request it refuses has been
-/// received and decoded. Made here, in front of the services, an unknown key or
-/// a denied org is turned away before any of the message is read. The resolved
-/// key reaches `export` through the request extensions.
+/// Admits an OTLP/gRPC export on its headers alone, so a refused one is never read,
+/// then decodes it under the HTTP path's limits (`decode_grpc_export`). The export
+/// reaches the service through the request extensions; tonic gets an empty message.
 async fn grpc_admission(
     State(state): State<Arc<AppState>>,
     mut request: Request,
@@ -3417,20 +3416,21 @@ async fn grpc_admission(
         let admitted = admit_grpc_export(&state, request.headers(), signal).await;
         match admitted {
             Ok((resolved, admission)) => {
-                if admission == KeyAdmission::Drop || resolved.org_id == SENTINEL_ORG_ID {
-                    // Paused, or the public placeholder token whose upload is never
-                    // kept: hand tonic one empty message instead of the upload, so
-                    // nothing is read or decoded and the client still gets an OK reply.
-                    *request.body_mut() = axum::body::Body::from(EMPTY_GRPC_MESSAGE);
-                    request.headers_mut().remove("grpc-encoding");
-                    request
-                        .headers_mut()
-                        .remove(axum::http::header::CONTENT_LENGTH);
-                } else if let Err(status) =
-                    limit_grpc_body(&mut request, state.config.max_request_body_bytes)
-                {
-                    return status.into_http();
+                // Paused, or the public placeholder token whose upload is never
+                // kept: nothing is read or decoded and the client still gets an OK reply.
+                if admission != KeyAdmission::Drop && resolved.org_id != SENTINEL_ORG_ID {
+                    match decode_grpc_export(&state, &mut request, signal).await {
+                        Ok(export) => {
+                            request.extensions_mut().insert(GrpcExportSlot::new(export));
+                        }
+                        Err(status) => return status.into_http(),
+                    }
                 }
+                *request.body_mut() = axum::body::Body::from(EMPTY_GRPC_MESSAGE);
+                request.headers_mut().remove("grpc-encoding");
+                request
+                    .headers_mut()
+                    .remove(axum::http::header::CONTENT_LENGTH);
                 request.extensions_mut().insert(resolved);
                 request.extensions_mut().insert(admission);
                 next.run(request).await
@@ -3459,6 +3459,105 @@ async fn grpc_admission(
     };
     record_grpc_outcome(&span_handle, &response);
     response
+}
+
+/// An export `grpc_admission` decoded, with its size as received.
+struct GrpcExport {
+    decoded: DecodedPayload,
+    decoded_bytes: usize,
+}
+
+/// Carries a `GrpcExport` through the request extensions, which must be `Clone`,
+/// to the one service call that takes it.
+#[derive(Clone)]
+struct GrpcExportSlot(Arc<std::sync::Mutex<Option<GrpcExport>>>);
+
+impl GrpcExportSlot {
+    fn new(export: GrpcExport) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(Some(export))))
+    }
+
+    fn take(&self) -> Option<GrpcExport> {
+        self.0.lock().ok()?.take()
+    }
+}
+
+/// Reads an export's one gRPC message and decodes it under the HTTP path's limits:
+/// the raw body cap, the bounded gunzip and the decode memory budget.
+async fn decode_grpc_export(
+    state: &AppState,
+    request: &mut Request,
+    signal: Signal,
+) -> Result<GrpcExport, tonic::Status> {
+    limit_grpc_body(request, state.config.max_request_body_bytes)?;
+    let frame = axum::body::to_bytes(std::mem::take(request.body_mut()), usize::MAX)
+        .await
+        .map_err(|error| tonic::Status::from_error(error.into_inner()))?;
+    let truncated = || tonic::Status::internal("Unexpected end of the gRPC message");
+    let (header, message) = frame.split_first_chunk::<5>().ok_or_else(truncated)?;
+    let [compressed, len @ ..] = *header;
+    if usize::try_from(u32::from_be_bytes(len)).ok() != Some(message.len()) {
+        return Err(truncated());
+    }
+    let inflated;
+    let payload = match compressed {
+        0 => message,
+        1 => {
+            match request
+                .headers()
+                .get("grpc-encoding")
+                .and_then(|value| value.to_str().ok())
+            {
+                Some("gzip") => {}
+                // A compressed message must name its encoding (gRPC spec: INTERNAL).
+                None | Some("identity") => {
+                    return Err(tonic::Status::internal(
+                        "Compressed message without a grpc-encoding",
+                    ))
+                }
+                Some(other) => {
+                    let mut status = tonic::Status::unimplemented(format!(
+                        "Message compression `{other}` is not supported; use gzip"
+                    ));
+                    status
+                        .metadata_mut()
+                        .insert("grpc-accept-encoding", tonic::metadata::MetadataValue::from_static("gzip"));
+                    return Err(status);
+                }
+            }
+            let max_decoded = state.config.max_decoded_body_bytes;
+            inflated = gunzip_bounded(message, max_decoded).map_err(|error| match error {
+                GunzipError::Invalid(_) => tonic::Status::invalid_argument("Invalid gzip message"),
+                GunzipError::TooLarge => tonic::Status::resource_exhausted(format!(
+                    "Decompressed message exceeds {max_decoded} bytes"
+                )),
+            })?;
+            &inflated[..]
+        }
+        _ => return Err(tonic::Status::internal("Invalid gRPC compression flag")),
+    };
+    let parse_span = parse_internal_span(PayloadFormat::Protobuf.label(), signal.path());
+    let _guard = parse_span.enter();
+    let decoded = decode_otlp_payload(
+        signal,
+        PayloadFormat::Protobuf,
+        payload,
+        state.config.max_decode_heap_bytes,
+    )
+    .map_err(|error| {
+        if error.status == StatusCode::PAYLOAD_TOO_LARGE {
+            record_stage_error(&parse_span, "payload_too_large", &error.message, false);
+            tonic::Status::resource_exhausted(error.message)
+        } else {
+            record_stage_error(&parse_span, "enrich", &error.message, false);
+            tonic::Status::invalid_argument(error.message)
+        }
+    })?;
+    parse_span.record("maple.ingest.item_count", decoded.item_count());
+    Ok(GrpcExport {
+        decoded,
+        decoded_bytes: payload.len(),
+    })
 }
 
 /// The HTTP path's raw body cap, and one message per export (`SingleGrpcFrame`).
@@ -3614,32 +3713,14 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
 {
     async fn export(
         &self,
-        mut request: tonic::Request<ExportTraceServiceRequest>,
+        request: tonic::Request<ExportTraceServiceRequest>,
     ) -> Result<
         tonic::Response<
             opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceResponse,
         >,
         tonic::Status,
     > {
-        let (resolved, admission) = grpc_admitted_key(&mut request)?;
-        let inner = request.into_inner();
-        // Sized before enrichment injects resource attributes, so this is the
-        // client's own payload size — the same basis as the HTTP path's
-        // `decoded_payload.len()`.
-        let decoded_bytes = inner.encoded_len();
-        let mut decoded = DecodedPayload::Traces(inner);
-        let (admission, claims) =
-            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        accept_grpc_decoded(
-            &self.state,
-            Signal::Traces,
-            decoded,
-            &resolved,
-            admission,
-            decoded_bytes,
-            &claims,
-        )
-        .await?;
+        serve_grpc_export(&self.state, Signal::Traces, request, DecodedPayload::Traces).await?;
         Ok(tonic::Response::new(
             opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceResponse {
                 partial_success: None,
@@ -3654,27 +3735,12 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
 {
     async fn export(
         &self,
-        mut request: tonic::Request<ExportLogsServiceRequest>,
+        request: tonic::Request<ExportLogsServiceRequest>,
     ) -> Result<
         tonic::Response<opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse>,
         tonic::Status,
     > {
-        let (resolved, admission) = grpc_admitted_key(&mut request)?;
-        let inner = request.into_inner();
-        let decoded_bytes = inner.encoded_len();
-        let mut decoded = DecodedPayload::Logs(inner);
-        let (admission, claims) =
-            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        accept_grpc_decoded(
-            &self.state,
-            Signal::Logs,
-            decoded,
-            &resolved,
-            admission,
-            decoded_bytes,
-            &claims,
-        )
-        .await?;
+        serve_grpc_export(&self.state, Signal::Logs, request, DecodedPayload::Logs).await?;
         Ok(tonic::Response::new(
             opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceResponse {
                 partial_success: None,
@@ -3689,35 +3755,50 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
 {
     async fn export(
         &self,
-        mut request: tonic::Request<ExportMetricsServiceRequest>,
+        request: tonic::Request<ExportMetricsServiceRequest>,
     ) -> Result<
         tonic::Response<
             opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceResponse,
         >,
         tonic::Status,
     > {
-        let (resolved, admission) = grpc_admitted_key(&mut request)?;
-        let inner = request.into_inner();
-        let decoded_bytes = inner.encoded_len();
-        let mut decoded = DecodedPayload::Metrics(inner);
-        let (admission, claims) =
-            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        accept_grpc_decoded(
-            &self.state,
-            Signal::Metrics,
-            decoded,
-            &resolved,
-            admission,
-            decoded_bytes,
-            &claims,
-        )
-        .await?;
+        serve_grpc_export(&self.state, Signal::Metrics, request, DecodedPayload::Metrics).await?;
         Ok(tonic::Response::new(
             opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceResponse {
                 partial_success: None,
             },
         ))
     }
+}
+
+/// Accepts an export `grpc_admission` admitted and, unless it was dropped there,
+/// decoded. A dropped export reaches tonic as one empty message.
+async fn serve_grpc_export<T>(
+    state: &AppState,
+    signal: Signal,
+    mut request: tonic::Request<T>,
+    empty: fn(T) -> DecodedPayload,
+) -> Result<(), tonic::Status> {
+    let (resolved, admission) = grpc_admitted_key(&mut request)?;
+    let export = request
+        .extensions_mut()
+        .remove::<GrpcExportSlot>()
+        .and_then(|slot| slot.take());
+    let (mut decoded, decoded_bytes) = match export {
+        Some(export) => (export.decoded, export.decoded_bytes),
+        None => (empty(request.into_inner()), 0),
+    };
+    let (admission, claims) = admit_grpc_claims(state, admission, &mut decoded, &resolved).await;
+    accept_grpc_decoded(
+        state,
+        signal,
+        decoded,
+        &resolved,
+        admission,
+        decoded_bytes,
+        &claims,
+    )
+    .await
 }
 
 /// Verifies a gRPC export's source claims; a batch of only paused pull sources
@@ -5517,23 +5598,40 @@ async fn handle_signal_inner(
     let mut decoded = {
         let parse_span = parse_internal_span(payload_format.label(), signal.path());
         let _guard = parse_span.enter();
-        let decoded =
-            decode_otlp_payload(signal, payload_format, &decoded_payload).map_err(|e| {
+        let decoded = decode_otlp_payload(
+            signal,
+            payload_format,
+            &decoded_payload,
+            state.config.max_decode_heap_bytes,
+        )
+        .map_err(|e| {
+            // Past the memory budget is the same refusal as an oversized body.
+            if e.status == StatusCode::PAYLOAD_TOO_LARGE {
                 warn!(
                     format = payload_format.label(),
                     signal = signal.path(),
                     org_id = resolved_key.org_id.as_str(),
-                    key_type = resolved_key.key_type.as_str(),
                     decoded_bytes = decoded_payload.len(),
-                    reason = %e.message,
-                    "Invalid OTLP payload"
+                    "Payload decodes past the memory budget"
                 );
-                // The reason previously only reached the log; on the span it
-                // is what tells you *why* a customer's SDK is being rejected.
-                record_stage_error(&parse_span, "enrich", &e.message, false);
-                metrics::org_data_loss(&resolved_key.org_id, signal.path(), "enrich");
-                (e, "enrich")
-            })?;
+                record_stage_error(&parse_span, "payload_too_large", &e.message, false);
+                return (e, "payload_too_large");
+            }
+            warn!(
+                format = payload_format.label(),
+                signal = signal.path(),
+                org_id = resolved_key.org_id.as_str(),
+                key_type = resolved_key.key_type.as_str(),
+                decoded_bytes = decoded_payload.len(),
+                reason = %e.message,
+                "Invalid OTLP payload"
+            );
+            // The reason previously only reached the log; on the span it
+            // is what tells you *why* a customer's SDK is being rejected.
+            record_stage_error(&parse_span, "enrich", &e.message, false);
+            metrics::org_data_loss(&resolved_key.org_id, signal.path(), "enrich");
+            (e, "enrich")
+        })?;
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         decoded
     };
@@ -6983,12 +7081,28 @@ fn encode_payload(payload: &[u8], content_encoding: Option<&str>) -> Result<Vec<
     }
 }
 
+/// Decodes an OTLP export, refusing one whose decoded form would allocate more
+/// than `heap_budget` before any of it is allocated.
 #[hotpath::measure]
 fn decode_otlp_payload(
     signal: Signal,
     payload_format: PayloadFormat,
     payload: &[u8],
+    heap_budget: u64,
 ) -> Result<DecodedPayload, ApiError> {
+    let estimate = match payload_format {
+        PayloadFormat::Protobuf => {
+            decode_budget::protobuf_cost(signal.otlp_signal(), payload, heap_budget)
+        }
+        PayloadFormat::Json => decode_budget::json_cost(payload, heap_budget),
+    }
+    .map_err(|decode_budget::OverBudget| {
+        ApiError::payload_too_large(format!(
+            "Request decodes past the {} MiB the gateway allows one request; send smaller batches",
+            heap_budget / (1024 * 1024)
+        ))
+    })?;
+    Span::current().record("maple.ingest.decode_heap_estimate", estimate);
     match (signal, payload_format) {
         (Signal::Traces, PayloadFormat::Protobuf) => {
             let request = ExportTraceServiceRequest::decode(payload)
@@ -10544,7 +10658,7 @@ mod tests {
     }
 
     fn decode_json(signal: Signal, payload: &str) -> Result<DecodedPayload, ApiError> {
-        decode_otlp_payload(signal, PayloadFormat::Json, payload.as_bytes()).map(|mut decoded| {
+        decode_otlp_payload(signal, PayloadFormat::Json, payload.as_bytes(), u64::MAX).map(|mut decoded| {
             enrich_decoded_payload(&mut decoded, &test_key(), &[]);
             decoded
         })
@@ -11545,6 +11659,7 @@ mod tests {
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
                 max_decoded_body_bytes: 8 * 1024 * 1024,
+                max_decode_heap_bytes: 64 * 1024 * 1024,
                 org_max_in_flight: 100,
                 rate_limit_fleet_size: 1,
                 gcp_org_max_in_flight: 100,
@@ -11747,9 +11862,9 @@ mod tests {
         StatusCode::INTERNAL_SERVER_ERROR
     }
 
-    fn gzip_bytes(plain: &str) -> Bytes {
+    fn gzip_bytes(plain: impl AsRef<[u8]>) -> Bytes {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(plain.as_bytes()).unwrap();
+        encoder.write_all(plain.as_ref()).unwrap();
         Bytes::from(encoder.finish().unwrap())
     }
 
@@ -12405,6 +12520,72 @@ mod tests {
             .expect_err("OTLP must refuse a gzip bomb");
         assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(error_kind, "payload_too_large");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// A logs export of one record carrying `attributes` empty attributes: two
+    /// bytes each on the wire, a whole `KeyValue` each once decoded.
+    fn many_empty_attributes(attributes: usize) -> ExportLogsServiceRequest {
+        let mut request = test_log_request("many attributes");
+        request.resource_logs[0].scope_logs[0].log_records[0].attributes =
+            vec![KeyValue::default(); attributes];
+        request
+    }
+
+    #[tokio::test]
+    async fn otlp_refuses_a_payload_that_decodes_past_the_memory_budget() {
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("otlp-decode-budget");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_decode_budget";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_decode_budget".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.config.max_decode_heap_bytes = 4 * 1024 * 1024;
+
+        let protobuf = many_empty_attributes(50_000).encode_to_vec();
+        assert!(protobuf.len() < 128 * 1024, "fixture stays small on the wire");
+        let json = format!("{{\"resourceLogs\":[{}{{}}]}}", "{},".repeat(30_000));
+        let mut json_headers = test_headers(raw_key);
+        json_headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+        let mut gzip_headers = test_headers(raw_key);
+        gzip_headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        for (case, headers, body) in [
+            ("protobuf", test_headers(raw_key), Bytes::from(protobuf.clone())),
+            ("gzip protobuf", gzip_headers, gzip_bytes(&protobuf)),
+            ("json", json_headers, Bytes::from(json)),
+        ] {
+            let (error, error_kind) = handle_signal_inner(&state, &headers, body, Signal::Logs)
+                .await
+                .expect_err(case);
+            assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE, "{case}");
+            assert_eq!(error_kind, "payload_too_large", "{case}");
+        }
+        assert!(forward_rx.try_recv().is_err(), "nothing refused is forwarded");
+
+        // A real batch under the same budget is still accepted.
+        let (response, item_count, _, _) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            Bytes::from(many_empty_attributes(100).encode_to_vec()),
+            Signal::Logs,
+        )
+        .await
+        .expect("a batch within the budget is accepted");
+        assert_eq!((response.status(), item_count), (StatusCode::OK, 1));
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -14405,6 +14586,19 @@ mod tests {
             "gzip that inflates past the decoded limit is RESOURCE_EXHAUSTED"
         );
 
+        // A compressed message must say how; one in an encoding we do not take is
+        // UNIMPLEMENTED, as tonic answered.
+        for (encoding, code) in [(None, "13"), (Some("zstd"), "12")] {
+            let mut request = grpc_export_request(raw_key, gzip_grpc_frame(&message(16)));
+            if let Some(encoding) = encoding {
+                request
+                    .headers_mut()
+                    .insert("grpc-encoding", HeaderValue::from_static(encoding));
+            }
+            let response = router.call(request).await.unwrap();
+            assert_eq!(grpc_header_status(&response), Some(code), "{encoding:?}");
+        }
+
         // Each extra frame would be decompressed up to the decoded limit.
         let mut two_frames = gzip_grpc_frame(&message(16));
         two_frames.extend(gzip_grpc_frame(&message(16)));
@@ -14443,6 +14637,57 @@ mod tests {
             Some("8"),
             "a declared length past the raw limit is refused before the body is read"
         );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn grpc_export_past_the_memory_budget_is_resource_exhausted() {
+        use tonic::codegen::Service as _;
+
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("grpc-decode-budget");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_grpc_decode_budget";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_grpc_decode_budget".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.config.max_decode_heap_bytes = 4 * 1024 * 1024;
+        let mut router = grpc_router(Arc::new(state));
+
+        let message = many_empty_attributes(50_000).encode_to_vec();
+        let plain = router
+            .call(grpc_export_request(raw_key, grpc_frame(&message)))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&plain), Some("8"), "RESOURCE_EXHAUSTED");
+        let mut gzip = grpc_export_request(raw_key, gzip_grpc_frame(&message));
+        gzip.headers_mut()
+            .insert("grpc-encoding", HeaderValue::from_static("gzip"));
+        let gzip = router.call(gzip).await.unwrap();
+        assert_eq!(grpc_header_status(&gzip), Some("8"), "RESOURCE_EXHAUSTED");
+        assert!(forward_rx.try_recv().is_err(), "nothing refused is forwarded");
+
+        let within = router
+            .call(grpc_export_request(
+                raw_key,
+                grpc_frame(&many_empty_attributes(100).encode_to_vec()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(grpc_header_status(&within), None, "a batch within the budget is accepted");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
