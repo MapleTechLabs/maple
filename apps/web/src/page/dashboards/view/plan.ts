@@ -206,20 +206,22 @@ const isInFlight = (requests: Model["requests"], slot: WidgetSlot): boolean => {
 	return request !== undefined && AsyncData.isPending(request.data)
 }
 
+type Planned = { readonly model: Model; readonly commands: ReadonlyArray<FetchCommand> }
+type OptionsPlan = ReturnType<typeof planVariableOptions>
+
 /**
- * Plans every revealed tile against the current window and asks for any request key not yet
+ * Plans the given revealed tiles against the current window and asks for any request key not yet
  * held (`Load`) or held but stale (`Refresh`). Tiles that share a key share one fetch; off-screen
  * tiles are only marked stale and ask once they are back in view.
  */
-export const replan = (
+const planTiles = (
 	model: Model,
 	context: PageContext,
 	mode: Keyed.RequestMode,
-): { readonly model: Model; readonly commands: ReadonlyArray<FetchCommand> } => {
-	const document = shownDocumentOf(model)
-	if (document === null) return { model, commands: [] }
+	widgets: ReadonlyArray<Widget>,
+	options: OptionsPlan,
+): Planned => {
 	const window = windowOf(model, context)
-	const options = planVariableOptions(model, context, mode)
 	const withOptions = { ...model, variableOptions: options.variableOptions }
 	const variables = variablesOf(withOptions, context)
 	const initial: PlanState = {
@@ -228,7 +230,7 @@ export const replan = (
 		commands: options.commands,
 		asked: [],
 	}
-	const planned = Arr.reduce(document.widgets, initial, (state, widget) => {
+	const planned = Arr.reduce(widgets, initial, (state, widget) => {
 		const slot = slotOf(model, widget.id)
 		const keep = (kept: WidgetSlot): PlanState =>
 			kept === state.widgets[widget.id]
@@ -273,4 +275,30 @@ export const replan = (
 		model: { ...withOptions, widgets: planned.widgets, requests: referencedRequests(planned) },
 		commands: planned.commands,
 	}
+}
+
+/** Every revealed tile and the variables' option lists, for a new window, document or variable. */
+export const replan = (model: Model, context: PageContext, mode: Keyed.RequestMode): Planned => {
+	const document = shownDocumentOf(model)
+	if (document === null) return { model, commands: [] }
+	return planTiles(model, context, mode, document.widgets, planVariableOptions(model, context, mode))
+}
+
+/** One tile revealed, measured or narrowed: no other tile's plan can have moved. */
+export const replanTile = (
+	model: Model,
+	context: PageContext,
+	widgetId: string,
+	mode: Keyed.RequestMode,
+): Planned => {
+	const widget = Arr.findFirst(
+		shownDocumentOf(model)?.widgets ?? [],
+		(candidate) => candidate.id === widgetId,
+	)
+	return widget._tag === "None"
+		? { model, commands: [] }
+		: planTiles(model, context, mode, [widget.value], {
+				variableOptions: model.variableOptions,
+				commands: [],
+			})
 }

@@ -40,7 +40,7 @@ import {
 import { gestureStep } from "./gesture"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { awaitsRefresh, isSameTimeRange, replan, slotOf, timeRangeOf, withCharts } from "./plan"
+import { awaitsRefresh, isSameTimeRange, replan, replanTile, slotOf, timeRangeOf, withCharts } from "./plan"
 import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
@@ -283,6 +283,12 @@ const withReplan = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 	return { model: planned.model, commands: planned.commands }
 }
 
+/** A step that changed one tile's slot: only that tile is planned again. */
+const withTileReplan = (model: Model, context: PageContext, widgetId: string): Return => {
+	const planned = replanTile(model, context, widgetId, "Load")
+	return { model: planned.model, commands: planned.commands }
+}
+
 /** The live document arrived (or changed): plan the revealed tiles against it. */
 const receiveDocument = (
 	model: Model,
@@ -521,26 +527,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const slot = slotOf(model, widgetId)
 			if (slot.widthPx === widthPx) return { model }
 			const next = { ...model, widgets: { ...model.widgets, [widgetId]: { ...slot, widthPx } } }
-			return slot.isRevealed ? withReplan(next, context, "Load") : { model: next }
+			return slot.isRevealed ? withTileReplan(next, context, widgetId) : { model: next }
 		},
 		ClickedNarrowRange: ({ widgetId }) => {
 			const slot = slotOf(model, widgetId)
 			return slot.isNarrowed === true
 				? { model }
-				: withReplan(
+				: withTileReplan(
 						{
 							...model,
 							widgets: { ...model.widgets, [widgetId]: { ...slot, isNarrowed: true } },
 						},
 						context,
-						"Load",
+						widgetId,
 					)
 		},
 		RevealedWidget: ({ widgetId }) => {
 			const slot = slotOf(model, widgetId)
 			return slot.isRevealed && slot.isOffscreen !== true
 				? { model }
-				: withReplan(
+				: withTileReplan(
 						{
 							...model,
 							widgets: {
@@ -549,7 +555,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							},
 						},
 						context,
-						"Load",
+						widgetId,
 					)
 		},
 		HidWidget: ({ widgetId }) => {
