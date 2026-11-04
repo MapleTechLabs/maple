@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { Schema, Array as Arr, String as Str } from "effect"
-import { InspectSecurityFindingOutput, ListSecurityFindingsOutput } from "@maple/domain/mcp-outputs"
+import {
+	InspectSecurityAuditRunOutput,
+	InspectSecurityFindingOutput,
+	ListSecurityAuditRunsOutput,
+	ListSecurityFindingsOutput,
+} from "@maple/domain/mcp-outputs"
 import { RoleName } from "@maple/domain/primitives"
 import type { McpToolResult } from "../types"
 import { type FixtureRule, installFakeWarehouse, restoreWarehouse } from "../../__evals__/fake-warehouse"
@@ -76,6 +81,42 @@ describe("list_security_findings", () => {
 		expect(Arr.map(output.findings, (row) => SEVERITY_ORDER.indexOf(row.severity))).toEqual(
 			Arr.map(output.findings, (row) => SEVERITY_ORDER.indexOf(row.severity)).toSorted((a, b) => a - b),
 		)
+	})
+
+	it("does not call a repository that was never scanned clear", async () => {
+		const { output, text } = await list(admin, {
+			area: "dependencies",
+			repository: "acme/api",
+			status: "all",
+		})
+		expect(output.areas[0]).toMatchObject({ area: "dependencies", state: "not_scanned", matched: 0 })
+		expect(text).toContain("acme/api has never had a dependency scan")
+		const shop = await list(admin, { area: "dependencies", repository: "acme/shop" })
+		expect(shop.output.areas[0]?.state).toBe("findings")
+	})
+
+	it("says a repository outside the audit is not set up rather than clear", async () => {
+		const { output } = await list(admin, { area: "code", repository: "acme/unknown" })
+		expect(output.areas[0]).toMatchObject({ area: "code", state: "not_connected" })
+	})
+
+	it("lists each repository's latest audit run and dependency scan in the overview", async () => {
+		const { output } = await list(admin, {})
+		expect(output.repositories).toEqual([
+			expect.objectContaining({
+				repository: "acme/shop",
+				audit: expect.objectContaining({ lastRunId: "run-shop-1", lastRunStatus: "complete" }),
+				dependencyScan: expect.objectContaining({ status: "completed" }),
+			}),
+			expect.objectContaining({
+				repository: "acme/api",
+				audit: expect.objectContaining({
+					lastRunId: "run-api-1",
+					lastRunStopReason: "org_spend_limit_reached",
+				}),
+				dependencyScan: expect.objectContaining({ status: null }),
+			}),
+		])
 	})
 
 	it("keeps code findings from members, as the dashboard does", async () => {
@@ -327,6 +368,88 @@ describe("inspect_security_finding", () => {
 		const { output, text } = await inspect("CVE-1999-0001")
 		expect(output.matches).toEqual([])
 		expect(text).toContain("No security finding matches")
+	})
+})
+
+describe("list_security_audit_runs", () => {
+	const runs = async (rt: EvalRuntime, params: Record<string, unknown>) => {
+		const result: McpToolResult = await runToolDirect(rt, "list_security_audit_runs", params)
+		return {
+			output: Schema.decodeUnknownSync(ListSecurityAuditRunsOutput)(result.structuredContent),
+			text: markdown(result),
+		}
+	}
+
+	it("lists runs newest first with why one stopped and the month's spend against the limit", async () => {
+		const { output, text } = await runs(admin, {})
+		expect(Arr.map(output.runs, (run) => run.runId)).toEqual(["run-shop-1", "run-api-1", "run-shop-0"])
+		expect(output.runs[1]).toMatchObject({
+			repository: "acme/api",
+			status: "incomplete",
+			stopReason: "org_spend_limit_reached",
+			durationMinutes: 120,
+		})
+		expect(output.runs[0]?.findings).toMatchObject({ critical: 2, rejected: 1 })
+		expect(output.spend.monthlyLimitUsd).toBe(25)
+		expect(output.spend.spentUsd).toBeGreaterThanOrEqual(25)
+		expect(text).toContain("reached its monthly audit spend limit")
+	})
+
+	it("narrows to one repository and hides what runs reported from members", async () => {
+		const { output } = await runs(member, { repository: "ACME/shop" })
+		expect(Arr.map(output.runs, (run) => run.runId)).toEqual(["run-shop-1", "run-shop-0"])
+		expect(Arr.map(output.runs, (run) => run.findings)).toEqual([null, null])
+	})
+
+	it("names a repository that is not set up", async () => {
+		const { output } = await runs(admin, { repository: "acme/unknown" })
+		expect(output.runs).toEqual([])
+		expect(Arr.join(output.notes, "\n")).toContain("acme/unknown is not set up")
+	})
+})
+
+describe("inspect_security_audit_run", () => {
+	const inspectRun = async (rt: EvalRuntime, params: Record<string, unknown>) => {
+		const result: McpToolResult = await runToolDirect(rt, "inspect_security_audit_run", params)
+		return result
+	}
+	const decode = (result: McpToolResult) =>
+		Schema.decodeUnknownSync(InspectSecurityAuditRunOutput)(result.structuredContent)
+
+	it("shows what a stopped run left unsettled, first, with its log", async () => {
+		const output = decode(await inspectRun(admin, { repository: "acme/api" }))
+		expect(output.run.runId).toBe("run-api-1")
+		expect(Arr.map(output.coverage.units, (unit) => unit.status)).toEqual([
+			"blocked",
+			"deferred",
+			"planned",
+			"covered",
+			"covered",
+		])
+		expect(output.coverage.units[0]?.unresolved).toContain("generated at build time")
+		expect(Arr.join(output.notes, "\n")).toContain("3 of 5 coverage units not settled")
+		expect(Arr.map(output.events, (event) => event.kind)).toEqual([
+			"Phase",
+			"Phase",
+			"Agent",
+			"Agent",
+			"Note",
+		])
+	})
+
+	it("lists rejected claims with the verifier's reason", async () => {
+		const output = decode(await inspectRun(admin, { run_id: "run-shop-1" }))
+		expect(output.findings[0]?.severity).toBe("critical")
+		expect(output.findings.find((f) => f.fingerprint === "checkout/webhook-ssrf")).toMatchObject({
+			verdict: "rejected",
+			rejectedBecause: "callbackUrl is read from server config, never from the request.",
+		})
+	})
+
+	it("refuses members, an unknown run and a call with no run", async () => {
+		expect((await inspectRun(member, { run_id: "run-shop-1" })).isError).toBe(true)
+		expect(markdown(await inspectRun(admin, { run_id: "run-nope" }))).toContain("No audit run run-nope")
+		expect((await inspectRun(admin, {})).isError).toBe(true)
 	})
 })
 
