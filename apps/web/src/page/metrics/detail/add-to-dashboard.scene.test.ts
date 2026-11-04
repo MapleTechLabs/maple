@@ -89,6 +89,10 @@ describe("add to dashboard", () => {
 	test("a new dashboard opens on the explorer's window, an absolute one included", () => {
 		expect(AddToDashboard.explorerTimeRangeOf({ timePreset: "7d" }, "24h")).toEqual(timeRange)
 		expect(AddToDashboard.explorerTimeRangeOf({}, "24h")).toEqual({ type: "relative", value: "24h" })
+		expect(AddToDashboard.explorerTimeRangeOf({ timePreset: "bogus" }, "24h")).toEqual({
+			type: "relative",
+			value: "24h",
+		})
 		expect(
 			AddToDashboard.explorerTimeRangeOf(
 				{ startTime: "2026-10-01T00:00:00.000Z", endTime: "2026-10-02T00:00:00.000Z" },

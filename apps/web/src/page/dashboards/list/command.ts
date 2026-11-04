@@ -123,9 +123,17 @@ const isRefusalEnvelope = Schema.is(
 	Schema.Struct({
 		error: Schema.Struct({
 			type: Schema.Literals(["invalid_request_error", "not_found_error", "conflict_error"]),
+			message: Schema.String,
 		}),
 	}),
 )
+
+/** The refusal's own message (name taken, conflict), found anywhere down the `cause` chain. */
+export const refusalMessageOf = (error: unknown, depth = 0): Option.Option<string> => {
+	if (depth > 5 || typeof error !== "object" || error === null) return Option.none()
+	if (isRefusalEnvelope(error)) return Option.some(error.error.message)
+	return "cause" in error ? refusalMessageOf(error.cause, depth + 1) : Option.none()
+}
 
 /** The API refused this write (anywhere down the `cause` chain): the store itself is still healthy. */
 export const isRejected = (error: unknown, depth = 0): boolean => {
@@ -137,7 +145,7 @@ export const isRejected = (error: unknown, depth = 0): boolean => {
 const toWriteResult = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.result(
 		Effect.mapError(effect, (error): WriteFailure => ({
-			message: errorMessageOf(error),
+			message: Option.getOrElse(refusalMessageOf(error), () => errorMessageOf(error)),
 			isRejected: isRejected(error),
 		})),
 	)

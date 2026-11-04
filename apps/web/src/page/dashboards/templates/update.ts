@@ -314,8 +314,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// The preview asks once typing settles; a new selection's generation drops a pending one.
 		ChangedParameter: ({ key, value }) => {
 			const previewGeneration = model.previewGeneration + 1
+			const parameters = { ...model.parameters, [key]: value }
+			const selected = selectedOf(model)
+			// A missing required value drops the old preview now, not after the debounce.
+			const preview: Model["preview"] =
+				selected !== null && missingRequiredOf(selected, parameters).length > 0
+					? Keyed.idle()
+					: model.preview
 			return {
-				model: { ...model, previewGeneration, parameters: { ...model.parameters, [key]: value } },
+				model: { ...model, previewGeneration, parameters, preview },
 				commands: [WaitParameterDebounce({ generation: previewGeneration })],
 			}
 		},

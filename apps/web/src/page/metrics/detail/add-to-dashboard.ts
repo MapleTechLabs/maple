@@ -1,4 +1,5 @@
 import { defaultWidgetLayout, TimeRangeSchema } from "@maple/domain/http"
+import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { MetricsQueryDraftSchema } from "@maple/query-model"
 import { makeQueryDataSource } from "@maple/widgets/dashboard"
 import { Clock, Effect, Option, Random, Result, Schema, Stream, Array as Arr, String as Str } from "effect"
@@ -86,8 +87,12 @@ export const explorerTimeRangeOf = (
 ): TimeRange =>
 	Option.getOrElse(
 		decodeTimeRange({ type: "absolute", startTime: search.startTime, endTime: search.endTime }),
-		() => ({ type: "relative", value: search.timePreset ?? defaultPreset }),
+		() => ({ type: "relative", value: readablePreset(search.timePreset) ?? defaultPreset }),
 	)
+
+/** A hand-edited `timePreset` the resolver cannot read is dropped, so the explorer's fallback is saved. */
+const readablePreset = (preset: string | undefined): string | undefined =>
+	preset !== undefined && resolveRelativeRangeToWarehouse(preset, 0, "UTC") !== null ? preset : undefined
 
 /** `widgetDisplay` and `buildWidgetDataSource`: a fresh query id, never the explorer's own. */
 export const widgetOf = (draft: typeof MetricsQueryDraftSchema.Type, queryId: string) => {

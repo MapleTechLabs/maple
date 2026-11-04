@@ -82,4 +82,10 @@ describe("template parameters", () => {
 		const spaced = typed(asked.model, "  acme")
 		expect(previewsOf(settled(spaced.model).commands)).toEqual([])
 	})
+
+	test("clearing a required value drops the shown preview at once, before the debounce", () => {
+		const asked = settled(typed(armed(), "acme").model)
+		expect(asked.model.preview.key).not.toBeNull()
+		expect(typed(asked.model, " ").model.preview.key).toBeNull()
+	})
 })

@@ -1,5 +1,6 @@
+import { Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { isRejected } from "./command"
+import { isRejected, refusalMessageOf } from "./command"
 
 // The v2 client fails with the decoded wire envelope; the collection wraps it in `cause` chains.
 const envelope = (type: string) => ({
@@ -26,5 +27,12 @@ describe("isRejected", () => {
 		expect(isRejected(wrapped(envelope("authentication_error")))).toBe(false)
 		expect(isRejected(wrapped(envelope("api_error")))).toBe(false)
 		expect(isRejected(wrapped({ message: "Failed to fetch" }))).toBe(false)
+	})
+
+	test("a refusal's own message reaches the toast", () => {
+		expect(refusalMessageOf(wrapped(envelope("conflict_error")))).toEqual(
+			Option.some("Someone else changed this dashboard"),
+		)
+		expect(refusalMessageOf(wrapped({ message: "Failed to fetch" }))).toEqual(Option.none())
 	})
 })
