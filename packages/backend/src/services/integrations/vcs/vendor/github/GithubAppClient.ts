@@ -18,6 +18,7 @@ import {
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
+import { readTextWithin } from "@maple/safe-fetch"
 import { Env } from "@maple/backend/platform/Env"
 import { githubWebBaseUrl } from "./github-hosts"
 import { timestampMs } from "@maple/backend/platform/time"
@@ -2374,13 +2375,14 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			/**
 			 * One blob's bytes as text, by its sha; unlike the contents API it serves files up to 100 MB.
-			 * Read raw, so a large lockfile is never held as base64 JSON as well.
+			 * Read raw, so a large lockfile is never held as base64 JSON as well, and never past `maxBytes`.
 			 */
 			const getBlobText = Effect.fn("GithubAppClient.getBlobText")(function* (
 				externalInstallationId: string,
 				owner: string,
 				repo: string,
 				sha: string,
+				maxBytes: number,
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
@@ -2391,9 +2393,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					"application/vnd.github.raw+json",
 				)
 				if (!isOk(response)) return yield* failure(response, "Read blob", "repository")
-				return yield* response.text.pipe(
-					Effect.mapError(
-						(cause) => new GithubAppError({ message: "Could not read the blob", cause }),
+				return yield* readTextWithin(response, maxBytes).pipe(
+					Effect.mapError((cause) =>
+						cause._tag === "@maple/safe-fetch/ResponseTooLargeError"
+							? new GithubAppError({ message: `The blob is larger than ${maxBytes} bytes` })
+							: new GithubAppError({ message: "Could not read the blob", cause }),
 					),
 				)
 			})

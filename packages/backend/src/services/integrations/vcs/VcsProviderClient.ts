@@ -511,11 +511,12 @@ export interface VcsProviderClient {
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 
-	/** A file's content as UTF-8 by its blob sha, without the size cap of `fetchSourceFile`. */
+	/** A file's content as UTF-8 by its blob sha, refused past `maxBytes` instead of read whole. */
 	readonly fetchBlobText: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
 		blobSha: string,
+		maxBytes: number,
 	) => Effect.Effect<
 		string,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
