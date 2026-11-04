@@ -189,6 +189,38 @@ describe("HTTP delivery deadline", () => {
 		}),
 	)
 
+	it.live("a follow-up with no time left is not sent", () =>
+		Effect.gen(function* () {
+			const live = yield* Clock.Clock
+			// Wall time as the delivery sees it: the page "takes" the whole budget.
+			let skewMs = 0
+			const nowMs = () => live.currentTimeMillisUnsafe() + skewMs
+			const skewed: Clock.Clock = {
+				currentTimeMillisUnsafe: nowMs,
+				currentTimeMillis: Effect.sync(nowMs),
+				currentTimeNanosUnsafe: () => BigInt(nowMs()) * 1_000_000n,
+				currentTimeNanos: Effect.sync(() => BigInt(nowMs()) * 1_000_000n),
+				monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+				monotonicTimeNanos: live.monotonicTimeNanos,
+				sleep: (duration) => live.sleep(duration),
+			}
+			let calls = 0
+			const { exit } = yield* run(
+				contextFor(
+					{ type: "pagerduty", integrationKey: "k" },
+					{ eventType: "resolve", incidentStatus: "resolved", incidentPeakSeverity: "critical" },
+				),
+				async () => {
+					calls += 1
+					skewMs += TIMEOUT_MS
+					return new Response("", { status: 202 })
+				},
+			).pipe(Effect.provideService(Clock.Clock, skewed))
+			assert.strictEqual(calls, 1)
+			assert.strictEqual(failureMessage(exit), `PagerDuty delivery timed out after ${TIMEOUT_MS}ms`)
+		}),
+	)
+
 	it.live("a prompt failure still reports the provider's status and body", () =>
 		Effect.gen(function* () {
 			const { exit } = yield* run(
