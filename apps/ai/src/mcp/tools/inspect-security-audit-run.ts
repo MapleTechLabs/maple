@@ -81,12 +81,14 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 				runId !== undefined
 					? yield* store.getRun(runId).pipe(Effect.mapError(storeError))
 					: yield* Effect.gen(function* () {
-							const target = targets.find(
+							// One target per branch: the repository's latest run is the newest across them.
+							const matching = Arr.filter(
+								targets,
 								(t) =>
 									Str.toLowerCase(t.repository) ===
 									Str.toLowerCase(params.repository ?? ""),
 							)
-							if (target === undefined)
+							if (matching.length === 0)
 								return yield* new McpInvalidInputError({
 									message: `${params.repository} is not set up for the code audit. Set up: ${Arr.join(
 										Arr.map(targets, (t) => t.repository),
@@ -94,10 +96,14 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 									)}.`,
 									parameter: "repository",
 								})
-							const runs = yield* store
-								.listRuns({ targetId: target.id, limit: 1 })
-								.pipe(Effect.mapError(storeError))
-							return Option.fromUndefinedOr(runs[0])
+							const pages = yield* Effect.forEach(
+								matching,
+								(t) => store.listRuns({ targetId: t.id, limit: 1 }),
+								{ concurrency: 4 },
+							).pipe(Effect.mapError(storeError))
+							return Option.fromUndefinedOr(
+								Arr.flatten(pages).toSorted((a, b) => b.startedAt - a.startedAt)[0],
+							)
 						})
 			if (Option.isNone(found))
 				return yield* new McpInvalidInputError({
@@ -126,11 +132,15 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 			)
 			const unsettled = Arr.filter(units, (u) => unitRank(u.status) < unitRank("candidate")).length
 			const notes = [
-				...(run.status === "incomplete" && unsettled > 0
+				...((run.status === "incomplete" || run.status === "failed") && unsettled > 0
 					? [
-							`The run stopped (${run.incompleteReason ?? "incomplete"}) with ${unsettled} of ${units.length} coverage units not settled: their code was not fully audited, so no finding there is not the same as clear.`,
+							`The run ${run.status === "failed" ? "failed" : "stopped"} (${truncate(run.incompleteReason ?? run.error ?? run.status, 160)}) with ${unsettled} of ${units.length} coverage units not settled: their code was not fully audited, so no finding there is not the same as clear.`,
 						]
-					: []),
+					: run.status === "in_progress" && unsettled > 0
+						? [
+								`The run is still in progress: ${unsettled} of ${units.length} coverage units are not settled yet.`,
+							]
+						: []),
 				...(units.length > MAX_UNITS
 					? [`Showing ${MAX_UNITS} of ${units.length} coverage units, unsettled ones first.`]
 					: []),
