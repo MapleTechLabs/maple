@@ -68,6 +68,15 @@ export const RootToastAction = Schema.Union([
 ])
 export type RootToastAction = typeof RootToastAction.Type
 
+/** A toast raised with a navigation or refresh; no timeout means the toast's default, no `rootAction` no button. */
+const NavigationToast = Schema.Struct({
+	type: ToastType,
+	title: Schema.String,
+	description: Schema.String,
+	timeoutMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	rootAction: Schema.optionalKey(Schema.Struct({ label: Schema.String, action: RootToastAction })),
+})
+
 /** Facts a page reports to the root; the root owns the URL. */
 export const PageOutMessage = defineMessageUnion({
 	/** `navigate({ search })` / `<Link>`: the root pushes (or replaces) the URL, which re-enters the route. */
@@ -75,13 +84,9 @@ export const PageOutMessage = defineMessageUnion({
 		url: Schema.String,
 		isReplace: Schema.Boolean,
 		/** A toast raised with the navigation (`navigate(...)` then `toastManager.add(...)`). */
-		toast: Schema.optionalKey(
-			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
-		),
+		toast: Schema.optionalKey(NavigationToast),
 		/** A second toast after the first (a Perses import's "Imported with N warnings"). */
-		followUpToast: Schema.optionalKey(
-			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
-		),
+		followUpToast: Schema.optionalKey(NavigationToast),
 		/** A confirmed checkout's URL cleanup: the root re-reads the app's customer too. */
 		refreshesCustomer: Schema.optionalKey(Schema.Boolean),
 	},
@@ -95,11 +100,7 @@ export const PageOutMessage = defineMessageUnion({
 	/** `retryOrgCollections` / `handleCollectionStuck`: recreate the org's synced collections. */
 	RequestedReconnectOrgCollections: {},
 	/** A billing change in a page: the root re-reads the app's customer (plan gate, quota banners). */
-	RequestedCustomerRefresh: {
-		toast: Schema.optionalKey(
-			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
-		),
-	},
+	RequestedCustomerRefresh: { toast: Schema.optionalKey(NavigationToast) },
 	/**
 	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.

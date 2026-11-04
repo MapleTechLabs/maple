@@ -90,16 +90,16 @@ export type WriteSync = typeof WriteSync.Type
  * The toast `applyMutationError` raises for a txid timeout: the edit reached the server, but the
  * optimistic copy rolled back. "Reconnect" is the root's `retryOrgCollections`.
  */
-export const behindToast = () =>
-	PageOutMessage.RequestedToast({
-		type: "warning",
-		title: "Saved, but this tab is behind",
-		description:
-			"The change reached the server; this tab’s live sync didn’t catch up, so it isn’t shown yet.",
-		timeoutMs: 10000,
-		action: null,
-		rootAction: { label: "Reconnect", action: { _tag: "ReconnectOrgCollections" } },
-	})
+export const behindToastContent = {
+	type: "warning",
+	title: "Saved, but this tab is behind",
+	description:
+		"The change reached the server; this tab’s live sync didn’t catch up, so it isn’t shown yet.",
+	timeoutMs: 10000,
+	rootAction: { label: "Reconnect", action: { _tag: "ReconnectOrgCollections" } },
+} as const
+
+export const behindToast = () => PageOutMessage.RequestedToast({ ...behindToastContent, action: null })
 
 /** A transaction's settlement as an Effect; a rejection keeps its cause for the message. */
 export const settled = <A>(promise: () => Promise<A>): Effect.Effect<WriteSync, DashboardWriteError> =>

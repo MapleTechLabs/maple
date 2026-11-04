@@ -348,7 +348,7 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 					? Option.some(
 							PageOutMessage.RequestedToast({
 								...out.toast,
-								timeoutMs: null,
+								timeoutMs: out.toast.timeoutMs ?? null,
 								action: null,
 							}),
 						)
@@ -359,7 +359,11 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 	const followUp = Option.flatMap(outMessage, (out) =>
 		out._tag === "RequestedNavigation" && out.followUpToast !== undefined
 			? Option.some(
-					PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }),
+					PageOutMessage.RequestedToast({
+						...out.followUpToast,
+						timeoutMs: out.followUpToast.timeoutMs ?? null,
+						action: null,
+					}),
 				)
 			: Option.none(),
 	)
