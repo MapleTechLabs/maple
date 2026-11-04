@@ -81,6 +81,8 @@ import { registerListProductEventsTool } from "./list-product-events"
 import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
 import { registerListAgentSessionsTool } from "./list-agent-sessions"
+import { registerListUsersTool } from "./list-users"
+import { registerInspectUserTool } from "./inspect-user"
 import { registerGetAgentSessionTool } from "./get-agent-session"
 import { registerGetAgentSessionTranscriptTool } from "./get-agent-session-transcript"
 import { registerGetAgentToolsOverviewTool } from "./get-agent-tools-overview"
@@ -400,6 +402,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerListProductEventsTool(registrar)
 	registerGetSessionTranscriptTool(registrar)
 	registerGetSessionTracesTool(registrar)
+	registerListUsersTool(registrar)
+	registerInspectUserTool(registrar)
 	registerListAgentSessionsTool(registrar)
 	registerGetAgentSessionTool(registrar)
 	registerGetAgentSessionTranscriptTool(registrar)
