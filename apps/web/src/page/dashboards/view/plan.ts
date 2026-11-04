@@ -15,6 +15,7 @@ import {
 	planOptionRequests,
 	planVariablesOf,
 } from "../kit/variables"
+import { isEditing } from "./mode"
 import type { Model, WidgetSlot } from "./model"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -23,9 +24,13 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Widget = DashboardDocument["widgets"][number]
 
-/** The range the board shows: this viewer's pick from the URL, else the board's saved range. */
+/** A viewer's own pick from the URL; an edit session works on the board's saved range instead. */
+export const viewerTimeRangeOf = (model: Model): TimeRange | null =>
+	isEditing(model) ? null : (timeRangeFromSearch(model.search) ?? null)
+
+/** The range the board shows: this viewer's pick, else the board's saved range. */
 export const timeRangeOf = (model: Model): TimeRange | null =>
-	timeRangeFromSearch(model.search) ?? model.document?.timeRange ?? null
+	viewerTimeRangeOf(model) ?? model.document?.timeRange ?? null
 
 export const isSameTimeRange = (a: TimeRange | null, b: TimeRange | null): boolean =>
 	a === null || b === null

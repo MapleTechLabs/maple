@@ -169,10 +169,12 @@ const navigate = (model: Model, url: string, isReplace = false): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace }),
 })
 
-/** `handleToggleEdit`: the per-viewer controls survive; only `mode` flips. */
+/** `handleToggleEdit`: the per-viewer controls survive, except a viewer's range, which editing replaces. */
 const toggleEdit = (model: Model): Return => {
 	const controls = pickDashboardControlParams(model.search)
-	return navigate(model, dashboardHref(model, isEditing(model) ? controls : { ...controls, mode: "edit" }))
+	if (isEditing(model)) return navigate(model, dashboardHref(model, controls))
+	const { range: _range, from: _from, to: _to, ...kept } = controls
+	return navigate(model, dashboardHref(model, { ...kept, mode: "edit" }))
 }
 
 /** `PageRefreshProvider.reload`: a new clock, an unsnapped window and the Reload spinner. */
@@ -377,7 +379,8 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 		isEditing(model) && !isSameTimeRange(model.document?.timeRange ?? null, timeRange)
 			? [SaveTimeRange({ orgId: context.orgId, dashboardId: model.dashboardId, timeRange })]
 			: []
-	if (isSameTimeRange(timeRangeOf(model), timeRange))
+	// The saved board answers through the document; the URL only holds a viewer's pick.
+	if (isEditing(model) || isSameTimeRange(timeRangeOf(model), timeRange))
 		return { model: updated, commands: [...commands, ...save] }
 	const controls = { ...pickDashboardControlParams(model.search), ...timeRangeParams(timeRange) }
 	const search = model.search.mode === "edit" ? { ...controls, mode: "edit" as const } : controls
@@ -426,6 +429,8 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 		case "share":
 			return openShare(model)
 		case "export":
+			// A preview still loading has no snapshot yet; exporting now would export the live board.
+			if (model.history.previewed !== null && shownDocumentOf(model) === null) return { model }
 			return {
 				model,
 				commands: [

@@ -1,3 +1,4 @@
+import { timeRangeOf } from "./plan"
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
@@ -234,12 +235,24 @@ describe("dashboard view", () => {
 		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
 		const picked = pickPreset(editing, "1h")
 		expect(names(picked.commands)).toContain(SaveTimeRange.name)
-		expect(picked.outMessage).toEqual(
+		// The saved board answers through the document; the URL keeps no range in edit mode.
+		expect(picked.outMessage).toBeUndefined()
+	})
+
+	test("an edit session works on the board's range, not a viewer's URL pick", () => {
+		const viewing = routeChanged(ready(), { ...ROUTE, search: { range: "7d", tab: "a" } }, context).model
+		expect(pageUpdate(viewing, Message.ClickedToggleEdit()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/dashboards/dash_platform?mode=edit&range=1h",
-				isReplace: true,
+				url: "/dashboards/dash_platform?mode=edit&tab=a",
+				isReplace: false,
 			}),
 		)
+		const editing = routeChanged(
+			ready(),
+			{ ...ROUTE, search: { mode: "edit", range: "7d" } },
+			context,
+		).model
+		expect(timeRangeOf(editing)).toEqual(editing.document?.timeRange)
 	})
 
 	test("the URL's range wins over the board's, and a range it cannot read falls back to the board's", () => {

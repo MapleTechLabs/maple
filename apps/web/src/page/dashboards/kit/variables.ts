@@ -116,7 +116,7 @@ export const unavailableVariables = (
 		Arr.flatMap(variables, (variable) => {
 			const options = optionsByName[variable.name] ?? NO_OPTIONS
 			const value = resolveDashboardVariableValue(variable, urlValues[variable.name], options)
-			return options.error !== null && isUnavailable(variable, options, value)
+			return isUnavailable(variable, options, value) && options.error !== null
 				? [[variable.name, options.error]]
 				: []
 		}),
@@ -162,8 +162,14 @@ export const optionsByNameOf = (
 		Arr.map(variables, (variable) => {
 			const source = optionsSourceOf(orgId, variable, window)
 			if (source._tag === "Inline") return [variable.name, { ...NO_OPTIONS, options: source.options }]
-			if (source._tag === "None")
-				return [variable.name, { ...NO_OPTIONS, loading: variable.type === "query" }]
+			if (source._tag === "None" && variable.type === "query")
+				return [
+					variable.name,
+					window === null
+						? { ...NO_OPTIONS, loading: true }
+						: { ...NO_OPTIONS, error: "This variable has no options query" },
+				]
+			if (source._tag === "None") return [variable.name, NO_OPTIONS]
 			const slot = slots[variable.name]
 			const data = slot === undefined || slot.key !== source.key ? AsyncData.Idle() : slot.data
 			const state: OptionsState = AsyncData.match(data, {

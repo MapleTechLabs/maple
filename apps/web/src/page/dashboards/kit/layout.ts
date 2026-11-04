@@ -6,6 +6,7 @@ import {
 	type SectionTarget,
 	withSectionTarget,
 } from "@maple/domain/http"
+import { groupWidgetsByContainer } from "@maple/widgets/dashboard"
 import type { DocumentFields } from "./store"
 import { Array as Arr, String as Str } from "effect"
 
@@ -14,13 +15,23 @@ import { Array as Arr, String as Str } from "effect"
 type Widget = DashboardDocument["widgets"][number]
 type Section = NonNullable<DashboardDocument["sections"]>[number]
 
-/** `widgetsInContainer`: the widgets sharing one grid. */
-export const widgetsInContainer = (
-	widgets: ReadonlyArray<Widget>,
-	target: SectionTarget,
-): ReadonlyArray<Widget> => {
-	const key = containerKeyFor(target)
-	return Arr.filter(widgets, (widget) => containerKeyOf(widget) === key)
+type Sectioned = Pick<DashboardDocument, "widgets" | "sections">
+
+/** `widgetsInContainer`: the widgets sharing one grid, as drawn (a vanished group's tiles are root). */
+export const widgetsInContainer = (document: Sectioned, target: SectionTarget): ReadonlyArray<Widget> =>
+	groupWidgetsByContainer(document).get(containerKeyFor(target)) ?? []
+
+/** The grid a widget draws in: its container, or the root when that container is gone. */
+const drawnKeyOf = (sections: ReadonlyArray<Section>) => {
+	const keys = new Set(
+		Arr.flatMap(sections, (section) =>
+			Arr.map(section.tabs, (tab) => containerKeyFor({ sectionId: section.id, tabId: tab.id })),
+		),
+	)
+	return (widget: Widget): string => {
+		const key = containerKeyOf(widget)
+		return keys.has(key) ? key : containerKeyFor(null)
+	}
 }
 
 /** `containerRank`: root first, then sections and tabs in order; a vanished container ranks as root. */
@@ -100,7 +111,7 @@ export const withClone = (
 		source.sectionId !== undefined && source.tabId !== undefined
 			? { sectionId: source.sectionId, tabId: source.tabId }
 			: null
-	const position = findNextPosition(widgetsInContainer(document.widgets, target), source.layout.w)
+	const position = findNextPosition(widgetsInContainer(document, target), source.layout.w)
 	const placed: Widget = {
 		id: newId,
 		visualization: source.visualization,
@@ -128,7 +139,7 @@ export const withAddedWidget = (
 	nowIso: DashboardDocument["updatedAt"],
 	target: SectionTarget = null,
 ): DocumentFields => {
-	const position = findNextPosition(widgetsInContainer(document.widgets, target), widget.layout.w)
+	const position = findNextPosition(widgetsInContainer(document, target), widget.layout.w)
 	const placed: Widget = withSectionTarget({ ...widget, layout: { ...position, ...widget.layout } }, target)
 	return { ...document, widgets: [...document.widgets, placed], updatedAt: nowIso }
 }
@@ -174,11 +185,10 @@ export const autoLaidOut = (
 	sections: ReadonlyArray<Section>,
 ): ReadonlyArray<Widget> => {
 	const sorted = sortWidgetsForLayout(widgets, sections)
-	const keys = [...new Set(Arr.map(sorted, (widget) => containerKeyOf(widget)))]
+	const keyOf = drawnKeyOf(sections)
+	const keys = [...new Set(Arr.map(sorted, keyOf))]
 	const placed = new Map(
-		Arr.flatMap(keys, (key) =>
-			flowContainer(Arr.filter(sorted, (widget) => containerKeyOf(widget) === key)),
-		),
+		Arr.flatMap(keys, (key) => flowContainer(Arr.filter(sorted, (widget) => keyOf(widget) === key))),
 	)
 	return Arr.map(sorted, (widget) => placed.get(widget) ?? widget)
 }

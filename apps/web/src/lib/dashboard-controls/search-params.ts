@@ -64,9 +64,6 @@ const VIEW_PARAM_KEYS = [
 	"to",
 ] as const
 
-/** The params that hold this viewer's time range: a preset, or an absolute window. */
-export const TIME_RANGE_PARAM_KEYS = ["range", "from", "to"] as const
-
 const decodeIso = Schema.decodeUnknownOption(IsoDateTimeString)
 
 const isPreset = (value: unknown): value is string =>
