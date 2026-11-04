@@ -8,6 +8,7 @@ import {
 	Layer,
 	Option,
 	Redacted,
+	Ref,
 	Schedule,
 	Schema,
 	Stream,
@@ -377,6 +378,11 @@ const GithubApiGitTreeListing = Schema.Struct({
 
 /** Git's well-known hash of a tree with no entries. */
 const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+/** Reads one truncated tree's walk may make: a monorepo needs one per directory it splits. */
+const MAX_TREE_WALK_READS = 400
+/** Entries a walk holds at most, a few times GitHub's 100,000 per read, inside a Worker's memory. */
+const MAX_TREE_WALK_ENTRIES = 500_000
+const TREE_WALK_CONCURRENCY = 4
 /** A recursive listing; `size` is set on blobs only, `truncated` when GitHub cut the listing short. */
 const GithubApiRecursiveTree = Schema.Struct({
 	sha: Schema.String,
@@ -2247,12 +2253,109 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						} satisfies GithubRecursiveTree
 				}
 				if (!isOk(response)) return yield* failure(response, "Read tree", "repository")
-				const recursiveTreeJson = yield* parseJson(response, "Read tree")
-				return yield* decodeRecursiveTree(recursiveTreeJson).pipe(
-					Effect.mapError(
-						(cause) => new GithubAppError({ message: "Unexpected tree payload", cause }),
+				const listing = yield* decodeTreeResponse(response)
+				if (!listing.truncated) return listing
+				// Too large for one read (a monorepo): list it again subtree by subtree.
+				const walked = yield* walkTree(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+					listing.sha,
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.github.tree_walk.reads": walked.reads,
+					"maple.github.tree_walk.truncated": walked.truncated,
+				})
+				return {
+					sha: listing.sha,
+					truncated: walked.truncated,
+					tree: walked.tree,
+				} satisfies GithubRecursiveTree
+			})
+
+			const decodeTreeResponse = (response: HttpClientResponse.HttpClientResponse) =>
+				parseJson(response, "Read tree").pipe(
+					Effect.flatMap((json) =>
+						decodeRecursiveTree(json).pipe(
+							Effect.mapError(
+								(cause) => new GithubAppError({ message: "Unexpected tree payload", cause }),
+							),
+						),
 					),
 				)
+
+			/**
+			 * A tree GitHub truncates, read as its direct entries plus one recursive read per subtree,
+			 * descending further only into a subtree that is itself truncated. Bounded in reads and
+			 * entries; past either bound the listing is reported truncated, never as complete.
+			 */
+			const walkTree = Effect.fnUntraced(function* (
+				config: ResolvedAppConfig,
+				token: string,
+				base: string,
+				rootSha: string,
+			) {
+				const reads = yield* Ref.make(0)
+				const entries = yield* Ref.make(0)
+				const read = Effect.fnUntraced(function* (sha: string, recursive: boolean) {
+					const count = yield* Ref.updateAndGet(reads, (n) => n + 1)
+					if (count > MAX_TREE_WALK_READS) return Option.none<GithubRecursiveTree>()
+					const response = yield* authedGet(
+						config,
+						token,
+						`${base}/git/trees/${encodeURIComponent(sha)}${recursive ? "?recursive=1" : ""}`,
+					)
+					if (!isOk(response)) return yield* failure(response, "Read tree", "repository")
+					const listing = yield* decodeTreeResponse(response)
+					const total = yield* Ref.updateAndGet(entries, (n) => n + listing.tree.length)
+					return total > MAX_TREE_WALK_ENTRIES
+						? Option.none<GithubRecursiveTree>()
+						: Option.some(listing)
+				})
+				type Walked = { readonly tree: GithubRecursiveTree["tree"]; readonly truncated: boolean }
+				const under = (prefix: string, walked: Walked): Walked => ({
+					truncated: walked.truncated,
+					tree: Arr.map(walked.tree, (entry) => ({ ...entry, path: `${prefix}${entry.path}` })),
+				})
+				const cut: Walked = { tree: [], truncated: true }
+				const walk = (sha: string): Effect.Effect<Walked, GithubAppError> =>
+					read(sha, false).pipe(
+						Effect.flatMap(
+							Option.match({
+								onNone: () => Effect.succeed(cut),
+								onSome: (level) =>
+									Effect.forEach(
+										Arr.filter(level.tree, (entry) => entry.type === "tree"),
+										(dir) =>
+											read(dir.sha, true).pipe(
+												Effect.flatMap(
+													Option.match({
+														onNone: () => Effect.succeed(cut),
+														onSome: (sub) =>
+															sub.truncated
+																? walk(dir.sha)
+																: Effect.succeed<Walked>({
+																		tree: sub.tree,
+																		truncated: false,
+																	}),
+													}),
+												),
+												Effect.map((walked) => under(`${dir.path}/`, walked)),
+											),
+										{ concurrency: TREE_WALK_CONCURRENCY },
+									).pipe(
+										Effect.map((subtrees): Walked => ({
+											truncated:
+												level.truncated || Arr.some(subtrees, (s) => s.truncated),
+											tree: [...level.tree, ...Arr.flatMap(subtrees, (s) => s.tree)],
+										})),
+									),
+							}),
+						),
+					)
+				const walked = yield* walk(rootSha)
+				const attempted = yield* Ref.get(reads)
+				return { ...walked, reads: Math.min(attempted, MAX_TREE_WALK_READS) }
 			})
 
 			/**

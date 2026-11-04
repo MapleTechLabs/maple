@@ -86,6 +86,7 @@ import {
 	REPO_SIZE_COMMAND,
 	refusalReason,
 	repoLimitViolations,
+	lfsSkippedNote,
 } from "./repo-size"
 import { formatRepoTree, REPO_TREE_COMMAND } from "./repo-tree"
 import { sandboxSource } from "./sandbox-source"
@@ -157,6 +158,13 @@ const preparedNothing = (profile: ExecutionProfile, why: string): ExecutionProfi
 })
 
 /** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
+/** The repo-size step's recorded result. */
+interface RepoSizeVerdict {
+	readonly violations: ReadonlyArray<string>
+	/** LFS files skipped as not source; absent on a step recorded before they were counted. */
+	readonly lfsFiles?: number
+}
+
 const REPO_SIZE_TIMEOUT_SECONDS = 120
 
 /** Store writes retried on transient database errors; every write is a replacement or idempotent. */
@@ -352,7 +360,7 @@ export const auditWithAgents = <E, R>(
 
 		// Measured before any agent: a repository over a limit is refused whole, never partly audited.
 		// The limits are read inside the step, so a deploy that changes them cannot flip a replay.
-		const { violations } = yield* durableStep(
+		const { violations, lfsFiles }: RepoSizeVerdict = yield* durableStep(
 			"repo-size",
 			Effect.gen(function* () {
 				const result = yield* sandbox
@@ -368,7 +376,10 @@ export const auditWithAgents = <E, R>(
 					}
 				}
 				const limits = yield* securityAuditLimits
-				return { violations: repoLimitViolations(size.value, limits) }
+				return {
+					violations: repoLimitViolations(size.value, limits),
+					lfsFiles: size.value.lfsFiles - size.value.lfsSourceFiles,
+				}
 			}),
 			STEP_RETRY,
 		)
@@ -384,6 +395,14 @@ export const auditWithAgents = <E, R>(
 				STEP_RETRY,
 			)
 			return yield* new AuditRepositoryRefusedError({ message: reason, violations })
+		}
+		const lfsNote = lfsSkippedNote(lfsFiles ?? 0)
+		if (Option.isSome(lfsNote)) {
+			yield* durableStep(
+				"lfs-note",
+				store.recordEvent(payload.runId, { _tag: "Note", message: lfsNote.value }),
+				STEP_RETRY,
+			)
 		}
 		// Which ecosystems it builds with, and so whether the execution sandbox can run it.
 		const executor = yield* ExecutorService

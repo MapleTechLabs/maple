@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SECURITY_AUDIT_LIMIT_DEFAULTS } from "@maple/backend/services/security-audit/limits"
@@ -8,16 +8,34 @@ import { describe, expect, it } from "vitest"
 import { parseRepoSize, REPO_SIZE_COMMAND, repoLimitViolations } from "./repo-size"
 
 const limits = { ...SECURITY_AUDIT_LIMIT_DEFAULTS, maxCheckoutBytes: 10 * 1024 * 1024 }
+const small = {
+	commits: 900,
+	files: 400,
+	bytes: 4_000_000,
+	lfsFiles: 0,
+	lfsSourceFiles: 0,
+	lfsSourceExamples: [],
+}
 
 describe("parseRepoSize", () => {
-	it("reads the probe's four counts, and nothing else", () => {
+	it("reads the probe's five counts and example paths, and nothing else", () => {
 		expect([
-			parseRepoSize("1200 340 2048000 0\n"),
+			parseRepoSize("1200 340 2048000 0 0\n"),
+			parseRepoSize("1200 340 2048000 9 2\napps/a.ts\nlib/b.py\n"),
 			parseRepoSize(""),
 			parseRepoSize("fatal: not a git repository"),
-			parseRepoSize("12 34 56"),
+			parseRepoSize("12 34 56 0"),
 		]).toEqual([
-			Option.some({ commits: 1200, files: 340, bytes: 2_048_000, lfsFiles: 0 }),
+			Option.some({ ...small, commits: 1200, files: 340, bytes: 2_048_000 }),
+			Option.some({
+				...small,
+				commits: 1200,
+				files: 340,
+				bytes: 2_048_000,
+				lfsFiles: 9,
+				lfsSourceFiles: 2,
+				lfsSourceExamples: ["apps/a.ts", "lib/b.py"],
+			}),
 			Option.none(),
 			Option.none(),
 			Option.none(),
@@ -27,22 +45,42 @@ describe("parseRepoSize", () => {
 
 describe("repoLimitViolations", () => {
 	it("passes a repository within every limit", () => {
-		expect(
-			repoLimitViolations({ commits: 900, files: 400, bytes: 4_000_000, lfsFiles: 0 }, limits),
-		).toEqual([])
+		expect(repoLimitViolations(small, limits)).toEqual([])
+	})
+
+	it("passes LFS media, which the audit skips, and refuses source kept in LFS", () => {
+		expect([
+			repoLimitViolations({ ...small, lfsFiles: 22_389 }, limits),
+			repoLimitViolations(
+				{ ...small, lfsFiles: 22_389, lfsSourceFiles: 1, lfsSourceExamples: ["src/gen.ts"] },
+				limits,
+			),
+		]).toEqual([
+			[],
+			[
+				"it stores 1 source files in Git LFS, whose content the checkout does not hold (limit 0; for example src/gen.ts)",
+			],
+		])
 	})
 
 	it("names each limit a repository is over", () => {
 		expect(
 			repoLimitViolations(
-				{ commits: 2_000_000, files: 150_000, bytes: 64 * 1024 * 1024, lfsFiles: 2 },
+				{
+					commits: 2_000_000,
+					files: 150_000,
+					bytes: 64 * 1024 * 1024,
+					lfsFiles: 2,
+					lfsSourceFiles: 2,
+					lfsSourceExamples: ["a.go", "b.go"],
+				},
 				limits,
 			),
 		).toEqual([
 			"its tracked files are 64 MiB, over the 10 MiB limit",
 			"it tracks 150000 files, over the 100000 limit",
 			"its history has 2000000 commits, over the 1000000 limit",
-			"it stores 2 files in Git LFS, whose content the checkout does not hold (limit 0)",
+			"it stores 2 source files in Git LFS, whose content the checkout does not hold (limit 0; for example a.go, b.go)",
 		])
 	})
 })
@@ -77,8 +115,45 @@ describe("the size probe", () => {
 		}
 	})
 
+	it("counts LFS files and picks out the source among them in a real checkout", () => {
+		const repo = mkdtempSync(join(tmpdir(), "repo-size-lfs-"))
+		try {
+			// No global or system config: a developer's git-lfs filter must not run here.
+			const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" }
+			const git = (...args: ReadonlyArray<string>) =>
+				spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", env })
+			git("init", "-q")
+			writeFileSync(
+				join(repo, ".gitattributes"),
+				"*.png filter=lfs\n*.psd filter=lfs\nsrc/Gen.TS filter=lfs\n",
+			)
+			mkdirSync(join(repo, "src"))
+			mkdirSync(join(repo, "assets"))
+			Arr.forEach(["assets/a.png", "assets/b.png", "assets/c.psd", "src/Gen.TS", "src/main.ts"], (p) =>
+				writeFileSync(join(repo, p), "x"),
+			)
+			git("add", "-A")
+			git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+			const probe = spawnSync(REPO_SIZE_COMMAND.command, [...REPO_SIZE_COMMAND.args], {
+				cwd: repo,
+				encoding: "utf8",
+				env,
+			})
+			expect(
+				Option.map(parseRepoSize(probe.stdout), (size) => [
+					size.files,
+					size.lfsFiles,
+					size.lfsSourceFiles,
+					size.lfsSourceExamples,
+				]),
+			).toEqual(Option.some([6, 4, 1, ["src/Gen.TS"]]))
+		} finally {
+			rmSync(repo, { recursive: true, force: true })
+		}
+	})
+
 	it("refuses a commit with history but no files", () => {
-		expect(repoLimitViolations({ commits: 7, files: 0, bytes: 0, lfsFiles: 0 }, limits)).toEqual([
+		expect(repoLimitViolations({ ...small, commits: 7, files: 0, bytes: 0 }, limits)).toEqual([
 			"its pinned commit listed no files although it has history, so its size could not be trusted",
 		])
 	})
