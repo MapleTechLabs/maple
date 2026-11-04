@@ -225,15 +225,15 @@ export const runReconnaissance = (engine: Engine) =>
 			reconResults,
 			priorSummary: prior?.summary ?? "No prior ledger exists for this repository.",
 		}
-		const synthesize = (id: string) =>
+		const synthesize = (id: string, attempt: "first" | "retry") =>
 			engine.invoke(
 				"synthesis",
 				id,
-				synthesisPrompt(synthesisInput, engine.context(id)),
+				synthesisPrompt(synthesisInput, engine.context(id), attempt),
 				SynthesisResult,
 			)
-		const first = yield* synthesize("synthesis-1")
-		const synthesis = first ?? (yield* synthesize("synthesis-2"))
+		const first = yield* synthesize("synthesis-1", "first")
+		const synthesis = first ?? (yield* synthesize("synthesis-2", "retry"))
 		if (synthesis === undefined) {
 			yield* engine.fail("reconnaissance_synthesis_failed")
 			return false
