@@ -3,10 +3,10 @@ import { DashboardDocument } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { FetchWidget } from "./command"
+import { CloneWidget, ExportDashboard, FetchWidget, RemoveWidget } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { slotOf } from "./plan"
+import { optionsByNameOf, slotOf, variablesOf } from "./plan"
 import { subscriptions } from "./subscription"
 import { init, update } from "./update"
 
@@ -69,7 +69,7 @@ const ready = (): Model =>
 		Message.GotMoreMenuMessage({
 			message: { _tag: "ClickedItem", index: 4, item: { kind: "Item", value: "history" } },
 		}),
-		Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
+		Message.CompletedFetchVersions({ generation: 1, nowMs: 0, result: Result.succeed([version]) }),
 	])
 
 const keyOf = (model: Model, widgetId: string) => {
@@ -86,6 +86,22 @@ const previewed = () => {
 }
 
 describe("previewing a version", () => {
+	test("a previewed version's own variables resolve, though the live board dropped them", () => {
+		const withEnv = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(snapshot),
+			variables: [
+				{ name: "env", type: "custom", options: [{ value: "production" }, { value: "staging" }] },
+			],
+		})
+		const opened = run(ready(), [Message.ClickedVersion({ versionId: version.id })])
+		const shown = pageUpdate(
+			opened,
+			Message.CompletedFetchSnapshot({ versionId: version.id, result: Result.succeed(withEnv) }),
+		).model
+		expect(optionsByNameOf(shown, context).env?.options).toEqual(["production", "staging"])
+		expect(variablesOf(shown, context).values.env?.value).toBe("production")
+	})
+
 	test("a snapshot's tiles plan the snapshot's own queries, not the live board's", () => {
 		const liveKey = keyOf(ready(), "w")
 		const loaded = previewed()
@@ -94,6 +110,55 @@ describe("previewing a version", () => {
 		const revealed = pageUpdate(loaded.model, Message.RevealedWidget({ widgetId: "gone" })).model
 		expect(keyOf(revealed, "gone")).not.toBeNull()
 		expect(keyOf(pageUpdate(revealed, Message.ClickedCancelPreview()).model, "w")).toBe(liveKey)
+	})
+
+	test("a failed export says so instead of doing nothing", () => {
+		const failed = pageUpdate(previewed().model, Message.CompletedExport({ error: "Disk full" }))
+		expect(failed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Couldn't export the dashboard",
+				description: "Disk full",
+			}),
+		)
+		expect(
+			pageUpdate(previewed().model, Message.CompletedExport({ error: null })).outMessage,
+		).toBeUndefined()
+	})
+
+	test("Export JSON during a preview exports the previewed version, not the live board", () => {
+		const exported = pageUpdate(
+			previewed().model,
+			Message.GotMoreMenuMessage({
+				message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value: "export" } },
+			}),
+		)
+		const command = exported.commands?.find(({ name }) => name === ExportDashboard.name)
+		const sent = command?.args?.snapshot
+		expect(Schema.is(DashboardDocument)(sent) ? Arr.map(sent.widgets, ({ id }) => id) : null).toEqual([
+			"w",
+			"gone",
+		])
+	})
+
+	test("a preview offers no writes and no embeds on its tiles", () => {
+		const loaded = run(previewed().model, [
+			Message.GotShareMessage({
+				message: { _tag: "CompletedFetchShares", seq: 1, result: Result.succeed([]) },
+			}),
+		])
+		const pick = (value: string) =>
+			pageUpdate(
+				loaded,
+				Message.GotWidgetMenuMessage({
+					widgetId: "w",
+					message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value } },
+				}),
+			)
+		const names = (value: string) => Arr.map(pick(value).commands ?? [], ({ name }) => name)
+		expect(names("delete")).not.toContain(RemoveWidget.name)
+		expect(names("clone")).not.toContain(CloneWidget.name)
+		expect(pick("embed").model.sharing).toEqual(loaded.sharing)
 	})
 
 	test("auto-refresh pauses while a version is previewed", () => {

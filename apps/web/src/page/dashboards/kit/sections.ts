@@ -101,15 +101,15 @@ export const withReorderedSections = (
 	return touch(document, [...without.slice(0, toIndex), moved, ...without.slice(toIndex)], nowIso)
 }
 
-const rootBottom = (widgets: ReadonlyArray<Widget>): number => {
-	const root = widgetsInContainer(widgets, null)
+const rootBottom = (document: DashboardDocument): number => {
+	const root = widgetsInContainer(document, null)
 	return root.length === 0 ? 0 : Math.max(...Arr.map(root, (widget) => widget.layout.y + widget.layout.h))
 }
 
 /** `ungroupSectionWidgets`: the group's tiles land on the root canvas below what is there. */
-const ungroup = (widgets: ReadonlyArray<Widget>, sectionId: string): ReadonlyArray<Widget> => {
-	const offset = rootBottom(widgets)
-	return Arr.map(widgets, (widget) => {
+const ungroup = (document: DashboardDocument, sectionId: string): ReadonlyArray<Widget> => {
+	const offset = rootBottom(document)
+	return Arr.map(document.widgets, (widget) => {
 		if (widget.sectionId !== sectionId) return widget
 		const moved = withSectionTarget(widget, null)
 		return { ...moved, layout: { ...moved.layout, y: moved.layout.y + offset } }
@@ -133,7 +133,7 @@ export const withoutSection = (
 		),
 		widgets:
 			action === "ungroup"
-				? ungroup(document.widgets, sectionId)
+				? ungroup(document, sectionId)
 				: Arr.filter(document.widgets, (widget) => widget.sectionId !== sectionId),
 	}
 }
@@ -186,7 +186,7 @@ export const withoutTab = (
 	const destination = remaining[0]
 	if (destination === undefined) return document
 	const isDoomed = (widget: Widget) => widget.sectionId === sectionId && widget.tabId === tabId
-	const offsetBase = widgetsInContainer(document.widgets, { sectionId, tabId: destination.id })
+	const offsetBase = widgetsInContainer(document, { sectionId, tabId: destination.id })
 	const offset =
 		offsetBase.length === 0 ? 0 : Math.max(...Arr.map(offsetBase, (w) => w.layout.y + w.layout.h))
 	const widgets =
@@ -229,7 +229,7 @@ export const withMovedWidget = (
 	const widget = document.widgets.find((candidate) => candidate.id === widgetId)
 	if (widget === undefined) return document
 	const position = findNextPosition(
-		Arr.filter(widgetsInContainer(document.widgets, target), (w) => w.id !== widgetId),
+		Arr.filter(widgetsInContainer(document, target), (w) => w.id !== widgetId),
 		widget.layout.w,
 	)
 	const moved = withSectionTarget({ ...widget, layout: { ...widget.layout, ...position } }, target)

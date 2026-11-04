@@ -1,4 +1,4 @@
-import { DashboardShareMode } from "@maple/domain/http"
+import { DashboardShareMode, type TimeRange } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import { Schema } from "effect"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -91,13 +91,30 @@ export const ShareMessage = defineMessageUnion({
 })
 export type ShareMessage = typeof ShareMessage.Type
 
-export const boardShareOf =(shares: ReadonlyArray<ShareRow>): ShareRow | undefined =>
+export const boardShareOf = (shares: ReadonlyArray<ShareRow>): ShareRow | undefined =>
 	shares.find((share) => share.widgetId === null)
 
 export const chartShareOf = (shares: ReadonlyArray<ShareRow>, widgetId: string): ShareRow | undefined =>
 	shares.find((share) => share.widgetId === widgetId && share.mode === "public")
 
-export const shareUrl = (origin: string, token: string): string => `${origin}/share/${token}`
+/** The share page's `?range=` or `?from=&to=` for a viewer's picked range. */
+const rangeParams = (range: TimeRange | null): Array<[string, string]> =>
+	range === null
+		? []
+		: range.type === "relative"
+			? [["range", range.value]]
+			: [
+					["from", range.startTime],
+					["to", range.endTime],
+				]
+
+const withParams = (url: string, params: Array<[string, string]>): string =>
+	params.length === 0 ? url : `${url}?${new URLSearchParams(params).toString()}`
+
+/** A share link: with the viewer's own range, so the recipient sees the window they picked. */
+export const shareUrl = (origin: string, token: string, range: TimeRange | null = null): string =>
+	withParams(`${origin}/share/${token}`, rangeParams(range))
 
 /** `?embed=true` drops the share page's own header, leaving only the chart. */
-export const embedUrl = (origin: string, token: string): string => `${shareUrl(origin, token)}?embed=true`
+export const embedUrl = (origin: string, token: string, range: TimeRange | null = null): string =>
+	withParams(`${origin}/share/${token}`, [["embed", "true"], ...rangeParams(range)])

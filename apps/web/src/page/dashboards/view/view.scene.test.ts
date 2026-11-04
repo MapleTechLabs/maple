@@ -1,3 +1,4 @@
+import { timeRangeOf } from "./plan"
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
@@ -202,15 +203,85 @@ describe("dashboard view", () => {
 		expect(refreshed.widgets["error-rate"]).toBe(revealed.widgets["error-rate"])
 	})
 
-	test("picking a preset re-plans the tiles and saves the range to the board", () => {
-		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
-		const picked = pageUpdate(
-			revealed,
-			Message.GotTimePickerMessage({ message: TimeRangePicker.Message.ClickedPreset({ value: "1h" }) }),
+	const pickPreset = (model: Model, value: string) =>
+		pageUpdate(
+			model,
+			Message.GotTimePickerMessage({ message: TimeRangePicker.Message.ClickedPreset({ value }) }),
 		)
-		expect(picked.model.timeRange).toEqual({ type: "relative", value: "1h" })
-		expect(names(picked.commands)).toContain(FetchWidget.name)
+	const endTimeOf = (model: Model, widgetId: string) => {
+		const gate = model.widgets[widgetId]?.gate
+		return gate?._tag === "Request" ? gate.request.params.endTime : undefined
+	}
+
+	test("a viewer's pick goes to their URL, not the board, and plans on a fresh clock", () => {
+		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
+		const picked = pickPreset(revealed, "1h")
+		expect(names(picked.commands)).not.toContain(SaveTimeRange.name)
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_platform?range=1h",
+				isReplace: true,
+			}),
+		)
+		const routed = routeChanged(picked.model, { ...ROUTE, search: { range: "1h" } }, context)
+		// Two hours after entry: the window ends now, not when the page was opened.
+		expect(names(routed.commands)).toEqual(["ReadDashboardClock"])
+		const clocked = pageUpdate(routed.model, Message.CompletedReadClock({ nowMs: NOW + 2 * 3_600_000 }))
+		expect(names(clocked.commands)).toContain(FetchWidget.name)
+		expect(endTimeOf(clocked.model, "total-errors")).toMatch(/^2026-10-01 14:/)
+	})
+
+	test("a viewer's pick of the board's own range still lands in their URL", () => {
+		const board = ready().document?.timeRange
+		const value = board?.type === "relative" ? board.value : ""
+		const picked = pickPreset(ready(), value)
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: `/dashboards/dash_platform?range=${value}`,
+				isReplace: true,
+			}),
+		)
+		const routed = routeChanged(picked.model, { ...ROUTE, search: { range: value } }, context).model
+		expect(pickPreset(routed, value).outMessage).toBeUndefined()
+	})
+
+	test("an edit session's pick is also saved as the board's range", () => {
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
+		const picked = pickPreset(editing, "1h")
 		expect(names(picked.commands)).toContain(SaveTimeRange.name)
+		// The saved board answers through the document; the URL keeps no range in edit mode.
+		expect(picked.outMessage).toBeUndefined()
+	})
+
+	test("an edit session works on the board's range, not a viewer's URL pick", () => {
+		const viewing = routeChanged(ready(), { ...ROUTE, search: { range: "7d", tab: "a" } }, context).model
+		expect(pageUpdate(viewing, Message.ClickedToggleEdit()).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_platform?mode=edit&tab=a",
+				isReplace: false,
+			}),
+		)
+		const editing = routeChanged(
+			ready(),
+			{ ...ROUTE, search: { mode: "edit", range: "7d" } },
+			context,
+		).model
+		expect(timeRangeOf(editing)).toEqual(editing.document?.timeRange)
+	})
+
+	test("the URL's range wins over the board's, and a range it cannot read falls back to the board's", () => {
+		const fromUrl = routeChanged(ready(), { ...ROUTE, search: { range: "15m" } }, context).model
+		const clocked = pageUpdate(
+			pageUpdate(fromUrl, Message.CompletedReadClock({ nowMs: NOW })).model,
+			Message.RevealedWidget({ widgetId: "total-errors" }),
+		).model
+		const gate = clocked.widgets["total-errors"]?.gate
+		const params = gate?._tag === "Request" ? gate.request.params : {}
+		expect(Date.parse(`${String(params.endTime)}Z`) - Date.parse(`${String(params.startTime)}Z`)).toBe(
+			15 * 60_000,
+		)
+		const garbled = routeChanged(ready(), { ...ROUTE, search: { range: "soon", from: 7 } }, context)
+		expect(names(garbled.commands)).toEqual([])
 	})
 
 	test("Edit flips mode=edit in the URL and keeps the view params", () => {
@@ -276,6 +347,71 @@ describe("dashboard view", () => {
 		expect(released.model.gesture).toBeNull()
 	})
 
+	test("a window narrowed into another tier mid-drag cancels the drag instead of saving a projection", () => {
+		const editing = pageUpdate(
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
+			Message.MeasuredGrid({ width: 1200 }),
+		).model
+		const pressed = pageUpdate(
+			editing,
+			Message.PressedGrip({ widgetId: "total-errors", clientX: 100, clientY: 100 }),
+		).model
+		const dragged = pageUpdate(
+			pressed,
+			Message.MovedPointer({ clientX: 700, clientY: 100, gridLeft: 0, gridTop: 0 }),
+		).model
+		expect(dragged.gesture?.isStarted).toBe(true)
+		const narrowed = pageUpdate(dragged, Message.MeasuredGrid({ width: 500 })).model
+		expect(narrowed.gesture).toBeNull()
+		const released = pageUpdate(narrowed, Message.ReleasedPointer())
+		expect(names(released.commands)).toEqual([])
+	})
+
+	test("a tap whose release was missed does not hijack the next drag", () => {
+		const editing = pageUpdate(
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
+			Message.MeasuredGrid({ width: 1200 }),
+		).model
+		// The release came before the window listeners attached, so no ReleasedPointer arrives.
+		const tapped = pageUpdate(
+			editing,
+			Message.PressedGrip({ widgetId: "total-errors", clientX: 100, clientY: 100 }),
+		).model
+		const pressed = pageUpdate(
+			tapped,
+			Message.PressedGrip({ widgetId: "error-rate", clientX: 400, clientY: 100 }),
+		).model
+		expect(pressed.gesture?.widgetId).toBe("error-rate")
+		const dragged = pageUpdate(
+			pressed,
+			Message.MovedPointer({ clientX: 1000, clientY: 100, gridLeft: 0, gridTop: 0 }),
+		).model
+		const released = pageUpdate(dragged, Message.ReleasedPointer())
+		expect(names(released.commands)).toEqual([UpdateWidgetLayouts.name])
+		const xOf = (id: string) => released.model.droppedLayout?.find((item) => item.i === id)?.x
+		expect(xOf("total-errors")).toBe(0)
+		expect(xOf("error-rate")).toBeGreaterThan(0)
+	})
+
+	test("a window narrowed during a keyboard move puts the tile back without a write", () => {
+		const editing = pageUpdate(
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
+			Message.MeasuredGrid({ width: 1200 }),
+		).model
+		const key = (value: string) =>
+			Message.PressedGripKey({
+				widgetId: "total-errors",
+				label: "Total errors",
+				key: value,
+				isShift: false,
+			})
+		const moved = pageUpdate(pageUpdate(editing, key(" ")).model, key("ArrowRight")).model
+		const narrowed = pageUpdate(moved, Message.MeasuredGrid({ width: 500 }))
+		expect(narrowed.model.keyboardMove).toBeNull()
+		expect(names(narrowed.commands)).toEqual([])
+		expect(narrowed.model.gridAnnouncement).toMatch(/^Move cancelled/)
+	})
+
 	test("a tile picked up with Space moves with the arrows; Escape puts it back without a write", () => {
 		const editing = pageUpdate(
 			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
@@ -306,6 +442,14 @@ describe("dashboard view", () => {
 		expect(fromView.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/dashboards/dash_platform?mode=edit",
+				isReplace: false,
+			}),
+		)
+		// A viewer's own range stays behind: edit mode works on the board's saved range.
+		const ranged = routeChanged(ready(), { ...ROUTE, search: { range: "7d", tab: "a" } }, context).model
+		expect(pageUpdate(ranged, pick).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_platform?mode=edit&tab=a",
 				isReplace: false,
 			}),
 		)

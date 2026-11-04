@@ -1,5 +1,5 @@
 import { DashboardWidgetSchema } from "@maple/domain/http"
-import { mutateDashboard } from "./page/dashboards/kit/store"
+import { errorMessageOf, mutateDashboard } from "./page/dashboards/kit/store"
 import { Clock, Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
@@ -44,7 +44,12 @@ export const RestoreDashboardWidgets = Command.define("RestoreDashboardWidgets",
 			return missing.length === 0
 				? document
 				: { ...document, widgets: [...document.widgets, ...missing], updatedAt: nowIso }
-		}).pipe(Effect.ignore, Effect.as(Message.CompletedRestoreDashboardWidgets())),
+		}).pipe(
+			Effect.as(Message.CompletedRestoreDashboardWidgets({ error: null })),
+			Effect.catch((error) =>
+				Effect.succeed(Message.CompletedRestoreDashboardWidgets({ error: errorMessageOf(error) })),
+			),
+		),
 })
 
 export const NavigateInternal = Command.define("NavigateInternal", {
