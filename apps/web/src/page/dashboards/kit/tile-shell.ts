@@ -268,6 +268,32 @@ const failedState = <M>(
 		],
 	)
 
+/** The chart code failed to load: canvas charts cannot draw until the page reloads. */
+export const chartRuntimeFailedState = <M>(h: HtmlBuilder<M>, reloadPage: M | null): Html =>
+	h.div(
+		[h.Class("flex items-center justify-center h-full flex-col gap-1.5 px-3")],
+		[
+			h.span(
+				[h.Class(cn(typographyClass({ size: "xs", weight: "medium" }), TONE_TEXT.crit))],
+				["Charts couldn't load"],
+			),
+			...(reloadPage === null
+				? []
+				: [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								className: "mt-1 text-3xs",
+								attributes: [h.OnClick(reloadPage)],
+							},
+							["Reload page"],
+						),
+					]),
+		],
+	)
+
 export type FrameOptions<M> = ShellOptions &
 	Readonly<{
 		state: WidgetDataState

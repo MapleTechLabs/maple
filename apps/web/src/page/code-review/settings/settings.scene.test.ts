@@ -116,6 +116,8 @@ describe("code review settings", () => {
 			}),
 		)
 		expect(names(saved.commands)).toEqual(["FetchCodeReviewSettingsStatus"])
+		// The switch shows the new state; a toast would cover the next rows.
+		expect(saved.outMessage).toBeUndefined()
 		const late = pageUpdate(
 			saved.model,
 			Message.CompletedFetchStatus({

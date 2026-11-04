@@ -95,7 +95,12 @@ export const historyStep = (model: Model, message: HistoryMessage): Return => {
 		case "CompletedFetchVersions":
 			return message.generation !== history.versionsGeneration
 				? { model }
-				: { model: withHistory(model, { versions: toAsync(message.result) }) }
+				: {
+						model: withHistory(model, {
+							versions: toAsync(message.result),
+							listedAtMs: message.nowMs,
+						}),
+					}
 		case "ClickedVersion":
 			return preview(model, message.versionId)
 		case "CompletedFetchSnapshot":

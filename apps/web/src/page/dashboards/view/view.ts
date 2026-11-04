@@ -7,7 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { alert, alertDescription } from "@maple/views/ui/alert"
+import { alert, alertAction, alertDescription } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import {
@@ -208,6 +208,17 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 const persistenceBanner = (h: H, error: string): Html =>
 	alert(h, { variant: "crit", size: "sm", className: "mb-4" }, [
 		alertDescription(h, [error, ". Dashboard editing is temporarily disabled."], TONE_TEXT.crit),
+		alertAction(h, [
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					attributes: [h.OnClick(Message.ClickedRetryPersistence())],
+				},
+				["Retry"],
+			),
+		]),
 	])
 
 const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => {
@@ -269,7 +280,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							...(model.history.isOpen
 								? {
 										rightPanel: historyPanel(h, model, {
-											nowMs: model.nowMs ?? 0,
+											nowMs: Math.max(model.nowMs ?? 0, model.history.listedAtMs),
 											timeZone: inputs.context.timeZone,
 										}),
 										rightPanelWidth: "w-80",
