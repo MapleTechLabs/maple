@@ -120,7 +120,7 @@ describe("hunterPrompt", () => {
 			},
 			{ ...context, execution: { _tag: "Available", limits: "60s, 512 MiB" } },
 		)
-		const confirmedBranch = '"const": "confirmed"'
+		const confirmedBranch = '"const":"confirmed"'
 		for (const scaffold of ["agents/hunter-1/scratch", "agents/hunter-1/artifacts", confirmedBranch]) {
 			expect(available).toContain(scaffold)
 			expect(prompt).not.toContain(scaffold)

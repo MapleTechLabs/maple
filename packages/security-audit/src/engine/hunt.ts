@@ -3,7 +3,7 @@
  * before any hunter launches; a `deep` run repeats waves until a post-wave critic and a separate
  * final-clean critic both accept no work.
  */
-import { Effect, Ref, Schema, Array as Arr } from "effect"
+import { Effect, Ref, Schema, Array as Arr, Record as Rec } from "effect"
 import { criticPrompt, hunterPrompt } from "../prompts"
 import { type Candidate, candidateErrors, CriticResult, HunterResult } from "../results"
 import { ledgerErrors } from "../validators"
@@ -190,13 +190,66 @@ const runHunter = (
 		])
 	})
 
-/** A compact ledger for the critic: every unit and block map, without check prose. */
-const criticLedger = (ledger: ReadonlyArray<LedgerUnit>) =>
-	Arr.map(ledger, ({ local_checks, attempts, hardening: _h, ...unit }) => ({
-		...unit,
-		checks: Arr.map(local_checks, (check) => check.invariant),
-		attempts: attempts.length,
-	}))
+/** The critic's short name for the ledger unit at `index`; `reassign_ids` answers with it. */
+const criticAlias = (index: number) => `U${index + 1}`
+
+/** Defaults a new unit starts with: the critic reads their absence the same way. */
+const CRITIC_DEFAULTS = new Map<string, unknown>([
+	["prior_status", "none"],
+	["wave", 1],
+	["attempts", 0],
+])
+
+const informative = (value: unknown, key: string) =>
+	value !== null &&
+	value !== undefined &&
+	!(Arr.isArray(value) && value.length === 0) &&
+	CRITIC_DEFAULTS.get(key) !== value
+
+/**
+ * A compact ledger for the critic: every unit and block map, without check prose, owners,
+ * scheduling bookkeeping (`priority`, `failed_attempts`) or empty fields. `coverage_id` is its canonical refs encoded, so a short alias
+ * stands in for it. A 150-unit ledger was 113k tokens with all of it.
+ */
+export const criticLedger = (ledger: ReadonlyArray<LedgerUnit>) =>
+	Arr.map(ledger, (unit, index) =>
+		Rec.filter(
+			{
+				id: criticAlias(index),
+				status: unit.status,
+				canonical_refs: unit.canonical_refs,
+				surface: unit.surface,
+				boundary: unit.boundary,
+				subsystem: unit.subsystem,
+				attack_class: unit.attack_class,
+				lifecycle: unit.lifecycle,
+				starting_paths: unit.starting_paths,
+				ordinary_attack_class_block: unit.ordinary_attack_class_block,
+				selected_companion_blocks: unit.selected_companion_blocks,
+				excluded_blocks: unit.excluded_blocks,
+				prior_status: unit.prior_status,
+				wave: unit.wave,
+				reviewed_paths: unit.reviewed_paths,
+				checks: Arr.map(unit.local_checks, (check) => check.invariant),
+				result_fingerprints: unit.result_fingerprints,
+				carried_fingerprint: unit.carried_fingerprint,
+				resolved_prior_leads: unit.resolved_prior_leads,
+				not_rechecked: unit.not_rechecked,
+				decisions: unit.decisions,
+				unresolved: unit.unresolved,
+				attempts: unit.attempts.length,
+			} satisfies Record<string, unknown>,
+			informative,
+		),
+	)
+
+/** A critic's `reassign_ids` as coverage IDs: its aliases, or a full coverage ID it quoted. */
+const resolveCriticIds = (ledger: ReadonlyArray<LedgerUnit>, ids: ReadonlyArray<string>) =>
+	Arr.map(ids, (id) => {
+		const match = /^U(\d+)$/u.exec(id)
+		const unit = match === null ? undefined : ledger[Number(match[1]) - 1]
+		return unit === undefined ? id : unit.coverage_id
+	})
 
 /**
  * Runs one critic and applies what it accepts. Returns the amount of accepted work, or undefined.
@@ -240,6 +293,8 @@ const runCritic = (
 		// One repair turn before the run loses its planning: a critic's JSON is long and easy to break.
 		const result = yield* engine.invokeRepairing("critic", agentId, prompt, CriticResult)
 		if (result === undefined) return undefined
+		// Aliases name units of the ledger the critic was shown.
+		const reassignIds = resolveCriticIds(s.ledger, result.reassign_ids)
 		const refusals = Arr.flatMap(result.missing_units, (unit) => {
 			const reason = unitRefusal(unit)
 			return reason === undefined ? [] : [`${unit.surface} / ${unit.attack_class}: ${reason}`]
@@ -263,7 +318,7 @@ const runCritic = (
 				),
 			)
 			const reassign = new Set(
-				Arr.filter(result.reassign_ids, (id) =>
+				Arr.filter(reassignIds, (id) =>
 					Arr.some(
 						current.ledger,
 						(u) =>

@@ -1,4 +1,3 @@
-import { viewerTimeRangeOf } from "./plan"
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
 import { REFRESH_INTERVAL_OPTIONS } from "../../../lib/dashboard-controls/search-params"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -18,7 +17,7 @@ import { codeBlock } from "../../settings/kit/code-block"
 import type { Variable } from "../kit/variables"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { optionsByNameOf, variablesOf } from "./plan"
+import { optionsByNameOf, shareLinkRangeOf, variablesOf } from "./plan"
 import { boardShareOf, chartShareOf, embedUrl, ShareMessage } from "./share"
 import { shareLinkRow } from "./view-share"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -271,13 +270,21 @@ const embedContent = (h: H, model: Model, context: PageContext): ReadonlyArray<H
 							...shareLinkRow(
 								h,
 								model,
-								embedUrl(model.sharing.origin, share.token, viewerTimeRangeOf(model)),
+								embedUrl(
+									model.sharing.origin,
+									share.token,
+									shareLinkRangeOf(model, context.timeZone),
+								),
 								"Every existing embed of this chart stops working until it is updated with the new link.",
 							),
 							iframeSnippet(
 								h,
 								model,
-								embedUrl(model.sharing.origin, share.token, viewerTimeRangeOf(model)),
+								embedUrl(
+									model.sharing.origin,
+									share.token,
+									shareLinkRangeOf(model, context.timeZone),
+								),
 							),
 							urlOptions(h, model, context),
 						]

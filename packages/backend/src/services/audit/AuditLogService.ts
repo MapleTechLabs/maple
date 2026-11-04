@@ -6,6 +6,7 @@ import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
 import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/domain/primitives"
 import * as CH from "@maple/query-engine/ch"
 import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -281,14 +282,16 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 							),
 						)
 
-			const record: AuditLogServiceApi["record"] = Effect.fn("AuditLogService.record")(
-				function* (input) {
-					const now = yield* Clock.currentTimeMillis
-					const event = makeEvent(input, now)
-					yield* logDenied(event)
-					yield* publish(event).pipe(neverFail(input.action))
-				},
-			)
+			const write = Effect.fn("AuditLogService.record")(function* (event: AuditLogEvent) {
+				yield* logDenied(event)
+				yield* publish(event).pipe(neverFail(event.action))
+			})
+
+			// Stamped now, sent after the response: the send was ~80 ms on every audited read.
+			const record: AuditLogServiceApi["record"] = (input) =>
+				Effect.flatMap(Clock.currentTimeMillis, (now) =>
+					runAfterResponse(write(makeEvent(input, now))),
+				)
 
 			const list: AuditLogServiceApi["list"] = Effect.fn("AuditLogService.list")(
 				function* (orgId, filters) {

@@ -1,4 +1,5 @@
-import { viewerTimeRangeOf } from "./plan"
+import type { PageContext } from "../../contract"
+import { shareLinkRangeOf } from "./plan"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -133,7 +134,7 @@ const accessOption = (
 		],
 	)
 
-const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
+const panelContent = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => {
 	const shares = AsyncData.getOrElse(model.sharing.shares, () => [])
 	const boardShare = boardShareOf(shares)
 	const serverAccess: Access = boardShare?.mode ?? "off"
@@ -158,7 +159,11 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 			: shareLinkRow(
 					h,
 					model,
-					shareUrl(model.sharing.origin, boardShare.token, viewerTimeRangeOf(model)),
+					shareUrl(
+						model.sharing.origin,
+						boardShare.token,
+						shareLinkRangeOf(model, context.timeZone),
+					),
 					"Anyone using the current link loses access to this dashboard. Chart embeds keep working.",
 				)),
 		...(unsupported.length > 0 && boardShare !== undefined
@@ -183,7 +188,7 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 	]
 }
 
-export const shareDialog = (h: H, model: Model): Html => {
+export const shareDialog = (h: H, model: Model, context: PageContext): Html => {
 	const id = model.sharing.dialog.id
 	return h.submodel({
 		slotId: "dashboard-share-dialog",
@@ -206,7 +211,7 @@ export const shareDialog = (h: H, model: Model): Html => {
 						"Anyone you share with sees this dashboard's data, but cannot edit it.",
 					),
 				]),
-				DialogView.dialogPanel(h, "dialog", id, panelContent(h, model), "space-y-4"),
+				DialogView.dialogPanel(h, "dialog", id, panelContent(h, model, context), "space-y-4"),
 				DialogView.dialogFooter(h, "dialog", [
 					button(h, { variant: "outline", attributes: close }, ["Done"]),
 				]),

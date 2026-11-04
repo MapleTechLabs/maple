@@ -82,16 +82,79 @@ describe("OrganizationRegionService", () => {
 		}),
 	)
 
-	it.effect("a chosen region expires 60 s after Clerk was read, in every tier", () =>
+	it.effect("a chosen region stays 10 min in the isolate, then comes from the shared cache", () =>
+		Effect.gen(function* () {
+			const backend = makeMemoryBackend()
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			const regions = yield* isolate(backend, directory)
+			yield* regions.ensureServedHere(orgId)
+			yield* TestClock.adjust("9 minutes")
+			yield* regions.ensureServedHere(orgId)
+			// Past the isolate's 10 min, the shared copy (still under its hour) answers.
+			yield* TestClock.adjust("2 minutes")
+			yield* regions.ensureServedHere(orgId)
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+		}),
+	)
+
+	it.effect("an answer from the shared cache is held 10 min from when it arrived", () =>
+		Effect.gen(function* () {
+			const memory = makeMemoryBackend()
+			let edgeReads = 0
+			const backend: EdgeCacheBackend = {
+				...memory,
+				get: (bucket, hash, nowMs) => {
+					edgeReads += 1
+					return memory.get(bucket, hash, nowMs)
+				},
+			}
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			yield* (yield* isolate(backend, directory)).ensureServedHere(orgId)
+			yield* TestClock.adjust("30 minutes")
+			const second = yield* isolate(backend, directory)
+			yield* second.ensureServedHere(orgId)
+			const afterArrival = edgeReads
+			// Read from Clerk 39 min ago, but here for only 9: the isolate still answers.
+			yield* TestClock.adjust("9 minutes")
+			yield* second.ensureServedHere(orgId)
+			assert.strictEqual(edgeReads, afterArrival)
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+		}),
+	)
+
+	it.effect("a read in flight when the region is forgotten caches nothing", () =>
+		Effect.gen(function* () {
+			const backend = makeMemoryBackend()
+			const gate = yield* Deferred.make<void>()
+			const reads = yield* Ref.make(0)
+			const read: ReadDirectoryOrganization = () =>
+				Ref.updateAndGet(reads, (n) => n + 1).pipe(
+					Effect.tap((n) => (n === 1 ? Deferred.await(gate) : Effect.void)),
+					Effect.as(Option.some(chosen("us"))),
+				)
+			const regions = yield* isolate(backend, { read })
+			const inFlight = yield* Effect.forkChild(regions.ensureServedHere(orgId))
+			yield* TestClock.adjust("50 millis")
+			yield* regions.forget(orgId)
+			yield* Deferred.succeed(gate, undefined)
+			yield* Fiber.join(inFlight)
+			// Neither the isolate nor the shared cache kept the pre-forget answer.
+			yield* regions.ensureServedHere(orgId)
+			assert.strictEqual(yield* Ref.get(reads), 2)
+		}),
+	)
+
+	it.effect("a chosen region expires an hour after Clerk was read, in every tier", () =>
 		Effect.gen(function* () {
 			const backend = makeMemoryBackend()
 			const directory = yield* makeDirectory(Option.some(chosen("us")))
 			yield* (yield* isolate(backend, directory)).ensureServedHere(orgId)
-			yield* TestClock.adjust("30 seconds")
+			yield* TestClock.adjust("55 minutes")
 			const second = yield* isolate(backend, directory)
 			yield* second.ensureServedHere(orgId)
-			// The second isolate got the answer at 30 s, but it was read at 0 s.
-			yield* TestClock.adjust("30 seconds")
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+			// The second isolate got the answer at 55 min, but it was read at 0.
+			yield* TestClock.adjust("6 minutes")
 			yield* second.ensureServedHere(orgId)
 			assert.strictEqual(yield* Ref.get(directory.reads), 2)
 		}),

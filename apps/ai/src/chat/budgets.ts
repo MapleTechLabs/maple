@@ -151,5 +151,11 @@ export const CHAT_BUDGET: AgentBudget = {
 export const MAX_LIVE_CONTEXT_TOKENS = 128_000
 const LIVE_CONTEXT_FRACTION = 0.6
 
-export const liveContextLimit = (modelContextTokens: number): number =>
-	Math.max(1, Math.min(Math.floor(modelContextTokens * LIVE_CONTEXT_FRACTION), MAX_LIVE_CONTEXT_TOKENS))
+/**
+ * The security audit's cap. Its agents start from an empty history, but a coverage critic's first
+ * prompt carries the whole ledger: 113k tokens on a large monorepo, so 128k killed it after one read.
+ */
+export const AUDIT_MAX_LIVE_CONTEXT_TOKENS = 600_000
+
+export const liveContextLimit = (modelContextTokens: number, cap: number = MAX_LIVE_CONTEXT_TOKENS): number =>
+	Math.max(1, Math.min(Math.floor(modelContextTokens * LIVE_CONTEXT_FRACTION), cap))
