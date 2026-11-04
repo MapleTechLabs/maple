@@ -9,6 +9,7 @@ import {
 	type FeatureUsagePricing,
 	type PlanLike,
 } from "@maple/domain/billing"
+import { spendLimitFor } from "./controls"
 import { sentenceCasePlanName } from "./plans"
 import { formatQuoteUnits, quoteUnits } from "./usage"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
@@ -271,6 +272,7 @@ export function buildSpendModel({
 			unlimited: balance?.unlimited === true,
 			// A hard-capped feature bills no overage — see `billsOverage`.
 			overageAllowed: balance?.overageAllowed,
+			overageLimit: spendLimitFor(customer, featureId)?.overageLimit,
 		}
 	}
 

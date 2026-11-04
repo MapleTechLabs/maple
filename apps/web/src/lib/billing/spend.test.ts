@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
 	BillingBalance,
+	BillingControls,
 	BillingCustomer,
 	BillingSubscription,
+	BillingSpendLimit,
 	BillingUsageFeature,
 	CatalogPlan,
 	CatalogPlanItem,
@@ -58,10 +60,26 @@ const buildCustomer = (
 	overrides: {
 		subscriptions?: ReadonlyArray<SubscriptionInput>
 		balances?: Record<string, Partial<BillingBalance>>
+		overageCaps?: Record<string, number>
 	} = {},
 ): BillingCustomer =>
 	new BillingCustomer({
 		id: "cus_1",
+		billingControls:
+			overrides.overageCaps === undefined
+				? null
+				: new BillingControls({
+						spendLimits: Arr.map(
+							Rec.toEntries(overrides.overageCaps),
+							([featureId, overageLimit]) =>
+								new BillingSpendLimit({
+									featureId,
+									enabled: true,
+									limitType: "absolute",
+									overageLimit,
+								}),
+						),
+					}),
 		subscriptions: Arr.map(
 			overrides.subscriptions ?? [
 				{
@@ -149,6 +167,60 @@ describe("buildSpendModel", () => {
 		// 320 GB + 40 GB/2 days × 28 days = 880 GB, 780 GB over at $0.30.
 		// Pacing the whole balance over 2 days would have projected 4,800 GB.
 		expect(result.projectedCents).toBe(3_900 + 23_400)
+	})
+
+	it("never projects past the base fee when every overage cap is zero", () => {
+		const day = 86_400_000
+		const customer = buildCustomer({
+			subscriptions: [
+				{
+					planId: "startup",
+					status: "active",
+					addOn: false,
+					currentPeriodStart: CYCLE_START,
+					currentPeriodEnd: CYCLE_START + 30 * day,
+				},
+			],
+			balances: { logs: { granted: 100 }, traces: { granted: 100 } },
+			overageCaps: { logs: 0, traces: 0, metrics: 0, browser_sessions: 0, product_events: 0 },
+		})
+		// 90 GB of logs in the first day paces to 2,700 GB: $780 uncapped.
+		const result = buildSpendModel({
+			customer,
+			plans: [startupPlan],
+			usage: usageOf({ logs: 90, traces: 10 }),
+			nowMs: CYCLE_START + day,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.projectedCents).toBe(3_900)
+	})
+
+	it("projects a capped feature up to its cap", () => {
+		const day = 86_400_000
+		const customer = buildCustomer({
+			subscriptions: [
+				{
+					planId: "startup",
+					status: "active",
+					addOn: false,
+					currentPeriodStart: CYCLE_START,
+					currentPeriodEnd: CYCLE_START + 30 * day,
+				},
+			],
+			balances: { logs: { granted: 100 } },
+			overageCaps: { logs: 200 },
+		})
+		const result = buildSpendModel({
+			customer,
+			plans: [startupPlan],
+			usage: usageOf({ logs: 90 }),
+			nowMs: CYCLE_START + day,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		// 200 GB cap × $0.30 on top of the $39 base.
+		expect(result.projectedCents).toBe(3_900 + 6_000)
 	})
 
 	it("names the top cost driver by overage dollars, not by volume", () => {
