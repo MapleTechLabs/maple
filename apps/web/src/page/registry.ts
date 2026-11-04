@@ -351,6 +351,10 @@ export const blockNavigation = (
 	)
 }
 
+/** The open instance holds unsaved state, so a reload or tab close asks first (`beforeunload`). */
+export const isBlockingUnload = (current: PageSlot | null): boolean =>
+	current !== null && Option.exists(pageById(current._tag), (page) => page.isBlockingNavigation(current))
+
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>
 	current === null
 		? unchanged(current)

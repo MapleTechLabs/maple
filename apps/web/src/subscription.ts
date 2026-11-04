@@ -9,7 +9,7 @@ import { readEffectiveTimeZone, TIME_ZONE_PREFERENCE_EVENT, TIMEZONE_STORAGE_KEY
 import { rendersShell } from "./page/chrome"
 import * as Preload from "./page/preload"
 import * as TooltipHost from "@maple/views/ui/tooltip-host"
-import { pageSubscriptions } from "./page/registry"
+import { isBlockingUnload, pageSubscriptions } from "./page/registry"
 import * as TimeRangePicker from "./page/kit/time-range-picker"
 import { onboardingInputsOf, pageContextOf } from "./update"
 import * as Onboarding from "./page/onboarding"
@@ -30,6 +30,16 @@ const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 		if (!event.altKey || !(exclude instanceof HTMLButtonElement)) return Option.none()
 		event.preventDefault()
 		exclude.click()
+		return Option.none()
+	},
+})
+
+/** Emits nothing: the browser's own leave prompt on reload or tab close, while subscribed. */
+const unloadPrompt: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
+	target: () => window,
+	type: "beforeunload",
+	filterMapEvent: (event): Option.Option<Message> => {
+		event.preventDefault()
 		return Option.none()
 	},
 })
@@ -266,6 +276,18 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				Stream.when(
 					Stream.map(TooltipHost.whileEngaged, (message) => Message.GotTooltipMessage({ message })),
 					Effect.sync(() => isEngaged),
+				),
+		},
+	),
+	/** `useBlocker`'s reload half: a page with unsaved state asks before the tab unloads. */
+	unloadGuard: entry(
+		{ isBlocking: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({ isBlocking: isBlockingUnload(model.page) }),
+			dependenciesToStream: ({ isBlocking }) =>
+				Stream.when(
+					unloadPrompt,
+					Effect.sync(() => isBlocking),
 				),
 		},
 	),
