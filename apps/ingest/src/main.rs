@@ -5570,7 +5570,11 @@ async fn handle_signal_inner(
     let decoded_bytes = claims.metered_bytes(decoded_payload.len());
     let item_count = claims.retained.metered_items(item_count);
 
-    let response = response_result.map_err(|error| (error, "forward"))?;
+    // A scan-budget refusal keeps its own kind: it loses the sender's data, unlike a forward failure.
+    let response = response_result.map_err(|error| {
+        let kind = error.error_kind();
+        (error, if kind == INGEST_RULES_SCAN_BUDGET.error_kind { kind } else { "forward" })
+    })?;
     if response.status().is_success() {
         state.resolver.note_source_use(&resolved_key, kept_claim);
         state
@@ -16788,14 +16792,15 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
-    /// Sends one email-bearing log as `raw_key` and returns the refusal; nothing may be forwarded.
+    /// Sends one email-bearing log as `raw_key` and returns the refusal and the kind its span
+    /// records; nothing may be forwarded.
     async fn refused_unforwarded(
         state: &AppState,
         raw_key: &str,
         forward_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
-    ) -> ApiError {
+    ) -> (ApiError, &'static str) {
         let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
-        let Err((error, _)) =
+        let Err((error, kind)) =
             handle_signal_inner(state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await
         else {
             panic!("the payload must be refused");
@@ -16806,7 +16811,7 @@ mod tests {
                 .is_err(),
             "nothing may be forwarded unredacted"
         );
-        error
+        (error, kind)
     }
 
     #[tokio::test]
@@ -16838,7 +16843,7 @@ mod tests {
         let state = with_ingest_rules(state, &store);
 
         for _ in 0..2 {
-            let error = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
+            let (error, _) = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
             assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
         }
         assert_eq!(
@@ -16869,10 +16874,11 @@ mod tests {
             IngestRuleResolver::new(Arc::<FakeKeyStore>::clone(&store), true, Duration::from_secs(30), 16)
                 .with_scan_budget(40);
 
-        let error = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
+        let (error, kind) = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
         assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        // `kind` is what the HTTP server span records.
         assert_eq!(
-            otel_status_for_rejection(error.status.as_u16(), error.error_kind()),
+            otel_status_for_rejection(error.status.as_u16(), kind),
             "Error",
             "the sender's data is lost, so the span must count as an error"
         );
