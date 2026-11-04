@@ -6,6 +6,9 @@ import type * as MenuView from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { refreshControls as sharedRefreshControls } from "../../kit/refresh-controls"
 import { presetLabel } from "../../kit/time-controls"
+import type { TimeRange } from "@maple/domain/http"
+import { timeRangeDisplay } from "../kit/time-range-label"
+import { timeRangeOf } from "./plan"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -89,15 +92,17 @@ const moreMenu = (h: H, model: Model): Html =>
 		toParentMessage: (message) => Message.GotMoreMenuMessage({ message }),
 	})
 
-const timeLabel = (model: Model): string =>
-	model.timeRange === null
+/** The trigger's label; a custom window reads like the widget chips ("Last 2 hours", or both ends). */
+const timeLabel = (timeRange: TimeRange | null, timeZone: string, nowMs: number | null): string =>
+	timeRange === null
 		? ""
-		: model.timeRange.type === "relative"
-			? presetLabel(model.timeRange.value)
-			: `${model.timeRange.startTime} - ${model.timeRange.endTime}`
+		: timeRange.type === "relative"
+			? presetLabel(timeRange.value)
+			: timeRangeDisplay(timeRange.startTime, timeRange.endTime, timeZone, nowMs ?? 0)
 
 export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 	const timeZone = context.timeZone
+	const timeRange = timeRangeOf(model)
 	const isEdit = isEditing(model)
 	const isReadOnly = model.persistenceError !== null || model.history.previewed !== null
 	return h.div(
@@ -112,8 +117,8 @@ export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 				model: model.timePicker,
 				view: TimeRangePicker.view,
 				viewInputs: {
-					label: timeLabel(model),
-					selectedPreset: model.timeRange?.type === "relative" ? model.timeRange.value : undefined,
+					label: timeLabel(timeRange, timeZone, model.nowMs),
+					selectedPreset: timeRange?.type === "relative" ? timeRange.value : undefined,
 					presets: TimeRangePicker.PRESET_VALUES,
 					timeZone,
 				},

@@ -1,4 +1,4 @@
-import { DashboardDocument, TimeRangeSchema } from "@maple/domain/http"
+import { DashboardDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -79,6 +79,10 @@ export const GridGesture = Schema.Struct({
 	dy: Schema.Number,
 	/** Past the 3 px threshold: until then a press is still a click. */
 	isStarted: Schema.Boolean,
+	/** The canonical grid's columns at the press: a resize into another tier cancels the gesture. */
+	cols: Schema.Number,
+	/** The container the tile was pressed in: moving it to another container cancels the gesture. */
+	key: Schema.String,
 	/** The grid's viewport position at the first frame; auto-scrolling moves it under the pointer. */
 	gridOrigin: Schema.NullOr(Schema.Struct({ left: Schema.Number, top: Schema.Number })),
 	/** The tile's box when it was picked up, inside the grid's padding box. */
@@ -92,6 +96,9 @@ export type GridGesture = typeof GridGesture.Type
 export const KeyboardMove = Schema.Struct({
 	widgetId: Schema.String,
 	label: Schema.String,
+	/** The canonical grid's columns and container at pick-up, as for `GridGesture`. */
+	cols: Schema.Number,
+	key: Schema.String,
 	origin: Schema.Array(GridItem),
 	preview: Schema.Array(GridItem),
 })
@@ -104,8 +111,7 @@ export const Model = Schema.Struct({
 	search: DashboardSearch,
 	status: Status,
 	document: Schema.NullOr(DashboardDocument),
-	/** `DashboardTimeRange`: seeded from the document once, then the picker's. */
-	timeRange: Schema.NullOr(TimeRangeSchema),
+	/** The clock the window is resolved against: read on entry, Reload and a time range change. */
 	nowMs: Schema.NullOr(Schema.Number),
 	/** `PageRefreshProvider.refreshVersion`: 0 snaps the window to the cache grid. */
 	refreshVersion: Schema.Number,
@@ -146,7 +152,6 @@ export const Model = Schema.Struct({
 	/** Which container the dropped layout belongs to. */
 	droppedKey: Schema.NullOr(Schema.String),
 	persistenceError: Schema.NullOr(Schema.String),
-	/** Failed tiles' "Details" popovers and their copy buttons, by widget id. */
 	/** Which grid the picker's next widget lands in: a group's own "+", reset when it closes. */
 	pickerTarget: Schema.NullOr(SectionTargetSchema),
 	/** The one open group options menu. */
@@ -165,6 +170,7 @@ export const Model = Schema.Struct({
 	pendingSectionDelete: Schema.NullOr(Schema.String),
 	tabDialog: Dialog.Model,
 	pendingTabDelete: Schema.NullOr(SectionTargetSchema),
+	/** Failed tiles' "Details" popovers and their copy buttons, by widget id. */
 	errorDetails: Schema.Record(Schema.String, Popover.Model),
 	errorCopies: Schema.Record(Schema.String, CopyButton.Model),
 	/** Each query variable's option list, by variable name (custom ones are inline). */

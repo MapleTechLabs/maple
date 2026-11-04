@@ -1,4 +1,5 @@
 import {
+	DashboardDocument,
 	DashboardId,
 	defaultWidgetLayout,
 	DashboardRefreshIntervalSeconds,
@@ -21,6 +22,7 @@ import {
 } from "../kit/layout"
 import { errorMessageOf, mutateDashboard, readDocument, type WriteSync } from "../kit/store"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
+import { getWidgetServerFunction } from "@maple/web-data/warehouse/widget-data-sources"
 import { fetchVariableOptions } from "../kit/variables"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
@@ -34,6 +36,22 @@ export const ReadClock = Command.define("ReadDashboardClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
 })
 
+/** The chart code failed to load: a fresh page load is the only way to fetch it again. */
+export const ReloadPage = Command.define("ReloadDashboardPage", {
+	messages: [Message.ReloadedPage],
+	execute: Effect.sync(() => {
+		window.location.reload()
+		return Message.ReloadedPage()
+	}),
+})
+
+const WIDGET_FAILURE_KIND = "maple.dashboard.widget.failure_kind"
+
+/** The widget endpoint when it is a catalog name (the args scrubber redacts the `endpoint` arg). */
+const widgetEndpointAttribute = (endpoint: string) => ({
+	"maple.dashboard.widget.endpoint": getWidgetServerFunction(endpoint) === undefined ? "unknown" : endpoint,
+})
+
 /** `widgetFetchAtom`: one fetch per request key, however many tiles share it. */
 export const FetchWidget = Command.define("FetchDashboardWidget", {
 	args: {
@@ -45,7 +63,11 @@ export const FetchWidget = Command.define("FetchDashboardWidget", {
 	execute: ({ key, endpoint, params }) =>
 		fetchWidgetData(endpoint, params).pipe(
 			Effect.mapError(toWidgetFailure),
+			Effect.tapError((failure) => Effect.annotateCurrentSpan(WIDGET_FAILURE_KIND, failure.kind)),
+			// The command span is Ok (its Message carries the Result); this child records the failure.
+			Effect.withSpan("dashboard.widget.fetch", { attributes: widgetEndpointAttribute(endpoint) }),
 			Effect.result,
+			Effect.tap(() => Effect.annotateCurrentSpan(widgetEndpointAttribute(endpoint))),
 			Effect.map((result) => Message.CompletedFetchWidget({ key, result })),
 		),
 })
@@ -191,13 +213,16 @@ export const UpdateWidgetLayouts = Command.define("UpdateDashboardWidgetLayouts"
 })
 
 export const ExportDashboard = Command.define("ExportDashboardJson", {
-	args: { orgId: Schema.String, dashboardId: Schema.String },
+	/** `snapshot`: a previewed version exports as shown, not the live board. */
+	args: { orgId: Schema.String, dashboardId: Schema.String, snapshot: Schema.NullOr(DashboardDocument) },
 	messages: [Message.CompletedExport],
-	execute: ({ orgId, dashboardId }) =>
-		readDocument(orgId, dashboardId).pipe(
+	execute: ({ orgId, dashboardId, snapshot }) =>
+		(snapshot === null ? readDocument(orgId, dashboardId) : Effect.succeed(snapshot)).pipe(
 			Effect.flatMap(downloadPortable),
-			Effect.ignore,
-			Effect.as(Message.CompletedExport()),
+			Effect.as(Message.CompletedExport({ error: null })),
+			Effect.catch((error) =>
+				Effect.succeed(Message.CompletedExport({ error: errorMessageOf(error) })),
+			),
 		),
 })
 

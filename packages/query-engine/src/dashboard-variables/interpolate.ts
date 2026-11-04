@@ -71,6 +71,24 @@ export function collectVariableRefs(input: string): string[] {
 	return names
 }
 
+/** Strings outside `*whereClause` keys: the places an "All" expands into option values. */
+const expandedStrings = (value: unknown, key?: string): string[] => {
+	if (key !== undefined && WHERE_CLAUSE_KEY.test(key)) return []
+	if (typeof value === "string") return [value]
+	if (Array.isArray(value)) return value.flatMap((item) => expandedStrings(item, key))
+	if (typeof value === "object" && value !== null)
+		return Object.entries(value).flatMap(([childKey, child]) => expandedStrings(child, childKey))
+	return []
+}
+
+/**
+ * Variables referenced where an "All" expands to the option list (SQL, values); a `whereClause`
+ * drops the clause for "All" instead, so it needs no options.
+ */
+export function collectExpandedVariableRefs(params: unknown): string[] {
+	return collectVariableRefs(expandedStrings(params).join("\n"))
+}
+
 // A whereClause is `clause AND clause AND ...` (the grammar has no OR). An
 // "All" selection means "don't filter on this at all", so the clause carrying
 // the reference is removed rather than substituted. Splitting uses the
