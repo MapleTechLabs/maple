@@ -14,7 +14,26 @@ export interface RepoSize {
 	readonly bytes: number
 	/** Files `.gitattributes` routes through Git LFS: pointers in the checkout, not content. */
 	readonly lfsFiles: number
+	/** Those of them that look like source or config, which an audit would need to read. */
+	readonly lfsSourceFiles: number
+	/** A few of their paths, for the refusal to name. */
+	readonly lfsSourceExamples: ReadonlyArray<string>
 }
+
+/**
+ * Code, config and key material an audit reads; any other LFS file (media, models, archives) is
+ * skipped. Plain `.json` and `.xml` are mostly data in LFS, so only their manifests count.
+ */
+const SOURCE_EXTENSIONS =
+	"ts tsx js jsx mjs cjs py rb go rs java kt kts scala swift m mm c cc cpp cxx h hh hpp cs php " +
+	"sh bash zsh ps1 sql lua dart ex exs erl clj vue svelte yaml yml toml tf hcl gradle properties ini conf cfg env " +
+	"html htm pem key crt"
+const SOURCE_NAMES =
+	"dockerfile makefile gemfile jenkinsfile package.json package-lock.json composer.json " +
+	"tsconfig.json deno.json pom.xml web.config"
+const alternatives = (words: string) => Str.replaceAll(" ", "|")(Str.replaceAll(".", "\\.")(words))
+const SOURCE_PATH = `(^|\\/)(${alternatives(SOURCE_NAMES)})$|\\.(${alternatives(SOURCE_EXTENSIONS)})$`
+const MAX_LFS_SOURCE_EXAMPLES = 3
 
 /** The run refused its repository before any agent started; `message` is the reason it is marked failed with. */
 export class AuditRepositoryRefusedError extends Schema.TaggedError<AuditRepositoryRefusedError>()(
@@ -22,7 +41,10 @@ export class AuditRepositoryRefusedError extends Schema.TaggedError<AuditReposit
 	{ message: Schema.String, violations: Schema.Array(Schema.String) },
 ) {}
 
-/** The probe's command: prints `<commits> <files> <bytes> <lfs files>` on one line. */
+/**
+ * The probe's command: prints `<commits> <files> <bytes> <lfs files> <lfs source files>` on one
+ * line, then up to three of those source paths, one per line.
+ */
 export const REPO_SIZE_COMMAND = {
 	command: "bash",
 	args: [
@@ -33,7 +55,9 @@ export const REPO_SIZE_COMMAND = {
 				"set -euo pipefail",
 				"commits=$(git --no-optional-locks rev-list --count HEAD)",
 				`tree=$(git --no-optional-locks ls-tree -r -l HEAD | awk '$2 == "blob" { n++; s += $4 } END { printf "%d %.0f", n, s }')`,
-				"lfs=$(git --no-optional-locks ls-files -- ':(attr:filter=lfs)' | wc -l)",
+				// NUL-delimited, so a path git would quote is matched as is; a newline inside a path
+				// becomes `?`, keeping one record per file.
+				`lfs=$(git --no-optional-locks ls-files -z -- ':(attr:filter=lfs)' | tr '\\n\\0' '?\\n' | awk '{ n++; if (tolower($0) ~ /${SOURCE_PATH}/) { s++; if (s <= ${MAX_LFS_SOURCE_EXAMPLES}) ex[s] = $0 } } END { printf "%d %d", n, s; for (i = 1; i <= s && i <= ${MAX_LFS_SOURCE_EXAMPLES}; i++) printf "\\n%s", ex[i] }')`,
 				'echo "$commits $tree $lfs"',
 			],
 			"\n",
@@ -43,14 +67,26 @@ export const REPO_SIZE_COMMAND = {
 
 const COUNT = /^\d+$/
 
-/** The probe's line as a size; None for anything else (a failed or cut probe proves nothing). */
+/** The probe's output as a size; None for anything else (a failed or cut probe proves nothing). */
 export const parseRepoSize = (stdout: string): Option.Option<RepoSize> => {
-	const parts = Str.split(/\s+/)(Str.trim(stdout))
-	if (parts.length !== 4 || !Arr.every(parts, (part) => COUNT.test(part))) return Option.none()
-	const [commits, files, bytes, lfsFiles] = Arr.map(parts, Number)
-	return commits === undefined || files === undefined || bytes === undefined || lfsFiles === undefined
+	const [line, ...examples] = Str.split("\n")(Str.trim(stdout))
+	const parts = Str.split(/\s+/)(Str.trim(line))
+	if (parts.length !== 5 || !Arr.every(parts, (part) => COUNT.test(part))) return Option.none()
+	const [commits, files, bytes, lfsFiles, lfsSourceFiles] = Arr.map(parts, Number)
+	return commits === undefined ||
+		files === undefined ||
+		bytes === undefined ||
+		lfsFiles === undefined ||
+		lfsSourceFiles === undefined
 		? Option.none()
-		: Option.some({ commits, files, bytes, lfsFiles })
+		: Option.some({
+				commits,
+				files,
+				bytes,
+				lfsFiles,
+				lfsSourceFiles,
+				lfsSourceExamples: Arr.filter(examples, (path) => path !== ""),
+			})
 }
 
 const mib = (bytes: number) => `${Math.ceil(bytes / (1024 * 1024))} MiB`
@@ -70,12 +106,24 @@ export const repoLimitViolations = (size: RepoSize, limits: SecurityAuditLimits)
 	...(size.commits > limits.maxHistoryCommits
 		? [`its history has ${size.commits} commits, over the ${limits.maxHistoryCommits} limit`]
 		: []),
-	...(size.lfsFiles > limits.maxLfsFiles
+	...(size.lfsSourceFiles > limits.maxLfsSourceFiles
 		? [
-				`it stores ${size.lfsFiles} files in Git LFS, whose content the checkout does not hold (limit ${limits.maxLfsFiles})`,
+				`it stores ${size.lfsSourceFiles} source files in Git LFS, whose content the checkout does not hold (limit ${limits.maxLfsSourceFiles}; for example ${Arr.join(size.lfsSourceExamples, ", ")})`,
 			]
 		: []),
 ]
+
+/** The run's note for the LFS files it read as pointers only, naming any source the limit let through. */
+export const lfsSkippedNote = (size: RepoSize): Option.Option<string> => {
+	if (size.lfsFiles === 0) return Option.none()
+	const source =
+		size.lfsSourceFiles === 0
+			? ""
+			: ` (${size.lfsSourceFiles} of them source, for example ${Arr.join(size.lfsSourceExamples, ", ")})`
+	return Option.some(
+		`${size.lfsFiles} files stored in Git LFS were not audited${source}: the checkout holds their pointers, not their content.`,
+	)
+}
 
 /** The pre-clone check: the size GitHub reports, before the sandbox fetches any history. */
 export const hostedSizeViolations = (bytes: number, limits: SecurityAuditLimits): ReadonlyArray<string> =>
