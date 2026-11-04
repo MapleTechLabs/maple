@@ -11,6 +11,7 @@ describe("internal bearer auth", () => {
 		assert.isFalse(isValidInternalBearer(undefined, "secret-token"))
 		assert.isFalse(isValidInternalBearer("Bearer secret-token", undefined))
 		assert.isFalse(isValidInternalBearer("secret-token", "secret-token"))
+		assert.isFalse(isValidInternalBearer(`Bearer ${"\u00e9".repeat(12)}`, "secret-token"))
 	})
 })
 

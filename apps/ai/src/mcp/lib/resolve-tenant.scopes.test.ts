@@ -9,6 +9,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { resolveMcpTenantContext } from "./resolve-tenant"
 
+const INTERNAL_TOKEN = "internal-token"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
@@ -23,6 +24,7 @@ const config = ConfigProvider.layer(
 		MAPLE_API_BASE_URL: "https://api.example.com",
 		MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
 		MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+		INTERNAL_SERVICE_TOKEN: INTERNAL_TOKEN,
 	}),
 )
 
@@ -94,6 +96,33 @@ describe("scoped API keys on the MCP server", () => {
 			)
 			expect(result._tag).toBe("Success")
 			if (result._tag === "Success") expect(result.success.readOnly).toBeUndefined()
+		}).pipe(Effect.provide(makeLayer())),
+	)
+})
+
+describe("internal service tokens on the MCP server", () => {
+	const resolveServiceToken = (token: string) =>
+		resolveMcpTenantContext(
+			new Request("https://api.example.com/mcp", {
+				method: "POST",
+				headers: { authorization: `Bearer maple_svc_${token}`, "x-org-id": orgId },
+			}),
+		).pipe(Effect.result)
+
+	it.effect("admits the configured token", () =>
+		Effect.gen(function* () {
+			const result = yield* resolveServiceToken(INTERNAL_TOKEN)
+			expect(result._tag).toBe("Success")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("refuses a token of the same length in other characters as a mismatch", () =>
+		Effect.gen(function* () {
+			const result = yield* resolveServiceToken("\u00e9".repeat(INTERNAL_TOKEN.length))
+			expect(result._tag).toBe("Failure")
+			if (result._tag === "Failure") {
+				expect(result.failure._tag).toBe("@maple/mcp/errors/McpAuthInvalidError")
+			}
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

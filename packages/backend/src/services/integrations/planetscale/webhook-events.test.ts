@@ -56,6 +56,10 @@ describe("verifyPlanetScaleSignature", () => {
 		const other = createHmac("sha256", "other-secret").update(OOM_PAYLOAD, "utf8").digest("hex")
 		assert.isFalse(verifyPlanetScaleSignature(OOM_PAYLOAD, "shh", other))
 	})
+
+	it("rejects a signature of the expected length in other characters", () => {
+		assert.isFalse(verifyPlanetScaleSignature(OOM_PAYLOAD, "shh", "\u00e9".repeat(64)))
+	})
 })
 
 describe("classifyPlanetScaleEvent", () => {

@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto"
+import { createHash, createHmac, randomUUID } from "node:crypto"
 import {
 	canonicalJson,
 	CompiledProjectionRegistry,
@@ -25,6 +25,7 @@ import {
 import { Clock, Effect, Result, Schema, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 
 /**
  * PlanetScale webhook event handling: signature verification, payload decode,
@@ -43,9 +44,7 @@ export const verifyPlanetScaleSignature = (
 ): boolean => {
 	if (!signatureHeader) return false
 	const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex")
-	const provided = Str.toLowerCase(Str.trim(signatureHeader))
-	if (provided.length !== expected.length) return false
-	return timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(provided, "utf8"))
+	return secretsEqual(Str.toLowerCase(Str.trim(signatureHeader)), expected)
 }
 
 export const PlanetScaleWebhookPayload = Schema.Struct({
