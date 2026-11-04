@@ -338,6 +338,14 @@ static REQUESTS_IN_FLIGHT: LazyLock<UpDownCounter<i64>> = LazyLock::new(|| {
         .build()
 });
 
+static DECODE_MEMORY_RESERVED_BYTES: LazyLock<Gauge<u64>> = LazyLock::new(|| {
+    METER
+        .u64_gauge("ingest_decode_memory_reserved_bytes")
+        .with_description("Memory reserved by request bodies being decoded, process-wide")
+        .with_unit("By")
+        .build()
+});
+
 static ORG_REQUESTS_IN_FLIGHT: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     METER
         .u64_gauge("ingest_org_requests_in_flight")
@@ -623,6 +631,11 @@ pub fn replay_session_chunk_dropped(org_id: &str) {
 /// zero, and it is the signal to watch during the R2 cutover.
 pub fn replay_blob_put_failed(org_id: &str) {
     REPLAY_BLOB_PUT_FAILED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
+}
+
+/// Memory request bodies being decoded hold right now; requests are shed near the budget.
+pub fn decode_memory_reserved(bytes: u64) {
+    DECODE_MEMORY_RESERVED_BYTES.record(bytes, &[]);
 }
 
 /// Current in-flight request count for an org.

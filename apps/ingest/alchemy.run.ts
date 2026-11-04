@@ -692,6 +692,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_MAX_DECODED_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_MAX_DECODE_HEAP_BYTES")),
+				...(yield* optionalPlain("INGEST_DECODE_MEMORY_BYTES")),
 				// The edge rule matches exact header values only; the gateway refuses these
 				// keys again after normalizing the header, so a respelled one is still blocked.
 				...(yield* Config.map(blockedIngestKeys, blockedIngestKeysEnv)),
