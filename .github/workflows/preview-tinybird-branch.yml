@@ -1,0 +1,136 @@
+name: Preview Tinybird branch
+
+# Creates and removes each preview's Tinybird branch `pr_<n>` with the parent workspace
+# credentials, so those never reach a job that runs PR code. `pull_request_target` runs
+# main's copy of this file and main's code: never check out or run the PR head here.
+# The branch's own credentials go to deploy-pr-preview.yml as a sealed artifact
+# (`scripts/tinybird-pr-branch.ts`); that job deploys the PR's schema into the branch.
+on:
+    pull_request_target:
+        types:
+            - opened
+            - reopened
+            - synchronize
+            - labeled
+            - unlabeled
+            - closed
+
+# Same grouping as deploy-pr-preview.yml: a run that neither creates nor removes gets
+# its own group, so it can't cancel a teardown.
+concurrency:
+    group: >-
+        ${{ ((github.event.action == 'unlabeled'
+                && (github.event.label.name == 'preview' || github.event.label.name == 'preview:web'))
+            || (github.event.action != 'unlabeled' && github.event.action != 'opened'
+                && (github.event.action != 'labeled' || contains(fromJSON('["preview","preview:web","preview:collector"]'), github.event.label.name))
+                && (contains(github.event.pull_request.labels.*.name, 'preview')
+                    || contains(github.event.pull_request.labels.*.name, 'preview:web'))))
+        && format('pr-preview-tinybird-{0}', github.event.pull_request.number)
+        || format('pr-preview-tinybird-noop-{0}', github.run_id) }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+jobs:
+    branch:
+        # Same-repo PRs only, on the same events deploy-pr-preview.yml deploys or tears down on.
+        if: >-
+            ${{ github.event.pull_request.head.repo.full_name == github.repository
+            && ((github.event.action == 'unlabeled'
+                    && (github.event.label.name == 'preview' || github.event.label.name == 'preview:web'))
+                || (github.event.action != 'unlabeled' && github.event.action != 'opened'
+                    && (github.event.action != 'labeled' || contains(fromJSON('["preview","preview:web","preview:collector"]'), github.event.label.name))
+                    && (contains(github.event.pull_request.labels.*.name, 'preview')
+                        || contains(github.event.pull_request.labels.*.name, 'preview:web')))) }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        permissions:
+            contents: read
+            id-token: write # Infisical OIDC machine-identity auth
+        # Deploys from main only, and carries the one Infisical identity that may read the
+        # parent workspace credentials.
+        environment: preview-tinybird
+        env:
+            PR_NUMBER: ${{ github.event.pull_request.number }}
+            HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+            TEARDOWN: >-
+                ${{ (github.event.action == 'closed'
+                    || (github.event.action == 'unlabeled'
+                        && !contains(github.event.pull_request.labels.*.name, 'preview')
+                        && !contains(github.event.pull_request.labels.*.name, 'preview:web')))
+                && 'true' || 'false' }}
+        steps:
+            # The base branch (main), never the PR head.
+            - name: Checkout main
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+            # Before secrets load, so the installers never see them.
+            - name: Install Tinybird CLI
+              run: |
+                  uv tool install tinybird==5.0.2 --python 3.11
+                  uv tool dir --bin >> "$GITHUB_PATH"
+
+            # The script needs only the root workspace.
+            - uses: ./.github/actions/setup
+              with:
+                  tools: bun
+                  install-filters: maple
+                  turbo-cache: "false"
+
+            # By name, so nothing else from the environment reaches this job.
+            - name: Load the parent workspace host
+              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+              with:
+                  method: "oidc"
+                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  env-slug: dev
+                  export-type: "env"
+                  secret-name: TINYBIRD_HOST
+
+            - name: Load the parent workspace token
+              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+              with:
+                  method: "oidc"
+                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  env-slug: dev
+                  export-type: "env"
+                  secret-name: TINYBIRD_TOKEN
+
+            - name: Load the handoff key
+              if: ${{ env.TEARDOWN != 'true' }}
+              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+              with:
+                  method: "oidc"
+                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  env-slug: dev
+                  export-type: "env"
+                  secret-name: PREVIEW_HANDOFF_KEY
+
+            - name: Create or refresh the branch
+              if: ${{ env.TEARDOWN != 'true' }}
+              run: bun scripts/tinybird-pr-branch.ts create "$PR_NUMBER" "$RUNNER_TEMP/tinybird-branch.sealed"
+
+            # Named for the PR head, which the deploy job waits for. Sealed, because
+            # artifacts of a public repo can be downloaded by anyone.
+            - name: Hand the branch to the deploy job
+              if: ${{ env.TEARDOWN != 'true' }}
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: tinybird-branch-${{ env.PR_NUMBER }}-${{ env.HEAD_SHA }}
+                  path: ${{ runner.temp }}/tinybird-branch.sealed
+                  if-no-files-found: error
+                  retention-days: 1
+
+            # Branches share compute with production, so removal is not optional.
+            - name: Remove the branch
+              if: ${{ env.TEARDOWN == 'true' }}
+              run: bun scripts/tinybird-pr-branch.ts down "$PR_NUMBER"

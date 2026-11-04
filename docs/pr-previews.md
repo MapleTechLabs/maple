@@ -5,15 +5,15 @@ when the label comes off or the PR closes (`.github/workflows/deploy-pr-preview.
 
 ## What a preview runs
 
-| Piece                                                   | Where                                                  | Notes                                                                                  |
-| :------------------------------------------------------ | :----------------------------------------------------- | :------------------------------------------------------------------------------------- |
-| web, api, ai, alerting, chat-bot, electric-sync Workers | `app-pr-<n>`, `api-pr-<n>`, `sync-pr-<n>` `.maple.dev` | Clerk development instance                                                             |
-| Postgres                                                | Neon branch `pr-<n>` of `NEON_PROJECT_ID`              | Migrated by the deploy (`declarePreviewDb` in `alchemy.run.ts`), deleted on destroy    |
-| Hyperdrive                                              | `maple-db-pr-<n>`, shared by every Worker              | One of the account's 25 configs                                                        |
-| Warehouse                                               | Tinybird branch `pr_<n>`                               | Empty; `scripts/tinybird-pr-branch.ts` swaps host, token, signing key and workspace id |
-| Ingest gateway                                          | `ingest-pr-<n>.maple.dev` (ECS on EC2)                 | Reads ingest keys from the preview's own branch                                        |
-| Electric                                                | `electric-pr-<n>.maple.dev` (ECS Fargate)              | Replicates from the branch; electric-sync points at it                                 |
-| Landing, local-ui                                       | `landing-pr-<n>.maple.dev`                             |                                                                                        |
+| Piece                                                   | Where                                                  | Notes                                                                               |
+| :------------------------------------------------------ | :----------------------------------------------------- | :---------------------------------------------------------------------------------- |
+| web, api, ai, alerting, chat-bot, electric-sync Workers | `app-pr-<n>`, `api-pr-<n>`, `sync-pr-<n>` `.maple.dev` | Clerk development instance                                                          |
+| Postgres                                                | Neon branch `pr-<n>` of `NEON_PROJECT_ID`              | Migrated by the deploy (`declarePreviewDb` in `alchemy.run.ts`), deleted on destroy |
+| Hyperdrive                                              | `maple-db-pr-<n>`, shared by every Worker              | One of the account's 25 configs                                                     |
+| Warehouse                                               | Tinybird branch `pr_<n>`                               | Empty; created by `preview-tinybird-branch.yml` (`docs/tinybird-pr-branches.md`)    |
+| Ingest gateway                                          | `ingest-pr-<n>.maple.dev` (ECS on EC2)                 | Reads ingest keys from the preview's own branch                                     |
+| Electric                                                | `electric-pr-<n>.maple.dev` (ECS Fargate)              | Replicates from the branch; electric-sync points at it                              |
+| Landing, local-ui                                       | `landing-pr-<n>.maple.dev`                             |                                                                                     |
 
 Not in a preview: the repository sandbox (`sandbox_*` tools report unavailable), chat
 connectors (no webhook hostname; a socket would fight dev's bot), and OAuth / GitHub App
@@ -79,11 +79,21 @@ and fails the job if a Postgres- or warehouse-backed route returns anything but 
    and enable logical replication on it (Settings, Logical replication). Electric needs it,
    and the owner role only gets `REPLICATION` once it is on.
 2. **Infisical** (the preview environment, `dev` unless `PREVIEW_INFISICAL_ENV_SLUG` says
-   otherwise): `NEON_API_KEY` (an org or project API key), `NEON_PROJECT_ID`, and
-   `PREVIEW_SIGNIN_KEY` (any long random string, e.g. `openssl rand -base64 24`).
-3. **AWS.** The deploy role must trust `repo:MapleTechLabs/maple:environment:pr-preview`.
-4. Optional: a dedicated Infisical environment for previews, then set the repo variable
+   otherwise): `NEON_API_KEY` (an org or project API key), `NEON_PROJECT_ID`,
+   `PREVIEW_SIGNIN_KEY` (any long random string, e.g. `openssl rand -base64 24`) and
+   `PREVIEW_HANDOFF_KEY` (the same value as in `dev`).
+3. **AWS.** The preview deploy role trusts `repo:MapleTechLabs/maple:environment:pr-preview`
+   only, and no production role trusts that subject.
+4. **GitHub environment `preview-tinybird`** (deploys from `main` only) with its own
+   `INFISICAL_MACHINE_IDENTITY_ID`: an identity bound to
+   `repo:MapleTechLabs/maple:environment:preview-tinybird` that reads `TINYBIRD_HOST`,
+   `TINYBIRD_TOKEN` and `PREVIEW_HANDOFF_KEY` from `dev`.
+5. A dedicated Infisical environment for previews, then the repo variable
    `PREVIEW_INFISICAL_ENV_SLUG`, so previews stop sharing every `dev` credential.
+
+`pull_request` runs use the PR's own copy of the workflow, so a job that runs PR code can only be
+trusted with what the `pr-preview` environment hands out. Anything broader (the parent Tinybird
+workspace, production AWS) lives behind an environment that deploys from `main` only.
 
 ## Debugging
 
