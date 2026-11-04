@@ -3798,13 +3798,12 @@ async fn accept_grpc_decoded(
             }
             Ok(())
         }
-        Err(error) => {
-            if error.status == StatusCode::TOO_MANY_REQUESTS {
-                Err(tonic::Status::resource_exhausted(error.message))
-            } else {
-                Err(tonic::Status::unavailable(error.message))
-            }
-        }
+        Err(error) => match error.status {
+            StatusCode::TOO_MANY_REQUESTS => Err(tonic::Status::resource_exhausted(error.message)),
+            // OTLP exporters never retry this; resending the same payload would be refused again.
+            StatusCode::PAYLOAD_TOO_LARGE => Err(tonic::Status::invalid_argument(error.message)),
+            _ => Err(tonic::Status::unavailable(error.message)),
+        },
     }
 }
 
@@ -16811,6 +16810,28 @@ mod tests {
 
         let error = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
         assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+
+        // Over gRPC the refusal is a code exporters do not retry.
+        let resolved = state
+            .resolver
+            .resolve_ingest_key(raw_key)
+            .await
+            .expect("resolution should not fail")
+            .expect("the test key resolves");
+        let payload = log_request_at("login from jane@example.com", 9);
+        let decoded_bytes = payload.encoded_len();
+        let status = accept_grpc_decoded(
+            &state,
+            Signal::Logs,
+            DecodedPayload::Logs(payload),
+            &resolved,
+            KeyAdmission::Ingest,
+            decoded_bytes,
+            &ClaimOutcome::default(),
+        )
+        .await
+        .expect_err("past the scan budget");
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
