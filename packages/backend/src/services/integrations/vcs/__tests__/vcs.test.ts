@@ -1273,7 +1273,7 @@ describe("VcsRepository", () => {
 			assert.strictEqual(branches.length, 3)
 			// isDefault is a display hint derived from the repo's defaultBranch ("main");
 			// the branch table no longer carries a per-branch tracked flag.
-			assert.ok(branches.find((b) => b.name === "main")!.isDefault)
+			assert.ok(Option.getOrThrow(Arr.findFirst(branches, (b) => b.name === "main")).isDefault)
 			assert.ok(
 				Arr.every(
 					Arr.filter(branches, (b) => b.name !== "main"),
@@ -1296,10 +1296,10 @@ describe("VcsRepository", () => {
 				truncated: false,
 			})
 			assert.deepStrictEqual([...deleted], ["stale"])
-			assert.deepStrictEqual((yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort(), [
-				"feature",
-				"main",
-			])
+			assert.deepStrictEqual(
+				Arr.map(yield* repo.listBranchesByRepository(r.id), (b) => b.name).sort(),
+				["feature", "main"],
+			)
 			// A truncated listing is never authoritative → no deletions, empty result.
 			const none = yield* repo.reconcileBranchDeletions(r.id, new Set(["main"]), { truncated: true })
 			assert.strictEqual(none.length, 0)
@@ -1307,7 +1307,7 @@ describe("VcsRepository", () => {
 
 			assert.ok(yield* repo.deleteBranch(r.id, "feature"))
 			assert.deepStrictEqual(
-				(yield* repo.listBranchesByRepository(r.id)).map((b) => b.name),
+				Arr.map(yield* repo.listBranchesByRepository(r.id), (b) => b.name),
 				["main"],
 			)
 			// Deleting an absent branch is a reported no-op.
@@ -2063,7 +2063,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
 
 			// Remote = {main, release}: "stale" reconciled away, "main" added.
-			const names = (yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort()
+			const names = Arr.map(yield* repo.listBranchesByRepository(r.id), (b) => b.name).sort()
 			assert.deepStrictEqual(names, ["main", "release"])
 			// Exactly one commit-sync, for the single tracked branch (the default "main").
 			const synced = Arr.map(
@@ -2475,7 +2475,7 @@ describe("VcsSyncService orchestrator", () => {
 
 			// Truncated ⇒ absence isn't authoritative ⇒ the reconcile is skipped and
 			// "kept" survives (a regression that dropped `truncated` would delete it).
-			const names = (yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort()
+			const names = Arr.map(yield* repo.listBranchesByRepository(r.id), (b) => b.name).sort()
 			assert.deepStrictEqual(names, ["kept", "main"])
 		}).pipe(
 			Effect.provide(
@@ -2516,7 +2516,7 @@ describe("VcsSyncService orchestrator", () => {
 
 			// Nothing reconciled and no backfill enqueued — the tracked branch is intact.
 			assert.strictEqual(sent.length, 0)
-			const names = (yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort()
+			const names = Arr.map(yield* repo.listBranchesByRepository(r.id), (b) => b.name).sort()
 			assert.deepStrictEqual(names, ["release"])
 		}).pipe(
 			Effect.provide(
@@ -2549,7 +2549,7 @@ describe("VcsSyncService orchestrator", () => {
 					branch: "feature/x",
 				}),
 			)
-			assert.ok((yield* repo.listBranchesByRepository(r.id)).some((b) => b.name === "feature/x"))
+			assert.ok(Arr.some(yield* repo.listBranchesByRepository(r.id), (b) => b.name === "feature/x"))
 
 			// Put a commit on the repo, then delete the branch — the commit row survives
 			// (commits belong to the repo, not the deleted branch).
@@ -2564,7 +2564,7 @@ describe("VcsSyncService orchestrator", () => {
 					branch: "feature/x",
 				}),
 			)
-			assert.ok(!(yield* repo.listBranchesByRepository(r.id)).some((b) => b.name === "feature/x"))
+			assert.ok(!Arr.some(yield* repo.listBranchesByRepository(r.id), (b) => b.name === "feature/x"))
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 			assert.strictEqual(sent.length, 0) // branch events make no GitHub/queue calls
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo })))
@@ -3147,7 +3147,8 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(STALE_SHA))))
 
 			// …leaving exactly the new installation, which synced its own repo.
-			const remaining = (yield* repo.listInstallationsByOrg(orgId)).filter(
+			const remaining = Arr.filter(
+				yield* repo.listInstallationsByOrg(orgId),
 				(i) => i.provider === "github",
 			)
 			assert.strictEqual(remaining.length, 1)
@@ -3630,9 +3631,9 @@ describe("VcsSyncService orchestrator", () => {
 				}),
 			)
 			const after = yield* Clock.currentTimeMillis
-			const backfill = sent.find((j) => j.kind === "sync-commits")
-			assert.ok(backfill && backfill.kind === "sync-commits")
-			if (!backfill || backfill.kind !== "sync-commits") return
+			const backfill = Option.getOrThrow(Arr.findFirst(sent, (j) => j.kind === "sync-commits"))
+			assert.ok(backfill.kind === "sync-commits")
+			if (backfill.kind !== "sync-commits") return
 			// A fresh walk starts from the tip (no resume cursor)…
 			assert.strictEqual(backfill.untilMs, undefined)
 			// …and reaches back exactly one window from the enqueue moment.
@@ -3826,7 +3827,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.strictEqual(sent.length, 0)
 			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "error")
-			assert.ok(stored[0]!.lastSyncError?.includes("Repository access blocked"))
+			assert.ok(Str.includes("Repository access blocked")(stored[0]!.lastSyncError ?? ""))
 		}).pipe(
 			Effect.provide(
 				orchestratorLayer(testDb, {
@@ -3936,7 +3937,7 @@ describe("VcsSyncService orchestrator", () => {
 					commits: [commit(SHA_A, 1)],
 				}),
 			)
-			assert.ok((yield* repo.listBranchesByRepository(r.id)).some((b) => b.name === "main"))
+			assert.ok(Arr.some(yield* repo.listBranchesByRepository(r.id), (b) => b.name === "main"))
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent })))
 	})
@@ -4216,7 +4217,7 @@ describe("git SHA validation (branded type)", () => {
 		assert.strictEqual(decode(Str.repeat(40)("A")), Str.repeat(40)("a"))
 		// Mixed case round-trips to its lowercase form (so case never splits a row).
 		const mixed = "AbCdEf0123456789aBcDeF0123456789AbCdEf01"
-		assert.strictEqual(decode(mixed), mixed.toLowerCase())
+		assert.strictEqual<string>(decode(mixed), Str.toLowerCase(mixed))
 		// Non-hex / wrong length are still rejected (after lowercasing).
 		assert.throws(() => decode(Str.repeat(40)("Z")))
 		assert.throws(() => decode("abc"))

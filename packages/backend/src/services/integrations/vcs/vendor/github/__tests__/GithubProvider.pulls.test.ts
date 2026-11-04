@@ -275,7 +275,9 @@ describe("GithubProvider publishing a review", () => {
 			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
 			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-5")
 			assert.isNull(published.reviewUrl)
-			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
+			assert.isTrue(
+				Option.exists(Arr.last(requests), Str.endsWith("/repos/octo/shop/issues/612/comments")),
+			)
 			// No review at all: the comment carries the result.
 			assert.isFalse(Arr.some(requests, (url) => Str.includes("/reviews")(url)))
 		}).pipe(Effect.provide(layer))
@@ -388,7 +390,9 @@ describe("GithubProvider publishing a review", () => {
 			const provider = yield* GithubProvider
 			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
 			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-77")
-			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/comments/77"))
+			assert.isTrue(
+				Option.exists(Arr.last(requests), Str.endsWith("/repos/octo/shop/issues/comments/77")),
+			)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -414,7 +418,9 @@ describe("GithubProvider publishing a review", () => {
 		return Effect.gen(function* () {
 			const provider = yield* GithubProvider
 			yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
-			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
+			assert.isTrue(
+				Option.exists(Arr.last(requests), Str.endsWith("/repos/octo/shop/issues/612/comments")),
+			)
 			assert.isFalse(Arr.some(requests, (url) => Str.includes("/issues/comments/9")(url)))
 		}).pipe(Effect.provide(layer))
 	})
@@ -473,7 +479,12 @@ describe("GithubProvider publishing a review", () => {
 				publication([{ path: "a.ts", line: 3, body: "add a span", key: "finding-1" }]),
 			)
 			assert.equal(published.reviewUrl, "https://github.com/octo/shop/pull/612#pullrequestreview-8")
-			assert.isTrue(requests.at(-2)?.endsWith("/repos/octo/shop/pulls/612/reviews"))
+			assert.isTrue(
+				Option.exists(
+					Arr.get(requests, requests.length - 2),
+					Str.endsWith("/repos/octo/shop/pulls/612/reviews"),
+				),
+			)
 			// The posted comment's id comes back under the key it was submitted with.
 			assert.deepEqual(published.inlineComments, [{ key: "finding-1", commentId: "81" }])
 		}).pipe(Effect.provide(layer))

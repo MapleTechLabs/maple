@@ -22,6 +22,7 @@ import {
 	Context,
 	Effect,
 	Layer,
+	Option,
 	Redacted,
 	Schema,
 	SchemaGetter,
@@ -62,7 +63,12 @@ export const planetScaleWebhookStatus = (
 	databases: ReadonlyArray<Pick<PlanetScaleDatabaseRow, "webhookId" | "webhookError">>,
 ): PlanetScaleWebhookStatus => {
 	const registeredDatabases = Arr.filter(databases, (row) => row.webhookId !== null).length
-	const lastError = databases.find((row) => row.webhookError !== null)?.webhookError ?? null
+	const lastError = Option.getOrNull(
+		Option.flatMapNullishOr(
+			Arr.findFirst(databases, (row) => row.webhookError !== null),
+			(row) => row.webhookError,
+		),
+	)
 	return new PlanetScaleWebhookStatus({
 		state: !grantsWebhookManagement(scopes)
 			? "needs_reauthorization"
