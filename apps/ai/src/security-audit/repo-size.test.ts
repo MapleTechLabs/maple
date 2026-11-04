@@ -125,13 +125,24 @@ describe("the size probe", () => {
 			git("init", "-q")
 			writeFileSync(
 				join(repo, ".gitattributes"),
-				"*.png filter=lfs\n*.psd filter=lfs\nsrc/Gen.TS filter=lfs\n",
+				"*.png filter=lfs\n*.psd filter=lfs\n*.json filter=lfs\n*.pem filter=lfs\nsrc/Gen.TS filter=lfs\n",
 			)
 			mkdirSync(join(repo, "src"))
 			mkdirSync(join(repo, "assets"))
-			Arr.forEach(["assets/a.png", "assets/b.png", "assets/c.psd", "src/Gen.TS", "src/main.ts"], (p) =>
-				writeFileSync(join(repo, p), "x"),
-			)
+			mkdirSync(join(repo, "pkg"))
+			mkdirSync(join(repo, "certs"))
+			// LFS data JSON is skipped; an LFS manifest and key are source, as is the uppercase .TS.
+			const paths = [
+				"assets/a.png",
+				"assets/b.png",
+				"assets/c.psd",
+				"assets/data.json",
+				"pkg/package.json",
+				"certs/tls.pem",
+				"src/Gen.TS",
+				"src/main.ts",
+			]
+			Arr.forEach(paths, (p) => writeFileSync(join(repo, p), "x"))
 			git("add", "-A")
 			git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
 			const probe = spawnSync(REPO_SIZE_COMMAND.command, [...REPO_SIZE_COMMAND.args], {
@@ -146,7 +157,7 @@ describe("the size probe", () => {
 					size.lfsSourceFiles,
 					size.lfsSourceExamples,
 				]),
-			).toEqual(Option.some([6, 4, 1, ["src/Gen.TS"]]))
+			).toEqual(Option.some([9, 7, 3, ["certs/tls.pem", "pkg/package.json", "src/Gen.TS"]]))
 		} finally {
 			rmSync(repo, { recursive: true, force: true })
 		}

@@ -20,12 +20,19 @@ export interface RepoSize {
 	readonly lfsSourceExamples: ReadonlyArray<string>
 }
 
-/** Code and config an audit reads; any other LFS file (media, models, archives) is skipped. */
+/**
+ * Code, config and key material an audit reads; any other LFS file (media, models, archives) is
+ * skipped. Plain `.json` and `.xml` are mostly data in LFS, so only their manifests count.
+ */
 const SOURCE_EXTENSIONS =
 	"ts tsx js jsx mjs cjs py rb go rs java kt kts scala swift m mm c cc cpp cxx h hh hpp cs php " +
-	"sh bash zsh ps1 sql lua dart ex exs erl clj vue svelte yaml yml toml tf hcl gradle properties ini conf cfg env"
-const SOURCE_NAMES = "dockerfile makefile gemfile jenkinsfile"
-const SOURCE_PATH = `(^|\\/)(${Str.replaceAll(" ", "|")(SOURCE_NAMES)})$|\\.(${Str.replaceAll(" ", "|")(SOURCE_EXTENSIONS)})$`
+	"sh bash zsh ps1 sql lua dart ex exs erl clj vue svelte yaml yml toml tf hcl gradle properties ini conf cfg env " +
+	"pem key crt"
+const SOURCE_NAMES =
+	"dockerfile makefile gemfile jenkinsfile package.json package-lock.json composer.json " +
+	"tsconfig.json deno.json pom.xml web.config"
+const alternatives = (words: string) => Str.replaceAll(" ", "|")(Str.replaceAll(".", "\\.")(words))
+const SOURCE_PATH = `(^|\\/)(${alternatives(SOURCE_NAMES)})$|\\.(${alternatives(SOURCE_EXTENSIONS)})$`
 const MAX_LFS_SOURCE_EXAMPLES = 3
 
 /** The run refused its repository before any agent started; `message` is the reason it is marked failed with. */

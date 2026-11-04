@@ -157,7 +157,6 @@ const preparedNothing = (profile: ExecutionProfile, why: string): ExecutionProfi
 	],
 })
 
-/** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
 /** The repo-size step's recorded result. */
 interface RepoSizeVerdict {
 	readonly violations: ReadonlyArray<string>
@@ -165,6 +164,7 @@ interface RepoSizeVerdict {
 	readonly lfsFiles?: number
 }
 
+/** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
 const REPO_SIZE_TIMEOUT_SECONDS = 120
 
 /** Store writes retried on transient database errors; every write is a replacement or idempotent. */
