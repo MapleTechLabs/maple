@@ -112,13 +112,17 @@ export const repoLimitViolations = (size: RepoSize, limits: SecurityAuditLimits)
 		: []),
 ]
 
-/** The run's note for LFS files it skips: media and other binaries, read as pointers only. */
-export const lfsSkippedNote = (lfsFiles: number): Option.Option<string> =>
-	lfsFiles > 0
-		? Option.some(
-				`${lfsFiles} files stored in Git LFS were not audited: they are not source code, and the checkout holds their pointers, not their content.`,
-			)
-		: Option.none()
+/** The run's note for the LFS files it read as pointers only, naming any source the limit let through. */
+export const lfsSkippedNote = (size: RepoSize): Option.Option<string> => {
+	if (size.lfsFiles === 0) return Option.none()
+	const source =
+		size.lfsSourceFiles === 0
+			? ""
+			: ` (${size.lfsSourceFiles} of them source, for example ${Arr.join(size.lfsSourceExamples, ", ")})`
+	return Option.some(
+		`${size.lfsFiles} files stored in Git LFS were not audited${source}: the checkout holds their pointers, not their content.`,
+	)
+}
 
 /** The pre-clone check: the size GitHub reports, before the sandbox fetches any history. */
 export const hostedSizeViolations = (bytes: number, limits: SecurityAuditLimits): ReadonlyArray<string> =>

@@ -181,9 +181,10 @@ describe("GithubAppClient responses that are normal states", () => {
 				tree: [tree("db", "db"), blob("db/package.json", "p1")],
 			},
 		}
-		const routedLayer = (served: Listings) => {
+		const routedLayer = (served: Listings, treeReads: Array<string> = []) => {
 			const http = fakeGithubHttp(({ url }) => {
 				if (url.endsWith("/access_tokens")) return tokenResponse()
+				treeReads.push(url)
 				const key = url.split("/git/trees/")[1]?.replace(SHA, "root")
 				const listing = key === undefined ? undefined : served[key]
 				return listing === undefined
@@ -218,6 +219,48 @@ describe("GithubAppClient responses that are normal states", () => {
 				assert.isTrue(listing.truncated)
 			}).pipe(Effect.provide(routedLayer(served)))
 		})
+
+		/** A truncated root whose direct entries are `dirs`, each listing whole as `subtree(i)`. */
+		const wideRoot = (dirs: number, subtree: (i: number) => ReadonlyArray<unknown>): Listings => ({
+			"root?recursive=1": { truncated: true, tree: [] },
+			root: { truncated: false, tree: Arr.makeBy(dirs, (i) => tree(`d${i}`, `d${i}`)) },
+			...Object.fromEntries(
+				Arr.makeBy(dirs, (i) => [`d${i}?recursive=1`, { truncated: false, tree: subtree(i) }]),
+			),
+		})
+
+		it.effect("stops at 400 reads and reports the listing truncated", () => {
+			const treeReads: Array<string> = []
+			return Effect.gen(function* () {
+				const client = yield* GithubAppClient
+				const listing = yield* client.getRecursiveTree("42", "octo", "shop", SHA)
+				// The first recursive read, then the walk's 400: the root level and 399 of 401 subtrees.
+				assert.deepStrictEqual([listing.truncated, treeReads.length], [true, 401])
+			}).pipe(
+				Effect.provide(
+					routedLayer(
+						wideRoot(401, (i) => [blob("f", `f${i}`)]),
+						treeReads,
+					),
+				),
+			)
+		})
+
+		it.effect("reports the listing truncated past 150,000 held entries", () =>
+			Effect.gen(function* () {
+				const client = yield* GithubAppClient
+				const listing = yield* client.getRecursiveTree("42", "octo", "shop", SHA)
+				assert.isTrue(listing.truncated)
+			}).pipe(
+				Effect.provide(
+					routedLayer(
+						wideRoot(2, (i) =>
+							i === 0 ? Arr.makeBy(150_001, (n) => blob(`f${n}`, `s${n}`)) : [blob("f", "s")],
+						),
+					),
+				),
+			),
+		)
 	})
 
 	it.effect("reads an expired job log as empty", () => {

@@ -160,8 +160,8 @@ const preparedNothing = (profile: ExecutionProfile, why: string): ExecutionProfi
 /** The repo-size step's recorded result. */
 interface RepoSizeVerdict {
 	readonly violations: ReadonlyArray<string>
-	/** LFS files skipped as not source; absent on a step recorded before they were counted. */
-	readonly lfsFiles?: number
+	/** The run's note on LFS files it did not read; absent when there were none. */
+	readonly lfsNote?: string
 }
 
 /** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
@@ -360,7 +360,7 @@ export const auditWithAgents = <E, R>(
 
 		// Measured before any agent: a repository over a limit is refused whole, never partly audited.
 		// The limits are read inside the step, so a deploy that changes them cannot flip a replay.
-		const { violations, lfsFiles }: RepoSizeVerdict = yield* durableStep(
+		const { violations, lfsNote }: RepoSizeVerdict = yield* durableStep(
 			"repo-size",
 			Effect.gen(function* () {
 				const result = yield* sandbox
@@ -378,7 +378,10 @@ export const auditWithAgents = <E, R>(
 				const limits = yield* securityAuditLimits
 				return {
 					violations: repoLimitViolations(size.value, limits),
-					lfsFiles: size.value.lfsFiles - size.value.lfsSourceFiles,
+					...Option.match(lfsSkippedNote(size.value), {
+						onNone: () => ({}),
+						onSome: (note) => ({ lfsNote: note }),
+					}),
 				}
 			}),
 			STEP_RETRY,
@@ -396,11 +399,10 @@ export const auditWithAgents = <E, R>(
 			)
 			return yield* new AuditRepositoryRefusedError({ message: reason, violations })
 		}
-		const lfsNote = lfsSkippedNote(lfsFiles ?? 0)
-		if (Option.isSome(lfsNote)) {
+		if (lfsNote !== undefined) {
 			yield* durableStep(
 				"lfs-note",
-				store.recordEvent(payload.runId, { _tag: "Note", message: lfsNote.value }),
+				store.recordEvent(payload.runId, { _tag: "Note", message: lfsNote }),
 				STEP_RETRY,
 			)
 		}

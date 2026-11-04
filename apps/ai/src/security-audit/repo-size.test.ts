@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { SECURITY_AUDIT_LIMIT_DEFAULTS } from "@maple/backend/services/security-audit/limits"
 import { Option, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { parseRepoSize, REPO_SIZE_COMMAND, repoLimitViolations } from "./repo-size"
+import { lfsSkippedNote, parseRepoSize, REPO_SIZE_COMMAND, repoLimitViolations } from "./repo-size"
 
 const limits = { ...SECURITY_AUDIT_LIMIT_DEFAULTS, maxCheckoutBytes: 10 * 1024 * 1024 }
 const small = {
@@ -81,6 +81,24 @@ describe("repoLimitViolations", () => {
 			"it tracks 150000 files, over the 100000 limit",
 			"its history has 2000000 commits, over the 1000000 limit",
 			"it stores 2 source files in Git LFS, whose content the checkout does not hold (limit 0; for example a.go, b.go)",
+		])
+	})
+})
+
+describe("lfsSkippedNote", () => {
+	it("names nothing without LFS files, and the source among them when a limit lets it through", () => {
+		expect([
+			lfsSkippedNote(small),
+			lfsSkippedNote({ ...small, lfsFiles: 12 }),
+			lfsSkippedNote({ ...small, lfsFiles: 12, lfsSourceFiles: 1, lfsSourceExamples: ["a.ts"] }),
+		]).toEqual([
+			Option.none(),
+			Option.some(
+				"12 files stored in Git LFS were not audited: the checkout holds their pointers, not their content.",
+			),
+			Option.some(
+				"12 files stored in Git LFS were not audited (1 of them source, for example a.ts): the checkout holds their pointers, not their content.",
+			),
 		])
 	})
 })

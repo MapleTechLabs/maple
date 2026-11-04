@@ -623,7 +623,7 @@ describe("auditWithAgents", () => {
 				{
 					status: "complete",
 					notes: [
-						"22389 files stored in Git LFS were not audited: they are not source code, and the checkout holds their pointers, not their content.",
+						"22389 files stored in Git LFS were not audited: the checkout holds their pointers, not their content.",
 					],
 				},
 			)
