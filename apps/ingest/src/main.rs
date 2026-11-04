@@ -1670,6 +1670,8 @@ enum GcpPushOutcome {
     SetupReport,
     /// The connector's integration source is paused.
     SourcePaused,
+    /// The org's ingest rules need more scanning than one entry may use; redelivery would too.
+    RulesScanBudget,
 }
 
 #[derive(Clone, Copy)]
@@ -5937,6 +5939,13 @@ async fn handle_gcp_logpush(
                     span_handle.record("maple.ingest.reject_reason", "source_paused");
                     metrics::request_completed("logs", "ok", "none", duration);
                 }
+                GcpPushOutcome::RulesScanBudget => {
+                    // Acked, but the entry is gone: an `Error`, like a decode failure.
+                    let kind = INGEST_RULES_SCAN_BUDGET.error_kind;
+                    span_handle.record("error.type", kind);
+                    record_rejection_reason(&span_handle, 200, kind, "Ingest rules scan budget exceeded");
+                    metrics::request_completed("logs", "error", kind, duration);
+                }
             }
             response
         }
@@ -6153,6 +6162,14 @@ async fn handle_gcp_logpush_inner(
     .await
     {
         Ok(response) => response,
+        // The same entry and rules are refused on every redelivery: ack it instead.
+        Err(error) if error.error_kind() == INGEST_RULES_SCAN_BUDGET.error_kind => {
+            state
+                .gcp_resolver
+                .record_health(connector_id, Some(gcp_logging::RULES_SCAN_BUDGET))
+                .await;
+            return Ok((StatusCode::OK.into_response(), GcpPushOutcome::RulesScanBudget));
+        }
         Err(error) => {
             state
                 .gcp_resolver
@@ -7619,6 +7636,8 @@ async fn apply_ingest_rules(
     }
     .map_err(|ingest_rules::ScanBudgetExceeded| {
         warn!(org_id, signal = signal.path(), "Payload exceeds the ingest rule scan budget; refused");
+        // Counted per refusal; a transport that retries a 413 counts each attempt.
+        metrics::org_data_loss(org_id, signal.path(), INGEST_RULES_SCAN_BUDGET.error_kind);
         ApiError::tagged(
             StatusCode::PAYLOAD_TOO_LARGE,
             &INGEST_RULES_SCAN_BUDGET,
@@ -13488,6 +13507,32 @@ mod tests {
         let again = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
         assert_eq!(again.status(), StatusCode::OK);
         assert_eq!(store.connector_successes.load(Ordering::Relaxed), 2);
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_acks_an_entry_past_the_rule_scan_budget() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (mut state, store, queue_dir) = gcp_logpush_state("gcp-logpush-scan", &ch_url).await;
+        store.set_ingest_rules("org_gcp", &[mask_emails_rule()]);
+        Arc::get_mut(&mut state).expect("the state is not shared yet").ingest_rule_resolver =
+            IngestRuleResolver::new(Arc::<FakeKeyStore>::clone(&store), true, Duration::from_secs(30), 16)
+                .with_scan_budget(1);
+
+        // Redelivery would be refused the same way, so it is acked, and nothing is stored.
+        let refused = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(refused.status(), StatusCode::OK);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "an unscanned entry must not be stored"
+        );
+        assert_eq!(
+            *store.connector_failures.lock().unwrap(),
+            [(GCP_CONNECTORS_TABLE, gcp_logging::RULES_SCAN_BUDGET.to_owned())]
+        );
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
