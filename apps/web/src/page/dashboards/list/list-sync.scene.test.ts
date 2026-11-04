@@ -113,7 +113,9 @@ describe("dashboards list write feedback", () => {
 		expect(names(creating.commands)).toEqual([CreateDashboard.name])
 		const failed = pageUpdate(
 			creating.model,
-			Message.CompletedCreateDashboard({ result: Result.fail("Couldn't create dashboard") }),
+			Message.CompletedCreateDashboard({
+				result: Result.fail({ message: "Couldn't create dashboard", isRejected: false }),
+			}),
 		)
 		expect(failed.model.persistenceError).toBe("Couldn't create dashboard")
 		expect(failed.outMessage).toBeUndefined()
@@ -122,7 +124,9 @@ describe("dashboards list write feedback", () => {
 	test("a failed write while the list is still loading reads the snapshot instead of waiting", () => {
 		const failed = pageUpdate(
 			waiting(),
-			Message.CompletedCreateDashboard({ result: Result.fail("Failed to fetch") }),
+			Message.CompletedCreateDashboard({
+				result: Result.fail({ message: "Failed to fetch", isRejected: false }),
+			}),
 		)
 		expect(names(failed.commands)).toEqual([FetchDashboardsFallback.name])
 		const unreachable = pageUpdate(
@@ -160,5 +164,57 @@ describe("dashboards list write feedback", () => {
 			title: "Imported with 4 warnings",
 			description: "a\nb\nc\n+1 more",
 		})
+	})
+
+	test("a refused write toasts and leaves the list writable", () => {
+		const creating = pageUpdate(listed(), Message.ClickedCreate()).model
+		const refused = pageUpdate(
+			creating,
+			Message.CompletedCreateDashboard({
+				result: Result.fail({
+					message: "A dashboard with this name already exists",
+					isRejected: true,
+				}),
+			}),
+		)
+		expect(refused.outMessage?._tag).toBe("RequestedToast")
+		expect(isReadOnly(refused.model)).toBe(false)
+		expect(names(pageUpdate(refused.model, Message.ClickedCreate()).commands)).toEqual([
+			CreateDashboard.name,
+		])
+	})
+
+	test("Retry sync and the next healthy sync turn writes back on after a failed write", () => {
+		const failed = pageUpdate(
+			listed(),
+			Message.CompletedCreateDashboard({
+				result: Result.fail({ message: "Failed to fetch", isRejected: false }),
+			}),
+		).model
+		expect(isReadOnly(failed)).toBe(true)
+		expect(isReadOnly(pageUpdate(failed, Message.ClickedRetrySync()).model)).toBe(false)
+		const whileDown = pageUpdate(
+			waiting(),
+			Message.CompletedCreateDashboard({
+				result: Result.fail({ message: "Failed to fetch", isRejected: false }),
+			}),
+		).model
+		const recovered = pageUpdate(
+			whileDown,
+			Message.UpdatedDashboards({ orgId, dashboards: [board] }),
+		).model
+		expect(isReadOnly(recovered)).toBe(false)
+	})
+
+	test("a failed export is reported", () => {
+		expect(
+			pageUpdate(
+				listed(),
+				Message.CompletedExportDashboard({ error: "Dashboard sync was not confirmed" }),
+			).outMessage?._tag,
+		).toBe("RequestedToast")
+		expect(
+			pageUpdate(listed(), Message.CompletedExportDashboard({ error: null })).outMessage,
+		).toBeUndefined()
 	})
 })
