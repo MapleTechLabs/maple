@@ -523,7 +523,9 @@ export const auditWithAgents = <E, R>(
 			: {
 					runId: priorRow.value.id,
 					sourceRef: priorRow.value.sourceRef,
-					ledger: (yield* store.listUnits(priorRow.value.id)).map((row) => row.unit),
+					ledger: yield* Effect.map(store.listUnits(priorRow.value.id), (rows) =>
+						Arr.map(rows, (row) => row.unit),
+					),
 					findings: yield* store.listRunFindings(priorRow.value.id),
 					estimates: yield* store.listRunFindingEstimates(priorRow.value.id),
 				}
@@ -645,12 +647,12 @@ export const auditWithAgents = <E, R>(
 			// Only a full pass can say a finding is gone: no disclosed gaps, not quick, not scoped, and
 			// the finding is not tied to a unit this run left unaudited (deferred, blocked, out of scope).
 			const row = yield* store.getRun(payload.runId)
+			const unauditedUnits = Arr.filter(
+				result.ledger,
+				(u) => u.status !== "covered" && u.status !== "candidate" && u.status !== "not_applicable",
+			)
 			const unaudited = new Set(
-				Arr.filter(
-					result.ledger,
-					(u) =>
-						u.status !== "covered" && u.status !== "candidate" && u.status !== "not_applicable",
-				).flatMap((u) => [
+				Arr.flatMap(unauditedUnits, (u) => [
 					...u.result_fingerprints,
 					...(u.carried_fingerprint === undefined ? [] : [u.carried_fingerprint]),
 				]),
@@ -668,7 +670,9 @@ export const auditWithAgents = <E, R>(
 				row.value.finishedAt === null
 			) {
 				const reported = new Set(Arr.map(result.findings, (f) => f.fingerprint))
-				const gone = (yield* store.listFindings(row.value.targetId)).filter(
+				const findings = yield* store.listFindings(row.value.targetId)
+				const gone = Arr.filter(
+					findings,
 					(f) =>
 						f.status === "open" &&
 						f.verdict !== "rejected" &&

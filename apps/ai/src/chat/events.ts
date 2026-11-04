@@ -11,7 +11,7 @@
 import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
 import type * as RunEvent from "@yielded/agent/run-event"
 import { APPROVAL_REQUIRED, type ToolUiPayload, type UiSource } from "../mcp/tools/llm-tools"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** Events the session log accepts. `seq` belongs to the Durable Object, which owns the ordering. */
 type WithoutSeq<T> = T extends unknown ? Omit<T, "seq"> : never
@@ -155,15 +155,15 @@ export const makeTextSanitizer = (): TextSanitizer => {
 			}
 			for (;;) {
 				if (closing !== undefined) {
-					const end = buffer.indexOf(closing.close)
+					const end = Str.indexOf(closing.close)(buffer)
 					// Nothing inside a block is emitted; keep only what could still close it. A block
 					// the turn never closes takes the rest of the turn's text with it, which is what
 					// an unparsed tool call at the end of a reply deserves.
-					if (end === -1) {
+					if (Option.isNone(end)) {
 						buffer = Str.slice(Math.max(0, buffer.length - closing.close.length + 1))(buffer)
 						return out
 					}
-					buffer = Str.slice(end + closing.close.length)(buffer)
+					buffer = Str.slice(end.value + closing.close.length)(buffer)
 					closing = undefined
 					from = 0
 					continue

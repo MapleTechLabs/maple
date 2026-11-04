@@ -3,7 +3,7 @@
  * text, and input problems reported against the parameter that caused them.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import {
 	CreateDashboardOutput,
 	DescribeDashboardSchemaOutput,
@@ -144,7 +144,7 @@ describe("dashboard tools", () => {
 		expect(result.isError).toBeUndefined()
 		const board = await call("get_dashboard", { dashboard_id: dashboardId })
 		const output = Schema.decodeUnknownSync(GetDashboardOutput)(board.structuredContent)
-		const w3 = output.dashboard.widgets.find((w) => w.id === "w3")
+		const w3 = Option.getOrUndefined(Arr.findFirst(output.dashboard.widgets, (w) => w.id === "w3"))
 		expect(w3?.display).toMatchObject({ title: "Notes", markdown: { content: "Hello" } })
 	})
 

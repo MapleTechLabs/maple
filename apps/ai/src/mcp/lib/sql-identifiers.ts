@@ -4,14 +4,14 @@ import {
 	listWarehouseTables,
 	type TableInfo,
 } from "@maple/backend/services/warehouse/warehouse-catalog"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** The column an unknown-identifier error names, as written. */
 export const unknownIdentifierName = (message: string): string | undefined => {
-	const match = message.match(
+	const match = Str.match(
 		/identifier [`']([^`']+)[`']|Missing columns: '([^']+)'|no column [`']([^`']+)[`']/i,
-	)
-	return match?.[1] ?? match?.[2] ?? match?.[3]
+	)(message)
+	return Option.match(match, { onNone: () => undefined, onSome: (m) => m[1] ?? m[2] ?? m[3] })
 }
 
 // String literals (with '' and \' escapes), `--`/`#`/`/* */` comments, and quoted identifiers.
@@ -33,14 +33,13 @@ export const identifierText = (sql: string): string =>
 export const referencedTableNames = (sql: string): ReadonlyArray<string> => {
 	const text = identifierText(sql)
 	return Arr.map(
-		Arr.filter(
-			Arr.map(listWarehouseTables(), (t) => ({
-				name: t.name,
-				at: text.search(
+		Arr.flatMap(listWarehouseTables(), (t) =>
+			Option.match(
+				Str.search(
 					new RegExp(`(?:\\bFROM\\s+|\\bJOIN\\s+|,\\s*)(?:[A-Za-z_]\\w*\\.)?${t.name}\\b`, "i"),
-				),
-			})),
-			(t) => t.at >= 0,
+				)(text),
+				{ onNone: () => [], onSome: (at) => [{ name: t.name, at }] },
+			),
 		).sort((a, b) => a.at - b.at),
 		(t) => t.name,
 	)
@@ -95,11 +94,15 @@ const identifierFix = (
 	const alias = KNOWN_ALIASES.get(fold(written))
 	if (alias !== undefined && owners(alias.column) === 1) return alias.expr
 	// `t.trace_id`: keep the qualifier and fix the column from the table it names.
-	const dot = written.lastIndexOf(".")
-	const qualified =
-		dot <= 0 ? undefined : tables.find((t) => t.name === qualifiers.get(Str.slice(0, dot)(written)))
-	if (qualified === undefined) return undefined
-	const hits = Arr.filter(qualified.columns, (c) => fold(c.name) === fold(Str.slice(dot + 1)(written)))
+	const lastDot = Option.filter(Str.lastIndexOf(".")(written), (at) => at > 0)
+	if (Option.isNone(lastDot)) return undefined
+	const dot = lastDot.value
+	const qualified = Arr.findFirst(tables, (t) => t.name === qualifiers.get(Str.slice(0, dot)(written)))
+	if (Option.isNone(qualified)) return undefined
+	const hits = Arr.filter(
+		qualified.value.columns,
+		(c) => fold(c.name) === fold(Str.slice(dot + 1)(written)),
+	)
 	return hits.length === 1 ? `${Str.slice(0, dot + 1)(written)}${hits[0].name}` : undefined
 }
 
@@ -118,9 +121,10 @@ const replaceIdentifier = (sql: string, written: string, replacement: string): s
 			? { start: m.index - 1, end: m.index + written.length + 1 }
 			: { start: m.index, end: m.index + written.length }
 	})
-	return spans.reduceRight(
-		(text, { start, end }) => `${Str.slice(0, start)(text)}${replacement}${Str.slice(end)(text)}`,
+	return Arr.reduceRight(
+		spans,
 		sql,
+		(text, { start, end }) => `${Str.slice(0, start)(text)}${replacement}${Str.slice(end)(text)}`,
 	)
 }
 
@@ -141,7 +145,10 @@ const RELATION = new RegExp(
 )
 
 const relations = (sql: string) =>
-	Arr.map([...identifierText(sql).matchAll(RELATION)], (m) => ({ name: m[1], alias: m[2] }))
+	Arr.map(Arr.fromIterable(Str.matchAll(RELATION)(identifierText(sql))), (m) => ({
+		name: m[1],
+		alias: m[2],
+	}))
 
 /**
  * Names the SQL defines itself, which are never column typos: `AS x`, `x AS (`, a relation's
@@ -151,11 +158,11 @@ export const definedNames = (sql: string): ReadonlySet<string> => {
 	const text = identifierText(sql)
 	return new Set([
 		...Arr.map(
-			[...text.matchAll(/\bAS\s+([A-Za-z_][\w.]*)|\b([A-Za-z_]\w*)\s+AS\s*\(/gi)],
+			Arr.fromIterable(Str.matchAll(/\bAS\s+([A-Za-z_][\w.]*)|\b([A-Za-z_]\w*)\s+AS\s*\(/gi)(text)),
 			(m) => m[1] ?? m[2],
 		),
 		...Arr.filter(
-			Arr.map([...text.matchAll(/\)\s*([A-Za-z_][\w.]*)/g)], (m) => m[1]),
+			Arr.map(Arr.fromIterable(Str.matchAll(/\)\s*([A-Za-z_][\w.]*)/g)(text)), (m) => m[1]),
 			(name) => !KEYWORDS.has(Str.toLowerCase(name)),
 		),
 		...Arr.flatMap(relations(sql), (r) => (r.alias === undefined ? [] : [r.alias])),
@@ -179,13 +186,13 @@ const tableQualifiers = (sql: string): ReadonlyMap<string, string> => {
  * another), so a rewrite of every `q.col` would also change the scope where it was valid.
  */
 const qualifierReused = (sql: string, written: string): boolean => {
-	const dot = written.lastIndexOf(".")
-	if (dot <= 0) return false
-	const qualifier = Str.toLowerCase(Str.slice(0, dot)(written))
+	const dot = Option.filter(Str.lastIndexOf(".")(written), (at) => at > 0)
+	if (Option.isNone(dot)) return false
+	const qualifier = Str.toLowerCase(Str.slice(0, dot.value)(written))
 	const binds = Arr.filter(
 		relations(sql),
 		({ name, alias }) =>
-			alias?.toLowerCase() === qualifier ||
+			(alias !== undefined && Str.toLowerCase(alias) === qualifier) ||
 			Str.toLowerCase(Str.split(".")(name).at(-1) ?? name) === qualifier,
 	)
 	return binds.length > 1

@@ -3,7 +3,7 @@
  * agent can rank code audit findings, vulnerable dependencies, served scanner probes and runtimes on
  * vulnerable or end-of-life versions against each other.
  */
-import { DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Option, Order, Array as Arr, String as Str } from "effect"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
 import type { DependencyFindingId } from "@maple/domain/dependency-scan"
@@ -199,7 +199,10 @@ export const runSummaryOf = (
 })
 
 const firstLocation = (row: SecurityAuditFindingRow): string => {
-	const sink = row.record.trace.find((step) => step.kind === "sink") ?? row.record.trace[0]
+	const sink = Option.getOrElse(
+		Arr.findFirst(row.record.trace, (step) => step.kind === "sink"),
+		() => row.record.trace[0],
+	)
 	const at = sink ?? row.record.evidence[0]
 	return at === undefined ? "" : `${at.file}:${at.line}`
 }
@@ -224,7 +227,7 @@ const fixedByText = (fixedRunId: string, latestRun: SecurityAuditRunRow | undefi
 	const run = fixedByRun(fixedRunId, latestRun)
 	return run.ref === null
 		? `no longer found by audit run ${run.runId}`
-		: `no longer found by the audit of ${Str.slice(0, 12)(run.ref)} on ${run.at?.slice(0, 10)}`
+		: `no longer found by the audit of ${Str.slice(0, 12)(run.ref)} on ${run.at === null ? undefined : Str.slice(0, 10)(run.at)}`
 }
 
 /** Services running a commit of each repository (by lowercase `owner/name`), from the dependency scanner's join. */
@@ -235,12 +238,10 @@ export const repositoryServicesOf = (read: DependencyRead | undefined): Reposito
 		read?._tag === "read"
 			? Arr.map(read.repositories, (repo) => [
 					Str.toLowerCase(repo.fullName),
-					servicesOf(Arr.flatMap(repo.runningCommits, (commit) => commit.services)).filter(
-						(ref, i, all) =>
-							all.findIndex(
-								(other) =>
-									other.service === ref.service && other.environment === ref.environment,
-							) === i,
+					Arr.dedupeWith(
+						servicesOf(Arr.flatMap(repo.runningCommits, (commit) => commit.services)),
+						(ref, other) =>
+							other.service === ref.service && other.environment === ref.environment,
 					),
 				])
 			: [],
@@ -328,8 +329,10 @@ export const readDependencies = (tenant: TenantContext, options: DependencyReadO
 				capped: false,
 			} satisfies DependencyRead
 		}
-		const wanted = options.repository?.toLowerCase()
-		const repository = repositories.repositories.find((repo) => Str.toLowerCase(repo.fullName) === wanted)
+		const wanted = options.repository === undefined ? undefined : Str.toLowerCase(options.repository)
+		const repository = Option.getOrUndefined(
+			Arr.findFirst(repositories.repositories, (repo) => Str.toLowerCase(repo.fullName) === wanted),
+		)
 		// An unknown repository has no findings; reading the org's would spend the cap on others.
 		const findings =
 			wanted !== undefined && repository === undefined
@@ -406,8 +409,10 @@ export const dependencyFixOf = (
 
 /** The CVE when the advisory has one: what people search for. */
 export const displayAdvisory = (finding: Pick<DependencyFindingView, "advisoryId" | "aliases">): string => {
-	const cve = finding.aliases.find((alias) => Str.startsWith("CVE-")(alias))
-	return cve === undefined ? finding.advisoryId : `${cve} (${finding.advisoryId})`
+	return Option.match(
+		Arr.findFirst(finding.aliases, (alias) => Str.startsWith("CVE-")(alias)),
+		{ onNone: () => finding.advisoryId, onSome: (cve) => `${cve} (${finding.advisoryId})` },
+	)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -501,7 +506,10 @@ export const catchAllServices = (signatures: ReadonlyArray<SignatureRow>): Reado
 
 export const categoryLabelOf = (signature: string): string => {
 	const id = probeCategoryOf(signature)
-	return PROBE_CATEGORIES.find((category) => category.id === id)?.label ?? "Unclassified"
+	return Option.match(
+		Arr.findFirst(PROBE_CATEGORIES, (category) => category.id === id),
+		{ onNone: () => "Unclassified", onSome: (category) => category.label },
+	)
 }
 
 /** What `inspect_security_finding` takes for an answered probe: the service and the path it served. */
@@ -616,13 +624,14 @@ export const readRuntimes = (tenant: TenantContext, window: SecurityWindow) =>
 			return product === undefined || row.runtimeVersion === "" ? [] : [product]
 		})
 		// Busiest services first, so the read cap drops the quietest versions.
-		const targets = Arr.flatMap(
-			rows.toSorted((a, b) => b.spans - a.spans),
-			(row) => {
-				const target = advisoryTargetOf(row)
-				return target === undefined ? [] : [target]
-			},
+		const busiestFirst = Arr.sort(
+			rows,
+			Order.flip(Order.mapInput(Order.Number, (row: (typeof rows)[number]) => row.spans)),
 		)
+		const targets = Arr.flatMap(busiestFirst, (row) => {
+			const target = advisoryTargetOf(row)
+			return target === undefined ? [] : [target]
+		})
 		const [releases, advisories] = yield* Effect.all(
 			[
 				(yield* RuntimeReleaseCatalog).releases(products),
@@ -770,13 +779,14 @@ export const matchesFilters = (row: SecurityFindingRow, filters: FindingFilters)
 	return true
 }
 
+const FINDING_RANK: Order.Order<SecurityFindingRow> = Order.combineAll([
+	Order.mapInput(Order.Number, (row: SecurityFindingRow) => SEVERITY_RANK[row.severity]),
+	Order.flip(Order.mapInput(Order.Number, (row: SecurityFindingRow) => row.services.length)),
+	Order.make((a, b) => Str.localeCompare(a.lastSeen ?? "")(b.lastSeen ?? "")),
+])
+
 export const rankFindings = (rows: ReadonlyArray<SecurityFindingRow>): ReadonlyArray<SecurityFindingRow> =>
-	rows.toSorted(
-		(a, b) =>
-			SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
-			b.services.length - a.services.length ||
-			Str.localeCompare(a.lastSeen ?? "")(b.lastSeen ?? ""),
-	)
+	Arr.sort(rows, FINDING_RANK)
 
 export const countBySeverity = (rows: ReadonlyArray<SecurityFindingRow>) => ({
 	critical: Arr.filter(rows, (row) => row.severity === "critical").length,
@@ -1005,20 +1015,25 @@ export const repositoryCoverage = (
 	const sameName = (a: string, b: string) => Str.toLowerCase(a) === Str.toLowerCase(b)
 	return Arr.flatMap(names, (name, i): ReadonlyArray<SecurityRepositoryCoverage> => {
 		// Keep the first spelling of each name.
-		if (names.findIndex((other) => sameName(other, name)) !== i) return []
+		if (
+			!Option.contains(
+				Arr.findFirstIndex(names, (other) => sameName(other, name)),
+				i,
+			)
+		)
+			return []
 		// One target per branch: show the branch that ran last (a run beats none), else the first.
-		const audited = Arr.filter(targets, ({ target }) => sameName(target.repository, name)).reduce<
-			CodeTarget | undefined
-		>(
+		const audited = Arr.reduce<CodeTarget, CodeTarget | undefined>(
+			Arr.filter(targets, ({ target }) => sameName(target.repository, name)),
+			undefined,
 			(best, next) =>
 				best === undefined ||
 				(next.latestRun !== undefined &&
 					(best.latestRun === undefined || next.latestRun.startedAt > best.latestRun.startedAt))
 					? next
 					: best,
-			undefined,
 		)
-		const repo = repos.find((r) => sameName(r.fullName, name))
+		const repo = Option.getOrUndefined(Arr.findFirst(repos, (r) => sameName(r.fullName, name)))
 		const run = audited?.latestRun
 		const scan = repo?.latestScan ?? null
 		return [
@@ -1060,26 +1075,26 @@ export const unreadRepository = (
 	repository: string,
 	coverage: ReadonlyArray<SecurityRepositoryCoverage>,
 ): { readonly state: "not_scanned" | "not_connected"; readonly note: string } | undefined => {
-	const row = coverage.find((r) => Str.toLowerCase(r.repository) === Str.toLowerCase(repository))
+	const row = Arr.findFirst(coverage, (r) => Str.toLowerCase(r.repository) === Str.toLowerCase(repository))
 	if (area === "code") {
-		if (row === undefined || row.audit === null)
+		if (Option.isNone(row) || row.value.audit === null)
 			return {
 				state: "not_connected",
 				note: `${repository} is not set up for the code audit, so no code finding is not the same as clear.`,
 			}
-		return row.audit.lastRunId === null
+		return row.value.audit.lastRunId === null
 			? {
 					state: "not_scanned",
 					note: `${repository} has never been audited, so no code finding is not the same as clear.`,
 				}
 			: undefined
 	}
-	if (row === undefined || row.dependencyScan === null)
+	if (Option.isNone(row) || row.value.dependencyScan === null)
 		return {
 			state: "not_connected",
 			note: `${repository} is not a connected GitHub repository, so its lockfiles are not scanned.`,
 		}
-	return row.dependencyScan.status === null
+	return row.value.dependencyScan.status === null
 		? {
 				state: "not_scanned",
 				note: `${repository} has never had a dependency scan, so no dependency finding is not the same as clear.`,

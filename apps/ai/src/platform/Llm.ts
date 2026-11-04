@@ -84,7 +84,7 @@ const OPENROUTER_API_URLS = {
 type OpenRouterRegion = "us" | "eu"
 
 const openRouterRegion = (settings: LlmSettings): OpenRouterRegion =>
-	readString(settings, "MAPLE_REGION")?.toLowerCase() === "eu" ? "eu" : "us"
+	readLowerString(settings, "MAPLE_REGION") === "eu" ? "eu" : "us"
 
 export const openRouterApiUrl = (settings: LlmSettings): string =>
 	OPENROUTER_API_URLS[openRouterRegion(settings)]
@@ -238,7 +238,7 @@ export type ReasoningEffort = "low" | "medium" | "high" | "off"
 const REASONING_EFFORTS: ReadonlySet<string> = new Set(["low", "medium", "high", "off"])
 
 const readReasoningEffort = (settings: LlmSettings, key: StringKey): ReasoningEffort | undefined => {
-	const raw = readString(settings, key)?.toLowerCase()
+	const raw = readLowerString(settings, key)
 	// An unrecognized value falls through to the caller's default rather than throwing. This is read
 	// on a request path in a Worker; a typo'd env var must not take the agent down.
 	return raw !== undefined && REASONING_EFFORTS.has(raw) ? (raw as ReasoningEffort) : undefined
@@ -300,6 +300,11 @@ const readString = (settings: LlmSettings, key: StringKey): string | undefined =
 	return value !== undefined && Str.trim(value) !== "" ? Str.trim(value) : undefined
 }
 
+const readLowerString = (settings: LlmSettings, key: StringKey): string | undefined => {
+	const value = readString(settings, key)
+	return value === undefined ? undefined : Str.toLowerCase(value)
+}
+
 const readSecret = (
 	settings: LlmSettings,
 	key: "OPENROUTER_API_KEY" | "CLOUDFLARE_API_KEY",
@@ -355,9 +360,7 @@ const limitsFor = (
  * OpenRouter the moment someone flipped the switch.
  */
 export const resolveLlmProvider = (settings: LlmSettings): LlmProvider =>
-	readString(settings, "MAPLE_LLM_PROVIDER")?.toLowerCase() === "workers-ai"
-		? "workers-ai"
-		: DEFAULT_LLM_PROVIDER
+	readLowerString(settings, "MAPLE_LLM_PROVIDER") === "workers-ai" ? "workers-ai" : DEFAULT_LLM_PROVIDER
 
 /**
  * Per-request body fields for the OpenRouter branch.
@@ -382,7 +385,8 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 })
 
 /** The session as OpenRouter accepts it. The span carries the same value, so the two never diverge. */
-const sessionIdFor = (tags: LlmCallTags): string | undefined => tags.sessionId?.slice(0, 256)
+const sessionIdFor = (tags: LlmCallTags): string | undefined =>
+	tags.sessionId === undefined ? undefined : Str.slice(0, 256)(tags.sessionId)
 
 /**
  * The agent-session identity as span attributes: the session, the turn and the workflow.
@@ -563,7 +567,7 @@ const servedReviewModel = (
 	chosen: Option.Option<PrReviewModel>,
 ): Option.Option<string> =>
 	chosen.pipe(
-		Option.flatMap((id) => Option.fromUndefinedOr(PR_REVIEW_MODELS.find((model) => model.id === id))),
+		Option.flatMap((id) => Arr.findFirst(PR_REVIEW_MODELS, (model) => model.id === id)),
 		Option.filter((model) => openRouterRegion(settings) !== "eu" || model.eu),
 		Option.map((model) => model.id),
 	)

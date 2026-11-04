@@ -24,7 +24,21 @@
  * live request. No `mcp-session-id` is issued, so clients never send one back
  * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
-import { Cause, Context, Effect, Exit, Layer, Option, Predicate, Queue, Ref, Schema, Scope } from "effect"
+import {
+	Cause,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Predicate,
+	Queue,
+	Ref,
+	Schema,
+	Scope,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -88,7 +102,7 @@ const isInitializeMessage = (message: FromClientEncoded): boolean =>
 	message._tag === "Request" && message.tag === "initialize"
 
 const isToolMessage = (message: FromClientEncoded): boolean =>
-	message._tag === "Request" && message.tag.startsWith("tools/")
+	message._tag === "Request" && Str.startsWith("tools/")(message.tag)
 
 const isToolCallMessage = (message: FromClientEncoded): boolean =>
 	message._tag === "Request" && message.tag === "tools/call"
@@ -128,7 +142,9 @@ const jsonRpcError = (id: string | number | null, code: number, message: string)
 
 /** Media types a `content-type` / `accept` header offers, parameters stripped. */
 const mediaTypes = (header: string | undefined): ReadonlyArray<string> =>
-	header === undefined ? [] : header.split(",").map((part) => part.split(";")[0]!.trim().toLowerCase())
+	header === undefined
+		? []
+		: Arr.map(Str.split(",")(header), (part) => Str.toLowerCase(Str.trim(Str.split(";")(part)[0])))
 
 /**
  * Mirrors Effect's origin check: a request without an `Origin` is a non-browser
@@ -205,7 +221,8 @@ export const layerStatelessMcpHttp = (options: {
 					)
 					// No session id is ever issued, so a client's leftover one is dropped: the server
 					// would look the session up by that id instead of by this request's client.
-					const requestHeaders = Object.entries(request.headers).filter(
+					const requestHeaders = Arr.filter(
+						Object.entries(request.headers),
 						([name]) => name !== "mcp-session-id",
 					)
 					// A body that cannot be read is a request we can still answer as
@@ -275,14 +292,14 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
-					const registered = messages.some(isToolMessage)
+					const registered = Arr.some(messages, isToolMessage)
 						? yield* Effect.exit(options.registerTools)
 						: Exit.void
 					if (Exit.isFailure(registered)) {
 						yield* Effect.logError("MCP tool registration failed", registered.cause)
 						return toolsUnavailable()
 					}
-					const loaded = messages.some(isToolCallMessage)
+					const loaded = Arr.some(messages, isToolCallMessage)
 						? yield* Effect.exit(options.loadToolExecutor)
 						: Exit.succeed({ built: false })
 					if (Exit.isFailure(loaded)) {
@@ -293,7 +310,7 @@ export const layerStatelessMcpHttp = (options: {
 
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.
-					if (!messages.some(isInitializeMessage)) {
+					if (!Arr.some(messages, isInitializeMessage)) {
 						const initializeJson = yield* encodeJson(
 							syntheticInitialize(options.protocol.protocolVersion),
 						).pipe(Effect.orDie)
@@ -325,19 +342,21 @@ export const layerStatelessMcpHttp = (options: {
 					// The synthetic handshake is Maple's, not the caller's; its reply must
 					// not reach the wire.
 					const initializeIds = new Set(
-						messages.flatMap((message) =>
+						Arr.flatMap(messages, (message) =>
 							message._tag === "Request" && isInitializeMessage(message) ? [message.id] : [],
 						),
 					)
-					const visible = responses
-						.filter(
+					const visible = Arr.map(
+						Arr.filter(
+							responses,
 							(response) =>
 								!(
 									Predicate.hasProperty(response, "requestId") &&
 									response.requestId === SYNTHETIC_INITIALIZE_ID
 								),
-						)
-						.map(withToolsCapability(initializeIds))
+						),
+						withToolsCapability(initializeIds),
+					)
 					return HttpServerResponse.text(parser.encode(visible) as string, {
 						contentType: serialization.contentType,
 						// api moves it onto its own span and strips it: this request's CPU shows only there.

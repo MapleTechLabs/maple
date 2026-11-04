@@ -149,13 +149,13 @@ export const runCheck = (
 			}
 		case "answer-mentions": {
 			const lower = Str.toLowerCase(answer)
-			const hit = check.anyOf.find((term) => Str.includes(Str.toLowerCase(term))(lower))
+			const hit = Arr.findFirst(check.anyOf, (term) => Str.includes(Str.toLowerCase(term))(lower))
 			return {
-				pass: hit !== undefined,
-				detail:
-					hit !== undefined
-						? `answer names "${hit}"`
-						: `answer names none of ${showJson(check.anyOf)}`,
+				pass: Option.isSome(hit),
+				detail: Option.match(hit, {
+					onNone: () => `answer names none of ${showJson(check.anyOf)}`,
+					onSome: (term) => `answer names "${term}"`,
+				}),
 			}
 		}
 	}
