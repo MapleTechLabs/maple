@@ -55,6 +55,7 @@ const press = (
 				dy: 0,
 				isStarted: false,
 				cols: grid.geometry.cols,
+				key: grid.key,
 				gridOrigin: null,
 				rect: itemRect(grid.geometry, item),
 				origin,
@@ -72,7 +73,7 @@ type Frame = Readonly<{ clientX: number; clientY: number; gridLeft: number; grid
  */
 const move = (model: Model, gesture: GridGesture, frame: Frame): Return => {
 	const grid = gridOfWidget(model, gesture.widgetId)
-	if (!isGestureGrid(grid, gesture.cols)) return { model: { ...model, gesture: null } }
+	if (!isGestureGrid(grid, gesture)) return { model: { ...model, gesture: null } }
 	const gridOrigin = gesture.gridOrigin ?? { left: frame.gridLeft, top: frame.gridTop }
 	const dx = frame.clientX - gesture.startX + (gridOrigin.left - frame.gridLeft)
 	const dy = frame.clientY - gesture.startY + (gridOrigin.top - frame.gridTop)
@@ -104,24 +105,21 @@ const move = (model: Model, gesture: GridGesture, frame: Frame): Return => {
 
 const release = (model: Model, context: PageContext, gesture: GridGesture, isCommit: boolean): Return => {
 	const ended = { ...model, gesture: null }
-	const isSameGrid = isGestureGrid(gridOfWidget(model, gesture.widgetId), gesture.cols)
+	const isSameGrid = isGestureGrid(gridOfWidget(model, gesture.widgetId), gesture)
 	return gesture.isStarted && isCommit && isSameGrid
 		? commitLayout(ended, context, gesture.widgetId, gesture.origin, gesture.preview)
 		: { model: ended }
 }
 
 /**
- * The grid was measured again: a pointer or keyboard move begun on another column count would
- * commit a projected layout, so it ends where it began.
+ * The grid was measured again or the document changed: a pointer or keyboard move begun on another
+ * column count or container would commit a projected layout, so it ends where it began.
  */
 export const cancelStaleGesture = (model: Model, context: PageContext): Return => {
 	const { gesture, keyboardMove } = model
-	if (gesture !== null && !isGestureGrid(gridOfWidget(model, gesture.widgetId), gesture.cols))
+	if (gesture !== null && !isGestureGrid(gridOfWidget(model, gesture.widgetId), gesture))
 		return { model: { ...model, gesture: null } }
-	if (
-		keyboardMove !== null &&
-		!isGestureGrid(gridOfWidget(model, keyboardMove.widgetId), keyboardMove.cols)
-	)
+	if (keyboardMove !== null && !isGestureGrid(gridOfWidget(model, keyboardMove.widgetId), keyboardMove))
 		return endKeyboardMove(model, context, keyboardMove, false)
 	return { model }
 }

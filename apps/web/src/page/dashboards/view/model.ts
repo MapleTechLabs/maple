@@ -81,6 +81,8 @@ export const GridGesture = Schema.Struct({
 	isStarted: Schema.Boolean,
 	/** The canonical grid's columns at the press: a resize into another tier cancels the gesture. */
 	cols: Schema.Number,
+	/** The container the tile was pressed in: moving it to another container cancels the gesture. */
+	key: Schema.String,
 	/** The grid's viewport position at the first frame; auto-scrolling moves it under the pointer. */
 	gridOrigin: Schema.NullOr(Schema.Struct({ left: Schema.Number, top: Schema.Number })),
 	/** The tile's box when it was picked up, inside the grid's padding box. */
@@ -94,8 +96,9 @@ export type GridGesture = typeof GridGesture.Type
 export const KeyboardMove = Schema.Struct({
 	widgetId: Schema.String,
 	label: Schema.String,
-	/** The canonical grid's columns at pick-up, as for `GridGesture`. */
+	/** The canonical grid's columns and container at pick-up, as for `GridGesture`. */
 	cols: Schema.Number,
+	key: Schema.String,
 	origin: Schema.Array(GridItem),
 	preview: Schema.Array(GridItem),
 })

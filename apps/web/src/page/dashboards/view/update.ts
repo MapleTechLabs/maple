@@ -337,10 +337,16 @@ const receiveDocument = (
 			const settled = isDefaultChanged
 				? { ...next, refreshMenu: { ...next.refreshMenu, highlighted: null } }
 				: next
+			// A tile moved to another container mid-gesture: the gesture ends where it began.
+			const ended = cancelStaleGesture(settled, context)
 			// A new saved range this viewer shows: the clock is read first, and its answer plans.
-			const planned: Return = isRangeMoved(model, settled)
-				? { model: settled, commands: [ReadClock()] }
-				: withReplan(settled, context, "Load")
+			const replanned: Return = isRangeMoved(model, ended.model)
+				? { model: ended.model, commands: [ReadClock()] }
+				: withReplan(ended.model, context, "Load")
+			const planned: Return = {
+				...replanned,
+				commands: [...(ended.commands ?? []), ...(replanned.commands ?? [])],
+			}
 			const isFirstRead = model.shares === "Idle" && next.shares === "Loading"
 			const seq = model.sharing.fetchSeq + 1
 			const shares = isFirstRead ? [FetchShares({ dashboardId: model.dashboardId, seq })] : []

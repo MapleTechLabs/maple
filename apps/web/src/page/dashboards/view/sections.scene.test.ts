@@ -4,7 +4,7 @@ import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { applySectionEdit, SectionEdit } from "./section-edit"
-import { EditSections, FetchWidget } from "./command"
+import { EditSections, FetchWidget, UpdateWidgetLayouts } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -89,6 +89,55 @@ describe("dashboard groups", () => {
 			Message.PressedGrip({ widgetId: "orphan", clientX: 10, clientY: 10 }),
 		)
 		expect(pressed.model.gesture?.widgetId).toBe("orphan")
+	})
+
+	test("a tile moved to another group mid-drag ends the drag without writing the old group's preview", () => {
+		const moved = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(document),
+			widgets: [
+				stat("root"),
+				stat("in-a", { sectionId: "s2", tabId: "c" }),
+				stat("in-b", { sectionId: "s1", tabId: "b" }),
+			],
+		})
+		const editing = pageUpdate(ready(), Message.MeasuredGrid({ width: 1200 })).model
+		const pressed = pageUpdate(
+			editing,
+			Message.PressedGrip({ widgetId: "in-a", clientX: 10, clientY: 10 }),
+		).model
+		const dragged = pageUpdate(
+			pressed,
+			Message.MovedPointer({ clientX: 700, clientY: 10, gridLeft: 0, gridTop: 0 }),
+		).model
+		expect(dragged.gesture?.isStarted).toBe(true)
+		const updated = pageUpdate(
+			dragged,
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(moved) }),
+		)
+		expect(updated.model.gesture).toBeNull()
+		expect(names(pageUpdate(updated.model, Message.ReleasedPointer()).commands)).toEqual([])
+	})
+
+	test("a tile moved to another group during a keyboard move goes back without a write", () => {
+		const moved = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(document),
+			widgets: [
+				stat("root"),
+				stat("in-a", { sectionId: "s2", tabId: "c" }),
+				stat("in-b", { sectionId: "s1", tabId: "b" }),
+			],
+		})
+		const editing = pageUpdate(ready(), Message.MeasuredGrid({ width: 1200 })).model
+		const key = (value: string) =>
+			Message.PressedGripKey({ widgetId: "in-a", label: "In A", key: value, isShift: false })
+		const nudged = pageUpdate(pageUpdate(editing, key(" ")).model, key("ArrowRight")).model
+		expect(nudged.keyboardMove?.widgetId).toBe("in-a")
+		const updated = pageUpdate(
+			nudged,
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(moved) }),
+		)
+		expect(updated.model.keyboardMove).toBeNull()
+		expect(names(updated.commands)).not.toContain(UpdateWidgetLayouts.name)
 	})
 
 	test("a chevron collapses the group for this viewer only, in the URL", () => {

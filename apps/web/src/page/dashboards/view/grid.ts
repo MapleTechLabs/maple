@@ -71,9 +71,12 @@ export const gridOfWidget = (model: Model, widgetId: string): CanvasGrid | null 
 		: canvasGridOf(model, drawnContainerOf(document, widget))
 }
 
-/** The grid a gesture began on is still the editable one: same columns, still the canonical tier. */
-export const isGestureGrid = (grid: CanvasGrid | null, cols: number): grid is CanvasGrid =>
-	grid !== null && grid.tier.canonical && grid.geometry.cols === cols
+/** The grid a gesture began on is still the editable one: same container, columns and canonical tier. */
+export const isGestureGrid = (
+	grid: CanvasGrid | null,
+	began: Readonly<{ cols: number; key: string }>,
+): grid is CanvasGrid =>
+	grid !== null && grid.tier.canonical && grid.geometry.cols === began.cols && grid.key === began.key
 
 const holds = (grid: CanvasGrid, widgetId: string) =>
 	Arr.some(grid.widgets, (widget) => widget.id === widgetId)

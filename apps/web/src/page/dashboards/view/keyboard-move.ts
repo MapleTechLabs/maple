@@ -37,7 +37,7 @@ export const endKeyboardMove = (
 	move: KeyboardMove,
 	isCommit: boolean,
 ): Return => {
-	const isSameGrid = isGestureGrid(gridOfWidget(model, move.widgetId), move.cols)
+	const isSameGrid = isGestureGrid(gridOfWidget(model, move.widgetId), move)
 	const final = isCommit && isEditing(model) && isSameGrid ? move.preview : move.origin
 	const item = final.find((candidate) => candidate.i === move.widgetId)
 	const position = item === undefined ? "its position" : describePosition(item)
@@ -67,6 +67,7 @@ const pickUp = (model: Model, message: KeyMessage): Return => {
 				widgetId: message.widgetId,
 				label,
 				cols: grid.geometry.cols,
+				key: grid.key,
 				origin,
 				preview: origin,
 			},
@@ -84,7 +85,7 @@ export const keyboardStep = (model: Model, context: PageContext, message: KeyMes
 	if (message.key === "Escape") return endKeyboardMove(model, context, move, false)
 	const direction = ARROWS.get(message.key)
 	const grid = gridOfWidget(model, move.widgetId)
-	if (!isGestureGrid(grid, move.cols)) return endKeyboardMove(model, context, move, false)
+	if (!isGestureGrid(grid, move)) return endKeyboardMove(model, context, move, false)
 	if (direction === undefined) return { model }
 	const next = message.isShift
 		? growItem(move.preview, move.widgetId, direction, grid.geometry.cols)
