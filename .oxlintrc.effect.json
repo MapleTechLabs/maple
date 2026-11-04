@@ -61,6 +61,11 @@
 		// New in the effect-native preset: flags every sync decode, ~1k hits mostly in tests and non-Effect
 		// boundaries. `schema-sync-in-effect` already covers the case that matters.
 		"effecttsgo/schema-sync": "off",
+		// ~3k native-to-effect swaps (`.find` to an Option, `.sort` to an Order) that find no bugs;
+		// `require-array-sort-compare` already covers the sort footgun.
+		"effecttsgo/prefer-effect-array": "off",
+		"effecttsgo/prefer-effect-record": "off",
+		"effecttsgo/prefer-effect-string": "off",
 		"effecttsgo/strict-effect-provide": "error",
 		"effecttsgo/sync-to-succeed": "error",
 		"effecttsgo/type-union-to-schema-union": "error",
@@ -131,10 +136,26 @@
 				"effecttsgo/global-random": "off",
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",
-				"effecttsgo/process-env": "off",
-				"effecttsgo/prefer-effect-array": "off",
-				"effecttsgo/prefer-effect-record": "off",
-				"effecttsgo/prefer-effect-string": "off"
+				"effecttsgo/process-env": "off"
+			}
+		},
+		// Host APIs on purpose: the customer SDK exports a Promise surface, the CLI reads its own
+		// environment, and the canvas animations draw with Math.random per frame.
+		{
+			"files": [
+				"packages/effect-sdk/**",
+				"apps/cli/**",
+				"apps/web/src/crash/**",
+				"apps/web/src/page/service-map/three/**"
+			],
+			"rules": {
+				"effecttsgo/crypto-random-uuid": "off",
+				"effecttsgo/global-console": "off",
+				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-random": "off",
+				"effecttsgo/global-timers": "off",
+				"effecttsgo/new-promise": "off",
+				"effecttsgo/process-env": "off"
 			}
 		},
 		// Tests may use host globals and intentionally incomplete layers; production code may not.
@@ -161,10 +182,6 @@
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",
 				"effecttsgo/process-env": "off",
-				// Fixtures and assertions read better with native array/string calls.
-				"effecttsgo/prefer-effect-array": "off",
-				"effecttsgo/prefer-effect-record": "off",
-				"effecttsgo/prefer-effect-string": "off",
 				// Tests decode fixtures inline and cast partial layers on purpose.
 				"effecttsgo/schema-sync-in-effect": "off",
 				"effecttsgo/unsafe-effect-type-assertion": "off",

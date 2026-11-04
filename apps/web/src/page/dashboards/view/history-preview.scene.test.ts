@@ -87,7 +87,7 @@ const previewed = () => {
 
 describe("previewing a version", () => {
 	test("a previewed version's own variables resolve, though the live board dropped them", () => {
-		const withEnv = Schema.decodeUnknownSync(DashboardDocument)({
+		const withEnv = Schema.decodeSync(DashboardDocument)({
 			...Schema.encodeSync(DashboardDocument)(snapshot),
 			variables: [
 				{ name: "env", type: "custom", options: [{ value: "production" }, { value: "staging" }] },
