@@ -231,6 +231,20 @@ describe("dashboard view", () => {
 		expect(endTimeOf(clocked.model, "total-errors")).toMatch(/^2026-10-01 14:/)
 	})
 
+	test("a viewer's pick of the board's own range still lands in their URL", () => {
+		const board = ready().document?.timeRange
+		const value = board?.type === "relative" ? board.value : ""
+		const picked = pickPreset(ready(), value)
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: `/dashboards/dash_platform?range=${value}`,
+				isReplace: true,
+			}),
+		)
+		const routed = routeChanged(picked.model, { ...ROUTE, search: { range: value } }, context).model
+		expect(pickPreset(routed, value).outMessage).toBeUndefined()
+	})
+
 	test("an edit session's pick is also saved as the board's range", () => {
 		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
 		const picked = pickPreset(editing, "1h")

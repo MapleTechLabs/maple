@@ -48,6 +48,7 @@ import {
 	shownDocumentOf,
 	slotOf,
 	timeRangeOf,
+	viewerTimeRangeOf,
 	withCharts,
 } from "./plan"
 import { isEditing } from "./mode"
@@ -385,8 +386,8 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 		isEditing(model) && !isSameTimeRange(model.document?.timeRange ?? null, timeRange)
 			? [SaveTimeRange({ orgId: context.orgId, dashboardId: model.dashboardId, timeRange })]
 			: []
-	// The saved board answers through the document; the URL only holds a viewer's pick.
-	if (isEditing(model) || isSameTimeRange(timeRangeOf(model), timeRange))
+	// The saved board answers through the document; the URL holds a viewer's pick, even one equal to the board's.
+	if (isEditing(model) || isSameTimeRange(viewerTimeRangeOf(model), timeRange))
 		return { model: updated, commands: [...commands, ...save] }
 	const controls = { ...pickDashboardControlParams(model.search), ...timeRangeParams(timeRange) }
 	const search = model.search.mode === "edit" ? { ...controls, mode: "edit" as const } : controls
