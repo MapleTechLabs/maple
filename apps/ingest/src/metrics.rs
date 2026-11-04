@@ -633,12 +633,12 @@ pub fn replay_blob_put_failed(org_id: &str) {
     REPLAY_BLOB_PUT_FAILED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
 }
 
-/// Current in-flight request count for an org.
 /// Memory request bodies being decoded hold right now; requests are shed near the budget.
 pub fn decode_memory_reserved(bytes: u64) {
     DECODE_MEMORY_RESERVED_BYTES.record(bytes, &[]);
 }
 
+/// Current in-flight request count for an org.
 pub fn org_requests_in_flight(org_id: &str, value: u64) {
     ORG_REQUESTS_IN_FLIGHT.record(value, &[KeyValue::new("org_id", org_id.to_owned())]);
 }

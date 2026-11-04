@@ -7159,7 +7159,8 @@ async fn decode_otlp_body(
         })
     })
     .await
-    .unwrap_or_else(|_| {
+    .unwrap_or_else(|join_error| {
+        error!(error = %join_error, "OTLP decode task failed");
         Err(DecodeRefusal {
             error: ApiError::service_unavailable("Ingest gateway failed to decode the request"),
             stage: "decode_panic",
