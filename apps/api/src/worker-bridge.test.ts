@@ -25,6 +25,7 @@ import { AiWorkerFetcher, MapleDbConnection } from "@maple/backend/platform/bind
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
+import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { buildIsolateHandler, makeFetch } from "./worker/http"
 
 /**
@@ -225,10 +226,13 @@ const event = (
 	path: string,
 	app: Effect.Effect<HttpEffect, unknown>,
 	headers?: Record<string, string>,
+	afterResponseRunner?: Effect.Effect<(work: Effect.Effect<void>) => Effect.Effect<void>>,
 ) =>
 	Effect.gen(function* () {
 		// A fresh isolate per event, so every request here is its isolate's first.
-		const fetch = yield* makeFetch(app, noPorts).pipe(Effect.provide(IsolateAge.layer))
+		const fetch = yield* makeFetch(app, noPorts, app, undefined, afterResponseRunner).pipe(
+			Effect.provide(IsolateAge.layer),
+		)
 		const recorded: Array<RecordedRequest> = []
 		const realFetch = globalThis.fetch
 		globalThis.fetch = stubFetch(recorded)
@@ -266,6 +270,31 @@ const event = (
 	}).pipe(Effect.scoped)
 
 describe("the api Worker through alchemy's bridge", () => {
+	it.effect("hands a route's after-response work to the event instead of running it first", () =>
+		Effect.gen(function* () {
+			const handedOver: Array<Effect.Effect<void>> = []
+			let ran = false
+			const app: Effect.Effect<HttpEffect, never> = Effect.succeed(
+				runAfterResponse(
+					Effect.sync(() => {
+						ran = true
+					}),
+				).pipe(Effect.as(HttpServerResponse.text("ok"))),
+			)
+			const result = yield* event(
+				"GET",
+				"/deferred",
+				app,
+				undefined,
+				Effect.succeed((work) => Effect.sync(() => handedOver.push(work))),
+			)
+			assert.strictEqual(result.response.status, 200)
+			assert.isFalse(ran)
+			yield* Effect.forEach(handedOver, (work) => work, { discard: true })
+			assert.isTrue(ran)
+		}),
+	)
+
 	it.effect("records isolate age for successful requests and graph-build failures", () =>
 		Effect.gen(function* () {
 			const success = yield* event(

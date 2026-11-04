@@ -57,24 +57,19 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
-import {
-	dataSourceQuerySet,
-	MARKDOWN_STATIC_ENDPOINT,
-	QUERY_RESULT_ENDPOINTS,
-	RAW_SQL_ENDPOINT,
-	toWidgetRequest,
-} from "@maple/widgets/dashboard"
+import { dataSourceQuerySet } from "@maple/widgets/dashboard"
 import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
-import { ROUTE_ENDPOINT_PLANS, type RouteEndpointContext } from "./route-endpoint-plans"
+import type { RouteEndpointContext } from "./route-endpoint-plans"
 import { resolveShareVariables } from "./share-variables"
 import { resolveShareWindow } from "./share-window"
-import { type TelemetryReadFamily, widgetReadFamilies } from "./widget-read-families"
+import { type TelemetryReadFamily, widgetReadFamilies, widgetReadPath } from "./widget-read-families"
 
-const UNSUPPORTED_WIDGET_MESSAGE = "This widget isn't available in shared views."
+// Shares and the API's widget data read both land here, so the wording names neither.
+const UNSUPPORTED_WIDGET_MESSAGE = "This widget type can't be read outside the dashboard yet."
 const EXECUTION_FAILED_MESSAGE = "This widget couldn't be loaded. Try again shortly."
 
 /**
@@ -330,14 +325,22 @@ export class DashboardWidgetDataService extends Context.Service<
 			// A markdown/static tile has nothing to fetch. It is a success with no
 			// data, not an unsupported widget — the renderer draws it from the
 			// document alone.
-			const lowered = toWidgetRequest(dataSource)
-			if (lowered === null || lowered.endpoint === MARKDOWN_STATIC_ENDPOINT) {
+			const path = widgetReadPath(dataSource)
+			if (path._tag === "Static") {
 				return {
 					widgetId: request.widgetId,
 					source: request.source,
 					data: null,
 				} satisfies WidgetDataOutcome
 			}
+			if (path._tag === "Unservable") {
+				return yield* new ShareUnsupportedWidgetError({
+					message: UNSUPPORTED_WIDGET_MESSAGE,
+					widgetId: request.widgetId,
+					kind: path.request.endpoint,
+				})
+			}
+			const lowered = path.request
 
 			// The signed-in browser's exact planning pass. A pinned tile
 			// (`widget.timeRange`) resolves against the same clock and snap grid
@@ -407,8 +410,8 @@ export class DashboardWidgetDataService extends Context.Service<
 			// `{ data: rows }` in every branch — the envelope the browser's server
 			// functions return, which the shared `toReadyWidgetData` unwraps on
 			// the client for both paths alike.
-			const querySet = dataSourceQuerySet(dataSource)
-			if (querySet !== null && executed.endpoint === QUERY_RESULT_ENDPOINTS[querySet.resultShape]) {
+			// Branches on the same path the scope gate classified, never on the stored shape.
+			if (path._tag === "QuerySet") {
 				const rows = yield* Effect.gen(function* () {
 					const params = yield* decodePlannedQuerySet(executed.params)
 					const result = yield* runQuerySet(makeServerQuerySetExecutor(tenant, queryEngine), {
@@ -419,7 +422,7 @@ export class DashboardWidgetDataService extends Context.Service<
 								? undefined
 								: { comparison: params.comparison }),
 						},
-						resultShape: querySet.resultShape,
+						resultShape: path.querySet.resultShape,
 						startTime: executed.window.startTime,
 						endTime: executed.window.endTime,
 						...(params.defaultLimit === undefined
@@ -443,7 +446,7 @@ export class DashboardWidgetDataService extends Context.Service<
 				return outcome({ data: rows })
 			}
 
-			if (executed.endpoint === RAW_SQL_ENDPOINT) {
+			if (path._tag === "RawSql") {
 				// The SQL is the dashboard author's, never the viewer's — it comes off
 				// the stored document and no share payload can influence it beyond
 				// the variable values, which the planner interpolated as escaped SQL
@@ -477,15 +480,6 @@ export class DashboardWidgetDataService extends Context.Service<
 				return outcome({ data: rows })
 			}
 
-			const routePlan = ROUTE_ENDPOINT_PLANS[executed.endpoint]
-			if (routePlan === undefined) {
-				return yield* new ShareUnsupportedWidgetError({
-					message: UNSUPPORTED_WIDGET_MESSAGE,
-					widgetId: request.widgetId,
-					kind: executed.endpoint,
-				})
-			}
-
 			const context: RouteEndpointContext = {
 				tenant,
 				queryEngine,
@@ -493,9 +487,8 @@ export class DashboardWidgetDataService extends Context.Service<
 				window: executed.window,
 			}
 
-			// `routePlan === undefined` above is the structural case and stays
-			// "unsupported"; a plan that exists and throws is a run that failed.
-			const data = yield* routePlan
+			// A route with no plan was refused as unsupported above; a plan that fails is a run that failed.
+			const data = yield* path.plan
 				.run(executed.params, context)
 				.pipe(asWidgetOutcomeFailure(request.widgetId, executed.endpoint))
 

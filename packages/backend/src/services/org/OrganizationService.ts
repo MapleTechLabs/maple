@@ -612,6 +612,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				}
 				yield* purgeOrgScopedRows(orgId)
 				yield* deleteClerkOrganization(orgId)
+				// A cached "served here" would outlive the organization by up to an hour.
+				yield* regions.forget(orgId)
 				return new DeleteOrganizationResponse({ deleted: true })
 			})
 

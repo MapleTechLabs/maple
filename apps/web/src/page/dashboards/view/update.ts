@@ -4,7 +4,7 @@ import {
 	variableValuesFromSearch,
 } from "../../../lib/dashboard-controls/search-params"
 import { behindToast } from "../kit/store"
-import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
+import { type DashboardDocument, DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -39,7 +39,8 @@ import {
 } from "./command"
 import { cancelStaleGesture, gestureStep } from "./gesture"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, Snapshot } from "./model"
+import { FallbackReason, FetchDashboardFallback } from "./command-fallback"
 import {
 	awaitsRefresh,
 	isSameTimeRange,
@@ -51,7 +52,7 @@ import {
 	viewerTimeRangeOf,
 	withCharts,
 } from "./plan"
-import { isEditing } from "./mode"
+import { isEditing, isWriteBlocked } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
 import { sectionStep } from "./section-update"
@@ -77,6 +78,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		search: route.search,
 		status: "Loading",
 		document: null,
+		snapshot: { _tag: "Idle" },
 		nowMs: null,
 		refreshVersion: 0,
 		isReloading: false,
@@ -215,7 +217,7 @@ const addPicked = (
 	context: PageContext,
 	pick: { readonly presetId: string | null; readonly chartId: string | null },
 ): Return => {
-	if (model.persistenceError !== null) {
+	if (isWriteBlocked(model)) {
 		const shut = closePicker(model)
 		return {
 			...shut,
@@ -308,19 +310,24 @@ const withTileReplan = (model: Model, context: PageContext, widgetId: string): R
 	return { model: planned.model, commands: planned.commands }
 }
 
-/** The live document arrived (or changed): plan the revealed tiles against it. */
+/**
+ * The document arrived (or changed): plan the revealed tiles against it. The live stream always
+ * wins: its answer replaces a shown HTTP snapshot, and editing comes back.
+ */
 const receiveDocument = (
 	model: Model,
 	context: PageContext,
-	message: Message & { _tag: "UpdatedDashboard" },
+	maybeDocument: Option.Option<DashboardDocument>,
+	snapshot: Snapshot,
 ): Return =>
-	Option.match(message.maybeDocument, {
-		onNone: () => ({ model: { ...model, status: "Missing", document: null } }),
+	Option.match(maybeDocument, {
+		onNone: () => ({ model: { ...model, status: "Missing", document: null, snapshot } }),
 		onSome: (document) => {
 			const next: Model = {
 				...model,
 				status: "Ready",
 				document,
+				snapshot,
 				// The store caught up with a drop (or moved on): the grid draws what it holds.
 				droppedLayout: null,
 				droppedKey: null,
@@ -367,6 +374,13 @@ const receiveDocument = (
 			}
 		},
 	})
+
+/** The board over HTTP while live sync is down; the org's collections reconnect meanwhile. */
+const readSnapshot = (model: Model, reason: typeof FallbackReason.Type): Return => ({
+	model: { ...model, status: "Loading", snapshot: { _tag: "Loading" } },
+	commands: [FetchDashboardFallback({ dashboardId: model.dashboardId, reason })],
+	outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+})
 
 const sortStep = (model: Model, widgetId: string, field: string, isText: boolean): Return => {
 	const current = model.tableSorts[widgetId] ?? { key: null, dir: "desc" as const }
@@ -553,7 +567,37 @@ const titleSubmit = (model: Model, context: PageContext): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		UpdatedDashboard: (updated) =>
-			updated.orgId === context.orgId ? receiveDocument(model, context, updated) : { model },
+			updated.orgId === context.orgId
+				? receiveDocument(model, context, updated.maybeDocument, { _tag: "Idle" })
+				: { model },
+		// `handleCollectionStuck`: the collections reconnect while the snapshot loads.
+		TimedOutLiveDashboard: ({ orgId }) =>
+			orgId !== context.orgId || model.status !== "Loading" || model.snapshot._tag !== "Idle"
+				? { model }
+				: readSnapshot(model, "live_sync_timeout"),
+		// A late answer after the stream delivered is dropped: the live board is newer.
+		CompletedFetchDashboardFallback: ({ dashboardId, result }) =>
+			dashboardId !== model.dashboardId || model.snapshot._tag !== "Loading"
+				? { model }
+				: Result.match(result, {
+						onSuccess: (document) =>
+							receiveDocument(model, context, Option.some(document), { _tag: "Shown" }),
+						onFailure: (failure) =>
+							failure.code === "dashboard_not_found"
+								? receiveDocument(model, context, Option.none(), { _tag: "Idle" })
+								: {
+										model: {
+											...model,
+											status: "Failed",
+											snapshot: { _tag: "Failed", failure },
+										},
+									},
+					}),
+		// `retryOrgCollections`: a board that could not be read is read again after the reconnect.
+		ClickedRetrySync: () =>
+			model.status === "Failed"
+				? readSnapshot(model, "retry")
+				: { model, outMessage: PageOutMessage.RequestedReconnectOrgCollections() },
 		CompletedReadClock: ({ nowMs }) =>
 			withReplan({ ...model, nowMs }, context, model.refreshVersion > 0 ? "Refresh" : "Load"),
 		MeasuredGrid: ({ width }) => cancelStaleGesture({ ...model, gridWidth: width }, context),
@@ -692,7 +736,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedTitle: () =>
-			model.persistenceError !== null || model.document === null || model.history.previewed !== null
+			isWriteBlocked(model) || model.document === null || model.history.previewed !== null
 				? { model }
 				: { model: { ...model, titleDraft: model.document.name } },
 		ChangedTitleDraft: ({ value }) => ({ model: { ...model, titleDraft: value } }),
