@@ -317,6 +317,15 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 	userActivityFixture("userTracesQuery", () =>
 		CH.compileUnsafe(CH.userTracesQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
 	),
+	{
+		...userActivityFixture("userTracesQuery", () =>
+			CH.compileUnsafe(
+				CH.userTracesQuery({ ...USER_SCOPE, serviceNames: ["api"], notableSlowerThanMs: 2000 }),
+				window,
+			),
+		),
+		label: "notable",
+	},
 	userActivityFixture("userLogsQuery", () =>
 		CH.compileUnsafe(CH.userLogsQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
 	),
@@ -2250,6 +2259,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				}),
 				window,
 			),
+	},
+	{
+		module: "users",
+		name: "usersListQuery",
+		label: "activityRollup",
+		compile: () =>
+			CH.compileUnsafe(CH.usersListQuery({ ...USERS_NAMESPACE_SCOPE, activityRollup: true }), window),
 	},
 	{
 		module: "users",

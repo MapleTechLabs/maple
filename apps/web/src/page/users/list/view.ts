@@ -39,12 +39,8 @@ const EMPTY_FACETS: UsersFacetsData = {
 	anonymousVisitors: 0,
 }
 
-/** A listed user as the kit row draws it; route and activity arrive with the request rollup. */
-const toRow = (user: UserListItem): UserRow => ({
-	...user,
-	topRoute: null,
-	activity: [],
-})
+/** A listed user as the kit row draws it. */
+const toRow = (user: UserListItem): UserRow => user
 
 const filtersOf = (model: Model): UsersFilters => ({
 	search: model.query,

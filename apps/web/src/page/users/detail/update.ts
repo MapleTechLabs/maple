@@ -10,7 +10,15 @@ import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from 
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import type { PresetValue } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { CompleteReloadSpin, detailInputs, FetchActivity, FetchProfile, ResolveWindow } from "./command"
+import {
+	CompleteReloadSpin,
+	detailInputs,
+	FetchActivity,
+	FetchLogs,
+	FetchProfile,
+	FetchTraces,
+	ResolveWindow,
+} from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model, Search } from "./model"
 
@@ -48,12 +56,21 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 		timeZone: context.timeZone,
 	})
 
+/**
+ * The profile and activity always; the Traces and Logs tabs' raw reads only while their tab is
+ * open, so a page view never scans spans it does not show.
+ */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const inputs = detailInputs(model.userId, model.search, window, context.pinnedNamespace)
+	const tab = tabOf(model.search)
 	const profileKey = requestKey(context.orgId, "getUserProfile", { data: inputs })
 	const activityKey = requestKey(context.orgId, "getUserActivity", { data: inputs })
+	const tracesKey = requestKey(context.orgId, "getUserTraces", { data: inputs })
+	const logsKey = requestKey(context.orgId, "getUserLogs", { data: inputs })
 	const profile = Keyed.request(model.profile, profileKey, mode)
 	const activity = Keyed.request(model.activity, activityKey, mode)
+	const traces = tab === "traces" ? Keyed.request(model.traces, tracesKey, mode) : Option.none()
+	const logs = tab === "logs" ? Keyed.request(model.logs, logsKey, mode) : Option.none()
 	const refresh = mode === "Refresh"
 	return {
 		model: {
@@ -61,10 +78,14 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			window,
 			profile: Option.getOrElse(profile, () => model.profile),
 			activity: Option.getOrElse(activity, () => model.activity),
+			traces: Option.getOrElse(traces, () => model.traces),
+			logs: Option.getOrElse(logs, () => model.logs),
 		},
 		commands: [
 			...(Option.isSome(profile) ? [FetchProfile({ key: profileKey, refresh, ...inputs })] : []),
 			...(Option.isSome(activity) ? [FetchActivity({ key: activityKey, refresh, ...inputs })] : []),
+			...(Option.isSome(traces) ? [FetchTraces({ key: tracesKey, refresh, ...inputs })] : []),
+			...(Option.isSome(logs) ? [FetchLogs({ key: logsKey, refresh, ...inputs })] : []),
 		],
 	}
 }
@@ -87,6 +108,8 @@ export const init = (route: Route, context: PageContext): Return => {
 		nowMs: 0,
 		profile: Keyed.idle(),
 		activity: Keyed.idle(),
+		traces: Keyed.idle(),
+		logs: Keyed.idle(),
 		timePicker: TimeRangePicker.init("user-time-range"),
 		refreshVersion: 0,
 		isReloading: false,
@@ -94,7 +117,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	return { model, commands: [resolveCommand(model, context, "Load")] }
 }
 
-/** The route loader warms the profile and the activity. */
+/** The route loader warms the profile and the activity, and the open tab's spans or logs. */
 export const preload = (route: Route, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
 	const window = resolveWindow(
@@ -107,10 +130,15 @@ export const preload = (route: Route, context: PageContext, nowMs: number) => {
 		},
 		nowMs,
 	)
-	return pickCommands(requestAll(model, context, window, "Load"), [FetchProfile.name, FetchActivity.name])
+	return pickCommands(requestAll(model, context, window, "Load"), [
+		FetchProfile.name,
+		FetchActivity.name,
+		FetchTraces.name,
+		FetchLogs.name,
+	])
 }
 
-/** A tab or namespace pick keeps the reads it can (a tab change starts none). */
+/** A tab or namespace pick keeps the reads it can; opening Traces or Logs starts that tab's read. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	const { search } = route
 	if (userDetailHref(model.userId, model.search) === userDetailHref(route.userId, search)) return { model }
@@ -126,7 +154,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 	})
 }
 
-/** The org pin changed: both reads are keyed on the scope, so the stale ones refetch. */
+/** The org pin changed: every read is keyed on the scope, so the stale ones refetch. */
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
 
@@ -158,6 +186,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchActivity: ({ key, result }) => ({
 			model: { ...model, activity: Keyed.accept(model.activity, key, result) },
+		}),
+		CompletedFetchTraces: ({ key, result }) => ({
+			model: { ...model, traces: Keyed.accept(model.traces, key, result) },
+		}),
+		CompletedFetchLogs: ({ key, result }) => ({
+			model: { ...model, logs: Keyed.accept(model.logs, key, result) },
 		}),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }

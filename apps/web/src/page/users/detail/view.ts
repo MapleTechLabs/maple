@@ -2,6 +2,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option } from "effect"
 import type { UserProfileItem } from "@maple/domain/http"
+import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import type { BreadcrumbEntry } from "../../../shell/view-topbar"
 import type { PageViewInputs } from "../../contract"
@@ -60,23 +61,25 @@ const actions = (h: H, model: Model): Html =>
 			}),
 	})
 
-/** The tabs read from the activity answer; the others come with the profile. */
+/** The tabs read from the activity answer; Traces and Logs have their own reads, Errors none yet. */
 const ACTIVITY_TABS: ReadonlySet<UserTab> = new Set(["activity", "sessions", "events", "mcp"])
 
-/** A loading or failed activity read, drawn in place of a tab that needs it. */
-const activityState = (h: H, model: Model, tab: UserTab): Html | undefined =>
-	ACTIVITY_TABS.has(tab)
-		? AsyncData.matchData(model.activity.data, {
-				onEmpty: (): Html | undefined => userRowsLoading(h),
-				onFailure: (failure): Html | undefined =>
-					errorState(h, {
-						failure,
-						title: "Couldn't load this user's activity",
-						onRetry: Message.ClickedRetry(),
-					}),
-				onData: (): Html | undefined => undefined,
-			})
-		: undefined
+/** A loading or failed read, drawn in place of the tab's rows. */
+const readState = <A>(h: H, data: AsyncData.AsyncData<A, LoadFailure>, title: string): Html | undefined =>
+	AsyncData.matchData(data, {
+		onEmpty: (): Html | undefined => userRowsLoading(h),
+		onFailure: (failure): Html | undefined =>
+			errorState(h, { failure, title, onRetry: Message.ClickedRetry() }),
+		onData: (): Html | undefined => undefined,
+	})
+
+/** The open tab's read state: the activity read's tabs, Traces and Logs; none for the others. */
+const tabState = (h: H, model: Model, tab: UserTab): Html | undefined => {
+	if (ACTIVITY_TABS.has(tab)) return readState(h, model.activity.data, "Couldn't load this user's activity")
+	if (tab === "traces") return readState(h, model.traces.data, "Couldn't load this user's requests")
+	if (tab === "logs") return readState(h, model.logs.data, "Couldn't load this user's logs")
+	return undefined
+}
 
 const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageViewInputs): Html => {
 	const pinned = inputs.context.pinnedNamespace
@@ -93,8 +96,12 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 		profile,
 		Option.getOrUndefined(AsyncData.getData(model.activity.data)),
 		model.search,
+		{
+			traces: Option.getOrUndefined(AsyncData.getData(model.traces.data)),
+			logs: Option.getOrUndefined(AsyncData.getData(model.logs.data)),
+		},
 	)
-	const tabContent = activityState(h, model, tab)
+	const tabContent = tabState(h, model, tab)
 	const options: UserDetailOptions<Message> = {
 		tab,
 		namespace,
@@ -123,7 +130,7 @@ const notFound = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	const active = activeNamespace(model.search, inputs.context.pinnedNamespace)
 	return resourceNotFound(h, {
 		title: "No activity from this user",
-		description: `No session, product event or MCP request carried user.id ${model.userId} in this time range${active === null ? "" : ` under the ${active} namespace`}. Widen the range, or check the id.`,
+		description: `No session, product event, span or log carried user.id ${model.userId} in this time range${active === null ? "" : ` under the ${active} namespace`}. Widen the range, or check the id.`,
 		back: { href: "/users", label: "All users" },
 	})
 }

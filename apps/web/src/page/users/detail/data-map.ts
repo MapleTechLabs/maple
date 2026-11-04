@@ -1,8 +1,8 @@
 import type { UserActivityItem, UserProfileItem } from "@maple/domain/http"
 import { Array as Arr } from "effect"
 import { AppRoute, hrefOf } from "../../../route"
-import type { ActivityItem, UserDetail, UserMcpSession, UserProfile } from "../data"
-import type { ActivityData, Search } from "./model"
+import type { ActivityItem, UserDetail, UserLog, UserMcpSession, UserProfile, UserTrace } from "../data"
+import type { ActivityData, LogsData, Search, TracesData } from "./model"
 import { windowSearch } from "./update"
 
 // The API's answers as the kit views draw them, with each row's link built from the app's routes.
@@ -13,6 +13,9 @@ export const mcpSessionHref = (service: string, sessionId: string, search: Searc
 
 /** One replay's page. */
 export const replayHref = (sessionId: string): string => hrefOf(AppRoute.Replay({ sessionId, search: {} }))
+
+/** One trace's page. */
+export const traceHref = (traceId: string): string => hrefOf(AppRoute.Trace({ traceId, search: {} }))
 
 const EMPTY_ACTIVITY: ActivityData = { sessions: [], events: [], mcpSessions: [], activity: [] }
 
@@ -31,9 +34,9 @@ export const toProfile = (profile: UserProfileItem): UserProfile => ({
 	lastSeenMs: profile.lastSeenMs,
 	sessions: profile.sessions,
 	errors: profile.replayErrors,
-	topRoute: null,
+	topRoute: profile.topRoute,
 	signals: profile.signals,
-	activity: [],
+	activity: profile.activity,
 	traits: Arr.map(profile.traits, (trait) => [trait.key, trait.value] as const),
 	visitorIds: profile.visitorIds,
 	services: profile.services,
@@ -47,13 +50,13 @@ export const toProfile = (profile: UserProfileItem): UserProfile => ({
 	issues: profile.issues,
 	failedRate: profile.failedRate,
 	p95Ms: profile.p95Ms,
-	orgP95Ms: null,
 	logs: profile.logs,
 	traces: profile.traces,
 })
 
-/** The page a timeline row opens: a replay, an MCP session on its server, else none. */
+/** The page a timeline row opens: a replay, an MCP session on its server, a trace, else none. */
 export const activityHref = (item: UserActivityItem, search: Search): string | null => {
+	if (item.traceId !== null) return traceHref(item.traceId)
 	if (item.sessionId === null) return null
 	switch (item.kind) {
 		case "session":
@@ -65,11 +68,15 @@ export const activityHref = (item: UserActivityItem, search: Search): string | n
 	}
 }
 
+/** What the Traces and Logs tabs draw; each read may still be out (no rows yet). */
+export type TabReads = Readonly<{ traces: TracesData | undefined; logs: LogsData | undefined }>
+
 /** Everything the kit body draws; the activity read may still be out (no rows yet). */
 export const toUserDetail = (
 	profile: UserProfileItem,
 	activity: ActivityData | undefined,
 	search: Search,
+	tabs: TabReads = { traces: undefined, logs: undefined },
 ): UserDetail => {
 	const data = activity ?? EMPTY_ACTIVITY
 	return {
@@ -95,8 +102,23 @@ export const toUserDetail = (
 			device: session.device,
 		})),
 		issues: [],
-		traces: [],
-		logs: [],
+		traces: Arr.map(tabs.traces?.traces ?? [], (trace): UserTrace => ({
+			traceId: trace.traceId,
+			atMs: trace.atMs,
+			rootSpan: trace.spanName,
+			service: trace.service,
+			durationMs: trace.durationMs,
+			status: trace.status,
+			isError: trace.status === "Error",
+			href: traceHref(trace.traceId),
+		})),
+		logs: Arr.map(tabs.logs?.logs ?? [], (log): UserLog => ({
+			atMs: log.atMs,
+			severity: log.severity,
+			service: log.service,
+			body: log.body,
+			href: log.traceId === "" ? null : traceHref(log.traceId),
+		})),
 		events: data.events,
 		mcpSessions: Arr.map(data.mcpSessions, (session): UserMcpSession => ({
 			service: session.service,

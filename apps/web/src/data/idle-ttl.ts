@@ -30,6 +30,10 @@ export const IdleTtl = {
 	userProfile: 30_000,
 	/** `/users/$userId`: sessions, events, MCP sessions and the timeline. */
 	userActivity: 30_000,
+	/** `/users/$userId`: the Traces tab's requests. */
+	userTraces: 30_000,
+	/** `/users/$userId`: the Logs tab's lines. */
+	userLogs: 30_000,
 	/** `getReplayResultAtom`. */
 	replay: 60_000,
 	/** `getReplayManifestResultAtom`. */

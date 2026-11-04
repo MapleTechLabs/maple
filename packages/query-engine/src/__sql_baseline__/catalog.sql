@@ -9767,7 +9767,7 @@ SELECT
           AND user_activity_hourly.UserId = 'user_catalog'
         FORMAT JSON
 
--- builder:user-activity:userActivityTotalsQuery:default  [e0f21ea2]
+-- builder:user-activity:userActivityTotalsQuery:default  [af7d08cb]
 SELECT
           user_activity_hourly.UserId AS userId,
           sum(user_activity_hourly.RequestCount) AS requestCount,
@@ -9776,7 +9776,10 @@ SELECT
           sum(user_activity_hourly.LogCount) AS logCount,
           sum(user_activity_hourly.ErrorLogCount) AS errorLogCount,
           min(user_activity_hourly.FirstSeen) AS firstSeen,
-          max(user_activity_hourly.LastSeen) AS lastSeen
+          max(user_activity_hourly.LastSeen) AS lastSeen,
+          tupleElement(arrayElement(arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes)), 1), 1) AS topRoute,
+          tupleElement(sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)]), 1) AS requestHours,
+          tupleElement(sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)]), 2) AS requestHourCounts
         FROM user_activity_hourly
         WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
           AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
@@ -9831,6 +9834,30 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
+-- builder:user-activity:userTracesQuery:notable  [9c6e1711]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.Timestamp AS timestamp,
+          traces.ServiceName AS serviceName,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          if(traces.ParentSpanId = '', 1, 0) AS isRoot
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('api')
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND traces.IsEntryPoint = 1
+          AND (traces.SpanAttributes['user.id'] = 'user_catalog' OR (traces.SpanAttributes['user.id'] = '' AND traces.SpanAttributes['enduser.id'] = 'user_catalog'))
+          AND (traces.StatusCode = 'Error' OR traces.Duration >= 2000000000)
+        ORDER BY timestamp DESC
+        LIMIT 100
+        FORMAT JSON
+
 -- builder:users:userDevicesQuery:default  [cf2b3cba]
 SELECT
           sessions.browser AS browser,
@@ -9862,21 +9889,55 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:users:userEventsQuery:namespaceFiltered  [31327fa9]
+-- builder:users:userEventsQuery:namespaceFiltered  [fe5833cd]
 SELECT
+          events.timestamp AS timestamp,
+          events.name AS name,
+          events.source AS source,
+          events.service AS service,
+          events.pagePath AS pagePath,
+          events.propertyKeys AS propertyKeys,
+          events.propertyValues AS propertyValues
+        FROM (SELECT
           product_events.Timestamp AS timestamp,
           product_events.EventName AS name,
           product_events.Source AS source,
-          product_events.ServiceName AS service,
+          if(product_events.ServiceName != '', product_events.ServiceName, ifNull(session.service, '')) AS service,
           product_events.PagePath AS pagePath,
           mapKeys(product_events.Attributes) AS propertyKeys,
           mapValues(product_events.Attributes) AS propertyValues
+        FROM product_events
+        LEFT JOIN (SELECT
+          session_replays.SessionId AS sessionId,
+          any(session_replays.ServiceName) AS service
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName != ''
+          AND session_replays.SessionId IN (SELECT
+          product_events.SessionId AS sessionId
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
           AND product_events.UserId = 'user_42'
-          AND product_events.ServiceName IN ('storefront-web')
+          AND product_events.ServiceName = ''
+          AND product_events.SessionId != ''
+        GROUP BY sessionId)
+        GROUP BY sessionId) AS session ON product_events.SessionId = session.sessionId
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42'
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))) AS events
         ORDER BY timestamp DESC
         LIMIT 200
         FORMAT JSON
@@ -9948,7 +10009,7 @@ SELECT
         GROUP BY sessionId) AS sessions
         FORMAT JSON
 
--- builder:users:usersAnonymousVisitorsQuery:default  [a9224a1a]
+-- builder:users:usersAnonymousVisitorsQuery:default  [3a50f0ee]
 SELECT
           count() AS anonymousVisitors
         FROM (SELECT
@@ -9974,14 +10035,21 @@ SELECT
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
           AND product_events.VisitorId != ''
-          AND product_events.ServiceName IN ('storefront-web')
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
         GROUP BY visitorId
 ) AS visitors
         GROUP BY visitorId
         HAVING sum(visitors.identified) = 0) AS anonymous
         FORMAT JSON
 
--- builder:users:userServicesQuery:default  [3f574db2]
+-- builder:users:userServicesQuery:default  [6a3acd28]
 SELECT
           signals.service AS service,
           signals.namespace AS namespace,
@@ -10003,15 +10071,42 @@ SELECT
         GROUP BY service, namespace
 UNION ALL
 SELECT
-          product_events.ServiceName AS service,
-          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          events.service AS service,
+          transform(events.service, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           count() AS signals
+        FROM (SELECT
+          product_events.Timestamp AS timestamp,
+          product_events.EventName AS name,
+          product_events.Source AS source,
+          if(product_events.ServiceName != '', product_events.ServiceName, ifNull(session.service, '')) AS service,
+          product_events.PagePath AS pagePath,
+          mapKeys(product_events.Attributes) AS propertyKeys,
+          mapValues(product_events.Attributes) AS propertyValues
+        FROM product_events
+        LEFT JOIN (SELECT
+          session_replays.SessionId AS sessionId,
+          any(session_replays.ServiceName) AS service
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName != ''
+          AND session_replays.SessionId IN (SELECT
+          product_events.SessionId AS sessionId
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
           AND product_events.UserId = 'user_42'
-          AND product_events.ServiceName != ''
+          AND product_events.ServiceName = ''
+          AND product_events.SessionId != ''
+        GROUP BY sessionId)
+        GROUP BY sessionId) AS session ON product_events.SessionId = session.sessionId
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42') AS events
+        WHERE events.service != ''
         GROUP BY service, namespace
 UNION ALL
 SELECT
@@ -10034,7 +10129,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:users:usersFacetsQuery:default  [6edef25c]
+-- builder:users:usersFacetsQuery:default  [9a4ae814]
 SELECT
           signals.namespace AS name,
           uniqExact(signals.userId) AS count,
@@ -10052,7 +10147,9 @@ SELECT
           toUInt64(sum(sessions.errors)) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10083,7 +10180,9 @@ SELECT
           toUInt64(0) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          count() AS events
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10103,7 +10202,9 @@ SELECT
           toUInt64(0) AS errors,
           countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
           count() AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10136,7 +10237,9 @@ SELECT
           toUInt64(sum(sessions.errors)) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10168,13 +10271,22 @@ SELECT
           toUInt64(0) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          count() AS events
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
           AND product_events.UserId != ''
-          AND product_events.ServiceName IN ('storefront-web')
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
         GROUP BY userId, namespace
 UNION ALL
 SELECT
@@ -10189,7 +10301,9 @@ SELECT
           toUInt64(0) AS errors,
           countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
           count() AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10207,7 +10321,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [a80d5e5f]
+-- builder:users:usersListQuery:activityRollup  [5e634f72]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10220,7 +10334,9 @@ SELECT
           sum(signals.errors) AS errors,
           sum(signals.requests) AS requests,
           sum(signals.mcpSpans) AS mcpSpans,
-          sum(signals.events) AS events
+          sum(signals.events) AS events,
+          sum(signals.spans) AS spans,
+          sum(signals.logLines) AS logLines
         FROM (
 SELECT
           sessions.userId AS userId,
@@ -10234,7 +10350,9 @@ SELECT
           toUInt64(sum(sessions.errors)) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10266,13 +10384,131 @@ SELECT
           toUInt64(0) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          count() AS events
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
           AND product_events.UserId != ''
-          AND product_events.ServiceName IN ('storefront-web')
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          user_activity_hourly.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          '' AS groupId,
+          user_activity_hourly.ServiceNamespace AS namespace,
+          toDateTime64(min(user_activity_hourly.FirstSeen), 9) AS firstSeen,
+          toDateTime64(max(user_activity_hourly.LastSeen), 9) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(sum(user_activity_hourly.FailedRequestCount)) AS errors,
+          toUInt64(sum(user_activity_hourly.RequestCount)) AS requests,
+          toUInt64(sumIf(user_activity_hourly.SpanCount, user_activity_hourly.ServiceName IN ('maple-ai'))) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(sum(user_activity_hourly.SpanCount)) AS spans,
+          toUInt64(sum(user_activity_hourly.LogCount)) AS logLines
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId != ''
+        GROUP BY userId, namespace
+) AS signals
+        GROUP BY userId
+        ORDER BY lastSeen DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:users:usersListQuery:namespaceFiltered  [e1f09d51]
+SELECT
+          signals.userId AS userId,
+          anyIf(signals.name, signals.name != '') AS name,
+          anyIf(signals.email, signals.email != '') AS email,
+          anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
+          min(signals.firstSeen) AS firstSeen,
+          max(signals.lastSeen) AS lastSeen,
+          sum(signals.sessions) AS sessions,
+          sum(signals.errors) AS errors,
+          sum(signals.requests) AS requests,
+          sum(signals.mcpSpans) AS mcpSpans,
+          sum(signals.events) AS events,
+          sum(signals.spans) AS spans,
+          sum(signals.logLines) AS logLines
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
         GROUP BY userId, namespace
 UNION ALL
 SELECT
@@ -10287,7 +10523,9 @@ SELECT
           toUInt64(0) AS errors,
           countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
           count() AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10308,7 +10546,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [779e0e4b]
+-- builder:users:usersListQuery:unscoped  [71404ca5]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10321,7 +10559,9 @@ SELECT
           sum(signals.errors) AS errors,
           sum(signals.requests) AS requests,
           sum(signals.mcpSpans) AS mcpSpans,
-          sum(signals.events) AS events
+          sum(signals.events) AS events,
+          sum(signals.spans) AS spans,
+          sum(signals.logLines) AS logLines
         FROM (
 SELECT
           sessions.userId AS userId,
@@ -10335,7 +10575,9 @@ SELECT
           toUInt64(sum(sessions.errors)) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10366,7 +10608,9 @@ SELECT
           toUInt64(0) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          count() AS events
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10386,7 +10630,9 @@ SELECT
           toUInt64(0) AS errors,
           countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
           count() AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10458,7 +10704,7 @@ SELECT
         LIMIT 2000
         FORMAT JSON
 
--- builder:users:usersSummaryQuery:default  [7ebef38c]
+-- builder:users:usersSummaryQuery:default  [e7bbbfe6]
 SELECT
           count() AS identified,
           countIf(users.lastSeen >= '2026-01-01 10:30:00') AS activeToday,
@@ -10482,7 +10728,9 @@ SELECT
           toUInt64(sum(sessions.errors)) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM (SELECT
           session_replays.SessionId AS sessionId,
           argMax(session_replays.UserId, session_replays.Version) AS userId,
@@ -10513,7 +10761,9 @@ SELECT
           toUInt64(0) AS errors,
           toUInt64(0) AS requests,
           toUInt64(0) AS mcpSpans,
-          count() AS events
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -10533,7 +10783,9 @@ SELECT
           toUInt64(0) AS errors,
           countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
           count() AS mcpSpans,
-          toUInt64(0) AS events
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'

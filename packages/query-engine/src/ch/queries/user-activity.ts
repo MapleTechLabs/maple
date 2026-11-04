@@ -211,6 +211,11 @@ export interface UserActivityTotalsOutput {
 	readonly errorLogCount: number
 	readonly firstSeen: DateTime.Utc
 	readonly lastSeen: DateTime.Utc
+	/** The busiest route, `''` when the user made no entry-point request. */
+	readonly topRoute: string
+	/** Requests per hour: epoch seconds of each hour with requests, ascending, and its count. */
+	readonly requestHours: ReadonlyArray<number>
+	readonly requestHourCounts: ReadonlyArray<number>
 }
 
 export const userActivityTotalsRowSchema = Schema.Struct({
@@ -222,7 +227,13 @@ export const userActivityTotalsRowSchema = Schema.Struct({
 	errorLogCount: CHNumber,
 	firstSeen: DateTimeUtcFromWarehouse,
 	lastSeen: DateTimeUtcFromWarehouse,
+	topRoute: Schema.String,
+	requestHours: Schema.Array(CHNumber),
+	requestHourCounts: Schema.Array(CHNumber),
 })
+
+// sumMap keeps only non-zero sums, so an hour with logs and no requests drops out.
+const REQUESTS_BY_HOUR_SQL = "sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)])"
 
 export function userActivityTotalsQuery(opts: UserActivityTotalsOpts) {
 	return from(UserActivityHourly)
@@ -235,6 +246,15 @@ export function userActivityTotalsQuery(opts: UserActivityTotalsOpts) {
 			errorLogCount: CH.sum($.ErrorLogCount),
 			firstSeen: CH.min_($.FirstSeen),
 			lastSeen: CH.max_($.LastSeen),
+			topRoute: CH.rawExpr<string>(`tupleElement(arrayElement(${TOP_ROUTES_SQL}, 1), 1)`, T.string),
+			requestHours: CH.rawExpr<ReadonlyArray<number>>(
+				`tupleElement(${REQUESTS_BY_HOUR_SQL}, 1)`,
+				T.array(T.uint32),
+			),
+			requestHourCounts: CH.rawExpr<ReadonlyArray<number>>(
+				`tupleElement(${REQUESTS_BY_HOUR_SQL}, 2)`,
+				T.array(T.uint64),
+			),
 		}))
 		.where(($) => [
 			...activityWindow($, opts),
@@ -293,8 +313,14 @@ export const userTraceRowSchema = Schema.Struct({
 	isRoot: CHNumber,
 })
 
+export interface UserTracesOpts extends UserRawReadOpts {
+	readonly errorsOnly?: boolean
+	/** Only failed requests and those at least this slow: the Activity timeline's notable ones. */
+	readonly notableSlowerThanMs?: number
+}
+
 /** The user's entry-point spans (Server/Consumer or root), newest first. One per request, not per trace. */
-export function userTracesQuery(opts: UserRawReadOpts & { readonly errorsOnly?: boolean }) {
+export function userTracesQuery(opts: UserTracesOpts) {
 	return from(Traces)
 		.select(($) => ({
 			traceId: $.TraceId,
@@ -316,6 +342,9 @@ export function userTracesQuery(opts: UserRawReadOpts & { readonly errorsOnly?: 
 			$.IsEntryPoint.eq(1),
 			traceUserCondition($, opts.userId),
 			opts.errorsOnly === true ? $.StatusCode.eq("Error") : undefined,
+			opts.notableSlowerThanMs === undefined
+				? undefined
+				: CH.or($.StatusCode.eq("Error"), $.Duration.gte(opts.notableSlowerThanMs * 1_000_000)),
 		])
 		.orderBy(["timestamp", "desc"])
 		.limit(opts.limit ?? 100)

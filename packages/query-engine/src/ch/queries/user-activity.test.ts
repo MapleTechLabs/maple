@@ -59,6 +59,12 @@ describe("user activity rollup reads", () => {
 		const empty = compileUnsafe(userActivityTotalsQuery({ userIds: [] }), params).sql
 		expect(empty).toContain("1 = 0")
 	})
+
+	it("gives each listed user their top route and requests per hour", () => {
+		const { sql } = compileUnsafe(userActivityTotalsQuery({ userIds: ["a"] }), params)
+		expect(sql).toContain("arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes))")
+		expect(sql).toContain("sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)])")
+	})
 })
 
 describe("user raw reads", () => {
@@ -88,6 +94,11 @@ describe("user raw reads", () => {
 		const failed = compileUnsafe(userTracesQuery({ ...raw, errorsOnly: true }), params).sql
 		expect(all).not.toContain("StatusCode = 'Error'")
 		expect(failed).toContain("StatusCode = 'Error'")
+	})
+
+	it("keeps failed or slow requests for the timeline", () => {
+		const { sql } = compileUnsafe(userTracesQuery({ ...raw, notableSlowerThanMs: 2000 }), params)
+		expect(sql).toContain("(traces.StatusCode = 'Error' OR traces.Duration >= 2000000000)")
 	})
 
 	it("prunes logs by partition time, sort-key time and service", () => {
