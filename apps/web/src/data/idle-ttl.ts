@@ -26,6 +26,10 @@ export const IdleTtl = {
 	listUsers: 30_000,
 	/** `/users`: the rail facets and summary. */
 	usersFacets: 30_000,
+	/** `/users/$userId`: the profile, stats and rail. */
+	userProfile: 30_000,
+	/** `/users/$userId`: sessions, events, MCP sessions and the timeline. */
+	userActivity: 30_000,
 	/** `getReplayResultAtom`. */
 	replay: 60_000,
 	/** `getReplayManifestResultAtom`. */

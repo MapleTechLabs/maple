@@ -88,6 +88,7 @@ export const AppRoute = defineRouteUnion({
 	Services: { search: Search.ServicesSearch },
 	Traces: { search: Search.TracesSearch },
 	Users: { search: Search.UsersSearch },
+	UserDetail: { userId: Schema.String, search: Search.UserDetailSearch },
 	AgentSessionTool: { toolName: Schema.String, search: Search.AgentSessionToolSearch },
 	McpServer: { serviceName: Schema.String, search: Search.McpServersSearch },
 	McpServerTool: { serviceName: Schema.String, toolName: Schema.String, search: Search.McpServersSearch },

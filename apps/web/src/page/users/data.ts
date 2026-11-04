@@ -1,4 +1,6 @@
+import type { McpClientKind } from "@maple/domain/mcp-clients"
 import { Array as Arr } from "effect"
+import { USER_DETAIL_TABS, type UserDetailTab } from "../../route/search"
 
 // What the users pages draw: one row per end user the SDKs identified, and one user's profile.
 // The ids come from `identify()` (session_replays, product_events) and `user.id` / `enduser.id`
@@ -27,10 +29,15 @@ export type UserRow = Readonly<{
 	activity: ReadonlyArray<number>
 }>
 
-export type UserService = Readonly<{ service: string; namespace: string; spans: number }>
+/** A service the user's signals came from; `signals` counts their sessions, events and MCP requests. */
+export type UserService = Readonly<{ service: string; namespace: string; signals: number }>
 export type UserDevice = Readonly<{ browser: string; os: string; sessions: number }>
 
-export type UserProfile = UserRow &
+/**
+ * One user's profile. The request figures (`requests`, `failedRate`, the p95s, `traces`, `logs`,
+ * `issues`) are `null` until the per-user request rollup lands; the page shows them as not available.
+ */
+export type UserProfile = Omit<UserRow, "requests"> &
 	Readonly<{
 		traits: ReadonlyArray<readonly [string, string]>
 		visitorIds: ReadonlyArray<string>
@@ -38,17 +45,19 @@ export type UserProfile = UserRow &
 		devices: ReadonlyArray<UserDevice>
 		location: string | null
 		recordedMs: number
-		issues: number
-		failedRate: number
-		p95Ms: number
-		orgP95Ms: number
 		events: number
 		distinctEvents: number
-		logs: number
-		traces: number
+		mcpCalls: number
+		requests: number | null
+		issues: number | null
+		failedRate: number | null
+		p95Ms: number | null
+		orgP95Ms: number | null
+		logs: number | null
+		traces: number | null
 	}>
 
-export type ActivityKind = "error" | "request" | "event" | "session" | "log"
+export type ActivityKind = "error" | "request" | "event" | "session" | "log" | "mcp"
 
 export type ActivityItem = Readonly<{
 	kind: ActivityKind
@@ -57,6 +66,8 @@ export type ActivityItem = Readonly<{
 	title: string
 	detail: string
 	tone: "crit" | "warn" | "neutral"
+	/** The page the row opens (a replay, an MCP session); `null` when it has none. */
+	href: string | null
 }>
 
 export type UserSession = Readonly<{
@@ -68,7 +79,8 @@ export type UserSession = Readonly<{
 	pages: number
 	errors: number
 	entry: string
-	exit: string
+	/** The last page, when the session recorded one. */
+	exit: string | null
 	device: string
 }>
 
@@ -101,8 +113,23 @@ export type UserEvent = Readonly<{
 	atMs: number
 	name: string
 	service: string
-	source: "browser" | "server" | "mobile"
+	/** `browser`, `server`, `mobile` or `trace`. */
+	source: string
 	detail: string
+}>
+
+/** One MCP session of the user on one MCP server, with the link to its session page. */
+export type UserMcpSession = Readonly<{
+	service: string
+	sessionId: string
+	client: string
+	kind: McpClientKind
+	calls: number
+	errors: number
+	tools: number
+	firstSeenMs: number
+	lastSeenMs: number
+	href: string
 }>
 
 /** Everything the detail page reads for one user. */
@@ -114,19 +141,23 @@ export type UserDetail = Readonly<{
 	traces: ReadonlyArray<UserTrace>
 	logs: ReadonlyArray<UserLog>
 	events: ReadonlyArray<UserEvent>
+	mcpSessions: ReadonlyArray<UserMcpSession>
 }>
 
-export const USER_TABS = ["activity", "sessions", "errors", "traces", "logs", "events"] as const
-export type UserTab = (typeof USER_TABS)[number]
+export const USER_TABS = USER_DETAIL_TABS
+export type UserTab = UserDetailTab
 
 /** One user's namespaces with how much of their activity each holds, for the rail and the scope. */
 export const namespacesOf = (
 	profile: Pick<UserProfile, "services">,
-): ReadonlyArray<Readonly<{ name: string; spans: number }>> => {
-	const totals = Arr.reduce(profile.services, new Map<string, number>(), (sum, service) =>
-		sum.set(service.namespace, (sum.get(service.namespace) ?? 0) + service.spans),
+): ReadonlyArray<Readonly<{ name: string; signals: number }>> => {
+	const named = Arr.filter(profile.services, (service) => service.namespace !== "")
+	const totals = Arr.reduce(named, new Map<string, number>(), (sum, service) =>
+		sum.set(service.namespace, (sum.get(service.namespace) ?? 0) + service.signals),
 	)
-	return Arr.map([...totals], ([name, spans]) => ({ name, spans })).toSorted((a, b) => b.spans - a.spans)
+	return Arr.map([...totals], ([name, signals]) => ({ name, signals })).toSorted(
+		(a, b) => b.signals - a.signals,
+	)
 }
 
 /** The user's display name: their name, else their email, else the raw id. */

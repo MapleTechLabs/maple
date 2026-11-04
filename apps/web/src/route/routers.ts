@@ -274,6 +274,12 @@ const routers = {
 	Services: pipe(path("services"), search(Search.ServicesSearch), Route.mapTo(AppRoute.Services)),
 	Traces: pipe(path("traces"), search(Search.TracesSearch), Route.mapTo(AppRoute.Traces)),
 	Users: pipe(path("users"), search(Search.UsersSearch), Route.mapTo(AppRoute.Users)),
+	UserDetail: pipe(
+		path("users"),
+		slash(boundedSegment("userId", 512)),
+		search(Search.UserDetailSearch),
+		Route.mapTo(AppRoute.UserDetail),
+	),
 	AgentSessionTool: pipe(
 		path("agent-sessions", "tools"),
 		slash(segment("toolName")),
@@ -512,6 +518,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.McpServer,
 		routers.AgentSessionTools,
 		routers.ErrorIssues,
+		routers.UserDetail,
 		...Rec.values(routers),
 	),
 	AppRoute.NotFound,

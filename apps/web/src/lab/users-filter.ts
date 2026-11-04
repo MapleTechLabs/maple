@@ -64,19 +64,23 @@ export const scopeDetail = (detail: UserDetail, namespace: string | null): UserD
 	const traces = keep(detail.traces)
 	const logs = keep(detail.logs)
 	const events = keep(detail.events)
-	const spans = Arr.reduce(detail.profile.services, { all: 0, kept: 0 }, (sum, service) => ({
-		all: sum.all + service.spans,
-		kept: sum.kept + (service.namespace === namespace ? service.spans : 0),
+	const mcpSessions = Arr.filter(
+		detail.mcpSessions,
+		(session) => namespaceOf[session.service] === namespace,
+	)
+	const signals = Arr.reduce(detail.profile.services, { all: 0, kept: 0 }, (sum, service) => ({
+		all: sum.all + service.signals,
+		kept: sum.kept + (service.namespace === namespace ? service.signals : 0),
 	}))
-	// The fixture has no per-namespace request counts; the namespace's share of spans stands in.
-	const share = spans.all === 0 ? 0 : spans.kept / spans.all
+	// The fixture has no per-namespace request counts; the namespace's share of signals stands in.
+	const share = signals.all === 0 ? 0 : signals.kept / signals.all
 	return {
 		...detail,
 		profile: {
 			...detail.profile,
 			sessions: sessions.length,
 			recordedMs: sessions.length === 0 ? 0 : detail.profile.recordedMs,
-			requests: Math.round(detail.profile.requests * share),
+			requests: detail.profile.requests === null ? null : Math.round(detail.profile.requests * share),
 			activity: Arr.map(detail.profile.activity, (value) => Math.round(value * share)),
 			errors: Arr.reduce(issues, 0, (sum, issue) => sum + issue.hits),
 			issues: issues.length,
@@ -84,6 +88,7 @@ export const scopeDetail = (detail: UserDetail, namespace: string | null): UserD
 			logs: logs.length,
 			events: events.length,
 			distinctEvents: new Set(Arr.map(events, (event) => event.name)).size,
+			mcpCalls: Arr.reduce(mcpSessions, 0, (sum, session) => sum + session.calls),
 		},
 		activity: keep(detail.activity),
 		sessions,
@@ -91,5 +96,6 @@ export const scopeDetail = (detail: UserDetail, namespace: string | null): UserD
 		traces,
 		logs,
 		events,
+		mcpSessions,
 	}
 }

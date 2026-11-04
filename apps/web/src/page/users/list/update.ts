@@ -268,7 +268,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedUser: ({ userId }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: `/users/${encodeURIComponent(userId)}`,
+				url: hrefOf(
+					AppRoute.UserDetail({
+						userId,
+						search: {
+							startTime: model.search.startTime,
+							endTime: model.search.endTime,
+							timePreset: model.search.timePreset,
+						},
+					}),
+				),
 				isReplace: false,
 			}),
 		}),
