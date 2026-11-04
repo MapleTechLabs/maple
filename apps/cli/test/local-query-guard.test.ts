@@ -48,6 +48,7 @@ describe("read-only statement preparation", () => {
 			"SELECT * FROM generateSeries(1, 3)",
 			"SELECT * FROM system.numbers LIMIT 1",
 			"SELECT urlHash('x'), cityHash64(1) FROM t",
+			"SELECT x, y FROM numbers(1) ARRAY JOIN [1, 2] AS x, arrayEnumerate([1, 2]) AS y",
 		])
 			expect(rejection(canonical, canonical)).toBeUndefined()
 		for (const [canonical, name] of [
@@ -61,6 +62,8 @@ describe("read-only statement preparation", () => {
 			["SELECT file('/etc/hosts')", "file"],
 			["SELECT * FROM numbers(1) AS limit, filesystem('/') AS f", "filesystem"],
 			["SELECT * FROM numbers(1) AS limit, values('a UInt8', 1) AS f", "values"],
+			["SELECT * FROM t ARRAY JOIN [1] AS x, [2] AS y JOIN url('http://h/x') AS u ON 1", "url"],
+			["SELECT * FROM t ARRAY JOIN [1] AS x JOIN s ON 1, values('a UInt8', 1) AS v", "values"],
 		] as const)
 			expect(rejection(canonical, canonical)).toBe(`function ${name} is not allowed`)
 	})

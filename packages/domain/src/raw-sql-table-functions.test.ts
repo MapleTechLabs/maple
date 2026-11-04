@@ -77,6 +77,7 @@ describe("rawSqlIssue table sources", () => {
 		"SELECT EXTRACT(DAY FROM toDateTime(Timestamp)) AS d FROM traces WHERE $__orgFilter",
 		"SELECT trim(BOTH ' ' FROM lower(SpanName)) AS n FROM traces WHERE $__orgFilter",
 		"SELECT x FROM traces ARRAY JOIN splitByChar(',', SpanName) AS x WHERE $__orgFilter",
+		"SELECT x, i FROM traces ARRAY JOIN splitByChar(',', SpanName) AS x, arrayEnumerate(splitByChar(',', SpanName)) AS i WHERE $__orgFilter",
 		"SELECT * FROM traces t, logs l WHERE $__orgFilter(t) AND t.TraceId = l.TraceId",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT SpanId FROM logs WHERE lower(Body) LIKE '%x%')",
 		"WITH c AS (SELECT count() AS n FROM traces WHERE $__orgFilter) SELECT n FROM c",

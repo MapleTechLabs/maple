@@ -333,6 +333,11 @@ export const disallowedTableFunction = (sql: string): string | null => {
 			}
 			continue
 		}
+		// ARRAY JOIN takes array expressions; its commas do not introduce tables.
+		if (t.v === "join" && depth === fromListDepth) {
+			fromListDepth = -1
+			continue
+		}
 		if (armed) {
 			let j = i
 			let dotted = false
