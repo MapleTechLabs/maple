@@ -32,7 +32,6 @@ export const viewerTimeRangeOf = (model: Model): TimeRange | null =>
 /** What a share or embed link built by this viewer pins, in the zone the board is drawn in. */
 export const shareLinkRangeOf = (model: Model, timeZone: string): ShareLinkRange => ({
 	range: viewerTimeRangeOf(model),
-	savedRange: model.document?.timeRange ?? null,
 	timeZone,
 })
 

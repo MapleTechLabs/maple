@@ -1,5 +1,5 @@
 import { DashboardShareMode, type TimeRange } from "@maple/domain/http"
-import { isCalendarAlignedShorthand } from "@maple/query-engine"
+import { isZoneDependentShorthand } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
 import { Schema } from "effect"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -98,10 +98,9 @@ export const boardShareOf = (shares: ReadonlyArray<ShareRow>): ShareRow | undefi
 export const chartShareOf = (shares: ReadonlyArray<ShareRow>, widgetId: string): ShareRow | undefined =>
 	shares.find((share) => share.widgetId === widgetId && share.mode === "public")
 
-/** What a share link pins: the viewer's picked range, the board's saved one, and the viewer's zone. */
+/** What a share link pins: the viewer's picked range (null for the board's saved one) and zone. */
 export interface ShareLinkRange {
 	readonly range: TimeRange | null
-	readonly savedRange: TimeRange | null
 	readonly timeZone: string
 }
 
@@ -116,13 +115,14 @@ const rangeParams = (range: TimeRange | null): Array<[string, string]> =>
 					["to", range.endTime],
 				]
 
-/** `?tz=` when the window the recipient resolves starts at a midnight, so it is the sender's midnight. */
-const zoneParams = (link: ShareLinkRange): Array<[string, string]> => {
-	const resolved = link.range ?? link.savedRange
-	return resolved !== null && resolved.type === "relative" && isCalendarAlignedShorthand(resolved.value)
+/**
+ * `?tz=` so a zone-dependent range resolves on the sender's wall clock. A link without its own
+ * range always carries it: the board's saved range can later change to one that needs it.
+ */
+const zoneParams = (link: ShareLinkRange): Array<[string, string]> =>
+	link.range === null || (link.range.type === "relative" && isZoneDependentShorthand(link.range.value))
 		? [["tz", link.timeZone]]
 		: []
-}
 
 const linkParams = (link: ShareLinkRange): Array<[string, string]> => [
 	...rangeParams(link.range),

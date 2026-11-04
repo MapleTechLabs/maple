@@ -694,6 +694,15 @@ export function isCalendarAlignedShorthand(shorthand: string): boolean {
 }
 
 /**
+ * Whether a shorthand's window depends on the time zone it resolves in: day,
+ * week and month presets count on the zone's wall clock. Only `m`/`h` are pure durations.
+ */
+export function isZoneDependentShorthand(shorthand: string): boolean {
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
+	return trimmed === "today" || /^\d+(?:d|w|mo)$/.test(trimmed)
+}
+
+/**
  * The structural shape of `TimeRange` (`@maple/query-model`). Structural rather
  * than the branded schema type so every host — the stored dashboard document,
  * an MCP tool's decoded input, the share page's decoded document — can hand its

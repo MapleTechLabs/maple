@@ -23,10 +23,10 @@ const board = (savedRange: string): SharedDashboard => ({
 })
 
 /** The share page opened in a `pageTimeZone` page with `search`. */
-const windowOf = (search: Model["search"], pageTimeZone: string, savedRange = "1h") =>
+const windowOf = (search: Model["search"], pageTimeZone: string, savedRange = "1h", nowMs = NOW) =>
 	Arr.reduce(
 		[
-			Message.CompletedResolveClock({ nowMs: NOW }),
+			Message.CompletedResolveClock({ nowMs }),
 			Message.CompletedResolveShare({
 				token: "tok",
 				resolve: { _tag: "Ready", share: board(savedRange) },
@@ -43,6 +43,15 @@ describe("share link time zone", () => {
 
 	test.each(["1w", "7d"])("%s from Los Angeles opened in Tokyo starts at Los Angeles midnight", (range) => {
 		expect(windowOf({ range, tz: LA }, TOKYO)?.startTime).toBe("2026-09-25 07:00:00")
+	})
+
+	test("1mo from Los Angeles opened in Tokyo counts the month on the Los Angeles clock", () => {
+		// 10:00 PST on Nov 10; a month back is 10:00 PDT on Oct 10, an hour off the Tokyo answer.
+		const afterDst = Date.parse("2026-11-10T18:00:00Z")
+		expect(windowOf({ range: "1mo", tz: LA }, TOKYO, "1h", afterDst)?.startTime).toBe(
+			"2026-10-10 17:00:00",
+		)
+		expect(windowOf({ range: "1mo" }, TOKYO, "1h", afterDst)?.startTime).toBe("2026-10-10 18:00:00")
 	})
 
 	test("a link without a zone resolves in the page's zone", () => {
