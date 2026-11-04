@@ -3810,9 +3810,13 @@ async fn accept_grpc_decoded(
             }
             Ok(())
         }
+        // OTLP exporters retry neither `INTERNAL` nor `INVALID_ARGUMENT`; resending would be refused
+        // again. A scan-budget refusal drops a healthy sender's data, so it must read as an error.
+        Err(error) if error.error_kind() == INGEST_RULES_SCAN_BUDGET.error_kind => {
+            Err(tonic::Status::internal(error.message))
+        }
         Err(error) => match error.status {
             StatusCode::TOO_MANY_REQUESTS => Err(tonic::Status::resource_exhausted(error.message)),
-            // OTLP exporters never retry this; resending the same payload would be refused again.
             StatusCode::PAYLOAD_TOO_LARGE => Err(tonic::Status::invalid_argument(error.message)),
             _ => Err(tonic::Status::unavailable(error.message)),
         },
@@ -16848,7 +16852,8 @@ mod tests {
         )
         .await
         .expect_err("past the scan budget");
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert_eq!(status.code(), tonic::Code::Internal);
+        assert_eq!(grpc_otel_status_for_rejection(status.code()), "Error");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
