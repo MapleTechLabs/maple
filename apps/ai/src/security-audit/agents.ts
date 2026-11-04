@@ -17,7 +17,13 @@ import * as InMemory from "@yielded/agent/in-memory"
 import * as Output from "@yielded/agent/output"
 import type { RunCostEstimator } from "@yielded/agent/run-options"
 import { Cause, type Duration, Effect, Layer, Ref, Schema, String as Str } from "effect"
-import { liveContextLimit, MODEL_RETRIES, REPEATED_TOOL_CALLS, TOOL_CONCURRENCY } from "../chat/budgets"
+import {
+	AUDIT_MAX_LIVE_CONTEXT_TOKENS,
+	liveContextLimit,
+	MODEL_RETRIES,
+	REPEATED_TOOL_CALLS,
+	TOOL_CONCURRENCY,
+} from "../chat/budgets"
 import { reportedCostOf } from "../platform/genai-spans"
 import type { LlmClients, ResolvedModel } from "../platform/Llm"
 import { type AuditExecutionApi, EXECUTION_TOOLKIT, executionToolHandlers } from "./execution"
@@ -67,7 +73,7 @@ const policyFor = (model: ResolvedModel) =>
 		// Out of tokens, the agent answers once more without tools instead of losing its work.
 		onExhaustion: "final-answer",
 		runStatus: "appended",
-		contextTokenLimit: liveContextLimit(model.limits.context),
+		contextTokenLimit: liveContextLimit(model.limits.context, AUDIT_MAX_LIVE_CONTEXT_TOKENS),
 	})
 
 const agentSpec = (role: AuditRole, model: ResolvedModel) => ({
