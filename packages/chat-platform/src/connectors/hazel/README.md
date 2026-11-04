@@ -25,14 +25,14 @@ A half whose names are unset is skipped rather than fatal, as for every connecto
    answers `auth` and no Hazel channel can be picked.
 2. **Register the install redirect URIs** on the bot (Edit Application → Install redirect URIs):
    `https://api.maple.dev/oauth/chat/hazel/callback`, the EU instance's with its region
-   (`https://<eu api origin>/oauth/chat/hazel/callback?region=eu`), plus the origin of any other
+   (`https://<eu api origin>/oauth/chat/hazel/callback?hazel_region=eu`), plus the origin of any other
    stage that shares this bot. Hazel compares them exactly.
 3. **Put the values on the deployment.** The token reaches `chat-bot` and `api`, the id reaches
    `api`, and the EU instance also sets `MAPLE_HAZEL_REGION=eu` on both.
 
 **One bot for every instance.** Hazel's gateway holds one session per bot and region. Each
 instance identifies with its own region (none for US), and its callback carries the region
-(`?region=eu`, `hazelRedirectUri`). That URI is registered on the bot and matched exactly, so
+(`?hazel_region=eu`, `hazelRedirectUri`). That URI is registered on the bot and matched exactly, so
 Hazel routes a workspace installed from the EU instance to the EU session before the install
 even exists, and no edited link can name another region. A workspace can be installed from one
 region at a time: Hazel refuses another region's callback until the bot is removed there. Its

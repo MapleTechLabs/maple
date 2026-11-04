@@ -43,7 +43,7 @@ export const hazelInstallUrl = (botId: string, input: { state: string; redirectU
 }
 
 /**
- * This instance's callback as Hazel knows it: with `?region=` when the deployment has one
+ * This instance's callback as Hazel knows it: with `?hazel_region=` when the deployment has one
  * ({@link REGION_CONFIG}). The region is part of the URI registered on the bot, and Hazel matches
  * that URI exactly, so it routes the workspace to this instance's gateway session before the
  * install exists, and no link can name a region its callback was not registered for.
@@ -52,7 +52,7 @@ export const hazelRedirectUri = (redirectUri: string, config: ChatConnectorConfi
 	const region = config.get(REGION_CONFIG)
 	if (region === undefined) return redirectUri
 	const url = new URL(redirectUri)
-	url.searchParams.set("region", Redacted.value(region))
+	url.searchParams.set("hazel_region", Redacted.value(region))
 	return url.toString()
 }
 

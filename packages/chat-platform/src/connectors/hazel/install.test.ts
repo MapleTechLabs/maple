@@ -62,7 +62,7 @@ describe("hazel install", () => {
 			JSON.stringify({ organizationId: "org-1", organizationName: "Acme", installedBy: "u" }),
 		)
 		const regional = new Map([...config, [REGION_CONFIG, Redacted.make("eu")]])
-		const regionalUri = `${redirectUri}?region=eu`
+		const regionalUri = `${redirectUri}?hazel_region=eu`
 		return Effect.gen(function* () {
 			const link = new URL(
 				yield* hazelInstall.authorizeUrl({ config: regional, state: "nonce", redirectUri }),
@@ -71,7 +71,7 @@ describe("hazel install", () => {
 			expect(link.searchParams.has("region")).toBe(false)
 			yield* hazelInstall.complete({
 				config: regional,
-				params: new URLSearchParams({ code: "org-1.secret", state: "nonce", region: "eu" }),
+				params: new URLSearchParams({ code: "org-1.secret", state: "nonce", hazel_region: "eu" }),
 				redirectUri,
 			})
 			expect(sentBody(http.seen[0]!)).toEqual({ code: "org-1.secret", redirectUri: regionalUri })
