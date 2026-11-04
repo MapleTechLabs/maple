@@ -49,9 +49,13 @@ pub async fn detect(wal_dir: &Path) -> Vec<KeyValue> {
 }
 
 fn wal_mount_attributes(wal_dir: &Path) -> Vec<KeyValue> {
+    // Mount points are absolute and symlink-free; a WAL dir not created yet keeps its own path.
+    let wal_dir = std::fs::canonicalize(wal_dir)
+        .or_else(|_| std::path::absolute(wal_dir))
+        .unwrap_or_else(|_| wal_dir.to_path_buf());
     let Some(mount) = std::fs::read_to_string("/proc/self/mountinfo")
         .ok()
-        .and_then(|contents| mount_for(&contents, wal_dir))
+        .and_then(|contents| mount_for(&contents, &wal_dir))
     else {
         return Vec::new();
     };
