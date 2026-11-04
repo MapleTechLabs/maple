@@ -9,7 +9,7 @@ import { PackageAdvisoryCatalog } from "@maple/backend/services/security/Package
 import osvFixture from "../security/__fixtures__/osv.json"
 import { DependencyScanner, DependencySources, MAX_LOCKFILE_BYTES } from "./DependencyScanner"
 import { DependencyScanStore } from "./DependencyScanStore"
-import { MAX_LOCKFILES } from "./lockfile-selection"
+import { MAX_LOCKFILES, MAX_MANIFEST_BYTES } from "./lockfile-selection"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -519,6 +519,25 @@ describe("DependencyScanner", () => {
 			// Scan now records its own result, so the page sees the scan it asked for.
 			yield* Effect.flip(scanner.scan(installation, repository, { trigger: "manual" }))
 			assert.strictEqual((yield* store.listScans({ orgId: repository.orgId, limit: 10 })).length, 2)
+		}).pipe(Effect.provide(scannerFor(state)))
+	})
+
+	it.effect("reads a yarn lockfile's manifests but never one too large to be a package.json", () => {
+		const state = world({
+			"yarn.lock": '"lodash@4.17.15":\n  version "4.17.15"\n',
+			"package.json": '{"dependencies":{"lodash":"4.17.15"}}',
+		})
+		state.files.set("packages/huge/package.json", {
+			sha: "huge-manifest",
+			content: "{}",
+			size: MAX_MANIFEST_BYTES + 1,
+		})
+		return Effect.gen(function* () {
+			const scanner = yield* DependencyScanner
+			const outcome = yield* scanner.scan(installation, repository, { trigger: "schedule" })
+			assert.strictEqual(outcome._tag, "Scanned")
+			assert.isTrue(state.blobReads.includes(state.files.get("package.json")!.sha))
+			assert.isFalse(state.blobReads.includes("huge-manifest"))
 		}).pipe(Effect.provide(scannerFor(state)))
 	})
 

@@ -9,6 +9,10 @@ import { Array as Arr, String as Str } from "effect"
 export const MAX_LOCKFILES = 50
 /** Manifests read for one yarn lockfile, which says nothing about direct and dev dependencies. */
 export const MAX_MANIFESTS = 20
+/** A package.json is a few KB; a larger one is skipped rather than read. */
+export const MAX_MANIFEST_BYTES = 1024 * 1024
+/** All the manifests read for one lockfile together. */
+export const MAX_MANIFEST_TOTAL_BYTES = 4 * 1024 * 1024
 
 export interface SelectedLockfile {
 	readonly file: VcsTreeFile
@@ -48,25 +52,30 @@ export function selectLockfiles(files: ReadonlyArray<VcsTreeFile>): {
 	return { selected: kept.slice(0, MAX_LOCKFILES), skipped: kept.slice(MAX_LOCKFILES) }
 }
 
-/** The package.json files under a yarn lockfile's directory, keyed relative to it. */
+/**
+ * The package.json files under a yarn lockfile's directory, keyed relative to it, shallowest first.
+ * Oversized manifests are skipped, and reading stops at `MAX_MANIFESTS` or the total byte budget.
+ */
 export function manifestsFor(
 	lockfile: SelectedLockfile,
 	files: ReadonlyArray<VcsTreeFile>,
 ): ReadonlyArray<{ readonly relativePath: string; readonly file: VcsTreeFile }> {
 	if (lockfile.kind !== "yarn-v1" && lockfile.kind !== "yarn-berry") return []
 	const dir = directoryOf(lockfile.file.path)
-	return Arr.map(
-		Arr.filter(
-			files,
-			(file) =>
-				Str.startsWith(dir)(file.path) &&
-				(file.path === `${dir}package.json` || Str.endsWith("/package.json")(file.path)) &&
-				!isIgnoredLockfilePath(file.path),
-		)
-			.sort((a, b) => depth(a.path) - depth(b.path) || Str.localeCompare(b.path)(a.path))
-			.slice(0, MAX_MANIFESTS),
-		(file) => ({ relativePath: Str.slice(dir.length)(file.path), file }),
+	const candidates = Arr.filter(
+		files,
+		(file) =>
+			Str.startsWith(dir)(file.path) &&
+			(file.path === `${dir}package.json` || Str.endsWith("/package.json")(file.path)) &&
+			!isIgnoredLockfilePath(file.path) &&
+			file.size <= MAX_MANIFEST_BYTES,
+	).sort((a, b) => depth(a.path) - depth(b.path) || Str.localeCompare(b.path)(a.path))
+	const { kept } = Arr.reduce(candidates, { bytes: 0, kept: Arr.empty<VcsTreeFile>() }, (read, file) =>
+		read.kept.length < MAX_MANIFESTS && read.bytes + file.size <= MAX_MANIFEST_TOTAL_BYTES
+			? { bytes: read.bytes + file.size, kept: [...read.kept, file] }
+			: read,
 	)
+	return Arr.map(kept, (file) => ({ relativePath: Str.slice(dir.length)(file.path), file }))
 }
 
 /** Whether a scan would read exactly the lockfile contents an earlier scan read. */

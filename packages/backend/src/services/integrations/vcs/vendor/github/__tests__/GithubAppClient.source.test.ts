@@ -37,6 +37,27 @@ const jsonResponse = (body: unknown) =>
 	new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
 describe("GithubAppClient source access", () => {
+	it.effect("reads a blob up to the ceiling and refuses one past it", () => {
+		const blob = Str.repeat(2048)("x")
+		const http = fakeGithubHttp(({ url }) =>
+			Str.endsWith("/access_tokens")(url)
+				? jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" })
+				: new Response(blob),
+		)
+		const layer = Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+			Layer.provide(http),
+			Layer.provide(env),
+		)
+
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			assert.strictEqual(yield* client.getBlobText("42", "octo", "shop", "abc", 2048), blob)
+			const refused = yield* client.getBlobText("42", "octo", "shop", "abc", 2047).pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/backend/vcs/GithubAppError")
+			assert.include(refused.message, "larger than 2047 bytes")
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("encodes a committish, so a ref cannot walk the token onto another repository", () => {
 		const requests: Array<{ url: string }> = []
 		const responses = [
