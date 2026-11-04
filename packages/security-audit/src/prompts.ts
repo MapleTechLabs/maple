@@ -51,14 +51,27 @@ export type ReconAgent = keyof typeof VERBATIM.recon
 export const RECON_AGENTS: ReadonlyArray<ReconAgent> = ["1a", "1b", "1c", "1d"]
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-const encodePretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
-const encodePrettyOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
+const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
+
+/**
+ * Prompt data as compact JSON, an array one element per line: indentation costs every agent tokens
+ * on every turn (a third of a large ledger) and tells the model nothing.
+ */
+const encodeData = (value: unknown): string =>
+	Arr.isArray(value)
+		? value.length === 0
+			? "[]"
+			: `[\n${Arr.join(
+					Arr.map(value, (item) => encodeJson(item)),
+					",\n",
+				)}\n]`
+		: encodeJson(value)
 
 type Verdict = "confirmed" | "needs_validation" | "rejected"
 
 const schemaBranch = (verdict: Verdict): string => {
 	const branch = reportSchema.items.oneOf.find((b) => b.properties.verdict.const === verdict)
-	return Option.getOrElse(encodePrettyOption(branch), () => `(no report schema branch for ${verdict})`)
+	return Option.getOrElse(encodeJsonOption(branch), () => `(no report schema branch for ${verdict})`)
 }
 
 /**
@@ -293,7 +306,7 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 			`## architecture.md\n\n${input.architectureMd}`,
 			...repoTreeSection(input.repoTree),
 			// 3
-			`## Your assignment\n\n${encodePretty(assignment)}`,
+			`## Your assignment\n\n${encodeData(assignment)}`,
 			// 4
 			`## Selected attack-class blocks\n\n${Arr.join(selectedBlockTexts(input.units), "\n\n")}`,
 			// 5
@@ -314,7 +327,7 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 			Arr.join(
 				[
 					"## Exclusions",
-					`Carried same-source confirmed root causes (do not re-report): ${input.carriedExclusions.length === 0 ? "none" : encodePretty(input.carriedExclusions)}`,
+					`Carried same-source confirmed root causes (do not re-report): ${input.carriedExclusions.length === 0 ? "none" : encodeData(input.carriedExclusions)}`,
 					`Peer-owned coverage IDs you must not duplicate: ${input.peerCoverageIds.length === 0 ? "none" : Arr.join(input.peerCoverageIds, ", ")}`,
 				],
 				"\n\n",
@@ -370,10 +383,10 @@ export const criticPrompt = (input: CriticInput, context: AgentContext): string 
 			VERBATIM.coverageCritic,
 			`## architecture.md\n\n${input.architectureMd}`,
 			...repoTreeSection(input.repoTree),
-			`## Coverage ledger\n\n${encodePretty(input.ledger)}`,
-			`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : encodePretty(input.candidateStates)}`,
+			`## Coverage ledger\n\nOne unit per line. Each unit's \`id\` is the name to use in \`reassign_ids\`; fields that are empty, null or unchanged from a new unit are left out.\n\n${encodeData(input.ledger)}`,
+			`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : encodeData(input.candidateStates)}`,
 			`## Prior-ledger gaps\n\n${input.priorGapSummary}`,
-			`## Surfaces hunters reported as uncovered\n\n${input.hunterUncovered.length === 0 ? "None." : encodePretty(input.hunterUncovered)}\nAccept each one that is a real, unmapped coverage gap as a missing unit; ignore the rest.`,
+			`## Surfaces hunters reported as uncovered\n\n${input.hunterUncovered.length === 0 ? "None." : encodeData(input.hunterUncovered)}\nAccept each one that is a real, unmapped coverage gap as a missing unit; ignore the rest.`,
 			`## Ordinary attack-class blocks\n\n${Arr.join(ORDINARY_BLOCK_REFS, "\n")}\n\nCompanion blocks are FILE.md# plus the heading text before any parenthetical, from: ${Arr.join(COMPANION_FILES, ", ")}.`,
 			Arr.join(
 				[
@@ -418,9 +431,9 @@ export const candidateVerifierPrompt = (input: CandidateVerifierInput, context: 
 					"\n\n",
 				) || "None."
 			}`,
-			`## Candidate\n\n${encodePretty(input.candidate)}`,
-			`## Linked coverage-unit checks\n\n${encodePretty(input.linkedChecks)}`,
-			`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : encodePretty(input.priorRecords)}${input.priorEstimate === undefined || input.priorEstimate === null ? "" : `\n\nThe previous run estimated this lead at \`${input.priorEstimate}\` (unverified). Keep or correct it in your estimate.`}`,
+			`## Candidate\n\n${encodeData(input.candidate)}`,
+			`## Linked coverage-unit checks\n\n${encodeData(input.linkedChecks)}`,
+			`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : encodeData(input.priorRecords)}${input.priorEstimate === undefined || input.priorEstimate === null ? "" : `\n\nThe previous run estimated this lead at \`${input.priorEstimate}\` (unverified). Keep or correct it in your estimate.`}`,
 			`## report-schema.json branches\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
 			VERIFIER_ESTIMATE,
 			...(input.includeRecordChecks === true
@@ -444,7 +457,7 @@ export const recordVerifierPrompt = (
 			"You are a fresh research verifier for one final record of a defensive security audit. You check the structured record, not the hunter write-up, and remain inside source and local boundaries. You did not hunt or validate it.",
 			VERBATIM.recordVerification,
 			executionStatement(context.execution),
-			`## The record\n\n${encodePretty(record)}`,
+			`## The record\n\n${encodeData(record)}`,
 			`## report-schema.json branches (for a replacement)\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
 			recordVerifierEstimate(record.verdict === "needs_validation" ? estimate : undefined),
 			'Return exactly one JSON object and no surrounding prose: {"decision":"verified","fingerprint":"..."} or {"decision":"replace","reason":"...","record":{...}}, adding "estimated_severity":{...} beside "record" when the replacement record is needs_validation.',

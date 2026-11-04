@@ -143,7 +143,7 @@ export const hunterAnswer = (
 	ids: ReadonlyArray<string>,
 	candidate: Candidate = keysCandidate,
 ): HunterResult => {
-	const owned = Arr.filter(ids, (id) => Str.includes(`"coverage_id": "${id}"`)(invocation.prompt))
+	const owned = Arr.filter(ids, (id) => Str.includes(`"coverage_id":"${id}"`)(invocation.prompt))
 	const keys = idOf(KEYS)
 	return {
 		units: Arr.map(owned, (id) => ({
