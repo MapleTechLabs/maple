@@ -17,6 +17,7 @@ import { truncatedText } from "@maple/views/ui/truncated-text"
 import { browserIconFor, deviceIconFor } from "../kit/sessions-parts"
 import { recordedMarker } from "../kit/replay-window"
 import { Message } from "./message"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { Model, ReplayDetail } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -177,6 +178,26 @@ const summary = (h: H, session: ReplayDetail): Html => {
 	)
 }
 
+const DAY_MS = 86_400_000
+
+/** The user page over a day either side of this session, so the session is in its window. */
+export const sessionUserHref = (
+	userId: string,
+	session: Pick<ReplayDetail, "startTime" | "lastActivityAt">,
+): string => {
+	const startMs = parseWarehouseDateTime(session.startTime)
+	const endMs = session.lastActivityAt === null ? startMs : parseWarehouseDateTime(session.lastActivityAt)
+	return hrefOf(
+		AppRoute.UserDetail({
+			userId,
+			search: {
+				startTime: formatWarehouseDateTime(startMs - DAY_MS),
+				endTime: formatWarehouseDateTime(endMs + DAY_MS),
+			},
+		}),
+	)
+}
+
 const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null => {
 	const traits = Rec.toEntries(parseAttributes(session.userTraits))
 	const userId = session.userId ?? ""
@@ -209,6 +230,15 @@ const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null 
 							"All sessions from this user",
 						),
 						copy(h, model, "userId", userId, "User ID"),
+					]),
+					row(h, { icon: "UsersIcon", label: "User", title: userId }, [
+						link(
+							h,
+							sessionUserHref(userId, session),
+							"Open user page",
+							"truncate text-xs text-primary underline-offset-2 hover:underline active:underline",
+							"Everything Maple holds for this user: sessions, events and MCP sessions",
+						),
 					]),
 				]
 			: []),
