@@ -190,11 +190,15 @@ describe("widget lowering", () => {
 		const tab = (model: Model, index: number) =>
 			pageUpdate(model, Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index }) }))
 				.model
-		const picked = pageUpdate(opened().model, Message.ChangedStatValueField({ value: "A" })).model
+		const series = opened().model.state?.queries[0]?.name ?? expect.unreachable("the fixture has a query")
+		const picked = pageUpdate(opened().model, Message.ChangedStatValueField({ value: series })).model
 		const sql = tab(picked, 1)
 		expect(sql.state?.statValueField).toBe("")
-		const back = pageUpdate(tab(sql, 0), Message.ChangedStatValueField({ value: "B" })).model
+		const back = pageUpdate(tab(sql, 0), Message.ChangedStatValueField({ value: series })).model
 		expect(tab(back, 1).state?.statValueField).toBe("")
+		// A column typed in the SQL tab survives a visit to the Builder.
+		const typed = pageUpdate(sql, Message.ChangedStatValueField({ value: "duration_ms" })).model
+		expect(tab(tab(typed, 0), 1).state?.statValueField).toBe("duration_ms")
 	})
 
 	test("the spans select rewrites root_only in the where clause", () => {

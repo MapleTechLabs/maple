@@ -13,6 +13,7 @@ import { toPanelType } from "../kit/chart-registry"
 import { SaveWidget } from "./command"
 import { addFormula, addQuery, cloneQuery, removeFormula, setPanelType } from "./edits"
 import type { EditorState } from "./editor-state"
+import { toSeriesFieldOptions } from "./drafts"
 import { trackStoredSource } from "./lowering"
 import { ProductEdit } from "./product-edit"
 import { applyEdit, stepComboStep } from "./product-step"
@@ -96,15 +97,19 @@ const rangePickerStep = (model: Model, context: PageContext, message: TimeRangeP
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 
-/** The Builder's stat field names a query series, never a SQL column: back in SQL, the opened column (or `value`). */
-const clearsBuilderValueField = (model: Model, selected: string): Model["state"] =>
-	model.state !== null && selected === "rawSql"
-		? {
-				...model.state,
-				statValueField:
-					model.initialSourceMode === "builder" ? "" : (model.initial?.statValueField ?? ""),
-			}
-		: model.state
+/** Back in SQL, a stat field naming a Builder series (never a SQL column) falls back to the opened column or `value`. */
+const clearsBuilderValueField = (model: Model, selected: string): Model["state"] => {
+	const state = model.state
+	if (state === null || selected !== "rawSql") return state
+	const builderNames = new Set([
+		...toSeriesFieldOptions(state),
+		...Arr.map(state.queries, (query) => query.name),
+		...Arr.map(state.formulas, (formula) => formula.name),
+	])
+	if (!builderNames.has(state.statValueField)) return state
+	const opened = model.initialSourceMode === "builder" ? "" : (model.initial?.statValueField ?? "")
+	return { ...state, statValueField: builderNames.has(opened) ? "" : opened }
+}
 
 /** The Source tabs: the preview switches to what the picked source runs. */
 const tabsStep = (model: Model, context: PageContext, message: Tabs.Message): Return => {
