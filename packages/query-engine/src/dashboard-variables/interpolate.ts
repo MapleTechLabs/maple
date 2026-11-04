@@ -13,11 +13,12 @@
 //   - `sql` values get self-quoted, escaped ClickHouse string literals so a
 //     crafted variable value cannot break out of its literal position.
 //   - `whereClause`-like values are handled clause-by-clause: a clause that
-//     references an "All" selection is dropped entirely (All = don't filter).
+//     references an "All" selection is dropped entirely (All = don't filter),
+//     and a value that would change a clause's predicates is not substituted.
 //   - everything else gets plain text substitution.
 
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
-import { splitWhereClause } from "@maple/domain/where-clause"
+import { parseWhereClause, splitWhereClause } from "@maple/domain/where-clause"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -89,25 +90,108 @@ export function collectExpandedVariableRefs(params: unknown): string[] {
 	return collectVariableRefs(expandedStrings(params).join("\n"))
 }
 
-// A whereClause is `clause AND clause AND ...` (the grammar has no OR). An
-// "All" selection means "don't filter on this at all", so the clause carrying
-// the reference is removed rather than substituted. Splitting uses the
-// engine's where-clause grammar, so a quoted value containing " and " is
-// never mis-split.
+/** Each resolved reference replaced by its value, or by `placeholder` when given; unknown ones stay literal. */
+const substituteClause = (clause: string, values: VariableValues, placeholder?: string): string =>
+	replaceRefs(clause, (name) => {
+		const variable = values[name]
+		return variable === undefined ? null : (placeholder ?? variable.value)
+	})
+
+type Predicate = readonly [key: string, operator: string]
+
+interface ClausePredicates {
+	readonly clauses: ReadonlyArray<Predicate>
+	readonly groups: ReadonlyArray<ReadonlyArray<Predicate>>
+	readonly unparsed: number
+}
+
+const predicatesOf = (text: string): ClausePredicates => {
+	const parsed = parseWhereClause(text, { orGroups: true })
+	const predicate = (clause: { key: string; operator: string }): Predicate => [clause.key, clause.operator]
+	return {
+		clauses: Arr.map(parsed.clauses, predicate),
+		groups: Arr.map(parsed.groups, (group) => Arr.map(group, predicate)),
+		unparsed: parsed.warnings.length,
+	}
+}
+
+const CLAUSE_AFTER = "maple.next exists"
+
+/** No quote or parenthesis is left open, so a clause joined after this one still splits off on its own. */
+const closesCleanly = (text: string): boolean => {
+	const parts = splitWhereClause(`${text} AND ${CLAUSE_AFTER}`)
+	return parts[parts.length - 1] === CLAUSE_AFTER
+}
+
+/** `$filter` alone: the value is the clause, so only its closing is checked. */
+const WHOLE_CLAUSE_REF = /^\$(?:\{[A-Za-z][A-Za-z0-9_]*\}|[A-Za-z][A-Za-z0-9_]*)$/
+
+/**
+ * Whether `actual` parses to the template's predicates. A key that differs between the two
+ * placeholder parses is the variable's own key position, so any key matches there.
+ */
+const predicatesMatch = (
+	actual: ReadonlyArray<Predicate>,
+	a: ReadonlyArray<Predicate>,
+	b: ReadonlyArray<Predicate>,
+) =>
+	actual.length === a.length &&
+	a.length === b.length &&
+	Arr.every(a, ([key, operator], i) => {
+		const [actualKey, actualOperator] = actual[i]
+		return actualOperator === operator && (actualKey === key || key !== b[i][0])
+	})
+
+/**
+ * A substituted clause closes cleanly and parses to the same predicates (keys, operators, OR
+ * groups, unparsed parts) as the clause with neutral placeholders. A value carrying a quote, a
+ * parenthesis or ` AND ` changes that; an ordinary service name never does.
+ */
+const keepsClausePredicates = (clause: string, values: VariableValues): boolean => {
+	if (collectVariableRefs(clause).length === 0) return true
+	const substituted = substituteClause(clause, values)
+	if (!closesCleanly(substituted)) return false
+	if (WHOLE_CLAUSE_REF.test(Str.trim(clause))) return true
+	const a = predicatesOf(substituteClause(clause, values, "v"))
+	const b = predicatesOf(substituteClause(clause, values, "w"))
+	const actual = predicatesOf(substituted)
+	return (
+		actual.unparsed === a.unparsed &&
+		predicatesMatch(actual.clauses, a.clauses, b.clauses) &&
+		actual.groups.length === a.groups.length &&
+		a.groups.length === b.groups.length &&
+		Arr.every(a.groups, (group, i) => predicatesMatch(actual.groups[i], group, b.groups[i]))
+	)
+}
+
+/** Every clause of `template` keeps its parsed shape once `values` are substituted into it. */
+export const keepsWhereClausePredicates = (template: string, values: VariableValues): boolean =>
+	Arr.every(splitWhereClause(template), (clause) => keepsClausePredicates(clause, values))
+
+// A whereClause is `clause AND clause AND ...`. An "All" selection means "don't filter on
+// this at all", so the clause carrying the reference is removed rather than substituted.
+// Splitting uses the engine's where-clause grammar, so a quoted value containing " and " is
+// never mis-split. A value that would change a clause's predicates is not substituted: the
+// reference stays literal, so in a value position the clause matches nothing, and no other
+// clause is dropped with it.
 function interpolateWhereClause(input: string, values: VariableValues): string {
 	const kept: string[] = []
 	for (const clause of splitWhereClause(input)) {
 		const refs = collectVariableRefs(clause)
 		const dropped = Arr.some(refs, (name) => values[name]?.isAll === true)
 		if (dropped) continue
-		kept.push(
-			replaceRefs(clause, (name) => {
-				const variable = values[name]
-				return variable === undefined ? null : variable.value
-			}),
-		)
+		kept.push(keepsClausePredicates(clause, values) ? substituteClause(clause, values) : clause)
 	}
 	return Arr.join(kept, " AND ")
+}
+
+/** Every string under a `*whereClause` key, at any depth: the templates a variable can land in. */
+export const collectWhereClauses = (value: unknown, key?: string): string[] => {
+	if (typeof value === "string") return key !== undefined && WHERE_CLAUSE_KEY.test(key) ? [value] : []
+	if (Arr.isArray(value)) return Arr.flatMap(value, (item) => collectWhereClauses(item, key))
+	if (typeof value === "object" && value !== null)
+		return Arr.flatMap(Rec.toEntries(value), ([childKey, child]) => collectWhereClauses(child, childKey))
+	return []
 }
 
 function interpolateString(input: string, key: string | undefined, values: VariableValues): string {

@@ -1,11 +1,14 @@
+import { parseWhereClause } from "@maple/domain/where-clause"
 import { describe, expect, it } from "vitest"
 
 import {
 	ALL_VALUE,
 	collectVariableRefs,
+	collectWhereClauses,
 	hasUnresolvedVariableRefs,
 	interpolateDisplayText,
 	interpolateWidgetParams,
+	keepsWhereClausePredicates,
 	type VariableValues,
 } from "./interpolate"
 
@@ -175,6 +178,136 @@ describe("interpolateWidgetParams — whereClause", () => {
 			{ service: all(["a"]) },
 		)
 		expect(result).toEqual({ listWhereClause: 'kind = "server"' })
+	})
+})
+
+describe("interpolateWidgetParams: values that would reshape a clause", () => {
+	const PINNED = 'service.name = "$service" AND deployment.environment = "prod" AND has_error = "true"'
+
+	/** The predicates the engine would apply to the interpolated clause. */
+	const predicates = (whereClause: string) => {
+		const parsed = parseWhereClause(whereClause, { orGroups: true })
+		return {
+			clauses: parsed.clauses.map((clause) => `${clause.key} ${clause.operator} ${clause.value}`),
+			groups: parsed.groups.length,
+			warnings: parsed.warnings.length,
+		}
+	}
+
+	const interpolatedClause = (template: string, value: string) => {
+		const result = interpolateWidgetParams({ whereClause: template }, { service: single(value) })
+		return String(result.whereClause)
+	}
+
+	it.each([['a"'], ['a" OR has_error = "false'], ['a" AND x = "'], ['a" OR (x = "']])(
+		"keeps every pinned clause for %j",
+		(value) => {
+			expect(predicates(interpolatedClause(PINNED, value))).toEqual({
+				clauses: ["service.name = $service", "deployment.environment = prod", "has_error = true"],
+				groups: 0,
+				warnings: 0,
+			})
+		},
+	)
+
+	it.each([["a'"], ["a(b"], ["a) OR (x"], ['a"']])(
+		"keeps every pinned clause for %j in an unquoted position",
+		(value) => {
+			const unquoted =
+				'service.name = $service AND deployment.environment = "prod" AND has_error = "true"'
+			expect(predicates(interpolatedClause(unquoted, value))).toEqual({
+				clauses: ["service.name = $service", "deployment.environment = prod", "has_error = true"],
+				groups: 0,
+				warnings: 0,
+			})
+		},
+	)
+
+	it("substitutes quotes and parentheses that sit inside the template's own quotes", () => {
+		expect(interpolatedClause('span.name = "$service"', "a'(b")).toBe(`span.name = "a'(b"`)
+	})
+
+	it("keeps the reference literal in an unquoted value position", () => {
+		expect(interpolatedClause('service.name = $service AND has_error = "true"', "a AND b = c")).toBe(
+			'service.name = $service AND has_error = "true"',
+		)
+	})
+
+	it("keeps an OR group's members when a value would break out of it", () => {
+		const template = '(service.name = "$service" OR service.name = "api") AND has_error = "true"'
+		const parsed = parseWhereClause(interpolatedClause(template, 'a" OR x = "y'), { orGroups: true })
+		expect(parsed.groups.map((group) => group.map((clause) => clause.value))).toEqual([
+			["$service", "api"],
+		])
+		expect(parsed.clauses.map((clause) => clause.key)).toEqual(["has_error"])
+	})
+
+	it("still substitutes values that keep the clause's shape", () => {
+		expect(interpolatedClause(PINNED, "payments-api")).toBe(
+			'service.name = "payments-api" AND deployment.environment = "prod" AND has_error = "true"',
+		)
+		expect(interpolatedClause('span.name = "$service"', "GET /users and more")).toBe(
+			'span.name = "GET /users and more"',
+		)
+	})
+
+	it("refuses a value that imitates the clause check", () => {
+		const result = interpolateWidgetParams(
+			{ whereClause: '$filter AND service.name = "prod"' },
+			{ filter: single('maple.next exists AND x = "') },
+		)
+		expect(result).toEqual({ whereClause: '$filter AND service.name = "prod"' })
+	})
+
+	it("substitutes a variable that is the whole clause, unless it leaves a quote open", () => {
+		const whole = (value: string) =>
+			interpolateWidgetParams(
+				{ whereClause: '$filter AND has_error = "true"' },
+				{ filter: single(value) },
+			)
+		expect(whole('service.name = "api"')).toEqual({
+			whereClause: 'service.name = "api" AND has_error = "true"',
+		})
+		expect(whole('service.name = "api')).toEqual({ whereClause: '$filter AND has_error = "true"' })
+	})
+
+	it("lets a variable choose the key it sits in", () => {
+		const result = interpolateWidgetParams(
+			{ whereClause: 'attr.$key = "x" AND has_error = "true"' },
+			{ key: single("http.route") },
+		)
+		expect(result).toEqual({ whereClause: 'attr.http.route = "x" AND has_error = "true"' })
+	})
+})
+
+describe("keepsWhereClausePredicates", () => {
+	it("holds for values that stay one predicate", () => {
+		expect(
+			keepsWhereClausePredicates("service.name = '$service'", { service: single("payments-api") }),
+		).toBe(true)
+	})
+
+	it("fails for a value that adds, drops or regroups predicates", () => {
+		for (const value of ['a" AND status = "500', 'a"', 'a" OR (b = "c']) {
+			expect(
+				keepsWhereClausePredicates('service.name = "$service" AND has_error = "true"', {
+					service: single(value),
+				}),
+				value,
+			).toBe(false)
+		}
+	})
+})
+
+describe("collectWhereClauses", () => {
+	it("finds every *whereClause string at any depth", () => {
+		expect(
+			collectWhereClauses({
+				dataSource: { params: { queries: [{ whereClause: "a = 1" }, { whereClause: "b = 2" }] } },
+				display: { listWhereClause: "c = 3", sparkline: { dataSource: { whereClause: "d = 4" } } },
+				title: "e = 5",
+			}),
+		).toEqual(["a = 1", "b = 2", "c = 3", "d = 4"])
 	})
 })
 
