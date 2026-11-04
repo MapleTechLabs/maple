@@ -1,4 +1,4 @@
-import type { DashboardDocument } from "@maple/domain/http"
+import type { DashboardDocument, TimeRange } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import * as Chart from "@maple/views/charts/chart"
@@ -7,7 +7,7 @@ import type { PageContext } from "../../contract"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget, type WidgetGate } from "../kit/widget-data"
 import { FetchVariableOptions, FetchWidget } from "./command"
-import { variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
+import { timeRangeFromSearch, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
 import { AsyncData } from "foldkit"
 import {
 	optionsByNameOf as optionsByNameFor,
@@ -23,12 +23,24 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Widget = DashboardDocument["widgets"][number]
 
+/** The range the board shows: this viewer's pick from the URL, else the board's saved range. */
+export const timeRangeOf = (model: Model): TimeRange | null =>
+	timeRangeFromSearch(model.search) ?? model.document?.timeRange ?? null
+
+export const isSameTimeRange = (a: TimeRange | null, b: TimeRange | null): boolean =>
+	a === null || b === null
+		? a === b
+		: a.type === "relative"
+			? b.type === "relative" && a.value === b.value
+			: b.type === "absolute" && a.startTime === b.startTime && a.endTime === b.endTime
+
 /** `resolveTimeRange`: snapped on entry, unsnapped after a reload; a bad preset falls back to 1h. */
 export const windowOf = (model: Model, context: PageContext) => {
-	if (model.timeRange === null || model.nowMs === null) return null
+	const timeRange = timeRangeOf(model)
+	if (timeRange === null || model.nowMs === null) return null
 	const options = { snap: model.refreshVersion === 0, timeZone: context.timeZone, nowMs: model.nowMs }
 	return (
-		resolveTimeRangeWindow(model.timeRange, options) ??
+		resolveTimeRangeWindow(timeRange, options) ??
 		resolveTimeRangeWindow({ type: "relative", value: "1h" }, options)
 	)
 }

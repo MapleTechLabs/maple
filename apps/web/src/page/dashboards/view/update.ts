@@ -1,5 +1,6 @@
 import {
 	pickDashboardControlParams,
+	timeRangeParams,
 	variableValuesFromSearch,
 } from "../../../lib/dashboard-controls/search-params"
 import { behindToast } from "../kit/store"
@@ -38,7 +39,7 @@ import {
 import { gestureStep } from "./gesture"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { awaitsRefresh, replan, slotOf, withCharts } from "./plan"
+import { awaitsRefresh, isSameTimeRange, replan, slotOf, timeRangeOf, withCharts } from "./plan"
 import { isEditing } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
@@ -65,7 +66,6 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		search: route.search,
 		status: "Loading",
 		document: null,
-		timeRange: null,
 		nowMs: null,
 		refreshVersion: 0,
 		isReloading: false,
@@ -129,9 +129,16 @@ const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<stri
 	Rec.keys(a).length === Rec.keys(b).length &&
 	Arr.every(Rec.toEntries(a), ([key, value]) => b[key] === value)
 
-/** A `var-*` change re-plans the tiles that read the variable (their request keys move). */
+/** The shown range moved after entry: plan on a fresh clock, not the one read when the page opened. */
+const isRangeMoved = (before: Model, after: Model): boolean => {
+	const range = timeRangeOf(before)
+	return after.nowMs !== null && range !== null && !isSameTimeRange(range, timeRangeOf(after))
+}
+
+/** A `var-*` change re-plans the tiles that read the variable; a `range` change reads the clock first. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	const next = { ...model, search: route.search }
+	if (isRangeMoved(model, next)) return { model: next, commands: [ReadClock()] }
 	return sameValues(variableValuesFromSearch(model.search), variableValuesFromSearch(route.search))
 		? { model: next }
 		: withReplan(next, context, "Load")
@@ -291,7 +298,6 @@ const receiveDocument = (
 				// The store caught up with a drop (or moved on): the grid draws what it holds.
 				droppedLayout: null,
 				droppedKey: null,
-				timeRange: model.timeRange ?? document.timeRange,
 				charts: withCharts(model, document.widgets),
 				// The toolbar's share dialog reads the shares too, so they load for an empty board as well.
 				shares: model.shares === "Idle" ? "Loading" : model.shares,
@@ -310,13 +316,13 @@ const receiveDocument = (
 						),
 					]
 				: []
-			const planned = withReplan(
-				isDefaultChanged
-					? { ...next, refreshMenu: { ...next.refreshMenu, highlighted: null } }
-					: next,
-				context,
-				"Load",
-			)
+			const settled = isDefaultChanged
+				? { ...next, refreshMenu: { ...next.refreshMenu, highlighted: null } }
+				: next
+			// A new saved range this viewer shows: the clock is read first, and its answer plans.
+			const planned: Return = isRangeMoved(model, settled)
+				? { model: settled, commands: [ReadClock()] }
+				: withReplan(settled, context, "Load")
 			const isFirstRead = model.shares === "Idle" && next.shares === "Loading"
 			const seq = model.sharing.fetchSeq + 1
 			const shares = isFirstRead ? [FetchShares({ dashboardId: model.dashboardId, seq })] : []
@@ -350,16 +356,23 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	const updated = { ...model, timePicker: next.model }
 	const timeRange = TimeRangePicker.dashboardTimeRangeOf(next.outMessage)
 	if (timeRange === undefined) return { model: updated, commands }
-	const isSame =
-		model.timeRange !== null &&
-		model.timeRange.type === "relative" &&
-		timeRange.type === "relative" &&
-		model.timeRange.value === timeRange.value
-	if (isSame) return { model: updated, commands }
-	const planned = withReplan({ ...updated, timeRange }, context, "Load")
-	// `DashboardTimeRangeSync`: a picked range is written to the board.
-	const save = SaveTimeRange({ orgId: context.orgId, dashboardId: model.dashboardId, timeRange })
-	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
+	// Only an edit session saves the pick as the board's range; a viewer's pick stays in their URL.
+	const save =
+		isEditing(model) && !isSameTimeRange(model.document?.timeRange ?? null, timeRange)
+			? [SaveTimeRange({ orgId: context.orgId, dashboardId: model.dashboardId, timeRange })]
+			: []
+	if (isSameTimeRange(timeRangeOf(model), timeRange))
+		return { model: updated, commands: [...commands, ...save] }
+	const controls = { ...pickDashboardControlParams(model.search), ...timeRangeParams(timeRange) }
+	const search = model.search.mode === "edit" ? { ...controls, mode: "edit" as const } : controls
+	return {
+		model: updated,
+		commands: [...commands, ...save],
+		outMessage: PageOutMessage.RequestedNavigation({
+			url: dashboardHref(model, search),
+			isReplace: true,
+		}),
+	}
 }
 
 /** The "More dashboard actions" menu: tags, history, variables, groups, layout, share, export. */

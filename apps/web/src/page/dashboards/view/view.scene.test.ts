@@ -202,15 +202,59 @@ describe("dashboard view", () => {
 		expect(refreshed.widgets["error-rate"]).toBe(revealed.widgets["error-rate"])
 	})
 
-	test("picking a preset re-plans the tiles and saves the range to the board", () => {
-		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
-		const picked = pageUpdate(
-			revealed,
-			Message.GotTimePickerMessage({ message: TimeRangePicker.Message.ClickedPreset({ value: "1h" }) }),
+	const pickPreset = (model: Model, value: string) =>
+		pageUpdate(
+			model,
+			Message.GotTimePickerMessage({ message: TimeRangePicker.Message.ClickedPreset({ value }) }),
 		)
-		expect(picked.model.timeRange).toEqual({ type: "relative", value: "1h" })
-		expect(names(picked.commands)).toContain(FetchWidget.name)
+	const endTimeOf = (model: Model, widgetId: string) => {
+		const gate = model.widgets[widgetId]?.gate
+		return gate?._tag === "Request" ? gate.request.params.endTime : undefined
+	}
+
+	test("a viewer's pick goes to their URL, not the board, and plans on a fresh clock", () => {
+		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
+		const picked = pickPreset(revealed, "1h")
+		expect(names(picked.commands)).not.toContain(SaveTimeRange.name)
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_platform?range=1h",
+				isReplace: true,
+			}),
+		)
+		const routed = routeChanged(picked.model, { ...ROUTE, search: { range: "1h" } }, context)
+		// Two hours after entry: the window ends now, not when the page was opened.
+		expect(names(routed.commands)).toEqual(["ReadDashboardClock"])
+		const clocked = pageUpdate(routed.model, Message.CompletedReadClock({ nowMs: NOW + 2 * 3_600_000 }))
+		expect(names(clocked.commands)).toContain(FetchWidget.name)
+		expect(endTimeOf(clocked.model, "total-errors")).toMatch(/^2026-10-01 14:/)
+	})
+
+	test("an edit session's pick is also saved as the board's range", () => {
+		const editing = routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model
+		const picked = pickPreset(editing, "1h")
 		expect(names(picked.commands)).toContain(SaveTimeRange.name)
+		expect(picked.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_platform?mode=edit&range=1h",
+				isReplace: true,
+			}),
+		)
+	})
+
+	test("the URL's range wins over the board's, and a range it cannot read falls back to the board's", () => {
+		const fromUrl = routeChanged(ready(), { ...ROUTE, search: { range: "15m" } }, context).model
+		const clocked = pageUpdate(
+			pageUpdate(fromUrl, Message.CompletedReadClock({ nowMs: NOW })).model,
+			Message.RevealedWidget({ widgetId: "total-errors" }),
+		).model
+		const gate = clocked.widgets["total-errors"]?.gate
+		const params = gate?._tag === "Request" ? gate.request.params : {}
+		expect(Date.parse(`${String(params.endTime)}Z`) - Date.parse(`${String(params.startTime)}Z`)).toBe(
+			15 * 60_000,
+		)
+		const garbled = routeChanged(ready(), { ...ROUTE, search: { range: "soon", from: 7 } }, context)
+		expect(names(garbled.commands)).toEqual([])
 	})
 
 	test("Edit flips mode=edit in the URL and keeps the view params", () => {

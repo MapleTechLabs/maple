@@ -1,4 +1,4 @@
-import { DashboardDocument, TimeRangeSchema } from "@maple/domain/http"
+import { DashboardDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -104,8 +104,7 @@ export const Model = Schema.Struct({
 	search: DashboardSearch,
 	status: Status,
 	document: Schema.NullOr(DashboardDocument),
-	/** `DashboardTimeRange`: seeded from the document once, then the picker's. */
-	timeRange: Schema.NullOr(TimeRangeSchema),
+	/** The clock the window is resolved against: read on entry, Reload and a time range change. */
 	nowMs: Schema.NullOr(Schema.Number),
 	/** `PageRefreshProvider.refreshVersion`: 0 snaps the window to the cache grid. */
 	refreshVersion: Schema.Number,
