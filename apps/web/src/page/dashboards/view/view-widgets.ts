@@ -234,6 +234,7 @@ const contextOf = (
 	onChart: (message) => Message.GotChartMessage({ widgetId: widget.id, message }),
 	onSort: (field, isText) => Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
 	sparkline: sparklineState(inputs, widget),
+	reloadPage: Message.ClickedReloadPage(),
 	narrowRange:
 		inputs.slot.gate?._tag === "Range" ? Message.ClickedNarrowRange({ widgetId: widget.id }) : null,
 	variables,

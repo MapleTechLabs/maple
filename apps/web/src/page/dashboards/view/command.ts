@@ -34,6 +34,15 @@ export const ReadClock = Command.define("ReadDashboardClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
 })
 
+/** The chart code failed to load: a fresh page load is the only way to fetch it again. */
+export const ReloadPage = Command.define("ReloadDashboardPage", {
+	messages: [Message.ReloadedPage],
+	execute: Effect.sync(() => {
+		window.location.reload()
+		return Message.ReloadedPage()
+	}),
+})
+
 /** `widgetFetchAtom`: one fetch per request key, however many tiles share it. */
 export const FetchWidget = Command.define("FetchDashboardWidget", {
 	args: {

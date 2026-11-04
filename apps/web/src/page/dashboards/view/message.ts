@@ -39,6 +39,9 @@ export const Message = defineMessageUnion({
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
+	/** "Reload page" on a chart tile whose chart code failed to load. */
+	ClickedReloadPage: {},
+	ReloadedPage: {},
 	GotChartMessage: { widgetId: Schema.String, message: Chart.Message },
 	ClickedSortColumn: { widgetId: Schema.String, field: Schema.String, isText: Schema.Boolean },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },

@@ -28,6 +28,7 @@ import {
 	ExportDashboard,
 	FetchShares,
 	ReadClock,
+	ReloadPage,
 	RemoveWidget,
 	RenameDashboard,
 	AddWidget,
@@ -591,6 +592,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
+		ClickedReloadPage: () => ({ model, commands: [ReloadPage()] }),
+		ReloadedPage: () => ({ model }),
 		GotChartMessage: ({ widgetId, message: inner }) => {
 			const next = Chart.update(model.charts[widgetId] ?? Chart.init(), inner)
 			return {
