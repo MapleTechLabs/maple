@@ -1464,6 +1464,48 @@ export const serviceRuntimesHourly = defineDatasource("service_runtimes_hourly",
 
 export type ServiceRuntimesHourlyRow = InferRow<typeof serviceRuntimesHourly>
 
+/**
+ * Per end user, service and hour, from `traces` and `logs` carrying `user.id` (else `enduser.id`).
+ * Counts for the `/users` pages, and the (hour, service) rows that prune their raw trace/log reads.
+ * Cardinality: users x services x active hours, no fan-out.
+ */
+export const userActivityHourly = defineDatasource("user_activity_hourly", {
+	tenantColumn: "OrgId",
+	description:
+		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts and first/last seen. Populated by materialized views from traces and logs.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		ServiceNamespace: t.string().lowCardinality(),
+		UserId: t.string(),
+		Hour: utcDateTime(),
+		ServiceName: t.string().lowCardinality(),
+		SpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ErrorSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Entry-point spans (Server/Consumer or root): what the pages call requests.
+		RequestCount: t.simpleAggregateFunction("sum", t.uint64()),
+		FailedRequestCount: t.simpleAggregateFunction("sum", t.uint64()),
+		TraceIds: t.aggregateFunction("uniqIf", t.string(), t.uint8()),
+		SessionIds: t.aggregateFunction("uniqIf", t.string(), t.uint8()),
+		// Entry-point durations only; read with `quantilesTDigestIfMerge(0.5, 0.95)`.
+		RequestDurationQuantiles: t.aggregateFunction("quantilesTDigestIf(0.5, 0.95)", t.uint64(), t.uint8()),
+		// Non-entry spans and logs write '' here, so a reader drops the '' entry.
+		TopRoutes: t.aggregateFunction("approx_top_k(10)", t.string()),
+		LogCount: t.simpleAggregateFunction("sum", t.uint64()),
+		WarnLogCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ErrorLogCount: t.simpleAggregateFunction("sum", t.uint64()),
+		FirstSeen: t.simpleAggregateFunction("min", utcDateTime()),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: ["OrgId", "ServiceNamespace", "UserId", "Hour", "ServiceName"],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
+
+export type UserActivityHourlyRow = InferRow<typeof userActivityHourly>
+
 /** `service.name` of the CI traces the GitHub App's workflow webhooks become. */
 export const CI_SERVICE_NAME = "github-actions"
 

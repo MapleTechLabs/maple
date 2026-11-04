@@ -224,6 +224,29 @@ like a real alert rule as well as a dashboard query.
 Steps 5 and 6 are expensive, so **batch removals into one migration** instead of shipping
 them one at a time. Migration `0019_mv_sweep` is the worked example.
 
+### Backfilling a rollup deployed with `BACKFILL skip`
+
+Managed Tinybird deploys some rollups without replaying raw history (`SKIP_BACKFILL` in
+`packages/domain/src/tinybird/project-manifest.ts`), so their first 30 days stay empty until a
+staged backfill. For `user_activity_hourly` (migration 0056):
+
+```bash
+# Dry run: the day chunks, and which already hold rows
+infisical run --env=prod -- bun scripts/backfill-user-activity-hourly.ts --until 2026-11-06T10:00:00Z
+# Populate, a day at a time, oldest first
+infisical run --env=prod -- bun scripts/backfill-user-activity-hourly.ts --until 2026-11-06T10:00:00Z --execute
+```
+
+- `--until` is when the views went live (the deploy). The views wrote everything after it, so a
+  later `--until` double counts.
+- `--from` defaults to 30 days before `--until` (raw retention); `--pause-seconds` (default 60)
+  spaces the days out. Run it off-peak and watch workspace CPU between days.
+- A day whose whole hours already hold rows is skipped, so a stopped run resumes. A day that
+  failed between its traces and logs view is skipped too: delete that day's rows and re-run.
+- Run once per workspace (US primary, prod-eu, the legacy mirror) with TINYBIRD_HOST/TOKEN set.
+- Try it on a Tinybird branch first: it calls the materialized node population endpoint
+  (`/v0/pipes/<pipe>/nodes/<node>/population`) with a `populate_condition` per day.
+
 ---
 
 ## Known-unresolved

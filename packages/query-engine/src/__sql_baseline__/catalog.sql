@@ -9703,6 +9703,134 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
+-- builder:user-activity:userActivityServicesQuery:default  [eabfc3cc]
+SELECT
+          user_activity_hourly.ServiceName AS serviceName,
+          user_activity_hourly.ServiceNamespace AS serviceNamespace,
+          sum(user_activity_hourly.RequestCount) AS requestCount,
+          sum(user_activity_hourly.FailedRequestCount) AS failedRequestCount,
+          sum(user_activity_hourly.ErrorSpanCount) AS errorSpanCount,
+          sum(user_activity_hourly.LogCount) AS logCount,
+          max(user_activity_hourly.LastSeen) AS lastSeen
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog'
+        GROUP BY serviceName, serviceNamespace
+        ORDER BY requestCount DESC, serviceName ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:user-activity:userActivitySlicesQuery:default  [54b5a280]
+SELECT
+          user_activity_hourly.Hour AS hour,
+          user_activity_hourly.ServiceName AS serviceName,
+          user_activity_hourly.ServiceNamespace AS serviceNamespace,
+          sum(user_activity_hourly.SpanCount) AS spanCount,
+          sum(user_activity_hourly.RequestCount) AS requestCount,
+          sum(user_activity_hourly.LogCount) AS logCount
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog'
+        GROUP BY hour, serviceName, serviceNamespace
+        ORDER BY hour DESC, serviceName ASC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:user-activity:userActivitySummaryQuery:default  [344f6010]
+SELECT
+          sum(user_activity_hourly.SpanCount) AS spanCount,
+          sum(user_activity_hourly.ErrorSpanCount) AS errorSpanCount,
+          sum(user_activity_hourly.RequestCount) AS requestCount,
+          sum(user_activity_hourly.FailedRequestCount) AS failedRequestCount,
+          uniqIfMerge(TraceIds) AS traceCount,
+          uniqIfMerge(SessionIds) AS sessionCount,
+          if(sum(RequestCount) > 0, arrayElement(quantilesTDigestIfMerge(0.5, 0.95)(RequestDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(RequestCount) > 0, arrayElement(quantilesTDigestIfMerge(0.5, 0.95)(RequestDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          sum(user_activity_hourly.LogCount) AS logCount,
+          sum(user_activity_hourly.WarnLogCount) AS warnLogCount,
+          sum(user_activity_hourly.ErrorLogCount) AS errorLogCount,
+          arrayMap(x -> x.1, arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes))) AS topRoutes,
+          arrayMap(x -> x.2, arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes))) AS topRouteCounts,
+          min(user_activity_hourly.FirstSeen) AS firstSeen,
+          max(user_activity_hourly.LastSeen) AS lastSeen
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog'
+        FORMAT JSON
+
+-- builder:user-activity:userActivityTotalsQuery:default  [e0f21ea2]
+SELECT
+          user_activity_hourly.UserId AS userId,
+          sum(user_activity_hourly.RequestCount) AS requestCount,
+          sum(user_activity_hourly.FailedRequestCount) AS failedRequestCount,
+          sum(user_activity_hourly.ErrorSpanCount) AS errorSpanCount,
+          sum(user_activity_hourly.LogCount) AS logCount,
+          sum(user_activity_hourly.ErrorLogCount) AS errorLogCount,
+          min(user_activity_hourly.FirstSeen) AS firstSeen,
+          max(user_activity_hourly.LastSeen) AS lastSeen
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId IN ('user_a', 'user_b')
+        GROUP BY userId
+        LIMIT 2
+        FORMAT JSON
+
+-- builder:user-activity:userLogsQuery:default  [3bd5f1bd]
+SELECT
+          logs.Timestamp AS timestamp,
+          logs.ServiceName AS serviceName,
+          logs.SeverityText AS severityText,
+          logs.SeverityNumber AS severityNumber,
+          logs.Body AS body,
+          logs.TraceId AS traceId,
+          logs.SpanId AS spanId
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ServiceName IN ('api')
+          AND logs.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND (logs.LogAttributes['user.id'] = 'user_catalog' OR (logs.LogAttributes['user.id'] = '' AND logs.LogAttributes['enduser.id'] = 'user_catalog'))
+        ORDER BY timestamp DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:user-activity:userTracesQuery:default  [8247554d]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.Timestamp AS timestamp,
+          traces.ServiceName AS serviceName,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          if(traces.ParentSpanId = '', 1, 0) AS isRoot
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('api')
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND traces.IsEntryPoint = 1
+          AND (traces.SpanAttributes['user.id'] = 'user_catalog' OR (traces.SpanAttributes['user.id'] = '' AND traces.SpanAttributes['enduser.id'] = 'user_catalog'))
+        ORDER BY timestamp DESC
+        LIMIT 100
+        FORMAT JSON
+
 -- builder:users:userDevicesQuery:default  [cf2b3cba]
 SELECT
           sessions.browser AS browser,

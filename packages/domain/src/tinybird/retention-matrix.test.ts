@@ -66,6 +66,8 @@ const RETENTION_DAYS = {
 	trace_list_mv: 30,
 	traces: 30,
 	traces_aggregates_hourly: 365,
+	// Users' PII: last seen up to a quarter back, not a year; raw drill-down needs only 30.
+	user_activity_hourly: 90,
 	// Browser rows past 30 days can never be rebuilt from `session_events`, but
 	// direct-ingested (server/mobile) rows have no source: this table IS the copy.
 	product_events: 365,
