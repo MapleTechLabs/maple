@@ -11,8 +11,9 @@
  * redelivered on the next connection, and the gateway asks for a reconnect after a minute without
  * one. HEARTBEATs keep the connection; RECONNECT and INVALID_SESSION end it.
  *
- * One session per bot token: a second IDENTIFY is refused while a session is live, and only a
- * RESUME of the live session's own id replaces it. So the session id is kept across every reconnect
+ * One session per bot and region (the deployment's `MAPLE_HAZEL_REGION`, none for US): a second
+ * IDENTIFY for the same region is refused while a session is live, and only a RESUME of the live
+ * session's own id replaces it. So the session id is kept across every reconnect
  * and deploy, and a fresh IDENTIFY happens only when there is none.
  */
 import { Option, Schema } from "effect"

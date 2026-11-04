@@ -110,8 +110,9 @@ sides, which is what this rests on.
   this bot. A gateway that predates `botUserId` delivers nothing until it names it.
 - Events arrive in DISPATCH batches, one in flight at a time; each is acknowledged in the same step
   that hands its events to the host.
-- One session per token: a second IDENTIFY is refused while one is live, and a RESUME of the live
-  session replaces it. So the session is kept across every reconnect and deploy, and only a refused
+- One session per bot and region (`MAPLE_HAZEL_REGION`; none for US): a second IDENTIFY for the
+  same region is refused while one is live, and a RESUME of the live session replaces it. The US
+  and EU instances share the token, each holding its own region's session. So the session is kept across every reconnect and deploy, and only a refused
   token (`Invalid bot token`) stops the loop.
 
 Hazel delivers every message in a workspace to an installed bot. The connector drops its own
