@@ -6,7 +6,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { CloneWidget, ExportDashboard, FetchWidget, RemoveWidget } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { slotOf } from "./plan"
+import { optionsByNameOf, slotOf, variablesOf } from "./plan"
 import { subscriptions } from "./subscription"
 import { init, update } from "./update"
 
@@ -86,6 +86,22 @@ const previewed = () => {
 }
 
 describe("previewing a version", () => {
+	test("a previewed version's own variables resolve, though the live board dropped them", () => {
+		const withEnv = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(snapshot),
+			variables: [
+				{ name: "env", type: "custom", options: [{ value: "production" }, { value: "staging" }] },
+			],
+		})
+		const opened = run(ready(), [Message.ClickedVersion({ versionId: version.id })])
+		const shown = pageUpdate(
+			opened,
+			Message.CompletedFetchSnapshot({ versionId: version.id, result: Result.succeed(withEnv) }),
+		).model
+		expect(optionsByNameOf(shown, context).env?.options).toEqual(["production", "staging"])
+		expect(variablesOf(shown, context).values.env?.value).toBe("production")
+	})
+
 	test("a snapshot's tiles plan the snapshot's own queries, not the live board's", () => {
 		const liveKey = keyOf(ready(), "w")
 		const loaded = previewed()

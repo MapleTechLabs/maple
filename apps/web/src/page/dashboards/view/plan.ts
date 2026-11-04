@@ -84,7 +84,7 @@ type FetchCommand = ReturnType<typeof FetchWidget> | ReturnType<typeof FetchVari
 export const optionsByNameOf = (model: Model, context: PageContext): Record<string, OptionsState> =>
 	optionsByNameFor(
 		context.orgId,
-		model.document?.variables ?? [],
+		shownDocumentOf(model)?.variables ?? [],
 		model.variableOptions,
 		windowOf(model, context),
 	)
@@ -93,7 +93,7 @@ export const optionsByNameOf = (model: Model, context: PageContext): Record<stri
 export const variablesOf = (model: Model, context: PageContext) =>
 	planVariablesOf(
 		context.orgId,
-		model.document?.variables ?? [],
+		shownDocumentOf(model)?.variables ?? [],
 		variableValuesFromSearch(model.search),
 		model.variableOptions,
 		windowOf(model, context),
@@ -103,7 +103,7 @@ export const variablesOf = (model: Model, context: PageContext) =>
 const planVariableOptions = (model: Model, context: PageContext, mode: Keyed.RequestMode) => {
 	const planned = planOptionRequests(
 		context.orgId,
-		model.document?.variables ?? [],
+		shownDocumentOf(model)?.variables ?? [],
 		model.variableOptions,
 		windowOf(model, context),
 		mode,
