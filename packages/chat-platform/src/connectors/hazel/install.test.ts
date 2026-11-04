@@ -46,6 +46,25 @@ describe("hazel install", () => {
 		})
 	})
 
+	it("names this instance's region on the link, so Hazel routes the workspace to it", () => {
+		const url = new URL(hazelInstallUrl("bot-1", { state: "nonce", redirectUri, region: "eu" }))
+		expect(url.searchParams.get("region")).toBe("eu")
+		expect(
+			new URL(hazelInstallUrl("bot-1", { state: "nonce", redirectUri })).searchParams.has("region"),
+		).toBe(false)
+	})
+
+	it.effect("builds the link with the deployment's region", () =>
+		Effect.gen(function* () {
+			const link = yield* hazelInstall.authorizeUrl({
+				config: new Map([...config, [REGION_CONFIG, Redacted.make("eu")]]),
+				state: "nonce",
+				redirectUri,
+			})
+			expect(new URL(link).searchParams.get("region")).toBe("eu")
+		}),
+	)
+
 	it.effect("redeems the code with the bot's own token for the workspace it names", () => {
 		const http = stub(
 			200,
@@ -66,21 +85,6 @@ describe("hazel install", () => {
 			expect(request?.url).toBe("https://api.hazel.sh/api/v1/bot-installs/token")
 			expect(request?.headers["authorization"]).toBe("Bearer hzl_bot_token")
 			expect(sentBody(request!)).toEqual({ code: "org-1.secret", redirectUri })
-		}).pipe(Effect.provide(http.layer))
-	})
-
-	it.effect("redeems with this instance's region, so the workspace's events reach its session", () => {
-		const http = stub(
-			200,
-			JSON.stringify({ organizationId: "org-1", organizationName: "Acme", installedBy: "u" }),
-		)
-		return Effect.gen(function* () {
-			yield* hazelInstall.complete({
-				config: new Map([...config, [REGION_CONFIG, Redacted.make("eu")]]),
-				params: new URLSearchParams({ code: "org-1.secret", state: "nonce" }),
-				redirectUri,
-			})
-			expect(sentBody(http.seen[0]!)).toEqual({ code: "org-1.secret", redirectUri, region: "eu" })
 		}).pipe(Effect.provide(http.layer))
 	})
 

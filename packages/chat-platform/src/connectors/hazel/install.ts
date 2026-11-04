@@ -34,24 +34,33 @@ const decodeRedeemedInstall = Schema.decodeUnknownEffect(RedeemedInstall)
 /**
  * The install link. Hazel's consent page checks `redirect_uri` against the URIs the bot's owner
  * registered on the bot (exactly), so the callback has to be one of them; `state` is the host's
- * single-use nonce and comes back untouched.
+ * single-use nonce and comes back untouched. `region` (this instance's, when it has one) makes
+ * Hazel route the workspace's events to this instance's gateway session before the install exists.
  */
-export const hazelInstallUrl = (botId: string, input: { state: string; redirectUri: string }): string => {
+export const hazelInstallUrl = (
+	botId: string,
+	input: { state: string; redirectUri: string; region?: string | undefined },
+): string => {
 	const params = new URLSearchParams({ bot_id: botId, redirect_uri: input.redirectUri, state: input.state })
+	if (input.region !== undefined) params.set("region", input.region)
 	return `${INSTALL_URL}?${params.toString()}`
 }
 
 const authorizeUrl = (input: ChatInstallStart) =>
-	Effect.map(requireConfig(input.config, HAZEL_CONNECTOR_ID, BOT_ID_CONFIG), (botId) =>
-		hazelInstallUrl(botId, { state: input.state, redirectUri: input.redirectUri }),
-	)
+	Effect.map(requireConfig(input.config, HAZEL_CONNECTOR_ID, BOT_ID_CONFIG), (botId) => {
+		const region = input.config.get(REGION_CONFIG)
+		return hazelInstallUrl(botId, {
+			state: input.state,
+			redirectUri: input.redirectUri,
+			region: region === undefined ? undefined : Redacted.value(region),
+		})
+	})
 
 /** The redemption POST, as one client span on the service map. */
 const redeem = Effect.fn("Hazel.request", { kind: "client" })(function* (
 	token: string,
 	code: string,
 	redirectUri: string,
-	region: string | undefined,
 ) {
 	yield* Effect.annotateCurrentSpan({
 		"peer.service": "hazel",
@@ -64,11 +73,7 @@ const redeem = Effect.fn("Hazel.request", { kind: "client" })(function* (
 		.execute(
 			HttpClientRequest.post(`${API_BASE}/bot-installs/token`, {
 				headers: { accept: "application/json", authorization: `Bearer ${token}` },
-			}).pipe(
-				HttpClientRequest.bodyJsonUnsafe(
-					region === undefined ? { code, redirectUri } : { code, redirectUri, region },
-				),
-			),
+			}).pipe(HttpClientRequest.bodyJsonUnsafe({ code, redirectUri })),
 		)
 		// The message only: the request carries the bot token.
 		.pipe(
@@ -126,14 +131,7 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const code = input.params.get("code")
 	if (code === null) return yield* installFailed("Hazel's callback carried no install code")
 	const token = yield* requireConfig(input.config, HAZEL_CONNECTOR_ID, BOT_TOKEN_CONFIG)
-	// Redeeming with this instance's region routes the workspace's events to its gateway session.
-	const region = input.config.get(REGION_CONFIG)
-	const response = yield* redeem(
-		token,
-		code,
-		input.redirectUri,
-		region === undefined ? undefined : Redacted.value(region),
-	)
+	const response = yield* redeem(token, code, input.redirectUri)
 	if (response.status === 400) {
 		return yield* installFailed("Hazel refused the install code: it expired or was already used")
 	}
