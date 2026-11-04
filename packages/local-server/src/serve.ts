@@ -1507,7 +1507,8 @@ const handleEventingRead = (
 const MAX_LOGIN_BODY_BYTES = 4 * 1024
 
 const authRejections = Metric.counter("maple.local.auth_rejections_total", {
-	description: "Requests refused for a missing or wrong ingest key or access token",
+	description:
+		"Requests refused: a missing or wrong ingest key or access token, a throttled guess, or a disallowed origin or Host",
 	incremental: true,
 })
 
@@ -1581,7 +1582,7 @@ interface ServerContext {
 	readonly status: ServerStatus
 	readonly auth: RemoteAuth
 	readonly loginThrottle: LoginThrottle
-	/** Counts a 401 without a span: refusals can come in floods. */
+	/** Counts a refusal (401, 429, origin or Host 403) without a span: they come in floods. */
 	readonly countRejection: (route: "ingest" | "read") => void
 }
 
@@ -1611,7 +1612,9 @@ const makeFetch =
 		const { db, options, runSpan, authority, gate, maintenanceToken, consumerToken } = context
 		const url = new URL(req.url)
 		const origin = req.headers.get("origin")
+		const route = Str.startsWith("/v1/")(url.pathname) ? "ingest" : "read"
 		if (!isBrowserOriginAllowed(url, origin, context.policy)) {
+			context.countRejection(route)
 			return origin === null
 				? text("request host not allowed; use the advertised host (--advertise-host)", 403)
 				: text("browser origin not allowed", 403)
@@ -1632,8 +1635,7 @@ const makeFetch =
 			attempts,
 		)
 		if (denied !== null) {
-			if (denied.status === 401)
-				context.countRejection(Str.startsWith("/v1/")(url.pathname) ? "ingest" : "read")
+			if (denied.status === 401 || denied.status === 429) context.countRejection(route)
 			return respond(denied)
 		}
 		if (url.pathname === "/health") return respond(text("OK"))
@@ -1643,7 +1645,8 @@ const makeFetch =
 			return respond(
 				req.method === "POST"
 					? await runSpan(loginSpan(context.auth, attempts, req, url)).then((response) => {
-							if (response.status === 401) context.countRejection("read")
+							if (response.status === 401 || response.status === 429)
+								context.countRejection("read")
 							return response
 						})
 					: // A reload of a failed sign-in lands here; show the form again.
