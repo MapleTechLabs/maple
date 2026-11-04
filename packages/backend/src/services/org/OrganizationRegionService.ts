@@ -381,15 +381,21 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 				running: HashMap.remove(state.running, orgId),
 				settled: HashMap.remove(state.settled, orgId),
 			}))
-			yield* edgeCache
-				.rawDelete(REGIONS_CACHE_BUCKET, orgId)
-				.pipe(
-					Effect.catch((error) =>
-						Effect.logWarning(
-							"Could not drop the shared organization regions; they expire on their TTL",
-						).pipe(Effect.annotateLogs({ orgId, error: error.message })),
-					),
-				)
+			yield* edgeCache.rawDelete(REGIONS_CACHE_BUCKET, orgId).pipe(
+				Effect.catch((error) =>
+					Effect.logWarning(
+						"Could not drop the shared organization regions; they expire on their TTL",
+					).pipe(Effect.annotateLogs({ orgId, error: error.message })),
+				),
+				// A stalled delete must not hold up the write that called this; the TTL still bounds it.
+				Effect.timeoutOrElse({
+					duration: SHARED_READ_DEADLINE_MS,
+					orElse: () =>
+						Effect.logWarning("Dropping the shared organization regions timed out").pipe(
+							Effect.annotateLogs({ orgId }),
+						),
+				}),
+			)
 		},
 	)
 
