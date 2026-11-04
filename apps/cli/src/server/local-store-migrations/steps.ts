@@ -1845,5 +1845,39 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// A metadata-only column on both error tables; the views are recreated to fill it.
+		// Existing rows read UserId '' and are not backfilled: the targets keep no span attributes.
+		id: "local-0048-to-0049-error-events-user-id",
+		from: 48,
+		to: 49,
+		description: "Add UserId to error_events and error_events_by_time and recreate their views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("error_events", [["UserId", "String DEFAULT ''"]]),
+			addColumns("error_events_by_time", [["UserId", "String DEFAULT ''"]]),
+			addIndex("error_events_by_time", "idx_user_id UserId TYPE bloom_filter GRANULARITY 4"),
+			dropTables("error_events_mv", "error_events_by_time_mv"),
+		],
+		plan: [
+			[
+				"add-error-events-user-id",
+				"Add UserId to error_events and error_events_by_time and recreate their views so new occurrences carry the end user",
+			],
+		],
+		verifies: "Verify the v49 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"UserId is added as a metadata-only default; existing rows keep every value and FingerprintHash, and read UserId as empty.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

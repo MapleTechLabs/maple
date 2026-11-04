@@ -329,6 +329,13 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 	userActivityFixture("userLogsQuery", () =>
 		CH.compileUnsafe(CH.userLogsQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
 	),
+	userActivityFixture("userIssuesQuery", () => CH.compileUnsafe(CH.userIssuesQuery(USER_SCOPE), window)),
+	userActivityFixture("issueAffectedUsersQuery", () =>
+		CH.compileUnsafe(CH.issueAffectedUsersQuery({ fingerprintHashes: ["1234567890"] }), window),
+	),
+	userActivityFixture("issueAffectedUserCountQuery", () =>
+		CH.compileUnsafe(CH.issueAffectedUserCountQuery({ fingerprintHashes: ["1234567890"] }), window),
+	),
 ]
 
 // Product-event funnel fixtures. The funnel SQL has four independent axes —

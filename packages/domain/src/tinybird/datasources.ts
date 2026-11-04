@@ -996,6 +996,8 @@ export const errorEvents = defineDatasource("error_events", {
 		// old client still in the wild, not a regression. Appended last so the
 		// materialized projection stays aligned with this column order.
 		ServiceVersion: t.string().lowCardinality(),
+		// The end user (`user.id`, else `enduser.id`), '' when the span named none. Not hashed.
+		UserId: t.string().default(""),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
@@ -1045,12 +1047,16 @@ export const errorEventsByTime = defineDatasource("error_events_by_time", {
 		// old client still in the wild, not a regression. Appended last so the
 		// materialized projection stays aligned with this column order.
 		ServiceVersion: t.string().lowCardinality(),
+		// The end user (`user.id`, else `enduser.id`), '' when the span named none. Not hashed.
+		UserId: t.string().default(""),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "FingerprintHash"],
 		ttl: "toDate(Timestamp) + INTERVAL 90 DAY",
 	}),
+	// One user's issues over a window (`userIssuesQuery`): user ids are near-unique, so a bloom filter.
+	indexes: [{ name: "idx_user_id", expr: "UserId", type: "bloom_filter", granularity: 4 }],
 })
 
 export type ErrorEventsByTimeRow = InferRow<typeof errorEventsByTime>

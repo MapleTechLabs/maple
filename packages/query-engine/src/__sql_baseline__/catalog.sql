@@ -9703,6 +9703,34 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
+-- builder:user-activity:issueAffectedUserCountQuery:default  [e85255cd]
+SELECT
+          uniqIf(error_events.UserId, error_events.UserId != '') AS affectedUsers,
+          countIf(error_events.UserId != '') AS hitsWithUser,
+          count() AS hits
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash IN (toUInt64('1234567890'))
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
+        FORMAT JSON
+
+-- builder:user-activity:issueAffectedUsersQuery:default  [77ef4c89]
+SELECT
+          error_events.UserId AS userId,
+          count() AS hits,
+          max(error_events.Timestamp) AS lastSeen
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash IN (toUInt64('1234567890'))
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events.UserId != ''
+        GROUP BY userId
+        ORDER BY hits DESC, userId ASC
+        LIMIT 20
+        FORMAT JSON
+
 -- builder:user-activity:userActivityServicesQuery:default  [eabfc3cc]
 SELECT
           user_activity_hourly.ServiceName AS serviceName,
@@ -9787,6 +9815,34 @@ SELECT
           AND user_activity_hourly.UserId IN ('user_a', 'user_b')
         GROUP BY userId
         LIMIT 2
+        FORMAT JSON
+
+-- builder:user-activity:userIssuesQuery:default  [2620f591]
+SELECT
+          toString(error_events_by_time.FingerprintHash) AS fingerprintHash,
+          argMax(error_events_by_time.ServiceName, error_events_by_time.Timestamp) AS serviceName,
+          argMax(error_events_by_time.ExceptionType, error_events_by_time.Timestamp) AS exceptionType,
+          argMax(error_events_by_time.ExceptionMessage, error_events_by_time.Timestamp) AS exceptionMessage,
+          argMax(error_events_by_time.ErrorLabel, error_events_by_time.Timestamp) AS errorLabel,
+          count() AS hits,
+          min(error_events_by_time.Timestamp) AS firstSeen,
+          max(error_events_by_time.Timestamp) AS lastSeen
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events_by_time.UserId = 'user_catalog'
+          AND error_events_by_time.ServiceName IN (SELECT
+          user_activity_hourly.ServiceName AS ServiceName
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog')
+        GROUP BY fingerprintHash
+        ORDER BY hits DESC, lastSeen DESC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:user-activity:userLogsQuery:default  [3bd5f1bd]
