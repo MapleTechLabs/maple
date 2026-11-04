@@ -96,6 +96,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/QueryEngineValidationError",
 	"@maple/http/errors/RawSqlValidationError",
 	"@maple/http/errors/RecommendationIssueNotFoundError",
+	"@maple/http/errors/ScrapeTargetLimitReachedError",
 	"@maple/http/errors/ScrapeTargetNotFoundError",
 	"@maple/http/errors/ScrapeTargetValidationError",
 	"@maple/http/errors/SelfHostedAuthDisabledError",

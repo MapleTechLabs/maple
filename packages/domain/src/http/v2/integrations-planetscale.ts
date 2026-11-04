@@ -12,6 +12,7 @@ import {
 } from "../integrations"
 import {
 	ScrapeTargetEncryptionError,
+	ScrapeTargetLimitReachedError,
 	ScrapeTargetNotFoundError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetStoredConfigInvalidError,
@@ -855,12 +856,14 @@ const [
 	scrapeTargetPersistence,
 	scrapeTargetEncryption,
 	scrapeTargetStoredConfigInvalid,
+	scrapeTargetLimitReached,
 ] = publicErrors(
 	ScrapeTargetNotFoundError,
 	ScrapeTargetValidationError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetStoredConfigInvalidError,
+	ScrapeTargetLimitReachedError,
 )
 const scrapeTargetMutationErrors = [
 	scrapeTargetNotFound,
@@ -868,6 +871,7 @@ const scrapeTargetMutationErrors = [
 	scrapeTargetPersistence,
 	scrapeTargetEncryption,
 	scrapeTargetStoredConfigInvalid,
+	scrapeTargetLimitReached,
 ] as const
 
 export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planetscaleIntegration")

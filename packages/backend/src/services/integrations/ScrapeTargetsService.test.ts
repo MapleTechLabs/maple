@@ -22,7 +22,11 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-import { ScrapeTargetsService, summarizeScrapeResults } from "./ScrapeTargetsService"
+import {
+	MAX_SCRAPE_TARGETS_PER_ORG,
+	ScrapeTargetsService,
+	summarizeScrapeResults,
+} from "./ScrapeTargetsService"
 
 const trackedDbs: TestDb[] = []
 const originalFetch = globalThis.fetch
@@ -151,6 +155,55 @@ describe("ScrapeTargetsService", () => {
 			assert.deepStrictEqual(
 				Arr.map(left.rows, (row) => row.org_id),
 				["org_2"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses an org's target past the per-org limit, and no other org's", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const create = (orgId: string, name: string) =>
+				service.create(
+					asOrgId(orgId),
+					new CreateScrapeTargetRequest({
+						name,
+						url: `https://${name}.example.com/metrics`,
+						// Disabled targets count too, or create-disabled-then-enable would skip the limit.
+						enabled: false,
+					}),
+				)
+			const full = yield* Effect.forEach(Arr.range(1, MAX_SCRAPE_TARGETS_PER_ORG), (n) =>
+				create("org_full", `node-${n}`),
+			)
+
+			const refused = yield* create("org_full", "one-more").pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/http/errors/ScrapeTargetLimitReachedError")
+			assert.include(refused.message, `${MAX_SCRAPE_TARGETS_PER_ORG} scrape targets`)
+
+			yield* create("org_other", "node")
+			yield* service.delete(asOrgId("org_full"), full[0]!.id)
+			yield* create("org_full", "replacement")
+
+			// Integration-owned rows are bounded by their integration: not counted, not refused.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1",
+					[full[1]!.id],
+				),
+			)
+			yield* create("org_full", "after-managed")
+			yield* service.create(
+				asOrgId("org_full"),
+				new CreateScrapeTargetRequest({
+					name: "PlanetScale (acme)",
+					targetType: "planetscale",
+					organization: "acme",
+					authType: "planetscale_oauth",
+					enabled: false,
+				}),
+				{ allowManaged: true },
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})

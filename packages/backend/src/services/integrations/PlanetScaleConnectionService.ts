@@ -526,6 +526,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 							// discovery rejects the OAuth grant, so it never scrapes.
 							enabled: false,
 						}),
+						// Marked managed below, in the connection's transaction.
+						{ allowManaged: true },
 					)
 					scrapeTargetId = created.id
 					createdTarget = true
