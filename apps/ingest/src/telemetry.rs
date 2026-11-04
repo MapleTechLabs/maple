@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::clickhouse_insert_mappings::{self, InsertMapping};
@@ -1119,6 +1119,9 @@ impl TelemetryPipeline {
         let frame_count = frames.len();
         let mut committed_bytes = 0u64;
         let mut frames_committed = 0usize;
+        let mut batch_frames = 0u64;
+        let mut lock_wait = Duration::ZERO;
+        let mut sync_wait = Duration::ZERO;
         // Captured before entering the WAL span so the link points at the
         // request's server span, not at `ingest.wal_commit` itself. An unsampled
         // context would produce a link to a span that was never exported.
@@ -1156,42 +1159,36 @@ impl TelemetryPipeline {
                 let queued_bytes = frame.payload.len() as u64;
                 self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)
                     .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
-                // Every exit from here to `commit()` — the error below, an early
-                // return above it, or this future being dropped mid-append —
-                // releases the reservation.
+                let datasource = frame.datasource.clone();
+                let encoded = encode_wal_frame(&frame).map_err(|error| {
+                    record_failing_frame(shard, lane, &datasource);
+                    PipelineError::QueueUnavailable(error)
+                })?;
+                // The delivery owns the reservation: it commits when the frame
+                // reaches the lane, and dropping the delivery instead (a refused
+                // or failed append) releases it.
                 let reservation = OrgBytesReservation {
-                    counters: &self.inner.org_queue_bytes,
-                    org_id: &frame.org_id,
+                    counters: Arc::clone(&self.inner.org_queue_bytes),
+                    org_id: frame.org_id.clone(),
                     bytes: queued_bytes,
                     committed: false,
                 };
-                let (segment, start, end) = match self.inner.wal.append(lane, &frame).await {
-                    Ok(position) => {
-                        reservation.commit();
-                        position
-                    }
-                    Err(error) => {
-                        record_failing_frame(shard, lane, &frame.datasource);
-                        return Err(PipelineError::QueueUnavailable(error));
-                    }
-                };
+                let deliver =
+                    queued_delivery(frame, shard, permit, reservation, source_span.clone());
+                let appended = self
+                    .inner
+                    .wal
+                    .append_delivering(lane, encoded, true, deliver)
+                    .await
+                    .map_err(|error| {
+                        record_failing_frame(shard, lane, &datasource);
+                        PipelineError::QueueUnavailable(error)
+                    })?;
                 committed_bytes += queued_bytes;
                 frames_committed += 1;
-                permit.send(QueuedFrame {
-                    shard,
-                    segment,
-                    start,
-                    end,
-                    org_id: frame.org_id,
-                    queued_bytes,
-                    signal: frame.signal,
-                    destination: frame.destination,
-                    datasource: frame.datasource,
-                    row_count: frame.row_count,
-                    payload: frame.payload,
-                    source_span: source_span.clone(),
-                    enqueued_at: Instant::now(),
-                });
+                batch_frames = batch_frames.max(appended.batch_frames);
+                lock_wait += appended.lock_wait;
+                sync_wait += appended.sync_wait;
             }
 
             Ok(())
@@ -1202,6 +1199,17 @@ impl TelemetryPipeline {
         span_handle.record("maple.ingest.frame_count", frame_count);
         span_handle.record("maple.ingest.frames_committed", frames_committed);
         span_handle.record("maple.ingest.queued_bytes", committed_bytes);
+        if frames_committed > 0 {
+            span_handle.record("maple.ingest.wal_batch_frames", batch_frames);
+            span_handle.record(
+                "maple.ingest.wal_lock_wait_ms",
+                lock_wait.as_secs_f64() * 1e3,
+            );
+            span_handle.record(
+                "maple.ingest.wal_sync_wait_ms",
+                sync_wait.as_secs_f64() * 1e3,
+            );
+        }
         if let Err(error) = &result {
             record_stage_error(
                 &span_handle,
@@ -1354,11 +1362,54 @@ struct WalLane {
     committed_bytes: AtomicU64,
     exported_bytes: AtomicU64,
     append: Mutex<LaneAppend>,
+    /// Signalled whenever a sync finishes, so waiters re-check their batch.
+    synced: Condvar,
     export: Mutex<LaneExport>,
     /// Set once, if a durability tier is configured, before any traffic is
     /// accepted. Segments are announced to it as they seal and as they are
     /// unlinked.
     shipper: OnceLock<mpsc::Sender<SegmentEvent>>,
+    /// Makes written bytes durable. `File::sync_data` outside the WAL benchmark,
+    /// which injects a device with a fixed fsync latency.
+    sync: WalSync,
+}
+
+/// How a lane makes its written bytes durable.
+#[doc(hidden)]
+pub type WalSync = Arc<dyn Fn(&File) -> std::io::Result<()> + Send + Sync>;
+
+fn sync_data_wal() -> WalSync {
+    Arc::new(File::sync_data)
+}
+
+/// Hands a durable frame to its lane's export channel, committing its org
+/// reservation. Dropped unrun, the reservation releases instead.
+fn queued_delivery(
+    frame: EncodedFrame,
+    shard: usize,
+    permit: mpsc::OwnedPermit<QueuedFrame>,
+    reservation: OrgBytesReservation,
+    source_span: Option<SpanContext>,
+) -> Delivery {
+    Box::new(move |segment, start, end| {
+        let queued_bytes = reservation.bytes;
+        reservation.commit();
+        permit.send(QueuedFrame {
+            shard,
+            segment,
+            start,
+            end,
+            org_id: frame.org_id,
+            queued_bytes,
+            signal: frame.signal,
+            destination: frame.destination,
+            datasource: frame.datasource,
+            row_count: frame.row_count,
+            payload: frame.payload,
+            source_span,
+            enqueued_at: Instant::now(),
+        });
+    })
 }
 
 /// A segment's lifecycle as the object-store shipper sees it. Events for one
@@ -1374,11 +1425,41 @@ enum SegmentEvent {
 
 struct LaneAppend {
     seq: u64,
-    file: File,
+    /// Shared so a batch leader can fsync it with the lane lock released.
+    file: Arc<File>,
     /// Bytes written to `file`. The handle is append-only and nothing else
     /// writes it, so this is the offset every frame in it is addressed by.
     len: u64,
+    /// A sync is in flight. Appends that land meanwhile join `open`.
+    syncing: bool,
+    /// Frames written since the in-flight sync started, waiting for the next.
+    open: Option<SyncBatch>,
 }
+
+/// Runs once its frame is durable, with the position it landed at.
+type Delivery = Box<dyn FnOnce(u64, u64, u64) + Send>;
+
+/// Frames that share one sync. Every appender in it holds `outcome` and waits
+/// until the leader that synced them sets it to the batch's frame count.
+#[derive(Default)]
+struct SyncBatch {
+    outcome: Arc<OnceLock<Result<u64, String>>>,
+    /// In write order. Run under the lane lock after the sync, so frames reach
+    /// the export channel in the order they sit in the segment.
+    deliveries: Vec<Box<dyn FnOnce() + Send>>,
+    frames: u64,
+    bytes: u64,
+}
+
+/// What a durable append waited on. Where it landed goes to its `Delivery`.
+struct Appended {
+    /// Frames made durable by the same sync as this one.
+    batch_frames: u64,
+    lock_wait: Duration,
+    sync_wait: Duration,
+}
+
+type AppendGuard<'a> = std::sync::MutexGuard<'a, LaneAppend>;
 
 struct LaneExport {
     /// Oldest segment still on disk. Sequences are contiguous, so this and the
@@ -1446,11 +1527,13 @@ impl WalLane {
     fn open(
         shard: usize,
         destination: ExportDestination,
-        cfg: &TinybirdConfig,
+        queue_dir: &Path,
+        segment_max_bytes: u64,
         max_bytes: u64,
+        sync: WalSync,
     ) -> Result<Self, String> {
         let lane_key = format!("shard-{shard:03}-{}", destination.as_str());
-        let dir = cfg.queue_dir.join(&lane_key);
+        let dir = queue_dir.join(&lane_key);
         std::fs::create_dir_all(&dir)
             .map_err(|error| format!("create ingest WAL lane {}: {error}", dir.display()))?;
         let cursor_path = dir.join("lane.cursor");
@@ -1499,7 +1582,7 @@ impl WalLane {
             dir,
             cursor_path,
             max_bytes,
-            segment_max_bytes: cfg.wal_segment_max_bytes,
+            segment_max_bytes,
             active_seq: AtomicU64::new(next_seq),
             live_bytes: AtomicU64::new(on_disk),
             // Whatever survived the last boot is backlog this lane still owes.
@@ -1507,34 +1590,41 @@ impl WalLane {
             exported_bytes: AtomicU64::new(0),
             append: Mutex::new(LaneAppend {
                 seq: next_seq,
-                file,
+                file: Arc::new(file),
                 len: 0,
+                syncing: false,
+                open: None,
             }),
+            synced: Condvar::new(),
             export: Mutex::new(LaneExport {
                 next_delete: cursor.seq,
                 cursor,
             }),
             shipper: OnceLock::new(),
+            sync,
         })
     }
 
-    /// Append one encoded frame and return where it landed. `enforce_cap` is
-    /// false only for frames being relocated from an older WAL layout, which
+    /// Append one encoded frame and return once a sync covers it. `enforce_cap`
+    /// is false only for frames being relocated from an older WAL layout, which
     /// were already accepted and must not be rejected now.
+    ///
+    /// Group commit: frames written while a sync is in flight share the next
+    /// one, so a slow fsync costs each append about two syncs, not one per
+    /// append queued ahead of it. `deliver` runs once the frame is durable.
     fn append_blocking(
         &self,
         encoded: &[u8],
         enforce_cap: bool,
-    ) -> Result<(u64, u64, u64), String> {
+        deliver: Delivery,
+    ) -> Result<Appended, String> {
         let added = encoded.len() as u64;
         let append_started = Instant::now();
-        let mut state = self
-            .append
-            .lock()
-            .map_err(|_| "WAL lane mutex poisoned".to_owned())?;
+        let state = self.lock_append()?;
         // Everything before this point was queueing behind other appenders on
         // this lane; everything after is this append's own work.
         let lock_wait = append_started.elapsed();
+        let mut state = self.wait_for_room(state)?;
         if enforce_cap
             && self
                 .live_bytes
@@ -1545,45 +1635,139 @@ impl WalLane {
             metrics::wal_shard_full(self.shard, self.destination.as_str());
             return Err("Telemetry WAL lane is full".to_owned());
         }
-        state
-            .file
+        (&*state.file)
             .write_all(encoded)
             .map_err(|error| format!("write WAL: {error}"))?;
-        let fsync_started = Instant::now();
-        state
-            .file
-            .sync_data()
-            .map_err(|error| format!("sync WAL: {error}"))?;
-        let fsync = fsync_started.elapsed();
         let seq = state.seq;
         let start = state.len;
         let end = start + added;
         state.len = end;
         let live = self.live_bytes.fetch_add(added, Ordering::Relaxed) + added;
-        self.committed_bytes.fetch_add(added, Ordering::Relaxed);
-        // Sealing is an open() and a directory fsync, paid once per segment —
-        // versus the tail rewrite the previous layout paid here under this lock.
-        if end >= self.segment_max_bytes {
-            self.seal(&mut state)?;
-        }
+        let batch = state.open.get_or_insert_with(SyncBatch::default);
+        batch.frames += 1;
+        batch.bytes += added;
+        batch
+            .deliveries
+            .push(Box::new(move || deliver(seq, start, end)));
+        let outcome = Arc::clone(&batch.outcome);
+        let written = Instant::now();
+
+        let batch_frames = loop {
+            if let Some(result) = outcome.get() {
+                break result.clone()?;
+            }
+            // Not syncing means no batch is in flight, so ours is the open one.
+            state = if state.syncing {
+                self.wait_synced(state)?
+            } else {
+                self.sync_open_batch(state)?
+            };
+        };
         drop(state);
 
+        let sync_wait = written.elapsed();
         metrics::wal_commit_bytes(self.shard, self.destination.as_str(), added);
         metrics::wal_shard_bytes(self.shard, self.destination.as_str(), live);
-        // Recorded after the lock is released: the append is done, and holding it
-        // to emit metrics would make the very contention this measures worse.
+        // Recorded after the lock is released: holding it to emit metrics
+        // would make the very contention this measures worse.
         metrics::wal_append_durations(
             self.shard,
             self.destination.as_str(),
             lock_wait.as_secs_f64(),
-            fsync.as_secs_f64(),
+            sync_wait.as_secs_f64(),
             append_started.elapsed().as_secs_f64(),
         );
-        Ok((seq, start, end))
+        Ok(Appended {
+            batch_frames,
+            lock_wait,
+            sync_wait,
+        })
+    }
+
+    fn lock_append(&self) -> Result<AppendGuard<'_>, String> {
+        self.append
+            .lock()
+            .map_err(|_| "WAL lane mutex poisoned".to_owned())
+    }
+
+    fn wait_synced<'a>(&'a self, state: AppendGuard<'a>) -> Result<AppendGuard<'a>, String> {
+        self.synced
+            .wait(state)
+            .map_err(|_| "WAL lane mutex poisoned".to_owned())
+    }
+
+    /// A segment at its seal threshold takes no more frames: it is synced and
+    /// sealed first, which keeps the overshoot to one frame, as before.
+    fn wait_for_room<'a>(&'a self, mut state: AppendGuard<'a>) -> Result<AppendGuard<'a>, String> {
+        while state.len >= self.segment_max_bytes {
+            if state.syncing {
+                state = self.wait_synced(state)?;
+            } else if state.open.is_some() {
+                state = self.sync_open_batch(state)?;
+            } else {
+                self.seal(&mut state)?;
+            }
+        }
+        Ok(state)
+    }
+
+    /// Lead one sync: take the open batch, fsync with the lock released, then
+    /// deliver its frames in order and wake everyone waiting on it. A failed
+    /// sync drops the deliveries, which releases their reservations.
+    fn sync_open_batch<'a>(
+        &'a self,
+        mut state: AppendGuard<'a>,
+    ) -> Result<AppendGuard<'a>, String> {
+        // Callers lead only when no sync is in flight and frames are waiting,
+        // so a missing batch is a bug; failing beats spinning on it.
+        let Some(batch) = state.open.take() else {
+            return Err("WAL sync batch missing".to_owned());
+        };
+        state.syncing = true;
+        let file = Arc::clone(&state.file);
+        drop(state);
+
+        let fsync_started = Instant::now();
+        let synced = (self.sync)(&file).map_err(|error| format!("sync WAL: {error}"));
+        let fsync = fsync_started.elapsed();
+
+        let mut state = self.lock_append()?;
+        state.syncing = false;
+        let SyncBatch {
+            outcome,
+            deliveries,
+            frames,
+            bytes,
+        } = batch;
+        if synced.is_ok() {
+            self.committed_bytes.fetch_add(bytes, Ordering::Relaxed);
+            for deliver in deliveries {
+                deliver();
+            }
+            // Sealed now rather than by the next append, so a quiet lane still
+            // ships its full segment.
+            if state.open.is_none() && state.len >= self.segment_max_bytes {
+                if let Err(error) = self.seal(&mut state) {
+                    warn!(shard = self.shard, %error, "Failed to seal a full WAL segment");
+                }
+            }
+        } else {
+            drop(deliveries);
+        }
+        drop(outcome.set(synced.map(|()| frames)));
+        self.synced.notify_all();
+        metrics::wal_sync(
+            self.shard,
+            self.destination.as_str(),
+            fsync.as_secs_f64(),
+            frames,
+        );
+        Ok(state)
     }
 
     /// Close the active segment and open the next one. The caller holds
-    /// `append`; every frame in the outgoing segment is already `sync_data`d.
+    /// `append` with no sync in flight; every frame in the outgoing segment was
+    /// synced, or refused to its appender because its sync failed.
     fn seal(&self, state: &mut LaneAppend) -> Result<(), String> {
         let sealed = state.seq;
         let next = sealed + 1;
@@ -1592,7 +1776,7 @@ impl WalLane {
         // is looking at a segment whose length can no longer change.
         self.active_seq.store(next, Ordering::Release);
         state.seq = next;
-        state.file = file;
+        state.file = Arc::new(file);
         state.len = 0;
         metrics::wal_segment_sealed(self.shard, self.destination.as_str());
         self.notify(SegmentEvent::Sealed {
@@ -1749,8 +1933,10 @@ impl ShardedWal {
                 lanes.push(Arc::new(WalLane::open(
                     shard,
                     destination,
-                    cfg,
+                    &cfg.queue_dir,
+                    cfg.wal_segment_max_bytes,
                     max_bytes_per_lane,
+                    sync_data_wal(),
                 )?));
             }
         }
@@ -1898,7 +2084,7 @@ impl ShardedWal {
                 };
                 // Bypass the per-lane byte cap: these frames were already accepted
                 // and are merely being relocated, so we must not reject them.
-                if let Err(error) = self.append_inner(lane, &encoded, false).await {
+                if let Err(error) = self.append_relocated(lane, &encoded).await {
                     warn!(shard, error = %error, "Failed to migrate legacy ingest WAL frame; will retry next boot");
                     migrated = false;
                     break;
@@ -2019,7 +2205,7 @@ impl ShardedWal {
                     // Bypass the lane cap: these frames were accepted by the
                     // task that died, and rejecting them here is the loss this
                     // whole tier exists to prevent.
-                    if let Err(error) = self.append_inner(lane, &encoded, false).await {
+                    if let Err(error) = self.append_relocated(lane, &encoded).await {
                         warn!(owner, error = %error, "Failed to re-commit an orphaned WAL frame");
                         committed = false;
                         break;
@@ -2073,22 +2259,44 @@ impl ShardedWal {
             .ok_or_else(|| format!("invalid WAL lane {lane}"))
     }
 
+    #[cfg(test)]
     async fn append(&self, lane: usize, frame: &EncodedFrame) -> Result<(u64, u64, u64), String> {
-        self.append_inner(lane, frame, true).await
+        let (sender, landed) = std::sync::mpsc::channel();
+        let deliver: Delivery = Box::new(move |seq, start, end| {
+            sender.send((seq, start, end)).ok();
+        });
+        self.append_delivering(lane, encode_wal_frame(frame)?, true, deliver)
+            .await?;
+        landed
+            .recv()
+            .map_err(|_| "a durable append was never delivered".to_owned())
     }
 
+    /// Frames relocated at boot: no cap, and nothing to deliver, because the
+    /// lane replays them from disk.
+    async fn append_relocated(&self, lane: usize, frame: &EncodedFrame) -> Result<(), String> {
+        let encoded = encode_wal_frame(frame)?;
+        self.append_delivering(lane, encoded, false, Box::new(|_, _, _| {}))
+            .await
+            .map(|_| ())
+    }
+
+    /// Append an encoded frame and return once it is durable. `deliver` runs
+    /// first, from the blocking task, so it still runs if this future is dropped.
     #[hotpath::measure]
-    async fn append_inner(
+    async fn append_delivering(
         &self,
         lane: usize,
-        frame: &EncodedFrame,
+        encoded: Vec<u8>,
         enforce_cap: bool,
-    ) -> Result<(u64, u64, u64), String> {
+        deliver: Delivery,
+    ) -> Result<Appended, String> {
         let lane_ref = self.lane(lane)?;
-        let encoded = encode_wal_frame(frame)?;
-        tokio::task::spawn_blocking(move || lane_ref.append_blocking(&encoded, enforce_cap))
-            .await
-            .map_err(|error| format!("join WAL append: {error}"))?
+        tokio::task::spawn_blocking(move || {
+            lane_ref.append_blocking(&encoded, enforce_cap, deliver)
+        })
+        .await
+        .map_err(|error| format!("join WAL append: {error}"))?
     }
 
     /// Bytes committed but not yet exported across every lane.
@@ -2114,6 +2322,51 @@ impl ShardedWal {
         tokio::task::spawn_blocking(move || lane_ref.mark_exported_blocking(cursor, bytes))
             .await
             .map_err(|error| format!("join WAL cursor: {error}"))?
+    }
+}
+
+/// One WAL lane driven directly, for `benches/wal_append_bench.rs`: the real
+/// append path with an injected fsync, without an export pipeline behind it.
+#[doc(hidden)]
+pub struct WalLaneBench {
+    lane: WalLane,
+}
+
+impl std::fmt::Debug for WalLaneBench {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WalLaneBench")
+            .field("dir", &self.lane.dir)
+            .finish()
+    }
+}
+
+impl WalLaneBench {
+    pub fn open(queue_dir: &Path, segment_max_bytes: u64, sync: WalSync) -> Result<Self, String> {
+        let lane = WalLane::open(
+            0,
+            ExportDestination::Tinybird,
+            queue_dir,
+            segment_max_bytes,
+            u64::MAX,
+            sync,
+        )?;
+        Ok(Self { lane })
+    }
+
+    /// Append one frame carrying `payload`; returns once it is durable.
+    pub fn append(&self, payload: Vec<u8>) -> Result<(), String> {
+        let encoded = encode_wal_frame(&EncodedFrame {
+            routing_key: 0,
+            org_id: "org_bench".to_owned(),
+            signal: TelemetrySignal::Logs,
+            destination: ExportDestination::Tinybird,
+            datasource: "logs".to_owned(),
+            row_count: 1,
+            payload,
+        })?;
+        self.lane
+            .append_blocking(&encoded, true, Box::new(|_, _, _| {}))
+            .map(|_| ())
     }
 }
 
@@ -2573,26 +2826,25 @@ fn add_org_queue_bytes(counters: &Arc<DashMap<String, Arc<AtomicU64>>>, org_id: 
 /// timeout fires. Dropped there, nobody released the bytes and nobody ever
 /// would, so the org's counter drifted up permanently until it was throttled by
 /// a queue that did not exist.
-struct OrgBytesReservation<'a> {
-    counters: &'a Arc<DashMap<String, Arc<AtomicU64>>>,
-    org_id: &'a str,
+struct OrgBytesReservation {
+    counters: Arc<DashMap<String, Arc<AtomicU64>>>,
+    org_id: String,
     bytes: u64,
     committed: bool,
 }
 
-impl OrgBytesReservation<'_> {
+impl OrgBytesReservation {
     /// The frame is on its way to the lane; the export worker owns the release
-    /// from here. Consumes the guard so the borrow ends and the frame's fields
-    /// can be moved into the `QueuedFrame`.
+    /// from here.
     fn commit(mut self) {
         self.committed = true;
     }
 }
 
-impl Drop for OrgBytesReservation<'_> {
+impl Drop for OrgBytesReservation {
     fn drop(&mut self) {
         if !self.committed {
-            release_org_queue_bytes(self.counters, self.org_id, self.bytes);
+            release_org_queue_bytes(&self.counters, &self.org_id, self.bytes);
         }
     }
 }
@@ -7181,6 +7433,120 @@ mod tests {
 
     fn lane_dir(queue_dir: &Path) -> PathBuf {
         queue_dir.join("shard-000-tinybird")
+    }
+
+    /// A lane whose sync takes `delay`, records the file length each sync
+    /// started from (all of it is covered), and fails while `fail` is set.
+    struct SlowSync {
+        syncs: AtomicU64,
+        durable_len: AtomicU64,
+        fail: std::sync::atomic::AtomicBool,
+    }
+
+    fn slow_sync_lane(name: &str, delay: Duration) -> (WalLane, Arc<SlowSync>, PathBuf) {
+        let queue_dir = unique_test_dir(name);
+        let probe = Arc::new(SlowSync {
+            syncs: AtomicU64::new(0),
+            durable_len: AtomicU64::new(0),
+            fail: std::sync::atomic::AtomicBool::new(false),
+        });
+        let sync: WalSync = {
+            let probe = Arc::clone(&probe);
+            Arc::new(move |file: &File| {
+                let covered = file.metadata()?.len();
+                std::thread::sleep(delay);
+                probe.syncs.fetch_add(1, Ordering::SeqCst);
+                if probe.fail.load(Ordering::SeqCst) {
+                    return Err(std::io::Error::other("injected fsync failure"));
+                }
+                probe.durable_len.fetch_max(covered, Ordering::SeqCst);
+                Ok(())
+            })
+        };
+        let lane = WalLane::open(
+            0,
+            ExportDestination::Tinybird,
+            &queue_dir,
+            u64::MAX,
+            u64::MAX,
+            sync,
+        )
+        .expect("open lane");
+        (lane, probe, queue_dir)
+    }
+
+    fn encoded_test_frame(payload_bytes: usize) -> Vec<u8> {
+        encode_wal_frame(&wal_test_frame(payload_bytes)).expect("encode")
+    }
+
+    #[test]
+    fn concurrent_appends_share_syncs_and_return_only_once_covered() {
+        const WRITERS: usize = 32;
+        let (lane, probe, queue_dir) =
+            slow_sync_lane("wal-group-commit", Duration::from_millis(20));
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        std::thread::scope(|scope| {
+            (0..WRITERS).for_each(|_| {
+                scope.spawn(|| {
+                    let (sender, landed) = std::sync::mpsc::channel();
+                    let delivered = Arc::clone(&delivered);
+                    let deliver: Delivery = Box::new(move |_, start, end| {
+                        delivered.lock().expect("delivered").push(start);
+                        sender.send(end).ok();
+                    });
+                    lane.append_blocking(&encoded_test_frame(256), true, deliver)
+                        .expect("append");
+                    // Delivered before the append returned, and only after a
+                    // sync that started with this frame's bytes in the file.
+                    let end = landed.try_recv().expect("delivered before return");
+                    assert!(probe.durable_len.load(Ordering::SeqCst) >= end);
+                });
+            });
+        });
+
+        let syncs = probe.syncs.load(Ordering::SeqCst);
+        assert!(
+            syncs < WRITERS as u64,
+            "{WRITERS} concurrent appends took {syncs} syncs"
+        );
+        let delivered = delivered.lock().expect("delivered").clone();
+        let mut in_segment_order = delivered.clone();
+        in_segment_order.sort_unstable();
+        assert_eq!(
+            delivered, in_segment_order,
+            "frames reach the lane in file order"
+        );
+        assert_eq!(delivered.len(), WRITERS);
+        assert_eq!(lane.backlog_bytes(), file_len(&segment_path(&lane.dir, 0)));
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn a_failed_sync_refuses_its_batch_and_the_lane_recovers() {
+        let (lane, probe, queue_dir) = slow_sync_lane("wal-group-commit-fail", Duration::ZERO);
+        probe.fail.store(true, Ordering::SeqCst);
+        let ran = Arc::new(AtomicU64::new(0));
+        let counting = || -> Delivery {
+            let ran = Arc::clone(&ran);
+            Box::new(move |_, _, _| {
+                ran.fetch_add(1, Ordering::SeqCst);
+            })
+        };
+        lane.append_blocking(&encoded_test_frame(64), true, counting())
+            .err()
+            .expect("an unsynced frame is not acknowledged");
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            0,
+            "a refused frame is never delivered"
+        );
+        assert_eq!(lane.backlog_bytes(), 0, "nor counted as backlog");
+
+        probe.fail.store(false, Ordering::SeqCst);
+        lane.append_blocking(&encoded_test_frame(64), true, counting())
+            .expect("the next sync succeeds");
+        assert_eq!(ran.load(Ordering::SeqCst), 1);
+        drop(std::fs::remove_dir_all(queue_dir));
     }
 
     #[tokio::test]

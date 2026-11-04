@@ -52,6 +52,7 @@ use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEM
 use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
+use maple_ingest::host_identity;
 use maple_ingest::ingest_rules::{self, IngestSignal, RuleStats};
 use maple_ingest::metrics;
 use maple_ingest::otel::{
@@ -2490,6 +2491,7 @@ fn init_tracing(
     bind_port: u16,
     service_instance_id: &str,
     internal_org_id: &str,
+    host_attributes: &[opentelemetry::KeyValue],
     trace_sample_ratio: f64,
 ) -> Option<TelemetryProviders> {
     // Two filters on purpose. The registry-wide filter is pinned at `info`
@@ -2534,6 +2536,7 @@ fn init_tracing(
         service_instance_id: service_instance_id.to_owned(),
         deployment_env,
         internal_org_id: internal_org_id.to_owned(),
+        host_attributes: host_attributes.to_vec(),
     });
 
     let exporter = match SpanExporter::builder()
@@ -2685,6 +2688,7 @@ fn init_metrics(
     bind_port: u16,
     service_instance_id: &str,
     internal_org_id: &str,
+    host_attributes: &[opentelemetry::KeyValue],
 ) -> Option<SdkMeterProvider> {
     let deployment_env = resolve_deployment_env();
     let forward_explicit = std::env::var("INGEST_FORWARD_OTLP_ENDPOINT").is_ok();
@@ -2700,6 +2704,7 @@ fn init_metrics(
         service_instance_id: service_instance_id.to_owned(),
         deployment_env,
         internal_org_id: internal_org_id.to_owned(),
+        host_attributes: host_attributes.to_vec(),
     });
 
     let exporter = match MetricExporter::builder()
@@ -2748,6 +2753,7 @@ fn init_usage_metrics(
     bind_port: u16,
     service_instance_id: &str,
     internal_org_id: &str,
+    host_attributes: &[opentelemetry::KeyValue],
 ) -> Option<UsageMetrics> {
     let deployment_env = resolve_deployment_env();
     let forward_explicit = std::env::var("INGEST_FORWARD_OTLP_ENDPOINT").is_ok();
@@ -2763,6 +2769,7 @@ fn init_usage_metrics(
         service_instance_id: service_instance_id.to_owned(),
         deployment_env,
         internal_org_id: internal_org_id.to_owned(),
+        host_attributes: host_attributes.to_vec(),
     });
 
     let exporter = match MetricExporter::builder()
@@ -2828,11 +2835,13 @@ async fn main() {
     // One UUID per process, shared by the trace and metric resources so both
     // signals attribute to the same `service.instance.id`.
     let service_instance_id = uuid::Uuid::new_v4().to_string();
+    let host_attributes = host_identity::detect(&config.tinybird.queue_dir).await;
     let telemetry_providers = init_tracing(
         &config.forward_endpoint,
         config.port,
         &service_instance_id,
         &config.internal_org_id,
+        &host_attributes,
         config.self_trace_sample_ratio,
     );
     let meter_provider = init_metrics(
@@ -2840,12 +2849,14 @@ async fn main() {
         config.port,
         &service_instance_id,
         &config.internal_org_id,
+        &host_attributes,
     );
     let usage_metrics = init_usage_metrics(
         &config.forward_endpoint,
         config.port,
         &service_instance_id,
         &config.internal_org_id,
+        &host_attributes,
     )
     .map(Arc::new);
 
