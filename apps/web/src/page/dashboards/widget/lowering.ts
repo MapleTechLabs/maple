@@ -296,15 +296,19 @@ const storedSourceOf = (widget: Widget, state: EditorState): DataSource => {
 export const builderDataSourceOf = (widget: Widget, state: EditorState): DataSource =>
 	state.keepsStoredSource ? storedSourceOf(widget, state) : buildDataSource(state)
 
-/** An edit to the queries, formulas, comparison or panel type lets go of the stored source. */
-export const trackStoredSource = (before: EditorState, after: EditorState): EditorState =>
-	after.keepsStoredSource &&
-	(after.queries !== before.queries ||
-		after.formulas !== before.formulas ||
-		after.comparisonMode !== before.comparisonMode ||
-		panelOf(after) !== panelOf(before))
-		? { ...after, keepsStoredSource: false }
-		: after
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/** The stored source holds while the queries, formulas, comparison, row limit and type match the opened state. */
+export const trackStoredSource = (initial: EditorState | null, after: EditorState): EditorState => {
+	if (initial === null || !initial.keepsStoredSource) return after
+	const keeps =
+		sameJson(after.queries, initial.queries) &&
+		sameJson(after.formulas, initial.formulas) &&
+		after.comparisonMode === initial.comparisonMode &&
+		after.tableLimit === initial.tableLimit &&
+		panelOf(after) === panelOf(initial)
+	return after.keepsStoredSource === keeps ? after : { ...after, keepsStoredSource: keeps }
+}
 
 /** Display keys a panel type owns: cleared first so nothing leaks across a type switch. */
 const OWNED_DISPLAY_KEYS = new Set<string>(

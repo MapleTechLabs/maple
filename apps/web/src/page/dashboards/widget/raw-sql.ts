@@ -64,7 +64,10 @@ export const rawSqlDataSourceOf = (
 	draft: RawSqlDraft,
 	state: Pick<EditorState, "visualization" | "chartId" | "statAggregate" | "statValueField">,
 ): Widget["dataSource"] => {
-	const { reduceToValue: _previous, ...kept } = dataSourceTransform(widget.dataSource) ?? {}
+	// A builder or endpoint transform (field maps, hidden series) does not describe SQL rows.
+	const stored =
+		dataSourceRawSql(widget.dataSource) === null ? undefined : dataSourceTransform(widget.dataSource)
+	const { reduceToValue: _previous, ...kept } = stored ?? {}
 	const isScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
 	const field = Str.trim(state.statValueField)
 	const transform = isScalar

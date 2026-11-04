@@ -37,7 +37,7 @@ import {
 	validationErrorOf,
 	type Widget,
 } from "./lowering"
-import { initRawSql, type RawSqlDraft, rawSqlDataSourceOf } from "./raw-sql"
+import { initRawSql, isRunnableSql, type RawSqlDraft, rawSqlDataSourceOf } from "./raw-sql"
 import { askMetricOptions } from "./metric-options"
 import { eventNamesKeyOf, requestSuggestions } from "./product-step"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
@@ -162,6 +162,8 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 			showStepPercent: state.funnel.showStepPercent,
 		},
 		queries: listPreviewQueries(model.staged.queries, state, model.staged, widget),
+		// A type switch releases the stored source at once, like Apply does.
+		keepsStoredSource: state.keepsStoredSource && model.staged.keepsStoredSource,
 	}
 	const isSql = isSqlSource(model) && model.rawSql !== null
 	return {
@@ -282,6 +284,13 @@ const ask = (planned: Planned, gate: Model["gate"]): Planned => {
 	})
 }
 
+/** Apply's gate: a valid query set, or SQL the warehouse check accepts. */
+export const canApply = (model: Model): boolean => {
+	if (model.state === null) return false
+	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
+	return rawSql === null ? validationErrorOf(model.state) === null : isRunnableSql(rawSql)
+}
+
 /** Run preview: the editing state is staged, unless the query set is invalid. */
 export const runPreview = (model: Model, context: PageContext): Return =>
 	model.state === null || validationErrorOf(model.state) !== null
@@ -356,7 +365,7 @@ export const editState = (
 ): Return =>
 	model.state === null
 		? { model }
-		: planPreview({ ...model, state: trackStoredSource(model.state, edit(model.state)) }, context)
+		: planPreview({ ...model, state: trackStoredSource(model.initial, edit(model.state)) }, context)
 
 /** `isDirty`: the source tab moved, or the state (or, in Raw SQL, the SQL) differs from what was opened. */
 export const isDirty = (model: Model): boolean =>

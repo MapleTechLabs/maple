@@ -13,11 +13,11 @@ import { toPanelType } from "../kit/chart-registry"
 import { SaveWidget } from "./command"
 import { addFormula, addQuery, cloneQuery, removeFormula, setPanelType } from "./edits"
 import type { EditorState } from "./editor-state"
-import { trackStoredSource, validationErrorOf } from "./lowering"
+import { trackStoredSource } from "./lowering"
 import { ProductEdit } from "./product-edit"
 import { applyEdit, stepComboStep } from "./product-step"
 import { whereFieldsInputsOf, whereFieldsOf } from "./where-fields"
-import { isRunnableSql, reseedForType } from "./raw-sql"
+import { reseedForType } from "./raw-sql"
 import { withDefaultMetric } from "./metric-options"
 import { runSqlPreview, sqlStep } from "./sql-step"
 import { Message } from "./message"
@@ -34,6 +34,7 @@ import {
 } from "./step"
 import {
 	backHref,
+	canApply,
 	editedWidget,
 	isSqlSource,
 	editState,
@@ -95,6 +96,12 @@ const rangePickerStep = (model: Model, context: PageContext, message: TimeRangeP
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 
+/** A builder widget's stat field names a query series; opened in SQL it reduces the templates' `value`. */
+const clearsBuilderValueField = (model: Model, selected: string): Model["state"] =>
+	model.state !== null && selected === "rawSql" && model.initialSourceMode === "builder"
+		? { ...model.state, statValueField: "" }
+		: model.state
+
 /** The Source tabs: the preview switches to what the picked source runs. */
 const tabsStep = (model: Model, context: PageContext, message: Tabs.Message): Return => {
 	const next = Tabs.update(model.sourceTabs, message)
@@ -103,6 +110,7 @@ const tabsStep = (model: Model, context: PageContext, message: Tabs.Message): Re
 			...model,
 			sourceTabs: next.model,
 			sourceMode: next.model.selected === "rawSql" ? "rawSql" : "builder",
+			state: clearsBuilderValueField(model, next.model.selected),
 		},
 		context,
 	)
@@ -151,8 +159,8 @@ const withListQueryId = (state: EditorState, id: string | null): EditorState =>
 const apply = (model: Model, context: PageContext, listQueryId: string | null): Return => {
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
+	if (!canApply(model)) return { model }
 	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
-	if (rawSql === null ? validationErrorOf(model.state) !== null : !isRunnableSql(rawSql)) return { model }
 	if (listQueryId === null && isEngineList(model, model.state))
 		return { model, commands: generate("applyList", "") }
 	return {
@@ -172,7 +180,7 @@ const productEdit = (model: Model, context: PageContext, change: ProductEdit): R
 	return planPreview(
 		model.state === null || edited.state === null
 			? edited
-			: { ...edited, state: trackStoredSource(model.state, edited.state) },
+			: { ...edited, state: trackStoredSource(model.initial, edited.state) },
 		context,
 	)
 }

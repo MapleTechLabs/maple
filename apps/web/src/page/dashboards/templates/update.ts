@@ -123,7 +123,8 @@ export const routeChanged = (model: Model, route: Route): Return =>
 const requestPreview = (model: Model, context: PageContext): Return => {
 	const selected = selectedOf(model)
 	if (selected === null || !model.isPreviewArmed) return { model }
-	if (missingRequiredOf(selected, model.parameters).length > 0) return { model }
+	if (missingRequiredOf(selected, model.parameters).length > 0)
+		return { model: { ...model, preview: Keyed.idle() } }
 	const parameters = filledParametersOf(model.parameters)
 	const key = requestKey(context.orgId, "dashboards.previewTemplate", {
 		templateId: selected.id,

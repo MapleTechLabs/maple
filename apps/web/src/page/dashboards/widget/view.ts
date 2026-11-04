@@ -17,7 +17,7 @@ import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { previewWidgetOf } from "./update"
+import { canApply, previewWidgetOf } from "./update"
 import type { Widget } from "./lowering"
 import { leaveDialog } from "./view-dialog"
 import { queryEditor } from "./view-query"
@@ -201,6 +201,7 @@ export const topbarActions = Submodel.defineView<Model, Message, PageViewInputs>
 					{
 						size: "sm",
 						isLoading: model.isSaving,
+						isDisabled: !canApply(model),
 						attributes: [h.OnClick(Message.ClickedApply())],
 					},
 					["Apply"],

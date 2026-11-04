@@ -81,9 +81,13 @@ describe("widget editor lowering", () => {
 		})
 		const requeried = trackStoredSource(state, {
 			...state,
-			queries: Arr.map(state.queries, (query) => ({ ...query, aggregation: "error_rate" })),
+			queries: Arr.map(state.queries, (query) => ({ ...query, whereClause: 'service.name = "api"' })),
 		})
 		expect(builderDataSourceOf(widget, requeried)).toMatchObject({ kind: "query" })
+		// Editing back to what was opened keeps the stored source.
+		expect(
+			builderDataSourceOf(widget, trackStoredSource(state, { ...requeried, queries: state.queries })),
+		).toEqual(widget.dataSource)
 		expect(
 			builderDataSourceOf(widget, trackStoredSource(state, setPanelType(state, "line"))),
 		).toMatchObject({
@@ -113,6 +117,24 @@ describe("widget editor lowering", () => {
 		).toEqual({ field: "value", aggregate: "max" })
 		const line = { ...stat, visualization: "chart" as const, chartId: "query-builder-line" }
 		expect(dataSourceTransform(rawSqlDataSourceOf(widget, sql, line))?.reduceToValue).toBeUndefined()
+	})
+
+	test("an endpoint widget switched to Raw SQL carries none of its old transform", () => {
+		const widget = {
+			...widgetOf("chart", {}),
+			dataSource: makeRouteDataSource("service_usage", undefined, {
+				fieldMap: { total: "totalTraces" },
+				hideSeries: { baseNames: ["errors"] },
+			}),
+		}
+		const sql = { sql: "SELECT 1 AS value FROM traces WHERE $__orgFilter", granularitySeconds: null }
+		const line = {
+			visualization: "chart" as const,
+			chartId: "query-builder-line",
+			statAggregate: "first" as const,
+			statValueField: "",
+		}
+		expect(dataSourceTransform(rawSqlDataSourceOf(widget, sql, line))).toBeUndefined()
 	})
 
 	test("a Raw SQL stat writes no builder sparkline and no title derived from builder queries", () => {
