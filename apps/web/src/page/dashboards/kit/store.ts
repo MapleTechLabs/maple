@@ -1,5 +1,5 @@
 import { type DashboardDocument, IsoDateTimeString } from "@maple/domain/http"
-import { DateTime, Effect, Option, Schema, String as Str } from "effect"
+import { DateTime, Effect, Option, Schema, Semaphore, String as Str } from "effect"
 import { OrgCollections } from "../../../data/collections/org-collections"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import type { DashboardRow } from "@maple/web-data/collections/dashboards"
@@ -69,7 +69,10 @@ export const dashboardsOf = (orgId: string) =>
 	})
 
 /** What the write path needs of the org's dashboards collection; a local-only one in tests. */
-export type DashboardsWriter = Pick<Collection<DashboardRow, string | number>, "get" | "update" | "subscribeChanges">
+export type DashboardsWriter = Pick<
+	Collection<DashboardRow, string | number>,
+	"get" | "update" | "subscribeChanges"
+>
 
 const readFrom = (collection: DashboardsWriter, id: string) =>
 	Effect.fromOption(
@@ -139,7 +142,7 @@ const CONFLICT_SYNC_WAIT = "3 seconds"
 const conflictError = (id: string) =>
 	new DashboardConflictError({
 		message:
-			"Someone else changed this dashboard while you were editing. Your change was not saved; try again.",
+			"This dashboard changed before your edit was saved, in another tab or by someone else. Your change was not saved; try again.",
 		rawId: id,
 	})
 
@@ -190,6 +193,27 @@ const writeOnce = (
  * on top of it once; a second conflict, or no sync in time, is a `DashboardConflictError`.
  */
 export const mutateDocumentIn = (
+	collection: DashboardsWriter,
+	id: string,
+	updater: (document: DashboardDocument, nowIso: IsoDateTimeString) => DocumentFields,
+) =>
+	Effect.flatMap(laneOf(id), (lane) =>
+		lane.withPermit(Effect.suspend(() => writeWithRetry(collection, id, updater))),
+	)
+
+/**
+ * One save at a time per board in this tab: each waits for the previous to settle, so its
+ * expected version is the synced one and a tab never conflicts with its own saves.
+ */
+const writeLanes = new Map<string, Semaphore.Semaphore>()
+const laneOf = (id: string) =>
+	Effect.sync(() => {
+		const lane = writeLanes.get(id) ?? Semaphore.makeUnsafe(1)
+		writeLanes.set(id, lane)
+		return lane
+	})
+
+const writeWithRetry = (
 	collection: DashboardsWriter,
 	id: string,
 	updater: (document: DashboardDocument, nowIso: IsoDateTimeString) => DocumentFields,

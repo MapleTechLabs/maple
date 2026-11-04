@@ -131,7 +131,7 @@ describe("mutateDocumentIn when someone else saved first", () => {
 		}),
 	)
 
-	it.effect("says someone else changed the dashboard when the retry conflicts too", () =>
+	it.effect("says the dashboard changed when the retry conflicts too", () =>
 		Effect.gen(function* () {
 			const { collection } = raced(() => Promise.reject(conflict()))
 			const error = yield* Effect.flip(
@@ -143,7 +143,46 @@ describe("mutateDocumentIn when someone else saved first", () => {
 			)
 
 			expect(error).toBeInstanceOf(DashboardConflictError)
-			expect(error.message).toContain("Someone else changed this dashboard")
+			expect(error.message).toContain("This dashboard changed before your edit was saved")
+		}),
+	)
+
+	it.effect("a tab's own overlapping saves go one at a time, each on the version the last one synced", () =>
+		Effect.gen(function* () {
+			const seen: Array<number> = []
+			let inFlight = 0
+			let maxInFlight = 0
+			const collection = createCollection(
+				localOnlyCollectionOptions<DashboardRow, string>({
+					getKey: (r) => r.id,
+					initialData: [row(1)],
+					onUpdate: async ({ transaction }) => {
+						const { original, modified } = transaction.mutations[0]
+						// The server's echo of the previous save: its new version syncing in.
+						if (modified.version !== original.version) return
+						inFlight += 1
+						maxInFlight = Math.max(maxInFlight, inFlight)
+						seen.push(original.version)
+						await new Promise((resolve) => setTimeout(resolve, 5))
+						inFlight -= 1
+						setTimeout(() =>
+							collection.update(ID, (draft) => {
+								draft.version = original.version + 1
+							}),
+						)
+					},
+				}),
+			)
+			const tag = (name: string) =>
+				mutateDocumentIn(collection, ID, (document, nowIso) => ({
+					...document,
+					tags: [...(document.tags ?? []), name],
+					updatedAt: nowIso,
+				}))
+			yield* Effect.all([tag("a"), tag("b")], { concurrency: "unbounded" })
+
+			expect(maxInFlight).toBe(1)
+			expect(seen).toHaveLength(2)
 		}),
 	)
 })
