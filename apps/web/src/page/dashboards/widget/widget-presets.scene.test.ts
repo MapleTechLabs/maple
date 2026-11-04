@@ -3,6 +3,7 @@ import { DashboardDocument, type PanelType } from "@maple/domain/http"
 import { statPresets, tablePresets } from "@maple/web-data/dashboards/widget-presets"
 import {
 	dataSourceQuerySet,
+	dataSourceRouteParams,
 	dataSourceTransform,
 	makeRawSqlDataSource,
 	makeRouteDataSource,
@@ -150,7 +151,7 @@ describe("preset widgets in the editor", () => {
 		}
 	})
 
-	test("a service's P95 latency stat edits as p95 duration of that service", () => {
+	test("a service's P95 latency stays fixed: a mean of bucket percentiles is not the window's", () => {
 		const board = opened(
 			"stat",
 			makeRouteDataSource(
@@ -160,13 +161,18 @@ describe("preset widgets in the editor", () => {
 			),
 			{ title: "P95 Latency", unit: "duration_ms" },
 		)
-		const saved = savedSourceOf(board, typedWhere(board.model, 'service.name = "payments"'))
-		expect(dataSourceQuerySet(saved)?.queries[0]).toMatchObject({
-			dataSource: "traces",
-			aggregation: "p95_duration",
-			whereClause: 'service.name = "payments"',
-		})
-		expect(board.model.state?.queries[0]?.whereClause).toBe('service.name = "checkout"')
+		expect(board.model.state?.queryFixed).toBe(true)
+		expect(savedSourceOf(board, board.model)).toEqual(board.widget.dataSource)
+	})
+
+	test("a raised row limit on a preset table also fetches that many rows", () => {
+		const board = openedPreset("table-traces")
+		const raised = update(board.model, Message.ChangedTableLimit({ value: "50" }), context).model
+		expect(dataSourceRouteParams(savedSourceOf(board, raised))?.limit).toBe(50)
+		const lowered = update(board.model, Message.ChangedTableLimit({ value: "2" }), context).model
+		expect(dataSourceRouteParams(savedSourceOf(board, lowered))?.limit).toBe(
+			dataSourceRouteParams(board.widget.dataSource)?.limit,
+		)
 	})
 
 	test("Active Services has no builder query: edits keep the stored route", () => {
@@ -312,10 +318,8 @@ describe("preset widgets in the editor", () => {
 		const limited = update(board.model, Message.ChangedTableLimit({ value: "50" }), context).model
 		const saved = savedSourceOf(board, limited)
 		expect(dataSourceTransform(saved)?.limit).toBe(50)
-		expect({ ...saved, transform: undefined }).toEqual({
-			...board.widget.dataSource,
-			transform: undefined,
-		})
+		// Still the preset's route, not a builder query.
+		expect(saved).toMatchObject({ kind: "route", endpoint: "list_traces" })
 		expect(savedSourceOf(board, board.model)).toEqual(board.widget.dataSource)
 	})
 

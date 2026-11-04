@@ -107,24 +107,9 @@ const errorsSummary = (route: RouteWidget): RouteStandIn => {
 	}
 }
 
-const serviceOverview = (route: RouteWidget): RouteStandIn => {
-	const latency = (aggregation: string) =>
-		perServiceRow(
-			route,
-			"avg",
-			(serviceName) => builder("traces", aggregation, { serviceName }, "avg"),
-			route.params.service_name,
-		)
-	switch (route.reduce?.field) {
-		case "p50LatencyMs":
-			return latency("p50_duration")
-		case "p95LatencyMs":
-			return latency("p95_duration")
-		// `throughput` is requests per second; the builder counts per bucket.
-		default:
-			return FIXED
-	}
-}
+// Every service overview field stays fixed: latency is a percentile over the whole window, which
+// a reduction of per-bucket percentiles drifts from, and `throughput` is requests per second.
+const serviceOverview = (_route: RouteWidget): RouteStandIn => FIXED
 
 /** Pre-query-builder chart routes store builder-shaped params. */
 const legacyChart = (route: RouteWidget): RouteStandIn => ({

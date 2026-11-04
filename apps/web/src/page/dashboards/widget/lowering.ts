@@ -318,7 +318,19 @@ const withRowLimit = (source: DataSource, limit: number | undefined): DataSource
 	const transform = dataSourceTransform(source)
 	if (transform?.limit === limit) return source
 	const { limit: _previous, ...rest } = transform ?? {}
-	return { ...source, transform: limit === undefined ? rest : { ...rest, limit } }
+	return withRouteFetchLimit(
+		{ ...source, transform: limit === undefined ? rest : { ...rest, limit } },
+		limit,
+	)
+}
+
+/** A route that fetches a fixed number of rows fetches at least as many as the table shows. */
+const withRouteFetchLimit = (source: DataSource, limit: number | undefined): DataSource => {
+	if (limit === undefined || source.kind !== "route" || source.params === undefined) return source
+	const fetched = source.params.limit
+	return typeof fetched === "number" && fetched < limit
+		? { ...source, params: { ...source.params, limit } }
+		: source
 }
 
 /** A fixed endpoint's stored source, with the stat aggregate and table row limit picked in the editor. */
