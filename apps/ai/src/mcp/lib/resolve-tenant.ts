@@ -1,7 +1,7 @@
-import { timingSafeEqual } from "node:crypto"
 import { Array as Arr, Effect, Option, Redacted, Schema, String as Str } from "effect"
 import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Env } from "@maple/backend/platform/Env"
@@ -148,10 +148,7 @@ const resolveInternalServiceTenant = Effect.fn("McpTenant.resolveInternalService
 		})
 	}
 
-	if (
-		provided.length === expected.length &&
-		timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
-	) {
+	if (secretsEqual(provided, expected)) {
 		const orgId = Option.match(env.MAPLE_ORG_ID_OVERRIDE, {
 			onNone: () => request.headers.get("x-org-id"),
 			onSome: (value) => value,

@@ -162,6 +162,12 @@ describe("uptime internal routes", () => {
 			)
 		}))
 
+	it("refuses a token of the internal token's length in other characters", () =>
+		withHarness(async (harness) => {
+			const token = "\u00e9".repeat("sd-token".length)
+			expect((await harness.request("GET", "/api/internal/uptime-targets", { token })).status).toBe(401)
+		}))
+
 	it("lists probe targets with the org's ingest key and applies reported results", () =>
 		withHarness(async (harness) => {
 			const { http } = await harness.run(createMonitors)
