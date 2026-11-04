@@ -181,8 +181,12 @@ export class ExecutorRunExited extends Schema.TaggedClass<ExecutorRunExited>()("
 	timedOut: Schema.Boolean,
 	stdout: Schema.String,
 	stderr: Schema.String,
+	/** Each stream's full size in bytes, before the cut at {@link EXECUTOR_LIMITS}`.outputBytes`. */
 	stdoutBytes: Schema.Finite,
 	stderrBytes: Schema.Finite,
+	/** The stream was cut; what came back is its prefix. */
+	stdoutTruncated: Schema.Boolean,
+	stderrTruncated: Schema.Boolean,
 	wallTimeMs: Schema.Finite,
 	promoted: Schema.Array(ExecutorArtifact),
 	rejected: Schema.Array(ExecutorRejectedArtifact),

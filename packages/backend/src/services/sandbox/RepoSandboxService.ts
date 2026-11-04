@@ -171,8 +171,6 @@ const inWorkspace = (relative: string | undefined): string =>
 		: `${REPO_MOUNT_TARGET}/${Str.replace(/^\/+/, "")(relative)}`
 
 /** Fold the event stream into what a tool renders. Non-zero exits are results, not failures: `rg` exits 1 on no match. */
-const utf8 = new TextEncoder()
-
 const drain = (
 	events: Stream.Stream<SandboxEvent, SandboxError>,
 ): Effect.Effect<SandboxCommandResult, SandboxError> =>
@@ -190,9 +188,7 @@ const drain = (
 				case "SandboxStarted":
 					return result
 				case "SandboxOutput": {
-					// `bytes` is the stream's real size; more of it than arrived means the
-					// container cut it at the bound.
-					const truncated = result.truncated || event.bytes > utf8.encode(event.text).length
+					const truncated = result.truncated || event.truncated
 					return event.stream === "stdout"
 						? { ...result, stdout: result.stdout + event.text, truncated }
 						: { ...result, stderr: result.stderr + event.text, truncated }

@@ -4,6 +4,7 @@
  * `executor.ts` implements the host over `ctx.container`; tests use a fake.
  */
 import {
+	EXECUTOR_LIMITS,
 	ExecutorArtifact,
 	ExecutorDestroyed,
 	type ExecutorDestroyResponse,
@@ -68,8 +69,6 @@ const PromotionOutput = Schema.Struct({
 	rejected: Schema.Array(Schema.Struct({ path: Schema.String, reason: Schema.String })),
 })
 const decodePromotion = Schema.decodeUnknownEffect(Schema.fromJsonString(PromotionOutput))
-
-const utf8 = new TextEncoder()
 
 export const prepare = (
 	host: ExecutorHost,
@@ -221,8 +220,11 @@ export const run = (
 				result.durationMs >= request.timeoutMs,
 			stdout: body,
 			stderr,
-			stdoutBytes: Math.max(trailer.stdoutBytes, utf8.encode(body).length),
-			stderrBytes: Math.max(trailer.stderrBytes, utf8.encode(stderr).length),
+			// The script measured the bytes; the decoded text's length is no measure of them.
+			stdoutBytes: trailer.stdoutBytes,
+			stderrBytes: trailer.stderrBytes,
+			stdoutTruncated: trailer.stdoutBytes > EXECUTOR_LIMITS.outputBytes,
+			stderrTruncated: trailer.stderrBytes > EXECUTOR_LIMITS.outputBytes,
 			wallTimeMs: result.durationMs,
 			promoted: Arr.map(promotion.promoted, (artifact) => new ExecutorArtifact(artifact)),
 			rejected: Arr.map(

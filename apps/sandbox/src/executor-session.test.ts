@@ -1,5 +1,10 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ExecutorPrepareRequest, ExecutorPromotion, ExecutorRunRequest } from "@maple/domain/executor"
+import {
+	EXECUTOR_LIMITS,
+	ExecutorPrepareRequest,
+	ExecutorPromotion,
+	ExecutorRunRequest,
+} from "@maple/domain/executor"
 import { Effect, Array as Arr, String as Str } from "effect"
 import type { GatewayProps } from "./executor-gateway"
 import { PREPARE_STATE_DIR, PROMOTE_HELPER, RUN_TRAILER } from "./executor-scripts"
@@ -186,6 +191,25 @@ describe("run", () => {
 				Arr.map(answer.rejected, (rejected) => rejected.reason),
 				["the file is a symlink"],
 			)
+		}),
+	)
+
+	it.effect("marks a cut stream from the measured bytes, even when its text decoded lossily", () =>
+		Effect.gen(function* () {
+			// A binary stream: each invalid byte decodes to U+FFFD, three bytes when re-encoded.
+			const limit = EXECUTOR_LIMITS.outputBytes
+			const body = Str.repeat(limit)("\uFFFD")
+			const fake = fakeHost([
+				[isRun, exited(`${body}\n${RUN_TRAILER} started 0 ${limit * 2} ${limit}\n`, "e")],
+			])
+			const answer = yield* run(fake.host, runRequest(), "call-1")
+			assert.strictEqual(answer._tag, "ExecutorRunExited")
+			if (answer._tag !== "ExecutorRunExited") return
+			assert.isTrue(answer.stdoutTruncated)
+			assert.strictEqual(answer.stdoutBytes, limit * 2)
+			// Exactly at the bound is whole.
+			assert.isFalse(answer.stderrTruncated)
+			assert.strictEqual(answer.stderrBytes, limit)
 		}),
 	)
 

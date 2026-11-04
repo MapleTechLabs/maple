@@ -30,6 +30,8 @@ const exited = new ExecutorRunExited({
 	stderr: "",
 	stdoutBytes: 2,
 	stderrBytes: 0,
+	stdoutTruncated: false,
+	stderrTruncated: false,
 	wallTimeMs: 10,
 	promoted: [],
 	rejected: [],
