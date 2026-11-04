@@ -95,6 +95,7 @@ import {
 import { UserSessionAuthorizationLive } from "@maple/backend/services/auth/UserSessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
@@ -281,6 +282,7 @@ export const ApiAuthLive = Layer.mergeAll(
 	UserSessionAuthorizationLive,
 ).pipe(
 	Layer.provideMerge(ApiV2RateLimiter.layer),
+	Layer.provideMerge(ShareRateLimiter.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
 	// `Authorization: DPoP` device tokens; also serves the device credential routes.
