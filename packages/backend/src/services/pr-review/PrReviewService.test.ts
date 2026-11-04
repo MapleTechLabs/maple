@@ -147,6 +147,7 @@ const layerFor = (
 	const provider: VcsProviderClient = {
 		id: "github",
 		reviewerMention: "@maple-review-bot",
+		webhookSignatureHeader: "x-hub-signature-256",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,

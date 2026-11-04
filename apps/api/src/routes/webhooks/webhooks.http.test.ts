@@ -22,6 +22,7 @@ import {
 } from "@maple/backend/services/auth/MembershipRevocationService"
 import { AutumnWebhookRouter } from "./autumn.http"
 import { ClerkWebhookRoute } from "./clerk.http"
+import { SVIX_WEBHOOK_MAX_BYTES } from "./svix-receiver"
 
 const CLERK_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
 const AUTUMN_SECRET = "whsec_" + Buffer.alloc(24, 7).toString("base64")
@@ -147,15 +148,21 @@ const signedHeaders = (secret: string, body: string, nowMs: number, id = "msg_te
 const post = (
 	handler: (request: Request, context: Context.Context<never>) => Promise<Response>,
 	path: string,
-	body: string,
+	body: BodyInit,
 	headers: Record<string, string>,
 ) =>
 	Effect.promise(() =>
 		handler(
-			new Request(`http://api.localhost${path}`, { method: "POST", body, headers }),
+			new Request(`http://api.localhost${path}`, { method: "POST", body, headers, duplex: "half" }),
 			Context.empty(),
 		),
 	)
+
+/** A body that fails as soon as anything pulls it. */
+const unreadableBody = () =>
+	new ReadableStream<Uint8Array>({
+		pull: (controller) => controller.error(new Error("the body was read")),
+	})
 
 const CLERK_USER_CREATED = JSON.stringify({
 	type: "user.created",
@@ -226,6 +233,41 @@ const CLERK_MEMBERSHIP_CREATED = JSON.stringify({
 })
 
 describe("ClerkWebhookRouter", () => {
+	it.live("refuses unsigned, stale and oversized deliveries before reading the body", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const configured = HttpRouter.toWebHandler(
+				makeRouterLayer(ClerkWebhookRoute, { CLERK_WEBHOOK_SECRET: CLERK_SECRET }, events.layer),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const unsigned = yield* post(configured.handler, "/webhooks/clerk", unreadableBody(), {})
+				assert.strictEqual(unsigned.status, 401)
+
+				const stale = yield* signedHeaders(CLERK_SECRET, "", now - 10 * 60 * 1000)
+				const staleResponse = yield* post(
+					configured.handler,
+					"/webhooks/clerk",
+					unreadableBody(),
+					stale,
+				)
+				assert.strictEqual(staleResponse.status, 401)
+
+				const oversized = Str.repeat(SVIX_WEBHOOK_MAX_BYTES + 1)("x")
+				const signed = yield* signedHeaders(CLERK_SECRET, oversized, now)
+				const streamed = yield* post(configured.handler, "/webhooks/clerk", oversized, signed)
+				assert.strictEqual(streamed.status, 413)
+				const declared = yield* post(configured.handler, "/webhooks/clerk", unreadableBody(), {
+					...signed,
+					"content-length": String(SVIX_WEBHOOK_MAX_BYTES + 1),
+				})
+				assert.strictEqual(declared.status, 413)
+				assert.strictEqual(events.tracked.length, 0)
+			}).pipe(Effect.ensuring(Effect.promise(() => configured.dispose())))
+		}),
+	)
+
 	// Membership is changed in Clerk, never through Maple's API, so this receiver
 	// is the only writer of `affected_user`.
 	it.live("audits an organizationMembership.created delivery against the member", () =>

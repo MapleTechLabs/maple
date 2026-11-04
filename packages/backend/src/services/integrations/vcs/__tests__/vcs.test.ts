@@ -1894,6 +1894,7 @@ describe("VcsSyncService orchestrator", () => {
 		const fakeProvider: VcsProviderClient = {
 			id: "github",
 			reviewerMention: "@maple-review-bot",
+			webhookSignatureHeader: "x-hub-signature-256",
 			webhookToJobs: () => Effect.succeed([]),
 			fetchRepositories:
 				opts.fetchRepositories ??
