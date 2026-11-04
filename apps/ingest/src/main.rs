@@ -7583,12 +7583,14 @@ async fn apply_ingest_rules(
     if !resolver.enabled() || org_id == SENTINEL_ORG_ID {
         return Ok(None);
     }
-    let rules = resolver.resolve_rules(org_id).await.map_err(|_| {
-        ApiError::tagged(
-            StatusCode::SERVICE_UNAVAILABLE,
-            &INGEST_RULES_UNAVAILABLE,
-            "Ingest rules could not be loaded; retry shortly",
-        )
+    let rules = resolver.resolve_rules(org_id).await.map_err(|unavailable| {
+        let message = match unavailable {
+            rules_gateway::RulesUnavailable::Store => "Ingest rules could not be loaded; retry shortly",
+            rules_gateway::RulesUnavailable::RegexBudget => {
+                "This organization's ingest rule regexes are too large to compile together; simplify or remove some"
+            }
+        };
+        ApiError::tagged(StatusCode::SERVICE_UNAVAILABLE, &INGEST_RULES_UNAVAILABLE, message)
     })?;
     let signal = decoded.signal();
     if !rules.compiled.covers(signal.ingest_signal()) {
@@ -7596,14 +7598,18 @@ async fn apply_ingest_rules(
     }
     let mut stats = RuleStats::default();
     match decoded {
-        DecodedPayload::Traces(request) => {
-            ingest_rules::apply_traces(&rules.compiled, request, &mut stats);
-        }
+        DecodedPayload::Traces(request) => ingest_rules::apply_traces(&rules.compiled, request, &mut stats),
         DecodedPayload::Logs(request) => ingest_rules::apply_logs(&rules.compiled, request, &mut stats),
-        DecodedPayload::Metrics(request) => {
-            ingest_rules::apply_metrics(&rules.compiled, request, &mut stats);
-        }
+        DecodedPayload::Metrics(request) => ingest_rules::apply_metrics(&rules.compiled, request, &mut stats),
     }
+    .map_err(|ingest_rules::ScanBudgetExceeded| {
+        warn!(org_id, signal = signal.path(), "Payload exceeds the ingest rule scan budget; refused");
+        ApiError::tagged(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            &INGEST_PAYLOAD_TOO_LARGE,
+            "This payload needs more ingest rule scanning than one request may use; send smaller batches",
+        )
+    })?;
     let span = Span::current();
     span.record("maple.ingest.rules.count", rules.compiled.len());
     span.record("maple.ingest.rules.dropped_items", stats.total.dropped);
@@ -16718,6 +16724,93 @@ mod tests {
                 .is_err(),
             "nothing may be forwarded unredacted"
         );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// Sends one email-bearing log as `raw_key` and returns the refusal; nothing may be forwarded.
+    async fn refused_unforwarded(
+        state: &AppState,
+        raw_key: &str,
+        forward_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    ) -> ApiError {
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let Err((error, _)) =
+            handle_signal_inner(state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await
+        else {
+            panic!("the payload must be refused");
+        };
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be forwarded unredacted"
+        );
+        error
+    }
+
+    #[tokio::test]
+    async fn rules_past_the_org_regex_budget_refuse_that_org_only() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_heavy";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-heavy", raw_key, "org_rules_heavy", forward_url).await;
+        // Each `\w{17}` compiles to just under 1 MiB; 24 of them pass the org budget.
+        let heavy = serde_json::json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": { "_tag": "redact", "keys": [], "detectors": [], "patterns": [r"\w{17}"],
+                "scopes": ["attributes"], "method": "mask" }
+        });
+        let mut rules = vec![mask_emails_rule()];
+        rules.extend(std::iter::repeat_n(heavy, 24));
+        store.set_ingest_rules("org_rules_heavy", &rules);
+        let other_key = "maple_sk_rules_light";
+        store.insert_private(
+            other_key,
+            KeyRow {
+                org_id: "org_rules_light".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.set_ingest_rules("org_rules_light", &[mask_emails_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        for _ in 0..2 {
+            let error = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
+            assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        }
+        assert_eq!(
+            store.ingest_rule_fetches.load(Ordering::Relaxed),
+            1,
+            "the refusal is cached, not recompiled per request"
+        );
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        handle_signal_inner(&state, &test_headers(other_key), Bytes::from(body), Signal::Logs)
+            .await
+            .expect("another org's rules still apply");
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded_bodies(&forwarded), ["login from [REDACTED:email]"]);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_payload_past_the_rule_scan_budget_is_refused_with_413() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_scan";
+        let (mut state, store, queue_dir) =
+            rules_forward_state("rules-scan", raw_key, "org_rules_scan", forward_url).await;
+        store.set_ingest_rules("org_rules_scan", &[mask_emails_rule()]);
+        // The 27-byte body is scanned again after a mask: 54 bytes.
+        state.ingest_rule_resolver =
+            IngestRuleResolver::new(Arc::<FakeKeyStore>::clone(&store), true, Duration::from_secs(30), 16)
+                .with_scan_budget(40);
+
+        let error = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }

@@ -18,6 +18,11 @@ export const INGEST_RULE_LIMITS = {
 	maxPosition: 10_000,
 	/** Detectors and patterns read at most this many bytes of one string value. */
 	scanBytes: 16 * 1024,
+	/**
+	 * Estimated MiB of compiled regex (`regexBudgetCost`) across all of an org's rules. The
+	 * gateway refuses an org whose regexes really compile past 16 MiB, so this keeps headroom.
+	 */
+	regexBudgetPerOrg: 8,
 } as const
 
 export const IngestRuleSignal = Schema.Literals(["traces", "logs", "metrics"])
@@ -392,16 +397,43 @@ const ESCAPE_WEIGHTS = new Map([
 const LITERAL_WEIGHT = 1 / 10_000
 const ANY_WEIGHT = 1 / 1048
 
-const atomWeight = (atom: string): number => {
-	if (atom.startsWith("\\")) return ESCAPE_WEIGHTS.get(atom[1] ?? "") ?? LITERAL_WEIGHT
+/** Code points of `\\x{..}`, `\\xHH`, `\\u{..}` and `\\uHHHH` escapes, in order. */
+const escapedCodePoints = (text: string): Array<number> =>
+	[...text.matchAll(/\\[ux]\{([0-9a-fA-F]+)\}|\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})/gu)].map((escape) =>
+		Number.parseInt(escape[1] ?? escape[2] ?? escape[3] ?? "0", 16),
+	)
+
+/** UTF-8 bytes of a literal atom: a character or a `\\x`/`\\u` escape. */
+const literalBytes = (atom: string): number => {
+	const code = atom.startsWith("\\")
+		? (escapedCodePoints(atom)[0] ?? atom.codePointAt(1) ?? 0)
+		: (atom.codePointAt(0) ?? 0)
+	return code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4
+}
+
+/** True when a class holds a character past ASCII, written out or escaped. */
+const hasNonAscii = (atom: string): boolean =>
+	/[^\x00-\x7f]/u.test(atom) || escapedCodePoints(atom).some((code) => code >= 0x80)
+
+/** `(?i)` turns a literal into a class of its case forms; classes already hold them. */
+const atomWeight = (atom: string, ignoreCase: boolean): number => {
+	const literal = LITERAL_WEIGHT * literalBytes(atom) * (ignoreCase ? 3 : 1)
+	if (atom.startsWith("\\")) return ESCAPE_WEIGHTS.get(atom[1] ?? "") ?? literal
 	if (atom === ".") return ANY_WEIGHT
-	if (!atom.startsWith("[")) return LITERAL_WEIGHT
-	const members = [...atom.matchAll(/\\(.)/gu)].map((escape) => ESCAPE_WEIGHTS.get(escape[1] ?? "") ?? 0)
-	return Math.max(atom.startsWith("[^") ? ANY_WEIGHT : 1 / 3000, ...members)
+	if (!atom.startsWith("[")) return literal
+	// `[^\\s]` compiles like `\\S`: a negated class weighs as its members' complements. A class
+	// past ASCII compiles to UTF-8 byte ranges about as large as `.`.
+	const negated = atom.startsWith("[^")
+	const members = [...atom.matchAll(/\\(.)/gu)].map((escape) => {
+		const letter = escape[1] ?? ""
+		const complement = letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase()
+		return ESCAPE_WEIGHTS.get(negated ? complement : letter) ?? 0
+	})
+	return Math.max(negated || hasNonAscii(atom) ? ANY_WEIGHT : 1 / 3000, ...members)
 }
 
 /** Estimated share of the gateway's compiled-regex limit; copies add up, counted repeats multiply. */
-export const compiledRegexWeight = (source: string): number =>
+export const compiledRegexWeight = (source: string, ignoreCase = false): number =>
 	topLevelBranches(source).reduce((total, branch) => {
 		let weight = 0
 		let at = 0
@@ -417,10 +449,20 @@ export const compiledRegexWeight = (source: string): number =>
 			at = end + (quantifier?.length ?? 0)
 			const copies =
 				quantifier === null ? 1 : quantifier.max === Infinity ? quantifier.min + 1 : quantifier.max
-			weight += copies * (char === "(" ? compiledRegexWeight(groupBody(atom)) : atomWeight(atom))
+			weight +=
+				copies *
+				(char === "("
+					? compiledRegexWeight(groupBody(atom), ignoreCase)
+					: atomWeight(atom, ignoreCase))
 		}
 		return total + weight
 	}, 0)
+
+/** A regex's estimated compiled size in MiB, for the per-org budget; each costs at least 16 KiB. */
+export const regexBudgetCost = (pattern: string): number => {
+	const { source, ignoreCase } = splitRegexFlags(pattern)
+	return Math.max(compiledRegexWeight(source, ignoreCase), 1 / 64)
+}
 
 /** The atoms of one branch with their repetition; unquantified plain groups are flattened. */
 const repetitions = (branch: string): Array<Repetition> => {
@@ -532,7 +574,8 @@ export const regexProblem = (pattern: string): string | null => {
 		return "a repeated group may not contain a repetition or alternation"
 	const compiled = compileIngestRegex(pattern, false)
 	if (Option.isNone(compiled)) return "pattern is not a valid regular expression"
-	if (compiledRegexWeight(splitRegexFlags(pattern).source) > 0.85)
+	const { source, ignoreCase } = splitRegexFlags(pattern)
+	if (compiledRegexWeight(source, ignoreCase) > 0.85)
 		return "pattern is too large for the gateway to compile; repeat \\w, \\d or \\p{...} less, or use an ASCII class like [A-Za-z0-9_]"
 	if (hasAmbiguousRepetition(pattern))
 		return "two repetitions that can match the same text need a character neither matches between them (a*a*b is too slow to match)"
@@ -547,6 +590,32 @@ export const compileIngestRegex = (pattern: string, global = true): Option.Optio
 		? Option.none()
 		: compileRegex(portable, `${global ? "g" : ""}${ignoreCase ? "i" : ""}u`)
 }
+
+/** The regexes a rule compiles in the gateway: regex conditions and redact patterns. */
+const ruleRegexes = (spec: IngestRuleSpec): ReadonlyArray<string> => [
+	...spec.conditions.flatMap((condition) =>
+		condition.op === "regex" && condition.value !== undefined ? [condition.value] : [],
+	),
+	...(spec.action._tag === "redact" ? spec.action.patterns : []),
+]
+
+/** Estimated MiB of compiled regex the rules need together; see `regexBudgetCost`. */
+export const regexBudgetUsed = (specs: ReadonlyArray<IngestRuleSpec>): number =>
+	specs.flatMap(ruleRegexes).reduce((total, pattern) => total + regexBudgetCost(pattern), 0)
+
+const regexBudgetProblem = (specs: ReadonlyArray<IngestRuleSpec>, subject: string): string | null => {
+	const used = regexBudgetUsed(specs)
+	if (used <= INGEST_RULE_LIMITS.regexBudgetPerOrg) return null
+	const percent = Math.ceil((used / INGEST_RULE_LIMITS.regexBudgetPerOrg) * 100)
+	return `${subject} too large to compile together (${percent}% of the limit); shorten counted repeats like \\d{100} or \\w{10}, or remove patterns or regex conditions`
+}
+
+/**
+ * Null when every rule an org stores, enabled or not, fits the regex budget together. The gateway
+ * compiles them all at once, so one org's patterns are bounded as a whole, not only one by one.
+ */
+export const orgRegexBudgetProblem = (specs: ReadonlyArray<IngestRuleSpec>): string | null =>
+	regexBudgetProblem(specs, "the regexes across this organization's ingest rules are")
 
 /** The ops a field supports, for editors that only offer valid choices. */
 export const opsForField = (field: IngestRuleField): ReadonlyArray<IngestRuleOp> =>
@@ -605,6 +674,8 @@ export const ingestRuleProblems = (spec: IngestRuleSpec): ReadonlyArray<string> 
 		const problem = conditionProblem(condition, spec.signals)
 		if (problem !== null) problems.push(`condition ${index + 1}: ${problem}`)
 	})
+	const budget = regexBudgetProblem([spec], "this rule's regexes are")
+	if (budget !== null) problems.push(budget)
 	const action = spec.action
 	if (action._tag === "drop") {
 		if (!Number.isInteger(action.keepPercent) || action.keepPercent < 0 || action.keepPercent > 100)
