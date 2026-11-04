@@ -191,8 +191,8 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 						text: location,
 						tail: Math.min(28, location.length - location.lastIndexOf("/")),
 						mono: true,
-						className:
-							"hidden min-w-0 max-w-[40%] shrink-[2] text-xs text-muted-foreground md:flex",
+						// md:grid keeps the kit's grid; no min-w-0 or max-w, which would let it shrink under its tail.
+						className: "hidden shrink-[2] text-xs text-muted-foreground md:grid",
 					}),
 				]),
 		...(note === null
