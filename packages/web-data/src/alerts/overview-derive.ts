@@ -203,17 +203,23 @@ export function ruleRibbon(
 	cells: number,
 ): RibbonCell[] {
 	const width = (range.max - range.min) / cells
-	return Array.from({ length: cells }, (_, i) => {
-		const cellStart = range.min + i * width
-		const cellEnd = cellStart + width
-		const hits = Arr.filter(incidents, (incident) => {
-			const start = Date.parse(incident.firstTriggeredAt)
-			const end = incident.resolvedAt === null ? range.max : Date.parse(incident.resolvedAt)
-			return end > cellStart && start < cellEnd
-		})
-		if (Arr.some(hits, (incident) => incident.severity === "critical")) return "critical"
-		return hits.length > 0 ? "warning" : "quiet"
-	})
+	const out: RibbonCell[] = Array.from({ length: cells }, () => "quiet")
+	if (!(width > 0)) return out
+	// Each incident paints only the cells it overlaps (±1 for float edges), so a row costs
+	// O(incidents + cells), not O(incidents × cells) timestamp parses.
+	for (const incident of incidents) {
+		const start = Date.parse(incident.firstTriggeredAt)
+		const end = incident.resolvedAt === null ? range.max : Date.parse(incident.resolvedAt)
+		const first = Math.max(0, Math.floor((start - range.min) / width) - 1)
+		const last = Math.min(cells - 1, Math.ceil((end - range.min) / width))
+		for (let i = first; i <= last; i++) {
+			const cellStart = range.min + i * width
+			if (!(end > cellStart && start < cellStart + width)) continue
+			if (incident.severity === "critical") out[i] = "critical"
+			else if (out[i] === "quiet") out[i] = "warning"
+		}
+	}
+	return out
 }
 
 export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery" | "slowed"

@@ -15,6 +15,7 @@ import {
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
+import { lastBy } from "../../kit/last-by"
 import { previewPayload } from "../shared/preview"
 import { isoMs } from "../shared/time"
 import type { Model } from "./model"
@@ -34,11 +35,28 @@ export interface IncidentView {
 }
 
 /** The state rows of one rule (one per group). */
-export const ruleStatesOf = (model: Model, ruleId: string): ReadonlyArray<AlertRuleStateRow> =>
-	Arr.filter(model.states ?? [], (row) => row.rule_id === ruleId)
+export const ruleStatesOf = (
+	model: Pick<Model, "states">,
+	ruleId: string,
+): ReadonlyArray<AlertRuleStateRow> => Arr.filter(model.states ?? [], (row) => row.rule_id === ruleId)
+
+type ViewKey = Pick<Model, "incidents" | "rules" | "states" | "incidentId" | "nowMs">
 
 /** The incident and its rule, or `None` while the incidents list has not answered or lacks it. */
-export const incidentViewOf = (model: Model): Option.Option<IncidentView> => {
+export const incidentViewOf = (model: Model): Option.Option<IncidentView> =>
+	incidentViewFor([model.incidents, model.rules, model.states, model.incidentId, model.nowMs])
+
+const incidentViewFor = lastBy(
+	([incidents, rules, states, incidentId, nowMs]: readonly [
+		ViewKey["incidents"],
+		ViewKey["rules"],
+		ViewKey["states"],
+		ViewKey["incidentId"],
+		ViewKey["nowMs"],
+	]) => deriveIncidentView({ incidents, rules, states, incidentId, nowMs }),
+)
+
+const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 	if (model.incidents === null || model.nowMs === null) return Option.none()
 	const incidentRow = model.incidents.find((row) => row.id === model.incidentId)
 	if (incidentRow === undefined) return Option.none()
