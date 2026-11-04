@@ -184,12 +184,18 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 									: isProductEventsFunnel(state)
 										? funnelPanel(h, model, state)
 										: state.queryFixed
-											? [fixedQueryNote(h)]
+											? [fixedQueryNote(h), runPreviewButton(h, false)]
 											: queryPanels(h, model, state, timeZone)),
 						]),
 		],
 	)
 }
+
+/** Applies the staged query and display edits (row limit, aggregate) to the preview. */
+const runPreviewButton = (h: H, isDisabled: boolean): Html =>
+	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(Message.ClickedRunPreview())] }, [
+		"Run preview",
+	])
 
 /** A preset whose query has no builder equivalent: it stays as stored, only its display edits. */
 const fixedQueryNote = (h: H): Html =>
@@ -249,15 +255,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 						),
 					]
 				: []),
-			button(
-				h,
-				{
-					size: "sm",
-					isDisabled: error !== null,
-					attributes: [h.OnClick(Message.ClickedRunPreview())],
-				},
-				["Run preview"],
-			),
+			runPreviewButton(h, error !== null),
 			// Two text nodes once there are formulas.
 			typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
 				Arr.join(

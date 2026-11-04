@@ -243,7 +243,16 @@ describe("preset widgets in the editor", () => {
 				}),
 			),
 			expectView(text("This preset's query can't be edited")).toExist(),
+			// Row limit and aggregate are staged, so a locked preset still needs a way to preview them.
+			expectView(text("Run preview")).toExist(),
 		)
+	})
+
+	test("a fixed table's row limit reaches the preview once run", () => {
+		const board = openedPreset("table-traces")
+		const limited = update(board.model, Message.ChangedTableLimit({ value: "50" }), context).model
+		const previewed = update(limited, Message.ClickedRunPreview(), context).model
+		expect(dataSourceTransform(previewWidgetOf(previewed)?.dataSource)?.limit).toBe(50)
 	})
 
 	test("a fixed preset switched to a pie edits a builder query that saves once grouped", () => {
