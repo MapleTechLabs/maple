@@ -163,7 +163,8 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 		},
 		queries: listPreviewQueries(model.staged.queries, state, model.staged, widget),
 		// The live flag, like Apply: a type switch releases it, an edit undone restores it.
-		keepsStoredSource: state.keepsStoredSource,
+		// A fixed query always previews its stored route.
+		keepsStoredSource: state.queryFixed || state.keepsStoredSource,
 	}
 	const isSql = isSqlSource(model) && model.rawSql !== null
 	return {
