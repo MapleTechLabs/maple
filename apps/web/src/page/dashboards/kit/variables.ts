@@ -86,9 +86,9 @@ export type OptionsState = Readonly<{
 
 export const NO_OPTIONS: OptionsState = { options: [], loading: false, error: null }
 
-/** A query variable that only had the empty fallback because its options failed: no value at all. */
+/** A query variable whose options failed: its empty fallback and "All" (an empty expansion) are no value. */
 const isUnavailable = (variable: Variable, options: OptionsState, value: string | undefined) =>
-	variable.type === "query" && options.error !== null && value === ""
+	variable.type === "query" && options.error !== null && (value === "" || value === ALL_VALUE)
 
 /** `values`: each variable's resolved value; one waiting on (or failed by) its options is absent. */
 export const resolveVariableValues = (
