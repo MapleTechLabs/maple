@@ -231,7 +231,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 						Arr.map(state.formulas, (formula) => formulaPanel(h, formula)),
 					),
 				]),
-		hstack(h, { gap: "3" }, [
+		hstack(h, { gap: "3", wrap: true }, [
 			button(
 				h,
 				{

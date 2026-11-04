@@ -15,6 +15,7 @@ import { button } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { hstack } from "@maple/views/ui/stack"
 import type { SelectOption } from "@maple/views/ui/select-view"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
@@ -102,15 +103,15 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 	]
 	const actions = (label: string, message: Message, isDisabled: boolean) =>
 		button(h, { variant: "ghost", size: "xs", isDisabled, attributes: [h.OnClick(message)] }, [label])
-	const trailing = [
-		h.div([h.Class("flex-1")], []),
-		...(inputs.hasHeaderActions
-			? [
+	// One group, so on a narrow screen Clone and Remove wrap together and stay right-aligned.
+	const trailing = inputs.hasHeaderActions
+		? [
+				hstack(h, { gap: "2", className: "ml-auto" }, [
 					actions("Clone", Message.ClickedClone({ queryId: query.id }), false),
 					actions("Remove", Message.ClickedRemove({ queryId: query.id }), !inputs.canRemove),
-				]
-			: []),
-	]
+				]),
+			]
+		: []
 	return panelSelect(
 		h,
 		model,
@@ -123,7 +124,7 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 			ariaLabel: "Query source",
 			toView: (parts) =>
 				h.div(
-					[h.Class("flex items-center gap-2 px-3 py-2 bg-surface-sunken")],
+					[h.Class("flex flex-wrap items-center gap-2 px-3 py-2 bg-surface-sunken")],
 					[...leading, ...parts, ...trailing],
 				),
 		},
