@@ -19,34 +19,95 @@ name: Local Binary Release
 # and a GitHub build-provenance attestation. See docs/local-mode.md
 # "Release signing".
 #
-# Triggers:
-#   - push a `v*` tag       → build + publish each platform's bundle as it finishes
-#   - workflow_dispatch     → build + upload artifacts (no release unless `tag` input given)
+# Trigger: workflow_dispatch. With `tag` (release.yml dispatches it on `main` for each new
+# CLI version) it builds that tag's commit and publishes; without it, it only builds the
+# dispatched ref as artifacts. A publishing run must be dispatched on `main`, the tag must
+# be `v<apps/cli version>` and on main's history, and only then does the job enter the
+# `cli-release` environment that holds the signing key.
 
 on:
-    push:
-        tags:
-            - "v*"
     workflow_dispatch:
         inputs:
             tag:
-                description: "Existing tag to publish the bundles to (optional). Leave blank to only produce build artifacts."
+                description: "Existing `v*` tag to build and publish (run on main). Leave blank to only produce build artifacts."
                 required: false
                 type: string
 
 concurrency:
-    group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref }}
+    group: ${{ github.workflow }}-${{ inputs.tag || github.ref }}
     cancel-in-progress: false
 
 permissions:
     contents: write
 
 jobs:
-    build:
+    # Resolves what to build before any of the repo's code runs, so the signing key only ever
+    # meets a commit that main already contains.
+    preflight:
         if: ${{ vars.MAPLE_RELEASE_ENABLED == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+            contents: read
+        outputs:
+            publish: ${{ steps.resolve.outputs.publish }}
+            sha: ${{ steps.resolve.outputs.sha }}
+            version: ${{ steps.resolve.outputs.version }}
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+                  fetch-depth: 0
+                  filter: blob:none
+
+            - name: Resolve the commit and version
+              id: resolve
+              env:
+                  INPUT_TAG: ${{ inputs.tag }}
+              run: |
+                  set -euo pipefail
+                  if [ -z "$INPUT_TAG" ]; then
+                    {
+                      echo "publish=false"
+                      echo "sha=$GITHUB_SHA"
+                      echo "version=$(git rev-parse --short "$GITHUB_SHA")"
+                    } >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
+                  if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+                    echo "::error::A publishing run must be dispatched on main, not $GITHUB_REF."
+                    exit 1
+                  fi
+                  if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+                    echo "::error::'$INPUT_TAG' is not a vX.Y.Z release tag."
+                    exit 1
+                  fi
+                  sha="$(git rev-parse --verify --quiet "refs/tags/$INPUT_TAG^{commit}")" || {
+                    echo "::error::Tag $INPUT_TAG does not exist."
+                    exit 1
+                  }
+                  if ! git merge-base --is-ancestor "$sha" origin/main; then
+                    echo "::error::Tag $INPUT_TAG ($sha) is not on main's history."
+                    exit 1
+                  fi
+                  expected="v$(git show "$sha:apps/cli/package.json" | jq -r .version)"
+                  if [ "$INPUT_TAG" != "$expected" ]; then
+                    echo "::error::Tag $INPUT_TAG does not match apps/cli/package.json at that commit ($expected)."
+                    exit 1
+                  fi
+                  {
+                    echo "publish=true"
+                    echo "sha=$sha"
+                    echo "version=$INPUT_TAG"
+                  } >> "$GITHUB_OUTPUT"
+
+    build:
+        needs: preflight
         name: Build ${{ matrix.target }}
         runs-on: ${{ matrix.runner }}
         timeout-minutes: 60
+        # Holds MAPLE_RELEASE_SIGNING_KEY; deployable from main only. Build-only runs skip it.
+        environment: ${{ needs.preflight.outputs.publish == 'true' && 'cli-release' || '' }}
         permissions:
             contents: write # create the release and upload assets
             id-token: write # OIDC identity for the build-provenance attestation
@@ -76,29 +137,20 @@ jobs:
                     - target: aarch64-unknown-linux-gnu
                       runner: ubuntu-24.04-arm
                       os: linux
+        env:
+            PUBLISH: ${{ needs.preflight.outputs.publish }}
+            VERSION: ${{ needs.preflight.outputs.version }}
+            TARGET: ${{ matrix.target }}
         steps:
+            # The commit preflight checked, not the tag name, which could move in between.
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  ref: ${{ needs.preflight.outputs.sha }}
+                  persist-credentials: false
 
             - uses: ./.github/actions/setup
               with:
                   turbo-cache: "false"
-
-            - name: Resolve version
-              id: version
-              env:
-                  INPUT_TAG: ${{ github.event.inputs.tag }}
-              run: |
-                  set -euo pipefail
-                  ref="$GITHUB_REF"
-                  input_tag="${INPUT_TAG:-}"
-                  if [ -n "$input_tag" ]; then
-                    version="$input_tag"
-                  elif [[ "$ref" == refs/tags/* ]]; then
-                    version="${ref#refs/tags/}"
-                  else
-                    version="$(git rev-parse --short HEAD)"
-                  fi
-                  echo "version=$version" >> "$GITHUB_OUTPUT"
 
             - name: Build local binary bundle
               # Builds the SPA, inlines it into the binary, compiles apps/cli with
@@ -106,7 +158,7 @@ jobs:
               # Output bundle lands in ./dist (maple + libchdb.so). MAPLE_BUILD_VERSION
               # bakes the resolved tag into `maple --version`.
               env:
-                  MAPLE_BUILD_VERSION: ${{ steps.version.outputs.version }}
+                  MAPLE_BUILD_VERSION: ${{ env.VERSION }}
                   # Added when `packages/effect-sdk` emitted its .d.mts in-process on
                   # TypeScript 6: Node sizes its default old-space from host RAM, and
                   # v0.0.15 OOM'd on the 7 GB macos-14 runner ("Ineffective
@@ -132,9 +184,7 @@ jobs:
               id: package
               run: |
                   set -euo pipefail
-                  version="${{ steps.version.outputs.version }}"
-                  target="${{ matrix.target }}"
-                  name="maple-${version}-${target}"
+                  name="maple-${VERSION}-${TARGET}"
                   staging="$RUNNER_TEMP/$name"
                   rm -rf "$staging"
                   mkdir -p "$staging"
@@ -142,7 +192,7 @@ jobs:
                   cp dist/libchdb.so "$staging/libchdb.so"
                   # Smoke-check the relocatable 2-file bundle (maple + libchdb.so).
                   ( cd "$staging" && ./maple --help >/dev/null 2>&1 ) || \
-                    echo "::warning::'maple --help' smoke check did not exit cleanly on $target"
+                    echo "::warning::'maple --help' smoke check did not exit cleanly on $TARGET"
                   tarball="$RUNNER_TEMP/${name}.tar.gz"
                   tar -C "$RUNNER_TEMP" -czf "$tarball" "$name"
                   # `<hash>  <file>` (sha256sum format), run beside the tarball so
@@ -158,14 +208,14 @@ jobs:
                   echo "name=$name" >> "$GITHUB_OUTPUT"
 
             - name: Sign checksum manifest
-              # Writes <tarball>.sha256.sig. Without the secret this warns and
-              # skips, except on a publishing run once MAPLE_RELEASE_PUBLIC_KEY is
-              # embedded, where it fails rather than ship a release every binary
-              # rejects. The key is scoped to this step only.
+              # Writes <tarball>.sha256.sig. Build-only runs never get the key and stay
+              # unsigned; a publishing run fails without it rather than ship a release
+              # every binary rejects. The key is scoped to this step only.
               env:
-                  MAPLE_RELEASE_SIGNING_KEY: ${{ secrets.MAPLE_RELEASE_SIGNING_KEY }}
-                  MAPLE_RELEASE_SIGNING_REQUIRED: ${{ (startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != '') && '1' || '0' }}
-              run: bun scripts/sign-local-release.ts "${{ steps.package.outputs.tarball }}.sha256"
+                  MAPLE_RELEASE_SIGNING_KEY: ${{ env.PUBLISH == 'true' && secrets.MAPLE_RELEASE_SIGNING_KEY || '' }}
+                  MAPLE_RELEASE_SIGNING_REQUIRED: ${{ env.PUBLISH == 'true' && '1' || '0' }}
+                  MANIFEST: ${{ steps.package.outputs.tarball }}.sha256
+              run: bun scripts/sign-local-release.ts "$MANIFEST"
 
             - name: Upload build artifact
               uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -180,7 +230,7 @@ jobs:
 
             - name: Attest build provenance
               # Verify with: gh attestation verify <bundle>.tar.gz --repo MapleTechLabs/maple
-              if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != '' }}
+              if: ${{ env.PUBLISH == 'true' }}
               uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
               with:
                   subject-path: ${{ steps.package.outputs.tarball }}
@@ -188,23 +238,23 @@ jobs:
             - name: Publish to release
               # Each platform publishes its own tarball as soon as it's built — no
               # waiting for other platforms. `gh release create` is idempotent (the
-              # `|| true` swallows the "already exists" error from concurrent jobs);
-              # `gh release upload --clobber` is safe to re-run.
-              if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != '' }}
+              # `|| true` swallows the "already exists" error from concurrent jobs).
+              # A tarball already on the release is never replaced; a re-run only
+              # finishes a platform whose upload did not complete.
+              if: ${{ env.PUBLISH == 'true' }}
               env:
                   GH_TOKEN: ${{ github.token }}
                   REPO: ${{ github.repository }}
-                  INPUT_TAG: ${{ github.event.inputs.tag }}
+                  TAG: ${{ env.VERSION }}
+                  TARBALL: ${{ steps.package.outputs.tarball }}
               run: |
                   set -euo pipefail
-                  ref="$GITHUB_REF"
-                  input_tag="${INPUT_TAG:-}"
-                  if [ -n "$input_tag" ]; then
-                    TAG="$input_tag"
-                  else
-                    TAG="${ref#refs/tags/}"
+                  tarball="$TARBALL"
+                  if gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' 2>/dev/null \
+                    | grep -Fqx "$(basename "$tarball")"; then
+                    echo "::notice::$(basename "$tarball") is already on release $TAG; leaving it as published."
+                    exit 0
                   fi
-                  tarball="${{ steps.package.outputs.tarball }}"
                   # Create the release if it doesn't exist yet. Multiple platforms
                   # may race here; ignore the "already exists" error.
                   # Write notes to a file using printf so we avoid heredoc indentation
@@ -225,7 +275,7 @@ jobs:
                     'Or download a bundle below. Each archive contains `maple` + `libchdb.so` — keep both in the same directory. macOS: run `xattr -dr com.apple.quarantine maple libchdb.so` after extracting.' \
                     'Verify a downloaded bundle with `gh attestation verify <bundle>.tar.gz --repo MapleTechLabs/maple`. The `.sha256.sig` files are Ed25519 signatures over the `.sha256` files, checked by `maple update` and the installer.' \
                     >> "$RUNNER_TEMP/release-notes.md"
-                  gh release create "$TAG" --repo "$REPO" \
+                  gh release create "$TAG" --repo "$REPO" --verify-tag \
                     --title "$TAG" \
                     --notes-file "$RUNNER_TEMP/release-notes.md" 2>/dev/null || true
                   # Verification assets first: once the tarball is visible, its
@@ -242,8 +292,7 @@ jobs:
     # smokes the image, no push.
     image:
         name: Container image
-        needs: build
-        if: ${{ vars.MAPLE_RELEASE_ENABLED == 'true' }}
+        needs: [preflight, build]
         runs-on: ubuntu-latest
         timeout-minutes: 30
         permissions:
@@ -253,17 +302,20 @@ jobs:
             attestations: write
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  ref: ${{ needs.preflight.outputs.sha }}
+                  persist-credentials: false
 
             - name: Resolve tags
               id: tags
               env:
-                  INPUT_TAG: ${{ github.event.inputs.tag }}
+                  PUBLISH: ${{ needs.preflight.outputs.publish }}
+                  VERSION: ${{ needs.preflight.outputs.version }}
                   REPO: ${{ github.repository }}
               run: |
                   set -euo pipefail
-                  ref="$GITHUB_REF"
-                  tag="${INPUT_TAG:-}"
-                  if [ -z "$tag" ] && [[ "$ref" == refs/tags/* ]]; then tag="${ref#refs/tags/}"; fi
+                  tag=""
+                  if [ "$PUBLISH" = "true" ]; then tag="$VERSION"; fi
                   image="ghcr.io/${REPO,,}"
                   echo "image=$image" >> "$GITHUB_OUTPUT"
                   if [ -z "$tag" ]; then
@@ -274,7 +326,7 @@ jobs:
                   # `latest` follows the newest stable release only: never a pre-release
                   # (v1.2.3-rc.1), never a re-run of an older tag.
                   newest="$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' | { grep -ve '-' || true; } | sort -V | tail -1)"
-                  if [[ "$ref" == refs/tags/* && "$tag" == "$newest" ]]; then tags="$tags,$image:latest"; fi
+                  if [ "$tag" = "$newest" ]; then tags="$tags,$image:latest"; fi
                   echo "publish=true" >> "$GITHUB_OUTPUT"
                   echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
