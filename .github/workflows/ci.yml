@@ -529,7 +529,7 @@ jobs:
                   MAPLE_REQUIRE_LIBCHDB: "1"
                   MAPLE_TELEMETRY: off
               run: |
-                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard; do
+                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz; do
                       bun test --timeout 30000 "test/$file.test.ts"
                   done
 

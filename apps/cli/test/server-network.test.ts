@@ -218,6 +218,22 @@ describe("browser origin policy", () => {
 		}
 	})
 
+	it("checks the Host of requests without an Origin outside ingest and /health", () => {
+		const rebound = "http://rebind.attacker.example:4418"
+		for (const path of ["/local/status", "/", "/assets/app.js", "/local/eventing/outbox"])
+			strictEqual(allowed(`${rebound}${path}`, null), false, path)
+		for (const path of ["/v1/traces", "/health"])
+			strictEqual(allowed(`${rebound}${path}`, null), true, path)
+		for (const url of [
+			"http://127.0.0.1:4318/local/status",
+			"http://localhost:4318/local/status",
+			"http://[::1]:4318/local/status",
+			"https://maple.wt.localhost/local/status",
+			"http://node-a.example.test:4418/local/status",
+		])
+			strictEqual(allowed(url, null), true, url)
+	})
+
 	it("rejects arbitrary and DNS-rebinding browser origins", () => {
 		strictEqual(allowed(requestUrl, "https://attacker.example"), false)
 		strictEqual(

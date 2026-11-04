@@ -17,6 +17,10 @@ describe("rawSqlIssue table sources", () => {
 		"SELECT * FROM traces t, numbers(1) n, primes(2) p WHERE $__orgFilter(t)",
 		"SELECT * FROM traces t LEFT JOIN timeSeriesData('d', 't') s ON 1 = 1 WHERE $__orgFilter(t)",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT * FROM view(SELECT * FROM loop('d', 't')))",
+		// An alias spelled like a clause keyword does not end the FROM list.
+		"SELECT * FROM traces t, numbers(1) AS limit, values('a UInt8', 1) AS f WHERE $__orgFilter(t)",
+		"SELECT * FROM traces t, filesystem('/') f WHERE $__orgFilter(t)",
+		"SELECT * FROM traces t JOIN logs l ON t.limit = l.x, values('a UInt8', 1) AS v WHERE $__orgFilter(t)",
 	])("rejects table functions outside the allow list: %s", (sql) => {
 		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
 	})
@@ -73,6 +77,7 @@ describe("rawSqlIssue table sources", () => {
 		"SELECT EXTRACT(DAY FROM toDateTime(Timestamp)) AS d FROM traces WHERE $__orgFilter",
 		"SELECT trim(BOTH ' ' FROM lower(SpanName)) AS n FROM traces WHERE $__orgFilter",
 		"SELECT x FROM traces ARRAY JOIN splitByChar(',', SpanName) AS x WHERE $__orgFilter",
+		"SELECT x, i FROM traces ARRAY JOIN splitByChar(',', SpanName) AS x, arrayEnumerate(splitByChar(',', SpanName)) AS i WHERE $__orgFilter",
 		"SELECT * FROM traces t, logs l WHERE $__orgFilter(t) AND t.TraceId = l.TraceId",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT SpanId FROM logs WHERE lower(Body) LIKE '%x%')",
 		"WITH c AS (SELECT count() AS n FROM traces WHERE $__orgFilter) SELECT n FROM c",

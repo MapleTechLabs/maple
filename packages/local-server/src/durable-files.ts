@@ -164,7 +164,7 @@ export class DurableFileError extends Schema.TaggedError<DurableFileError>()("@m
 	cause: Schema.Defect(),
 }) {}
 
-const durableFileError =
+export const durableFileError =
 	(path: string, action: string) =>
 	(cause: unknown): DurableFileError =>
 		new DurableFileError({

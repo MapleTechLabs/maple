@@ -2,6 +2,7 @@
 // the text, the canonical statement is what runs, and read statements carry
 // `readonly = 1` plus result caps, so enforcement does not rest on a regex.
 
+import { disallowedTableFunction } from "@maple/domain/raw-sql"
 import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Chdb } from "./chdb"
 
@@ -61,8 +62,9 @@ const WRITE_KEYWORDS = new Set([
 	"SET",
 	"USE",
 ])
-// `readonly` does not cover these: the `file` function reads any local path.
-const DENIED_FUNCTIONS = new Set(["file", "catboostevaluate"])
+// `readonly` does not cover reads (`file` reaches any local path), so table functions
+// get hosted raw SQL's allow list and its readers are refused in any position.
+const DENIED_FUNCTIONS = new Set(["catboostevaluate"])
 
 export interface PreparedLocalQuery {
 	readonly kind: "read" | "write"
@@ -249,6 +251,8 @@ export const prepareLocalQuery = (
 			if (word.text === "INTO" && words[index + 1]?.text === "OUTFILE")
 				return yield* reject("INTO OUTFILE is not allowed")
 		}
+		const tableFunction = disallowedTableFunction(canonical)
+		if (tableFunction !== null) return yield* reject(`function ${tableFunction} is not allowed`)
 		const leading = Str.startsWith("(")(canonical) ? "SELECT" : first.text
 		if (!READ_STATEMENTS.has(leading)) {
 			if (options.allowWrites) {
@@ -268,6 +272,14 @@ export const prepareLocalQuery = (
 		if (leading === "EXPLAIN" && Arr.some(words, (word) => WRITE_KEYWORDS.has(word.text)))
 			return yield* reject("EXPLAIN is only allowed for read statements")
 		const peeled = peelTerminalClauses(canonical, words)
+		// A subquery's own SETTINGS would apply after the appended `readonly = 1`.
+		if (
+			Arr.some(
+				words,
+				(word) => !word.quoted && word.text === "SETTINGS" && word.end <= peeled.body.length,
+			)
+		)
+			return yield* reject("SETTINGS is only allowed once, at the end of the query")
 		// Schema inference reads whatever a table function points at, and
 		// DESCRIBE skips the readonly check, so only plain tables are described.
 		if (
