@@ -111,6 +111,8 @@ CI trace ids from the fixture do not resolve in `inspect_trace`: the world has n
 | `legacy-admin` served `/.env`, `billing` served `/actuator/env`; `marketing-site` answers every path         | exposure, inspect `legacy-admin:/.env` |
 | nuclei from 185.220.101.4 is the busiest scanner                                                             | `area=exposure`                        |
 | checkout on Node.js 18.19.0 (EOL, CVE-2025-23166), api-gateway on 22.4.0 (critical CVE), legacy-admin on 3.8 | runtimes, inspect `CVE-2025-23166`     |
+| `run-api-1` stopped at the $25 monthly limit: webhooks deferred, admin blocked, exports never reached        | list/inspect_security_audit_run        |
+| `run-shop-1` reported 6 claims, the webhook SSRF rejected with the verifier's reason; it has a 3-entry log   | inspect_security_audit_run             |
 
 ### Security scenarios
 
@@ -125,6 +127,12 @@ CI trace ids from the fixture do not resolve in `inspect_trace`: the world has n
 | S7  | Which findings did we dismiss or accept, and why? Is our coverage complete?              | coupon replay dismissed with its reason; acme/api never scanned and its audit incomplete                            | 2              |
 | S9  | CVE-2025-23166 in Node.js is being exploited. Which services, and to what version?       | checkout to 18.20.6, api-gateway to 22.12.0; Python services clean; cart not checkable                              | 1              |
 | S10 | Did we fix the JWT alg none problem? What high or critical issues are open in acme/shop? | fixed by the latest audit run; the open code and dependency findings of acme/shop                                   | 2              |
+| R1  | Show me the audit runs for acme/shop and acme/api. Which is latest, did it finish?       | run-shop-1 complete; run-api-1 incomplete (spend limit); durations                                                  | 1              |
+| R2  | For the last acme/api audit: what did it cover and skip? Why did it stop?                | 2 of 5 units covered; webhooks deferred, admin blocked, exports never reached; spend limit                          | 1              |
+| R3  | How much have we spent on audits this month, and what is our limit?                      | over the $25 limit, resets on the 1st                                                                               | 1              |
+| R4  | Which repositories are set up for the audit and the dependency scan, and when last run?  | both audited; acme/api never dependency-scanned                                                                     | 1              |
+| R5  | Everything the last acme/shop audit reported, rejected claims and its log                | 6 claims, SSRF rejected with its reason; the run's log                                                              | 1              |
+| R6  | Any vulnerable dependencies in acme/api? (never scanned)                                 | not scanned, so unknown; not "clear"                                                                                | 1              |
 
 ### Security results (Haiku unless noted; data calls, wasted in brackets)
 
