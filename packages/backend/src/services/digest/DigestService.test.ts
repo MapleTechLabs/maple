@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Array as Arr } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr, Option } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
@@ -380,14 +380,14 @@ describe("DigestService.unsubscribeByToken", () => {
 			const digest = yield* DigestService
 			yield* digest.runDigestTick()
 
-			const toA = messages.find((m) => m.to === "a@example.com")
+			const toA = Option.getOrUndefined(Arr.findFirst(messages, (m) => m.to === "a@example.com"))
 			assert.isDefined(toA)
 			const header = toA.headers["List-Unsubscribe"] ?? ""
 			assert.strictEqual(toA.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
 			const token = decodeURIComponent(/token=([^>]+)>/.exec(header)?.[1] ?? "")
 			assert.include(toA.html, `/unsubscribe?token=${encodeURIComponent(token)}`)
 			assert.notInclude(
-				messages.find((m) => m.to === "b@example.com")?.html ?? "",
+				Option.getOrUndefined(Arr.findFirst(messages, (m) => m.to === "b@example.com"))?.html ?? "",
 				encodeURIComponent(token),
 			)
 
@@ -468,7 +468,7 @@ const multiEnvFixture = {
 } satisfies WarehouseFixture
 
 const findService = (props: WeeklyDigestProps, environment: string) => {
-	const match = props.services.find((s) => s.environment === environment)
+	const match = Option.getOrUndefined(Arr.findFirst(props.services, (s) => s.environment === environment))
 	assert.isDefined(match, `no service row for environment ${environment}`)
 	return match
 }
@@ -663,13 +663,17 @@ describe("DigestService.generateDigestData", () => {
 			}
 
 			// `error_events` has a deployment env column but no namespace one.
-			const errors = seen.find((call) => call.context === "digestTopErrors")
+			const errors = Option.getOrUndefined(
+				Arr.findFirst(seen, (call) => call.context === "digestTopErrors"),
+			)
 			assert.include(errors?.sql, "DeploymentEnv IN ('production')")
 			assert.notInclude(errors?.sql, "ServiceNamespace")
 
 			// `service_usage` has neither column, so the scope is approximated by
 			// service membership and the email says so.
-			const usage = seen.find((call) => call.context === "digestServiceUsageCompare")
+			const usage = Option.getOrUndefined(
+				Arr.findFirst(seen, (call) => call.context === "digestServiceUsageCompare"),
+			)
 			assert.include(usage?.sql, "ServiceName IN ('api')")
 			assert.isTrue(props.ingestion.approximate)
 			assert.deepStrictEqual(props.scope, { environments: ["production"], namespaces: ["edge"] })
@@ -768,7 +772,9 @@ describe("DigestService.generateDigestData — scope containment", () => {
 			const digest = yield* DigestService
 			yield* digest.generateDigestData(ORG_ID, { environments: [], namespaces: ["edge"] })
 
-			const errors = seen.find((call) => call.context === "digestTopErrors")
+			const errors = Option.getOrUndefined(
+				Arr.findFirst(seen, (call) => call.context === "digestTopErrors"),
+			)
 			assert.include(errors?.sql, "ServiceName IN ('api')")
 			assert.notInclude(errors?.sql, "DeploymentEnv IN", "no environment in this scope")
 		}).pipe(Effect.provide(layer))
@@ -787,8 +793,14 @@ describe("DigestService.generateDigestData — scope containment", () => {
 
 			// Dropping the filter here would have shown org-wide ingestion and
 			// org-wide errors inside a digest claiming to cover one namespace.
-			assert.isUndefined(seen.find((call) => call.context === "digestServiceUsageCompare"))
-			assert.isUndefined(seen.find((call) => call.context === "digestTopErrors"))
+			assert.isUndefined(
+				Option.getOrUndefined(
+					Arr.findFirst(seen, (call) => call.context === "digestServiceUsageCompare"),
+				),
+			)
+			assert.isUndefined(
+				Option.getOrUndefined(Arr.findFirst(seen, (call) => call.context === "digestTopErrors")),
+			)
 			assert.strictEqual(props.ingestion.totalBytes, 0)
 			assert.deepStrictEqual(props.topErrors, [])
 		}).pipe(Effect.provide(layer))

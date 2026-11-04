@@ -34,7 +34,7 @@ import {
 	clickhouseExec,
 	uniqueDatabase,
 } from "./clickhouse-e2e-support"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_service_overview_parity_e2e")
 const ORG_ID = "org_service_overview_parity"
@@ -469,7 +469,9 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 
 	it("merges tDigest states rather than averaging namespace quantiles", async () => {
 		const rows = await runJson(CH.compileUnsafe(CH.serviceOverviewQuery({}), window).sql)
-		const skewed = rows.find((row) => String(row.serviceName) === "skewed")
+		const skewed = Option.getOrUndefined(
+			Arr.findFirst(rows, (row) => String(row.serviceName) === "skewed"),
+		)
 		assert.isDefined(skewed, "the skewed-namespace seed did not reach serviceOverviewQuery")
 		if (!skewed) return
 
@@ -525,7 +527,9 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		assert.strictEqual(String(skewed[0]?.serviceNamespace), "slow")
 
 		// Commits ride along as a capped, count-descending tuple array.
-		const worker = rows.find((row) => String(row.serviceName) === "worker")
+		const worker = Option.getOrUndefined(
+			Arr.findFirst(rows, (row) => String(row.serviceName) === "worker"),
+		)
 		assert.isDefined(worker, "the worker seed did not reach serviceOverviewQuery")
 		const commits = (worker?.commits ?? []) as ReadonlyArray<ReadonlyArray<unknown>>
 		assert.lengthOf(commits, 2, "worker was seeded with exactly two commits")

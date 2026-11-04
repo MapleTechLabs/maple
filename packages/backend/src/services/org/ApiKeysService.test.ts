@@ -83,8 +83,8 @@ describe("ApiKeysService.roll", () => {
 			assert.match(rolled.txid ?? "", /^\d+$/)
 
 			const { keys } = yield* svc.list(orgId)
-			const oldRow = keys.find((k) => k.id === created.id)
-			const newRow = keys.find((k) => k.id === rolled.id)
+			const oldRow = Option.getOrUndefined(Arr.findFirst(keys, (k) => k.id === created.id))
+			const newRow = Option.getOrUndefined(Arr.findFirst(keys, (k) => k.id === rolled.id))
 
 			assert.isDefined(oldRow)
 			assert.strictEqual(oldRow?.revoked, true)

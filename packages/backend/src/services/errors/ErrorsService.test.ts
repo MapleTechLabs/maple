@@ -13,6 +13,7 @@ import {
 	Array as Arr,
 	String as Str,
 	DateTime,
+	Option,
 } from "effect"
 import { TestClock } from "effect/testing"
 import {
@@ -850,7 +851,9 @@ describe("Error issue severity, policies, and read models", () => {
 			)
 			assert.match(first.nextCursor ?? "", /^sev_/)
 
-			const cursor = Schema.decodeUnknownSync(IssueSeverityListCursor)(first.nextCursor?.slice(4))
+			const cursor = Schema.decodeUnknownSync(IssueSeverityListCursor)(
+				typeof first.nextCursor === "string" ? Str.slice(4)(first.nextCursor) : undefined,
+			)
 			const second = yield* readModels.listIssues(ORG, {
 				service: "checkout-api",
 				actionable: true,
@@ -1560,7 +1563,10 @@ describe("ErrorsService.runTick", () => {
 				assert.lengthOf(leaseHeadroomMs, 6)
 				assert.isTrue(
 					Arr.every(leaseHeadroomMs, (headroom) => headroom > 0),
-					`a row was delivered under an expired lease: ${leaseHeadroomMs.join(", ")}`,
+					`a row was delivered under an expired lease: ${Arr.join(
+						Arr.map(leaseHeadroomMs, (headroom) => `${headroom}`),
+						", ",
+					)}`,
 				)
 			}).pipe(Effect.provide(makeErrorsLayer(() => [], undefined, undefined, undefined, dispatcher)))
 		},
@@ -1654,7 +1660,7 @@ describe("ErrorsService.runTick", () => {
 			)
 			assert.strictEqual(
 				states[0]?.openIncidentId,
-				incidents.find((incident) => incident.status === "open")?.id,
+				Option.getOrUndefined(Arr.findFirst(incidents, (incident) => incident.status === "open"))?.id,
 			)
 		}).pipe(
 			Effect.provide(makeErrorsLayer(() => rows, undefined, undefined, undefined, countingDispatcher)),
@@ -3544,7 +3550,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 				assert.strictEqual(recovered.issuesTouched, 1)
 				assert.strictEqual(recovered.incidentsOpened, 1)
 				assert.deepStrictEqual(
-					(yield* issuesOf(IDLE)).map((issue) => [issue.fingerprintHash, issue.occurrenceCount]),
+					Arr.map(yield* issuesOf(IDLE), (issue) => [issue.fingerprintHash, issue.occurrenceCount]),
 					[[fingerprint(1), 3]],
 				)
 
@@ -3556,7 +3562,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 
 				assert.lengthOf(h.callsTo(LOOKUP), 1)
 				assert.sameMembers(
-					(yield* issuesOf(IDLE)).map((issue) => issue.fingerprintHash),
+					Arr.map(yield* issuesOf(IDLE), (issue) => issue.fingerprintHash),
 					[fingerprint(1), fingerprint(2)],
 				)
 			}).pipe(Effect.provide(h.layer))
@@ -3596,7 +3602,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 				[T - 4 * HOUR_MS, first + 10 * MINUTE_MS, last + 5 * MINUTE_MS],
 			)
 			assert.sameMembers(
-				(yield* candidatesOf(IDLE)).map((candidate) => candidate.fingerprintHash),
+				Arr.map(yield* candidatesOf(IDLE), (candidate) => candidate.fingerprintHash),
 				[fingerprint(1), fingerprint(2), fingerprint(3)],
 			)
 			assert.strictEqual(yield* cursorOf(IDLE), parkedAt(T + 3 * MINUTE_MS))
@@ -3626,7 +3632,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			scanFails = false
 			yield* tickAt(T + MINUTE_MS)
 			assert.deepStrictEqual(
-				(yield* issuesOf(IDLE)).map((issue) => issue.occurrenceCount),
+				Arr.map(yield* issuesOf(IDLE), (issue) => issue.occurrenceCount),
 				[3],
 			)
 			assert.strictEqual(yield* cursorOf(IDLE), first + 5 * MINUTE_MS)
@@ -3656,7 +3662,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			yield* h.forgetCached(IDLE)
 			yield* tickAt(T + 2 * MINUTE_MS)
 			assert.sameMembers(
-				(yield* candidatesOf(IDLE)).map((candidate) => candidate.fingerprintHash),
+				Arr.map(yield* candidatesOf(IDLE), (candidate) => candidate.fingerprintHash),
 				[fingerprint(1), fingerprint(2)],
 			)
 			assert.strictEqual(yield* cursorOf(IDLE), second + 5 * MINUTE_MS)
@@ -3970,7 +3976,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 				1,
 			)
 			assert.deepStrictEqual(
-				(yield* issuesOf(IDLE)).map((issue) => issue.occurrenceCount),
+				Arr.map(yield* issuesOf(IDLE), (issue) => issue.occurrenceCount),
 				[3],
 			)
 			assert.isAtLeast((yield* cursorOf(IDLE)) ?? 0, first + 5 * MINUTE_MS)
@@ -4059,7 +4065,7 @@ describe("ErrorsService.runTick idle cursors", () => {
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(T)
 				// Seeded oldest first, so the pick cannot follow insertion order.
-				yield* seedIdleOrgs(orgs.toReversed())
+				yield* seedIdleOrgs(Arr.reverse(orgs))
 
 				yield* tickAt(T)
 

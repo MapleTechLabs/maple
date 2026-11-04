@@ -1,6 +1,6 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema, DateTime } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema, DateTime, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	DashboardId,
@@ -438,12 +438,12 @@ describe("DashboardPersistenceService", () => {
 
 				const listed = yield* persistence.list(org)
 				assert.deepStrictEqual(
-					listed.dashboards.map((d) => d.document.id),
+					Arr.map(listed.dashboards, (d) => d.document.id),
 					[good.id],
 				)
 				const page = yield* persistence.listPage(org, { limit: 10 })
 				assert.deepStrictEqual(
-					page.dashboards.map((d) => d.document.id),
+					Arr.map(page.dashboards, (d) => d.document.id),
 					[good.id],
 				)
 			}).pipe(Effect.provide(makeLayer(testDb)))
@@ -510,7 +510,7 @@ describe("DashboardPersistenceService", () => {
 				assert.strictEqual((yield* persistence.get(org, created.document.id)).version, 2)
 				const page = yield* persistence.listPage(org, { limit: 10 })
 				assert.deepStrictEqual(
-					page.dashboards.map((d) => d.version),
+					Arr.map(page.dashboards, (d) => d.version),
 					[2],
 				)
 			}).pipe(Effect.provide(makeLayer(testDb)))
@@ -668,7 +668,7 @@ describe("DashboardPersistenceService", () => {
 
 			const history = yield* persistence.listVersions(org, created.id)
 			assert.deepStrictEqual(
-				history.versions.map((version) => [version.versionNumber, version.changeKind]),
+				Arr.map(history.versions, (version) => [version.versionNumber, version.changeKind]),
 				[
 					[3, "renamed"],
 					[2, "renamed"],
@@ -702,7 +702,7 @@ describe("DashboardPersistenceService", () => {
 
 			const tied = [a.id, b.id].sort().reverse()
 			assert.deepStrictEqual(
-				[...first.dashboards, ...second.dashboards].map((d) => d.document.id),
+				Arr.map([...first.dashboards, ...second.dashboards], (d) => d.document.id),
 				[newest.id, ...tied],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))

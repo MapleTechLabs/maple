@@ -11,6 +11,7 @@ import {
 	Semaphore,
 	Array as Arr,
 	String as Str,
+	Option,
 } from "effect"
 import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { Timestamp } from "@maple/domain/http/v2"
@@ -180,8 +181,11 @@ describe("AnomalyDetectionService.countIncidentsByService", () => {
 			const anomalies = yield* AnomalyDetectionService
 			const rows = yield* anomalies.countIncidentsByService(ORG, {})
 
-			const production = rows.find(
-				(row) => row.deploymentEnv === "production" && row.signalType === "error_rate",
+			const production = Option.getOrUndefined(
+				Arr.findFirst(
+					rows,
+					(row) => row.deploymentEnv === "production" && row.signalType === "error_rate",
+				),
 			)
 			expect(rows).toHaveLength(2)
 			expect(production).toBeDefined()
@@ -192,7 +196,9 @@ describe("AnomalyDetectionService.countIncidentsByService", () => {
 			// The whole point: the handler hands this straight to `timestamp()`.
 			expect(() => decodeTimestamp(production?.lastTriggeredAt)).not.toThrow()
 
-			const staging = rows.find((row) => row.deploymentEnv === "staging")
+			const staging = Option.getOrUndefined(
+				Arr.findFirst(rows, (row) => row.deploymentEnv === "staging"),
+			)
 			expect(staging?.incidentCount).toBe(1)
 			expect(staging?.severity).toBe("warning")
 

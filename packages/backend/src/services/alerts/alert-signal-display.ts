@@ -75,7 +75,7 @@ const tracesAggregationUnit = (aggregation: string): SignalUnit => {
 const humanize = (value: string): string => {
 	const words = Str.trim(Str.replace(/[_-]+/g, " ")(value))
 	if (words.length === 0) return "Signal"
-	return Str.toUpperCase(words.charAt(0)) + Str.slice(1)(words)
+	return Str.toUpperCase(Str.slice(0, 1)(words)) + Str.slice(1)(words)
 }
 
 const call = (fn: string, arg: string | undefined): string =>

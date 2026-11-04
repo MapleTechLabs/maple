@@ -297,13 +297,13 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 
 		if (request.rules !== undefined) {
 			const rules = request.rules
-			const duplicate = rules.find(
-				(rule, index) => rules.findIndex((other) => other.severity === rule.severity) !== index,
+			const duplicate = Arr.findFirst(rules, (rule, index) =>
+				Arr.some(Arr.take(rules, index), (other) => other.severity === rule.severity),
 			)
-			if (duplicate !== undefined) {
+			if (Option.isSome(duplicate)) {
 				return yield* new ErrorValidationError({
 					message: "Escalation policy has duplicate severity rules",
-					details: [duplicate.severity],
+					details: [duplicate.value.severity],
 				})
 			}
 

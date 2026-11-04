@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db/tables"
 import { OrgId } from "@maple/domain/primitives"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
@@ -378,7 +378,9 @@ describe("transport render: uptime monitors", () => {
 		assert.strictEqual(body.content, "**checkout-api is down**")
 		assert.strictEqual(body.embeds[0]?.title, "\u{1F6A8} checkout-api is down")
 		assert.deepStrictEqual(
-			body.embeds[0]?.fields.find((field) => field.name === "Observed"),
+			Option.getOrUndefined(
+				Arr.findFirst(body.embeds[0]?.fields ?? [], (field) => field.name === "Observed"),
+			),
 			{ name: "Observed", value: "Status 503, expected 2xx" },
 		)
 	})
