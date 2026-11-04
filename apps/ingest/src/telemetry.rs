@@ -2192,6 +2192,10 @@ impl ShardedWal {
                 return;
             }
         };
+        // Segments this host kept from its last boot sealed before any shipper
+        // was attached, so nothing else ever ships them. Best-effort, and done
+        // before recovery appends anything.
+        self.flush_segments_to(store).await;
         // Per lane, the first segment recovery has not re-shipped, seeded at the
         // active segment: every segment from there on is one recovery wrote.
         let mut reshipped_below: Vec<u64> = self
@@ -8335,6 +8339,32 @@ mod tests {
             .filter(|request| request.starts_with(&reship_prefix))
             .count();
         assert_eq!(reshipped, 2, "{requests:?}");
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn segments_left_on_disk_by_the_last_boot_are_shipped_at_recovery() {
+        // A boot opens a fresh segment above the ones it found, and the shipper
+        // only hears about segments sealed after it attaches.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let queue_dir = unique_test_dir("wal-leftover-segments");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let leftover = {
+            let wal = ShardedWal::open(&cfg).expect("open WAL");
+            wal.append(0, &wal_test_frame(64)).await.expect("append").0
+        };
+
+        let wal = ShardedWal::open(&cfg).expect("reopen WAL");
+        let store = test_wal_store(&endpoint);
+        wal.recover_orphans(&cfg, &store).await;
+
+        let shipped = format!(
+            "wal/v1/segments/{}/shard-000-tinybird/{leftover:012}.seg",
+            store.owner()
+        );
+        assert!(bucket.get(&shipped).is_some(), "{:?}", bucket.keys());
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
