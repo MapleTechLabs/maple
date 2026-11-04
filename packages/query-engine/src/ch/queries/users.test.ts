@@ -107,7 +107,12 @@ describe("usersListQuery", () => {
 		expect(sql).toContain("HAVING sum(signals.errors) > 0")
 		expect(sql).toContain("sum(signals.sessions) > 0")
 		expect(sql).toContain("anyIf(signals.groupId, signals.groupId != '') IN ('acme')")
-		expect(sql).toMatch(/ORDER BY lastSeen DESC\s+LIMIT 50/)
+		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 50/)
+	})
+
+	it("pages the directory by offset", () => {
+		const { sql } = compileUnsafe(usersListQuery(unscoped, {}, 21, 40), params)
+		expect(sql).toMatch(/LIMIT 21\s+OFFSET 40/)
 	})
 
 	it("reads spans and logs from the activity rollup in place of raw MCP spans", () => {

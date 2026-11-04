@@ -169,7 +169,10 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 	const rows = yield* withRollupFallback(scope, [], (scope) =>
 		warehouse.compiledQuery(
 			tenant,
-			CH.compile(CH.usersListQuery(scope, filter, payload.limit ?? DEFAULT_LIMIT), params),
+			CH.compile(
+				CH.usersListQuery(scope, filter, payload.limit ?? DEFAULT_LIMIT, payload.offset ?? 0),
+				params,
+			),
 			{ profile: "list", context: "usersList" },
 		),
 	)

@@ -54,6 +54,8 @@ export class UsersListRequest extends Schema.Class<UsersListRequest>("UsersListR
 	hasReplay: Schema.optionalKey(Schema.Boolean),
 	groups: Schema.optionalKey(Schema.Array(groupId).check(Schema.isMaxLength(50))),
 	limit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
+	/** Rows to skip, for the public API's offset cursor. */
+	offset: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100_000 }))),
 }) {}
 
 export class UsersListResponse extends Schema.Class<UsersListResponse>("UsersListResponse")({

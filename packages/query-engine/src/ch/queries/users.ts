@@ -276,8 +276,8 @@ const userSignals = (scope: UsersScope) => {
 	return fromUnion(unionAll(first ?? replayUsers(scope), ...rest), "signals")
 }
 
-/** The directory: one row per user under the filter, the most recently seen first. */
-export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200) {
+/** The directory: one row per user under the filter, the most recently seen first, then by id. */
+export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200, offset = 0) {
 	return userSignals(scope)
 		.select(($) => ({
 			userId: $.userId,
@@ -310,8 +310,9 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 					.or(nonEmpty($.email).ilike(pattern))
 			}),
 		])
-		.orderBy(["lastSeen", "desc"])
+		.orderBy(["lastSeen", "desc"], ["userId", "asc"])
 		.limit(limit)
+		.offset(offset)
 		.format("JSON")
 }
 
