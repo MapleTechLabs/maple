@@ -24,12 +24,18 @@ const makeHarness = (
 	// Error channel is `unknown`, not `never`: a stub that fails is how the
 	// execution-failure mapping is asserted, and pinning this to `never` forces
 	// the caller into a cast at exactly the point the test is about.
-	execute: (request: { startTime: string; endTime: string }) => Effect.Effect<unknown, unknown>,
+	execute: (request: {
+		startTime: string
+		endTime: string
+		query: unknown
+	}) => Effect.Effect<unknown, unknown>,
 ) => {
 	const windows: Array<{ startTime: string; endTime: string }> = []
+	const queries: Array<unknown> = []
 	const queryEngine = Layer.succeed(QueryEngineService, {
-		execute: (_tenant: unknown, request: { startTime: string; endTime: string }) => {
+		execute: (_tenant: unknown, request: { startTime: string; endTime: string; query: unknown }) => {
 			windows.push({ startTime: request.startTime, endTime: request.endTime })
+			queries.push(request.query)
 			return execute(request).pipe(Effect.map((result) => ({ result })))
 		},
 		evaluate: die,
@@ -52,16 +58,21 @@ const makeHarness = (
 			Layer.provide(Layer.mergeAll(queryEngine, warehouse)),
 		),
 	)
-	return { runtime, windows, rawSql }
+	return { runtime, windows, rawSql, queries }
 }
 
-const document = (widgets: ReadonlyArray<Record<string, unknown>>): DashboardDocument =>
+const document = (
+	widgets: ReadonlyArray<Record<string, unknown>>,
+	variables?: ReadonlyArray<Record<string, unknown>>,
+): DashboardDocument =>
 	new DashboardDocument({
 		id: asDashboardId("dash-share"),
 		name: "Shared",
 		timeRange: { type: "relative", value: "12h" },
 		// oxlint-disable-next-line typescript/no-explicit-any
 		widgets: widgets as any,
+		// oxlint-disable-next-line typescript/no-explicit-any
+		...(variables === undefined ? undefined : { variables: variables as any }),
 		createdAt: NOW,
 		updatedAt: NOW,
 	})
@@ -426,6 +437,57 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 
 		expect(results).toEqual([{ widgetId: "w-proto", ...UNSUPPORTED }])
 		expect(windows).toHaveLength(0)
+		await runtime.dispose()
+	})
+
+	it("keeps a board's pinned filter when a live variable option carries a quote", async () => {
+		// The first listed span name is the variable's value: a truncated SQL statement with one quote.
+		const { runtime, queries } = makeHarness((request) => {
+			const query = request.query as { kind?: string; facet?: string }
+			return query.kind === "facets"
+				? Effect.succeed({
+						kind: "facets",
+						data: [{ facetType: query.facet, name: 'SELECT "users', count: 3 }],
+					})
+				: timeseries()
+		})
+		const pinned = widget("w-pinned", {
+			kind: "query",
+			resultShape: "timeseries",
+			queries: [
+				{
+					id: "q1",
+					name: "A",
+					aggregation: "count",
+					dataSource: "traces",
+					whereClause: 'span.name = "$span" AND service.name = "frontend"',
+				},
+			],
+		})
+		const board = document(
+			[pinned],
+			[{ name: "span", type: "query", source: { kind: "facet", facet: "span_name" } }],
+		)
+
+		const { results } = await runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolveBatch(ORG, board, {
+					requests: [{ widgetId: "w-pinned", source: "primary" }],
+					window: BATCH_WINDOW,
+					variableValues: {},
+					canRead: () => true,
+				}),
+			),
+		)
+
+		expect(results[0]).toMatchObject({ widgetId: "w-pinned", ok: true })
+		const executed = JSON.stringify(
+			queries.filter((query) => (query as { kind?: string }).kind !== "facets"),
+		)
+		// The pinned clause survives, and the span clause stays an unresolved reference that matches nothing.
+		expect(executed).toContain("frontend")
+		expect(executed).toContain("$span")
+		expect(executed).not.toContain("users")
 		await runtime.dispose()
 	})
 

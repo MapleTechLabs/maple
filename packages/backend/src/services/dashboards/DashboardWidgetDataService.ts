@@ -42,6 +42,7 @@ import { RoleName } from "@maple/domain/primitives"
 import { QuerySetSchema } from "@maple/query-model"
 import {
 	MAX_LIST_RANGE_SECONDS,
+	collectWhereClauses,
 	computeBucketSecondsForRange,
 	dashboardVariableOptionsFromResult,
 	dashboardVariableOptionsQuery,
@@ -273,12 +274,10 @@ export interface WidgetDataBatchResult {
 
 const WIDGET_NOT_ON_DASHBOARD = "That widget is not on this dashboard."
 
-/** Every where-clause the board could interpolate a variable into. */
+/** Every where-clause the board could interpolate a variable into: data sources, sparklines, list displays. */
 const boardWhereClauses = (document: DashboardDocument): ReadonlyArray<string> =>
 	Arr.flatMap(document.widgets, (widget) =>
-		Arr.flatMap(dataSourceQuerySet(widget.dataSource)?.queries ?? [], (query) =>
-			typeof query.whereClause === "string" ? [query.whereClause] : [],
-		),
+		collectWhereClauses({ dataSource: widget.dataSource, display: widget.display }),
 	)
 
 export class DashboardWidgetDataService extends Context.Service<

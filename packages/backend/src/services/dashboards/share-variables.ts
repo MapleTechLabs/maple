@@ -18,35 +18,37 @@
  *
  * Two defences, deliberately layered:
  *
- *   1. Enumerated variables must name a value the stored definition allows.
- *      Exhaustive, and the strong one.
- *   2. Free-text variables get a conservative charset AND a clause-count
- *      assertion. The charset is a guess about a grammar this module does not
- *      own; the clause count is a direct check on the thing that must not
- *      change. Either alone would be weaker than both.
+ *   1. Enumerated variables must name a value the stored definition allows;
+ *      free-text ones get a conservative charset.
+ *   2. Every value, enumerated or not, must leave each where-clause it lands in
+ *      with the same parsed shape (`keepsWhereClausePredicates`). Enumerated is
+ *      not enough on its own: a `query` variable's options are live telemetry,
+ *      and a span name with a quote in it is an option like any other.
  *
  * `query` variables sit across both. Their options are whatever the warehouse
  * returns right now — the route lists them server-side over the batch window
  * (`DashboardWidgetDataService.variableOptions`, the same facet / attribute
- * queries the signed-in provider runs) — so with a list they get defence 1 and
- * with a source that listed nothing they get defence 2. What they must never
- * get is an *empty* list treated as an exhaustive one — that rejects every
- * value including the board's own stored default, which blanks the share.
+ * queries the signed-in provider runs) — so with a list they are held to it
+ * and with a source that listed nothing they get the free-text charset. What
+ * they must never get is an *empty* list treated as an exhaustive one — that
+ * rejects every value including the board's own stored default, which blanks
+ * the share.
  *
  * Which value a variable takes when the viewer picked none is not decided
  * here: `resolveDashboardVariableValue` (`@maple/query-engine`) is the board's
  * own ladder — selection → default → All → first option — shared with the
  * signed-in provider, so a share resolves to what the board resolves to.
  */
-import { splitWhereClause } from "@maple/domain/where-clause"
 import {
 	ALL_VALUE,
+	collectVariableRefs,
+	keepsWhereClausePredicates,
 	resolveDashboardVariableValue,
 	type ResolvedVariable,
 	type VariableValues,
 } from "@maple/query-engine"
 import { ShareVariableInvalidError } from "@maple/domain/http"
-import { Array as Arr, Effect, Option, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Record as Rec } from "effect"
 
 /**
  * Characters a free-text variable value may contain.
@@ -79,19 +81,14 @@ const invalid = (variableName: string) =>
 		}),
 	)
 
-/**
- * A submitted value cannot change how many clauses a where-clause has.
- *
- * The direct expression of the property that matters. A value containing
- * ` AND `, or one that closes a quote and opens a new predicate, changes the
- * clause count; a legitimate service name never does. Checked against the
- * *template* rather than a fixed number, so a board whose clause already
- * contains a quoted space is not falsely rejected.
- */
-export const preservesClauseStructure = (template: string, value: string): boolean => {
-	const before = splitWhereClause(template).length
-	const after = splitWhereClause(Str.replaceAll(/\$\{?[A-Za-z][A-Za-z0-9_]*\}?/g, value)(template)).length
-	return before === after
+/** The value leaves every where-clause that references `name` with the same parsed shape. */
+const keepsBoardPredicates = (templates: ReadonlyArray<string>, name: string, value: string): boolean => {
+	const values: VariableValues = { [name]: { value, isAll: false, options: [] } }
+	return Arr.every(
+		templates,
+		(template) =>
+			!collectVariableRefs(template).includes(name) || keepsWhereClausePredicates(template, values),
+	)
 }
 
 /**
@@ -107,12 +104,9 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 	/** Option lists for `query` variables, resolved by the caller. */
 	queryOptions: Readonly<Record<string, ReadonlyArray<string>>> = {},
 	/**
-	 * Every where-clause on the board that a variable could land in.
-	 *
-	 * The charset above already makes structural injection impossible, so this is
-	 * the second layer: a direct assertion on the property that must hold, rather
-	 * than a guess about which characters could break a grammar this module does
-	 * not own. If the charset is ever loosened, this is what still catches it.
+	 * Every where-clause on the board that a variable could land in, for the
+	 * direct check on the property that must hold rather than a guess about which
+	 * characters could break a grammar this module does not own.
 	 */
 	whereClauseTemplates: ReadonlyArray<string> = [],
 ) {
@@ -147,12 +141,6 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 			return definition.includeAll !== true ? invalid(definition.name) : accept(true)
 		}
 
-		/** The free-text defence: conservative charset, then the direct clause check. */
-		const passesFreeTextChecks = () => {
-			if (!TEXTBOX_ALLOWED.test(value)) return false
-			return Arr.every(whereClauseTemplates, (template) => preservesClauseStructure(template, value))
-		}
-
 		switch (definition.type) {
 			case "custom": {
 				if (!options.includes(value)) return invalid(definition.name)
@@ -162,21 +150,27 @@ export const resolveShareVariables = Effect.fn("ShareVariables.resolveShareVaria
 				// A query variable's options are whatever the warehouse currently
 				// returns for its facet or attribute — not something the stored
 				// document carries. When the caller resolved that list, hold the value
-				// to it, which is the strong check. When it did not, fall back to the
-				// free-text defence rather than rejecting everything: an empty list is
-				// "unknown", not "nothing is allowed", and treating the two the same
-				// rejected the board's own stored `defaultValue` and blanked the share.
-				if (options.length > 0) {
-					if (!options.includes(value)) return invalid(definition.name)
-					break
+				// to it. When it did not, fall back to the free-text charset rather
+				// than rejecting everything: an empty list is "unknown", not "nothing
+				// is allowed", and treating the two the same rejected the board's own
+				// stored `defaultValue` and blanked the share.
+				if (options.length > 0 ? !options.includes(value) : !TEXTBOX_ALLOWED.test(value)) {
+					return invalid(definition.name)
 				}
-				if (!passesFreeTextChecks()) return invalid(definition.name)
 				break
 			}
 			case "textbox": {
-				if (!passesFreeTextChecks()) return invalid(definition.name)
+				if (!TEXTBOX_ALLOWED.test(value)) return invalid(definition.name)
 				break
 			}
+		}
+
+		// A value that would reshape a clause is refused unless it is the board's own
+		// fallback (its default, or the first live option): refusing that would blank the
+		// share, and the interpolator keeps the reference literal for it instead.
+		const fallback = resolveDashboardVariableValue(definition, undefined, { options, loading: false })
+		if (value !== fallback && !keepsBoardPredicates(whereClauseTemplates, definition.name, value)) {
+			return invalid(definition.name)
 		}
 
 		return accept(false)
