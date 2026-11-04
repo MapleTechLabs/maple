@@ -380,8 +380,12 @@ export interface AuthEnv {
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
-	/** Only `development` lets a pinned org admit a non-member (with their session role). */
 	readonly MAPLE_ENVIRONMENT?: string | undefined
+	/**
+	 * Lets a pinned org admit a non-member with their session role, for a local stack pinned to a
+	 * seeded org. Honoured only when `MAPLE_ENVIRONMENT` is `development`; absent means refuse.
+	 */
+	readonly MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS?: boolean | undefined
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
@@ -770,7 +774,7 @@ export const makeResolveTenant = (
 				const pinnedOrgId = yield* decodeOrgId(orgIdOverride, "Invalid MAPLE_ORG_ID_OVERRIDE value")
 				// The pin wins over a selection header (every web session names its own
 				// org). The role is the verified membership's; a non-member is only let
-				// in with their session's role on a development pin.
+				// in with their session's role on an explicitly opted-in development pin.
 				if (auth.orgId === pinnedOrgId) {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
@@ -780,10 +784,13 @@ export const makeResolveTenant = (
 				if (Option.isSome(membership)) {
 					return { orgId: pinnedOrgId, userId, roles: [membership.value.role], authMode: "clerk" }
 				}
-				if (env.MAPLE_ENVIRONMENT === "development") {
+				if (
+					env.MAPLE_ENVIRONMENT === "development" &&
+					env.MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS === true
+				) {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
-				// Outside development, membership the resolver cannot prove (no verifier) is a refusal.
+				// Otherwise membership the resolver cannot prove (no verifier) is a refusal.
 				return yield* organizationAccessDenied(pinnedOrgId)
 			}
 
