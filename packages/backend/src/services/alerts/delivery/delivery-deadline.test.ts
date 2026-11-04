@@ -74,7 +74,7 @@ const deps: EffectTransportDeps = {
 const webhook = { type: "webhook", url: "https://hooks.example.test/maple", signingSecret: null } as const
 
 /** A body that sends one byte every 50 ms and never ends, so only a deadline stops the read. */
-const tricklingBody = () => {
+const tricklingBody = (onCancel: () => void = () => undefined) => {
 	let timer: ReturnType<typeof setTimeout> | undefined
 	return new ReadableStream<Uint8Array>({
 		pull: (controller) =>
@@ -84,7 +84,10 @@ const tricklingBody = () => {
 					resolve()
 				}, 50)
 			}),
-		cancel: () => clearTimeout(timer),
+		cancel: () => {
+			clearTimeout(timer)
+			onCancel()
+		},
 	})
 }
 
@@ -145,14 +148,22 @@ describe("HTTP delivery deadline", () => {
 		}),
 	)
 
-	it.live("an ack body that never ends times out at the delivery deadline", () =>
+	it.live("an ack body that never ends times out at the delivery deadline and is cancelled", () =>
 		Effect.gen(function* () {
+			let cancelled = false
 			const { exit, elapsedMs } = yield* run(
 				contextFor({ type: "telegram", botToken: "123456789:secret-token", chatId: "-100123" }),
-				async () => new Response(tricklingBody(), { status: 200 }),
+				async () =>
+					new Response(
+						tricklingBody(() => {
+							cancelled = true
+						}),
+						{ status: 200 },
+					),
 			)
 			assert.strictEqual(failureMessage(exit), `Telegram delivery timed out after ${TIMEOUT_MS}ms`)
 			assert.isBelow(elapsedMs, WITHIN_MS)
+			assert.isTrue(cancelled, "the provider's body stream is cancelled, not left open")
 		}),
 	)
 
@@ -167,14 +178,14 @@ describe("HTTP delivery deadline", () => {
 				),
 				async (_input, init) => {
 					calls += 1
-					await after(calls === 1 ? 800 : TIMEOUT_MS, init?.signal)
+					await after(calls === 1 ? 500 : TIMEOUT_MS, init?.signal)
 					return new Response("", { status: 202 })
 				},
 			)
 			assert.strictEqual(calls, 2)
 			assert.strictEqual(failureMessage(exit), `PagerDuty delivery timed out after ${TIMEOUT_MS}ms`)
-			// A fresh budget for the follow-up would end at 1800ms.
-			assert.isBelow(elapsedMs, TIMEOUT_MS + 400)
+			// A fresh budget for the follow-up would end at 1500ms.
+			assert.isBelow(elapsedMs, TIMEOUT_MS + 300)
 		}),
 	)
 

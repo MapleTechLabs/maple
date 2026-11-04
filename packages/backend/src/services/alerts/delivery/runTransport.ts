@@ -193,12 +193,17 @@ const failOnStatus = <Config>(
 ): Effect.Effect<void, AlertDeliveryFailure> =>
 	Effect.gen(function* () {
 		if (response.status >= 200 && response.status < 300) return
-		const detail = yield* readErrorBody(response, deadline)
 		// A transport may supply a better sentence for a status it knows well;
 		// it does not get to change whether the failure is retryable.
 		const described = transport.describeStatus?.(response.status) ?? null
+		// The body is only read when it will be shown.
+		const message =
+			described ??
+			(yield* Effect.map(readErrorBody(response, deadline), (detail) =>
+				statusFailureMessage(transport.providerLabel, response.status, detail),
+			))
 		const failure = failureForStatus(response.status, {
-			message: described ?? statusFailureMessage(transport.providerLabel, response.status, detail),
+			message,
 			destinationType: transport.type,
 			providerStatus: response.status,
 		})
