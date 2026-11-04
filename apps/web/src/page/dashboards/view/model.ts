@@ -149,7 +149,6 @@ export const Model = Schema.Struct({
 	/** Which container the dropped layout belongs to. */
 	droppedKey: Schema.NullOr(Schema.String),
 	persistenceError: Schema.NullOr(Schema.String),
-	/** Failed tiles' "Details" popovers and their copy buttons, by widget id. */
 	/** Which grid the picker's next widget lands in: a group's own "+", reset when it closes. */
 	pickerTarget: Schema.NullOr(SectionTargetSchema),
 	/** The one open group options menu. */
@@ -168,6 +167,7 @@ export const Model = Schema.Struct({
 	pendingSectionDelete: Schema.NullOr(Schema.String),
 	tabDialog: Dialog.Model,
 	pendingTabDelete: Schema.NullOr(SectionTargetSchema),
+	/** Failed tiles' "Details" popovers and their copy buttons, by widget id. */
 	errorDetails: Schema.Record(Schema.String, Popover.Model),
 	errorCopies: Schema.Record(Schema.String, CopyButton.Model),
 	/** Each query variable's option list, by variable name (custom ones are inline). */
