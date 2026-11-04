@@ -1765,3 +1765,86 @@ describe("v2 session_replays over HTTP", () => {
 		})
 	})
 })
+
+describe("v2 users over HTTP", () => {
+	const WINDOW = "start_time=2026-11-01T00:00:00.000Z&end_time=2026-11-02T00:00:00.000Z"
+
+	it("serves empty envelopes for a quiet window and 404s a user nothing carries", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["users:read"])
+
+		const list = await harness.request(
+			"GET",
+			`/v2/users?${WINDOW}&namespace=storefront,billing&limit=5`,
+			{
+				token: key.secret,
+			},
+		)
+		expect(list.status).toBe(200)
+		expect(list.body).toEqual({ object: "list", data: [], has_more: false, next_cursor: null })
+
+		const missing = await harness.request("GET", `/v2/users/${encodeURIComponent("user 42")}?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(missing.status).toBe(404)
+		expect(missing.body.error.code).toBe("user_not_found")
+
+		const activity = await harness.request("GET", `/v2/users/user_42/activity?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(activity.status).toBe(200)
+		expect(activity.body).toEqual({
+			object: "user.activity",
+			user_id: "user_42",
+			sessions: [],
+			events: [],
+			mcp_sessions: [],
+			timeline: [],
+		})
+
+		const issues = await harness.request("GET", `/v2/users/user_42/issues?${WINDOW}`, {
+			token: key.secret,
+		})
+		expect(issues.status).toBe(200)
+		expect(issues.body).toMatchObject({ object: "list", data: [], has_more: false, next_cursor: null })
+		expect(typeof issues.body.attributed).toBe("boolean")
+		await harness.dispose()
+	})
+
+	it("needs users:read", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["traces:read"])
+		const denied = await harness.request("GET", `/v2/users?${WINDOW}`, { token: key.secret })
+		expect(denied.status).toBe(403)
+		expect(denied.body.error.code).toBe("insufficient_scope")
+		await harness.dispose()
+	})
+
+	it("refuses an inverted or over-wide window and a cursor past the deepest page", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+
+		const inverted = await harness.request(
+			"GET",
+			"/v2/users?start_time=2026-11-02T00:00:00.000Z&end_time=2026-11-01T00:00:00.000Z",
+			{ token: key.secret },
+		)
+		expect(inverted.status).toBe(400)
+		expect(inverted.body.error.code).toBe("invalid_time_range")
+
+		const wide = await harness.request(
+			"GET",
+			"/v2/users/user_42?start_time=2026-08-01T00:00:00.000Z&end_time=2026-11-01T00:00:00.000Z",
+			{ token: key.secret },
+		)
+		expect(wide.status).toBe(400)
+		expect(wide.body.error.code).toBe("time_range_too_large")
+
+		const deep = await harness.request("GET", `/v2/users?${WINDOW}&cursor=off_zzzzz`, {
+			token: key.secret,
+		})
+		expect(deep.status).toBe(400)
+		expect(deep.body.error.type).toBe("invalid_request_error")
+		await harness.dispose()
+	})
+})

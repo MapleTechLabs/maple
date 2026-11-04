@@ -8,6 +8,7 @@ import { V2ApiKey, V2ApiKeyCreateParams, V2ApiKeyMutationResponse, V2ApiKeyWithS
 import { V2Investigation } from "./investigations"
 import { V2Organization } from "./organization"
 import { V2SessionReplay, V2SessionReplayListItem } from "./session-replays"
+import { V2User, V2UserProfile } from "./users"
 import { errorTypeForStatus } from "./errors"
 
 /**
@@ -186,6 +187,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/traces/{trace_id}/spans/{span_id}",
 			"GET /v2/uptime_monitors",
 			"GET /v2/uptime_monitors/{id}",
+			"GET /v2/users",
+			"GET /v2/users/{user_id}",
+			"GET /v2/users/{user_id}/activity",
+			"GET /v2/users/{user_id}/issues",
 			"GET /v2/widget_summary",
 			"PATCH /v2/alerts/destinations/{id}",
 			"PATCH /v2/alerts/rules/{id}",
@@ -487,6 +492,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			["Organization", Schema.decodeUnknownSync(V2Organization), "organization"],
 			["SessionReplayListItem", Schema.decodeUnknownSync(V2SessionReplayListItem), "session_replay"],
 			["SessionReplay", Schema.decodeUnknownSync(V2SessionReplay), "session_replay"],
+			["User", Schema.decodeUnknownSync(V2User), "user"],
+			["UserProfile", Schema.decodeUnknownSync(V2UserProfile), "user"],
 		] as const
 		for (const [name, decode, objectType] of cases) {
 			const component = schemas[name]
@@ -696,6 +703,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			["get", "/v2/error_issues"],
 			["get", "/v2/error_issues/{id}"],
 			["get", "/v2/anomalies/incidents/{id}/timeseries"],
+			["get", "/v2/users"],
+			["get", "/v2/users/{user_id}/activity"],
 		] as const) {
 			expect(responseErrorTags(method, path, "429")).toContain(
 				"@maple/http/errors/WarehouseQuotaExceededError",

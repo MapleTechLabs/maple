@@ -79,6 +79,8 @@ import { StatusPagesService } from "@maple/backend/services/status-pages/StatusP
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { HttpV2SessionReplaysLive } from "./session-replays.http"
+import { HttpV2UsersLive } from "./users.http"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
 import { HttpV2TelemetrySignalsLive } from "./telemetry-signals.http"
 import { HttpV2SharePublicLive } from "./share.http"
@@ -235,6 +237,8 @@ const v2GroupLayersExceptOnboardingChecklist = (
 				),
 			),
 		),
+		// Real reads over whichever `WarehouseQueryService` stub the test provides.
+		HttpV2UsersLive.pipe(Layer.provide(Layer.effect(UsersReadService, UsersReadService.make))),
 		// Real reads over whichever warehouse and query-engine stubs the test provides.
 		Layer.mergeAll(
 			HttpV2TracesLive,

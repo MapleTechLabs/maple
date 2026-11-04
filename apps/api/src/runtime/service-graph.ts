@@ -90,6 +90,7 @@ import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeed
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -193,6 +194,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SetupAuditService.layer,
 	SignalPresenceService.layer,
 	SessionReplayReadService.layer,
+	UsersReadService.layer,
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,
