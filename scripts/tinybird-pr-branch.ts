@@ -219,14 +219,14 @@ const create = async (branchName: string, handoffFile: string): Promise<void> =>
 	console.log(`::add-mask::${token}`)
 	// The branch is reached on the same regional host as its parent: the
 	// branch-scoped token does the routing, so only the token changes.
-	const sealed = sealHandoff(requireEnv("PREVIEW_HANDOFF_KEY"), branchName, { host: parent.host, id, token })
+	const sealed = await sealHandoff(requireEnv("PREVIEW_HANDOFF_KEY"), branchName, { host: parent.host, id, token })
 	writeFileSync(handoffFile, sealed, { mode: 0o600 })
 	console.log(`✓ Tinybird branch ${branchName} ready; sealed its credentials for the deploy job.`)
 }
 
 /** PR side: deploy this PR's schema into the branch, then bind the rest of the job to it. */
 const deploy = async (branchName: string, handoffFile: string): Promise<void> => {
-	const handoff = openHandoff(requireEnv("PREVIEW_HANDOFF_KEY"), branchName, readFileSync(handoffFile, "utf8"))
+	const handoff = await openHandoff(requireEnv("PREVIEW_HANDOFF_KEY"), branchName, readFileSync(handoffFile, "utf8"))
 	if (!handoff) {
 		return fail(`The Tinybird handoff for ${branchName} did not open: wrong key, wrong PR or damaged.`)
 	}

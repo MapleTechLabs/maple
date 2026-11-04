@@ -76,12 +76,10 @@ jobs:
                   uv tool install tinybird==5.0.2 --python 3.11
                   uv tool dir --bin >> "$GITHUB_PATH"
 
-            # The script needs only the root workspace.
-            - uses: ./.github/actions/setup
+            # Bun alone: create and down import nothing outside node builtins, so no install runs.
+            - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
               with:
-                  tools: bun
-                  install-filters: maple
-                  turbo-cache: "false"
+                  install_args: bun
 
             # By name, so nothing else from the environment reaches this job.
             - name: Load the parent workspace host
