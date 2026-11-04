@@ -47,6 +47,12 @@ const makeHandler = () => {
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
 		fetchSourceFile: unused,
+		fetchTreeFiles: unused,
+		fetchBlobText: unused,
+		repositorySizeBytes: unused,
+		fetchWorkflowJobAnnotations: unused,
+		streamWorkflowJobLog: unused,
+		canReadWorkflowLogs: unused,
 	}
 	const web = HttpRouter.toWebHandler(
 		VcsWebhookRouter.pipe(

@@ -26,6 +26,8 @@ export const readBoundedText = (
 		})
 		const declared = Number(request.headers["content-length"] ?? Number.NaN)
 		if (Number.isFinite(declared) && declared > maxBytes) return Effect.fail(tooLarge)
+		// A web request without a body has no stream to read; that is an empty body, not a read error.
+		if ("body" in request.source && request.source.body === null) return Effect.succeed("")
 		const decoder = new TextDecoder()
 		return Stream.runFoldEffect(
 			request.stream.pipe(

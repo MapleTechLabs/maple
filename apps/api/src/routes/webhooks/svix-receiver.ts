@@ -8,14 +8,9 @@ import {
 } from "@maple/backend/services/product-events/svix"
 
 /**
- * Shared receive step for Svix-delivered webhooks (Clerk, Autumn). NOT behind
- * auth — authenticity is the Svix signature over the raw body. Every outcome is
- * an HTTP response: 503 while the secret is unset (so the provider retries once
- * it is configured), 401 on missing headers or a bad/stale signature, 413 on a
- * body over `SVIX_WEBHOOK_MAX_BYTES`, 400 on an empty body, and
- * `{ _tag: "verified" }` with the raw body for the caller to decode. Headers and
- * size are checked before the body is read. Span attributes carry the outcome so
- * a misconfigured secret is visible in traces.
+ * Shared receive step for Svix-delivered webhooks (Clerk, Autumn); authenticity is the Svix
+ * signature. Headers and size are checked before the body is read; every outcome is a response
+ * (503 secret unset, 401 bad headers or signature, 413 too large, 400 empty) or the verified body.
  */
 
 /** Clerk and Autumn events are a few KB; anything this large is not one of them. */
