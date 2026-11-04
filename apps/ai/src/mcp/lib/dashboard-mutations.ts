@@ -263,6 +263,19 @@ export const defaultSizeForPanelType = (panelType: PanelType): { w: number; h: n
  */
 export { findNextPosition as findNextWidgetPosition }
 
+/** One dashboard of the tenant's org by id; a malformed id is the same not-found as a missing one. */
+export const loadDashboard = Effect.fn("McpDashboardMutations.loadDashboard")(function* (
+	dashboardId: string,
+	tool: string,
+) {
+	const tenant = yield* CurrentMcpTenant
+	const persistence = yield* DashboardPersistenceService
+	const id = yield* decodeDashboardId(dashboardId).pipe(
+		Effect.mapError(() => dashboardNotFound(dashboardId)),
+	)
+	return yield* persistence.get(tenant.orgId, id).pipe(Effect.mapError(toMcpDashboardError(tool)))
+})
+
 /**
  * Shared workflow: resolve tenant, load dashboard by id, run a pure transform
  * over its widgets, and persist the result. The transform receives the

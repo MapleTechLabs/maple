@@ -3,7 +3,12 @@ import { Clock, DateTime, Effect, Schema, String as Str } from "effect"
 import { UpdateDashboardOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
-import { DashboardDocument, DashboardId, PortableDashboardDocument } from "@maple/domain/http"
+import {
+	DashboardId,
+	PortableDashboardDocument,
+	withDocumentFields,
+	withPortableContent,
+} from "@maple/domain/http"
 import { IsoDateTimeString } from "@maple/domain"
 import { validateDashboardTimeRange } from "../lib/resolve-dashboard-time-range"
 import { MAX_QUERY_RANGE_SECONDS, formatRangeSeconds } from "@maple/query-engine"
@@ -73,44 +78,23 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 
 			const dashboard = yield* persistence
 				.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
-					Effect.sync(() => {
-						// `description`/`tags` are `Schema.optionalKey` on `DashboardDocument`: the
-						// constructor rejects a present `undefined`, so omit the key instead.
-						if (portable) {
-							return new DashboardDocument({
-								id: existing.id,
-								name: portable.name,
-								...(portable.description !== undefined && {
-									description: portable.description,
-								}),
-								...(portable.tags !== undefined && { tags: portable.tags }),
-								timeRange: portable.timeRange,
-								widgets: portable.widgets,
-								createdAt: existing.createdAt,
-								updatedAt: now,
-							})
-						}
-
-						const timeRange = time_range
-							? {
-									type: "relative" as const,
-									value: time_range,
-								}
-							: existing.timeRange
-
-						const nextDescription = description ?? existing.description
-
-						return new DashboardDocument({
-							id: existing.id,
-							name: name ?? existing.name,
-							...(nextDescription !== undefined && { description: nextDescription }),
-							...(existing.tags !== undefined && { tags: existing.tags }),
-							timeRange,
-							widgets: existing.widgets,
-							createdAt: existing.createdAt,
-							updatedAt: now,
-						})
-					}),
+					Effect.sync(() =>
+						// Both branches carry the stored document forward through the shared
+						// helpers, so sections, variables and refresh survive every edit.
+						portable
+							? withPortableContent(existing, portable, now)
+							: withDocumentFields(
+									existing,
+									{
+										...(name === undefined ? undefined : { name }),
+										...(description === undefined ? undefined : { description }),
+										...(time_range
+											? { timeRange: { type: "relative", value: time_range } }
+											: undefined),
+									},
+									now,
+								),
+					),
 				)
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 
