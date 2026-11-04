@@ -22,6 +22,7 @@ import {
 } from "../kit/layout"
 import { errorMessageOf, mutateDashboard, readDocument, type WriteSync } from "../kit/store"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
+import { getWidgetServerFunction } from "@maple/web-data/warehouse/widget-data-sources"
 import { fetchVariableOptions } from "../kit/variables"
 import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
@@ -44,6 +45,13 @@ export const ReloadPage = Command.define("ReloadDashboardPage", {
 	}),
 })
 
+const WIDGET_FAILURE_KIND = "maple.dashboard.widget.failure_kind"
+
+/** The widget endpoint when it is a catalog name (the args scrubber redacts the `endpoint` arg). */
+const widgetEndpointAttribute = (endpoint: string) => ({
+	"maple.dashboard.widget.endpoint": getWidgetServerFunction(endpoint) === undefined ? "unknown" : endpoint,
+})
+
 /** `widgetFetchAtom`: one fetch per request key, however many tiles share it. */
 export const FetchWidget = Command.define("FetchDashboardWidget", {
 	args: {
@@ -55,7 +63,11 @@ export const FetchWidget = Command.define("FetchDashboardWidget", {
 	execute: ({ key, endpoint, params }) =>
 		fetchWidgetData(endpoint, params).pipe(
 			Effect.mapError(toWidgetFailure),
+			Effect.tapError((failure) => Effect.annotateCurrentSpan(WIDGET_FAILURE_KIND, failure.kind)),
+			// The command span is Ok (its Message carries the Result); this child records the failure.
+			Effect.withSpan("dashboard.widget.fetch", { attributes: widgetEndpointAttribute(endpoint) }),
 			Effect.result,
+			Effect.tap(() => Effect.annotateCurrentSpan(widgetEndpointAttribute(endpoint))),
 			Effect.map((result) => Message.CompletedFetchWidget({ key, result })),
 		),
 })
