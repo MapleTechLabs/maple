@@ -38,7 +38,9 @@ const press = (
 	clientY: number,
 ): Return => {
 	const grid = gridOfWidget(model, widgetId)
-	if (grid === null || model.gesture !== null || model.keyboardMove !== null) return { model }
+	// A press that never started (a tap whose release beat the window listeners) is replaced, never resumed.
+	const isDragging = model.gesture !== null && model.gesture.isStarted
+	if (grid === null || isDragging || model.keyboardMove !== null) return { model }
 	if (!isEditing(model) || !grid.tier.canonical) return { model }
 	const origin = shownLayoutOf(model, grid)
 	const item = origin.find((candidate) => candidate.i === widgetId)

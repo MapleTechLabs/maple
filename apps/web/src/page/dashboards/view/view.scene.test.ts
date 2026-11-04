@@ -353,6 +353,32 @@ describe("dashboard view", () => {
 		expect(names(released.commands)).toEqual([])
 	})
 
+	test("a tap whose release was missed does not hijack the next drag", () => {
+		const editing = pageUpdate(
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
+			Message.MeasuredGrid({ width: 1200 }),
+		).model
+		// The release came before the window listeners attached, so no ReleasedPointer arrives.
+		const tapped = pageUpdate(
+			editing,
+			Message.PressedGrip({ widgetId: "total-errors", clientX: 100, clientY: 100 }),
+		).model
+		const pressed = pageUpdate(
+			tapped,
+			Message.PressedGrip({ widgetId: "error-rate", clientX: 400, clientY: 100 }),
+		).model
+		expect(pressed.gesture?.widgetId).toBe("error-rate")
+		const dragged = pageUpdate(
+			pressed,
+			Message.MovedPointer({ clientX: 1000, clientY: 100, gridLeft: 0, gridTop: 0 }),
+		).model
+		const released = pageUpdate(dragged, Message.ReleasedPointer())
+		expect(names(released.commands)).toEqual([UpdateWidgetLayouts.name])
+		const xOf = (id: string) => released.model.droppedLayout?.find((item) => item.i === id)?.x
+		expect(xOf("total-errors")).toBe(0)
+		expect(xOf("error-rate")).toBeGreaterThan(0)
+	})
+
 	test("a window narrowed during a keyboard move puts the tile back without a write", () => {
 		const editing = pageUpdate(
 			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
