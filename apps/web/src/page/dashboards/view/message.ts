@@ -39,6 +39,9 @@ export const Message = defineMessageUnion({
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
+	/** "Reload page" on a chart tile whose chart code failed to load. */
+	ClickedReloadPage: {},
+	ReloadedPage: {},
 	GotChartMessage: { widgetId: Schema.String, message: Chart.Message },
 	ClickedSortColumn: { widgetId: Schema.String, field: Schema.String, isText: Schema.Boolean },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
@@ -63,6 +66,7 @@ export const Message = defineMessageUnion({
 	ClickedCloseHistory: {},
 	CompletedFetchVersions: {
 		generation: Schema.Number,
+		nowMs: Schema.Number,
 		result: Schema.Result(Schema.Array(VersionRow), LoadFailure),
 	},
 	ClickedVersion: { versionId: Schema.String },
@@ -99,9 +103,12 @@ export const Message = defineMessageUnion({
 	/** Focus left a picked-up tile's grip for somewhere outside it: the tile drops where it is. */
 	BlurredGrip: { widgetId: Schema.String },
 	CompletedWrite: { result: WriteResult },
-	/** "Undo" on the "Widget removed" toast: the removed tile, as it was stored. */
-	/** "Undo" after a group was deleted with its widgets: they come back on the board, the group does not. */
-	CompletedExport: {},
+	/** The persistence banner's Retry: editing comes back, and the next write tells whether it holds. */
+	ClickedRetryPersistence: {},
+	/** The browser came back online while the banner shows: editing comes back as with Retry. */
+	CameBackOnline: {},
+	/** Export JSON's download: `error` is why it could not be written. */
+	CompletedExport: { error: Schema.NullOr(Schema.String) },
 	/** A group's chevron: this viewer's collapse, in the URL. */
 	ClickedSectionChevron: { sectionId: Schema.String, collapsed: Schema.Boolean },
 	ClickedSectionTab: { sectionId: Schema.String, tabId: Schema.String },

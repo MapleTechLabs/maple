@@ -64,6 +64,10 @@ export const dashboardViewParamsSchema = {
 	tab: Schema.optional(Schema.String),
 	widget: Schema.optional(Schema.String),
 	refresh: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
+	/** This viewer's time range; read leniently by `timeRangeFromSearch`, so a bad value is ignored. */
+	range: Schema.optional(Schema.Unknown),
+	from: Schema.optional(Schema.Unknown),
+	to: Schema.optional(Schema.Unknown),
 }
 
 // Agent tool analytics and search

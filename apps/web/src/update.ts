@@ -1088,7 +1088,17 @@ const foldMessage = (model: Model, message: Message) =>
 						? foldToasts(withoutToastActions(model, message.toastId), message)
 						: foldToasts(model, message),
 		CompletedReconnectOrgCollections: () => ({ model }),
-		CompletedRestoreDashboardWidgets: () => ({ model }),
+		CompletedRestoreDashboardWidgets: ({ error }) =>
+			error === null
+				? { model }
+				: showPageToast(
+						model,
+						PageOutMessage.RequestedToast({
+							type: "error",
+							title: "Couldn't restore the widget",
+							description: error,
+						}),
+					),
 		GotPageMessage: ({ message }) => toPage(model, message),
 		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),
 		IntendedLink: ({ href, isImmediate }) =>

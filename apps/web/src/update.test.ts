@@ -292,3 +292,18 @@ describe("pinned dashboards load", () => {
 		expect(watched(failed)).toBeNull()
 	})
 })
+
+describe("dashboard widget undo", () => {
+	test("a failed restore shows an error toast; a successful one stays quiet", () => {
+		const model = base(AppRoute.Logs({ search: {} }))
+		const failed = update(
+			model,
+			Message.CompletedRestoreDashboardWidgets({ error: "Network down" }),
+		).model
+		expect(
+			Arr.map(failed.toasts.toasts, ({ type, title, description }) => ({ type, title, description })),
+		).toEqual([{ type: "error", title: "Couldn't restore the widget", description: "Network down" }])
+		const restored = update(model, Message.CompletedRestoreDashboardWidgets({ error: null })).model
+		expect(restored.toasts.toasts).toEqual([])
+	})
+})

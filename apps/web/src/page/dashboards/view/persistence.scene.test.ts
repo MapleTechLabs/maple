@@ -60,6 +60,18 @@ describe("a write failing behind an open dialog", () => {
 		expect(names(saved.commands)).toContain(SaveTags.name)
 	})
 
+	test("Retry on the banner brings editing back without writing anything", () => {
+		const failed = run(ready(), [failedWrite])
+		expect(failed.persistenceError).toBe("Conflict")
+		expect(names(pageUpdate(failed, menuPick("add-group")).commands)).toEqual([])
+		const retried = pageUpdate(failed, Message.ClickedRetryPersistence())
+		expect(retried.model.persistenceError).toBeNull()
+		expect(names(retried.commands)).toEqual([])
+		expect(names(pageUpdate(retried.model, menuPick("add-group")).commands)).toEqual([
+			"EditDashboardSections",
+		])
+	})
+
 	test("the widget picker closes, and a pick then says editing is unavailable", () => {
 		const failed = run(ready(), [Message.ClickedAddWidget(), failedWrite])
 		expect(failed.pickerDialog.isOpen).toBe(false)

@@ -30,8 +30,16 @@ describe("gcp dashboard lab", () => {
 
 	test("the metric variables list the fixture's options, not loading", () => {
 		const options = optionsByNameOf(opened().model, CONTEXT)
-		expect(options.project).toEqual({ options: ["acme-prod", "acme-staging"], loading: false })
-		expect(options.region).toEqual({ options: ["europe-west1", "us-central1"], loading: false })
+		expect(options.project).toEqual({
+			options: ["acme-prod", "acme-staging"],
+			loading: false,
+			error: null,
+		})
+		expect(options.region).toEqual({
+			options: ["europe-west1", "us-central1"],
+			loading: false,
+			error: null,
+		})
 	})
 
 	test("a tab switch stays in the lab's own search", () => {

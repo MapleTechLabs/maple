@@ -1,6 +1,8 @@
 // BOUNDARY: widget endpoints answer untyped JSON; this module narrows it into rows and values.
 import { QueryEngineValidationError } from "@maple/domain/http"
 import {
+	collectExpandedVariableRefs,
+	collectVariableRefs,
 	computeBucketSecondsForWidthRange,
 	formatRangeSeconds,
 	formatWarehouseDateTime,
@@ -57,6 +59,8 @@ export const WidgetGate = Schema.Union([
 	Schema.TaggedStruct("Range", { title: Schema.String, message: Schema.String }),
 	Schema.TaggedStruct("Disabled", { message: Schema.String }),
 	Schema.TaggedStruct("WaitingOnVariables", {}),
+	/** A variable the tile reads has no value to give: its options failed or cannot be queried. */
+	Schema.TaggedStruct("VariableUnavailable", { name: Schema.String, message: Schema.String }),
 ])
 export type WidgetGate = typeof WidgetGate.Type
 
@@ -67,7 +71,14 @@ export interface PlanInput {
 	readonly widgetTimeRange?: Parameters<typeof planWidgetRequest>[0]["widgetTimeRange"]
 	readonly maxDataPoints?: number
 	/** The board's variables: their names, and the values resolved so far (`useDashboardVariables`). */
-	readonly variables?: Readonly<{ names: ReadonlyArray<string>; values: VariableValues }>
+	readonly variables?: Readonly<{
+		names: ReadonlyArray<string>
+		values: VariableValues
+		/** Variables no value can come from, with why (`unavailableVariables`). */
+		unavailable?: Readonly<Record<string, string>>
+		/** "All" over failed options: blocks only references outside where clauses (`unexpandableVariables`). */
+		unexpandable?: Readonly<Record<string, string>>
+	}>
 	/** `narrowedToCap`: the viewer pulled this list back to the cap (per tile, not persisted). */
 	readonly isNarrowed?: boolean
 }
@@ -87,6 +98,8 @@ const keyParamsOf = (params: Readonly<Record<string, unknown>>): Readonly<Record
 	}
 }
 
+const encodeParams = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** `narrowRangeLabel`: the list cap as the CTA reads it. */
 export const NARROW_RANGE_LABEL = `Show last ${formatRangeSeconds(MAX_LIST_RANGE_SECONDS)}`
 
@@ -99,6 +112,22 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 	const request = toWidgetRequest(input.dataSource)
 	if (request === null) return { _tag: "Disabled", message: "Unsupported data source" }
 	if (request.endpoint === "markdown_static") return { _tag: "Static" }
+	const unavailable = input.variables?.unavailable ?? {}
+	const unexpandable = input.variables?.unexpandable ?? {}
+	const broken = Arr.findFirst(collectVariableRefs(encodeParams(request.params ?? {})), (name) =>
+		Rec.has(unavailable, name),
+	)
+	if (broken._tag === "Some")
+		return { _tag: "VariableUnavailable", name: broken.value, message: unavailable[broken.value] ?? "" }
+	const unexpanded = Arr.findFirst(collectExpandedVariableRefs(request.params ?? {}), (name) =>
+		Rec.has(unexpandable, name),
+	)
+	if (unexpanded._tag === "Some")
+		return {
+			_tag: "VariableUnavailable",
+			name: unexpanded.value,
+			message: unexpandable[unexpanded.value] ?? "",
+		}
 	// A literal `$service` must never reach the API: wait until every referenced variable resolves.
 	if (
 		input.variables !== undefined &&
@@ -227,9 +256,17 @@ export const toWidgetFailure = (error: unknown): WidgetFailure => {
 }
 
 /**
- * `fetchWidgetData`: the endpoint's server function, retried twice unless the window was empty or the read
- * hit its deadline (retrying a timeout would hold the tile on its skeleton for three deadlines).
+ * Worth asking again: a dropped connection or a failure the backend marks retryable (a 5xx). Not an
+ * empty window, a bad query, an unreadable answer or a read past its deadline (retrying a timeout
+ * would hold the tile on its skeleton for three deadlines).
  */
+export const isTransientWidgetError = (error: unknown): boolean =>
+	!EXPECTED_EMPTY_MESSAGES.has(messageOf(error) ?? "") &&
+	!isRequestTimeout(error) &&
+	!isDecodeError(error) &&
+	displayError(error).retryable
+
+/** `fetchWidgetData`: the endpoint's server function, retried twice on a transient failure. */
 export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string, unknown>>) => {
 	const serverFn = getWidgetServerFunction(endpoint)
 	return serverFn === undefined
@@ -238,8 +275,7 @@ export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string
 				Effect.retry({
 					times: 2,
 					schedule: Schedule.exponential(Duration.millis(500)),
-					while: (error) =>
-						!EXPECTED_EMPTY_MESSAGES.has(messageOf(error) ?? "") && !isRequestTimeout(error),
+					while: isTransientWidgetError,
 				}),
 			)
 }
