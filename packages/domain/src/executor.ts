@@ -10,6 +10,7 @@ import { SandboxCheckout } from "./sandbox"
 
 export const EXECUTOR_PREPARE_PATH = "/internal/executor/prepare"
 export const EXECUTOR_RUN_PATH = "/internal/executor/run"
+export const EXECUTOR_RELEASE_PATH = "/internal/executor/release"
 export const EXECUTOR_DESTROY_PATH = "/internal/executor/destroy"
 
 /**
@@ -121,6 +122,15 @@ export interface ExecutorCommandInput {
 	readonly promote: ReadonlyArray<ExecutorPromotion>
 }
 
+/**
+ * The agent is done with the executor: its processes, scratch, cgroup and promoted artifacts are
+ * removed, and later commands under its id are refused.
+ */
+export class ExecutorReleaseRequest extends Schema.Class<ExecutorReleaseRequest>("ExecutorReleaseRequest")({
+	executorKey: ExecutorKey,
+	agentId: ExecutorAgentId,
+}) {}
+
 export class ExecutorDestroyRequest extends Schema.Class<ExecutorDestroyRequest>("ExecutorDestroyRequest")({
 	executorKey: ExecutorKey,
 }) {}
@@ -195,6 +205,11 @@ export class ExecutorNotPrepared extends Schema.TaggedClass<ExecutorNotPrepared>
 
 export const ExecutorRunResponse = Schema.Union([ExecutorRunExited, ExecutorNotPrepared, ExecutorUnavailable])
 export type ExecutorRunResponse = typeof ExecutorRunResponse.Type
+
+export class ExecutorReleased extends Schema.TaggedClass<ExecutorReleased>()("ExecutorReleased", {}) {}
+
+export const ExecutorReleaseResponse = Schema.Union([ExecutorReleased, ExecutorUnavailable])
+export type ExecutorReleaseResponse = typeof ExecutorReleaseResponse.Type
 
 export class ExecutorDestroyed extends Schema.TaggedClass<ExecutorDestroyed>()("ExecutorDestroyed", {}) {}
 

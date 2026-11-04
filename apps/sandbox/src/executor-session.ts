@@ -15,6 +15,9 @@ import {
 	type ExecutorPrepareResponse,
 	ExecutorPreparing,
 	ExecutorRejectedArtifact,
+	ExecutorReleased,
+	type ExecutorReleaseRequest,
+	type ExecutorReleaseResponse,
 	ExecutorRunExited,
 	type ExecutorRunRequest,
 	type ExecutorRunResponse,
@@ -29,6 +32,7 @@ import {
 	prepareRunner,
 	prepareStatusScript,
 	promoteScript,
+	releaseScript,
 	resetPrepareScript,
 	runScript,
 } from "./executor-scripts"
@@ -55,6 +59,8 @@ const STATUS_TIMEOUT_MS = 60_000
 /** Headroom over a command's own deadline before the exec itself is abandoned. */
 const RUN_HEADROOM_MS = 60_000
 const PROMOTE_TIMEOUT_MS = 60_000
+/** Killing what is left (10 s at most), an unmount and a removal. */
+const RELEASE_TIMEOUT_MS = 60_000
 
 const PromotionOutput = Schema.Struct({
 	promoted: Schema.Array(
@@ -164,6 +170,10 @@ export const run = (
 			return new ExecutorNotPrepared({
 				message: "the executor holds no prepared checkout; prepare it again",
 			})
+		if (trailer.state === "released")
+			return new ExecutorUnavailable({
+				message: "this agent was released when its invocation ended; its commands no longer run",
+			})
 		if (trailer.state === "setup-failed")
 			return new ExecutorUnavailable({
 				message: boundMessage(
@@ -241,6 +251,31 @@ export const run = (
 				Effect.as(new ExecutorUnavailable({ message: boundMessage(error) })),
 			),
 		),
+	)
+
+export const release = (
+	host: ExecutorHost,
+	request: ExecutorReleaseRequest,
+): Effect.Effect<ExecutorReleaseResponse> =>
+	Effect.gen(function* () {
+		// A stopped container took every agent's processes, scratch and cgroup with it.
+		if (!host.isRunning()) return new ExecutorReleased()
+		const result = yield* host.exec(releaseScript(request.agentId), RELEASE_TIMEOUT_MS)
+		if (result.exitCode !== 0)
+			return new ExecutorUnavailable({
+				message: boundMessage(
+					`releasing ${request.agentId} failed (exit ${result.exitCode}): ${Str.slice(0, 500)(Str.trim(result.stderr))}`,
+				),
+			})
+		yield* Effect.logInfo("executor agent released").pipe(
+			Effect.annotateLogs({
+				"maple.executor.key": request.executorKey,
+				"maple.executor.agent_id": request.agentId,
+			}),
+		)
+		return new ExecutorReleased()
+	}).pipe(
+		Effect.catch((error) => Effect.succeed(new ExecutorUnavailable({ message: boundMessage(error) }))),
 	)
 
 export const destroy = (host: ExecutorHost): Effect.Effect<ExecutorDestroyResponse> =>

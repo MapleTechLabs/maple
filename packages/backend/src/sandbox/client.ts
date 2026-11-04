@@ -17,11 +17,14 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import {
 	EXECUTOR_DESTROY_PATH,
 	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RELEASE_PATH,
 	EXECUTOR_RUN_PATH,
 	ExecutorDestroyRequest,
 	ExecutorDestroyResponse,
 	ExecutorPrepareRequest,
 	ExecutorPrepareResponse,
+	ExecutorReleaseRequest,
+	ExecutorReleaseResponse,
 	ExecutorRunRequest,
 	ExecutorRunResponse,
 } from "@maple/domain/executor"
@@ -44,7 +47,7 @@ export interface SandboxClientApi {
 	readonly executor: ExecutorTransport
 }
 
-/** The executor's three calls; the local runner answers the same wire over HTTP. */
+/** The executor's calls; the local runner answers the same wire over HTTP. */
 export interface ExecutorTransport {
 	/** False on a deployment without a sandbox Worker: every call then answers `Option.none`. */
 	readonly available: boolean
@@ -54,6 +57,9 @@ export interface ExecutorTransport {
 	readonly run: (
 		request: ExecutorRunRequest,
 	) => Effect.Effect<Option.Option<ExecutorRunResponse>, SandboxClientError>
+	readonly release: (
+		request: ExecutorReleaseRequest,
+	) => Effect.Effect<Option.Option<ExecutorReleaseResponse>, SandboxClientError>
 	readonly destroy: (
 		request: ExecutorDestroyRequest,
 	) => Effect.Effect<Option.Option<ExecutorDestroyResponse>, SandboxClientError>
@@ -63,12 +69,14 @@ const encodeRequest = Schema.encodeUnknownSync(SandboxExecRequest)
 
 const encodePrepare = Schema.encodeUnknownSync(ExecutorPrepareRequest)
 const encodeRun = Schema.encodeUnknownSync(ExecutorRunRequest)
+const encodeRelease = Schema.encodeUnknownSync(ExecutorReleaseRequest)
 const encodeDestroy = Schema.encodeUnknownSync(ExecutorDestroyRequest)
 
 const unbound: ExecutorTransport = {
 	available: false,
 	prepare: () => Effect.succeedNone,
 	run: () => Effect.succeedNone,
+	release: () => Effect.succeedNone,
 	destroy: () => Effect.succeedNone,
 }
 
@@ -137,6 +145,9 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 				}),
 				run: Effect.fn("SandboxClient.executor.run")(function* (request) {
 					return yield* post(EXECUTOR_RUN_PATH, encodeRun(request), ExecutorRunResponse)
+				}),
+				release: Effect.fn("SandboxClient.executor.release")(function* (request) {
+					return yield* post(EXECUTOR_RELEASE_PATH, encodeRelease(request), ExecutorReleaseResponse)
 				}),
 				destroy: Effect.fn("SandboxClient.executor.destroy")(function* (request) {
 					return yield* post(EXECUTOR_DESTROY_PATH, encodeDestroy(request), ExecutorDestroyResponse)

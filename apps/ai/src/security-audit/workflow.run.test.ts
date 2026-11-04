@@ -172,6 +172,7 @@ const unboundExecutor: ExecutorServiceApi = {
 	available: false,
 	prepare: () => Effect.die("no executor in this test"),
 	run: () => Effect.die("no executor in this test"),
+	release: () => Effect.void,
 	destroy: () => Effect.void,
 }
 
@@ -698,6 +699,7 @@ describe("auditWithAgents", () => {
 									])
 					}),
 				run: () => Effect.die("no command runs in this test"),
+				release: () => Effect.void,
 				destroy: (runId) => Effect.sync(() => void asked.push(`destroy ${runId}`)),
 			}
 			return { executor, asked }

@@ -470,6 +470,7 @@ export const auditWithAgents = <E, R>(
 										(error) => new AuditExecutionError({ message: error.message }),
 									),
 								),
+						release: (agentId) => executor.release(payload.runId, agentId),
 					}
 				: undefined
 		yield* durableStep(
