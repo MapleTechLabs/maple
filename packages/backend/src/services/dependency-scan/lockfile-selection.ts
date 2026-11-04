@@ -54,7 +54,7 @@ export function selectLockfiles(files: ReadonlyArray<VcsTreeFile>): {
 
 /**
  * The package.json files under a yarn lockfile's directory, keyed relative to it, shallowest first.
- * Oversized manifests are skipped, and reading stops at `MAX_MANIFESTS` or the total byte budget.
+ * Skips a manifest that is oversized or would pass the total byte budget, up to `MAX_MANIFESTS`.
  */
 export function manifestsFor(
 	lockfile: SelectedLockfile,
