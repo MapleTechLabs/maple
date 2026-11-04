@@ -71,6 +71,8 @@ export const HistoryState = Schema.Struct({
 	 * `Keyed` slot: the read has no org-scoped request key and reopening resets to `Loading`.
 	 */
 	versionsGeneration: Schema.Number,
+	/** When the version list was read: its relative times count from here, not from page load. */
+	listedAtMs: Schema.Number,
 	previewed: Schema.NullOr(VersionRow),
 	snapshot: SnapshotData.schema,
 	restoreDialog: Dialog.Model,
@@ -88,6 +90,7 @@ export const initHistory = (): HistoryState => ({
 	isOpen: false,
 	versions: AsyncData.Idle(),
 	versionsGeneration: 0,
+	listedAtMs: 0,
 	previewed: null,
 	snapshot: AsyncData.Idle(),
 	restoreDialog: Dialog.init("dashboard-restore-version", "alert-dialog"),

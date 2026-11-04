@@ -280,7 +280,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							...(model.history.isOpen
 								? {
 										rightPanel: historyPanel(h, model, {
-											nowMs: model.nowMs ?? 0,
+											nowMs: Math.max(model.nowMs ?? 0, model.history.listedAtMs),
 											timeZone: inputs.context.timeZone,
 										}),
 										rightPanelWidth: "w-80",

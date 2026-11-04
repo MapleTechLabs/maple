@@ -66,6 +66,7 @@ export const Message = defineMessageUnion({
 	ClickedCloseHistory: {},
 	CompletedFetchVersions: {
 		generation: Schema.Number,
+		nowMs: Schema.Number,
 		result: Schema.Result(Schema.Array(VersionRow), LoadFailure),
 	},
 	ClickedVersion: { versionId: Schema.String },

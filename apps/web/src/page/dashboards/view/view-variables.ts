@@ -15,7 +15,7 @@ import type { PageContext } from "../../contract"
 import { NO_OPTIONS, type OptionsState, type Variable as DashboardVariable } from "../kit/variables"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { optionsByNameOf, variablesOf } from "./plan"
+import { optionsByNameOf, shownDocumentOf, variablesOf } from "./plan"
 import { variableComboIdOf } from "./variable-update"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -231,7 +231,7 @@ export const variableSelects = (
 	context: PageContext,
 	canManage: boolean,
 ): ReadonlyArray<Html> => {
-	const variables = model.document?.variables ?? []
+	const variables = shownDocumentOf(model)?.variables ?? []
 	if (variables.length === 0 && !canManage) return []
 	return [
 		hstack(h, { gap: "1.5" }, [

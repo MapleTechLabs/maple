@@ -69,7 +69,7 @@ const ready = (): Model =>
 		Message.GotMoreMenuMessage({
 			message: { _tag: "ClickedItem", index: 4, item: { kind: "Item", value: "history" } },
 		}),
-		Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
+		Message.CompletedFetchVersions({ generation: 1, nowMs: 0, result: Result.succeed([version]) }),
 	])
 
 const keyOf = (model: Model, widgetId: string) => {
