@@ -10,6 +10,7 @@ import {
 	Redacted,
 	Ref,
 	Schedule,
+	Semaphore,
 	Schema,
 	Stream,
 	String as Str,
@@ -2300,7 +2301,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const reads = yield* Ref.make(0)
 				const entries = yield* Ref.make(0)
-				const read = Effect.fnUntraced(function* (sha: string, recursive: boolean) {
+				// One gate for the whole walk: nested walks would otherwise multiply the reads in flight.
+				// A read never recurses, so holding its permit cannot starve a nested one.
+				const gate = yield* Semaphore.make(TREE_WALK_CONCURRENCY)
+				const readOnce = Effect.fnUntraced(function* (sha: string, recursive: boolean) {
 					const count = yield* Ref.updateAndGet(reads, (n) => n + 1)
 					if (count > MAX_TREE_WALK_READS) return Option.none<GithubRecursiveTree>()
 					// Past the entry cap the answer is already truncated; spend no more reads on it.
@@ -2320,6 +2324,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						? Option.none<GithubRecursiveTree>()
 						: Option.some(listing)
 				})
+				const read = (sha: string, recursive: boolean) =>
+					readOnce(sha, recursive).pipe(gate.withPermit)
 				type Walked = { readonly tree: GithubRecursiveTree["tree"]; readonly truncated: boolean }
 				const under = (prefix: string, walked: Walked): Walked => ({
 					truncated: walked.truncated,

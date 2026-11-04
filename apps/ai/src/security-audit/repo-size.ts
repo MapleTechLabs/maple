@@ -27,7 +27,7 @@ export interface RepoSize {
 const SOURCE_EXTENSIONS =
 	"ts tsx js jsx mjs cjs py rb go rs java kt kts scala swift m mm c cc cpp cxx h hh hpp cs php " +
 	"sh bash zsh ps1 sql lua dart ex exs erl clj vue svelte yaml yml toml tf hcl gradle properties ini conf cfg env " +
-	"pem key crt"
+	"html htm pem key crt"
 const SOURCE_NAMES =
 	"dockerfile makefile gemfile jenkinsfile package.json package-lock.json composer.json " +
 	"tsconfig.json deno.json pom.xml web.config"
@@ -55,7 +55,8 @@ export const REPO_SIZE_COMMAND = {
 				"set -euo pipefail",
 				"commits=$(git --no-optional-locks rev-list --count HEAD)",
 				`tree=$(git --no-optional-locks ls-tree -r -l HEAD | awk '$2 == "blob" { n++; s += $4 } END { printf "%d %.0f", n, s }')`,
-				`lfs=$(git --no-optional-locks -c core.quotePath=false ls-files -- ':(attr:filter=lfs)' | awk '{ n++; if (tolower($0) ~ /${SOURCE_PATH}/) { s++; if (s <= ${MAX_LFS_SOURCE_EXAMPLES}) ex[s] = $0 } } END { printf "%d %d", n, s; for (i = 1; i <= s && i <= ${MAX_LFS_SOURCE_EXAMPLES}; i++) printf "\\n%s", ex[i] }')`,
+				// NUL-delimited, so a path git would quote (a `"`, a backslash) is matched as is, not quoted.
+				`lfs=$(git --no-optional-locks ls-files -z -- ':(attr:filter=lfs)' | tr '\\0' '\\n' | awk '{ n++; if (tolower($0) ~ /${SOURCE_PATH}/) { s++; if (s <= ${MAX_LFS_SOURCE_EXAMPLES}) ex[s] = $0 } } END { printf "%d %d", n, s; for (i = 1; i <= s && i <= ${MAX_LFS_SOURCE_EXAMPLES}; i++) printf "\\n%s", ex[i] }')`,
 				'echo "$commits $tree $lfs"',
 			],
 			"\n",
