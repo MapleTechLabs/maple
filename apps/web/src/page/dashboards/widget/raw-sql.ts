@@ -2,7 +2,8 @@ import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/h
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Schema, String as Str } from "effect"
+import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import type { Widget } from "./lowering"
 
@@ -58,18 +59,31 @@ export const reseedForType = (rawSql: RawSqlState, before: TypePair, after: Type
 /** The column a SQL stat or gauge reduces while none is typed: the templates' `value`. */
 export const SQL_VALUE_FIELD = "value"
 
+type FieldState = Pick<EditorState, "statValueField" | "queries" | "formulas">
+
+/** The SQL value column: the typed field, never a Builder series name (that pick stays for the Builder). */
+export const sqlValueFieldOf = (state: FieldState): string => {
+	const field = Str.trim(state.statValueField)
+	const builderNames = new Set([
+		...toSeriesFieldOptions(state),
+		...Arr.map(state.queries, (query) => query.name),
+		...Arr.map(state.formulas, (formula) => formula.name),
+	])
+	return builderNames.has(field) ? "" : field
+}
+
 /** `buildRawSqlDataSource`: the transform follows the picked type, so only a stat or gauge reduces. */
 export const rawSqlDataSourceOf = (
 	widget: Widget,
 	draft: RawSqlDraft,
-	state: Pick<EditorState, "visualization" | "chartId" | "statAggregate" | "statValueField">,
+	state: Pick<EditorState, "visualization" | "chartId" | "statAggregate"> & FieldState,
 ): Widget["dataSource"] => {
 	// A builder or endpoint transform (field maps, hidden series) does not describe SQL rows.
 	const stored =
 		dataSourceRawSql(widget.dataSource) === null ? undefined : dataSourceTransform(widget.dataSource)
 	const { reduceToValue: _previous, ...kept } = stored ?? {}
 	const isScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
-	const field = Str.trim(state.statValueField)
+	const field = sqlValueFieldOf(state)
 	const transform = isScalar
 		? {
 				...kept,

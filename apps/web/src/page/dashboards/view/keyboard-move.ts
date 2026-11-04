@@ -1,6 +1,6 @@
 import { clampSize, type GridItem, type Layout, nudgeItem, resizeItem, sameLayout } from "@maple/grid-engine"
 import type { PageContext, PageReturn } from "../../contract"
-import { gridOfWidget, shownLayoutOf } from "./grid"
+import { gridOfWidget, isGestureGrid, shownLayoutOf } from "./grid"
 import { commitLayout } from "./layout-commit"
 import type { Message } from "./message"
 import type { KeyboardMove, Model } from "./model"
@@ -37,13 +37,20 @@ export const endKeyboardMove = (
 	move: KeyboardMove,
 	isCommit: boolean,
 ): Return => {
-	const final = isCommit && isEditing(model) ? move.preview : move.origin
+	const isSameGrid = isGestureGrid(gridOfWidget(model, move.widgetId), move)
+	const final = isCommit && isEditing(model) && isSameGrid ? move.preview : move.origin
 	const item = final.find((candidate) => candidate.i === move.widgetId)
 	const position = item === undefined ? "its position" : describePosition(item)
 	const gridAnnouncement = isCommit
 		? `${move.label} dropped at ${position}.`
 		: `Move cancelled. ${move.label} is back at ${position}.`
-	return commitLayout({ ...model, keyboardMove: null, gridAnnouncement }, context, move.widgetId, move.origin, final)
+	return commitLayout(
+		{ ...model, keyboardMove: null, gridAnnouncement },
+		context,
+		move.widgetId,
+		move.origin,
+		final,
+	)
 }
 
 const pickUp = (model: Model, message: KeyMessage): Return => {
@@ -56,7 +63,14 @@ const pickUp = (model: Model, message: KeyMessage): Return => {
 	return {
 		model: {
 			...model,
-			keyboardMove: { widgetId: message.widgetId, label, origin, preview: origin },
+			keyboardMove: {
+				widgetId: message.widgetId,
+				label,
+				cols: grid.geometry.cols,
+				key: grid.key,
+				origin,
+				preview: origin,
+			},
 			gridAnnouncement: `Picked up ${label} at ${describePosition(item)}. Arrow keys move it, Shift and arrow keys resize it, Space drops it, Escape cancels.`,
 		},
 	}
@@ -71,7 +85,8 @@ export const keyboardStep = (model: Model, context: PageContext, message: KeyMes
 	if (message.key === "Escape") return endKeyboardMove(model, context, move, false)
 	const direction = ARROWS.get(message.key)
 	const grid = gridOfWidget(model, move.widgetId)
-	if (direction === undefined || grid === null) return { model }
+	if (!isGestureGrid(grid, move)) return endKeyboardMove(model, context, move, false)
+	if (direction === undefined) return { model }
 	const next = message.isShift
 		? growItem(move.preview, move.widgetId, direction, grid.geometry.cols)
 		: nudgeItem(move.preview, move.widgetId, direction[0], direction[1], grid.geometry.cols)

@@ -126,8 +126,8 @@ const scriptedAgents = (calls: Array<string>, costUsd?: number): AuditAgentsApi 
 		}),
 })
 
-/** `<commits> <files> <bytes> <lfs files>`, as the size probe prints it: a small repository. */
-const SMALL_REPO = "120 40 81920 0\n"
+/** `<commits> <files> <bytes> <lfs files> <lfs source files>`, as the size probe prints it: a small repository. */
+const SMALL_REPO = "120 40 81920 0 0\n"
 
 const sandbox = (
 	commands: Array<string>,
@@ -574,10 +574,13 @@ describe("auditWithAgents", () => {
 				const { store, target } = yield* setup
 				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
 				const calls: Array<string> = []
-				// 250,000 tracked files, 3 of them in Git LFS.
+				// 250,000 tracked files, 3 of them source files in Git LFS.
 				const exit = yield* Effect.exit(
 					auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
-						Effect.provideService(RepoSandboxService, sandbox([], "5000 250000 524288000 3\n")),
+						Effect.provideService(
+							RepoSandboxService,
+							sandbox([], "5000 250000 524288000 3 3\nsrc/a.ts\nsrc/b.ts\nsrc/c.ts\n"),
+						),
 						Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
 					),
 				)
@@ -595,12 +598,36 @@ describe("auditWithAgents", () => {
 						orgSpent: 0,
 						row: Option.some([
 							"failed",
-							"repository_refused: the repository was not audited because it tracks 250000 files, over the 100000 limit; it stores 3 files in Git LFS, whose content the checkout does not hold (limit 0).",
+							"repository_refused: the repository was not audited because it tracks 250000 files, over the 100000 limit; it stores 3 source files in Git LFS, whose content the checkout does not hold (limit 0; for example src/a.ts, src/b.ts, src/c.ts).",
 							0,
 						]),
 					},
 				)
 			}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("audits a repository whose Git LFS files are media, noting them on the run", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			// 22,389 files in Git LFS, none of them source.
+			const result = yield* auditWithAgents(payloadFor(run.id), () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([], "120 40 81920 22389 0\n")),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const notes = Arr.filter(yield* store.listEvents(run.id), (event) => event.kind === "Note")
+			assert.deepStrictEqual(
+				{ status: result.status, notes: Arr.map(notes, (event) => event.detail?.message) },
+				{
+					status: "complete",
+					notes: [
+						"22389 files stored in Git LFS were not audited: the checkout holds their pointers, not their content.",
+					],
+				},
+			)
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect(

@@ -74,6 +74,8 @@ export type TileContext<M> = Readonly<{
 	variables?: VariableValues
 	/** "Show last 7 days" on a list wider than the cap, when the surface offers narrowing. */
 	narrowRange?: M | null
+	/** Reloads the page when the chart code failed to load, on surfaces that offer it. */
+	reloadPage?: M | null
 	/** The "Details" popover under a failed tile's message, when the surface renders one. */
 	errorDetails?: ((message: string) => Html) | null
 }>

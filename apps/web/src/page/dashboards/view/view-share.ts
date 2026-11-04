@@ -1,3 +1,4 @@
+import { viewerTimeRangeOf } from "./plan"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -157,7 +158,7 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 			: shareLinkRow(
 					h,
 					model,
-					shareUrl(model.sharing.origin, boardShare.token),
+					shareUrl(model.sharing.origin, boardShare.token, viewerTimeRangeOf(model)),
 					"Anyone using the current link loses access to this dashboard. Chart embeds keep working.",
 				)),
 		...(unsupported.length > 0 && boardShare !== undefined
