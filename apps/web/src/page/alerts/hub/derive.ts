@@ -11,28 +11,59 @@ import { AsyncData } from "foldkit"
 import type { RuleBucket } from "./message"
 import type { Model } from "./model"
 
+type OverviewKey = readonly [
+	Model["rules"],
+	Model["states"],
+	Model["incidents"],
+	Model["deliveries"]["data"],
+	Model["nowMs"],
+]
+
+/** Keeps the last result while every input is the same reference: views call this on every message. */
+const lastBy = <K extends ReadonlyArray<unknown>, A>(compute: (key: K) => A): ((key: K) => A) => {
+	const last: Array<{ key: K; value: A }> = []
+	return (key) => {
+		const previous = last[0]
+		if (previous !== undefined && Arr.every(key, (part, index) => part === previous.key[index]))
+			return previous.value
+		const value = compute(key)
+		last[0] = { key, value }
+		return value
+	}
+}
+
+const overviewFor = lastBy(
+	([rules, states, incidents, deliveries, nowMs]: OverviewKey): Option.Option<AlertsOverviewReady> => {
+		if (rules === null || incidents === null || nowMs === null) return Option.none()
+		const stateRows = states ?? []
+		const statesByRule = buildRuleStatesByRuleId(stateRows)
+		return Option.some(
+			deriveOverview({
+				rules: Arr.map(rules, (row) => rowToAlertRuleDocument(row, statesByRule)),
+				incidents: Arr.map(incidents, rowToAlertIncidentDocument),
+				states: stateRows,
+				deliveryEvents: Option.getOrElse(AsyncData.getData(deliveries), () => []),
+				now: nowMs,
+			}),
+		)
+	},
+)
+
 /**
  * `AlertsOverviewModel.buildOverview`: rules and incidents gate the hub; evaluation states and
- * deliveries degrade to empty while loading or failed.
+ * deliveries degrade to empty while loading or failed. Recomputed only when one of them changes.
  */
-export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> => {
-	if (model.rules === null || model.incidents === null || model.nowMs === null) return Option.none()
-	const stateRows = model.states ?? []
-	const statesByRule = buildRuleStatesByRuleId(stateRows)
-	return Option.some(
-		deriveOverview({
-			rules: Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, statesByRule)),
-			incidents: Arr.map(model.incidents, rowToAlertIncidentDocument),
-			states: stateRows,
-			deliveryEvents: Option.getOrElse(AsyncData.getData(model.deliveries.data), () => []),
-			now: model.nowMs,
-		}),
-	)
-}
+export const overviewOf = (model: Model): Option.Option<AlertsOverviewReady> =>
+	overviewFor([model.rules, model.states, model.incidents, model.deliveries.data, model.nowMs])
+
+const destinationsFor = lastBy(
+	([rows]: readonly [Model["destinations"]]): ReadonlyArray<AlertDestinationDocument> =>
+		rowsToAlertDestinationDocuments(rows ?? []),
+)
 
 /** `useAlertDestinationsList()`, `orElse(() => [])`. */
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
-	rowsToAlertDestinationDocuments(model.destinations ?? [])
+	destinationsFor([model.destinations])
 
 export type AlertsTab = "inbox" | "rules" | "uptime" | "routing"
 
