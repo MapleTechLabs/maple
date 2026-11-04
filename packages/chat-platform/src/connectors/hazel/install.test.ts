@@ -3,6 +3,8 @@ import { Effect, Layer, Redacted, Record as Rec } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import type { ChatConnectorConfig } from "../../install"
 import { BOT_ID_CONFIG, BOT_TOKEN_CONFIG, REGION_CONFIG } from "./api"
+import { isConnectorConfigured } from "../../index"
+import { hazel } from "./index"
 import { hazelInstall, hazelInstallUrl } from "./install"
 
 const config: ChatConnectorConfig = new Map([
@@ -44,6 +46,14 @@ describe("hazel install", () => {
 			redirect_uri: redirectUri,
 			state: "nonce",
 		})
+	})
+
+	it("is configured without a region, and not without its token", () => {
+		expect(isConnectorConfigured(hazel, config)).toBe(true)
+		expect(isConnectorConfigured(hazel, new Map([...config, [REGION_CONFIG, Redacted.make("eu")]]))).toBe(
+			true,
+		)
+		expect(isConnectorConfigured(hazel, new Map([[BOT_ID_CONFIG, Redacted.make("bot-1")]]))).toBe(false)
 	})
 
 	it("names this instance's region on the link, so Hazel routes the workspace to it", () => {
