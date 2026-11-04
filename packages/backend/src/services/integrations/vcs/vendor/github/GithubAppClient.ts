@@ -380,8 +380,11 @@ const GithubApiGitTreeListing = Schema.Struct({
 const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 /** Reads one truncated tree's walk may make: a monorepo needs one per directory it splits. */
 const MAX_TREE_WALK_READS = 400
-/** Entries a walk holds at most, a few times GitHub's 100,000 per read, inside a Worker's memory. */
-const MAX_TREE_WALK_ENTRIES = 500_000
+/**
+ * Entries a walk holds at most: 1.5 times GitHub's 100,000 per read, about 60 MB of heap with the
+ * caller's copy, well inside a Worker's 128 MB.
+ */
+const MAX_TREE_WALK_ENTRIES = 150_000
 const TREE_WALK_CONCURRENCY = 4
 /** A recursive listing; `size` is set on blobs only, `truncated` when GitHub cut the listing short. */
 const GithubApiRecursiveTree = Schema.Struct({
@@ -2300,6 +2303,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const read = Effect.fnUntraced(function* (sha: string, recursive: boolean) {
 					const count = yield* Ref.updateAndGet(reads, (n) => n + 1)
 					if (count > MAX_TREE_WALK_READS) return Option.none<GithubRecursiveTree>()
+					// Past the entry cap the answer is already truncated; spend no more reads on it.
+					if ((yield* Ref.get(entries)) > MAX_TREE_WALK_ENTRIES)
+						return Option.none<GithubRecursiveTree>()
 					const response = yield* authedGet(
 						config,
 						token,
