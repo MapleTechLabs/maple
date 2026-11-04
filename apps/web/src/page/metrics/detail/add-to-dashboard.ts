@@ -1,4 +1,4 @@
-import { defaultWidgetLayout } from "@maple/domain/http"
+import { defaultWidgetLayout, TimeRangeSchema } from "@maple/domain/http"
 import { MetricsQueryDraftSchema } from "@maple/query-model"
 import { makeQueryDataSource } from "@maple/widgets/dashboard"
 import { Clock, Effect, Option, Random, Result, Schema, Stream, Array as Arr, String as Str } from "effect"
@@ -22,7 +22,8 @@ import type { Resources } from "../../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
 import { generateWidgetId, withAddedWidget } from "../../dashboards/kit/layout"
 import { createPayload } from "../../dashboards/kit/portable"
-import { awaitTxid, mutateDashboard, readDocument } from "../../dashboards/kit/store"
+import { awaitTxid, mutateDashboard } from "../../dashboards/kit/store"
+import { inferDisplayUnitForQuery } from "../../dashboards/widget/drafts"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -70,12 +71,37 @@ export type OutMessage = typeof OutMessage.Type
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
+type TimeRange = typeof TimeRangeSchema.Type
+
+const decodeTimeRange = Schema.decodeUnknownOption(TimeRangeSchema)
+
+/** The explorer's window as a new dashboard's range: its absolute range when set, else its preset. */
+export const explorerTimeRangeOf = (
+	search: Readonly<{
+		startTime?: string | undefined
+		endTime?: string | undefined
+		timePreset?: string | undefined
+	}>,
+	defaultPreset: string,
+): TimeRange =>
+	Option.getOrElse(
+		decodeTimeRange({ type: "absolute", startTime: search.startTime, endTime: search.endTime }),
+		() => ({ type: "relative", value: search.timePreset ?? defaultPreset }),
+	)
+
 /** `widgetDisplay` and `buildWidgetDataSource`: a fresh query id, never the explorer's own. */
-const widgetOf = (draft: typeof MetricsQueryDraftSchema.Type, queryId: string) => ({
-	visualization: "chart" as const,
-	dataSource: makeQueryDataSource({ resultShape: "timeseries", queries: [{ ...draft, id: queryId }] }),
-	display: { title: draft.metricName, chartId: "query-builder-area" },
-})
+export const widgetOf = (draft: typeof MetricsQueryDraftSchema.Type, queryId: string) => {
+	const unit = inferDisplayUnitForQuery(draft)
+	return {
+		visualization: "chart" as const,
+		dataSource: makeQueryDataSource({ resultShape: "timeseries", queries: [{ ...draft, id: queryId }] }),
+		display: {
+			title: draft.metricName,
+			chartId: "query-builder-area",
+			...(unit === undefined ? undefined : { unit }),
+		},
+	}
+}
 
 export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 	args: { orgId: Schema.String, dashboardId: Schema.String, draft: MetricsQueryDraftSchema },
@@ -88,17 +114,9 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 			const secureRandom = yield* SecureRandom.SecureRandom
 			const queryId = yield* secureRandom.uuidV4()
 			const widget = widgetOf(draft, queryId)
-			// `addWidget` throws when the board is not readable; the write itself is not awaited:
-			// it navigates on the optimistic update and lets the store report a failed persist.
-			yield* readDocument(orgId, dashboardId)
-			yield* Effect.forkDetach(
-				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
-					withAddedWidget(
-						document,
-						{ id, ...widget, layout: defaultWidgetLayout("chart") },
-						nowIso,
-					),
-				),
+			// The write is awaited: a failed persist keeps the dialog open with its error, never a navigation.
+			yield* mutateDashboard(orgId, dashboardId, (document, nowIso) =>
+				withAddedWidget(document, { id, ...widget, layout: defaultWidgetLayout("chart") }, nowIso),
 			)
 		}).pipe(
 			Effect.mapError(toLoadFailure),
@@ -109,9 +127,14 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 
 /** `importDashboard` with the widget in it: one create, so a not-yet-synced board cannot drop it. */
 export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget", {
-	args: { orgId: Schema.String, name: Schema.String, draft: MetricsQueryDraftSchema },
+	args: {
+		orgId: Schema.String,
+		name: Schema.String,
+		draft: MetricsQueryDraftSchema,
+		timeRange: TimeRangeSchema,
+	},
 	messages: [Message.CompletedCreateDashboard],
-	execute: ({ orgId, name, draft }) =>
+	execute: ({ orgId, name, draft, timeRange }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const random = yield* SecureRandom.SecureRandom
@@ -121,7 +144,7 @@ export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget",
 			const created = yield* client.dashboards.create({
 				payload: createPayload({
 					name,
-					timeRange: { type: "relative", value: "12h" },
+					timeRange,
 					widgets: [{ ...widget, layout: { x: 0, y: 0, ...defaultWidgetLayout("chart") } }],
 				}),
 			})
@@ -166,7 +189,12 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 
 export const open = (model: Model): Return => liftDialog(model, Dialog.open(model.dialog))
 
-type Context = Readonly<{ orgId: string; draft: typeof MetricsQueryDraftSchema.Type | null }>
+type Context = Readonly<{
+	orgId: string
+	draft: typeof MetricsQueryDraftSchema.Type | null
+	/** The explorer's window: a dashboard created here opens on it. */
+	timeRange: TimeRange
+}>
 
 export const update = (model: Model, message: Message, context: Context): Return =>
 	Message.match<Return>(message, {
@@ -178,7 +206,7 @@ export const update = (model: Model, message: Message, context: Context): Return
 			context.draft === null || model.addingTo !== null || model.isCreating
 				? { model }
 				: {
-						model: { ...model, addingTo: dashboardId },
+						model: { ...model, addingTo: dashboardId, error: null },
 						commands: [AddWidget({ orgId: context.orgId, dashboardId, draft: context.draft })],
 					},
 		// `handleCreate`: a blank name or a create in flight does nothing.
@@ -188,7 +216,14 @@ export const update = (model: Model, message: Message, context: Context): Return
 				? { model }
 				: {
 						model: { ...model, isCreating: true, error: null },
-						commands: [CreateDashboard({ orgId: context.orgId, name, draft: context.draft })],
+						commands: [
+							CreateDashboard({
+								orgId: context.orgId,
+								name,
+								draft: context.draft,
+								timeRange: context.timeRange,
+							}),
+						],
 					}
 		},
 		CompletedAddWidget: ({ dashboardId, result }) =>

@@ -501,6 +501,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				AddToDashboard.update(model.addToDashboard, inner, {
 					orgId: context.orgId,
 					draft: summary === null ? null : draftOf(model, summary),
+					timeRange: AddToDashboard.explorerTimeRangeOf(model.search, DEFAULT_PRESET),
 				}),
 			)
 		},

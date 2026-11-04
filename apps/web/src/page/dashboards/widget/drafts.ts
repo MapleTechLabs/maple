@@ -90,8 +90,10 @@ export const hasActiveGroupBy = (query: QueryDraft): boolean =>
 	query.addOns.groupBy &&
 	Arr.some(query.groupBy, (g) => Str.trim(g) !== "" && Str.toLowerCase(Str.trim(g)) !== "none")
 
-/** `inferDisplayUnitForQuery`. */
-export const inferDisplayUnitForQuery = (query: QueryDraft): string | undefined => {
+/** `inferDisplayUnitForQuery`: from the source, aggregation and metric name alone. */
+export const inferDisplayUnitForQuery = (
+	query: Readonly<{ dataSource: string; aggregation: string; metricName?: string | undefined }>,
+): string | undefined => {
 	if (query.dataSource === "traces") {
 		if (query.aggregation === "error_rate") return "percent"
 		if (["avg_duration", "p50_duration", "p95_duration", "p99_duration"].includes(query.aggregation))
@@ -99,7 +101,7 @@ export const inferDisplayUnitForQuery = (query: QueryDraft): string | undefined 
 		return query.aggregation === "count" ? "number" : undefined
 	}
 	if (query.dataSource === "logs" || query.dataSource === "product_events") return "number"
-	const lower = Str.toLowerCase(query.metricName)
+	const lower = Str.toLowerCase(query.metricName ?? "")
 	if (/\b(error[._ -]?rate|percentage|percent)\b/.test(lower)) return "percent"
 	if (/[._](seconds|s)$/.test(lower) || /\b(duration[._]seconds)\b/.test(lower)) return "duration_s"
 	if (/\b(duration|latency|response[._]time)\b/.test(lower)) return "duration_ms"
