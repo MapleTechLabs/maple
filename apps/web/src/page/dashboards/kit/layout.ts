@@ -107,8 +107,13 @@ export const withClone = (
 ): DocumentFields => {
 	const source = document.widgets.find((widget) => widget.id === widgetId)
 	if (source === undefined) return document
+	// The copy lands where its source draws: a source in a vanished group draws (and copies) as root.
+	const isDrawnInGroup =
+		source.sectionId !== undefined &&
+		source.tabId !== undefined &&
+		drawnKeyOf(document.sections ?? [])(source) !== containerKeyFor(null)
 	const target: SectionTarget =
-		source.sectionId !== undefined && source.tabId !== undefined
+		isDrawnInGroup && source.sectionId !== undefined && source.tabId !== undefined
 			? { sectionId: source.sectionId, tabId: source.tabId }
 			: null
 	const position = findNextPosition(widgetsInContainer(document, target), source.layout.w)

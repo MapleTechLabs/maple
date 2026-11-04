@@ -375,8 +375,7 @@ export const chartWidgetTile = <M>(
 	})
 	return widgetFrame(h, options_, () => {
 		if (category === undefined) return []
-		if (isServiceChart(chartId) && ctx.chartRuntime._tag === "Failed")
-			return [chartRuntimeFailedState(h, ctx.reloadPage ?? null)]
+		if (runtimeFailed) return [chartRuntimeFailedState(h, ctx.reloadPage ?? null)]
 		if (data === undefined || data.length === 0) return [widgetEmptyState(h)]
 		if (isServiceChart(chartId))
 			return theme === null || ctx.nowMs === null || !isChartRuntimeReady(ctx.chartRuntime)

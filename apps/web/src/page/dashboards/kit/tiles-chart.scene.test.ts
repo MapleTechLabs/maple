@@ -9,7 +9,7 @@ import { type TileContext, widgetTile } from "./tiles"
 
 // A chart tile when the chart code itself could not load.
 
-type Model = Readonly<{ runtime: ChartRuntime; reloads: number; dataLoading?: boolean }>
+type Model = Readonly<{ runtime: ChartRuntime; reloads: number; dataLoading?: boolean; noRows?: boolean }>
 type Message = "ClickedReloadPage" | "Ignored"
 
 const [widget] = Schema.decodeUnknownSync(DashboardDocument)({
@@ -39,7 +39,13 @@ const tile = withViewInputs(
 					? { _tag: "Loading" }
 					: {
 							_tag: "Ready",
-							data: { _tag: "Rows", rows: [{ bucket: "2026-10-01 12:00:00", value: 3 }] },
+							data: {
+								_tag: "Rows",
+								rows:
+									model.noRows === true
+										? []
+										: [{ bucket: "2026-10-01 12:00:00", value: 3 }],
+							},
 						},
 			isEdit: false,
 			menu: null,
@@ -91,6 +97,15 @@ describe("a chart tile whose chart code failed to load", () => {
 			given({ runtime: { _tag: "Failed", reason: "chunk 404" }, reloads: 0, dataLoading: true }),
 			expect(text("Charts couldn't load")).toExist(),
 			expect(role("button", { name: "Reload page" })).toExist(),
+		)
+	})
+
+	test("says so even when the query returned no rows", () => {
+		scene(
+			config,
+			given({ runtime: { _tag: "Failed", reason: "chunk 404" }, reloads: 0, noRows: true }),
+			expect(text("Charts couldn't load")).toExist(),
+			expect(text("No data in this window")).toBeAbsent(),
 		)
 	})
 
