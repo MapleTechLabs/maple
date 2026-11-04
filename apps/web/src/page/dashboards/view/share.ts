@@ -1,4 +1,5 @@
 import { DashboardShareMode, type TimeRange } from "@maple/domain/http"
+import { isCalendarAlignedShorthand } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
 import { Schema } from "effect"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -97,6 +98,13 @@ export const boardShareOf = (shares: ReadonlyArray<ShareRow>): ShareRow | undefi
 export const chartShareOf = (shares: ReadonlyArray<ShareRow>, widgetId: string): ShareRow | undefined =>
 	shares.find((share) => share.widgetId === widgetId && share.mode === "public")
 
+/** What a share link pins: the viewer's picked range, the board's saved one, and the viewer's zone. */
+export interface ShareLinkRange {
+	readonly range: TimeRange | null
+	readonly savedRange: TimeRange | null
+	readonly timeZone: string
+}
+
 /** The share page's `?range=` or `?from=&to=` for a viewer's picked range. */
 const rangeParams = (range: TimeRange | null): Array<[string, string]> =>
 	range === null
@@ -108,13 +116,26 @@ const rangeParams = (range: TimeRange | null): Array<[string, string]> =>
 					["to", range.endTime],
 				]
 
+/** `?tz=` when the window the recipient resolves starts at a midnight, so it is the sender's midnight. */
+const zoneParams = (link: ShareLinkRange): Array<[string, string]> => {
+	const resolved = link.range ?? link.savedRange
+	return resolved !== null && resolved.type === "relative" && isCalendarAlignedShorthand(resolved.value)
+		? [["tz", link.timeZone]]
+		: []
+}
+
+const linkParams = (link: ShareLinkRange): Array<[string, string]> => [
+	...rangeParams(link.range),
+	...zoneParams(link),
+]
+
 const withParams = (url: string, params: Array<[string, string]>): string =>
 	params.length === 0 ? url : `${url}?${new URLSearchParams(params).toString()}`
 
 /** A share link: with the viewer's own range, so the recipient sees the window they picked. */
-export const shareUrl = (origin: string, token: string, range: TimeRange | null = null): string =>
-	withParams(`${origin}/share/${token}`, rangeParams(range))
+export const shareUrl = (origin: string, token: string, link: ShareLinkRange): string =>
+	withParams(`${origin}/share/${token}`, linkParams(link))
 
 /** `?embed=true` drops the share page's own header, leaving only the chart. */
-export const embedUrl = (origin: string, token: string, range: TimeRange | null = null): string =>
-	withParams(`${origin}/share/${token}`, [["embed", "true"], ...rangeParams(range)])
+export const embedUrl = (origin: string, token: string, link: ShareLinkRange): string =>
+	withParams(`${origin}/share/${token}`, [["embed", "true"], ...linkParams(link)])

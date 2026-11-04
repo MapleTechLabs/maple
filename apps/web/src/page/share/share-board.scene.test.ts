@@ -7,7 +7,7 @@ import type { PageContext } from "../contract"
 import { ApplyShareAppearance, MeasureGrid, ReadFrame, sectionsOf, WatchTile } from "./command"
 import { Message } from "./message"
 import type { Model, SharedDashboard, ShareWidget } from "./model"
-import { init, update } from "./update"
+import { init, update as updateIn } from "./update"
 import { appearanceOf, view as pageView } from "./view"
 
 const context: PageContext = {
@@ -15,6 +15,7 @@ const context: PageContext = {
 	pinnedNamespace: null,
 	timeZone: "UTC",
 }
+const update = (model: Model, message: Message) => updateIn(model, message, context.timeZone)
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const view = withViewInputs(pageView, { context })()
 

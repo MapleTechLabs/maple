@@ -17,6 +17,7 @@ import {
 } from "../kit/variables"
 import { isEditing } from "./mode"
 import type { Model, WidgetSlot } from "./model"
+import type { ShareLinkRange } from "./share"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -27,6 +28,13 @@ type Widget = DashboardDocument["widgets"][number]
 /** A viewer's own pick from the URL; an edit session works on the board's saved range instead. */
 export const viewerTimeRangeOf = (model: Model): TimeRange | null =>
 	isEditing(model) ? null : (timeRangeFromSearch(model.search) ?? null)
+
+/** What a share or embed link built by this viewer pins, in the zone the board is drawn in. */
+export const shareLinkRangeOf = (model: Model, timeZone: string): ShareLinkRange => ({
+	range: viewerTimeRangeOf(model),
+	savedRange: model.document?.timeRange ?? null,
+	timeZone,
+})
 
 /** The range the board shows: this viewer's pick, else the board's saved range. */
 export const timeRangeOf = (model: Model): TimeRange | null =>

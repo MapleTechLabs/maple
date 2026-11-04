@@ -25,7 +25,7 @@ import { refreshControls } from "../kit/refresh-controls"
 import { ApplyShareAppearance, MeasureGrid, WatchTile } from "./command"
 import { Message } from "./message"
 import type { Model, ShareError, SharedDashboard, ShareWidget, WidgetState } from "./model"
-import { refreshSecondsOf } from "./update"
+import { refreshSecondsOf, shareTimeZoneOf } from "./update"
 import { sharedSection } from "./view-sections"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -372,7 +372,7 @@ export const appearanceOf = (search: Model["search"]): { theme: string | null; i
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const isEmbed = model.search.embed === true
 	const appearance = appearanceOf(model.search)
-	const timeZone = inputs.context.timeZone
+	const timeZone = shareTimeZoneOf(model.search, inputs.context.timeZone)
 	const resolve = model.resolve
 	const embedShellOrShell = (children: ReadonlyArray<Html>) =>
 		isEmbed ? embedShell(h, children, "widget") : shell(h, children)
