@@ -36,7 +36,7 @@ const view = (model: Model, h: HtmlBuilder<Message>) =>
 				nowMs: Date.parse("2026-10-01T12:00:00Z"),
 				timeZone: "UTC",
 				isWaiting: false,
-				sort: null,
+				sort: { key: null, dir: "desc" },
 			}),
 		],
 	)
