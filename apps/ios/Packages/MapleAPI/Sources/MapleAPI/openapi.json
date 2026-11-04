@@ -2112,6 +2112,12 @@
             },
             "type": "array"
           },
+          "version": {
+            "description": "The dashboard's current version. Send it as `expected_version` on an update so a newer change is never overwritten.",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
           "widgets": {
             "items": {
               "additionalProperties": false,
@@ -2843,7 +2849,8 @@
           "sections",
           "variables",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "version"
         ],
         "type": "object"
       },
