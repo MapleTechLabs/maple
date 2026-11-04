@@ -2059,6 +2059,18 @@ static INGEST_RULES_UNAVAILABLE: FailureKind = FailureKind {
     retry_after_seconds: Some(5),
 };
 
+/// The org's own rules need more scanning than one payload may use. Not the sender's fault and
+/// its data is lost, so the span is `Error`; smaller batches fit.
+static INGEST_RULES_SCAN_BUDGET: FailureKind = FailureKind {
+    tag: "@maple/ingest/IngestRulesScanBudget",
+    code: "ingest_rules_scan_budget",
+    title: "Ingest rules scan budget exceeded",
+    recovery: "fix_request",
+    retryable: false,
+    error_kind: "rules_scan_budget",
+    retry_after_seconds: None,
+};
+
 static INGEST_INTERNAL_ERROR: FailureKind = FailureKind {
     tag: "@maple/ingest/InternalError",
     code: "ingest_internal_error",
@@ -7605,7 +7617,7 @@ async fn apply_ingest_rules(
         warn!(org_id, signal = signal.path(), "Payload exceeds the ingest rule scan budget; refused");
         ApiError::tagged(
             StatusCode::PAYLOAD_TOO_LARGE,
-            &INGEST_PAYLOAD_TOO_LARGE,
+            &INGEST_RULES_SCAN_BUDGET,
             "This payload needs more ingest rule scanning than one request may use; send smaller batches",
         )
     })?;
@@ -16810,6 +16822,11 @@ mod tests {
 
         let error = refused_unforwarded(&state, raw_key, &mut forward_rx).await;
         assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            otel_status_for_rejection(error.status.as_u16(), error.error_kind()),
+            "Error",
+            "the sender's data is lost, so the span must count as an error"
+        );
 
         // Over gRPC the refusal is a code exporters do not retry.
         let resolved = state
