@@ -1,4 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { badge } from "@maple/views/ui/display"
@@ -182,11 +183,28 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 									? pathsPanel(h, model, state)
 									: isProductEventsFunnel(state)
 										? funnelPanel(h, model, state)
-										: queryPanels(h, model, state, timeZone)),
+										: state.queryFixed
+											? [fixedQueryNote(h), runPreviewButton(h, false)]
+											: queryPanels(h, model, state, timeZone)),
 						]),
 		],
 	)
 }
+
+/** Applies the staged query and display edits (row limit, aggregate) to the preview. */
+const runPreviewButton = (h: H, isDisabled: boolean): Html =>
+	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(Message.ClickedRunPreview())] }, [
+		"Run preview",
+	])
+
+/** A preset whose query has no builder equivalent: it stays as stored, only its display edits. */
+const fixedQueryNote = (h: H): Html =>
+	alert(h, { variant: "info", size: "sm", role: "status" }, [
+		alertTitle(h, ["This preset's query can't be edited"]),
+		alertDescription(h, [
+			"Change its display options here, or recreate it from the query builder or Raw SQL.",
+		]),
+	])
 
 /** The query panels, formula panels and the toolbar under them. */
 const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): ReadonlyArray<Html> => {
@@ -213,7 +231,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 						Arr.map(state.formulas, (formula) => formulaPanel(h, formula)),
 					),
 				]),
-		hstack(h, { gap: "3" }, [
+		hstack(h, { gap: "3", wrap: true }, [
 			button(
 				h,
 				{
@@ -237,15 +255,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 						),
 					]
 				: []),
-			button(
-				h,
-				{
-					size: "sm",
-					isDisabled: error !== null,
-					attributes: [h.OnClick(Message.ClickedRunPreview())],
-				},
-				["Run preview"],
-			),
+			runPreviewButton(h, error !== null),
 			// Two text nodes once there are formulas.
 			typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
 				Arr.join(

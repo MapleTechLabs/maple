@@ -23,8 +23,9 @@ import type { Resources } from "../../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
 import { generateWidgetId, withAddedWidget } from "../../dashboards/kit/layout"
 import { createPayload } from "../../dashboards/kit/portable"
-import { awaitTxid, mutateDashboard } from "../../dashboards/kit/store"
+import { awaitTxid, mutateDashboard, WriteSync } from "../../dashboards/kit/store"
 import { inferDisplayUnitForQuery } from "../../dashboards/widget/drafts"
+import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -61,13 +62,16 @@ export const Message = defineMessageUnion({
 	ChangedNewName: { value: Schema.String },
 	ClickedDashboard: { dashboardId: Schema.String },
 	ClickedCreate: {},
-	CompletedAddWidget: { dashboardId: Schema.String, result: Schema.Result(Schema.Void, LoadFailure) },
+	CompletedAddWidget: { dashboardId: Schema.String, result: Schema.Result(WriteSync, LoadFailure) },
 	CompletedCreateDashboard: { result: Schema.Result(Schema.String, LoadFailure) },
 })
 export type Message = typeof Message.Type
 
 /** Where the page goes once the widget landed: the dashboard. */
-export const OutMessage = defineMessageUnion({ OpenedDashboard: { dashboardId: Schema.String } })
+export const OutMessage = defineMessageUnion({
+	/** `isBehind`: the widget was saved, but this tab's live sync did not catch up yet. */
+	OpenedDashboard: { dashboardId: Schema.String, isBehind: Schema.Boolean },
+})
 export type OutMessage = typeof OutMessage.Type
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
@@ -94,9 +98,22 @@ export const explorerTimeRangeOf = (
 const readablePreset = (preset: string | undefined): string | undefined =>
 	preset !== undefined && resolveRelativeRangeToWarehouse(preset, 0, "UTC") !== null ? preset : undefined
 
+// The metrics aggregations whose result is in the metric's own unit; count and rate are not.
+const UNIT_PRESERVING = new Set(["avg", "min", "max", "sum", "increase"])
+
+/** The declared OTel unit when the aggregation keeps it and the chart can read it, else the inferred one. */
+const displayUnitOf = (draft: typeof MetricsQueryDraftSchema.Type, declaredUnit: string) =>
+	(UNIT_PRESERVING.has(draft.aggregation)
+		? chartUnitFromOtel(declaredUnit, draft.metricName)
+		: undefined) ?? inferDisplayUnitForQuery(draft)
+
 /** `widgetDisplay` and `buildWidgetDataSource`: a fresh query id, never the explorer's own. */
-export const widgetOf = (draft: typeof MetricsQueryDraftSchema.Type, queryId: string) => {
-	const unit = inferDisplayUnitForQuery(draft)
+export const widgetOf = (
+	draft: typeof MetricsQueryDraftSchema.Type,
+	declaredUnit: string,
+	queryId: string,
+) => {
+	const unit = displayUnitOf(draft, declaredUnit)
 	return {
 		visualization: "chart" as const,
 		dataSource: makeQueryDataSource({ resultShape: "timeseries", queries: [{ ...draft, id: queryId }] }),
@@ -109,18 +126,23 @@ export const widgetOf = (draft: typeof MetricsQueryDraftSchema.Type, queryId: st
 }
 
 export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
-	args: { orgId: Schema.String, dashboardId: Schema.String, draft: MetricsQueryDraftSchema },
+	args: {
+		orgId: Schema.String,
+		dashboardId: Schema.String,
+		draft: MetricsQueryDraftSchema,
+		declaredUnit: Schema.String,
+	},
 	messages: [Message.CompletedAddWidget],
-	execute: ({ orgId, dashboardId, draft }) =>
+	execute: ({ orgId, dashboardId, draft, declaredUnit }) =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
 			const random = yield* Random.next
 			const id = generateWidgetId(nowMs, random)
 			const secureRandom = yield* SecureRandom.SecureRandom
 			const queryId = yield* secureRandom.uuidV4()
-			const widget = widgetOf(draft, queryId)
+			const widget = widgetOf(draft, declaredUnit, queryId)
 			// The write is awaited: a failed persist keeps the dialog open with its error, never a navigation.
-			yield* mutateDashboard(orgId, dashboardId, (document, nowIso) =>
+			return yield* mutateDashboard(orgId, dashboardId, (document, nowIso) =>
 				withAddedWidget(document, { id, ...widget, layout: defaultWidgetLayout("chart") }, nowIso),
 			)
 		}).pipe(
@@ -136,16 +158,17 @@ export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget",
 		orgId: Schema.String,
 		name: Schema.String,
 		draft: MetricsQueryDraftSchema,
+		declaredUnit: Schema.String,
 		timeRange: TimeRangeSchema,
 	},
 	messages: [Message.CompletedCreateDashboard],
-	execute: ({ orgId, name, draft, timeRange }) =>
+	execute: ({ orgId, name, draft, declaredUnit, timeRange }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const random = yield* SecureRandom.SecureRandom
 			const widgetId = yield* random.uuidV4()
 			const queryId = yield* random.uuidV4()
-			const widget = { id: widgetId, ...widgetOf(draft, queryId) }
+			const widget = { id: widgetId, ...widgetOf(draft, declaredUnit, queryId) }
 			const created = yield* client.dashboards.create({
 				payload: createPayload({
 					name,
@@ -197,6 +220,8 @@ export const open = (model: Model): Return => liftDialog(model, Dialog.open(mode
 type Context = Readonly<{
 	orgId: string
 	draft: typeof MetricsQueryDraftSchema.Type | null
+	/** The catalog's OTel unit for the metric (`ms`, `By`, `1`), `""` when none is declared. */
+	declaredUnit: string
 	/** The explorer's window: a dashboard created here opens on it. */
 	timeRange: TimeRange
 }>
@@ -212,7 +237,14 @@ export const update = (model: Model, message: Message, context: Context): Return
 				? { model }
 				: {
 						model: { ...model, addingTo: dashboardId, error: null },
-						commands: [AddWidget({ orgId: context.orgId, dashboardId, draft: context.draft })],
+						commands: [
+							AddWidget({
+								orgId: context.orgId,
+								dashboardId,
+								draft: context.draft,
+								declaredUnit: context.declaredUnit,
+							}),
+						],
 					},
 		// `handleCreate`: a blank name or a create in flight does nothing.
 		ClickedCreate: () => {
@@ -226,6 +258,7 @@ export const update = (model: Model, message: Message, context: Context): Return
 								orgId: context.orgId,
 								name,
 								draft: context.draft,
+								declaredUnit: context.declaredUnit,
 								timeRange: context.timeRange,
 							}),
 						],
@@ -235,7 +268,8 @@ export const update = (model: Model, message: Message, context: Context): Return
 			dashboardId !== model.addingTo
 				? { model }
 				: Result.match(result, {
-						onSuccess: () => closedTo({ ...model, addingTo: null }, dashboardId),
+						onSuccess: (sync) =>
+							closedTo({ ...model, addingTo: null }, dashboardId, sync === "Behind"),
 						onFailure: (failure) => ({
 							model: {
 								...model,
@@ -246,7 +280,7 @@ export const update = (model: Model, message: Message, context: Context): Return
 					}),
 		CompletedCreateDashboard: ({ result }) =>
 			Result.match(result, {
-				onSuccess: (dashboardId) => closedTo({ ...model, isCreating: false }, dashboardId),
+				onSuccess: (dashboardId) => closedTo({ ...model, isCreating: false }, dashboardId, false),
 				onFailure: (failure) => ({
 					model: {
 						...model,
@@ -258,9 +292,9 @@ export const update = (model: Model, message: Message, context: Context): Return
 	})
 
 /** `onOpenChange(false)` then `navigate({ to: "/dashboards/$dashboardId" })`. */
-const closedTo = (model: Model, dashboardId: string): Return => ({
+const closedTo = (model: Model, dashboardId: string, isBehind: boolean): Return => ({
 	...liftDialog(model, Dialog.close(model.dialog)),
-	outMessage: OutMessage.OpenedDashboard({ dashboardId }),
+	outMessage: OutMessage.OpenedDashboard({ dashboardId, isBehind }),
 })
 
 // VIEW

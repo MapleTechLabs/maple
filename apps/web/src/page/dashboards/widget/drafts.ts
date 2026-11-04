@@ -211,7 +211,8 @@ export const legacyQueryDraft = (raw: Readonly<Record<string, unknown>>): QueryD
 	const base = {
 		...fallback,
 		whereClause: formatFiltersAsWhereClause({ ...raw }),
-		aggregation: typeof params.metric === "string" ? params.metric : fallback.aggregation,
+		// No metric reads as a count, never the new-query default (error rate).
+		aggregation: typeof params.metric === "string" ? params.metric : "count",
 		stepInterval:
 			typeof params.bucketSeconds === "number" ? String(params.bucketSeconds) : fallback.stepInterval,
 		addOns: { ...fallback.addOns, groupBy: Arr.isArray(params.groupBy) && params.groupBy.length > 0 },

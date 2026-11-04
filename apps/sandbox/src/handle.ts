@@ -15,11 +15,14 @@ import {
 import {
 	EXECUTOR_DESTROY_PATH,
 	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RELEASE_PATH,
 	EXECUTOR_RUN_PATH,
 	ExecutorDestroyRequest,
 	type ExecutorDestroyResponse,
 	ExecutorPrepareRequest,
 	type ExecutorPrepareResponse,
+	ExecutorReleaseRequest,
+	type ExecutorReleaseResponse,
 	ExecutorRunRequest,
 	type ExecutorRunResponse,
 	ExecutorUnavailable,
@@ -48,11 +51,20 @@ export interface SandboxHandleEnv {
 			executorKey: string,
 			request: typeof ExecutorRunRequest.Encoded,
 		) => Promise<typeof ExecutorRunResponse.Encoded>
+		readonly release: (
+			executorKey: string,
+			request: typeof ExecutorReleaseRequest.Encoded,
+		) => Promise<typeof ExecutorReleaseResponse.Encoded>
 		readonly destroy: (executorKey: string) => Promise<typeof ExecutorDestroyResponse.Encoded>
 	}
 }
 
-const EXECUTOR_PATHS = new Set([EXECUTOR_PREPARE_PATH, EXECUTOR_RUN_PATH, EXECUTOR_DESTROY_PATH])
+const EXECUTOR_PATHS = new Set([
+	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RUN_PATH,
+	EXECUTOR_RELEASE_PATH,
+	EXECUTOR_DESTROY_PATH,
+])
 
 const decodeRequest = Schema.decodeUnknownEffect(SandboxExecRequest)
 const encodeRequest = Schema.encodeSync(SandboxExecRequest)
@@ -130,9 +142,11 @@ const readJson = (request: Request) =>
 
 const decodePrepare = Schema.decodeUnknownEffect(ExecutorPrepareRequest)
 const decodeRun = Schema.decodeUnknownEffect(ExecutorRunRequest)
+const decodeRelease = Schema.decodeUnknownEffect(ExecutorReleaseRequest)
 const decodeDestroy = Schema.decodeUnknownEffect(ExecutorDestroyRequest)
 const encodePrepare = Schema.encodeSync(ExecutorPrepareRequest)
 const encodeRun = Schema.encodeSync(ExecutorRunRequest)
+const encodeRelease = Schema.encodeSync(ExecutorReleaseRequest)
 const encodeUnavailable = Schema.encodeSync(ExecutorUnavailable)
 
 /** One executor request, decoded here and answered by the run's Durable Object. */
@@ -175,6 +189,14 @@ const handleExecutor = (path: string, request: Request, env: SandboxHandleEnv): 
 				const run = decoded.value
 				return yield* call(run.executorKey, "", () =>
 					env.executor.run(run.executorKey, encodeRun(run)),
+				)
+			}
+			case EXECUTOR_RELEASE_PATH: {
+				const decoded = yield* decodeRelease(body).pipe(Effect.option)
+				if (decoded._tag === "None") return invalid
+				const release = decoded.value
+				return yield* call(release.executorKey, "", () =>
+					env.executor.release(release.executorKey, encodeRelease(release)),
 				)
 			}
 			default: {

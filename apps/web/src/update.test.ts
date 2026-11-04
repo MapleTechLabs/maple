@@ -1,5 +1,5 @@
 import { OrgId, UserId } from "@maple/domain"
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { UrlRequest } from "foldkit/navigation"
 import { fromString as urlFromString } from "foldkit/url"
 import { describe, expect, test, vi } from "vitest"
@@ -12,6 +12,8 @@ import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import { enterRoute, pageIdentity } from "./page/registry"
 import { Message as ServicesMessage } from "./page/services/list/message"
+import * as AddToDashboard from "./page/metrics/detail/add-to-dashboard"
+import { Message as MetricMessage } from "./page/metrics/detail/message"
 import * as SignIn from "./page/sign-in"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
@@ -78,6 +80,39 @@ describe("root navigation", () => {
 		expect(
 			update(zoned.model, Message.ChangedTimeZonePreference({ timeZone: "Asia/Tokyo" })).commands ?? [],
 		).toEqual([])
+	})
+
+	test("a behind write's navigation toast keeps its timeout and Reconnect button", () => {
+		const route = AppRoute.Metric({ metricName: "cpu", search: {} })
+		const context = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+		const entered = Option.getOrThrow(Option.fromNullishOr(enterRoute(null, route, context, 1).slot))
+		const adding = { ...AddToDashboard.init(), addingTo: "dash_1" }
+		const slot =
+			entered._tag === "MetricDetail"
+				? { ...entered, model: { ...entered.model, addToDashboard: adding } }
+				: entered
+		const model: Model = { ...base(route), page: slot, pageInstances: 1 }
+		const landed = update(
+			model,
+			Message.GotPageMessage({
+				message: {
+					_tag: "MetricDetail",
+					key: slot.key,
+					orgId: slot.orgId,
+					instance: slot.instance,
+					message: MetricMessage.GotAddToDashboardMessage({
+						message: AddToDashboard.Message.CompletedAddWidget({
+							dashboardId: "dash_1",
+							result: Result.succeed("Behind"),
+						}),
+					}),
+				},
+			}),
+		)
+		expect(Object.values(landed.model.toastRootActions)).toEqual([{ _tag: "ReconnectOrgCollections" }])
+		expect(landed.model.toasts.toasts).toMatchObject([
+			{ title: "Saved, but this tab is behind", actionLabel: "Reconnect", timeoutMs: 10000 },
+		])
 	})
 
 	test("a closed toast's action entries are dropped", () => {

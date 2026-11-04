@@ -3,12 +3,13 @@ import {
 	EXECUTOR_LIMITS,
 	ExecutorPrepareRequest,
 	ExecutorPromotion,
+	ExecutorReleaseRequest,
 	ExecutorRunRequest,
 } from "@maple/domain/executor"
 import { Effect, Array as Arr, String as Str } from "effect"
 import type { GatewayProps } from "./executor-gateway"
 import { PREPARE_STATE_DIR, PROMOTE_HELPER, RUN_TRAILER } from "./executor-scripts"
-import { type ExecResult, type ExecutorHost, destroy, prepare, run } from "./executor-session"
+import { type ExecResult, type ExecutorHost, destroy, prepare, release, run } from "./executor-session"
 
 const SHA = Str.repeat(40)("b")
 const TOKEN = "ghs_clone_token"
@@ -260,6 +261,19 @@ describe("run", () => {
 		}),
 	)
 
+	it.effect("refuses a command from an agent that was released", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([[isRun, exited(`\n${RUN_TRAILER} released 0 0 0\n`)]])
+			const answer = yield* run(
+				fake.host,
+				runRequest([new ExecutorPromotion({ path: "a", maxBytes: 1 })]),
+				"c",
+			)
+			assert.strictEqual(answer._tag, "ExecutorUnavailable")
+			assert.isFalse(Arr.some(fake.execs, isPromote))
+		}),
+	)
+
 	it.effect("never reports a command whose isolation failed as having run", () =>
 		Effect.gen(function* () {
 			const fake = fakeHost([
@@ -269,6 +283,39 @@ describe("run", () => {
 			assert.strictEqual(answer._tag, "ExecutorUnavailable")
 			if (answer._tag !== "ExecutorUnavailable") return
 			assert.include(answer.message, "Operation not permitted")
+		}),
+	)
+})
+
+describe("release", () => {
+	const releaseRequest = new ExecutorReleaseRequest({ executorKey: "run-1", agentId: "hunter-3" })
+	const isRelease = (script: string) => Str.includes("/audit/released/hunter-3")(script)
+
+	it.effect("runs the agent's release in its container", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([[isRelease, exited("")]])
+			assert.strictEqual((yield* release(fake.host, releaseRequest))._tag, "ExecutorReleased")
+			assert.lengthOf(fake.execs, 1)
+		}),
+	)
+
+	it.effect("has nothing to do when the container is gone", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([], { running: false })
+			assert.strictEqual((yield* release(fake.host, releaseRequest))._tag, "ExecutorReleased")
+			assert.lengthOf(fake.execs, 0)
+		}),
+	)
+
+	it.effect("answers unavailable, with what was left, when a step failed", () =>
+		Effect.gen(function* () {
+			const fake = fakeHost([
+				[isRelease, { exitCode: 3, stdout: "", stderr: "could not release: cgroup", durationMs: 5 }],
+			])
+			const answer = yield* release(fake.host, releaseRequest)
+			assert.strictEqual(answer._tag, "ExecutorUnavailable")
+			if (answer._tag !== "ExecutorUnavailable") return
+			assert.include(answer.message, "cgroup")
 		}),
 	)
 })

@@ -120,6 +120,8 @@ export const EditorState = Schema.Struct({
 	queries: Schema.Array(QueryDraft),
 	/** A fixed-endpoint widget whose stand-in queries are untouched: Apply and the preview keep its source. */
 	keepsStoredSource: Schema.Boolean,
+	/** A fixed endpoint no builder query computes: its query is read-only and Apply always keeps its source. */
+	queryFixed: Schema.Boolean,
 	formulas: Schema.Array(FormulaDraft),
 	comparisonMode: Schema.Literals(QUERY_COMPARISON_MODES),
 	includePercentChange: Schema.Boolean,

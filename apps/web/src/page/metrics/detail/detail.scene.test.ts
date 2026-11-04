@@ -6,6 +6,8 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { MetricRow } from "../shared"
+import { behindToastContent } from "../../dashboards/kit/store"
+import * as AddToDashboard from "./add-to-dashboard"
 import { MountWhereCaret } from "./command"
 import { appendWhereFilter } from "./derive"
 import { CaretMessage } from "./where-editor"
@@ -234,5 +236,48 @@ describe("metric detail", () => {
 			themeResolved(),
 			expectView(text("No data for this metric in this window")).toExist(),
 		)
+	})
+
+	describe("add to dashboard", () => {
+		const landed = (sync: "Synced" | "Behind") => {
+			const model = loaded([row("checkout-api")])
+			const adding = { ...model, addToDashboard: { ...model.addToDashboard, addingTo: "dash_1" } }
+			return pageUpdate(
+				adding,
+				Message.GotAddToDashboardMessage({
+					message: AddToDashboard.Message.CompletedAddWidget({
+						dashboardId: "dash_1",
+						result: Result.succeed(sync),
+					}),
+				}),
+			).outMessage
+		}
+
+		test("the widget picks up the catalog's declared unit", () => {
+			const model = loaded([row("checkout-api")])
+			const adding = pageUpdate(
+				model,
+				Message.GotAddToDashboardMessage({
+					message: AddToDashboard.Message.ClickedDashboard({ dashboardId: "dash_1" }),
+				}),
+			)
+			expect(adding.commands?.[0]?.args).toMatchObject({ declaredUnit: "s" })
+		})
+
+		test("a write this tab did not sync back opens the dashboard with the behind toast", () => {
+			expect(landed("Behind")).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/dashboards/dash_1",
+					isReplace: false,
+					toast: behindToastContent,
+				}),
+			)
+		})
+
+		test("a synced write opens the dashboard without a toast", () => {
+			expect(landed("Synced")).toEqual(
+				PageOutMessage.RequestedNavigation({ url: "/dashboards/dash_1", isReplace: false }),
+			)
+		})
 	})
 })

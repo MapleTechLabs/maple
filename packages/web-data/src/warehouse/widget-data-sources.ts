@@ -75,7 +75,7 @@ export const widgetServerFunctions = {
 
 export type WidgetDataSourceEndpoint = keyof typeof widgetServerFunctions
 
-const isWidgetDataSourceEndpoint = (endpoint: string): endpoint is WidgetDataSourceEndpoint =>
+export const isWidgetDataSourceEndpoint = (endpoint: string): endpoint is WidgetDataSourceEndpoint =>
 	Object.prototype.hasOwnProperty.call(widgetServerFunctions, endpoint)
 
 /**

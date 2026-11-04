@@ -47,11 +47,14 @@ import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
 import {
 	EXECUTOR_DESTROY_PATH,
 	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RELEASE_PATH,
 	EXECUTOR_RUN_PATH,
 	ExecutorDestroyRequest,
 	ExecutorDestroyResponse,
 	ExecutorPrepareRequest,
 	ExecutorPrepareResponse,
+	ExecutorReleaseRequest,
+	ExecutorReleaseResponse,
 	ExecutorRunRequest,
 	ExecutorRunResponse,
 } from "@maple/domain/executor"
@@ -332,6 +335,12 @@ const httpTransport = (base: string): ExecutorTransport => {
 			),
 		run: (request) =>
 			send(EXECUTOR_RUN_PATH, Schema.encodeSync(ExecutorRunRequest)(request), ExecutorRunResponse),
+		release: (request) =>
+			send(
+				EXECUTOR_RELEASE_PATH,
+				Schema.encodeSync(ExecutorReleaseRequest)(request),
+				ExecutorReleaseResponse,
+			),
 		destroy: (request) =>
 			send(
 				EXECUTOR_DESTROY_PATH,
@@ -437,6 +446,7 @@ const main = async () => {
 										(error) => new AuditExecutionError({ message: error.message }),
 									),
 								),
+						release: (agentId) => executor.release(executorRun, agentId),
 					}
 		const agents = yield* makeAuditAgents(models, localSource(args.repoDir, sha), execution).pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide

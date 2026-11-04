@@ -194,10 +194,22 @@ export interface SynthesisInput {
 }
 
 /**
+ * Units one synthesis answer seeds. The whole plan is one model call capped at 32k output tokens,
+ * reasoning included: about 60 full units on a large monorepo ran past it. The coverage critic adds
+ * the surfaces left unseeded after each wave. A retry, after an answer that did not fit or decode,
+ * seeds fewer.
+ */
+export const SYNTHESIS_SEED_LIMIT = { first: 40, retry: 20 } as const
+
+/**
  * The parent's synthesis step, delegated: in the skill a model parent writes `architecture.md` and
  * seeds the ledger. Code owns ids, state and validation; this agent owns the judgment.
  */
-export const synthesisPrompt = (input: SynthesisInput, context: AgentContext): string =>
+export const synthesisPrompt = (
+	input: SynthesisInput,
+	context: AgentContext,
+	attempt: keyof typeof SYNTHESIS_SEED_LIMIT = "first",
+): string =>
 	Arr.join(
 		[
 			`You synthesize reconnaissance for a ${input.profile} security audit of ${input.target}. Scope: ${input.scopePaths.length === 0 ? "the whole repository" : Arr.join(input.scopePaths, ", ")}. Write the parent's architecture summary and the initial coverage-ledger units, following the skill's rules below exactly.`,
@@ -217,6 +229,12 @@ export const synthesisPrompt = (input: SynthesisInput, context: AgentContext): s
 					'{"architecture_md": "<the architecture summary, about 1,000 words at most>", "units": [<seed unit>, ...]}',
 					"Each seed unit carries the semantic fields of a ledger unit and nothing else: canonical_refs (surface, boundary, subsystem, attack_class, and lifecycle only when material), surface, boundary, subsystem, attack_class, lifecycle (with canonical_refs.lifecycle), starting_paths, ordinary_attack_class_block, selected_companion_blocks, excluded_blocks. Add priority (an integer, 1 is hunted first) ranking unauthenticated or lowest-trust entry surfaces first, then boundaries protecting the most valuable resources (credentials, cross-tenant data, code execution, release authority). The parent derives coverage_id and every state field.",
 					`Block references must be exact: an ordinary block is one of the list above; a companion block is FILE.md# plus the heading text before any parenthetical qualifier. Seed only in-scope surfaces as assignable units.${input.profile === "deep" ? " This is a deep run: split units per subsystem and per material lifecycle mode." : ""}`,
+					`Your answer must fit one reply. Seed at most ${SYNTHESIS_SEED_LIMIT[attempt]} units, the highest-priority ones; the coverage critic adds the remaining surfaces after each hunting wave, so name every entry surface you found, seeded or not, in architecture_md. Keep each excluded_blocks reason to one short clause, and leave the companion "Core discipline", "Universal moves" and "Validation rules" sections out of selected_companion_blocks: the parent adds them.`,
+					...(attempt === "retry"
+						? [
+								"A previous attempt at this result did not produce a usable answer: it ran out of room or broke the contract. Do not explore the repository again; the reconnaissance above is enough. Answer directly and keep it compact.",
+							]
+						: []),
 				],
 				"\n\n",
 			),
@@ -381,7 +399,7 @@ export const criticPrompt = (input: CriticInput, context: AgentContext): string 
 		[
 			`You are a fresh ${input.kind} coverage critic in a defensive security audit. You read source but do not write files or run targets. You propose coverage, not findings.`,
 			VERBATIM.coverageCritic,
-			`## architecture.md\n\n${input.architectureMd}`,
+			`## architecture.md\n\nSynthesis seeded at most ${SYNTHESIS_SEED_LIMIT.first} units, the highest-priority ones. An entry surface named here with no ledger unit is a missing unit, not a deliberate exclusion.\n\n${input.architectureMd}`,
 			...repoTreeSection(input.repoTree),
 			`## Coverage ledger\n\nOne unit per line. Each unit's \`id\` is the name to use in \`reassign_ids\`; left out are each unit's owner (\`agent_id\`), its scheduling (\`priority\`, \`failed_attempts\`), check prose (only each check's invariant is listed, as \`checks\`), archived attempts (only their count), and any field that is empty, null or unchanged from a new unit (\`prior_status\` none, \`wave\` 1, no attempts).\n\n${encodeData(input.ledger)}`,
 			`## Candidate fingerprints and states\n\n${input.candidateStates.length === 0 ? "None." : encodeData(input.candidateStates)}`,

@@ -167,7 +167,7 @@ const typePicker = (h: H, state: EditorState): Html =>
 			onChange: (panel) => Message.ClickedPanelType({ panel }),
 			size: "sm",
 			ariaLabel: "Panel type",
-			className: "grid w-full grid-cols-3 *:text-xs",
+			className: "grid w-full grid-cols-2 *:text-xs",
 		}),
 	])
 

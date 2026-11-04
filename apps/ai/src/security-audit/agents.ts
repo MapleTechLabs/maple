@@ -26,7 +26,12 @@ import {
 } from "../chat/budgets"
 import { reportedCostOf } from "../platform/genai-spans"
 import type { LlmClients, ResolvedModel } from "../platform/Llm"
-import { type AuditExecutionApi, EXECUTION_TOOLKIT, executionToolHandlers } from "./execution"
+import {
+	type AuditExecutionApi,
+	EXECUTION_TOOLKIT,
+	executionToolHandlers,
+	invocationExecution,
+} from "./execution"
 import { AUDIT_TOOLKIT, auditToolHandlers, type SourceReaderApi } from "./source"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 
@@ -133,9 +138,9 @@ export const makeAuditAgents = (
 				// A retried attempt gets its own uid and scratch: it never sees the failed attempt's files.
 				const uid = yield* secureRandom.uuidV4()
 				const attempt = Str.slice(0, 8)(uid)
-				const sandbox: AuditExecutionApi | undefined =
+				const sandbox =
 					execution !== undefined && EXECUTING_ROLES.has(invocation.role)
-						? { run: (agentId, command) => execution.run(`${agentId}-${attempt}`, command) }
+						? yield* invocationExecution(execution, `${invocation.agentId}-${attempt}`)
 						: undefined
 				const options = { estimateCostMicrousd: reportedCost }
 				// Each invocation is an entry point: one agent run with its own tools and empty history.
@@ -158,6 +163,8 @@ export const makeAuditAgents = (
 									InMemory.layer,
 								),
 							),
+							// So a run's agents never add up in its one container.
+							sandbox.releasingAfter,
 						)
 					: AgentRuntime.run(auditAgent(invocation.role, model), invocation.prompt, options).pipe(
 							// oxlint-disable-next-line effecttsgo/strict-effect-provide

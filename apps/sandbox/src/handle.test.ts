@@ -5,7 +5,12 @@ import {
 	SandboxExecResponse,
 	SandboxRunExited,
 } from "@maple/domain/sandbox"
-import { EXECUTOR_DESTROY_PATH, EXECUTOR_PREPARE_PATH, EXECUTOR_RUN_PATH } from "@maple/domain/executor"
+import {
+	EXECUTOR_DESTROY_PATH,
+	EXECUTOR_PREPARE_PATH,
+	EXECUTOR_RELEASE_PATH,
+	EXECUTOR_RUN_PATH,
+} from "@maple/domain/executor"
 import { Effect, Schema, String as Str } from "effect"
 import { handle, type SandboxHandleEnv } from "./handle"
 
@@ -43,6 +48,7 @@ const post = (payload: unknown = body(), authorization = `Bearer ${SERVICE_TOKEN
 const noExecutor: SandboxHandleEnv["executor"] = {
 	prepare: () => Promise.reject(new Error("no executor in this test")),
 	run: () => Promise.reject(new Error("no executor in this test")),
+	release: () => Promise.reject(new Error("no executor in this test")),
 	destroy: () => Promise.reject(new Error("no executor in this test")),
 }
 
@@ -159,6 +165,30 @@ describe("handle, executor routes", () => {
 			const payload = yield* Effect.promise(() => answered(response))
 			assert.strictEqual(payload._tag, "ExecutorPreparing")
 			assert.deepStrictEqual(keys, ["run-1"])
+		}),
+	)
+
+	it.effect("hands a release to the run's executor, naming the agent", () =>
+		Effect.gen(function* () {
+			const asked: Array<string> = []
+			const response = yield* handle(
+				executorPost(EXECUTOR_RELEASE_PATH, { executorKey: "run-1", agentId: "hunter-2-ab12cd34" }),
+				env(unreachable, {
+					...noExecutor,
+					release: async (key, request) => {
+						asked.push(`${key} ${request.agentId}`)
+						return { _tag: "ExecutorReleased" }
+					},
+				}),
+			)
+			const payload = yield* Effect.promise(() => answered(response))
+			assert.strictEqual(payload._tag, "ExecutorReleased")
+			assert.deepStrictEqual(asked, ["run-1 hunter-2-ab12cd34"])
+			const invalid = yield* handle(
+				executorPost(EXECUTOR_RELEASE_PATH, { executorKey: "run-1", agentId: "../other" }),
+				env(unreachable),
+			)
+			assert.strictEqual(invalid.status, 400)
 		}),
 	)
 

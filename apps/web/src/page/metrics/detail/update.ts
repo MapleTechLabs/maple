@@ -1,6 +1,7 @@
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as AddToDashboard from "./add-to-dashboard"
+import { behindToastContent } from "../../dashboards/kit/store"
 import {
 	appliedSuggestion,
 	caretMessage,
@@ -259,6 +260,7 @@ const liftAddToDashboard = (
 		outMessage: PageOutMessage.RequestedNavigation({
 			url: hrefOf(AppRoute.Dashboard({ dashboardId, search: {} })),
 			isReplace: false,
+			...(step.outMessage.isBehind ? { toast: behindToastContent } : undefined),
 		}),
 	}
 }
@@ -501,6 +503,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				AddToDashboard.update(model.addToDashboard, inner, {
 					orgId: context.orgId,
 					draft: summary === null ? null : draftOf(model, summary),
+					declaredUnit: summary === null ? "" : summary.unit,
 					timeRange: AddToDashboard.explorerTimeRangeOf(model.search, DEFAULT_PRESET),
 				}),
 			)
