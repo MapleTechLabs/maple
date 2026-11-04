@@ -320,6 +320,45 @@ describe("dashboard view", () => {
 		expect(released.model.gesture).toBeNull()
 	})
 
+	test("a window narrowed into another tier mid-drag cancels the drag instead of saving a projection", () => {
+		const editing = pageUpdate(
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
+			Message.MeasuredGrid({ width: 1200 }),
+		).model
+		const pressed = pageUpdate(
+			editing,
+			Message.PressedGrip({ widgetId: "total-errors", clientX: 100, clientY: 100 }),
+		).model
+		const dragged = pageUpdate(
+			pressed,
+			Message.MovedPointer({ clientX: 700, clientY: 100, gridLeft: 0, gridTop: 0 }),
+		).model
+		expect(dragged.gesture?.isStarted).toBe(true)
+		const narrowed = pageUpdate(dragged, Message.MeasuredGrid({ width: 500 })).model
+		expect(narrowed.gesture).toBeNull()
+		const released = pageUpdate(narrowed, Message.ReleasedPointer())
+		expect(names(released.commands)).toEqual([])
+	})
+
+	test("a window narrowed during a keyboard move puts the tile back without a write", () => {
+		const editing = pageUpdate(
+			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,
+			Message.MeasuredGrid({ width: 1200 }),
+		).model
+		const key = (value: string) =>
+			Message.PressedGripKey({
+				widgetId: "total-errors",
+				label: "Total errors",
+				key: value,
+				isShift: false,
+			})
+		const moved = pageUpdate(pageUpdate(editing, key(" ")).model, key("ArrowRight")).model
+		const narrowed = pageUpdate(moved, Message.MeasuredGrid({ width: 500 }))
+		expect(narrowed.model.keyboardMove).toBeNull()
+		expect(names(narrowed.commands)).toEqual([])
+		expect(narrowed.model.gridAnnouncement).toMatch(/^Move cancelled/)
+	})
+
 	test("a tile picked up with Space moves with the arrows; Escape puts it back without a write", () => {
 		const editing = pageUpdate(
 			routeChanged(ready(), { ...ROUTE, search: { mode: "edit" } }, context).model,

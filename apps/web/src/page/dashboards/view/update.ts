@@ -37,7 +37,7 @@ import {
 	SaveRefreshInterval,
 	SaveTimeRange,
 } from "./command"
-import { gestureStep } from "./gesture"
+import { cancelStaleGesture, gestureStep } from "./gesture"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { awaitsRefresh, isSameTimeRange, replan, replanTile, slotOf, timeRangeOf, withCharts } from "./plan"
@@ -522,7 +522,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			updated.orgId === context.orgId ? receiveDocument(model, context, updated) : { model },
 		CompletedReadClock: ({ nowMs }) =>
 			withReplan({ ...model, nowMs }, context, model.refreshVersion > 0 ? "Refresh" : "Load"),
-		MeasuredGrid: ({ width }) => ({ model: { ...model, gridWidth: width } }),
+		MeasuredGrid: ({ width }) => cancelStaleGesture({ ...model, gridWidth: width }, context),
 		MeasuredWidget: ({ widgetId, widthPx }) => {
 			const slot = slotOf(model, widgetId)
 			if (slot.widthPx === widthPx) return { model }

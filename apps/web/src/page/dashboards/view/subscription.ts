@@ -76,12 +76,19 @@ export const pointerEvents = (widgetId: string) =>
 					if (isScrolled) pointer.frame = requestAnimationFrame(step)
 				}
 				const onMove = (event: PointerEvent) => {
+					// No button held: the release came before these listeners attached (a quick tap).
+					if (event.buttons === 0) {
+						Queue.offerUnsafe(queue, Message.ReleasedPointer())
+						return
+					}
 					pointer.x = event.clientX
 					pointer.y = event.clientY
 					if (pointer.frame === 0) pointer.frame = requestAnimationFrame(step)
 				}
 				const onUp = () => Queue.offerUnsafe(queue, Message.ReleasedPointer())
 				const onCancel = () => Queue.offerUnsafe(queue, Message.CancelledPointer())
+				// Switching windows mid-drag: the release would land elsewhere, so the tile goes back.
+				const onWindowBlur = () => Queue.offerUnsafe(queue, Message.CancelledPointer())
 				const onKey = (event: KeyboardEvent) => {
 					if (event.key !== "Escape") return
 					event.preventDefault()
@@ -91,12 +98,14 @@ export const pointerEvents = (widgetId: string) =>
 				window.addEventListener("pointerup", onUp)
 				window.addEventListener("pointercancel", onCancel)
 				window.addEventListener("keydown", onKey)
+				window.addEventListener("blur", onWindowBlur)
 				return () => {
 					cancelAnimationFrame(pointer.frame)
 					window.removeEventListener("pointermove", onMove)
 					window.removeEventListener("pointerup", onUp)
 					window.removeEventListener("pointercancel", onCancel)
 					window.removeEventListener("keydown", onKey)
+					window.removeEventListener("blur", onWindowBlur)
 				}
 			}),
 			(detach) => Effect.sync(detach),

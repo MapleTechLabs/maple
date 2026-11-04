@@ -1,6 +1,6 @@
 import { cellAt, itemRect, moveItem, resizeItem, sameLayout, sizeAt } from "@maple/grid-engine"
 import type { PageContext, PageReturn } from "../../contract"
-import { gridOfWidget, shownLayoutOf } from "./grid"
+import { gridOfWidget, isGestureGrid, shownLayoutOf } from "./grid"
 import { commitLayout } from "./layout-commit"
 import type { Message } from "./message"
 import type { GridGesture, Model } from "./model"
@@ -54,6 +54,7 @@ const press = (
 				dx: 0,
 				dy: 0,
 				isStarted: false,
+				cols: grid.geometry.cols,
 				gridOrigin: null,
 				rect: itemRect(grid.geometry, item),
 				origin,
@@ -71,7 +72,7 @@ type Frame = Readonly<{ clientX: number; clientY: number; gridLeft: number; grid
  */
 const move = (model: Model, gesture: GridGesture, frame: Frame): Return => {
 	const grid = gridOfWidget(model, gesture.widgetId)
-	if (grid === null) return { model }
+	if (!isGestureGrid(grid, gesture.cols)) return { model: { ...model, gesture: null } }
 	const gridOrigin = gesture.gridOrigin ?? { left: frame.gridLeft, top: frame.gridTop }
 	const dx = frame.clientX - gesture.startX + (gridOrigin.left - frame.gridLeft)
 	const dy = frame.clientY - gesture.startY + (gridOrigin.top - frame.gridTop)
@@ -103,9 +104,26 @@ const move = (model: Model, gesture: GridGesture, frame: Frame): Return => {
 
 const release = (model: Model, context: PageContext, gesture: GridGesture, isCommit: boolean): Return => {
 	const ended = { ...model, gesture: null }
-	return gesture.isStarted && isCommit
+	const isSameGrid = isGestureGrid(gridOfWidget(model, gesture.widgetId), gesture.cols)
+	return gesture.isStarted && isCommit && isSameGrid
 		? commitLayout(ended, context, gesture.widgetId, gesture.origin, gesture.preview)
 		: { model: ended }
+}
+
+/**
+ * The grid was measured again: a pointer or keyboard move begun on another column count would
+ * commit a projected layout, so it ends where it began.
+ */
+export const cancelStaleGesture = (model: Model, context: PageContext): Return => {
+	const { gesture, keyboardMove } = model
+	if (gesture !== null && !isGestureGrid(gridOfWidget(model, gesture.widgetId), gesture.cols))
+		return { model: { ...model, gesture: null } }
+	if (
+		keyboardMove !== null &&
+		!isGestureGrid(gridOfWidget(model, keyboardMove.widgetId), keyboardMove.cols)
+	)
+		return endKeyboardMove(model, context, keyboardMove, false)
+	return { model }
 }
 
 export const gestureStep = (model: Model, context: PageContext, message: GestureMessage): Return => {
