@@ -64,7 +64,7 @@ use maple_ingest::otlp_json;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
 use maple_ingest::session_analytics::{
     derive_referrer_host, sanitize_product_event, sanitize_session_event, sanitize_session_meta,
-    take_billable_session_start,
+    BillableSessionStarts,
 };
 use maple_ingest::telemetry::{
     AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget, ClickHouseTargetProvider,
@@ -4326,10 +4326,10 @@ async fn handle_replay_meta_inner(
     // Meter one browser session per visit to Autumn: the SDK claims a visit once
     // per visitor per 30-minute idle window across tabs and subdomains, and marks
     // the claiming session's rows `billable_start: 1`. See
-    // `take_billable_session_start` for the rule and its legacy-SDK fallback.
+    // `BillableSessionStarts` for the rule and its per-request bound.
     let country = derive_country(headers, state.config.trust_proxy_geo);
     let mut rows: Vec<Vec<u8>> = Vec::new();
-    let mut session_starts: u64 = 0;
+    let mut session_starts = BillableSessionStarts::default();
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
@@ -4371,9 +4371,7 @@ async fn handle_replay_meta_inner(
         // LowCardinality columns. Clamp before it reaches the warehouse — the
         // SDK's own trimming ships in customer JavaScript.
         sanitize_session_meta(obj);
-        if take_billable_session_start(obj) {
-            session_starts += 1;
-        }
+        session_starts.note(obj);
         rows.push(
             serde_json::to_vec(&value).map_err(|e| {
                 ApiError::bad_request(format!("failed to re-serialize metadata: {e}"))
@@ -4387,9 +4385,9 @@ async fn handle_replay_meta_inner(
     let count = rows.len();
     #[expect(
         clippy::cast_precision_loss,
-        reason = "a single request carries far fewer than 2^53 session starts"
+        reason = "a request bills at most a handful of session starts"
     )]
-    let billable_sessions = session_starts as f64;
+    let billable_sessions = session_starts.count() as f64;
     metered_enqueue(
         state,
         &org_id,
@@ -12189,6 +12187,38 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&queue_dir);
     }
+
+    #[tokio::test]
+    async fn session_metadata_bills_a_repeated_session_start_once() {
+        let queue_dir = unique_main_test_dir("replay-meta-billing");
+        let state = replay_blob_test_state(
+            "maple_sk_test_meta_bill",
+            "org_meta_bill",
+            queue_dir.clone(),
+        )
+        .await;
+        let (state, mut rx) = with_fake_autumn(state).await;
+
+        let body = r#"{"session_id":"sess_1","version":1,"billable_start":1}"#.to_owned() + "\n";
+        let accepted = handle_replay_meta_inner(
+            &state,
+            &bearer_headers("maple_sk_test_meta_bill"),
+            Bytes::from(body.repeat(1000)),
+        )
+        .await
+        .expect("session metadata should be accepted");
+        assert_eq!(accepted, 1000, "every row is still stored");
+
+        let calls = drain_autumn_calls(&mut rx).await;
+        assert_eq!(
+            tracked(&calls),
+            vec![("browser_sessions", 1.0)],
+            "{calls:?}"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[tokio::test]
     async fn replay_chunks_stay_inline_when_no_blob_store_is_configured() {
         // The self-hosted / BYO-ClickHouse path, and the pre-cutover managed
