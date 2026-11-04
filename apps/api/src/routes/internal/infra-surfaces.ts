@@ -5,6 +5,7 @@ export interface InfraSurfaceLookups<R> {
 	readonly surfaces: Effect.Effect<ReadonlyArray<InfraSurfaceLiteral>, unknown, R>
 	readonly cloudflare: Effect.Effect<boolean, unknown, R>
 	readonly railway: Effect.Effect<boolean, unknown, R>
+	readonly vercel: Effect.Effect<boolean, unknown, R>
 	readonly planetscale: Effect.Effect<boolean, unknown, R>
 	readonly gcp: Effect.Effect<boolean, unknown, R>
 	readonly supabase: Effect.Effect<boolean, unknown, R>
@@ -25,6 +26,7 @@ export const settleInfraSurfaces = <R>(lookups: InfraSurfaceLookups<R>) =>
 			surfaces: settle("presence", lookups.surfaces),
 			cloudflare: settle("cloudflare", lookups.cloudflare),
 			railway: settle("railway", lookups.railway),
+			vercel: settle("vercel", lookups.vercel),
 			planetscale: settle("planetscale", lookups.planetscale),
 			gcp: settle("gcp", lookups.gcp),
 			supabase: settle("supabase", lookups.supabase),

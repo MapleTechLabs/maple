@@ -18,6 +18,7 @@ const cronCases = [
 			"prReviewPostMerge",
 		],
 	],
+	["2-59/5 * * * *", ["vercel"]],
 	["*/15 * * * *", ["digest", "supabaseInsights"]],
 	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery", "awsConnections"]],
 	[
@@ -52,6 +53,7 @@ const recordingTicks = (
 		supabaseDiscovery: tick("supabaseDiscovery"),
 		supabaseLogs: tick("supabaseLogs"),
 		supabaseInsights: tick("supabaseInsights"),
+		vercel: tick("vercel"),
 		...overrides,
 	}
 }

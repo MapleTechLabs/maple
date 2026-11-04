@@ -40,6 +40,7 @@ const VENDOR_COLORS = {
 	// Hugging Face's yellow.
 	smolagents: { light: "#BA8E00", dark: "#FFD21E" },
 	spring_ai: { light: "#5EA32D", dark: "#6DB33F" },
+	vercel_ai_gateway: MONOCHROME,
 	vercel_ai_sdk: MONOCHROME,
 } satisfies Record<string, BrandColor>
 

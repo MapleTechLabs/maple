@@ -23,6 +23,7 @@ const resolved = Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, loca
 const NO_INTEGRATIONS = {
 	cloudflare: false,
 	railway: false,
+	vercel: false,
 	planetscale: false,
 	gcp: false,
 	supabase: false,

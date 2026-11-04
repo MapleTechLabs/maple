@@ -59,6 +59,7 @@ const KIND_FILTERS = {
 	cloudflare_workers: new Set<keyof InfraFilters>(),
 	railway_services: new Set<keyof InfraFilters>(["environment"]),
 	planetscale_databases: new Set<keyof InfraFilters>(),
+	vercel_projects: new Set<keyof InfraFilters>(),
 } satisfies Record<(typeof INFRA_KINDS)[number], ReadonlySet<keyof InfraFilters>>
 const SCOPING_FILTERS: ReadonlyArray<keyof InfraFilters> = [
 	"host",
@@ -98,7 +99,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Infrastructure",
 		description:
-			"Hosts, Kubernetes pods/nodes/workloads, Docker containers and connected-integration infrastructure (Cloudflare, Railway, PlanetScale), " +
+			"Hosts, Kubernetes pods/nodes/workloads, Docker containers and connected-integration infrastructure (Cloudflare, Railway, PlanetScale, Vercel), " +
 			"closest to a limit first: CPU, memory and disk use against limits. Without `kind`, an overview of every kind that reports with the top 5 of each. " +
 			"Status reflects the window peak, not the latest sample. Then inspect_infra for one entity over time.",
 		parameters: Schema.Struct({
@@ -303,7 +304,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 							empty: {
 								message:
 									output.reporting.length === 0
-										? "No infrastructure metrics in this window: no hostmetrics, kubeletstats or docker stats receivers are reporting, and no connected Cloudflare, Railway or PlanetScale integration wrote metrics."
+										? "No infrastructure metrics in this window: no hostmetrics, kubeletstats or docker stats receivers are reporting, and no connected Cloudflare, Railway, PlanetScale or Vercel integration wrote data."
 										: "Nothing matched these filters.",
 								hints:
 									output.reporting.length === 0

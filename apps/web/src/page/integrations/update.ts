@@ -26,6 +26,8 @@ import * as Gcp from "./update-gcp"
 import * as Configure from "./update-gcp-configure"
 import * as Planetscale from "./update-planetscale"
 import * as Railway from "./update-railway"
+import * as Vercel from "./update-vercel"
+import { initVercelCard } from "./vercel"
 import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { isMultiAccount } from "./view-cloudflare"
@@ -129,6 +131,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		statuses: {
 			cloudflare: Keyed.idle(),
 			railway: Keyed.idle(),
+			vercel: Keyed.idle(),
 			planetscale: Keyed.idle(),
 			planetscaleDatabases: Keyed.idle(),
 			gcp: Keyed.idle(),
@@ -151,6 +154,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		gcpCard: initGcpCard(),
 		awsCard: initAwsCard(),
 		railwayCard: initRailwayCard(),
+		vercelCard: initVercelCard(),
 		supabaseCard: initSupabaseCard(),
 	}
 	const loaded = chain(model, [
@@ -182,6 +186,7 @@ export const routeChanged = (
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
+	if (integration === "vercel") return Vercel.enterVercel(model, context)
 	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
@@ -210,6 +215,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
 			accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }),
+		CompletedLoadVercel: ({ key, result }) =>
+			Vercel.enterVercel(accepted(model, { ...s, vercel: Keyed.accept(s.vercel, key, result) }).model, context),
 		CompletedLoadPlanetscale: ({ key, result }) => {
 			const read = accepted(model, {
 				...s,
@@ -355,6 +362,43 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		CompletedLoadVercelProjects: ({ key, result }) => ({
+			model: Vercel.withVercelCard(model, { projects: Keyed.accept(model.vercelCard.projects, key, result) }),
+		}),
+		CompletedLoadVercelTimeseries: ({ key, result }) => ({
+			model: Vercel.withVercelCard(model, {
+				timeseries: Keyed.accept(model.vercelCard.timeseries, key, result),
+			}),
+		}),
+		CompletedLoadVercelGateway: ({ key, result }) => ({
+			model: Vercel.withVercelCard(model, { gateway: Keyed.accept(model.vercelCard.gateway, key, result) }),
+		}),
+		ClickedVercelRetryUsage: () => Vercel.requestUsage(model, context, "Refresh"),
+		TickedVercelSettle: () => Vercel.tickedSettle(model, context),
+		ClickedVercelSync: () => Vercel.clickedSync(model),
+		CompletedVercelSync: ({ failure }) => Vercel.completedSync(model, context, failure),
+		ClickedVercelReapply: () => Vercel.clickedReapply(model),
+		ClickedVercelConfigure: ({ target }) => Vercel.openConfigure(model, target),
+		GotVercelConfigureDialogMessage: ({ message: child }) => Vercel.gotConfigureDialog(model, child),
+		GotVercelTokenMessage: ({ message: child }) => Vercel.gotToken(model, child),
+		SubmittedVercelToken: () => Vercel.submittedToken(model),
+		CompletedVercelDiscover: ({ forTeam, response, error }) =>
+			Vercel.completedDiscover(model, forTeam, response, error),
+		GotVercelTeamMessage: ({ message: child }) => Vercel.gotTeam(model, child),
+		SubmittedVercelTeam: () => Vercel.submittedTeam(model),
+		ClickedVercelConfigureBack: () => Vercel.clickedBack(model),
+		ToggledVercelSignal: ({ signal }) => Vercel.toggledSignal(model, signal),
+		ChangedVercelScope: ({ scope }) => Vercel.changedScope(model, scope),
+		ToggledVercelProject: ({ id }) => Vercel.toggledProject(model, id),
+		ChangedVercelProjectQuery: ({ value }) => Vercel.changedProjectQuery(model, value),
+		ChangedVercelSampling: ({ value }) => Vercel.changedSampling(model, value),
+		SubmittedVercelConnect: () => Vercel.submittedConnect(model),
+		CompletedVercelConnect: ({ mode, teamName, error }) =>
+			Vercel.completedConnect(model, context, mode, teamName, error),
+		ClickedVercelSave: () => Vercel.clickedSave(model),
+		GotVercelConfirmDialogMessage: ({ message: child }) => Vercel.gotConfirmDialog(model, child),
+		ConfirmedVercelSave: () => Vercel.confirmedSave(model),
+		CompletedVercelSave: ({ isReapply, error }) => Vercel.completedSave(model, context, isReapply, error),
 		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
 		SubmittedAwsAccount: () => Aws.submittedAccount(model),
 		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
@@ -573,7 +617,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (spec === undefined) return closed
 			const toast = PageOutMessage.RequestedToast(
 				failure === null
-					? { type: "success", title: spec.success, description: "" }
+					? {
+							type: spec.successType ?? "success",
+							title: spec.success,
+							description: spec.successDescription ?? "",
+						}
 					: { type: "error", title: spec.error, description: failure.message },
 			)
 			return chain(settled, [

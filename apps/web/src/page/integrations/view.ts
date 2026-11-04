@@ -20,6 +20,7 @@ import { githubCard } from "./view-github"
 import { linearCard } from "./view-linear"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
+import { vercelCard } from "./view-vercel"
 import { awsCard } from "./view-aws"
 import { supabaseCard } from "./view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
@@ -68,6 +69,8 @@ export const cardView = (
 			return [cloudflareCard(h, model, timeZone)]
 		case "railway":
 			return [railwayCard(h, model, timeZone)]
+		case "vercel":
+			return vercelCard(h, model, timeZone)
 		case "supabase":
 			return [supabaseCard(h, model, timeZone)]
 		case "planetscale":

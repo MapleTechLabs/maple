@@ -235,6 +235,9 @@ const GENAI_VENDOR_USAGE_CONVENTIONS: ReadonlyMap<string, GenAiUsageConvention> 
 	// packages — `ai/dist/index.mjs` for the attribute and `@ai-sdk/anthropic`
 	// (vendored under `eve`) for the sum.
 	["vercel_ai_sdk", NESTED],
+	// Vercel AI Gateway reports GenAI semconv usage, where the input count
+	// includes the cached tokens, whichever provider served the request.
+	["vercel_ai_gateway", NESTED],
 	// `@opencode-ai/ai` normalises `inputTokens` to the inclusive total for every
 	// provider (see `sumTokens` in its anthropic-messages/bedrock-converse
 	// protocols) and reports reasoning as a detail of the completion count, so

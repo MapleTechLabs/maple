@@ -105,6 +105,9 @@ import {
 	SecurityAuditTargets,
 	SecurityAuditUnits,
 	VcsInstallations,
+	VercelConnections,
+	VercelDeployments,
+	VercelProjects,
 	VcsRepositories,
 } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -223,6 +226,10 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	RailwayConnections,
 	RailwayEnvironments,
+	// The encrypted Vercel token, and the team inventory read with it.
+	VercelConnections,
+	VercelProjects,
+	VercelDeployments,
 	// The Supabase grant itself is in oauth_connections; these hold the org binding and projects.
 	SupabaseProjectInsights,
 	SupabaseProjects,

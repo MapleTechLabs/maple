@@ -15,6 +15,7 @@ import {
 	LoadPlanetscaleDatabases,
 	LoadRailway,
 	LoadScrapeTargets,
+	LoadVercel,
 	LoadSupabase,
 } from "./command"
 import type { Message } from "./message"
@@ -28,6 +29,7 @@ type AnyCommand = Command.Command<Message, never, Resources>
 const OPERATIONS = {
 	cloudflare: "integrations.cloudflareStatus",
 	railway: "integrations.railwayStatus",
+	vercel: "integrations.vercelStatus",
 	planetscale: "planetscaleIntegration.status",
 	planetscaleDatabases: "planetscaleIntegration.databases",
 	gcp: "gcpIntegration.status",
@@ -85,6 +87,12 @@ export const requestStatus = (
 				s.railway,
 				(all, railway) => ({ ...all, railway }),
 				(slotKey) => LoadRailway({ key: slotKey, refresh }),
+			)
+		case "vercel":
+			return go(
+				s.vercel,
+				(all, vercel) => ({ ...all, vercel }),
+				(slotKey) => LoadVercel({ key: slotKey }),
 			)
 		case "planetscale":
 			return go(
@@ -160,6 +168,7 @@ export const chain = (model: Model, steps: ReadonlyArray<(model: Model) => Retur
 export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"cloudflare",
 	"railway",
+	"vercel",
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",

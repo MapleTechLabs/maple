@@ -79,6 +79,7 @@ describe("integrations hub", () => {
 				"ReadIntegrationsClock",
 				"LoadIntegrationsCloudflareStatus",
 				"LoadIntegrationsRailwayStatus",
+				"LoadIntegrationsVercelStatus",
 				"LoadIntegrationsPlanetscaleStatus",
 				"LoadIntegrationsPlanetscaleDatabases",
 				"LoadIntegrationsGcpStatus",

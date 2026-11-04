@@ -18,6 +18,7 @@ const LEGEND_PLATFORMS = [
 	["kubernetes", "Kubernetes"],
 	["cloudflare", "Cloudflare"],
 	["gcp", "Google Cloud"],
+	["vercel", "Vercel"],
 	["lambda", "Lambda"],
 	["web", "Web"],
 	["unknown", "Unknown"],

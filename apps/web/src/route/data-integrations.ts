@@ -7,6 +7,7 @@ export const DATA_INTEGRATIONS = [
 	"gcp",
 	"aws",
 	"railway",
+	"vercel",
 	"supabase",
 	"warpstream",
 	"github",

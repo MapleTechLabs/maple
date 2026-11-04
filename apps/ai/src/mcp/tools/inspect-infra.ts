@@ -12,6 +12,8 @@ import { inspectInfra } from "../lib/infra-inspect"
 import { ZONE_DIMENSIONS, ZONE_SECTIONS, inspectProvider, isProviderEntityKind } from "../lib/infra-providers"
 import { formatDurationFromMs, formatNumber, formatPercent } from "../lib/format"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import type { OrgId, VercelDeploymentSummary } from "@maple/domain/http"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import {
 	ENTITY_KIND,
 	KIND_METRICS,
@@ -35,6 +37,7 @@ const LIST_KIND = {
 	cloudflare_worker: "cloudflare_workers",
 	railway_service: "railway_services",
 	planetscale_database: "planetscale_databases",
+	vercel_project: "vercel_projects",
 } as const
 
 /** The metrics behind each non-default Cloudflare zone section. */
@@ -45,6 +48,40 @@ const ZONE_SECTION_METRICS = {
 		"Metrics: cloudflare.firewall.events (by firewall.action, firewall.source, firewall.rule_id), under service.name=cloudflare/<zone>.",
 	dns: "Metrics: cloudflare.dns.queries (by dns.response_code, dns.query_name), under service.name=cloudflare/<zone>.",
 } as const
+
+const deploymentText = (deployment: VercelDeploymentSummary | null) =>
+	deployment === null
+		? undefined
+		: [
+				`${deployment.state} https://${deployment.url}`,
+				new Date(deployment.createdAt).toISOString(),
+				deployment.branch,
+				deployment.commitSha?.slice(0, 7),
+			]
+				.filter((part) => part !== undefined && part !== null)
+				.join(", ")
+
+/** A Vercel project's framework and deployments from the polled inventory; empty when unknown. */
+const vercelInventoryDetails = (orgId: OrgId, projectId: string | undefined) =>
+	projectId === undefined
+		? Effect.succeed({})
+		: VercelIntegrationService.use((vercel) => vercel.getStatus(orgId)).pipe(
+				Effect.map((status): Record<string, string> => {
+					const project = status.projects.find((p) => p.id === projectId)
+					if (project === undefined) return {}
+					const fields: ReadonlyArray<readonly [string, string | undefined]> = [
+						["Framework", project.framework ?? undefined],
+						["Forwarded", project.forwarded ? undefined : "no: not in the drains' project list"],
+						["Production deployment", deploymentText(project.productionDeployment)],
+						["Latest deployment", deploymentText(project.latestDeployment)],
+					]
+					return Object.fromEntries(fields.flatMap(([k, v]) => (v === undefined ? [] : [[k, v]])))
+				}),
+				Effect.tapError((error) =>
+					Effect.logWarning("inspect_infra could not read the Vercel inventory", error.message),
+				),
+				Effect.orElseSucceed(() => ({})),
+			)
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`
 
@@ -61,6 +98,9 @@ const resourceKeyFor = (kind: (typeof ENTITY_KINDS)[number], workloadKind: strin
 			return "host.name"
 		case "workload":
 			return workloadKind === undefined ? undefined : `k8s.${workloadKind}.name`
+		case "vercel_project":
+			// The name can be a fallback (service name or id); the id is on every drain log.
+			return "vercel.project.id"
 		case "cloudflare_zone":
 		case "cloudflare_worker":
 		case "railway_service":
@@ -114,7 +154,7 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Inspect Infrastructure",
 		description:
-			"One infrastructure entity in depth (host, Kubernetes pod/node/workload, container, Cloudflare zone or Worker, Railway service, PlanetScale database): " +
+			"One infrastructure entity in depth (host, Kubernetes pod/node/workload, container, Cloudflare zone or Worker, Railway service, PlanetScale database, Vercel project): " +
 			"identity, then CPU and memory (or the provider's traffic and resources) as min/avg/max/last with the peak time, and its busiest children. " +
 			"Use after list_infra, or to check whether a slow service was starved: compare the peak time with the incident. " +
 			"Same default window as list_infra (1 hour); pass start_time to look further back.",
@@ -176,6 +216,10 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 							window,
 						),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
+			const inventory =
+				kind === "vercel_project" && result.found
+					? yield* vercelInventoryDetails(tenant.orgId, result.details?.["Project id"])
+					: {}
 
 			return {
 				timeRange: { start: st, end: et },
@@ -183,6 +227,9 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 				name: params.name,
 				bucketSeconds: bucketSecondsFor({ startTime: st, endTime: et }),
 				...result,
+				...(result.details === undefined
+					? undefined
+					: { details: { ...result.details, ...inventory } }),
 			}
 		}),
 		render: (output) => {
@@ -248,14 +295,16 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 			const both = (a: number | undefined, b: number | undefined, f: (v: number) => string) =>
 				a === undefined ? undefined : b === undefined ? f(a) : `${f(a)} → ${f(b)}`
 			const isZone = output.kind === "cloudflare_zone"
+			// Zones and Vercel projects count requests and their 5xx; Workers count invocations.
+			const isRequests = isZone || output.kind === "vercel_project"
 			// Window totals for provider kinds: what list_infra showed, before the series below.
 			const totals: Array<readonly [string, string | undefined]> = [
 				[
-					isZone ? "Requests" : "Invocations",
+					isRequests ? "Requests" : "Invocations",
 					entity.requests === undefined ? undefined : formatNumber(entity.requests),
 				],
 				[
-					isZone ? "5xx" : "Errors",
+					isRequests ? "5xx" : "Errors",
 					entity.errors === undefined
 						? undefined
 						: `${formatNumber(entity.errors)} (${formatPercent(entity.errorRate ?? 0)})`,
@@ -266,6 +315,7 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 					entity.cacheHitRate === undefined ? undefined : formatPercent(entity.cacheHitRate),
 				],
 				["Bandwidth", entity.bytes === undefined ? undefined : formatBytes(entity.bytes)],
+				["Error logs", entity.errorLogs === undefined ? undefined : formatNumber(entity.errorLogs)],
 				["Visits", entity.visits === undefined ? undefined : formatNumber(entity.visits)],
 				[
 					"Subrequests",
@@ -481,7 +531,10 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 									kind: "timeseries",
 									group_by: "severity",
 									attribute_key: resourceKey,
-									attribute_value: output.name,
+									attribute_value:
+										output.kind === "vercel_project"
+											? (output.details?.["Project id"] ?? output.name)
+											: output.name,
 									attribute_scope: "resource",
 									start_time: output.timeRange.start,
 									end_time: output.timeRange.end,

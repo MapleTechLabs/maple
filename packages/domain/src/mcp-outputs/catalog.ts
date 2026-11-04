@@ -25,6 +25,7 @@ import {
 	ListIntegrationsOutput,
 	ScrapeTargetMutationOutput,
 	SyncRailwayOutput,
+	SyncVercelOutput,
 } from "./integrations"
 import { CiRunsOutput, CompareCommitsOutput } from "./ci"
 import {
@@ -224,6 +225,7 @@ export const McpToolOutputs = {
 	service_deployments: ServiceDeploymentsOutput,
 	service_map: ServiceMapOutput,
 	sync_railway: SyncRailwayOutput,
+	sync_vercel: SyncVercelOutput,
 	set_issue_severity: SetIssueSeverityOutput,
 	merge_error_issues: MergeErrorIssuesOutput,
 	transition_error_issue: TransitionErrorIssueOutput,

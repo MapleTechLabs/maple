@@ -59,6 +59,10 @@ const railwayServiceBucketed = {
 	bucketSeconds: 300,
 }
 
+/** One Vercel project, as /infra/vercel/$projectId scopes its reads. */
+const VERCEL_PROJECT_ID = "prj_sql_catalog"
+const vercelProject = { ...window, projectId: VERCEL_PROJECT_ID }
+
 /** One Supabase project, as /infra/supabase/$ref scopes it. */
 const supabaseProject = { ...window, projectRef: "abcdefghijklmnopqrst" }
 const supabaseProjectBucketed = { ...supabaseProject, bucketSeconds: 300 }
@@ -793,6 +797,73 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "railwayServiceTimeseriesSQL",
 		label: "default",
 		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelProjectRequestsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelProjectRequestsSQL(), window),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelRequestTimeseriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelRequestTimeseriesSQL(), bucketed),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelRequestTimeseriesSQL",
+		label: "project",
+		compile: () =>
+			compileUnsafe(CH.vercelRequestTimeseriesSQL({ projectId: VERCEL_PROJECT_ID }), bucketed),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelProjectTopPathsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelProjectTopPathsSQL(), vercelProject),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelProjectTopErrorsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelProjectTopErrorsSQL(), vercelProject),
+	},
+	{
+		module: "vercel-infra",
+		name: "vercelProjectLatencySQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelProjectLatencySQL(), window),
+	},
+	{
+		module: "vercel-ai-gateway",
+		name: "vercelAiGatewaySummarySQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelAiGatewaySummarySQL(), window),
+	},
+	{
+		module: "vercel-ai-gateway",
+		name: "vercelAiGatewaySummarySQL",
+		label: "project",
+		compile: () => compileUnsafe(CH.vercelAiGatewaySummarySQL({ projectId: VERCEL_PROJECT_ID }), window),
+	},
+	{
+		module: "vercel-ai-gateway",
+		name: "vercelAiGatewayByModelSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelAiGatewayByModelSQL(), window),
+	},
+	{
+		module: "vercel-ai-gateway",
+		name: "vercelAiGatewayByProjectSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelAiGatewayByProjectSQL(), window),
+	},
+	{
+		module: "vercel-ai-gateway",
+		name: "vercelAiGatewayTimeseriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.vercelAiGatewayTimeseriesSQL(), bucketed),
 	},
 	{
 		module: "supabase-infra",

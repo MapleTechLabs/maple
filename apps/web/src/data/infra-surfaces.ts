@@ -51,7 +51,7 @@ export const loadInfraPresence = (
 		}),
 	).pipe(Effect.map((response) => response.surfaces))
 
-export const INTEGRATION_IDS = ["cloudflare", "railway", "planetscale", "gcp", "supabase", "aws"] as const
+export const INTEGRATION_IDS = ["cloudflare", "railway", "vercel", "planetscale", "gcp", "supabase", "aws"] as const
 
 /** Connected integrations: `null` until its status answers; a failed status counts as not connected. */
 export type IntegrationFlags = Readonly<{ [K in (typeof INTEGRATION_IDS)[number]]: boolean | null }>
@@ -59,6 +59,7 @@ export type IntegrationFlags = Readonly<{ [K in (typeof INTEGRATION_IDS)[number]
 export const PENDING_INTEGRATIONS: IntegrationFlags = {
 	cloudflare: null,
 	railway: null,
+	vercel: null,
 	planetscale: null,
 	gcp: null,
 	supabase: null,

@@ -194,6 +194,9 @@ fn is_model_call(vendor: &str, span: &Span, facts: &Facts) -> bool {
     match vendor {
         _ if INFERENCE_OPS.contains(&op) => true,
         "litellm" => matches!(op, "acompletion" | "completion"),
+        // Only the request span is stamped, and every request is one billed
+        // model call: chat, embeddings, image generation or reranking.
+        "vercel_ai_gateway" => true,
         "semantic_kernel" => matches!(op, "chat.completions" | "chat.streaming_completions"),
         // The legacy `ai` scope: the provider call, never the `ai.generateText`
         // wrapper that sums its steps.

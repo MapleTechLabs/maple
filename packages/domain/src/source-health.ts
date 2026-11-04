@@ -67,6 +67,8 @@ const POLICIES = {
 	// Analytics are polled and Logpush pushes; a grant may only push. Both arrive at the gateway.
 	cloudflare: { freshness: "data", staleAfterMs: 24 * 60 * MINUTE },
 	railway: { freshness: "poll", staleAfterMs: 30 * MINUTE },
+	// The drains push logs and traces; the poller only reads deployments and checks the drains.
+	vercel: { freshness: "data", staleAfterMs: 24 * 60 * MINUTE, pollReadsData: false },
 	// Log forwarding pushes, metrics are polled; a connector may only forward logs.
 	gcp: { freshness: "data", staleAfterMs: 24 * 60 * MINUTE },
 	// The inventory refreshes hourly; metrics arrive through the managed scrape.

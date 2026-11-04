@@ -18,6 +18,7 @@ import {
 import type { Keyed } from "@maple/views/data/keyed"
 import { chatIntegrationId, HUB_CATALOG, type IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
+import { scopeLabel, signalsLabel, vercelHealth, vercelIssues } from "../../components/integrations/vercel-model"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
 
@@ -250,6 +251,19 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 							: { label: countLabel(status.environments.length, "environment"), variant: "ok" },
 				unavailableStatus,
 			)
+		case "vercel":
+			return fold(
+				statuses.vercel,
+				(status): CardStatus =>
+					!status.connected
+						? NOT_CONNECTED
+						: status.authFailed
+							? { label: "Token rejected", variant: "crit" }
+							: vercelIssues(status).length > 0
+								? { label: "Needs attention", variant: "warn" }
+								: { label: status.team?.name ?? "Connected", variant: "ok" },
+				unavailableStatus,
+			)
 		case "supabase":
 			return fold(
 				statuses.supabase,
@@ -435,6 +449,32 @@ const railwayOverview = (statuses: Statuses, nowMs: number) =>
 				stat: `${countLabel(status.environments.length, "environment")} polled`,
 				lastSyncLabel: syncedLabel(status.lastSyncedAt ?? null, nowMs),
 				issue,
+			}
+		},
+		unavailableOverview,
+	)
+
+const VERCEL_STATE_LABEL = { attention: "Needs attention", pending: "Syncing", healthy: "Healthy" } as const
+
+const vercelOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.vercel,
+		(status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const issues = vercelIssues(status)
+			const health = vercelHealth(status)
+			return {
+				kind: "connected",
+				health,
+				stateLabel: VERCEL_STATE_LABEL[health],
+				context: status.team?.name ?? null,
+				stat: `${signalsLabel(status)} · ${scopeLabel(status)}`,
+				lastSyncLabel: syncedLabel(status.lastSuccessAt, nowMs, "checked"),
+				issue: status.authFailed
+					? "Token rejected"
+					: issues.length > 0
+						? `${countLabel(issues.length, "drain")} failing`
+						: null,
 			}
 		},
 		unavailableOverview,
@@ -669,6 +709,8 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return awsOverview(statuses, nowMs)
 		case "railway":
 			return railwayOverview(statuses, nowMs)
+		case "vercel":
+			return vercelOverview(statuses, nowMs)
 		case "supabase":
 			return supabaseOverview(statuses, nowMs)
 		case "cloudflare":

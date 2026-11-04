@@ -8,6 +8,7 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
+	summarizeVercel,
 	summarizeSupabase,
 } from "../../../components/infra/overview/summaries"
 import { getCloudflareZones } from "@maple/web-data/warehouse/cloudflare-infra"
@@ -15,6 +16,7 @@ import { getAwsInfraFleet } from "@maple/web-data/warehouse/aws-infra"
 import { getGcpInfraFleet } from "@maple/web-data/warehouse/gcp-infra"
 import { containersSummary, listHosts, podsSummary } from "@maple/web-data/warehouse/infra"
 import { getRailwayServices } from "@maple/web-data/warehouse/railway-infra"
+import { getVercelProjects } from "@maple/web-data/warehouse/vercel-infra"
 import { getSupabaseProjects } from "@maple/web-data/warehouse/supabase-infra"
 import { getServiceMapPlanetScale } from "@maple/web-data/warehouse/service-map"
 import { Effect, Option, Schema, Array as Arr } from "effect"
@@ -49,6 +51,10 @@ const read = (source: SourceId, window: TimeWindow) => {
 		case "railway":
 			return Effect.map(getRailwayServices({ data }), ({ services }) =>
 				reading(summarizeRailway(services)),
+			)
+		case "vercel":
+			return Effect.map(getVercelProjects({ data }), ({ projects }) =>
+				reading(summarizeVercel(projects)),
 			)
 		// Discovery names the projects; without it the findings fall back to refs.
 		case "supabase":

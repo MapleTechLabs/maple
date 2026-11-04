@@ -13,6 +13,7 @@ const DISCONNECTS = {
 	planetscale: "Maple drops its PlanetScale access and the metrics scrape",
 	github: "Maple deletes this installation's repositories, branches and commits",
 	supabase: "Maple removes its log drains and revokes its Supabase access",
+	vercel: "Maple removes its drains and stops accepting their logs and traces",
 } as const satisfies Record<PullSourcePlatform, string>
 
 /** The lines the delete dialog lists for an integration source, most specific first. */

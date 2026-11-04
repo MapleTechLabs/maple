@@ -62,7 +62,7 @@ export const OverviewRow = Schema.Struct({
 	spanCount: Schema.Number,
 })
 
-export const Platform = Schema.Literals(["kubernetes", "cloudflare", "gcp", "lambda", "web", "unknown"])
+export const Platform = Schema.Literals(["kubernetes", "cloudflare", "gcp", "vercel", "lambda", "web", "unknown"])
 
 export const LocalServiceMapData = Schema.Struct({
 	edges: Schema.Array(EdgeRow),

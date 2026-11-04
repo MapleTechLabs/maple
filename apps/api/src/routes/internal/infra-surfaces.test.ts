@@ -10,6 +10,7 @@ const lookups = {
 	surfaces: Effect.succeed(["hosts", "k8sPods"] as const),
 	cloudflare: Effect.succeed(true),
 	railway: Effect.succeed(false),
+	vercel: Effect.succeed(true),
 	planetscale: Effect.succeed(true),
 	gcp: Effect.succeed(false),
 	supabase: Effect.succeed(false),
@@ -24,6 +25,7 @@ describe("settleInfraSurfaces", () => {
 			expect(response.integrations).toEqual({
 				cloudflare: true,
 				railway: false,
+				vercel: true,
 				planetscale: true,
 				gcp: false,
 				supabase: false,

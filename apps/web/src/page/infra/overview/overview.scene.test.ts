@@ -13,6 +13,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { summarizeVercel } from "../../../components/infra/overview/summaries"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import * as Frame from "../kit/frame"
@@ -26,6 +27,7 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const integrations = {
 	cloudflare: true,
 	railway: false,
+	vercel: false,
 	planetscale: false,
 	gcp: false,
 	supabase: false,
@@ -150,8 +152,8 @@ describe("infra overview", () => {
 			}),
 			context,
 		)
-		expect(shown(failed.model)).toHaveLength(9)
-		expect(sourceReads(failed.commands)).toHaveLength(9)
+		expect(shown(failed.model)).toHaveLength(10)
+		expect(sourceReads(failed.commands)).toHaveLength(10)
 	})
 
 	test("a reload with presence known reads only the sources it shows", () => {
@@ -220,5 +222,60 @@ describe("infra overview", () => {
 		const render = { update: pageUpdate, view: withViewInputs(view, { context })() }
 		scene(render, given(allFailed), expectView(role("button", { name: "Try again" })).toExist())
 		scene(render, given(retried.model), expectView(text("Couldn't check your sources")).toExist())
+	})
+
+	test("a connected Vercel team is read, and a project serving 5xx is a finding that opens its page", () => {
+		const connected: PageContext = {
+			...context,
+			infra: { ...context.infra!, integrations: { ...integrations, vercel: true } },
+		}
+		const entry = update(init({ search: {} }, connected).model, resolvedAt(window, "Load"), connected).model
+		const known = update(
+			entry,
+			Message.CompletedFetchPresence({ key: entry.presence.key ?? "", result: Result.succeed([]) }),
+			connected,
+		).model
+		expect(presentSources(surfacesOf(known, connected))).toEqual(["cloudflare", "vercel"])
+		const project = {
+			projectId: "prj_api",
+			projectName: "api",
+			serviceName: "api",
+			requests: 10_000,
+			requests4xx: 0,
+			requests5xx: 900,
+			cacheHits: 0,
+			cacheLookups: 0,
+			errorLogs: 12,
+			lastSeen: "2026-10-01T11:59:00.000Z",
+			p50DurationMs: null,
+			p95DurationMs: null,
+		}
+		const completeIn = (model: Model, source: SourceId, reading: SourceReading) =>
+			update(
+				model,
+				Message.CompletedFetchSource({
+					source,
+					key: model.sources[source].key ?? "",
+					result: Result.succeed(reading),
+				}),
+				connected,
+			).model
+		// Needs attention lists findings once every shown source answered.
+		const settled = completeIn(
+			completeIn(known, "vercel", { summary: summarizeVercel([project]) }),
+			"cloudflare",
+			reporting,
+		)
+		scene(
+			{
+				update: (model, message) => update(model, message, connected),
+				view: withViewInputs(view, { context: connected })(),
+			},
+			given(settled),
+			expectView(role("link", { name: /api returning 9.0% 5xx/ })).toHaveAttr(
+				"href",
+				"/infra/vercel/prj_api",
+			),
+		)
 	})
 })

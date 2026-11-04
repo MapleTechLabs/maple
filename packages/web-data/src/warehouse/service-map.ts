@@ -96,7 +96,7 @@ export interface ServiceDbQuerySummaryResponse {
 	topQueries: ReadonlyArray<ServiceDbTopQuery>
 }
 
-export type ServicePlatform = "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown"
+export type ServicePlatform = "kubernetes" | "cloudflare" | "gcp" | "vercel" | "lambda" | "web" | "unknown"
 
 const GetServiceMapInputSchema = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),

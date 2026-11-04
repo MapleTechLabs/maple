@@ -93,6 +93,7 @@ const VIA = {
 	cloudflare: "OAuth · read-only",
 	gcp: "Project connector",
 	railway: "API token",
+	vercel: "API token",
 	planetscale: "OAuth",
 	github: "GitHub App",
 	aws: "IAM role",

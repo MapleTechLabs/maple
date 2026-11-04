@@ -726,6 +726,11 @@ export const InfraRailwayServiceSearch = Schema.Struct({
 })
 
 // sessionTimeRangeSearchMiddleware()
+export const InfraVercelProjectSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+})
+
+// sessionTimeRangeSearchMiddleware()
 export const InfraSupabaseProjectSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
@@ -824,6 +829,16 @@ export const InfraPlanetscaleSearch = Schema.Struct({
 // sessionTimeRangeSearchMiddleware()
 export const InfraRailwaySearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
+	...TimeRangeSearchFields,
+})
+
+export const VercelView = Schema.Literals(["projects", "aiGateway"])
+export type VercelView = typeof VercelView.Type
+
+// sessionTimeRangeSearchMiddleware()
+export const InfraVercelSearch = Schema.Struct({
+	q: Schema.optional(Schema.String),
+	view: Schema.optional(VercelView),
 	...TimeRangeSearchFields,
 })
 

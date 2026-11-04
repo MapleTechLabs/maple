@@ -28,6 +28,7 @@ import { SupabaseConnectionService } from "@maple/backend/services/integrations/
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
 import {
@@ -76,6 +77,7 @@ export const layerTick = (
 		PlanetScaleService.layer,
 		PlanetScaleMetricsService.layer,
 		RailwayMetricsService.layer,
+		VercelIntegrationService.layer,
 		AwsConnectionService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
@@ -360,6 +362,21 @@ const railwayMetricsTick = makeTick(
 			: undefined,
 )
 
+const vercelTick = makeTick(
+	VercelIntegrationService.use((vercel) => vercel.pollAllOrgs()),
+	"vercel",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					deploymentsUpserted: result.deploymentsUpserted,
+					drainsRepaired: result.drainsRepaired,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const supabaseDiscoveryTick = makeTick(
 	SupabaseConnectionService.use((supabase) => supabase.discoverAllOrgs),
 	"supabase_discovery",
@@ -475,6 +492,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly supabaseDiscovery: Effect.Effect<void, never, R>
 	readonly supabaseLogs: Effect.Effect<void, never, R>
 	readonly supabaseInsights: Effect.Effect<void, never, R>
+	readonly vercel: Effect.Effect<void, never, R>
 }
 
 /** The program each lane runs; every tick belongs to exactly one lane. */
@@ -496,6 +514,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("planetscale", () => Effect.andThen(ticks.planetScale, ticks.planetScaleMetrics)),
 		Match.when("railway_metrics", () => ticks.railwayMetrics),
 		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
+		Match.when("vercel", () => ticks.vercel),
 		Match.when("digest", () => ticks.digest),
 		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
 		Match.when("aws_connections", () => ticks.awsConnections),
@@ -556,6 +575,7 @@ type ScheduledServices =
 	| SupabaseConnectionService
 	| SupabaseLogsService
 	| SupabaseInsightsService
+	| VercelIntegrationService
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
@@ -577,6 +597,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	supabaseDiscovery: supabaseDiscoveryTick,
 	supabaseLogs: supabaseLogsTick,
 	supabaseInsights: supabaseInsightsTick,
+	vercel: vercelTick,
 }
 
 /**

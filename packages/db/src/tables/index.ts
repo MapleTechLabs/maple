@@ -102,6 +102,7 @@ import {
 	PrReviewEdits,
 	PrReviewSettings,
 } from "./vcs"
+import { VercelConnections, VercelDeployments, VercelProjects } from "./vercel"
 
 export * from "./agent-feedback"
 export * from "./ai-triage"
@@ -152,6 +153,7 @@ export * from "./supabase"
 export * from "./support-channels"
 export * from "./uptime"
 export * from "./vcs"
+export * from "./vercel"
 
 /** Every table the application database has, for schema checks and DDL. */
 export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> = [
@@ -264,4 +266,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	PrReviewReplies,
 	PrReviewEdits,
 	PrReviewSettings,
+	VercelConnections,
+	VercelProjects,
+	VercelDeployments,
 ]

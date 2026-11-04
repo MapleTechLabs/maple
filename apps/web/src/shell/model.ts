@@ -40,6 +40,7 @@ const IntegrationFlag = Schema.NullOr(Schema.Boolean)
 export const Integrations = Schema.Struct({
 	cloudflare: IntegrationFlag,
 	railway: IntegrationFlag,
+	vercel: IntegrationFlag,
 	planetscale: IntegrationFlag,
 	gcp: IntegrationFlag,
 	supabase: IntegrationFlag,

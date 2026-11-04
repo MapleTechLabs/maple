@@ -50,6 +50,7 @@ export const DOCS = {
 	gcpManualSetup: "/docs/integrations/gcp-manual-setup",
 	gcpInfrastructureAsCode: "/docs/integrations/gcp-infrastructure-as-code",
 	planetscale: "/docs/integrations/planetscale",
+	vercel: "/docs/integrations/vercel",
 	railway: "/docs/integrations/railway",
 	supabase: "/docs/integrations/supabase",
 	prometheus: "/docs/integrations/prometheus",

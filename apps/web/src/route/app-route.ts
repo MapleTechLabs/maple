@@ -103,6 +103,7 @@ export const AppRoute = defineRouteUnion({
 	InfraHost: { hostName: Schema.String, search: Search.InfraHostSearch },
 	InfraPlanetscaleDatabase: { dbName: Schema.String, search: Search.InfraPlanetscaleDatabaseSearch },
 	InfraRailwayService: { serviceId: Schema.String, search: Search.InfraRailwayServiceSearch },
+	InfraVercelProject: { projectId: Schema.String, search: Search.InfraVercelProjectSearch },
 	InfraSupabaseProject: { projectRef: Schema.String, search: Search.InfraSupabaseProjectSearch },
 	AgentSessionTools: { search: Search.AgentSessionToolsSearch },
 	McpServers: { search: Search.McpServersSearch },
@@ -115,6 +116,7 @@ export const AppRoute = defineRouteUnion({
 	InfraKubernetes: { search: Search.InfraKubernetesSearch },
 	InfraPlanetscale: { search: Search.InfraPlanetscaleSearch },
 	InfraRailway: { search: Search.InfraRailwaySearch },
+	InfraVercel: { search: Search.InfraVercelSearch },
 	InfraSupabase: { search: Search.InfraSupabaseSearch },
 	DashboardWidget: {
 		dashboardId: DashboardId,

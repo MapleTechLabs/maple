@@ -61,6 +61,8 @@ const SAMPLE_PATHS = [
 	"/infra",
 	"/infra/railway",
 	"/infra/railway/svc_1?environmentId=%22env_1%22",
+	"/infra/vercel",
+	"/infra/vercel/prj_1",
 	"/infra/supabase",
 	"/infra/supabase/abcdefghijklmnop",
 	"/infra/planetscale",

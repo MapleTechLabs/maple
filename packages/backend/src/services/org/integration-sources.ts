@@ -10,6 +10,7 @@ import {
 	Sources,
 	SupabaseConnections,
 	VcsInstallations,
+	VercelConnections,
 } from "@maple/db/tables"
 import { AWS_METRICS_OFF, AWS_NO_DELIVERY, awsStreamState } from "@maple/domain/aws"
 import { scrapeStaleAfterMs } from "@maple/domain/integration-inventory"
@@ -37,6 +38,7 @@ export const integrationSourceName = {
 	gcp: (connector: { readonly scopeId: string }) => `Google Cloud ${connector.scopeId}`,
 	railway: (connection: { readonly workspaceNames: string | null }) =>
 		connection.workspaceNames ?? "Railway",
+	vercel: (connection: { readonly teamName: string }) => connection.teamName,
 	planetscale: (organization: string | undefined) =>
 		organization === undefined ? "PlanetScale" : `PlanetScale ${organization}`,
 	cloudflare: (connection: { readonly externalAccountName: string | null }) =>
@@ -324,6 +326,11 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 			),
 			db.run(
 				PG.from(RailwayConnections)
+					.select("id", "sourceId")
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
+			db.run(
+				PG.from(VercelConnections)
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
