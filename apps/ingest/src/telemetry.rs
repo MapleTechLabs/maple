@@ -3,7 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -1382,6 +1382,28 @@ fn sync_data_wal() -> WalSync {
     Arc::new(File::sync_data)
 }
 
+/// Cleared when the append's caller is dropped, so its delivery is skipped.
+struct WaitingCaller(Arc<AtomicBool>);
+
+impl Drop for WaitingCaller {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// `deliver`, run only while the returned guard is alive. Skipped, the inner
+/// delivery is dropped, which releases its org reservation.
+fn while_caller_waits(deliver: Delivery) -> (WaitingCaller, Delivery) {
+    let waiting = WaitingCaller(Arc::new(AtomicBool::new(true)));
+    let still_waiting = Arc::clone(&waiting.0);
+    let guarded: Delivery = Box::new(move |segment, start, end| {
+        if still_waiting.load(Ordering::Acquire) {
+            deliver(segment, start, end);
+        }
+    });
+    (waiting, guarded)
+}
+
 /// Hands a durable frame to its lane's export channel, committing its org
 /// reservation. Dropped unrun, the reservation releases instead.
 fn queued_delivery(
@@ -2292,11 +2314,16 @@ impl ShardedWal {
         deliver: Delivery,
     ) -> Result<Appended, String> {
         let lane_ref = self.lane(lane)?;
-        tokio::task::spawn_blocking(move || {
+        // A caller dropped mid-append (a request timeout) has already answered
+        // with a retryable error, so its frame must not reach export as well.
+        let (waiting, deliver) = while_caller_waits(deliver);
+        let appended = tokio::task::spawn_blocking(move || {
             lane_ref.append_blocking(&encoded, enforce_cap, deliver)
         })
         .await
-        .map_err(|error| format!("join WAL append: {error}"))?
+        .map_err(|error| format!("join WAL append: {error}"))?;
+        drop(waiting);
+        appended
     }
 
     /// Bytes committed but not yet exported across every lane.
@@ -7518,6 +7545,35 @@ mod tests {
         );
         assert_eq!(delivered.len(), WRITERS);
         assert_eq!(lane.backlog_bytes(), file_len(&segment_path(&lane.dir, 0)));
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn a_frame_whose_caller_gave_up_is_not_delivered() {
+        let (lane, _probe, queue_dir) = slow_sync_lane("wal-caller-gone", Duration::ZERO);
+        let ran = Arc::new(AtomicU64::new(0));
+        let counting = || -> Delivery {
+            let ran = Arc::clone(&ran);
+            Box::new(move |_, _, _| {
+                ran.fetch_add(1, Ordering::SeqCst);
+            })
+        };
+
+        let (gone, deliver) = while_caller_waits(counting());
+        drop(gone);
+        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+            .expect("the frame is still made durable");
+        assert_eq!(ran.load(Ordering::SeqCst), 0, "but never reaches export");
+
+        let (waiting, deliver) = while_caller_waits(counting());
+        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+            .expect("append");
+        drop(waiting);
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            1,
+            "a waiting caller's frame is delivered"
+        );
         drop(std::fs::remove_dir_all(queue_dir));
     }
 
