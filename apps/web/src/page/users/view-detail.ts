@@ -45,7 +45,7 @@ import { clientIcon, kindTag } from "../mcp/view-kit"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { type LinkTab, linkTabStrip } from "../kit/underline-tabs"
 import type { ActivityItem, ActivityKind, UserDetail, UserProfile, UserTab } from "./data"
-import { groupLabel, namespacesOf, USER_TABS, userLabel } from "./data"
+import { namespacesOf, USER_TABS, userLabel } from "./data"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../errors/kit/workflow"
 import { userAvatar } from "./view-kit"
 
@@ -129,15 +129,16 @@ export const userTitle = <M>(h: HtmlBuilder<M>, profile: UserProfile, clock: Clo
 						...(profile.groupId === null
 							? []
 							: [
-									typography(
-										h,
-										{
-											mono: profile.groupName === null,
-											as: "span",
-											attributes: [h.Title(`group ${profile.groupId}`)],
-										},
-										[groupLabel(profile) ?? profile.groupId],
-									),
+									profile.groupName === null
+										? typography(h, { mono: true, as: "span" }, [profile.groupId])
+										: typography(
+												h,
+												{
+													as: "span",
+													attributes: [h.Title(`group ${profile.groupId}`)],
+												},
+												[profile.groupName],
+											),
 								]),
 						hstack(h, { gap: "1.5", as: "span" }, [
 							statusDot(h, { tone: "ok" }),
@@ -302,7 +303,7 @@ const groupRows = <M>(
 	groupHref: string | null,
 ): ReadonlyArray<Html> => {
 	if (profile.groupId === null) return []
-	const label = groupLabel(profile) ?? profile.groupId
+	const label = profile.groupName ?? profile.groupId
 	return [
 		detailRailRow(h, { label: "Group" }, [
 			groupHref === null

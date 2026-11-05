@@ -398,6 +398,43 @@ describe("the directory's group names", () => {
 		}),
 	)
 
+	it.effect("lists the users with their group ids when the name lookup fails", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				["usersServiceNamespaces", []],
+				["mcpServices", []],
+				["usersList", [{ ...listRow("user_1", "Ada"), groupId: "grp_acme" }]],
+			])
+			const failingNames = Layer.succeed(
+				WarehouseQueryService,
+				makeWarehouseServiceStub({
+					compiledQuery: (_tenant, input, options) => {
+						const compiled = compiledQueryOf(input)
+						const context = options?.context ?? ""
+						ran.push({ context, sql: compiled.sql })
+						if (context === "usersGroupNames")
+							return Effect.fail(
+								new WarehouseConfigError({
+									message: "Code: 159. Timeout",
+									pipeName: context,
+								}),
+							)
+						return compiled.decodeRows(rows.get(context) ?? []).pipe(Effect.orDie)
+					},
+				}),
+			)
+			const response = yield* readUsersList(
+				tenant,
+				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
+			).pipe(Effect.provide(failingNames))
+			assert.deepStrictEqual(
+				Arr.map(response.users, (user) => [user.groupId, user.groupName]),
+				[["grp_acme", null]],
+			)
+		}),
+	)
+
 	it.effect("skips the lookup when no listed user has a group", () =>
 		Effect.gen(function* () {
 			const ran: Ran = []
