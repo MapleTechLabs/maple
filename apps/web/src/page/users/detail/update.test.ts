@@ -3,7 +3,7 @@ import { AsyncData } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { fromString } from "foldkit/url"
 import { describe, expect, it } from "vitest"
-import { ErrorIssueId, OrgId } from "@maple/domain/http"
+import { ErrorIssueId, OrgId, type UserProfileItem } from "@maple/domain/http"
 import { AppRoute, urlToAppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
 import { activeNamespace, detailInputs } from "./command"
@@ -223,5 +223,72 @@ describe("the namespace in effect", () => {
 		expect(activeNamespace({ namespace: "" }, null)).toBeNull()
 		expect(activeNamespace({ namespace: "storefront" }, null)).toBe("storefront")
 		expect(activeNamespace({ namespace: "storefront" }, "payments")).toBe("payments")
+	})
+})
+
+describe("the group card", () => {
+	const profile = (groupId: string | null): UserProfileItem => ({
+		userId: "user/42 ada",
+		name: "Ada",
+		email: null,
+		groupId,
+		groupName: groupId === null ? null : "Acme Inc.",
+		traits: [],
+		visitorIds: [],
+		firstSeenMs: 0,
+		lastSeenMs: 0,
+		sessions: 1,
+		recordedMs: 0,
+		replayErrors: 0,
+		events: 0,
+		distinctEvents: 0,
+		mcpRequests: 0,
+		mcpCalls: 0,
+		devices: [],
+		country: null,
+		services: [],
+		signals: ["replay"],
+		requests: null,
+		failedRate: null,
+		p95Ms: null,
+		traces: null,
+		logs: null,
+		issues: null,
+		issueHits: null,
+		topRoute: null,
+		activity: [],
+	})
+	const overviewFor = (groupId: string | null) => {
+		const loaded = update(
+			page({}, pinned),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			pinned,
+		).model
+		return update(
+			loaded,
+			Message.CompletedFetchOverview({
+				key: loaded.profile.key ?? "",
+				result: Result.succeed({
+					profile: { profile: profile(groupId) },
+					activity: { sessions: [], events: [], mcpSessions: [], activity: [] },
+					issues: { issues: [], attributed: true },
+				}),
+			}),
+			pinned,
+		)
+	}
+
+	it("reads the user's group once the overview names it, over the org pin", () => {
+		const step = overviewFor("grp_acme")
+		const read = Arr.findFirst(step.commands ?? [], (command) => command.name === "FetchUserGroupStats")
+		expect(Option.isSome(read)).toBe(true)
+		expect(step.model.groupStats.key).toContain("grp_acme")
+		expect(step.model.groupStats.key).toContain("storefront")
+	})
+
+	it("reads nothing for a user in no group", () => {
+		const step = overviewFor(null)
+		expect(Arr.map(step.commands ?? [], (command) => command.name)).not.toContain("FetchUserGroupStats")
+		expect(step.model.groupStats.key).toBeNull()
 	})
 })

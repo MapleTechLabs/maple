@@ -63,8 +63,18 @@ export type UsersSummary = Readonly<{
 	anonymousVisitors: number
 }>
 
+/** One picked group's numbers, which the strip shows in place of the org's. */
+export type UsersGroupSummary = Readonly<{
+	kind: "group"
+	label: string
+	users: number
+	activeToday: number
+	withErrors: number
+	sessions: number
+}>
+
 /** The strip's counts, or why it has none: still loading, or the facets read failed. */
-export type UsersSummaryState = UsersSummary | "loading" | "failed"
+export type UsersSummaryState = UsersSummary | UsersGroupSummary | "loading" | "failed"
 
 /** What one directory row is: a user, or a group of them. */
 export type UsersGroupBy = "none" | "group"
@@ -201,13 +211,50 @@ const scopeText = (scope: ReadonlyArray<string>): string =>
 
 type SummaryItem = Readonly<{ eyebrow: string; value: number; subline: string; tone?: "crit" | "neutral" }>
 
-const summaryItems = (summary: UsersSummary, scope: ReadonlyArray<string>): ReadonlyArray<SummaryItem> => [
-	{ eyebrow: "Identified users", value: summary.identified, subline: `seen in ${scopeText(scope)}` },
-	{ eyebrow: "Active today", value: summary.activeToday, subline: "any signal in the last 24h" },
+/** `24% of users`, or the fallback when there are none to divide by. */
+const shareOf = (count: number, of: number, noun: string, fallback: string): string =>
+	of === 0 ? fallback : `${formatPercentColumn(count / of)} of ${noun}`
+
+const groupSummaryItems = (summary: UsersGroupSummary): ReadonlyArray<SummaryItem> => [
+	{ eyebrow: "Users in group", value: summary.users, subline: summary.label },
+	{
+		eyebrow: "Active today",
+		value: summary.activeToday,
+		subline: shareOf(summary.activeToday, summary.users, "the group", "any signal in the last 24h"),
+	},
 	{
 		eyebrow: "Hit an error",
 		value: summary.withErrors,
-		subline: "users with one or more errors",
+		subline: shareOf(summary.withErrors, summary.users, "the group", "users with one or more errors"),
+		tone: summary.withErrors > 0 ? "crit" : "neutral",
+	},
+	{
+		eyebrow: "Sessions",
+		value: summary.sessions,
+		subline:
+			summary.users === 0
+				? "recorded sessions"
+				: `${(summary.sessions / summary.users).toFixed(1)} per user`,
+	},
+]
+
+const summaryItems = (
+	summary: UsersSummary | UsersGroupSummary,
+	scope: ReadonlyArray<string>,
+): ReadonlyArray<SummaryItem> =>
+	"kind" in summary ? groupSummaryItems(summary) : orgSummaryItems(summary, scope)
+
+const orgSummaryItems = (summary: UsersSummary, scope: ReadonlyArray<string>): ReadonlyArray<SummaryItem> => [
+	{ eyebrow: "Identified users", value: summary.identified, subline: `seen in ${scopeText(scope)}` },
+	{
+		eyebrow: "Active today",
+		value: summary.activeToday,
+		subline: shareOf(summary.activeToday, summary.identified, "users", "any signal in the last 24h"),
+	},
+	{
+		eyebrow: "Hit an error",
+		value: summary.withErrors,
+		subline: shareOf(summary.withErrors, summary.identified, "users", "users with one or more errors"),
 		tone: summary.withErrors > 0 ? "crit" : "neutral",
 	},
 	{
@@ -531,7 +578,7 @@ export const usersListBody = <M>(
 						h,
 						typeof summary === "string"
 							? countLabel(shown.length, "user")
-							: `${shown.length} of ${countLabel(summary.identified, "user")}`,
+							: `${shown.length} of ${countLabel("kind" in summary ? summary.users : summary.identified, "user")}`,
 						"· sorted by last seen",
 					),
 				],

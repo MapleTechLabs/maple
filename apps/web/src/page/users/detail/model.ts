@@ -8,6 +8,7 @@ import {
 	UserProfileItem,
 	UserSessionItem,
 	UserTraceItem,
+	UsersGroupItem,
 } from "@maple/domain/http"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -48,6 +49,10 @@ export const OverviewData = Schema.Struct({
 })
 export type OverviewData = typeof OverviewData.Type
 
+/** The user's group over the window: its users and their totals; `null` when the read found none. */
+export const GroupStatsData = Schema.Struct({ group: Schema.NullOr(UsersGroupItem) })
+export type GroupStatsData = typeof GroupStatsData.Type
+
 /** `getUserLogs`: the Logs tab's lines, read only while the tab is open. */
 export const LogsData = Schema.Struct({ logs: Schema.Array(UserLogItem) })
 export type LogsData = typeof LogsData.Type
@@ -62,6 +67,8 @@ export const Model = Schema.Struct({
 	issues: KeyedSchema(IssuesData, LoadFailure),
 	traces: KeyedSchema(TracesData, LoadFailure),
 	logs: KeyedSchema(LogsData, LoadFailure),
+	/** Read once the profile names a group. */
+	groupStats: KeyedSchema(GroupStatsData, LoadFailure),
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,

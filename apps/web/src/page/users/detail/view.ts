@@ -12,7 +12,14 @@ import { resourceNotFound } from "../../kit/resource-not-found"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { type UserTab, userLabel } from "../data"
-import { userDetailBody, type UserDetailOptions, userRail, userTabs, userTitle } from "../view-detail"
+import {
+	type UserGroupStats,
+	userDetailBody,
+	type UserDetailOptions,
+	userRail,
+	userTabs,
+	userTitle,
+} from "../view-detail"
 import { userDetailLoading, userRowsLoading } from "../view-states"
 import { activeNamespace } from "./command"
 import { groupUsersHref, toUserDetail } from "./data-map"
@@ -126,6 +133,7 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 				clock,
 				namespace,
 				detail.profile.groupId === null ? null : groupUsersHref(detail.profile.groupId, model.search),
+				groupStatsOf(model),
 			),
 			rightPanelWidth: "w-80",
 			scrollClassName: "p-0",
@@ -133,6 +141,16 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 		[userDetailBody(h, detail, options)],
 	)
 }
+
+/** The rail's group numbers: none until the overview names a group, then the read's state. */
+const groupStatsOf = (model: Model): UserGroupStats =>
+	model.groupStats.key === null
+		? null
+		: AsyncData.matchData(model.groupStats.data, {
+				onEmpty: (): UserGroupStats => "loading",
+				onFailure: (): UserGroupStats => "failed",
+				onData: ({ group }): UserGroupStats => group,
+			})
 
 /** No signal in the window and scope carries this id. */
 const notFound = (h: H, model: Model, inputs: PageViewInputs): Html => {

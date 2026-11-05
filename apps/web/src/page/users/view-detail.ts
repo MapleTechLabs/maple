@@ -5,6 +5,7 @@ import {
 	formatLatency,
 	formatNumber,
 	formatPercent,
+	formatPercentColumn,
 } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -325,7 +326,71 @@ const groupRows = <M>(
 	]
 }
 
-/** The right rail: identity, traits, the services the user's requests touched, and their devices. */
+/** The user's group over the window: its users' totals, still loading, failed, or not read. */
+export type UserGroupStats =
+	| Readonly<{ users: number; activeToday: number; withErrors: number; sessions: number; requests: number }>
+	| "loading"
+	| "failed"
+	| null
+
+/** One decimal under ten, whole numbers past it. */
+const perUserText = (value: number): string =>
+	value >= 10 ? formatNumber(Math.round(value)) : value.toFixed(1)
+
+const shareText = (count: number, of: number): string =>
+	count === 0 ? "0" : `${formatNumber(count)} · ${formatPercentColumn(count / Math.max(1, of))}`
+
+/** The group's own numbers, so one user reads against the rest of their company. */
+const groupStatsSection = <M>(
+	h: HtmlBuilder<M>,
+	profile: UserProfile,
+	stats: UserGroupStats,
+	groupHref: string | null,
+): ReadonlyArray<Html> => {
+	if (profile.groupId === null || stats === null) return []
+	const label = profile.groupName ?? profile.groupId
+	const title = `Group: ${label}`
+	if (stats === "loading")
+		return [
+			detailRailGroup(h, title, [
+				typography(h, { size: "xs", tone: "subtle" }, ["Loading the group's numbers…"]),
+			]),
+		]
+	if (stats === "failed")
+		return [
+			detailRailGroup(h, title, [
+				typography(h, { size: "xs", tone: "muted" }, ["Couldn't load the group's numbers"]),
+			]),
+		]
+	return [
+		detailRailGroup(h, title, [
+			detailRailRow(h, { label: "Users" }, [railValue(h, formatNumber(stats.users))]),
+			detailRailRow(h, { label: "Active 24h" }, [
+				railValue(h, shareText(stats.activeToday, stats.users)),
+			]),
+			detailRailRow(h, { label: "Hit an error" }, [
+				railValue(h, shareText(stats.withErrors, stats.users)),
+			]),
+			detailRailRow(h, { label: "Sessions" }, [
+				railValue(
+					h,
+					`${formatNumber(stats.sessions)} · ${perUserText(stats.sessions / Math.max(1, stats.users))} per user`,
+				),
+			]),
+			detailRailRow(h, { label: "Requests" }, [railValue(h, formatNumber(stats.requests))]),
+			...(groupHref === null
+				? []
+				: [
+						textLink(h, { href: groupHref, tone: "muted", className: "pt-1 text-xs" }, [
+							`See the ${formatNumber(stats.users)} users in ${label}`,
+							icon(h, "ArrowRightIcon", { size: 12 }),
+						]),
+					]),
+		]),
+	]
+}
+
+/** The right rail: identity, the user's group, traits, the services they touched, and their devices. */
 export const userRail = <M>(
 	h: HtmlBuilder<M>,
 	profile: UserProfile,
@@ -333,6 +398,7 @@ export const userRail = <M>(
 	scope: UserNamespaceScope<M>,
 	/** The directory filtered to the user's group; `null` draws the group as plain text. */
 	groupHref: string | null = null,
+	groupStats: UserGroupStats = null,
 ): Html =>
 	h.aside(
 		[h.AriaLabel("User details"), h.Class("flex flex-col")],
@@ -360,6 +426,7 @@ export const userRail = <M>(
 					? []
 					: [detailRailRow(h, { label: "Location" }, [railValue(h, profile.location, false)])]),
 			]),
+			...groupStatsSection(h, profile, groupStats, groupHref),
 			detailRailGroup(
 				h,
 				"Traits",

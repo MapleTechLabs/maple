@@ -95,3 +95,23 @@ describe("users directory group view", () => {
 		expect(params.get("timePreset")).toBe("1w")
 	})
 })
+
+describe("users directory narrowed to one group", () => {
+	const window = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 04:00:00" }
+	const names = (search: Search) =>
+		Arr.map(
+			update(start(search), Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }), context)
+				.commands ?? [],
+			(command) => command.name,
+		)
+
+	it("reads that group's numbers beside the users", () => {
+		const read = names({ groups: ["grp_acme"] })
+		expect(read).toContain("FetchUsers")
+		expect(read).toContain("FetchUserGroups")
+	})
+
+	it("reads no group numbers for two picked groups", () => {
+		expect(names({ groups: ["grp_acme", "grp_globex"] })).not.toContain("FetchUserGroups")
+	})
+})

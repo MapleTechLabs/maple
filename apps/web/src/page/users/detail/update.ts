@@ -14,6 +14,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
 	detailInputs,
+	FetchGroupStats,
 	FetchLogs,
 	FetchOverview,
 	FetchTraces,
@@ -92,6 +93,29 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	}
 }
 
+/**
+ * The group card's read, once the overview names the user's group: org-wide under the pin, not the
+ * page's namespace pick, since a group spans namespaces. A reload refreshes it with the overview.
+ */
+const requestGroupStats = (model: Model, context: PageContext, groupId: string | null): Return => {
+	if (groupId === null || model.window === null) return { model }
+	const inputs = {
+		groupId,
+		startTime: model.window.startTime,
+		endTime: model.window.endTime,
+		namespaces: context.pinnedNamespace === null ? [] : [context.pinnedNamespace],
+	}
+	const key = requestKey(context.orgId, "listUserGroups", { data: inputs })
+	const groupStats = Keyed.request(model.groupStats, key, model.isReloading ? "Refresh" : "Load")
+	return Option.match(groupStats, {
+		onNone: () => ({ model }),
+		onSome: (next) => ({
+			model: { ...model, groupStats: next },
+			commands: [FetchGroupStats({ key, refresh: model.isReloading, ...inputs })],
+		}),
+	})
+}
+
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -113,6 +137,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		issues: Keyed.idle(),
 		traces: Keyed.idle(),
 		logs: Keyed.idle(),
+		groupStats: Keyed.idle(),
 		timePicker: TimeRangePicker.init("user-time-range"),
 		refreshVersion: 0,
 		isReloading: false,
@@ -183,25 +208,34 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			requestAll({ ...model, nowMs }, context, window, mode),
-		CompletedFetchOverview: ({ key, result }) => ({
-			model: {
-				...model,
-				profile: Keyed.accept(
-					model.profile,
-					key,
-					Result.map(result, (data) => data.profile),
-				),
-				activity: Keyed.accept(
-					model.activity,
-					key,
-					Result.map(result, (data) => data.activity),
-				),
-				issues: Keyed.accept(
-					model.issues,
-					key,
-					Result.map(result, (data) => data.issues),
-				),
-			},
+		CompletedFetchOverview: ({ key, result }) =>
+			requestGroupStats(
+				{
+					...model,
+					profile: Keyed.accept(
+						model.profile,
+						key,
+						Result.map(result, (data) => data.profile),
+					),
+					activity: Keyed.accept(
+						model.activity,
+						key,
+						Result.map(result, (data) => data.activity),
+					),
+					issues: Keyed.accept(
+						model.issues,
+						key,
+						Result.map(result, (data) => data.issues),
+					),
+				},
+				context,
+				Result.match(result, {
+					onSuccess: (data) => data.profile.profile?.groupId ?? null,
+					onFailure: () => null,
+				}),
+			),
+		CompletedFetchGroupStats: ({ key, result }) => ({
+			model: { ...model, groupStats: Keyed.accept(model.groupStats, key, result) },
 		}),
 		CompletedFetchTraces: ({ key, result }) => ({
 			model: { ...model, traces: Keyed.accept(model.traces, key, result) },
