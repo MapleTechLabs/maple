@@ -15,6 +15,7 @@ export const HttpUsersInternalLive = HttpApiBuilder.group(MapleInternalApi, "use
 		const users = yield* UsersReadService
 		return handlers
 			.handle("list", withTenant(users.list))
+			.handle("groups", withTenant(users.groups))
 			.handle("facets", withTenant(users.facets))
 			.handle("profile", withTenant(users.profile))
 			.handle("activity", withTenant(users.activity))

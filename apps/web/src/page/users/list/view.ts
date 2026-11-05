@@ -16,10 +16,12 @@ import type { UserRow } from "../data"
 import {
 	type UsersFacets,
 	type UsersFilters,
+	type UsersGroupBy,
 	type UsersSummary,
 	type UsersRailFacets,
 	type UsersSummaryState,
 	usersFilterRail,
+	usersGroupsBody,
 	usersListBody,
 	usersToolbar,
 } from "../view-list"
@@ -27,7 +29,7 @@ import { noUsersState, usersLoading } from "../view-states"
 import { pinScope } from "./command"
 import { Message } from "./message"
 import type { Model, UsersFacetsData } from "./model"
-import { DEFAULT_PRESET, userHref, WIDE_PRESET } from "./update"
+import { DEFAULT_PRESET, groupUsersHref, isGrouped, userHref, WIDE_PRESET } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -97,10 +99,15 @@ const hasNoTelemetry = (model: Model): boolean =>
 const isWidestWindow = (model: Model): boolean =>
 	model.search.startTime !== undefined || model.search.timePreset === WIDE_PRESET
 
+const groupByOf = (model: Model): UsersGroupBy => (isGrouped(model.search) ? "group" : "none")
+
 const searchOptions = (model: Model) => ({
 	filters: filtersOf(model),
 	onSearch: (value: string) => Message.ChangedQuery({ value }),
 	onClearSearch: Message.ClickedClearQuery(),
+	groupBy: groupByOf(model),
+	onGroupBy: (groupBy: UsersGroupBy) =>
+		Message.ClickedGroupBy({ groupBy: groupBy === "none" ? null : groupBy }),
 })
 
 const signalEmpty = (h: H, model: Model): Html =>
@@ -125,7 +132,28 @@ const emptyBody = (h: H, model: Model): Html =>
 					onWidenRange: isWidestWindow(model) ? undefined : Message.ClickedWidenRange(),
 				})
 
+const groupsBody = (h: H, model: Model, inputs: PageViewInputs): Html =>
+	AsyncData.matchData(model.groups.data, {
+		onEmpty: () => usersLoading(h),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load groups", onRetry: Message.ClickedRetry() }),
+		onData: (page) =>
+			page.groups.length === 0
+				? emptyBody(h, model)
+				: usersGroupsBody(h, page.groups, summaryStateOf(model), {
+						nowMs: model.nowMs,
+						timeZone: inputs.context.timeZone,
+						...searchOptions(model),
+						scope: pinScope(inputs.context.pinnedNamespace),
+						groupHref: groupUsersHref(model.search),
+						truncated: page.truncated,
+					}),
+	})
+
 const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
+	isGrouped(model.search) ? groupsBody(h, model, inputs) : listBody(h, model, inputs)
+
+const listBody = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.list.data, {
 		onEmpty: () => usersLoading(h),
 		onFailure: (failure) =>

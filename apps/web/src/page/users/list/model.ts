@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { UserListItem, UsersGroupOption } from "@maple/domain/http"
+import { UserListItem, UsersGroupItem, UsersGroupOption } from "@maple/domain/http"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
@@ -15,6 +15,13 @@ export type Search = typeof UsersSearch.Type
 /** One `listUsers` answer: the window's users under the filters, the latest seen first. */
 export const UsersPage = Schema.Struct({ users: Schema.Array(UserListItem) })
 export type UsersPage = typeof UsersPage.Type
+
+/** One `listUserGroups` answer: the window's groups under the filters, the largest first. */
+export const UsersGroupsPage = Schema.Struct({
+	groups: Schema.Array(UsersGroupItem),
+	truncated: Schema.Boolean,
+})
+export type UsersGroupsPage = typeof UsersGroupsPage.Type
 
 const FacetItem = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
@@ -35,6 +42,7 @@ export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
 	list: KeyedSchema(UsersPage, LoadFailure),
+	groups: KeyedSchema(UsersGroupsPage, LoadFailure),
 	facets: KeyedSchema(UsersFacetsData, LoadFailure),
 	presence: SignalPresenceData.schema,
 	/** The toolbar search: what is typed, and the debounce run that may still commit it. */

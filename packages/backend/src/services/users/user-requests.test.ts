@@ -189,6 +189,7 @@ describe("a cluster without user_activity_hourly", () => {
 							name: "Ada",
 							email: "",
 							groupId: "",
+							groupIds: [],
 							namespaces: ["storefront"],
 							firstSeen: "2026-11-01 08:00:00.000000000",
 							lastSeen: "2026-11-01 09:00:00.000000000",
@@ -298,6 +299,7 @@ const listRow = (userId: string, name: string) => ({
 	name,
 	email: "",
 	groupId: "",
+	groupIds: [],
 	namespaces: [],
 	firstSeen: "2026-11-01 08:00:00.000000000",
 	lastSeen: "2026-11-01 09:00:00.000000000",
@@ -371,9 +373,9 @@ describe("the directory's group names", () => {
 				[
 					"usersList",
 					[
-						{ ...listRow("user_1", "Ada"), groupId: "grp_acme" },
-						{ ...listRow("user_2", "Grace"), groupId: "grp_acme" },
-						{ ...listRow("user_3", "Linus"), groupId: "grp_unnamed" },
+						{ ...listRow("user_1", "Ada"), groupId: "grp_acme", groupIds: ["grp_acme"] },
+						{ ...listRow("user_2", "Grace"), groupId: "grp_acme", groupIds: ["grp_acme"] },
+						{ ...listRow("user_3", "Linus"), groupId: "grp_unnamed", groupIds: ["grp_unnamed"] },
 						listRow("user_4", "Ken"),
 					],
 				],
@@ -404,7 +406,7 @@ describe("the directory's group names", () => {
 			const rows = new Map<string, ReadonlyArray<unknown>>([
 				["usersServiceNamespaces", []],
 				["mcpServices", []],
-				["usersList", [{ ...listRow("user_1", "Ada"), groupId: "grp_acme" }]],
+				["usersList", [{ ...listRow("user_1", "Ada"), groupId: "grp_acme", groupIds: ["grp_acme"] }]],
 			])
 			const failingNames = Layer.succeed(
 				WarehouseQueryService,

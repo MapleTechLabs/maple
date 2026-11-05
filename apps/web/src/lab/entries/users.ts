@@ -8,9 +8,9 @@ import { icon } from "@maple/views/ui/icon"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { USER_TABS, type UserTab, userLabel } from "../../page/users/data"
 import { userDetailBody, userRail, userTabs, userTitle } from "../../page/users/view-detail"
-import { usersFilterRail, usersListBody } from "../../page/users/view-list"
+import { usersFilterRail, usersGroupsBody, usersListBody } from "../../page/users/view-list"
 import type { Resources } from "../../platform/resources"
-import { filterUsers, scopeDetail, usersFacets, usersSummary } from "../users-filter"
+import { filterUsers, scopeDetail, usersFacets, usersGroups, usersSummary } from "../users-filter"
 import { noUsersState, usersLoading } from "../../page/users/view-states"
 import { USER_DETAIL, USER_ROWS, USERS_NOW, USERS_SUMMARY, USERS_TIME_ZONE } from "../users-fixture"
 import { defineShellLab } from "../shell-lab"
@@ -39,6 +39,7 @@ const Model = Schema.Struct({
 	hasReplay: Schema.Boolean,
 	namespaces: Schema.Array(Schema.String),
 	groups: Schema.Array(Schema.String),
+	groupBy: Schema.Literals(["none", "group"]),
 	filterSections: FilterSections.Model,
 	pinnedNamespace: Schema.NullOr(Schema.String),
 	/** The namespace picked on the user's page (the pin overrides it). */
@@ -54,6 +55,7 @@ const Message = defineMessageUnion({
 	ToggledReplay: {},
 	ToggledNamespace: { name: Schema.String },
 	ToggledGroup: { name: Schema.String },
+	ClickedGroupBy: { groupBy: Schema.Literals(["none", "group"]) },
 	ClearedFilters: {},
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	ToggledPin: {},
@@ -67,8 +69,11 @@ const Flags = Schema.Struct({
 	view: Schema.Literals(VIEWS),
 	tab: Schema.Literals(USER_TABS),
 	pinnedNamespace: Schema.NullOr(Schema.String),
+	groupBy: Schema.Literals(["none", "group"]),
 })
 type Flags = typeof Flags.Type
+
+const groupByParam = (value: string | null): "none" | "group" => (value === "group" ? "group" : "none")
 
 const decodeView = Schema.decodeUnknownOption(Schema.Literals(VIEWS))
 const decodeTab = Schema.decodeUnknownOption(Schema.Literals(USER_TABS))
@@ -82,6 +87,7 @@ const init = (flags: Flags) => ({
 		hasReplay: false,
 		namespaces: [],
 		groups: [],
+		groupBy: flags.groupBy,
 		filterSections: FilterSections.init(),
 		pinnedNamespace: flags.pinnedNamespace,
 		detailNamespace: null,
@@ -102,6 +108,7 @@ const update = (model: Model, message: Message): Return =>
 		ToggledReplay: () => ({ model: { ...model, hasReplay: !model.hasReplay } }),
 		ToggledNamespace: ({ name }) => ({ model: { ...model, namespaces: toggle(model.namespaces, name) } }),
 		ToggledGroup: ({ name }) => ({ model: { ...model, groups: toggle(model.groups, name) } }),
+		ClickedGroupBy: ({ groupBy }) => ({ model: { ...model, groupBy } }),
 		ClearedFilters: () => ({
 			model: { ...model, hasErrors: false, hasReplay: false, namespaces: [], groups: [] },
 		}),
@@ -220,25 +227,31 @@ const detailPage = (h: H, model: Model): Html => {
 
 const view = (model: Model, h: H): Html => {
 	switch (model.view) {
-		case "list":
+		case "list": {
+			const shown = filterUsers(USER_ROWS, filtersOf(model), model.pinnedNamespace)
+			const summary = usersSummary(USER_ROWS, model.pinnedNamespace, USERS_SUMMARY, USERS_NOW)
+			const options = {
+				nowMs: USERS_NOW,
+				timeZone: USERS_TIME_ZONE,
+				filters: filtersOf(model),
+				groupBy: model.groupBy,
+				onGroupBy: (groupBy: "none" | "group") => Message.ClickedGroupBy({ groupBy }),
+				scope: model.pinnedNamespace === null ? [] : [model.pinnedNamespace],
+				onSearch: (value: string) => Message.ChangedSearch({ value }),
+				onClearSearch: Message.ChangedSearch({ value: "" }),
+			}
 			return listPage(
 				h,
 				model,
-				usersListBody(
-					h,
-					filterUsers(USER_ROWS, filtersOf(model), model.pinnedNamespace),
-					usersSummary(USER_ROWS, model.pinnedNamespace, USERS_SUMMARY, USERS_NOW),
-					{
-						nowMs: USERS_NOW,
-						timeZone: USERS_TIME_ZONE,
-						filters: filtersOf(model),
-						scope: model.pinnedNamespace === null ? [] : [model.pinnedNamespace],
-						onSearch: (value) => Message.ChangedSearch({ value }),
-						onClearSearch: Message.ChangedSearch({ value: "" }),
-						userHref: () => "?view=detail",
-					},
-				),
+				model.groupBy === "group"
+					? usersGroupsBody(h, usersGroups(shown, USERS_NOW), summary, {
+							...options,
+							groupHref: (groupId) => `?view=list&groups=${groupId}`,
+							truncated: false,
+						})
+					: usersListBody(h, shown, summary, { ...options, userHref: () => "?view=detail" }),
 			)
+		}
 		case "detail":
 			return detailPage(h, model)
 		case "empty":
@@ -297,6 +310,7 @@ export const lab = defineShellLab("Users", {
 			view: Option.getOrElse(decodeView(params.get("view")), (): View => "list"),
 			tab: Option.getOrElse(decodeTab(params.get("tab")), (): UserTab => "activity"),
 			pinnedNamespace: params.get("pin"),
+			groupBy: groupByParam(params.get("groupBy")),
 		}
 	}),
 	init,

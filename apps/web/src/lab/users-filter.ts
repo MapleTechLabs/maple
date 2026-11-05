@@ -1,7 +1,7 @@
 import type { FilterOption } from "@maple/views/ui/filters/filter-section"
 import { Array as Arr, Option, Order, Record, String as Str } from "effect"
 import type { UserDetail, UserRow } from "../page/users/data"
-import type { UsersFacets, UsersFilters, UsersSummary } from "../page/users/view-list"
+import type { UsersFacets, UsersFilters, UsersGroupRow, UsersSummary } from "../page/users/view-list"
 
 // `/lab/users`' stand-in for the warehouse: the facet counts, the directory filter and a user's
 // namespace scope, applied to the fixture the way the queries will apply them.
@@ -139,4 +139,30 @@ export const scopeDetail = (detail: UserDetail, namespace: string | null): UserD
 		events,
 		mcpSessions,
 	}
+}
+
+/** The group view over already-filtered rows, as the API groups them: the ungrouped last. */
+export const usersGroups = (rows: ReadonlyArray<UserRow>, nowMs: number): ReadonlyArray<UsersGroupRow> => {
+	const byGroup = Arr.groupBy(rows, (row) => row.groupId ?? "")
+	const groups = Arr.map(Record.toEntries(byGroup), ([groupId, members]): UsersGroupRow => ({
+		groupId: groupId === "" ? null : groupId,
+		groupName: Arr.findFirst(members, (row) => row.groupName !== null).pipe(
+			Option.match({ onNone: () => null, onSome: (row) => row.groupName }),
+		),
+		users: members.length,
+		activeToday: Arr.filter(members, (row) => row.lastSeenMs >= nowMs - DAY_MS).length,
+		withErrors: Arr.filter(members, (row) => row.errors > 0).length,
+		sessions: Arr.reduce(members, 0, (sum, row) => sum + row.sessions),
+		errors: Arr.reduce(members, 0, (sum, row) => sum + row.errors),
+		requests: Arr.reduce(members, 0, (sum, row) => sum + row.requests),
+		lastSeenMs: Arr.reduce(members, 0, (latest, row) => Math.max(latest, row.lastSeenMs)),
+	}))
+	const sorted = Arr.sort(
+		groups,
+		Order.flip(Order.mapInput(Order.Number, (group: UsersGroupRow) => group.users)),
+	)
+	return [
+		...Arr.filter(sorted, (group) => group.groupId !== null),
+		...Arr.filter(sorted, (group) => group.groupId === null),
+	]
 }

@@ -16,8 +16,10 @@ import {
 	CompleteReloadSpin,
 	DebounceQuery,
 	FetchFacets,
+	FetchGroups,
 	FetchUsers,
 	facetsInputs,
+	groupsInputs,
 	listInputs,
 	LoadSignalPresence,
 	ResolveWindow,
@@ -44,15 +46,24 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 		timeZone: context.timeZone,
 	})
 
+/** Whether the directory shows one row per group instead of per user. */
+export const isGrouped = (search: Search): boolean => search.groupBy === "group"
+
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const pinnedNamespace = context.pinnedNamespace
+	const grouped = isGrouped(model.search)
 	const listKey = requestKey(context.orgId, "listUsers", {
 		data: listInputs(model.search, window, pinnedNamespace),
+	})
+	const groupsKey = requestKey(context.orgId, "listUserGroups", {
+		data: groupsInputs(model.search, window, pinnedNamespace),
 	})
 	const facetsKey = requestKey(context.orgId, "getUsersFacets", {
 		data: facetsInputs(window, pinnedNamespace),
 	})
-	const list = Keyed.request(model.list, listKey, mode)
+	// Only the view on screen reads: the other keeps its last answer for a quick switch back.
+	const list = grouped ? Option.none() : Keyed.request(model.list, listKey, mode)
+	const groups = grouped ? Keyed.request(model.groups, groupsKey, mode) : Option.none()
 	const facets = Keyed.request(model.facets, facetsKey, mode)
 	const args = { search: model.search, window, pinnedNamespace, refresh: mode === "Refresh" }
 	return {
@@ -60,16 +71,24 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			...model,
 			window,
 			list: Option.getOrElse(list, () => model.list),
+			groups: Option.getOrElse(groups, () => model.groups),
 			facets: Option.getOrElse(facets, () => model.facets),
 		},
 		commands: [
 			...(Option.isSome(list) ? [FetchUsers({ key: listKey, ...args })] : []),
+			...(Option.isSome(groups) ? [FetchGroups({ key: groupsKey, ...args })] : []),
 			...(Option.isSome(facets) ? [FetchFacets({ key: facetsKey, ...args })] : []),
 		],
 	}
 }
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Users({ search }))
+
+/** The directory listing one group's users: the group view's filters, that group picked. */
+export const groupUsersHref =
+	(search: Search) =>
+	(groupId: string): string =>
+		searchHref({ ...search, groupBy: undefined, groups: [groupId] })
 
 /** The user page a directory row links to, over the directory's window. */
 export const userHref =
@@ -128,6 +147,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		window: null,
 		nowMs: 0,
 		list: Keyed.idle(),
+		groups: Keyed.idle(),
 		facets: Keyed.idle(),
 		presence: SignalPresenceData.Loading(),
 		query: search.q ?? "",
@@ -162,7 +182,11 @@ export const preload = (route: { readonly search: Search }, context: PageContext
 		},
 		nowMs,
 	)
-	return pickCommands(requestAll(model, context, window, "Load"), [FetchUsers.name, FetchFacets.name])
+	return pickCommands(requestAll(model, context, window, "Load"), [
+		FetchUsers.name,
+		FetchGroups.name,
+		FetchFacets.name,
+	])
 }
 
 export const routeChanged = (
@@ -227,6 +251,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchUsers: ({ key, result }) => ({
 			model: { ...model, list: Keyed.accept(model.list, key, result) },
 		}),
+		CompletedFetchGroups: ({ key, result }) => ({
+			model: { ...model, groups: Keyed.accept(model.groups, key, result) },
+		}),
+		ClickedGroupBy: ({ groupBy }) =>
+			navigate(model, { ...model.search, groupBy: groupBy === null ? undefined : groupBy }),
 		CompletedFetchFacets: ({ key, result }) => ({
 			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
 		}),

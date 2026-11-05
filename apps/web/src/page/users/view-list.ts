@@ -1,4 +1,4 @@
-import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber, formatPercentColumn } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { columnClass } from "@maple/views/ui/column"
 import {
@@ -15,8 +15,9 @@ import {
 import { icon } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
 import { searchInput } from "@maple/views/ui/search-input"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { button } from "@maple/views/ui/button"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import {
@@ -65,10 +66,28 @@ export type UsersSummary = Readonly<{
 /** The strip's counts, or why it has none: still loading, or the facets read failed. */
 export type UsersSummaryState = UsersSummary | "loading" | "failed"
 
+/** What one directory row is: a user, or a group of them. */
+export type UsersGroupBy = "none" | "group"
+
+/** One group in the group view; `groupId` `null` is the users in none. */
+export type UsersGroupRow = Readonly<{
+	groupId: string | null
+	groupName: string | null
+	users: number
+	activeToday: number
+	withErrors: number
+	sessions: number
+	errors: number
+	requests: number
+	lastSeenMs: number
+}>
+
 export type UsersListOptions<M> = Readonly<{
 	nowMs: number
 	timeZone: string
 	filters: UsersFilters
+	groupBy: UsersGroupBy
+	onGroupBy: (groupBy: UsersGroupBy) => M
 	/** The summary strip's scope: the org pin only, as the facets read it; empty is every namespace. */
 	scope: ReadonlyArray<string>
 	onSearch: (value: string) => M
@@ -234,12 +253,17 @@ const summaryRail = <M>(h: HtmlBuilder<M>, summary: UsersSummaryState, scope: Re
 					),
 				)
 
-/** The directory's search box; it stays above the empty state a search with no matches shows. */
+const GROUP_BY_OPTIONS = [
+	{ value: "none", label: "Users" },
+	{ value: "group", label: "Groups" },
+] as const
+
+/** The directory's search box and its row kind; they stay above the empty state a search with no matches shows. */
 export const usersToolbar = <M>(
 	h: HtmlBuilder<M>,
-	options: Pick<UsersListOptions<M>, "filters" | "onSearch" | "onClearSearch">,
+	options: Pick<UsersListOptions<M>, "filters" | "onSearch" | "onClearSearch" | "groupBy" | "onGroupBy">,
 ): Html =>
-	hstack(h, { gap: "2", wrap: true, className: "px-6 py-3" }, [
+	hstack(h, { gap: "2", wrap: true, justify: "between", className: "px-6 py-3" }, [
 		searchInput(h, {
 			id: "users-search",
 			value: options.filters.search,
@@ -248,6 +272,13 @@ export const usersToolbar = <M>(
 			onInput: options.onSearch,
 			onClear: options.onClearSearch,
 			className: "w-full max-w-sm",
+		}),
+		segmentedSelect(h, {
+			size: "sm",
+			ariaLabel: "Group by",
+			value: options.groupBy,
+			onChange: options.onGroupBy,
+			options: GROUP_BY_OPTIONS,
 		}),
 	])
 
@@ -502,6 +533,174 @@ export const usersListBody = <M>(
 							? countLabel(shown.length, "user")
 							: `${shown.length} of ${countLabel(summary.identified, "user")}`,
 						"· sorted by last seen",
+					),
+				],
+			),
+		],
+	)
+}
+
+/** A group's name over its id; the users in no group get their own label. */
+const groupNameBlock = <M>(h: HtmlBuilder<M>, row: UsersGroupRow): Html =>
+	vstack(h, { gap: "0", shrink: true, className: "min-w-0" }, [
+		typography(h, { size: "xs", tone: row.groupId === null ? "muted" : "foreground", truncate: true }, [
+			row.groupId === null ? "No group" : (row.groupName ?? row.groupId),
+		]),
+		typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+			row.groupId === null
+				? "identify() sent no groupId"
+				: row.groupName === null
+					? "no name sent"
+					: row.groupId,
+		]),
+	])
+
+/** `12 · 25%`: how many of the group's users, and their share. */
+const shareCell = <M>(
+	h: HtmlBuilder<M>,
+	count: number,
+	of: number,
+	className: string,
+	tone?: "error",
+): Html =>
+	numberCell(
+		h,
+		count === 0 ? "0" : `${formatNumber(count)} · ${formatPercentColumn(count / Math.max(1, of))}`,
+		className,
+		count === 0 ? "subtle" : tone,
+	)
+
+const groupRow = <M>(h: HtmlBuilder<M>, row: UsersGroupRow, options: UsersGroupsOptions<M>): Html =>
+	toolTableRow(
+		h,
+		row.groupId === null
+			? { className: "h-12" }
+			: { href: options.groupHref(row.groupId), className: "h-12" },
+		[
+			hstack(
+				h,
+				{ gap: "2.5", shrink: true, grow: true, as: "span", className: columnClass({ min: "48" }) },
+				[
+					icon(h, row.groupId === null ? "UserIcon" : "UsersIcon", {
+						size: 14,
+						className: "shrink-0 text-foreground-subtle",
+					}),
+					groupNameBlock(h, row),
+				],
+			),
+			numberCell(h, formatNumber(row.users), "w-16"),
+			shareCell(h, row.activeToday, row.users, "hidden w-24 @min-[680px]/panel:block"),
+			shareCell(h, row.withErrors, row.users, "w-24", "error"),
+			numberCell(
+				h,
+				formatNumber(row.sessions),
+				"hidden w-16 @min-[760px]/panel:block",
+				row.sessions === 0 ? "subtle" : undefined,
+			),
+			numberCell(
+				h,
+				formatNumber(row.errors),
+				"hidden w-14 @min-[760px]/panel:block",
+				row.errors > 0 ? "error" : "subtle",
+			),
+			numberCell(
+				h,
+				formatNumber(row.requests),
+				"hidden w-20 @min-[880px]/panel:block",
+				row.requests === 0 ? "subtle" : undefined,
+			),
+			h.span(
+				[h.Class("w-24 shrink-0 text-right")],
+				[
+					listRelativeTime(h, {
+						value: row.lastSeenMs,
+						nowMs: options.nowMs,
+						timeZone: options.timeZone,
+						variant: "short",
+						mono: true,
+						className: typographyClass({ size: "xs", tone: "soft" }),
+					}),
+				],
+			),
+			hstack(
+				h,
+				{
+					justify: "end",
+					as: "span",
+					className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+				},
+				row.groupId === null ? [] : [icon(h, "ChevronRightIcon", { size: 14 })],
+			),
+		],
+	)
+
+export type UsersGroupsOptions<M> = UsersListOptions<M> &
+	Readonly<{
+		/** The directory filtered to one group. */
+		groupHref: (groupId: string) => string
+		/** More groups exist than the page lists. */
+		truncated: boolean
+	}>
+
+/** The directory grouped: the summary strip, the search, then one row per group (already filtered). */
+export const usersGroupsBody = <M>(
+	h: HtmlBuilder<M>,
+	shown: ReadonlyArray<UsersGroupRow>,
+	summary: UsersSummaryState,
+	options: UsersGroupsOptions<M>,
+): Html => {
+	const named = Arr.filter(shown, (row) => row.groupId !== null).length
+	return h.div(
+		[h.Class("@container/panel flex min-w-0 flex-col")],
+		[
+			summaryRail(h, summary, options.scope),
+			usersToolbar(h, options),
+			h.section(
+				[h.AriaLabel("Groups"), h.Class("min-w-0 px-6 pb-6")],
+				[
+					toolTable(h, [
+						toolTableHead(h, [
+							th(h, { label: "Group", width: columnClass({ min: "48" }) }),
+							th(h, { label: "Users", width: "w-16 shrink-0", align: "right" }),
+							th(h, {
+								label: "Active 24h",
+								width: "w-24 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[680px]/panel:flex",
+							}),
+							th(h, { label: "Hit an error", width: "w-24 shrink-0", align: "right" }),
+							th(h, {
+								label: "Sessions",
+								width: "w-16 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[760px]/panel:flex",
+							}),
+							th(h, {
+								label: "Errors",
+								width: "w-14 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[760px]/panel:flex",
+							}),
+							th(h, {
+								label: "Requests",
+								width: "w-20 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[880px]/panel:flex",
+							}),
+							th(h, { label: "Last seen", width: "w-24 shrink-0", align: "right" }),
+							h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
+						]),
+						toolTableBody(
+							h,
+							Arr.map(shown, (row) => groupRow(h, row, options)),
+						),
+					]),
+					toolTableFooter(
+						h,
+						options.truncated
+							? `First ${countLabel(named, "group")}`
+							: countLabel(named, "group"),
+						"· sorted by users · a user in two groups counts in both",
 					),
 				],
 			),

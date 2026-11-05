@@ -487,9 +487,16 @@ export function usersGroupsQuery(scope: UsersScope, filter: UsersListFilter = {}
 							$.groupIds,
 							CH.arrayOf(...Arr.map(picked, (group) => CH.lit(group))),
 						)
-			const ungrouped = CH.compileTypedFnCall("length", T.uint64.schema, groups).eq(0)
+			// Typed explicitly: `if_` over two arrays loses the element type, and the row then goes undecoded.
+			const orUngrouped = CH.compileTypedFnCall(
+				"if",
+				T.array(T.string).schema,
+				CH.compileTypedFnCall("empty", T.uint8.schema, groups),
+				CH.arrayOf(CH.lit("")),
+				groups,
+			)
 			return {
-				groupId: CH.arrayJoin(CH.if_(ungrouped, CH.arrayOf(CH.lit("")), groups)),
+				groupId: CH.arrayJoin(orUngrouped),
 				users: CH.count(),
 				activeToday: CH.countIf($.lastSeen.gte(param.dateTime("activeSince"))),
 				withErrors: CH.countIf($.errors.gt(0)),

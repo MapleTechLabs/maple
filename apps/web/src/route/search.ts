@@ -630,6 +630,8 @@ export const UsersSearch = Schema.Struct({
 	hasReplay: BooleanParam,
 	namespaces: OptionalStringArrayParam,
 	groups: OptionalStringArrayParam,
+	/** `group`: one row per `identify()` group instead of per user. */
+	groupBy: Schema.optional(Schema.Literal("group")),
 	...TimeRangeSearchFields,
 })
 

@@ -10591,12 +10591,129 @@ SELECT
         LIMIT 2
         FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [52ffde9d]
+-- builder:users:usersGroupsQuery:default  [5f075534]
+SELECT
+          arrayJoin(if(empty(per_user.groupIds), [''], per_user.groupIds)) AS groupId,
+          count() AS users,
+          countIf(per_user.lastSeen >= '2026-01-01 10:30:00') AS activeToday,
+          countIf(per_user.errors > 0) AS withErrors,
+          countIf(per_user.sessions > 0) AS withReplay,
+          sum(per_user.sessions) AS sessions,
+          sum(per_user.errors) AS errors,
+          sum(per_user.requests) AS requests,
+          min(per_user.firstSeen) AS firstSeen,
+          max(per_user.lastSeen) AS lastSeen
+        FROM (SELECT
+          signals.userId AS userId,
+          anyIf(signals.name, signals.name != '') AS name,
+          anyIf(signals.email, signals.email != '') AS email,
+          anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          arraySort(groupUniqArrayIf(20)(signals.groupId, signals.groupId != '')) AS groupIds,
+          arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
+          min(signals.firstSeen) AS firstSeen,
+          max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
+          sum(signals.sessions) AS sessions,
+          sum(signals.errors) AS errors,
+          sum(signals.requests) AS requests,
+          sum(signals.mcpSpans) AS mcpSpans,
+          sum(signals.events) AS events,
+          sum(signals.spans) AS spans,
+          sum(signals.logLines) AS logLines
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          user_activity_hourly.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          '' AS groupId,
+          user_activity_hourly.ServiceNamespace AS namespace,
+          toDateTime64(min(user_activity_hourly.FirstSeen), 9) AS firstSeen,
+          toDateTime64(max(user_activity_hourly.LastSeen), 9) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(sum(user_activity_hourly.FailedRequestCount)) AS errors,
+          toUInt64(sum(user_activity_hourly.RequestCount)) AS requests,
+          toUInt64(sumIf(user_activity_hourly.SpanCount, user_activity_hourly.ServiceName IN ('maple-ai'))) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(sum(user_activity_hourly.SpanCount)) AS spans,
+          toUInt64(sum(user_activity_hourly.LogCount)) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId != ''
+        GROUP BY userId, namespace
+) AS signals
+        GROUP BY userId) AS per_user
+        GROUP BY groupId
+        ORDER BY users DESC, groupId ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:users:usersListQuery:activityRollup  [63816b08]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
           anyIf(signals.email, signals.email != '') AS email,
           anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          arraySort(groupUniqArrayIf(20)(signals.groupId, signals.groupId != '')) AS groupIds,
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
@@ -10705,12 +10822,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [cbba6299]
+-- builder:users:usersListQuery:namespaceFiltered  [51933f58]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
           anyIf(signals.email, signals.email != '') AS email,
           anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          arraySort(groupUniqArrayIf(20)(signals.groupId, signals.groupId != '')) AS groupIds,
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
@@ -10826,12 +10944,13 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [e895ff7c]
+-- builder:users:usersListQuery:unscoped  [cbe0151f]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
           anyIf(signals.email, signals.email != '') AS email,
           anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          arraySort(groupUniqArrayIf(20)(signals.groupId, signals.groupId != '')) AS groupIds,
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,

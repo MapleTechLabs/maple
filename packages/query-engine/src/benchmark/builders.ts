@@ -2314,6 +2314,16 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "users",
+		name: "usersGroupsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.usersGroupsQuery({ ...USERS_SCOPE, activityRollup: true }), {
+				...window,
+				activeSince: START_TIME,
+			}),
+	},
+	{
+		module: "users",
 		name: "usersGroupNamesQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.usersGroupNamesQuery(["grp_acme", "grp_globex"]), window),
