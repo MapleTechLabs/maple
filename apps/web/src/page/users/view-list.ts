@@ -1,4 +1,4 @@
-import { formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { columnClass } from "@maple/views/ui/column"
 import {
@@ -67,7 +67,8 @@ export type UsersListOptions<M> = Readonly<{
 	onSearch: (value: string) => M
 	onClearSearch: M
 	/** The user page a row links to. */
-	userHref: (userId: string) => string
+	/** Where a row links; rows are plain until the user page exists. */
+	userHref?: (userId: string) => string
 }>
 
 export type UsersRailOptions<M> = Readonly<{
@@ -228,82 +229,96 @@ const namespaceCell = <M>(h: HtmlBuilder<M>, namespaces: ReadonlyArray<string>):
 }
 
 const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M>): Html =>
-	toolTableRow(h, { href: options.userHref(row.userId), className: "h-12" }, [
-		hstack(
-			h,
-			{ gap: "2.5", shrink: true, grow: true, as: "span", className: columnClass({ min: "48" }) },
-			[userAvatar(h, row), userNameBlock(h, row)],
-		),
-		namespaceCell(h, row.namespaces),
-		h.span(
-			[h.Class("w-24 shrink-0 text-right")],
-			[
-				listRelativeTime(h, {
-					value: row.lastSeenMs,
-					nowMs: options.nowMs,
-					timeZone: options.timeZone,
-					variant: "short",
+	toolTableRow(
+		h,
+		options.userHref === undefined
+			? { className: "h-12" }
+			: { href: options.userHref(row.userId), className: "h-12" },
+		[
+			hstack(
+				h,
+				{ gap: "2.5", shrink: true, grow: true, as: "span", className: columnClass({ min: "48" }) },
+				[userAvatar(h, row), userNameBlock(h, row)],
+			),
+			namespaceCell(h, row.namespaces),
+			h.span(
+				[h.Class("w-24 shrink-0 text-right")],
+				[
+					listRelativeTime(h, {
+						value: row.lastSeenMs,
+						nowMs: options.nowMs,
+						timeZone: options.timeZone,
+						variant: "short",
+						mono: true,
+						className: typographyClass({ size: "xs", tone: "soft" }),
+					}),
+				],
+			),
+			numberCell(
+				h,
+				row.sessions === 0 ? "0" : formatNumber(row.sessions),
+				"w-16",
+				row.sessions === 0 ? "subtle" : undefined,
+			),
+			numberCell(h, formatNumber(row.errors), "w-14", row.errors > 0 ? "error" : "subtle"),
+			h.span(
+				[h.Class("hidden w-28 shrink-0 items-center justify-end gap-2 @min-[760px]/panel:flex")],
+				[
+					...(row.activity.length === 0
+						? []
+						: [
+								miniBars(h, {
+									values: row.activity,
+									color: "var(--primary)",
+									className: "h-5 w-14",
+								}),
+							]),
+					typography(h, { size: "xs", mono: true, numeric: true, as: "span" }, [
+						formatNumber(row.requests),
+					]),
+				],
+			),
+			typography(
+				h,
+				{
+					size: "xs",
 					mono: true,
-					className: typographyClass({ size: "xs", tone: "soft" }),
-				}),
-			],
-		),
-		numberCell(
-			h,
-			row.sessions === 0 ? "0" : formatNumber(row.sessions),
-			"w-16",
-			row.sessions === 0 ? "subtle" : undefined,
-		),
-		numberCell(h, formatNumber(row.errors), "w-14", row.errors > 0 ? "error" : "subtle"),
-		h.span(
-			[h.Class("hidden w-28 shrink-0 items-center justify-end gap-2 @min-[760px]/panel:flex")],
-			[
-				miniBars(h, { values: row.activity, color: "var(--primary)", className: "h-5 w-14" }),
-				typography(h, { size: "xs", mono: true, numeric: true, as: "span" }, [
-					formatNumber(row.requests),
-				]),
-			],
-		),
-		typography(
-			h,
-			{
-				size: "xs",
-				mono: true,
-				tone: row.topRoute === null ? "subtle" : "soft",
-				truncate: true,
-				as: "span",
-				className: "hidden w-40 shrink-0 pl-4 @min-[960px]/panel:block",
-			},
-			[row.topRoute ?? "no requests"],
-		),
-		hstack(
-			h,
-			{ gap: "1", as: "span", className: "hidden w-36 shrink-0 @min-[1000px]/panel:flex" },
-			signalTags(h, row.signals),
-		),
-		h.span(
-			[h.Class("hidden w-20 shrink-0 text-right @min-[1100px]/panel:block")],
-			[
-				listRelativeTime(h, {
-					value: row.firstSeenMs,
-					nowMs: options.nowMs,
-					timeZone: options.timeZone,
-					variant: "short",
-					mono: true,
-					className: typographyClass({ size: "xs", tone: "muted" }),
-				}),
-			],
-		),
-		hstack(
-			h,
-			{
-				justify: "end",
-				as: "span",
-				className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
-			},
-			[icon(h, "ChevronRightIcon", { size: 14 })],
-		),
-	])
+					tone: row.topRoute === null ? "subtle" : "soft",
+					truncate: true,
+					as: "span",
+					className: "hidden w-40 shrink-0 pl-4 @min-[960px]/panel:block",
+				},
+				[row.topRoute ?? (row.requests === 0 ? "no requests" : EMPTY_VALUE)],
+			),
+			hstack(
+				h,
+				{ gap: "1", as: "span", className: "hidden w-36 shrink-0 @min-[1000px]/panel:flex" },
+				signalTags(h, row.signals),
+			),
+			h.span(
+				[h.Class("hidden w-20 shrink-0 text-right @min-[1100px]/panel:block")],
+				[
+					listRelativeTime(h, {
+						value: row.firstSeenMs,
+						nowMs: options.nowMs,
+						timeZone: options.timeZone,
+						variant: "short",
+						mono: true,
+						className: typographyClass({ size: "xs", tone: "muted" }),
+					}),
+				],
+			),
+			hstack(
+				h,
+				{
+					justify: "end",
+					as: "span",
+					className: typographyClass({ tone: "subtle", className: "w-3.5 shrink-0" }),
+				},
+				[icon(h, "ChevronRightIcon", { size: 14 })],
+			),
+		],
+	)
 
 /** The directory: the summary strip, the search, then one row per user (already filtered). */
 export const usersListBody = <M>(
