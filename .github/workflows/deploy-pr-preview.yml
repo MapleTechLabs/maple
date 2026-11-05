@@ -168,7 +168,7 @@ jobs:
                       --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | reverse | .[] | "\(.id) \(.workflow_run.id)"' || true)
                     while read -r artifact run; do
                       [ -n "$artifact" ] || continue
-                      origin=$(gh api "repos/$REPO/actions/runs/$run" --jq '.path + " " + .event' || true)
+                      origin=$(gh api "repos/$REPO/actions/runs/$run" --jq '(.path | sub("@.*$"; "")) + " " + .event' || true)
                       if [ "$origin" = ".github/workflows/preview-tinybird-branch.yml pull_request_target" ]; then
                         if gh api "repos/$REPO/actions/artifacts/$artifact/zip" > "$RUNNER_TEMP/tinybird-branch.zip" \
                           && unzip -p "$RUNNER_TEMP/tinybird-branch.zip" tinybird-branch.sealed > "$RUNNER_TEMP/tinybird-branch.sealed"; then
