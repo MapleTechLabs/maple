@@ -31,7 +31,14 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
 import { Array as Arr, Option, Order } from "effect"
-import { th, toolTable, toolTableBody, toolTableHead, toolTableRow } from "../agent-sessions/tools-kit/table"
+import {
+	th,
+	toolTable,
+	toolTableBody,
+	toolTableFooter,
+	toolTableHead,
+	toolTableRow,
+} from "../agent-sessions/tools-kit/table"
 import { listRelativeTime } from "../kit/relative-time"
 import { clientIcon, kindTag } from "../mcp/view-kit"
 import { statRail, statRailItem } from "../kit/stat-rail"
@@ -617,7 +624,31 @@ const timeCell = <M>(h: HtmlBuilder<M>, atMs: number, clock: Clock, className = 
 		],
 	)
 
+/**
+ * The tab's rows, then a footer when the list stops short of the badge's window total, so a
+ * "150" badge over a 100-row table says it is showing the latest 100.
+ */
+export const cappedList = <M>(
+	h: HtmlBuilder<M>,
+	table: Html,
+	shown: number,
+	total: number,
+	noun: string,
+): Html =>
+	shown >= total
+		? table
+		: vstack(h, { gap: "0", className: "min-w-0" }, [
+				table,
+				toolTableFooter(h, `${formatNumber(shown)} of ${countLabel(total, noun)}`, "· newest first"),
+			])
+
 const sessionsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
+	cappedList(h, sessionsTable(h, detail, clock), detail.sessions.length, detail.profile.sessions, "session")
+
+const eventsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
+	cappedList(h, eventsTable(h, detail, clock), detail.events.length, detail.profile.events, "event")
+
+const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	Arr.isReadonlyArrayEmpty(detail.sessions)
 		? noRows(h, "No recorded sessions from this user in the window.")
 		: toolTable(h, [
@@ -789,7 +820,7 @@ const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html 
 					),
 				])
 
-const eventsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
+const eventsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	Arr.isReadonlyArrayEmpty(detail.events)
 		? noRows(h, "No product events from this user in the window.")
 		: toolTable(h, [
