@@ -99,6 +99,7 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 		}),
 		output: InspectUserOutput,
 		hints: { readOnly: true },
+		scopeFamily: "users",
 		phrases: ["Looking up a user"],
 		handler: Effect.fn("McpTool.inspectUser")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

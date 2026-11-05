@@ -181,6 +181,11 @@ export interface McpToolSpec<
 	readonly hints: McpToolHints
 	/** Defaults to `public`. */
 	readonly audience?: McpToolAudience
+	/**
+	 * A v2 scope family a scoped API key must also hold (read for read-only tools, else write), as
+	 * the matching `/v2/<family>` routes require. For data outside the toolset's baseline families.
+	 */
+	readonly scopeFamily?: string
 	readonly phrases: McpToolPhrases
 	/** Retired parameter names mapped to their current name. Accepted, never published. */
 	readonly aliases?: Readonly<Record<string, string>>

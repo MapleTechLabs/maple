@@ -44,6 +44,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 		}),
 		output: ListUsersOutput,
 		hints: { readOnly: true },
+		scopeFamily: "users",
 		phrases: ["Listing users"],
 		handler: Effect.fn("McpTool.listUsers")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
