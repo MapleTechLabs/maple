@@ -9945,7 +9945,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:users:userEventsQuery:namespaceFiltered  [fe5833cd]
+-- builder:users:userEventsQuery:namespaceFiltered  [fc5a1f93]
 SELECT
           events.timestamp AS timestamp,
           events.name AS name,
@@ -9990,8 +9990,9 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
           AND session_replays.ServiceName IN ('storefront-web')
         GROUP BY sessionId)))) AS events
         ORDER BY timestamp DESC
@@ -10065,7 +10066,7 @@ SELECT
         GROUP BY sessionId) AS sessions
         FORMAT JSON
 
--- builder:users:usersAnonymousVisitorsQuery:default  [3a50f0ee]
+-- builder:users:usersAnonymousVisitorsQuery:default  [8a706b10]
 SELECT
           count() AS anonymousVisitors
         FROM (SELECT
@@ -10095,8 +10096,9 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
           AND session_replays.ServiceName IN ('storefront-web')
         GROUP BY sessionId)))
         GROUP BY visitorId
@@ -10185,7 +10187,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:users:usersFacetsQuery:default  [9a4ae814]
+-- builder:users:usersFacetsQuery:default  [fda36b9a]
 SELECT
           signals.namespace AS name,
           uniqExact(signals.userId) AS count,
@@ -10339,8 +10341,9 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
           AND session_replays.ServiceName IN ('storefront-web')
         GROUP BY sessionId)))
         GROUP BY userId, namespace
@@ -10377,7 +10380,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersFacetsQuery:pinned  [3c5f107e]
+-- builder:users:usersFacetsQuery:pinned  [5f486b38]
 SELECT
           signals.groupId AS name,
           uniqExact(signals.userId) AS count,
@@ -10441,8 +10444,9 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
           AND session_replays.ServiceName IN ('storefront-web')
         GROUP BY sessionId)))
         GROUP BY userId, namespace
@@ -10479,7 +10483,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [5e634f72]
+-- builder:users:usersListQuery:activityRollup  [2fe76708]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10554,8 +10558,9 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
           AND session_replays.ServiceName IN ('storefront-web')
         GROUP BY sessionId)))
         GROUP BY userId, namespace
@@ -10588,7 +10593,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [cc9ca26f]
+-- builder:users:usersListQuery:namespaceFiltered  [c6164559]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10663,8 +10668,9 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
           AND session_replays.ServiceName IN ('storefront-web')
         GROUP BY sessionId)))
         GROUP BY userId, namespace
