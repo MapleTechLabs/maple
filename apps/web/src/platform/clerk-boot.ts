@@ -1,4 +1,4 @@
-import { Duration, Effect, Fiber, Option, Ref, Schema } from "effect"
+import { Duration, Effect, Fiber, Option, Ref, Schema, String as Str } from "effect"
 import { labEnabled, labPathOf } from "../lab/boot"
 import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
@@ -17,9 +17,9 @@ interface LoadedClerk {
 	readonly readyAtMs: number
 }
 
-const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? ""
-const signInUrl = import.meta.env.VITE_CLERK_SIGN_IN_URL?.trim() || "/sign-in"
-const signUpUrl = import.meta.env.VITE_CLERK_SIGN_UP_URL?.trim() || "/sign-up"
+const publishableKey = Str.trim(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? "")
+const signInUrl = Str.trim(import.meta.env.VITE_CLERK_SIGN_IN_URL ?? "") || "/sign-in"
+const signUpUrl = Str.trim(import.meta.env.VITE_CLERK_SIGN_UP_URL ?? "") || "/sign-up"
 
 const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
 	const script = document.createElement("script")
