@@ -153,3 +153,13 @@ describe("usersAnonymousVisitorsQuery", () => {
 		expect(sql).toContain("product_events.ServiceName IN ('web')")
 	})
 })
+
+describe("a namespace no service resolves to", () => {
+	const ghost: UsersScope = { ...unscoped, namespaces: ["ghost"], services: [], mcpServices: ["maple-ai"] }
+
+	it("reads no replays or events instead of emitting an empty IN list", () => {
+		const { sql } = compileUnsafe(usersAnonymousVisitorsQuery(ghost), params)
+		expect(sql).not.toContain("IN ()")
+		expect(sql).toContain("1 = 0")
+	})
+})
