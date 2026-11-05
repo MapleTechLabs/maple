@@ -246,5 +246,6 @@ export function escapeRegExp(value: string): string {
  */
 function corsUrlMatcher(entry: string | RegExp): RegExp {
 	if (typeof entry !== "string") return entry
-	return new RegExp(`^${escapeRegExp(entry.replace(/\/+$/, ""))}(?:[/?#]|$)`)
+	const prefix = entry.endsWith("/") ? entry.slice(0, -1) : entry
+	return new RegExp(`^${escapeRegExp(prefix)}(?:[/?#]|$)`)
 }
