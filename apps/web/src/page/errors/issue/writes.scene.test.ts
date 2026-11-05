@@ -50,6 +50,7 @@ describe("error issue writes", () => {
 		expect(names(done.commands)).toEqual(
 			expect.arrayContaining([
 				"FetchErrorIssueDetail",
+				"FetchErrorIssueAffectedUsers",
 				"FetchErrorIssueEvents",
 				"FetchErrorIssueEscalations",
 				"FetchErrorIssuePullRequests",

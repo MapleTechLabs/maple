@@ -351,14 +351,19 @@ const selectStep = (
 const isSeverity = (value: string): value is IssueSeverity =>
 	value === "critical" || value === "high" || value === "medium" || value === "low"
 
-/** The reads a write invalidates (`invalidateKeys`): the detail, timeline, escalations, PRs, verifications. */
+/** The reads a write invalidates (`invalidateKeys`): the detail, affected users, timeline, escalations, PRs, verifications. */
 const refreshAfterWrite =
 	(context: PageContext) =>
 	(model: Model): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } => {
 		const key = (operation: string) => requestKey(context.orgId, operation, model.issueId)
 		const issueId = model.issueId
 		const result = applySteps(model, [
-			...(model.window === null ? [] : [detailStep(context, model.window, "Supersede")]),
+			...(model.window === null
+				? []
+				: [
+						detailStep(context, model.window, "Supersede"),
+						affectedUsersStep(context, model.window, "Supersede"),
+					]),
 			(m) =>
 				keyed(
 					m.events,
