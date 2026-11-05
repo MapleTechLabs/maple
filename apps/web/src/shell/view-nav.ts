@@ -44,6 +44,7 @@ export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<N
 		releases: flag("releases"),
 		securityAudit: flag("securityAudit"),
 		statusPages: flag("statusPages"),
+		users: flag("users"),
 	})
 }
 

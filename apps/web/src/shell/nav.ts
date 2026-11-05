@@ -130,9 +130,14 @@ const exploreItem: NavItem = {
 }
 
 /** The org rollout flags that gate a nav row each. */
-export type NavFlags = Readonly<{ releases: boolean; securityAudit: boolean; statusPages: boolean }>
+export type NavFlags = Readonly<{
+	releases: boolean
+	securityAudit: boolean
+	statusPages: boolean
+	users: boolean
+}>
 
-/** `navGroups(flags)`; `releases`, `securityAudit` and `statusPages` gate a row each. */
+/** `navGroups(flags)`; `releases`, `securityAudit`, `statusPages` and `users` gate a row each. */
 export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
@@ -161,7 +166,7 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			exploreItem,
 			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
-			{ title: "Users", href: "/users", icon: "UsersIcon" },
+			...(flags.users ? [{ title: "Users", href: "/users", icon: "UsersIcon" } as const] : []),
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 		],
 	},

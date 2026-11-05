@@ -84,12 +84,27 @@ describe("routes", () => {
 
 	test("an org outside the statusPages rollout is sent home from every status page route", () => {
 		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
-			expect(flaggedRouteRedirect(parse(path), { statusPages: false })).toEqual(
+			expect(flaggedRouteRedirect(parse(path), { statusPages: false, users: true })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
 			)
-			expect(flaggedRouteRedirect(parse(path), { statusPages: true })).toEqual(Option.none())
+			expect(flaggedRouteRedirect(parse(path), { statusPages: true, users: true })).toEqual(
+				Option.none(),
+			)
 		}
-		expect(flaggedRouteRedirect(parse("/services"), { statusPages: false })).toEqual(Option.none())
+		expect(flaggedRouteRedirect(parse("/services"), { statusPages: false, users: false })).toEqual(
+			Option.none(),
+		)
+	})
+
+	test("an org outside the users rollout is sent home from the users pages", () => {
+		for (const path of ["/users", "/users/user_42"]) {
+			expect(flaggedRouteRedirect(parse(path), { statusPages: true, users: false })).toEqual(
+				Option.some({ url: "/", isReplace: true }),
+			)
+			expect(flaggedRouteRedirect(parse(path), { statusPages: true, users: true })).toEqual(
+				Option.none(),
+			)
+		}
 	})
 
 	test("a literal sibling wins over a param route", () => {
