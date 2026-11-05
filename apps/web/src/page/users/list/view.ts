@@ -1,6 +1,6 @@
 import { Submodel, AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr } from "effect"
 import type { UserListItem } from "@maple/domain/http"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { errorState } from "@maple/views/ui/error-state"
@@ -16,6 +16,7 @@ import {
 	type UsersFacets,
 	type UsersFilters,
 	type UsersSummary,
+	type UsersRailFacets,
 	type UsersSummaryState,
 	usersFilterRail,
 	usersListBody,
@@ -32,16 +33,6 @@ type H = HtmlBuilder<Message>
 const DESCRIPTION =
 	"People your SDKs identified with identify() or a user.id attribute: their sessions, errors, requests and events."
 
-const EMPTY_FACETS: UsersFacetsData = {
-	namespaces: [],
-	groups: [],
-	withErrors: 0,
-	withReplay: 0,
-	identified: 0,
-	activeToday: 0,
-	anonymousVisitors: 0,
-}
-
 /** A listed user as the kit row draws it; route and activity arrive with the request rollup. */
 const toRow = (user: UserListItem): UserRow => ({
 	...user,
@@ -57,15 +48,20 @@ const filtersOf = (model: Model): UsersFilters => ({
 	groups: model.search.groups ?? [],
 })
 
-const facetsOf = (model: Model): UsersFacetsData =>
-	Option.getOrElse(AsyncData.getData(model.facets.data), () => EMPTY_FACETS)
-
 const railFacets = (facets: UsersFacetsData): UsersFacets => ({
 	namespaces: facets.namespaces,
 	groups: facets.groups,
 	withErrors: facets.withErrors,
 	withReplay: facets.withReplay,
 })
+
+/** The rail waits for the facets read too, and says when it failed instead of reading zero. */
+const railFacetsStateOf = (model: Model): UsersRailFacets =>
+	AsyncData.matchData(model.facets.data, {
+		onEmpty: () => "loading",
+		onFailure: () => "failed",
+		onData: railFacets,
+	})
 
 /** The strip waits for the facets read and says so when it failed, rather than drawing zeros. */
 const summaryStateOf = (model: Model): UsersSummaryState =>
@@ -160,7 +156,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			description: DESCRIPTION,
 			filters: usersFilterRail(h, {
 				filters: filtersOf(model),
-				facets: railFacets(facetsOf(model)),
+				facets: railFacetsStateOf(model),
+				onRetry: Message.ClickedRetry(),
 				pinnedNamespace: inputs.context.pinnedNamespace,
 				sections: model.filterSections,
 				toSectionsMessage: (message) => Message.GotFilterSectionsMessage({ message }),
