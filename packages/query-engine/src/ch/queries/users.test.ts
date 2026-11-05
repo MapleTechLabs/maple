@@ -94,9 +94,14 @@ describe("usersListQuery", () => {
 
 	it("searches the id, name and email case-insensitively after merging sources", () => {
 		const { sql } = compileUnsafe(usersListQuery(unscoped, { search: "Ada_1" }), params)
-		expect(sql).toContain("signals.userId ILIKE '%Ada\\\\_1%'")
-		expect(sql).toContain("anyIf(signals.name, signals.name != '') ILIKE '%Ada\\\\_1%'")
-		expect(sql).toContain("anyIf(signals.email, signals.email != '') ILIKE '%Ada\\\\_1%'")
+		expect(sql).toContain("positionCaseInsensitiveUTF8(signals.userId, 'Ada_1') > 0")
+		expect(sql).toContain(
+			"positionCaseInsensitiveUTF8(anyIf(signals.name, signals.name != ''), 'Ada_1') > 0",
+		)
+		expect(sql).toContain(
+			"positionCaseInsensitiveUTF8(anyIf(signals.email, signals.email != ''), 'Ada_1') > 0",
+		)
+		expect(sql).not.toContain("ILIKE")
 	})
 
 	it("applies the toggles and groups per user, newest first", () => {
@@ -106,7 +111,8 @@ describe("usersListQuery", () => {
 		)
 		expect(sql).toContain("HAVING sum(signals.errors) > 0")
 		expect(sql).toContain("sum(signals.sessions) > 0")
-		expect(sql).toContain("anyIf(signals.groupId, signals.groupId != '') IN ('acme')")
+		// Any of the user's groups, not one arbitrary `anyIf` pick.
+		expect(sql).toContain("countIf(signals.groupId IN ('acme')) > 0")
 		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 50/)
 	})
 
