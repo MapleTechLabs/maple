@@ -266,8 +266,8 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			: statRailItem(h, {
 					eyebrow: "P95 latency",
 					value: formatLatency(profile.p95Ms),
-					subline:
-						profile.topRoute === null ? "over every request" : `top route ${profile.topRoute}`,
+					// The p95 spans every entry request, so the subline names that scope, not a route.
+					subline: "over every request",
 					compact: true,
 				}),
 		statRailItem(h, {
