@@ -41,6 +41,8 @@
 		"packages/email/components",
 		"apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json",
 		"scripts/oxlint-plugins/anti-slop/**",
+		"lib/oxlint-config/plugins/anti-slop/**",
+		"lib/oxlint-config/plugins/anti-slop.mjs",
 		"CLAUDE.md",
 	],
 }

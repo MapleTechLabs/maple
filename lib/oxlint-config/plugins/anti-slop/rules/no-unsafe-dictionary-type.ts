@@ -93,8 +93,11 @@ function shouldReportType(node: ESTree.TSType, environment: TypeEnvironment): bo
 	if (unsafe === null || unsafe.unsafeValue === "unknown") return false;
 	let current: ESTree.Node | null = node.parent;
 	while (current !== null && current.type !== "Program") {
-		if (isTypeNode(current) && classifyUnsafeDictionary(current, environment) !== null)
-			return false;
+		if (isTypeNode(current)) {
+			const ancestor = classifyUnsafeDictionary(current, environment);
+			// A permitted `unknown` ancestor is not reported, so it must not swallow a nested `any`.
+			if (ancestor !== null && ancestor.unsafeValue !== "unknown") return false;
+		}
 		current = current.parent;
 	}
 	return true;

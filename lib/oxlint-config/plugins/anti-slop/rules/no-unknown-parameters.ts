@@ -54,11 +54,20 @@ function isBoundaryParameter(node: ParameterOwner): boolean {
   return hasRuntimeBody(node);
 }
 
+/**
+ * A `BOUNDARY:` header above the first statement marks the whole module as a boundary; one
+ * anywhere else exempts only the function it sits on.
+ */
 function hasBoundaryComment(sourceCode: SourceCode, node: ESTree.Node): boolean {
+  const firstStatement = sourceCode.ast.body[0];
   if (
     sourceCode
       .getAllComments()
-      .some((comment) => /\bBOUNDARY\s*:/u.test(comment.value))
+      .some(
+        (comment) =>
+          /\bBOUNDARY\s*:/u.test(comment.value) &&
+          (firstStatement === undefined || comment.end <= firstStatement.start),
+      )
   ) {
     return true;
   }

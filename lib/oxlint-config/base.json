@@ -1,7 +1,7 @@
 {
 	// Stack-agnostic correctness and anti-slop rules. Works without type-aware linting or Effect.
 	"plugins": ["eslint", "unicorn", "typescript", "oxc"],
-	"jsPlugins": ["./plugins/anti-slop/index.ts"],
+	"jsPlugins": ["./plugins/anti-slop.mjs"],
 	"options": {
 		// A stale disable directive is an error, and eslint-disable comments are not honoured, so
 		// every suppression is an `oxlint-disable` that still has a hit under it.

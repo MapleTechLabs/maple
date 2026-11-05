@@ -80,5 +80,8 @@ configs and plain `.js`.
 
 - After bumping `@effect/tsgo`: `bun run sync:effect` regenerates `effect.json` from the installed
   presets plus the decisions in `scripts/sync-effect-preset.mjs`. Edit the script, not the JSON.
-- `bun run smoke` builds a throwaway project with one planted violation per rule family and
+- `plugins/anti-slop.mjs` is bundled from `plugins/anti-slop/` by `bun run build` (and on
+  `prepack`): Node will not strip types from a `.ts` file under `node_modules`. Rebuild after
+  editing a rule.
+- `bun run smoke` packs the package, installs the tarball into a throwaway project, and a throwaway project with one planted violation per rule family and
   fails if any preset stops reporting it, or if the clean file picks up a hit.

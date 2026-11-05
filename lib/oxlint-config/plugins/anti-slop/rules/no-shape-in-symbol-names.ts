@@ -46,6 +46,16 @@ function isPropertyKeyOrExternalMember(node: ESTree.Node & { name: string }): bo
   if (parent.type === "ExportSpecifier" && parent.exported === node && parent.local !== node) {
     return true;
   }
+  // `export { shape as geometry } from "pkg"`: the local name belongs to the other module.
+  if (
+    parent.type === "ExportSpecifier" &&
+    parent.local === node &&
+    parent.exported !== node &&
+    parent.parent?.type === "ExportNamedDeclaration" &&
+    parent.parent.source !== null
+  ) {
+    return true;
+  }
   return (
     (parent.type === "JSXAttribute" && parent.name === node) ||
     (parent.type === "JSXMemberExpression" && parent.property === node)

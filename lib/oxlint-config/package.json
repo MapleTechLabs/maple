@@ -18,6 +18,8 @@
 		"./plugins/*": "./plugins/*"
 	},
 	"scripts": {
+		"build": "node scripts/build-anti-slop.mjs",
+		"prepack": "node scripts/build-anti-slop.mjs",
 		"sync:effect": "node scripts/sync-effect-preset.mjs",
 		"smoke": "node scripts/smoke.mjs"
 	},
