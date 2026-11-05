@@ -1,4 +1,6 @@
-import { Option, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { fromString } from "foldkit/url"
 import { describe, expect, it } from "vitest"
 import { ErrorIssueId, OrgId } from "@maple/domain/http"
@@ -133,6 +135,24 @@ describe("tabs and namespaces", () => {
 			context,
 		)
 		expect((loaded.commands ?? []).map((command) => command.name)).toEqual(["FetchUserOverview"])
+	})
+
+	it("settles the issues with the overview, so the Errors tab never stays loading", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		).model
+		const failed = update(
+			loaded,
+			Message.CompletedFetchOverview({
+				key: loaded.issues.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+			context,
+		).model
+		expect(AsyncData.isFailure(failed.issues.data)).toBe(true)
+		expect(AsyncData.isFailure(failed.profile.data)).toBe(true)
 	})
 
 	it("refetches when the namespace changes", () => {

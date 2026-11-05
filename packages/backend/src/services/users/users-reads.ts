@@ -199,11 +199,14 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 							{ profile: "list", context: "userActivityTotals" },
 						),
 					).pipe(Effect.map((found) => Option.getOrElse(found, () => []))),
-			unnamed.length === 0 || scope.mcpServices.length === 0
+			unnamed.length === 0 || mcpServersInScope(scope).length === 0
 				? Effect.succeed([])
 				: warehouse.compiledQuery(
 						tenant,
-						CH.compile(CH.usersMcpNamesQuery(scope.mcpServices, unnamed), params),
+						CH.compile(
+							CH.usersMcpNamesQuery(mcpServersInScope(scope), unnamed, scope.namespaces),
+							params,
+						),
 						{ profile: "list", context: "usersMcpNames" },
 					),
 		],

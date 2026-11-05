@@ -221,7 +221,11 @@ const mcpUsers = (scope: UsersScope) =>
  * The name and email MCP server spans carry for the listed users: the rollup keeps neither, so the
  * directory reads them for the page's unnamed users only.
  */
-export function usersMcpNamesQuery(mcpServices: ReadonlyArray<string>, userIds: ReadonlyArray<string>) {
+export function usersMcpNamesQuery(
+	mcpServices: ReadonlyArray<string>,
+	userIds: ReadonlyArray<string>,
+	namespaces: ReadonlyArray<string> = [],
+) {
 	return from(Traces)
 		.select(($) => ({
 			userId: mcpUserId($),
@@ -236,6 +240,9 @@ export function usersMcpNamesQuery(mcpServices: ReadonlyArray<string>, userIds: 
 			mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
 			mcpMethod($).neq(""),
 			userIds.length > 0 ? CH.inList(mcpUserId($), userIds) : CH.rawCond("1 = 0"),
+			namespaces.length > 0
+				? CH.inList($.ResourceAttributes.get("service.namespace"), namespaces)
+				: undefined,
 		])
 		.groupBy("userId")
 		.limit(Math.max(1, userIds.length))

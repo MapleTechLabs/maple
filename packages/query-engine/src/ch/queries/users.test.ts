@@ -13,6 +13,7 @@ import {
 	usersAnonymousVisitorsQuery,
 	usersFacetsQuery,
 	usersListQuery,
+	usersMcpNamesQuery,
 	usersSummaryQuery,
 	type UsersScope,
 } from "./users"
@@ -245,5 +246,15 @@ describe("one user's reads", () => {
 		expect(count(compileUnsafe(userServicesQuery(unscoped), userParams).sql, "UNION ALL")).toBe(2)
 		const sql = compileUnsafe(userServicesQuery({ ...unscoped, mcpServices: [] }), userParams).sql
 		expect(sql).not.toContain("FROM traces")
+	})
+
+	it("reads MCP-only names within the namespace scope", () => {
+		const scoped = compileUnsafe(
+			usersMcpNamesQuery(["maple-ai"], ["user_42"], ["storefront"]),
+			params,
+		).sql
+		expect(scoped).toContain("traces.ResourceAttributes['service.namespace'] IN ('storefront')")
+		const unscopedSql = compileUnsafe(usersMcpNamesQuery(["maple-ai"], ["user_42"]), params).sql
+		expect(unscopedSql).not.toContain("service.namespace")
 	})
 })

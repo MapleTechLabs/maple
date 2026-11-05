@@ -195,6 +195,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					key,
 					Result.map(result, (data) => data.activity),
 				),
+				issues: Keyed.accept(
+					model.issues,
+					key,
+					Result.map(result, (data) => data.issues),
+				),
 			},
 		}),
 		CompletedFetchTraces: ({ key, result }) => ({
