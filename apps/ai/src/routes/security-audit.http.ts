@@ -488,7 +488,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						store.listRuns(query.targetId === undefined ? {} : { targetId: query.targetId }),
 					)
 					const runs = Arr.map(rows, toRun)
-					// Members may list runs but not read findings, so only admins see what each reported.
+					// Members may list runs but not read findings, so only engineers and admins see what each reported.
 					if (!Policy.can(tenant.roles, "security:manage")) return { runs }
 					const findingCounts = yield* orUnavailable(
 						store.countRunFindings(Arr.map(rows, (r) => r.id)),
