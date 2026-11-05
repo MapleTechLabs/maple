@@ -189,21 +189,29 @@ const reads = (
 	})
 }
 
-const tenant = Layer.succeed(CurrentMcpTenant, {
-	orgId: Schema.decodeSync(OrgId)("org_user_tools"),
-	userId: Schema.decodeSync(UserId)("user_user_tools"),
-	roles: [Schema.decodeSync(RoleName)("org:member")],
-	authMode: "self_hosted",
-})
+/** `scopes` set is a scoped API key; unset is an unscoped key, OAuth token or session. */
+const tenantWith = (scopes?: ReadonlyArray<string>) =>
+	Layer.succeed(CurrentMcpTenant, {
+		orgId: Schema.decodeSync(OrgId)("org_user_tools"),
+		userId: Schema.decodeSync(UserId)("user_user_tools"),
+		roles: [Schema.decodeSync(RoleName)("org:member")],
+		authMode: "self_hosted",
+		...(scopes === undefined ? undefined : { scopes }),
+	})
 
 // The registry's requirements name every tool's services; these tools reach only the users reads.
 const withoutUnreachedServices = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E> =>
 	Effect.provide(effect, Context.makeUnsafe<R>(new Map()))
 
-const run = (name: string, params: unknown, layer: Layer.Layer<UsersReadService>) =>
+const run = (
+	name: string,
+	params: unknown,
+	layer: Layer.Layer<UsersReadService>,
+	scopes?: ReadonlyArray<string>,
+) =>
 	Effect.runPromise(
 		executeRegisteredMcpToolUnscoped(name, params, "mcp").pipe(
-			Effect.provide(Layer.merge(layer, tenant)),
+			Effect.provide(Layer.merge(layer, tenantWith(scopes))),
 			Effect.result,
 			withoutUnreachedServices,
 		),
@@ -295,5 +303,43 @@ describe("inspect_user", () => {
 		expect(markdown).toContain(
 			'list_users start_time="2026-11-01 00:00:00" end_time="2026-11-02 00:00:00" search="u_nobody"',
 		)
+	})
+})
+
+describe("user tools under a scoped API key", () => {
+	const calls = [
+		["list_users", WINDOW],
+		["inspect_user", { ...WINDOW, user_id: "u_ada" }],
+	] as const
+
+	it("refuses a key without users:read, as GET /v2/users does, without reading", async () => {
+		const results = await Promise.all(
+			Arr.map(calls, async ([name, params]) => {
+				const seen: Seen = {}
+				const result = await run(name, params, reads(seen), ["traces:read", "error_issues:read"])
+				return { name, result, seen }
+			}),
+		)
+		Arr.forEach(results, ({ name, result, seen }) => {
+			expect(result._tag).toBe("Failure")
+			if (result._tag === "Failure") {
+				expect(result.failure).toMatchObject({
+					_tag: "@maple/mcp/errors/McpAuthInvalidError",
+					reason: "insufficient_scope",
+				})
+				expect(result.failure.message).toContain("users:read")
+				expect(result.failure.message).toContain(name)
+			}
+			expect(seen).toEqual({})
+		})
+	})
+
+	it("runs both tools for a key holding users:read or users:write", async () => {
+		const results = await Promise.all(
+			Arr.flatMap([["traces:read", "users:read"], ["users:write"], ["*"]], (scopes) =>
+				Arr.map(calls, ([name, params]) => run(name, params, reads({}), scopes)),
+			),
+		)
+		expect(Arr.map(results, (result) => result._tag)).toEqual(Arr.map(results, () => "Success"))
 	})
 })

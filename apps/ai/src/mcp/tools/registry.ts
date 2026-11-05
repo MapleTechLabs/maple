@@ -1,5 +1,6 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
+import { scopeAllows } from "@maple/domain/http/v2"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Clock, Effect, Schema, type SchemaAST, Array as Arr, Record as Rec, String as Str } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
@@ -138,6 +139,7 @@ export interface MapleToolCatalogEntry {
 	readonly hints: McpToolHints
 	readonly aliases: Readonly<Record<string, string>>
 	readonly audience: McpToolAudience
+	readonly scopeFamily?: string
 	readonly phrases: McpToolPhrases
 }
 
@@ -367,6 +369,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 			hints: spec.hints,
 			aliases: spec.aliases ?? {},
 			audience: spec.audience ?? "public",
+			...(spec.scopeFamily === undefined ? undefined : { scopeFamily: spec.scopeFamily }),
 			phrases: spec.phrases,
 			run: (params) =>
 				Effect.gen(function* () {
@@ -652,6 +655,17 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 		if (tenant.readOnly === true) {
 			return yield* new McpAuthInvalidError({
 				message: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+				reason: "insufficient_scope",
+			})
+		}
+	}
+
+	if (definition.scopeFamily !== undefined) {
+		const access = definition.hints.readOnly ? "read" : "write"
+		const tenant = yield* CurrentMcpTenant
+		if (!scopeAllows(tenant.scopes, { family: definition.scopeFamily, access })) {
+			return yield* new McpAuthInvalidError({
+				message: `\`${definition.name}\` needs the \`${definition.scopeFamily}:${access}\` scope, which this API key lacks. Add it to the key, or use a full-access key.`,
 				reason: "insufficient_scope",
 			})
 		}
