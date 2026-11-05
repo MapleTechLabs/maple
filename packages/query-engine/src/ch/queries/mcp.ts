@@ -30,7 +30,7 @@ const likeLiteral = (value: string): string => Str.replace(/[\\%_]/g, "\\$&")(va
 
 type TracesRow = ColumnAccessor<typeof Traces.columns>
 
-const method = ($: TracesRow) => $.SpanAttributes.get("mcp.method.name")
+export const method = ($: TracesRow) => $.SpanAttributes.get("mcp.method.name")
 const toolName = ($: TracesRow) => $.SpanAttributes.get("gen_ai.tool.name")
 const errorType = ($: TracesRow) => $.SpanAttributes.get("error.type")
 const userAgent = ($: TracesRow) => $.SpanAttributes.get("user_agent.original")
@@ -43,7 +43,7 @@ const errorMessage = ($: TracesRow) =>
 	CH.if_($.StatusMessage.neq(""), $.StatusMessage, $.SpanAttributes.get("error.message"))
 
 /** The end user: OpenTelemetry `user.id`, else the deprecated `enduser.id`. */
-const userId = ($: TracesRow) =>
+export const userId = ($: TracesRow) =>
 	CH.if_(
 		$.SpanAttributes.get("user.id").neq(""),
 		$.SpanAttributes.get("user.id"),

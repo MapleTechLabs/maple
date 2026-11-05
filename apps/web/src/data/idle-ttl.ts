@@ -22,6 +22,10 @@ export const IdleTtl = {
 	listReplays: 30_000,
 	/** `replaysFacetsResultAtom`. */
 	replaysFacets: 30_000,
+	/** `/users`: the directory list. */
+	listUsers: 30_000,
+	/** `/users`: the rail facets and summary. */
+	usersFacets: 30_000,
 	/** `getReplayResultAtom`. */
 	replay: 60_000,
 	/** `getReplayManifestResultAtom`. */

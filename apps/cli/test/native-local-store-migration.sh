@@ -128,9 +128,10 @@ printf '%s\n' "{\"chdb\":\"$CHDB_VERSION\",\"maple\":\"native-probe\",\"createdA
 chmod 600 "$ROOT/maple-store-version.json"
 
 step "running maple schema migrate"
-# 120s bound: healthy runs take ~3s; the job budget is <3 minutes, so a stall
-# has to fail the step in seconds-not-minutes with migrate.out as evidence.
-bounded 120 "maple schema migrate" \
+# 300s bound: every step clones, re-bootstraps and verifies, so the run grows with
+# the step count. Beside the other probes on one runner, 47 steps took ~90s and 49
+# took ~120s (2026-11-05); a real stall still fails well inside the job budget.
+bounded 300 "maple schema migrate" \
 	env MAPLE_LIBCHDB="$LIBCHDB" "$MAPLE" schema migrate --data-dir "$DATA" --yes >"$ROOT/migrate.out" 2>&1 || {
 	cat "$ROOT/migrate.out" >&2
 	fail "native schema migration failed"

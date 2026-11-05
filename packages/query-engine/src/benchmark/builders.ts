@@ -67,6 +67,16 @@ const SPAN_ID = "b7ad6b7169203331"
 const FINGERPRINT = "11640393269246331608"
 
 const window = { orgId: ORG_ID, startTime: START_TIME, endTime: END_TIME }
+const USERS_SCOPE = {
+	namespaces: [],
+	services: [],
+	serviceNamespaces: [
+		["storefront-web", "storefront"],
+		["maple-ai", "platform"],
+	],
+	mcpServices: ["maple-ai"],
+} as const
+const USERS_NAMESPACE_SCOPE = { ...USERS_SCOPE, namespaces: ["storefront"], services: ["storefront-web"] }
 
 // Web analytics fixtures used by the v1 route registry.
 //
@@ -2168,6 +2178,58 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				userId: "user_2abc",
 				client: "Claude Code",
 			}),
+	},
+	{
+		module: "users",
+		name: "usersListQuery",
+		label: "unscoped",
+		compile: () => CH.compileUnsafe(CH.usersListQuery(USERS_SCOPE), window),
+	},
+	{
+		module: "users",
+		name: "usersListQuery",
+		label: "namespaceFiltered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.usersListQuery(USERS_NAMESPACE_SCOPE, {
+					search: "ada",
+					hasErrors: true,
+					hasReplay: true,
+					groups: ["acme"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "users",
+		name: "usersFacetsQuery",
+		label: "default",
+		compile: () => CH.compileUnionUnsafe(CH.usersFacetsQuery(USERS_NAMESPACE_SCOPE, USERS_SCOPE), window),
+	},
+	{
+		module: "users",
+		name: "usersFacetsQuery",
+		label: "pinned",
+		compile: () => CH.compileUnionUnsafe(CH.usersFacetsQuery(USERS_NAMESPACE_SCOPE), window),
+	},
+	{
+		module: "users",
+		name: "usersSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.usersSummaryQuery(USERS_SCOPE), { ...window, activeSince: START_TIME }),
+	},
+	{
+		module: "users",
+		name: "usersAnonymousVisitorsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.usersAnonymousVisitorsQuery(USERS_NAMESPACE_SCOPE), window),
+	},
+	{
+		module: "users",
+		name: "usersServiceNamespacesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.usersServiceNamespacesQuery(), window),
 	},
 	{
 		module: "mcp",
