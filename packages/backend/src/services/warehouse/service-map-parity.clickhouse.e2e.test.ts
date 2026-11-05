@@ -232,7 +232,7 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 	).flat(),
 ]
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const insertSpans = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
 	const rows = Arr.join(

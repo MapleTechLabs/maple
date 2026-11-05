@@ -576,8 +576,7 @@ const renderCollectorYaml = (input: {
  * Quote a YAML scalar so any `:` / `#` / leading-whitespace doesn't break
  * the serialiser. We always wrap in double quotes for predictability.
  */
-const quoteYaml = (value: string): string =>
-	`"${Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))}"`
+const quoteYaml = (value: string): string => `"${Str.replace(/[\\"]/g, "\\$&")(value)}"`
 
 const normalizeHttpUrl = (raw: string): Effect.Effect<string, OrgClickHouseSettingsValidationError> =>
 	validateExternalUrl(raw).pipe(

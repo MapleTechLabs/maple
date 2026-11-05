@@ -383,8 +383,7 @@ export const ERROR_MSG_REDACTIONS: Redactions = [
  * Escape a pattern or replacement for embedding in a ClickHouse single-quoted
  * string literal.
  */
-export const chPattern = (value: string): string =>
-	`'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+export const chPattern = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 /**
  * Render a redaction list as the nested `replaceRegexpAll` chain ClickHouse

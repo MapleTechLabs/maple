@@ -27,7 +27,7 @@ const chDateTime = (epochMs: number): string =>
 	Str.slice(0, 19)(Str.replace("T", " ")(msToDate(epochMs).toISOString()))
 const SEED_TS = chDateTime(SEED_MS)
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 const chMap = (entries: Readonly<Record<string, string>>): string => {
 	const pairs = Arr.flatMap(Rec.toEntries(entries), ([key, value]) => [quote(key), quote(value)])
 	return pairs.length === 0 ? "map()" : `map(${Arr.join(pairs, ", ")})`

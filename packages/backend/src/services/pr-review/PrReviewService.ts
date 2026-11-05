@@ -627,8 +627,7 @@ const confidenceMark = (confidence: number) => CONFIDENCE_MARK[prReviewConfidenc
 const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
 	finding.checkId === undefined ? finding.category : `${finding.category} · ${finding.checkId}`
 
-const escapeCell = (value: string) =>
-	Str.replace(/\n/g, " ")(Str.replace(/\|/g, "\\|")(Str.replace(/\\/g, "\\\\")(value)))
+const escapeCell = (value: string) => Str.replace(/\n/g, " ")(Str.replace(/[\\|]/g, "\\$&")(value))
 
 export interface ReviewMarkdownInput {
 	readonly report: PrReviewReport

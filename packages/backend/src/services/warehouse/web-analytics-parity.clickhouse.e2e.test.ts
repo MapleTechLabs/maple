@@ -217,7 +217,7 @@ const SEED_SESSIONS: ReadonlyArray<SeedSession> = [
 	sess("s4", 1, { startTime: at(4 * HOUR_MS) }),
 ]
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const seed = async (): Promise<void> => {
 	const eventRows = Arr.join(

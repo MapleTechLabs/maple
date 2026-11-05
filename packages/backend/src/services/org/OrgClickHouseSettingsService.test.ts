@@ -1020,6 +1020,23 @@ describe("resolveRuntimeConfig caching", () => {
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 
+	it.effect("escapes every quote and backslash in the collector config's quoted values", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_collector_escaping"
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			yield* Effect.promise(() => seedRow(testDb, orgId, "https://clickhouse.example.test"))
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE org_clickhouse_settings SET ch_user = $2 WHERE org_id = $1", [
+					orgId,
+					'we"ird\\user"\\',
+				]),
+			)
+			const config = yield* service.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
+			expect(config.yaml).toContain('    username: "we\\"ird\\\\user\\"\\\\"')
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
 	it.effect("reports corrupt stored collector credentials as an encryption failure", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_corrupt_collector_password"

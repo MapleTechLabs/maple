@@ -148,7 +148,7 @@ export function chartDisplayForMetric(aggregation: string): WidgetDisplay {
 // metric where-clause literal, so a value containing `"` (or `\`) can't break
 // out of the string. Metric where-clauses are ClickHouse-dialect string literals.
 export function escapeMetricStringLiteral(value: string): string {
-	return Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))
+	return Str.replace(/[\\"]/g, "\\$&")(value)
 }
 
 export function serviceWhereClause(serviceName?: string): string {
