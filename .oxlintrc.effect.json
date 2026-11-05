@@ -89,6 +89,12 @@
 		"effecttsgo/yield-in-call-argument": "error",
 		"effecttsgo/schema-sync-in-effect": "error",
 		"effecttsgo/unsafe-effect-type-assertion": "error",
+		// `any` is typed at its source (decodes, guards, typed env); see the overrides for what is scoped out.
+		"typescript/no-unsafe-argument": "error",
+		"typescript/no-unsafe-assignment": "error",
+		"typescript/no-unsafe-call": "error",
+		"typescript/no-unsafe-member-access": "error",
+		"typescript/no-unsafe-return": "error",
 		"typescript/await-thenable": "error",
 		"typescript/no-floating-promises": "error",
 		"typescript/restrict-template-expressions": "error",
@@ -204,7 +210,38 @@
 				// Tests sort ids and tuples to compare them as sets; the default order is fine there.
 				"typescript/require-array-sort-compare": "off",
 				"typescript/restrict-template-expressions": "off",
-				"effecttsgo/yield-in-call-argument": "off"
+				"effecttsgo/yield-in-call-argument": "off",
+				// Tests read JSON response bodies and fixtures inline and assert on their fields.
+				"typescript/no-unsafe-argument": "off",
+				"typescript/no-unsafe-assignment": "off",
+				"typescript/no-unsafe-call": "off",
+				"typescript/no-unsafe-member-access": "off",
+				"typescript/no-unsafe-return": "off"
+			}
+		},
+		// Untyped JavaScript, and ops scripts, benches, tools and e2e harnesses that no tsconfig
+		// includes: their imports do not resolve for the type-aware lint, so every value is `any`.
+		// Two files import `.astro` components and one imports the `atmn` CLI, neither loadable here.
+		{
+			"files": [
+				"**/*.js",
+				"**/*.mjs",
+				"**/*.cjs",
+				"scripts/**",
+				"**/scripts/**",
+				"**/tools/**",
+				"**/bench/**",
+				"**/e2e/**",
+				"apps/api/autumn.config.ts",
+				"apps/landing/src/lib/customer-logos.ts",
+				"apps/landing/src/pages/docs/search-index.json.ts"
+			],
+			"rules": {
+				"typescript/no-unsafe-argument": "off",
+				"typescript/no-unsafe-assignment": "off",
+				"typescript/no-unsafe-call": "off",
+				"typescript/no-unsafe-member-access": "off",
+				"typescript/no-unsafe-return": "off"
 			}
 		}
 	],

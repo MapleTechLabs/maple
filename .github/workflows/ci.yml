@@ -293,6 +293,12 @@ jobs:
                   --filter=@maple-dev/alchemy
                   --filter=@maple-dev/browser --concurrency=2
 
+            # The landing site imports generated Paraglide messages and Astro content types;
+            # unresolved, they lint as `error` types under the no-unsafe-* rules.
+            - name: Generate landing i18n and content types for type-aware lint
+              if: ${{ matrix.shard == 'effect-lint' }}
+              run: bun run --cwd apps/landing sync:i18n
+
             - name: Lint TypeScript and Effect code
               if: ${{ matrix.shard == 'effect-lint' }}
               run: bun run lint
