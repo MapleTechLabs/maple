@@ -147,12 +147,8 @@ describe("usersListQuery", () => {
 			"(max(signals.lastSeen) < '2026-11-01 10:00:00.123456789' OR (max(signals.lastSeen) = '2026-11-01 10:00:00.123456789' AND signals.userId > 'u_b'))",
 		)
 		expect(sql).toContain("toString(max(signals.lastSeen)) AS lastSeenKey")
-		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 21\s+OFFSET 0/)
-	})
-
-	it("pages the directory by offset", () => {
-		const { sql } = compileUnsafe(usersListQuery(unscoped, {}, 21, 40), params)
-		expect(sql).toMatch(/LIMIT 21\s+OFFSET 40/)
+		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 21/)
+		expect(sql).not.toContain("OFFSET")
 	})
 
 	it("reads spans and logs from the activity rollup in place of raw MCP spans", () => {

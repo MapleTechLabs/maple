@@ -192,15 +192,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		Effect.flatMap(searchUserIds(scope), (ids) =>
 			warehouse.compiledQuery(
 				tenant,
-				CH.compile(
-					CH.usersListQuery(
-						scope,
-						{ ...filter, searchUserIds: ids },
-						limit + 1,
-						payload.offset ?? 0,
-					),
-					params,
-				),
+				CH.compile(CH.usersListQuery(scope, { ...filter, searchUserIds: ids }, limit + 1), params),
 				{ profile: "list", context: "usersList" },
 			),
 		),

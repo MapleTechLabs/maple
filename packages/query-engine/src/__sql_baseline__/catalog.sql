@@ -10589,7 +10589,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [d364e199]
+-- builder:users:usersListQuery:activityRollup  [52ffde9d]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10701,10 +10701,9 @@ SELECT
         GROUP BY userId
         ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
-        OFFSET 0
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [cad1d8dd]
+-- builder:users:usersListQuery:namespaceFiltered  [cbba6299]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10823,10 +10822,9 @@ SELECT
           AND (positionCaseInsensitiveUTF8(signals.userId, 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.name, signals.name != ''), 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.email, signals.email != ''), 'ada') > 0)
         ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
-        OFFSET 0
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [4083d202]
+-- builder:users:usersListQuery:unscoped  [e895ff7c]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10930,7 +10928,6 @@ SELECT
         GROUP BY userId
         ORDER BY lastSeen DESC, userId ASC
         LIMIT 200
-        OFFSET 0
         FORMAT JSON
 
 -- builder:users:usersMcpNameSearchQuery:default  [f72bc044]

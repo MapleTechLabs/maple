@@ -378,7 +378,7 @@ const userSignals = (scope: UsersScope, groups: ReadonlyArray<string> = []) => {
 }
 
 /** The directory: one row per user under the filter, the most recently seen first, then by id. */
-export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200, offset = 0) {
+export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200) {
 	return userSignals(scope, filter.groups ?? [])
 		.select(($) => ({
 			userId: $.userId,
@@ -423,7 +423,6 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 		])
 		.orderBy(["lastSeen", "desc"], ["userId", "asc"])
 		.limit(limit)
-		.offset(offset)
 		.format("JSON")
 }
 

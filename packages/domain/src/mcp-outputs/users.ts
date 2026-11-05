@@ -11,7 +11,7 @@ import {
 	UserProfileItem,
 	UserSessionItem,
 } from "../http/users"
-import { OutputPagination, OutputTimeRange } from "./shared"
+import { OutputTimeRange } from "./shared"
 
 /** The filters a list_users call applied, echoed so a next page repeats them. */
 export const ListUsersFilters = Schema.Struct({
@@ -24,7 +24,9 @@ export const ListUsersFilters = Schema.Struct({
 export const ListUsersOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	users: Schema.Array(UserListItem),
-	pagination: OutputPagination,
+	limit: Schema.Number,
+	/** Pass back as `cursor` for the next page; absent on the last page. */
+	nextCursor: Schema.optionalKey(Schema.String),
 	filters: ListUsersFilters,
 })
 

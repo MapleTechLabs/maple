@@ -1,9 +1,9 @@
 import { Effect, Schema, Array as Arr } from "effect"
-import { UsersListRequest } from "@maple/domain/http"
+import { UsersListCursor, UsersListRequest } from "@maple/domain/http"
 import { ListUsersOutput } from "@maple/domain/mcp-outputs"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
-import type { McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
@@ -14,6 +14,9 @@ import { doc } from "../lib/tool-doc"
 
 const TOOL = "list_users"
 const WINDOW = P.timeWindow({ defaultHours: 24 * 7, maxHours: MCP_DISCOVERY_MAX_HOURS })
+
+const decodeCursor = Schema.decodeUnknownEffect(UsersListCursor)
+const encodeCursor = Schema.encodeSync(UsersListCursor)
 
 type Filters = typeof ListUsersOutput.Type.filters
 
@@ -40,7 +43,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			has_errors: P.optionalFlag("Only users with errors or failed requests in the window"),
 			groups: P.optionalList("Only users in these group ids (`identify()` group)"),
 			limit: P.limit({ default: 25, max: 100, noun: "users" }),
-			offset: P.offset({ max: 10_000 }),
+			cursor: P.optionalText("The `nextCursor` from a previous page, to read the next one"),
 		}),
 		output: ListUsersOutput,
 		hints: { readOnly: true },
@@ -48,17 +51,29 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 		phrases: ["Listing users"],
 		handler: Effect.fn("McpTool.listUsers")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
-			const { limit, offset } = params
+			const { limit } = params
 			const namespaces = listFilter(params.namespaces)
 			const groups = listFilter(params.groups)
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.users.limit": limit })
 
+			const after =
+				params.cursor === undefined
+					? undefined
+					: yield* decodeCursor(params.cursor).pipe(
+							Effect.mapError(
+								() =>
+									new McpInvalidInputError({
+										message: `Invalid cursor: pass the \`nextCursor\` value from a previous ${TOOL} page unchanged.`,
+										parameter: "cursor",
+									}),
+							),
+						)
 			const request = yield* decodeUsersRequest(UsersListRequest, TOOL, {
 				startTime: st,
 				endTime: et,
 				limit,
-				offset,
+				...(after !== undefined && { after }),
 				...(namespaces !== undefined && { namespaces }),
 				...(params.search !== undefined && { search: params.search }),
 				...(params.has_errors === true && { hasErrors: true }),
@@ -68,19 +83,15 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			const response = yield* reads
 				.list(tenant, request)
 				.pipe(Effect.catchTags(warehouseReadToMcpHandlers(TOOL)))
-			// The read's own lookahead says whether another page exists.
-			const hasMore = response.next !== undefined
+			// The read's lookahead hands back the keyset after its last row while another page exists.
 			const users = response.users
+			const nextCursor = response.next === undefined ? undefined : encodeCursor(response.next)
 			yield* Effect.annotateCurrentSpan("result.rowCount", users.length)
 			return {
 				timeRange: { start: st, end: et },
 				users,
-				pagination: {
-					offset,
-					limit,
-					hasMore,
-					...(hasMore ? { nextOffset: offset + users.length } : undefined),
-				},
+				limit,
+				...(nextCursor !== undefined && { nextCursor }),
 				filters: {
 					...(namespaces !== undefined && { namespaces }),
 					...(params.search !== undefined && { search: params.search }),
@@ -90,7 +101,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			}
 		}),
 		render: (output) => {
-			const { users, pagination } = output
+			const { users } = output
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
 			return {
 				title: "Users",
@@ -98,7 +109,6 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 					["Namespaces", output.filters.namespaces?.join(", ")],
 					["Search", output.filters.search],
-					["Rows", pagination.offset > 0 ? `from ${pagination.offset + 1}` : undefined],
 				],
 				...(users.length === 0
 					? {
@@ -140,7 +150,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 									]),
 								),
 							],
-				...(pagination.nextOffset === undefined
+				...(output.nextCursor === undefined
 					? undefined
 					: {
 							truncation: {
@@ -151,8 +161,8 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 									{
 										...window,
 										...filterArgs(output.filters),
-										limit: pagination.limit,
-										offset: pagination.nextOffset,
+										limit: output.limit,
+										cursor: output.nextCursor,
 									},
 									"next page",
 								),

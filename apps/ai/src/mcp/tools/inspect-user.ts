@@ -86,6 +86,21 @@ const profileFields = (profile: UserProfileItem): DocBlock =>
 /** The issue's own id when it has one, else its fingerprint. */
 const issueRef = (issue: UserIssueItem): string => issue.issueId ?? `fingerprint ${issue.fingerprintHash}`
 
+/**
+ * Why the failed-requests table is empty. Its rows come from the capped timeline, so only the
+ * profile's uncapped figures can say the window truly had none.
+ */
+export const noFailedRequestsText = (
+	profile: Readonly<{ requests: number | null; failedRate: number | null }> | null,
+): string => {
+	if (profile === null || profile.requests === null || profile.failedRate === null)
+		return "No failed requests among the timeline's most recent rows."
+	const failed = Math.round(profile.requests * profile.failedRate)
+	return failed === 0
+		? "No failed requests in the window."
+		: `${formatNumber(failed)} failed requests in the window, none among the timeline's most recent rows.`
+}
+
 export function registerInspectUserTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
@@ -247,7 +262,7 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 							),
 				doc.heading("Recent failed requests"),
 				failedRequests.length === 0
-					? doc.text("No failed requests in the window.")
+					? doc.text(noFailedRequestsText(profile))
 					: doc.table(
 							["At", "Service", "Request", "Trace"],
 							Arr.map(failedRequests, (request) => [
