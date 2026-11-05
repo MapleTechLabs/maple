@@ -50,6 +50,24 @@ export const userId = ($: TracesRow) =>
 		$.SpanAttributes.get("user.id"),
 		$.SpanAttributes.get("enduser.id"),
 	)
+
+/**
+ * `userId($)` is one of `ids`. The raw attribute match lets the `mapValues(SpanAttributes)` bloom
+ * index skip granules; the `if()` alone reads every MCP span in the window.
+ */
+export const userIdIn = ($: TracesRow, ids: ReadonlyArray<string>) =>
+	CH.inList(userId($), ids).and(
+		CH.inList($.SpanAttributes.get("user.id"), ids).or(
+			CH.inList($.SpanAttributes.get("enduser.id"), ids),
+		),
+	)
+
+/** `userId($) = user`, with the same index-friendly raw attribute match as {@link userIdIn}. */
+export const userIdIs = ($: TracesRow, user: CH.Expr<string> | string) =>
+	userId($)
+		.eq(user)
+		.and($.SpanAttributes.get("user.id").eq(user).or($.SpanAttributes.get("enduser.id").eq(user)))
+
 /** What the page calls the user: `user.name`, else `user.email`. */
 const userLabel = ($: TracesRow) =>
 	CH.if_(
@@ -437,7 +455,7 @@ export interface McpSessionFilter {
 const selected = ($: TracesRow, filter: McpSessionFilter) => [
 	CH.when(filter.client, (client) => mcpClientName($).eq(client)),
 	CH.when(filter.kind, (kind) => mcpClientKind($).eq(kind)),
-	CH.when(filter.user, (user) => userId($).eq(user)),
+	CH.when(filter.user, (user) => userIdIs($, user)),
 	filter.namespaces !== undefined && filter.namespaces.length > 0
 		? CH.inList($.ResourceAttributes.get("service.namespace"), filter.namespaces)
 		: undefined,
