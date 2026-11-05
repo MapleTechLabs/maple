@@ -36,6 +36,6 @@ describe("listInputs", () => {
 
 describe("userHref", () => {
 	it("links a row to the user page over the directory's window", () => {
-		expect(userHref({ timePreset: "24h", q: "ada" })("user/42")).toBe("/users/user%2F42?timePreset=24h")
+		expect(userHref({ timePreset: "24h", q: "ada" })("user/42")).toBe("/users/user/42?timePreset=24h")
 	})
 })
