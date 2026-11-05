@@ -81,7 +81,20 @@ const reads = (
 	Layer.mock(UsersReadService)({
 		list: (_tenant, request) => {
 			seen.list = request
-			return Effect.succeed(new UsersListResponse({ users: opts.users ?? [] }))
+			// Like the read: at most `limit` users, and `next` only when more match.
+			const all = opts.users ?? []
+			const limit = request.limit ?? all.length
+			const page = all.slice(0, limit)
+			const last = page.at(-1)
+			return Effect.succeed(
+				new UsersListResponse({
+					users: page,
+					...(all.length > limit &&
+						last !== undefined && {
+							next: { lastSeen: "2026-11-01 00:00:00.000000000", userId: last.userId },
+						}),
+				}),
+			)
 		},
 		profile: (_tenant, request) => {
 			seen.detail = request
@@ -202,7 +215,7 @@ describe("list_users", () => {
 			{ ...WINDOW, namespaces: "storefront, billing", search: "ada", has_errors: true, limit: 2 },
 			reads(seen, { users }),
 		)
-		expect(seen.list?.limit).toBe(3)
+		expect(seen.list?.limit).toBe(2)
 		expect(seen.list?.namespaces).toEqual(["storefront", "billing"])
 		expect(seen.list?.search).toBe("ada")
 		expect(seen.list?.hasErrors).toBe(true)

@@ -15,6 +15,7 @@ import {
 	type ColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
 import {
+	exactDateTime64,
 	IdentityLinks,
 	ProductEvents,
 	SessionReplays,
@@ -48,6 +49,11 @@ export interface UsersListFilter {
 	readonly hasErrors?: boolean
 	readonly hasReplay?: boolean
 	readonly groups?: ReadonlyArray<string>
+	/**
+	 * Keyset: only users ordered after this `(lastSeen, userId)`. `lastSeen` is a row's exact
+	 * `lastSeenKey` (`toString` of the DateTime64(9)), so the tie branch matches it.
+	 */
+	readonly after?: { readonly lastSeen: string; readonly userId: string }
 }
 
 /**
@@ -322,6 +328,8 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 			namespaces: CH.arraySort(CH.groupUniqArrayIf(20)($.namespace, $.namespace.neq(""))),
 			firstSeen: CH.min_($.firstSeen),
 			lastSeen: CH.max_($.lastSeen),
+			// Lossless, unlike the decoded `lastSeen`: the keyset cursor carries it back verbatim.
+			lastSeenKey: CH.toString_(CH.max_($.lastSeen)),
 			sessions: CH.sum($.sessions),
 			errors: CH.sum($.errors),
 			requests: CH.sum($.requests),
@@ -343,6 +351,12 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 					containsText(nonEmpty($.email), search),
 				),
 			),
+			CH.when(filter.after, (after) => {
+				const at = exactDateTime64(after.lastSeen)
+				return CH.max_($.lastSeen)
+					.lt(at)
+					.or(CH.max_($.lastSeen).eq(at).and($.userId.gt(after.userId)))
+			}),
 		])
 		.orderBy(["lastSeen", "desc"], ["userId", "asc"])
 		.limit(limit)

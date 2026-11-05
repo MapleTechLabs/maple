@@ -56,8 +56,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			const request = yield* decodeUsersRequest(UsersListRequest, TOOL, {
 				startTime: st,
 				endTime: et,
-				// One row of lookahead says whether another page exists.
-				limit: limit + 1,
+				limit,
 				offset,
 				...(namespaces !== undefined && { namespaces }),
 				...(params.search !== undefined && { search: params.search }),
@@ -68,8 +67,9 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			const response = yield* reads
 				.list(tenant, request)
 				.pipe(Effect.catchTags(warehouseReadToMcpHandlers(TOOL)))
-			const hasMore = response.users.length > limit
-			const users = response.users.slice(0, limit)
+			// The read's own lookahead says whether another page exists.
+			const hasMore = response.next !== undefined
+			const users = response.users
 			yield* Effect.annotateCurrentSpan("result.rowCount", users.length)
 			return {
 				timeRange: { start: st, end: et },

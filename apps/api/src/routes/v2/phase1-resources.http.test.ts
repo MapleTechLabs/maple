@@ -1811,6 +1811,75 @@ describe("v2 users over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("pages populated users by keyset, continuing after a lastSeen tie without repeats", async () => {
+		// Two users share the boundary lastSeen to the nanosecond; only userId orders them.
+		const tie = "2026-11-01 10:00:00.123456789"
+		const fixture = [
+			{ userId: "u_a", lastSeenKey: "2026-11-01 11:00:00.000000001" },
+			{ userId: "u_b", lastSeenKey: tie },
+			{ userId: "u_c", lastSeenKey: tie },
+		]
+		const row = (user: (typeof fixture)[number]) => ({
+			...user,
+			name: "",
+			email: "",
+			groupId: "",
+			namespaces: [],
+			firstSeen: "2026-11-01 01:00:00.000000000",
+			lastSeen: user.lastSeenKey,
+			sessions: 1,
+			errors: 0,
+			requests: 0,
+			mcpSpans: 0,
+			events: 0,
+			spans: 0,
+			logLines: 0,
+		})
+		// Answers the list like the warehouse would: the keyset HAVING, then the LIMIT.
+		const usersWarehouse: WarehouseQueryServiceApi = {
+			...warehouseStub,
+			compiledQuery: (_tenant, compiled, options) => {
+				const query = compiledQueryOf(compiled)
+				if (options?.context !== "usersList") return query.decodeRows([]).pipe(Effect.orDie)
+				const after = /signals\.lastSeen\) < '([^']+)'.*signals\.userId > '([^']+)'/s.exec(query.sql)
+				const limit = Number(/LIMIT\s+(\d+)/i.exec(query.sql)?.[1] ?? 200)
+				const kept = Arr.filter(
+					fixture,
+					(user) =>
+						after === null ||
+						user.lastSeenKey < (after[1] ?? "") ||
+						(user.lastSeenKey === after[1] && user.userId > (after[2] ?? "")),
+				)
+				return query.decodeRows(Arr.map(kept.slice(0, limit), row)).pipe(Effect.orDie)
+			},
+		}
+		const harness = makeHarness(usersWarehouse)
+		const key = await harness.bootstrapKey(["users:read"])
+
+		const first = await harness.request("GET", `/v2/users?${WINDOW}&limit=2`, { token: key.secret })
+		expect(first.status).toBe(200)
+		expect(Arr.map(first.body.data, (user: { id: string }) => user.id)).toEqual(["u_a", "u_b"])
+		expect(first.body.has_more).toBe(true)
+		expect(typeof first.body.next_cursor).toBe("string")
+
+		const second = await harness.request(
+			"GET",
+			`/v2/users?${WINDOW}&limit=2&cursor=${encodeURIComponent(first.body.next_cursor)}`,
+			{ token: key.secret },
+		)
+		expect(second.status).toBe(200)
+		expect(Arr.map(second.body.data, (user: { id: string }) => user.id)).toEqual(["u_c"])
+		expect(second.body.has_more).toBe(false)
+		expect(second.body.next_cursor).toBeNull()
+
+		const forged = await harness.request("GET", `/v2/users?${WINDOW}&cursor=usr_bm90LWpzb24`, {
+			token: key.secret,
+		})
+		expect(forged.status).toBe(400)
+		expect(forged.body.error.code).toBe("cursor_invalid")
+		await harness.dispose()
+	})
+
 	it("needs users:read", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["traces:read"])
@@ -1820,7 +1889,7 @@ describe("v2 users over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("refuses an inverted or over-wide window and a cursor past the deepest page", async () => {
+	it("refuses an inverted or over-wide window and an offset cursor", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey()
 

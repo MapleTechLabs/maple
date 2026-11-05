@@ -13,9 +13,9 @@ import {
 } from "@maple/domain/http"
 import {
 	isoTimestamp,
+	LIST_LIMIT_DEFAULT,
 	MapleApiV2,
 	paginateArray,
-	paginateOffsetQuery,
 	V2ParameterInvalid,
 	V2TelemetryRangeTooLarge,
 	V2TimeRangeInvalid,
@@ -29,13 +29,14 @@ import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-en
 import { formatRangeSeconds, MAX_QUERY_RANGE_SECONDS, timeWindowViolation } from "@maple/query-engine/runtime"
 import { Array as Arr, Effect, Record as Rec, Schema, String as Str } from "effect"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
+import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 
 // `/v2/users`: thin adapters over `UsersReadService`, mapping its camelCase epoch-ms rows to the
 // snake_case ISO wire shape. Windows are capped like the other telemetry reads.
 
 const decodeSessionId = Schema.decodeSync(SessionId)
 
-/** The internal request, or a 400: its caps (50 namespaces or groups, the deepest offset) are tighter than the query's. */
+/** The internal request, or a 400: its caps (50 namespaces or groups) are tighter than the query's. */
 const internalRequest =
 	<S extends Schema.Codec<unknown, unknown, never, never>>(schema: S) =>
 	(input: unknown) =>
@@ -205,20 +206,29 @@ export const HttpV2UsersLive = HttpApiBuilder.group(MapleApiV2, "users", (handle
 					const tenant = yield* CurrentTenant.Context
 					const window = yield* resolveUsersWindow(query)
 					const groups = commaList(query.group)
-					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
-						listRequest({
-							...window,
-							limit,
-							offset,
-							...(query.q !== undefined && { search: query.q }),
-							...(query.has_errors === "true" && { hasErrors: true }),
-							...(groups.length > 0 && { groups }),
-						}).pipe(
-							Effect.flatMap((request) => users.list(tenant, request)),
-							Effect.map((response) => Arr.map(response.users, toV2User)),
-						),
-					)
-					return { object: "list" as const, ...page }
+					// Keyset over (lastSeen, userId), not offset: a paged user's lastSeen keeps rising,
+					// so an offset re-slices a reordered list and skips or repeats users.
+					const cursor = yield* decodeKeysetCursor(query.cursor, "usr", 2)
+					const request = yield* listRequest({
+						...window,
+						limit: query.limit ?? LIST_LIMIT_DEFAULT,
+						...(cursor !== undefined && {
+							after: { lastSeen: cursor[0] ?? "", userId: cursor[1] ?? "" },
+						}),
+						...(query.q !== undefined && { search: query.q }),
+						...(query.has_errors === "true" && { hasErrors: true }),
+						...(groups.length > 0 && { groups }),
+					})
+					const response = yield* users.list(tenant, request)
+					return {
+						object: "list" as const,
+						data: Arr.map(response.users, toV2User),
+						has_more: response.next !== undefined,
+						next_cursor:
+							response.next === undefined
+								? null
+								: encodeKeysetCursor("usr", [response.next.lastSeen, response.next.userId]),
+					}
 				}),
 			)
 			.handle("retrieve", ({ params, query }) =>

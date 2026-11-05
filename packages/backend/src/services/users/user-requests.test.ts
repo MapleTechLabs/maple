@@ -184,6 +184,7 @@ describe("a cluster without user_activity_hourly", () => {
 							namespaces: ["storefront"],
 							firstSeen: "2026-11-01 08:00:00.000000000",
 							lastSeen: "2026-11-01 09:00:00.000000000",
+							lastSeenKey: "2026-11-01 09:00:00.000000000",
 							sessions: "2",
 							errors: "1",
 							requests: "0",
