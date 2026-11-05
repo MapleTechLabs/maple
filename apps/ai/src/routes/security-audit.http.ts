@@ -51,7 +51,7 @@ import {
 } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
-import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
 import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
@@ -213,17 +213,20 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			return { tenant, store: stores.forOrg(tenant.orgId) }
 		})
 
-		const adminAccess = orgAccess.pipe(
-			Effect.tap(({ tenant }) =>
-				requireAdmin(
-					tenant.roles,
-					() =>
-						new SecurityAuditForbiddenError({
-							message: "Only org admins can manage security audits.",
-						}),
+		const accessFor = (permission: Policy.Permission) =>
+			orgAccess.pipe(
+				Effect.tap(({ tenant }) =>
+					Policy.check(
+						tenant.roles,
+						permission,
+						(denial) => new SecurityAuditForbiddenError({ message: denial.message }),
+					),
 				),
-			),
-		)
+			)
+		/** Reading and triaging findings. */
+		const findingsAccess = accessFor("security:manage")
+		/** Anything that spends the audit budget: targets, settings, starting or stopping runs. */
+		const auditAccess = accessFor("security_audit:run")
 
 		/**
 		 * The org's spend limit, what it spent this UTC month, and its models (the org's picks, else
@@ -326,7 +329,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		return handlers
 			.handle("createTarget", ({ payload }) =>
 				Effect.gen(function* () {
-					const { tenant, store } = yield* adminAccess
+					const { tenant, store } = yield* auditAccess
 					if (payload.discoveryModel !== undefined || payload.validationModel !== undefined) {
 						const org = yield* orgSettings(store)
 						yield* requireDistinctModels(
@@ -370,7 +373,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("updateSettings", ({ payload }) =>
 				Effect.gen(function* () {
-					const { tenant, store } = yield* adminAccess
+					const { tenant, store } = yield* auditAccess
 					yield* requireDistinctModels(payload.discoveryModel, payload.validationModel)
 					yield* orUnavailable(store.saveSettings({ ...payload, updatedBy: tenant.userId }))
 					yield* recordHttpAudit("security_audit_settings.updated", { metadata: { ...payload } })
@@ -386,7 +389,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("startRun", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const { tenant, store } = yield* adminAccess
+					const { tenant, store } = yield* auditAccess
 					const target = yield* requireTarget(store, params.targetId)
 					// The org's own limit first: it is the one an admin can raise right away.
 					const org = yield* orgSettings(store)
@@ -485,8 +488,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						store.listRuns(query.targetId === undefined ? {} : { targetId: query.targetId }),
 					)
 					const runs = Arr.map(rows, toRun)
-					// Members may list runs but not read findings, so only admins see what each reported.
-					if (!isAdmin(tenant.roles)) return { runs }
+					// Members may list runs but not read findings, so only engineers and admins see what each reported.
+					if (!Policy.can(tenant.roles, "security:manage")) return { runs }
 					const findingCounts = yield* orUnavailable(
 						store.countRunFindings(Arr.map(rows, (r) => r.id)),
 					)
@@ -495,7 +498,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("getRun", ({ params }) =>
 				Effect.gen(function* () {
-					const { store } = yield* adminAccess
+					const { store } = yield* findingsAccess
 					const run = yield* requireRun(store, params.runId)
 					const unitCounts = yield* orUnavailable(store.countUnits(run.id))
 					return {
@@ -510,7 +513,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("cancelRun", ({ params }) =>
 				Effect.gen(function* () {
-					const { tenant, store } = yield* adminAccess
+					const { tenant, store } = yield* auditAccess
 					const run = yield* requireRun(store, params.runId)
 					const notInProgress = new SecurityAuditRunNotInProgressError({
 						message: "This audit run has already finished.",
@@ -540,7 +543,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listRunUnits", ({ params }) =>
 				Effect.gen(function* () {
-					const { store } = yield* adminAccess
+					const { store } = yield* findingsAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(store.listUnitSummaries(run.id))
 					return { units: Arr.map(rows, toUnit) }
@@ -548,7 +551,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listRunEvents", ({ params, query }) =>
 				Effect.gen(function* () {
-					const { store } = yield* adminAccess
+					const { store } = yield* findingsAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(
 						store.listEvents(run.id, {
@@ -562,7 +565,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listRunFindings", ({ params }) =>
 				Effect.gen(function* () {
-					const { store } = yield* adminAccess
+					const { store } = yield* findingsAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(store.listRunFindingViews(run.id))
 					return { findings: Arr.map(rows, toFinding) }
@@ -570,7 +573,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listFindings", ({ params, query }) =>
 				Effect.gen(function* () {
-					const { store } = yield* adminAccess
+					const { store } = yield* findingsAccess
 					const target = yield* requireTarget(store, params.targetId)
 					const rows = yield* orUnavailable(store.listFindings(target.id))
 					const includeRejected = query.includeRejected === "true"
@@ -584,7 +587,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("updateFindingStatus", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const { tenant, store } = yield* adminAccess
+					const { tenant, store } = yield* findingsAccess
 					const updated = yield* orUnavailable(
 						store.setFindingStatus(
 							params.targetId,

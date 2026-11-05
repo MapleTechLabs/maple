@@ -377,8 +377,8 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 			).pipe(Effect.exit)
 			const failure = getError(exit)
 			assert.instanceOf(failure, TinybirdOrgTokenConfigError)
-			assert.include((failure as TinybirdOrgTokenConfigError).message, "TINYBIRD_SIGNING_KEY")
-			assert.notInclude((failure as TinybirdOrgTokenConfigError).message, "managed-token")
+			assert.include(failure.message, "TINYBIRD_SIGNING_KEY")
+			assert.notInclude(failure.message, "managed-token")
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -450,7 +450,7 @@ describe("bounded Tinybird response body", () => {
 				over.sql(parseStatement("SELECT 1 FORMAT JSON"), { responseLimits: limits }),
 			)
 			assert.instanceOf(error, WarehouseResponseLimitError)
-			assert.strictEqual((error as WarehouseResponseLimitError).kind, "bytes")
+			assert.strictEqual(error.kind, "bytes")
 			assert.match(error.message, /5000000 encoded bytes/)
 		}),
 	)
@@ -553,7 +553,7 @@ describe("WarehouseQueryService.compiledQuery retry on transient upstream failur
 
 			const failure = getError(exit)
 			assert.instanceOf(failure, WarehouseUpstreamError)
-			assert.strictEqual((failure as WarehouseUpstreamError).upstreamStatus, 503)
+			assert.strictEqual(failure.upstreamStatus, 503)
 		}).pipe(Effect.provide(layer))
 	})
 })
@@ -872,7 +872,7 @@ describe("createClickHouseSqlClient.insert is disabled (ClickHouse is read-only)
 		}
 
 		assert.instanceOf(thrown, Error)
-		assert.match((thrown as Error).message, /read-only|Tinybird/)
+		assert.match(thrown.message, /read-only|Tinybird/)
 		assert.strictEqual(fetched, 0)
 	})
 })
@@ -910,7 +910,7 @@ describe("createTinybirdSqlClient.insert wire framing (the production insert pat
 		await Effect.runPromise(client.insert("traces", [{ trace_id: "a" }, { trace_id: "b" }]))
 
 		assert.strictEqual(captured.length, 1)
-		const req = captured[0]!
+		const req = captured[0]
 		assert.strictEqual(req.method, "POST")
 		assert.isTrue(Str.startsWith("https://api.tinybird.co/v0/events?name=traces")(req.url))
 		assert.strictEqual(req.contentType, "application/x-ndjson")
@@ -964,7 +964,7 @@ describe("createTinybirdSqlClient.sql wire format", () => {
 		await Effect.runPromise(client.sql(statement, undefined))
 
 		assert.strictEqual(sent.length, 1)
-		return sent[0]!
+		return sent[0]
 	}
 
 	it("sends the statement as the executor rendered it", async () => {
@@ -1129,7 +1129,7 @@ describe("Tinybird response decoding", () => {
 			)
 			const error = yield* Effect.flip(client.sql(statement))
 			assert.instanceOf(error, WarehouseDriverError)
-			assert.strictEqual((error as WarehouseDriverError).reason, "protocol")
+			assert.strictEqual(error.reason, "protocol")
 		}),
 	)
 
@@ -1142,7 +1142,7 @@ describe("Tinybird response decoding", () => {
 			)
 			const error = yield* Effect.flip(client.sql(statement))
 			assert.instanceOf(error, WarehouseDriverError)
-			const driver = error as WarehouseDriverError
+			const driver = error
 			assert.strictEqual(driver.reason, "server")
 			assert.strictEqual(driver.status, 403)
 			assert.strictEqual(driver.message, "invalid authentication token")
@@ -1157,7 +1157,7 @@ describe("Tinybird response decoding", () => {
 			)
 			const error = yield* Effect.flip(client.sql(statement))
 			assert.instanceOf(error, WarehouseDriverError)
-			const driver = error as WarehouseDriverError
+			const driver = error
 			assert.strictEqual(driver.status, 502)
 			assert.match(driver.message, /^Request failed with status 502: /)
 		}),
@@ -1171,7 +1171,7 @@ describe("Tinybird response decoding", () => {
 			)
 			const error = yield* Effect.flip(client.sql(statement))
 			assert.instanceOf(error, WarehouseDriverError)
-			const driver = error as WarehouseDriverError
+			const driver = error
 			assert.strictEqual(driver.status, 403)
 			assert.match(driver.message, /^Request failed with status 403: access denied/)
 			assert.strictEqual(String(driver.cause).length, 16 * 1024)
@@ -1207,17 +1207,14 @@ describe("BYO ClickHouse redirect refusal", () => {
 		}
 
 		assert.instanceOf(thrown, WarehouseDriverError)
-		const driver = thrown as WarehouseDriverError
+		const driver = thrown
 		// A refused redirect is configuration, never an ordinary 4xx from the cluster.
 		assert.strictEqual(driver.reason, "config")
 		assert.strictEqual(driver.status, 307)
 		assert.match(driver.message, /redirect responses are not allowed \(307\)/)
 		// The Location is kept as context, so a refusal is diagnosable.
 		assert.instanceOf(driver.cause, ClickHouseHttp.ClickHouseRedirectError)
-		assert.strictEqual(
-			(driver.cause as ClickHouseHttp.ClickHouseRedirectError).location,
-			"http://169.254.169.254/",
-		)
+		assert.strictEqual(driver.cause.location, "http://169.254.169.254/")
 		// Exactly one request, and it opted out of automatic redirect following.
 		assert.strictEqual(seen.length, 1)
 		assert.strictEqual(seen[0]?.redirect, "manual")
@@ -1273,10 +1270,10 @@ describe("warehouse driver Effect boundaries", () => {
 				const second = yield* Effect.forkChild(query)
 				yield* Deferred.await(started)
 				yield* Fiber.interrupt(first)
-				assert.isTrue(signals[0]!.aborted)
-				assert.isFalse(signals[1]!.aborted)
+				assert.isTrue(signals[0].aborted)
+				assert.isFalse(signals[1].aborted)
 				yield* Fiber.interrupt(second)
-				assert.isTrue(signals[1]!.aborted)
+				assert.isTrue(signals[1].aborted)
 				assert.strictEqual(signals.length, 2)
 			}),
 		)
@@ -1341,7 +1338,7 @@ describe("warehouse driver Effect boundaries", () => {
 						}),
 					)
 					assert.instanceOf(error, WarehouseResponseLimitError)
-					assert.strictEqual((error as WarehouseResponseLimitError).kind, kind)
+					assert.strictEqual(error.kind, kind)
 				}),
 			)
 		}
@@ -1356,7 +1353,7 @@ describe("warehouse driver Effect boundaries", () => {
 				makeClickHouseTestClient(chConfig, request).sql(parseStatement("SELECT 1 FORMAT JSON")),
 			)
 			assert.instanceOf(error, WarehouseResponseLimitError)
-			assert.strictEqual((error as WarehouseResponseLimitError).kind, "bytes")
+			assert.strictEqual(error.kind, "bytes")
 			assert.match(error.message, /^A single result row exceeded 16777216 encoded bytes$/)
 		}),
 	)

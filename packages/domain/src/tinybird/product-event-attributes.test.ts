@@ -104,7 +104,7 @@ describe("product event span attributes", () => {
 
 		const projected = Arr.map(topLevelParts(PRODUCT_EVENTS_TRACE_PROJECTION_SQL), (part) => {
 			const aliased = /\bAS ([A-Za-z][A-Za-z0-9_]*)$/.exec(part)
-			return aliased ? aliased[1]! : part
+			return aliased ? aliased[1] : part
 		})
 		expect(projected).toEqual(Rec.keys(productEvents._schema))
 	})

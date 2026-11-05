@@ -29,7 +29,7 @@ import {
 	zoneStatus,
 } from "./cloudflare-derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
@@ -248,10 +248,12 @@ export const zoneBoard = (
 					{
 						variant: "outline",
 						size: "xs",
-						isDisabled: !model.isAdmin,
+						isDisabled: !canManage(model),
 						attributes: [
 							h.OnClick(Message.ClickedManageZones()),
-							...(model.isAdmin ? [] : [h.Title("Only org admins can change zones")]),
+							...(canManage(model)
+								? []
+								: [h.Title("Only org admins and engineers can change zones")]),
 						],
 					},
 					["Manage zones"],

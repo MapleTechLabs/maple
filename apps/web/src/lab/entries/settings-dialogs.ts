@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2ApiKeyWithSecret, V2Source } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
@@ -109,7 +110,7 @@ const keyDialog = (isCreated: boolean): KeyDialog.Model => {
 const ORG: OrgInfo = { id: "org_lab", name: "Acme", hasImage: false, region: "us" }
 
 const general = () => {
-	const model = General.init(true).model
+	const model = General.init(Policy.allPermissions).model
 	return {
 		...model,
 		org: AsyncData.Success({ data: ORG }),

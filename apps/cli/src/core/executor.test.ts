@@ -56,11 +56,11 @@ describe("makeLocalWarehouseExecutorApi", () => {
 
 			expect(rows).toEqual([{ c: 1 }])
 			expect(requests).toHaveLength(1)
-			expect(requests[0]!.url).toBe(`${BASE_URL}/local/query`)
+			expect(requests[0].url).toBe(`${BASE_URL}/local/query`)
 			// The chdb backend speaks the ClickHouse protocol shape: the executor
 			// strips the trailing FORMAT and the local server owns the output format.
-			expect(requests[0]!.sql).not.toContain("FORMAT JSON")
-			expect(requests[0]!.sql).toContain("OrgId = 'local'")
+			expect(requests[0].sql).not.toContain("FORMAT JSON")
+			expect(requests[0].sql).toContain("OrgId = 'local'")
 		}).pipe(Effect.provide(httpWith(request)))
 	})
 

@@ -503,7 +503,7 @@ describe("CancellationReviewService", () => {
 			const stored = yield* storedReview(testDb)
 			assert.strictEqual(stored?.rule_reason, "stopped_sending")
 			assert.isNotNull(stored?.posted_at)
-			assert.deepNestedInclude(stored?.snapshot_json as object, {
+			assert.deepNestedInclude(stored?.snapshot_json, {
 				"plan.tenureDays": 240,
 				"plan.daysUntilEnd": 9,
 				"org.members": 2,

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId, UserId } from "@maple/domain"
 import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
 import {
@@ -323,8 +324,8 @@ export const signOutOfClerk: Effect.Effect<void> = Effect.promise(
 /** The active org's handle for its own rename and invitations (`useOrganization().organization`). */
 export interface ClerkTeamOrganization {
 	readonly name: string
-	/** `useAuth().orgRole === "org:admin"`: the role of the user's membership in it. */
-	readonly isAdmin: boolean
+	/** The user's membership role holds `members:manage`: they may invite and rename. */
+	readonly canManageMembers: boolean
 	readonly update: (input: { name: string }) => Promise<void>
 	readonly inviteMember: (input: { emailAddress: string; role: "org:member" }) => Promise<void>
 	readonly pendingInvitations: () => Promise<ReadonlyArray<string>>
@@ -340,7 +341,9 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 		)
 		return Option.some<ClerkTeamOrganization>({
 			name: organization.name,
-			isAdmin: Option.exists(membership, (found) => found.role === "org:admin"),
+			canManageMembers: Option.exists(membership, (found) =>
+				Policy.can(found.role === undefined ? [] : [found.role], "members:manage"),
+			),
 			update: (input) =>
 				update === undefined ? missing() : update.call(organization, input).then(() => undefined),
 			inviteMember: (input) =>

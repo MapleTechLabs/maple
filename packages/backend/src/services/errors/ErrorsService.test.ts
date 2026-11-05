@@ -917,7 +917,7 @@ const loadIssueById = (issueId: ErrorIssueId) =>
 			),
 		)
 		assert.lengthOf(rows, 1)
-		return rows[0]!
+		return rows[0]
 	})
 
 const loadIssuesByFingerprint = (fingerprintHash: string) =>
@@ -1299,7 +1299,7 @@ describe("ErrorsService.runTick", () => {
 
 				const issues = yield* loadIssuesByFingerprint(SCAN_FINGERPRINT)
 				assert.lengthOf(issues, 1)
-				const issue = issues[0]!
+				const issue = issues[0]
 				assert.strictEqual(issue.orgId, ORG)
 				assert.strictEqual(issue.kind, "error")
 				assert.strictEqual(issue.workflowState, "triage")
@@ -1362,8 +1362,8 @@ describe("ErrorsService.runTick", () => {
 
 			const issues = yield* loadIssuesByFingerprint(SCAN_FINGERPRINT)
 			assert.lengthOf(issues, 1)
-			assert.strictEqual(issues[0]!.exceptionMessage, "failed at position 1 (): garbage")
-			assert.strictEqual(issues[0]!.topFrame, "cli/store.ts:1")
+			assert.strictEqual(issues[0].exceptionMessage, "failed at position 1 (): garbage")
+			assert.strictEqual(issues[0].topFrame, "cli/store.ts:1")
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
@@ -1387,7 +1387,7 @@ describe("ErrorsService.runTick", () => {
 			assert.lengthOf(issues, 1)
 			assert.strictEqual(issues[0]?.occurrenceCount, 3)
 
-			const incidents = yield* loadIncidentsForIssue(issues[0]!.id)
+			const incidents = yield* loadIncidentsForIssue(issues[0].id)
 			assert.lengthOf(incidents, 1)
 			assert.strictEqual(incidents[0]?.status, "open")
 			assert.strictEqual(incidents[0]?.occurrenceCount, 3)
@@ -1403,7 +1403,7 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(cursors[0]?.processedThrough, TICK_MS - 60_000)
 			assert.isTrue(cursors[0]?.bootstrapCompleted)
 
-			const events = yield* loadEventsForIssue(issues[0]!.id)
+			const events = yield* loadEventsForIssue(issues[0].id)
 			assert.lengthOf(
 				Arr.filter(events, (e) => e.type === "created"),
 				1,
@@ -1648,7 +1648,7 @@ describe("ErrorsService.runTick", () => {
 				2,
 			)
 
-			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 			const incidents = yield* loadIncidentsForIssue(issue.id)
 			assert.lengthOf(incidents, 2)
 			const states = yield* database.execute((db) =>
@@ -1677,7 +1677,7 @@ describe("ErrorsService.runTick", () => {
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
 				yield* errors.runTick
-				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 
 				// Walk the long way round on purpose: the direct triage -> done path is
 				// covered separately, and this keeps the multi-step route exercised.
@@ -1686,7 +1686,7 @@ describe("ErrorsService.runTick", () => {
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_review")
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
 
-				const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 				assert.strictEqual(resolved.workflowState, "done")
 				assert.isNotNull(resolved.resolvedAt)
 				yield* backdateResolution(issue.id, TICK_MS - 3 * 60 * 60 * 1000)
@@ -1699,7 +1699,7 @@ describe("ErrorsService.runTick", () => {
 				// Reopening lands in `regressed`, not `triage`: an issue that was fixed
 				// and came back is not the same as one nobody has looked at, and
 				// flattening the two is what let the same bug be fixed twice.
-				const reopened = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				const reopened = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 				assert.strictEqual(reopened.workflowState, "regressed")
 				assert.isNull(reopened.resolvedAt)
 				assert.strictEqual(reopened.regressionCount, 1)
@@ -1732,7 +1732,7 @@ describe("ErrorsService.runTick", () => {
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
 				yield* errors.runTick
-				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 				assert.strictEqual(issue.workflowState, "triage")
 
 				// The path auto-resolve uses. It was previously illegal, which is why
@@ -1741,7 +1741,7 @@ describe("ErrorsService.runTick", () => {
 				const actor = yield* actorService.ensureUserActor(ORG, USER)
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
 
-				const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 				assert.strictEqual(resolved.workflowState, "done")
 				assert.isNotNull(resolved.resolvedAt)
 				assert.strictEqual(resolved.resolvedByActorId, actor.id)
@@ -1766,7 +1766,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
 			yield* errors.runTick
-			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 
 			yield* database.execute((db) =>
 				db.run(
@@ -1782,7 +1782,7 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(second.incidentsOpened, 0)
 			assert.strictEqual(second.issuesReopened, 0)
 
-			const after = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+			const after = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 			assert.strictEqual(after.workflowState, "wontfix")
 			// Skipped means skipped: not even the occurrence count moves.
 			assert.strictEqual(after.occurrenceCount, 3)
@@ -1877,7 +1877,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS)
 			yield* seedIssue(asIssueId(randomUUID()))
 			yield* errors.runTick
-			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 
 			// The fingerprint goes quiet.
 			rows.length = 0
@@ -1893,8 +1893,8 @@ describe("ErrorsService.runTick", () => {
 			// Staleness is measured in event time against the window being applied,
 			// so the flip lands in the first window that closes more than 30 minutes
 			// after the last occurrence — within one window width of that boundary.
-			const lastTriggeredMs = incidents[0]!.lastTriggeredAt
-			const resolvedAtMs = incidents[0]!.resolvedAt!
+			const lastTriggeredMs = incidents[0].lastTriggeredAt
+			const resolvedAtMs = incidents[0].resolvedAt!
 			assert.isAbove(resolvedAtMs, lastTriggeredMs + 30 * 60_000)
 			assert.isAtMost(resolvedAtMs, lastTriggeredMs + 35 * 60_000)
 
@@ -1909,7 +1909,7 @@ describe("ErrorsService.runTick", () => {
 
 			// Auto-resolve closes the incident only; the issue's workflow state is
 			// not advanced.
-			const after = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+			const after = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 			assert.strictEqual(after.workflowState, "triage")
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
@@ -2122,7 +2122,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS + 120_000)
 			yield* errors.runTick
 			assert.lengthOf(yield* loadIssuesByFingerprint(SCAN_FINGERPRINT), 0)
-			const pending = (yield* candidates())[0]!
+			const pending = (yield* candidates())[0]
 			assert.strictEqual(pending.occurrenceCount, 2)
 			assert.sameMembers([...pending.serviceVersionsJson], ["1.0.0", "1.1.0"])
 
@@ -2131,7 +2131,7 @@ describe("ErrorsService.runTick", () => {
 			yield* TestClock.setTime(TICK_MS + 240_000)
 			yield* errors.runTick
 
-			const promoted = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+			const promoted = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 			// The issue opens with the occurrences it earned across all three ticks,
 			// not just the one in the promoting window.
 			assert.strictEqual(promoted.occurrenceCount, 3)
@@ -2475,7 +2475,7 @@ describe("ErrorsService.runTick", () => {
 				yield* TestClock.setTime(TICK_MS)
 				yield* seedIssue(asIssueId(randomUUID()))
 				yield* errors.runTick
-				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 
 				const actor = yield* actorService.ensureUserActor(ORG, USER)
 				yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
@@ -2493,7 +2493,7 @@ describe("ErrorsService.runTick", () => {
 				// An old client still running the pre-fix build is not new work: the
 				// issue stays fixed, and — the part that matters — no fresh incident,
 				// notification, or investigation is raised off the back of it.
-				const after = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				const after = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]
 				assert.strictEqual(after.workflowState, "done")
 				assert.strictEqual(after.regressionCount, 0)
 				assert.strictEqual(second.incidentsOpened, 0)
@@ -2527,8 +2527,8 @@ describe("ErrorsService.runTick", () => {
 
 			// ONGOING gets a real issue + open incident from a first tick.
 			yield* errors.runTick
-			const ongoing = (yield* loadIssuesByFingerprint(ONGOING))[0]!
-			const openIncident = (yield* loadIncidentsForIssue(ongoing.id))[0]!
+			const ongoing = (yield* loadIssuesByFingerprint(ONGOING))[0]
+			const openIncident = (yield* loadIncidentsForIssue(ongoing.id))[0]
 			assert.strictEqual(openIncident.status, "open")
 
 			const regressedId = asIssueId(randomUUID())
@@ -2548,7 +2548,7 @@ describe("ErrorsService.runTick", () => {
 				snoozeUntil: null,
 				occurrenceCount: 7,
 			})
-			const snoozedBefore = (yield* loadIssuesByFingerprint(SNOOZED))[0]!
+			const snoozedBefore = (yield* loadIssuesByFingerprint(SNOOZED))[0]
 
 			const secondMs = TICK_MS + 60_000
 			const firstSeen = formatWarehouseDateTime(secondMs - 120_000)
@@ -2571,7 +2571,7 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(result.issuesTouched, 3)
 
 			// Ongoing: counters accumulate, bounds widen, no second incident.
-			const ongoingAfter = (yield* loadIssuesByFingerprint(ONGOING))[0]!
+			const ongoingAfter = (yield* loadIssuesByFingerprint(ONGOING))[0]
 			assert.strictEqual(ongoingAfter.occurrenceCount, 3 + 4)
 			assert.strictEqual(ongoingAfter.firstSeenAt, ongoing.firstSeenAt)
 			assert.isAbove(ongoingAfter.lastSeenAt, ongoing.lastSeenAt)
@@ -2581,7 +2581,7 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(ongoingIncidents[0]?.status, "open")
 
 			// Regressed: reopened, resolution cleared, both audit events written.
-			const regressedAfter = (yield* loadIssuesByFingerprint(REGRESSED))[0]!
+			const regressedAfter = (yield* loadIssuesByFingerprint(REGRESSED))[0]
 			assert.strictEqual(regressedAfter.workflowState, "regressed")
 			assert.isNull(regressedAfter.resolvedAt)
 			assert.strictEqual(regressedAfter.occurrenceCount, 12)
@@ -2599,12 +2599,12 @@ describe("ErrorsService.runTick", () => {
 			assert.strictEqual(regressedIncidents[0]?.reason, "regression")
 
 			// Snoozed: byte-identical to before the window ran.
-			const snoozedAfter = (yield* loadIssuesByFingerprint(SNOOZED))[0]!
+			const snoozedAfter = (yield* loadIssuesByFingerprint(SNOOZED))[0]
 			assert.deepStrictEqual(snoozedAfter, snoozedBefore)
 			assert.lengthOf(yield* loadIncidentsForIssue(snoozedId), 0)
 
 			// Fresh: created with a first_seen incident.
-			const freshAfter = (yield* loadIssuesByFingerprint(FRESH))[0]!
+			const freshAfter = (yield* loadIssuesByFingerprint(FRESH))[0]
 			assert.strictEqual(freshAfter.occurrenceCount, 6)
 			assert.strictEqual(freshAfter.workflowState, "triage")
 			const freshEvents = yield* loadEventsForIssue(freshAfter.id)

@@ -106,7 +106,7 @@ describe("filterKeyRows", () => {
 
 describe("keyAccessSummary", () => {
 	const row = (overrides: Omit<Partial<V2ApiKey>, "id">) =>
-		buildKeyRows({ apiKeys: [apiKey(overrides)], now: NOW })[0]!
+		buildKeyRows({ apiKeys: [apiKey(overrides)], now: NOW })[0]
 
 	it("describes unscoped and MCP keys", () => {
 		expect(keyAccessSummary(row({ scopes: null }))).toBe("Full access")

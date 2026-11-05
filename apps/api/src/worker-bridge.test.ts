@@ -171,17 +171,17 @@ class GraphBuildFailure extends Schema.TaggedError<GraphBuildFailure>()("GraphBu
 }) {}
 
 /** A route graph that answers everything with 404, as the real one does for an unknown path. */
-const notFoundApp: Effect.Effect<HttpEffect, never> = Effect.succeed(
+const notFoundApp: Effect.Effect<HttpEffect> = Effect.succeed(
 	Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 })),
 )
 
 /** A graph that renders its own 500, the shape the unattributed prod 500s arrive in. */
-const renderedServerErrorApp: Effect.Effect<HttpEffect, never> = Effect.succeed(
+const renderedServerErrorApp: Effect.Effect<HttpEffect> = Effect.succeed(
 	Effect.succeed(HttpServerResponse.text("", { status: 500 })),
 )
 
 /** A graph whose handler dies, so the cause is still live when it leaves the router. */
-const dyingApp: Effect.Effect<HttpEffect, never> = Effect.succeed(Effect.die(new Error("handler exploded")))
+const dyingApp: Effect.Effect<HttpEffect> = Effect.succeed(Effect.die(new Error("handler exploded")))
 
 /** One route that answers with the bearer it was called with — the header a leaked request would get wrong. */
 const EchoGroup = HttpApiGroup.make("echo").add(
@@ -295,7 +295,7 @@ describe("the api Worker through alchemy's bridge", () => {
 		Effect.gen(function* () {
 			const handedOver: Array<Effect.Effect<void>> = []
 			let ran = false
-			const app: Effect.Effect<HttpEffect, never> = Effect.succeed(
+			const app: Effect.Effect<HttpEffect> = Effect.succeed(
 				runAfterResponse(
 					Effect.sync(() => {
 						ran = true

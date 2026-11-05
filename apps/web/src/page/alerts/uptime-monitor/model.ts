@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { AlertDestinationRowSchema, AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
@@ -90,7 +91,7 @@ export const Model = Schema.Struct({
 	/** Synced destinations (the Setup panel's names) and incidents (the open one, by rule name). */
 	destinations: Rows(AlertDestinationRowSchema),
 	incidents: Rows(AlertIncidentRowSchema),
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	isToggling: Schema.Boolean,
 	isChecking: Schema.Boolean,
 	/** The heartbeat's copy buttons, by snippet id. */
@@ -105,3 +106,7 @@ export const Model = Schema.Struct({
 	themeColors: Schema.NullOr(ThemeColors),
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change what this page edits (`uptime_monitors:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "uptime_monitors:manage")

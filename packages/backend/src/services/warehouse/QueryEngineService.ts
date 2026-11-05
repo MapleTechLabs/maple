@@ -86,7 +86,7 @@ export interface QueryEngineServiceApi {
 		effect: Effect.Effect<A, E>,
 		policy?: DirectRouteCachePolicyInput,
 		/** How the value crosses the cache's JSON round trip, when plain JSON would change it. */
-		schema?: Schema.Codec<A, unknown, never, never>,
+		schema?: Schema.Codec<A, unknown>,
 		/** The write's TTL from the computed value, overriding the policy's. The key is unchanged. */
 		ttlSecondsFor?: (value: A) => number,
 	) => Effect.Effect<A, E | QueryEngineTimeoutError>
@@ -402,7 +402,7 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				payload: unknown,
 				effect: Effect.Effect<A, E>,
 				policyInput: DirectRouteCachePolicyInput = 15,
-				schema?: Schema.Codec<A, unknown, never, never>,
+				schema?: Schema.Codec<A, unknown>,
 				ttlSecondsFor?: (value: A) => number,
 			) {
 				// Attributes go on the `Effect.fn` span, not an inner `withSpan` of the

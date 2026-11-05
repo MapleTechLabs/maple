@@ -89,7 +89,7 @@ export function downsample(rows: ReadonlyArray<ChartPoint>): ChartPoint[] {
 		let min = Number.POSITIVE_INFINITY
 		let max = Number.NEGATIVE_INFINITY
 		for (let i = start; i < end; i += 1) {
-			const row = rows[i]!
+			const row = rows[i]
 			for (const key in row) {
 				if (key === "t") continue
 				const value = row[key]
@@ -338,7 +338,7 @@ export const mergeGhost = (
 
 	// Close enough to be the same window, far enough that a coarser summary
 	// bucket still lands on its neighbour.
-	const spacing = primary.length >= 2 ? Math.abs(primary[1]!.t - primary[0]!.t) : fallbackSpacing
+	const spacing = primary.length >= 2 ? Math.abs(primary[1].t - primary[0].t) : fallbackSpacing
 	const tolerance = Math.max(spacing, 1)
 	let cursor = 0
 	let maxGap: number | null = null
@@ -346,11 +346,11 @@ export const mergeGhost = (
 	const rows = Arr.map(primary, (row) => {
 		while (
 			cursor + 1 < ghostPoints.length &&
-			Math.abs(ghostPoints[cursor + 1]!.t - row.t) <= Math.abs(ghostPoints[cursor]!.t - row.t)
+			Math.abs(ghostPoints[cursor + 1].t - row.t) <= Math.abs(ghostPoints[cursor].t - row.t)
 		) {
 			cursor += 1
 		}
-		const candidate = ghostPoints[cursor]!
+		const candidate = ghostPoints[cursor]
 		if (Math.abs(candidate.t - row.t) > tolerance) return row
 		const own = row[SINGLE_KEY]
 		if (typeof own === "number") {

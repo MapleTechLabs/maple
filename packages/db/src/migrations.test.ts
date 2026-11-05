@@ -13,7 +13,7 @@ const migrationNamed = (name: string) => {
 	)
 	if (matches.length !== 1)
 		throw new Error(`expected exactly one migration named ${name}, found ${matches.length}`)
-	return matches[0]!
+	return matches[0]
 }
 
 const readMigrationSql = (name: string): string => readFileSync(migrationNamed(name).sqlPath, "utf8")
@@ -41,8 +41,8 @@ describe("migrations", () => {
 			// applies), but the replay order in fresh databases would differ from
 			// production's, which is how a dependency between two migrations hides.
 			expect(
-				Str.slice(0, 14)(migrations[i]!.name) >= Str.slice(0, 14)(migrations[i - 1]!.name),
-				`${migrations[i]!.name} must not predate ${migrations[i - 1]!.name}`,
+				Str.slice(0, 14)(migrations[i].name) >= Str.slice(0, 14)(migrations[i - 1].name),
+				`${migrations[i].name} must not predate ${migrations[i - 1].name}`,
 			).toBe(true)
 		}
 	})

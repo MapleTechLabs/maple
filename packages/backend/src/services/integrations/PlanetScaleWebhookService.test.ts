@@ -123,7 +123,7 @@ const fakePlanetScale = (options: {
 		const hookMatch = Str.match(/\/databases\/([^/]+)\/webhooks(?:\/([^/]+))?$/)(url.pathname)
 		if (Option.isSome(hookMatch)) {
 			const hook = hookMatch.value
-			const database = decodeURIComponent(hook[1]!)
+			const database = decodeURIComponent(hook[1])
 			const list = webhooks.get(database) ?? []
 			webhooks.set(database, list)
 			const id = hook[2]
@@ -153,7 +153,7 @@ const fakePlanetScale = (options: {
 			}
 			if (request.method === "PATCH") {
 				const body = (await request.json()) as Partial<FakeWebhook>
-				list[index] = { ...list[index]!, ...body }
+				list[index] = { ...list[index], ...body }
 				return json(list[index])
 			}
 		}
@@ -247,7 +247,7 @@ describe("PlanetScaleWebhookService", () => {
 			const url = `${WEBHOOK_PREFIX}${connection.id}`
 			// PlanetScale disabled ours after failed deliveries, and a reconnect left an old one behind.
 			store.set("shop", [
-				{ ...store.get("shop")![0]!, enabled: false, secret: "rotated-secret" },
+				{ ...store.get("shop")![0], enabled: false, secret: "rotated-secret" },
 				{
 					id: "wh_old",
 					url: `${WEBHOOK_PREFIX}old-connection`,

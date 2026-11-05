@@ -303,8 +303,8 @@ describe("container rows decode timestamps to DateTime.Utc", () => {
 					uptimeSeconds: 60,
 				},
 			])
-			expect(DateTime.formatIso(row!.firstSeen)).toBe("2024-01-01T09:00:00.000Z")
-			expect(DateTime.formatIso(row!.lastSeen)).toBe("2024-01-01T10:00:00.500Z")
+			expect(DateTime.formatIso(row.firstSeen)).toBe("2024-01-01T09:00:00.000Z")
+			expect(DateTime.formatIso(row.lastSeen)).toBe("2024-01-01T10:00:00.500Z")
 		}),
 	)
 })

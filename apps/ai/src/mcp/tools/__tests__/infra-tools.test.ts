@@ -23,7 +23,7 @@ afterAll(async () => {
 const call = (name: string, params: Record<string, unknown>): Promise<McpToolResult> =>
 	runToolDirect(rt, name, { ...WINDOW, ...params })
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
+const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
 describe("list_infra", () => {

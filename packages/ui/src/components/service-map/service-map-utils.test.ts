@@ -8,7 +8,6 @@ import {
 	getServiceMapNodeColor,
 	parseDbNodeId,
 	topologyKey,
-	type ServiceNodeData,
 } from "./service-map-utils"
 import type {
 	ServiceMapDbEdgeRow,
@@ -73,7 +72,7 @@ describe("buildFlowElements", () => {
 			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("clickhouse", "")),
 		)
 		expect(dbNode).toBeDefined()
-		const data = dbNode!.data as ServiceNodeData
+		const data = dbNode!.data
 		expect(data.kind).toBe("database")
 		expect(data.label).toBe("clickhouse")
 		expect(data.dbSystem).toBe("clickhouse")
@@ -116,15 +115,15 @@ describe("buildFlowElements", () => {
 			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "hyperdrive")),
 		)
 		expect(hyperdriveNode).toBeDefined()
-		const data = hyperdriveNode!.data as ServiceNodeData
+		const data = hyperdriveNode!.data
 		expect(data.hyperdrive).toHaveLength(1)
-		expect(data.hyperdrive![0]!.matched).toEqual({ name: "maple", kind: "mysql" })
+		expect(data.hyperdrive![0].matched).toEqual({ name: "maple", kind: "mysql" })
 
 		// Other db nodes stay clean.
 		const psNode = Option.getOrUndefined(
 			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("mysql", "maple")),
 		)
-		expect((psNode!.data as ServiceNodeData).hyperdrive).toBeUndefined()
+		expect(psNode!.data.hyperdrive).toBeUndefined()
 
 		const originEdge = Option.getOrUndefined(
 			Arr.findFirst(result.edges, (e) => e.data?.relation === "hyperdrive-origin"),
@@ -161,7 +160,7 @@ describe("buildFlowElements", () => {
 		const hyperdriveNode = Option.getOrUndefined(
 			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "hyperdrive")),
 		)
-		expect((hyperdriveNode!.data as ServiceNodeData).hyperdrive).toHaveLength(1)
+		expect(hyperdriveNode!.data.hyperdrive).toHaveLength(1)
 		// …but no synthetic edge points at a node that doesn't exist.
 		expect(Arr.some(result.edges, (e) => e.data?.relation === "hyperdrive-origin")).toBe(false)
 	})
@@ -181,8 +180,8 @@ describe("buildFlowElements", () => {
 
 		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
 		const authNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "auth"))
-		expect((apiNode!.data as ServiceNodeData).platform).toBe("cloudflare")
-		expect((authNode!.data as ServiceNodeData).platform).toBe("kubernetes")
+		expect(apiNode!.data.platform).toBe("cloudflare")
+		expect(authNode!.data.platform).toBe("kubernetes")
 	})
 
 	it("aggregates multiple callers into one db node", () => {
@@ -198,7 +197,7 @@ describe("buildFlowElements", () => {
 
 		const dbNodes = Arr.filter(result.nodes, (n) => Str.startsWith("db:")(n.id))
 		expect(dbNodes).toHaveLength(1)
-		const data = dbNodes[0].data as ServiceNodeData
+		const data = dbNodes[0].data
 		expect(data.errorRate).toBeCloseTo(3 / 80)
 
 		const dbEdges = Arr.filter(result.edges, (e) => e.target === dbNodeId("clickhouse", ""))
@@ -225,7 +224,7 @@ describe("buildFlowElements", () => {
 		const orders = Option.getOrUndefined(
 			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "orders")),
 		)
-		const data = orders!.data as ServiceNodeData
+		const data = orders!.data
 		// Named databases show the namespace as the node label…
 		expect(data.label).toBe("orders")
 		expect(data.dbSystem).toBe("postgresql")
@@ -388,8 +387,8 @@ describe("buildFlowElements namespace", () => {
 		const dbNode = Option.getOrUndefined(
 			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "")),
 		)
-		expect((apiNode!.data as ServiceNodeData).namespace).toBe("backend")
-		expect((dbNode!.data as ServiceNodeData).namespace).toBeUndefined()
+		expect(apiNode!.data.namespace).toBe("backend")
+		expect(dbNode!.data.namespace).toBeUndefined()
 	})
 
 	it("treats an empty namespace string as no namespace", () => {
@@ -399,7 +398,7 @@ describe("buildFlowElements namespace", () => {
 			durationSeconds: 60,
 		})
 		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
-		expect((apiNode!.data as ServiceNodeData).namespace).toBeUndefined()
+		expect(apiNode!.data.namespace).toBeUndefined()
 	})
 })
 

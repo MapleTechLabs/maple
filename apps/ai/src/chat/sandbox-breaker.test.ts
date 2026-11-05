@@ -71,7 +71,7 @@ describe("withSandboxBreaker", () => {
 			}),
 		)
 		assert.deepStrictEqual(calls, ["sandbox_grep", "sandbox_grep"])
-		assert.include(results[1]!.content[0]!.text, "read_source_file")
+		assert.include(results[1].content[0].text, "read_source_file")
 		// Another repository has its own sandbox.
 		assert.strictEqual(results[2], ok)
 	})

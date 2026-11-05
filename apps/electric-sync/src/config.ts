@@ -26,7 +26,7 @@ class SyncConfigInvalidError extends Schema.TaggedError<SyncConfigInvalidError>(
 export interface SyncConfigValues extends AuthEnv {
 	readonly ELECTRIC_URL: Option.Option<string>
 	readonly ELECTRIC_SOURCE_ID: Option.Option<string>
-	readonly ELECTRIC_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly ELECTRIC_SECRET: Option.Option<Redacted.Redacted>
 }
 
 const syncConfig = Config.all({

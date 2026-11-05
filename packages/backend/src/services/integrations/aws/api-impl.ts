@@ -107,9 +107,9 @@ const toReadError =
 
 /** What an operation signs with: fixed credentials, in the region STS and IAM answer in. */
 const signWith = (credentials: {
-	readonly accessKeyId: Redacted.Redacted<string>
-	readonly secretAccessKey: Redacted.Redacted<string>
-	readonly sessionToken?: Redacted.Redacted<string>
+	readonly accessKeyId: Redacted.Redacted
+	readonly secretAccessKey: Redacted.Redacted
+	readonly sessionToken?: Redacted.Redacted
 }): Credentials.Credentials["Service"] =>
 	Effect.succeed({
 		accessKeyId: credentials.accessKeyId,
@@ -123,7 +123,7 @@ const timedOut = (what: string) =>
 
 const assumeWithToken = (
 	httpClient: HttpClient.HttpClient,
-	token: Redacted.Redacted<string>,
+	token: Redacted.Redacted,
 	target: AwsRoleTarget,
 ) =>
 	HttpClientRequest.post(STS_URL).pipe(
@@ -164,7 +164,7 @@ const assumeWithToken = (
  */
 export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 	httpClient: HttpClient.HttpClient,
-	token: Redacted.Redacted<string>,
+	token: Redacted.Redacted,
 	target: AwsRoleTarget,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.aws.role_arn": target.roleArn })
@@ -176,10 +176,7 @@ export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 		secretAccessKey: Redacted.make(credentials.SecretAccessKey),
 		sessionToken: Redacted.make(credentials.SessionToken),
 	})
-	const asRole = <A, E extends { readonly _tag: string }>(
-		what: string,
-		effect: Effect.Effect<A, E, never>,
-	) =>
+	const asRole = <A, E extends { readonly _tag: string }>(what: string, effect: Effect.Effect<A, E>) =>
 		effect.pipe(
 			Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => Effect.fail(timedOut(what)) }),
 			Effect.mapError((error) => (Schema.is(AwsApiError)(error) ? error : toReadError(what)(error))),

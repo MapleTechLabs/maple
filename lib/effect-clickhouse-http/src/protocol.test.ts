@@ -113,7 +113,7 @@ describe("errors after HTTP 200", () => {
 		["framed", `{"ok":1}\n${frame}`],
 		["partial-row-framed", `{"partial":${frame}`],
 	]) {
-		const bytes = encode(wire!)
+		const bytes = encode(wire)
 		for (let cut = 0; cut <= bytes.length; cut++) {
 			it.effect(`${name} exception survives byte split ${cut}`, () =>
 				Effect.gen(function* () {
@@ -139,7 +139,7 @@ describe("errors after HTTP 200", () => {
 	])
 		it.effect(`rejects ${name}`, () =>
 			Effect.gen(function* () {
-				assert.instanceOf(yield* Effect.flip(collect([encode(bad!)])), ClickHouseProtocolError)
+				assert.instanceOf(yield* Effect.flip(collect([encode(bad)])), ClickHouseProtocolError)
 			}),
 		)
 })

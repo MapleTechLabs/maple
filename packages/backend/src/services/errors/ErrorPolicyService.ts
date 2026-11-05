@@ -35,7 +35,7 @@ import {
 } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { evaluateEscalationPolicy as evaluateRoutingPolicy } from "@maple/backend/services/alerts/escalation-policy"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
@@ -204,11 +204,12 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 		"ErrorPolicyService.upsertNotificationPolicy",
 	)(function* (orgId, userId, roles, request) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		yield* requireAdmin(
+		yield* Policy.check(
 			roles,
-			() =>
+			"error_policy:manage",
+			(denial) =>
 				new ErrorForbiddenError({
-					message: "Only org admins can manage error notification policy",
+					message: denial.message,
 				}),
 		)
 		const timestamp = yield* Clock.currentTimeMillis

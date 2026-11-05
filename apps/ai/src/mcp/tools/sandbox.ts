@@ -344,7 +344,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			const total =
 				markerIndex === -1
 					? undefined
-					: Number(Str.trim(Str.slice(TOTAL_MARKER.length)(body[markerIndex]!)))
+					: Number(Str.trim(Str.slice(TOTAL_MARKER.length)(body[markerIndex])))
 			// No blank-line filter: the header reports the line range, so dropping
 			// empty lines would leave the rendered source not matching those numbers.
 			// awk's trailing newline is the one empty element worth removing.

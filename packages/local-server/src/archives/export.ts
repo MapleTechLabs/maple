@@ -218,7 +218,7 @@ const splitArgs = (inner: string): string[] => {
 	let depth = 0
 	let start = 0
 	for (let i = 0; i < inner.length; i++) {
-		const ch = inner[i]!
+		const ch = inner[i]
 		if (ch === "(") depth++
 		else if (ch === ")") depth--
 		else if (ch === "," && depth === 0) {
@@ -409,8 +409,8 @@ export const compareSchema = (
 		)
 	}
 	for (let i = 0; i < source.length; i++) {
-		const src = source[i]!
-		const par = parquetCols[i]!
+		const src = source[i]
+		const par = parquetCols[i]
 		if (src.name !== par.name) {
 			throw new Error(
 				`archive shard validation failed: ${shardPath} column ${i} name mismatch: source ${src.name}, Parquet ${par.name}`,

@@ -38,7 +38,7 @@ const createIntent = (phase: CreateOperationIntent["phase"]): CreateOperationInt
 		phase,
 		createdAt: "2026-06-01T00:00:00.000Z",
 		updatedAt: "2026-06-01T00:00:00.000Z",
-	} as CreateOperationIntent
+	}
 }
 
 const gcIntent = (
@@ -69,7 +69,7 @@ const gcIntent = (
 		phase,
 		createdAt: "2026-06-01T00:00:00.000Z",
 		updatedAt: "2026-06-01T00:00:00.000Z",
-	} as GcOperationIntent
+	}
 }
 
 const createSnapshot = (

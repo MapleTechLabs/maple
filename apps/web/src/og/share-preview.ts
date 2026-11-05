@@ -200,6 +200,7 @@ const readCapped = async (
 const fetchOrgLogo = async (url: string): Promise<EmbeddedImage | undefined> => {
 	try {
 		if (new URL(url).protocol !== "https:") return undefined
+		// @effect-diagnostics-next-line globalFetch:off -- plain async OG renderer, outside any Effect runtime
 		const response = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS) })
 		if (!response.ok || response.body === null) return undefined
 		if (Number(response.headers.get("content-length") ?? 0) > MAX_LOGO_BYTES) {

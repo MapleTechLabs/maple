@@ -15,9 +15,9 @@ describe("unifiedBucketDomain", () => {
 	it("stays chronological across mixed formats", () => {
 		// A naive sort puts every space-format bucket before every ISO one, so
 		// the axis replays the window: 10:00, 10:05, 10:10, 10:00, 10:05, 10:10.
-		const domain = unifiedBucketDomain([[ISO[2]!, WAREHOUSE[0]!], [WAREHOUSE[1]!]])
+		const domain = unifiedBucketDomain([[ISO[2], WAREHOUSE[0]], [WAREHOUSE[1]]])
 		expect(domain).toEqual([ISO[0], ISO[1], ISO[2]])
-		expect(Arr.every(domain, (v, i) => i === 0 || domain[i - 1]! < v)).toBe(true)
+		expect(Arr.every(domain, (v, i) => i === 0 || domain[i - 1] < v)).toBe(true)
 	})
 
 	it("survives a source with no buckets", () => {

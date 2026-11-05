@@ -31,8 +31,8 @@ const spec = OpenApi.fromApi(MapleApiV2)
 type GeneratedOpenApiObject = Record<string, any>
 const doc = spec as GeneratedOpenApiObject
 const schemas = doc.components.schemas as GeneratedOpenApiObject
-const operation = (method: string, path: string): GeneratedOpenApiObject =>
-	(spec.paths as GeneratedOpenApiObject)[path][method]
+const paths: GeneratedOpenApiObject = doc.paths
+const operation = (method: string, path: string): GeneratedOpenApiObject => paths[path][method]
 const afterLastSlash = (ref: string): number =>
 	Option.match(Str.lastIndexOf("/")(ref), { onNone: () => 0, onSome: (index) => index + 1 })
 const resolveSchema = (schema: GeneratedOpenApiObject): GeneratedOpenApiObject => {
@@ -978,7 +978,7 @@ describe("MapleApiV2 OpenAPI", () => {
 	 */
 	describe("nullable-union rendering", () => {
 		const queryParameters = (): ReadonlyArray<GeneratedOpenApiObject> =>
-			Arr.flatMap(Rec.values(spec.paths as GeneratedOpenApiObject), (item) =>
+			Arr.flatMap(Rec.values(paths), (item) =>
 				Arr.flatMap(
 					Arr.filter(
 						Rec.toEntries(item as GeneratedOpenApiObject),

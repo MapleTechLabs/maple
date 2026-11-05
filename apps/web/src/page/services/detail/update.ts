@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
 import { ENDPOINTS_LIMIT } from "../../../components/services/service-endpoints"
 import { buildServiceOpenIssuesQuery } from "../../../lib/services/error-issues"
@@ -829,11 +830,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
-		CompletedFetchUptimeMonitors: ({ key, result, isAdmin }) => ({
+		CompletedFetchUptimeMonitors: ({ key, result, grants }) => ({
 			model: {
 				...model,
 				uptimeMonitors: Keyed.accept(model.uptimeMonitors, key, result),
-				canCreateUptimeMonitors: isAdmin,
+				canCreateUptimeMonitors: Policy.has(grants, "uptime_monitors:manage"),
 			},
 		}),
 		CompletedFetchRuntimes: ({ key, result }) => ({

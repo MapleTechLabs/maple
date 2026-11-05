@@ -1559,7 +1559,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.source === "traces" && request.query.kind === "timeseries") {
 			const tracesQuery = request.query
-			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			const opts = extractTracesOpts(request.query.filters)
 
 			if (tracesQuery.allMetrics) {
 				const runAllMetrics = (overviewTiers: "hour" | "minute" | undefined) =>
@@ -1573,7 +1573,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 								metric: tracesQuery.metric,
 								allMetrics: true,
 								needsSampling: true,
-								groupBy: tracesQuery.groupBy as string[] | undefined,
+								groupBy: tracesQuery.groupBy,
 								apdexThresholdMs:
 									tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
 								bucketSeconds,
@@ -1637,7 +1637,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 						metric: tracesQuery.metric,
 						needsSampling: false,
-						groupBy: tracesQuery.groupBy as string[] | undefined,
+						groupBy: tracesQuery.groupBy,
 						apdexThresholdMs:
 							tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
 						bucketSeconds,
@@ -1841,7 +1841,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.source === "traces" && request.query.kind === "breakdown") {
 			const tracesQuery = request.query
-			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			const opts = extractTracesOpts(request.query.filters)
 			if (
 				spanBudgetApplies(opts, range.rangeSeconds) &&
 				CH.tracesBreakdownReadsRaw({
@@ -1950,7 +1950,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.source === "traces" && request.query.kind === "list") {
 			const tracesQuery = request.query
-			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			const opts = extractTracesOpts(request.query.filters)
 			const requestedColumns = (tracesQuery as { columns?: readonly string[] }).columns
 
 			if (tracesQuery.groupByTrace) {
@@ -2030,7 +2030,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						cursor: Option.getOrUndefined(Option.flatten(cursor)),
 						sortBy: tracesQuery.sortBy,
 						sortDir: tracesQuery.sortDir,
-						columns: requestedColumns as string[] | undefined,
+						columns: requestedColumns,
 					}),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 				"tracesList",
@@ -2225,9 +2225,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const baseParams = { orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime }
 
 			if (request.query.source === "traces") {
-				const opts = extractTracesFacetsOpts(
-					request.query.filters as Record<string, unknown> | undefined,
-				)
+				const opts = extractTracesFacetsOpts(request.query.filters)
 				const facet = request.query.facet
 				const rows = yield* withTraceFacetsFallback(
 					tenant.orgId,
@@ -2365,9 +2363,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 
 		if (request.query.source === "traces" && request.query.kind === "stats") {
-			const opts = extractTracesDurationStatsOpts(
-				request.query.filters as Record<string, unknown> | undefined,
-			)
+			const opts = extractTracesDurationStatsOpts(request.query.filters)
 			const rows = yield* withTraceFacetsFallback(
 				tenant.orgId,
 				CH.canUseTraceFacetsRollup(opts),
@@ -2590,11 +2586,11 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 	// QuerySpec union (discriminated on both `kind` and `source`) so the per-source
 	// branches can read `filters`/`metric`/`groupBy`.
 	if (query.kind !== "timeseries") {
-		return obs as ReadonlyArray<BucketGroupObs>
+		return obs
 	}
 
 	if (query.source === "traces") {
-		const opts = extractTracesOpts(query.filters as Record<string, unknown>)
+		const opts = extractTracesOpts(query.filters)
 		const rows = yield* executeCHQuery(
 			warehouse,
 			tenant,
@@ -2604,7 +2600,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 					attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 					metric: query.metric,
 					needsSampling: false,
-					groupBy: query.groupBy as readonly string[] | undefined,
+					groupBy: query.groupBy,
 					apdexThresholdMs: query.metric === "apdex" ? query.apdexThresholdMs : undefined,
 					bucketSeconds,
 					wholeRange: request.wholeRange,
@@ -2699,7 +2695,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			const sampleCount = row.dataPointCount
 			const value = sampleCount > 0 ? metricsAggregateValueForMetric(query.metric, row) : null
 			const groupKey = composeMetricsGroupKey(
-				query.groupBy as readonly string[] | undefined,
+				query.groupBy,
 				row.serviceName ?? "",
 				row.attributeValue ?? "",
 			)
@@ -2712,7 +2708,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 		}
 	}
 
-	return obs as ReadonlyArray<BucketGroupObs>
+	return obs
 })
 
 /**

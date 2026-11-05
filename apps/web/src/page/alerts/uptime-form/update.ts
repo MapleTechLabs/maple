@@ -18,7 +18,7 @@ import {
 import { defaultName, formFromMonitor, formIssues, wireConfig, wirePayload } from "./derive"
 import { ASSERTION_OPS, type AssertionDraft, emptyForm, type Form, MonitorKind, type TextField } from "./form"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -52,7 +52,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		timeZones: [],
 		destinations: null,
 		destinationMenu: Menu.init(DESTINATION_MENU_ID),
-		isAdmin: false,
+		grants: [],
 		isSessionLoaded: false,
 	}
 	const common = [FetchFormServices(), ReadFormTimeZones(), FetchFormSession({ orgId: context.orgId })]
@@ -102,7 +102,7 @@ const test = (model: Model): Return =>
 			}
 
 const save = (model: Model): Return =>
-	model.isSaving || !model.isAdmin || formIssues(model.form).length > 0
+	model.isSaving || !canManage(model) || formIssues(model.form).length > 0
 		? { model }
 		: {
 				model: { ...model, isSaving: true, saveFailure: null },
@@ -166,8 +166,8 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		CompletedFetchServices: ({ services }) => ({ model: { ...model, services } }),
 		CompletedReadTimeZones: ({ zones }) => ({ model: { ...model, timeZones: zones } }),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
 		PickedKind: ({ kind }) =>
 			model.editingId !== null
 				? { model }

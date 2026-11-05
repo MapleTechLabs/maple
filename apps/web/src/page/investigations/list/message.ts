@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -6,14 +7,17 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import { InvestigationPage, TriageBudget } from "./model"
 
-const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })
+const result = <A extends Schema.Top>(schema: A) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
 	CompletedFetchFirstPage: result(InvestigationPage),
 	CompletedFetchMorePage: { cursor: Schema.String, ...result(InvestigationPage) },
 	CompletedFetchBudget: result(TriageBudget),
-	CompletedReadIsAdmin: { orgId: Schema.String, isAdmin: Schema.Boolean },
+	CompletedReadGrants: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ClickedRetry: {},
 	ClickedLoadMore: {},
 	ChangedSubject: { value: Schema.String },

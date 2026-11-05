@@ -91,7 +91,7 @@ describe("searchLogs", () => {
 				const call = Option.getOrThrow(Arr.findFirst(captured.pipeCalls, (c) => c.pipe === pipe))
 				const compiled = compilePipeQuery(pipe, { ...call.params, org_id: asOrgId("org_test") })
 				assert.isDefined(compiled)
-				assert.include(compiled!.sql, "Body ILIKE '%boom%'")
+				assert.include(compiled.sql, "Body ILIKE '%boom%'")
 			}
 		}),
 	)

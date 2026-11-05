@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { StatusPagePreviewParams, V2StatusPage, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	StatusPageSnapshot,
@@ -15,7 +16,7 @@ const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, Loa
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
-	CompletedFetchSession: { orgId: Schema.String, isAdmin: Schema.Boolean },
+	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchMonitors: { key: Schema.String, result: outcome(Schema.Array(V2UptimeMonitor)) },
 	ClickedRetry: {},
 	ChangedName: { value: Schema.String },

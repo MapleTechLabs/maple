@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { EMPTY_VALUE, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -474,7 +475,8 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 		budget.pausedDimension === "runs" || budget.pausedDimension === "runs_reserved"
 			? "Today's investigation limit is reached"
 			: "Today's model budget is spent"
-	const canEditSettings = model.isOrgAdmin
+	// The limit lives on the AI settings tab, which needs llm_keys:manage to open.
+	const canEditSettings = Policy.has(model.grants, "llm_keys:manage")
 	return alert(h, { variant: "warn", className: "mb-4" }, [
 		alertTitle(
 			h,

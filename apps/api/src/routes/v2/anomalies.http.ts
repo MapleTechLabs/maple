@@ -16,7 +16,7 @@ import { MapleApiV2, paginateOffsetQuery, timestamp } from "@maple/domain/http/v
 import type { V2AnomalyIncident, V2AnomalyIncidentTimeseries, V2AnomalySettings } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
@@ -231,11 +231,12 @@ export const HttpV2AnomaliesLive = HttpApiBuilder.group(MapleApiV2, "anomalies",
 			.handle("updateSettings", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(
+					yield* Policy.check(
 						tenant.roles,
-						() =>
+						"anomalies:configure",
+						(denial) =>
 							new AnomalyForbiddenError({
-								message: "Only org admins can manage anomaly detector settings",
+								message: denial.message,
 							}),
 					)
 					const settings = yield* anomalies.updateSettings(
