@@ -88,6 +88,7 @@ describe("getServiceOverview throughput resolution", () => {
 
 				assert.strictEqual(data.length, 1)
 				const svc = data[0]
+				assert.ok(svc !== undefined)
 				assert.strictEqual(svc.hasSampling, true)
 				// throughput = estimated spans / durationSeconds = 1000 / 3600
 				assert.ok(Math.abs(svc.throughput - 1000 / 3600) < 1e-9, `throughput=${svc.throughput}`)
@@ -121,6 +122,7 @@ describe("getServiceOverview throughput resolution", () => {
 
 			assert.strictEqual(data.length, 1)
 			const svc = data[0]
+			assert.ok(svc !== undefined)
 			assert.strictEqual(svc.hasSampling, false)
 			assert.ok(Math.abs(svc.throughput - 100 / 3600) < 1e-9, `throughput=${svc.throughput}`)
 			assert.ok(Math.abs(svc.samplingWeight - 1) < 1e-9, `weight=${svc.samplingWeight}`)
@@ -160,7 +162,10 @@ describe("getServiceOverview throughput resolution", () => {
 			})
 
 			assert.strictEqual(data.length, 1)
-			assert.ok(Math.abs(data[0].errorRate - 1 / 101) < 1e-12, `errorRate=${data[0].errorRate}`)
+			assert.ok(
+				Math.abs(Arr.getUnsafe(data, 0).errorRate - 1 / 101) < 1e-12,
+				`errorRate=${Arr.getUnsafe(data, 0).errorRate}`,
+			)
 		}).pipe(mockedWarehouse),
 	)
 
@@ -183,7 +188,7 @@ describe("getServiceOverview throughput resolution", () => {
 			})
 
 			assert.strictEqual(data.length, 1)
-			assert.strictEqual(data[0].errorRate, 0.05)
+			assert.strictEqual(Arr.getUnsafe(data, 0).errorRate, 0.05)
 		}).pipe(mockedWarehouse),
 	)
 
@@ -207,7 +212,7 @@ describe("getServiceOverview throughput resolution", () => {
 			})
 
 			assert.strictEqual(data.length, 1)
-			assert.strictEqual(data[0].errorRate, 0.05)
+			assert.strictEqual(Arr.getUnsafe(data, 0).errorRate, 0.05)
 		}).pipe(mockedWarehouse),
 	)
 
@@ -238,12 +243,12 @@ describe("getServiceOverview throughput resolution", () => {
 			})
 
 			assert.strictEqual(data.length, 1)
-			assert.strictEqual(data[0].serviceName, "dash-api")
-			assert.strictEqual(data[0].serviceNamespace, "api")
+			assert.strictEqual(Arr.getUnsafe(data, 0).serviceName, "dash-api")
+			assert.strictEqual(Arr.getUnsafe(data, 0).serviceNamespace, "api")
 			// Weighted, not raw: 17/19_430 would read ~10x higher.
 			assert.ok(
-				Math.abs(data[0].errorRate - 169.9896246566982 / 194_288.14159293) < 1e-12,
-				`errorRate=${data[0].errorRate}`,
+				Math.abs(Arr.getUnsafe(data, 0).errorRate - 169.9896246566982 / 194_288.14159293) < 1e-12,
+				`errorRate=${Arr.getUnsafe(data, 0).errorRate}`,
 			)
 		}).pipe(mockedWarehouse),
 	)
@@ -270,7 +275,7 @@ describe("getServiceOverview throughput resolution", () => {
 				data: { startTime: START, endTime: END },
 			})
 
-			assert.deepStrictEqual(data[0].commits, [
+			assert.deepStrictEqual(Arr.getUnsafe(data, 0).commits, [
 				{
 					commitSha: "newsha",
 					spanCount: 150,
@@ -296,7 +301,10 @@ describe("getServiceOverview throughput resolution", () => {
 
 			// 100 spans over the 24h fallback window, not over a 1h fallback duration.
 			const expected = 100 / (24 * 3600)
-			assert.ok(Math.abs(data[0].throughput - expected) < 1e-9, `throughput=${data[0].throughput}`)
+			assert.ok(
+				Math.abs(Arr.getUnsafe(data, 0).throughput - expected) < 1e-9,
+				`throughput=${Arr.getUnsafe(data, 0).throughput}`,
+			)
 		}).pipe(mockedWarehouse),
 	)
 })

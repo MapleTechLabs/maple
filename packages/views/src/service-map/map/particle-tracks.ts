@@ -58,8 +58,9 @@ export const allocateParticleBudget = (
 	}
 	remainders.sort((a, b) => b[1] - a[1])
 	let remaining = maxTotal - used
-	for (let i = 0; i < remainders.length && remaining > 0; i++) {
-		result.set(remainders[i][0], (result.get(remainders[i][0]) ?? 0) + 1)
+	for (const [id] of remainders) {
+		if (remaining <= 0) break
+		result.set(id, (result.get(id) ?? 0) + 1)
 		remaining--
 	}
 	return result

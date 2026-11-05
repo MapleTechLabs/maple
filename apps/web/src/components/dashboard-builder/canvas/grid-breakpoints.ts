@@ -56,7 +56,7 @@ export interface GridTier {
  * 12 columns and an ~860px canvas the narrowest common widget (a `w:3` stat) is
  * still ~215px, which reads fine; below that it starts truncating.
  */
-export const GRID_TIERS: readonly GridTier[] = [
+export const GRID_TIERS: Arr.NonEmptyReadonlyArray<GridTier> = [
 	{ minWidth: 860, cols: CANONICAL_COLS, minSpan: 1, margin: [12, 12], canonical: true },
 	{ minWidth: 640, cols: 8, minSpan: 2, margin: [10, 10], canonical: false },
 	{ minWidth: 460, cols: 6, minSpan: 3, margin: [8, 8], canonical: false },
@@ -66,7 +66,7 @@ export const GRID_TIERS: readonly GridTier[] = [
 export function tierForWidth(width: number): GridTier {
 	return Option.getOrElse(
 		Arr.findFirst(GRID_TIERS, (tier) => width > tier.minWidth),
-		() => GRID_TIERS[GRID_TIERS.length - 1],
+		() => Arr.lastNonEmpty(GRID_TIERS),
 	)
 }
 
@@ -128,7 +128,9 @@ export function projectLayout(widgets: ReadonlyArray<PlacedWidget>, tier: GridTi
 		if (row.length === 0) return
 		let remainder = tier.cols - Arr.reduce(row, 0, (sum, item) => sum + item.w)
 		for (let index = 0; remainder > 0; index = (index + 1) % row.length) {
-			row[index].w += 1
+			const item = row[index]
+			if (item === undefined) break
+			item.w += 1
 			remainder -= 1
 		}
 

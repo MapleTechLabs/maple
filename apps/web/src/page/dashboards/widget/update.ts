@@ -277,7 +277,7 @@ type Planned = Readonly<{ model: Model; commands: ReadonlyArray<ReturnType<typeo
 const ask = (planned: Planned, gate: Model["gate"]): Planned => {
 	if (gate === null || gate._tag !== "Request") return planned
 	const { key, endpoint, params } = gate.request
-	return Option.match(Keyed.request(planned.model.requests[key] ?? Keyed.idle(), key, "Load"), {
+	return Option.match(Keyed.request(Keyed.at(planned.model.requests, key), key, "Load"), {
 		onNone: () => planned,
 		onSome: (slot) => ({
 			model: { ...planned.model, requests: { ...planned.model.requests, [key]: slot } },
@@ -455,7 +455,7 @@ export const requestAutocomplete = (model: Model, context: PageContext): Return 
 			)
 				return step
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, range)
-			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
+			return Option.match(Keyed.request(Keyed.at(step.model.autocomplete, lookup), key, "Load"), {
 				onNone: () => step,
 				onSome: (slot) => ({
 					model: { ...step.model, autocomplete: { ...step.model.autocomplete, [lookup]: slot } },

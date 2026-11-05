@@ -254,7 +254,7 @@ describe("anomaly link dialog by keyboard", () => {
 				result: Result.succeed(issues),
 			}),
 		).model
-		const timeout = errorIssueFromV2(issues[1] ?? issues[0]).id
+		const timeout = errorIssueFromV2(Arr.getUnsafe(issues, 1) ?? issues[0]).id
 		const input = role("combobox")
 		scene(
 			{ update: pageUpdate, view },

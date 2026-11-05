@@ -35,15 +35,15 @@ const RESOURCE_OF: Record<
 	GcpInfraServiceId,
 	{ readonly assetType: string; readonly name: (keys: ReadonlyArray<string>) => string }
 > = {
-	cloudRun: { assetType: RUN_SERVICE, name: (keys) => keys[0] },
-	cloudFunctions: { assetType: FUNCTION, name: (keys) => keys[0] },
+	cloudRun: { assetType: RUN_SERVICE, name: (keys) => keys[0] ?? "" },
+	cloudFunctions: { assetType: FUNCTION, name: (keys) => keys[0] ?? "" },
 	// A container has no inventory entry of its own: its cluster has.
-	gke: { assetType: CLUSTER, name: (keys) => keys[2] },
-	computeEngine: { assetType: INSTANCE, name: (keys) => keys[0] },
+	gke: { assetType: CLUSTER, name: (keys) => keys[2] ?? "" },
+	computeEngine: { assetType: INSTANCE, name: (keys) => keys[0] ?? "" },
 	// Cloud Monitoring names an instance `<project>:<instance>`.
-	cloudSql: { assetType: SQL_INSTANCE, name: (keys) => afterFirst(keys[0], ":") },
-	pubsub: { assetType: SUBSCRIPTION, name: (keys) => keys[0] },
-	loadBalancing: { assetType: URL_MAP, name: (keys) => keys[0] },
+	cloudSql: { assetType: SQL_INSTANCE, name: (keys) => afterFirst(keys[0] ?? "", ":") },
+	pubsub: { assetType: SUBSCRIPTION, name: (keys) => keys[0] ?? "" },
+	loadBalancing: { assetType: URL_MAP, name: (keys) => keys[0] ?? "" },
 } satisfies Record<
 	GcpInfraServiceId,
 	{ readonly assetType: string; readonly name: (keys: ReadonlyArray<string>) => string }
@@ -268,7 +268,7 @@ export const gcpConsoleProjectPages = (
 			["Metrics Explorer", "monitoring/metrics-explorer"],
 			["Logs Explorer", "logs/query"],
 			["Asset Inventory", "iam-admin/asset-inventory/dashboard"],
-		],
+		] as const,
 		([label, path]) => ({ label, href: consoleUrl(path, "project", project) }),
 	)
 
@@ -304,8 +304,8 @@ export function gcpWorkloadTelemetry(
 				// Cloud Logging labels a subscription with its full path, Cloud Monitoring with its id.
 				value:
 					service === "pubsub"
-						? `projects/${gcpWorkloadProject(service, keys)}/subscriptions/${keys[0]}`
-						: keys[0],
+						? `projects/${gcpWorkloadProject(service, keys)}/subscriptions/${keys[0] ?? ""}`
+						: (keys[0] ?? ""),
 				negated: false,
 			}),
 		],
@@ -318,5 +318,5 @@ export function gcpWorkloadTelemetry(
  */
 export const gcpExplorerWhere = (source: GcpInfraSourceId, keys: ReadonlyArray<string>): string =>
 	gcpInfraNamesService(source)
-		? appendWhereFilter("", "service.name", keys[0])
-		: appendWhereFilter("", `resource.${GCP_INFRA_SOURCES[source].identity[0][1]}`, keys[0])
+		? appendWhereFilter("", "service.name", keys[0] ?? "")
+		: appendWhereFilter("", `resource.${GCP_INFRA_SOURCES[source].identity[0][1]}`, keys[0] ?? "")

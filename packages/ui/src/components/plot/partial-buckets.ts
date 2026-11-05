@@ -34,8 +34,8 @@ export function findFirstPartialIndex(
 	const nowMs = options?.now ?? Date.now()
 	const intervalMs = bucketSeconds * 1000
 
-	for (let index = 0; index < rows.length; index += 1) {
-		const bucketMs = parseBucketMs(rows[index].bucket)
+	for (const [index, row] of rows.entries()) {
+		const bucketMs = parseBucketMs(row.bucket)
 		if (bucketMs == null) continue
 		if (bucketMs + intervalMs > nowMs) return index
 	}
@@ -91,7 +91,11 @@ export function trimEmptyTrailingBuckets<T extends PartialCandidateRow>(
 			}))
 
 	let end = rows.length
-	while (end > firstPartialIndex && end > 1 && isEmptyRow(rows[end - 1])) {
+	for (
+		let last = rows[end - 1];
+		end > firstPartialIndex && end > 1 && last !== undefined && isEmptyRow(last);
+		last = rows[end - 1]
+	) {
 		end -= 1
 	}
 	return end === rows.length ? rows : rows.slice(0, end)

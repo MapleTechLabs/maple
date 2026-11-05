@@ -128,7 +128,7 @@ describe("projectPreview", () => {
 			]),
 			domain.max,
 		)
-		expect(projection.rows[0].t).toBe(domain.max)
+		expect(Arr.getUnsafe(projection.rows, 0).t).toBe(domain.max)
 		expect(projection.meta.get(domain.max)?.provisional).toBe(true)
 	})
 
@@ -251,8 +251,8 @@ describe("mergeGhost", () => {
 			],
 			MINUTE,
 		)
-		expect(merged.rows[0][GHOST_KEY]).toBe(1.5)
-		expect(merged.rows[1][GHOST_KEY]).toBe(4)
+		expect(Arr.getUnsafe(merged.rows, 0)[GHOST_KEY]).toBe(1.5)
+		expect(Arr.getUnsafe(merged.rows, 1)[GHOST_KEY]).toBe(4)
 		// The widest gap at a shared instant is what the "sources differ" pill shows.
 		expect(merged.divergence).toBe(2)
 	})

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 
 import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
@@ -237,6 +237,7 @@ describe("summarizeGcp", () => {
 
 	it("says which service could not be read instead of counting it as healthy", () => {
 		const [cloudRun] = fleet(0, 0.4)
+		assert.isDefined(cloudRun)
 		expect(summarizeGcp([cloudRun, ...gcpFleet([unread("cloudSql"), unread("pubsub")])])).toEqual({
 			resources: "1 workload",
 			segments: [
@@ -252,6 +253,7 @@ describe("summarizeGcp", () => {
 
 	it("keeps the workloads it did read beside the service it could not", () => {
 		const [cloudRun] = fleet(80, 0.4)
+		assert.isDefined(cloudRun)
 		const summary = summarizeGcp([cloudRun, ...gcpFleet([unread("cloudSql")])])
 		expect(summary?.headline).toBe("Cloud SQL not read, 1 workload elevated or erroring")
 		expect(summary?.headlineTone).toBe("crit")
@@ -263,6 +265,8 @@ describe("summarizeGcp", () => {
 
 	it("caps its findings like every source, an unread service before an elevated workload", () => {
 		const [cloudRun, cloudSql] = fleet(80, 0.72)
+		assert.isDefined(cloudRun)
+		assert.isDefined(cloudSql)
 		const summary = summarizeGcp([cloudRun, cloudSql, ...gcpFleet([unread("pubsub")])])
 		expect(Arr.map(summary?.findings ?? [], (finding) => finding.key)).toEqual([
 			"gcp:cloudRun:api/acme-prod/europe-west1",

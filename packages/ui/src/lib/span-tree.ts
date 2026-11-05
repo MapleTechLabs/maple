@@ -103,15 +103,17 @@ export function buildSpanTree(spans: Span[]): SpanNode[] {
 	}
 
 	for (const [missingParentId, children] of missingParentGroups) {
+		const [firstChild] = children
+		if (firstChild === undefined) continue
 		const placeholder: SpanNode = {
-			traceId: children[0].traceId,
+			traceId: firstChild.traceId,
 			spanId: toSpanId(missingParentId),
 			parentSpanId: "",
 			spanName: "Missing Span",
 			serviceName: "unknown",
 			spanKind: "SPAN_KIND_INTERNAL",
 			durationMs: 0,
-			startTime: children[0].startTime,
+			startTime: firstChild.startTime,
 			statusCode: "Unset",
 			statusMessage: "",
 			spanAttributes: {},
@@ -302,7 +304,7 @@ export function buildTraceDetail(rows: ReadonlyArray<SpanHierarchyRow>): TraceDe
 			),
 		),
 	)
-	let traceStartTime = spans.length > 0 ? spans[0].startTime : new Date().toISOString()
+	let traceStartTime = spans[0]?.startTime ?? new Date().toISOString()
 	let earliestEpoch = new Date(traceStartTime).getTime()
 	for (const span of spans) {
 		const epoch = new Date(span.startTime).getTime()

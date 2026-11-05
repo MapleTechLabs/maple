@@ -69,8 +69,8 @@ export function humanizeDbSystem(system: string): string {
 export const pickAttr = (attrs: Record<string, string>, ...keys: ReadonlyArray<string>): string | null =>
 	Option.getOrNull(
 		Arr.findFirst(
-			Arr.map(keys, (key) => attrs[key]),
-			(value) => value != null && Str.trim(value) !== "",
+			Arr.flatMap(keys, (key) => (attrs[key] === undefined ? [] : [attrs[key]])),
+			(value) => Str.trim(value) !== "",
 		),
 	)
 

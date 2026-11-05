@@ -472,9 +472,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		}
 
 		const keyPattern = keyMatch.value
-		const keyToken = keyPattern[1]
-		const keyGap = keyPattern[2]
-		const operatorTail = keyPattern[3]
+		const [, keyToken = "", keyGap = "", operatorTail = ""] = keyPattern
 		const keyStart = segmentStart + leadingWhitespace
 
 		if (!keyGap && operatorTail.length === 0) {
@@ -591,8 +589,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 	}
 
 	const unquotedValue = unquotedMatch.value
-	const valueToken = unquotedValue[1]
-	const trailing = unquotedValue[2]
+	const [, valueToken = "", trailing] = unquotedValue
 
 	if (!trailing) {
 		return {

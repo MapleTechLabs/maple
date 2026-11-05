@@ -112,7 +112,7 @@ const planValues = (
 		if (request === null) return acc
 		const slot = `${fieldId}:${kind}`
 		const rk = requestKey(orgId, `where.${request._tag}`, request)
-		return Option.match(Keyed.request(acc.fields.values[slot] ?? Keyed.idle(), rk, "Load"), {
+		return Option.match(Keyed.request(Keyed.at(acc.fields.values, slot), rk, "Load"), {
 			onNone: () => acc,
 			onSome: (next) => ({
 				...acc,

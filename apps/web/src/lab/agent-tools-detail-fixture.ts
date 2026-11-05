@@ -534,20 +534,20 @@ export function buildToolErrorDetailFixture(
 		sessionId,
 		vendorId: "maple",
 		agentName: "investigation-lane",
-		service: where[index % where.length][1],
+		service: Arr.getUnsafe(where, index % where.length)[1],
 		hits: Math.max(1, Math.round(spec.calls / (spec.sessions + index))),
 		lastSeen: row.lastSeen - index * 47 * 60_000,
 	}))
 
 	const all: ReadonlyArray<ToolErrorOccurrenceRow> = Array.from({ length: spec.calls }, (_, index) => {
-		const variant =
-			variants[
-				variantIndex(
-					index,
-					Arr.map(variants, (candidate) => candidate.calls),
-				)
-			]
-		const [model, service] = where[index % where.length]
+		const variant = Arr.getUnsafe(
+			variants,
+			variantIndex(
+				index,
+				Arr.map(variants, (candidate) => candidate.calls),
+			),
+		)
+		const [model, service] = Arr.getUnsafe(where, index % where.length)
 		const args = spec.arguments(index)
 		const result = Str.startsWith("{")(spec.message) ? variant.message : ""
 		return {

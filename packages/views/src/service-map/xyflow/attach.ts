@@ -30,8 +30,13 @@ export const animationAttribute = (animation: {
 export const readViewport = (renderer: Element): Viewport | undefined => {
 	const leaf = renderer.querySelector(".react-flow__viewport-portal")
 	const parts = Arr.map(Str.split(",")(leaf?.getAttribute(VIEWPORT_ATTRIBUTE) ?? ""), Number)
-	return parts.length === 3 && Arr.every(parts, Number.isFinite)
-		? { x: parts[0], y: parts[1], zoom: parts[2] }
+	const [x, y, zoom] = parts
+	return parts.length === 3 &&
+		x !== undefined &&
+		y !== undefined &&
+		zoom !== undefined &&
+		Arr.every(parts, Number.isFinite)
+		? { x, y, zoom }
 		: undefined
 }
 
@@ -87,7 +92,7 @@ const sameMeasurement = (a: MeasuredNode | undefined, b: MeasuredNode): boolean 
 	a.handles.length === b.handles.length &&
 	Arr.every(
 		a.handles,
-		(handle, index) => handle.x === b.handles[index].x && handle.y === b.handles[index].y,
+		(handle, index) => handle.x === b.handles[index]?.x && handle.y === b.handles[index]?.y,
 	)
 
 /** Measures nodes as they appear or resize, batching each observer callback into one Message. */
@@ -251,10 +256,21 @@ const attachPanZoom = (
 	const animations = new MutationObserver(() => {
 		const leaf = renderer.querySelector(".react-flow__viewport-portal")
 		const parts = Arr.map(Str.split(",")(leaf?.getAttribute(ANIMATION_ATTRIBUTE) ?? ""), Number)
-		if (parts.length !== 5 || !Arr.every(parts, Number.isFinite) || parts[0] === started.seq) return
-		started.seq = parts[0]
+		const [seq, x, y, zoom, duration] = parts
+		if (
+			parts.length !== 5 ||
+			seq === undefined ||
+			x === undefined ||
+			y === undefined ||
+			zoom === undefined ||
+			duration === undefined ||
+			!Arr.every(parts, Number.isFinite) ||
+			seq === started.seq
+		)
+			return
+		started.seq = seq
 		sync()
-		void panZoom.setViewport({ x: parts[1], y: parts[2], zoom: parts[3] }, { duration: parts[4] })
+		void panZoom.setViewport({ x, y, zoom }, { duration })
 	})
 	animations.observe(renderer, { attributes: true, subtree: true, attributeFilter: [ANIMATION_ATTRIBUTE] })
 	return () => {

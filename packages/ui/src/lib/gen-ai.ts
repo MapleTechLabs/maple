@@ -265,10 +265,12 @@ export function splitGenAiAttributes(attributes: Record<string, string>): {
 
 /** The group the key belongs to: its own path segment unless it names another. */
 function groupOf(key: string): string {
-	if (Rec.has(GROUP_OVERRIDES, key)) return GROUP_OVERRIDES[key]
+	const override = GROUP_OVERRIDES[key]
+	if (override !== undefined) return override
 	const namespace = namespaceOf(key)
 	if (Arr.some(Rec.keys(GROUP_LABELS), (id) => id === namespace)) return namespace
-	if (Rec.has(GROUP_ALIASES, namespace)) return GROUP_ALIASES[namespace]
+	const alias = GROUP_ALIASES[namespace]
+	if (alias !== undefined) return alias
 	return "other"
 }
 

@@ -67,8 +67,8 @@ function detectColor(key: string): string | null {
 	const lower = Str.toLowerCase(key)
 
 	// Span status codes ("error" is matched here, before the severity map)
-	if (lower in SPAN_STATUS_COLORS) return SPAN_STATUS_COLORS[lower]
-	if (lower in RUN_RESULT_COLORS) return RUN_RESULT_COLORS[lower]
+	if (lower in SPAN_STATUS_COLORS) return SPAN_STATUS_COLORS[lower] ?? null
+	if (lower in RUN_RESULT_COLORS) return RUN_RESULT_COLORS[lower] ?? null
 
 	// Log severities — the shared uppercase-keyed map from ./severity
 	const severity = SEVERITY_COLORS[Str.toUpperCase(lower)]
@@ -79,7 +79,7 @@ function detectColor(key: string): string | null {
 	if (method) return method
 
 	// Latency percentiles — these have dedicated chart tokens
-	if (lower in AGGREGATE_COLORS) return AGGREGATE_COLORS[lower]
+	if (lower in AGGREGATE_COLORS) return AGGREGATE_COLORS[lower] ?? null
 
 	// HTTP status code classes (e.g., "2xx", "5xx")
 	const classMatch = Str.match(STATUS_CLASS_PATTERN)(key)

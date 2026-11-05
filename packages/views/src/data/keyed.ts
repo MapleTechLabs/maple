@@ -34,6 +34,10 @@ export const KeyedSchema = <A, AI, E, EI>(
 
 export const idle = <A, E>(): Keyed<A, E> => ({ key: null, data: AsyncData.Idle() })
 
+/** The slot stored under `key`, or an idle one when the record has none yet. */
+export const at = <A, E>(slots: Readonly<Record<string, Keyed<A, E>>>, key: string): Keyed<A, E> =>
+	slots[key] ?? idle()
+
 /** A superseding re-read's key: the request key plus a generation, so an older answer is dropped. */
 const GENERATION_SEPARATOR = "\u0001"
 

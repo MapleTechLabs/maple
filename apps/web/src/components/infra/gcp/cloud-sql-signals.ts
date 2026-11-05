@@ -39,7 +39,10 @@ export function gcpSqlEngine(databaseVersion: string | null): string | undefined
 					return Arr.join(Arr.filter([name, Arr.join(version, ".")], Boolean), " ")
 				const [year, ...edition] = version
 				return Arr.join(
-					Arr.filter([name, year, Str.toLowerCase(Arr.join(edition, " "))], Boolean),
+					Arr.filter(
+						[name, year, Str.toLowerCase(Arr.join(edition, " "))],
+						(part): part is string => part !== undefined && part !== "",
+					),
 					" ",
 				)
 			},
@@ -213,11 +216,13 @@ export function gcpMatchStatements(
 				Order.mapInput(Order.Number, (query: (typeof queries)[number]) => query.estimatedQueryCount),
 			),
 		)
+		const [top] = found
+		if (top === undefined) continue
 		const services = [...new Set(Arr.map(found, (query) => query.sampleService))]
 		matched.set(row.queryHash, {
 			services,
 			serviceCount: Math.max(services.length, ...Arr.map(found, (query) => query.serviceCount)),
-			appP95Ms: found[0].p95DurationMs,
+			appP95Ms: top.p95DurationMs,
 			queryKeys: [...new Set(Arr.map(found, (query) => query.queryKey))],
 		})
 	}
@@ -259,8 +264,9 @@ export function gcpAppWait(
 		const db = row.p95LatencyMillis
 		if (app === undefined || db === null) return []
 		const appP95Ms = app.appP95Ms
-		return appP95Ms >= APP_WAIT_RATIO * db && appP95Ms - db >= APP_WAIT_MIN_MS
-			? [{ service: app.services[0], statement: row.querystring, appP95Ms, dbP95Ms: db }]
+		const [service] = app.services
+		return service !== undefined && appP95Ms >= APP_WAIT_RATIO * db && appP95Ms - db >= APP_WAIT_MIN_MS
+			? [{ service, statement: row.querystring, appP95Ms, dbP95Ms: db }]
 			: []
 	})
 	return Option.getOrNull(

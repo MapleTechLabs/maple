@@ -84,7 +84,7 @@ export interface ReleaseGroup {
 	commitSha: string
 	/** Earliest first-seen across services. */
 	firstSeen: string
-	services: ReleaseServiceImpact[]
+	services: Arr.NonEmptyArray<ReleaseServiceImpact>
 	spanCount: number
 	errorCount: number
 	errorRate: number
@@ -246,7 +246,7 @@ function toBaseline(row: Release): ReleaseBaseline {
 
 /** Fold per-service impacts into one group per commit, newest first. */
 export function groupReleases(impacts: ReadonlyArray<ReleaseServiceImpact>): ReleaseGroup[] {
-	const bySha = new Map<string, ReleaseServiceImpact[]>()
+	const bySha = new Map<string, Arr.NonEmptyArray<ReleaseServiceImpact>>()
 	for (const impact of impacts) {
 		const list = bySha.get(impact.commitSha)
 		if (list === undefined) bySha.set(impact.commitSha, [impact])
@@ -262,7 +262,7 @@ export function groupReleases(impacts: ReadonlyArray<ReleaseServiceImpact>): Rel
 		const errorCount = Arr.reduce(sorted, 0, (sum, s) => sum + s.errorCount)
 		groups.push({
 			commitSha,
-			firstSeen: Arr.reduce(sorted, sorted[0].firstSeen, (min, s) =>
+			firstSeen: Arr.reduce(sorted, Arr.headNonEmpty(sorted).firstSeen, (min, s) =>
 				s.firstSeen < min ? s.firstSeen : min,
 			),
 			services: sorted,
@@ -338,7 +338,7 @@ export function releaseDayLabel(iso: string, nowMs: number, timeZone: string): s
  */
 export function releaseHeadline(group: ReleaseGroup): ReleaseServiceImpact {
 	const rank = (impact: ReleaseServiceImpact) => RELEASE_HEALTH_ORDER.indexOf(impact.health)
-	return Arr.reduce(group.services.slice(1), group.services[0], (best, impact) => {
+	return Arr.reduce(Arr.tailNonEmpty(group.services), Arr.headNonEmpty(group.services), (best, impact) => {
 		if (rank(impact) !== rank(best)) return rank(impact) < rank(best) ? impact : best
 		if ((impact.errorRatio ?? 0) !== (best.errorRatio ?? 0))
 			return (impact.errorRatio ?? 0) > (best.errorRatio ?? 0) ? impact : best
@@ -467,7 +467,9 @@ export function liveVersions(
 							group.firstSeen > liveGroup.firstSeen &&
 							group.firstSeen <= siblingsNewest &&
 							!Arr.some(group.services, (impact) => impact.serviceName === serviceName) &&
-							Arr.some(group.services, (impact) => siblings.has(impact.serviceName)),
+							Arr.some(group.services, (impact: ReleaseServiceImpact) =>
+								siblings.has(impact.serviceName),
+							),
 					).length
 		result.push({ serviceName, commitSha, share, behind })
 	}

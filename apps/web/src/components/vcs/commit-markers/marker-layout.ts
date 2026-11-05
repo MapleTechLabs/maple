@@ -159,7 +159,7 @@ export function buildCommitMarkers(
 
 	return Arr.map(Array.from(byBucket.entries()), ([bucket, commits]): CommitMarker => {
 		const ordered = Arr.sort(commits, byRepresentative)
-		return { bucket, label: shortLabel(ordered[0].sha), commits: ordered }
+		return { bucket, label: shortLabel(ordered[0]?.sha ?? ""), commits: ordered }
 	}).sort((a, b) => bucketMs(a.bucket) - bucketMs(b.bucket))
 }
 
@@ -231,8 +231,8 @@ function placeLabel(
 	plotLeft: number,
 	plotRight: number,
 ): { boxLeft: number; boxWidth: number } {
-	const minX = dashXs[0]
-	const maxX = dashXs[dashXs.length - 1]
+	const minX = dashXs[0] ?? plotLeft
+	const maxX = dashXs.at(-1) ?? minX
 	// HARD bounds — never violated: don't overlap the previous label, don't leave the plot.
 	const hardLo = Math.max(prevRight, plotLeft)
 	// Cap the width to the space left before the plot's right edge so the box can never be
@@ -302,8 +302,9 @@ export function layoutMarkerLabels(
 		// freshly pushed) is re-placed clearing the label BEFORE it (groups[-2]). For a
 		// fresh group `before` is the old `last`, so `beforeRight === prevRight` computed
 		// above — same input the standalone-placement path used.
-		const group = groups[groups.length - 1]
-		const before = groups[groups.length - 2]
+		const group = groups.at(-1)
+		if (group === undefined) continue
+		const before = groups.at(-2)
 		const beforeRight = before !== undefined ? before.boxLeft + before.boxWidth + gap : plotLeft
 		const box = placeLabel(
 			group.dashXs,

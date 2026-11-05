@@ -60,7 +60,7 @@ export const requestSuggestions = (model: Model, context: PageContext): Return =
 					requestKey(context.orgId, "autocomplete.productEventNames", window)
 			)
 				return step
-			return Option.match(Keyed.request(step.model.suggestions[lookup] ?? Keyed.idle(), key, "Load"), {
+			return Option.match(Keyed.request(Keyed.at(step.model.suggestions, lookup), key, "Load"), {
 				onNone: () => step,
 				onSome: (slot) => ({
 					model: { ...step.model, suggestions: { ...step.model.suggestions, [lookup]: slot } },

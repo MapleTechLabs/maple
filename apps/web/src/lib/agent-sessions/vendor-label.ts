@@ -40,7 +40,7 @@ export function vendorLabel(vendorId: string): string {
 	return Arr.join(
 		Arr.map(
 			Arr.filter(Str.split(/[_-]+/)(vendorId), Boolean),
-			(word) => Str.toUpperCase(word[0]) + Str.slice(1)(word),
+			(word) => Str.toUpperCase(Str.slice(0, 1)(word)) + Str.slice(1)(word),
 		),
 		" ",
 	)

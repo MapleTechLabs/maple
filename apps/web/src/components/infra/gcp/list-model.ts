@@ -102,7 +102,7 @@ export function gcpSparks(
 					const values = Array.from({ length: buckets }, () => 0)
 					for (const point of ofMetric) {
 						const index = Math.round((utcMs(point.bucket) - first) / step)
-						if (index >= 0 && index < buckets) values[index] += point.total
+						if (index >= 0 && index < buckets) values[index] = (values[index] ?? 0) + point.total
 					}
 					series.set(metric, values)
 				} else {
@@ -350,8 +350,11 @@ export function gcpSubscriptionRows(
 /** How much the backlog rose across the window: its last bucket less its first. */
 export const gcpBacklogGrowth = (row: GcpSubscriptionRow): number | undefined => {
 	const series = row.backlogSpark
-	if (series === undefined || series.length < 2) return undefined
-	return series[series.length - 1] - series[0]
+	const first = series?.[0]
+	const last = series?.at(-1)
+	if (series === undefined || series.length < 2 || first === undefined || last === undefined)
+		return undefined
+	return last - first
 }
 
 /** Rising by at least 100 messages and half of where it started: a batch consumer's steady backlog is not. */
@@ -452,8 +455,8 @@ export function gcpDatabaseRows(
 		const queries = read.total(`${DATABASE}.queries`)
 		return {
 			...rowBase("cloudSql", keys),
-			instance: byId.get(keys[0]),
-			engine: byId.get(keys[0])?.databaseVersion ?? gcpSqlEngineOf(points),
+			instance: byId.get(keys[0] ?? ""),
+			engine: byId.get(keys[0] ?? "")?.databaseVersion ?? gcpSqlEngineOf(points),
 			cpu: read.mean(`${DATABASE}.cpu.utilization`),
 			memory: read.mean(`${DATABASE}.memory.utilization`),
 			disk: read.mean(`${DATABASE}.disk.utilization`),

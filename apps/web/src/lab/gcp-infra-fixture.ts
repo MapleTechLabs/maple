@@ -369,7 +369,11 @@ const instance = (
 	...settings,
 })
 
-const [ORDERS, REPLICA, ANALYTICS, USERS, STAGING] = DATABASES
+const ORDERS = Arr.getUnsafe(DATABASES, 0)
+const REPLICA = Arr.getUnsafe(DATABASES, 1)
+const ANALYTICS = Arr.getUnsafe(DATABASES, 2)
+const USERS = Arr.getUnsafe(DATABASES, 3)
+const STAGING = Arr.getUnsafe(DATABASES, 4)
 
 export const CLOUD_SQL_INSTANCES: ReadonlyArray<GcpCloudSqlInstance> = [
 	instance(ORDERS, {

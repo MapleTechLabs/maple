@@ -41,7 +41,7 @@ export function humanizeUnit(unit: string, metricName = ""): string {
 	if (known) return known
 	return Option.match(Str.match(/^\{(.+)\}$/)(trimmed), {
 		onNone: () => Str.replace(/[{}]/g, "")(trimmed),
-		onSome: (annotation) => (Str.endsWith("s")(annotation[1]) ? annotation[1] : `${annotation[1]}s`),
+		onSome: ([, word = ""]) => (Str.endsWith("s")(word) ? word : `${word}s`),
 	})
 }
 

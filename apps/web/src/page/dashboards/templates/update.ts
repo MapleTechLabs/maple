@@ -169,7 +169,7 @@ const planPreview = (model: Model, context: PageContext): Return => {
 		const gates = { ...state.gates, [widget.id]: gate }
 		if (gate._tag !== "Request" || state.asked.includes(gate.request.key)) return { ...state, gates }
 		const { key, endpoint, params } = gate.request
-		return Option.match(Keyed.request(state.requests[key] ?? Keyed.idle(), key, "Load"), {
+		return Option.match(Keyed.request(Keyed.at(state.requests, key), key, "Load"), {
 			onNone: () => ({ ...state, gates }),
 			onSome: (slot) => ({
 				gates,

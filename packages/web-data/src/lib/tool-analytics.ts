@@ -312,7 +312,7 @@ export function toolSeriesColors(keys: ReadonlyArray<string>): ReadonlyMap<strin
 			out.set(key, OTHER_COLOR)
 			continue
 		}
-		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length])
+		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length] ?? OTHER_COLOR)
 		index++
 	}
 	return out

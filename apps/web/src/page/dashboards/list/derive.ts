@@ -130,7 +130,7 @@ const glyphOf = (document: DashboardDocument): Glyph => {
 			return "ChartBarIcon"
 		case "Raw SQL":
 			return "CodeIcon"
-		case undefined:
+		default:
 			return "FileIcon"
 	}
 }

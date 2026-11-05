@@ -36,7 +36,7 @@ describe("patternSearchTerm", () => {
 			{ body: "payment\tdeclined for order 2", severityText: "WARN", serviceName: "api" },
 		]
 		const { patterns } = clusterLogPatterns(rows)
-		const term = patternSearchTerm(patterns[0].template)
+		const term = patternSearchTerm(Arr.getUnsafe(patterns, 0).template)
 		expect(term.length).toBeGreaterThan(0)
 		for (const row of rows) expect(row.body).toContain(term)
 	})
@@ -52,7 +52,7 @@ describe("patternSearchTerm", () => {
 			{ body: "request 3 took 40ms", severityText: "WARN", serviceName: "web" },
 		]
 		const { patterns } = clusterLogPatterns(rows)
-		const term = patternSearchTerm(patterns[0].template)
+		const term = patternSearchTerm(Arr.getUnsafe(patterns, 0).template)
 		expect(term.length).toBeGreaterThan(0)
 		for (const row of rows) expect(row.body).toContain(term)
 	})

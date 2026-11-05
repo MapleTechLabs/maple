@@ -124,7 +124,8 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 
 	const logs = coerceLogRows(logsResult.data)
 	// The exact stored literal: a millisecond cursor would skip rows sharing the boundary millisecond.
-	const cursor = logs.length === limit && logs.length > 0 ? logs[logs.length - 1].exactTimestamp : null
+	const lastLog = logs.at(-1)
+	const cursor = logs.length === limit && lastLog !== undefined ? lastLog.exactTimestamp : null
 
 	return {
 		data: logs,
@@ -174,7 +175,7 @@ const getLogEffect = Effect.fn("QueryEngine.getLog")(function* ({ data }: { data
 	)
 
 	return {
-		data: response.data.length > 0 ? coerceLogRow(response.data[0]) : null,
+		data: response.data[0] === undefined ? null : coerceLogRow(response.data[0]),
 	} satisfies GetLogResult
 })
 

@@ -52,7 +52,11 @@ const busy = <M>(h: HtmlBuilder<M>, label: string, body: Html): Html =>
 	h.div([h.Class("relative"), h.AriaBusy(true), h.AriaLabel(label)], [body, slowNote(h)])
 
 /** A busy page: the slow-load note sits under its first block, where a reader is looking. */
-export const busyPage = <M>(h: HtmlBuilder<M>, label: string, [first, ...rest]: ReadonlyArray<Html>): Html =>
+export const busyPage = <M>(
+	h: HtmlBuilder<M>,
+	label: string,
+	[first, ...rest]: Arr.NonEmptyReadonlyArray<Html>,
+): Html =>
 	vstack(h, { gap: "6", attributes: [h.AriaBusy(true), h.AriaLabel(label)] }, [
 		h.div([h.Class("relative")], [first, slowNote(h)]),
 		...rest,

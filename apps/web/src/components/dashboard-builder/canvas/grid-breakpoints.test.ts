@@ -45,7 +45,7 @@ describe("tierForWidth", () => {
 
 describe("projectLayout", () => {
 	it("passes the authored layout through untouched at the canonical tier", () => {
-		const projected = projectLayout(AUTHORED, GRID_TIERS[0])
+		const projected = projectLayout(AUTHORED, Arr.getUnsafe(GRID_TIERS, 0))
 		expect(Arr.map(projected, (l) => [l.i, l.x, l.y, l.w, l.h])).toEqual(
 			Arr.map(AUTHORED, (w) => [w.id, w.layout.x, w.layout.y, w.layout.w, w.layout.h]),
 		)
@@ -177,6 +177,6 @@ describe("projectLayout", () => {
 	})
 
 	it("returns an empty layout for a dashboard with no widgets", () => {
-		expect(projectLayout([], GRID_TIERS[2])).toEqual([])
+		expect(projectLayout([], Arr.getUnsafe(GRID_TIERS, 2))).toEqual([])
 	})
 })

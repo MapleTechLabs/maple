@@ -114,9 +114,11 @@ function median(values: ReadonlyArray<number>): number {
 		Arr.filter(values, (v) => Number.isFinite(v)),
 		Order.Number,
 	)
-	if (sorted.length === 0) return 0
 	const mid = Math.floor(sorted.length / 2)
-	return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+	const upper = sorted[mid]
+	if (upper === undefined) return 0
+	const lower = sorted[mid - 1]
+	return sorted.length % 2 === 0 && lower !== undefined ? (lower + upper) / 2 : upper
 }
 
 export function deriveLensVerdict({

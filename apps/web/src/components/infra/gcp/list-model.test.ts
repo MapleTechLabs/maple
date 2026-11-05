@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
@@ -107,7 +107,7 @@ describe("services", () => {
 			GCP_SERVICE_RULES,
 			Option.getOrElse(
 				Arr.findFirst(rows, (row) => row.name === name),
-				() => rows[0],
+				() => Arr.getUnsafe(rows, 0),
 			),
 		)
 
@@ -186,7 +186,7 @@ describe("Pub/Sub subscriptions", () => {
 	const find = (name: string) =>
 		Option.getOrElse(
 			Arr.findFirst(rows, (row) => row.name === name),
-			() => rows[0],
+			() => Arr.getUnsafe(rows, 0),
 		)
 
 	it("reads push failures as every attempt not acked, and a pull subscription as none", () => {
@@ -278,7 +278,7 @@ describe("Cloud SQL instances", () => {
 	})
 
 	it("has no query count for an instance Query Insights reports nothing for", () => {
-		expect(rowsOf(db("users-mysql", {}))[0].queries).toBeUndefined()
+		expect(Arr.getUnsafe(rowsOf(db("users-mysql", {})), 0).queries).toBeUndefined()
 	})
 
 	it("folds a read replica into its primary, with its lag", () => {
@@ -287,13 +287,13 @@ describe("Cloud SQL instances", () => {
 			[instance("orders-db"), instance("orders-db-replica-1", { primary: "acme-prod:orders-db" })],
 		)
 		expect(names(rows)).toEqual(["orders-db"])
-		expect(rows[0].replicas).toEqual([{ name: "orders-db-replica-1", lagSeconds: 4 }])
+		expect(Arr.getUnsafe(rows, 0).replicas).toEqual([{ name: "orders-db-replica-1", lagSeconds: 4 }])
 	})
 
 	it("keeps a replica's own row while the inventory is unknown, and rates its lag", () => {
 		const rows = rowsOf([...db("orders-db", {}), ...db("orders-db-replica-1", { lag: 31 })])
 		expect(names(rows)).toEqual(["orders-db", "orders-db-replica-1"])
-		expect(rowHealth(GCP_DATABASE_RULES, rows[1])).toBe("replicaLag")
+		expect(rowHealth(GCP_DATABASE_RULES, Arr.getUnsafe(rows, 1))).toBe("replicaLag")
 	})
 
 	it("rates a primary by its folded replica's lag", () => {
@@ -301,7 +301,7 @@ describe("Cloud SQL instances", () => {
 			[...db("orders-db", {}), ...db("orders-db-replica-1", { lag: 31 })],
 			[instance("orders-db"), instance("orders-db-replica-1", { primary: "acme-prod:orders-db" })],
 		)
-		expect(rowHealth(GCP_DATABASE_RULES, rows[0])).toBe("replicaLag")
+		expect(rowHealth(GCP_DATABASE_RULES, Arr.getUnsafe(rows, 0))).toBe("replicaLag")
 	})
 
 	it("puts an instance at a limit when its connections reach 90% of max_connections", () => {
@@ -310,7 +310,7 @@ describe("Cloud SQL instances", () => {
 			instance("orders-db"),
 			instance("analytics-pg", { maxConnections: 200 }),
 		])
-		expect(gcpConnectionShare(rows[0])).toBeCloseTo(0.97)
+		expect(gcpConnectionShare(Arr.getUnsafe(rows, 0))).toBeCloseTo(0.97)
 		expect(Arr.map(rows, (row) => rowHealth(GCP_DATABASE_RULES, row))).toEqual(["atLimit", "ok"])
 	})
 
@@ -318,6 +318,7 @@ describe("Cloud SQL instances", () => {
 		const [row] = rowsOf(db("users-mysql", { connections: 97 }), [
 			instance("users-mysql", { maxConnections: null }),
 		])
+		assert.isDefined(row)
 		expect(gcpConnectionShare(row)).toBeUndefined()
 		expect(rowHealth(GCP_DATABASE_RULES, row)).toBe("ok")
 	})

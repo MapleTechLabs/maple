@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import { codeUnitAt } from "@maple/strings"
 /**
  * Chart color Tailwind classes for depth-based coloring in visualizations.
@@ -17,8 +17,12 @@ export const CHART_BG_CLASSES = [
  * Cycles through chart-1 to chart-5 based on depth % 5.
  */
 export function getDepthColorClass(depth: number): string {
-	return CHART_BG_CLASSES[depth % CHART_BG_CLASSES.length]
+	return cyclic(CHART_BG_CLASSES, depth)
 }
+
+/** The element at `index` modulo the list length, wrapping negatives. */
+const cyclic = <A>(items: Arr.NonEmptyReadonlyArray<A>, index: number): A =>
+	items[((index % items.length) + items.length) % items.length] ?? Arr.headNonEmpty(items)
 
 /**
  * Simple hash function for strings
@@ -35,7 +39,7 @@ function hashString(str: string): number {
  * Base hues for services - warm to cool spectrum
  * Using OKLCH for perceptually uniform colors
  */
-const SERVICE_HUES = [
+const SERVICE_HUES: Arr.NonEmptyReadonlyArray<number> = [
 	250, // Blue
 	185, // Teal
 	155, // Green
@@ -62,7 +66,7 @@ export function extractClassName(spanName: string): string | null {
 	return Option.getOrNull(
 		Option.map(
 			Option.orElse(Str.match(/^(.+?)\.[\w]+$/)(spanName), () => Str.match(/^(.+?)::[\w]+$/)(spanName)),
-			(match) => match[1],
+			(match) => match[1] ?? null,
 		),
 	)
 }
@@ -73,7 +77,7 @@ export function extractClassName(spanName: string): string | null {
  * service map) regardless of which other services are on screen.
  */
 export function getServiceHueFromName(serviceName: string): number {
-	return SERVICE_HUES[hashString(serviceName) % SERVICE_HUES.length]
+	return cyclic(SERVICE_HUES, hashString(serviceName))
 }
 
 /**
@@ -83,7 +87,7 @@ export function getServiceHueFromName(serviceName: string): number {
  * by depth. All tiers stay mid-lightness so they read on both themes: below ~0.55 a hue
  * turns muddy on the dark canvas, and chroma under ~0.13 reads washed out.
  */
-const SERVICE_COLOR_TIERS = [
+const SERVICE_COLOR_TIERS: Arr.NonEmptyReadonlyArray<{ readonly l: number; readonly c: number }> = [
 	{ l: 0.57, c: 0.17 },
 	{ l: 0.64, c: 0.16 },
 	{ l: 0.7, c: 0.14 },
@@ -112,8 +116,8 @@ export function getIdentitySlot(name: string): number {
 /** The color occupying a given identity slot. Wraps, so any integer is valid. */
 export function getIdentityColorBySlot(slot: number): string {
 	const index = ((Math.floor(slot) % IDENTITY_SLOT_COUNT) + IDENTITY_SLOT_COUNT) % IDENTITY_SLOT_COUNT
-	const tier = SERVICE_COLOR_TIERS[Math.floor(index / SERVICE_HUES.length)]
-	const hue = SERVICE_HUES[index % SERVICE_HUES.length]
+	const tier = cyclic(SERVICE_COLOR_TIERS, Math.floor(index / SERVICE_HUES.length))
+	const hue = cyclic(SERVICE_HUES, index)
 	return `oklch(${tierLightness(tier.l, hue).toFixed(2)} ${tier.c} ${hue})`
 }
 
@@ -165,7 +169,7 @@ export function getSpanColorStyle(
  */
 export function getValueHue(value: string | undefined | null): number | null {
 	if (value == null || value === "") return null
-	return SERVICE_HUES[hashString(value) % SERVICE_HUES.length]
+	return cyclic(SERVICE_HUES, hashString(value))
 }
 
 /**
@@ -201,10 +205,11 @@ export function calculateSelfTime(
 	const merged: Array<{ start: number; end: number }> = []
 
 	for (const interval of childIntervals) {
-		if (merged.length === 0 || merged[merged.length - 1].end < interval.start) {
+		const last = merged.at(-1)
+		if (last === undefined || last.end < interval.start) {
 			merged.push({ ...interval })
 		} else {
-			merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, interval.end)
+			last.end = Math.max(last.end, interval.end)
 		}
 	}
 
@@ -257,5 +262,5 @@ export function tokenFallback(token: string): string {
 	const inner =
 		Str.startsWith("var(")(token) && Str.endsWith(")")(token) ? Str.trim(Str.slice(4, -1)(token)) : token
 	const name = Str.startsWith("--color-")(inner) ? `--${Str.slice("--color-".length)(inner)}` : inner
-	return Rec.has(TOKEN_FALLBACK, name) ? TOKEN_FALLBACK[name] : DEFAULT_TOKEN_FALLBACK
+	return TOKEN_FALLBACK[name] ?? DEFAULT_TOKEN_FALLBACK
 }

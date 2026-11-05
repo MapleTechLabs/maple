@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { collectDescendantParentIds, computeCollapseOneLevel, computeExpandOneLevel } from "../auto-collapse"
 import type { SpanNode } from "../../../lib/types"
+import * as Arr from "effect/Array"
 
 /** Minimal SpanNode — these helpers only read spanId, depth and children. */
 function node(spanId: string, depth: number, children: SpanNode[] = []): SpanNode {
@@ -82,7 +83,7 @@ describe("computeCollapseOneLevel", () => {
 
 describe("collectDescendantParentIds", () => {
 	it("returns expandable descendants only, excluding the node itself", () => {
-		expect(collectDescendantParentIds(TREE[0]).sort()).toEqual(["a", "a1", "b"])
+		expect(collectDescendantParentIds(Arr.getUnsafe(TREE, 0)).sort()).toEqual(["a", "a1", "b"])
 	})
 
 	it("returns nothing for a leaf", () => {

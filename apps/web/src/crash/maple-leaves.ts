@@ -52,15 +52,15 @@ const hex = (h: string): Rgb => [
 	Number.parseInt(Str.slice(5, 7)(h), 16),
 ]
 
-const PALETTES: readonly (readonly Rgb[])[] = Arr.map(
-	[
+const PALETTES: Arr.NonEmptyReadonlyArray<readonly Rgb[]> = Arr.map(
+	Arr.make(
 		["#f2c14e", "#e8892c", "#c9412a"],
 		["#f0a03c", "#d9542b", "#a8281f"],
 		["#e9c46a", "#e9a23b", "#d0702a"],
 		["#d8452c", "#b52a22", "#7e1d1a"],
 		["#f4d35e", "#f0b73f", "#e07a2e"],
 		["#c98b4a", "#a5612f", "#6e3b22"],
-	],
+	),
 	(p) => Arr.map(p, hex),
 )
 const STEM = hex("#6b4226")
@@ -179,7 +179,7 @@ export function mountMapleLeaves(
 			flipV: rand(1.2, 2.2),
 			asx: 1,
 			back: false,
-			pal: PALETTES[Math.floor(Math.random() * PALETTES.length)] ?? PALETTES[0],
+			pal: PALETTES[Math.floor(Math.random() * PALETTES.length)] ?? Arr.headNonEmpty(PALETTES),
 			groundY: groundFor(z),
 			resting,
 			sy: 1,
@@ -341,17 +341,19 @@ export function mountMapleLeaves(
 
 		const resting = Arr.filter(leaves, (l) => l.resting)
 		const oldest =
-			resting.length > 18
-				? Arr.reduce(resting, resting[0], (a, b) => (b.age > a.age ? b : a))
+			resting.length > 18 && Arr.isReadonlyArrayNonEmpty(resting)
+				? Arr.reduce(resting, Arr.headNonEmpty(resting), (a, b) => (b.age > a.age ? b : a))
 				: undefined
 		if (oldest) oldest.age = Math.max(oldest.age, oldest.life)
 
 		for (let k = leaves.length - 1; k >= 0; k--) {
 			const l = leaves[k]
+			if (l === undefined) continue
 			if (l.alpha <= 0 || l.x < -160 || l.x > grid.w + 160 || l.y < -300) leaves.splice(k, 1)
 		}
 		for (let k = bits.length - 1; k >= 0; k--) {
 			const b = bits[k]
+			if (b === undefined) continue
 			b.x += b.vx * dt
 			b.y += b.vy * dt
 			b.vx *= 1 - Math.min(1, dt * 2.5)
