@@ -503,6 +503,11 @@ export const mergeServices = (
 	)
 }
 
+/** The scope's services for the issue reads: the namespace's services, or every one when unscoped. */
+const resolvedServices = (scope: CH.UsersScope) => ({
+	serviceNames: scope.namespaces.length > 0 ? scope.services : undefined,
+})
+
 export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,
@@ -587,8 +592,8 @@ export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 					{ profile: "aggregation", context: "userActivityTotals" },
 				),
 			),
-			readUserIssueItems(tenant, payload),
-			readUserIssueTotalsRow(tenant, payload),
+			readUserIssueItems(tenant, payload, resolvedServices(scope)),
+			readUserIssueTotalsRow(tenant, payload, resolvedServices(scope)),
 		],
 		{ concurrency: USERS_READ_CONCURRENCY },
 	)
@@ -985,7 +990,7 @@ export const readUserActivity = Effect.fn("UsersReads.activity")(function* (
 					),
 			),
 			readNotable(tenant, payload),
-			readUserIssueItems(tenant, payload),
+			readUserIssueItems(tenant, payload, resolvedServices(scope)),
 		],
 		{ concurrency: 4 },
 	)
