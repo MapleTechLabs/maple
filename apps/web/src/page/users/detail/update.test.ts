@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { ErrorIssueId, OrgId } from "@maple/domain/http"
 import { AppRoute, urlToAppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
-import { detailInputs } from "./command"
+import { activeNamespace, detailInputs } from "./command"
 import { activityHref } from "./data-map"
 import { Message } from "./message"
 import { init, routeChanged, tabOf, update, userDetailHref } from "./update"
@@ -190,5 +190,13 @@ describe("activity links", () => {
 		expect(
 			activityHref({ ...item, kind: "error", sessionId: null, issueId }, { timePreset: "24h" }),
 		).toBe("/errors/issues/00000000-0000-4000-8000-000000000001?timePreset=24h")
+	})
+})
+
+describe("the namespace in effect", () => {
+	it("reads an empty ?namespace= as none, and lets the org pin win", () => {
+		expect(activeNamespace({ namespace: "" }, null)).toBeNull()
+		expect(activeNamespace({ namespace: "storefront" }, null)).toBe("storefront")
+		expect(activeNamespace({ namespace: "storefront" }, "payments")).toBe("payments")
 	})
 })
