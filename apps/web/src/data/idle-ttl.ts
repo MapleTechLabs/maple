@@ -30,6 +30,8 @@ export const IdleTtl = {
 	userProfile: 30_000,
 	/** `/users/$userId`: sessions, events, MCP sessions and the timeline. */
 	userActivity: 30_000,
+	/** `/users/$userId`: the Errors tab's issues. */
+	userIssues: 30_000,
 	/** `/users/$userId`: the Traces tab's requests. */
 	userTraces: 30_000,
 	/** `/users/$userId`: the Logs tab's lines. */

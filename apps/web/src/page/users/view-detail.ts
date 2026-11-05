@@ -6,7 +6,6 @@ import {
 	formatNumber,
 	formatPercent,
 } from "@maple/ui/lib/format"
-import type { Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { columnClass } from "@maple/views/ui/column"
@@ -43,8 +42,9 @@ import { listRelativeTime } from "../kit/relative-time"
 import { clientIcon, kindTag } from "../mcp/view-kit"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { type LinkTab, linkTabStrip } from "../kit/underline-tabs"
-import type { ActivityItem, ActivityKind, UserDetail, UserIssueStatus, UserProfile, UserTab } from "./data"
-import { namespacesOf, USER_TABS, userLabel } from "./data"
+import type { ActivityItem, ActivityKind, UserDetail, UserProfile, UserTab } from "./data"
+import { ERRORS_ATTRIBUTED_FROM, namespacesOf, USER_TABS, userLabel } from "./data"
+import { WORKFLOW_LABEL, workflowRingIcon } from "../errors/kit/workflow"
 import { userAvatar } from "./view-kit"
 
 // `/users/$userId`: one end user's identity, then everything Maple holds for them, by tab.
@@ -212,6 +212,23 @@ export const userTabs = <M>(h: HtmlBuilder<M>, detail: UserDetail, options: User
 /** A request figure the org's warehouse cannot answer: a dash, never a fake zero. */
 const UNKNOWN = EMPTY_VALUE
 
+/** Error hits that named the user across their issues; replay errors where errors carry no user. */
+const errorsStat = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html => {
+	const hits = profile.issueHits ?? profile.errors
+	return statRailItem(h, {
+		eyebrow: "Errors",
+		value: formatNumber(hits),
+		tone: hits > 0 ? "crit" : "neutral",
+		subline:
+			profile.issues === null
+				? "in recorded sessions"
+				: profile.issues === 0
+					? `tracked since ${ERRORS_ATTRIBUTED_FROM}`
+					: `across ${countLabel(profile.issues, "issue")}`,
+		compact: true,
+	})
+}
+
 const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 	statRail(h, { columns: 5, isFlush: true }, [
 		statRailItem(h, {
@@ -223,16 +240,7 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 					: `${formatDuration(profile.recordedMs)} recorded`,
 			compact: true,
 		}),
-		statRailItem(h, {
-			eyebrow: "Errors",
-			value: formatNumber(profile.errors),
-			tone: profile.errors > 0 ? "crit" : "neutral",
-			subline:
-				profile.issues === null
-					? "in recorded sessions"
-					: `across ${countLabel(profile.issues, "issue")}`,
-			compact: true,
-		}),
+		errorsStat(h, profile),
 		statRailItem(h, {
 			eyebrow: "Requests",
 			value: profile.requests === null ? UNKNOWN : formatNumber(profile.requests),
@@ -573,8 +581,8 @@ const activityBody = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<ActivityItem>, 
 /** A tab with no rows in the window. */
 const noRows = <M>(h: HtmlBuilder<M>, text: string): Html => emptyMessage(h, { dashed: true }, [text])
 
-/** A tab whose data Maple does not read per user yet: said plainly, never demo rows. */
-const pendingTab = <M>(h: HtmlBuilder<M>, iconName: IconName, title: string, description: string): Html =>
+/** A tab the org's warehouse cannot answer: said plainly, never demo rows. */
+const unavailableTab = <M>(h: HtmlBuilder<M>, iconName: IconName, title: string, description: string): Html =>
 	empty(h, [
 		emptyHeader(h, [
 			emptyMedia(h, { variant: "icon" }, [icon(h, iconName)]),
@@ -583,8 +591,8 @@ const pendingTab = <M>(h: HtmlBuilder<M>, iconName: IconName, title: string, des
 		]),
 	])
 
-const PENDING_DESCRIPTION =
-	"Maple does not group this user's errors into issues yet. Once it does, this tab lists the issues they hit, from every service that stamps user.id."
+/** Errors carry the user that hit them only from the release that added it; earlier ones never do. */
+const ATTRIBUTION_NOTE = `Errors are linked to users from ${ERRORS_ATTRIBUTED_FROM} on. Earlier errors have no user.`
 
 /** Where this warehouse has no per-user rollup (it has not applied migration 0056): no count to show. */
 const UNINDEXED_DESCRIPTION =
@@ -702,57 +710,70 @@ const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): 
 				),
 			])
 
-const STATUS_BADGE = {
-	open: { variant: "crit", label: "Open" },
-	investigating: { variant: "warn", label: "Investigating" },
-	resolved: { variant: "ok", label: "Resolved" },
-} as const satisfies { readonly [K in UserIssueStatus]: { variant: Tone; label: string } }
+/** The issue's workflow state as the errors hub draws it; a fingerprint not yet an issue says so. */
+const issueStatus = <M>(h: HtmlBuilder<M>, status: UserDetail["issues"][number]["status"]): Html =>
+	status === null
+		? typography(h, { size: "xs", tone: "muted", as: "span" }, ["Not an issue yet"])
+		: hstack(h, { gap: "1.5", as: "span" }, [
+				// The label beside it says the state; the ring's own aria-label would say it twice.
+				h.span([h.AriaHidden(true), h.Class("inline-flex")], [workflowRingIcon(h, status, 12)]),
+				typography(h, { size: "xs", tone: "soft", truncate: true, as: "span" }, [
+					WORKFLOW_LABEL[status],
+				]),
+			])
 
-const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
-	detail.profile.issues === null
-		? pendingTab(h, "CircleWarningIcon", "Errors by user are on the way", PENDING_DESCRIPTION)
-		: Arr.isReadonlyArrayEmpty(detail.issues)
-			? noRows(h, "This user hit no errors in the window.")
-			: toolTable(h, [
-					toolTableHead(h, [
-						th(h, { label: "Issue", width: columnClass({ min: "0" }) }),
-						th(h, { label: "Service", width: "w-28 shrink-0" }),
-						th(h, { label: "This user", width: "w-20 shrink-0", align: "right" }),
-						th(h, { label: "Last seen", width: "w-28 shrink-0 pl-4" }),
-						th(h, { label: "Status", width: "w-28 shrink-0" }),
-					]),
-					toolTableBody(
+/** The issues the user hit, most hits first; each opens its issue page. */
+const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html => {
+	if (detail.profile.issues === null)
+		return unavailableTab(
+			h,
+			"CircleWarningIcon",
+			"Errors are not linked to users here",
+			"This warehouse's schema predates per-user errors. Apply the latest schema, and new errors name the user that hit them.",
+		)
+	if (Arr.isReadonlyArrayEmpty(detail.issues))
+		return noRows(h, `This user hit no errors in the window. ${ATTRIBUTION_NOTE}`)
+	return vstack(h, { gap: "2" }, [
+		typography(h, { size: "xs", tone: "muted" }, [ATTRIBUTION_NOTE]),
+		toolTable(h, [
+			toolTableHead(h, [
+				th(h, { label: "Issue", width: columnClass({ min: "0" }) }),
+				th(h, { label: "Service", width: "w-28 shrink-0" }),
+				th(h, { label: "This user", width: "w-20 shrink-0", align: "right" }),
+				th(h, { label: "Last seen", width: "w-28 shrink-0 pl-4" }),
+				th(h, { label: "Status", width: "w-32 shrink-0" }),
+			]),
+			toolTableBody(
+				h,
+				Arr.map(detail.issues, (issue) =>
+					toolTableRow(
 						h,
-						Arr.map(detail.issues, (issue) =>
-							toolTableRow(h, { href: `/errors/issues/${issue.issueId}`, className: "h-12" }, [
-								vstack(h, { gap: "0", className: "w-0 min-w-0 flex-1" }, [
-									typography(h, { size: "xs", mono: true, tone: "error", truncate: true }, [
-										issue.type,
-									]),
-									typography(h, { size: "2xs", tone: "muted", truncate: true }, [
-										issue.message,
-									]),
+						issue.href === null ? { className: "h-12" } : { href: issue.href, className: "h-12" },
+						[
+							vstack(h, { gap: "0", className: "w-0 min-w-0 flex-1" }, [
+								typography(h, { size: "xs", mono: true, tone: "error", truncate: true }, [
+									issue.type,
 								]),
-								hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-									serviceDot(h, { serviceName: issue.service }),
-									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-										issue.service,
-									]),
+								typography(h, { size: "2xs", tone: "muted", truncate: true }, [
+									issue.message,
 								]),
-								cellText(h, formatNumber(issue.hits), "w-20 shrink-0", { right: true }),
-								timeCell(h, issue.lastSeenMs, clock, "w-28 shrink-0 pl-4"),
-								h.span(
-									[h.Class("w-28 shrink-0")],
-									[
-										badge(h, { variant: STATUS_BADGE[issue.status].variant }, [
-											STATUS_BADGE[issue.status].label,
-										]),
-									],
-								),
 							]),
-						),
+							hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
+								serviceDot(h, { serviceName: issue.service }),
+								typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
+									issue.service,
+								]),
+							]),
+							cellText(h, formatNumber(issue.hits), "w-20 shrink-0", { right: true }),
+							timeCell(h, issue.lastSeenMs, clock, "w-28 shrink-0 pl-4"),
+							h.span([h.Class("w-32 shrink-0")], [issueStatus(h, issue.status)]),
+						],
 					),
-				])
+				),
+			),
+		]),
+	])
+}
 
 /** A request this slow reads as a warning. */
 const SLOW_MS = 2000
@@ -760,7 +781,7 @@ const SLOW_MS = 2000
 /** The user's requests, one row per entry span; each opens its trace. */
 const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	indexedTabState(detail.profile.requests, detail.traces) === "unindexed"
-		? pendingTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
+		? unavailableTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.traces)
 			? noRows(h, "No requests from this user in the window.")
 			: toolTable(h, [
@@ -799,7 +820,7 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 /** The user's log lines; one inside a trace opens it. */
 const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	indexedTabState(detail.profile.logs, detail.logs) === "unindexed"
-		? pendingTab(h, "FileIcon", "Logs are not indexed per user here", UNINDEXED_DESCRIPTION)
+		? unavailableTab(h, "FileIcon", "Logs are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.logs)
 			? noRows(h, "No logs from this user in the window.")
 			: toolTable(h, [

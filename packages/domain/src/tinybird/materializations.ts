@@ -1158,7 +1158,8 @@ const errorEventsSelectSql = `${errorEventsWithSql}
           StatusMessage,
           Duration,
           _errorLabel AS ErrorLabel,
-          ResourceAttributes['service.version'] AS ServiceVersion${errorEventsSourceSql}
+          ResourceAttributes['service.version'] AS ServiceVersion,
+          ${SPAN_USER_ID_SQL} AS UserId${errorEventsSourceSql}
       `
 
 export const errorEventsMv = defineMaterializedView("error_events_mv", {

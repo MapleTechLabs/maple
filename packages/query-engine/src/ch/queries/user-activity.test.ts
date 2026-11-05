@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
+	issueAffectedUserCountQuery,
+	issueAffectedUsersQuery,
 	userActivityServicesQuery,
+	userIssuesQuery,
 	userActivitySlicesQuery,
 	userActivitySummaryQuery,
 	userActivityTotalsQuery,
@@ -112,5 +115,52 @@ describe("user raw reads", () => {
 		expect(sql).toContain("LogAttributes['enduser.id'] = 'u_42'")
 		expect(sql).toMatch(/ResourceAttributes\['service.namespace'\] IN \('storefront', 'billing'\)/)
 		expect(sql).toContain("SeverityNumber >= 13")
+	})
+})
+
+describe("user issues", () => {
+	it("groups one user's occurrences by fingerprint on the time-ordered table", () => {
+		const { sql } = compileUnsafe(userIssuesQuery({ userId: "u_42" }), params)
+		expect(sql).toContain("FROM error_events_by_time")
+		expect(sql).toContain("toString(error_events_by_time.FingerprintHash) AS fingerprintHash")
+		expect(sql).toContain("error_events_by_time.OrgId = 'org_1'")
+		expect(sql).toContain("error_events_by_time.UserId = 'u_42'")
+		expect(sql).toContain("GROUP BY fingerprintHash")
+		expect(sql).not.toContain("user_activity_hourly")
+	})
+
+	it("scopes to the services a namespace resolved to, without the per-user rollup", () => {
+		const { sql } = compileUnsafe(
+			userIssuesQuery({ userId: "u_42", serviceNames: ["checkout", "cart"] }),
+			params,
+		)
+		expect(sql).toMatch(/error_events_by_time\.ServiceName IN \('checkout', 'cart'\)/)
+		expect(sql).not.toContain("user_activity_hourly")
+	})
+
+	it("reads nothing for a namespace that resolved to no service", () => {
+		const { sql } = compileUnsafe(userIssuesQuery({ userId: "u_42", serviceNames: [] }), params)
+		expect(sql).toContain("1 = 0")
+	})
+
+	it("reads an issue's users on the fingerprint-keyed table, skipping unidentified hits", () => {
+		const { sql } = compileUnsafe(issueAffectedUsersQuery({ fingerprintHashes: ["123", "456"] }), params)
+		expect(sql).toContain("FROM error_events")
+		expect(sql).not.toContain("error_events_by_time")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toMatch(/FingerprintHash IN \(toUInt64\('123'\), toUInt64\('456'\)\)/)
+		expect(sql).toContain("UserId != ''")
+		expect(sql).toContain("GROUP BY userId")
+	})
+
+	it("drops non-warehouse fingerprints instead of failing the read", () => {
+		const some = compileUnsafe(
+			issueAffectedUserCountQuery({ fingerprintHashes: ["alert:r:g", "7"] }),
+			params,
+		)
+		expect(some.sql).toMatch(/FingerprintHash IN \(toUInt64\('7'\)\)/)
+		expect(some.sql).not.toContain("alert:")
+		const none = compileUnsafe(issueAffectedUserCountQuery({ fingerprintHashes: ["alert:r:g"] }), params)
+		expect(none.sql).toContain("1 = 0")
 	})
 })

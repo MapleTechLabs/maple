@@ -1,4 +1,10 @@
-import { getUserActivity, getUserLogs, getUserProfile, getUserTraces } from "@maple/web-data/warehouse/users"
+import {
+	getUserActivity,
+	getUserIssues,
+	getUserLogs,
+	getUserProfile,
+	getUserTraces,
+} from "@maple/web-data/warehouse/users"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -7,7 +13,7 @@ import { readThrough } from "../../../data/read-cache"
 import { TimeWindow } from "../../../data/time-range"
 import { resolveUsersWindow } from "../window"
 import { Message, RequestMode } from "./message"
-import { ActivityData, LogsData, ProfileData, TracesData, type Search } from "./model"
+import { ActivityData, IssuesData, LogsData, ProfileData, TracesData, type Search } from "./model"
 
 /** The namespace in effect: the org-global pin wins over one picked on this page. */
 export const activeNamespace = (search: Search, pinnedNamespace: string | null): string | null =>
@@ -90,6 +96,23 @@ export const FetchActivity = Command.define("FetchUserActivity", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchActivity({ key, result })),
+		),
+})
+
+export const FetchIssues = Command.define("FetchUserIssues", {
+	args: FetchArgs,
+	messages: [Message.CompletedFetchIssues],
+	execute: ({ key, refresh, ...data }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.userIssues, schema: IssuesData },
+			Effect.map(getUserIssues({ data }), (response): IssuesData => ({
+				issues: response.issues,
+				attributed: response.attributed,
+			})),
+		).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchIssues({ key, result })),
 		),
 })
 

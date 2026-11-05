@@ -3,13 +3,21 @@
 // splices. Raw trace and log reads take the services and window its slices name, so the sort-key
 // prefix prunes instead of a full-range attribute bloom scan.
 
-import { Schema, type DateTime } from "effect"
+import { Schema, type DateTime, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse, DateTimeUtcFromWarehouse64 } from "../../datetime"
-import { Logs, Traces, UserActivityHourly, orgIdParam, utcSecondsParam } from "../tables"
+import {
+	ErrorEvents,
+	ErrorEventsByTime,
+	Logs,
+	Traces,
+	UserActivityHourly,
+	orgIdParam,
+	utcSecondsParam,
+} from "../tables"
 import { utcHourFloor } from "./query-helpers"
 
 /** The page's namespace scope: the org-global pin, else the rail's picks. Empty means all. */
@@ -415,5 +423,162 @@ export function userLogsQuery(opts: UserRawReadOpts & { readonly minSeverity?: n
 		])
 		.orderBy(["timestamp", "desc"])
 		.limit(opts.limit ?? 200)
+		.format("JSON")
+}
+
+// E. Issues: `error_events.UserId` (migration 0057), set on occurrences ingested since
+
+/** Only decimal UInt64 hashes live in the warehouse; alert/integration keys would abort `toUInt64`. */
+const fingerprintHashesCondition = (column: CH.Expr<number>, hashes: readonly string[]) => {
+	const usable = Arr.filter(hashes, (hash) => /^[0-9]+$/.test(hash))
+	return usable.length
+		? CH.inExprList(
+				column,
+				Arr.map(usable, (hash) => CH.toUInt64(CH.lit(hash))),
+			)
+		: NEVER
+}
+
+export interface UserIssueOutput {
+	readonly fingerprintHash: string
+	readonly serviceName: string
+	readonly exceptionType: string
+	readonly exceptionMessage: string
+	readonly errorLabel: string
+	readonly hits: number
+	readonly firstSeen: DateTime.Utc
+	readonly lastSeen: DateTime.Utc
+}
+
+export const userIssueRowSchema = Schema.Struct({
+	fingerprintHash: Schema.String,
+	serviceName: Schema.String,
+	exceptionType: Schema.String,
+	exceptionMessage: Schema.String,
+	errorLabel: Schema.String,
+	hits: CHNumber,
+	firstSeen: DateTimeUtcFromWarehouse,
+	lastSeen: DateTimeUtcFromWarehouse,
+})
+
+/**
+ * One user's error scope. `error_events` has no namespace, so a namespace scope arrives as the
+ * services the caller resolved for it; absent is every service. No rollup is read, so a cluster
+ * without `user_activity_hourly` still scopes its issues.
+ */
+export interface UserIssueScope {
+	readonly userId: string
+	readonly serviceNames?: readonly string[]
+}
+
+const userErrorRows = ($: ColumnAccessor<typeof ErrorEventsByTime.columns>, opts: UserIssueScope) => [
+	$.OrgId.eq(orgIdParam),
+	$.Timestamp.gte(utcSecondsParam("startTime")),
+	$.Timestamp.lte(utcSecondsParam("endTime")),
+	$.UserId.eq(opts.userId),
+	opts.serviceNames === undefined ? undefined : CH.inList($.ServiceName, opts.serviceNames),
+]
+
+/** The issues (by FingerprintHash, as the errors queries key them) one user hit, most hits first. */
+export function userIssuesQuery(opts: UserIssueScope & { readonly limit?: number }) {
+	return from(ErrorEventsByTime)
+		.select(($) => ({
+			fingerprintHash: CH.toString_($.FingerprintHash),
+			serviceName: CH.argMax($.ServiceName, $.Timestamp),
+			exceptionType: CH.argMax($.ExceptionType, $.Timestamp),
+			exceptionMessage: CH.argMax($.ExceptionMessage, $.Timestamp),
+			errorLabel: CH.argMax($.ErrorLabel, $.Timestamp),
+			hits: CH.count(),
+			firstSeen: CH.min_($.Timestamp),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => userErrorRows($, opts))
+		.groupBy("fingerprintHash")
+		.orderBy(["hits", "desc"], ["lastSeen", "desc"])
+		.limit(opts.limit ?? 50)
+		.format("JSON")
+}
+
+export interface UserIssueTotalsOutput {
+	readonly hits: number
+	/** Distinct error fingerprints; not named for them, as identity-looking 64-bit columns must be strings. */
+	readonly errorGroups: number
+}
+
+export const userIssueTotalsRowSchema = Schema.Struct({ hits: CHNumber, errorGroups: CHNumber })
+
+/** All of the user's error occurrences and distinct fingerprints, uncapped, for the profile totals. */
+export function userIssueTotalsQuery(opts: UserIssueScope) {
+	return from(ErrorEventsByTime)
+		.select(($) => ({ hits: CH.count(), errorGroups: CH.uniqExact($.FingerprintHash) }))
+		.where(($) => userErrorRows($, opts))
+		.format("JSON")
+}
+
+export interface IssueAffectedUsersOpts {
+	/** The issue's own fingerprint plus any aliases it owns. */
+	readonly fingerprintHashes: readonly string[]
+	readonly limit?: number
+}
+
+export interface IssueAffectedUserOutput {
+	readonly userId: string
+	readonly hits: number
+	readonly lastSeen: DateTime.Utc
+}
+
+export const issueAffectedUserRowSchema = Schema.Struct({
+	userId: Schema.String,
+	hits: CHNumber,
+	lastSeen: DateTimeUtcFromWarehouse,
+})
+
+/** The users an issue hit most, on `error_events`' (OrgId, FingerprintHash) prefix. */
+export function issueAffectedUsersQuery(opts: IssueAffectedUsersOpts) {
+	return from(ErrorEvents)
+		.select(($) => ({
+			userId: $.UserId,
+			hits: CH.count(),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			fingerprintHashesCondition($.FingerprintHash, opts.fingerprintHashes),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
+			$.UserId.neq(""),
+		])
+		.groupBy("userId")
+		.orderBy(["hits", "desc"], ["userId", "asc"])
+		.limit(opts.limit ?? 20)
+		.format("JSON")
+}
+
+export interface IssueAffectedUserCountOutput {
+	readonly affectedUsers: number
+	readonly hitsWithUser: number
+	readonly hits: number
+}
+
+export const issueAffectedUserCountRowSchema = Schema.Struct({
+	affectedUsers: CHNumber,
+	hitsWithUser: CHNumber,
+	hits: CHNumber,
+})
+
+/** Distinct users an issue hit, and how many of its hits named a user at all (coverage). */
+export function issueAffectedUserCountQuery(opts: Pick<IssueAffectedUsersOpts, "fingerprintHashes">) {
+	return from(ErrorEvents)
+		.select(($) => ({
+			affectedUsers: CH.uniqIf($.UserId, $.UserId.neq("")),
+			hitsWithUser: CH.countIf($.UserId.neq("")),
+			hits: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			fingerprintHashesCondition($.FingerprintHash, opts.fingerprintHashes),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
+		])
 		.format("JSON")
 }

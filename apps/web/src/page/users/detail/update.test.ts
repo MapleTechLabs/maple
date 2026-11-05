@@ -1,7 +1,7 @@
 import { Array as Arr, Option, Schema } from "effect"
 import { fromString } from "foldkit/url"
 import { describe, expect, it } from "vitest"
-import { OrgId } from "@maple/domain/http"
+import { ErrorIssueId, OrgId } from "@maple/domain/http"
 import { AppRoute, urlToAppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
 import { activeNamespace, detailInputs } from "./command"
@@ -112,6 +112,23 @@ describe("tabs and namespaces", () => {
 		expect(names(back)).toEqual([])
 	})
 
+	it("reads the user's issues only once the Errors tab opens", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		const names = (step: ReturnType<typeof update>) =>
+			Arr.map(step.commands ?? [], (command) => command.name)
+		expect(names(loaded)).not.toContain("FetchUserIssues")
+		const errors = routeChanged(
+			loaded.model,
+			{ userId: "user/42 ada", search: { tab: "errors" } },
+			context,
+		)
+		expect(names(errors)).toEqual(["FetchUserIssues"])
+	})
+
 	it("refetches when the namespace changes", () => {
 		const loaded = update(
 			page({}),
@@ -137,6 +154,7 @@ describe("activity links", () => {
 		detail: "",
 		tone: "neutral" as const,
 		traceId: null,
+		issueId: null,
 	}
 
 	it("opens an MCP session on its own server's page over the user page's window", () => {
@@ -157,6 +175,21 @@ describe("activity links", () => {
 		expect(activityHref({ ...item, kind: "log", sessionId: null, traceId: "c3d4" }, {})).toBe(
 			"/traces/c3d4",
 		)
+	})
+
+	it("opens the issue an error row names, and nothing for a fingerprint not yet an issue", () => {
+		const issueId = Schema.decodeSync(ErrorIssueId)("00000000-0000-4000-8000-000000000001")
+		expect(activityHref({ ...item, kind: "error", sessionId: null, issueId }, {})).toBe(
+			"/errors/issues/00000000-0000-4000-8000-000000000001",
+		)
+		expect(activityHref({ ...item, kind: "error", sessionId: null }, {})).toBeNull()
+	})
+
+	it("opens an issue over the user page's window", () => {
+		const issueId = Schema.decodeSync(ErrorIssueId)("00000000-0000-4000-8000-000000000001")
+		expect(
+			activityHref({ ...item, kind: "error", sessionId: null, issueId }, { timePreset: "24h" }),
+		).toBe("/errors/issues/00000000-0000-4000-8000-000000000001?timePreset=24h")
 	})
 })
 

@@ -1,5 +1,6 @@
 import {
 	UserActivityResponse,
+	UserIssuesResponse,
 	UserLogsResponse,
 	UserProfileResponse,
 	UserTracesResponse,
@@ -8,6 +9,7 @@ import {
 	type UserActivityItem,
 	type UserDetailRequest,
 	type UserEventItem,
+	type UserIssueItem,
 	type UserListItem,
 	type UserLogItem,
 	type UserMcpSessionItem,
@@ -25,6 +27,7 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingUserActivityHourly } from "@maple/backend/services/warehouse/missing-table"
 import { readUserSessionsOnServer } from "@maple/backend/services/mcp/mcp-reads"
+import { readUserIssueItems, readUserIssueTotalsRow, userIssueTotals } from "./user-issues"
 
 // The users directory's reads (`/users`): the namespace scope is resolved to services first, since
 // replays and product events carry only a service name, then the users queries run in parallel.
@@ -339,6 +342,7 @@ export type ActivitySources = Readonly<{
 	mcpSessions: ReadonlyArray<UserMcpSessionItem>
 	traces?: ReadonlyArray<UserTraceItem>
 	logs?: ReadonlyArray<UserLogItem>
+	issues?: ReadonlyArray<UserIssueItem>
 }>
 
 const requestItem = (trace: UserTraceItem): UserActivityItem => {
@@ -355,6 +359,7 @@ const requestItem = (trace: UserTraceItem): UserActivityItem => {
 		tone: failed ? "crit" : "warn",
 		sessionId: null,
 		traceId: trace.traceId,
+		issueId: null,
 	}
 }
 
@@ -367,11 +372,32 @@ const logItem = (log: UserLogItem): UserActivityItem => ({
 	tone: isErrorSeverity(log.severity) ? "crit" : "warn",
 	sessionId: null,
 	traceId: nullIfEmpty(log.traceId),
+	issueId: null,
+})
+
+/** An issue the user hit, at its latest occurrence in the window; it opens the issue page. */
+export const issueItem = (issue: UserIssueItem): UserActivityItem => ({
+	kind: "error",
+	atMs: issue.lastSeenMs,
+	service: issue.service,
+	// As the Errors tab names it: an occurrence with neither a type nor a message is "Unknown Error".
+	title: issue.type !== "" ? issue.type : issue.message !== "" ? issue.message : "Unknown Error",
+	detail: Arr.join(
+		Arr.filter(
+			[plural(issue.hits, "hit"), issue.service, issue.type === "" ? "" : issue.message],
+			(part) => part !== "",
+		),
+		" · ",
+	),
+	tone: "crit",
+	sessionId: null,
+	traceId: null,
+	issueId: issue.issueId,
 })
 
 /**
- * The Activity tab: replay sessions, product events, MCP sessions, failed or slow requests and
- * warn/error logs as one timeline, the latest first, capped at `limit`. Failures are `crit`.
+ * The Activity tab: replay sessions, product events, MCP sessions, the issues the user hit, failed or
+ * slow requests and warn/error logs as one timeline, the latest first, capped at `limit`. Failures are `crit`.
  */
 export const mergeActivity = (
 	sources: ActivitySources,
@@ -396,6 +422,7 @@ export const mergeActivity = (
 					tone: session.errors > 0 ? "crit" : "neutral",
 					sessionId: session.sessionId,
 					traceId: null,
+					issueId: null,
 				})),
 				...Arr.map(sources.events, (event): UserActivityItem => ({
 					kind: "event",
@@ -409,6 +436,7 @@ export const mergeActivity = (
 					tone: "neutral",
 					sessionId: null,
 					traceId: null,
+					issueId: null,
 				})),
 				...Arr.map(sources.mcpSessions, (session): UserActivityItem => ({
 					kind: "mcp",
@@ -422,7 +450,9 @@ export const mergeActivity = (
 					tone: session.errors > 0 ? "crit" : "neutral",
 					sessionId: session.sessionId,
 					traceId: null,
+					issueId: null,
 				})),
+				...Arr.map(sources.issues ?? [], issueItem),
 				...Arr.map(sources.traces ?? [], requestItem),
 				...Arr.map(sources.logs ?? [], logItem),
 			],
@@ -473,6 +503,11 @@ export const mergeServices = (
 	)
 }
 
+/** The scope's services for the issue reads: the namespace's services, or every one when unscoped. */
+const resolvedServices = (scope: CH.UsersScope) => ({
+	serviceNames: scope.namespaces.length > 0 ? scope.services : undefined,
+})
+
 export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,
@@ -484,73 +519,84 @@ export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 	const readsServices = CH.readsServiceSources(scope)
 	const readsMcp = scope.mcpServices.length > 0
 	const userScope = { userId: payload.userId, namespaces: scope.namespaces }
-	const [replay, devices, events, mcp, services, visitors, summary, rollupServices, totals] =
-		yield* Effect.all(
-			[
-				readsServices
-					? warehouse.compiledQuery(tenant, CH.compile(CH.userReplayProfileQuery(scope), params), {
-							profile: "aggregation",
-							context: "userReplayProfile",
-						})
-					: Effect.succeed([]),
-				readsServices
-					? warehouse.compiledQuery(tenant, CH.compile(CH.userDevicesQuery(scope), params), {
-							profile: "aggregation",
-							context: "userDevices",
-						})
-					: Effect.succeed([]),
-				readsServices
-					? warehouse.compiledQuery(tenant, CH.compile(CH.userEventsSummaryQuery(scope), params), {
-							profile: "aggregation",
-							context: "userEventsSummary",
-						})
-					: Effect.succeed([]),
-				readsMcp
-					? warehouse.compiledQuery(tenant, CH.compile(CH.userMcpSummaryQuery(scope), params), {
-							profile: "aggregation",
-							context: "userMcpSummary",
-						})
-					: Effect.succeed([]),
-				CH.hasUserSources(scope)
-					? warehouse.compiledQuery(tenant, CH.compile(CH.userServicesQuery(scope), params), {
-							profile: "aggregation",
-							context: "userServices",
-						})
-					: Effect.succeed([]),
-				warehouse.compiledQuery(tenant, CH.compile(CH.userVisitorIdsQuery(), params), {
-					profile: "list",
-					context: "userVisitorIds",
+	const [
+		replay,
+		devices,
+		events,
+		mcp,
+		services,
+		visitors,
+		summary,
+		rollupServices,
+		totals,
+		issues,
+		issueTotalsRow,
+	] = yield* Effect.all(
+		[
+			readsServices
+				? warehouse.compiledQuery(tenant, CH.compile(CH.userReplayProfileQuery(scope), params), {
+						profile: "aggregation",
+						context: "userReplayProfile",
+					})
+				: Effect.succeed([]),
+			readsServices
+				? warehouse.compiledQuery(tenant, CH.compile(CH.userDevicesQuery(scope), params), {
+						profile: "aggregation",
+						context: "userDevices",
+					})
+				: Effect.succeed([]),
+			readsServices
+				? warehouse.compiledQuery(tenant, CH.compile(CH.userEventsSummaryQuery(scope), params), {
+						profile: "aggregation",
+						context: "userEventsSummary",
+					})
+				: Effect.succeed([]),
+			readsMcp
+				? warehouse.compiledQuery(tenant, CH.compile(CH.userMcpSummaryQuery(scope), params), {
+						profile: "aggregation",
+						context: "userMcpSummary",
+					})
+				: Effect.succeed([]),
+			CH.hasUserSources(scope)
+				? warehouse.compiledQuery(tenant, CH.compile(CH.userServicesQuery(scope), params), {
+						profile: "aggregation",
+						context: "userServices",
+					})
+				: Effect.succeed([]),
+			warehouse.compiledQuery(tenant, CH.compile(CH.userVisitorIdsQuery(), params), {
+				profile: "list",
+				context: "userVisitorIds",
+			}),
+			rollupRead(
+				warehouse.compiledQuery(tenant, CH.compile(CH.userActivitySummaryQuery(userScope), params), {
+					profile: "aggregation",
+					context: "userActivitySummary",
 				}),
-				rollupRead(
-					warehouse.compiledQuery(
-						tenant,
-						CH.compile(CH.userActivitySummaryQuery(userScope), params),
-						{ profile: "aggregation", context: "userActivitySummary" },
+			),
+			rollupRead(
+				warehouse.compiledQuery(tenant, CH.compile(CH.userActivityServicesQuery(userScope), params), {
+					profile: "aggregation",
+					context: "userActivityServices",
+				}),
+			),
+			rollupRead(
+				warehouse.compiledQuery(
+					tenant,
+					CH.compile(
+						CH.userActivityTotalsQuery({
+							userIds: [payload.userId],
+							namespaces: scope.namespaces,
+						}),
+						params,
 					),
+					{ profile: "aggregation", context: "userActivityTotals" },
 				),
-				rollupRead(
-					warehouse.compiledQuery(
-						tenant,
-						CH.compile(CH.userActivityServicesQuery(userScope), params),
-						{ profile: "aggregation", context: "userActivityServices" },
-					),
-				),
-				rollupRead(
-					warehouse.compiledQuery(
-						tenant,
-						CH.compile(
-							CH.userActivityTotalsQuery({
-								userIds: [payload.userId],
-								namespaces: scope.namespaces,
-							}),
-							params,
-						),
-						{ profile: "aggregation", context: "userActivityTotals" },
-					),
-				),
-			],
-			{ concurrency: USERS_READ_CONCURRENCY },
-		)
+			),
+			readUserIssueItems(tenant, payload, resolvedServices(scope)),
+			readUserIssueTotalsRow(tenant, payload, resolvedServices(scope)),
+		],
+		{ concurrency: USERS_READ_CONCURRENCY },
+	)
 	const sessions = replay[0]?.sessions ?? 0
 	const eventCount = events[0]?.events ?? 0
 	const mcpRequests = mcp[0]?.requests ?? 0
@@ -558,6 +604,11 @@ export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 	const activity = Option.flatMap(summary, (rows) => Option.fromNullishOr(rows[0]))
 	const spanCount = Option.match(activity, { onNone: () => 0, onSome: (row) => row.spanCount })
 	const logCount = Option.match(activity, { onNone: () => 0, onSome: (row) => row.logCount })
+	// `None` when `error_events` predates `UserId`: the issue figures are then unknown, not zero.
+	const issueTotals = Option.flatMap(issues, (items) =>
+		Option.map(issueTotalsRow, (row) => userIssueTotals(row, items.length)),
+	)
+	const hitCount = Option.match(issueTotals, { onNone: () => 0, onSome: (totals) => totals.hits })
 	yield* Effect.annotateCurrentSpan({
 		"maple.users.sessions": sessions,
 		"maple.users.events": eventCount,
@@ -565,8 +616,16 @@ export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 		"maple.users.spans": spanCount,
 		"maple.users.logs": logCount,
 		"maple.users.activity_rollup": Option.isSome(summary),
+		"maple.users.issue_hits": hitCount,
 	})
-	if (sessions === 0 && eventCount === 0 && mcpRequests === 0 && spanCount === 0 && logCount === 0)
+	if (
+		sessions === 0 &&
+		eventCount === 0 &&
+		mcpRequests === 0 &&
+		spanCount === 0 &&
+		logCount === 0 &&
+		hitCount === 0
+	)
 		return EMPTY_PROFILE
 	// Each source's bounds, only from sources that saw the user (an empty aggregate is the epoch).
 	const seen = [
@@ -575,8 +634,15 @@ export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 		...(mcpRequests > 0 && mcp[0] !== undefined ? [mcp[0]] : []),
 		...Option.toArray(Option.filter(activity, (row) => row.spanCount + row.logCount > 0)),
 	]
-	const firstSeens = Arr.map(seen, (row) => toMs(row.firstSeen))
-	const lastSeens = Arr.map(seen, (row) => toMs(row.lastSeen))
+	const issueItems = Option.getOrElse(issues, () => [])
+	const firstSeens = [
+		...Arr.map(seen, (row) => toMs(row.firstSeen)),
+		...Arr.map(issueItems, (item) => item.firstSeenMs),
+	]
+	const lastSeens = [
+		...Arr.map(seen, (row) => toMs(row.lastSeen)),
+		...Arr.map(issueItems, (item) => item.lastSeenMs),
+	]
 	const traitKeys = replay[0]?.traitKeys ?? []
 	const traitValues = replay[0]?.traitValues ?? []
 	const total = Option.flatMap(totals, (rows) => Option.fromNullishOr(rows[0]))
@@ -626,7 +692,8 @@ export const readUserProfile = Effect.fn("UsersReads.profile")(function* (
 		p95Ms: requestFigure((row) => row.p95DurationMs),
 		traces: countFigure((row) => row.traceCount),
 		logs: countFigure((row) => row.logCount),
-		issues: null,
+		issues: Option.getOrNull(Option.map(issueTotals, (totals) => totals.issues)),
+		issueHits: Option.getOrNull(Option.map(issueTotals, (totals) => totals.hits)),
 		topRoute: Option.getOrNull(
 			Option.flatMap(total, (row) => Option.fromNullishOr(nullIfEmpty(row.topRoute))),
 		),
@@ -857,7 +924,7 @@ export const readUserActivity = Effect.fn("UsersReads.activity")(function* (
 	const readsServices = CH.readsServiceSources(scope)
 	const servers = mcpServersInScope(scope)
 	const window = { startTime: payload.startTime, endTime: payload.endTime }
-	const [replays, eventRows, mcpSessions, [notableTraces, notableLogs]] = yield* Effect.all(
+	const [replays, eventRows, mcpSessions, [notableTraces, notableLogs], issues] = yield* Effect.all(
 		[
 			readsServices
 				? warehouse.compiledQuery(
@@ -923,6 +990,7 @@ export const readUserActivity = Effect.fn("UsersReads.activity")(function* (
 					),
 			),
 			readNotable(tenant, payload),
+			readUserIssueItems(tenant, payload, resolvedServices(scope)),
 		],
 		{ concurrency: 4 },
 	)
@@ -959,6 +1027,26 @@ export const readUserActivity = Effect.fn("UsersReads.activity")(function* (
 		sessions,
 		events,
 		mcpSessions,
-		activity: mergeActivity({ sessions, events, mcpSessions, traces: notableTraces, logs: notableLogs }),
+		activity: mergeActivity({
+			sessions,
+			events,
+			mcpSessions,
+			traces: notableTraces,
+			logs: notableLogs,
+			issues: Option.getOrElse(issues, () => []),
+		}),
+	})
+})
+
+/** The Errors tab: the issues the user hit, most hits first; unattributed on an older cluster. */
+export const readUserIssues = Effect.fn("UsersReads.issues")(function* (
+	tenant: TenantContext,
+	payload: UserDetailRequest,
+) {
+	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+	const issues = yield* readUserIssueItems(tenant, payload)
+	return new UserIssuesResponse({
+		issues: Option.getOrElse(issues, () => []),
+		attributed: Option.isSome(issues),
 	})
 })

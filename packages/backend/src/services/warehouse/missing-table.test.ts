@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { WarehouseConfigError, WarehouseQueryError, WarehouseSchemaDriftError } from "@maple/domain/http"
 import {
+	isMissingErrorEventsUserId,
 	isMissingServiceApiColumns,
 	isMissingServiceEndpointDetails,
 	isMissingServiceMapDbEdgesMinutely,
@@ -65,5 +66,18 @@ describe("migration 0048 degrade detectors", () => {
 		expect(isMissingUserActivityHourly(missing("user_activity_hourly"))).toBe(true)
 		expect(isMissingUserActivityHourly(missing("session_replays"))).toBe(false)
 		expect(isMissingUserActivityHourly(drift("user_activity_hourly"))).toBe(false)
+	})
+
+	it("degrades the issue reads only when error_events lacks UserId", () => {
+		expect(isMissingErrorEventsUserId(drift("Unknown expression identifier `UserId` in scope"))).toBe(
+			true,
+		)
+		expect(isMissingErrorEventsUserId(drift("Missing columns: 'UserId' while processing"))).toBe(true)
+		expect(isMissingErrorEventsUserId(drift("Unknown expression identifier `ErrorLabel`"))).toBe(false)
+		expect(
+			isMissingErrorEventsUserId(
+				new WarehouseQueryError({ message: "UserId overflowed", pipeName: "userIssues" }),
+			),
+		).toBe(false)
 	})
 })
