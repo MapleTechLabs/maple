@@ -47,8 +47,14 @@ export const UserListItem = Schema.Struct({
 })
 export type UserListItem = typeof UserListItem.Type
 
+/** The longest end-user id the API and the `/users/<id>` route accept. */
+export const END_USER_ID_MAX_LENGTH = 512
+
 /** An end user's id as the SDK sent it: opaque, matched exactly. */
-export const EndUserId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
+export const EndUserId = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(END_USER_ID_MAX_LENGTH),
+)
 
 /**
  * A keyset position in the directory: the `(lastSeen, userId)` of a page's last row. `lastSeen` is

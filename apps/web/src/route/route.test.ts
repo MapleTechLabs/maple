@@ -1,4 +1,5 @@
-import { Option } from "effect"
+import { END_USER_ID_MAX_LENGTH } from "@maple/domain/http"
+import { Option, String as Str } from "effect"
 import { fromString } from "foldkit/url"
 import { describe, expect, test } from "vitest"
 import { DATA_INTEGRATIONS } from "./data-integrations"
@@ -22,6 +23,14 @@ describe("routes", () => {
 				search: { peek: "8113412291" },
 			})
 		}
+	})
+
+	test("a user page takes any id the API accepts, decoded, and nothing longer", () => {
+		const route = parse("/users/user%2F42%20ada")
+		expect(route).toMatchObject({ _tag: "UserDetail", userId: "user/42 ada" })
+		expect(hrefOf(route)).toBe("/users/user%2F42%20ada")
+		expect(parse(`/users/${Str.repeat(END_USER_ID_MAX_LENGTH)("u")}`)._tag).toBe("UserDetail")
+		expect(parse(`/users/${Str.repeat(END_USER_ID_MAX_LENGTH + 1)("u")}`)._tag).not.toBe("UserDetail")
 	})
 
 	test("path params are percent-decoded and printed back encoded", () => {
