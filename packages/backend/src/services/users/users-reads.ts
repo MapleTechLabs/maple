@@ -161,6 +161,7 @@ const readGroupNames = Effect.fn("UsersReads.groupNames")(function* (
 	tenant: TenantContext,
 	window: Readonly<{ startTime: string; endTime: string }>,
 	groupIds: ReadonlyArray<string>,
+	scope: CH.UsersScope,
 ) {
 	const ids = Arr.dedupe(Arr.filter(groupIds, (id) => id !== ""))
 	yield* Effect.annotateCurrentSpan({ "maple.users.groups": ids.length })
@@ -169,7 +170,7 @@ const readGroupNames = Effect.fn("UsersReads.groupNames")(function* (
 	const rows = yield* warehouse
 		.compiledQuery(
 			tenant,
-			CH.compile(CH.usersGroupNamesQuery(ids), {
+			CH.compile(CH.usersGroupNamesQuery(ids, scope), {
 				orgId: tenant.orgId,
 				startTime: window.startTime,
 				endTime: window.endTime,
@@ -271,6 +272,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 				tenant,
 				payload,
 				Arr.map(rows, (row) => row.groupId),
+				scope,
 			),
 		],
 		{ concurrency: 3 },
@@ -357,6 +359,7 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 		tenant,
 		payload,
 		Arr.map(groups, (group) => group.name),
+		scope,
 	)
 	const totals = summary[0]
 	return new UsersFacetsResponse({
@@ -770,7 +773,7 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 	const profileGroupName =
 		groupId === null || sessionGroupName !== null
 			? sessionGroupName
-			: ((yield* readGroupNames(tenant, payload, [groupId])).get(groupId) ?? null)
+			: ((yield* readGroupNames(tenant, payload, [groupId], scope)).get(groupId) ?? null)
 	const traitKeys = replay[0]?.traitKeys ?? []
 	const traitValues = replay[0]?.traitValues ?? []
 	const requestFigure = <A>(read: (row: CH.UserActivitySummaryOutput) => A): A | null =>

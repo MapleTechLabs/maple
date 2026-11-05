@@ -76,11 +76,22 @@ const nonEmpty = (value: CH.Expr<string>) => CH.anyIf(value, value.neq(""))
  * The value from the latest row that has one, `''` when none: empty values rank at the epoch. The
  * list and the profile then agree on a user who changed name, email or group.
  */
-const latestNonEmpty = <A>(value: CH.Expr<string>, at: CH.Expr<A>) =>
-	CH.argMax(
-		value,
-		CH.if_(value.neq(""), CH.compileTypedFnCall("toFloat64", T.float64.schema, at), CH.lit(0)),
-	)
+const latestNonEmpty = <A>(value: CH.Expr<string>, at: CH.Expr<A>) => latestPaired(value, value, at)
+
+/** `value` from the latest row whose `key` is non-empty: a group's name from the session its id came from. */
+const latestPaired = <A>(value: CH.Expr<string>, key: CH.Expr<string>, at: CH.Expr<A>) =>
+	CH.argMax(value, CH.if_(key.neq(""), epochSeconds(at), CH.lit(0)))
+
+const epochSeconds = <A>(at: CH.Expr<A>) => CH.compileTypedFnCall("toFloat64", T.float64.schema, at)
+
+/**
+ * When a source last carried a non-empty `value` (epoch seconds, 0 for never), so the merge across
+ * sources picks the newest value itself, not the newest source.
+ */
+const seenAt = <A>(value: CH.Expr<string>, at: CH.Expr<A>) =>
+	CH.compileTypedFnCall("toFloat64", T.float64.schema, CH.maxIf(epochSeconds(at), value.neq("")))
+
+const neverSeen = () => CH.compileTypedFnCall("toFloat64", T.float64.schema, CH.lit(0))
 
 const zero = () => CH.toUInt64(CH.lit(0))
 
@@ -195,6 +206,9 @@ const replayUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 			spans: zero(),
 			logLines: zero(),
 			groupHits: groupHits($.groupId, groups),
+			nameAt: seenAt($.userName, $.lastActivity),
+			emailAt: seenAt($.userEmail, $.lastActivity),
+			groupAt: seenAt($.groupId, $.lastActivity),
 		}))
 		.where(($) => [$.userId.neq("")])
 		.groupBy("userId", "namespace")
@@ -217,6 +231,9 @@ const eventUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 			spans: zero(),
 			logLines: zero(),
 			groupHits: groupHits($.GroupId, groups),
+			nameAt: neverSeen(),
+			emailAt: neverSeen(),
+			groupAt: seenAt($.GroupId, $.Timestamp),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -246,6 +263,9 @@ const mcpUsers = (scope: UsersScope) =>
 			spans: zero(),
 			logLines: zero(),
 			groupHits: zero(),
+			nameAt: seenAt($.SpanAttributes.get("user.name"), $.Timestamp),
+			emailAt: seenAt($.SpanAttributes.get("user.email"), $.Timestamp),
+			groupAt: neverSeen(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -299,15 +319,23 @@ export function usersMcpNamesQuery(
  * Each group's latest name from `identify({ groupName })`. Only replays carry it, so a group seen
  * only in product events or spans has no row and the caller shows its id.
  */
-export function usersGroupNamesQuery(groupIds: ReadonlyArray<string>) {
+export function usersGroupNamesQuery(groupIds: ReadonlyArray<string>, scope?: UsersScope) {
 	return from(SessionReplays)
-		.select(($) => ({ groupId: $.GroupId, groupName: CH.argMax($.GroupName, $.StartTime) }))
+		.select(($) => ({
+			groupId: $.GroupId,
+			// A replay's start and end rows share a StartTime: the later version breaks the tie.
+			groupName: CH.argMax(
+				$.GroupName,
+				CH.compileTypedFnCall("tuple", T.string.schema, $.StartTime, $.Version),
+			),
+		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.StartTime.gte(param.dateTime("startTime")),
 			$.StartTime.lte(param.dateTime("endTime")),
 			groupIds.length > 0 ? CH.inList($.GroupId, groupIds) : CH.rawCond("1 = 0"),
 			$.GroupName.neq(""),
+			scope === undefined ? undefined : serviceScope($.ServiceName, scope),
 		])
 		.groupBy("groupId")
 		.limit(Math.max(1, groupIds.length))
@@ -392,6 +420,9 @@ const activityUsers = (scope: UsersScope) =>
 			spans: CH.toUInt64(CH.sum($.SpanCount)),
 			logLines: CH.toUInt64(CH.sum($.LogCount)),
 			groupHits: zero(),
+			nameAt: neverSeen(),
+			emailAt: neverSeen(),
+			groupAt: neverSeen(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -425,9 +456,9 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 	return userSignals(scope, filter.groups ?? [])
 		.select(($) => ({
 			userId: $.userId,
-			name: latestNonEmpty($.name, $.lastSeen),
-			email: latestNonEmpty($.email, $.lastSeen),
-			groupId: latestNonEmpty($.groupId, $.lastSeen),
+			name: CH.argMax($.name, $.nameAt),
+			email: CH.argMax($.email, $.emailAt),
+			groupId: CH.argMax($.groupId, $.groupAt),
 			namespaces: CH.arraySort(CH.groupUniqArrayIf(20)($.namespace, $.namespace.neq(""))),
 			firstSeen: CH.min_($.firstSeen),
 			lastSeen: CH.max_($.lastSeen),
@@ -450,8 +481,8 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 			CH.when(filter.search, (search) =>
 				CH.or(
 					containsText($.userId, search),
-					containsText(nonEmpty($.name), search),
-					containsText(nonEmpty($.email), search),
+					containsText(CH.argMax($.name, $.nameAt), search),
+					containsText(CH.argMax($.email, $.emailAt), search),
 					...(filter.searchUserIds !== undefined && filter.searchUserIds.length > 0
 						? [CH.inList($.userId, filter.searchUserIds)]
 						: []),
@@ -601,10 +632,11 @@ const userReplaySessions = (scope: UsersScope) =>
 export function userReplayProfileQuery(scope: UsersScope) {
 	return fromQuery(userReplaySessions(scope), "sessions")
 		.select(($) => ({
-			name: CH.argMax($.userName, $.lastActivity),
-			email: CH.argMax($.userEmail, $.lastActivity),
-			groupId: CH.argMax($.groupId, $.lastActivity),
-			groupName: CH.argMax($.groupName, $.lastActivity),
+			// The latest non-empty values, as the directory reads them; the name from the group's session.
+			name: latestNonEmpty($.userName, $.lastActivity),
+			email: latestNonEmpty($.userEmail, $.lastActivity),
+			groupId: latestNonEmpty($.groupId, $.lastActivity),
+			groupName: latestPaired($.groupName, $.groupId, $.lastActivity),
 			traitKeys: CH.argMax($.traitKeys, $.lastActivity),
 			traitValues: CH.argMax($.traitValues, $.lastActivity),
 			country: nonEmpty($.country),

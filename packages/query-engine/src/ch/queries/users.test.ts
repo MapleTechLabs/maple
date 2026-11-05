@@ -100,10 +100,10 @@ describe("usersListQuery", () => {
 		const { sql } = compileUnsafe(usersListQuery(unscoped, { search: "Ada_1" }), params)
 		expect(sql).toContain("positionCaseInsensitiveUTF8(signals.userId, 'Ada_1') > 0")
 		expect(sql).toContain(
-			"positionCaseInsensitiveUTF8(anyIf(signals.name, signals.name != ''), 'Ada_1') > 0",
+			"positionCaseInsensitiveUTF8(argMax(signals.name, signals.nameAt), 'Ada_1') > 0",
 		)
 		expect(sql).toContain(
-			"positionCaseInsensitiveUTF8(anyIf(signals.email, signals.email != ''), 'Ada_1') > 0",
+			"positionCaseInsensitiveUTF8(argMax(signals.email, signals.emailAt), 'Ada_1') > 0",
 		)
 		expect(sql).not.toContain("ILIKE")
 	})
@@ -309,7 +309,12 @@ describe("a namespace no service resolves to", () => {
 		expect(sql).toContain("session_replays.OrgId = 'org_1'")
 		expect(sql).toContain("session_replays.GroupId IN ('grp_acme', 'grp_globex')")
 		expect(sql).toContain("session_replays.GroupName != ''")
-		expect(sql).toContain("argMax(session_replays.GroupName, session_replays.StartTime)")
+		expect(sql).toContain(
+			"argMax(session_replays.GroupName, tuple(session_replays.StartTime, session_replays.Version))",
+		)
+		expect(sql).not.toContain("session_replays.ServiceName IN")
+		const scoped = compileUnsafe(usersGroupNamesQuery(["grp_acme"], storefront), params).sql
+		expect(scoped).toContain("session_replays.ServiceName IN ('web')")
 		expect(sql).toContain("LIMIT 2")
 		expect(compileUnsafe(usersGroupNamesQuery([]), params).sql).toContain("1 = 0")
 	})
