@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { coverageOf } from "./view-affected-users"
+import { affectedUserHref, coverageOf } from "./view-affected-users"
 
 describe("affected users coverage", () => {
 	it("is the share of hits that named a user", () => {
@@ -9,5 +9,13 @@ describe("affected users coverage", () => {
 
 	it("has no value over a window without hits", () => {
 		expect(coverageOf({ hits: 0, hitsWithUser: 0 })).toBeNull()
+	})
+})
+
+describe("affected user links", () => {
+	it("open the user page over the issue page's window", () => {
+		expect(affectedUserHref("user/42", { timePreset: "24h", tab: "activity" })).toBe(
+			"/users/user%2F42?timePreset=24h",
+		)
 	})
 })

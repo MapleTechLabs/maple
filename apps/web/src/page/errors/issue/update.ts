@@ -474,7 +474,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetry: () =>
 			model.window === null
 				? { model }
-				: applySteps(model, [detailStep(context, model.window, "Supersede")]),
+				: applySteps(model, [
+						detailStep(context, model.window, "Supersede"),
+						affectedUsersStep(context, model.window, "Supersede"),
+					]),
 		ClickedResetTimeRange: () =>
 			navigateSearch(model, {
 				...model.search,
