@@ -120,6 +120,7 @@ export const makeAppGraphs = (isolate: Context.Context<never>, ports: ApiPortsLa
 				Effect.suspend(() => {
 					const previous = tail
 					let release!: () => void
+					// @effect-diagnostics-next-line newPromise:off -- a native Promise hands the waiter back to its own Workers I/O context
 					tail = new Promise<void>((resolve) => {
 						release = resolve
 					})

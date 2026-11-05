@@ -2305,6 +2305,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					]) {
 						await ensurePrivateDirectory(path)
 					}
+					// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 					const startedAt = new Date().toISOString()
 					let operation: CheckpointOperation = {
 						formatVersion: 1,
@@ -2423,6 +2424,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 						revision: operationId,
 						current: checkpointId,
 						previous: oldState?.current ?? null,
+						// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 						committedAt: new Date().toISOString(),
 					}
 					await durableJson(checkpointStatePath(options.dataDir), state, options.faults)
@@ -2471,6 +2473,7 @@ const isCheckpointPreconditionError = Schema.is(CheckpointPreconditionError)
  */
 export const createCheckpoint = (options: CheckpointOptions) =>
 	createCheckpointTraced(options).pipe(
+		// @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off -- filterOrFail's orFailWith sees the unnarrowed value, widening the error
 		Effect.flatMap((outcome) =>
 			isCheckpointPreconditionError(outcome) ? Effect.fail(outcome) : Effect.succeed(outcome),
 		),
@@ -2939,6 +2942,7 @@ export const restoreCheckpoint = Effect.fn("CheckpointService.restore")(function
 					checkpointId: resolvedCheckpoint.checkpointId,
 					quarantineId,
 					phase: "intent",
+					// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 					createdAt: new Date().toISOString(),
 					validation: null,
 				}

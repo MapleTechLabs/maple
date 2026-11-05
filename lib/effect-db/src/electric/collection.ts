@@ -112,6 +112,7 @@ function createBackoffOnError(
 		if (resetTimeout) {
 			clearTimeout(resetTimeout)
 		}
+		// @effect-diagnostics-next-line globalTimers:off -- the sync client's callback API, outside Effect
 		resetTimeout = setTimeout(() => {
 			retryCount = 0
 			currentDelay = backoffConfig.initialDelayMs

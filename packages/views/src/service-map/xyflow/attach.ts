@@ -350,6 +350,7 @@ const attachNodeDrag = (renderer: HTMLElement, emit: (message: MountMessage) => 
 			if (state.dragging) emit(Message.EndedNodeDrag({ id, position: state.position }))
 			if (!state.moved) return
 			window.addEventListener("click", swallowClick, { capture: true, once: true })
+			// @effect-diagnostics-next-line globalTimers:off -- DOM pointer handler; drops the listener after this click
 			setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0)
 		}
 		drag.start(move, up)
