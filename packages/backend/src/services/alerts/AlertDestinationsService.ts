@@ -514,7 +514,7 @@ export class AlertDestinationsService extends Context.Service<
 		const listTelegramChats: AlertDestinationsServiceApi["listTelegramChats"] = Effect.fn(
 			"AlertDestinationsService.listTelegramChats",
 		)(function* (roles, botToken) {
-			// Admin-gated for the same reason a chat workspace's channel list is: it reads
+			// Gated for the same reason a chat workspace's channel list is: it reads
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
 			// must not be a probe any org member can drive.
 			yield* requireAlertsPermission(roles)

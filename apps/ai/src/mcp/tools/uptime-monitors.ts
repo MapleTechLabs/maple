@@ -1,6 +1,6 @@
 /**
  * Uptime monitors: Maple checks a URL, port or DNS name on a schedule, or waits for a job's
- * heartbeat pings. Anyone may list them; creating, changing and deleting is admin-only, like
+ * heartbeat pings. Anyone may list them; creating, changing and deleting needs an engineer or admin, like
  * the REST routes, since a monitor makes Maple request an operator-chosen host on a schedule.
  */
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
@@ -188,7 +188,7 @@ const renderMonitor = (title: string, row: typeof UptimeMonitorRow.Type) => ({
 			],
 		]),
 		// The ping URL is a credential and rendered text can be relayed to chat: it stays in
-		// the structured result (admins only) and the monitor's page in Maple.
+		// the structured result (engineers and admins) and the monitor's page in Maple.
 		...(row.kind === "heartbeat"
 			? [
 					doc.text(
@@ -352,7 +352,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		name: "create_uptime_monitor",
 		title: "Create Uptime Monitor",
 		description:
-			"Start monitoring an endpoint. kind=http requests `url` and expects `expected_status` (default 2xx), optionally under `max_response_ms` and with `body_contains`; kind=tcp connects to `host`:`port`; kind=dns resolves `host` (`record_type`, optional `expected` answer); kind=heartbeat waits for your job to ping a URL every `heartbeat_interval_seconds` or on a `cron` schedule, plus `grace_seconds`. A monitor that goes down opens an alert incident and notifies `destination_ids`. Admin only. Returns the monitor and, for a heartbeat, its ping URL and a curl line for the job.",
+			"Start monitoring an endpoint. kind=http requests `url` and expects `expected_status` (default 2xx), optionally under `max_response_ms` and with `body_contains`; kind=tcp connects to `host`:`port`; kind=dns resolves `host` (`record_type`, optional `expected` answer); kind=heartbeat waits for your job to ping a URL every `heartbeat_interval_seconds` or on a `cron` schedule, plus `grace_seconds`. A monitor that goes down opens an alert incident and notifies `destination_ids`. Org admins and engineers only. Returns the monitor and, for a heartbeat, its ping URL and a curl line for the job.",
 		parameters: Schema.Struct({
 			name: P.text("A label for the monitor, unique among the org's monitors and alert rules"),
 			kind: P.oneOf(UptimeMonitorKind.literals, "What the monitor checks"),
@@ -402,7 +402,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		name: "update_uptime_monitor",
 		title: "Update Uptime Monitor",
 		description:
-			"Change an uptime monitor: pause it (enabled=false) or resume it (enabled=true, which restarts it from pending), or change its name, target, assertions, schedule, interval, service or destinations. Fields left out keep their value; a monitor cannot change kind. Admin only.",
+			"Change an uptime monitor: pause it (enabled=false) or resume it (enabled=true, which restarts it from pending), or change its name, target, assertions, schedule, interval, service or destinations. Fields left out keep their value; a monitor cannot change kind. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			monitor: P.text("The monitor's name or id (list_uptime_monitors lists them)"),
 			enabled: P.optionalFlag("false pauses the monitor, true resumes it"),
@@ -474,7 +474,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		name: "delete_uptime_monitor",
 		title: "Delete Uptime Monitor",
 		description:
-			"Delete an uptime monitor and its alert rule. Check spans already in the traces stay. Irreversible; requires confirm=true. To stop it for a while, update_uptime_monitor enabled=false instead. Admin only.",
+			"Delete an uptime monitor and its alert rule. Check spans already in the traces stay. Irreversible; requires confirm=true. To stop it for a while, update_uptime_monitor enabled=false instead. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			monitor: P.text("The monitor's name or id"),
 			confirm: P.flag("Must be true. There is no undo."),

@@ -1,6 +1,6 @@
 /**
  * Ingest rules: drop or redact telemetry before Maple stores or bills it. Anyone may list and
- * preview them; creating, changing and deleting is admin-only, like the REST routes, since a
+ * preview them; creating, changing and deleting needs an engineer or admin, like the REST routes, since a
  * rule rewrites or discards the whole organization's incoming data.
  */
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -458,7 +458,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "create_ingest_rule",
 		title: "Create Ingest Rule",
 		description:
-			"Add a rule that drops or redacts telemetry before Maple stores or bills it. Dropped data is never billed. Drop rules need at least one condition. Preview with preview_ingest_rule first. Admin only. Applies to new data within 30 seconds.",
+			"Add a rule that drops or redacts telemetry before Maple stores or bills it. Dropped data is never billed. Drop rules need at least one condition. Preview with preview_ingest_rule first. Org admins and engineers only. Applies to new data within 30 seconds.",
 		parameters: Schema.Struct({
 			name: P.text("A label for the rule"),
 			...SPEC_FIELDS,
@@ -492,7 +492,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "update_ingest_rule",
 		title: "Update Ingest Rule",
 		description:
-			"Change an ingest rule: turn it off (enabled=false) or on, rename it, move it (position), or replace its signals, conditions or action. Fields left out keep their value. Admin only.",
+			"Change an ingest rule: turn it off (enabled=false) or on, rename it, move it (position), or replace its signals, conditions or action. Fields left out keep their value. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
 			name: P.optionalText("A new name"),
@@ -540,7 +540,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "delete_ingest_rule",
 		title: "Delete Ingest Rule",
 		description:
-			"Delete an ingest rule. Telemetry it would have dropped or redacted is stored as sent from then on. Requires confirm=true. Admin only.",
+			"Delete an ingest rule. Telemetry it would have dropped or redacted is stored as sent from then on. Requires confirm=true. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
 			confirm: P.flag("Must be true"),

@@ -206,8 +206,8 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						return toWorkspace(workspace)
 					}),
 				)
-				// Admin-gated like the other channel inventories: it reads a workspace's channel
-				// list off the platform, and only an admin can create a destination from it.
+				// Gated like the other channel inventories: it reads a workspace's channel
+				// list off the platform, and only an engineer or admin can create a destination from it.
 				.handle("destinations", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context

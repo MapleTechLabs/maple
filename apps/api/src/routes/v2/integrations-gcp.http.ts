@@ -15,7 +15,7 @@ import {
 	type GcpConnector,
 } from "@maple/backend/services/integrations/GcpConnectorService"
 
-// Reading the status is open to every member. Everything else is admin-only: a connector decides
+// Reading the status is open to every member. Everything else needs integrations:manage: a connector decides
 // what may write logs into the org and what Maple reads, and its setup script carries the push
 // secret.
 

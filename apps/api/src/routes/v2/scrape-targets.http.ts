@@ -16,7 +16,7 @@ import { ScrapeTargetsService } from "@maple/backend/services/integrations/Scrap
 import * as Policy from "@maple/domain/policy"
 import { timestampMs } from "@maple/backend/platform/time"
 
-// Every write is admin-gated: a scrape target stores credentials and makes
+// Every write needs scrape_targets:manage: a scrape target stores credentials and makes
 // Maple's infrastructure fetch an operator-chosen URL, so `probe` (which sends
 // the stored credential on demand) is a write, not a read. Reads stay on the
 // `scrape_targets:read` scope — they never expose the credential itself.

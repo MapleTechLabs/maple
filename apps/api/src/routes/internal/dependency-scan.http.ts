@@ -23,7 +23,7 @@ export const HttpDependencyScanLive = HttpApiBuilder.group(MapleInternalApi, "de
 			.handle("updateFinding", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					// Triage, like the code audit's, is an admin's call.
+					// Triage, like the code audit's, needs security:manage (engineers and admins).
 					yield* Policy.check(
 						tenant.roles,
 						"security:manage",
