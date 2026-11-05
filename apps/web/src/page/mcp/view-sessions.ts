@@ -75,6 +75,10 @@ const failedCell = <M>(h: HtmlBuilder<M>, errors: number): Html =>
 const USER_CELL = "hidden w-36 shrink-0 truncate font-mono text-xs @min-[950px]/panel:block"
 
 /** Who the session belongs to: their name, else their id, linked to their user page; else nobody named. */
+/** Who a session's row names: `user.name`/`user.email`, else the id, else `anonymous`. */
+export const sessionUserLabel = (user: string | null, userName: string | null): string =>
+	userName ?? user ?? "anonymous"
+
 const userCell = <M>(
 	h: HtmlBuilder<M>,
 	user: string | null,
@@ -82,14 +86,14 @@ const userCell = <M>(
 	userHref: (userId: string) => string,
 ): Html =>
 	user === null
-		? h.span([h.Class(cn(USER_CELL, "text-foreground-subtle"))], ["anonymous"])
+		? h.span([h.Class(cn(USER_CELL, "text-foreground-subtle"))], [sessionUserLabel(user, userName)])
 		: h.a(
 				[
 					h.Href(userHref(user)),
 					h.Title(`Open user ${user}`),
 					h.Class(cn(USER_CELL, ROW_LINK_LIFT, "text-foreground hover:underline active:underline")),
 				],
-				[userName ?? user],
+				[sessionUserLabel(user, userName)],
 			)
 
 const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: SessionsBodyOptions<M>): Html =>
