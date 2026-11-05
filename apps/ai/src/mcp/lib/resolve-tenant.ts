@@ -324,6 +324,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				rateLimitCredentialId: `key:${resolved.keyId}`,
 				...(actorId ? { actorId } : undefined),
 				...(scopeAccess === "read" ? { readOnly: true } : undefined),
+				...(isMcpOAuthToken || resolved.scopes === null ? undefined : { scopes: resolved.scopes }),
 			} as McpAuthenticatedTenant
 		}
 

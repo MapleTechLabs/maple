@@ -1,5 +1,5 @@
 import { Array as Arr, Record as Rec, String as Str } from "effect"
-// BOUNDARY: captured message payloads are vendor JSON, walked as `unknown`.
+// BOUNDARY-FILE: captured message payloads are vendor JSON, walked as `unknown`.
 
 // Envelope normalisation for the captured message fields, shared by the
 // default integration and the vendor overrides: each turns a vendor's wrapper

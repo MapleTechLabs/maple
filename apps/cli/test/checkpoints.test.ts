@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { sha256File } from "@maple/local-server/checkpoint-digest"

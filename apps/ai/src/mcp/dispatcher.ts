@@ -15,6 +15,7 @@ import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesServ
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
@@ -232,6 +233,7 @@ const callMcpToolUnscoped = (name: string, input: unknown, surface: McpToolSurfa
 	)
 
 export interface McpToolExecutorApi {
+	// BOUNDARY: tool input is unparsed until the tool's own schema decodes it.
 	readonly execute: (
 		tenant: TenantContext,
 		name: string,
@@ -293,6 +295,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	StatusPageSnapshotBuilder.layer,
 	StatusPagesService.layer,
 	UptimeMonitorsService.layer,
+	UsersReadService.layer,
 	IngestRuleService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,

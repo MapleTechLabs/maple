@@ -26,7 +26,6 @@
         "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
-        "@oxlint/plugins": "1.90.0",
         "@types/node": "catalog:tooling",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
@@ -487,6 +486,23 @@
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
       },
+    },
+    "lib/oxlint-config": {
+      "name": "@maple-dev/oxlint-config",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@oxlint/plugins": "1.90.0",
+      },
+      "peerDependencies": {
+        "@effect/tsgo": ">=0.64.1",
+        "@oxlint/plugins": ">=1.90.0",
+        "oxlint": ">=1.90.0",
+        "oxlint-tsgolint": ">=7.0.0",
+      },
+      "optionalPeers": [
+        "@effect/tsgo",
+        "oxlint-tsgolint",
+      ],
     },
     "lib/prometheus-otlp": {
       "name": "@maple/prometheus-otlp",
@@ -1501,6 +1517,8 @@
     "@maple-dev/effect-orm": ["@maple-dev/effect-orm@0.8.0", "", { "peerDependencies": { "effect": "^4.0.6" }, "bin": { "ch-bench": "dist/benchmark/bin.mjs", "effect-orm": "dist/kit/bin.mjs" } }, "sha512-NQxCs+HKZT/nUVleiWjDv8yXJGZ8i3byb36B6qNObgJF0XHCLK/GgvfZjVTDWLsqKagOxy7M/ggN89SXZwrVxg=="],
 
     "@maple-dev/effect-sdk": ["@maple-dev/effect-sdk@workspace:packages/effect-sdk"],
+
+    "@maple-dev/oxlint-config": ["@maple-dev/oxlint-config@workspace:lib/oxlint-config"],
 
     "@maple-examples/alchemy": ["@maple-examples/alchemy@workspace:examples/alchemy-maple"],
 

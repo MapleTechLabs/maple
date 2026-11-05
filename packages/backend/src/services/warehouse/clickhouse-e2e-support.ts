@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 // Shared plumbing for the ClickHouse-backed e2e tests.
 //
 // Both suites need the same three things: connection settings from the CI job's

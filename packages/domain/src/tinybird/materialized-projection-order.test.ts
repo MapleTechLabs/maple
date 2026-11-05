@@ -118,6 +118,8 @@ describe("materialized projection order", () => {
 			["ai_crawler_requests", "ai_crawler_requests_mv"],
 			["scanner_requests", "scanner_requests_mv"],
 			["service_runtimes_hourly", "service_runtimes_hourly_mv"],
+			["user_activity_hourly", "user_activity_hourly_traces_mv"],
+			["user_activity_hourly", "user_activity_hourly_logs_mv"],
 			["ci_runs", "ci_runs_mv"],
 			["ci_jobs", "ci_jobs_mv"],
 			["service_map_edges_hourly", "service_map_edges_hourly_ingest_mv"],

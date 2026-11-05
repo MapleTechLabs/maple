@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 // bench-startup-cpu.ts — does defining Schema/TaggedError classes actually
 // cost meaningful Cloudflare *startup* CPU?
 //

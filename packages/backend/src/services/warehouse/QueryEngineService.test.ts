@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
+// BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import { describe, it } from "@effect/vitest"
 import { TestClock } from "effect/testing"
 import {

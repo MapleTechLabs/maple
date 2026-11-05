@@ -190,6 +190,9 @@ export const ScannerRequests = Datasources.scannerRequests
 /** Runtime and telemetry SDK versions per service and hour (migration 0050). SummingMergeTree. */
 export const ServiceRuntimesHourly = Datasources.serviceRuntimesHourly
 
+/** Per end user, namespace, service and hour (migration 0056). AggregatingMergeTree. */
+export const UserActivityHourly = Datasources.userActivityHourly
+
 /** CI workflow runs (migration 0047): the root span of each `github-actions` trace. */
 export const CiRuns = Datasources.ciRuns
 

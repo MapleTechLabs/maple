@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Config, Context, Effect, Fiber, Layer, Option, Schema, String as Str } from "effect"
 import { CacheBackend, type EdgeCacheBackend, type EdgeCacheBackendError } from "./cache-backend"
 import { isolateOutboundSlots, trackOutboundSlot, type OutboundSlotsCell } from "./outbound-slots"

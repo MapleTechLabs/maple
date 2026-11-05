@@ -133,13 +133,15 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 
 ### Session replays and product events
 
-| Tool                     | Access | What it does                                                                              |
-| ------------------------ | ------ | ----------------------------------------------------------------------------------------- |
-| `search_sessions`        | read   | Find browser session replays by user, client, errors, duration or what happened in them   |
-| `get_session_transcript` | read   | A session replay as a text transcript of navigation, clicks, console, network and errors  |
-| `get_session_traces`     | read   | The backend traces a browser session produced                                             |
-| `list_product_events`    | read   | Product event names with how often each fired and how many sessions and people it reached |
-| `query_funnel`           | read   | Conversion funnel over product events, with step counts, conversion and drop-off          |
+| Tool                     | Access | What it does                                                                                |
+| ------------------------ | ------ | ------------------------------------------------------------------------------------------- |
+| `search_sessions`        | read   | Find browser session replays by user, client, errors, duration or what happened in them     |
+| `get_session_transcript` | read   | A session replay as a text transcript of navigation, clicks, console, network and errors    |
+| `get_session_traces`     | read   | The backend traces a browser session produced                                               |
+| `list_product_events`    | read   | Product event names with how often each fired and how many sessions and people it reached   |
+| `query_funnel`           | read   | Conversion funnel over product events, with step counts, conversion and drop-off            |
+| `list_users`             | read   | The end users your apps identified, with sessions, requests, errors and their busiest route |
+| `inspect_user`           | read   | One end user: sessions, MCP sessions, the issues they hit and their failed requests         |
 
 ### Agent sessions
 

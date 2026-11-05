@@ -150,6 +150,7 @@ export const TABLE_DELETE_PLAN = {
 	trace_list_mv: derived("Timestamp", { namespace: SERVICE_NAMESPACE }),
 	traces: raw("Timestamp"),
 	traces_aggregates_hourly: derived("Hour"),
+	user_activity_hourly: derived("Hour", { namespace: SERVICE_NAMESPACE, env: null }),
 } satisfies TableDeletePlans
 
 const lookup =

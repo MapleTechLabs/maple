@@ -3130,6 +3130,35 @@ SELECT
         GROUP BY service, bucket
         FORMAT JSON
 
+-- builder:mcp:mcpServersSessionListQuery:userPage  [11aed10c]
+SELECT
+          traces.ServiceName AS service,
+          traces.SpanAttributes['mcp.session.id'] AS sessionId,
+          anyIf(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'Claude Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'Claude', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'Codex', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'Cursor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'Windsurf', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'VS Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'omp', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'curl', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'Bun', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'Node (undici)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'Node', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'Python (httpx)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'Python (requests)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'Python (aiohttp)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'Go', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'executor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'estate-console', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'preview-verifier', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+') = '', 'unknown', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+')), traces.SpanAttributes['user_agent.original'] != '') AS client,
+          anyIf(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'internal', 'unknown'), traces.SpanAttributes['user_agent.original'] != '') AS kind,
+          anyIf(if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']), if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != '') AS user,
+          anyIf(if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']), if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']) != '') AS userName,
+          count() AS requests,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS calls,
+          countIf((traces.SpanAttributes['mcp.method.name'] = 'tools/call' AND traces.SpanAttributes['error.type'] != '')) AS errors,
+          uniqExact(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai', 'docs-mcp')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND traces.SpanAttributes['mcp.session.id'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
+          AND traces.ResourceAttributes['service.namespace'] IN ('platform')
+        GROUP BY service, sessionId
+        ORDER BY lastSeen DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:mcp:mcpServerStatsQuery:twoServers  [2b165cff]
 SELECT
           traces.ServiceName AS service,
@@ -3147,6 +3176,50 @@ SELECT
           AND traces.ServiceName IN ('maple-ai', 'docs-mcp')
           AND traces.SpanAttributes['mcp.method.name'] = 'tools/call'
         GROUP BY service
+        FORMAT JSON
+
+-- builder:mcp:mcpServersUserActivityQuery:userPage  [5e45bd44]
+SELECT
+          ranked.service AS service,
+          ranked.user AS user,
+          ranked.client AS client,
+          ranked.minute AS minute,
+          ranked.kind AS kind,
+          ranked.userName AS userName,
+          ranked.requests AS requests,
+          ranked.calls AS calls,
+          ranked.errors AS errors,
+          ranked.tools AS tools,
+          ranked.firstSeen AS firstSeen,
+          ranked.lastSeen AS lastSeen
+        FROM (SELECT
+          traces.ServiceName AS service,
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS user,
+          multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'Claude Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'Claude', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'Codex', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'Cursor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'Windsurf', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'VS Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'omp', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'curl', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'Bun', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'Node (undici)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'Node', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'Python (httpx)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'Python (requests)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'Python (aiohttp)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'Go', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'executor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'estate-console', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'preview-verifier', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+') = '', 'unknown', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+')) AS client,
+          toStartOfMinute(traces.Timestamp) AS minute,
+          any(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'internal', 'unknown')) AS kind,
+          anyIf(if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']), if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']) != '') AS userName,
+          count() AS requests,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS calls,
+          countIf((traces.SpanAttributes['mcp.method.name'] = 'tools/call' AND traces.SpanAttributes['error.type'] != '')) AS errors,
+          groupUniqArray(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen,
+          row_number() OVER (PARTITION BY service ORDER BY minute DESC) AS serviceRank
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai', 'docs-mcp')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND traces.SpanAttributes['mcp.session.id'] = ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
+        GROUP BY service, user, client, minute) AS ranked
+        WHERE ranked.serviceRank <= 5000
+        ORDER BY minute DESC
+        LIMIT 20000
         FORMAT JSON
 
 -- builder:mcp:mcpServicesQuery:default  [083d9dc7]
@@ -3207,6 +3280,33 @@ SELECT
         HAVING countIf((traces.SpanAttributes['mcp.method.name'] = 'tools/call' AND traces.SpanAttributes['error.type'] != '')) > 0
         ORDER BY lastSeen DESC
         LIMIT 200
+        FORMAT JSON
+
+-- builder:mcp:mcpSessionListQuery:oneUser  [1bbc6ee0]
+SELECT
+          traces.SpanAttributes['mcp.session.id'] AS sessionId,
+          anyIf(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'Claude Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'Claude', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'Codex', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'Cursor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'Windsurf', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'VS Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'omp', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'curl', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'Bun', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'Node (undici)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'Node', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'Python (httpx)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'Python (requests)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'Python (aiohttp)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'Go', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'executor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'estate-console', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'preview-verifier', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+') = '', 'unknown', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+')), traces.SpanAttributes['user_agent.original'] != '') AS client,
+          anyIf(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'internal', 'unknown'), traces.SpanAttributes['user_agent.original'] != '') AS kind,
+          anyIf(if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']), if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != '') AS user,
+          anyIf(if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']), if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']) != '') AS userName,
+          count() AS requests,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS calls,
+          countIf((traces.SpanAttributes['mcp.method.name'] = 'tools/call' AND traces.SpanAttributes['error.type'] != '')) AS errors,
+          uniqExact(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName = 'maple-ai'
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND traces.SpanAttributes['mcp.session.id'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
+        GROUP BY sessionId
+        ORDER BY lastSeen DESC
+        LIMIT 100
         FORMAT JSON
 
 -- builder:mcp:mcpSessionRequestsQuery:default  [b4eb5e36]
@@ -3380,6 +3480,34 @@ SELECT
         GROUP BY user, client, minute
         ORDER BY minute DESC
         LIMIT 50000
+        FORMAT JSON
+
+-- builder:mcp:mcpUserActivityQuery:userPage  [24cf2d00]
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS user,
+          multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'Claude Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'Claude', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'Codex', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'Cursor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'Windsurf', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'VS Code', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'omp', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'curl', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'Bun', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'Node (undici)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'Node', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'Python (httpx)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'Python (requests)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'Python (aiohttp)', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'Go', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'executor', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'estate-console', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'preview-verifier', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+') = '', 'unknown', extract(traces.SpanAttributes['user_agent.original'], '^[^/ ]+')) AS client,
+          toStartOfMinute(traces.Timestamp) AS minute,
+          any(multiIf(positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-code/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'claude-user') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'openai-mcp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'cursor/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'windsurf/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'vscode/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'omp/') = 1, 'agent', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'curl/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'bun/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'undici') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'node') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-httpx/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'python-requests/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'aiohttp/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'go-http-client/') = 1, 'script', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'executor') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'estate-console/') = 1, 'internal', positionCaseInsensitive(traces.SpanAttributes['user_agent.original'], 'preview-verifier/') = 1, 'internal', 'unknown')) AS kind,
+          anyIf(if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']), if(traces.SpanAttributes['user.name'] != '', traces.SpanAttributes['user.name'], traces.SpanAttributes['user.email']) != '') AS userName,
+          count() AS requests,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS calls,
+          countIf((traces.SpanAttributes['mcp.method.name'] = 'tools/call' AND traces.SpanAttributes['error.type'] != '')) AS errors,
+          groupUniqArray(nullIf(traces.SpanAttributes['gen_ai.tool.name'], '')) AS tools,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName = 'maple-ai'
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND traces.SpanAttributes['mcp.session.id'] = ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
+        GROUP BY user, client, minute
+        ORDER BY minute DESC
+        LIMIT 5001
         FORMAT JSON
 
 -- builder:mcp:mcpUserSessionRequestsQuery:default  [37b2f575]
@@ -9646,6 +9774,1345 @@ SELECT
         ORDER BY startTime DESC, traceId DESC
         LIMIT 51
         OFFSET 0
+        FORMAT JSON
+
+-- builder:user-activity:issueAffectedUserCountQuery:default  [e85255cd]
+SELECT
+          uniqIf(error_events.UserId, error_events.UserId != '') AS affectedUsers,
+          countIf(error_events.UserId != '') AS hitsWithUser,
+          count() AS hits
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash IN (toUInt64('1234567890'))
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
+        FORMAT JSON
+
+-- builder:user-activity:issueAffectedUsersQuery:default  [77ef4c89]
+SELECT
+          error_events.UserId AS userId,
+          count() AS hits,
+          max(error_events.Timestamp) AS lastSeen
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash IN (toUInt64('1234567890'))
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events.UserId != ''
+        GROUP BY userId
+        ORDER BY hits DESC, userId ASC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:user-activity:userActivityServicesQuery:default  [eabfc3cc]
+SELECT
+          user_activity_hourly.ServiceName AS serviceName,
+          user_activity_hourly.ServiceNamespace AS serviceNamespace,
+          sum(user_activity_hourly.RequestCount) AS requestCount,
+          sum(user_activity_hourly.FailedRequestCount) AS failedRequestCount,
+          sum(user_activity_hourly.ErrorSpanCount) AS errorSpanCount,
+          sum(user_activity_hourly.LogCount) AS logCount,
+          max(user_activity_hourly.LastSeen) AS lastSeen
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog'
+        GROUP BY serviceName, serviceNamespace
+        ORDER BY requestCount DESC, serviceName ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:user-activity:userActivitySlicesQuery:default  [5b6ff050]
+SELECT
+          user_activity_hourly.ServiceName AS serviceName,
+          user_activity_hourly.ServiceNamespace AS serviceNamespace,
+          sum(user_activity_hourly.SpanCount) AS spanCount,
+          sum(user_activity_hourly.RequestCount) AS requestCount,
+          sum(user_activity_hourly.LogCount) AS logCount,
+          minIf(user_activity_hourly.Hour, user_activity_hourly.RequestCount > 0) AS firstRequestHour,
+          maxIf(user_activity_hourly.Hour, user_activity_hourly.RequestCount > 0) AS lastRequestHour,
+          minIf(user_activity_hourly.Hour, user_activity_hourly.LogCount > 0) AS firstLogHour,
+          maxIf(user_activity_hourly.Hour, user_activity_hourly.LogCount > 0) AS lastLogHour
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog'
+        GROUP BY serviceName, serviceNamespace
+        ORDER BY serviceName ASC
+        FORMAT JSON
+
+-- builder:user-activity:userActivitySummaryQuery:default  [644ac3ff]
+SELECT
+          sum(user_activity_hourly.SpanCount) AS spanCount,
+          sum(user_activity_hourly.ErrorSpanCount) AS errorSpanCount,
+          sum(user_activity_hourly.RequestCount) AS requestCount,
+          sum(user_activity_hourly.FailedRequestCount) AS failedRequestCount,
+          uniqIfMerge(TraceIds) AS traceCount,
+          uniqIfMerge(SessionIds) AS sessionCount,
+          if(sum(RequestCount) > 0, arrayElement(quantilesTDigestIfMerge(0.5, 0.95)(RequestDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(RequestCount) > 0, arrayElement(quantilesTDigestIfMerge(0.5, 0.95)(RequestDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          sum(user_activity_hourly.LogCount) AS logCount,
+          sum(user_activity_hourly.WarnLogCount) AS warnLogCount,
+          sum(user_activity_hourly.ErrorLogCount) AS errorLogCount,
+          arrayMap(x -> x.1, arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes))) AS topRoutes,
+          arrayMap(x -> x.2, arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes))) AS topRouteCounts,
+          tupleElement(sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)]), 1) AS requestHours,
+          tupleElement(sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)]), 2) AS requestHourCounts,
+          min(user_activity_hourly.FirstSeen) AS firstSeen,
+          max(user_activity_hourly.LastSeen) AS lastSeen
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog'
+        FORMAT JSON
+
+-- builder:user-activity:userActivityTotalsQuery:default  [af7d08cb]
+SELECT
+          user_activity_hourly.UserId AS userId,
+          sum(user_activity_hourly.RequestCount) AS requestCount,
+          sum(user_activity_hourly.FailedRequestCount) AS failedRequestCount,
+          sum(user_activity_hourly.ErrorSpanCount) AS errorSpanCount,
+          sum(user_activity_hourly.LogCount) AS logCount,
+          sum(user_activity_hourly.ErrorLogCount) AS errorLogCount,
+          min(user_activity_hourly.FirstSeen) AS firstSeen,
+          max(user_activity_hourly.LastSeen) AS lastSeen,
+          tupleElement(arrayElement(arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes)), 1), 1) AS topRoute,
+          tupleElement(sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)]), 1) AS requestHours,
+          tupleElement(sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)]), 2) AS requestHourCounts
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId IN ('user_a', 'user_b')
+        GROUP BY userId
+        LIMIT 2
+        FORMAT JSON
+
+-- builder:user-activity:userIssuesQuery:default  [db0e3ebe]
+SELECT
+          toString(error_events_by_time.FingerprintHash) AS fingerprintHash,
+          argMax(error_events_by_time.ServiceName, error_events_by_time.Timestamp) AS serviceName,
+          argMax(error_events_by_time.ExceptionType, error_events_by_time.Timestamp) AS exceptionType,
+          argMax(error_events_by_time.ExceptionMessage, error_events_by_time.Timestamp) AS exceptionMessage,
+          argMax(error_events_by_time.ErrorLabel, error_events_by_time.Timestamp) AS errorLabel,
+          count() AS hits,
+          min(error_events_by_time.Timestamp) AS firstSeen,
+          max(error_events_by_time.Timestamp) AS lastSeen
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events_by_time.UserId = 'user_catalog'
+        GROUP BY fingerprintHash
+        ORDER BY hits DESC, lastSeen DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:user-activity:userIssueTotalsQuery:default  [10c2bfc2]
+SELECT
+          count() AS hits,
+          uniqExact(error_events_by_time.FingerprintHash) AS errorGroups
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events_by_time.UserId = 'user_catalog'
+        FORMAT JSON
+
+-- builder:user-activity:userLogsQuery:default  [3bd5f1bd]
+SELECT
+          logs.Timestamp AS timestamp,
+          logs.ServiceName AS serviceName,
+          logs.SeverityText AS severityText,
+          logs.SeverityNumber AS severityNumber,
+          logs.Body AS body,
+          logs.TraceId AS traceId,
+          logs.SpanId AS spanId
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ServiceName IN ('api')
+          AND logs.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND (logs.LogAttributes['user.id'] = 'user_catalog' OR (logs.LogAttributes['user.id'] = '' AND logs.LogAttributes['enduser.id'] = 'user_catalog'))
+        ORDER BY timestamp DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:user-activity:userTracesQuery:default  [8247554d]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.Timestamp AS timestamp,
+          traces.ServiceName AS serviceName,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          if(traces.ParentSpanId = '', 1, 0) AS isRoot
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('api')
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND traces.IsEntryPoint = 1
+          AND (traces.SpanAttributes['user.id'] = 'user_catalog' OR (traces.SpanAttributes['user.id'] = '' AND traces.SpanAttributes['enduser.id'] = 'user_catalog'))
+        ORDER BY timestamp DESC
+        LIMIT 100
+        FORMAT JSON
+
+-- builder:user-activity:userTracesQuery:notable  [9c6e1711]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.Timestamp AS timestamp,
+          traces.ServiceName AS serviceName,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          if(traces.ParentSpanId = '', 1, 0) AS isRoot
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('api')
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND traces.IsEntryPoint = 1
+          AND (traces.SpanAttributes['user.id'] = 'user_catalog' OR (traces.SpanAttributes['user.id'] = '' AND traces.SpanAttributes['enduser.id'] = 'user_catalog'))
+          AND (traces.StatusCode = 'Error' OR traces.Duration >= 2000000000)
+        ORDER BY timestamp DESC
+        LIMIT 100
+        FORMAT JSON
+
+-- builder:users:userDevicesQuery:default  [cf2b3cba]
+SELECT
+          sessions.browser AS browser,
+          sessions.os AS os,
+          count() AS sessions
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          argMax(mapKeys(session_replays.UserTraits), session_replays.Version) AS traitKeys,
+          argMax(mapValues(session_replays.UserTraits), session_replays.Version) AS traitValues,
+          argMax(session_replays.BrowserName, session_replays.Version) AS browser,
+          argMax(session_replays.OsName, session_replays.Version) AS os,
+          argMax(session_replays.Country, session_replays.Version) AS country,
+          ifNull(argMax(session_replays.DurationMs, session_replays.Version), 0) AS durationMs,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.UserId = 'user_42'
+        GROUP BY sessionId) AS sessions
+        WHERE (sessions.browser != '' OR sessions.os != '')
+        GROUP BY browser, os
+        ORDER BY sessions DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:users:userEventsQuery:namespaceFiltered  [28a0c0c9]
+SELECT
+          events.timestamp AS timestamp,
+          events.name AS name,
+          events.source AS source,
+          events.service AS service,
+          events.pagePath AS pagePath,
+          events.propertyKeys AS propertyKeys,
+          events.propertyValues AS propertyValues
+        FROM (SELECT
+          product_events.Timestamp AS timestamp,
+          product_events.EventName AS name,
+          product_events.Source AS source,
+          if(product_events.ServiceName != '', product_events.ServiceName, ifNull(session.service, '')) AS service,
+          product_events.PagePath AS pagePath,
+          mapKeys(product_events.Attributes) AS propertyKeys,
+          mapValues(product_events.Attributes) AS propertyValues
+        FROM product_events
+        LEFT JOIN (SELECT
+          session_replays.SessionId AS sessionId,
+          any(session_replays.ServiceName) AS service
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
+          AND session_replays.ServiceName != ''
+          AND session_replays.SessionId IN (SELECT
+          product_events.SessionId AS sessionId
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42'
+          AND product_events.ServiceName = ''
+          AND product_events.SessionId != ''
+        GROUP BY sessionId)
+        GROUP BY sessionId) AS session ON product_events.SessionId = session.sessionId
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42'
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))) AS events
+        ORDER BY timestamp DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:users:userEventsSummaryQuery:default  [4d066db5]
+SELECT
+          count() AS events,
+          uniqExact(product_events.EventName) AS distinctEvents,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42'
+        FORMAT JSON
+
+-- builder:users:userMcpSummaryQuery:default  [51dfe64c]
+SELECT
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          count() AS requests,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS calls,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
+        FORMAT JSON
+
+-- builder:users:userReplayProfileQuery:namespaceFiltered  [d6f77270]
+SELECT
+          argMax(sessions.userName, sessions.lastActivity) AS name,
+          argMax(sessions.userEmail, sessions.lastActivity) AS email,
+          argMax(sessions.groupId, sessions.lastActivity) AS groupId,
+          argMax(sessions.traitKeys, sessions.lastActivity) AS traitKeys,
+          argMax(sessions.traitValues, sessions.lastActivity) AS traitValues,
+          anyIf(sessions.country, sessions.country != '') AS country,
+          count() AS sessions,
+          toUInt64(sum(sessions.durationMs)) AS recordedMs,
+          toUInt64(sum(sessions.errors)) AS errors,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          argMax(mapKeys(session_replays.UserTraits), session_replays.Version) AS traitKeys,
+          argMax(mapValues(session_replays.UserTraits), session_replays.Version) AS traitValues,
+          argMax(session_replays.BrowserName, session_replays.Version) AS browser,
+          argMax(session_replays.OsName, session_replays.Version) AS os,
+          argMax(session_replays.Country, session_replays.Version) AS country,
+          ifNull(argMax(session_replays.DurationMs, session_replays.Version), 0) AS durationMs,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.UserId = 'user_42'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId) AS sessions
+        FORMAT JSON
+
+-- builder:users:usersAnonymousVisitorsQuery:default  [8a706b10]
+SELECT
+          count() AS anonymousVisitors
+        FROM (SELECT
+          visitors.visitorId AS visitorId,
+          sum(visitors.identified) AS identified
+        FROM (
+SELECT
+          session_replays.VisitorId AS visitorId,
+          countIf(session_replays.UserId != '') AS identified
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.VisitorId != ''
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY visitorId
+UNION ALL
+SELECT
+          product_events.VisitorId AS visitorId,
+          countIf(product_events.UserId != '') AS identified
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.VisitorId != ''
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
+        GROUP BY visitorId
+) AS visitors
+        GROUP BY visitorId
+        HAVING sum(visitors.identified) = 0) AS anonymous
+        FORMAT JSON
+
+-- builder:users:userServicesQuery:default  [6ecc9043]
+SELECT
+          signals.service AS service,
+          signals.namespace AS namespace,
+          sum(signals.signals) AS signals
+        FROM (
+SELECT
+          sessions.service AS service,
+          transform(sessions.service, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          count() AS signals
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          any(session_replays.ServiceName) AS service
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.UserId = 'user_42'
+        GROUP BY sessionId) AS sessions
+        GROUP BY service, namespace
+UNION ALL
+SELECT
+          events.service AS service,
+          transform(events.service, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          count() AS signals
+        FROM (SELECT
+          product_events.Timestamp AS timestamp,
+          product_events.EventName AS name,
+          product_events.Source AS source,
+          if(product_events.ServiceName != '', product_events.ServiceName, ifNull(session.service, '')) AS service,
+          product_events.PagePath AS pagePath,
+          mapKeys(product_events.Attributes) AS propertyKeys,
+          mapValues(product_events.Attributes) AS propertyValues
+        FROM product_events
+        LEFT JOIN (SELECT
+          session_replays.SessionId AS sessionId,
+          any(session_replays.ServiceName) AS service
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
+          AND session_replays.ServiceName != ''
+          AND session_replays.SessionId IN (SELECT
+          product_events.SessionId AS sessionId
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42'
+          AND product_events.ServiceName = ''
+          AND product_events.SessionId != ''
+        GROUP BY sessionId)
+        GROUP BY sessionId) AS session ON product_events.SessionId = session.sessionId
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42') AS events
+        WHERE events.service != ''
+        GROUP BY service, namespace
+UNION ALL
+SELECT
+          traces.ServiceName AS service,
+          transform(traces.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], traces.ResourceAttributes['service.namespace']) AS namespace,
+          count() AS signals
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42'
+        GROUP BY service, namespace
+) AS signals
+        WHERE signals.service != ''
+        GROUP BY service, namespace
+        ORDER BY signals DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:users:usersFacetsQuery:default  [3fb921fa]
+SELECT
+          signals.namespace AS name,
+          uniqExact(signals.userId) AS count,
+          'namespace' AS facetType
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          '' AS groupId,
+          traces.ResourceAttributes['service.namespace'] AS namespace,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
+          count() AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+        GROUP BY userId, namespace
+) AS signals
+        WHERE signals.namespace != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          signals.groupId AS name,
+          uniqExact(signals.userId) AS count,
+          'group' AS facetType
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          '' AS groupId,
+          traces.ResourceAttributes['service.namespace'] AS namespace,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
+          count() AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+        GROUP BY userId, namespace
+) AS signals
+        WHERE signals.groupId != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+FORMAT JSON
+
+-- builder:users:usersFacetsQuery:pinned  [67e061ac]
+SELECT
+          signals.groupId AS name,
+          uniqExact(signals.userId) AS count,
+          'group' AS facetType
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          '' AS groupId,
+          traces.ResourceAttributes['service.namespace'] AS namespace,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
+          count() AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+        GROUP BY userId, namespace
+) AS signals
+        WHERE signals.groupId != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+FORMAT JSON
+
+-- builder:users:usersListQuery:activityRollup  [52ffde9d]
+SELECT
+          signals.userId AS userId,
+          anyIf(signals.name, signals.name != '') AS name,
+          anyIf(signals.email, signals.email != '') AS email,
+          anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
+          min(signals.firstSeen) AS firstSeen,
+          max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
+          sum(signals.sessions) AS sessions,
+          sum(signals.errors) AS errors,
+          sum(signals.requests) AS requests,
+          sum(signals.mcpSpans) AS mcpSpans,
+          sum(signals.events) AS events,
+          sum(signals.spans) AS spans,
+          sum(signals.logLines) AS logLines
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          user_activity_hourly.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          '' AS groupId,
+          user_activity_hourly.ServiceNamespace AS namespace,
+          toDateTime64(min(user_activity_hourly.FirstSeen), 9) AS firstSeen,
+          toDateTime64(max(user_activity_hourly.LastSeen), 9) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(sum(user_activity_hourly.FailedRequestCount)) AS errors,
+          toUInt64(sum(user_activity_hourly.RequestCount)) AS requests,
+          toUInt64(sumIf(user_activity_hourly.SpanCount, user_activity_hourly.ServiceName IN ('maple-ai'))) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(sum(user_activity_hourly.SpanCount)) AS spans,
+          toUInt64(sum(user_activity_hourly.LogCount)) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId != ''
+        GROUP BY userId, namespace
+) AS signals
+        GROUP BY userId
+        ORDER BY lastSeen DESC, userId ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:users:usersListQuery:namespaceFiltered  [cbba6299]
+SELECT
+          signals.userId AS userId,
+          anyIf(signals.name, signals.name != '') AS name,
+          anyIf(signals.email, signals.email != '') AS email,
+          anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
+          min(signals.firstSeen) AS firstSeen,
+          max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
+          sum(signals.sessions) AS sessions,
+          sum(signals.errors) AS errors,
+          sum(signals.requests) AS requests,
+          sum(signals.mcpSpans) AS mcpSpans,
+          sum(signals.events) AS events,
+          sum(signals.spans) AS spans,
+          sum(signals.logLines) AS logLines
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(countIf(sessions.groupId IN ('acme'))) AS groupHits
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(countIf(product_events.GroupId IN ('acme'))) AS groupHits
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+          AND (product_events.ServiceName IN ('storefront-web') OR (product_events.ServiceName = '' AND product_events.SessionId IN (SELECT
+          session_replays.SessionId AS sessionId
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
+          AND session_replays.ServiceName IN ('storefront-web')
+        GROUP BY sessionId)))
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          '' AS groupId,
+          traces.ResourceAttributes['service.namespace'] AS namespace,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
+          count() AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+        GROUP BY userId, namespace
+) AS signals
+        GROUP BY userId
+        HAVING sum(signals.errors) > 0
+          AND sum(signals.sessions) > 0
+          AND sum(signals.groupHits) > 0
+          AND (positionCaseInsensitiveUTF8(signals.userId, 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.name, signals.name != ''), 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.email, signals.email != ''), 'ada') > 0)
+        ORDER BY lastSeen DESC, userId ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:users:usersListQuery:unscoped  [e895ff7c]
+SELECT
+          signals.userId AS userId,
+          anyIf(signals.name, signals.name != '') AS name,
+          anyIf(signals.email, signals.email != '') AS email,
+          anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
+          min(signals.firstSeen) AS firstSeen,
+          max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
+          sum(signals.sessions) AS sessions,
+          sum(signals.errors) AS errors,
+          sum(signals.requests) AS requests,
+          sum(signals.mcpSpans) AS mcpSpans,
+          sum(signals.events) AS events,
+          sum(signals.spans) AS spans,
+          sum(signals.logLines) AS logLines
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          '' AS groupId,
+          traces.ResourceAttributes['service.namespace'] AS namespace,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
+          count() AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+        GROUP BY userId, namespace
+) AS signals
+        GROUP BY userId
+        ORDER BY lastSeen DESC, userId ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:users:usersMcpNameSearchQuery:default  [47202f1a]
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND (positionCaseInsensitiveUTF8(traces.SpanAttributes['user.name'], 'ada') > 0 OR positionCaseInsensitiveUTF8(traces.SpanAttributes['user.email'], 'ada') > 0)
+        GROUP BY userId
+        ORDER BY userId ASC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:users:usersMcpNamesQuery:default  [0f43736f]
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) IN ('user_42', 'user_43')
+        GROUP BY userId
+        LIMIT 2
+        FORMAT JSON
+
+-- builder:users:usersServiceNamespacesQuery:default  [7caa4563]
+SELECT
+          service_windows.bServiceName AS service,
+          service_windows.bServiceNamespace AS namespace,
+          sum(service_windows.bSpanCount) AS spans
+        FROM (
+SELECT
+          toStartOfHour(service_overview_spans.Timestamp) AS bBucket,
+          service_overview_spans.ServiceName AS bServiceName,
+          service_overview_spans.ServiceNamespace AS bServiceNamespace,
+          service_overview_spans.DeploymentEnv AS bEnvironment,
+          service_overview_spans.CommitSha AS bCommitSha,
+          count() AS bSpanCount,
+          sum(service_overview_spans.SampleRate) AS bEstimatedSpanCount,
+          countIf(service_overview_spans.StatusCode = 'Error') AS bErrorCount,
+          sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          min(service_overview_spans.Timestamp) AS bFirstSeen,
+          countIf((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration < 500000000)) AS bApdexSatisfiedCount,
+          countIf(((service_overview_spans.StatusCode != 'Error' AND service_overview_spans.Duration >= 500000000) AND service_overview_spans.Duration < 2000000000)) AS bApdexToleratingCount
+        FROM service_overview_spans
+        WHERE service_overview_spans.OrgId = 'org_sql_catalog'
+          AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND service_overview_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+UNION ALL
+SELECT
+          service_overview_hourly.Hour AS bBucket,
+          service_overview_hourly.ServiceName AS bServiceName,
+          service_overview_hourly.ServiceNamespace AS bServiceNamespace,
+          service_overview_hourly.DeploymentEnv AS bEnvironment,
+          service_overview_hourly.CommitSha AS bCommitSha,
+          sum(service_overview_hourly.SpanCount) AS bSpanCount,
+          sum(service_overview_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_overview_hourly.ErrorCount) AS bErrorCount,
+          sum(service_overview_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_overview_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          min(service_overview_hourly.FirstSeen) AS bFirstSeen,
+          sum(service_overview_hourly.ApdexSatisfiedCount) AS bApdexSatisfiedCount,
+          sum(service_overview_hourly.ApdexToleratingCount) AS bApdexToleratingCount
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_overview_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
+) AS service_windows
+        WHERE service_windows.bServiceName != ''
+          AND service_windows.bServiceNamespace != ''
+        GROUP BY service, namespace
+        ORDER BY spans DESC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:users:usersSummaryQuery:default  [fa8f125e]
+SELECT
+          count() AS identified,
+          countIf(users.lastSeen >= '2026-01-01 10:30:00') AS activeToday,
+          countIf(users.errors > 0) AS withErrors,
+          countIf(users.sessions > 0) AS withReplay
+        FROM (SELECT
+          signals.userId AS userId,
+          max(signals.lastSeen) AS lastSeen,
+          sum(signals.sessions) AS sessions,
+          sum(signals.errors) AS errors
+        FROM (
+SELECT
+          sessions.userId AS userId,
+          anyIf(sessions.userName, sessions.userName != '') AS name,
+          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
+          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(sessions.startTime) AS firstSeen,
+          max(sessions.lastActivity) AS lastSeen,
+          count() AS sessions,
+          toUInt64(sum(sessions.errors)) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM (SELECT
+          session_replays.SessionId AS sessionId,
+          argMax(session_replays.UserId, session_replays.Version) AS userId,
+          argMax(session_replays.UserName, session_replays.Version) AS userName,
+          argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
+          argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          any(session_replays.ServiceName) AS serviceName,
+          max(session_replays.ErrorCount) AS errors,
+          min(session_replays.StartTime) AS startTime,
+          max(ifNull(session_replays.LastActivityAt, session_replays.StartTime)) AS lastActivity
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+        GROUP BY sessionId) AS sessions
+        WHERE sessions.userId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          product_events.UserId AS userId,
+          '' AS name,
+          '' AS email,
+          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
+          min(product_events.Timestamp) AS firstSeen,
+          max(product_events.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          toUInt64(0) AS requests,
+          toUInt64(0) AS mcpSpans,
+          count() AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId != ''
+        GROUP BY userId, namespace
+UNION ALL
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
+          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
+          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          '' AS groupId,
+          traces.ResourceAttributes['service.namespace'] AS namespace,
+          min(traces.Timestamp) AS firstSeen,
+          max(traces.Timestamp) AS lastSeen,
+          toUInt64(0) AS sessions,
+          toUInt64(0) AS errors,
+          countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS requests,
+          count() AS mcpSpans,
+          toUInt64(0) AS events,
+          toUInt64(0) AS spans,
+          toUInt64(0) AS logLines,
+          toUInt64(0) AS groupHits
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+        GROUP BY userId, namespace
+) AS signals
+        GROUP BY userId) AS users
+        FORMAT JSON
+
+-- builder:users:userVisitorIdsQuery:default  [4df66218]
+SELECT
+          identity_links.VisitorId AS visitorId,
+          min(identity_links.FirstSeen) AS firstSeen
+        FROM identity_links
+        WHERE identity_links.OrgId = 'org_sql_catalog'
+          AND identity_links.UserId = 'user_42'
+        GROUP BY visitorId
+        ORDER BY firstSeen ASC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:web-analytics-ai:webAnalyticsAiCrawledPagesQuery:default  [56486fc0]
