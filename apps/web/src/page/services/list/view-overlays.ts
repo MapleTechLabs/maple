@@ -12,7 +12,7 @@ import type { Model, ServiceRow } from "./model"
 import { overlayTriggerId } from "./update-overlays"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The row tooltips (rollout split, sampling estimate, `UnnamedServiceHint`) and `CommitShaHoverCard`.
 
@@ -119,8 +119,10 @@ const contentOf = (
 	triggerId: string,
 	render: (service: ServiceRow) => ReadonlyArray<Html | string>,
 ) => {
-	const found = entries.find((entry) => entry.id === triggerId)
-	return found === undefined ? [] : render(found.service)
+	return Option.match(
+		Arr.findFirst(entries, (entry) => entry.id === triggerId),
+		{ onNone: () => [], onSome: (found) => render(found.service) },
+	)
 }
 
 const tooltipLayer = (
@@ -202,7 +204,9 @@ export const withOverlays = (
 									className: "w-80 p-0",
 									toContent: (triggerId) => {
 										const sha = Str.slice(-40)(triggerId)
-										const owner = entries.commit.find((entry) => entry.id === triggerId)
+										const owner = Option.getOrUndefined(
+											Arr.findFirst(entries.commit, (entry) => entry.id === triggerId),
+										)
 										return [
 											commitDetailBody(
 												h,

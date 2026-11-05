@@ -23,6 +23,7 @@ import { settingsSection } from "../../settings/kit/section"
 import { publicAddress, statusPagesHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
+import { monitorStatusOf } from "../shared/derive"
 import { checkedRows } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { daysOf, previewDocument, previewFrame, previewTheme } from "../shared/preview"
@@ -176,7 +177,7 @@ const draftDocument = (model: Model): string => {
 			name: Str.trim(row.name) === "" ? "Untitled component" : Str.trim(row.name),
 			description: null,
 			group: Str.trim(row.group) === "" ? null : Str.trim(row.group),
-			monitorStatus: monitors.find((monitor) => monitor.id === row.monitorId)?.state.status ?? null,
+			monitorStatus: monitorStatusOf(monitors, row.monitorId),
 			manualStatus: row.monitorId === null ? row.manualStatus : null,
 			showUptime: true,
 			monitored: row.monitorId !== null,

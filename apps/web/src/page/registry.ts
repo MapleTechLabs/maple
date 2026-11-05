@@ -284,12 +284,11 @@ export const parkPages = (
 		Array.some(pages, (page) => page.id === left._tag && page.isRevivable) &&
 		!hasLoadInFlight(left.model)
 	const sameSlot = (a: PageSlotBase, b: PageSlotBase) => a._tag === b._tag && a.key === b.key
-	const next = Array.filter(
+	const kept = Array.filter(
 		[...(isLeft ? [left] : []), ...parked],
 		(slot) => entered === null || (slot.orgId === entered.orgId && !sameSlot(slot, entered)),
 	)
-		.filter((slot, index, all) => all.findIndex((other) => sameSlot(other, slot)) === index)
-		.slice(0, PARKED_PAGES_MAX)
+	const next = Array.dedupeWith(kept, sameSlot).slice(0, PARKED_PAGES_MAX)
 	// Nothing parked or taken out: the same array, so the root Model can stay the same reference.
 	return next.length === parked.length && Array.every(next, (slot, index) => slot === parked[index])
 		? parked

@@ -19,7 +19,7 @@ import {
 } from "./findings"
 import { securitySeverityBadge } from "./parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The findings list the run page and the Findings tab share, laid out like Linear's issue list:
 // severity tabs on top, collapsible groups, one dense line per finding.
@@ -189,7 +189,10 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 			: [
 					middleTruncate(h, {
 						text: location,
-						tail: Math.min(28, location.length - location.lastIndexOf("/")),
+						tail: Math.min(
+							28,
+							location.length - Option.getOrElse(Str.lastIndexOf("/")(location), () => -1),
+						),
 						mono: true,
 						className:
 							"hidden min-w-0 max-w-[40%] shrink-[2] text-xs text-muted-foreground md:flex",

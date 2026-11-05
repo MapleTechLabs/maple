@@ -20,7 +20,7 @@ import { releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { sectionCard } from "./view-sections"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 // The release comparison and the versions rail.
 
@@ -201,8 +201,9 @@ export type RailInput<M> = Readonly<{
 
 /** `ReleaseVersionsRail`: every version of the service in the window, newest first. */
 export const releaseVersionsRail = <M>(h: HtmlBuilder<M>, input: RailInput<M>): Html => {
-	const sorted = input.impacts.toSorted((a, b) =>
-		a.firstSeen < b.firstSeen ? 1 : a.firstSeen > b.firstSeen ? -1 : 0,
+	const sorted = Arr.sort(
+		input.impacts,
+		Order.flip(Order.mapInput(Order.String, (impact: ReleaseServiceImpact) => impact.firstSeen)),
 	)
 	return sectionCard(
 		h,
