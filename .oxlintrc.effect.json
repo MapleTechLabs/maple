@@ -229,9 +229,10 @@
 				"**/*.cjs",
 				"scripts/**",
 				"**/scripts/**",
-				"**/tools/**",
-				"**/bench/**",
-				"**/e2e/**",
+				"apps/landing/tools/**",
+				"apps/cli/bench/**",
+				"apps/web/e2e/**",
+				"packages/browser/e2e/**",
 				"apps/api/autumn.config.ts",
 				"apps/landing/src/lib/customer-logos.ts",
 				"apps/landing/src/pages/docs/search-index.json.ts"
