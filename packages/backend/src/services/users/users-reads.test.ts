@@ -3,6 +3,7 @@ import { Array as Arr, DateTime } from "effect"
 import {
 	bucketActivity,
 	eventDetail,
+	issueItem,
 	mcpServersInScope,
 	mergeActivity,
 	mergeServices,
@@ -237,5 +238,25 @@ describe("severityOf", () => {
 		expect(severityOf("", 17)).toBe("ERROR")
 		expect(severityOf("", 24)).toBe("FATAL")
 		expect(severityOf("", 0)).toBe("UNSPECIFIED")
+	})
+})
+
+describe("issueItem", () => {
+	const issue = {
+		issueId: null,
+		fingerprintHash: "123",
+		type: "",
+		message: "",
+		service: "api",
+		hits: 2,
+		firstSeenMs: 0,
+		lastSeenMs: 1,
+		status: null,
+	}
+
+	it("titles a timeline error by its type, else its message, else as the Errors tab does", () => {
+		expect(issueItem({ ...issue, type: "TypeError", message: "x is undefined" }).title).toBe("TypeError")
+		expect(issueItem({ ...issue, message: "upstream timed out" }).title).toBe("upstream timed out")
+		expect(issueItem(issue).title).toBe("Unknown Error")
 	})
 })
