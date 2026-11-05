@@ -209,4 +209,11 @@ describe("activity links", () => {
 		)
 		expect(activityHref({ ...item, kind: "error", sessionId: null }, {})).toBeNull()
 	})
+
+	it("opens an issue over the user page's window", () => {
+		const issueId = Schema.decodeSync(ErrorIssueId)("00000000-0000-4000-8000-000000000001")
+		expect(
+			activityHref({ ...item, kind: "error", sessionId: null, issueId }, { timePreset: "24h" }),
+		).toBe("/errors/issues/00000000-0000-4000-8000-000000000001?timePreset=24h")
+	})
 })

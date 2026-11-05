@@ -1,3 +1,4 @@
+import { USERS_PRESETS } from "../window"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option } from "effect"
@@ -56,7 +57,7 @@ const actions = (h: H, model: Model): Html =>
 					selectedPreset:
 						model.search.timePreset ??
 						(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
-					presets: TimeRangePicker.PRESET_VALUES,
+					presets: USERS_PRESETS,
 				},
 			}),
 	})

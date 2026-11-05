@@ -9905,6 +9905,25 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
+-- builder:user-activity:userIssueTotalsQuery:default  [8ffd458c]
+SELECT
+          count() AS hits,
+          uniqExact(error_events_by_time.FingerprintHash) AS fingerprints
+        FROM error_events_by_time
+        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
+          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events_by_time.UserId = 'user_catalog'
+          AND error_events_by_time.ServiceName IN (SELECT
+          user_activity_hourly.ServiceName AS ServiceName
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog')
+        FORMAT JSON
+
 -- builder:user-activity:userLogsQuery:default  [3bd5f1bd]
 SELECT
           logs.Timestamp AS timestamp,
@@ -10005,7 +10024,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:users:userEventsQuery:namespaceFiltered  [fc5a1f93]
+-- builder:users:userEventsQuery:namespaceFiltered  [28a0c0c9]
 SELECT
           events.timestamp AS timestamp,
           events.name AS name,
@@ -10028,8 +10047,9 @@ SELECT
           any(session_replays.ServiceName) AS service
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
           AND session_replays.ServiceName != ''
           AND session_replays.SessionId IN (SELECT
           product_events.SessionId AS sessionId
@@ -10167,7 +10187,7 @@ SELECT
         HAVING sum(visitors.identified) = 0) AS anonymous
         FORMAT JSON
 
--- builder:users:userServicesQuery:default  [6a3acd28]
+-- builder:users:userServicesQuery:default  [fc3fffaa]
 SELECT
           signals.service AS service,
           signals.namespace AS namespace,
@@ -10206,8 +10226,9 @@ SELECT
           any(session_replays.ServiceName) AS service
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractDays('2026-01-01 10:30:00', 1)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND ifNull(session_replays.LastActivityAt, session_replays.StartTime) >= '2026-01-01 10:30:00'
           AND session_replays.ServiceName != ''
           AND session_replays.SessionId IN (SELECT
           product_events.SessionId AS sessionId

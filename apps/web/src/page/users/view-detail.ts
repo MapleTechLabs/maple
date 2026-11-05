@@ -68,11 +68,22 @@ const clockOf = (atMs: number, timeZone: string): string =>
 const dayKey = (atMs: number, timeZone: string): string =>
 	timeFormat(timeZone, { year: "numeric", month: "2-digit", day: "2-digit" }).format(atMs)
 
+/** The local calendar day as a day count, so "yesterday" is one less even across a DST change. */
+const dayNumber = (atMs: number, timeZone: string): number => {
+	const parts = timeFormat(timeZone, { year: "numeric", month: "numeric", day: "numeric" }).formatToParts(
+		atMs,
+	)
+	const part = (type: Intl.DateTimeFormatPartTypes): number =>
+		Number(parts.find((entry) => entry.type === type)?.value ?? 0)
+	return Date.UTC(part("year"), part("month") - 1, part("day")) / 86_400_000
+}
+
 /** "Today", "Yesterday", else "Mon 2 Nov". */
-const dayLabel = (atMs: number, clock: Clock): string => {
-	const key = dayKey(atMs, clock.timeZone)
-	if (key === dayKey(clock.nowMs, clock.timeZone)) return "Today"
-	if (key === dayKey(clock.nowMs - 86_400_000, clock.timeZone)) return "Yesterday"
+export const dayLabel = (atMs: number, clock: Clock): string => {
+	const day = dayNumber(atMs, clock.timeZone)
+	const today = dayNumber(clock.nowMs, clock.timeZone)
+	if (day === today) return "Today"
+	if (day === today - 1) return "Yesterday"
 	return timeFormat(clock.timeZone, { weekday: "short", day: "numeric", month: "short" }).format(atMs)
 }
 
@@ -214,9 +225,11 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			subline:
 				profile.requests === null
 					? "no per-user request data"
-					: profile.requests === 0 || profile.failedRate === null
+					: profile.requests === 0
 						? "no requests in the window"
-						: `${formatPercent(profile.failedRate)} failed`,
+						: profile.failedRate === null
+							? "failure rate not available"
+							: `${formatPercent(profile.failedRate)} failed`,
 			tone: profile.failedRate !== null && profile.failedRate > 0 ? "warn" : "neutral",
 			spark: Arr.some(profile.activity, (count) => count > 0) ? profile.activity : undefined,
 			compact: true,
@@ -332,6 +345,10 @@ export const userRail = <M>(
 const namespacesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, scope: UserNamespaceScope<M>): Html => {
 	const namespaces = namespacesOf(profile)
 	const total = Arr.reduce(namespaces, 0, (sum, namespace) => sum + namespace.signals)
+	if (namespaces.length === 0)
+		return detailRailGroup(h, "Namespaces", [
+			typography(h, { size: "xs", tone: "subtle" }, ["No namespace recorded in the window"]),
+		])
 	return detailRailGroup(
 		h,
 		"Namespaces",

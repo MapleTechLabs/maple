@@ -44,10 +44,16 @@ const userList = (h: H, users: ErrorIssueAffectedUsersResponse["users"], search:
 						{
 							href: affectedUserHref(user.userId, search),
 							isMono: true,
-							className: "min-w-0 truncate text-xs",
+							className: "min-w-0 text-xs",
 							attributes: [h.Title(user.userId)],
 						},
-						[user.userId],
+						[
+							typography(
+								h,
+								{ size: "xs", mono: true, truncate: true, as: "span", className: "min-w-0" },
+								[user.userId],
+							),
+						],
 					),
 					typography(
 						h,

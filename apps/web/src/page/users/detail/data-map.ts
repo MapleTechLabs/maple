@@ -23,9 +23,9 @@ export const mcpSessionHref = (service: string, sessionId: string, search: Searc
 /** One replay's page. */
 export const replayHref = (sessionId: string): string => hrefOf(AppRoute.Replay({ sessionId, search: {} }))
 
-/** One issue's page, as the errors hub links it. */
-export const issueHref = (issueId: string): string =>
-	hrefOf(AppRoute.ErrorIssue({ issueId: decodeIssueId(issueId), search: {} }))
+/** One issue's page over the user page's window, so its hits match the row that links it. */
+export const issueHref = (issueId: string, search: Search): string =>
+	hrefOf(AppRoute.ErrorIssue({ issueId: decodeIssueId(issueId), search: windowSearch(search) }))
 
 /** One trace's page. */
 export const traceHref = (traceId: string): string => hrefOf(AppRoute.Trace({ traceId, search: {} }))
@@ -72,7 +72,7 @@ export const toProfile = (profile: UserProfileItem): UserProfile => ({
 
 /** The page a timeline row opens: an issue, a replay, an MCP session on its server, a trace, else none. */
 export const activityHref = (item: UserActivityItem, search: Search): string | null => {
-	if (item.issueId !== null) return issueHref(item.issueId)
+	if (item.issueId !== null) return issueHref(item.issueId, search)
 	if (item.traceId !== null) return traceHref(item.traceId)
 	if (item.sessionId === null) return null
 	switch (item.kind) {
@@ -92,7 +92,7 @@ export type TabReads = Readonly<{
 	logs: LogsData | undefined
 }>
 
-export const toUserIssue = (issue: IssuesData["issues"][number]): UserIssue => ({
+export const toUserIssue = (issue: IssuesData["issues"][number], search: Search): UserIssue => ({
 	issueId: issue.issueId,
 	type: issue.type === "" ? "Unknown Error" : issue.type,
 	message: issue.message,
@@ -100,7 +100,7 @@ export const toUserIssue = (issue: IssuesData["issues"][number]): UserIssue => (
 	hits: issue.hits,
 	lastSeenMs: issue.lastSeenMs,
 	status: issue.status,
-	href: issue.issueId === null ? null : issueHref(issue.issueId),
+	href: issue.issueId === null ? null : issueHref(issue.issueId, search),
 })
 
 /** Everything the kit body draws; the activity read may still be out (no rows yet). */
@@ -133,7 +133,7 @@ export const toUserDetail = (
 			exit: null,
 			device: session.device,
 		})),
-		issues: Arr.map(tabs.issues?.issues ?? [], toUserIssue),
+		issues: Arr.map(tabs.issues?.issues ?? [], (issue) => toUserIssue(issue, search)),
 		traces: Arr.map(tabs.traces?.traces ?? [], (trace): UserTrace => ({
 			traceId: trace.traceId,
 			atMs: trace.atMs,

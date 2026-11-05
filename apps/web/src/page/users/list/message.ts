@@ -36,6 +36,8 @@ export const Message = defineMessageUnion({
 	ClickedClearSearchAndFilters: {},
 	ClickedClearNamespacePin: {},
 	ClickedSetup: {},
+	/** The empty directory's way out of a quiet window. */
+	ClickedWidenRange: {},
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 })

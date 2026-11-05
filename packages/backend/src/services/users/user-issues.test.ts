@@ -18,6 +18,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { affectedUsersResponse } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { readUserActivity, readUserIssues, readUserOverview } from "./users-reads"
+import { userIssueTotals } from "./user-issues"
 
 // One user's issues: fingerprints resolved to the issue the errors tick lands them on, and a
 // cluster whose `error_events` predates `UserId` (migration 0057) answering unattributed.
@@ -344,5 +345,18 @@ describe("affectedUsersResponse", () => {
 	it("is unattributed when either read found no UserId", () => {
 		assert.isFalse(affectedUsersResponse(Option.none(), Option.some([])).attributed)
 		assert.isFalse(affectedUsersResponse(Option.some(count), Option.none()).attributed)
+	})
+})
+
+describe("userIssueTotals", () => {
+	it("counts every hit and the resolved issues while the list holds every fingerprint", () => {
+		expect(userIssueTotals({ hits: 412, fingerprints: 3 }, 2)).toEqual({ hits: 412, issues: 2 })
+	})
+
+	it("counts the distinct fingerprints once the list is capped", () => {
+		expect(userIssueTotals({ hits: 9_000, fingerprints: 340 }, 100)).toEqual({
+			hits: 9_000,
+			issues: 340,
+		})
 	})
 })

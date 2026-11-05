@@ -49,3 +49,13 @@ describe("users directory search", () => {
 		expect(params.has("hasReplay")).toBe(false)
 	})
 })
+
+describe("users directory empty window", () => {
+	it("widens a quiet window to the last month and drops a custom range", () => {
+		const model = start({ startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 04:00:00", q: "ada" })
+		const params = navigatedTo(update(model, Message.ClickedWidenRange(), context))
+		expect(params.get("timePreset")).toBe("1mo")
+		expect(params.has("startTime")).toBe(false)
+		expect(params.get("q")).toBe("ada")
+	})
+})
