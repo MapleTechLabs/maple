@@ -8,6 +8,7 @@ import {
 	Ref,
 	Schema,
 	Array as Arr,
+	Record as Rec,
 	String as Str,
 } from "effect"
 import { HttpRouter } from "effect/http"
@@ -2121,7 +2122,7 @@ describe("v2 users wire mapping over HTTP", () => {
 			},
 		],
 	} satisfies Record<string, ReadonlyArray<unknown>>
-	const rowsByContext = new Map<string, ReadonlyArray<unknown>>(Object.entries(rows))
+	const rowsByContext = new Map<string, ReadonlyArray<unknown>>(Rec.toEntries(rows))
 
 	const usersWarehouse: WarehouseQueryServiceApi = {
 		...warehouseStub,
