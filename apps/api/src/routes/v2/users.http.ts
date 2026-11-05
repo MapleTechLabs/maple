@@ -38,7 +38,7 @@ const decodeSessionId = Schema.decodeSync(SessionId)
 
 /** The internal request, or a 400: its caps (50 namespaces or groups) are tighter than the query's. */
 const internalRequest =
-	<S extends Schema.Codec<unknown, unknown, never, never>>(schema: S) =>
+	<S extends Schema.Codec<unknown, unknown>>(schema: S) =>
 	(input: unknown) =>
 		Schema.decodeUnknownEffect(schema)(input).pipe(
 			Effect.mapError(() => V2ParameterInvalid.make("A filter or the cursor is out of range.")),
