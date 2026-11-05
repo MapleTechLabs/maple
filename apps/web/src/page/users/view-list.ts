@@ -30,7 +30,7 @@ import { pinnedNamespaceNotice } from "../kit/pinned-namespace-notice"
 import { listRelativeTime } from "../kit/relative-time"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import type { UserRow } from "./data"
-import { signalTags, userAvatar, userNameBlock } from "./view-kit"
+import { signalLane, signalTags, userAvatar, userNameBlock } from "./view-kit"
 
 // `/users`: every end user the SDKs identified in the window, most recently seen first.
 
@@ -231,6 +231,32 @@ const namespaceCell = <M>(h: HtmlBuilder<M>, namespaces: ReadonlyArray<string>):
 	])
 }
 
+/** The first signal tags, then `+N` naming the rest on hover, so five signals fit the lane. */
+const signalCell = <M>(
+	h: HtmlBuilder<M>,
+	signals: ReadonlyArray<UserRow["signals"][number]>,
+): ReadonlyArray<Html> => {
+	const lane = signalLane(signals)
+	return [
+		...signalTags(h, lane.shown),
+		...(lane.hidden.length === 0
+			? []
+			: [
+					typography(
+						h,
+						{
+							size: "2xs",
+							mono: true,
+							tone: "muted",
+							as: "span",
+							attributes: [h.Title(lane.hidden.join(", "))],
+						},
+						[`+${lane.hidden.length}`],
+					),
+				]),
+	]
+}
+
 const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M>): Html =>
 	toolTableRow(
 		h,
@@ -296,7 +322,7 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 			hstack(
 				h,
 				{ gap: "1", as: "span", className: "hidden w-36 shrink-0 @min-[1000px]/panel:flex" },
-				signalTags(h, row.signals),
+				signalCell(h, row.signals),
 			),
 			h.span(
 				[h.Class("hidden w-20 shrink-0 text-right @min-[1100px]/panel:block")],
