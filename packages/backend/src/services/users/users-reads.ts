@@ -578,6 +578,11 @@ export const mergeServices = (
 	)
 }
 
+/** The scope's services for the issue reads: the namespace's services, or every one when unscoped. */
+const resolvedServices = (scope: CH.UsersScope) => ({
+	serviceNames: scope.namespaces.length > 0 ? scope.services : undefined,
+})
+
 const profileIn = Effect.fn("UsersReads.profile")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,
@@ -647,7 +652,7 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 						},
 					),
 				),
-				readUserIssueTotalsRow(tenant, payload),
+				readUserIssueTotalsRow(tenant, payload, resolvedServices(scope)),
 			],
 			{ concurrency: USERS_READ_CONCURRENCY },
 		)
