@@ -9,11 +9,13 @@ import {
 	sdkHint,
 } from "@maple/browser-session"
 import {
+	type Context,
 	context,
 	propagation,
 	ProxyTracerProvider,
 	type Span as ApiSpan,
 	SpanStatusCode,
+	type TextMapSetter,
 	type Tracer,
 	type TracerProvider,
 	trace,
@@ -38,7 +40,7 @@ import {
 	ATTR_TELEMETRY_SDK_VERSION,
 	TELEMETRY_SDK_LANGUAGE_VALUE_WEBJS,
 } from "@opentelemetry/semantic-conventions"
-import type { ResolvedConfig } from "./config"
+import { escapeRegExp, type ResolvedConfig } from "./config"
 import { responseHeaders, setHeaderAttributes } from "./http-headers"
 import { HttpStatusExporter } from "./http-status"
 import { OfflineSpanExporter } from "./offline"
@@ -113,6 +115,27 @@ class ConsentSpanExporter implements SpanExporter {
 
 	shutdown(): Promise<void> {
 		return this.inner.shutdown()
+	}
+}
+
+/**
+ * W3C trace context without the `ot` member `sampleRate` writes. That member
+ * would turn on a `tracestate` header for every traced request, and a
+ * cross-origin API that allows only `traceparent` in CORS (what the README asks
+ * for) would then fail its preflight. The exported span keeps it.
+ */
+export class TraceContextPropagator extends W3CTraceContextPropagator {
+	override inject(ctx: Context, carrier: unknown, setter: TextMapSetter): void {
+		const spanContext = trace.getSpanContext(ctx)
+		const state = spanContext?.traceState
+		if (spanContext !== undefined && state?.get("ot") !== undefined) {
+			const rest = state.unset("ot")
+			ctx = trace.setSpanContext(ctx, {
+				...spanContext,
+				traceState: rest.serialize() ? rest : undefined,
+			})
+		}
+		super.inject(ctx, carrier, setter)
 	}
 }
 
@@ -259,7 +282,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	trace.setGlobalTracerProvider(provider)
 	propagation.setGlobalPropagator(
 		new CompositePropagator({
-			propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
+			propagators: [new TraceContextPropagator(), new W3CBaggagePropagator()],
 		}),
 	)
 	context.setGlobalContextManager(new StackContextManager().enable())
@@ -436,8 +459,4 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 function isTimeout(error: Error, signal: AbortSignal | null | undefined): boolean {
 	const reason: unknown = signal?.reason
 	return error.name === "TimeoutError" || (reason instanceof DOMException && reason.name === "TimeoutError")
-}
-
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }

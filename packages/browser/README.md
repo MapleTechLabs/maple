@@ -92,10 +92,10 @@ Bundled, minified and gzipped, as your bundler would ship it:
 
 |                  | gzipped | what it is                                                |
 | ---------------- | ------- | --------------------------------------------------------- |
-| **eager**        | ~40 kB  | every page load, before any sampling decision             |
-| ↳ our code alone | ~16 kB  | the marginal cost if your app already ships OpenTelemetry |
-| **deferred**     | ~9 kB   | logs SDK, Web Vitals, document timing, after `init()`     |
-| **lazy**         | ~61 kB  | rrweb — downloaded only by sessions sampled into replay   |
+| **eager**        | ~44 kB  | every page load, before any sampling decision             |
+| ↳ our code alone | ~25 kB  | the marginal cost if your app already ships OpenTelemetry |
+| **deferred**     | ~14 kB  | logs SDK, Web Vitals, document timing, after `init()`     |
+| **lazy**         | ~64 kB  | rrweb — downloaded only by sessions sampled into replay   |
 
 The eager figure is ~90% OpenTelemetry. If your app already uses the OTel web
 SDK, your bundler should dedupe it and you pay closer to the second row; if it
@@ -183,9 +183,15 @@ join one trace, and allow the `traceparent` header in the API's CORS policy:
 ```ts
 MapleBrowser.init({
 	// ...
-	tracing: { propagateTraceHeaderCorsUrls: [/^https:\/\/api\.example\.com\//] },
+	tracing: { propagateTraceHeaderCorsUrls: ["https://api.example.com"] },
 })
 ```
+
+A string is a URL prefix: `"https://api.example.com"` covers every path on that
+origin, and `"https://api.example.com/v1"` only that path. Use a RegExp to match
+anything else. `tracing.sampleRate` never adds a `tracestate` header, so
+`traceparent` is the only header to allow (plus `baggage` if your app sets
+OpenTelemetry baggage).
 
 ## Navigations and data loading
 

@@ -10,6 +10,7 @@ import {
 	type Tracer,
 	type TracerProvider,
 } from "@opentelemetry/api"
+import { TraceState } from "@opentelemetry/core"
 import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -32,7 +33,8 @@ vi.mock("./otlp", async (original) => ({
 	},
 }))
 
-const { resourceAttributes, setupTracing, TraceIdCollector } = await import("./tracing")
+const { resourceAttributes, setupTracing, TraceContextPropagator, TraceIdCollector } =
+	await import("./tracing")
 
 const CONFIG = {
 	ingestKey: "k",
@@ -204,6 +206,28 @@ describe("setupTracing unload flush", () => {
 		expect(headers.baggage).toBe("tenant=acme")
 	})
 
+	it("keeps the sampling threshold off the wire, so CORS allowing only traceparent still passes", () => {
+		const propagator = new TraceContextPropagator()
+		const inject = (traceState: string) => {
+			const ctx = trace.setSpanContext(context.active(), {
+				traceId: "0123456789abcdef0123456789abcdef",
+				spanId: "0123456789abcdef",
+				traceFlags: 1,
+				traceState: new TraceState(traceState),
+			})
+			const headers: Record<string, string> = {}
+			propagator.inject(ctx, headers, { set: (carrier, key, value) => void (carrier[key] = value) })
+			return headers
+		}
+
+		// What `tracing.sampleRate: 0.25` writes on every sampled span.
+		const sampled = inject("ot=th:c;rv:d5a8b2c1e3f405")
+		expect(sampled.traceparent).toBe("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")
+		expect(sampled).not.toHaveProperty("tracestate")
+		// A vendor's own member, extracted from a server-rendered parent, still travels.
+		expect(inject("vendor=abc,ot=th:c").tracestate).toBe("vendor=abc")
+	})
+
 	it("parents a span started inside an active span through the context manager", async () => {
 		shutdown = setupTracing(CONFIG)
 		const tracer = trace.getTracer("test")
@@ -332,6 +356,8 @@ describe("setupTracing unload flush", () => {
 
 		expect(exported[0]?.status.code).toBe(2)
 		expect(exported[0]?.attributes["error.type"]).toBe("TypeError")
+		// No response, so no status code: the instrumentation's 0 is not a status.
+		expect(exported[0]?.attributes).not.toHaveProperty("http.response.status_code")
 		// error.message is deprecated in the conventions; error.type carries the class of failure.
 		expect(exported[0]?.attributes["error.message"]).toBeUndefined()
 	})

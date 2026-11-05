@@ -35,6 +35,23 @@ describe("resolveConfig", () => {
 		expect(String(warn.mock.calls[0]?.[0])).toContain("serviceName")
 	})
 
+	it("treats a string CORS URL as a prefix of that origin or path, not the whole URL", () => {
+		const { propagateTraceHeaderCorsUrls } = resolveConfig({
+			ingestKey: "maple_pk_x",
+			serviceName: "s",
+			tracing: {
+				propagateTraceHeaderCorsUrls: ["https://api.example.com/", "https://cdn.example.com/v2"],
+			},
+		})
+		const propagates = (url: string) => propagateTraceHeaderCorsUrls.some((re) => re.test(url))
+		expect(propagates("https://api.example.com")).toBe(true)
+		expect(propagates("https://api.example.com/v1/users?id=1")).toBe(true)
+		expect(propagates("https://cdn.example.com/v2/assets")).toBe(true)
+		expect(propagates("https://api.example.com.evil.io/v1")).toBe(false)
+		expect(propagates("https://api.example.com:8443/v1")).toBe(false)
+		expect(propagates("https://cdn.example.com/v20")).toBe(false)
+	})
+
 	it("applies defaults and strips the endpoint's trailing slash", () => {
 		const config = resolveConfig({
 			ingestKey: "maple_pk_x",
