@@ -9853,7 +9853,7 @@ SELECT
         HAVING sum(visitors.identified) = 0) AS anonymous
         FORMAT JSON
 
--- builder:users:userServicesQuery:default  [3f574db2]
+-- builder:users:userServicesQuery:default  [878e925b]
 SELECT
           signals.service AS service,
           signals.namespace AS namespace,
@@ -9888,7 +9888,7 @@ SELECT
 UNION ALL
 SELECT
           traces.ServiceName AS service,
-          traces.ResourceAttributes['service.namespace'] AS namespace,
+          transform(traces.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], traces.ResourceAttributes['service.namespace']) AS namespace,
           count() AS signals
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
