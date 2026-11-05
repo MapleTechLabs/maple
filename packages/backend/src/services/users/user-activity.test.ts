@@ -5,7 +5,7 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
-import { readUserActivity } from "./users-reads"
+import { readUserActivity, readUserProfile } from "./users-reads"
 
 const ORG = Schema.decodeSync(OrgId)("org_user_activity")
 const USER = Schema.decodeSync(UserId)("user_member")
@@ -70,24 +70,24 @@ const fixture = new Map<string, ReadonlyArray<unknown>>([
 	],
 ])
 
-const run = (payload: UserDetailRequest, seen: Array<string>) =>
-	readUserActivity(tenant, payload).pipe(
-		Effect.provide(
-			Layer.succeed(
-				WarehouseQueryService,
-				makeWarehouseServiceStub({
-					compiledQuery: (_tenant, input, options) => {
-						const compiled = compiledQueryOf(input)
-						const context = options?.context ?? ""
-						seen.push(context)
-						const service = /ServiceName = '([^']+)'/.exec(compiled.sql)?.[1] ?? ""
-						const rows = fixture.get(`${context}:${service}`) ?? fixture.get(context) ?? []
-						return compiled.decodeRows(rows).pipe(Effect.orDie)
-					},
-				}),
-			),
-		),
+/** A warehouse answering each query from `rows` by context (or `context:service`). */
+const warehouseOf = (rows: ReadonlyMap<string, ReadonlyArray<unknown>>, seen: Array<string>) =>
+	Layer.succeed(
+		WarehouseQueryService,
+		makeWarehouseServiceStub({
+			compiledQuery: (_tenant, input, options) => {
+				const compiled = compiledQueryOf(input)
+				const context = options?.context ?? ""
+				seen.push(context)
+				const service = /ServiceName = '([^']+)'/.exec(compiled.sql)?.[1] ?? ""
+				const found = rows.get(`${context}:${service}`) ?? rows.get(context) ?? []
+				return compiled.decodeRows(found).pipe(Effect.orDie)
+			},
+		}),
 	)
+
+const run = (payload: UserDetailRequest, seen: Array<string>) =>
+	readUserActivity(tenant, payload).pipe(Effect.provide(warehouseOf(fixture, seen)))
 
 const request = (namespaces?: ReadonlyArray<string>) =>
 	new UserDetailRequest({
@@ -140,6 +140,72 @@ describe("readUserActivity", () => {
 				["docs-mcp"],
 			)
 			assert.strictEqual(Arr.filter(seen, (context) => context === "userMcpSessionList").length, 1)
+		}),
+	)
+})
+
+describe("readUserProfile", () => {
+	const sources = new Map<string, ReadonlyArray<unknown>>([
+		["usersServiceNamespaces", [{ service: "web", namespace: "storefront", spans: "5" }]],
+		["mcpServices", [{ service: "docs-mcp", serverSpans: "4" }]],
+	])
+
+	it.effect("answers no profile for a user no session, event or MCP request names", () =>
+		Effect.gen(function* () {
+			const response = yield* readUserProfile(tenant, request()).pipe(
+				Effect.provide(warehouseOf(sources, [])),
+			)
+			assert.isNull(response.profile)
+		}),
+	)
+
+	it.effect("merges each source's bounds and takes the replay's identity first", () =>
+		Effect.gen(function* () {
+			const rows = new Map([
+				...sources,
+				[
+					"userReplayProfile",
+					[
+						{
+							name: "Ada Lovelace",
+							email: "ada@example.com",
+							groupId: "grp_acme",
+							traitKeys: ["plan"],
+							traitValues: ["pro"],
+							country: "GB",
+							sessions: "2",
+							recordedMs: "90000",
+							errors: "1",
+							firstSeen: "2026-11-01 09:00:00",
+							lastSeen: "2026-11-01 11:00:00",
+						},
+					],
+				],
+				[
+					"userMcpSummary",
+					[
+						{
+							name: "ada (mcp)",
+							email: "",
+							requests: "6",
+							calls: "3",
+							firstSeen: "2026-11-01 08:30:00.000",
+							lastSeen: "2026-11-01 12:15:00.000",
+						},
+					],
+				],
+			])
+			const response = yield* readUserProfile(tenant, request()).pipe(
+				Effect.provide(warehouseOf(rows, [])),
+			)
+			const profile = response.profile
+			assert.isNotNull(profile)
+			assert.strictEqual(profile?.name, "Ada Lovelace")
+			assert.strictEqual(profile?.firstSeenMs, Date.parse("2026-11-01T08:30:00Z"))
+			assert.strictEqual(profile?.lastSeenMs, Date.parse("2026-11-01T12:15:00Z"))
+			assert.strictEqual(profile?.sessions, 2)
+			assert.strictEqual(profile?.mcpCalls, 3)
+			assert.deepStrictEqual(profile?.traits, [{ key: "plan", value: "pro" }])
 		}),
 	)
 })
