@@ -50,6 +50,9 @@ const seed = async () => {
 		{ session: "s3", user: "grace", group: "grp_acme", name: "", hour: 2, errors: 0 },
 		// linus: no group, two browser errors.
 		{ session: "s4", user: "linus", group: "", name: "", hour: 3, errors: 2 },
+		// joan: two replays in two groups under one service, so one source sees both groups.
+		{ session: "s5", user: "joan", group: "grp_acme", name: "", hour: 8, errors: 0 },
+		{ session: "s6", user: "joan", group: "grp_initech", name: "Initech", hour: 9, errors: 0 },
 	]
 	await clickhouseExec(
 		`INSERT INTO session_replays (OrgId, SessionId, UserId, GroupId, GroupName, ServiceName, StartTime, LastActivityAt, ErrorCount, Version) VALUES\n${Arr.join(
@@ -113,9 +116,10 @@ describe.skipIf(!clickhouseE2eEnabled)("users grouped by group", () => {
 		assert.deepStrictEqual(
 			pick(rows, "groupId", "users", "sessions", "requests", "errors", "withErrors"),
 			[
+				["grp_acme", 3, 5, 10, 1, 1],
 				["", 2, 1, 5, 2, 1],
-				["grp_acme", 2, 3, 10, 1, 1],
 				["grp_globex", 1, 1, 0, 0, 0],
+				["grp_initech", 1, 2, 0, 0, 0],
 			],
 		)
 	})
@@ -123,9 +127,10 @@ describe.skipIf(!clickhouseE2eEnabled)("users grouped by group", () => {
 	it("counts the users active since the cutoff", async () => {
 		const rows = await groups()
 		assert.deepStrictEqual(pick(rows, "groupId", "activeToday"), [
+			["grp_acme", 3],
 			["", 1],
-			["grp_acme", 2],
 			["grp_globex", 1],
+			["grp_initech", 1],
 		])
 	})
 
@@ -133,6 +138,22 @@ describe.skipIf(!clickhouseE2eEnabled)("users grouped by group", () => {
 		assert.deepStrictEqual(pick(await groups({ groups: ["grp_globex"] }), "groupId", "users"), [
 			["grp_globex", 1],
 		])
+		// joan's replays name both groups under one service: picking either finds her there.
+		assert.deepStrictEqual(pick(await groups({ groups: ["grp_initech"] }), "groupId", "users"), [
+			["grp_initech", 1],
+		])
+	})
+
+	it("counts a user in every group one source saw them in", async () => {
+		const facets = await runJson(CH.compileUnionUnsafe(CH.usersFacetsQuery(scope), params).sql)
+		assert.deepStrictEqual(
+			Arr.sort(pick(facets, "name", "count"), (a, b) => (String(a[0]) < String(b[0]) ? -1 : 1)),
+			[
+				["grp_acme", 3],
+				["grp_globex", 1],
+				["grp_initech", 1],
+			],
+		)
 	})
 
 	it("groups only the users the directory's filters keep", async () => {

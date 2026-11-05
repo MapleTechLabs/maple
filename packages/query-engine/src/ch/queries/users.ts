@@ -163,11 +163,25 @@ const replaySessions = (scope: UsersScope) =>
 
 // Every source answers the same columns in the same order: UNION ALL is positional.
 
-/** Rows in a selected group, per source: a user can carry several groups, and `groupId` keeps one. */
-const groupHits = (groupId: CH.Expr<string>, groups: ReadonlyArray<string>) =>
-	groups.length === 0 ? zero() : CH.toUInt64(CH.countIf(CH.inList(groupId, groups)))
+/** Groups one user counts toward at most, per source. */
+const USER_GROUPS_MAX = 20
 
-const replayUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
+/** Every group a source saw the user in; `groupId` keeps only one of them, for display. */
+const sourceGroups = (groupId: CH.Expr<string>) =>
+	CH.groupUniqArrayIf(USER_GROUPS_MAX)(groupId, groupId.neq(""))
+
+/** A source with no group column. Typed, so UNION ALL matches the other branches' `Array(String)`. */
+const noGroups = () => CH.rawExpr<ReadonlyArray<string>>("CAST([], 'Array(String)')", T.array(T.string))
+
+/** A user's groups across every source row, each once. */
+const mergedGroups = (groupIds: CH.Expr<ReadonlyArray<string>>) =>
+	CH.compileTypedFnCall(
+		"arrayDistinct",
+		T.array(T.string).schema,
+		CH.compileTypedFnCall("groupArrayArray", T.array(T.string).schema, groupIds),
+	)
+
+const replayUsers = (scope: UsersScope) =>
 	fromQuery(replaySessions(scope), "sessions")
 		.select(($) => ({
 			userId: $.userId,
@@ -184,12 +198,12 @@ const replayUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 			events: zero(),
 			spans: zero(),
 			logLines: zero(),
-			groupHits: groupHits($.groupId, groups),
+			groupIds: sourceGroups($.groupId),
 		}))
 		.where(($) => [$.userId.neq("")])
 		.groupBy("userId", "namespace")
 
-const eventUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
+const eventUsers = (scope: UsersScope) =>
 	from(ProductEvents)
 		.select(($) => ({
 			userId: $.UserId,
@@ -206,7 +220,7 @@ const eventUsers = (scope: UsersScope, groups: ReadonlyArray<string>) =>
 			events: CH.count(),
 			spans: zero(),
 			logLines: zero(),
-			groupHits: groupHits($.GroupId, groups),
+			groupIds: sourceGroups($.GroupId),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -235,7 +249,7 @@ const mcpUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: zero(),
 			logLines: zero(),
-			groupHits: zero(),
+			groupIds: noGroups(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -381,7 +395,7 @@ const activityUsers = (scope: UsersScope) =>
 			events: zero(),
 			spans: CH.toUInt64(CH.sum($.SpanCount)),
 			logLines: CH.toUInt64(CH.sum($.LogCount)),
-			groupHits: zero(),
+			groupIds: noGroups(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -397,29 +411,29 @@ const activityUsers = (scope: UsersScope) =>
  * the same users, and a query reading a rollup and raw spans must tile the window, which these do
  * not. Callers check {@link hasUserSources} first.
  */
-const userSignals = (scope: UsersScope, groups: ReadonlyArray<string> = []) => {
+const userSignals = (scope: UsersScope) => {
 	const spanSource = readsActivityRollup(scope)
 		? [activityUsers(scope)]
 		: scope.mcpServices.length > 0
 			? [mcpUsers(scope)]
 			: []
 	const [first, ...rest] = [
-		...(readsServiceSources(scope) ? [replayUsers(scope, groups), eventUsers(scope, groups)] : []),
+		...(readsServiceSources(scope) ? [replayUsers(scope), eventUsers(scope)] : []),
 		...spanSource,
 	]
-	return fromUnion(unionAll(first ?? replayUsers(scope, groups), ...rest), "signals")
+	return fromUnion(unionAll(first ?? replayUsers(scope), ...rest), "signals")
 }
 
 /** One row per user under the filter, every source merged: the directory and its group view read it. */
 const usersPerUser = (scope: UsersScope, filter: UsersListFilter) =>
-	userSignals(scope, filter.groups ?? [])
+	userSignals(scope)
 		.select(($) => ({
 			userId: $.userId,
 			name: nonEmpty($.name),
 			email: nonEmpty($.email),
 			groupId: nonEmpty($.groupId),
-			/** Every group a source put the user in; `groupId` keeps one of them. */
-			groupIds: CH.arraySort(CH.groupUniqArrayIf(USER_GROUPS_MAX)($.groupId, $.groupId.neq(""))),
+			/** Every group any source saw the user in; `groupId` keeps one of them. */
+			groupIds: CH.arraySort(mergedGroups($.groupIds)),
 			namespaces: CH.arraySort(CH.groupUniqArrayIf(20)($.namespace, $.namespace.neq(""))),
 			firstSeen: CH.min_($.firstSeen),
 			lastSeen: CH.max_($.lastSeen),
@@ -437,8 +451,15 @@ const usersPerUser = (scope: UsersScope, filter: UsersListFilter) =>
 		.having(($) => [
 			CH.when(filter.hasErrors === true ? true : undefined, () => CH.sum($.errors).gt(0)),
 			CH.when(filter.hasReplay === true ? true : undefined, () => CH.sum($.sessions).gt(0)),
-			// Any of the user's groups, counted in each source before it keeps one `groupId`.
-			filter.groups !== undefined && filter.groups.length > 0 ? CH.sum($.groupHits).gt(0) : undefined,
+			// Any of the user's groups, not only the one `groupId` keeps.
+			filter.groups !== undefined && filter.groups.length > 0
+				? CH.compileTypedFnCall(
+						"hasAny",
+						T.uint8.schema,
+						mergedGroups($.groupIds),
+						CH.arrayOf(...Arr.map(filter.groups, (group) => CH.lit(group))),
+					).eq(1)
+				: undefined,
 			CH.when(filter.search, (search) =>
 				CH.or(
 					containsText($.userId, search),
@@ -464,9 +485,6 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 		.limit(limit)
 		.format("JSON")
 }
-
-/** Groups one user counts toward at most. */
-const USER_GROUPS_MAX = 20
 
 /**
  * The directory grouped: one row per group over the same filtered users, the largest first. A
@@ -519,13 +537,14 @@ export function usersGroupsQuery(scope: UsersScope, filter: UsersListFilter = {}
  * pinned scope) the namespace facet is skipped.
  */
 export function usersFacetsQuery(scope: UsersScope, namespaceScope?: UsersScope) {
+	// One row per group a source saw the user in: a user in two groups counts in both.
 	const groups = userSignals(scope)
 		.select(($) => ({
-			name: $.groupId,
+			// Typed: the union's array column carries no element type, and an untyped column leaves the row undecoded.
+			name: CH.compileTypedFnCall("arrayJoin", T.string.schema, $.groupIds),
 			count: CH.uniqExact($.userId),
 			facetType: CH.lit("group"),
 		}))
-		.where(($) => [$.groupId.neq("")])
 		.groupBy("name")
 		.orderBy(["count", "desc"])
 		.limit(50)
