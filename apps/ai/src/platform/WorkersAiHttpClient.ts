@@ -157,7 +157,8 @@ const isNativeWorkersAiTrailer = (payload: string): boolean =>
  * Frame-aligned rather than line-based: SSE separates events with a blank line, and rewriting at
  * any finer granularity risks corrupting a multi-line `data:` payload.
  */
-const stripNativeTrailer = (body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> => {
+// The Workers runtime types a response body as `ReadableStream<any>`; chunks are checked as bytes.
+const stripNativeTrailer = (body: ReadableStream<unknown>): ReadableStream<Uint8Array> => {
 	const decoder = new TextDecoder()
 	const encoder = new TextEncoder()
 	let buffer = ""
@@ -175,8 +176,14 @@ const stripNativeTrailer = (body: ReadableStream<Uint8Array>): ReadableStream<Ui
 	}
 
 	return body.pipeThrough(
-		new TransformStream<Uint8Array, Uint8Array>({
+		new TransformStream<unknown, Uint8Array>({
 			transform(chunk, controller) {
+				if (!ArrayBuffer.isView(chunk)) {
+					controller.error(
+						new WorkersAiShimRequestError({ message: "Workers AI stream chunk is not bytes" }),
+					)
+					return
+				}
 				buffer += decoder.decode(chunk, { stream: true })
 				const frames = Str.split("\n\n")(buffer)
 				buffer = frames.pop() ?? ""

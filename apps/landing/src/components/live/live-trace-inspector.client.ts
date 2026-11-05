@@ -1,4 +1,4 @@
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Predicate, Record as Rec } from "effect"
 /**
  * Wires waterfall row hover to the side-panel attribute inspector.
  * Touch users get the same behaviour via `pointerenter` (rAF debounced).
@@ -19,7 +19,8 @@ export function wireInspector(traceId: string) {
 		const dur = row.dataset.duration ?? ""
 		let attrs: Record<string, string> = {}
 		try {
-			attrs = JSON.parse(row.dataset.attrs ?? "{}")
+			const parsed: unknown = JSON.parse(row.dataset.attrs ?? "{}")
+			attrs = isStringRecord(parsed) ? parsed : {}
 		} catch {
 			attrs = {}
 		}
@@ -33,6 +34,9 @@ export function wireInspector(traceId: string) {
 		if (row) renderRow(row)
 	})
 }
+
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+	Predicate.isObject(value) && Arr.every(Rec.values(value), (v) => typeof v === "string")
 
 function renderAttrs(attrs: Record<string, string>): string {
 	const escape = (s: string) =>

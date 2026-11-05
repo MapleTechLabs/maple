@@ -76,7 +76,6 @@ export async function getNavTree(): Promise<NavGroup[]> {
 }
 
 /** Where a page sits in the tree: its sidebar group and, if nested, its parent row. */
-// oxlint-disable-next-line typescript/no-redundant-type-constituents -- astro:content types are generated at build time, so lint sees `Doc` as an error type.
 export function locate(tree: NavGroup[], slug: string): { group: string; parent: Doc | null } | null {
 	for (const { group, rows } of tree) {
 		for (const row of rows) {
@@ -107,7 +106,7 @@ export async function getDocSections(currentSlug: string) {
 		return {
 			...section,
 			count: docs.length,
-			href: first ? `/docs/${first.id}` : "/docs",
+			href: first !== undefined ? `/docs/${first.id}` : "/docs",
 			active: section.id === activeId,
 		}
 	})

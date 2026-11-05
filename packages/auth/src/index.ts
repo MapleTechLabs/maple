@@ -368,10 +368,14 @@ type ClerkRequestState = {
 	readonly toAuth: (options?: { readonly treatPendingAsSignedOut?: boolean }) => ClerkSessionAuth | null
 }
 
+type ClerkTokenType = "session_token" | "api_key" | "m2m_token" | "oauth_token"
+// Clerk takes `"any"` only on its own, never inside the array.
+type ClerkAcceptsToken = ClerkTokenType | ReadonlyArray<ClerkTokenType> | "any"
+
 type ClerkAuthenticateRequest = (
 	request: Request,
 	options: {
-		readonly acceptsToken: string | string[]
+		readonly acceptsToken: ClerkAcceptsToken
 		readonly jwtKey?: string
 	},
 ) => Promise<ClerkRequestState>
@@ -431,7 +435,11 @@ const makeClerkAuthenticateRequest = (
 	})
 
 	return (request, options) =>
-		clerkClient.authenticateRequest(request, options as any) as Promise<ClerkRequestState>
+		clerkClient.authenticateRequest(request, {
+			jwtKey: options.jwtKey,
+			acceptsToken:
+				typeof options.acceptsToken === "string" ? options.acceptsToken : [...options.acceptsToken],
+		})
 }
 
 export const makeLoginSelfHosted = (
@@ -648,8 +656,8 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 	headers: HeaderRecord,
 	env: Pick<AuthEnv, "CLERK_JWT_KEY">,
 	authenticateClerkRequest: ClerkAuthenticateRequest,
-	acceptsToken: string | string[],
-	acceptPendingSession = false,
+	acceptsToken: ClerkAcceptsToken,
+	acceptPendingSession: boolean = false,
 ) {
 	const requestState = yield* Effect.tryPromise({
 		try: () =>
@@ -717,7 +725,7 @@ export const makeResolveClerkUser = (
 export const makeResolveTenant = (
 	env: AuthEnv,
 	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
-	acceptsToken: string | string[] = "session_token",
+	acceptsToken: ClerkAcceptsToken = "session_token",
 	/**
 	 * Omit to disable {@link ORG_SELECTION_HEADER} entirely — the header is then
 	 * rejected rather than ignored. Callers that have no membership directory to

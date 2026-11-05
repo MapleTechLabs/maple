@@ -44,7 +44,7 @@ import {
 } from "./telemetry"
 import { V2SchemaErrors, V2UnexpectedErrors } from "./auth"
 import { collapseQueryParameterNullBranches } from "./openapi-nullable"
-import { Record as Rec } from "effect"
+import { Predicate, Record as Rec } from "effect"
 
 const HTTP_OPERATION_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const
 
@@ -168,10 +168,15 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 				const withRateLimitHeaders = collapseQueryParameterNullBranches(
 					addRateLimitResponseHeaders(spec),
 				)
+				// The generated document is `Record<string, any>`; `info` is checked before it is spread.
+				const generatedInfo: unknown = withRateLimitHeaders.info
+				const info: Record<PropertyKey, unknown> = Predicate.isObject(generatedInfo)
+					? generatedInfo
+					: {}
 				return {
 					...withRateLimitHeaders,
 					info: {
-						...withRateLimitHeaders.info,
+						...info,
 						contact: {
 							name: "Maple Support",
 							url: "https://maple.dev",

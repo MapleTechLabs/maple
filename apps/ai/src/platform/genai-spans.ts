@@ -556,7 +556,8 @@ const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined
 	if (tools.length === 0) return undefined
 	const described = Arr.map(tools, (tool) => ({
 		type: "function",
-		name: tool.name,
+		// `Tool.Any` types the name parameter as `any`.
+		name: String(tool.name),
 		description: Tool.getDescription(tool) ?? "",
 	}))
 	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.

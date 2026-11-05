@@ -45,7 +45,10 @@ export const parseYamlText = (
 ): Effect.Effect<unknown, LockfileParseError> =>
 	Effect.try({
 		// The library's alias cap stops a lockfile of nested anchors from expanding past memory.
-		try: () => parseYaml(content, options),
+		try: () => {
+			const parsed: unknown = parseYaml(content, options)
+			return parsed
+		},
 		catch: parseError(path, "invalid YAML"),
 	})
 
@@ -70,7 +73,11 @@ export const parseYamlDocuments = (
 				{
 					onNone: () =>
 						Effect.try({
-							try: () => Arr.map(docs, (doc) => doc.toJS()),
+							try: () =>
+								Arr.map(docs, (doc) => {
+									const value: unknown = doc.toJS()
+									return value
+								}),
 							catch: parseError(path, "invalid YAML"),
 						}),
 					onSome: (broken) =>

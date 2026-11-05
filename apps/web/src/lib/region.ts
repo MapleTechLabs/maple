@@ -11,7 +11,7 @@ const RegionAppUrls = Schema.fromJsonString(
 )
 
 const regionAppUrls: Partial<Record<MapleRegion, string>> = Option.getOrElse(
-	Schema.decodeUnknownOption(RegionAppUrls)(import.meta.env.VITE_MAPLE_REGION_APP_URLS ?? ""),
+	Schema.decodeOption(RegionAppUrls)(import.meta.env.VITE_MAPLE_REGION_APP_URLS ?? ""),
 	() => ({}),
 )
 

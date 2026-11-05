@@ -204,7 +204,7 @@ const anyValueJson = (
 			anyValueJson(item, `${label}[${index}]`, depth + 1, budget),
 		)
 	if (value.kvlistValue !== undefined) {
-		const output: Record<string, JsonValue> = Object.create(null)
+		const output = nullPrototypeRecord<JsonValue>()
 		for (const [index, entry] of (value.kvlistValue.values ?? []).entries()) {
 			const key = assertStringBound(entry.key ?? "", `${label}.key[${index}]`)
 			if (key.length === 0 || SENSITIVE_KEY.test(key)) continue
@@ -213,6 +213,13 @@ const anyValueJson = (
 		return output
 	}
 	return null
+}
+
+/** A record with no prototype, so untrusted keys like `__proto__` stay plain data. */
+const nullPrototypeRecord = <V>(): Record<string, V> => {
+	const record: Record<string, V> = {}
+	Reflect.setPrototypeOf(record, null)
+	return record
 }
 
 interface NormalizedAttributes {
@@ -224,7 +231,7 @@ const attributes = (values: readonly KeyValue[] | undefined, label: string): Nor
 	if ((values?.length ?? 0) > MAX_ATTRIBUTES)
 		throw new OtlpFieldError({ message: `${label} exceeds ${MAX_ATTRIBUTES} attributes` })
 	const scalars = new Map<string, SignalScalar>()
-	const data: Record<string, JsonValue> = Object.create(null)
+	const data = nullPrototypeRecord<JsonValue>()
 	for (const [index, entry] of (values ?? []).entries()) {
 		const key = assertStringBound(entry.key ?? "", `${label}[${index}].key`)
 		if (key.length === 0 || SENSITIVE_KEY.test(key)) continue

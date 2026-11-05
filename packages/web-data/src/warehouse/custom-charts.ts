@@ -316,6 +316,18 @@ const tracesMetrics = new Set<TracesMetric>([
 const metricsMetrics = new Set<MetricsMetric>(["avg", "sum", "min", "max", "count", "rate", "increase"])
 const metricsBreakdownMetrics = new Set<"avg" | "sum" | "count">(["avg", "sum", "count"])
 
+const TRACES_TIMESERIES_GROUP_BY = [
+	"service",
+	"span_name",
+	"status_code",
+	"http_method",
+	"attribute",
+	"none",
+] as const
+const LOGS_TIMESERIES_GROUP_BY = ["service", "severity", "none"] as const
+const isOneOf = <const L extends ReadonlyArray<string>>(literals: L, value: string): value is L[number] =>
+	Arr.some(literals, (literal) => literal === value)
+
 function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec | string {
 	// The legacy chart route predates the query set; product events only lower through it.
 	if (data.source === "product_events") {
@@ -325,13 +337,9 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 		if (!tracesMetrics.has(data.metric as TracesMetric)) {
 			return `Unknown trace metric: ${data.metric}`
 		}
-		if (
-			data.groupBy &&
-			!["service", "span_name", "status_code", "http_method", "attribute", "none"].includes(
-				data.groupBy,
-			)
-		) {
-			return `Unsupported traces groupBy: ${data.groupBy}`
+		const groupBy = data.groupBy
+		if (groupBy !== undefined && !isOneOf(TRACES_TIMESERIES_GROUP_BY, groupBy)) {
+			return `Unsupported traces groupBy: ${groupBy}`
 		}
 
 		return {
@@ -339,7 +347,7 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 			source: "traces",
 			metric: data.metric as TracesMetric,
 			apdexThresholdMs: data.apdexThresholdMs,
-			groupBy: data.groupBy ? ([data.groupBy] as any) : undefined,
+			groupBy: groupBy === undefined ? undefined : [groupBy],
 			filters: {
 				serviceName: data.filters?.serviceName,
 				spanName: data.filters?.spanName,
@@ -359,15 +367,16 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 		if (data.metric !== "count") {
 			return `Unknown logs metric: ${data.metric}`
 		}
-		if (data.groupBy && !["service", "severity", "none"].includes(data.groupBy)) {
-			return `Unsupported logs groupBy: ${data.groupBy}`
+		const groupBy = data.groupBy
+		if (groupBy !== undefined && !isOneOf(LOGS_TIMESERIES_GROUP_BY, groupBy)) {
+			return `Unsupported logs groupBy: ${groupBy}`
 		}
 
 		return {
 			kind: "timeseries",
 			source: "logs",
 			metric: "count",
-			groupBy: data.groupBy ? ([data.groupBy] as any) : undefined,
+			groupBy: groupBy === undefined ? undefined : [groupBy],
 			filters: {
 				serviceName: data.filters?.serviceName,
 				severity: data.filters?.severity,
@@ -633,7 +642,7 @@ export function makeAllMetricsTimeseriesRequest(opts: {
 	excludedEnvironments?: ReadonlyArray<DeploymentEnvironment>
 	excludedNamespaces?: ReadonlyArray<ServiceNamespace>
 	excludedCommitShas?: ReadonlyArray<CommitSha>
-	groupBy?: string[]
+	groupBy?: Extract<QuerySpec, { kind: "timeseries"; source: "traces" }>["groupBy"]
 }) {
 	return new QueryEngineExecuteRequest({
 		startTime: opts.startTime ?? "2020-01-01 00:00:00",
@@ -643,7 +652,7 @@ export function makeAllMetricsTimeseriesRequest(opts: {
 			source: "traces" as const,
 			metric: "count" as const,
 			allMetrics: true,
-			groupBy: opts.groupBy as any,
+			groupBy: opts.groupBy,
 			filters: {
 				serviceName: opts.serviceName,
 				rootSpansOnly: opts.rootSpansOnly ?? true,
@@ -1043,7 +1052,7 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 			excludedEnvironments: input.excludedEnvironments,
 			excludedNamespaces: input.excludedNamespaces,
 			excludedCommitShas: input.excludedCommitShas,
-			groupBy: ["service"] as string[],
+			groupBy: ["service" as const],
 		}
 
 		// The services-list sparkline shape uses the sampling-aware

@@ -73,10 +73,12 @@ const withDateParamGuard = <T extends object>(client: T): T =>
 			if (property === "query") {
 				return (sql: string, params?: unknown[], ...rest: unknown[]) => {
 					assertNoDateParams(sql, params)
-					return value.call(target, sql, params, ...rest)
+					const result: unknown = value.call(target, sql, params, ...rest)
+					return result
 				}
 			}
-			return value.bind(target)
+			const bound: unknown = value.bind(target)
+			return bound
 		},
 	})
 

@@ -57,10 +57,14 @@ export const group = (transform: Transform, children: ReadonlyArray<Child>): THR
 	return node
 }
 
+// A guard keeps the default generics; a bare `instanceof` narrows to `Mesh<any, any>`.
+const isDrawable = (object: THREE.Object3D): object is THREE.Mesh | THREE.LineSegments =>
+	object instanceof THREE.Mesh || object instanceof THREE.LineSegments
+
 /** Frees every geometry, material and texture under `root`. */
 export const disposeTree = (root: THREE.Object3D): void => {
 	root.traverse((object) => {
-		if (!(object instanceof THREE.Mesh || object instanceof THREE.LineSegments)) return
+		if (!isDrawable(object)) return
 		object.geometry.dispose()
 		const materials: ReadonlyArray<THREE.Material> = Arr.isArray(object.material)
 			? object.material

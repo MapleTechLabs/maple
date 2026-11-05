@@ -29,7 +29,7 @@ const MAX_ENTRIES = 150
 
 const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> => {
 	if (value === null || typeof value !== "object") return false
-	const proto = Object.getPrototypeOf(value)
+	const proto: unknown = Object.getPrototypeOf(value)
 	return proto === Object.prototype || proto === null
 }
 

@@ -50,7 +50,7 @@ export const isJsonValue = (value: unknown, seen: Set<object> = new Set()): valu
 	if (typeof value !== "object") return false
 	if (seen.has(value)) return false
 	seen.add(value)
-	const prototype = Object.getPrototypeOf(value)
+	const prototype: unknown = Object.getPrototypeOf(value)
 	const valid = Arr.isArray(value)
 		? Arr.every(value, (item) => isJsonValue(item, seen))
 		: (prototype === Object.prototype || prototype === null) &&
