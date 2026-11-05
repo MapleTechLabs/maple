@@ -391,7 +391,7 @@ export const makeUuidSequence = (...values: string[]): Pick<AlertRuntimeApi, "ma
 	}
 }
 
-export const okFetch: typeof fetch = (async () => new Response("ok", { status: 200 })) as typeof fetch
+export const okFetch: typeof fetch = async () => new Response("ok", { status: 200 })
 
 export const insertDeliveryEventRow = async (
 	db: TestDb,

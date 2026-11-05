@@ -375,8 +375,8 @@ describe("makeQueryEngineExecute", () => {
 				const response = yield* execute(tenant, sidebarRequest(kind))
 
 				assert.strictEqual(queries.length, 2, kind)
-				assert.ok(Str.includes("trace_facets_hourly")(queries[0]!), kind)
-				assert.ok(!Str.includes("trace_facets_hourly")(queries[1]!), kind)
+				assert.ok(Str.includes("trace_facets_hourly")(queries[0]), kind)
+				assert.ok(!Str.includes("trace_facets_hourly")(queries[1]), kind)
 				assert.strictEqual(response.result.kind, kind)
 			}
 		}),
@@ -397,7 +397,7 @@ describe("makeQueryEngineExecute", () => {
 				const response = yield* execute(tenant, sidebarRequest(kind))
 
 				assert.strictEqual(queries.length, 1, kind)
-				assert.ok(!Str.includes("trace_facets_hourly")(queries[0]!), kind)
+				assert.ok(!Str.includes("trace_facets_hourly")(queries[0]), kind)
 				assert.strictEqual(response.result.kind, kind)
 			}
 		}),

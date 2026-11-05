@@ -418,7 +418,7 @@ const timingSafeEqual = (a: string, b: string): boolean => {
 	const bb = Buffer.from(b)
 	if (ba.length !== bb.length) return false
 	let mismatch = 0
-	for (let i = 0; i < ba.length; i += 1) mismatch |= ba[i]! ^ bb[i]!
+	for (let i = 0; i < ba.length; i += 1) mismatch |= ba[i] ^ bb[i]
 	return mismatch === 0
 }
 

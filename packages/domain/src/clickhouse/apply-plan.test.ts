@@ -30,23 +30,23 @@ describe("expandBackfill", () => {
 		const steps = await expandBackfill(spec, "maple", boundsExec(LO, HI))
 		expect(steps).toHaveLength(3)
 		expect(Arr.every(steps, (s) => s.backfill)).toBe(true)
-		expect(steps[0]!.sql).toContain(
+		expect(steps[0].sql).toContain(
 			"Timestamp >= toDateTime('2026-01-01 00:00:00') AND Timestamp < toDateTime('2026-01-02 00:00:00')",
 		)
-		expect(steps[1]!.sql).toContain("toDateTime('2026-01-02 00:00:00')")
-		expect(steps[2]!.sql).toContain(
+		expect(steps[1].sql).toContain("toDateTime('2026-01-02 00:00:00')")
+		expect(steps[2].sql).toContain(
 			"Timestamp >= toDateTime('2026-01-03 00:00:00') AND Timestamp < toDateTime('2026-01-04 00:00:00')",
 		)
 		// distinct, stable, date-suffixed step names
 		expect(new Set(Arr.map(steps, (s) => s.name)).size).toBe(3)
-		expect(steps[0]!.name).toBe("backfill:service_overview_spans:2026-01-01")
+		expect(steps[0].name).toBe("backfill:service_overview_spans:2026-01-01")
 	})
 
 	it("emits a single full step when the source table is empty", async () => {
 		const steps = await expandBackfill(spec, "maple", boundsExec(0, 0))
 		expect(steps).toHaveLength(1)
-		expect(steps[0]!.name).toContain(":empty")
-		expect(steps[0]!.sql).not.toContain("toDateTime('") // no time predicate
+		expect(steps[0].name).toContain(":empty")
+		expect(steps[0].sql).not.toContain("toDateTime('") // no time predicate
 	})
 })
 
@@ -59,9 +59,9 @@ describe("expandMigrationToSteps", () => {
 		}
 		const steps = await expandMigrationToSteps(migration, "maple", boundsExec(LO, HI))
 		expect(steps).toHaveLength(1 + 3)
-		expect(steps[0]!.backfill).toBe(false)
+		expect(steps[0].backfill).toBe(false)
 		// TRUNCATE is not identifier-rewritten by qualify (relies on session db) — passes through.
-		expect(steps[0]!.sql).toBe("TRUNCATE TABLE IF EXISTS service_overview_spans")
+		expect(steps[0].sql).toBe("TRUNCATE TABLE IF EXISTS service_overview_spans")
 		expect(Arr.every(steps.slice(1), (s) => s.backfill)).toBe(true)
 	})
 })

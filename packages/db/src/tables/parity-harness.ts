@@ -48,7 +48,7 @@ const catalog = async (db: PGlite, tables: ReadonlyArray<string>) => {
 	return { columns: columns.rows, constraints: constraints.rows, indexes: indexes.rows }
 }
 
-const isTable = (value: unknown): value is PgSchemaTable<string, ColumnDefs, string> =>
+const isTable = (value: unknown): value is PgSchemaTable<string, ColumnDefs> =>
 	typeof value === "object" && value !== null && "_tag" in value && value._tag === "Table" && "ddl" in value
 
 /**
@@ -56,7 +56,7 @@ const isTable = (value: unknown): value is PgSchemaTable<string, ColumnDefs, str
  * `complete` also requires them to be every table the database has.
  */
 export const describeParity = (
-	tables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> | Record<string, unknown>,
+	tables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> | Record<string, unknown>,
 	options: { readonly complete?: boolean } = {},
 ) => {
 	// @effect-diagnostics-next-line preferEffectArray:off preferEffectRecord:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch; not a record type; Rec.values would need a cast

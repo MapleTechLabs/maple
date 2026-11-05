@@ -77,7 +77,7 @@ describe("mapGcpTimeSeries", () => {
 			["2026-10-08 12:01:00.000", "2026-10-08 12:01:00.000", 0],
 			["2026-10-08 12:02:00.000", "2026-10-08 12:02:00.000", 2.5],
 		])
-		expect(gaugeRows[0]!.metric_attributes).toEqual({ "gcp.metric.labels.state": "idle" })
+		expect(gaugeRows[0].metric_attributes).toEqual({ "gcp.metric.labels.state": "idle" })
 	})
 
 	it("keeps the points that end inside (start, end]", () => {
@@ -141,11 +141,11 @@ describe("mapGcpTimeSeries", () => {
 			series,
 		]).sumRows
 		const [sent] = map("compute.googleapis.com/instance/network/sent_bytes_count", [series]).sumRows
-		expect(Arr.map([received, sent], (row) => [row!.metric_name, row!.metric_attributes])).toEqual([
+		expect(Arr.map([received, sent], (row) => [row.metric_name, row.metric_attributes])).toEqual([
 			["gcp.gce.network.io", { "network.io.direction": "receive" }],
 			["gcp.gce.network.io", { "network.io.direction": "transmit" }],
 		])
-		expect(received!.resource_attributes).toMatchObject({
+		expect(received.resource_attributes).toMatchObject({
 			"service.name": "web-1",
 			"host.name": "web-1",
 			"gcp.gce.instance.name": "web-1",
@@ -205,7 +205,7 @@ describe("mapGcpTimeSeries", () => {
 			"cloud.region",
 			"gcp.resource.labels.database_id",
 		]) {
-			expect(queries!.resource_attributes[key], key).toBe(instance[key])
+			expect(queries.resource_attributes[key], key).toBe(instance[key])
 		}
 	})
 

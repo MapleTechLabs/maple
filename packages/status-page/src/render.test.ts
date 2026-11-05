@@ -749,7 +749,7 @@ describe("editor preview render", () => {
 describe("previewSnapshot", () => {
 	const base = makeSnapshot()
 	const withoutDays = (index: number) => {
-		const { days: _days, ...component } = base.components[index]!
+		const { days: _days, ...component } = base.components[index]
 		return component
 	}
 
@@ -777,18 +777,18 @@ describe("previewSnapshot", () => {
 		expect(Arr.every(snapshot.components[0]?.days, (day) => day.checks === 0)).toBe(true)
 		const html = renderPage(snapshot, { _tag: "live", updatedAt: FIXTURE_NOW }, FIXTURE_NOW)
 		expect(html).toContain("--link:#123abc")
-		expect(rowOf(html, snapshot.components[0]!.id)).toContain(`<span class="uptime">No data</span>`)
+		expect(rowOf(html, snapshot.components[0].id)).toContain(`<span class="uptime">No data</span>`)
 	})
 })
 
 describe("previewSnapshot with history", () => {
 	it("shows the days it is given for a monitored component", () => {
 		const base = makeSnapshot()
-		const days = base.components[0]!.days
+		const days = base.components[0].days
 		const snapshot = previewSnapshot({
 			pageId: base.pageId,
 			page: base.page,
-			components: [{ ...base.components[0]!, monitorStatus: "up", manualStatus: null, days }],
+			components: [{ ...base.components[0], monitorStatus: "up", manualStatus: null, days }],
 			incidents: [],
 			nowMs: FIXTURE_NOW,
 		})

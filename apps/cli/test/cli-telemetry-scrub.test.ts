@@ -84,11 +84,11 @@ describe("CLI telemetry scrubber", () => {
 				},
 			],
 		})
-		const scrubbed = data.resourceSpans[0]!.scopeSpans[0]!.spans[0]!
+		const scrubbed = data.resourceSpans[0].scopeSpans[0].spans[0]
 		expect(JSON.stringify(scrubbed)).not.toContain("secret")
 		expect(scrubbed.status).toEqual({ code: 2 })
 		expect(scrubbed.attributes).toEqual([str("cli.argv", "query")])
-		expect(Arr.map(scrubbed.events[0]!.attributes, (attribute) => attribute.key)).toEqual([
+		expect(Arr.map(scrubbed.events[0].attributes, (attribute) => attribute.key)).toEqual([
 			"exception.type",
 			"exception.stacktrace",
 		])

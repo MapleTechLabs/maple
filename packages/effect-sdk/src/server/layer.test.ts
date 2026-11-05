@@ -30,7 +30,7 @@ interface ExportedSpan {
 // Installed for the whole file: `FetchHttpClient` resolves `globalThis.fetch`
 // once, so a per-test swap would be missed after the first export.
 const calls: Array<ExportCall> = []
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 	const request = new Request(input, init)
 	const text = await request.text()
 	calls.push({
@@ -39,7 +39,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		body: text ? JSON.parse(text) : {},
 	})
 	return new Response(null, { status: 200 })
-}) as typeof fetch
+}
 
 const exportedSpans = (): Array<ExportedSpan> =>
 	pipe(

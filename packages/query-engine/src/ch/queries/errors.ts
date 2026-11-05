@@ -795,7 +795,7 @@ export interface TracesDurationStatsOutput {
 
 export function tracesDurationStatsQuery(
 	opts: TracesDurationStatsOpts,
-): CHQuery<ColumnDefs, TracesDurationStatsOutput, {}> {
+): CHQuery<ColumnDefs, TracesDurationStatsOutput> {
 	// Each tier reports its row count beside its extremes: an aggregate over an
 	// empty tier returns 0 rather than nothing, and that 0 must not win the
 	// outer `min`. The t-digest states merge across tiers; an empty one is inert.
@@ -886,10 +886,8 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 							CH.dynamicColumn("t_attr.TraceId").eq(CH.outerRef("TraceId")),
 							// Typed so the compiler sees the subquery's tenant filter.
 							$.OrgId.eq(orgIdParam),
-							CH.dynamicColumn<string>("t_attr.Timestamp").gte(
-								param.dateTimeString("startTime"),
-							),
-							CH.dynamicColumn<string>("t_attr.Timestamp").lte(param.dateTimeString("endTime")),
+							CH.dynamicColumn("t_attr.Timestamp").gte(param.dateTimeString("startTime")),
+							CH.dynamicColumn("t_attr.Timestamp").lte(param.dateTimeString("endTime")),
 							matchCond,
 						]),
 				),
@@ -912,10 +910,8 @@ export function tracesFacetsQuery(opts: TracesFacetsOpts): CHUnionQuery<TracesFa
 							CH.dynamicColumn("t_res.TraceId").eq(CH.outerRef("TraceId")),
 							// Typed so the compiler sees the subquery's tenant filter.
 							$.OrgId.eq(orgIdParam),
-							CH.dynamicColumn<string>("t_res.Timestamp").gte(
-								param.dateTimeString("startTime"),
-							),
-							CH.dynamicColumn<string>("t_res.Timestamp").lte(param.dateTimeString("endTime")),
+							CH.dynamicColumn("t_res.Timestamp").gte(param.dateTimeString("startTime")),
+							CH.dynamicColumn("t_res.Timestamp").lte(param.dateTimeString("endTime")),
 							matchCond,
 						]),
 				),

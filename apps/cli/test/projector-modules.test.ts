@@ -69,9 +69,9 @@ describe("projector modules", () => {
 			}
 			const first = await evaluate(true)
 			strictEqual(first.length, 1)
-			deepStrictEqual(first[0]!.data, { label: "external projector", occurrenceId: "delivery-42" })
+			deepStrictEqual(first[0].data, { label: "external projector", occurrenceId: "delivery-42" })
 			const restarted = await evaluate(false)
-			strictEqual(restarted[0]!.id, first[0]!.id)
+			strictEqual(restarted[0].id, first[0].id)
 			// Saved specs cannot silently lose their implementation on the next start.
 			const store = await openStore(data)
 			try {

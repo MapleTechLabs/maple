@@ -410,8 +410,8 @@ describe("McpOAuthService", () => {
 					"select family_expires_at from mcp_oauth_refresh_tokens order by created_at desc limit 1",
 				),
 			)
-			expect(DateTime.toEpochMillis(DateTime.makeUnsafe(after.rows[0]!.family_expires_at))).toBe(
-				DateTime.toEpochMillis(DateTime.makeUnsafe(before.rows[0]!.family_expires_at)),
+			expect(DateTime.toEpochMillis(DateTime.makeUnsafe(after.rows[0].family_expires_at))).toBe(
+				DateTime.toEpochMillis(DateTime.makeUnsafe(before.rows[0].family_expires_at)),
 			)
 		}).pipe(Effect.provide(makeLayer(db)))
 	})

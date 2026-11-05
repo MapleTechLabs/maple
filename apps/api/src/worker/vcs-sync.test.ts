@@ -53,7 +53,7 @@ const syncService = (exhausted: Array<unknown>) =>
 	} satisfies VcsSyncServiceApi)
 
 /** A delivered message that records what the consumer decided for it. */
-const message = (id: string, kind: string, settled: Array<string>, attempts = 1): Message<unknown> => ({
+const message = (id: string, kind: string, settled: Array<string>, attempts = 1): Message => ({
 	id,
 	timestamp: new Date(0),
 	body: job(kind),
@@ -108,8 +108,8 @@ describe("VCS sync batches over the self binding", () => {
 			assert.deepStrictEqual(handOff, { run: "placed" })
 			assert.deepStrictEqual(settled, ["a:ack", "b:retry:120", "c:ack", "d:retry"])
 			assert.deepStrictEqual(exhausted, [job("broken")])
-			assert.strictEqual(new URL(seen[0]!.url).pathname, VCS_SYNC_BATCH_PATH)
-			assert.strictEqual(seen[0]!.headers.get("authorization"), `Bearer ${TOKEN}`)
+			assert.strictEqual(new URL(seen[0].url).pathname, VCS_SYNC_BATCH_PATH)
+			assert.strictEqual(seen[0].headers.get("authorization"), `Bearer ${TOKEN}`)
 		}),
 	)
 

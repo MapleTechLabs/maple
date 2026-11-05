@@ -33,7 +33,7 @@ interface MetaPost {
 const setupFetch = () => {
 	const metaPosts: Array<MetaPost> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		if (Str.includes("/v1/sessionReplays/meta")(url) && typeof init?.body === "string") {
 			metaPosts.push({
@@ -44,7 +44,7 @@ const setupFetch = () => {
 			})
 		}
 		return new Response(null, { status: 200 })
-	}) as typeof fetch
+	}
 	return { metaPosts, restore: () => void (globalThis.fetch = original) }
 }
 
@@ -247,7 +247,7 @@ describe("standalone session emission (client)", () => {
 
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		expect(Arr.map(metaPosts, (post) => post.row.status)).toEqual(["active"])
-		expect(metaPosts[0]!.authorization).toBeNull()
+		expect(metaPosts[0].authorization).toBeNull()
 	})
 
 	it("attaches observed trace ids to the ended row and rotates sessions", async () => {

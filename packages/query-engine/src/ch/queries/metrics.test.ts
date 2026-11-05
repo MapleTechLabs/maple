@@ -600,7 +600,7 @@ describe("metric rows decode buckets to DateTime.Utc", () => {
 			const query = yield* compiled
 			expect(query.rowSchemaSource).not.toBe("none")
 			const [row] = yield* query.decodeRows([wire])
-			return row!.bucket
+			return row.bucket
 		})
 
 	const cases = {

@@ -22,7 +22,7 @@ const CORE_FILES: ReadonlySet<string> = new Set([
 /** Domain companions, in file order: the files reconnaissance selects from. */
 // SAFETY: `Object.keys` of the generated `as const` record is exactly its key union.
 export const COMPANION_FILES: ReadonlyArray<SkillFileName> = Arr.filter(
-	Rec.keys(SKILL_FILES) as Array<SkillFileName>,
+	Rec.keys(SKILL_FILES),
 	(name) => !CORE_FILES.has(name),
 )
 

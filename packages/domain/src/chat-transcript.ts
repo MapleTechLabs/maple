@@ -279,5 +279,5 @@ const foldTaskEvent = (
 			// further, so no `task` field is ever present on them.
 			messages: child.messages,
 		},
-	} as ChatToolCall
+	}
 }

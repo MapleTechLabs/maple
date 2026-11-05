@@ -82,7 +82,7 @@ describe("session transcript rows decode timestamps to DateTime.Utc", () => {
 					attributes: "{}",
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2026-06-24T04:00:00.123Z")
+			expect(DateTime.formatIso(row.timestamp)).toBe("2026-06-24T04:00:00.123Z")
 		}),
 	)
 })

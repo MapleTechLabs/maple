@@ -44,8 +44,8 @@ describe("spanMessages", () => {
 			["input", "user"],
 			["output", "assistant"],
 		])
-		expect(messages[1]!.parts).toEqual([{ kind: "text", text: "fix the retry backoff" }])
-		expect(messages[2]!.parts[1]).toEqual({
+		expect(messages[1].parts).toEqual([{ kind: "text", text: "fix the retry backoff" }])
+		expect(messages[2].parts[1]).toEqual({
 			kind: "tool_call",
 			id: "toolu_01",
 			name: "read_file",
@@ -68,9 +68,9 @@ describe("spanMessages", () => {
 		})
 
 		const messages = spanMessages(span)
-		expect(messages[0]!.parts).toEqual([{ kind: "text", text: "one line of instructions" }])
-		expect(messages[1]!.parts).toEqual([{ kind: "text", text: "a bare content string" }])
-		expect(messages[2]!.parts).toEqual([{ kind: "text", text: "a text key" }])
+		expect(messages[0].parts).toEqual([{ kind: "text", text: "one line of instructions" }])
+		expect(messages[1].parts).toEqual([{ kind: "text", text: "a bare content string" }])
+		expect(messages[2].parts).toEqual([{ kind: "text", text: "a text key" }])
 	})
 
 	// A payload the reader cannot see is worse than one that is ugly.
@@ -84,7 +84,7 @@ describe("spanMessages", () => {
 			},
 		})
 
-		expect(spanMessages(span)[0]!.parts).toEqual([{ kind: "text", text: '{"type":"image","media":"…"}' }])
+		expect(spanMessages(span)[0].parts).toEqual([{ kind: "text", text: '{"type":"image","media":"…"}' }])
 	})
 
 	it("reads OpenAI-format tool calls and tool messages", () => {
@@ -220,7 +220,7 @@ describe("spanMessages", () => {
 			},
 		})
 
-		expect(spanMessages(span)[0]!.parts).toEqual([
+		expect(spanMessages(span)[0].parts).toEqual([
 			{ kind: "reasoning", text: "semconv spelling", redacted: false },
 			{ kind: "reasoning", text: "anthropic spelling", redacted: false },
 			{ kind: "reasoning", text: "the text key", redacted: false },
@@ -239,9 +239,7 @@ describe("spanMessages", () => {
 			},
 		})
 
-		expect(spanMessages(span)[0]!.parts).toEqual([
-			{ kind: "reasoning", text: undefined, redacted: false },
-		])
+		expect(spanMessages(span)[0].parts).toEqual([{ kind: "reasoning", text: undefined, redacted: false }])
 	})
 })
 
@@ -331,7 +329,7 @@ describe("spanToolCalls", () => {
 
 		const calls = spanToolCalls(span)
 		expect(calls).toHaveLength(1)
-		expect(calls[0]!.id).toBe("toolu_01")
+		expect(calls[0].id).toBe("toolu_01")
 	})
 
 	// A model span's output only makes its calls; the responses come back on
@@ -449,7 +447,7 @@ describe("spanMessages — reasoning payloads", () => {
 				durationMs: 1000,
 				genAi: { outputMessages: [{ role: "assistant", parts: [part] }] },
 			}),
-		)[0]!.parts[0]
+		)[0].parts[0]
 
 	// A payload the reader cannot see is worse than one that is ugly — and that
 	// holds for reasoning too, whatever shape the vendor wrapped it in.

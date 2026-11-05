@@ -98,7 +98,7 @@ const warehouseStub = (
 				Str.includes(`FROM ${name}`)(compiledQueryOf(compiled).sql),
 			)
 			return compiledQueryOf(compiled)
-				.decodeRows(Option.isNone(table) ? [] : rowsByTable[table.value]!)
+				.decodeRows(Option.isNone(table) ? [] : rowsByTable[table.value])
 				.pipe(Effect.orDie)
 		},
 		compiledQueryFirst: () => Effect.die(new Error("unexpected compiled query")),

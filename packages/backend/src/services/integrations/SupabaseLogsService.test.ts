@@ -253,9 +253,9 @@ describe("SupabaseLogsService", () => {
 
 					const records = sentRecords(world)
 					assert.deepStrictEqual(Arr.map(records, uidOf), [fixture.id])
-					assert.strictEqual(records[0]!.severityText, "ERROR")
-					assert.strictEqual(records[0]!.timeUnixNano, `${(ENABLED_FROM + 30_000) / 1000}123456000`)
-					assert.strictEqual(records[0]!.body.stringValue, fixture.event_message)
+					assert.strictEqual(records[0].severityText, "ERROR")
+					assert.strictEqual(records[0].timeUnixNano, `${(ENABLED_FROM + 30_000) / 1000}123456000`)
+					assert.strictEqual(records[0].body.stringValue, fixture.event_message)
 
 					const sourceId = yield* Effect.promise(() =>
 						queryFirstRow<{ source_id: string }>(
@@ -265,7 +265,7 @@ describe("SupabaseLogsService", () => {
 						),
 					)
 					const resource = Rec.fromEntries(
-						Arr.map(world.ingest.bodies[0]!.resourceLogs[0]!.resource.attributes, (attribute) => [
+						Arr.map(world.ingest.bodies[0].resourceLogs[0].resource.attributes, (attribute) => [
 							attribute.key,
 							attribute.value.stringValue,
 						]),

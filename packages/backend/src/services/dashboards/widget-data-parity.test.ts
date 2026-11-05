@@ -296,7 +296,7 @@ describe("shared widget data parity with the signed-in board", () => {
 
 		const plan = browserWould(TIMESERIES_SOURCE, { widgetTimeRange: { type: "relative", value: "1h" } })
 		expect(shared.captured.execute).toHaveLength(1)
-		const executed = shared.captured.execute[0]!
+		const executed = shared.captured.execute[0]
 		// Both resolve "1h" against their own `Date.now()`, a few ms apart; the
 		// cache-grid snap (15s rung for 1h) makes them land on the same endpoint.
 		expect(executed.endTime).toBe(plan.window.endTime)
@@ -348,7 +348,7 @@ describe("shared widget data parity with the signed-in board", () => {
 
 		expect(shared.captured.rawSql).toEqual(expected.captured.rawSql)
 		expect(shared.captured.rawSql).toHaveLength(1)
-		const issued = shared.captured.rawSql[0]!.sql
+		const issued = shared.captured.rawSql[0].sql
 		expect(issued).toContain("'checkout'")
 		expect(issued).not.toContain("$service")
 		// 12h under the rawSql policy is a 30-minute `$__interval_s`, not the old
@@ -410,7 +410,7 @@ describe("shared widget data parity with the signed-in board", () => {
 		)
 
 		expect(outcome.narrowedToSeconds).toBe(MAX_LIST_RANGE_SECONDS)
-		const executed = shared.captured.execute[0]!
+		const executed = shared.captured.execute[0]
 		expect(executed.endTime).toBe(wide.endTime)
 		expect((Date.parse(`${executed.endTime}Z`) - Date.parse(`${executed.startTime}Z`)) / 1000).toBe(
 			MAX_LIST_RANGE_SECONDS,

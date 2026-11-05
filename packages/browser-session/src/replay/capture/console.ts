@@ -130,6 +130,8 @@ export function boundedStringify(value: unknown, budget: number): string {
 			case "function":
 				out += "[Function]"
 				return
+			case "object":
+				break
 		}
 		if (typeof node !== "object" || node === null) {
 			out += "null"

@@ -262,7 +262,7 @@ export function groupReleases(impacts: ReadonlyArray<ReleaseServiceImpact>): Rel
 		const errorCount = Arr.reduce(sorted, 0, (sum, s) => sum + s.errorCount)
 		groups.push({
 			commitSha,
-			firstSeen: Arr.reduce(sorted, sorted[0]!.firstSeen, (min, s) =>
+			firstSeen: Arr.reduce(sorted, sorted[0].firstSeen, (min, s) =>
 				s.firstSeen < min ? s.firstSeen : min,
 			),
 			services: sorted,

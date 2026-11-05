@@ -427,7 +427,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			? Arr.filter(openIncidents, (i) => i.groupKey === input.selectedGroupKey || i.groupKey == null)
 			: openIncidents
 	if (groupIncidents.length > 0) {
-		const first = groupIncidents[0]!
+		const first = groupIncidents[0]
 		stages.push({
 			id: "incident",
 			label: "Incident opened",

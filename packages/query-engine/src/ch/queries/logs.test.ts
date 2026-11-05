@@ -502,16 +502,16 @@ describe("logsListQuery", () => {
 					resourceAttributes: "{}",
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T12:00:00.123Z")
+			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T12:00:00.123Z")
 			const next = yield* compile(
 				logsListQuery({
 					limit: 1,
 					cursorIdentity: {
-						timestamp: row!.exactTimestamp,
-						serviceName: row!.serviceName,
-						traceId: row!.traceId,
-						spanId: row!.spanId,
-						recordIdentity: row!.recordIdentity,
+						timestamp: row.exactTimestamp,
+						serviceName: row.serviceName,
+						traceId: row.traceId,
+						spanId: row.spanId,
+						recordIdentity: row.recordIdentity,
 					},
 				}),
 				baseParams,
@@ -581,7 +581,7 @@ describe("logsListQuery", () => {
 		// Cutoff subquery reads only Timestamp — no Body, no toJSONString.
 		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch[1]!
+		const inner = cutoffMatch[1]
 		expect(inner).not.toContain("Body")
 		expect(inner).not.toContain("toJSONString")
 		expect(inner).toContain("ORDER BY ts DESC")

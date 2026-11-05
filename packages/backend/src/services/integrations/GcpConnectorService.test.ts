@@ -94,7 +94,7 @@ describe("GcpConnectorService", () => {
 			const { setupScript } = yield* gcp.scripts(orgId, connector.id, scriptOptions)
 			const endpoint = /PUSH_ENDPOINT='([^']+)'/.exec(setupScript)?.[1]
 			assert.isDefined(endpoint)
-			const url = new URL(endpoint!)
+			const url = new URL(endpoint)
 			assert.strictEqual(
 				url.origin + url.pathname,
 				`https://ingest.test/v1/logpush/gcp/${connector.id}`,

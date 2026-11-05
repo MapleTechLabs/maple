@@ -154,7 +154,7 @@ export * from "./uptime"
 export * from "./vcs"
 
 /** Every table the application database has, for schema checks and DDL. */
-export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> = [
+export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	AgentFeedback,
 	AiTriageSettings,
 	AlertDestinations,

@@ -106,6 +106,6 @@ describe("runChatTurn input", () => {
 		)
 
 		assert.lengthOf(prompts, 1)
-		assert.equal(userText(prompts[0]!), text)
+		assert.equal(userText(prompts[0]), text)
 	})
 })
