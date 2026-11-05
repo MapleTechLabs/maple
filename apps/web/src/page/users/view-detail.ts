@@ -176,7 +176,7 @@ export const tabCount = (tab: UserTab, detail: UserDetail): number | undefined =
 		case "events":
 			return profile.events
 		case "mcp":
-			return detail.mcpSessions.length
+			return detail.activityPending === true ? undefined : detail.mcpSessions.length
 	}
 }
 
