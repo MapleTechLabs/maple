@@ -142,6 +142,7 @@
 				"effecttsgo/crypto-random-uuid": "off",
 				"effecttsgo/global-console": "off",
 				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-json": "off",
 				"effecttsgo/global-random": "off",
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",
@@ -151,8 +152,8 @@
 				"effecttsgo/prefer-effect-string": "off"
 			}
 		},
-		// Host APIs on purpose: the customer SDK exports a Promise surface, the CLI reads its own
-		// environment, and the canvas animations draw with Math.random per frame.
+		// Host APIs on purpose: the customer SDK exports a Promise surface and keeps Schema out of its
+		// bundle, the CLI reads its own environment, and the canvas animations use Math.random per frame.
 		{
 			"files": [
 				"packages/effect-sdk/**",
@@ -164,6 +165,7 @@
 				"effecttsgo/crypto-random-uuid": "off",
 				"effecttsgo/global-console": "off",
 				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-json": "off",
 				"effecttsgo/global-random": "off",
 				"effecttsgo/global-timers": "off",
 				"effecttsgo/new-promise": "off",

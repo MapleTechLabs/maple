@@ -380,7 +380,6 @@ function parseJsonEachRow<T>(text: string): ReadonlyArray<T> {
 		const trimmed = line.trim()
 		if (trimmed.length === 0) continue
 		try {
-			// oxlint-disable-next-line effecttsgo/global-json -- package does not depend on effect
 			out.push(JSON.parse(trimmed) as T)
 		} catch {
 			// best-effort; the response is from us-controlled queries

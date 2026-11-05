@@ -192,7 +192,6 @@ export const spansOf = (requests: ReadonlyArray<IngestRequest>): DecodedSpan[] =
 					resource?: { attributes?: ReadonlyArray<KeyValue> }
 					scopeSpans: ReadonlyArray<{ spans: ReadonlyArray<OtlpSpan> }>
 				}>
-				// oxlint-disable-next-line effecttsgo/global-json -- packages/browser does not depend on effect
 			} = JSON.parse(bodyText(request))
 			return (body.resourceSpans ?? []).flatMap((resourceSpans) =>
 				resourceSpans.scopeSpans.flatMap((scope) =>
@@ -236,7 +235,6 @@ export const logsOf = (requests: ReadonlyArray<IngestRequest>): DecodedLog[] =>
 						}>
 					}>
 				}>
-				// oxlint-disable-next-line effecttsgo/global-json -- packages/browser does not depend on effect
 			} = JSON.parse(bodyText(request))
 			return (body.resourceLogs ?? []).flatMap((resource) =>
 				resource.scopeLogs.flatMap((scope) =>
@@ -286,7 +284,6 @@ export const replayChunksOf = (requests: ReadonlyArray<IngestRequest>): ReplayCh
 				seq: Number(request.headers["x-maple-chunk-seq"]),
 				isCheckpoint: request.headers["x-maple-is-checkpoint"] === "1",
 				eventCount: Number(request.headers["x-maple-event-count"]),
-				// oxlint-disable-next-line effecttsgo/global-json -- packages/browser does not depend on effect
 				events: JSON.parse(raw),
 				raw,
 			}
@@ -299,7 +296,6 @@ const ndjsonOf = (requests: ReadonlyArray<IngestRequest>, path: string): Record<
 			bodyText(request)
 				.split("\n")
 				.filter((line) => line.length > 0)
-				// oxlint-disable-next-line effecttsgo/global-json -- packages/browser does not depend on effect
 				.map((line) => JSON.parse(line)),
 		)
 
@@ -338,7 +334,6 @@ export async function openApp(
 	const page = await context.newPage()
 	const pageErrors: string[] = []
 	page.on("pageerror", (error) => pageErrors.push(error.message))
-	// oxlint-disable-next-line effecttsgo/global-json -- packages/browser does not depend on effect
 	await page.goto(`${appUrl}${path}?maple=${encodeURIComponent(JSON.stringify(config))}`)
 	return { page, pageErrors }
 }

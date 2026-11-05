@@ -28,7 +28,6 @@ interface ReportFields {
 
 /** Report bodies expose their fields as getters that only `toJSON` serializes. */
 function parseReportBody(body: unknown): ReportFields {
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const raw: unknown = body === null || body === undefined ? undefined : JSON.parse(JSON.stringify(body))
 	const fields = new Map(typeof raw === "object" && raw !== null ? Object.entries(raw) : [])
 	const str = (key: string): string | undefined => {
