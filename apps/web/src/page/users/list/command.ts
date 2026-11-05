@@ -1,5 +1,5 @@
 import { getUsersFacets, listUsers, USERS_SEARCH_MAX_LENGTH } from "@maple/web-data/warehouse/users"
-import { Clock, Duration, Effect, Schema, String as Str } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Schema, String as Str } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -35,15 +35,18 @@ const searchText = (q: string | undefined): string | undefined => {
 	return text === "" ? undefined : text
 }
 
+/** The most namespace or group picks the API takes; a longer shared URL drops the rest. */
+const USERS_PICKS_MAX = 50
+
 /** The list's inputs: the window, the namespace scope, the search, the toggles and the group picks. */
 export const listInputs = (search: Search, window: TimeWindow, pinnedNamespace: string | null) => ({
 	startTime: window.startTime,
 	endTime: window.endTime,
-	namespaces: namespaceScope(search, pinnedNamespace),
+	namespaces: Arr.take(namespaceScope(search, pinnedNamespace), USERS_PICKS_MAX),
 	search: searchText(search.q),
 	hasErrors: search.hasErrors === true ? true : undefined,
 	hasReplay: search.hasReplay === true ? true : undefined,
-	groups: search.groups,
+	groups: search.groups === undefined ? undefined : Arr.take(search.groups, USERS_PICKS_MAX),
 	limit: USERS_LIMIT,
 })
 

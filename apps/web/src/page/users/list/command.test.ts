@@ -1,4 +1,4 @@
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { facetsInputs, listInputs } from "./command"
 import { userHref } from "./update"
@@ -22,6 +22,13 @@ describe("listInputs", () => {
 	it("sends a blank search as no search", () => {
 		expect(listInputs({ q: "   " }, window, null).search).toBeUndefined()
 		expect(listInputs({ q: " ada " }, window, null).search).toBe("ada")
+	})
+
+	it("cuts a shared URL's namespace and group picks to the 50 the API accepts", () => {
+		const picks = Arr.map(Arr.range(1, 60), (n) => `pick_${n}`)
+		const inputs = listInputs({ namespaces: picks, groups: picks }, window, null)
+		expect(inputs.namespaces).toHaveLength(50)
+		expect(inputs.groups).toHaveLength(50)
 	})
 
 	it("cuts a pasted search to the length the API accepts", () => {
