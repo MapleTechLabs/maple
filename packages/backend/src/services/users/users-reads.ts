@@ -376,11 +376,12 @@ const logItem = (log: UserLogItem): UserActivityItem => ({
 })
 
 /** An issue the user hit, at its latest occurrence in the window; it opens the issue page. */
-const issueItem = (issue: UserIssueItem): UserActivityItem => ({
+export const issueItem = (issue: UserIssueItem): UserActivityItem => ({
 	kind: "error",
 	atMs: issue.lastSeenMs,
 	service: issue.service,
-	title: issue.type === "" ? issue.message : issue.type,
+	// As the Errors tab names it: an occurrence with neither a type nor a message is "Unknown Error".
+	title: issue.type !== "" ? issue.type : issue.message !== "" ? issue.message : "Unknown Error",
 	detail: Arr.join(
 		Arr.filter(
 			[plural(issue.hits, "hit"), issue.service, issue.type === "" ? "" : issue.message],
