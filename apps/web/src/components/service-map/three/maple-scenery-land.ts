@@ -192,14 +192,13 @@ function drawStep(
 	y: number,
 	open: (angle: number, depth: number) => readonly [number, number] | null,
 ) {
-	const spots = Arr.filter(
+	const candidates = Arr.filter(
 		Array.from({ length: 12 }, (_, k) => open((k / 12) * Math.PI * 2 + i, 0.62)),
 		(spot): spot is readonly [number, number] => spot !== null,
+	).sort(([ax, az], [bx, bz]) => hash(ax, az) - hash(bx, bz))
+	const spots = Arr.filter(candidates, ([x, z], k) =>
+		Arr.every(candidates.slice(0, k), ([ox, oz]) => Math.hypot(x - ox, z - oz) > 0.8),
 	)
-		.sort(([ax, az], [bx, bz]) => hash(ax, az) - hash(bx, bz))
-		.filter(([x, z], k, all) =>
-			Arr.every(all.slice(0, k), ([ox, oz]) => Math.hypot(x - ox, z - oz) > 0.8),
-		)
 	const top = i === count - 1
 	const trees = top ? 0 : i === 0 || i === count - 2 ? 2 : 1
 	Arr.forEach(spots.slice(0, trees), ([x, z], k) => {
@@ -238,7 +237,8 @@ function drawStair(
 	level: (i: number) => number,
 	steepness: (nx: number, nz: number) => number,
 ) {
-	const gentle = Array.from({ length: 24 }, (_, k) => (k / 24) * Math.PI * 2).reduce((best, angle) =>
+	const angles = Array.from({ length: 24 }, (_, k) => (k / 24) * Math.PI * 2)
+	const gentle = Arr.reduce(angles.slice(1), angles[0], (best, angle) =>
 		steepness(Math.cos(angle), Math.sin(angle)) < steepness(Math.cos(best), Math.sin(best))
 			? angle
 			: best,

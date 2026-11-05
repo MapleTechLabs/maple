@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { ScrapeTargetId } from "@maple/domain/http"
 import type { V2PlanetScaleIntegration, V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
 import {
@@ -45,7 +45,8 @@ const status = (over: Partial<V2PlanetScaleIntegration> = {}): V2PlanetScaleInte
 })
 
 const stateOf = (s: V2PlanetScaleIntegration, id: LiveCheckId) =>
-	derivePlanetScaleSetup(s, NOW).checks.find((check) => check.id === id)?.state
+	Option.getOrUndefined(Arr.findFirst(derivePlanetScaleSetup(s, NOW).checks, (check) => check.id === id))
+		?.state
 
 /** A connection on the metrics API poller, the default since service tokens were retired. */
 const viaApi = (

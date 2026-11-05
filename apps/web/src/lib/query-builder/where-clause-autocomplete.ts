@@ -6,7 +6,7 @@ import {
 import { type Operator, normalizeKey as sharedNormalizeKey } from "@maple/domain/where-clause"
 import { FUNNEL_POPULATION_FILTER_FIELDS, type FunnelPopulationFilterField } from "@maple/query-model"
 import { productEventsFilterField, productEventsFilterKey } from "./funnel-filters"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 type WhereClauseAutocompleteContext = "key" | "operator" | "value" | "conjunction"
 
@@ -443,7 +443,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 	const cursorPosition = clampCursor(expression, cursor)
 	const segmentStart = findLastConjunctionBoundary(expression, cursorPosition)
 	const segment = Str.slice(segmentStart, cursorPosition)(expression)
-	const leadingWhitespace = segment.match(/^\s*/)?.[0].length ?? 0
+	const leadingWhitespace = segment.length - Str.trimStart(segment).length
 	const trimmedSegment = Str.slice(leadingWhitespace)(segment)
 
 	if (!trimmedSegment) {
@@ -458,9 +458,9 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 
 	const operatorMatch = findFirstOperator(trimmedSegment)
 	if (!operatorMatch) {
-		const keyPattern = trimmedSegment.match(/^([^\s=]+)(\s*)(.*)$/)
+		const keyMatch = Str.match(/^([^\s=]+)(\s*)(.*)$/)(trimmedSegment)
 
-		if (!keyPattern) {
+		if (Option.isNone(keyMatch)) {
 			const query = Str.trim(trimmedSegment)
 			return {
 				context: "key",
@@ -471,6 +471,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 			}
 		}
 
+		const keyPattern = keyMatch.value
 		const keyToken = keyPattern[1]
 		const keyGap = keyPattern[2]
 		const operatorTail = keyPattern[3]
@@ -523,7 +524,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 	}
 
 	const valueTail = Str.slice(operatorMatch.position + operatorMatch.length)(trimmedSegment)
-	const valueTailLeadingWhitespace = valueTail.match(/^\s*/)?.[0].length ?? 0
+	const valueTailLeadingWhitespace = valueTail.length - Str.trimStart(valueTail).length
 	const trimmedValueTail = Str.slice(valueTailLeadingWhitespace)(valueTail)
 	const valueStart =
 		segmentStart +
@@ -567,7 +568,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 			}
 		}
 
-		const trailingLeadingWhitespace = trailing.match(/^\s*/)?.[0].length ?? 0
+		const trailingLeadingWhitespace = trailing.length - Str.trimStart(trailing).length
 
 		return {
 			context: "conjunction",
@@ -578,8 +579,8 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		}
 	}
 
-	const unquotedValue = trimmedValueTail.match(/^(\S+)(.*)$/)
-	if (!unquotedValue) {
+	const unquotedMatch = Str.match(/^(\S+)(.*)$/)(trimmedValueTail)
+	if (Option.isNone(unquotedMatch)) {
 		return {
 			context: "value",
 			query: "",
@@ -589,6 +590,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		}
 	}
 
+	const unquotedValue = unquotedMatch.value
 	const valueToken = unquotedValue[1]
 	const trailing = unquotedValue[2]
 
@@ -612,7 +614,7 @@ function parseWhereClauseContext(expression: string, cursor: number): ParsedWher
 		}
 	}
 
-	const trailingLeadingWhitespace = trailing.match(/^\s*/)?.[0].length ?? 0
+	const trailingLeadingWhitespace = trailing.length - Str.trimStart(trailing).length
 
 	return {
 		context: "conjunction",
@@ -773,9 +775,9 @@ function buildProductEventValueSuggestions(
 		path: uniqueValues(values?.pagePaths ?? []),
 		"service.name": uniqueValues(values?.services ?? []),
 	} satisfies Record<string, string[]>
-	if (Object.hasOwn(fixed, normalizedKey)) {
-		const own: string[] = fixed[normalizedKey as keyof typeof fixed]
-		return Arr.map(own, (value) => toStringValueSuggestion(value, normalizedKey))
+	const own = Rec.get<string, string[]>(fixed, normalizedKey)
+	if (Option.isSome(own)) {
+		return Arr.map(own.value, (value) => toStringValueSuggestion(value, normalizedKey))
 	}
 
 	const field = productEventsFilterField(normalizedKey)

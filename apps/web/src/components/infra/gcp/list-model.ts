@@ -28,7 +28,7 @@ import {
 	type GcpView,
 	type GcpWorkload,
 } from "./tabs"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 /** One service of the fleet read: see `getGcpInfraFleet`. */
 export interface GcpFleetRead {
@@ -92,8 +92,11 @@ export function gcpSparks(
 			const series = sparks.get(id) ?? new Map<string, Array<number>>()
 			sparks.set(id, series)
 			for (const metric of new Set(Arr.map(workload.points, (point) => point.metric))) {
-				const ofMetric = Arr.filter(workload.points, (point) => point.metric === metric).toSorted(
-					(a, b) => utcMs(a.bucket) - utcMs(b.bucket),
+				const ofMetric = Arr.sort(
+					Arr.filter(workload.points, (point) => point.metric === metric),
+					Order.mapInput(Order.Number, (point: (typeof workload.points)[number]) =>
+						utcMs(point.bucket),
+					),
 				)
 				if (counters.has(metric)) {
 					const values = Array.from({ length: buckets }, () => 0)
@@ -119,7 +122,7 @@ export function gcpSparks(
 /** `?view=`, else a link from before the views: `?tab=` named a service. */
 export function gcpRequestedView(view: string | undefined, tab: string | undefined): GcpView | undefined {
 	const wanted = view ?? (tab === "cloudRun" || tab === "cloudFunctions" ? "services" : tab)
-	return GCP_VIEWS.find((candidate) => candidate === wanted)
+	return Option.getOrUndefined(Arr.findFirst(GCP_VIEWS, (candidate) => candidate === wanted))
 }
 
 /**
@@ -139,7 +142,10 @@ export function gcpViews(
 			? view !== GCP_RESOURCES_TAB || collecting
 			: counts !== null && (view === GCP_RESOURCES_TAB ? collecting : counts[view] > 0),
 	)
-	const view = views.find((candidate) => candidate === requested) ?? views[0] ?? "services"
+	const view = Option.getOrElse(
+		Arr.findFirst(views, (candidate) => candidate === requested),
+		(): GcpView => views[0] ?? "services",
+	)
 	return { views, view }
 }
 
@@ -162,7 +168,12 @@ const rowBase = (service: GcpInfraServiceId, keys: ReadonlyArray<string>): GcpRo
 })
 
 const workloadsOf = (fleet: ReadonlyArray<GcpFleetRead>, service: GcpInfraServiceId) =>
-	gcpWorkloadPoints(fleet.find((entry) => entry.service === service)?.points ?? [])
+	gcpWorkloadPoints(
+		Option.match(
+			Arr.findFirst(fleet, (entry) => entry.service === service),
+			{ onNone: () => [], onSome: (entry) => entry.points },
+		),
+	)
 
 const spark = (sparks: GcpSparks, keys: ReadonlyArray<string>, metric: string) =>
 	sparks.get(gcpWorkloadId(keys))?.get(metric)
@@ -179,7 +190,10 @@ export interface RowRules<R, S extends string> {
 }
 
 export const rowHealth = <R, S extends string>(rules: RowRules<R, S>, row: R): S | "ok" =>
-	rules.worst.find((scope) => rules.inScope(row, scope)) ?? "ok"
+	Option.getOrElse(
+		Arr.findFirst(rules.worst, (scope) => rules.inScope(row, scope)),
+		(): S | "ok" => "ok",
+	)
 
 /** Problems first, the worst signal first, then by volume. */
 export function sortByAttention<R, S extends string>(
@@ -190,7 +204,13 @@ export function sortByAttention<R, S extends string>(
 		const health = rowHealth(rules, row)
 		return health === "ok" ? rules.worst.length : rules.worst.indexOf(health)
 	}
-	return rows.toSorted((a, b) => rank(a) - rank(b) || rules.volume(b) - rules.volume(a))
+	return Arr.sort(
+		rows,
+		Order.combine(
+			Order.mapInput(Order.Number, rank),
+			Order.flip(Order.mapInput(Order.Number, rules.volume)),
+		),
+	)
 }
 
 // Cloud Run services and Cloud Functions -------------------------------------------------------
@@ -481,7 +501,8 @@ const worstLag = (row: GcpDatabaseRow): number =>
 /** Query Insights is off on a PostgreSQL instance: its query columns are dashes. */
 export const gcpQueryInsightsOff = (row: GcpDatabaseRow): boolean =>
 	row.instance !== undefined &&
-	row.instance.databaseVersion?.startsWith("POSTGRES") === true &&
+	typeof row.instance.databaseVersion === "string" &&
+	Str.startsWith("POSTGRES")(row.instance.databaseVersion) &&
 	!row.instance.queryInsightsEnabled
 
 /** The band's cells first; the last two only rate a row. */
@@ -638,7 +659,7 @@ export function gcpListScope(
 	const projects = gcpProjects(allRows ?? NO_ROWS)
 	// An empty param in a hand-edited address is no filter.
 	const region = state.region || undefined
-	const project = projects.find((candidate) => candidate === state.project)
+	const project = Option.getOrUndefined(Arr.findFirst(projects, (candidate) => candidate === state.project))
 	const inRegion = gcpRowsIn(allRows ?? NO_ROWS, { region })
 	const rows = gcpRowsIn(inRegion, { project })
 	const counts = allRows === null ? null : gcpViewCounts(rows)
@@ -660,7 +681,16 @@ export function gcpProjects(rows: GcpListRows): ReadonlyArray<string> {
 		}
 	}
 	return Arr.map(
-		[...counts].toSorted((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+		Arr.sort(
+			[...counts],
+			Order.combine(
+				Order.flip(Order.mapInput(Order.Number, ([, count]: readonly [string, number]) => count)),
+				Order.mapInput(
+					Order.make<string>((a, b) => Str.localeCompare(b)(a)),
+					([project]: readonly [string, number]) => project,
+				),
+			),
+		),
 		([project]) => project,
 	)
 }
@@ -693,7 +723,12 @@ export const GCP_VIEW_NOUN = {
 
 /** "9 services · 2 databases": the current view first, then every other view with rows. */
 export function gcpProjectCounts(rows: GcpListRows, project: string, view: GcpView): string {
-	const views = VIEW_ROW_KEYS.toSorted((a, b) => Number(b === view) - Number(a === view))
+	const views = Arr.sort(
+		VIEW_ROW_KEYS,
+		Order.flip(
+			Order.mapInput(Order.Number, (key: (typeof VIEW_ROW_KEYS)[number]) => Number(key === view)),
+		),
+	)
 	return Arr.join(
 		Arr.flatMap(views, (key) => {
 			const count = Arr.filter(listed(rows, key), (row) => row.project === project).length

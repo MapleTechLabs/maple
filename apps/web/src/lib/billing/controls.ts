@@ -5,13 +5,18 @@ import {
 } from "@maple/domain/http"
 
 import type { FeatureSpend, SpendFeatureId, SpendModel } from "./spend"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export const spendLimitFor = (
 	customer: BillingCustomer | undefined,
 	featureId: SpendFeatureId,
 ): BillingSpendLimit | undefined =>
-	customer?.billingControls?.spendLimits?.find((limit) => limit.featureId === featureId && limit.enabled)
+	Option.getOrUndefined(
+		Arr.findFirst(
+			customer?.billingControls?.spendLimits ?? [],
+			(limit) => limit.featureId === featureId && limit.enabled,
+		),
+	)
 
 /**
  * Upsert one feature's overage cap; the API merges it over the other features'

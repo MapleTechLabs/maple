@@ -124,10 +124,7 @@ const merge = (acc: PageResult, next: PageResult): PageResult => ({
 })
 
 const apply = (result: PageResult, messages: ReadonlyArray<PageMessage>): PageResult =>
-	messages.reduce<PageResult>(
-		(acc, message) => merge(acc, MapUpdate.update(acc.model, message, CONTEXT)),
-		result,
-	)
+	Arr.reduce(messages, result, (acc, message) => merge(acc, MapUpdate.update(acc.model, message, CONTEXT)))
 
 /** Answers pending reads until none is left (an answer can start the next read). */
 const settle = (result: PageResult, depth = 0): PageResult => {

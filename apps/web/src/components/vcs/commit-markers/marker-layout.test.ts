@@ -11,7 +11,7 @@ import {
 	type ReleasePoint,
 	shouldRenderLabels,
 } from "./marker-layout"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const SHA_A = Str.repeat(40)("a")
 const SHA_B = Str.repeat(40)("b")
@@ -79,7 +79,7 @@ describe("buildCommitMarkers", () => {
 		]
 		const markers = buildCommitMarkers(releases, CHART)
 		expect(markers).toHaveLength(1) // A is the baseline → only the iso(2) group
-		const grouped = markers.find((m) => m.bucket === iso(2))!
+		const grouped = Option.getOrThrow(Arr.findFirst(markers, (m) => m.bucket === iso(2)))
 		expect(grouped.commits).toEqual([
 			{ sha: SHA_D, count: 50 },
 			{ sha: SHA_C, count: 10 },
@@ -95,7 +95,9 @@ describe("buildCommitMarkers", () => {
 			{ bucket: iso(1), commitSha: SHA_B, count: 40 }, // earlier sighting wins
 		]
 		const markers = buildCommitMarkers(releases, CHART)
-		const b = markers.find((m) => Arr.some(m.commits, (c) => c.sha === SHA_B))!
+		const b = Option.getOrThrow(
+			Arr.findFirst(markers, (m) => Arr.some(m.commits, (c) => c.sha === SHA_B)),
+		)
 		expect(b.bucket).toBe(iso(1))
 		expect(b.commits[0].count).toBe(40)
 	})

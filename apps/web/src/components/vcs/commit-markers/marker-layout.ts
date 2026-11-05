@@ -1,7 +1,7 @@
 // Pure geometry + derivation for the chart's commit deploy markers. Kept free of
 // rendering so it unit-tests cleanly and the overlay component stays thin.
 import { shortId } from "@maple/ui/lib/ids"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 
 /** A row of the per-bucket release timeline (one per distinct commit per bucket). */
 export interface ReleasePoint {
@@ -97,9 +97,10 @@ function snapBucket(ms: number, chartMs: ReadonlyArray<{ b: string; ms: number }
 // Representative ordering within a bucket: highest span count first (the version
 // that actually took most of the traffic in that bucket is the most useful label),
 // ties broken by sha so the pick is deterministic.
-function byRepresentative(a: MarkerCommit, b: MarkerCommit): number {
-	return b.count - a.count || (a.sha < b.sha ? -1 : 1)
-}
+const byRepresentative: Order.Order<MarkerCommit> = Order.combine(
+	Order.flip(Order.mapInput(Order.Number, (commit: MarkerCommit) => commit.count)),
+	Order.mapInput(Order.String, (commit: MarkerCommit) => commit.sha),
+)
 
 /**
  * Derives deploy markers from the per-bucket release timeline.
@@ -157,7 +158,7 @@ export function buildCommitMarkers(
 	}
 
 	return Arr.map(Array.from(byBucket.entries()), ([bucket, commits]): CommitMarker => {
-		const ordered = commits.toSorted(byRepresentative)
+		const ordered = Arr.sort(commits, byRepresentative)
 		return { bucket, label: shortLabel(ordered[0].sha), commits: ordered }
 	}).sort((a, b) => bucketMs(a.bucket) - bucketMs(b.bucket))
 }

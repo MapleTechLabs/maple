@@ -75,10 +75,16 @@ export function commonErrorPrefix(texts: ReadonlyArray<string>): string {
 		while (index < length && index < text.length && first[index] === text[index]) index++
 		length = index
 	}
-	const cut = Str.slice(0, length)(first).lastIndexOf(": ")
-	if (cut <= 0) return ""
-	const prefix = Str.slice(0, cut + 2)(first)
-	return Arr.every(texts, (text) => text.length > prefix.length) ? prefix : ""
+	return Option.match(
+		Option.filter(Str.lastIndexOf(": ")(Str.slice(0, length)(first)), (cut) => cut > 0),
+		{
+			onNone: () => "",
+			onSome: (cut) => {
+				const prefix = Str.slice(0, cut + 2)(first)
+				return Arr.every(texts, (text) => text.length > prefix.length) ? prefix : ""
+			},
+		},
+	)
 }
 
 /** One run of a message, as a row draws it. */
@@ -226,7 +232,7 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 		const path = match[1]!
 		tokens.push({
 			kind: "path",
-			parts: Arr.map([...path.matchAll(PATH_SEGMENT)], (segment) =>
+			parts: Arr.map([...Str.matchAll(PATH_SEGMENT)(path)], (segment) =>
 				segment[2] === undefined
 					? { kind: "key" as const, text: segment[0] }
 					: { kind: "mask" as const, label: "[*]", raw: segment[0] },
@@ -236,15 +242,24 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 	}
 	tokens.push(...outsideTokens(Str.slice(cursor)(text), emphasizeQuoted))
 
-	const firstBreak = tokens.findIndex((token) => token.kind === "break")
-	if (firstBreak <= 0) return Arr.filter(tokens, (token) => !(token.kind === "text" && token.text === ""))
-	return Arr.filter(
-		Arr.map(tokens, (token, index) =>
-			index < firstBreak && token.kind === "text"
-				? { kind: "value" as const, text: token.text }
-				: token,
+	return Option.match(
+		Option.filter(
+			Arr.findFirstIndex(tokens, (token) => token.kind === "break"),
+			(firstBreak) => firstBreak > 0,
 		),
-		(token) => !((token.kind === "text" || token.kind === "value") && Str.trim(token.text) === ""),
+		{
+			onNone: () => Arr.filter(tokens, (token) => !(token.kind === "text" && token.text === "")),
+			onSome: (firstBreak) =>
+				Arr.filter(
+					Arr.map(tokens, (token, index) =>
+						index < firstBreak && token.kind === "text"
+							? { kind: "value" as const, text: token.text }
+							: token,
+					),
+					(token) =>
+						!((token.kind === "text" || token.kind === "value") && Str.trim(token.text) === ""),
+				),
+		},
 	)
 }
 
@@ -256,10 +271,10 @@ export type ErrorPath = ReadonlyArray<string | number>
 
 /** The last `at [...]` path of a message, as keys and indices. */
 export function parseErrorPath(text: string): ErrorPath | undefined {
-	const matches = [...text.matchAll(AT_PATH)]
+	const matches = [...Str.matchAll(AT_PATH)(text)]
 	const last = matches[matches.length - 1]
 	if (last === undefined) return undefined
-	return Arr.map([...last[1]!.matchAll(PATH_SEGMENT)], (segment) => {
+	return Arr.map([...Str.matchAll(PATH_SEGMENT)(last[1]!)], (segment) => {
 		if (segment[2] !== undefined) return Number(segment[2])
 		const unescaped = parseJson(`"${segment[1]}"`)
 		return typeof unescaped === "string" ? unescaped : segment[1]
@@ -393,17 +408,16 @@ export function variantDifferences(texts: ReadonlyArray<string>): ReadonlyArray<
 			to += 1
 		}
 		const prefix = Str.replace(/\s+/g, " ")(Str.slice(0, from)(text))
-		const at = prefix.lastIndexOf(" at ")
+		const at = Str.lastIndexOf(" at ")(prefix)
 		const suffix = Str.replace(/\s+/g, " ")(Str.slice(to)(text))
 		// The rest of a path the difference sits in reads to its end, whole.
 		const pathTail = /^(?:\[(?:"(?:[^"\\]|\\.)*"|\d+)\])+/.exec(suffix)?.[0]
 		return {
-			before:
-				at >= 0
-					? Str.slice(at + 4)(prefix)
-					: prefix.length > VARIANT_CONTEXT
-						? `…${Str.slice(-VARIANT_CONTEXT)(prefix)}`
-						: prefix,
+			before: Option.match(at, {
+				onSome: (index) => Str.slice(index + 4)(prefix),
+				onNone: () =>
+					prefix.length > VARIANT_CONTEXT ? `…${Str.slice(-VARIANT_CONTEXT)(prefix)}` : prefix,
+			}),
 			middle: Str.slice(from, to)(text),
 			after:
 				pathTail ??

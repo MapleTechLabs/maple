@@ -37,8 +37,8 @@ export function schemaApplyPlan(entries: ReadonlyArray<ClickHouseTableDiffEntry>
 		if (entry.status !== "drifted") return []
 		// Views are never altered, so even their missing columns stay unresolved.
 		if (entry.kind !== "table") return [{ name: entry.name, reason: "view definition drifted" }]
-		const reasons = entry.columnDrifts.flatMap((drift) => describeDrift(drift) ?? [])
-		return reasons.length > 0 ? [{ name: entry.name, reason: reasons.join(", ") }] : []
+		const reasons = Arr.flatMap(entry.columnDrifts, (drift) => Arr.fromNullishOr(describeDrift(drift)))
+		return reasons.length > 0 ? [{ name: entry.name, reason: Arr.join(reasons, ", ") }] : []
 	})
 	return { create, addColumns, unresolved }
 }

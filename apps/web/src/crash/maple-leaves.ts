@@ -339,7 +339,10 @@ export function mountMapleLeaves(
 		mouse.vy *= 0.85
 
 		const resting = Arr.filter(leaves, (l) => l.resting)
-		const oldest = resting.length > 18 ? resting.reduce((a, b) => (b.age > a.age ? b : a)) : undefined
+		const oldest =
+			resting.length > 18
+				? Arr.reduce(resting, resting[0], (a, b) => (b.age > a.age ? b : a))
+				: undefined
 		if (oldest) oldest.age = Math.max(oldest.age, oldest.life)
 
 		for (let k = leaves.length - 1; k >= 0; k--) {

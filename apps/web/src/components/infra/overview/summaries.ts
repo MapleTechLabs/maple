@@ -16,6 +16,7 @@ import {
 } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
+import { Array as Arr, Option, String as Str } from "effect"
 import {
 	GCP_INFRA_COLUMNS,
 	formatGcpValue,
@@ -87,12 +88,12 @@ export interface SourceSummary {
 const MAX_FINDINGS_PER_SOURCE = 3
 
 const okCount = (total: number, ...flagged: number[]) =>
-	Math.max(total - flagged.reduce((sum, n) => sum + n, 0), 0)
+	Math.max(total - Arr.reduce(flagged, 0, (sum, n) => sum + n), 0)
 
 const worstTone = (findings: ReadonlyArray<Finding>): SourceSummary["headlineTone"] =>
-	findings.some((f) => f.tone === "crit")
+	Arr.some(findings, (f) => f.tone === "crit")
 		? "crit"
-		: findings.some((f) => f.tone === "warn")
+		: Arr.some(findings, (f) => f.tone === "warn")
 			? "warn"
 			: "neutral"
 
@@ -101,9 +102,9 @@ const METRIC_NAMES = ["CPU", "memory", "disk"] as const
 export function summarizeHosts(hosts: ReadonlyArray<HostRow>, referenceTime: string): SourceSummary {
 	const { total, saturated, elevated, stale } = countHostScopes(hosts, referenceTime)
 	const byPeak = [...hosts].sort((a, b) => hostPeak(b) - hostPeak(a))
-	const hot = byPeak.filter((host) => hostPeak(host) >= 0.9)
+	const hot = Arr.filter(byPeak, (host) => hostPeak(host) >= 0.9)
 
-	const findings: Finding[] = hot.slice(0, MAX_FINDINGS_PER_SOURCE).map((host) => {
+	const findings: Finding[] = Arr.map(hot.slice(0, MAX_FINDINGS_PER_SOURCE), (host) => {
 		const values = [host.cpuPct, host.memoryPct, host.diskPct]
 		const worst = values.indexOf(Math.max(...values))
 		return {
@@ -239,12 +240,13 @@ export function summarizePods(counts: PodCounts): SourceSummary {
 const MIN_ZONE_REQUESTS = 100
 
 export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): SourceSummary {
-	const erroring = zones
-		.filter((zone) => zone.requests >= MIN_ZONE_REQUESTS && errorRateLevel(zone.errorRate) !== "neutral")
-		.sort((a, b) => b.errorRate - a.errorRate)
-	const crit = erroring.filter((zone) => errorRateLevel(zone.errorRate) === "crit").length
+	const erroring = Arr.filter(
+		zones,
+		(zone) => zone.requests >= MIN_ZONE_REQUESTS && errorRateLevel(zone.errorRate) !== "neutral",
+	).sort((a, b) => b.errorRate - a.errorRate)
+	const crit = Arr.filter(erroring, (zone) => errorRateLevel(zone.errorRate) === "crit").length
 
-	const findings: Finding[] = erroring.slice(0, MAX_FINDINGS_PER_SOURCE).map((zone) => ({
+	const findings: Finding[] = Arr.map(erroring.slice(0, MAX_FINDINGS_PER_SOURCE), (zone) => ({
 		key: `zone:${zone.zoneName}`,
 		source: "cloudflare",
 		tone: errorRateLevel(zone.errorRate) === "crit" ? "crit" : "warn",
@@ -275,10 +277,10 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 }
 
 export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): SourceSummary {
-	const saturated = services.filter((row) => railwayInScope(row, "saturated"))
-	const elevated = services.filter((row) => railwayInScope(row, "elevated")).length
-	const unbounded = services.filter((row) => railwayInScope(row, "unbounded")).length
-	const findings: Finding[] = saturated.slice(0, MAX_FINDINGS_PER_SOURCE).map((row) => ({
+	const saturated = Arr.filter(services, (row) => railwayInScope(row, "saturated"))
+	const elevated = Arr.filter(services, (row) => railwayInScope(row, "elevated")).length
+	const unbounded = Arr.filter(services, (row) => railwayInScope(row, "unbounded")).length
+	const findings: Finding[] = Arr.map(saturated.slice(0, MAX_FINDINGS_PER_SOURCE), (row) => ({
 		key: `railway:${row.environmentId}:${row.serviceId}`,
 		source: "railway",
 		tone: "crit",
@@ -314,22 +316,25 @@ export function summarizeSupabase(
 ): SourceSummary {
 	const peakOf = (row: SupabaseProjectRow) => Math.max(row.cpuMax, row.memoryMax, row.diskUsedMax)
 	const byPeak = [...projects].sort((a, b) => peakOf(b) - peakOf(a))
-	const saturated = byPeak.filter((row) => peakOf(row) >= 0.9)
-	const elevated = byPeak.filter((row) => peakOf(row) >= 0.6 && peakOf(row) < 0.9)
-	const findings: Finding[] = [...saturated, ...elevated].slice(0, MAX_FINDINGS_PER_SOURCE).map((row) => {
-		const values = [row.cpuMax, row.memoryMax, row.diskUsedMax]
-		const worst = values.indexOf(Math.max(...values))
-		const name = names.get(row.projectRef) || row.projectRef
-		return {
-			key: `supabase:${row.projectRef}`,
-			source: "supabase",
-			tone: peakOf(row) >= 0.9 ? "crit" : "warn",
-			subject: name,
-			title: `${name} at ${formatPercent(values[worst] ?? 0)} ${METRIC_NAMES[worst]}`,
-			detail: `CPU ${formatPercent(row.cpuMax)}, memory ${formatPercent(row.memoryMax)}, disk ${formatPercent(row.diskUsedMax)} at peak`,
-			target: { kind: "supabase", projectRef: row.projectRef },
-		}
-	})
+	const saturated = Arr.filter(byPeak, (row) => peakOf(row) >= 0.9)
+	const elevated = Arr.filter(byPeak, (row) => peakOf(row) >= 0.6 && peakOf(row) < 0.9)
+	const findings: Finding[] = Arr.map(
+		[...saturated, ...elevated].slice(0, MAX_FINDINGS_PER_SOURCE),
+		(row) => {
+			const values = [row.cpuMax, row.memoryMax, row.diskUsedMax]
+			const worst = values.indexOf(Math.max(...values))
+			const name = names.get(row.projectRef) || row.projectRef
+			return {
+				key: `supabase:${row.projectRef}`,
+				source: "supabase",
+				tone: peakOf(row) >= 0.9 ? "crit" : "warn",
+				subject: name,
+				title: `${name} at ${formatPercent(values[worst] ?? 0)} ${METRIC_NAMES[worst]}`,
+				detail: `CPU ${formatPercent(row.cpuMax)}, memory ${formatPercent(row.memoryMax)}, disk ${formatPercent(row.diskUsedMax)} at peak`,
+				target: { kind: "supabase", projectRef: row.projectRef },
+			}
+		},
+	)
 	return {
 		resources: countLabel(projects.length, "project"),
 		segments: [
@@ -347,49 +352,58 @@ export function summarizeSupabase(
 }
 
 const gcpTitles = (fleet: ReadonlyArray<GcpFleetService>) =>
-	fleet.map(({ service }) => GCP_INFRA_SERVICES[service].title).join(", ")
+	Arr.join(
+		Arr.map(fleet, ({ service }) => GCP_INFRA_SERVICES[service].title),
+		", ",
+	)
 
 /**
  * Google Cloud workloads by their busiest share of a limit and by their error rate. A service
  * whose read failed is a finding of its own, and null when none could be read.
  */
 export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSummary | null {
-	const unread = fleet.filter(({ failed }) => failed)
+	const unread = Arr.filter(fleet, ({ failed }) => failed)
 	if (unread.length > 0 && unread.length === fleet.length) return null
-	const flagged = fleet
-		.flatMap(({ service, workloads }) =>
-			workloads.map((workload) => {
+	const flagged = Arr.filter(
+		Arr.flatMap(fleet, ({ service, workloads }) =>
+			Arr.map(workloads, (workload) => {
 				const tone = gcpWorkloadTone(workload)
 				// The column behind the tone: the error rate when it is as bad, else the busiest limit.
 				const format = workload.errors === tone ? "errorRate" : "percent"
-				const worst = GCP_INFRA_COLUMNS[service]
-					.map((spec, index) => ({
+				const columns = Arr.filter(
+					Arr.map(GCP_INFRA_COLUMNS[service], (spec, index) => ({
 						label: spec.label,
 						format: spec.format,
 						value: workload.values[index] ?? 0,
-					}))
-					.filter((column) => column.format === format)
-					.reduce((a, b) => (b.value > a.value ? b : a), { label: "", format, value: 0 })
+					})),
+					(column) => column.format === format,
+				)
+				const worst = Arr.reduce<(typeof columns)[number], (typeof columns)[number]>(
+					columns,
+					{ label: "", format, value: 0 },
+					(a, b) => (b.value > a.value ? b : a),
+				)
 				return { service, workload, tone, worst }
 			}),
-		)
-		.filter((entry) => entry.tone !== "neutral")
+		),
+		(entry) => entry.tone !== "neutral",
+	)
 		// Critical before elevated, then the larger share first.
 		.sort((a, b) => (a.tone === b.tone ? b.worst.value - a.worst.value : a.tone === "crit" ? -1 : 1))
-	const workloadFindings = flagged.map(({ service, workload, tone, worst }): Finding => ({
-		key: `gcp:${service}:${workload.keys.join("/")}`,
+	const workloadFindings = Arr.map(flagged, ({ service, workload, tone, worst }): Finding => ({
+		key: `gcp:${service}:${Arr.join(workload.keys, "/")}`,
 		source: "gcp",
 		tone: tone === "crit" ? "crit" : "warn",
 		// "orders-db at 93% disk", "api at 8.0% 5xx rate": an acronym keeps its capitals.
-		title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())}`,
-		detail: [GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" / "),
+		title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => Str.toLowerCase(letter))}`,
+		detail: Arr.join([GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)], " / "),
 		target: { kind: "gcp", service, keys: workload.keys },
 	}))
 	// Capped like every source: critical workloads, then the unread services (their workloads are
 	// unknown, not healthy: the tab says the same and offers the reload), then elevated ones.
 	const findings = [
-		...workloadFindings.filter((finding) => finding.tone === "crit"),
-		...unread.map(({ service }): Finding => ({
+		...Arr.filter(workloadFindings, (finding) => finding.tone === "crit"),
+		...Arr.map(unread, ({ service }): Finding => ({
 			key: `gcp:${service}:unread`,
 			source: "gcp",
 			tone: "warn",
@@ -398,10 +412,10 @@ export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSumma
 			detail: "Reload to try again",
 			target: { kind: "gcpService", service },
 		})),
-		...workloadFindings.filter((finding) => finding.tone !== "crit"),
+		...Arr.filter(workloadFindings, (finding) => finding.tone !== "crit"),
 	].slice(0, MAX_FINDINGS_PER_SOURCE)
-	const total = fleet.reduce((sum, { workloads }) => sum + workloads.length, 0)
-	const crit = flagged.filter((entry) => entry.tone === "crit").length
+	const total = Arr.reduce(fleet, 0, (sum, { workloads }) => sum + workloads.length)
+	const crit = Arr.filter(flagged, (entry) => entry.tone === "crit").length
 	return {
 		resources: countLabel(total, "workload"),
 		segments: [
@@ -410,12 +424,15 @@ export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSumma
 			{ key: "saturated", count: crit },
 		],
 		headline:
-			[
-				...(unread.length > 0 ? [`${gcpTitles(unread)} not read`] : []),
-				...(flagged.length > 0
-					? [`${countLabel(flagged.length, "workload")} elevated or erroring`]
-					: []),
-			].join(", ") || (fleet.length > 0 ? gcpTitles(fleet) : "no metrics in this window"),
+			Arr.join(
+				[
+					...(unread.length > 0 ? [`${gcpTitles(unread)} not read`] : []),
+					...(flagged.length > 0
+						? [`${countLabel(flagged.length, "workload")} elevated or erroring`]
+						: []),
+				],
+				", ",
+			) || (fleet.length > 0 ? gcpTitles(fleet) : "no metrics in this window"),
 		headlineTone: worstTone(findings),
 		findings,
 	}
@@ -459,8 +476,8 @@ export function summarizePlanetScale(databases: ReadonlyArray<PlanetScaleDatabas
 				detail: "Share of the plan's storage in use",
 			},
 		] as const
-		if (gauges.some((gauge) => gauge.tone === "crit")) saturated++
-		else if (gauges.some((gauge) => gauge.tone === "warn")) elevated++
+		if (Option.isSome(Arr.findFirst(gauges, (gauge) => gauge.tone === "crit"))) saturated++
+		else if (Option.isSome(Arr.findFirst(gauges, (gauge) => gauge.tone === "warn"))) elevated++
 		for (const gauge of gauges) {
 			if (!gauge.tone) continue
 			findings.push({
@@ -475,10 +492,11 @@ export function summarizePlanetScale(databases: ReadonlyArray<PlanetScaleDatabas
 		}
 	}
 	findings.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === "crit" ? -1 : 1))
-	const worstLag = databases.reduce<PlanetScaleDatabaseStat | undefined>(
+	const worstLag = Arr.reduce<PlanetScaleDatabaseStat, PlanetScaleDatabaseStat | undefined>(
+		databases,
+		undefined,
 		(worst, db) =>
 			worst === undefined || db.replicaLagMaxSeconds > worst.replicaLagMaxSeconds ? db : worst,
-		undefined,
 	)
 	return {
 		resources: countLabel(databases.length, "database"),

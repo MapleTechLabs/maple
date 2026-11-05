@@ -1,6 +1,6 @@
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
 import type { BillingBalance, BillingCustomer, BillingSubscription, CatalogPlan } from "@maple/domain/http"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 type Customer = BillingCustomer
 
@@ -34,7 +34,8 @@ export interface FeatureQuota {
 
 function isLegacyFreePlan(sub: Subscription): boolean {
 	if (Str.toLowerCase(sub.planId) === "free") return true
-	return sub.plan?.name?.toLowerCase() === "free"
+	const name = sub.plan?.name
+	return typeof name === "string" && Str.toLowerCase(name) === "free"
 }
 
 // A subscription is "legacy" when its plan is no longer offered to new customers:
@@ -49,9 +50,10 @@ export function isLegacyPlan(
 	if (isLegacyFreePlan(sub)) return true
 	if (sub.plan?.archived === true) return true
 	if (!plans || plans.length === 0) return false
-	const catalogPlan = plans.find((plan) => plan.id === sub.planId)
-	if (!catalogPlan) return true
-	return catalogPlan.archived === true
+	return Option.match(
+		Arr.findFirst(plans, (plan) => plan.id === sub.planId),
+		{ onNone: () => true, onSome: (catalogPlan) => catalogPlan.archived === true },
+	)
 }
 
 // Autumn's `useCustomer` surfaces upstream API failures (e.g. a `200` whose
@@ -66,7 +68,7 @@ export function isUsableCustomer(customer: Customer | null | undefined): custome
 
 export function getActivePlan(customer: Customer | null | undefined): Subscription | null {
 	if (!isUsableCustomer(customer)) return null
-	return customer.subscriptions.find((sub) => isActivePlanSubscription(sub)) ?? null
+	return Option.getOrNull(Arr.findFirst(customer.subscriptions, (sub) => isActivePlanSubscription(sub)))
 }
 
 export function hasSelectedPlan(customer: Customer | null | undefined): boolean {
@@ -244,7 +246,9 @@ export function getQuotaStatus(customer: Customer | null | undefined): QuotaLeve
 // to surface it.
 export function getPastDueSubscription(customer: Customer | null | undefined): Subscription | null {
 	if (!isUsableCustomer(customer)) return null
-	return customer.subscriptions.find((sub) => !sub.addOn && sub.pastDue === true) ?? null
+	return Option.getOrNull(
+		Arr.findFirst(customer.subscriptions, (sub) => !sub.addOn && sub.pastDue === true),
+	)
 }
 
 // Whether the org's active plan is a legacy/grandfathered one, plus its display

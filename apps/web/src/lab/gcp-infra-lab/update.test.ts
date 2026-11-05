@@ -1,3 +1,4 @@
+import { Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { CompleteReloadSpin } from "../../page/infra-integrations/gcp/list/command"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
@@ -45,7 +46,7 @@ describe("Google Cloud list lab", () => {
 			opened,
 			Menu.Message.ClickedItem({ index: 5, item: { kind: "Item", value: MANAGE_CONNECTIONS } }),
 		)
-		expect(left.commands?.map((command) => command.name)).toContain(LoadIntegrationsPage.name)
+		expect(Arr.map(left.commands ?? [], (command) => command.name)).toContain(LoadIntegrationsPage.name)
 		expect(left.model.state).toEqual(opened.state)
 	})
 
@@ -61,7 +62,7 @@ describe("Google Cloud list lab", () => {
 			Message.GotListMessage({ message: GcpList.Message.ClickedReload() }),
 		)
 		expect(reload.model.isReloading).toBe(true)
-		expect(reload.commands?.map((command) => command.name)).toEqual([CompleteReloadSpin.name])
+		expect(Arr.map(reload.commands ?? [], (command) => command.name)).toEqual([CompleteReloadSpin.name])
 		const again = list(reload.model, GcpList.Message.ClickedReload())
 		const stale = list(
 			again,

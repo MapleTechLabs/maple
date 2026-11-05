@@ -1,5 +1,8 @@
+import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { diagnoseScrapeError } from "./scrape-error-diagnosis"
+
+const fixesText = (d: ReturnType<typeof diagnoseScrapeError>) => (d === null ? null : Arr.join(d.fixes, " "))
 
 describe("diagnoseScrapeError", () => {
 	it("returns null for empty input", () => {
@@ -12,8 +15,8 @@ describe("diagnoseScrapeError", () => {
 		const d = diagnoseScrapeError("target returned HTTP 429", "planetscale")
 		expect(d?.severity).toBe("warn")
 		expect(d?.title).toBe("Rate limited")
-		expect(d?.fixes.join(" ")).toContain("interval")
-		expect(d?.fixes.join(" ")).toContain("branch")
+		expect(fixesText(d)).toContain("interval")
+		expect(fixesText(d)).toContain("branch")
 	})
 
 	it("strips the [branch:…] rollup prefix before diagnosing", () => {
@@ -27,14 +30,14 @@ describe("diagnoseScrapeError", () => {
 			const d = diagnoseScrapeError(`target returned HTTP ${status}`, "planetscale")
 			expect(d?.severity).toBe("crit")
 			expect(d?.title).toBe("Authentication rejected")
-			expect(d?.fixes.join(" ")).toContain("read_metrics_endpoints")
+			expect(fixesText(d)).toContain("read_metrics_endpoints")
 		}
 	})
 
 	it("diagnoses 404 as endpoint not found", () => {
 		const d = diagnoseScrapeError("target returned HTTP 404", "planetscale")
 		expect(d?.title).toBe("Endpoint not found")
-		expect(d?.fixes.join(" ").toLowerCase()).toContain("organization")
+		expect(d === null ? null : Str.toLowerCase(Arr.join(d.fixes, " "))).toContain("organization")
 	})
 
 	it("treats 5xx as a transient upstream warning", () => {
@@ -60,8 +63,8 @@ describe("diagnoseScrapeError", () => {
 	it("omits PlanetScale-specific copy for generic prometheus targets", () => {
 		const d = diagnoseScrapeError("target returned HTTP 429", "prometheus")
 		expect(d?.title).toBe("Rate limited")
-		expect(d?.fixes.join(" ")).not.toContain("branch")
-		expect(d?.fixes.join(" ")).not.toContain("PlanetScale")
+		expect(fixesText(d)).not.toContain("branch")
+		expect(fixesText(d)).not.toContain("PlanetScale")
 	})
 
 	it("falls back to surfacing the raw message for unrecognized errors", () => {

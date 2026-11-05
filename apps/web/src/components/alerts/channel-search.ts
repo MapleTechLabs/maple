@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 /**
  * Ranking for the chat channel picker.
  *
@@ -67,18 +67,20 @@ export const scoreChannelName = (name: string, query: string): number | null => 
 	if (haystack === needle) return 10_000
 	if (Str.startsWith(needle)(haystack)) return 9_000 - Math.min(haystack.length, 500)
 
-	const index = haystack.indexOf(needle)
-	if (index !== -1) {
-		// `deploy-alerts` should surface for `alerts` ahead of `stale-alerting`:
-		// a match that starts a word beats one that lands mid-word.
-		const atWordStart = isBoundary(haystack[index - 1] ?? "")
-		const base = atWordStart ? 8_000 : 7_000
-		return base - Math.min(index, 400) - Math.min(haystack.length, 500) / 100
-	}
-
-	const penalty = subsequencePenalty(haystack, needle)
-	if (penalty === null) return null
-	return 6_000 - Math.min(penalty, 500) - Math.min(haystack.length, 500) / 100
+	return Option.match(Str.indexOf(needle)(haystack), {
+		onSome: (index) => {
+			// `deploy-alerts` should surface for `alerts` ahead of `stale-alerting`:
+			// a match that starts a word beats one that lands mid-word.
+			const atWordStart = isBoundary(haystack[index - 1] ?? "")
+			const base = atWordStart ? 8_000 : 7_000
+			return base - Math.min(index, 400) - Math.min(haystack.length, 500) / 100
+		},
+		onNone: () => {
+			const penalty = subsequencePenalty(haystack, needle)
+			if (penalty === null) return null
+			return 6_000 - Math.min(penalty, 500) - Math.min(haystack.length, 500) / 100
+		},
+	})
 }
 
 /**
@@ -175,7 +177,11 @@ export const channelPickerView = <T extends PickableChannel>(
 	const visible = truncated ? ranked.slice(0, limit) : ranked
 	if (Str.trim(searchQuery).length > 0 || selectedId === null || limit < 1) return { visible, truncated }
 	if (Arr.some(visible, (channel) => channel.id === selectedId)) return { visible, truncated }
-	const selected = channels.find((channel) => channel.id === selectedId)
-	if (selected === undefined) return { visible, truncated }
-	return { visible: [selected, ...visible.slice(0, limit - 1)], truncated }
+	return Option.match(
+		Arr.findFirst(channels, (channel) => channel.id === selectedId),
+		{
+			onNone: () => ({ visible, truncated }),
+			onSome: (selected) => ({ visible: [selected, ...visible.slice(0, limit - 1)], truncated }),
+		},
+	)
 }

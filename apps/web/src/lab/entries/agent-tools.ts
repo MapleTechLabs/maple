@@ -187,22 +187,20 @@ const settle = (model: Model, step: PageStep): Return => {
 		onNone: () => ({ model: withPage, commands: [] }),
 		onSome: (next) => settle(withPage, next),
 	})
-	return answers.reduce<Return>(
-		(result, message) => {
-			const next = settle(
-				result.model,
-				toolsUpdate(result.model.page, message, contextOf(result.model.timeZone)),
-			)
-			return { model: next.model, commands: [...(result.commands ?? []), ...(next.commands ?? [])] }
-		},
-		{
-			model: navigated.model,
-			commands: [
-				...Command.mapMessages(rest, (message) => Message.GotPageMessage({ message })),
-				...(navigated.commands ?? []),
-			],
-		},
-	)
+	const initial: Return = {
+		model: navigated.model,
+		commands: [
+			...Command.mapMessages(rest, (message) => Message.GotPageMessage({ message })),
+			...(navigated.commands ?? []),
+		],
+	}
+	return Arr.reduce(answers, initial, (result, message): Return => {
+		const next = settle(
+			result.model,
+			toolsUpdate(result.model.page, message, contextOf(result.model.timeZone)),
+		)
+		return { model: next.model, commands: [...(result.commands ?? []), ...(next.commands ?? [])] }
+	})
 }
 
 const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMessage({ message }))
