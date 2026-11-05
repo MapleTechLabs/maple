@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { snapTimestamp } from "./time-range"
 

@@ -9,6 +9,8 @@ upstream project recommends. Maple-specific differences from that snapshot are:
 - `no-unknown-parameters`, `no-unknown-returns`, and `no-module-mocking` support
   audited `BOUNDARY:` / `TEST-SEAM:` markers. Their upstream-strict behavior remains
   the default when those options are not configured.
+- `BOUNDARY:` exempts only the declaration it is written on; `BOUNDARY-FILE:` exempts the
+  whole module (mirroring `SAFETY-FILE:`).
 - `require-safety-comment-for-type-assertion` has an unsafe-boundary mode and an
   audited `SAFETY-FILE:` marker for trusted test and fixed-format round trips.
 - the symbol/dictionary/widening rules preserve Maple's protocol keys, direct

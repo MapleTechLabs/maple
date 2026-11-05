@@ -1,4 +1,4 @@
-// BOUNDARY: tiles render whatever their endpoint answered; rows are untyped query results.
+// BOUNDARY-FILE: tiles render whatever their endpoint answered; rows are untyped query results.
 import type { DashboardDocument } from "@maple/domain/http"
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"

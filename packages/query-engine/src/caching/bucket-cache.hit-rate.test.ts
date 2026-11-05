@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, describe, expect, it } from "@effect/vitest"
 import { Clock, ConfigProvider, Effect, Layer, Array as Arr } from "effect"
 import { OrgId } from "@maple/domain"
