@@ -8,7 +8,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
-import { decodeUsersRequest, listFilter, nameAndEmail, userLabel } from "../lib/users"
+import { decodeUsersRequest, groupLabel, listFilter, nameAndEmail, userLabel } from "../lib/users"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -140,7 +140,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 									Arr.map(users, (user) => [
 										user.userId,
 										nameAndEmail(user),
-										user.groupId ?? "-",
+										groupLabel(user) ?? "-",
 										formatWarehouseDateTime(user.lastSeenMs),
 										formatNumber(user.sessions),
 										formatNumber(user.requests),

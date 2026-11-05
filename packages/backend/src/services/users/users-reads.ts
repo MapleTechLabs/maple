@@ -153,6 +153,28 @@ const loadScope = Effect.fn("UsersReads.scope")(function* (tenant: TenantContext
 	return scope
 })
 
+/** Each listed group's name, keyed by id; a group no replay named is absent. */
+const readGroupNames = Effect.fn("UsersReads.groupNames")(function* (
+	tenant: TenantContext,
+	window: Readonly<{ startTime: string; endTime: string }>,
+	groupIds: ReadonlyArray<string>,
+) {
+	const ids = Arr.dedupe(Arr.filter(groupIds, (id) => id !== ""))
+	yield* Effect.annotateCurrentSpan({ "maple.users.groups": ids.length })
+	if (ids.length === 0) return new Map<string, string>()
+	const warehouse = yield* WarehouseQueryService
+	const rows = yield* warehouse.compiledQuery(
+		tenant,
+		CH.compile(CH.usersGroupNamesQuery(ids), {
+			orgId: tenant.orgId,
+			startTime: window.startTime,
+			endTime: window.endTime,
+		}),
+		{ profile: "list", context: "usersGroupNames" },
+	)
+	return new Map(Arr.map(rows, (row) => [row.groupId, row.groupName] as const))
+})
+
 export const readUsersList = Effect.fn("UsersReads.list")(function* (
 	tenant: TenantContext,
 	payload: UsersListRequest,
@@ -209,7 +231,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		Arr.filter(rows, (row) => row.name === "" || row.email === ""),
 		(row) => row.userId,
 	)
-	const [totals, mcpNames] = yield* Effect.all(
+	const [totals, mcpNames, groupNames] = yield* Effect.all(
 		[
 			rows.length === 0
 				? Effect.succeed([])
@@ -236,8 +258,13 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 						),
 						{ profile: "list", context: "usersMcpNames" },
 					),
+			readGroupNames(
+				tenant,
+				payload,
+				Arr.map(rows, (row) => row.groupId),
+			),
 		],
-		{ concurrency: 2 },
+		{ concurrency: 3 },
 	)
 	const totalsByUser = new Map(Arr.map(totals, (row) => [row.userId, row] as const))
 	const namesByUser = new Map(Arr.map(mcpNames, (row) => [row.userId, row] as const))
@@ -250,6 +277,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 			name: nullIfEmpty(row.name) ?? nullIfEmpty(named?.name ?? ""),
 			email: nullIfEmpty(row.email) ?? nullIfEmpty(named?.email ?? ""),
 			groupId: nullIfEmpty(row.groupId),
+			groupName: groupNames.get(row.groupId) ?? null,
 			namespaces: row.namespaces,
 			firstSeenMs: toMs(row.firstSeen),
 			lastSeenMs: toMs(row.lastSeen),
@@ -315,10 +343,16 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 			Arr.filter(facets, (row) => row.facetType === facetType),
 			(row) => ({ name: row.name, count: row.count }),
 		)
+	const groups = options("group")
+	const groupNames = yield* readGroupNames(
+		tenant,
+		payload,
+		Arr.map(groups, (group) => group.name),
+	)
 	const totals = summary[0]
 	return new UsersFacetsResponse({
 		namespaces: options("namespace"),
-		groups: options("group"),
+		groups: Arr.map(groups, (group) => ({ ...group, label: groupNames.get(group.name) ?? null })),
 		withErrors: totals?.withErrors ?? 0,
 		withReplay: totals?.withReplay ?? 0,
 		identified: totals?.identified ?? 0,
@@ -735,6 +769,7 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		name: nullIfEmpty(replay[0]?.name ?? "") ?? nullIfEmpty(mcp[0]?.name ?? ""),
 		email: nullIfEmpty(replay[0]?.email ?? "") ?? nullIfEmpty(mcp[0]?.email ?? ""),
 		groupId: nullIfEmpty(replay[0]?.groupId ?? ""),
+		groupName: nullIfEmpty(replay[0]?.groupName ?? ""),
 		traits: Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),
 		visitorIds: Arr.map(visitors, (row) => row.visitorId),
 		firstSeenMs: Math.min(...firstSeens),

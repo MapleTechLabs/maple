@@ -20,6 +20,10 @@ import { windowSearch } from "./update"
 export const mcpSessionHref = (service: string, sessionId: string, search: Search): string =>
 	hrefOf(AppRoute.McpServerSession({ serviceName: service, sessionId, search: windowSearch(search) }))
 
+/** The directory filtered to one group, over the user page's window. */
+export const groupUsersHref = (groupId: string, search: Search): string =>
+	hrefOf(AppRoute.Users({ search: { ...windowSearch(search), groups: [groupId] } }))
+
 /** One replay's page. */
 export const replayHref = (sessionId: string): string => hrefOf(AppRoute.Replay({ sessionId, search: {} }))
 
@@ -39,6 +43,7 @@ export const toProfile = (profile: UserProfileItem): UserProfile => ({
 	name: profile.name,
 	email: profile.email,
 	groupId: profile.groupId,
+	groupName: profile.groupName,
 	namespaces: Arr.dedupe(
 		Arr.filter(
 			Arr.map(profile.services, (service) => service.namespace),

@@ -33,6 +33,17 @@ export const userLabel = (user: {
 }): string => user.name ?? user.email ?? user.userId
 
 /** `name / email`, the parts that are set, or `-`. */
+/** A user's group as `Acme (grp_1)`, the id alone when it has no name, `undefined` without one. */
+export const groupLabel = (user: {
+	readonly groupId: string | null
+	readonly groupName: string | null
+}): string | undefined =>
+	user.groupId === null
+		? undefined
+		: user.groupName === null
+			? user.groupId
+			: `${user.groupName} (${user.groupId})`
+
 export const nameAndEmail = (user: {
 	readonly name: string | null
 	readonly email: string | null

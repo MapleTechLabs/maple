@@ -17,6 +17,8 @@ export type UserRow = Readonly<{
 	name: string | null
 	email: string | null
 	groupId: string | null
+	/** The group's `identify({ groupName })`, `null` when none was sent. */
+	groupName: string | null
 	/** The `service.namespace`s this user's signals came from, most active first. */
 	namespaces: ReadonlyArray<string>
 	firstSeenMs: number
@@ -176,6 +178,10 @@ export const namespacesOf = (
 		Order.flip(Order.mapInput(Order.Number, (namespace: { signals: number }) => namespace.signals)),
 	)
 }
+
+/** A group's display name: its name, else its id. */
+export const groupLabel = (group: Pick<UserRow, "groupId" | "groupName">): string | null =>
+	group.groupName ?? group.groupId
 
 /** The user's display name: their name, else their email, else the raw id. */
 export const userLabel = (user: Pick<UserRow, "name" | "email" | "userId">): string =>

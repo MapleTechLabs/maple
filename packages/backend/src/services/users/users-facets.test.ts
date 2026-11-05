@@ -29,6 +29,7 @@ const rows = new Map<string, ReadonlyArray<unknown>>([
 			{ facetType: "group", name: "grp_acme", count: "2" },
 		],
 	],
+	["usersGroupNames", [{ groupId: "grp_acme", groupName: "Acme Inc." }]],
 	["usersSummary", [{ identified: "4", activeToday: "3", withErrors: "1", withReplay: "2" }]],
 	["usersAnonymousVisitors", [{ anonymousVisitors: "9" }]],
 ])
@@ -68,7 +69,7 @@ describe("readUsersFacets", () => {
 			const ran: Ran = []
 			const facets = yield* readUsersFacets(tenant, request()).pipe(Effect.provide(warehouse(ran)))
 			assert.deepStrictEqual(facets.namespaces, [{ name: "storefront", count: 4 }])
-			assert.deepStrictEqual(facets.groups, [{ name: "grp_acme", count: 2 }])
+			assert.deepStrictEqual(facets.groups, [{ name: "grp_acme", label: "Acme Inc.", count: 2 }])
 			assert.deepStrictEqual(
 				[
 					facets.identified,

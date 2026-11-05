@@ -25,7 +25,7 @@ describe("users namespace scope", () => {
 	it("counts the facets over the pinned namespace's users, with no namespace facet", () => {
 		const facets = usersFacets(USER_ROWS, "data")
 		expect(facets.namespaces).toEqual([])
-		expect(facets.groups[0]).toEqual({ name: "grp_northwind", count: 2 })
+		expect(facets.groups[0]).toEqual({ name: "grp_northwind", label: "Northwind Traders", count: 2 })
 		expect(facets.withErrors).toBe(4)
 		expect(facets.withReplay).toBe(3)
 	})

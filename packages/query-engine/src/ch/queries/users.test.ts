@@ -14,6 +14,7 @@ import {
 	usersAnonymousVisitorsQuery,
 	usersFacetsQuery,
 	usersListQuery,
+	usersGroupNamesQuery,
 	usersMcpNamesQuery,
 	usersMcpNameSearchQuery,
 	usersSummaryQuery,
@@ -301,6 +302,16 @@ describe("a namespace no service resolves to", () => {
 		expect(scoped).toContain("traces.ResourceAttributes['service.namespace'] IN ('storefront')")
 		const unscopedSql = compileUnsafe(usersMcpNamesQuery(["maple-ai"], ["user_42"]), params).sql
 		expect(unscopedSql).not.toContain("service.namespace")
+	})
+
+	it("names only the asked groups, from named replay rows in the org and window", () => {
+		const sql = compileUnsafe(usersGroupNamesQuery(["grp_acme", "grp_globex"]), params).sql
+		expect(sql).toContain("session_replays.OrgId = 'org_1'")
+		expect(sql).toContain("session_replays.GroupId IN ('grp_acme', 'grp_globex')")
+		expect(sql).toContain("session_replays.GroupName != ''")
+		expect(sql).toContain("argMax(session_replays.GroupName, session_replays.StartTime)")
+		expect(sql).toContain("LIMIT 2")
+		expect(compileUnsafe(usersGroupNamesQuery([]), params).sql).toContain("1 = 0")
 	})
 
 	it("searches MCP names and emails in the org, window, MCP servers and namespace scope", () => {

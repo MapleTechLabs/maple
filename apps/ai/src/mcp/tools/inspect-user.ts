@@ -9,7 +9,7 @@ import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatDurationFromMs, formatNumber, formatPercent, truncate } from "../lib/format"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
-import { decodeUsersRequest, listFilter, nameAndEmail, userLabel } from "../lib/users"
+import { decodeUsersRequest, groupLabel, listFilter, nameAndEmail, userLabel } from "../lib/users"
 import * as P from "../lib/params"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"
 
@@ -31,7 +31,7 @@ const errorReads = {
 const profileFields = (profile: UserProfileItem): DocBlock =>
 	doc.fields([
 		["Name / email", nameAndEmail(profile)],
-		["Group", profile.groupId ?? undefined],
+		["Group", groupLabel(profile)],
 		["First seen", at(profile.firstSeenMs)],
 		["Last seen", at(profile.lastSeenMs)],
 		["Signals", Arr.join(profile.signals, ", ")],

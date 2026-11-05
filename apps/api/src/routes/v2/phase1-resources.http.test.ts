@@ -1969,11 +1969,13 @@ describe("v2 users wire mapping over HTTP", () => {
 				lastSeen: "2026-11-01 08:30:00",
 			},
 		],
+		usersGroupNames: [{ groupId: "grp_acme", groupName: "Acme Inc." }],
 		userReplayProfile: [
 			{
 				name: "Ada Replay",
 				email: "ada.replay@acme.test",
 				groupId: "grp_replay",
+				groupName: "Replay Group",
 				sessions: 29,
 				recordedMs: 31_000,
 				errors: 37,
@@ -2174,6 +2176,7 @@ describe("v2 users wire mapping over HTTP", () => {
 					name: "Ada Lovelace",
 					email: "ada@acme.test",
 					group_id: "grp_acme",
+					group_name: "Acme Inc.",
 					first_seen_at: "2026-11-01T01:00:00.000Z",
 					last_seen_at: "2026-11-01T09:00:00.000Z",
 					session_count: 3,
@@ -2197,6 +2200,7 @@ describe("v2 users wire mapping over HTTP", () => {
 			name: "Ada Replay",
 			email: "ada.replay@acme.test",
 			group_id: "grp_replay",
+			group_name: "Replay Group",
 			// The earliest and latest any source saw the user: the replay and the issue.
 			first_seen_at: "2026-11-01T02:00:00.000Z",
 			last_seen_at: "2026-11-01T14:00:00.000Z",

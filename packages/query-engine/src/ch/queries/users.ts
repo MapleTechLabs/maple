@@ -285,6 +285,25 @@ export function usersMcpNamesQuery(
 		.format("JSON")
 }
 
+/**
+ * Each group's latest name from `identify({ groupName })`. Only replays carry it, so a group seen
+ * only in product events or spans has no row and the caller shows its id.
+ */
+export function usersGroupNamesQuery(groupIds: ReadonlyArray<string>) {
+	return from(SessionReplays)
+		.select(($) => ({ groupId: $.GroupId, groupName: CH.argMax($.GroupName, $.StartTime) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.lte(param.dateTime("endTime")),
+			groupIds.length > 0 ? CH.inList($.GroupId, groupIds) : CH.rawCond("1 = 0"),
+			$.GroupName.neq(""),
+		])
+		.groupBy("groupId")
+		.limit(Math.max(1, groupIds.length))
+		.format("JSON")
+}
+
 /** Max MCP users a name search hands to the directory's search. */
 const MCP_NAME_SEARCH_LIMIT = 500
 
@@ -548,6 +567,7 @@ const userReplaySessions = (scope: UsersScope) =>
 			userName: CH.argMax($.UserName, $.Version),
 			userEmail: CH.argMax($.UserEmail, $.Version),
 			groupId: CH.argMax($.GroupId, $.Version),
+			groupName: CH.argMax($.GroupName, $.Version),
 			traitKeys: CH.argMax(CH.mapKeys($.UserTraits), $.Version),
 			traitValues: CH.argMax(CH.mapValues($.UserTraits), $.Version),
 			browser: CH.argMax($.BrowserName, $.Version),
@@ -567,13 +587,14 @@ const userReplaySessions = (scope: UsersScope) =>
 		])
 		.groupBy("sessionId")
 
-/** The user's identity and replay totals: the latest name, email, group and traits. */
+/** The user's identity and replay totals: the latest name, email, group (id and name, one session's) and traits. */
 export function userReplayProfileQuery(scope: UsersScope) {
 	return fromQuery(userReplaySessions(scope), "sessions")
 		.select(($) => ({
 			name: CH.argMax($.userName, $.lastActivity),
 			email: CH.argMax($.userEmail, $.lastActivity),
 			groupId: CH.argMax($.groupId, $.lastActivity),
+			groupName: CH.argMax($.groupName, $.lastActivity),
 			traitKeys: CH.argMax($.traitKeys, $.lastActivity),
 			traitValues: CH.argMax($.traitValues, $.lastActivity),
 			country: nonEmpty($.country),

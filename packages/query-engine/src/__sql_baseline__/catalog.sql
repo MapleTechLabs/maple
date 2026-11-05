@@ -9994,7 +9994,7 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:users:userDevicesQuery:default  [cf2b3cba]
+-- builder:users:userDevicesQuery:default  [6079ff37]
 SELECT
           sessions.browser AS browser,
           sessions.os AS os,
@@ -10004,6 +10004,7 @@ SELECT
           argMax(session_replays.UserName, session_replays.Version) AS userName,
           argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
           argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          argMax(session_replays.GroupName, session_replays.Version) AS groupName,
           argMax(mapKeys(session_replays.UserTraits), session_replays.Version) AS traitKeys,
           argMax(mapValues(session_replays.UserTraits), session_replays.Version) AS traitValues,
           argMax(session_replays.BrowserName, session_replays.Version) AS browser,
@@ -10111,11 +10112,12 @@ SELECT
           AND (if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42' AND (traces.SpanAttributes['user.id'] = 'user_42' OR traces.SpanAttributes['enduser.id'] = 'user_42'))
         FORMAT JSON
 
--- builder:users:userReplayProfileQuery:namespaceFiltered  [d6f77270]
+-- builder:users:userReplayProfileQuery:namespaceFiltered  [90ecf291]
 SELECT
           argMax(sessions.userName, sessions.lastActivity) AS name,
           argMax(sessions.userEmail, sessions.lastActivity) AS email,
           argMax(sessions.groupId, sessions.lastActivity) AS groupId,
+          argMax(sessions.groupName, sessions.lastActivity) AS groupName,
           argMax(sessions.traitKeys, sessions.lastActivity) AS traitKeys,
           argMax(sessions.traitValues, sessions.lastActivity) AS traitValues,
           anyIf(sessions.country, sessions.country != '') AS country,
@@ -10129,6 +10131,7 @@ SELECT
           argMax(session_replays.UserName, session_replays.Version) AS userName,
           argMax(session_replays.UserEmail, session_replays.Version) AS userEmail,
           argMax(session_replays.GroupId, session_replays.Version) AS groupId,
+          argMax(session_replays.GroupName, session_replays.Version) AS groupName,
           argMax(mapKeys(session_replays.UserTraits), session_replays.Version) AS traitKeys,
           argMax(mapValues(session_replays.UserTraits), session_replays.Version) AS traitValues,
           argMax(session_replays.BrowserName, session_replays.Version) AS browser,
@@ -10573,6 +10576,20 @@ SELECT
         ORDER BY count DESC
         LIMIT 50
 FORMAT JSON
+
+-- builder:users:usersGroupNamesQuery:default  [478345ba]
+SELECT
+          session_replays.GroupId AS groupId,
+          argMax(session_replays.GroupName, session_replays.StartTime) AS groupName
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.GroupId IN ('grp_acme', 'grp_globex')
+          AND session_replays.GroupName != ''
+        GROUP BY groupId
+        LIMIT 2
+        FORMAT JSON
 
 -- builder:users:usersListQuery:activityRollup  [52ffde9d]
 SELECT

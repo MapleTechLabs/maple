@@ -35,11 +35,11 @@ export const userAvatar = <M>(
 	)
 }
 
-/** The name over its detail: the email, else the id, plus the group when there is one. */
+/** The name over its detail: the email, else the id (the directory's Group column carries the group). */
 export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 	const label = userLabel(user)
 	const detail = Arr.filter(
-		[label === user.email ? user.userId : (user.email ?? user.userId), user.groupId],
+		[label === user.email ? user.userId : (user.email ?? user.userId)],
 		(part): part is string => part !== null && part !== label,
 	)
 	return vstack(h, { gap: "0", shrink: true, className: "min-w-0" }, [

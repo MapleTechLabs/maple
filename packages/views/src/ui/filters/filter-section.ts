@@ -33,6 +33,8 @@ const visibleFilterOptions = (input: {
 	readonly search: string
 	readonly isShowingAll: boolean
 	readonly maxVisible: number
+	/** What a row shows; the search matches it as well as the value. */
+	readonly labelOf?: (name: string) => string
 }) => {
 	const chosen = new Set([...input.selected, ...input.excluded])
 	const present = new Set(Arr.map(input.options, (option) => option.name))
@@ -59,7 +61,13 @@ const visibleFilterOptions = (input: {
 		}
 	}
 	const needle = Str.toLowerCase(input.search)
-	const matches = Arr.filter(ordered, (option) => Str.includes(needle)(Str.toLowerCase(option.name)))
+	const matches = Arr.filter(
+		ordered,
+		(option) =>
+			Str.includes(needle)(Str.toLowerCase(option.name)) ||
+			(input.labelOf !== undefined &&
+				Str.includes(needle)(Str.toLowerCase(input.labelOf(option.name)))),
+	)
 	return {
 		visible: matches.slice(0, MAX_SEARCH_RESULTS),
 		hasMore: 0,
@@ -321,6 +329,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 		search: isSearchable ? state.search : "",
 		isShowingAll: state.isShowingAll,
 		maxVisible: config.maxVisible ?? 5,
+		...(config.getOptionLabel !== undefined && { labelOf: config.getOptionLabel }),
 	})
 	const panelId = `filter-section-${config.title}-panel`
 	const toSections = config.toSectionsMessage

@@ -205,6 +205,7 @@ describe("readUserProfile", () => {
 							name: "Ada Lovelace",
 							email: "ada@example.com",
 							groupId: "grp_acme",
+							groupName: "Acme Inc.",
 							traitKeys: ["plan"],
 							traitValues: ["pro"],
 							country: "GB",
@@ -236,6 +237,7 @@ describe("readUserProfile", () => {
 			const profile = response.profile
 			assert.isNotNull(profile)
 			assert.strictEqual(profile?.name, "Ada Lovelace")
+			assert.strictEqual(profile?.groupName, "Acme Inc.")
 			assert.strictEqual(profile?.firstSeenMs, Date.parse("2026-11-01T08:30:00Z"))
 			assert.strictEqual(profile?.lastSeenMs, Date.parse("2026-11-01T12:15:00Z"))
 			assert.strictEqual(profile?.sessions, 2)

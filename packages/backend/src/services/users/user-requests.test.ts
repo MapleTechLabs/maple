@@ -361,6 +361,60 @@ describe("the directory's MCP-only users", () => {
 	)
 })
 
+describe("the directory's group names", () => {
+	it.effect("names each listed group once, and leaves a group no replay named as its id", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				["usersServiceNamespaces", []],
+				["mcpServices", []],
+				[
+					"usersList",
+					[
+						{ ...listRow("user_1", "Ada"), groupId: "grp_acme" },
+						{ ...listRow("user_2", "Grace"), groupId: "grp_acme" },
+						{ ...listRow("user_3", "Linus"), groupId: "grp_unnamed" },
+						listRow("user_4", "Ken"),
+					],
+				],
+				["usersGroupNames", [{ groupId: "grp_acme", groupName: "Acme Inc." }]],
+			])
+			const response = yield* readUsersList(
+				tenant,
+				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
+			).pipe(Effect.provide(warehouse(rows, ran)))
+			assert.deepStrictEqual(
+				Arr.map(response.users, (user) => [user.userId, user.groupId, user.groupName]),
+				[
+					["user_1", "grp_acme", "Acme Inc."],
+					["user_2", "grp_acme", "Acme Inc."],
+					["user_3", "grp_unnamed", null],
+					["user_4", null, null],
+				],
+			)
+			const lookups = Arr.filter(ran, (query) => query.context === "usersGroupNames")
+			assert.strictEqual(lookups.length, 1)
+			assert.include(lookups[0]?.sql ?? "", "IN ('grp_acme', 'grp_unnamed')")
+		}),
+	)
+
+	it.effect("skips the lookup when no listed user has a group", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				["usersServiceNamespaces", []],
+				["mcpServices", []],
+				["usersList", [listRow("user_4", "Ken")]],
+			])
+			yield* readUsersList(
+				tenant,
+				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
+			).pipe(Effect.provide(warehouse(rows, ran)))
+			assert.isFalse(Arr.some(ran, (query) => query.context === "usersGroupNames"))
+		}),
+	)
+})
+
 describe("searching the directory on the rollup", () => {
 	it.effect("finds an MCP-only user by the name its spans carry", () =>
 		Effect.gen(function* () {

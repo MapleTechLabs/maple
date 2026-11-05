@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { UserListItem } from "@maple/domain/http"
+import { UserListItem, UsersGroupOption } from "@maple/domain/http"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
@@ -21,7 +21,7 @@ const FacetItem = Schema.Struct({ name: Schema.String, count: Schema.Number })
 /** `getUsersFacets`: the rail's counts and the summary strip. */
 export const UsersFacetsData = Schema.Struct({
 	namespaces: Schema.Array(FacetItem),
-	groups: Schema.Array(FacetItem),
+	groups: Schema.Array(UsersGroupOption),
 	withErrors: Schema.Number,
 	withReplay: Schema.Number,
 	identified: Schema.Number,
