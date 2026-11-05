@@ -12,18 +12,24 @@ const facet = (values: ReadonlyArray<string>): ReadonlyArray<FilterOption> =>
 		count: hits.length,
 	})).toSorted((a, b) => b.count - a.count)
 
-/** Users per namespace and per group, and how many hit an error or have a replay. */
-export const usersFacets = (rows: ReadonlyArray<UserRow>): UsersFacets => ({
-	namespaces: facet(Arr.flatMap(rows, (row) => row.namespaces)),
-	groups: facet(
-		Arr.filter(
-			Arr.map(rows, (row) => row.groupId),
-			(group): group is string => group !== null,
+/**
+ * Users per namespace and per group, and how many hit an error or have a replay. Under a pin the
+ * counts cover the pinned namespace's users and there is no namespace facet, as the API reads it.
+ */
+export const usersFacets = (all: ReadonlyArray<UserRow>, pinned: string | null): UsersFacets => {
+	const rows = pinned === null ? all : Arr.filter(all, (row) => row.namespaces.includes(pinned))
+	return {
+		namespaces: pinned === null ? facet(Arr.flatMap(rows, (row) => row.namespaces)) : [],
+		groups: facet(
+			Arr.filter(
+				Arr.map(rows, (row) => row.groupId),
+				(group): group is string => group !== null,
+			),
 		),
-	),
-	withErrors: Arr.filter(rows, (row) => row.errors > 0).length,
-	withReplay: Arr.filter(rows, (row) => row.signals.includes("replay")).length,
-})
+		withErrors: Arr.filter(rows, (row) => row.errors > 0).length,
+		withReplay: Arr.filter(rows, (row) => row.signals.includes("replay")).length,
+	}
+}
 
 /** The namespaces in effect: the org pin wins over the rail's picks. */
 export const scopeOf = (filters: UsersFilters, pinned: string | null): ReadonlyArray<string> =>
