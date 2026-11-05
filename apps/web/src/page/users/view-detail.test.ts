@@ -33,3 +33,10 @@ describe("tabCount", () => {
 		expect(tabCount("traces", detail)).toBe(57)
 	})
 })
+
+describe("tabCount while the activity read is out", () => {
+	it("leaves the MCP count off rather than reading zero", () => {
+		expect(tabCount("mcp", { ...USER_DETAIL, mcpSessions: [], activityPending: true })).toBeUndefined()
+		expect(tabCount("mcp", { ...USER_DETAIL, mcpSessions: [] })).toBe(0)
+	})
+})

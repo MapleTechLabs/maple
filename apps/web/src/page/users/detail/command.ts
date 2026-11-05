@@ -11,7 +11,7 @@ import { ActivityData, LogsData, ProfileData, TracesData, type Search } from "./
 
 /** The namespace in effect: the org-global pin wins over one picked on this page. */
 export const activeNamespace = (search: Search, pinnedNamespace: string | null): string | null =>
-	pinnedNamespace ?? search.namespace ?? null
+	pinnedNamespace ?? (search.namespace === undefined || search.namespace === "" ? null : search.namespace)
 
 /** Every read's inputs: the user, the window and the namespace scope. */
 export const detailInputs = (
