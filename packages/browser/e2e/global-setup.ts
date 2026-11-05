@@ -19,7 +19,7 @@ export default async function setup(): Promise<void> {
 			outDir: OUTPUT_DIR,
 			emptyOutDir: true,
 			minify: false,
-			rollupOptions: {
+			rolldownOptions: {
 				input: {
 					index: here("./fixture/index.html"),
 					next: here("./fixture/next.html"),

@@ -42,7 +42,7 @@ export const optionalSetting = (name: string): Config.Config<Option.Option<strin
 	)
 
 /** {@link optionalSetting} for a secret: kept `Redacted` until the one place that uses it. */
-export const optionalSecret = (name: string): Config.Config<Option.Option<Redacted.Redacted<string>>> =>
+export const optionalSecret = (name: string): Config.Config<Option.Option<Redacted.Redacted>> =>
 	optionalSetting(name).pipe(Config.map(Option.map((value) => Redacted.make(value))))
 
 /**

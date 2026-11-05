@@ -118,7 +118,7 @@ describe("upsertAlertIssue", () => {
 
 			const issues = yield* loadIssue
 			assert.lengthOf(issues, 1)
-			const issue = issues[0]!
+			const issue = issues[0]
 			assert.strictEqual(issue.kind, "alert")
 			assert.strictEqual(issue.workflowState, "triage")
 			assert.strictEqual(issue.severity, "medium")

@@ -30,7 +30,7 @@ const FLUSH_LINK_TIMEOUT_MS = 15_000
  */
 export interface ResourceInput {
 	readonly endpoint: string | undefined
-	readonly ingestKey: Redacted.Redacted<string> | undefined
+	readonly ingestKey: Redacted.Redacted | undefined
 	readonly resource: {
 		readonly serviceName: string
 		readonly serviceVersion: string | undefined

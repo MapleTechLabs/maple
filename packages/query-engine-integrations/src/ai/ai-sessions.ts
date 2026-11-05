@@ -787,7 +787,7 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 
 	// The `HAVING` and `WHERE` levels see the aliases by name only.
 	const column = {
-		sessionId: CH.dynamicColumn<string>("sessionId", T.string),
+		sessionId: CH.dynamicColumn("sessionId", T.string),
 		errorAgentSpans: CH.dynamicColumn<number>("errorAgentSpans", T.float64),
 		agentDurationMs: CH.dynamicColumn<number>("agentDurationMs", T.float64),
 		cost: CH.dynamicColumn<number>("cost", T.float64),

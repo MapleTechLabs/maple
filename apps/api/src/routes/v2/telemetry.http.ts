@@ -189,7 +189,7 @@ const compactTimestamp = (value: string) => {
 const expandTimestamp = (value: string) => {
 	const match = /^~([0-9a-z]+)(\.\d+)?$/.exec(value)
 	if (match === null) return value
-	const epochSeconds = Number.parseInt(match[1]!, 36)
+	const epochSeconds = Number.parseInt(match[1], 36)
 	if (!Number.isSafeInteger(epochSeconds)) return value
 	const seconds = formatWarehouseDateTime(epochSeconds * 1000)
 	return `${seconds}${match[2] ?? ""}`
@@ -497,9 +497,9 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 							limit: limit + 1,
 							cursor: cursorParts
 								? Option.getOrUndefined(
-										Option.map(parseUtc(cursorParts[0]!), (at) => ({
+										Option.map(parseUtc(cursorParts[0]), (at) => ({
 											timestamp: at,
-											traceId: cursorParts[1]!,
+											traceId: cursorParts[1],
 										})),
 									)
 								: undefined,
@@ -683,11 +683,11 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 							limit: limit + 1,
 							cursorIdentity: cursorParts
 								? {
-										timestamp: cursorParts[0]!,
-										serviceName: cursorParts[1]!,
-										traceId: cursorParts[2]!,
-										spanId: cursorParts[3]!,
-										recordIdentity: cursorParts[4]!,
+										timestamp: cursorParts[0],
+										serviceName: cursorParts[1],
+										traceId: cursorParts[2],
+										spanId: cursorParts[3],
+										recordIdentity: cursorParts[4],
 									}
 								: undefined,
 						},

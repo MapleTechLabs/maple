@@ -26,7 +26,7 @@ describe("mapRailwayMetrics", () => {
 			{ startMs: t0, endMs: t0 + 60_000 },
 		)
 		assert.strictEqual(rows.length, 1)
-		const row = rows[0]!
+		const row = rows[0]
 		assert.strictEqual(row.metric_name, METRIC_CPU_USAGE)
 		assert.strictEqual(row.value, 0.25)
 		assert.strictEqual(row.service_name, "api")
@@ -114,7 +114,7 @@ describe("mapRailwayMetrics", () => {
 			{ startMs: t0, endMs: t0 + 60_000 },
 		)
 		assert.strictEqual(rows.length, 1)
-		assert.strictEqual(rows[0]!.service_name, "svc_new")
-		assert.strictEqual(rows[0]!.resource_attributes["railway.replica.id"], undefined)
+		assert.strictEqual(rows[0].service_name, "svc_new")
+		assert.strictEqual(rows[0].resource_attributes["railway.replica.id"], undefined)
 	})
 })

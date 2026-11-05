@@ -34,9 +34,7 @@ const fieldCodec = (ast: SchemaAST.AST, field: string) => {
 		? Arr.findFirst(ast.propertySignatures, (signature) => signature.name === field)
 		: Option.none()
 	return Option.getOrUndefined(
-		Option.map(property, (signature) =>
-			Schema.make<Schema.Codec<unknown, unknown, never, never>>(signature.type),
-		),
+		Option.map(property, (signature) => Schema.make<Schema.Codec<unknown, unknown>>(signature.type)),
 	)
 }
 
@@ -86,7 +84,7 @@ describe("trace and log rows decode timestamps to DateTime.Utc", () => {
 					timestamp: "2024-01-01 10:00:00",
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T10:00:00.000Z")
+			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T10:00:00.000Z")
 			yield* decodesUtc(compile(traceSummariesQuery({}), params), ["startTime"])
 		}),
 	)
@@ -149,7 +147,7 @@ describe("trace and log rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ events: ["2024-01-01 10:00:00.5", "2024-01-01 10:00:01.123456789"] },
 			])
-			expect(Arr.map(row!.events, DateTime.formatIso)).toEqual([
+			expect(Arr.map(row.events, DateTime.formatIso)).toEqual([
 				"2024-01-01T10:00:00.500Z",
 				"2024-01-01T10:00:01.123Z",
 			])

@@ -42,7 +42,7 @@ export interface EdgeCacheGetOrComputeOptions<A = unknown, I = unknown> {
 	 * that a deploy with an incompatible schema change cannot poison reads.
 	 * Encode failures fail loud — they indicate a programmer bug.
 	 */
-	readonly schema?: Schema.Codec<A, I, never, never>
+	readonly schema?: Schema.Codec<A, I>
 	/**
 	 * Override the read deadline for this call, in ms. Defaults to the service's.
 	 *

@@ -198,9 +198,7 @@ export interface ReleasesTimelineOutput {
 const RELEASES_TIMELINE_CAP = 5000
 
 /** Sub-minute buckets: no rollup tier can place a row inside a minute. */
-function releasesTimelineRawQuery(
-	opts: ReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ReleasesTimelineOutput, {}> {
+function releasesTimelineRawQuery(opts: ReleasesTimelineOpts): CHQuery<ColumnDefs, ReleasesTimelineOutput> {
 	return from(ServiceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
@@ -222,12 +220,12 @@ function releasesTimelineRawQuery(
 		.groupBy("bucket", "serviceName", "commitSha")
 		.orderBy(["bucket", "asc"])
 		.limit(RELEASES_TIMELINE_CAP)
-		.format("JSON") as CHQuery<ColumnDefs, ReleasesTimelineOutput, {}>
+		.format("JSON")
 }
 
 export function releasesTimelineQuery(
 	opts: ReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ReleasesTimelineOutput, {}> {
+): CHQuery<ColumnDefs, ReleasesTimelineOutput> {
 	const tiers = serviceWindowTiersForBucket(opts.bucketSeconds)
 	if (tiers === "raw") return releasesTimelineRawQuery(opts)
 
@@ -256,7 +254,7 @@ export function releasesTimelineQuery(
 		.groupBy("bucket", "serviceName", "commitSha")
 		.orderBy(["bucket", "asc"])
 		.limit(RELEASES_TIMELINE_CAP)
-		.format("JSON") as CHQuery<ColumnDefs, ReleasesTimelineOutput, {}>
+		.format("JSON")
 }
 
 // Error fingerprints on a version

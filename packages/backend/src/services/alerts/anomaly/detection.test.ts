@@ -108,7 +108,7 @@ describe("evaluateGoldenSignals — error rate", () => {
 describe("evaluateGoldenSignals — p95 latency", () => {
 	it("is robust to one outlier hour in the baseline", () => {
 		const baseline = goldenBaseline()
-		baseline[3] = { ...baseline[3]!, p95Ms: 5000 } // single bad hour
+		baseline[3] = { ...baseline[3], p95Ms: 5000 } // single bad hour
 		const evals = evaluateGoldenSignals(
 			goldenSeries({ requestCount: 3000, errorCount: 30, p95Ms: 220 }, baseline),
 			normalConfig,

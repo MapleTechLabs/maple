@@ -29,7 +29,7 @@ import { checkedRows, hasRowIssues } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { FocusNewRow } from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { ADD_PICKER_ID, PANEL_TITLE_ID } from "./update-components"
 import { UPDATE_BODY_ID } from "./update-incidents"
@@ -121,7 +121,7 @@ const saveIndicator = (h: H, model: Model): Html =>
 
 export const componentPanel = (h: H, model: Model, component: V2StatusPageComponent): Html => {
 	const form = model.componentForm
-	const isReadOnly = !model.isAdmin
+	const isReadOnly = !canManage(model)
 	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
 	const hasMonitor = form.monitorId !== ""
 	const uptimeId = "status-page-panel-uptime"
@@ -139,7 +139,7 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 			...(isReadOnly
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
-							"Only org admins can change components.",
+							"Only org admins and engineers can change components.",
 						]),
 					]
 				: []),

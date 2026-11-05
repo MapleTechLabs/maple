@@ -1029,8 +1029,8 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			await Promise.all(Arr.map(slices, (slice) => readDetails(slice))),
 		)
 		const whole = await readDetails({
-			spansStart: slices[0]!.spansStart,
-			spansEnd: slices[slices.length - 1]!.spansEnd,
+			spansStart: slices[0].spansStart,
+			spansEnd: slices[slices.length - 1].spansEnd,
 		})
 		const sorted = (list: ReadonlyArray<Integrations.AiSessionDetailsOutput>) =>
 			Arr.map(
@@ -1084,16 +1084,16 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// The gateway's model call: a legacy-scope `doGenerate` with no
 		// operation name.
 		assert.deepStrictEqual(
-			[sessionless!.models, sessionless!.agentNames, sessionless!.llmCalls, sessionless!.toolCalls],
+			[sessionless.models, sessionless.agentNames, sessionless.llmCalls, sessionless.toolCalls],
 			[["gpt-5"], [], 1, 0],
 		)
-		assert.strictEqual(sessionless!.totalTokens, 15)
-		assert.strictEqual(sessionless!.cost, 0)
-		assert.strictEqual(sessionless!.errorAgentSpans, 1)
+		assert.strictEqual(sessionless.totalTokens, 15)
+		assert.strictEqual(sessionless.cost, 0)
+		assert.strictEqual(sessionless.errorAgentSpans, 1)
 		// The one failed span is a model call: a turn failure, not a tool's.
-		assert.deepStrictEqual([sessionless!.toolErrors, sessionless!.turnErrors], [0, 1])
+		assert.deepStrictEqual([sessionless.toolErrors, sessionless.turnErrors], [0, 1])
 		// One span of 1ms: the extent is its own duration.
-		assert.strictEqual(sessionless!.agentDurationMs, 1)
+		assert.strictEqual(sessionless.agentDurationMs, 1)
 
 		// The roll-up: the turn span reported the chat call's 150 tokens and
 		// $0.02 again; the deepest reporter is counted once. The gateway's mirror
@@ -1103,25 +1103,25 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// under a reporting parent, is not a call. The lambdas are raw SQL the
 		// builder cannot type-check, so this is where they are proven.
 		assert.deepStrictEqual(
-			[session!.models, [...session!.agentNames].sort(), session!.llmCalls, session!.toolCalls],
+			[session.models, [...session.agentNames].sort(), session.llmCalls, session.toolCalls],
 			[["claude-sonnet-5-20260101"], ["critic-agent", "slack-agent"], 1, 1],
 		)
 		// The name the row goes by. `agentNames` is a set, and `critic-agent` sorts
 		// first in it; the session's earliest NAMED span is the `slack-agent` turn,
 		// on the other trace, 30 seconds before it. Taking the heading off the set
 		// titled a multi-agent session differently in the list and on its own page.
-		assert.strictEqual(session!.firstAgentName, "slack-agent")
+		assert.strictEqual(session.firstAgentName, "slack-agent")
 		// A session that named no agent leaves it blank rather than falling back to
 		// a span with no name — the sentinel keeps unnamed spans out of the argMin.
-		assert.strictEqual(sessionless!.firstAgentName, "")
-		assert.strictEqual(session!.totalTokens, 150)
-		assert.strictEqual(session!.cost, 0.03)
-		assert.strictEqual(session!.errorAgentSpans, 1)
+		assert.strictEqual(sessionless.firstAgentName, "")
+		assert.strictEqual(session.totalTokens, 150)
+		assert.strictEqual(session.cost, 0.03)
+		assert.strictEqual(session.errorAgentSpans, 1)
 		// The failed tool span under an `Ok` turn: one tool error, and no turn
 		// error echoed off it. The failure lambda is raw SQL too.
-		assert.deepStrictEqual([session!.toolErrors, session!.turnErrors], [1, 0])
+		assert.deepStrictEqual([session.toolErrors, session.turnErrors], [1, 0])
 		// From the first turn span to the end of the second trace's turn span.
-		assert.strictEqual(session!.agentDurationMs, 30_001)
+		assert.strictEqual(session.agentDurationMs, 30_001)
 	})
 
 	it("applies each counted filter per trace, and each session filter on the ranked row", async () => {
@@ -1225,7 +1225,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 					}),
 					{
 						orgId,
-						fanOutStart: Arr.map(ranked, (row) => row.agentStart).sort()[0]!,
+						fanOutStart: Arr.map(ranked, (row) => row.agentStart).sort()[0],
 						fanOutEnd: Arr.map(ranked, (row) => row.agentEnd)
 							.sort()
 							.at(-1)!,
@@ -1299,7 +1299,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			return Option.isNone(row)
 				? undefined
 				: Arr.map(Rec.toEntries(row.value.buckets), ([floor, count]) => [Number(floor), count]).sort(
-						([a], [b]) => a! - b!,
+						([a], [b]) => a - b,
 					)
 		}
 

@@ -887,6 +887,7 @@ export class RequestQuiescenceGate {
 
 	#drain(): Promise<void> {
 		if (this.#active === 0) return Promise.resolve()
+		// @effect-diagnostics-next-line newPromise:off -- Promise-based drain for Bun's server shutdown
 		return new Promise<void>((resolve) => this.#drained.push(resolve))
 	}
 
@@ -1042,6 +1043,7 @@ class ReadinessRecovery implements ReadinessRetry {
 		if (this.#stopped) return
 		const delay = ReadinessRecovery.DELAYS_MS[attempt]
 		if (delay === undefined) return this.#onGiveUp(eventIds.length)
+		// @effect-diagnostics-next-line globalTimers:off -- timers of the Promise-based recovery loop
 		const timer = setTimeout(() => {
 			this.#timers.delete(timer)
 			const leave = this.#gate.enter()
@@ -1725,7 +1727,9 @@ const SHUTDOWN_DRAIN_MS = 10_000
 /** Resolve when `work` settles or after `ms`, whichever is first. */
 const settleWithin = (work: Promise<unknown>, ms: number): Promise<void> => {
 	let timer: ReturnType<typeof setTimeout> | undefined
+	// @effect-diagnostics-next-line newPromise:off -- plain Promise helper for Bun's shutdown path
 	const timeout = new Promise<void>((resolve) => {
+		// @effect-diagnostics-next-line globalTimers:off -- plain Promise helper for Bun's shutdown path
 		timer = setTimeout(resolve, ms)
 	})
 	return Promise.race([work.then(() => undefined), timeout]).finally(() => clearTimeout(timer))

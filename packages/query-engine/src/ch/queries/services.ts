@@ -622,7 +622,7 @@ export interface ServiceReleasesTimelineOutput {
  */
 function serviceReleasesTimelineRawQuery(
 	opts: ServiceReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}> {
+): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput> {
 	return from(ServiceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
@@ -637,12 +637,12 @@ function serviceReleasesTimelineRawQuery(
 		.groupBy("bucket", "commitSha")
 		.orderBy(["bucket", "asc"])
 		.limit(1000)
-		.format("JSON") as CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}>
+		.format("JSON")
 }
 
 export function serviceReleasesTimelineQuery(
 	opts: ServiceReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}> {
+): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput> {
 	// Sub-hour buckets (the default here is 300s) cannot read the hourly tier: an
 	// hour-floored row carries no position inside the hour, so `toStartOfInterval`
 	// would put every interior hour on the bucket containing `:00` and leave the
@@ -661,7 +661,7 @@ export function serviceReleasesTimelineQuery(
 		.groupBy("bucket", "commitSha")
 		.orderBy(["bucket", "asc"])
 		.limit(1000)
-		.format("JSON") as CHQuery<ColumnDefs, ServiceReleasesTimelineOutput, {}>
+		.format("JSON")
 }
 
 // Service environments
@@ -728,7 +728,7 @@ export interface ServiceApdexTimeseriesOutput {
 
 export function serviceApdexTimeseriesQuery(
 	opts: ServiceApdexTimeseriesOpts,
-): CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput> {
 	const thresholdMs = opts.apdexThresholdMs ?? 500
 
 	// Sub-hour buckets (the default here is 60s) cannot read the hourly tier: an
@@ -760,7 +760,7 @@ export function serviceApdexTimeseriesQuery(
 			})
 			.groupBy("bucket")
 			.orderBy(["bucket", "asc"])
-			.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}>
+			.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput>
 	}
 
 	// Routes through `service_overview_spans` (the entry-point MV) rather than
@@ -784,7 +784,7 @@ export function serviceApdexTimeseriesQuery(
 		)
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
-		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput, {}>
+		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput>
 }
 
 // Service usage

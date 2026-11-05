@@ -18,7 +18,7 @@ const env = {
 const setupFetch = (responder: (url: string) => Response = () => new Response(null, { status: 200 })) => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const headers: Record<string, string> = {}
 		const initHeaders = init?.headers
@@ -32,7 +32,7 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 		calls.push({ url, headers, body })
 		return responder(url)
-	}) as typeof fetch
+	}
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 
@@ -275,7 +275,7 @@ describe("MapleCloudflareSDK.make", () => {
 		const calls: Array<{ url: string; body: unknown }> = []
 		const original = globalThis.fetch
 		restore = () => void (globalThis.fetch = original)
-		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 			calls.push({
 				url,
@@ -283,7 +283,7 @@ describe("MapleCloudflareSDK.make", () => {
 			})
 			await new Promise<void>((resolve) => setTimeout(resolve, 5))
 			return new Response(null, { status: 200 })
-		}) as typeof fetch
+		}
 
 		const telemetry = make({ serviceName: "unit-test" })
 
@@ -320,13 +320,13 @@ describe("MapleCloudflareSDK.make", () => {
 		const calls: Array<{ url: string; body: unknown }> = []
 		const original = globalThis.fetch
 		restore = () => void (globalThis.fetch = original)
-		globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 			const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 			calls.push({ url, body })
 			// The first POST belongs to the cancelled invocation and never settles.
 			return calls.length === 1 ? new Promise<Response>(() => {}) : Promise.resolve(new Response(null))
-		}) as typeof fetch
+		}
 		const telemetry = make({ serviceName: "unit-test" })
 
 		await Effect.runPromise(

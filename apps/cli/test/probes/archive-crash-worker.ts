@@ -187,7 +187,7 @@ const main = async (): Promise<void> => {
 	}
 }
 
-void main().catch((error) => {
+void main().catch((error: unknown) => {
 	console.error(`crash-worker fatal: ${error instanceof Error ? error.message : String(error)}`)
 	process.exit(6)
 })

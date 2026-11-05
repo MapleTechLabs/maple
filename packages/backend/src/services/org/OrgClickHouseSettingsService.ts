@@ -1,5 +1,6 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import * as Policy from "@maple/domain/policy"
 import {
 	IsoDateTimeString,
 	OrgClickHouseApplySchemaStarted,
@@ -264,8 +265,6 @@ const toCachedChSettings = (row: CachedSettingsRow): CachedChSettings => ({
 	chPasswordTag: row.chPasswordTag,
 })
 
-const ROOT_ROLE = Schema.decodeSync(RoleName)("root")
-const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 
 const SkippedEntries = Schema.Array(Schema.Struct({ id: Schema.String, reason: Schema.String }))
@@ -634,9 +633,6 @@ export const validateClickHouseCredentialTransport = (
 		}),
 	)
 
-const isOrgAdmin = (roles: ReadonlyArray<RoleName>) =>
-	roles.includes(ROOT_ROLE) || roles.includes(ORG_ADMIN_ROLE)
-
 const isIsoDateTime = (value: number | null | undefined) =>
 	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
 
@@ -954,10 +950,11 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const requireAdmin = Effect.fn("OrgClickHouseSettingsService.requireAdmin")(function* (
 			roles: ReadonlyArray<RoleName>,
 		) {
-			if (isOrgAdmin(roles)) return
-			return yield* new OrgClickHouseSettingsForbiddenError({
-				message: "Only org admins can manage ClickHouse settings",
-			})
+			return yield* Policy.check(
+				roles,
+				"warehouse:manage",
+				(denial) => new OrgClickHouseSettingsForbiddenError({ message: denial.message }),
+			)
 		})
 
 		const selectActiveRow = Effect.fn("OrgClickHouseSettingsService.selectActiveRow")(function* (

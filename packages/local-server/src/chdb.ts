@@ -61,6 +61,7 @@ export const configureLibchdb = (path: string | undefined): void => {
 function resolveLibchdb(): string {
 	if (configuredLibchdb !== undefined) return configuredLibchdb
 	const candidates: string[] = []
+	// @effect-diagnostics-next-line processEnv:off -- resolved before the Effect runtime starts
 	const override = process.env.MAPLE_LIBCHDB
 	if (override) candidates.push(override)
 
@@ -372,6 +373,7 @@ export const pinProcessTimezoneToUtc = (): void => {
 	timezonePinned = true
 	// Keep Bun's own view in sync, so JS `Date` formatting in this process
 	// matches what the engine reports.
+	// @effect-diagnostics-next-line processEnv:off -- pins the process TZ that libchdb reads
 	process.env.TZ = "UTC"
 	const key = cstr("TZ")
 	const value = cstr("UTC")

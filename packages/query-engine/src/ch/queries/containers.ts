@@ -476,7 +476,7 @@ export function containerSumTimeseriesQuery(opts: ContainerSumTimeseriesOpts) {
 								labels,
 								([metricName, label]) =>
 									[$.MetricName.eq(metricName), CH.lit(label)] as const,
-							) as Array<[CH.Condition, CH.Expr<string>]>,
+							),
 							CH.lit(""),
 						)
 					: opts.groupByAttributeKey

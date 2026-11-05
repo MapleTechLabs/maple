@@ -255,8 +255,8 @@ describe("ApiClient", () => {
 			const attempts = endedSpansNamed(tracer.ended, "GET")
 			assert.lengthOf(attempts, 2)
 			assert.isTrue(Arr.every(attempts, (span) => Exit.isSuccess(span.exit)))
-			assert.strictEqual(attempts[0]!.attributes.get("http.response.status_code"), 200)
-			assert.isString(attempts[0]!.attributes.get("maple.attempt.error"))
+			assert.strictEqual(attempts[0].attributes.get("http.response.status_code"), 200)
+			assert.isString(attempts[0].attributes.get("maple.attempt.error"))
 		}).pipe(Effect.provide(TestLayer)),
 	)
 })

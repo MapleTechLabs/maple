@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Clock, DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { ListSecurityAuditRunsOutput } from "@maple/domain/mcp-outputs"
 import { securityAuditSpendWindow } from "@maple/domain/security-audit"
@@ -127,7 +128,11 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 							`The org has reached its monthly audit spend limit (${usd(spentUsd)} of ${usd(limitUsd)}): running audits stop and new ones are refused until ${isoOf(window.resetsAt).slice(0, 10)} or an admin raises the limit.`,
 						]
 					: []),
-				...(admin ? [] : ["Only org admins see what each run reported."]),
+				...(admin
+					? []
+					: [
+							`Only ${Policy.holdersPhrase(Policy.requiredRole("security:manage"))} see what each run reported.`,
+						]),
 			]
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": runs.length })
 			return {
@@ -228,7 +233,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 										: `${run.agentInvocations} of ${run.budget}`,
 									run.costUsd === null ? "pending" : usd(run.costUsd),
 									run.findings === null
-										? "admins only"
+										? "admins and engineers only"
 										: `${run.findings.critical}/${run.findings.high}/${run.findings.medium}/${run.findings.low}/${run.findings.informational}, ${run.findings.leads}, ${run.findings.rejected}`,
 								]),
 							),

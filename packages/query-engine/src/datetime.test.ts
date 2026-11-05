@@ -384,7 +384,7 @@ describe("alertQueryLimits", () => {
 
 	it("never lowers a limit as the interval grows", () => {
 		const limits = Arr.map([1, 5, 10, 15, 30, 60], alertQueryLimits)
-		for (const [a, b] of Arr.map(limits.slice(1), (limit, i) => [limits[i]!, limit] as const)) {
+		for (const [a, b] of Arr.map(limits.slice(1), (limit, i) => [limits[i], limit] as const)) {
 			expect(b.timeSeconds).toBeGreaterThanOrEqual(a.timeSeconds)
 			expect(b.memoryBytes).toBeGreaterThanOrEqual(a.memoryBytes)
 		}
@@ -427,7 +427,7 @@ describe("isAlertRuleDue", () => {
 		const phases = new Set(
 			Array.from(
 				{ length: 50 },
-				(_, i) => dueMinutes({ ruleId: `rule-${i}`, intervalMinutes: 5 })[0]! % 5,
+				(_, i) => dueMinutes({ ruleId: `rule-${i}`, intervalMinutes: 5 })[0] % 5,
 			),
 		)
 		expect(phases.size).toBe(5)

@@ -176,11 +176,11 @@ describe.skipIf(!clickhouseE2eEnabled)("trace_facets_hourly materialization", ()
 				assert.deepStrictEqual(byFacet(await run(facets(false))), byFacet(await run(facets(true))))
 				const [spliced] = await run(stats(false))
 				const [raw] = await run(stats(true))
-				assert.strictEqual(spliced!.minDurationMs, raw!.minDurationMs)
-				assert.strictEqual(spliced!.maxDurationMs, longestMs)
-				assert.strictEqual(raw!.maxDurationMs, longestMs)
+				assert.strictEqual(spliced.minDurationMs, raw.minDurationMs)
+				assert.strictEqual(spliced.maxDurationMs, longestMs)
+				assert.strictEqual(raw.maxDurationMs, longestMs)
 				for (const key of ["p50DurationMs", "p95DurationMs"]) {
-					assert.closeTo(Number(spliced![key]), Number(raw![key]), Number(raw![key]) * 0.01)
+					assert.closeTo(Number(spliced[key]), Number(raw[key]), Number(raw[key]) * 0.01)
 				}
 			}
 		}

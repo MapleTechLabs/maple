@@ -305,7 +305,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 		}
 	})
 
-	for (const metric of Rec.keys(METRIC_FIELDS) as Array<keyof typeof METRIC_FIELDS>) {
+	for (const metric of Rec.keys(METRIC_FIELDS)) {
 		for (const needsSampling of [false, true]) {
 			// Hour-multiple single-metric requests deliberately use the separate
 			// weighted aggregate route, with different sample-count semantics.

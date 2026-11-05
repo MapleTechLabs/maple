@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { InspectSecurityAuditRunOutput } from "@maple/domain/mcp-outputs"
@@ -40,7 +41,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 			"One code security audit run in full: its status and why it stopped, the coverage ledger (which parts of the " +
 			"codebase it covered, which it deferred, blocked or never reached, with what it could not settle), every claim " +
 			"it reported including the ones its verifier rejected and why, and its step log (agents, phases, notes). " +
-			"Takes a `run_id` from list_security_audit_runs, or a `repository` for its latest run. Admin only.",
+			"Takes a `run_id` from list_security_audit_runs, or a `repository` for its latest run. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			run_id: P.optionalText("A run id from list_security_audit_runs"),
 			repository: P.optionalText("Instead of run_id: this repository's (owner/name) latest run"),
@@ -64,8 +65,7 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 				})
 			if (!access.admin)
 				return yield* new McpUnavailableError({
-					message:
-						"Only org admins can read an audit run's coverage, claims and log; list_security_audit_runs shows its status.",
+					message: `${Policy.denialFor("security:manage").message} list_security_audit_runs shows a run's status.`,
 					capability: "security_audit_admin",
 				})
 			const { store } = access

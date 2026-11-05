@@ -108,7 +108,7 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 const ruleRow = (
 	h: H,
 	model: Model,
-	isAdmin: boolean,
+	canManage: boolean,
 	rule: V2IngestRule,
 	index: number,
 	count: number,
@@ -146,7 +146,7 @@ const ruleRow = (
 			hitsCell(h, model, rule),
 			h.div(
 				[h.Class("flex w-10 shrink-0 items-center")],
-				isAdmin
+				canManage
 					? switchControl(h, {
 							id: `${menuId}-switch`,
 							inputId: `${menuId}-switch-input`,
@@ -157,7 +157,7 @@ const ruleRow = (
 						})
 					: [h.span([h.Class("text-xs")], [rule.enabled ? "On" : "Off"])],
 			),
-			...(isAdmin
+			...(canManage
 				? [
 						h.div(
 							[h.Class("flex w-7 shrink-0 justify-end")],
@@ -178,7 +178,7 @@ const ruleRow = (
 	)
 }
 
-const rulesTable = (h: H, model: Model, isAdmin: boolean, rules: ReadonlyArray<V2IngestRule>): Html =>
+const rulesTable = (h: H, model: Model, canManage: boolean, rules: ReadonlyArray<V2IngestRule>): Html =>
 	h.div(
 		[],
 		[
@@ -192,14 +192,14 @@ const rulesTable = (h: H, model: Model, isAdmin: boolean, rules: ReadonlyArray<V
 						"Last 24h",
 					]),
 					eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
-					...(isAdmin ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
+					...(canManage ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
 				],
 			),
-			...Arr.map(rules, (rule, index) => ruleRow(h, model, isAdmin, rule, index, rules.length)),
+			...Arr.map(rules, (rule, index) => ruleRow(h, model, canManage, rule, index, rules.length)),
 		],
 	)
 
-const rulesEmpty = (h: H, isAdmin: boolean): Html =>
+const rulesEmpty = (h: H, canManage: boolean): Html =>
 	empty(
 		h,
 		[
@@ -210,7 +210,7 @@ const rulesEmpty = (h: H, isAdmin: boolean): Html =>
 					"Drop noisy records or redact sensitive values before Maple stores them. Dropped data is not billed.",
 				]),
 			]),
-			...(isAdmin
+			...(canManage
 				? [
 						emptyActions(
 							h,
@@ -243,7 +243,7 @@ const rulesSkeleton = (h: H): Html =>
 			),
 	})
 
-export const ingestRulesSection = (h: H, model: Model, isAdmin: boolean): Html =>
+export const ingestRulesSection = (h: H, model: Model, canManage: boolean): Html =>
 	settingsSection(
 		h,
 		{
@@ -253,7 +253,7 @@ export const ingestRulesSection = (h: H, model: Model, isAdmin: boolean): Html =
 				"Drop or redact telemetry before it is stored or billed. Applies to new data only.",
 			],
 			padded: false,
-			actions: isAdmin ? addRuleButton(h) : undefined,
+			actions: canManage ? addRuleButton(h) : undefined,
 		},
 		[
 			h.div(
@@ -270,8 +270,8 @@ export const ingestRulesSection = (h: H, model: Model, isAdmin: boolean): Html =
 							}),
 						onData: (rules) =>
 							rules.length === 0
-								? rulesEmpty(h, isAdmin)
-								: rulesTable(h, model, isAdmin, rules),
+								? rulesEmpty(h, canManage)
+								: rulesTable(h, model, canManage, rules),
 					}),
 				],
 			),

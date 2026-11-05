@@ -106,8 +106,8 @@ const parseColumn = (line: string): LocalSchemaColumn | undefined => {
 	if (/^INDEX\b/i.test(trimmed)) return undefined
 	const found = Str.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$/)(trimmed)
 	if (Option.isNone(found)) return undefined
-	const name = found.value[1]!
-	const declaration = stripTrailingComma(found.value[2]!)
+	const name = found.value[1]
+	const declaration = stripTrailingComma(found.value[2])
 	const stop = topLevelKeyword(declaration, ["DEFAULT", "MATERIALIZED", "ALIAS", "CODEC", "COMMENT"])
 	const type = normalize(stop === -1 ? declaration : Str.slice(0, stop)(declaration))
 	if (type.length === 0) return undefined
@@ -117,7 +117,7 @@ const parseColumn = (line: string): LocalSchemaColumn | undefined => {
 	const defaultEnd = Arr.filter(
 		[codecOffset, commentOffset, attributes.length],
 		(offset) => offset >= 0,
-	).sort((a, b) => a - b)[0]!
+	).sort((a, b) => a - b)[0]
 	const defaultClause = Str.trim(Str.slice(0, defaultEnd)(attributes))
 	const defaultMatch = Str.match(/^(DEFAULT|MATERIALIZED|ALIAS)\s+(.+)$/i)(defaultClause)
 	const codecClause =
@@ -129,8 +129,8 @@ const parseColumn = (line: string): LocalSchemaColumn | undefined => {
 		type,
 		...(Option.isSome(defaultMatch)
 			? {
-					defaultKind: Str.toUpperCase(defaultMatch.value[1]!),
-					defaultExpression: normalize(defaultMatch.value[2]!),
+					defaultKind: Str.toUpperCase(defaultMatch.value[1]),
+					defaultExpression: normalize(defaultMatch.value[2]),
 				}
 			: undefined),
 		...(!(codecClause === undefined) ? { codec: normalize(codecClause) } : undefined),
@@ -200,7 +200,7 @@ const parseStatement = (raw: string): LocalSchemaObject | undefined => {
 		: Option.isSome(materialized)
 			? "materialized_view"
 			: "view"
-	const name = match[1]!
+	const name = match[1]
 	const open = Option.getOrElse(
 		Option.map(Str.indexOf("(")(Str.slice(match[0].length)(statement)), (at) => at + match[0].length),
 		() => -1,
@@ -223,7 +223,7 @@ const parseStatement = (raw: string): LocalSchemaObject | undefined => {
 	const ttl = firstGroup(clause, /\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/is)
 	const indexes = Arr.map(
 		Arr.fromIterable(Str.matchAll(/^\s*INDEX\s+([A-Za-z_][A-Za-z0-9_]*)\b/gim)(statement)),
-		(match) => match[1]!,
+		(match) => match[1],
 	)
 	return {
 		name,

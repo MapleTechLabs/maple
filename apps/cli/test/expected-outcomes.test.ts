@@ -24,10 +24,10 @@ const captureStderr = async (effect: Effect.Effect<void>): Promise<string> => {
 	const original = process.stderr.write.bind(process.stderr)
 	const previousExitCode = process.exitCode
 	let captured = ""
-	process.stderr.write = ((chunk: string) => {
+	process.stderr.write = (chunk: string) => {
 		captured += chunk
 		return true
-	}) as typeof process.stderr.write
+	}
 	try {
 		await Effect.runPromise(effect)
 		return captured
@@ -75,7 +75,7 @@ describe("expected CLI outcomes", () => {
 	it("still exits non-zero, so scripts and CI keep their old behaviour", async () => {
 		const original = process.exitCode
 		const restoreStderr = process.stderr.write.bind(process.stderr)
-		process.stderr.write = (() => true) as typeof process.stderr.write
+		process.stderr.write = () => true
 		try {
 			process.exitCode = 0
 			await Effect.runPromise(

@@ -63,8 +63,7 @@ const fakeHost = (options: {
 			if (options.restoreFails === "error") throw new Error("restore refused")
 			return options.restoreFails === "gone" ? "gone" : "restored"
 		},
-		readBackup: async () =>
-			Option.fromNullishOr(store.get(MIRROR_BACKUP_KEY) as StoredMirrorBackup | undefined),
+		readBackup: async () => Option.fromNullishOr(store.get(MIRROR_BACKUP_KEY)),
 		writeBackup: async (backup) => {
 			store.set(MIRROR_BACKUP_KEY, backup)
 		},

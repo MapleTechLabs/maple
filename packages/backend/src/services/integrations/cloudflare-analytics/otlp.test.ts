@@ -53,7 +53,7 @@ describe("metricRowsToOtlp", () => {
 		const payload = metricRowsToOtlp([baseSum({})], [baseGauge({})])
 
 		assert.strictEqual(payload.resourceMetrics.length, 1)
-		const resource = payload.resourceMetrics[0]!
+		const resource = payload.resourceMetrics[0]
 		// Resource attributes carry service.name so the collector derives ServiceName.
 		assert.deepStrictEqual(resource.resource.attributes, [
 			{ key: "service.name", value: { stringValue: "cloudflare/example.com" } },
@@ -61,7 +61,7 @@ describe("metricRowsToOtlp", () => {
 			{ key: "cloud.provider", value: { stringValue: "cloudflare" } },
 		])
 		assert.strictEqual(resource.scopeMetrics.length, 1)
-		const scope = resource.scopeMetrics[0]!
+		const scope = resource.scopeMetrics[0]
 		assert.strictEqual(scope.scope.name, "@maple/cloudflare-analytics")
 		assert.strictEqual(scope.metrics.length, 2)
 
@@ -71,10 +71,10 @@ describe("metricRowsToOtlp", () => {
 		assert.isDefined(sum.sum)
 		assert.isUndefined(sum.gauge)
 		// DELTA temporality (1) + monotonic carried straight from the row.
-		assert.strictEqual(sum.sum!.aggregationTemporality, 1)
-		assert.strictEqual(sum.sum!.isMonotonic, true)
-		assert.strictEqual(sum.sum!.dataPoints[0]!.asDouble, 100)
-		assert.deepStrictEqual(sum.sum!.dataPoints[0]!.attributes, [
+		assert.strictEqual(sum.sum.aggregationTemporality, 1)
+		assert.strictEqual(sum.sum.isMonotonic, true)
+		assert.strictEqual(sum.sum.dataPoints[0].asDouble, 100)
+		assert.deepStrictEqual(sum.sum.dataPoints[0].attributes, [
 			{ key: "cache.status", value: { stringValue: "hit" } },
 			{ key: "http.status_class", value: { stringValue: "2xx" } },
 		])
@@ -84,7 +84,7 @@ describe("metricRowsToOtlp", () => {
 		)
 		assert.isDefined(gauge.gauge)
 		assert.isUndefined(gauge.sum)
-		assert.strictEqual(gauge.gauge!.dataPoints[0]!.asDouble, 180)
+		assert.strictEqual(gauge.gauge.dataPoints[0].asDouble, 180)
 	})
 
 	it("stamps the poller's source id on every resource", () => {
@@ -110,7 +110,7 @@ describe("metricRowsToOtlp", () => {
 			[],
 			[baseGauge({ timestamp: "2026-07-02 11:35:00.000", start_timestamp: "2026-07-02 11:30:00.000" })],
 		)
-		const dp = payload.resourceMetrics[0]!.scopeMetrics[0]!.metrics[0]!.gauge!.dataPoints[0]!
+		const dp = payload.resourceMetrics[0].scopeMetrics[0].metrics[0].gauge!.dataPoints[0]
 		assert.strictEqual(dp.timeUnixNano, `${Date.parse("2026-07-02T11:35:00.000Z")}000000`)
 		assert.strictEqual(dp.startTimeUnixNano, `${Date.parse("2026-07-02T11:30:00.000Z")}000000`)
 	})
@@ -141,7 +141,7 @@ describe("metricRowsToOtlp", () => {
 			),
 		)
 		const requests = Option.getOrThrow(
-			Arr.findFirst(zone.scopeMetrics[0]!.metrics, (m) => m.name === "cloudflare.http.requests"),
+			Arr.findFirst(zone.scopeMetrics[0].metrics, (m) => m.name === "cloudflare.http.requests"),
 		)
 		// Two datapoints (hit + miss) merged under one metric.
 		assert.strictEqual(requests.sum!.dataPoints.length, 2)

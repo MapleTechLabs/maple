@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 import { DependencyScanForbiddenError, DependencyScanPersistenceError } from "@maple/domain/http"
@@ -47,6 +48,9 @@ import { Message, type Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
 	pinnedNamespace: null,
@@ -64,11 +68,11 @@ const apply = (model: Model, messages: ReadonlyArray<(model: Model) => Message>)
 const loaded = (
 	repositories: DependencyScanRepositoriesResponse = repositoriesOf(NOW),
 	findings: DependencyFindingsResponse = findingsOf(NOW),
-	isAdmin = true,
+	canEdit = true,
 ): Model =>
 	apply(init(route, context).model, [
 		() => Message.ReadClock({ nowMs: NOW }),
-		() => Message.CompletedReadIsAdmin({ isAdmin }),
+		() => Message.CompletedReadGrants({ grants: canEdit ? ENGINEER : MEMBER }),
 		(model) =>
 			Message.CompletedFetchRepositories({
 				key: model.repositories.key ?? "",
@@ -1053,13 +1057,13 @@ describe("security dependencies tab", () => {
 			{ update: pageUpdate, view },
 			given(opened(loaded(repositoriesOf(NOW), findingsOf(NOW), false))),
 			mounted,
-			expectView(text("Only org admins can change a finding's status.")).toExist(),
+			expectView(text("Only org admins and engineers can change a finding's status.")).toExist(),
 			expectView(role("button", { name: "Dismiss" })).toBeAbsent(),
 		)
 	})
 
 	test("a saved triage reads the findings again and says what changed", () => {
-		const finding = findingsOf(NOW).findings[0]!
+		const finding = findingsOf(NOW).findings[0]
 		const saving = apply(opened(loaded()), [
 			() =>
 				Message.GotReasonMessage({ message: Field.Message.ChangedValue({ value: "Not reachable" }) }),

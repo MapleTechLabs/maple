@@ -13,7 +13,7 @@ interface FetchCall {
 const setupFetch = (responder: (url: string) => Response = () => new Response(null, { status: 200 })) => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const headers: Record<string, string> = {}
 		const initHeaders = init?.headers
@@ -27,7 +27,7 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 		calls.push({ url, headers, body })
 		return responder(url)
-	}) as typeof fetch
+	}
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 
@@ -332,7 +332,7 @@ describe("MapleFlush.make (server)", () => {
 	})
 
 	it("does not start an auto-flush timer when autoFlushInterval is false", () => {
-		const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation(() => 0 as never)
+		const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockImplementation(() => 0)
 		restore = () => setIntervalSpy.mockRestore()
 		make({ ...baseConfig, autoFlushInterval: false })
 		expect(setIntervalSpy).not.toHaveBeenCalled()

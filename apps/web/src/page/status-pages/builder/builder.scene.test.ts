@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { StatusPageSlugTakenError } from "@maple/domain/http"
 import { StatusPagePreviewParams, type V2UptimeMonitor } from "@maple/domain/http/v2"
@@ -34,6 +35,9 @@ import type { Model } from "./model"
 import { init, previewDraft as BuilderUpdatePreviewDraft, update } from "./update"
 import { view as builderView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const builderUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -50,12 +54,12 @@ const tcpMonitor = () =>
 		config: { type: "tcp", host: "db.acme.dev", port: 5432, timeout_ms: 10000 },
 	})
 
-const withMonitors = (monitors: ReadonlyArray<V2UptimeMonitor>, isAdmin = true): Model => {
+const withMonitors = (monitors: ReadonlyArray<V2UptimeMonitor>, canEdit = true): Model => {
 	const start = init({ _tag: "StatusPageNew" }, context).model
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: canEdit ? ENGINEER : MEMBER }),
 			Message.CompletedFetchMonitors({
 				key: start.monitors.key ?? "",
 				result: Result.succeed(monitors),
@@ -386,7 +390,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(withMonitors([httpMonitor()], false)),
-			expectView(text("Only org admins can create status pages")).toExist(),
+			expectView(text("Only org admins and engineers can create status pages")).toExist(),
 			expectView(role("button", { name: "Publish page" })).not.toExist(),
 		)
 	})

@@ -111,14 +111,14 @@ describe("agent budgets", () => {
 describe("agentPolicyFor", () => {
 	/** It ignored its agent argument until 2026-09-20, so every surface got the same rail. */
 	it("reads the agent's own budget rather than one shared number", () => {
-		const investigate = agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT)
-		const chat = agentPolicyFor(AGENTS.default!, GLM_CONTEXT)
+		const investigate = agentPolicyFor(AGENTS.investigate, GLM_CONTEXT)
+		const chat = agentPolicyFor(AGENTS.default, GLM_CONTEXT)
 		expect(investigate.maxToolCalls).not.toBe(chat.maxToolCalls)
 		expect(investigate.tokenBudget).not.toBe(chat.tokenBudget)
 	})
 
 	it("derives the context limit instead of passing the window through", () => {
-		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT).contextTokenLimit).toBe(
+		expect(agentPolicyFor(AGENTS.investigate, GLM_CONTEXT).contextTokenLimit).toBe(
 			liveContextLimit(GLM_CONTEXT),
 		)
 	})
@@ -128,15 +128,15 @@ describe("agentPolicyFor", () => {
 	 * a chat turn keeps its cached prompt untouched.
 	 */
 	it("shows the unattended passes their run status, and not the chat turn", () => {
-		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT, true).runStatus).toBe("appended")
-		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT, true).runStatus).toBe("appended")
-		expect(agentPolicyFor(AGENTS.default!, GLM_CONTEXT, true).runStatus).toBe("off")
+		expect(agentPolicyFor(AGENTS["pr-review"], GLM_CONTEXT, true).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.investigate, GLM_CONTEXT, true).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.default, GLM_CONTEXT, true).runStatus).toBe("off")
 	})
 
 	// An attended follow-up in an `inv-` or `pr-` session runs on the same agent, and must answer
 	// rather than be told to file a partial at the warning.
 	it("keeps the run status off an attended follow-up on an investigation or review", () => {
-		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT, false).runStatus).toBe("off")
-		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT, false).runStatus).toBe("off")
+		expect(agentPolicyFor(AGENTS.investigate, GLM_CONTEXT, false).runStatus).toBe("off")
+		expect(agentPolicyFor(AGENTS["pr-review"], GLM_CONTEXT, false).runStatus).toBe("off")
 	})
 })

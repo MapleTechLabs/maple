@@ -19,12 +19,12 @@ interface FetchCall {
 const setupFetch = () => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 		calls.push({ url, body })
 		return new Response(null, { status: 200 })
-	}) as typeof fetch
+	}
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 

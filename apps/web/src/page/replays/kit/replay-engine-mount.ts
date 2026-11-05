@@ -225,6 +225,7 @@ const startEngine = <A>(
 		Arr.forEach(event.detail, (item: unknown) => engine.addEvent(item))
 		if (!state.isStarved) return
 		// rrweb commits added events on a microtask; resume after they land.
+		// @effect-diagnostics-next-line globalTimers:off -- DOM event handler; resumes after rrweb's microtask commit
 		setTimeout(() => {
 			if (!state.isStarved) return
 			engine.play(engine.getCurrentTimeMs())

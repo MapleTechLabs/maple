@@ -62,7 +62,7 @@ const unreachable: SandboxHandleEnv["run"] = () => {
 	throw new TypeError("Cannot read properties of undefined (reading 'getByName')")
 }
 
-const answered = (response: Response) => response.json() as Promise<Record<string, unknown>>
+const answered = (response: Response) => response.json<Record<string, unknown>>()
 
 describe("handle", () => {
 	it.effect("reports a missing container binding instead of a bare 500", () =>

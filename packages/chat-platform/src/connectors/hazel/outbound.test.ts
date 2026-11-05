@@ -30,10 +30,10 @@ const stub = (routes: ReadonlyArray<readonly [string, Reply | ReadonlyArray<Repl
 			Arr.findFirst(routes, ([route]) => Str.startsWith(route)(path)),
 			() => fallback,
 		)
-		const list = Arr.isArray<Reply | ReadonlyArray<Reply>>(replies) ? replies : [replies as Reply]
+		const list = Arr.isArray<Reply | ReadonlyArray<Reply>>(replies) ? replies : [replies]
 		const index = counts.get(prefix) ?? 0
 		counts.set(prefix, index + 1)
-		const reply = list[Math.min(index, list.length - 1)]!
+		const reply = list[Math.min(index, list.length - 1)]
 		return Effect.succeed(
 			HttpClientResponse.fromWeb(request, new Response(reply.body, { status: reply.status })),
 		)

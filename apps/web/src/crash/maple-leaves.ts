@@ -179,7 +179,7 @@ export function mountMapleLeaves(
 			flipV: rand(1.2, 2.2),
 			asx: 1,
 			back: false,
-			pal: PALETTES[Math.floor(Math.random() * PALETTES.length)] ?? PALETTES[0]!,
+			pal: PALETTES[Math.floor(Math.random() * PALETTES.length)] ?? PALETTES[0],
 			groundY: groundFor(z),
 			resting,
 			sy: 1,
@@ -347,11 +347,11 @@ export function mountMapleLeaves(
 		if (oldest) oldest.age = Math.max(oldest.age, oldest.life)
 
 		for (let k = leaves.length - 1; k >= 0; k--) {
-			const l = leaves[k]!
+			const l = leaves[k]
 			if (l.alpha <= 0 || l.x < -160 || l.x > grid.w + 160 || l.y < -300) leaves.splice(k, 1)
 		}
 		for (let k = bits.length - 1; k >= 0; k--) {
-			const b = bits[k]!
+			const b = bits[k]
 			b.x += b.vx * dt
 			b.y += b.vy * dt
 			b.vx *= 1 - Math.min(1, dt * 2.5)

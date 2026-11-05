@@ -52,7 +52,7 @@ const TeamsSchema = Schema.Struct({
 const resolveConfig = (
 	env: EnvConfig,
 ): Effect.Effect<
-	OAuthTokenEndpointConfig & { readonly clientSecret: Redacted.Redacted<string> },
+	OAuthTokenEndpointConfig & { readonly clientSecret: Redacted.Redacted },
 	IntegrationsValidationError
 > =>
 	Option.match(

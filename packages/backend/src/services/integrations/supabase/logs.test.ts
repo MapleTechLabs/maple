@@ -83,7 +83,7 @@ describe("parseRowTimestamp", () => {
 
 describe("logsToOtlp", () => {
 	const payload = otlp(sample.result)
-	const records = payload.resourceLogs[0]!.scopeLogs[0]!.logRecords
+	const records = payload.resourceLogs[0].scopeLogs[0].logRecords
 	const byId = new Map(
 		Arr.map(records, (record) => [attributeMap(record.attributes)["log.record.uid"], record]),
 	)
@@ -154,7 +154,7 @@ describe("logsToOtlp", () => {
 				event_message: "GET | 502 | /rest/v1/",
 				log_attributes: { "response.status_code": "502" },
 			},
-		]).resourceLogs[0]!.scopeLogs[0]!.logRecords[0]!
+		]).resourceLogs[0].scopeLogs[0].logRecords[0]
 		assert.strictEqual(record.severityText, "ERROR")
 		assert.strictEqual(record.severityNumber, 17)
 	})
@@ -185,7 +185,7 @@ describe("logsToOtlp", () => {
 	})
 
 	it("stamps the project and the connection's source on the resource", () => {
-		assert.deepStrictEqual(attributeMap(payload.resourceLogs[0]!.resource.attributes), {
+		assert.deepStrictEqual(attributeMap(payload.resourceLogs[0].resource.attributes), {
 			"service.name": "supabase",
 			"supabase.project.ref": "abcdefghijklmnopqrst",
 			"supabase.project.name": "app",
@@ -199,7 +199,7 @@ describe("logsToOtlp", () => {
 		const records = otlp([
 			{ timestamp: "2026-10-21T17:00:00", source: "edge_logs", event_message: "no id" },
 			{ id: "y", timestamp: "not a time", source: "edge_logs", event_message: "bad time" },
-		]).resourceLogs[0]!.scopeLogs[0]!.logRecords
+		]).resourceLogs[0].scopeLogs[0].logRecords
 		assert.strictEqual(records.length, 0)
 	})
 })

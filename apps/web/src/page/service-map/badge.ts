@@ -62,6 +62,8 @@ export function machineBadge(node: Pick<Node3D, "kind" | "system" | "runtime">):
 				return { label: "NATS", mark: "nats" }
 			case "rabbitmq":
 				return { label: "RabbitMQ", mark: "rabbitmq" }
+			default:
+				break
 		}
 		const database = getDbStyle(system)
 		const mark = DB_MARKS.get(database.icon)

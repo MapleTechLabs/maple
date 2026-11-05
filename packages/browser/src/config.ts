@@ -1,5 +1,4 @@
 import {
-	type IdentifyInput,
 	type MapleIdentity,
 	type MapleRegion,
 	normalizeIdentity,
@@ -177,7 +176,7 @@ export function resolveIdentity(config: {
 	readonly user?: MapleIdentity | undefined
 	readonly userId?: string | null | undefined
 }): ResolvedIdentity | undefined {
-	return normalizeIdentity((config.user ?? config.userId) as IdentifyInput)
+	return normalizeIdentity(config.user ?? config.userId)
 }
 
 let warnedServiceName = false

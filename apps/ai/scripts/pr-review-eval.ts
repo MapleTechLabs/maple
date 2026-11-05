@@ -291,7 +291,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 		}
 		for (const sha of Str.split("..")(c.range)) git(["cat-file", "-e", `${sha}^{commit}`])
 		const [base, head] = Str.split("..")(c.range)
-		if (Str.trim(git(["merge-base", base!, head!])) !== base) {
+		if (Str.trim(git(["merge-base", base, head])) !== base) {
 			console.error(`${c.id}: pinned base must be an ancestor of head`)
 			process.exit(2)
 		}
@@ -333,7 +333,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	const jobs = Array.from({ length: repeats }, (_, repeat) =>
 		Arr.flatMap(groups, (range) =>
 			Arr.map(variants, (_, v) => {
-				const variant = variants[(v + repeat) % variants.length]!
+				const variant = variants[(v + repeat) % variants.length]
 				return {
 					repeat,
 					range,
@@ -349,12 +349,12 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 		order: number,
 	) => {
 		const promptFile = join(out, `prompt-${variant.prompt}.txt`)
-		writeFileSync(promptFile, promptTexts[variant.prompt]!)
-		console.log(`\n${runId}: PR #${labels[0]!.number}`)
+		writeFileSync(promptFile, promptTexts[variant.prompt])
+		console.log(`\n${runId}: PR #${labels[0].number}`)
 		const dir = await reviewLocally([
 			REPOSITORY,
 			"--number",
-			String(labels[0]!.number),
+			String(labels[0].number),
 			"--range",
 			range!,
 			"--repo-dir",
@@ -489,7 +489,7 @@ const score = (argv: ReadonlyArray<string>) => {
 			const matching = Arr.filter(grades, (g) => g.runId === run.runId && g.caseId === caseId)
 			const scored =
 				matching.length === 1
-					? scoreGrade(matching[0]!, run.findings.length, c.expected ?? "present")
+					? scoreGrade(matching[0], run.findings.length, c.expected ?? "present")
 					: null
 			return {
 				runId: run.runId,

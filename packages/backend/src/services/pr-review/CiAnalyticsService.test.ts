@@ -179,10 +179,10 @@ describe("CiAnalyticsService.analytics", () => {
 				const bucketMs = analytics.bucketSeconds * 1000
 				assert.strictEqual(bucketMs, 7 * 24 * HOUR)
 				const buckets = Arr.map(analytics.series, (bucket) => bucket.bucket)
-				assert.isAtMost(buckets[0]!, analytics.startTime)
-				assert.isAbove(buckets[buckets.length - 1]! + bucketMs, END - 1)
+				assert.isAtMost(buckets[0], analytics.startTime)
+				assert.isAbove(buckets[buckets.length - 1] + bucketMs, END - 1)
 				assert.isTrue(
-					Arr.every(buckets, (bucket, i) => i === 0 || bucket - buckets[i - 1]! === bucketMs),
+					Arr.every(buckets, (bucket, i) => i === 0 || bucket - buckets[i - 1] === bucketMs),
 				)
 				// Each week's row lands in its own bar; the weeks around it stay empty.
 				const failedIn = (weeksAgo: number) =>

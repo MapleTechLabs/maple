@@ -6,13 +6,13 @@ import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Cause, Clock, Effect, Schema } from "effect"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
+import { readGrants } from "../../../data/session-tenant"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Command } from "foldkit"
 import {
 	deleteDestination,
 	listDeliveries,
 	listDeliveriesRaw,
-	readIsAdmin,
 	setRuleEnabled,
 	testDestination,
 	updateDestination,
@@ -55,7 +55,7 @@ export const FetchHubSession = Command.define("FetchAlertsHubSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
 	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
 })
 
 export const ToggleRule = Command.define("ToggleAlertRule", {

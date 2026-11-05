@@ -128,7 +128,7 @@ describe("AlertsService evaluation error persistence", () => {
 			assert.deepStrictEqual([...failing, recovered], [1, 2, 3])
 			// Healthy again, it waits for its 5-minute slot.
 			const later = yield* Effect.forEach(Arr.range(1, 4), () => tickAndCount)
-			assert.isBelow(later[3]! - recovered, 4)
+			assert.isBelow(later[3] - recovered, 4)
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 
@@ -514,7 +514,7 @@ describe("AlertsService.previewRule", () => {
 			assert.strictEqual(response.bucketSeconds, 300)
 			assert.strictEqual(response.windowMinutes, 5)
 			assert.lengthOf(response.series, 1)
-			const points = response.series[0]!.points
+			const points = response.series[0].points
 			// 30-minute range at 5-minute windows = 6 evaluation buckets, with the
 			// three data-less windows filled in as skipped.
 			assert.lengthOf(points, 6)
@@ -566,7 +566,7 @@ describe("AlertsService.previewRule", () => {
 
 			// 288 windows — the bucket cap used to stop at 200, so the chart drew
 			// only the newest 16h40m of a full-width 24h axis.
-			const points = response.series[0]!.points
+			const points = response.series[0].points
 			assert.lengthOf(points, 288)
 			assert.isNull(response.truncatedToStart)
 			assert.strictEqual(points[0]?.bucket, "2026-01-01T00:00:00.000Z")
@@ -606,7 +606,7 @@ describe("AlertsService.previewRule", () => {
 
 			const response = yield* alerts.previewRule(orgId, adminRoles, request)
 
-			const points = response.series[0]!.points
+			const points = response.series[0].points
 			assert.lengthOf(points, 1500)
 			// The clamped start is what the chart frames its axis on.
 			assert.strictEqual(response.truncatedToStart, "2026-01-29T23:00:00.000Z")
@@ -652,11 +652,11 @@ describe("AlertsService.previewRule", () => {
 			const response = yield* alerts.previewRule(orgId, adminRoles, request)
 
 			assert.lengthOf(response.series, 1)
-			const points = response.series[0]!.points
+			const points = response.series[0].points
 			// 6 complete windows plus the in-progress [00:30, 00:32:30) one.
 			assert.lengthOf(points, 7)
 			assert.isUndefined(points[5]?.provisional)
-			const last = points[6]!
+			const last = points[6]
 			assert.strictEqual(last.bucket, "2026-01-01T00:30:00.000Z")
 			assert.strictEqual(last.provisional, true)
 			assert.strictEqual(last.status, "breached")

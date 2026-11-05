@@ -66,7 +66,7 @@ const grantedAccountsOfRow = (row: {
 interface ResolvedCloudflareOAuthConfig {
 	readonly clientId: string
 	/** null for a public (PKCE-only) client — Cloudflare's default for third-party SaaS apps. Redacted until the wire. */
-	readonly clientSecret: Redacted.Redacted<string> | null
+	readonly clientSecret: Redacted.Redacted | null
 	readonly authorizeUrl: string
 	readonly tokenUrl: string
 	readonly revokeUrl: string
