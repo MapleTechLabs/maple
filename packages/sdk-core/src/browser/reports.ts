@@ -30,7 +30,9 @@ interface ReportFields {
 function parseReportBody(body: unknown): ReportFields {
 	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const raw: unknown = body === null || body === undefined ? undefined : JSON.parse(JSON.stringify(body))
-	const fields = new Map(typeof raw === "object" && raw !== null ? Object.entries(raw) : [])
+	const fields = new Map<string, unknown>(
+		typeof raw === "object" && raw !== null ? Object.entries(raw) : [],
+	)
 	const str = (key: string): string | undefined => {
 		const value = fields.get(key)
 		return typeof value === "string" && value !== "" ? value : undefined
