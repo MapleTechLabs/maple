@@ -72,6 +72,16 @@ const containsText = (value: CH.Expr<string>, search: string) =>
 /** Any non-empty value in the group, `''` when none. */
 const nonEmpty = (value: CH.Expr<string>) => CH.anyIf(value, value.neq(""))
 
+/**
+ * The value from the latest row that has one, `''` when none: empty values rank at the epoch. The
+ * list and the profile then agree on a user who changed name, email or group.
+ */
+const latestNonEmpty = <A>(value: CH.Expr<string>, at: CH.Expr<A>) =>
+	CH.argMax(
+		value,
+		CH.if_(value.neq(""), CH.compileTypedFnCall("toFloat64", T.float64.schema, at), CH.lit(0)),
+	)
+
 const zero = () => CH.toUInt64(CH.lit(0))
 
 /** A service's namespace from the caller's map, `fallback` (default `''`) for a service it does not know. */
@@ -185,9 +195,9 @@ const replayUsers = (scope: UsersScope) =>
 	fromQuery(replaySessions(scope), "sessions")
 		.select(($) => ({
 			userId: $.userId,
-			name: nonEmpty($.userName),
-			email: nonEmpty($.userEmail),
-			groupId: nonEmpty($.groupId),
+			name: latestNonEmpty($.userName, $.lastActivity),
+			email: latestNonEmpty($.userEmail, $.lastActivity),
+			groupId: latestNonEmpty($.groupId, $.lastActivity),
 			namespace: namespaceOf($.serviceName, scope),
 			firstSeen: CH.min_($.startTime),
 			lastSeen: CH.max_($.lastActivity),
@@ -209,7 +219,7 @@ const eventUsers = (scope: UsersScope) =>
 			userId: $.UserId,
 			name: CH.lit(""),
 			email: CH.lit(""),
-			groupId: nonEmpty($.GroupId),
+			groupId: latestNonEmpty($.GroupId, $.Timestamp),
 			namespace: namespaceOf($.ServiceName, scope),
 			firstSeen: CH.min_($.Timestamp),
 			lastSeen: CH.max_($.Timestamp),
@@ -236,8 +246,8 @@ const mcpUsers = (scope: UsersScope) =>
 	from(Traces)
 		.select(($) => ({
 			userId: mcpUserId($),
-			name: nonEmpty($.SpanAttributes.get("user.name")),
-			email: nonEmpty($.SpanAttributes.get("user.email")),
+			name: latestNonEmpty($.SpanAttributes.get("user.name"), $.Timestamp),
+			email: latestNonEmpty($.SpanAttributes.get("user.email"), $.Timestamp),
 			groupId: CH.lit(""),
 			namespace: $.ResourceAttributes.get("service.namespace"),
 			firstSeen: CH.min_($.Timestamp),
@@ -429,10 +439,10 @@ const usersPerUser = (scope: UsersScope, filter: UsersListFilter) =>
 	userSignals(scope)
 		.select(($) => ({
 			userId: $.userId,
-			name: nonEmpty($.name),
-			email: nonEmpty($.email),
-			groupId: nonEmpty($.groupId),
-			/** Every group any source saw the user in; `groupId` keeps one of them. */
+			name: latestNonEmpty($.name, $.lastSeen),
+			email: latestNonEmpty($.email, $.lastSeen),
+			groupId: latestNonEmpty($.groupId, $.lastSeen),
+			/** Every group any source saw the user in; `groupId` keeps the latest. */
 			groupIds: CH.arraySort(mergedGroups($.groupIds)),
 			namespaces: CH.arraySort(CH.groupUniqArrayIf(20)($.namespace, $.namespace.neq(""))),
 			firstSeen: CH.min_($.firstSeen),

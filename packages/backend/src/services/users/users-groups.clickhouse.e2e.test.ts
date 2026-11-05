@@ -167,6 +167,13 @@ describe.skipIf(!clickhouseE2eEnabled)("users grouped by group", () => {
 		])
 	})
 
+	it("lists a user's latest group and every group they were in", async () => {
+		const rows = await runJson(CH.compileUnsafe(CH.usersListQuery(scope, { search: "joan" }), params).sql)
+		assert.deepStrictEqual(pick(rows, "userId", "groupId", "groupIds"), [
+			["joan", "grp_initech", ["grp_acme", "grp_initech"]],
+		])
+	})
+
 	it("names a group from its latest named replay, and leaves an event-only group unnamed", async () => {
 		const rows = await runJson(
 			CH.compileUnsafe(CH.usersGroupNamesQuery(["grp_acme", "grp_globex"]), params).sql,
