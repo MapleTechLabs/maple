@@ -524,6 +524,16 @@ const pendingTab = <M>(h: HtmlBuilder<M>, iconName: IconName, title: string, des
 const PENDING_DESCRIPTION =
 	"Maple does not group this user's errors into issues yet. Once it does, this tab lists the issues they hit, from every service that stamps user.id."
 
+/** Where this warehouse has no per-user rollup (it has not applied migration 0056): no count to show. */
+const UNINDEXED_DESCRIPTION =
+	"This warehouse does not index requests and logs per user yet. Apply the latest ClickHouse migration to see them here."
+
+/** A rollup-backed tab: no count means the warehouse cannot answer, which is not "no rows". */
+export const indexedTabState = (
+	count: number | null,
+	rows: ReadonlyArray<unknown>,
+): "unindexed" | "empty" | "rows" => (count === null ? "unindexed" : rows.length === 0 ? "empty" : "rows")
+
 const cellText = <M>(
 	h: HtmlBuilder<M>,
 	value: string,
@@ -663,72 +673,76 @@ const SLOW_MS = 2000
 
 /** The user's requests, one row per entry span; each opens its trace. */
 const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
-	Arr.isReadonlyArrayEmpty(detail.traces)
-		? noRows(h, "No requests from this user in the window.")
-		: toolTable(h, [
-				toolTableHead(h, [
-					th(h, { label: "Time", width: "w-28 shrink-0" }),
-					th(h, { label: "Root span", width: columnClass({ min: "0" }) }),
-					th(h, { label: "Service", width: "w-28 shrink-0" }),
-					th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
-					th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
-				]),
-				toolTableBody(
-					h,
-					Arr.map(detail.traces, (trace) =>
-						toolTableRow(h, { href: trace.href }, [
-							timeCell(h, trace.atMs, clock),
-							cellText(h, trace.rootSpan, "w-0 flex-1"),
-							hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-								serviceDot(h, { serviceName: trace.service }),
-								typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-									trace.service,
+	indexedTabState(detail.profile.traces, detail.traces) === "unindexed"
+		? pendingTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
+		: Arr.isReadonlyArrayEmpty(detail.traces)
+			? noRows(h, "No requests from this user in the window.")
+			: toolTable(h, [
+					toolTableHead(h, [
+						th(h, { label: "Time", width: "w-28 shrink-0" }),
+						th(h, { label: "Root span", width: columnClass({ min: "0" }) }),
+						th(h, { label: "Service", width: "w-28 shrink-0" }),
+						th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
+						th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
+					]),
+					toolTableBody(
+						h,
+						Arr.map(detail.traces, (trace) =>
+							toolTableRow(h, { href: trace.href }, [
+								timeCell(h, trace.atMs, clock),
+								cellText(h, trace.rootSpan, "w-0 flex-1"),
+								hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
+									serviceDot(h, { serviceName: trace.service }),
+									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
+										trace.service,
+									]),
 								]),
+								cellText(h, formatLatency(trace.durationMs), "w-20 shrink-0", {
+									right: true,
+									tone: trace.durationMs >= SLOW_MS ? "warning" : "foreground",
+								}),
+								cellText(h, trace.status, "w-16 shrink-0", {
+									right: true,
+									tone: trace.isError ? "error" : "muted",
+								}),
 							]),
-							cellText(h, formatLatency(trace.durationMs), "w-20 shrink-0", {
-								right: true,
-								tone: trace.durationMs >= SLOW_MS ? "warning" : "foreground",
-							}),
-							cellText(h, trace.status, "w-16 shrink-0", {
-								right: true,
-								tone: trace.isError ? "error" : "muted",
-							}),
-						]),
+						),
 					),
-				),
-			])
+				])
 
 /** The user's log lines; one inside a trace opens it. */
 const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
-	Arr.isReadonlyArrayEmpty(detail.logs)
-		? noRows(h, "No logs from this user in the window.")
-		: toolTable(h, [
-				toolTableHead(h, [
-					th(h, { label: "Time", width: "w-28 shrink-0" }),
-					th(h, { label: "Level", width: "w-16 shrink-0" }),
-					th(h, { label: "Service", width: "w-28 shrink-0" }),
-					th(h, { label: "Message", width: columnClass({ min: "0" }) }),
-				]),
-				toolTableBody(
-					h,
-					Arr.map(detail.logs, (log) =>
-						toolTableRow(h, log.href === null ? {} : { href: log.href }, [
-							timeCell(h, log.atMs, clock),
-							h.span(
-								[h.Class("w-16 shrink-0")],
-								[severityBadge(h, { severity: log.severity })],
-							),
-							hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-								serviceDot(h, { serviceName: log.service }),
-								typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-									log.service,
+	indexedTabState(detail.profile.logs, detail.logs) === "unindexed"
+		? pendingTab(h, "FileIcon", "Logs are not indexed per user here", UNINDEXED_DESCRIPTION)
+		: Arr.isReadonlyArrayEmpty(detail.logs)
+			? noRows(h, "No logs from this user in the window.")
+			: toolTable(h, [
+					toolTableHead(h, [
+						th(h, { label: "Time", width: "w-28 shrink-0" }),
+						th(h, { label: "Level", width: "w-16 shrink-0" }),
+						th(h, { label: "Service", width: "w-28 shrink-0" }),
+						th(h, { label: "Message", width: columnClass({ min: "0" }) }),
+					]),
+					toolTableBody(
+						h,
+						Arr.map(detail.logs, (log) =>
+							toolTableRow(h, log.href === null ? {} : { href: log.href }, [
+								timeCell(h, log.atMs, clock),
+								h.span(
+									[h.Class("w-16 shrink-0")],
+									[severityBadge(h, { severity: log.severity })],
+								),
+								hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
+									serviceDot(h, { serviceName: log.service }),
+									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
+										log.service,
+									]),
 								]),
+								cellText(h, log.body, "w-0 flex-1"),
 							]),
-							cellText(h, log.body, "w-0 flex-1"),
-						]),
+						),
 					),
-				),
-			])
+				])
 
 const eventsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	Arr.isReadonlyArrayEmpty(detail.events)
