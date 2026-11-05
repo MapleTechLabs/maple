@@ -224,6 +224,39 @@ describe("readUserProfile", () => {
 		}),
 	)
 
+	it.effect("names the group as the list does when another user's replay renamed it", () =>
+		Effect.gen(function* () {
+			const seen: Array<string> = []
+			const rows = new Map([
+				...sources,
+				[
+					"userReplayProfile",
+					[
+						{
+							name: "Ada",
+							email: "",
+							groupId: "grp_acme",
+							groupName: "Acme",
+							traitKeys: [],
+							traitValues: [],
+							country: "",
+							sessions: "1",
+							recordedMs: "0",
+							errors: "0",
+							firstSeen: "2026-11-01 09:00:00",
+							lastSeen: "2026-11-01 11:00:00",
+						},
+					],
+				],
+				["usersGroupNames", [{ groupId: "grp_acme", groupName: "Acme Inc." }]],
+			])
+			const response = yield* readUserProfile(tenant, request()).pipe(
+				Effect.provide(warehouseOf(rows, seen)),
+			)
+			assert.strictEqual(response.profile?.groupName, "Acme Inc.")
+		}),
+	)
+
 	it.effect("merges each source's bounds and takes the replay's identity first", () =>
 		Effect.gen(function* () {
 			const rows = new Map([

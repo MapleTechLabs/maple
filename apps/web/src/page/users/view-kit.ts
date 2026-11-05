@@ -5,7 +5,7 @@ import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { groupLabel, type UserRow, type UserSignal, userLabel } from "./data"
 
@@ -48,14 +48,25 @@ export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 	const group = groupLabel(user)
 	return vstack(h, { gap: "0", shrink: true, className: "min-w-0" }, [
 		typography(h, { size: "xs", tone: "foreground", truncate: true }, [label]),
-		typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
-			Arr.join(detail, " · "),
+		hstack(h, { gap: "1", as: "span", className: "min-w-0" }, [
+			typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true, as: "span" }, [
+				Arr.join(detail, " · "),
+			]),
+			// Its own slot, so a long email cannot truncate the group away.
 			...(group === null
 				? []
 				: [
-						h.span(
-							[h.Class("@min-[880px]/panel:hidden")],
-							[`${detail.length === 0 ? "" : " · "}${group}`],
+						typography(
+							h,
+							{
+								size: "2xs",
+								tone: "muted",
+								mono: true,
+								truncate: true,
+								as: "span",
+								className: "max-w-1/2 shrink-0 @min-[880px]/panel:hidden",
+							},
+							[detail.length === 0 ? group : `· ${group}`],
 						),
 					]),
 		]),

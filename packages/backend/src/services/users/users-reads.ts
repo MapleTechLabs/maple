@@ -768,12 +768,12 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		...Arr.map(issueItems, (item) => item.lastSeenMs),
 	]
 	const groupId = nullIfEmpty(replay[0]?.groupId ?? "")
-	// The latest session may carry the id without a name: then the group's latest name, as the list reads it.
+	// The group's latest name, as the list reads it; the user's own session's name if the lookup has none.
 	const sessionGroupName = groupId === null ? null : nullIfEmpty(replay[0]?.groupName ?? "")
 	const profileGroupName =
-		groupId === null || sessionGroupName !== null
-			? sessionGroupName
-			: ((yield* readGroupNames(tenant, payload, [groupId], scope)).get(groupId) ?? null)
+		groupId === null
+			? null
+			: ((yield* readGroupNames(tenant, payload, [groupId], scope)).get(groupId) ?? sessionGroupName)
 	const traitKeys = replay[0]?.traitKeys ?? []
 	const traitValues = replay[0]?.traitValues ?? []
 	const requestFigure = <A>(read: (row: CH.UserActivitySummaryOutput) => A): A | null =>
