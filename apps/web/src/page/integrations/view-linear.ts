@@ -19,7 +19,7 @@ import {
 } from "../infra-integrations/kit/integration-empty"
 import { LINEAR_ACCENT } from "./catalog"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -30,7 +30,7 @@ type H = HtmlBuilder<Message>
 
 const BRAND = { icon: "LinearIcon", accent: LINEAR_ACCENT } as const
 
-const ADMIN_ONLY = "Only org admins can change the Linear connection."
+const ADMIN_ONLY = "Only org admins and engineers can change the Linear connection."
 
 const notConnected = (h: H, model: Model): Html =>
 	integrationEmpty(h, [
@@ -61,14 +61,14 @@ const notConnected = (h: H, model: Model): Html =>
 			button(
 				h,
 				{
-					isDisabled: !model.isAdmin || model.connect.isStarting || model.disconnect.isPending,
+					isDisabled: !canManage(model) || model.connect.isStarting || model.disconnect.isPending,
 					isLoading: model.connect.isStarting,
 					attributes: [h.OnClick(Message.ClickedConnect())],
 				},
 				[icon(h, "LinearIcon"), "Connect Linear"],
 			),
 			integrationEmptyFooter(h, [
-				model.isAdmin ? "You'll authorize Maple in your Linear workspace." : ADMIN_ONLY,
+				canManage(model) ? "You'll authorize Maple in your Linear workspace." : ADMIN_ONLY,
 			]),
 		]),
 	])
@@ -115,7 +115,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 							),
 						]
 					: []),
-				model.isAdmin
+				canManage(model)
 					? hstack(h, { gap: "2", align: "stretch", wrap: true }, [
 							button(
 								h,

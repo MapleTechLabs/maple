@@ -273,7 +273,7 @@ describe("AwsConnectionService", () => {
 			assert.isDefined(accessKey)
 			assert.strictEqual(
 				yield* streamSecretHash(created.id),
-				hashIngestKey(accessKey!, "maple-test-lookup-secret"),
+				hashIngestKey(accessKey, "maple-test-lookup-secret"),
 			)
 			assert.include(setup.setupScript, "for region in us-east-1 eu-central-1; do")
 
@@ -290,7 +290,7 @@ describe("AwsConnectionService", () => {
 			// The secret is a parameter the script passes, never part of the template.
 			assert.deepStrictEqual(endpoint.AccessKey, { Ref: "AccessKey" })
 			assert.isTrue(template.Parameters.AccessKey.NoEcho)
-			assert.notInclude(setup.metricsCloudformationTemplate ?? "", accessKey!)
+			assert.notInclude(setup.metricsCloudformationTemplate ?? "", accessKey)
 
 			// Turning the stream off leaves a setup that only removes its stacks.
 			const off = yield* service.update(orgId, created.id, { metricStream: null })
@@ -312,7 +312,7 @@ describe("AwsConnectionService", () => {
 			assert.notStrictEqual(again, accessKey)
 			assert.strictEqual(
 				yield* streamSecretHash(created.id),
-				hashIngestKey(again!, "maple-test-lookup-secret"),
+				hashIngestKey(again, "maple-test-lookup-secret"),
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})

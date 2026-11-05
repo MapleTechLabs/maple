@@ -27,7 +27,7 @@ import {
 	toSnapshotIncident,
 } from "../shared/preview"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
@@ -163,7 +163,7 @@ const componentItem = (
 							]),
 				],
 			),
-			...(model.isAdmin
+			...(canManage(model)
 				? [
 						h.div(
 							[
@@ -260,7 +260,7 @@ const onThisPage = (h: H, model: Model): Html => {
 					? h.p(
 							[h.Class("px-2 text-xs text-muted-foreground")],
 							[
-								model.isAdmin
+								canManage(model)
 									? "Nothing yet. Add a monitor and visitors see its status and uptime."
 									: "No monitors on this page yet.",
 							],
@@ -275,7 +275,7 @@ const onThisPage = (h: H, model: Model): Html => {
 								}),
 							),
 						),
-				...(model.isAdmin
+				...(canManage(model)
 					? [
 							button(
 								h,

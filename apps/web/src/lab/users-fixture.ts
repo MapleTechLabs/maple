@@ -143,7 +143,7 @@ export const USERS_SUMMARY: UsersSummary = {
 	anonymousVisitors: 9_870,
 }
 
-const maya = USER_ROWS[0]!
+const maya = USER_ROWS[0]
 
 export const USER_DETAIL: UserDetail = {
 	profile: {

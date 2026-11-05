@@ -126,7 +126,7 @@ describe("list_security_findings", () => {
 			auditReadable: false,
 			audit: null,
 		})
-		expect(text).toContain("admins only")
+		expect(text).toContain("admins and engineers only")
 		expect(text).not.toContain("not set up")
 	})
 

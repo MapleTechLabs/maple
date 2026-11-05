@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { V2OnboardingChecklist, V2OnboardingChecklistStep } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -58,11 +59,11 @@ type Message = OnboardingChecklist.Message
 const modelOf = (
 	nowMs: number,
 	checklist: V2OnboardingChecklist,
-	isAdmin = true,
+	canClaim = true,
 ): OnboardingChecklist.Model => ({
 	...OnboardingChecklist.init(),
 	checklist,
-	isAdmin,
+	grants: canClaim ? Policy.allPermissions : [],
 	isSeen: false,
 	nowMs,
 })

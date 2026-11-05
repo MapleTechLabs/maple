@@ -146,8 +146,8 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 					level: "",
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T10:00:00.250Z")
-			expect(DateTime.formatIso(row!.windowEnd)).toBe("2024-01-01T10:00:00.000Z")
+			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T10:00:00.250Z")
+			expect(DateTime.formatIso(row.windowEnd)).toBe("2024-01-01T10:00:00.000Z")
 		}),
 	)
 
@@ -172,7 +172,7 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 					threshold: 1,
 				},
 			])
-			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
+			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
 		}),
 	)
 })

@@ -185,19 +185,19 @@ describe("GithubProvider.webhookToJobs", () => {
 				rawBody: pushBody,
 			})
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "push")
 			if (job.kind !== "push") return
 			assert.strictEqual(job.externalInstallationId, "42")
 			assert.strictEqual(job.externalRepoId, "7")
 			assert.strictEqual(job.branch, "main")
 			assert.strictEqual(job.commits.length, 1)
-			assert.strictEqual(job.commits[0]!.sha, SHA)
-			assert.strictEqual(job.commits[0]!.authorLogin, "octocat")
+			assert.strictEqual(job.commits[0].sha, SHA)
+			assert.strictEqual(job.commits[0].authorLogin, "octocat")
 			// Push payloads carry no avatar URL — the provider derives one from the
 			// committer login against the commit's own host (here github.com), so the
 			// dashboard never has to patch a null avatar.
-			assert.strictEqual(job.commits[0]!.authorAvatarUrl, "https://github.com/octocat.png?size=64")
+			assert.strictEqual(job.commits[0].authorAvatarUrl, "https://github.com/octocat.png?size=64")
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -235,7 +235,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				rawBody: body,
 			})
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "pull-request-event")
 			if (job.kind !== "pull-request-event") return
 			assert.strictEqual(job.repoFullName, "octo/repo")
@@ -292,7 +292,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				},
 				rawBody: body,
 			})
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "pull-request-comment")
 			if (job.kind !== "pull-request-comment") return
 			assert.strictEqual(job.surface, "review_thread")
@@ -373,7 +373,7 @@ describe("GithubProvider.webhookToJobs", () => {
 
 			const jobs = yield* map(edit({}))
 			assert.lengthOf(jobs, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "pull-request-checklist")
 			if (job.kind !== "pull-request-checklist") return
 			assert.strictEqual(job.editorLogin, "christo")
@@ -398,7 +398,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				headers: { "x-github-event": "pull_request", "x-hub-signature-256": sign(body) },
 				rawBody: body,
 			})
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "pull-request-event")
 			if (job.kind !== "pull-request-event") return
 			// `closed` covers both outcomes on GitHub; only `merged` separates them,
@@ -433,7 +433,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				headers: { "x-github-event": "pull_request", "x-hub-signature-256": sign(body) },
 				rawBody: body,
 			})
-			const job = jobs[0]!
+			const job = jobs[0]
 			if (job.kind !== "pull-request-event") return assert.fail("expected a pull-request job")
 			assert.strictEqual(job.body, "Fixes maple-issue:abc")
 			assert.strictEqual(job.title, "Fix the checkout crash")
@@ -457,7 +457,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				headers: { "x-github-event": "pull_request", "x-hub-signature-256": sign(body) },
 				rawBody: body,
 			})
-			const job = jobs[0]!
+			const job = jobs[0]
 			if (job.kind !== "pull-request-event") return assert.fail("expected a pull-request job")
 			assert.strictEqual(job.action, "ready_for_review")
 			// Normalized to lowercase by the brand; a malformed base is dropped, not fatal.
@@ -491,9 +491,9 @@ describe("GithubProvider.webhookToJobs", () => {
 				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
 				rawBody: body,
 			})
-			const job = jobs[0]!
+			const job = jobs[0]
 			if (job.kind !== "push") return assert.fail("expected a push job")
-			assert.strictEqual(job.commits[0]!.authorAvatarUrl, "https://github.acme.com/octocat.png?size=64")
+			assert.strictEqual(job.commits[0].authorAvatarUrl, "https://github.acme.com/octocat.png?size=64")
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -518,10 +518,10 @@ describe("GithubProvider.webhookToJobs", () => {
 				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
 				rawBody: body,
 			})
-			const job = jobs[0]!
+			const job = jobs[0]
 			if (job.kind !== "push") return assert.fail("expected a push job")
-			assert.strictEqual(job.commits[0]!.authorLogin, null)
-			assert.strictEqual(job.commits[0]!.authorAvatarUrl, null)
+			assert.strictEqual(job.commits[0].authorLogin, null)
+			assert.strictEqual(job.commits[0].authorAvatarUrl, null)
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -606,7 +606,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				rawBody: body,
 			})
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "push")
 			if (job.kind !== "push") return
 			assert.strictEqual(job.forced, true)
@@ -624,7 +624,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				rawBody: body,
 			})
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "installation-sync")
 			if (job.kind !== "installation-sync") return
 			assert.strictEqual(job.reason, "created")
@@ -646,7 +646,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				rawBody: body,
 			})
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "branch-event")
 			if (job.kind !== "branch-event") return
 			assert.strictEqual(job.action, "created")
@@ -670,7 +670,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				rawBody: body,
 			})
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "branch-event")
 			if (job.kind !== "branch-event") return
 			assert.strictEqual(job.action, "deleted")
@@ -711,7 +711,7 @@ describe("GithubProvider.webhookToJobs", () => {
 					rawBody: body,
 				})
 				assert.strictEqual(jobs.length, 1, `${action} → one job`)
-				const job = jobs[0]!
+				const job = jobs[0]
 				assert.strictEqual(job.kind, "installation-sync")
 				if (job.kind !== "installation-sync") return
 				assert.strictEqual(job.reason, reason)
@@ -747,7 +747,7 @@ describe("GithubProvider.webhookToJobs", () => {
 					rawBody: body,
 				})
 				assert.strictEqual(jobs.length, 1, `${action} → one job`)
-				const job = jobs[0]!
+				const job = jobs[0]
 				assert.strictEqual(job.kind, "installation-sync")
 				if (job.kind !== "installation-sync") return
 				assert.strictEqual(job.reason, reason)
@@ -875,7 +875,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				rawBody: body,
 			})
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			if (job.kind !== "push") return
 			assert.strictEqual(job.branch, "feature/a/b")
 		}).pipe(Effect.provide(providerLayer())),
@@ -961,7 +961,7 @@ describe("GithubProvider.webhookToJobs", () => {
 		Effect.gen(function* () {
 			const jobs = yield* mapWorkflow("workflow_run", workflowRunBody())
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "workflow-run")
 			if (job.kind !== "workflow-run") return
 			assert.strictEqual(job.runId, "9001")
@@ -978,7 +978,7 @@ describe("GithubProvider.webhookToJobs", () => {
 		Effect.gen(function* () {
 			const jobs = yield* mapWorkflow("workflow_job", workflowJobBody())
 			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
+			const job = jobs[0]
 			assert.strictEqual(job.kind, "workflow-job")
 			if (job.kind !== "workflow-job") return
 			assert.strictEqual(job.runId, "9001")
@@ -998,7 +998,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				"workflow_job",
 				workflowJobBody("completed", { conclusion: "skipped", started_at: null, steps: [] }),
 			)
-			const job = jobs[0]!
+			const job = jobs[0]
 			if (job.kind !== "workflow-job") return assert.fail(`unexpected ${job.kind}`)
 			assert.strictEqual(job.startedAtMs, job.completedAtMs)
 		}).pipe(Effect.provide(providerLayer())),
@@ -1033,7 +1033,7 @@ describe("GithubProvider.webhookToJobs", () => {
 		Effect.gen(function* () {
 			const started = yield* mapWorkflow("workflow_run", approvedForkRun("in_progress"))
 			assert.strictEqual(started.length, 1)
-			const job = started[0]!
+			const job = started[0]
 			if (job.kind !== "pull-request-ci-approved") return assert.fail(`unexpected ${job.kind}`)
 			assert.strictEqual(job.approverLogin, "maintainer")
 			assert.strictEqual(job.authorLogin, "octocat")
@@ -1086,7 +1086,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				completed_at: "2026-01-01T00:00:41Z",
 			}))
 			const jobs = yield* mapWorkflow("workflow_job", workflowJobBody("completed", { steps }))
-			const wireBytes = Buffer.byteLength(JSON.stringify(Schema.encodeSync(VcsSyncJob)(jobs[0]!)))
+			const wireBytes = Buffer.byteLength(JSON.stringify(Schema.encodeSync(VcsSyncJob)(jobs[0])))
 			assert.isBelow(wireBytes, 128 * 1024)
 		}).pipe(Effect.provide(providerLayer())),
 	)
@@ -1412,8 +1412,8 @@ describe("VcsRepository", () => {
 				const orgId = asOrgId("org_purge")
 				const repoFixture = (externalRepoId: string, fullName: string) => ({
 					externalRepoId,
-					owner: Str.split("/")(fullName)[0]!,
-					name: Str.split("/")(fullName)[1]!,
+					owner: Str.split("/")(fullName)[0],
+					name: Str.split("/")(fullName)[1],
 					fullName,
 					defaultBranch: "main",
 					htmlUrl: `https://github.com/${fullName}`,
@@ -2606,7 +2606,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 			const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
-			assert.strictEqual(backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "", "main")
+			assert.strictEqual(backfills[0].kind === "sync-commits" ? backfills[0].branch : "", "main")
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo })))
 	})
 
@@ -2645,7 +2645,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 			const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
-			assert.strictEqual(backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "", "main")
+			assert.strictEqual(backfills[0].kind === "sync-commits" ? backfills[0].branch : "", "main")
 		}).pipe(
 			Effect.provide(
 				orchestratorLayer(testDb, {
@@ -2679,10 +2679,7 @@ describe("VcsSyncService orchestrator", () => {
 			)
 			const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
-			assert.strictEqual(
-				backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : undefined,
-				"main",
-			)
+			assert.strictEqual(backfills[0].kind === "sync-commits" ? backfills[0].branch : undefined, "main")
 			// Forced ⇒ the payload is discarded (we re-walk instead), so SHA_A is not stored.
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: oneRepo })))
@@ -2881,7 +2878,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A)))) // push landed…
 			// …yet the sync status stays exactly as the backfill left it (untouched here).
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "pending")
+			assert.strictEqual(stored[0].syncStatus, "pending")
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent })))
 	})
 
@@ -2914,7 +2911,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
 			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored.length, 1)
-			assert.strictEqual(stored[0]!.externalRepoId, "7")
+			assert.strictEqual(stored[0].externalRepoId, "7")
 			// Per repo: only a branch-list sync. The commit backfills (default + tracked)
 			// are enqueued later, when that sync-branches job is itself processed.
 			assert.strictEqual(sent.length, 1)
@@ -3152,10 +3149,10 @@ describe("VcsSyncService orchestrator", () => {
 				(i) => i.provider === "github",
 			)
 			assert.strictEqual(remaining.length, 1)
-			assert.strictEqual(remaining[0]!.externalInstallationId, "42")
+			assert.strictEqual(remaining[0].externalInstallationId, "42")
 			const newRepos = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(newRepos.length, 1)
-			assert.strictEqual(newRepos[0]!.externalRepoId, "7")
+			assert.strictEqual(newRepos[0].externalRepoId, "7")
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos })))
 	})
 
@@ -3195,7 +3192,7 @@ describe("VcsSyncService orchestrator", () => {
 			const b = yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_B))
 			assert.ok(Option.isSome(a) && Option.isSome(b))
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "ready")
+			assert.strictEqual(stored[0].syncStatus, "ready")
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, commits })))
 	})
 
@@ -3239,7 +3236,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isSome(inst))
 			assert.strictEqual(inst.value.status, "active") // never disconnected
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "error")
+			assert.strictEqual(stored[0].syncStatus, "error")
 		}).pipe(
 			Effect.provide(
 				orchestratorLayer(testDb, {
@@ -3382,10 +3379,10 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 			// …the repo is marked backfilling (in progress, not ready)…
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "backfilling")
+			assert.strictEqual(stored[0].syncStatus, "backfilling")
 			// …and a continuation was requeued from the watermark, delayed until reset.
 			assert.strictEqual(sent.length, 1)
-			const continuation = sent[0]!
+			const continuation = sent[0]
 			assert.strictEqual(continuation.kind, "sync-commits")
 			if (continuation.kind !== "sync-commits") return
 			assert.strictEqual(continuation.untilMs, 5000)
@@ -3418,10 +3415,10 @@ describe("VcsSyncService orchestrator", () => {
 			// The fetched page was persisted and the repo marked backfilling…
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "backfilling")
+			assert.strictEqual(stored[0].syncStatus, "backfilling")
 			// …and a continuation was requeued from the watermark with NO delay…
 			assert.strictEqual(sent.length, 1)
-			const continuation = sent[0]!
+			const continuation = sent[0]
 			assert.strictEqual(continuation.kind, "sync-commits")
 			if (continuation.kind !== "sync-commits") return
 			assert.strictEqual(continuation.untilMs, 5000)
@@ -3462,7 +3459,7 @@ describe("VcsSyncService orchestrator", () => {
 			// It requeued exactly the cap's worth of continuations, then gave up.
 			assert.strictEqual(sent.length, STALL_CAP)
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "error")
+			assert.strictEqual(stored[0].syncStatus, "error")
 		}).pipe(
 			Effect.provide(
 				orchestratorLayer(testDb, {
@@ -3494,7 +3491,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Exit.isFailure(exit))
 			const error = findError(exit)
 			assert.ok(Schema.is(VcsRateLimitedError)(error))
-			assert.strictEqual((error as VcsRateLimitedError).retryAfterSeconds, 600)
+			assert.strictEqual(error.retryAfterSeconds, 600)
 		}).pipe(
 			Effect.provide(
 				orchestratorLayer(testDb, {
@@ -3536,7 +3533,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.strictEqual(active.length, 0)
 			const all = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(all.length, 1)
-			assert.strictEqual(all[0]!.status, "removed")
+			assert.strictEqual(all[0].status, "removed")
 			// Its commits are retained (soft delete, not a purge).
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_A))))
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos: [] })))
@@ -3577,7 +3574,7 @@ describe("VcsSyncService orchestrator", () => {
 
 			const all = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(all.length, 1)
-			assert.strictEqual(all[0]!.status, "active") // reactivated
+			assert.strictEqual(all[0].status, "active") // reactivated
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, repos })))
 	})
 
@@ -3658,7 +3655,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* seedRepo(repo)
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob))
 			assert.strictEqual(sent.length, 1)
-			const continuation = sent[0]!
+			const continuation = sent[0]
 			assert.strictEqual(continuation.kind, "sync-commits")
 			if (continuation.kind !== "sync-commits") return
 			assert.strictEqual(continuation.sinceMs, backfillJob.sinceMs) // carried through (0)
@@ -3689,7 +3686,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* seedRepo(repo)
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)({ ...backfillJob, staleAttempts: 3 }))
 			assert.strictEqual(sent.length, 1)
-			const continuation = sent[0]!
+			const continuation = sent[0]
 			assert.strictEqual(continuation.kind, "sync-commits")
 			if (continuation.kind !== "sync-commits") return
 			assert.strictEqual(continuation.staleAttempts, 4) // 3 + 1, zero commits fetched
@@ -3721,7 +3718,7 @@ describe("VcsSyncService orchestrator", () => {
 				Schema.encodeSync(VcsSyncJob)({ ...backfillJob, untilMs: 10000, staleAttempts: 5 }),
 			)
 			assert.strictEqual(sent.length, 1)
-			const continuation = sent[0]!
+			const continuation = sent[0]
 			assert.strictEqual(continuation.kind, "sync-commits")
 			if (continuation.kind !== "sync-commits") return
 			assert.strictEqual(continuation.staleAttempts, 0)
@@ -3754,7 +3751,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)({ ...backfillJob, untilMs: 5000 }))
 			assert.strictEqual(sent.length, 0) // never requeues
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "error")
+			assert.strictEqual(stored[0].syncStatus, "error")
 		}).pipe(
 			Effect.provide(
 				orchestratorLayer(testDb, {
@@ -3826,8 +3823,8 @@ describe("VcsSyncService orchestrator", () => {
 			)
 			assert.strictEqual(sent.length, 0)
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "error")
-			assert.ok(Str.includes("Repository access blocked")(stored[0]!.lastSyncError ?? ""))
+			assert.strictEqual(stored[0].syncStatus, "error")
+			assert.ok(Str.includes("Repository access blocked")(stored[0].lastSyncError ?? ""))
 		}).pipe(
 			Effect.provide(
 				orchestratorLayer(testDb, {
@@ -3964,7 +3961,7 @@ describe("VcsSyncService orchestrator", () => {
 				}),
 			) // must not fail
 			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored[0]!.syncStatus, "pending") // a push never moves sync state
+			assert.strictEqual(stored[0].syncStatus, "pending") // a push never moves sync state
 			assert.strictEqual(sent.length, 0)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent })))
 	})
@@ -4293,7 +4290,7 @@ describe("git SHA validation (branded type)", () => {
 			assert.ok(Schema.is(VcsRepoDecodeError)(error))
 			// The write-side decode pins the offending column so a row-build failure is
 			// distinguishable from a read-side row decode (which carries no column).
-			assert.strictEqual((error as VcsRepoDecodeError).column, "sha")
+			assert.strictEqual(error.column, "sha")
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 })
@@ -4365,7 +4362,7 @@ describe("GithubProvider rate-limit handling", () => {
 			assert.ok(Exit.isFailure(exit))
 			const error = findError(exit)
 			assert.ok(Schema.is(VcsRateLimitedError)(error))
-			assert.strictEqual((error as VcsRateLimitedError).retryAfterSeconds, 600)
+			assert.strictEqual(error.retryAfterSeconds, 600)
 		}).pipe(
 			// token → repos page 1 (429, retry-after 600 → surfaced, not resumable)
 			Effect.provide(stubbedProviderLayer([tokenResponse, () => rateLimited(600)])),

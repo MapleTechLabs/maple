@@ -973,24 +973,24 @@ interface CapturedSql {
  * result still contributes its SQL — the SQL is the artifact under test.
  */
 function makeCapturingWarehouse(capabilities: WarehouseCapabilities): {
-	readonly warehouse: QueryEngineWarehouse<QueryTenant>
+	readonly warehouse: QueryEngineWarehouse
 	readonly captured: ReadonlyArray<CapturedSql>
 } {
 	const captured: Array<CapturedSql> = []
 	const empty = Effect.succeed([] as ReadonlyArray<never>)
-	const warehouse: QueryEngineWarehouse<QueryTenant> = {
+	const warehouse: QueryEngineWarehouse = {
 		rawSqlQuery: (_tenant, sql) => {
 			captured.push({ sql })
 			return empty
 		},
 		compiledQuery: (_tenant, input) => {
 			const compiled = compiledQueryOf(input)
-			captured.push({ sql: compiled.sql, compiled: compiled as CompiledQuery<unknown> })
+			captured.push({ sql: compiled.sql, compiled: compiled })
 			return empty
 		},
 		compiledQueryWithCapabilities: (_tenant, compile) => {
 			const compiled = Effect.runSync(compile(capabilities))
-			captured.push({ sql: compiled.sql, compiled: compiled as CompiledQuery<unknown> })
+			captured.push({ sql: compiled.sql, compiled: compiled })
 			return empty
 		},
 	}
@@ -1267,7 +1267,7 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 				metric: query.metric,
 				needsSampling: true,
 				allMetrics: query.allMetrics === true,
-				groupBy: query.groupBy as ReadonlyArray<string> | undefined,
+				groupBy: query.groupBy,
 				bucketSeconds: query.bucketSeconds,
 				apdexThresholdMs: query.apdexThresholdMs,
 				rootOnly: filters.rootSpansOnly === true,

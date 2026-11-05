@@ -28,7 +28,7 @@ import { leadsLine, type StopAction, stopNoteOf } from "../kit/outcome"
 import { iconTile, metaItem, placeholder, runStatusBadge } from "../kit/parts"
 import { meter } from "@maple/views/ui/meter"
 import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
-import { Message, type Model } from "./model"
+import { canRunAudits, Message, type Model } from "./model"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -110,7 +110,7 @@ export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 						[icon(h, "FileIcon"), "Report"],
 					),
 				]),
-		...(!model.isAdmin
+		...(!canRunAudits(model)
 			? []
 			: isLive(run)
 				? [
@@ -153,7 +153,7 @@ const startRunButton = (h: H, model: Model): Html =>
 	)
 
 const stopAction = (h: H, model: Model, action: StopAction): ReadonlyArray<Html> => {
-	if (!model.isAdmin || action === null) return []
+	if (!canRunAudits(model) || action === null) return []
 	const control =
 		action === "start"
 			? startRunButton(h, model)

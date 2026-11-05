@@ -157,7 +157,7 @@ const BINDING_PLACEHOLDER = "workers-ai-binding"
 /** The deployment's LLM configuration, keyed by the variable each field is read from. */
 export interface LlmSettings {
 	readonly CLOUDFLARE_ACCOUNT_ID?: string | undefined
-	readonly CLOUDFLARE_API_KEY?: Redacted.Redacted<string> | undefined
+	readonly CLOUDFLARE_API_KEY?: Redacted.Redacted | undefined
 	readonly MAPLE_LLM_PROVIDER?: string | undefined
 	/** The instance this Worker runs in. `eu` sends every OpenRouter call to its EU endpoint. */
 	readonly MAPLE_REGION?: string | undefined
@@ -177,7 +177,7 @@ export interface LlmSettings {
 	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string | undefined
 	/** Seconds an unattended model call streams before it is cut and retried; see {@link MODEL_ATTEMPT_CAP}. */
 	readonly MAPLE_MODEL_ATTEMPT_CAP_SECONDS?: string | undefined
-	readonly OPENROUTER_API_KEY?: Redacted.Redacted<string> | undefined
+	readonly OPENROUTER_API_KEY?: Redacted.Redacted | undefined
 	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	readonly MAPLE_DECISION_MODEL?: string | undefined
 	/** Embedding model id, overriding {@link DEFAULT_EMBEDDING_MODEL}. */
@@ -198,7 +198,7 @@ const optionalTrimmed = (key: string): Config.Config<string | undefined> =>
 		Config.orElse(() => Config.succeed(undefined)),
 	)
 
-const optionalSecret = (key: string): Config.Config<Redacted.Redacted<string> | undefined> =>
+const optionalSecret = (key: string): Config.Config<Redacted.Redacted | undefined> =>
 	optionalTrimmed(key).pipe(Config.map((value) => (value === undefined ? undefined : Redacted.make(value))))
 
 /** {@link LlmSettings} from Effect `Config`, so the Worker env reaches it through the ConfigProvider. */
@@ -308,7 +308,7 @@ const readLowerString = (settings: LlmSettings, key: StringKey): string | undefi
 const readSecret = (
 	settings: LlmSettings,
 	key: "OPENROUTER_API_KEY" | "CLOUDFLARE_API_KEY",
-): Redacted.Redacted<string> | undefined => {
+): Redacted.Redacted | undefined => {
 	const value = settings[key]
 	return value !== undefined && Str.trim(Redacted.value(value)) !== "" ? value : undefined
 }
@@ -772,10 +772,7 @@ export const layerOpenRouterClient = (
  * Settings for an org that brought its own OpenRouter key: that key, and OpenRouter whatever this
  * deploy's provider is, since the key is only good there.
  */
-export const withOrgOpenRouterKey = (
-	settings: LlmSettings,
-	apiKey: Redacted.Redacted<string>,
-): LlmSettings => ({
+export const withOrgOpenRouterKey = (settings: LlmSettings, apiKey: Redacted.Redacted): LlmSettings => ({
 	...settings,
 	OPENROUTER_API_KEY: apiKey,
 	MAPLE_LLM_PROVIDER: "openrouter",

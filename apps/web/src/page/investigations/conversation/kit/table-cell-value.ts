@@ -95,8 +95,8 @@ export function durationScale(header: string): LatencyScale {
 function parseDuration(text: string, scale: LatencyScale): CellValue | null {
 	const match = DURATION_RE.exec(text)
 	if (!match) return null
-	const amount = Number(Str.replaceAll(",", "")(match[1]!))
-	const unit = UNIT_MS.get(Str.toLowerCase(match[2]!))
+	const amount = Number(Str.replaceAll(",", "")(match[1]))
+	const unit = UNIT_MS.get(Str.toLowerCase(match[2]))
 	if (!Number.isFinite(amount) || unit === undefined) return null
 	const note = match[3] ?? null
 	const value = note ? Str.trimEnd(Str.slice(0, text.length - note.length)(text)) : text

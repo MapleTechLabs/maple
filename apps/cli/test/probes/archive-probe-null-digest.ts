@@ -36,7 +36,7 @@ try {
 		maxShardRows: 500_000,
 		maxShardBytes: 256 * 1024 * 1024,
 	})
-	const digest = written[0]!.complexDigest
+	const digest = written[0].complexDigest
 	if (!digest || digest.length === 0) h.fail(`NULL columns collapsed digest to empty: '${digest}'`)
 	h.ok(`NULL columns did not collapse digest: ${digest}`)
 } catch (e) {

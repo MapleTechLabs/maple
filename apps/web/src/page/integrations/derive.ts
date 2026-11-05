@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { type AwsStreamState, awsStreamState } from "@maple/domain/aws"
 import type { V2AwsConnection } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
@@ -712,13 +713,17 @@ export const summaryOf = (
 
 /** `useVisibleSettingsSections()` on `/integrations`: the session's admin flag and the BYOC add-on. */
 export const settingsNavVisibility = (
-	model: Pick<Model, "isAdmin" | "customer">,
+	model: Pick<Model, "grants" | "customer">,
 	isClerk: boolean,
 ): Visibility => {
-	if (!isClerk) return { isClerk, isAdmin: true, canAccessDataPlatform: true }
+	if (!isClerk) return { isClerk, grants: Policy.allPermissions, canAccessDataPlatform: true }
 	const hasByoc = AsyncData.getOrElse(
 		AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn),
 		() => false,
 	)
-	return { isClerk, isAdmin: model.isAdmin, canAccessDataPlatform: model.isAdmin && hasByoc }
+	return {
+		isClerk,
+		grants: model.grants,
+		canAccessDataPlatform: Policy.has(model.grants, "warehouse:manage") && hasByoc,
+	}
 }

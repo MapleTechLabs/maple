@@ -16,7 +16,7 @@ import { linkTabStrip } from "../../kit/underline-tabs"
 import { alertsHref, createHref } from "../shared/links"
 import { type AlertsTab, destinationsOf, overviewOf, resolveStatus, resolveTab } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
 import { inboxTab } from "./view-inbox"
 import { routingTab } from "./view-routing"
@@ -122,7 +122,7 @@ const newRuleButton = (h: H, model: Model): Html =>
 							"Error rate, latency or any query on traces, logs and metrics.",
 						),
 						// Uptime monitors are admin-only to create; the API refuses members too.
-						...(model.isAdmin
+						...(canManage(model)
 							? [
 									newRuleItem(
 										h,
@@ -161,7 +161,7 @@ const newRuleButton = (h: H, model: Model): Html =>
 // Destinations are a Routing concern, so "New destination" only shows on that tab.
 const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 	hstack(h, { gap: "2" }, [
-		...(model.isAdmin && tab === "routing"
+		...(canManage(model) && tab === "routing"
 			? [
 					button(
 						h,
@@ -213,10 +213,10 @@ const hubBody = (
 		onSome: (data) => {
 			const destinations = destinationsOf(model)
 			const emptyState = alertsEmptyState(h, {
-				isAdmin: model.isAdmin,
+				canEdit: canManage(model),
 				hasDestinations: destinations.length > 0,
 				serviceName: model.search.serviceName,
-				onAddDestination: model.isAdmin ? Message.ClickedNewDestination() : undefined,
+				onAddDestination: canManage(model) ? Message.ClickedNewDestination() : undefined,
 			})
 			// An org with only uptime monitors has no visible rules but may have open incidents to show.
 			const hasUptimeIncidents = Arr.some(

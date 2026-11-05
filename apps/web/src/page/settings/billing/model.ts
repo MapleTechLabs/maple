@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	AttachResult,
 	BillingAccount,
@@ -61,7 +62,7 @@ export const CheckoutReturn = Schema.Literals(["Idle", "Confirming", "TimedOut"]
 export type CheckoutReturn = typeof CheckoutReturn.Type
 
 export const Model = Schema.Struct({
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	/** Clerk mode: the viewer's other orgs are known, so this org can be billed through one. */
 	isClerk: Schema.Boolean,
 	checkoutReturn: CheckoutReturn,
@@ -100,6 +101,9 @@ export const Model = Schema.Struct({
 	isUnlinking: Schema.Boolean,
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change the plan and payment details (`billing:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "billing:manage")
 
 const result = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, LoadFailure) })
 

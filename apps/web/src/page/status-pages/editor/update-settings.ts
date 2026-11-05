@@ -22,7 +22,7 @@ import {
 	settingsPayload,
 } from "../shared/form"
 import { Message } from "./message"
-import type { BreakGlassAction, Model } from "./model"
+import { canBreakGlass, canManage, type BreakGlassAction, type Model } from "./model"
 import { errorToast, liftDialog, pageOf, readPage, type Return, toast } from "./reads"
 
 // The Settings tab: the page's fields behind a save bar, Publish now, the break-glass token, delete.
@@ -72,7 +72,7 @@ export const saveSettings = (model: Model): Return => {
 		edits === null ||
 		model.isSavingSettings ||
 		model.isApplyingJson ||
-		!model.isAdmin ||
+		!canManage(model) ||
 		hasSettingsIssues(edits)
 		? { model }
 		: {
@@ -104,7 +104,7 @@ export const savedSettings = (model: Model, result: Result.Result<V2StatusPage, 
 	})
 
 export const publish = (model: Model): Return =>
-	model.pageId === null || model.isPublishing || !model.isAdmin
+	model.pageId === null || model.isPublishing || !canManage(model)
 		? { model }
 		: { model: { ...model, isPublishing: true }, commands: [PublishPage({ pageId: model.pageId })] }
 
@@ -163,6 +163,7 @@ export const breakGlassDialog = (model: Model, step: ReturnType<typeof Dialog.up
 
 /** The first token is issued at once; replacing or revoking one asks first. */
 export const askBreakGlass = (model: Model, action: BreakGlassAction): Return => {
+	if (!canBreakGlass(model)) return { model }
 	const hasToken = Option.match(pageOf(model), {
 		onNone: () => false,
 		onSome: (page) => page.break_glass_token_suffix !== null,
@@ -173,7 +174,7 @@ export const askBreakGlass = (model: Model, action: BreakGlassAction): Return =>
 
 export const runBreakGlass = (model: Model): Return => {
 	const action = model.breakGlassAction
-	return model.pageId === null || action === null || model.isChangingBreakGlass || !model.isAdmin
+	return model.pageId === null || action === null || model.isChangingBreakGlass || !canBreakGlass(model)
 		? { model }
 		: {
 				model: { ...model, isChangingBreakGlass: true },
@@ -251,7 +252,7 @@ export const deletePageDialog = (model: Model, step: ReturnType<typeof Dialog.up
 	)
 
 export const confirmDeletePage = (model: Model): Return =>
-	model.pageId === null || model.isDeletingPage || !model.isAdmin
+	model.pageId === null || model.isDeletingPage || !canManage(model)
 		? { model }
 		: { model: { ...model, isDeletingPage: true }, commands: [DeletePage({ pageId: model.pageId })] }
 

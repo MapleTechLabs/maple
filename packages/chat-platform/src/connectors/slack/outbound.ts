@@ -256,7 +256,7 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		 * three deep under the first one.
 		 */
 		const attempt = Effect.fn("Slack.request", { kind: "client" })(function* (
-			bearer: Redacted.Redacted<string>,
+			bearer: Redacted.Redacted,
 			operation: ChatOutboundOperation,
 			method: string,
 			request: HttpClientRequest.HttpClientRequest,

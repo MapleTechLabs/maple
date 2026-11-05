@@ -524,7 +524,7 @@ function buildOverviewRollupGroupNameExpr(
 
 export function tracesTimeseriesQuery(
 	opts: TracesTimeseriesOpts,
-): CHQuery<ColumnDefs, TracesTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, TracesTimeseriesOutput> {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 
 	if (canUseAnnualServiceOverview(opts)) {
@@ -712,8 +712,7 @@ export function tracesTimeseriesQuery(
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(annual, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
+			TracesTimeseriesOutput
 		>
 	}
 
@@ -830,11 +829,7 @@ export function tracesTimeseriesQuery(
 			}))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
-			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
-		>
+		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts)
 	}
 
 	// Fast path: when no filter or groupBy references span-level columns
@@ -858,8 +853,7 @@ export function tracesTimeseriesQuery(
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(mv, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
+			TracesTimeseriesOutput
 		>
 	}
 
@@ -879,8 +873,7 @@ export function tracesTimeseriesQuery(
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 		ColumnDefs,
-		TracesTimeseriesOutput,
-		{}
+		TracesTimeseriesOutput
 	>
 }
 
@@ -941,7 +934,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 			.orderBy(["count", "desc"])
 			.limit(limit)
 			.format("JSON")
-		return mv as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+		return mv as CHQuery<ColumnDefs, TracesBreakdownOutput>
 	}
 
 	const raw = from(Traces)
@@ -968,7 +961,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 		.orderBy(["count", "desc"])
 		.limit(limit)
 		.format("JSON")
-	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput>
 }
 
 // List query

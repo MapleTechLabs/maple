@@ -12,7 +12,7 @@ import { textarea } from "@maple/views/ui/textarea"
 import { adminOnlyNote } from "../../settings/kit/section"
 import { formatConfig, problemText } from "./config-json"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { canApply, currentConfigOf, draftOf } from "./update-json"
 import { isSettingsDirty } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -86,7 +86,7 @@ const readView = (h: H, model: Model, text: string): Html =>
 					variant: "outline",
 					size: "sm",
 				}),
-				...(model.isAdmin
+				...(canManage(model)
 					? [
 							button(
 								h,
@@ -225,10 +225,14 @@ export const jsonTab = (h: H, model: Model): Html =>
 				[h.Class("flex max-w-4xl flex-col gap-4")],
 				[
 					intro(h),
-					...(model.isAdmin
+					...(canManage(model)
 						? []
-						: [adminOnlyNote(h, ["Only org admins can apply a config. You can copy it."])]),
-					model.isAdmin && model.jsonDraft !== null
+						: [
+								adminOnlyNote(h, [
+									"Only org admins and engineers can apply a config. You can copy it.",
+								]),
+							]),
+					canManage(model) && model.jsonDraft !== null
 						? editView(h, model, model.jsonDraft)
 						: readView(h, model, formatConfig(current)),
 				],

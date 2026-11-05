@@ -555,7 +555,7 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(found.value.status, "active")
 
 			assert.strictEqual(sent.length, 1)
-			const job = sent[0]!
+			const job = sent[0]
 			assert.strictEqual(job.kind, "installation-sync")
 			if (job.kind !== "installation-sync") return
 			assert.strictEqual(job.provider, "github")
@@ -1402,10 +1402,7 @@ describe("GithubConnectService", () => {
 				assert.strictEqual((yield* repoFor(repo, orgId, "7")).trackedBranch, "release")
 				const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 				assert.strictEqual(backfills.length, 1)
-				assert.strictEqual(
-					backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",
-					"release",
-				)
+				assert.strictEqual(backfills[0].kind === "sync-commits" ? backfills[0].branch : "", "release")
 			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 		},
 	)

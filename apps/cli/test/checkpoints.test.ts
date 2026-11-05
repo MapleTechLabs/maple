@@ -554,8 +554,8 @@ describe("checkpoint reconciliation and retention", () => {
 			const quarantines = readdirSync(quarantineRoot)
 			strictEqual(quarantines.length, 1)
 			// A failed refresh used to leave a full store copy here, forever.
-			deepStrictEqual(readdirSync(join(quarantineRoot, quarantines[0]!)), ["operation"])
-			ok(existsSync(join(quarantineRoot, quarantines[0]!, "operation", "intent.json")))
+			deepStrictEqual(readdirSync(join(quarantineRoot, quarantines[0])), ["operation"])
+			ok(existsSync(join(quarantineRoot, quarantines[0], "operation", "intent.json")))
 		})
 	})
 

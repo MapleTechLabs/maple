@@ -96,6 +96,8 @@ const fixtures: FixtureRule[] = [
 				netStatus: 500,
 				netDurationMs: 120,
 			}),
+			// Mobile SDKs send no URL on a screen view, only the screen name.
+			eventRow(3, "navigation", { url: "", message: "Saved Chats" }),
 		],
 	},
 	// An event-refined list: the replay row's ErrorCount is 0, as most SDKs leave it.
@@ -196,6 +198,11 @@ describe("get_session_transcript", () => {
 		const bad = await call("get_session_transcript", { session_id: SESSION_ID, event_types: ["clicks"] })
 		expect(bad.isError).toBe(true)
 		expect(markdown(bad)).toContain("`event_types`")
+	})
+
+	it("names a mobile screen view by its screen name", async () => {
+		const result = await call("get_session_transcript", { session_id: SESSION_ID })
+		expect(markdown(result)).toContain("NAV   → Saved Chats")
 	})
 })
 

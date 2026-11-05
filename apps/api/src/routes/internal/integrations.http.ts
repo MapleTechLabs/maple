@@ -75,7 +75,7 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
-import { requireAdmin as requireAdminRole } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import {
 	CLOUDFLARE_CALLBACK_PATH,
 	GITHUB_CALLBACK_PATH,
@@ -96,11 +96,8 @@ const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
-const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
-	requireAdminRole(
-		roles,
-		() => new IntegrationsForbiddenError({ message: "Only org admins can manage integrations" }),
-	)
+const requirePermission = (roles: ReadonlyArray<RoleName>, permission: Policy.Permission) =>
+	Policy.check(roles, permission, (denial) => new IntegrationsForbiddenError({ message: denial.message }))
 
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
@@ -171,7 +168,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearStart", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(LINEAR_CALLBACK_PATH)
 						const result = yield* linear.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -190,7 +187,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const disconnected = yield* linear.disconnect(tenant.orgId)
 						return new LinearDisconnectResponse(disconnected)
 					}),
@@ -433,7 +430,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflareStart", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(CLOUDFLARE_CALLBACK_PATH)
 						const result = yield* cloudflare.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -445,7 +442,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflareZoneSettings", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						yield* cloudflareAnalytics.setZoneSettings(tenant.orgId, tenant.userId, payload)
 						yield* recordHttpAudit("cloudflare_integration.zones_updated", {
 							metadata: {
@@ -463,7 +460,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflareDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const result = yield* cloudflare.disconnect(tenant.orgId)
 						return new CloudflareDisconnectResponse(result)
 					}),
@@ -471,7 +468,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflarePrime", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						// Discovery (the part that stops the integration looking empty) commits in
 						// the first seconds; the rest spends what call budget it has on the newest
 						// window. Timing out is an ordinary outcome, not a failure — the cron picks
@@ -500,27 +497,27 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("railwayConnect", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						return yield* railway.connect(tenant.orgId, tenant.userId, payload.token)
 					}),
 				)
 				.handle("railwaySync", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// Spends the org's per-token Railway quota, so it is an admin action like connect.
-						yield* requireAdmin(tenant.roles)
+						// Spends the org's per-token Railway quota, so it needs integrations:manage like connect.
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						return yield* railway.sync(tenant.orgId)
 					}),
 				)
 				.handle("railwayDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const disconnected = yield* railway.disconnect(tenant.orgId)
 						return new RailwayDisconnectResponse(disconnected)
 					}),
 				)
-				// Any member may read the status; every change is an admin action, as for Railway.
+				// Any member may read the status; every change needs integrations:manage, as for Railway.
 				.handle("supabaseStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -530,7 +527,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("supabaseConnect", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(SUPABASE_CALLBACK_PATH)
 						const result = yield* supabaseOAuth.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -542,15 +539,15 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("supabaseSync", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// Spends the org's Supabase rate limit, so it is an admin action like connect.
-						yield* requireAdmin(tenant.roles)
+						// Spends the org's Supabase rate limit, so it needs integrations:manage like connect.
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						return yield* supabase.sync(tenant.orgId)
 					}),
 				)
 				.handle("supabaseUpdateProject", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						// Drain first: switching a project from drain to polling turns the drain off before polling on.
 						const status = yield* supabase.updateProject(
 							tenant.orgId,
@@ -572,7 +569,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("supabaseDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const disconnected = yield* supabase.disconnect(tenant.orgId)
 						return new SupabaseDisconnectResponse(disconnected)
 					}),
@@ -603,7 +600,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubStart", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(GITHUB_CALLBACK_PATH)
 						const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -616,7 +613,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSelectInstallation", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const selected = yield* github.selectInstallation(
 							payload.installationId,
 							payload.state,
@@ -631,7 +628,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const result = yield* github.disconnect(tenant.orgId)
 						return new GithubDisconnectResponse(result)
 					}),
@@ -639,7 +636,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubDeleteRepository", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const result = yield* github.deleteRepository(tenant.orgId, params.repositoryId)
 						return new GithubDeleteRepositoryResponse(result)
 					}),
@@ -647,7 +644,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetTrackedBranch", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const result = yield* github.setTrackedBranch(
 							tenant.orgId,
 							params.repositoryId,
@@ -659,7 +656,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetCiTraces", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "integrations:manage")
 						const result = yield* github.setCiTracesEnabled(tenant.orgId, payload.enabled)
 						return new GithubSetCiTracesResponse(result)
 					}),
@@ -667,7 +664,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetPrReview", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "code_review:configure")
 						const result = yield* github.setPrReviewEnabled(
 							tenant.orgId,
 							params.repositoryId,
@@ -676,7 +673,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						return new GithubSetPrReviewResponse(result)
 					}),
 				)
-				// Any member may read a repository's review settings and history; only admins change them.
+				// Any member may read a repository's review settings and history; changing them needs code_review:configure.
 				.handle("githubGetPrReviewConfig", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -687,7 +684,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetPrReviewConfig", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "code_review:configure")
 						const config = yield* github.setPrReviewConfig(
 							tenant.orgId,
 							params.repositoryId,
@@ -706,7 +703,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetPrReviewSettings", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
+						yield* requirePermission(tenant.roles, "code_review:configure")
 						const settings = yield* github.setPrReviewSettings(
 							tenant.orgId,
 							payload.settings,

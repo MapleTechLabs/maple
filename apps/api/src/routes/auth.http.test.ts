@@ -62,7 +62,7 @@ const makeHarness = () => {
 				method,
 				headers: { authorization: `Bearer ${bearer}` },
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		return { status: response.status, body: JSON.parse(await response.text()) as Record<string, unknown> }
 	}

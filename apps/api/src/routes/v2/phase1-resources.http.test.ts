@@ -1645,7 +1645,7 @@ describe("v2 session_replays over HTTP", () => {
 			// 60 chunks: more than one capped page, so a page that claims to be the
 			// last one is provably wrong.
 			const manyRows = Array.from({ length: 60 }, (_, seq) => ({
-				...chunkRows[0]!,
+				...chunkRows[0],
 				chunkSeq: seq,
 			}))
 			const harness = makeHarness({

@@ -272,7 +272,7 @@ const IDLE: GcpMetricsPollSummary = {
 interface Tick {
 	readonly now: number
 	readonly httpClient: HttpClient.HttpClient
-	readonly mapleToken: Redacted.Redacted<string>
+	readonly mapleToken: Redacted.Redacted
 	/** Every outbound request of the tick, counted by `httpClient`. */
 	readonly budget: { calls: number }
 }

@@ -20,7 +20,7 @@ const request = (model: Model, context: PageContext, mode: Keyed.ReadMode): Retu
 	})
 
 export const init = (_route: ListRoute, context: PageContext): Return => {
-	const read = request({ pages: Keyed.idle(), nowMs: null, isAdmin: false }, context, "Load")
+	const read = request({ pages: Keyed.idle(), nowMs: null, grants: [] }, context, "Load")
 	return {
 		model: read.model,
 		commands: [ReadListClock(), FetchListSession({ orgId: context.orgId }), ...(read.commands ?? [])],
@@ -30,8 +30,8 @@ export const init = (_route: ListRoute, context: PageContext): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin } } : { model },
+		CompletedFetchSession: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants } } : { model },
 		CompletedFetchPages: ({ key, result }) => ({
 			model: { ...model, pages: Keyed.accept(model.pages, key, result) },
 			commands: [ReadListClock()],

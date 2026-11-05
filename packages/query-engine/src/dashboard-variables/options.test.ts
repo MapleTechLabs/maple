@@ -11,8 +11,11 @@ import {
 } from "./options"
 
 // SAFETY: test fixtures; the shape is the decoded query-variable arm.
-const query = (source: DashboardQueryVariableSource): DashboardVariable =>
-	({ name: "v", type: "query", source }) as DashboardVariable
+const query = (source: DashboardQueryVariableSource): DashboardVariable => ({
+	name: "v",
+	type: "query",
+	source,
+})
 
 const loaded = (options: string[]) => ({ options, loading: false })
 
@@ -111,9 +114,9 @@ describe("dashboardVariableOptionsQuery", () => {
 				name: "c",
 				type: "custom",
 				options: [{ value: "x" }],
-			} as DashboardVariable),
+			}),
 		).toBeNull()
-		expect(dashboardVariableOptionsQuery({ name: "t", type: "textbox" } as DashboardVariable)).toBeNull()
+		expect(dashboardVariableOptionsQuery({ name: "t", type: "textbox" })).toBeNull()
 	})
 })
 

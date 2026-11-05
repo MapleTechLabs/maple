@@ -42,6 +42,7 @@ describe("containEscape", () => {
 					const enter = Object.assign(new Event("keydown"), { key: "Enter" })
 					container.dispatchEvent(escape)
 					container.dispatchEvent(enter)
+					// oxlint-disable-next-line typescript/no-deprecated -- cancelBubble is the observable flag stopPropagation sets.
 					expect({ escape: escape.cancelBubble, enter: enter.cancelBubble }).toEqual({
 						escape: true,
 						enter: false,

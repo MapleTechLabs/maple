@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	AttachRequest,
 	type BillingAccount,
@@ -45,7 +46,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import * as Details from "./details/update"
-import { CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
+import { canManage, CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -366,9 +367,13 @@ export const profileOf = (model: Model): Option.Option<BillingProfile> => AsyncD
  * `isReturning`: the tab opened with `?checkout=complete`, so it waits on the Stripe to Autumn sync.
  * Invoices and details wait for the account: a member org's billing lives on its billing org.
  */
-export const init = (isAdmin: boolean, isReturning: boolean, isClerk: boolean): Return => ({
+export const init = (
+	grants: ReadonlyArray<Policy.Permission>,
+	isReturning: boolean,
+	isClerk: boolean,
+): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		isClerk,
 		checkoutReturn: isReturning ? "Confirming" : "Idle",
 		plans: AsyncData.Loading(),
@@ -510,7 +515,7 @@ const applyAccount = (model: Model, account: BillingAccount, isFresh: boolean): 
 	)
 	const orgChoices = gated(
 		model.orgChoices,
-		account.role === "standalone" && model.isAdmin && model.isClerk,
+		account.role === "standalone" && canManage(model) && model.isClerk,
 		false,
 		FetchOrgChoices,
 	)

@@ -209,7 +209,7 @@ describe("durable retired-day authority", () => {
 				async () =>
 					authority.assertBatchAllowed(
 						"logs",
-						`${JSON.stringify({ timestamp: `${date} 12:00:00.000000000` })}`,
+						JSON.stringify({ timestamp: `${date} 12:00:00.000000000` }),
 					),
 				/retired UTC day/,
 			)

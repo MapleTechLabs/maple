@@ -205,7 +205,7 @@ describe("reading the answers back", () => {
 			file("docs/orders.md"),
 			file("bun.lock"),
 			file("assets/logo.ts", { patch: null }),
-		]).content[0]!.text
+		]).content[0].text
 		assert.deepEqual(reviewablePathsInListing(answer), [
 			"src/orders.ts",
 			"src/orders.test.ts",
@@ -225,7 +225,7 @@ describe("reading the answers back", () => {
 			7,
 			[file("src/a.ts"), big, file("src/c.ts")],
 			["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
-		).content[0]!.text
+		).content[0].text
 		assert.include(answer, "Not included")
 		const shown = pathsInDiffAnswer(answer)
 		// The unknown path shows nothing, and the deferred one is named without its diff.

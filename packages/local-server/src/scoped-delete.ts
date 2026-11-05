@@ -259,7 +259,7 @@ const materializedViews = (manifest: LocalSchemaManifest): ReadonlyArray<ViewEdg
 			const sources = Arr.filter(
 				Arr.map(
 					Arr.fromIterable(Str.matchAll(/\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)/gi)(body)),
-					(match) => match[1]!,
+					(match) => match[1],
 				),
 				(name) => tables.has(name),
 			)
@@ -337,7 +337,7 @@ const resolvePlan = (
 					const source = view.sources[0]
 					return source !== undefined &&
 						plans[source] !== undefined &&
-						plans[source]!.strategy !== "excluded"
+						plans[source].strategy !== "excluded"
 						? [{ ...view, source }]
 						: []
 				},
@@ -454,7 +454,7 @@ export const validateDeletePlan = (
 	for (const view of views) {
 		if (plans[view.target]?.strategy !== "excluded") continue
 		for (const source of view.sources)
-			if (plans[source] !== undefined && plans[source]!.strategy !== "excluded")
+			if (plans[source] !== undefined && plans[source].strategy !== "excluded")
 				problems.push(`${view.name}: writes excluded ${view.target} from ${source}`)
 	}
 	return [...new Set(problems)]

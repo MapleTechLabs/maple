@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
 import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
@@ -38,7 +39,7 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: outcome(Schema.Array(AlertDeliveryEventDocument)),
 	},
-	CompletedFetchSession: { orgId: Schema.String, isAdmin: Schema.Boolean },
+	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ChangedRulesQuery: { value: Schema.String },
 	ClickedStatusFilter: { bucket: RuleBucket },
 	ClickedClearRuleFilters: {},

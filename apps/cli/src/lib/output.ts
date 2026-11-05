@@ -123,7 +123,7 @@ const ATTRIBUTES_KEY = /[aA]ttributes$/
  * log whose text happens to look like a datetime prints unchanged.
  */
 export const utcTimestampReplacer = () => {
-	const attributeMaps = new WeakSet<object>()
+	const attributeMaps = new WeakSet()
 	return function (this: unknown, key: string, value: unknown) {
 		if (typeof this === "object" && this !== null && attributeMaps.has(this)) return value
 		if (ATTRIBUTES_KEY.test(key) && typeof value === "object" && value !== null) attributeMaps.add(value)

@@ -99,6 +99,7 @@ const offline = (props: RouteProps): RouteAttributes => {
 }
 
 /** Deploy-time provider: nothing to create. Routes are a dev-mode concern. */
+// @effect-diagnostics-next-line lazyEffect:off -- ProviderLayer.dual takes Layer factories
 export const RouteProviderLive = () =>
 	Provider.succeed(Route, {
 		diff: () => Effect.succeed({ action: "noop" as const }),
@@ -108,6 +109,7 @@ export const RouteProviderLive = () =>
 	})
 
 /** Dev-mode provider, in alchemy's sidecar so the route survives stack-file reloads. */
+// @effect-diagnostics-next-line lazyEffect:off -- ProviderLayer.dual takes Layer factories
 export const RouteProviderLocal = () =>
 	LocalProvider.make(
 		Route,
@@ -143,5 +145,6 @@ export const RouteProviderLocal = () =>
 	)
 
 /** Register both providers; merge into the stack's `providers` layer. */
+// @effect-diagnostics-next-line lazyEffect:off -- alchemy's provider convention, called as `providers()`
 export const providers = () =>
 	ProviderLayer.dual(Route, { live: RouteProviderLive, local: RouteProviderLocal })
