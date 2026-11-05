@@ -14,7 +14,12 @@
  * screenshot.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId } from "@maple/domain/http"
+import {
+	DashboardDocument,
+	DashboardVariableSchema,
+	IsoDateTimeString,
+	OrgId,
+} from "@maple/domain/http"
 import type { RawSqlValidationError } from "@maple/domain/http"
 import {
 	MAX_LIST_RANGE_SECONDS,
@@ -41,7 +46,6 @@ import {
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
 
-const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 
@@ -162,12 +166,11 @@ const fieldOf = (query: unknown, field: string): string | undefined => {
 }
 
 const document = (widgets: ReadonlyArray<Record<string, unknown>>): DashboardDocument =>
-	new DashboardDocument({
-		id: asDashboardId("dash-parity"),
+	Schema.decodeUnknownSync(DashboardDocument)({
+		id: "dash-parity",
 		name: "Parity",
 		timeRange: { type: "relative", value: "12h" },
-		// oxlint-disable-next-line typescript/no-explicit-any
-		widgets: widgets as any,
+		widgets,
 		createdAt: NOW,
 		updatedAt: NOW,
 	})
@@ -424,7 +427,7 @@ describe("shared widget data parity with the signed-in board", () => {
 
 	it("variable options: lists each query variable's source once, over the window, and tolerates a failing source", async () => {
 		const shared = makeHarness()
-		const definitions = [
+		const definitions = Schema.decodeSync(Schema.Array(DashboardVariableSchema))([
 			{ name: "service", type: "query", source: { kind: "facet", facet: "service" } },
 			{ name: "svc2", type: "query", source: { kind: "facet", facet: "service" } },
 			{
@@ -435,12 +438,11 @@ describe("shared widget data parity with the signed-in board", () => {
 			{ name: "sev", type: "query", source: { kind: "facet", facet: "log_severity" } },
 			{ name: "free", type: "textbox" },
 			{ name: "fixed", type: "custom", options: [{ value: "x" }] },
-		]
+		])
 
 		const options = await shared.runtime.runPromise(
 			DashboardWidgetDataService.use((service) =>
-				// oxlint-disable-next-line typescript/no-explicit-any -- fixture definitions in stored shape
-				service.variableOptions(ORG, definitions as any, WINDOW, () => true),
+				service.variableOptions(ORG, definitions, WINDOW, () => true),
 			),
 		)
 

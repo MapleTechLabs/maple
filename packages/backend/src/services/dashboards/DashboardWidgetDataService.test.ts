@@ -1,14 +1,14 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId } from "@maple/domain/http"
+import { DashboardDocument, IsoDateTimeString, OrgId } from "@maple/domain/http"
 import { MAX_LIST_RANGE_SECONDS } from "@maple/query-engine"
 import { Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { DashboardWidgetDataService, type WidgetDataRequest } from "./DashboardWidgetDataService"
 
-const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const asOrgId = Schema.decodeUnknownSync(OrgId)
+const asDashboardDocument = Schema.decodeUnknownSync(DashboardDocument)
 
 const ORG = asOrgId("org_share_widgets")
 const NOW = asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString())
@@ -65,14 +65,12 @@ const document = (
 	widgets: ReadonlyArray<Record<string, unknown>>,
 	variables?: ReadonlyArray<Record<string, unknown>>,
 ): DashboardDocument =>
-	new DashboardDocument({
-		id: asDashboardId("dash-share"),
+	asDashboardDocument({
+		id: "dash-share",
 		name: "Shared",
 		timeRange: { type: "relative", value: "12h" },
-		// oxlint-disable-next-line typescript/no-explicit-any
-		widgets: widgets as any,
-		// oxlint-disable-next-line typescript/no-explicit-any
-		...(variables === undefined ? undefined : { variables: variables as any }),
+		widgets,
+		...(variables === undefined ? undefined : { variables }),
 		createdAt: NOW,
 		updatedAt: NOW,
 	})

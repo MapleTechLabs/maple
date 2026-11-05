@@ -491,7 +491,7 @@ WHERE name = 'enable_full_text_index'`,
 			// An unresolved placeholder means the SQL reached the executor without
 			// going through `compile()` — a bug in Maple's own query construction. No
 			// request could be rewritten to avoid it and no caller could handle it.
-			// oxlint-disable-next-line maple/no-effect-die
+			// oxlint-disable-next-line maple/no-effect-die -- an unresolved placeholder is a query-construction bug
 			return yield* Effect.die(
 				new UnresolvedQueryParamError({
 					param: leftoverParam[1] ?? "",

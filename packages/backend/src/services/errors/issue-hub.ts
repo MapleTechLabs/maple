@@ -131,7 +131,7 @@ const ensureSystemAlertsActor = Effect.fn("IssueHub.ensureSystemAlertsActor")(fu
 	if (!row) {
 		// The row was upserted two statements above; a select that then finds nothing
 		// means the write and the read disagree, which the alert tick cannot act on.
-		// oxlint-disable-next-line maple/no-effect-die
+		// oxlint-disable-next-line maple/no-effect-die -- write/read disagreement, an invariant break
 		return yield* Effect.die(
 			new SystemActorMissingError({
 				orgId,
