@@ -10893,6 +10893,22 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
+-- builder:users:usersMcpNameSearchQuery:default  [f72bc044]
+SELECT
+          if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ServiceName IN ('maple-ai')
+          AND traces.SpanAttributes['mcp.method.name'] != ''
+          AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
+          AND (positionCaseInsensitiveUTF8(traces.SpanAttributes['user.name'], 'ada') > 0 OR positionCaseInsensitiveUTF8(traces.SpanAttributes['user.email'], 'ada') > 0)
+        GROUP BY userId
+        LIMIT 500
+        FORMAT JSON
+
 -- builder:users:usersMcpNamesQuery:default  [0f43736f]
 SELECT
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,

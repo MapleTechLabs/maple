@@ -44,6 +44,8 @@ export interface UsersScope {
 export interface UsersListFilter {
 	/** Case-insensitive substring of the user id, name or email. */
 	readonly search?: string
+	/** Users the search matched outside this query: MCP users whose name the rollup does not keep. */
+	readonly searchUserIds?: ReadonlyArray<string>
 	readonly hasErrors?: boolean
 	readonly hasReplay?: boolean
 	readonly groups?: ReadonlyArray<string>
@@ -278,6 +280,41 @@ export function usersMcpNamesQuery(
 		.format("JSON")
 }
 
+/** Max MCP users a name search hands to the directory's search. */
+const MCP_NAME_SEARCH_LIMIT = 500
+
+/**
+ * MCP users whose span `user.name` or `user.email` contains `search`: the rollup keeps no name, so
+ * the directory's search also accepts these ids.
+ */
+export function usersMcpNameSearchQuery(
+	mcpServices: ReadonlyArray<string>,
+	search: string,
+	namespaces: ReadonlyArray<string> = [],
+) {
+	return from(Traces)
+		.select(($) => ({ userId: mcpUserId($) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.SpanKind.eq("Server"),
+			mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
+			mcpMethod($).neq(""),
+			mcpUserId($).neq(""),
+			CH.or(
+				containsText($.SpanAttributes.get("user.name"), search),
+				containsText($.SpanAttributes.get("user.email"), search),
+			),
+			namespaces.length > 0
+				? CH.inList($.ResourceAttributes.get("service.namespace"), namespaces)
+				: undefined,
+		])
+		.groupBy("userId")
+		.limit(MCP_NAME_SEARCH_LIMIT)
+		.format("JSON")
+}
+
 /**
  * Spans and logs with `user.id` from the rollup: entry-point requests, failed ones as errors, and
  * spans on an MCP server as MCP activity (MCP spans carry the same user id).
@@ -372,6 +409,9 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 					containsText($.userId, search),
 					containsText(nonEmpty($.name), search),
 					containsText(nonEmpty($.email), search),
+					...(filter.searchUserIds !== undefined && filter.searchUserIds.length > 0
+						? [CH.inList($.userId, filter.searchUserIds)]
+						: []),
 				),
 			),
 		])

@@ -14,6 +14,7 @@ import {
 	usersFacetsQuery,
 	usersListQuery,
 	usersMcpNamesQuery,
+	usersMcpNameSearchQuery,
 	usersSummaryQuery,
 	type UsersScope,
 } from "./users"
@@ -103,6 +104,19 @@ describe("usersListQuery", () => {
 			"positionCaseInsensitiveUTF8(anyIf(signals.email, signals.email != ''), 'Ada_1') > 0",
 		)
 		expect(sql).not.toContain("ILIKE")
+	})
+
+	it("also accepts the users a name search matched elsewhere, only when given ids", () => {
+		const withIds = compileUnsafe(
+			usersListQuery(unscoped, { search: "ada", searchUserIds: ["user_42", "user_43"] }),
+			params,
+		).sql
+		expect(withIds).toContain("signals.userId IN ('user_42', 'user_43')")
+		for (const filter of [{ search: "ada" }, { search: "ada", searchUserIds: [] }]) {
+			const { sql } = compileUnsafe(usersListQuery(unscoped, filter), params)
+			expect(sql).toContain("positionCaseInsensitiveUTF8(signals.userId, 'ada') > 0")
+			expect(sql).not.toContain("signals.userId IN (")
+		}
 	})
 
 	it("applies the toggles and groups per user, newest first", () => {
@@ -264,5 +278,26 @@ describe("one user's reads", () => {
 		expect(scoped).toContain("traces.ResourceAttributes['service.namespace'] IN ('storefront')")
 		const unscopedSql = compileUnsafe(usersMcpNamesQuery(["maple-ai"], ["user_42"]), params).sql
 		expect(unscopedSql).not.toContain("service.namespace")
+	})
+
+	it("searches MCP names and emails in the org, window, MCP servers and namespace scope", () => {
+		const scoped = compileUnsafe(usersMcpNameSearchQuery(["maple-ai"], "Ada", ["storefront"]), params).sql
+		expect(scoped).toContain("traces.OrgId = 'org_1'")
+		expect(scoped).toContain("traces.Timestamp >= ")
+		expect(scoped).toContain("traces.Timestamp <= ")
+		expect(scoped).toContain("traces.ServiceName IN ('maple-ai')")
+		expect(scoped).toContain("positionCaseInsensitiveUTF8(traces.SpanAttributes['user.name'], 'Ada') > 0")
+		expect(scoped).toContain(
+			"positionCaseInsensitiveUTF8(traces.SpanAttributes['user.email'], 'Ada') > 0",
+		)
+		expect(scoped).toContain("traces.ResourceAttributes['service.namespace'] IN ('storefront')")
+		expect(scoped).not.toContain("ILIKE")
+		const unscopedSql = compileUnsafe(usersMcpNameSearchQuery(["maple-ai"], "Ada"), params).sql
+		expect(unscopedSql).not.toContain("service.namespace")
+	})
+
+	it("matches no MCP user when no MCP server is in scope", () => {
+		const { sql } = compileUnsafe(usersMcpNameSearchQuery([], "Ada"), params)
+		expect(sql).toContain("1 = 0")
 	})
 })

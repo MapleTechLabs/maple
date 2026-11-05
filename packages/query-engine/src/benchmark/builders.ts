@@ -2311,6 +2311,12 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "users",
+		name: "usersMcpNameSearchQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.usersMcpNameSearchQuery(["maple-ai"], "ada"), window),
+	},
+	{
+		module: "users",
 		name: "usersFacetsQuery",
 		label: "pinned",
 		compile: () => CH.compileUnionUnsafe(CH.usersFacetsQuery(USERS_NAMESPACE_SCOPE), window),

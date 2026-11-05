@@ -167,14 +167,39 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		...(payload.groups !== undefined && { groups: payload.groups }),
 	}
 	const params = { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
+	// The rollup keeps no name, so a search there first finds the MCP users whose span name matches.
+	const searchUserIds = (scope: CH.UsersScope) =>
+		payload.search === undefined || scope.activityRollup !== true || mcpServersInScope(scope).length === 0
+			? Effect.succeed([])
+			: warehouse
+					.compiledQuery(
+						tenant,
+						CH.compile(
+							CH.usersMcpNameSearchQuery(
+								mcpServersInScope(scope),
+								payload.search,
+								scope.namespaces,
+							),
+							params,
+						),
+						{ profile: "list", context: "usersMcpNameSearch" },
+					)
+					.pipe(Effect.map(Arr.map((row) => row.userId)))
 	const rows = yield* withRollupFallback(scope, [], (scope) =>
-		warehouse.compiledQuery(
-			tenant,
-			CH.compile(
-				CH.usersListQuery(scope, filter, payload.limit ?? DEFAULT_LIMIT, payload.offset ?? 0),
-				params,
+		Effect.flatMap(searchUserIds(scope), (ids) =>
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.usersListQuery(
+						scope,
+						{ ...filter, searchUserIds: ids },
+						payload.limit ?? DEFAULT_LIMIT,
+						payload.offset ?? 0,
+					),
+					params,
+				),
+				{ profile: "list", context: "usersList" },
 			),
-			{ profile: "list", context: "usersList" },
 		),
 	)
 	// The rollup keeps no name: a page's unnamed users take the one their MCP spans carry.
