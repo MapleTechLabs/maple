@@ -120,7 +120,8 @@ export const statusOf = (row: InfraEntityRow, kind: InfraKind): string => {
 		level !== undefined && level >= HOT_THRESHOLD ? [{ resource, level }] : [],
 	).sort((a, b) => b.level - a.level)
 	const worst = hot[0]
-	const restartText = row.restarts ? `${row.restarts} restart${row.restarts === 1 ? "" : "s"}` : ""
+	const restartText =
+		(row.restarts ?? 0) > 0 ? `${row.restarts} restart${row.restarts === 1 ? "" : "s"}` : ""
 	if (worst === undefined) return restartText
 	// Hosts have no limit to be at; their 90% is just high.
 	const label = worst.level >= LIMIT_THRESHOLD ? (kind === "hosts" ? "HIGH" : "AT LIMIT") : "hot"

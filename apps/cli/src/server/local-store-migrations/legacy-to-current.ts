@@ -411,7 +411,7 @@ const inventory = async (
 		side === "source" ? await querySource(context, sql) : await queryTarget(context, sql),
 	)
 	const row = rows[0]
-	if (!row) throw new Error(`inventory query returned no row for ${table.name}`)
+	if (row === undefined) throw new Error(`inventory query returned no row for ${table.name}`)
 	return {
 		table: table.name,
 		rowCount: numberString(row.rowCount),
@@ -441,7 +441,7 @@ const tableTotalRowCount = async (
 	const rows = decodeRowCountRows(
 		side === "source" ? await querySource(context, sql) : await queryTarget(context, sql),
 	)
-	if (!rows[0]) throw new Error(`row-count query returned no row for ${table}`)
+	if (rows[0] === undefined) throw new Error(`row-count query returned no row for ${table}`)
 	return numberString(rows[0].rowCount)
 }
 
@@ -912,7 +912,7 @@ const legacyApply = async (
 	let progress = asProgress(progressValue)
 	for (const table of LEGACY_RAW_TABLES) {
 		const columns = await ensureSourceTargetColumns(context, table)
-		if (!progress.sourceInventory[table.name]) {
+		if (progress.sourceInventory[table.name] === undefined) {
 			progress = {
 				...progress,
 				sourceInventory: {
@@ -936,7 +936,7 @@ const legacyVerify = async (
 	for (const table of LEGACY_RAW_TABLES) {
 		const columns = await tableColumns(context, "source", table.name)
 		const before = progress.sourceInventory[table.name]
-		if (!before) throw new Error(`source inventory is missing for ${table.name}`)
+		if (before === undefined) throw new Error(`source inventory is missing for ${table.name}`)
 		const after = await inventory(context, "source", table, columns, context.cutoffAt)
 		if (!inventoriesEqual(before, after))
 			throw new Error(`source changed during migration: ${table.name}; promotion refused`)

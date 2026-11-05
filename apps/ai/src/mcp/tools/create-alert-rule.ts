@@ -188,7 +188,7 @@ export const buildAlertRuleRequest = Effect.fnUntraced(function* (
 	}
 
 	const apdexThresholdMs = params.apdex_threshold_ms ?? template?.apdexThresholdMs
-	if (signalType === "apdex" && !apdexThresholdMs) {
+	if (signalType === "apdex" && (apdexThresholdMs ?? 0) === 0) {
 		return yield* invalid(
 			"signal_type=apdex requires apdex_threshold_ms (milliseconds defining satisfactory response time).",
 			"apdex_threshold_ms",

@@ -517,12 +517,10 @@ const score = (argv: ReadonlyArray<string>) => {
 			graded: graded.length,
 			pending: Arr.filter(selected, (r) => r.status === "ungraded").length,
 			failed: Arr.filter(selected, (r) => r.status === "failed").length,
-			targetRecall: positives.length
-				? positives.filter((r) => r.passed).length / positives.length
-				: null,
-			controlPassRate: controls.length
-				? controls.filter((r) => r.passed).length / controls.length
-				: null,
+			targetRecall:
+				positives.length > 0 ? positives.filter((r) => r.passed).length / positives.length : null,
+			controlPassRate:
+				controls.length > 0 ? controls.filter((r) => r.passed).length / controls.length : null,
 		}
 	})
 	writeFileSync(join(dir, "summary.json"), encodeTabbedJson(summary))

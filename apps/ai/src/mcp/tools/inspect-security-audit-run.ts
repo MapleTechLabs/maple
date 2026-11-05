@@ -127,8 +127,10 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 			const byStatus = Arr.reduce(units, Rec.empty<string, number>(), (acc, unit) =>
 				Rec.set(acc, unit.status, (acc[unit.status] ?? 0) + 1),
 			)
-			const ranked = units.toSorted(
-				(a, b) => unitRank(a.status) - unitRank(b.status) || a.wave - b.wave,
+			const ranked = units.toSorted((a, b) =>
+				unitRank(a.status) !== unitRank(b.status)
+					? unitRank(a.status) - unitRank(b.status)
+					: a.wave - b.wave,
 			)
 			const unsettled = Arr.filter(units, (u) => unitRank(u.status) < unitRank("candidate")).length
 			const notes = [

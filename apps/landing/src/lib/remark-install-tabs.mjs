@@ -54,7 +54,7 @@ export function installVariants(source) {
 			current = []
 		}
 	}
-	if (current.length) commands.push(current.join("\n"))
+	if (current.length > 0) commands.push(current.join("\n"))
 
 	let ecosystem
 	for (const command of commands) {

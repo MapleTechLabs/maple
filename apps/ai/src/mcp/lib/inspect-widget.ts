@@ -390,7 +390,7 @@ const checkFunnelWidget = (
 		provideWarehouseExecutorFromTenant(tenant),
 		Effect.map((rows): FunnelCheck => {
 			const count = (step: number) =>
-				Number(Option.getOrUndefined(Arr.findFirst(rows, (r) => r.step === step))?.count) || 0
+				Option.getOrUndefined(Arr.findFirst(rows, (r) => r.step === step))?.count ?? 0
 			return { ok: true, steps, first: count(1), last: count(steps) }
 		}),
 		Effect.catch((error) => Effect.succeed<FunnelCheck>({ ok: false, error: error.message })),
@@ -564,9 +564,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 						: buildBreakdownQuerySpec(draft)
 
 					const builderWarnings =
-						buildResult.warnings && buildResult.warnings.length > 0
-							? [...buildResult.warnings]
-							: undefined
+						buildResult.warnings.length > 0 ? [...buildResult.warnings] : undefined
 					const builderWarningFlags: ChartFlag[] = builderWarnings ? ["BUILDER_WARNINGS"] : []
 
 					if (!buildResult.query) {

@@ -131,11 +131,14 @@ export async function getOffer(): Promise<Offer> {
 
 		const product = products[0]
 
-		if (product) {
+		if (product !== undefined) {
 			return {
 				name: product.name,
 				price: product.price?.amount ?? 0,
-				interval: product.price?.interval ? `/${product.price.interval}` : undefined,
+				interval:
+					product.price?.interval == null || product.price.interval === ""
+						? undefined
+						: `/${product.price.interval}`,
 				hasTrial: !!product.freeTrial,
 				trialDuration: product.freeTrial?.durationLength,
 				allotments: Arr.map(
