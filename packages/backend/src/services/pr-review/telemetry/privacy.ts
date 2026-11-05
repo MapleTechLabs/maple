@@ -370,7 +370,7 @@ const matchCount = (pattern: RegExp, text: string): number =>
 const blankLiterals = (text: string) => {
 	const literals: Array<LineLiteral> = []
 	const interpolations: Array<readonly [number, number]> = []
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
+	// @effect-diagnostics-next-line preferEffectString:off -- the replacer reads the match offset, which replaceWith drops
 	const code = text.replace(
 		STRING_LITERAL,
 		(whole: string, quote: string, value: string, offset: number) => {

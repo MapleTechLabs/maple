@@ -14,6 +14,7 @@ import {
 	signalsForField,
 } from "@maple/domain/ingest-rules"
 import { Schema, Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 // The editor's draft: text inputs stay strings until `specOf` turns the draft into a rule.
 
@@ -128,8 +129,7 @@ export const splitList = (text: string): ReadonlyArray<string> =>
 
 export const joinList = (values: ReadonlyArray<string>): string =>
 	Arr.join(
-		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-		Arr.map(values, (value) => value.replace(/[\\,]/gu, (char) => `\\${char}`)),
+		Arr.map(values, (value) => replaceWith(value, /[\\,]/gu, (char) => `\\${char}`)),
 		", ",
 	)
 

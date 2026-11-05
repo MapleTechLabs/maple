@@ -16,6 +16,7 @@ import {
 } from "./kit"
 import { linkSeed } from "./transport"
 import { Array as Arr, Order } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 // The zone and path drawing: stone terraces, meadow mats, worn paths, terrace steps and their
 // helpers.
@@ -66,8 +67,7 @@ export function stoneTerrace(
 /** A small stable number per zone id, so wobble and tufts never reshuffle. */
 function zoneSeed(id: string) {
 	let seed = 7
-	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-	for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) % 997
+	for (let i = 0; i < id.length; i++) seed = (seed * 31 + codeUnitAt(id, i)) % 997
 	return seed
 }
 

@@ -1,4 +1,5 @@
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { Option, pipe, Schema, Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
 	alertAccentColor,
@@ -30,17 +31,13 @@ const escapeHtml = (value: string): string =>
  * http(s) links only. Escaped first, so only the tags built here reach Google Chat.
  */
 const markdownToCardHtml = (markdown: string): string =>
-	Str.replace(
-		/\n/g,
-		"<br>",
-	)(
-		Str.replace(
-			/\*\*([^*]+)\*\*/g,
-			"<b>$1</b>",
-			// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-		)(escapeHtml(markdown)).replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text: string, url: string) =>
+	pipe(
+		escapeHtml(markdown),
+		Str.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"),
+		replaceWith(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text = "", url = "") =>
 			/^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : match,
 		),
+		Str.replace(/\n/g, "<br>"),
 	)
 
 /** `<users/all>` is Google Chat mention syntax; a rule name or template must never ping a space. */

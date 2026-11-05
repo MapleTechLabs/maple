@@ -2,6 +2,7 @@
 // and the local-mode UI.
 
 import { Option, Schema, String as Str } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 const decodeUrl = Schema.decodeUnknownOption(Schema.URLFromString)
 
@@ -25,8 +26,7 @@ const AVATAR_GRADIENTS: readonly [string, ...string[]] = [
 /** Deterministic avatar gradient for a session, keyed by a stable seed. */
 export function gradientFor(seed: string): string {
 	let hash = 0
-	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-	for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
+	for (let i = 0; i < seed.length; i++) hash = (hash * 31 + codeUnitAt(seed, i)) >>> 0
 	return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length] ?? AVATAR_GRADIENTS[0]
 }
 

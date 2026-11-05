@@ -37,6 +37,7 @@ import {
 	type TurnAnchorKind,
 } from "./session-turns"
 import { Array as Arr, Option, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 /** Below this share of the prompt served from cache, across the calls after
  *  the first, the prefix is not being reused. */
@@ -769,8 +770,7 @@ function clauses(
 
 /** `turn 14 (final)`, `turns 9, 11` — the finding's own attribution, read in a sentence. */
 function where(finding: SessionFinding): string {
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	return finding.turnText.replace(/^(Turn|Segment)/, (word) => Str.toLowerCase(word))
+	return replaceWith(finding.turnText, /^(Turn|Segment)/, (word) => Str.toLowerCase(word))
 }
 
 function toolName(finding: SessionFinding): string {

@@ -5,6 +5,7 @@ import {
 	type TableInfo,
 } from "@maple/backend/services/warehouse/warehouse-catalog"
 import { Array as Arr, Option, String as Str } from "effect"
+import { matchAllIndexed, replaceWith } from "@maple/strings"
 
 /** The column an unknown-identifier error names, as written. */
 export const unknownIdentifierName = (message: string): string | undefined => {
@@ -23,8 +24,7 @@ const SQL_TOKEN =
  * position, so `FROM \`traces\`` reads as a table while `'traces'` does not.
  */
 export const identifierText = (sql: string): string =>
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	sql.replace(SQL_TOKEN, (token) => {
+	replaceWith(sql, SQL_TOKEN, (token) => {
 		if (token[0] !== "`" && token[0] !== '"') return Str.replace(/[^\n]/g, " ")(token)
 		const closed = token.length > 1 && Str.endsWith(token[0])(token)
 		return ` ${Str.slice(1, closed ? -1 : undefined)(token)}${closed ? " " : ""}`
@@ -115,8 +115,7 @@ const escapeRegExp = (text: string) => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"
  */
 const replaceIdentifier = (sql: string, written: string, replacement: string): string => {
 	const pattern = new RegExp(`(?<![\\w.])${escapeRegExp(written)}(?![\\w.(])`, "g")
-	// @effect-diagnostics-next-line preferEffectString:off -- match.index feeds arithmetic; Str.matchAll types it as optional
-	const spans = Arr.map([...identifierText(sql).matchAll(pattern)], (m) => {
+	const spans = Arr.map(matchAllIndexed(identifierText(sql), pattern), (m) => {
 		const quote = sql[m.index - 1]
 		const quoted = (quote === "`" || quote === '"') && sql[m.index + written.length] === quote
 		return quoted

@@ -1,3 +1,4 @@
+import { codeUnitAt } from "@maple/strings"
 /**
  * The sandbox Worker's bearer check.
  *
@@ -11,8 +12,7 @@ export const tokenMatches = (presented: string, expected: string): boolean => {
 	if (presented.length !== expected.length) return false
 	let diff = 0
 	for (let index = 0; index < presented.length; index++)
-		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
-		diff |= presented.charCodeAt(index) ^ expected.charCodeAt(index)
+		diff |= codeUnitAt(presented, index) ^ codeUnitAt(expected, index)
 	return diff === 0
 }
 

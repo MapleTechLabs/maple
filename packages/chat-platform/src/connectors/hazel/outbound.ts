@@ -50,6 +50,7 @@ import {
 	type HazelLiveBody,
 	type HazelMessageBody,
 } from "./render"
+import { replaceWith } from "@maple/strings"
 
 const botToken = (config: ConnectorConfig): Redacted.Redacted<string> =>
 	Redacted.make(config.get(BOT_TOKEN_CONFIG) ?? "")
@@ -517,10 +518,10 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 						return Option.some({
 							displayName: author?.displayName ?? "Someone",
 							isBot: author?.isBot ?? false,
-							// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-							text: message.content.replace(
+							text: replaceWith(
+								message.content,
 								MENTION,
-								(_, id: string) => `@${names.get(id)?.displayName ?? "someone"}`,
+								(_, id = "") => `@${names.get(id)?.displayName ?? "someone"}`,
 							),
 							at,
 						})

@@ -12,6 +12,7 @@ import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
 import type * as RunEvent from "@yielded/agent/run-event"
 import { APPROVAL_REQUIRED, type ToolUiPayload, type UiSource } from "../mcp/tools/llm-tools"
 import { Array as Arr, Option, String as Str } from "effect"
+import { indexOfFrom } from "@maple/strings"
 
 /** Events the session log accepts. `seq` belongs to the Durable Object, which owns the ordering. */
 type WithoutSeq<T> = T extends unknown ? Omit<T, "seq"> : never
@@ -170,8 +171,7 @@ export const makeTextSanitizer = (): TextSanitizer => {
 				}
 				const opened = Arr.filter(
 					Arr.map(HIDDEN_BLOCKS, (block) => ({
-						// @effect-diagnostics-next-line preferEffectString:off -- searches from a position; Str.indexOf takes none
-						at: buffer.indexOf(block.open, from),
+						at: indexOfFrom(buffer, block.open, from),
 						block,
 					})),
 					({ at }) => at !== -1,

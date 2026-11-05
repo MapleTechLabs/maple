@@ -19,6 +19,7 @@
 		"@maple/chat-platform": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"@maple/ui": "workspace:*",
 		"@maple/web-data": "workspace:*",
 		"@pierre/highlights": "0.3.0",

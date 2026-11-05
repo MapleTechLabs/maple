@@ -1,5 +1,6 @@
 import { listWarehouseTables } from "@maple/backend/services/warehouse/warehouse-catalog"
 import { Array as Arr, Option, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 const DB = "[A-Za-z_]\\w*"
 
@@ -49,8 +50,7 @@ export const rawSqlErrorText = (message: string): string => {
 								BARE_WRAPPER,
 								"$1",
 							)(
-								// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-								message.replace(ALIASED_WRAPPER, (_whole, table: string, alias: string) =>
+								replaceWith(message, ALIASED_WRAPPER, (_whole, table = "", alias = "") =>
 									alias === table ? table : `${table} AS ${alias}`,
 								),
 							),

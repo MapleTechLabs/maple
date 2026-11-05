@@ -35,6 +35,7 @@ import {
 	RESERVED_SUFFIXES,
 	WILDCARD_DNS_DOMAINS,
 } from "./free-mail-domains"
+import { replaceWith } from "@maple/strings"
 
 type Billing = NonNullable<Section["billing"]>
 type EmailDomains = NonNullable<Section["emailDomains"]>
@@ -188,8 +189,7 @@ const NAMED_ENTITIES = new Map<string, string>(
 )
 
 const decodeEntities = (value: string): string =>
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replaceAll only takes a string
-	value.replaceAll(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{1,32});/gi, (entity, name: string) => {
+	replaceWith(value, /&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{1,32});/gi, (entity, name = "") => {
 		const code =
 			Str.startsWith("#x")(name) || Str.startsWith("#X")(name)
 				? Number.parseInt(Str.slice(2)(name), 16)

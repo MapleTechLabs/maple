@@ -15,6 +15,7 @@ import {
 } from "@maple/ui/lib/format"
 import { gcpMetricsState } from "../../integrations/gcp-connector-state"
 import { Array as Arr, Option, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 /** One metric and label value of one workload: `total` over `samples` points. */
 export interface GcpMetricValue {
@@ -384,8 +385,9 @@ export const gcpHasRegion = (service: GcpInfraServiceId): boolean =>
 
 /** What one row of a tab is, in running text: "container", "URL map". */
 export const gcpWorkloadNoun = (service: GcpInfraServiceId): string =>
-	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
-	GCP_INFRA_SERVICES[service].identity[0][0].replace(/^[A-Z](?=[a-z])/, (letter) => Str.toLowerCase(letter))
+	replaceWith(GCP_INFRA_SERVICES[service].identity[0][0], /^[A-Z](?=[a-z])/, (letter) =>
+		Str.toLowerCase(letter),
+	)
 
 export const GCP_RESOURCES_TAB = "resources"
 
