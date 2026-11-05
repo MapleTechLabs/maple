@@ -114,7 +114,7 @@ export const usersFilterRail = <M>(h: HtmlBuilder<M>, options: UsersRailOptions<
 				: filterSection(h, {
 						title: "Namespace",
 						description:
-							"The service.namespace of the services this user's requests and sessions reached.",
+							"The service.namespace of the services users' requests and sessions reached in the window.",
 						options: options.facets.namespaces,
 						selected: options.filters.namespaces,
 						isSearchable: true,
