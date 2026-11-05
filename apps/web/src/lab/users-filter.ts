@@ -1,5 +1,5 @@
 import type { FilterOption } from "@maple/views/ui/filters/filter-section"
-import { Array as Arr, Record } from "effect"
+import { Array as Arr, Order, Record, String as Str } from "effect"
 import type { UserDetail, UserRow } from "../page/users/data"
 import type { UsersFacets, UsersFilters, UsersSummary } from "../page/users/view-list"
 
@@ -7,10 +7,13 @@ import type { UsersFacets, UsersFilters, UsersSummary } from "../page/users/view
 // namespace scope, applied to the fixture the way the queries will apply them.
 
 const facet = (values: ReadonlyArray<string>): ReadonlyArray<FilterOption> =>
-	Arr.map(Object.entries(Arr.groupBy(values, (value) => value)), ([name, hits]) => ({
-		name,
-		count: hits.length,
-	})).toSorted((a, b) => b.count - a.count)
+	Arr.sort(
+		Arr.map(Record.toEntries(Arr.groupBy(values, (value) => value)), ([name, hits]) => ({
+			name,
+			count: hits.length,
+		})),
+		Order.flip(Order.mapInput(Order.Number, (option: FilterOption) => option.count)),
+	)
 
 /**
  * Users per namespace and per group, and how many hit an error or have a replay. Under a pin the
@@ -64,14 +67,14 @@ export const filterUsers = (
 	filters: UsersFilters,
 	pinned: string | null,
 ): ReadonlyArray<UserRow> => {
-	const needle = filters.search.trim().toLowerCase()
+	const needle = Str.toLowerCase(Str.trim(filters.search))
 	const scope = scopeOf(filters, pinned)
 	return Arr.filter(
 		rows,
 		(row) =>
 			(needle === "" ||
 				Arr.some([row.userId, row.name, row.email], (field) =>
-					(field ?? "").toLowerCase().includes(needle),
+					Str.includes(needle)(Str.toLowerCase(field ?? "")),
 				)) &&
 			(!filters.hasErrors || row.errors > 0) &&
 			(!filters.hasReplay || row.signals.includes("replay")) &&

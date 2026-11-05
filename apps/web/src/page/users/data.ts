@@ -1,4 +1,4 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // What the users pages draw: one row per end user the SDKs identified, and one user's profile.
 // The ids come from `identify()` (session_replays, product_events) and `user.id` / `enduser.id`
@@ -126,7 +126,10 @@ export const namespacesOf = (
 	const totals = Arr.reduce(profile.services, new Map<string, number>(), (sum, service) =>
 		sum.set(service.namespace, (sum.get(service.namespace) ?? 0) + service.spans),
 	)
-	return Arr.map([...totals], ([name, spans]) => ({ name, spans })).toSorted((a, b) => b.spans - a.spans)
+	return Arr.sort(
+		Arr.map([...totals], ([name, spans]) => ({ name, spans })),
+		Order.flip(Order.mapInput(Order.Number, (namespace: { spans: number }) => namespace.spans)),
+	)
 }
 
 /** The user's display name: their name, else their email, else the raw id. */

@@ -1,4 +1,4 @@
-import { Option, Array as Arr } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -71,7 +71,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 const searchHref = (search: Search) => hrefOf(AppRoute.Users({ search }))
 
 const textValue = (text: string): string | undefined => {
-	const trimmed = text.trim()
+	const trimmed = Str.trim(text)
 	return trimmed === "" ? undefined : trimmed
 }
 
