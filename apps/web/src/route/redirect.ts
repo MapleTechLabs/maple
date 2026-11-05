@@ -100,12 +100,13 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	)
 
 const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage"])
+const isUsersRoute = AppRoute.isAnyOf(["Users", "UserDetail"])
 
 /** A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`). */
 export const flaggedRouteRedirect = (
 	route: AppRoute,
-	flags: Pick<OrganizationFeatureFlags, "statusPages">,
+	flags: Pick<OrganizationFeatureFlags, "statusPages" | "users">,
 ): Option.Option<Redirect> =>
-	!flags.statusPages && isStatusPageRoute(route)
+	(!flags.statusPages && isStatusPageRoute(route)) || (!flags.users && isUsersRoute(route))
 		? redirect(AppRoute.Home({ search: {} }), true)
 		: Option.none()

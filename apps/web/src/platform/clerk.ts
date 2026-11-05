@@ -217,6 +217,7 @@ export const ClerkOrganization = Schema.Struct({
 		releases: Schema.Boolean,
 		securityAudit: Schema.Boolean,
 		statusPages: Schema.Boolean,
+		users: Schema.Boolean,
 	}),
 })
 export type ClerkOrganization = typeof ClerkOrganization.Type
