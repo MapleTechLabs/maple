@@ -2037,7 +2037,7 @@ describe("v2 users wire mapping over HTTP", () => {
 			},
 		],
 		// Uncapped totals, distinct from the listed issue's hits so the profile shows which it read.
-		userIssueTotals: [{ hits: 97, fingerprints: 1 }],
+		userIssueTotals: [{ hits: 97, errorGroups: 1 }],
 		userSessions: [
 			{
 				sessionId: "sess_ada",
