@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { createClerkClient } from "@clerk/backend"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
@@ -115,12 +116,6 @@ import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-
-const ROOT_ROLE = Schema.decodeSync(RoleName)("root")
-const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
-
-const isOrgAdmin = (roles: ReadonlyArray<RoleName>) =>
-	roles.includes(ROOT_ROLE) || roles.includes(ORG_ADMIN_ROLE)
 
 const toPersistenceError = (error: unknown) =>
 	new OrganizationPersistenceError({
@@ -373,10 +368,14 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				roles: ReadonlyArray<RoleName>,
 				action: string,
 			) {
-				if (isOrgAdmin(roles)) return
-				return yield* new OrganizationForbiddenError({
-					message: `Only org admins can ${action}`,
-				})
+				return yield* Policy.check(
+					roles,
+					"organization:manage",
+					(denial) =>
+						new OrganizationForbiddenError({
+							message: `Only ${Policy.holdersPhrase(denial.required)} can ${action}.`,
+						}),
+				)
 			})
 
 			const purgeOrgScopedRows = Effect.fn("OrganizationService.purgeOrgScopedRows")(function* (

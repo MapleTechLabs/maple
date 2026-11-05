@@ -20,7 +20,7 @@ import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { sectionNote, settingsSection, settingsSections } from "../kit/section"
 import * as CreateDialogView from "./create-dialog-view"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import * as RollDialog from "./roll-dialog"
 import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
@@ -50,7 +50,7 @@ const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 			[h.Class("inline-flex"), h.Title(ROLE_UNKNOWN_REASON)],
 			[button(h, { size: "sm", isDisabled: true }, [plus, "Create MCP key"])],
 		)
-	if (!model.isAdmin)
+	if (!canManage(model))
 		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [
 			plus,
 			"Create MCP key",

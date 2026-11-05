@@ -9,7 +9,7 @@ import { panel } from "@maple/views/ui/panel"
 import { heading } from "@maple/views/ui/heading"
 import { publicUrl, statusPageHref } from "../shared/commands"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canBreakGlass, type Model } from "./model"
 import { revealedToken } from "./view-settings"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -133,7 +133,7 @@ export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
 					title: "Get a break-glass token",
 					description:
 						"If Maple itself is down, post updates straight to the page with it. Shown once; keep it in your password manager.",
-					actions: model.isAdmin
+					actions: canBreakGlass(model)
 						? [
 								button(
 									h,

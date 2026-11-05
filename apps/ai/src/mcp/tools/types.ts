@@ -168,7 +168,7 @@ export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurfac
  */
 export interface McpToolSpec<
 	P extends Schema.Codec<unknown, unknown, never, unknown>,
-	O extends Schema.Codec<unknown, unknown, never, never>,
+	O extends Schema.Codec<unknown, unknown>,
 	R extends McpToolRequirements,
 > {
 	readonly name: string
@@ -197,7 +197,7 @@ export interface McpToolSpec<
 export interface McpToolRegistrar {
 	define<
 		P extends Schema.Codec<unknown, unknown, never, unknown>,
-		O extends Schema.Codec<unknown, unknown, never, never>,
+		O extends Schema.Codec<unknown, unknown>,
 		R extends McpToolRequirements,
 	>(
 		spec: McpToolSpec<P, O, R>,

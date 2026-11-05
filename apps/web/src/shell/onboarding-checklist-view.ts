@@ -12,7 +12,7 @@ import { iconButton } from "@maple/views/ui/icon-button"
 import { meter } from "@maple/views/ui/meter"
 import * as PopoverView from "@maple/views/ui/popover"
 import { pressable } from "@maple/views/ui/pressable"
-import { Message, type Model } from "./onboarding-checklist"
+import { canClaim, Message, type Model } from "./onboarding-checklist"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -273,7 +273,7 @@ const panelFooter = (
 			button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedDone())] }, ["Done"]),
 		]
 	if (checklist.status === "claimable")
-		return model.isAdmin
+		return canClaim(model)
 			? [
 					h.span(
 						[

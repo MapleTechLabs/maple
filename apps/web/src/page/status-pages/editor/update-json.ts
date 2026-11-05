@@ -13,7 +13,7 @@ import { ApplyConfig } from "./command"
 import { type DraftResult, formatConfig, parseDraft } from "./config-json"
 import { isSameSettings, settingsFormOf } from "../shared/form"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import {
 	chain,
 	pageOf,
@@ -46,7 +46,7 @@ const hasChanges = (draft: DraftResult): boolean =>
 
 /** Apply needs a valid draft that changes something, and no unsaved Settings edits to fight. */
 export const canApply = (model: Model): boolean =>
-	model.isAdmin &&
+	canManage(model) &&
 	!model.isApplyingJson &&
 	!model.isSavingSettings &&
 	!isSettingsDirty(model) &&
@@ -60,7 +60,7 @@ const withCurrent = (model: Model, write: (text: string, base: StatusPageConfig)
 
 /** Opens the editor on the saved document; Reset runs it again over the draft. */
 export const editJson = (model: Model): Return =>
-	model.isAdmin
+	canManage(model)
 		? withCurrent(model, (jsonDraft, jsonBase) => ({
 				...model,
 				jsonDraft,

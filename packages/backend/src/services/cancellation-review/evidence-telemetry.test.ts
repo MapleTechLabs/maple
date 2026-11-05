@@ -67,7 +67,7 @@ describe("servicesOf", () => {
 			{ distinctRecent: 1, distinctPrior: 1 },
 			AT_MS,
 		).top
-		expect(service!.name).toHaveLength(80)
+		expect(service.name).toHaveLength(80)
 	})
 })
 
@@ -90,7 +90,7 @@ describe("resourceAttributesOf", () => {
 				{ value: "staging", share: 0.15 },
 			],
 		})
-		expect(byKey["telemetry.sdk.language"]!.notSetShare).toBe(0)
+		expect(byKey["telemetry.sdk.language"].notSetShare).toBe(0)
 		// Never set anywhere: all of it is "not set", not a guessed default.
 		expect(byKey["telemetry.sdk.version"]).toEqual({
 			key: "telemetry.sdk.version",

@@ -114,7 +114,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(response.status).toBe(401)
 			expect(response.headers.get("www-authenticate")).toContain(
@@ -183,7 +183,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(response.status).toBe(200)
 
@@ -206,7 +206,7 @@ describe("MCP HTTP authorization", () => {
 						method: "notifications/initialized",
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const called = await handler(
 				new Request("http://internal-worker.invalid/mcp", {
@@ -227,7 +227,7 @@ describe("MCP HTTP authorization", () => {
 						params: { name: "inspect_trace", arguments: {} },
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const calledBody = await called.clone().text()
 			expect({ status: called.status, body: calledBody }).toEqual({
@@ -291,7 +291,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const initializedBody = await readBody(initialized)
 			expect({
@@ -315,7 +315,7 @@ describe("MCP HTTP authorization", () => {
 						params: { name: "inspect_trace", arguments: {} },
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(called.status).toBe(200)
 		} finally {
@@ -374,7 +374,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			// No session id on the wire is what keeps clients off the 404 branch.
 			expect({
@@ -396,7 +396,7 @@ describe("MCP HTTP authorization", () => {
 					headers: headers({ "mcp-protocol-version": "2025-06-18" }),
 					body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const body = await listed.clone().text()
 			expect({ status: listed.status, defect: Str.includes("A defect occurred")(body) }).toEqual({
@@ -440,7 +440,7 @@ describe("MCP HTTP authorization", () => {
 					}),
 					body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(stale.status).toBe(200)
 			expect(await stale.text()).toContain("inspect_trace")
@@ -499,7 +499,7 @@ describe("MCP HTTP authorization", () => {
 						},
 					}),
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const body = await readBody(response)
 			expect({
@@ -562,7 +562,7 @@ describe("MCP HTTP authorization", () => {
 					// @ts-expect-error -- undici requires this for a stream body; not in the DOM lib.
 					duplex: "half",
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const body = await readBody(response)
 			expect({ status: response.status, code: errorCode(body.error) }).toEqual({
@@ -623,7 +623,7 @@ describe("MCP HTTP authorization", () => {
 						clientInfo: { name: "test", version: "1.0.0" },
 					},
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const result = (await readBody(initialized)).result
 			expect({
@@ -642,7 +642,7 @@ describe("MCP HTTP authorization", () => {
 
 			const listed = await handler(
 				post({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const tools: ReadonlyArray<{ readonly name: string }> =
 				(await readBody(listed)).result?.tools ?? []
@@ -709,7 +709,7 @@ describe("MCP server spans", () => {
 					},
 					body: JSON.stringify(body),
 				}),
-				Context.make(Tracer.Tracer, tracer) as never,
+				Context.make(Tracer.Tracer, tracer),
 			)
 		const callerTrace = "4bf92f3577b34da6a3ce929d0e0e4736"
 		const callerSpan = "00f067aa0ba902b7"

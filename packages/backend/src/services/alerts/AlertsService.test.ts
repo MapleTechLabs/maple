@@ -97,7 +97,7 @@ describe("AlertsService", () => {
 			assert.strictEqual(Arr.filter(exits, Exit.isFailure).length, 1)
 			const error = getError(Option.getOrUndefined(Arr.findFirst(exits, Exit.isFailure))!)
 			assert.instanceOf(error, AlertValidationError)
-			assert.include((error as AlertValidationError).message, "at most 100 active alert rules")
+			assert.include(error.message, "at most 100 active alert rules")
 			const rules = yield* alerts.listRules(orgId)
 			assert.lengthOf(
 				Arr.filter(rules.rules, (rule) => rule.enabled),
@@ -149,7 +149,7 @@ describe("AlertsService", () => {
 			const incidentsAfterSecondTick = yield* alerts.listIncidents(orgId)
 			const retrievedIncident = yield* alerts.getIncident(
 				orgId,
-				incidentsAfterSecondTick.incidents[0]!.id,
+				incidentsAfterSecondTick.incidents[0].id,
 			)
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
@@ -400,7 +400,7 @@ describe("AlertsService", () => {
 			// The webhook body is the snapshotted delivery payload — it carries the
 			// template so retries and downstream consumers render the same message.
 			assert.lengthOf(bodies, 1)
-			const payload = JSON.parse(bodies[0]!) as {
+			const payload = JSON.parse(bodies[0]) as {
 				template?: { title?: string; body?: string }
 			}
 			assert.strictEqual(payload.template?.title, "{{ severity }} on {{ rule.name }}")
@@ -446,10 +446,10 @@ describe("AlertsService", () => {
 			const incidents = yield* alerts.listIncidents(orgId)
 			assert.lengthOf(incidents.incidents, 1)
 			assert.lengthOf(bodies, 1)
-			const payload = JSON.parse(bodies[0]!) as { linkUrl?: string }
+			const payload = JSON.parse(bodies[0]) as { linkUrl?: string }
 			assert.isTrue(
 				payload.linkUrl !== undefined &&
-					Str.endsWith(`/alerts/incidents/${incidents.incidents[0]!.id}`)(payload.linkUrl),
+					Str.endsWith(`/alerts/incidents/${incidents.incidents[0].id}`)(payload.linkUrl),
 				payload.linkUrl,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
@@ -625,7 +625,7 @@ describe("AlertsService", () => {
 			assert.isOk(claimFirst?.lastScheduledAt, "claim row is created on the first tick")
 			assert.isAbove(
 				claimSecond!.lastScheduledAt!.getTime(),
-				claimFirst!.lastScheduledAt!.getTime(),
+				claimFirst.lastScheduledAt.getTime(),
 				"claim advances every tick",
 			)
 			assert.strictEqual(
@@ -1198,7 +1198,7 @@ describe("AlertsService", () => {
 						comparator: rule.comparator,
 						thresholds: [
 							rule.thresholds[0],
-							{ ...rule.thresholds[1]!, destinationIds: [warnHook.id] },
+							{ ...rule.thresholds[1], destinationIds: [warnHook.id] },
 						],
 						windowMinutes: rule.windowMinutes,
 						minimumSampleCount: rule.minimumSampleCount,
@@ -2269,7 +2269,7 @@ describe("AlertsService", () => {
 					incidentId: null,
 					ruleId: rule.id,
 					destinationId: destination.id,
-					deliveryKey: `${"00000000-0000-4000-8000-000000000004"}:${destination.id}:trigger:${fixedTime}`,
+					deliveryKey: `00000000-0000-4000-8000-000000000004:${destination.id}:trigger:${fixedTime}`,
 					eventType: "trigger",
 					attemptNumber: 1,
 					status: "queued",

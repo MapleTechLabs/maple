@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
@@ -90,8 +91,8 @@ export const Message = defineMessageUnion({
 	CompletedLoadCustomer: result(BillingCustomer),
 	/** `trackProduct("integration_connected")` was handed to the session SDK. */
 	CompletedTrackConnected: {},
-	/** The shared session read answered (`useIsOrgAdmin`). */
-	CompletedLoadSession: { isAdmin: Schema.Boolean },
+	/** The shared session read answered with its grants. */
+	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName) },
 	/** A catalog row or card, or the header's back button (`navigate({ search })`). */
 	ClickedIntegration: { integration: Schema.NullOr(Schema.String) },
 	/** A settings nav tab (`navigate({ to: "/settings", search: { tab } })`). */

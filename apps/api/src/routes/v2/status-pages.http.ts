@@ -34,7 +34,7 @@ import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { timestampMs } from "@maple/backend/platform/time"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import {
 	OrganizationFeatureFlagsService,
 	type OrganizationFeatureFlagsServiceApi,
@@ -47,10 +47,9 @@ import {
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 
-// Page settings, components and the break-glass token are admin-gated: they change what the
-// public sees about the whole org. Incidents stay open to any writer, so responders can post.
-const adminOnly = (action: string) => () =>
-	V2InsufficientPermissions.make(`Only org admins can ${action} status pages`)
+// Page settings and components need an engineer: they change what the public sees about the
+// whole org. The break-glass token is a credential, so it stays admin-only. Incidents stay open
+// to any writer, so responders can post.
 
 /** The caller's tenant, once its org is in the `statusPages` rollout. */
 const tenantInRollout = (featureFlags: OrganizationFeatureFlagsServiceApi) =>
@@ -224,7 +223,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("create"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const created = yield* service.create(tenant.orgId, {
 						name: payload.name,
 						slug: payload.slug,
@@ -287,7 +288,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("update"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const current = yield* service.get(tenant.orgId, params.id)
 					const updated = yield* service.update(tenant.orgId, params.id, {
 						...(payload.name === undefined ? undefined : { name: payload.name }),
@@ -323,7 +326,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("delete"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const current = yield* service.get(tenant.orgId, params.id)
 					const deleted = yield* service.remove(tenant.orgId, params.id)
 					// Best effort: the row is gone, so the page must not stay up; a failure is logged.
@@ -358,7 +363,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("publish", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("publish"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					// A draft goes public first, so the publish below writes it.
 					const page = yield* service.makePublic(tenant.orgId, params.id)
 					const publisher = yield* Effect.serviceOption(StatusPagePublisher)
@@ -394,7 +401,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("rotateBreakGlass", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("issue break-glass tokens for"))
+					yield* Policy.check(tenant.roles, "status_pages:break_glass", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const token = yield* service.rotateBreakGlassToken(tenant.orgId, params.id)
 					yield* recordHttpAudit("status_page.break_glass_rotated", { resourceId: params.id })
 					return {
@@ -408,7 +417,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("revokeBreakGlass", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("revoke break-glass tokens for"))
+					yield* Policy.check(tenant.roles, "status_pages:break_glass", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					yield* service.revokeBreakGlassToken(tenant.orgId, params.id)
 					yield* recordHttpAudit("status_page.break_glass_revoked", { resourceId: params.id })
 					const page = yield* service.get(tenant.orgId, params.id)
@@ -424,7 +435,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("applyConfig", ({ params, query, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("update"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const { previous, config, changes } = yield* service.applyConfig(
 						tenant.orgId,
 						params.id,
@@ -460,7 +473,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("createComponent", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("edit"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const created = yield* service.createComponent(tenant.orgId, params.id, {
 						name: payload.name,
 						...(payload.description === undefined
@@ -485,7 +500,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("reorderComponents", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("edit"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const components = yield* service.reorderComponents(
 						tenant.orgId,
 						params.id,
@@ -503,7 +520,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("updateComponent", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("edit"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const current = yield* requireComponentOnPage(
 						tenant.orgId,
 						params.id,
@@ -538,7 +557,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 			.handle("deleteComponent", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
-					yield* requireAdmin(tenant.roles, adminOnly("edit"))
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const current = yield* requireComponentOnPage(
 						tenant.orgId,
 						params.id,

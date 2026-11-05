@@ -133,7 +133,7 @@ describe("buildDiagnosisCompletion", () => {
 		const { spans, tracer } = makeRecordingTracer()
 
 		await Effect.runPromise(
-			completion!.handlers[SUBMIT_DIAGNOSIS](sampleSubmission()).pipe(
+			completion.handlers[SUBMIT_DIAGNOSIS](sampleSubmission()).pipe(
 				Effect.withSpan(`execute_tool ${SUBMIT_DIAGNOSIS}`),
 				Effect.withTracer(tracer),
 			),
@@ -201,9 +201,9 @@ describe("buildReviewCompletion", () => {
 			)
 			assert.isDefined(completion)
 			return {
-				completion: completion!,
+				completion: completion,
 				call: (submission: PrReviewSubmission) =>
-					Effect.runPromise(Effect.result(completion!.handlers[SUBMIT_REVIEW](submission))),
+					Effect.runPromise(Effect.result(completion.handlers[SUBMIT_REVIEW](submission))),
 			}
 		}
 		const CLEAN: PrReviewSubmission = { verdict: "clean", summary: "Adds a retry to the order client." }
@@ -317,14 +317,14 @@ describe("buildReviewCompletion", () => {
 
 			assert.isTrue(Result.isSuccess(await call(CLEAN)))
 			assert.deepStrictEqual(
-				Arr.map(filed[0]!.report.findings, (finding) => [
+				Arr.map(filed[0].report.findings, (finding) => [
 					finding.path,
 					finding.line,
 					finding.severity,
 				]),
 				[["src/capture.ts", 213, "warn"]],
 			)
-			assert.equal(filed[0]!.report.verdict, "issues")
+			assert.equal(filed[0].report.verdict, "issues")
 		})
 
 		it("files a child's observability warning without an audit id as a correctness finding", async () => {
@@ -350,7 +350,7 @@ describe("buildReviewCompletion", () => {
 			assert.isTrue(Result.isFailure(await call()))
 			assert.isTrue(Result.isSuccess(await call()))
 			assert.deepStrictEqual(
-				Arr.map(filed[0]!.report.findings, (finding) => [finding.path, finding.category]),
+				Arr.map(filed[0].report.findings, (finding) => [finding.path, finding.category]),
 				[["src/queue.ts", "correctness"]],
 			)
 		})
@@ -359,7 +359,7 @@ describe("buildReviewCompletion", () => {
 			const { filed, call } = submitWith(true)
 			assert.isTrue(Result.isSuccess(await call(CLEAN)))
 			assert.deepStrictEqual(
-				Arr.map(filed[0]!.report.findings, (finding) => [finding.path, finding.line]),
+				Arr.map(filed[0].report.findings, (finding) => [finding.path, finding.line]),
 				[["src/capture.ts", 213]],
 			)
 		})
@@ -373,7 +373,7 @@ describe("buildReviewCompletion", () => {
 				],
 			})
 			assert.isTrue(Result.isSuccess(result))
-			assert.lengthOf(filed[0]!.report.findings, 0)
+			assert.lengthOf(filed[0].report.findings, 0)
 		})
 
 		it("counts a finding saved and repeated in the submission once", async () => {
@@ -429,7 +429,7 @@ describe("buildReviewCompletion", () => {
 				],
 			})
 			assert.isTrue(Result.isSuccess(result))
-			assert.lengthOf(filed[0]!.report.findings, 0)
+			assert.lengthOf(filed[0].report.findings, 0)
 		})
 
 		it("records a review that files it near the child's line", async () => {
@@ -448,7 +448,7 @@ describe("buildReviewCompletion", () => {
 				],
 			})
 			assert.isTrue(Result.isSuccess(result))
-			assert.lengthOf(filed[0]!.report.findings, 1)
+			assert.lengthOf(filed[0].report.findings, 1)
 		})
 	})
 })
@@ -479,7 +479,7 @@ describe("record_finding", () => {
 			ledger,
 		)
 		assert.isDefined(completion)
-		const handlers = completion!.handlers
+		const handlers = completion.handlers
 		return {
 			filed,
 			ledger,
@@ -544,7 +544,7 @@ describe("record_finding", () => {
 			],
 		})
 		assert.isTrue(Result.isSuccess(result))
-		assert.lengthOf(filed[0]!.report.findings, 1)
+		assert.lengthOf(filed[0].report.findings, 1)
 	})
 
 	it("refuses a submission with an overlong finding once, then records it as given", async () => {
@@ -566,7 +566,7 @@ describe("record_finding", () => {
 		assert.isTrue(Result.isFailure(first))
 		assert.include(Result.isFailure(first) ? first.failure.message : "", "over 60")
 		assert.isTrue(Result.isSuccess(await submit(submission)))
-		assert.lengthOf(filed[0]!.report.findings, 1)
+		assert.lengthOf(filed[0].report.findings, 1)
 	})
 
 	it("saves a finding and adds it to the submitted report, dropping a restatement", async () => {
@@ -583,7 +583,7 @@ describe("record_finding", () => {
 			],
 		})
 		assert.isTrue(Result.isSuccess(result))
-		const report = filed[0]!.report
+		const report = filed[0].report
 		assert.deepStrictEqual(
 			Arr.map(report.findings, (finding) => finding.line),
 			[42, 90],
@@ -611,7 +611,7 @@ describe("record_finding", () => {
 	it("names the reviewed files a close-out never read on its report", async () => {
 		const { filed, submit } = setup(["src/b.ts", "src/c.ts"], true)
 		assert.isTrue(Result.isSuccess(await submit({ verdict: "clean", summary: "Partial." })))
-		assert.deepStrictEqual(filed[0]!.report.unreviewed, ["src/b.ts", "src/c.ts"])
+		assert.deepStrictEqual(filed[0].report.unreviewed, ["src/b.ts", "src/c.ts"])
 	})
 })
 
@@ -666,12 +666,9 @@ describe("buildChatToolkit", () => {
 			PULL_REQUEST,
 		)
 
-		await Effect.runPromise(handlers.pr_changed_files!({ description: "files" }, {} as never))
+		await Effect.runPromise(handlers.pr_changed_files({ description: "files" }, {}))
 		await Effect.runPromise(
-			handlers.pr_file_diff!(
-				{ repository: "MapleLabs/Maple", number: 1, paths: ["a.ts"] },
-				{} as never,
-			),
+			handlers.pr_file_diff({ repository: "MapleLabs/Maple", number: 1, paths: ["a.ts"] }, {}),
 		)
 
 		assert.deepEqual(calls, [
@@ -694,7 +691,7 @@ describe("buildChatToolkit", () => {
 		)
 		const read = { repository: "MapleTechLabs/other", ref: "main", path: "a.ts" }
 
-		await Effect.runPromise(handlers.sandbox_read_file!(read, {} as never))
+		await Effect.runPromise(handlers.sandbox_read_file(read, {}))
 
 		assert.deepEqual(calls, [{ name: "sandbox_read_file", params: read }])
 	})

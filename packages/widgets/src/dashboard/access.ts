@@ -64,9 +64,7 @@ export const dataSourceTransform = (
 	dataSource: unknown,
 ): typeof WidgetDataSourceTransformV2.Type | undefined => {
 	if (!isRecord(dataSource)) return undefined
-	return isRecord(dataSource.transform)
-		? (dataSource.transform as typeof WidgetDataSourceTransformV2.Type)
-		: undefined
+	return isRecord(dataSource.transform) ? dataSource.transform : undefined
 }
 
 /** True when this data source carries a user-authored query set. */
@@ -115,7 +113,7 @@ export const dataSourceQuerySet = (dataSource: unknown): WidgetQuerySet | null =
 		resultShape: resultKind,
 		queries: Arr.isArray(fields.queries) ? (fields.queries as QuerySet["queries"]) : [],
 		formulas: Arr.isArray(fields.formulas) ? (fields.formulas as QuerySet["formulas"]) : undefined,
-		comparison: isRecord(fields.comparison) ? (fields.comparison as QuerySet["comparison"]) : undefined,
+		comparison: isRecord(fields.comparison) ? fields.comparison : undefined,
 		defaultLimit: typeof fields.defaultLimit === "number" ? fields.defaultLimit : undefined,
 		limit: typeof fields.limit === "number" ? fields.limit : undefined,
 		columns: Arr.isArray(fields.columns) ? (fields.columns as ReadonlyArray<string>) : undefined,

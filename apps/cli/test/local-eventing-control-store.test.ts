@@ -373,7 +373,7 @@ describe("LocalEventingControlStore", () => {
 				const firstPage = run(store.listReady(1))
 				strictEqual(firstPage.events.length, 1)
 				strictEqual(firstPage.nextCursor, firstPage.events[0]?.sequence)
-				const secondPage = run(store.listReady(1, firstPage.nextCursor!))
+				const secondPage = run(store.listReady(1, firstPage.nextCursor))
 				deepStrictEqual(
 					Arr.map([...firstPage.events, ...secondPage.events], ({ event }) => event.id),
 					[event().id, second.id],
@@ -407,7 +407,7 @@ describe("LocalEventingControlStore", () => {
 					Arr.map(initialPage.events, ({ event }) => event.id),
 					[second.id],
 				)
-				const cursor = initialPage.events[0]!.sequence
+				const cursor = initialPage.events[0].sequence
 
 				run(store.markReady([first.id]))
 				const recoveredPage = run(store.listReady(1, cursor))
@@ -415,7 +415,7 @@ describe("LocalEventingControlStore", () => {
 					Arr.map(recoveredPage.events, ({ event }) => event.id),
 					[first.id],
 				)
-				strictEqual(recoveredPage.events[0]!.sequence > cursor, true)
+				strictEqual(recoveredPage.events[0].sequence > cursor, true)
 			} finally {
 				await store.close()
 			}
@@ -505,7 +505,7 @@ describe("LocalEventingControlStore", () => {
 								"tenant-a",
 								"automation",
 								firstClaim.leaseToken!,
-								firstClaim.events[0]!.sequence,
+								firstClaim.events[0].sequence,
 								"2026-08-13T12:00:03.000Z",
 							),
 						),
@@ -622,7 +622,7 @@ describe("LocalEventingControlStore", () => {
 			const registered = run(
 				store.registerConsumer("tenant-a", "automation", "latest", "2099-01-01T00:00:00.000Z"),
 			)
-			strictEqual(registered.lastAcknowledgedSequence, run(store.listReady()).events[0]!.sequence)
+			strictEqual(registered.lastAcknowledgedSequence, run(store.listReady()).events[0].sequence)
 			deepStrictEqual(
 				run(store.claimReady("tenant-a", "automation", 10, 300, "2099-01-01T00:00:01.000Z")).events,
 				[],

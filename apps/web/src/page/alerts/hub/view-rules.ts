@@ -27,7 +27,7 @@ import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
 import { Message, type RuleBucket } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { ruleMenuId } from "./update"
 import { searchInput } from "@maple/views/ui/search-input"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -350,7 +350,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 			),
 			h.span(
 				[h.Class(ROW_LINK_LIFT)],
-				model.isAdmin
+				canManage(model)
 					? [
 							rowActionsMenu(h, {
 								slotId: menuId,

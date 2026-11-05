@@ -1,4 +1,5 @@
-import { toOrgRole } from "../../../components/settings/org-membership"
+import * as Policy from "@maple/domain/policy"
+import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../../../components/settings/org-membership"
 import { Array, Effect, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -15,7 +16,7 @@ import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import { memberDisplayName, otherAdminName } from "../kit/members"
-import { type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
+import { canManage, type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -233,17 +234,18 @@ const ResendInvitation = Command.define("ResendClerkInvitation", {
 		}),
 })
 
-const ROLE_VALUES = ["org:member", "org:admin"] as const
-
 export const roleSelectFor = (model: Model, member: MemberRow): Select.Model =>
 	model.roleSelects[member.id] ?? roleSelect(`member-role-${member.id}`, toOrgRole(member.role))
 
 const roleSelect = (id: string, role: OrgRole): Select.Model =>
-	Select.init(id, { value: role, selectedIndex: ROLE_VALUES.indexOf(role) })
+	Select.init(id, {
+		value: role,
+		selectedIndex: Option.getOrNull(Array.findFirstIndex(orgRoleKeys, (key) => key === role)),
+	})
 
-export const init = (isAdmin: boolean): Return => ({
+export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		adminName: null,
 		hasOrganization: null,
 		orgName: "",
@@ -271,7 +273,7 @@ export const init = (isAdmin: boolean): Return => ({
 		FetchOrganization(),
 		FetchMembers({ page: 1, generation: 0 }),
 		FetchInvitations({ page: 1, generation: 0 }),
-		...(isAdmin ? [] : [FetchAdminName()]),
+		...(Policy.has(grants, "members:manage") ? [] : [FetchAdminName()]),
 	],
 })
 
@@ -436,7 +438,7 @@ export const revisit = (model: Model): Return => {
 			...members.commands,
 			...invitations.commands,
 			FetchOrganization(),
-			...(model.isAdmin ? [] : [FetchAdminName()]),
+			...(canManage(model) ? [] : [FetchAdminName()]),
 		],
 	}
 }
@@ -599,10 +601,7 @@ export const update = (model: Model, message: Message): Return =>
 						pendingRole: null,
 						roleSelects: {},
 					}),
-					outMessage: toast(
-						"success",
-						`${name} is now ${next === "org:admin" ? "an admin" : "a member"}`,
-					),
+					outMessage: toast("success", `${name} is now ${orgRoleNoun(next)}`),
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isRoleSaving: false },

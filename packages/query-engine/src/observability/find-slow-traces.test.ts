@@ -109,7 +109,7 @@ describe("findSlowTraces", () => {
 			}).pipe(Effect.provide(makeLayer(executor)))
 
 			assert.strictEqual(output.traces.length, 1)
-			const trace = output.traces[0]!
+			const trace = output.traces[0]
 			assert.strictEqual(trace.traceId, "trace-abc")
 			assert.strictEqual(trace.spanId, null)
 			assert.strictEqual(trace.spanName, "GET /api/users")
@@ -118,10 +118,10 @@ describe("findSlowTraces", () => {
 			assert.strictEqual(trace.statusCode, "Ok")
 
 			assert.isNotNull(output.stats)
-			assert.strictEqual(output.stats!.p50Ms, 100)
-			assert.strictEqual(output.stats!.p95Ms, 1500)
-			assert.strictEqual(output.stats!.minMs, 5)
-			assert.strictEqual(output.stats!.maxMs, 2000)
+			assert.strictEqual(output.stats.p50Ms, 100)
+			assert.strictEqual(output.stats.p95Ms, 1500)
+			assert.strictEqual(output.stats.minMs, 5)
+			assert.strictEqual(output.stats.maxMs, 2000)
 		}),
 	)
 

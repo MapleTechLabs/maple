@@ -96,7 +96,7 @@ const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
 				},
 				body: JSON.stringify(body),
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		const text = await response.text()
 		return {

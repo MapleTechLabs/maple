@@ -1082,7 +1082,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				(orgSubs) => {
 					// Every subscription in the group shares an org and a scope by
 					// construction, so the first row speaks for all of them.
-					const head = orgSubs[0]!
+					const head = orgSubs[0]
 					const rawOrgId = head.orgId
 					const scope: DigestScope = {
 						environments: parseScopeColumn(head.environmentsJson),

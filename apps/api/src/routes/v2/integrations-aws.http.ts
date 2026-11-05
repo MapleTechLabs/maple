@@ -9,16 +9,15 @@ import {
 } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import {
 	AwsConnectionService,
 	type AwsConnection,
 } from "@maple/backend/services/integrations/AwsConnectionService"
 import { AwsIngestService } from "@maple/backend/services/integrations/AwsIngestService"
 
-// The reads (status, ingest) are open to every member. Everything else is admin-only: a connection
+// The reads (status, ingest) are open to every member. Everything else needs integrations:manage: a connection
 // decides what Maple may read in the org's AWS account.
-const adminOnly = () => V2InsufficientPermissions.make("Only org admins can manage AWS connections")
 
 const toV2Connection = (connection: AwsConnection): V2AwsConnection => ({
 	id: connection.id,
@@ -68,7 +67,9 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("createConnection", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const connection = yield* aws.create(tenant.orgId, tenant.userId, {
 						accountId: payload.account_id,
 						modules: payload.modules ?? [],
@@ -84,7 +85,9 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("updateConnection", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const connection = yield* aws.update(tenant.orgId, params.id, {
 						modules: payload.modules,
 						metricStream: payload.metric_stream,
@@ -99,7 +102,9 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("setup", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const setup = yield* aws.setup(tenant.orgId, params.id)
 					return {
 						object: "aws_connection.setup" as const,
@@ -117,7 +122,9 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("checkConnection", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const connection = yield* aws.check(tenant.orgId, params.id)
 					return toV2Connection(connection)
 				}),
@@ -147,7 +154,9 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 			.handle("deleteConnection", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, adminOnly)
+					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
 					const deleted = yield* aws.delete(tenant.orgId, params.id)
 					yield* recordHttpAudit("aws_connection.deleted", {
 						resourceId: params.id,

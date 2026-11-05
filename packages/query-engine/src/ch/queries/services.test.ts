@@ -209,7 +209,7 @@ describe("serviceOverviewQuery", () => {
 		expect(decoded.estimatedSpanCount).toBe(200)
 		expect(decoded.p95LatencyMs).toBe(42)
 		expect(decoded.commits).toHaveLength(2)
-		const [sha, spans, errors, firstSeen] = decoded.commits[0]!
+		const [sha, spans, errors, firstSeen] = decoded.commits[0]
 		expect([sha, spans, errors, DateTime.formatIso(firstSeen)]).toEqual([
 			"abc123",
 			80,

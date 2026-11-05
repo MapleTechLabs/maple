@@ -141,7 +141,7 @@ const listPreviewWorkers = async (token: string, accountId: string, candidates: 
 		const match = WORKER_PATTERN.exec(script.id ?? "")
 		if (!match) continue
 		matched++
-		addCandidate(candidates, match[2] as string, script.id as string)
+		addCandidate(candidates, match[2], script.id as string)
 	}
 	console.log(`Found ${scripts.length} Worker script(s), ${matched} maple-*-pr-*`)
 }
@@ -163,7 +163,7 @@ const listReplayBuckets = async (token: string, accountId: string, candidates: C
 		const match = REPLAY_BUCKET_PATTERN.exec(bucket.name ?? "")
 		if (!match) continue
 		matched++
-		addCandidate(candidates, match[1] as string, bucket.name as string)
+		addCandidate(candidates, match[1], bucket.name as string)
 	}
 	console.log(`Found ${matched} maple-replay-blobs-pr-* R2 bucket(s)`)
 }
@@ -186,8 +186,8 @@ const listNeonBranches = async (
 	for (const branch of branches ?? []) {
 		const match = NEON_BRANCH_PATTERN.exec(branch.name ?? "")
 		if (!match || !branch.id) continue
-		branchIdByPr.set(match[1] as string, branch.id)
-		addCandidate(candidates, match[1] as string, `neon:${branch.name}`)
+		branchIdByPr.set(match[1], branch.id)
+		addCandidate(candidates, match[1], `neon:${branch.name}`)
 	}
 	console.log(`Found ${branches?.length ?? 0} Neon branch(es), ${branchIdByPr.size} pr-*`)
 	return branchIdByPr

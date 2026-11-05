@@ -22,7 +22,7 @@ import { columnHead, dataTable } from "../../infra/kit/data-table"
 import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstackClass } from "@maple/views/ui/stack"
 
@@ -96,7 +96,7 @@ const apiRow = (
 ): Html => {
 	const key: V2ApiKey = row.key
 	const isDead = row.status === "revoked" || row.status === "expired"
-	const can = apiKeyRowPermissions(key, { isAdmin: model.isAdmin, userId: model.userId })
+	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
 	const entries: ReadonlyArray<MenuView.MenuEntry> = [
 		...(can.canRoll
 			? [{ _tag: "Item" as const, value: "roll", label: "Roll key", icon: "ArrowPathIcon" as const }]
@@ -231,7 +231,7 @@ const deviceRow = (
 	formatDate: (iso: string) => string,
 ): Html => {
 	const key: V2ApiKey = row.key
-	const can = apiKeyRowPermissions(key, { isAdmin: model.isAdmin, userId: model.userId })
+	const can = apiKeyRowPermissions(key, { canManageKeys: canManage(model), userId: model.userId })
 	const entries: ReadonlyArray<MenuView.MenuEntry> = can.canRevoke
 		? [
 				{

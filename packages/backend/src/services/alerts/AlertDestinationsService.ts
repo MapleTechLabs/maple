@@ -39,6 +39,7 @@ import {
 	type LinearOAuthServiceApi,
 	type LinearTeam,
 } from "@maple/backend/services/auth/LinearOAuthService"
+import * as Policy from "@maple/domain/policy"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import {
@@ -68,10 +69,7 @@ const decodeAlertDestinationIdSync = Schema.decodeUnknownSync(AlertDestinationDo
 const decodeAlertDestinationTypeSync = Schema.decodeUnknownSync(AlertDestinationTypeSchema)
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const isoFromMs = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
-
-const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 
 const makeValidationError = (message: string, details: ReadonlyArray<string> = [], cause?: unknown) =>
 	new AlertValidationError({ message, details, ...(!(cause === undefined) ? { cause } : undefined) })
@@ -383,15 +381,19 @@ export class AlertDestinationsService extends Context.Service<
 
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
 
-		const requireAdmin = Effect.fn("AlertDestinationsService.requireAdmin")(function* (
-			roles: ReadonlyArray<RoleName>,
-		) {
-			if (roles.some((role) => adminRoles.includes(role))) return
-			return yield* new AlertForbiddenError({
-				message: "Only org admins can manage alerts",
-				...(roles.length > 0 ? { roles: [...roles] } : undefined),
-			})
-		})
+		const requireAlertsPermission = Effect.fn("AlertDestinationsService.requireAlertsPermission")(
+			function* (roles: ReadonlyArray<RoleName>) {
+				return yield* Policy.check(
+					roles,
+					"alerts:manage",
+					(denial) =>
+						new AlertForbiddenError({
+							message: denial.message,
+							...(roles.length > 0 ? { roles: [...roles] } : undefined),
+						}),
+				)
+			},
+		)
 
 		const requireDestinationRow = Effect.fn("AlertDestinationsService.requireDestinationRow")(function* (
 			orgId: OrgId,
@@ -512,10 +514,10 @@ export class AlertDestinationsService extends Context.Service<
 		const listTelegramChats: AlertDestinationsServiceApi["listTelegramChats"] = Effect.fn(
 			"AlertDestinationsService.listTelegramChats",
 		)(function* (roles, botToken) {
-			// Admin-gated for the same reason a chat workspace's channel list is: it reads
+			// Gated for the same reason a chat workspace's channel list is: it reads
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
 			// must not be a probe any org member can drive.
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			const trimmed = botToken.trim()
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
 				return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
@@ -530,7 +532,7 @@ export class AlertDestinationsService extends Context.Service<
 		const createDestination: AlertDestinationsServiceApi["createDestination"] = Effect.fn(
 			"AlertDestinationsService.createDestination",
 		)(function* (orgId, userId, roles, request) {
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			if (request.type === "webhook") yield* validateDestinationUrl(request.url, "url")
 			else if (request.type === "discord") {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
@@ -604,7 +606,7 @@ export class AlertDestinationsService extends Context.Service<
 		const updateDestination: AlertDestinationsServiceApi["updateDestination"] = Effect.fn(
 			"AlertDestinationsService.updateDestination",
 		)(function* (orgId, userId, roles, destinationId, request) {
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			const existing = yield* requireDestinationRow(orgId, destinationId)
 			if (existing.type !== request.type) {
 				return yield* makeValidationError("Destination type cannot be changed")
@@ -885,7 +887,7 @@ export class AlertDestinationsService extends Context.Service<
 		const deleteDestination: AlertDestinationsServiceApi["deleteDestination"] = Effect.fn(
 			"AlertDestinationsService.deleteDestination",
 		)(function* (orgId, roles, destinationId) {
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			yield* requireDestinationRow(orgId, destinationId)
 			const dependentRules = yield* dbExecute((db) =>
 				db.run(
@@ -967,7 +969,7 @@ export class AlertDestinationsService extends Context.Service<
 		const testDestination: AlertDestinationsServiceApi["testDestination"] = Effect.fn(
 			"AlertDestinationsService.testDestination",
 		)(function* (orgId, _userId, roles, destinationId) {
-			yield* requireAdmin(roles)
+			yield* requireAlertsPermission(roles)
 			const row = yield* requireDestinationRow(orgId, destinationId)
 			const sent = yield* delivery
 				.sendImmediateNotification(row, {

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Effect, Option, Result, Schedule, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -7,7 +8,7 @@ import { MapleInternalApiClient } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Select from "@maple/views/ui/select"
 import { currentReturnPath, startConnect } from "../../integrations/connect"
-import { readIsAdmin } from "../shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import type { DestinationForm } from "./form"
 
 // `LinearFields`: the org's Linear connection, connected in a popup by an admin, and the
@@ -26,8 +27,8 @@ export const Model = Schema.Struct({
 	status: Keyed.KeyedSchema(LinearStatus, LoadFailure),
 	teams: Keyed.KeyedSchema(Schema.Array(LinearTeam), LoadFailure),
 	teamSelect: Select.Model,
-	/** Connecting Linear is admin-only; `null` until the session answers. */
-	isAdmin: Schema.NullOr(Schema.Boolean),
+	/** The session's permissions; `null` until it answers. Connecting needs `alerts:manage`. */
+	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
 	/** The connect popup is out: the status is re-read once it closes. */
 	isConnecting: Schema.Boolean,
 	/** Bumped per connect and per mount: a popup from an earlier one never settles this form. */
@@ -39,13 +40,17 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+/** Whether the viewer may connect Linear here; `null` while the session read is out. */
+export const canConnect = (model: Model): boolean | null =>
+	model.grants === null ? null : Policy.has(model.grants, "alerts:manage")
+
 export const TEAM_SELECT_ID = "destination-linear-team"
 
 export const init = (): Model => ({
 	status: Keyed.idle(),
 	teams: Keyed.idle(),
 	teamSelect: Select.init(TEAM_SELECT_ID, { value: "", selectedIndex: null }),
-	isAdmin: null,
+	grants: null,
 	isConnecting: false,
 	connectAttempt: 0,
 	connectNote: null,
@@ -55,7 +60,7 @@ export const init = (): Model => ({
 export const Message = defineMessageUnion({
 	CompletedFetchStatus: { key: Schema.String, result: Schema.Result(LinearStatus, LoadFailure) },
 	CompletedFetchTeams: { key: Schema.String, result: Schema.Result(Schema.Array(LinearTeam), LoadFailure) },
-	CompletedFetchIsAdmin: { isAdmin: Schema.Boolean },
+	CompletedFetchGrants: { grants: Schema.Array(Policy.PermissionName) },
 	ClickedRetry: {},
 	ClickedConnect: {},
 	CompletedConnect: { attempt: Schema.Number, outcome: Schema.Literals(["Closed", "Blocked", "Failed"]) },
@@ -100,9 +105,9 @@ const FetchTeams = Command.define("FetchAlertLinearTeams", {
 		),
 })
 
-export const FetchIsAdmin = Command.define("FetchAlertLinearIsAdmin", {
-	messages: [Message.CompletedFetchIsAdmin],
-	execute: Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchIsAdmin({ isAdmin })),
+export const FetchGrants = Command.define("FetchAlertLinearGrants", {
+	messages: [Message.CompletedFetchGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedFetchGrants({ grants })),
 })
 
 const WINDOW_NAME = "maple-linear-connect"
@@ -207,11 +212,11 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 	Message.match<Return>(message, {
 		CompletedFetchStatus: ({ key, result }) => statusAnswered(model, key, result),
 		CompletedFetchTeams: ({ key, result }) => teamsAnswered(model, key, result, form),
-		CompletedFetchIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin }, commands: [] }),
+		CompletedFetchGrants: ({ grants }) => ({ model: { ...model, grants }, commands: [] }),
 		// The status read chains into the teams when the connection is usable.
 		ClickedRetry: () => readStatus({ ...model, isRecheckingStatus: false }, "Refresh"),
 		ClickedConnect: () =>
-			model.isConnecting || model.isAdmin !== true
+			model.isConnecting || canConnect(model) !== true
 				? { model, commands: [] }
 				: {
 						model: {
@@ -262,7 +267,7 @@ export const reset = (model: Model, form: DestinationForm): Return => {
 		connectNote: null,
 		teamSelect: Select.init(TEAM_SELECT_ID, { value: form.linearTeamId, selectedIndex: null }),
 	}
-	const admin = model.isAdmin === null ? [FetchIsAdmin()] : []
+	const admin = model.grants === null ? [FetchGrants()] : []
 	const isCachedUsable = Option.exists(AsyncData.getData(mounted.status.data), isUsable)
 	const status = readStatus(mounted, isCachedUsable ? "Load" : "Refresh")
 	// A status already known to be usable (a reopen) reads the teams straight away.

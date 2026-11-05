@@ -99,7 +99,7 @@ export interface OrgOpenRouterKeyServiceApi {
 	 * The key an AI turn for this org should run on, or `None` for Maple's own. Never fails: an
 	 * unreadable key falls back to Maple's, which still meters the turn.
 	 */
-	readonly resolveForRun: (orgId: OrgId) => Effect.Effect<Option.Option<Redacted.Redacted<string>>>
+	readonly resolveForRun: (orgId: OrgId) => Effect.Effect<Option.Option<Redacted.Redacted>>
 }
 
 export class OrgOpenRouterKeyService extends Context.Service<
@@ -272,11 +272,11 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		const resolveForRun = Effect.fn("OrgOpenRouterKeyService.resolveForRun")(
 			function* (orgId: OrgId) {
 				const row = yield* loadRow(orgId)
-				if (Option.isNone(row)) return Option.none<Redacted.Redacted<string>>()
+				if (Option.isNone(row)) return Option.none<Redacted.Redacted>()
 				// A lapsed add-on stops the key being used; Autumn being down does not.
 				if ((yield* entitlement(orgId)) === "not_entitled") {
 					yield* Effect.annotateCurrentSpan("maple.llm.byok_lapsed", true)
-					return Option.none<Redacted.Redacted<string>>()
+					return Option.none<Redacted.Redacted>()
 				}
 				const apiKey = yield* decryptAes256Gcm(
 					{ ciphertext: row.value.keyCiphertext, iv: row.value.keyIv, tag: row.value.keyTag },
@@ -291,7 +291,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 					Effect.catchCause((cause) =>
 						Effect.logError("Could not read the org's OpenRouter key; using Maple's").pipe(
 							Effect.annotateLogs({ orgId, cause }),
-							Effect.as(Option.none<Redacted.Redacted<string>>()),
+							Effect.as(Option.none<Redacted.Redacted>()),
 						),
 					),
 				),

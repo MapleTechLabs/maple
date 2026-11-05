@@ -67,7 +67,7 @@ describe("parseFingerprints", () => {
 	it("tolerates malformed JSON by reseeding", () => {
 		const entries = parseFingerprints(incidentRow({ fingerprintsJson: "{not json" }))
 		expect(entries).toHaveLength(1)
-		expect(entries[0]!.fingerprintHash).toBe("fp1")
+		expect(entries[0].fingerprintHash).toBe("fp1")
 	})
 })
 
@@ -75,7 +75,7 @@ describe("upsertFingerprintEntry", () => {
 	it("replaces an existing fingerprint's entry", () => {
 		const next = upsertFingerprintEntry([entry()], entry({ lastValue: 99 }))
 		expect(next).toHaveLength(1)
-		expect(next[0]!.lastValue).toBe(99)
+		expect(next[0].lastValue).toBe(99)
 	})
 
 	it("appends new fingerprints up to the cap", () => {

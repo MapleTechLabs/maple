@@ -21,7 +21,7 @@ const HOUR_MS = 3_600_000
  *  real argument type rather than a cast-down document. */
 const issue = (fields: { hasOpenIncident?: boolean; workflowState?: WorkflowState }) => ({
 	hasOpenIncident: fields.hasOpenIncident ?? false,
-	workflowState: fields.workflowState ?? ("triage" as WorkflowState),
+	workflowState: fields.workflowState ?? "triage",
 })
 
 const investigation = (fields: {
@@ -139,7 +139,7 @@ describe("surgeRatio", () => {
 
 describe("buildErrorSignals", () => {
 	it("sums a merged issue's volume and spark across every hash it owns", () => {
-		const base = buildErrorsLabFixture(Date.parse("2026-11-03T12:00:00Z")).signals[0]!.issue
+		const base = buildErrorsLabFixture(Date.parse("2026-11-03T12:00:00Z")).signals[0].issue
 		const merged = new ErrorIssueDocument({ ...base, fingerprintHashes: ["1", "2"] })
 		const day = (n: number) => `2026-11-0${n}T00:00:00.000Z`
 		const [signal] = buildErrorSignals({

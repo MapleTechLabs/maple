@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Effect, Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
@@ -102,7 +103,12 @@ const ANSWERS: ReadonlyArray<Answer> = [
 	),
 	slot(
 		(model) => model.uptimeMonitors,
-		(key) => PageMessage.CompletedFetchUptimeMonitors({ key, result: Result.succeed([]), isAdmin: true }),
+		(key) =>
+			PageMessage.CompletedFetchUptimeMonitors({
+				key,
+				result: Result.succeed([]),
+				grants: Policy.allPermissions,
+			}),
 	),
 	(model) =>
 		Arr.flatMap(Rec.toEntries(model.commits), ([sha, data]) => {

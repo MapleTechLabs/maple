@@ -554,11 +554,7 @@ describe("GcpMetricsService", () => {
 
 				// The assertion is an RS256 JWT from Maple's account, valid for ten minutes.
 				assert.lengthOf(calls.oauth, 1)
-				const [header, claims, signature] = Str.split(".")(calls.oauth[0]!) as [
-					string,
-					string,
-					string,
-				]
+				const [header, claims, signature] = Str.split(".")(calls.oauth[0]) as [string, string, string]
 				assert.deepStrictEqual(decodeJwtPart(header), { alg: "RS256", typ: "JWT", kid: "key-1" })
 				assert.deepStrictEqual(decodeJwtPart(claims), {
 					iss: MAPLE_ACCOUNT,
@@ -636,8 +632,8 @@ describe("GcpMetricsService", () => {
 				)
 
 				assert.lengthOf(calls.ingest, 1)
-				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
-				const payload = JSON.parse(calls.ingest[0]!.body)
+				assert.match(calls.ingest[0].authorization ?? "", /^Bearer maple_pk_/)
+				const payload = JSON.parse(calls.ingest[0].body)
 				const resource = payload.resourceMetrics[0]
 				const attributes = Rec.fromEntries(
 					resource.resource.attributes.map(
@@ -732,7 +728,7 @@ describe("GcpMetricsService", () => {
 					["organizations/123456789012"],
 				)
 
-				const payload = JSON.parse(calls.ingest[0]!.body)
+				const payload = JSON.parse(calls.ingest[0].body)
 				const accounts = payload.resourceMetrics.map(
 					(resource: {
 						resource: { attributes: Array<{ key: string; value: { stringValue: string } }> }
@@ -1022,7 +1018,7 @@ describe("GcpMetricsService", () => {
 				assert.deepInclude(summary, { polled: 1, failures: 0, incompleteMetrics: 1 })
 				const pages = Arr.filter(calls.monitoring, (call) => call.metricType === REQUEST_COUNT)
 				assert.lengthOf(pages, MAX_PAGES_PER_METRIC)
-				assert.isNull(pages[0]!.params.get("pageToken"))
+				assert.isNull(pages[0].params.get("pageToken"))
 				assert.isNotNull(pages.at(-1)!.params.get("pageToken"))
 				// What was read is kept, and the window is not read again.
 				assert.strictEqual(summary.rowsIngested, 2 * MAX_PAGES_PER_METRIC)
@@ -1534,7 +1530,7 @@ describe("GcpMetricsService resource inventory", () => {
 					authorization: `Bearer ${READER_TOKEN}`,
 					quotaProject: "acme-prod",
 				})
-				assert.deepStrictEqual(calls.assets[0]!.params.getAll("assetTypes"), [...GCP_ASSET_TYPES])
+				assert.deepStrictEqual(calls.assets[0].params.getAll("assetTypes"), [...GCP_ASSET_TYPES])
 				assert.deepStrictEqual(yield* inventory(testDb, CONNECTOR_A), [
 					["acme-prod", "cloudresourcemanager.googleapis.com/Project", "acme-prod"],
 					["acme-prod", "run.googleapis.com/Service", "cart"],
@@ -1617,9 +1613,9 @@ describe("GcpMetricsService resource inventory", () => {
 					authorization: `Bearer ${READER_TOKEN}`,
 					quotaProject: "acme-prod",
 				})
-				assert.strictEqual(calls.instances[0]!.params.get("contentType"), "RESOURCE")
+				assert.strictEqual(calls.instances[0].params.get("contentType"), "RESOURCE")
 				assert.strictEqual(
-					calls.instances[0]!.params.get("assetTypes"),
+					calls.instances[0].params.get("assetTypes"),
 					"sqladmin.googleapis.com/Instance",
 				)
 				const stored = yield* Effect.promise(() =>

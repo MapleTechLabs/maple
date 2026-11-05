@@ -135,8 +135,8 @@ describe("TargetFetcher", () => {
 				Effect.flip,
 			)
 			const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
-			assert.isTrue(Exit.isSuccess(span!.exit))
-			assert.strictEqual(span!.attributes.get("http.response.status_code"), 429)
+			assert.isTrue(Exit.isSuccess(span.exit))
+			assert.strictEqual(span.attributes.get("http.response.status_code"), 429)
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 

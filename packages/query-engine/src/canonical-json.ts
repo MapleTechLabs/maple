@@ -26,7 +26,7 @@ const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknow
  * `null` so a malformed input can never hang the key path.
  */
 export const canonicalJSON = (value: unknown): string => {
-	const seen = new WeakSet<object>()
+	const seen = new WeakSet()
 	const walk = (v: unknown): unknown => {
 		if (v === null) return null
 		if (v === undefined) return undefined

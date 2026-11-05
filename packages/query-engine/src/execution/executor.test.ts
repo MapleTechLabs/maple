@@ -393,7 +393,7 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 			)
 			assert.deepStrictEqual(statuses, ["ok", "error"])
 			assert.strictEqual(
-				inserts[0]!.attributes.get("error.type"),
+				inserts[0].attributes.get("error.type"),
 				"@maple/http/errors/WarehouseUpstreamError",
 			)
 		}),
@@ -631,7 +631,7 @@ describe("makeWarehouseExecutor wire format", () => {
 			)
 			yield* executor.compiledQuery(tenant, compiled, { context: "test", profile: "list" })
 			assert.lengthOf(sqls, 1)
-			return sqls[0]!
+			return sqls[0]
 		})
 
 	it.effect("declares FORMAT in the statement for the Tinybird SDK backend", () =>
@@ -1076,8 +1076,8 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 			)
 
 			assert.lengthOf(executed, 1)
-			assert.include(executed[0]!, "'scan' = 'scan'")
-			assert.notInclude(executed[0]!, "enable_full_text_index")
+			assert.include(executed[0], "'scan' = 'scan'")
+			assert.notInclude(executed[0], "enable_full_text_index")
 		}),
 	)
 
@@ -1190,7 +1190,7 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 			yield* TestClock.adjust(Duration.seconds(3))
 			assert.strictEqual(yield* Ref.get(outcome), "success")
 			assert.lengthOf(executed, 1)
-			assert.include(executed[0]!, "'scan' = 'scan'")
+			assert.include(executed[0], "'scan' = 'scan'")
 		}),
 	)
 

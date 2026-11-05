@@ -121,7 +121,7 @@ export const frameRouteChanged = (
 	})
 }
 
-const mapped = <M>(commands: ReadonlyArray<Command.Command<M, never, never>>, wrap: (m: M) => FrameMessage) =>
+const mapped = <M>(commands: ReadonlyArray<Command.Command<M>>, wrap: (m: M) => FrameMessage) =>
 	Command.mapMessages(commands, wrap)
 
 export const updateFrame = (

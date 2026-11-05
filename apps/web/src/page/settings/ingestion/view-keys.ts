@@ -12,7 +12,7 @@ import { iconButton } from "@maple/views/ui/icon-button"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { Message } from "./message"
-import type { IngestKeyKind, Model } from "./model"
+import { canRollKeys, type IngestKeyKind, type Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 
 // `CredentialRow`.
@@ -32,7 +32,8 @@ export type CredentialRowOptions = Readonly<{
 	onToggleVisibility?: Message
 	copy: CopyButton.Model
 	onCopy: (text: string) => Message
-	onRegenerate?: Message
+	/** Absent for a viewer who cannot roll the key. */
+	onRegenerate?: Message | undefined
 	isDisabled?: boolean
 }>
 
@@ -187,7 +188,7 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			copy: model.keyCopies[kind] ?? CopyButton.init(),
 			onCopy: (text) =>
 				Message.GotKeyCopyMessage({ kind, message: CopyButton.Message.ClickedCopy({ text }) }),
-			onRegenerate: Message.ClickedRegenerateKey({ kind }),
+			onRegenerate: canRollKeys(model) ? Message.ClickedRegenerateKey({ kind }) : undefined,
 			isDisabled: isBusy,
 		})
 	const failure = keys === null && isFailed ? AsyncData.getError(model.ingest) : Option.none()

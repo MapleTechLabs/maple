@@ -13,8 +13,7 @@ import { layer } from "./layer.js"
 // for the whole file and each test swaps the handler behind it.
 const ok = async (_request: Request) => new Response(null, { status: 200 })
 let onFetch = ok
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
-	onFetch(new Request(input, init))) as typeof fetch
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => onFetch(new Request(input, init))
 
 const setupFetch = () => {
 	onFetch = ok
