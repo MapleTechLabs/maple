@@ -572,7 +572,7 @@ const sessionsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): H
 					th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
 					th(h, { label: "Pages", width: "w-14 shrink-0", align: "right" }),
 					th(h, { label: "Errors", width: "w-14 shrink-0", align: "right" }),
-					th(h, { label: "Pages", width: `${columnClass({ min: "0" })} pl-4` }),
+					th(h, { label: "Entry → exit", width: `${columnClass({ min: "0" })} pl-4` }),
 					th(h, { label: "Device", width: "w-36 shrink-0" }),
 					h.span([h.AriaHidden(true), h.Class("w-24 shrink-0")], []),
 				]),
