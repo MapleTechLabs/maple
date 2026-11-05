@@ -47,13 +47,16 @@ export const UserListItem = Schema.Struct({
 })
 export type UserListItem = typeof UserListItem.Type
 
+/** An end user's id as the SDK sent it: opaque, matched exactly. */
+export const EndUserId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
+
 /**
  * A keyset position in the directory: the `(lastSeen, userId)` of a page's last row. `lastSeen` is
  * the warehouse's exact `toString` (up to 9 fraction digits), so ties at the boundary are not lost.
  */
 export const UsersListKeyset = Schema.Struct({
 	lastSeen: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/u)),
-	userId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500)),
+	userId: EndUserId,
 })
 export type UsersListKeyset = typeof UsersListKeyset.Type
 
@@ -100,9 +103,6 @@ export class UsersFacetsResponse extends Schema.Class<UsersFacetsResponse>("User
 // ---------------------------------------------------------------------------
 // /users/:userId
 // ---------------------------------------------------------------------------
-
-/** An end user's id as the SDK sent it: opaque, matched exactly. */
-export const EndUserId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
 
 export class UserDetailRequest extends Schema.Class<UserDetailRequest>("UserDetailRequest")({
 	...windowFields,
