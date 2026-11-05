@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { StatusPageComponentId, StatusPageIncidentId, StatusPageIncidentKind } from "@maple/domain"
 import {
 	StatusPageConfig,
@@ -36,7 +37,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchComponents: { key: Schema.String, result: outcome(Schema.Array(V2StatusPageComponent)) },
 	CompletedFetchIncidents: { key: Schema.String, result: outcome(Schema.Array(V2StatusPageIncident)) },
 	CompletedFetchMonitors: { key: Schema.String, result: outcome(Schema.Array(V2UptimeMonitor)) },
-	CompletedFetchSession: { orgId: Schema.String, isAdmin: Schema.Boolean },
+	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ClickedRetry: {},
 	GotPageMenuMessage: { message: Menu.Message },
 	CompletedFocus: {},

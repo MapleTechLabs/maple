@@ -67,14 +67,14 @@ export const LoadTeam = Command.define("LoadOnboardingTeam", {
 		if (Option.isNone(maybeOrganization))
 			return TeamMessage.LoadedTeam({ name: "My workspace", canManage: false, invitations: [] })
 		const organization = maybeOrganization.value
-		const invitations = organization.isAdmin
+		const invitations = organization.canManageMembers
 			? yield* clerkTry("Couldn't load invitations", organization.pendingInvitations).pipe(
 					Effect.orElseSucceed(() => []),
 				)
 			: []
 		return TeamMessage.LoadedTeam({
 			name: organization.name,
-			canManage: organization.isAdmin,
+			canManage: organization.canManageMembers,
 			invitations,
 		})
 	}),

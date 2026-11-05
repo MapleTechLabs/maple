@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { cn } from "@maple/ui/lib/utils"
 import { mcpUrl } from "../../../lib/services/common/mcp-url"
 import {
@@ -24,7 +25,11 @@ import { connectedClientsSection } from "./view-clients"
 import { toolsSection } from "./view-tools"
 import { typography } from "@maple/views/ui/typography"
 
-export type ViewInputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>
+export type ViewInputs = Readonly<{
+	grants: ReadonlyArray<Policy.Permission>
+	nowMs: number
+	timeZone: string
+}>
 
 type H = HtmlBuilder<Message>
 
@@ -173,7 +178,8 @@ const connectSection = (h: H, model: Model): Html =>
 							label(
 								h,
 								{
-									className: "block font-prose text-xs font-normal text-muted-foreground sm:text-xs",
+									className:
+										"block font-prose text-xs font-normal text-muted-foreground sm:text-xs",
 									attributes: [h.For("mcp-server-url")],
 								},
 								["Server URL"],

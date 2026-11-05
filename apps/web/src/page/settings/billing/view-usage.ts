@@ -21,7 +21,7 @@ import { segmentedBar } from "@maple/views/ui/meter"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
-import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
+import { canManage, CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -249,7 +249,7 @@ const featureRow = (
 					? capEditor(h, model, feature)
 					: hstack(h, { gap: "2", justify: "between" }, [
 							capSummary(h, feature, cap),
-							...(model.isAdmin && capApplies(feature) && featureId !== null
+							...(canManage(model) && capApplies(feature) && featureId !== null
 								? [
 										button(
 											h,

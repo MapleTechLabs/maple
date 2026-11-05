@@ -103,6 +103,7 @@ export const withResourceTiming =
 					const entry = lookup(path, startedAt, doneAt)
 					if (entry !== undefined) return annotate(entry, startedAt, doneAt)
 					// With the timeline buffer full only the observer has it, and it delivers a task later.
+					// @effect-diagnostics-next-line effectSleepZeroToYieldNow:off -- needs a macrotask for the observer to deliver; yieldNow does not wait one
 					return Effect.sleep(Duration.zero).pipe(
 						Effect.andThen(
 							Effect.suspend(() =>

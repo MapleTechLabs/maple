@@ -406,6 +406,7 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 					),
 				catch: (cause) => new BenchFileError({ path, op: "import suite", message: String(cause) }),
 			}).pipe(
+				// @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off -- the branch also maps the suite's own error
 				Effect.flatMap((value) =>
 					Effect.isEffect(value)
 						? // oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- a suite module's default export, checked by isEffect

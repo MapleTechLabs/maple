@@ -13,7 +13,7 @@ import {
 import { icon } from "@maple/views/ui/icon"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { activeRepositoriesOf } from "./derive"
-import { Message, type Model } from "./model"
+import { canRunAudits, Message, type Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -69,7 +69,7 @@ export const emptyOnRamp = (h: H, model: Model): Html => {
 			emptyContent(h, [
 				hstack(h, { gap: "2", justify: "center", wrap: true }, [
 					isConnected
-						? model.isAdmin
+						? canRunAudits(model)
 							? button(h, { attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
 									icon(h, "PlusIcon"),
 									"Add target",

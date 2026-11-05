@@ -258,6 +258,7 @@ export function createQueryDraft(index: number): TracesQueryDraft {
 	const isDefaultErrorRateQuery = index === 0
 
 	return {
+		// @effect-diagnostics-next-line cryptoRandomUuid:off -- a client-side draft id from a sync builder
 		id: crypto.randomUUID(),
 		name: queryLabel(index),
 		enabled: true,
@@ -295,6 +296,7 @@ export function createFormulaDraft(index: number, queryNames: string[]): QueryBu
 	const [first = "A", second = "B"] = queryNames
 
 	return {
+		// @effect-diagnostics-next-line cryptoRandomUuid:off -- a client-side draft id from a sync builder
 		id: crypto.randomUUID(),
 		name: formulaLabel(index),
 		expression: `${first} / ${second}`,

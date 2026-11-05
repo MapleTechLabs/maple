@@ -208,8 +208,10 @@ export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry",
 										budgets.set(
 											key,
 											isUp
-												? probed(due, at, Math.random())
-												: postponed(due, at, Math.random()),
+												? // @effect-diagnostics-next-line globalRandom:off -- retry jitter in a DOM timer loop
+													probed(due, at, Math.random())
+												: // @effect-diagnostics-next-line globalRandom:off -- retry jitter in a DOM timer loop
+													postponed(due, at, Math.random()),
 										)
 										if (isUp) probe()
 									}

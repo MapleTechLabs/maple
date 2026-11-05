@@ -15,7 +15,7 @@ import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { settingsSection } from "../kit/section"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { linkTargetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -64,7 +64,7 @@ export const memberSection = (h: H, model: Model, account: BillingAccount): Html
 						`This organization's usage counts toward ${payer}'s plan and appears on its invoice. Plan, payment and invoices are managed in ${payer}.`,
 					]),
 				]),
-				...(model.isAdmin
+				...(canManage(model)
 					? [
 							button(
 								h,
@@ -131,7 +131,7 @@ const memberRow = (h: H, model: Model, member: BillingAccountOrg, timeZone: stri
 			]),
 			hstack(h, { gap: "4" }, [
 				volumeCell(h, model, member),
-				...(model.isAdmin
+				...(canManage(model)
 					? [
 							button(
 								h,

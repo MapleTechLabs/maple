@@ -18,7 +18,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { listMonitors } from "../../alerts/shared/uptime-commands"
 import { Message, RequestMode } from "./message"
 
@@ -315,7 +315,7 @@ export const FetchUptimeMonitors = Command.define("FetchServiceDetailUptimeMonit
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchUptimeMonitors],
 	execute: ({ key }) =>
-		Effect.all([Effect.result(listMonitors), readIsAdmin]).pipe(
-			Effect.map(([result, isAdmin]) => Message.CompletedFetchUptimeMonitors({ key, result, isAdmin })),
+		Effect.all([Effect.result(listMonitors), readGrants]).pipe(
+			Effect.map(([result, grants]) => Message.CompletedFetchUptimeMonitors({ key, result, grants })),
 		),
 })

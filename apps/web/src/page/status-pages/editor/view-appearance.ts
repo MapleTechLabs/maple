@@ -25,7 +25,7 @@ import {
 	themeOf,
 } from "../shared/form"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { isoMs } from "../../alerts/shared/time"
 import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
@@ -123,7 +123,7 @@ const colorField = (
 
 export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const theme = form.theme
-	const isReadOnly = !model.isAdmin
+	const isReadOnly = !canManage(model)
 	const isAuto = theme.appearance === "auto"
 	const issues = themeColorIssues(theme)
 	const contrast = themeContrastOf(theme)

@@ -41,7 +41,7 @@ import { stopSummaryOf } from "../kit/outcome"
 import { BUCKET_LABEL, type BucketCounts, SCORED_BUCKETS } from "../kit/findings"
 import { bucketDot } from "../kit/findings-view"
 import { meter } from "@maple/views/ui/meter"
-import { Message, type Model } from "./model"
+import { canRunAudits, Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
@@ -88,7 +88,7 @@ const findingsCell = (
 	counts: Readonly<{ buckets: BucketCounts; unverified: number }> | null,
 	run: SecurityAuditRun,
 ): Html => {
-	if (counts === null) return muted(h, "", "Findings are visible to org admins only")
+	if (counts === null) return muted(h, "", "Findings are visible to org admins and engineers only")
 	const { buckets, unverified } = counts
 	const shown = Arr.filter(SCORED_BUCKETS, (bucket) => buckets[bucket] > 0)
 	if (shown.length === 0) return muted(h, isLive(run) ? "" : "None")
@@ -257,7 +257,7 @@ const toolbar = (
 export const startRunAction = (h: H, model: Model): Html | undefined => {
 	const targetId = model.runsSearch.target
 	const found = Arr.findFirst(targetsOf(model), (candidate) => candidate.id === targetId)
-	if (Option.isNone(found) || !model.isAdmin) return undefined
+	if (Option.isNone(found) || !canRunAudits(model)) return undefined
 	const target = found.value
 	const isRunning = Arr.some(runsForTarget(model, target.id), isLive)
 	return button(
@@ -283,12 +283,12 @@ const noTargets = (h: H, model: Model): Html =>
 			emptyHeader(h, [
 				emptyTitle(h, ["No runs yet"]),
 				emptyDescription(h, [
-					model.isAdmin
+					canRunAudits(model)
 						? "Add a target, then start its first run."
 						: "An org admin adds the first target on the Overview tab.",
 				]),
 			]),
-			model.isAdmin
+			canRunAudits(model)
 				? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
 						icon(h, "PlusIcon"),
 						"Add target",

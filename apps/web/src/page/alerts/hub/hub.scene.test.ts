@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
@@ -20,6 +21,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, ruleMenuId, update } from "./update"
 import { view as pageView } from "./view"
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -54,7 +57,7 @@ const loaded = (search: Model["search"] = {}): Model =>
 				rows: [incidentRow({ rule_name: "Payment p95 latency" })],
 			}),
 			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
 		],
 		entered(search).model,
 		(model, message) => pageUpdate(model, message).model,

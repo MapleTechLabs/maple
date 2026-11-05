@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -17,7 +18,7 @@ import {
 	LoadInvestigationsPresence,
 	PAGE_SIZE,
 	ReadInvestigationsClock,
-	ReadInvestigationsIsAdmin,
+	ReadInvestigationsGrants,
 	WaitInvestigationsSearch,
 } from "./command"
 import {
@@ -60,7 +61,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		presence: SignalPresenceData.Loading(),
 		subject: "",
 		isCreating: false,
-		isOrgAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		searchDraft: search.q ?? "",
 		searchGeneration: 0,
 		tabs: Tabs.init({ idBase: 0, values: VIEWS, selected: viewOf(search) }),
@@ -84,7 +85,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			ReadInvestigationsClock(),
 			...(loaded.commands ?? []),
 			FetchTriageBudget({ key: budgetKey }),
-			...(isClerkAuthEnabled ? [ReadInvestigationsIsAdmin({ orgId: context.orgId })] : []),
+			...(isClerkAuthEnabled ? [ReadInvestigationsGrants({ orgId: context.orgId })] : []),
 		],
 	}
 }
@@ -163,8 +164,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchBudget: ({ key, result }) => ({
 			model: { ...model, budget: Keyed.accept(model.budget, key, result) },
 		}),
-		CompletedReadIsAdmin: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isOrgAdmin: isAdmin } } : { model },
+		CompletedReadGrants: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants } } : { model },
 		ClickedRetry: () => loadFirstPage(model, context, "Refresh"),
 		ClickedLoadMore: () => {
 			const cursor = nextCursorOf(model)

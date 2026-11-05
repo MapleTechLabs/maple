@@ -98,6 +98,7 @@ export class InsertBatcher {
 		// Escaping only grows the payload, so this undercounts by the escaped `\` and `'`.
 		for (const batch of batches) this.#queuedBytes += Buffer.byteLength(batch.ndjson, "utf8")
 		if (this.#queuedBytes >= MAX_ESCAPED_PAYLOAD_BYTES) this.flush()
+		// @effect-diagnostics-next-line globalTimers:off -- Promise-based batcher behind Bun's server
 		else this.#timer ??= setTimeout(() => this.flush(), 0)
 		return promise
 	}

@@ -14,7 +14,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { draftProblems } from "./form"
 import { ingestionHref } from "./hrefs"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { actionClause } from "./view-action"
 import { conditionsClause, type H, signalsClause } from "./view-form"
 import { previewPanel } from "./view-preview"
@@ -109,7 +109,7 @@ const actionBar = (h: H, model: Model): Html => {
 					button(
 						h,
 						{
-							isDisabled: problems.length > 0 || !model.isAdmin,
+							isDisabled: problems.length > 0 || !canManage(model),
 							isLoading: model.isSaving,
 							attributes: [h.OnClick(Message.ClickedSave())],
 						},
@@ -129,11 +129,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		title: model.editingId === null && !model.isBadId ? "New ingest rule" : "Edit ingest rule",
 		description: "Drop or redact telemetry before Maple stores or bills it.",
 	}
-	if (model.isSessionLoaded && !model.isAdmin)
+	if (model.isSessionLoaded && !canManage(model))
 		return dashboardPage(h, header, [
 			alert(h, { variant: "info" }, [
 				icon(h, "ShieldIcon"),
-				alertTitle(h, ["Only org admins can create or change ingest rules"]),
+				alertTitle(h, ["Only org admins and engineers can create or change ingest rules"]),
 				alertDescription(h, ["Ask an admin to make this change."]),
 			]),
 			backLink(h),

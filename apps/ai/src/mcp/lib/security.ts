@@ -33,7 +33,7 @@ import { CH } from "@maple/query-engine"
 import { truncate } from "./format"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { isAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	type SecurityAuditOrgStore,
@@ -102,10 +102,10 @@ export const readCode = (tenant: TenantContext) =>
 				message: "The code security audit is not enabled for this organization.",
 			} satisfies CodeRead
 		}
-		if (!isAdmin(tenant.roles)) {
+		if (!Policy.can(tenant.roles, "security:manage")) {
 			return {
 				_tag: "forbidden",
-				message: "Only org admins can read code audit findings.",
+				message: Policy.denialFor("security:manage").message,
 			} satisfies CodeRead
 		}
 		const store = (yield* SecurityAuditStore).forOrg(tenant.orgId)
@@ -160,7 +160,7 @@ export const auditAccess = (tenant: TenantContext) =>
 		return {
 			_tag: "read",
 			store: (yield* SecurityAuditStore).forOrg(tenant.orgId),
-			admin: isAdmin(tenant.roles),
+			admin: Policy.can(tenant.roles, "security:manage"),
 		} satisfies AuditAccess
 	})
 

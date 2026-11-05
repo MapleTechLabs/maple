@@ -206,7 +206,7 @@ describe("update_scrape_target", () => {
 			enabled: false,
 		})
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("only org admins")
+		expect(markdown(result)).toContain("Only org admins and engineers can manage scrape targets")
 	})
 
 	it("pauses a target for an admin and says it is paused", async () => {
