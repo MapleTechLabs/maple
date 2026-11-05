@@ -11,7 +11,7 @@ export const listFilter = (values: ReadonlyArray<string> | undefined): ReadonlyA
 }
 
 /** The users read's request, or invalid input naming its caps (50 namespaces or groups, 200-char search). */
-export const decodeUsersRequest = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const decodeUsersRequest = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	tool: string,
 	input: unknown,

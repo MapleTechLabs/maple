@@ -107,7 +107,7 @@ const windowMs = (window: Readonly<{ startTime: string; endTime: string }>) => (
 /** A rollup read, `None` on a cluster that has not applied migration 0056. */
 const rollupRead = <A, E, R>(read: Effect.Effect<A, E, R>): Effect.Effect<Option.Option<A>, E, R> =>
 	read.pipe(
-		Effect.map(Option.some),
+		Effect.asSome,
 		Effect.catchIf(isMissingUserActivityHourly, () => Effect.succeed(Option.none<A>())),
 	)
 

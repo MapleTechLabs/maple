@@ -157,7 +157,7 @@ export const readUserIssueItems = Effect.fn("UsersReads.issueItems")(function* (
 			{ profile: "list", context: "userIssues" },
 		)
 		.pipe(
-			Effect.map(Option.some),
+			Effect.asSome,
 			Effect.catchIf(
 				(error) => isMissingErrorEventsUserId(error),
 				() => Effect.succeed(Option.none<ReadonlyArray<CH.UserIssueOutput>>()),
