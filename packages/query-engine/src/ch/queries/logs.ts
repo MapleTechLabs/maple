@@ -340,7 +340,7 @@ function mvNamespaceCondition(
 	return CH.inList($.ServiceNamespace, opts.namespaces)
 }
 
-export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDefs, LogsTimeseriesOutput, {}> {
+export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDefs, LogsTimeseriesOutput> {
 	const groupByService = opts.groupBy?.includes("service")
 	const groupBySeverity = opts.groupBy?.includes("severity")
 
@@ -368,11 +368,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 			])
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		return finalizeTimeseries(mv, LOGS_TS_COLUMNS, "count", opts) as CHQuery<
-			ColumnDefs,
-			LogsTimeseriesOutput,
-			{}
-		>
+		return finalizeTimeseries(mv, LOGS_TS_COLUMNS, "count", opts)
 	}
 
 	const raw = from(Logs)
@@ -400,11 +396,7 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 		])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
-	return finalizeTimeseries(raw, LOGS_TS_COLUMNS, "count", opts) as CHQuery<
-		ColumnDefs,
-		LogsTimeseriesOutput,
-		{}
-	>
+	return finalizeTimeseries(raw, LOGS_TS_COLUMNS, "count", opts)
 }
 
 function buildLogsGroupNameExpr(
@@ -450,7 +442,7 @@ function logsBreakdownName(
 	return groupBy === "severity" ? $.SeverityText : $.ServiceName
 }
 
-export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs, LogsBreakdownOutput, {}> {
+export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs, LogsBreakdownOutput> {
 	if (opts.source === "raw" || !canUseLogsAggregateInterior(opts)) {
 		const raw = from(Logs)
 			.select(($) => ({
@@ -471,7 +463,7 @@ export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs,
 			.groupBy("name")
 			.orderBy(["count", "desc"])
 		const result = opts.limit === null ? raw.format("JSON") : raw.limit(opts.limit ?? 10).format("JSON")
-		return result as CHQuery<ColumnDefs, LogsBreakdownOutput, {}>
+		return result
 	}
 
 	const rawEdges = from(Logs)
@@ -514,7 +506,7 @@ export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs,
 		.orderBy(["count", "desc"])
 	const result =
 		opts.limit === null ? combined.format("JSON") : combined.limit(opts.limit ?? 10).format("JSON")
-	return result as CHQuery<ColumnDefs, LogsBreakdownOutput, {}>
+	return result
 }
 
 // Count query
@@ -523,7 +515,7 @@ export interface LogsCountOutput {
 	readonly total: number
 }
 
-export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCountOutput, {}> {
+export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCountOutput> {
 	if (!canUseLogsAggregateInterior(opts)) {
 		const raw = from(Logs)
 			.select(() => ({
@@ -541,7 +533,7 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 				...logAttributeConditions(opts),
 			])
 			.format("JSON")
-		return raw as CHQuery<ColumnDefs, LogsCountOutput, {}>
+		return raw
 	}
 
 	const rawEdges = from(Logs)
@@ -571,7 +563,7 @@ export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCou
 			total: CH.sum($.total),
 		}))
 		.format("JSON")
-	return combined as CHQuery<ColumnDefs, LogsCountOutput, {}>
+	return combined
 }
 
 // List query

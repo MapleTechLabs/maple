@@ -58,6 +58,7 @@ describe("resolveConfig", () => {
 			ingestKey: "maple_pk_x",
 			serviceName: "acme-web",
 			endpoint: "https://ingest.example.com/",
+			// oxlint-disable-next-line typescript/no-deprecated -- covers the legacy `userId` option.
 			userId: null,
 			tracing: { instrumentFetch: false },
 			replay: { sampleRate: 0.25 },
@@ -77,6 +78,7 @@ describe("resolveConfig", () => {
 		const legacy = resolveConfig({
 			ingestKey: "k",
 			serviceName: "s",
+			// oxlint-disable-next-line typescript/no-deprecated -- covers the legacy `userId` option.
 			userId: "user_123",
 		})
 		expect(legacy.identity).toEqual({ id: "user_123", traits: {} })
@@ -103,6 +105,7 @@ describe("resolveConfig", () => {
 		const config = resolveConfig({
 			ingestKey: "k",
 			serviceName: "s",
+			// oxlint-disable-next-line typescript/no-deprecated -- covers the legacy `userId` option.
 			userId: "legacy",
 			user: { id: "modern" },
 		})

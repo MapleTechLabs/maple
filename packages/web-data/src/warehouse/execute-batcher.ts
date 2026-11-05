@@ -53,6 +53,7 @@ export const makeExecuteBatcher = (
 
 	const schedule = () => {
 		if (flushHandle !== undefined) return
+		// @effect-diagnostics-next-line globalTimers:off -- the Promise batcher under the Effect executor
 		flushHandle = setTimeout(flush, windowMs)
 	}
 
@@ -92,6 +93,7 @@ export const makeExecuteBatcher = (
 
 	return {
 		enqueue: (payload) =>
+			// @effect-diagnostics-next-line newPromise:off -- the Promise batcher under the Effect executor
 			new Promise<QueryEngineExecuteResponse>((resolve, reject) => {
 				pending.push({ payload, resolve, reject })
 				// A full batch has nothing to gain from waiting out the window.

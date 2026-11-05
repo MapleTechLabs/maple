@@ -52,9 +52,7 @@ export interface ValidateWidgetRenderabilityInput {
 const panelTypeOf = (input: ValidateWidgetRenderabilityInput): PanelType => {
 	if (input.panelType) return input.panelType
 	const visualization = input.widget.visualization
-	return visualization === "chart" || !(visualization in WIDGET_TYPES)
-		? "line"
-		: (visualization as PanelType)
+	return visualization === "chart" || !(visualization in WIDGET_TYPES) ? "line" : visualization
 }
 
 /** Every unit field a display config can carry, with a label for the message. */

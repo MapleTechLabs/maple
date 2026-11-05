@@ -89,6 +89,7 @@ export async function purgeForeignClerkCookies(publishableKey: string): Promise<
 		// (e.g. `crypto.subtle` missing on an insecure origin) reproduces exactly
 		// the 403/redirect loop this guard exists to prevent, so leave a
 		// breadcrumb instead of failing silently.
+		// @effect-diagnostics-next-line globalConsole:off -- boot code that runs before the app's logger exists
 		console.warn("[clerk-cookie-guard] failed to purge foreign __client_uat cookies", error)
 	}
 }

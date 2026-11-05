@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { V2McpConnection } from "@maple/domain/http/v2"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
@@ -16,7 +17,7 @@ import { Array as Arr } from "effect"
 // `McpConnectedClientsSection`.
 
 type H = HtmlBuilder<Message>
-type Inputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>
+type Inputs = Readonly<{ grants: ReadonlyArray<Policy.Permission>; nowMs: number; timeZone: string }>
 
 const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html =>
 	hstack(h, { gap: "4", as: "li", className: "px-4 py-3", attributes: [h.Key(connection.id)] }, [
@@ -78,7 +79,7 @@ export const connectedClientsSection = (h: H, model: Model, inputs: Inputs): Htm
 			id: "mcp-clients-heading",
 			title: "Connected clients",
 			description: [
-				inputs.isAdmin
+				Policy.has(inputs.grants, "mcp_connections:view_all")
 					? "Clients that members approved with OAuth. Revoking one signs it out right away."
 					: "Clients you approved with OAuth. Revoking signs the client out right away.",
 			],

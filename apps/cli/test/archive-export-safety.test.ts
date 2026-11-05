@@ -17,7 +17,7 @@ describe("export path safety (M-1)", () => {
 					{ name: "traces", eventTimeColumn: "Timestamp" } as never,
 					"2026-06-01",
 					"/tmp/o'clock",
-					{ writerThreads: 1, rowGroupRows: 100, maxShardRows: 10, maxShardBytes: 1024 } as never,
+					{ writerThreads: 1, rowGroupRows: 100, maxShardRows: 10, maxShardBytes: 1024 },
 				),
 			/single quote/,
 		)
@@ -31,7 +31,7 @@ describe("export path safety (M-1)", () => {
 					{ name: "traces", eventTimeColumn: "Timestamp" } as never,
 					"2026-06-01",
 					"/tmp/back\\slash",
-					{ writerThreads: 1, rowGroupRows: 100, maxShardRows: 10, maxShardBytes: 1024 } as never,
+					{ writerThreads: 1, rowGroupRows: 100, maxShardRows: 10, maxShardBytes: 1024 },
 				),
 			/backslash/,
 		)

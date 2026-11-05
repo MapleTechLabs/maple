@@ -53,16 +53,15 @@ const makeExecutor = (respond: (request: QuerySetExecuteRequest) => FakeResponse
 
 // A breakdown needs a real group-by dimension, and the lowering only reads
 // `groupBy` when its add-on is switched on — the same gate the builder UI uses.
-const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}): QueryBuilderQueryDraftPayload =>
-	({
-		id: "q-1",
-		name: "A",
-		dataSource: "traces",
-		aggregation: "count",
-		groupBy: ["service"],
-		addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
-		...overrides,
-	}) as QueryBuilderQueryDraftPayload
+const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}): QueryBuilderQueryDraftPayload => ({
+	id: "q-1",
+	name: "A",
+	dataSource: "traces",
+	aggregation: "count",
+	groupBy: ["service"],
+	addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+	...overrides,
+})
 
 const set = (overrides: Partial<QuerySet> = {}): QuerySet => ({ queries: [draft()], ...overrides })
 

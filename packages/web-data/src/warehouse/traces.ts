@@ -684,8 +684,8 @@ export type GetTracesFacetsInput = (typeof GetTracesFacetsInputSchema)["Encoded"
 type GetTracesFacetsDecoded = (typeof GetTracesFacetsInputSchema)["Type"]
 
 function buildTracesFiltersFromInput(input: GetTracesFacetsDecoded) {
-	const attributeFilters = buildAttributeFilters(input as ListTracesDecoded)
-	const resourceAttributeFilters = buildResourceAttributeFilters(input as ListTracesDecoded)
+	const attributeFilters = buildAttributeFilters(input)
+	const resourceAttributeFilters = buildResourceAttributeFilters(input)
 	const matchModes: Record<string, string> = {}
 	if (input.serviceMatchMode === "contains") matchModes.serviceName = "contains"
 	if (input.spanNameMatchMode === "contains") matchModes.spanName = "contains"

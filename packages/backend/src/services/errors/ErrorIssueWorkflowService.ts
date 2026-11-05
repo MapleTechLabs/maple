@@ -415,7 +415,7 @@ const make: Effect.Effect<
 		"ErrorIssueWorkflowService.hydrateIssue",
 	)(function* (orgId, row) {
 		const hydrated = yield* hydrateIssueRows(orgId, [row])
-		return hydrated[0]!
+		return hydrated[0]
 	})
 
 	const buildEventInsert = (

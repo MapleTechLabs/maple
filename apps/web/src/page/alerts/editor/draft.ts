@@ -3,7 +3,8 @@ import { defaultRuleForm, ruleToFormState } from "@maple/web-data/alerts/form-ut
 import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
 import { buildRuleStatesByRuleId, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
 import { createWidgetAlertPrefill, resolveWidgetAlertPrefill } from "../../../lib/alerts/widget-prefill"
-import { Option, Schema, String as Str, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
+import { Base64Url } from "effect/encoding"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { fromFormState, type RuleForm } from "./form"
 import type { Model, Notice } from "./model"
@@ -53,11 +54,7 @@ const AlertChartContext = Schema.Struct({
 })
 const decodeChart = Schema.decodeUnknownOption(Schema.fromJsonString(AlertChartContext))
 const fromBase64Url = (input: string): Option.Option<string> =>
-	Option.liftThrowable(() => {
-		const base64 = Str.replace(/_/g, "/")(Str.replace(/-/g, "+")(input))
-		const padded = base64 + Str.repeat((4 - (base64.length % 4)) % 4)("=")
-		return decodeURIComponent(escape(atob(padded)))
-	})()
+	Result.getSuccess(Base64Url.decodeString(input))
 export const decodeChartParam = (raw: string) => Option.flatMap(fromBase64Url(raw), decodeChart)
 
 /** The rule being edited, from the live rows. */

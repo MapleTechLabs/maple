@@ -131,7 +131,7 @@ const churnFor = <A>(arb: fc.Arbitrary<A>, length: number) =>
 
 /** Sites run from the throw site outward; Python prints them the other way round. */
 const renderStack = (sites: ReadonlyArray<Site>, churn: ReadonlyArray<FrameChurn>) => {
-	const frames = Arr.map(sites, (site, i) => renderFrame(site, i, churn[i] ?? churn[0]!))
+	const frames = Arr.map(sites, (site, i) => renderFrame(site, i, churn[i] ?? churn[0]))
 	return Arr.some(PYTHON_RUNTIMES, (runtime) => runtime === sites[0]?.runtime)
 		? Arr.join(["Traceback (most recent call last):", ...Arr.reverse(frames), "Error: boom"], "\n")
 		: Arr.join(["Error: boom", ...frames], "\n")
@@ -222,7 +222,7 @@ type Part = typeof Part extends fc.Arbitrary<infer A> ? A : never
 const renderMessage = (parts: ReadonlyArray<Part>, churn: ReadonlyArray<ValueChurn>) =>
 	Arr.join(
 		Arr.map(parts, (part, i) =>
-			part.kind === "word" ? part.word : renderVolatile(part.kind, part.word, churn[i]!),
+			part.kind === "word" ? part.word : renderVolatile(part.kind, part.word, churn[i]),
 		),
 		" ",
 	)
@@ -286,7 +286,7 @@ describe("one bug is one issue", () => {
 			Rec.fromEntries(
 				Arr.map(entries, ({ key, kind, word }, i) => [
 					key,
-					kind === "int" ? churn[i]!.n : renderVolatile(kind, word, churn[i]!),
+					kind === "int" ? churn[i].n : renderVolatile(kind, word, churn[i]),
 				]),
 			),
 		)
@@ -340,8 +340,8 @@ describe("two bugs are two issues", () => {
 				fc.pre(fnA !== fnB)
 				const [top, ...callers] = stack.sites
 				// A throw inside a dependency or the stdlib groups by its app callers instead.
-				fc.pre(!LIBRARY_RUNTIMES.has(top!.runtime))
-				const render = (fn: string) => renderStack([{ ...top!, fn, file: fn }, ...callers], stack.a)
+				fc.pre(!LIBRARY_RUNTIMES.has(top.runtime))
+				const render = (fn: string) => renderStack([{ ...top, fn, file: fn }, ...callers], stack.a)
 				expect(fingerprint("Error", render(fnA), "").fpFrames).not.toBe(
 					fingerprint("Error", render(fnB), "").fpFrames,
 				)
@@ -363,7 +363,7 @@ describe("two bugs are two issues", () => {
 					`${Arr.join(words, "_")}${version === undefined ? "" : `_v${version}`}`,
 					`${Arr.join(words, "-")}${version === undefined ? "" : `-${version}`}`,
 					Arr.join(
-						Arr.map(words, (w) => Str.toUpperCase(w[0]!) + Str.slice(1)(w)),
+						Arr.map(words, (w) => Str.toUpperCase(w[0]) + Str.slice(1)(w)),
 						"",
 					),
 				),

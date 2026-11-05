@@ -222,7 +222,7 @@ describe("PlanetScaleConnectionService", () => {
 			})
 			// Metrics come from the metrics API; the target only holds the branch filters.
 			assert.isNotNull(status.scrapeTarget)
-			assert.isFalse(status.scrapeTarget!.enabled)
+			assert.isFalse(status.scrapeTarget.enabled)
 			assert.strictEqual(status.metricsAuth, "api")
 
 			// The probes hit the management API with the OAuth Bearer header.
@@ -258,11 +258,11 @@ describe("PlanetScaleConnectionService", () => {
 				),
 			)
 			assert.isDefined(connection)
-			assert.isNotNull(connection!.webhook_secret_ciphertext)
+			assert.isNotNull(connection.webhook_secret_ciphertext)
 
 			// The managed target and the connection send as one PlanetScale source.
 			assert.deepStrictEqual(yield* integrationSources(testDb), [
-				{ platform: "planetscale", targets: [status.scrapeTarget!.id], connections: 1 },
+				{ platform: "planetscale", targets: [status.scrapeTarget.id], connections: 1 },
 			])
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),

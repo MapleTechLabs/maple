@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -13,6 +14,9 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as listView } from "./view"
 
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const listUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -20,17 +24,20 @@ const view = withViewInputs(listView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const entered = (isAdmin = true): Model => {
+const entered = (canEdit = true): Model => {
 	const start = init({ _tag: "StatusPages" }, context).model
 	return Arr.reduce(
-		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, isAdmin })],
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: canEdit ? ENGINEER : MEMBER }),
+		],
 		start,
 		(model, message) => listUpdate(model, message).model,
 	)
 }
 
-const withPages = (pages: ReadonlyArray<StatusPageSummary>, isAdmin = true): Model => {
-	const model = entered(isAdmin)
+const withPages = (pages: ReadonlyArray<StatusPageSummary>, canEdit = true): Model => {
+	const model = entered(canEdit)
 	return listUpdate(
 		model,
 		Message.CompletedFetchPages({ key: model.pages.key ?? "", result: Result.succeed(pages) }),

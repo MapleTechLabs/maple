@@ -73,7 +73,7 @@ const JSON_MEDIA_TYPE = "application/json"
  * a parsed value with a corrective message before the schema's own (much longer) failure.
  */
 // BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
-export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const jsonText = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,
@@ -87,7 +87,7 @@ export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>
  * `Schema.Class`, the data-source union) publishes as a `$ref`, which would otherwise carry it.
  */
 // BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
-export const optionalJsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const optionalJsonText = <S extends Schema.Codec<unknown, unknown>>(
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,

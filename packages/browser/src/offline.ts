@@ -1,6 +1,7 @@
 // The eager half of the offline queue: span batches the exporter gave up on
 // (after its own retries) are handed to the deferred chunk, which stores them
 // and sends them again once the browser is back online.
+import { ExportResultCode } from "@opentelemetry/core"
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace"
 
 type SpanStash = (spans: ReadableSpan[]) => void
@@ -28,7 +29,7 @@ export class OfflineSpanExporter implements SpanExporter {
 
 	export(spans: ReadableSpan[], callback: (result: { code: number; error?: Error }) => void): void {
 		this.inner.export(spans, (result) => {
-			if (result.code !== 0) {
+			if (result.code !== ExportResultCode.SUCCESS) {
 				if (stash) stash(spans)
 				else {
 					held.push(spans)

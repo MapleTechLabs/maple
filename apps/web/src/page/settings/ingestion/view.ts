@@ -13,7 +13,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../kit/section"
 import * as MappingDialogView from "./mapping-dialog-view"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManageRules, canRollKeys, canViewKeys, type Model } from "./model"
 import { credentialRow, ingestKeyRows } from "./view-keys"
 import { connectInstructions, frameworkIconStrip, frameworkPicker } from "./view-setup"
 import { deleteMappingDialog, mappingsSection, recommendationsSection } from "./view-rules"
@@ -102,7 +102,7 @@ const endpointAndKeysSection = (h: H, model: Model): Html =>
 		h,
 		{
 			id: "ingestion-endpoint-heading",
-			title: model.isAdmin ? "Endpoint & keys" : "Endpoint",
+			title: canViewKeys(model) ? "Endpoint & keys" : "Endpoint",
 			description: ["Point your OTLP exporter at the endpoint and authenticate with an ingest key."],
 			padded: false,
 			actions: h.a(
@@ -132,7 +132,7 @@ const endpointAndKeysSection = (h: H, model: Model): Html =>
 								message: CopyButton.Message.ClickedCopy({ text }),
 							}),
 					}),
-					...(model.isAdmin ? ingestKeyRows(h, model) : []),
+					...(canViewKeys(model) ? ingestKeyRows(h, model) : []),
 					manageSourcesRow(h),
 				],
 			),
@@ -235,7 +235,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 		endpointAndKeysSection(h, model),
 		addServiceSection(h, model),
 		...recommendationsSection(h, model),
-		ingestRulesSection(h, model.ingestRules, model.isAdmin),
+		ingestRulesSection(h, model.ingestRules, canManageRules(model)),
 		mappingsSection(h, model),
 		h.submodel({
 			slotId: "ingestion-mapping-dialog",
@@ -245,7 +245,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 			viewInputs: { slotId: "ingestion-mapping-dialog-popup" },
 		}),
 		deleteMappingDialog(h, model),
-		...(model.isAdmin ? [deleteRuleDialog(h, model.ingestRules)] : []),
-		...(model.isAdmin ? [rollKeyDialog(h, model)] : []),
+		...(canManageRules(model) ? [deleteRuleDialog(h, model.ingestRules)] : []),
+		...(canRollKeys(model) ? [rollKeyDialog(h, model)] : []),
 	]),
 )

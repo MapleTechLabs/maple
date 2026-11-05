@@ -301,7 +301,7 @@ export function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): Widg
 	const errors: string[] = []
 
 	for (let i = 0; i < specs.length; i++) {
-		const result = simpleSpecToWidget(specs[i]!, `w${i}`, layouts[i]!)
+		const result = simpleSpecToWidget(specs[i], `w${i}`, layouts[i])
 		if (typeof result === "string") {
 			errors.push(result)
 		} else {

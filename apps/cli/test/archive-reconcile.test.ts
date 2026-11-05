@@ -275,7 +275,7 @@ describe("archive reconciliation protocol (Gate 3b r5)", () => {
 		await withRoots(async (archiveDir, dataDir, scratchRoot) => {
 			const { withMaintenanceLock } = await import("@maple/local-server/checkpoints")
 			const { record } = validV2(archiveDir, dataDir, scratchRoot)
-			writeActiveIntent(archiveDir, record.operationId as string, record)
+			writeActiveIntent(archiveDir, record.operationId, record)
 			await withMaintenanceLock(dataDir, randomUUID(), async () => {
 				await rejects(
 					runArchiveReconciliation(dataDir, archiveDir, scratchRoot, { dryRun: true }),

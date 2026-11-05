@@ -14,7 +14,7 @@ import { adminOnlyNotice } from "../kit/members"
 import { dangerRow, dangerZone } from "../kit/danger-zone"
 import { saveBar } from "../kit/save-bar"
 import { settingsSection, settingsSections } from "../kit/section"
-import { Message, type Model, type OrgInfo } from "./model"
+import { canManage, Message, type Model, type OrgInfo } from "./model"
 import { isNameDirty, LOGO_INPUT_ID, leaveEligibilityOf, nameDraftOf } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
@@ -99,7 +99,7 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 						h,
 						LOGO_INPUT_ID,
 						"Logo",
-						model.isAdmin
+						canManage(model)
 							? "Saved as soon as you upload. PNG, JPG, WEBP or GIF, up to 10 MB."
 							: "Shown beside the name in the organization switcher.",
 						[
@@ -109,7 +109,7 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 								preview: orgAvatar(h, org.name),
 								isUploading: model.isSavingLogo,
 								isDragging: model.isDragging,
-								isReadOnly: !model.isAdmin,
+								isReadOnly: !canManage(model),
 								targetLabel: "Change organization logo",
 								changeLabel: "Change logo",
 								onPick: Message.ClickedPickLogo(),
@@ -121,7 +121,7 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 						],
 					),
 					row(h, "org-name", "Name", "Shown in the organization switcher.", [
-						model.isAdmin
+						canManage(model)
 							? input(h, {
 									id: "org-name",
 									className: "w-72",
@@ -196,7 +196,7 @@ const dangerZoneSection = (h: H, model: Model, org: OrgInfo): Html => {
 				),
 			]),
 		}),
-		...(model.isAdmin
+		...(canManage(model)
 			? [
 					dangerRow(h, {
 						title: "Delete organization",
@@ -263,7 +263,7 @@ const dialogs = (h: H, model: Model, org: OrgInfo): ReadonlyArray<Html> => [
 const loaded = (h: H, model: Model, org: OrgInfo, isKnownMember: boolean): Html =>
 	settingsSections(h, [
 		...adminOnlyNotice(h, {
-			isKnownMember: isKnownMember && !model.isAdmin,
+			isKnownMember: isKnownMember && !canManage(model),
 			subject: "organization settings",
 			adminName: AsyncData.getOrElse(
 				AsyncData.map(model.admins, (admins) => admins.firstAdminName),

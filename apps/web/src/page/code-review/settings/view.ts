@@ -17,7 +17,7 @@ import { bar, repositoryListSkeleton, withSlowNote } from "../kit/skeletons"
 import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { repositoryList } from "./repositories"
 import {
 	activeRepositories,
@@ -70,12 +70,14 @@ const modelSetting = (h: H, model: Model): Html =>
 				size: "sm",
 				ariaLabel: "Review model",
 				className: "w-56",
-				isDisabled: !model.isAdmin || model.isSavingModel,
+				isDisabled: !canManage(model) || model.isSavingModel,
 				toView: (parts) =>
 					h.div(
 						[
 							h.Class("contents"),
-							...(model.isAdmin ? [] : [h.Title("Only admins can change the review model")]),
+							...(canManage(model)
+								? []
+								: [h.Title("Only admins and engineers can change the review model")]),
 						],
 						parts,
 					),
@@ -83,12 +85,12 @@ const modelSetting = (h: H, model: Model): Html =>
 		}),
 	)
 
-const formView = (h: H, form: RulesForm.Model, isAdmin: boolean, wrap: (m: RulesForm.Message) => Message) =>
+const formView = (h: H, form: RulesForm.Model, canEdit: boolean, wrap: (m: RulesForm.Message) => Message) =>
 	h.submodel({
 		slotId: `${form.id}-form`,
 		model: form,
 		view: RulesFormView.view,
-		viewInputs: { isAdmin },
+		viewInputs: { canEdit },
 		toParentMessage: wrap,
 	})
 
@@ -132,7 +134,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 			return repositoryList(h, {
 				repositories,
 				state: model.repoList,
-				isAdmin: model.isAdmin,
+				canEdit: canManage(model),
 				busy: model.busy,
 				isEnabled: (repo) => isRepoEnabled(model, repo),
 				onSearch: (value) => Message.ChangedRepoSearch({ value }),
@@ -160,7 +162,7 @@ const repoConfigBody = (h: H, model: Model): Html =>
 		onData: () =>
 			model.repoForm === null
 				? h.empty
-				: formView(h, model.repoForm, model.isAdmin, (message) =>
+				: formView(h, model.repoForm, canManage(model), (message) =>
 						Message.GotRepoFormMessage({ message }),
 					),
 	})
@@ -272,7 +274,7 @@ const content = (h: H, model: Model): Html =>
 				defaults: Option.match(Option.fromNullishOr(model.defaultsForm), {
 					onNone: () => [],
 					onSome: (form) => [
-						formView(h, form, model.isAdmin, (message) =>
+						formView(h, form, canManage(model), (message) =>
 							Message.GotDefaultsFormMessage({ message }),
 						),
 					],

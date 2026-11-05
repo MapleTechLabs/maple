@@ -29,7 +29,7 @@ import {
 	SaveComponent,
 } from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import {
 	chain,
 	componentsOf,
@@ -93,7 +93,7 @@ export const commitComponent = (model: Model): Return => {
 	const form = model.componentForm
 	const found = Arr.findFirst(componentsOf(model), (row) => row.id === form.editingId)
 	if (
-		!model.isAdmin ||
+		!canManage(model) ||
 		model.pageId === null ||
 		Option.isNone(found) ||
 		model.componentSave === "saving" ||
@@ -158,7 +158,7 @@ export const moved = <A extends { readonly id: StatusPageComponentId }>(
 /** Moves the row at once; the server's order lands with the re-read. */
 export const moveComponent = (model: Model, componentId: StatusPageComponentId, offset: number): Return => {
 	const next = moved(componentsOf(model), componentId, offset)
-	if (model.pageId === null || model.isReordering || next === null || !model.isAdmin) return { model }
+	if (model.pageId === null || model.isReordering || next === null || !canManage(model)) return { model }
 	return {
 		model: {
 			...model,
@@ -190,7 +190,7 @@ export const reordered = (
 }
 
 export const askDeleteComponent = (model: Model, componentId: StatusPageComponentId): Return =>
-	model.isAdmin
+	canManage(model)
 		? deleteComponentDialog(
 				{ ...model, confirmDeleteComponentId: componentId },
 				Dialog.open(model.deleteComponentDialog),
@@ -239,7 +239,7 @@ export const deletedComponent = (
 
 /** The monitors not on the page yet, none picked; a URL or a component by hand join them. */
 export const openAdd = (model: Model): Return => {
-	if (!model.isAdmin || model.isAddingComponents) return { model }
+	if (!canManage(model) || model.isAddingComponents) return { model }
 	const used = new Set(
 		Arr.flatMap(componentsOf(model), (component) =>
 			component.monitor_id === null ? [] : [component.monitor_id],

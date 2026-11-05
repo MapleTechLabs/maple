@@ -135,7 +135,7 @@ export interface MapleToolCatalogEntry {
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
 	/** How arguments decode; `rejectUnknownKeys` tools refuse nested keys the schema lacks. */
 	readonly parseOptions: SchemaAST.ParseOptions
-	readonly outputSchema: Schema.Codec<unknown, unknown, never, never>
+	readonly outputSchema: Schema.Codec<unknown, unknown>
 	readonly hints: McpToolHints
 	readonly aliases: Readonly<Record<string, string>>
 	readonly audience: McpToolAudience
@@ -373,7 +373,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 			phrases: spec.phrases,
 			run: (params) =>
 				Effect.gen(function* () {
-					const output = yield* spec.handler(params as typeof spec.parameters.Type)
+					const output = yield* spec.handler(params)
 					// A result that does not match its own schema is a bug, but the text is still right:
 					// the model gets its answer and the UI falls back to the text.
 					const structured = yield* encode(output).pipe(

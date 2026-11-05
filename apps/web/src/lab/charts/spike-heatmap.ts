@@ -20,7 +20,7 @@ import { RAMP_TOKENS } from "./spike-timeseries-tokens"
 // holes, value cells on a sequential scale, a gradient legend. Code copied, constants unchanged.
 
 type Slot = HeatmapSpikeRow | HeatmapHole
-type Point = ChartPoint<Slot, ChartValue, ChartValue>
+type Point = ChartPoint<Slot>
 
 export const buildHeatmapSpike = (spec: SpikeSpec): BuiltChart<Slot, ChartValue, ChartValue> => {
 	const model = heatmapSpikeModel(HEATMAP_SPIKE_ROWS)

@@ -12,7 +12,7 @@ import type { Providers } from "./Providers"
 import type { ExclusiveVariant } from "./variants"
 
 /** A write-only channel secret: plain string or `Redacted` (recommended). */
-type SecretInput = string | Redacted.Redacted<string>
+type SecretInput = string | Redacted.Redacted
 
 interface DestinationBaseProps {
 	/** Human-readable label for the destination. */
