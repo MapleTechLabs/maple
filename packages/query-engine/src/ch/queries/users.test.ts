@@ -149,6 +149,12 @@ describe("usersListQuery", () => {
 		)
 	})
 
+	it("matches a browser event to a session active in the window, even one started the day before", () => {
+		const { sql } = compileUnsafe(usersListQuery(storefront), params)
+		expect(sql).toContain("session_replays.StartTime >= subtractDays(")
+		expect(sql).toContain("ifNull(session_replays.LastActivityAt, session_replays.StartTime) >=")
+	})
+
 	it("finalizes replay identity to the session's latest version", () => {
 		const { sql } = compileUnsafe(usersListQuery(unscoped), params)
 		expect(sql).toContain("argMax(session_replays.UserId, session_replays.Version) AS userId")

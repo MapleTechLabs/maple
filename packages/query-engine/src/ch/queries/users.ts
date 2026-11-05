@@ -93,11 +93,33 @@ const replayWindow = ($: ColumnAccessor<typeof SessionReplays.columns>) => [
 	$.StartTime.lte(param.dateTime("endTime")),
 ]
 
-/** The window's sessions recorded by an in-scope service. */
+/** How far before the window a session may have started and still carry in-window events. */
+const SESSION_LOOKBACK_DAYS = 1
+
+/**
+ * Sessions recorded by an in-scope service that were active in the window, including ones that
+ * began up to a day before it, so their in-window browser events keep a service.
+ */
 const scopedSessionIds = (scope: UsersScope) =>
 	from(SessionReplays)
 		.select(($) => ({ sessionId: $.SessionId }))
-		.where(($) => [...replayWindow($), CH.inList($.ServiceName, scope.services)])
+		.where(($) => {
+			const start = param.dateTime("startTime")
+			return [
+				$.OrgId.eq(orgIdParam),
+				$.StartTime.gte(
+					CH.compileTypedFnCall(
+						"subtractDays",
+						CH.schemaOf(start),
+						start,
+						CH.lit(SESSION_LOOKBACK_DAYS),
+					),
+				),
+				$.StartTime.lte(param.dateTime("endTime")),
+				CH.ifNull($.LastActivityAt, $.StartTime).gte(start),
+				CH.inList($.ServiceName, scope.services),
+			]
+		})
 		.groupBy("sessionId")
 
 /**
