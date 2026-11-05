@@ -246,5 +246,6 @@ export function escapeRegExp(value: string): string {
  */
 function corsUrlMatcher(entry: string | RegExp): RegExp {
 	if (typeof entry !== "string") return entry
-	return new RegExp(`^${escapeRegExp(entry.replace(/\/$/, ""))}(?:[/?#]|$)`)
+	// A configured trailing slash is part of the prefix; without one, the prefix ends on a boundary.
+	return new RegExp(`^${escapeRegExp(entry)}${entry.endsWith("/") ? "" : "(?:[/?#]|$)"}`)
 }

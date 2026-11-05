@@ -40,12 +40,21 @@ describe("resolveConfig", () => {
 			ingestKey: "maple_pk_x",
 			serviceName: "s",
 			tracing: {
-				propagateTraceHeaderCorsUrls: ["https://api.example.com/", "https://cdn.example.com/v2"],
+				propagateTraceHeaderCorsUrls: [
+					"https://api.example.com",
+					"https://cdn.example.com/v2",
+					"https://edge.example.com/v1/",
+				],
 			},
 		})
 		const propagates = (url: string) => propagateTraceHeaderCorsUrls.some((re) => re.test(url))
-		expect(propagates("https://api.example.com")).toBe(true)
+		// Request URLs always carry at least the root path.
+		expect(propagates("https://api.example.com/")).toBe(true)
 		expect(propagates("https://api.example.com/v1/users?id=1")).toBe(true)
+		// A configured trailing slash is kept: `/v1/` does not cover `/v1` itself.
+		expect(propagates("https://edge.example.com/v1/users")).toBe(true)
+		expect(propagates("https://edge.example.com/v1")).toBe(false)
+		expect(propagates("https://edge.example.com/v1?x=1")).toBe(false)
 		expect(propagates("https://cdn.example.com/v2/assets")).toBe(true)
 		expect(propagates("https://api.example.com.evil.io/v1")).toBe(false)
 		expect(propagates("https://api.example.com:8443/v1")).toBe(false)
