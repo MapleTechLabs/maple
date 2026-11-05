@@ -44,45 +44,63 @@ const requestQuantileMs = (index: 1 | 2) =>
 		T.float64,
 	)
 
-// A. Slices: the (hour, service, namespace) buckets a user was active in
+// A. Slices: per service, the hours a user's requests and logs span
 
-export interface UserActivitySlicesOpts extends UserScopeOpts {
-	readonly limit?: number
-}
+/** `minIf`/`maxIf` over the `Hour` column, typed as the hour (the DSL's take numbers only). */
+const hourIf = (fn: "minIf" | "maxIf", hour: ActivityColumns["Hour"], condition: CH.Condition) =>
+	CH.compileTypedFnCall(fn, T.dateTime.schema, hour, condition)
 
+export type UserActivitySlicesOpts = UserScopeOpts
+
+/**
+ * One (service, namespace) the user was active in, with the first and last hour that held a
+ * request and a log line. An hour bound is meaningless when its count is 0.
+ */
 export interface UserActivitySliceOutput {
-	readonly hour: DateTime.Utc
 	readonly serviceName: string
 	readonly serviceNamespace: string
 	readonly spanCount: number
 	readonly requestCount: number
 	readonly logCount: number
+	readonly firstRequestHour: DateTime.Utc
+	readonly lastRequestHour: DateTime.Utc
+	readonly firstLogHour: DateTime.Utc
+	readonly lastLogHour: DateTime.Utc
 }
 
 export const userActivitySliceRowSchema = Schema.Struct({
-	hour: DateTimeUtcFromWarehouse,
 	serviceName: Schema.String,
 	serviceNamespace: Schema.String,
 	spanCount: CHNumber,
 	requestCount: CHNumber,
 	logCount: CHNumber,
+	firstRequestHour: DateTimeUtcFromWarehouse,
+	lastRequestHour: DateTimeUtcFromWarehouse,
+	firstLogHour: DateTimeUtcFromWarehouse,
+	lastLogHour: DateTimeUtcFromWarehouse,
 })
 
-/** Feeds `userTracesQuery` / `userLogsQuery`: their services and window come from these rows. */
+/**
+ * Feeds `userTracesQuery` / `userLogsQuery`: their services and window come from these rows. One
+ * row per service, uncapped, so a long window cannot drop a service's older hours.
+ */
 export function userActivitySlicesQuery(opts: UserActivitySlicesOpts) {
 	return from(UserActivityHourly)
 		.select(($) => ({
-			hour: $.Hour,
 			serviceName: $.ServiceName,
 			serviceNamespace: $.ServiceNamespace,
 			spanCount: CH.sum($.SpanCount),
 			requestCount: CH.sum($.RequestCount),
 			logCount: CH.sum($.LogCount),
+			// Counts are never negative, so a part with a count above 0 marks an hour that held one.
+			firstRequestHour: hourIf("minIf", $.Hour, $.RequestCount.gt(0)),
+			lastRequestHour: hourIf("maxIf", $.Hour, $.RequestCount.gt(0)),
+			firstLogHour: hourIf("minIf", $.Hour, $.LogCount.gt(0)),
+			lastLogHour: hourIf("maxIf", $.Hour, $.LogCount.gt(0)),
 		}))
 		.where(($) => [...activityWindow($, opts), $.UserId.eq(opts.userId)])
-		.groupBy("hour", "serviceName", "serviceNamespace")
-		.orderBy(["hour", "desc"], ["serviceName", "asc"])
-		.limit(opts.limit ?? 5000)
+		.groupBy("serviceName", "serviceNamespace")
+		.orderBy(["serviceName", "asc"])
 		.format("JSON")
 }
 
