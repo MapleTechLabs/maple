@@ -305,6 +305,35 @@ describe("/api/security-audit access", () => {
 		}
 	})
 
+	it("lets engineers read and triage findings but keeps the audit budget to admins", async () => {
+		const harness = makeHarness()
+		try {
+			const engineer = `${ORG_A}|org:engineer`
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const engineerCalls = await Promise.all([
+				harness.call("GET", `/runs/${run.body.id}`, { as: engineer }),
+				harness.call("GET", `/targets/${target.body.id}/findings`, { as: engineer }),
+				harness.call("POST", "/targets", { as: engineer, body: { ...TARGET, branch: "next" } }),
+				harness.call("POST", `/targets/${target.body.id}/runs`, { as: engineer, body: {} }),
+				harness.call("PUT", "/settings", {
+					as: engineer,
+					body: {
+						monthlySpendLimitUsd: 750,
+						discoveryModel: "anthropic/claude-haiku-5.5",
+						validationModel: "openai/gpt-6-luna",
+					},
+				}),
+			])
+
+			expect(Arr.map(engineerCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403])
+			expect(engineerCalls[3]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
+			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("answers 404 for another org's target, run and finding ids", async () => {
 		const harness = makeHarness()
 		try {

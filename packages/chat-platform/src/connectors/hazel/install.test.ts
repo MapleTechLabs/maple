@@ -74,7 +74,7 @@ describe("hazel install", () => {
 				params: new URLSearchParams({ code: "org-1.secret", state: "nonce", hazel_region: "eu" }),
 				redirectUri,
 			})
-			expect(sentBody(http.seen[0]!)).toEqual({ code: "org-1.secret", redirectUri: regionalUri })
+			expect(sentBody(http.seen[0])).toEqual({ code: "org-1.secret", redirectUri: regionalUri })
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -101,7 +101,7 @@ describe("hazel install", () => {
 			const [request] = http.seen
 			expect(request?.url).toBe("https://api.hazel.sh/api/v1/bot-installs/token")
 			expect(request?.headers["authorization"]).toBe("Bearer hzl_bot_token")
-			expect(sentBody(request!)).toEqual({ code: "org-1.secret", redirectUri })
+			expect(sentBody(request)).toEqual({ code: "org-1.secret", redirectUri })
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -113,7 +113,7 @@ describe("hazel install", () => {
 			expect(settings?.method).toBe("PATCH")
 			expect(settings?.url).toBe("https://api.hazel.sh/bot-commands/settings")
 			expect(settings?.headers["authorization"]).toBe("Bearer hzl_bot_token")
-			expect(sentBody(settings!)).toEqual({ mentionable: true })
+			expect(sentBody(settings)).toEqual({ mentionable: true })
 		}).pipe(Effect.provide(http.layer))
 	})
 

@@ -58,7 +58,7 @@ describe("wrapped utcDateTime64 columns", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ exemplars: ["2026-10-07 10:00:00.123456789", "2026-10-07 10:00:01.000000000"] },
 			])
-			expect(Arr.map(row!.exemplars, DateTime.formatIso)).toEqual([
+			expect(Arr.map(row.exemplars, DateTime.formatIso)).toEqual([
 				"2026-10-07T10:00:00.123Z",
 				"2026-10-07T10:00:01.000Z",
 			])
@@ -76,8 +76,8 @@ describe("wrapped utcDateTime64 columns", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ firstSeen: "2026-10-07 10:00:00.250000000", earliest: "2026-10-07 09:00:00.000000000" },
 			])
-			expect(DateTime.formatIso(row!.firstSeen)).toBe("2026-10-07T10:00:00.250Z")
-			expect(DateTime.formatIso(row!.earliest)).toBe("2026-10-07T09:00:00.000Z")
+			expect(DateTime.formatIso(row.firstSeen)).toBe("2026-10-07T10:00:00.250Z")
+			expect(DateTime.formatIso(row.earliest)).toBe("2026-10-07T09:00:00.000Z")
 		}),
 	)
 })

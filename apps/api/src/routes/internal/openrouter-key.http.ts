@@ -1,14 +1,15 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, MapleInternalApi, OpenRouterKeyForbiddenError } from "@maple/domain/http"
 import { Effect } from "effect"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 
 const requireKeyAdmin = (roles: CurrentTenant.TenantSchema["roles"]) =>
-	requireAdmin(
+	Policy.check(
 		roles,
-		() => new OpenRouterKeyForbiddenError({ message: "Only org admins can manage the OpenRouter key" }),
+		"llm_keys:manage",
+		(denial) => new OpenRouterKeyForbiddenError({ message: denial.message }),
 	)
 
 export const HttpOpenRouterKeyLive = HttpApiBuilder.group(MapleInternalApi, "openRouterKey", (handlers) =>

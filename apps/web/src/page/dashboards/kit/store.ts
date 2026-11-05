@@ -69,10 +69,7 @@ export const dashboardsOf = (orgId: string) =>
 	})
 
 /** What the write path needs of the org's dashboards collection; a local-only one in tests. */
-export type DashboardsWriter = Pick<
-	Collection<DashboardRow, string | number>,
-	"get" | "update" | "subscribeChanges"
->
+export type DashboardsWriter = Pick<Collection<DashboardRow>, "get" | "update" | "subscribeChanges">
 
 const readFrom = (collection: DashboardsWriter, id: string) =>
 	Effect.fromOption(

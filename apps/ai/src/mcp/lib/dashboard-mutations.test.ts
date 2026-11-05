@@ -151,7 +151,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			const listed = yield* persistence.list(asOrgId(ORG))
 			assert.strictEqual(listed.dashboards.length, 1)
 			assert.deepStrictEqual(
-				Arr.map(listed.dashboards[0]!.document.widgets, (w) => w.id),
+				Arr.map(listed.dashboards[0].document.widgets, (w) => w.id),
 				["w-new"],
 			)
 		}).pipe(Effect.provide(layer))
@@ -222,7 +222,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			yield* invoke({ dashboard_id: dashboardId, name: "Renamed" })
 
 			const listed = yield* persistence.list(asOrgId(ORG))
-			assert.strictEqual(listed.dashboards[0]!.document.name, "Renamed")
+			assert.strictEqual(listed.dashboards[0].document.name, "Renamed")
 		}).pipe(Effect.provide(layer.pipe(Layer.provideMerge(makeToolServicesLayer(testDb)))))
 	})
 
@@ -265,8 +265,8 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 			})
 
 			const stored = (yield* persistence.list(asOrgId(ORG))).dashboards[0]?.document
-			assert.deepStrictEqual(stored!.widgets[0]!.display, { title: "Short", chartId: "bar-chart" })
-			assert.deepStrictEqual(stored!.widgets[0]!.layout, widget("w-1").layout)
+			assert.deepStrictEqual(stored.widgets[0].display, { title: "Short", chartId: "bar-chart" })
+			assert.deepStrictEqual(stored.widgets[0].layout, widget("w-1").layout)
 
 			const both = yield* Effect.flip(
 				invoke({

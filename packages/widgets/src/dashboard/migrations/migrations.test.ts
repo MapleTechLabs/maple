@@ -150,7 +150,7 @@ describe("the v1 -> v2 step", () => {
 		const dataSource = widget.dataSource
 		if (typeof dataSource !== "object" || dataSource === null) throw new Error("expected a dataSource")
 
-		expect(dataSource).toHaveProperty("params", looseDocument.widgets[0]!.dataSource.params)
+		expect(dataSource).toHaveProperty("params", looseDocument.widgets[0].dataSource.params)
 	})
 
 	// The case that makes this migration more than a rename: `line`/`bar`/`area`

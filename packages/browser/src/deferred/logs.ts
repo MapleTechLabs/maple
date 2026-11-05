@@ -1,5 +1,6 @@
 import { consentAllowedSince, hasConsent, ingestHeaders, sdkHint } from "@maple/browser-session"
 import { ROOT_CONTEXT, trace } from "@opentelemetry/api"
+import { ExportResultCode } from "@opentelemetry/core"
 import { JsonLogsSerializer } from "@opentelemetry/otlp-transformer"
 import { resourceFromAttributes } from "@opentelemetry/resources"
 import {
@@ -49,7 +50,7 @@ class OfflineLogExporter implements LogRecordExporter {
 
 	export(logs: ReadableLogRecord[], callback: (result: { code: number; error?: Error }) => void): void {
 		this.inner.export(logs, (result) => {
-			if (result.code !== 0) this.stash(logs)
+			if (result.code !== ExportResultCode.SUCCESS) this.stash(logs)
 			callback(result)
 		})
 	}

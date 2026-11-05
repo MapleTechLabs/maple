@@ -228,7 +228,7 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 
 function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput> {
 	const bucket = CH.toStartOfInterval(
 		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
@@ -379,7 +379,7 @@ export function metricDeltaExpr(args: {
 
 export function metricsTimeseriesRateQuery(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput> {
 	if (canUseSpanMetricsCallsHourly(opts)) return metricsTimeseriesRateFromSpanMetricsCallsHourly(opts)
 
 	// Prometheus-style counters often land as gauges (or as sums flagged

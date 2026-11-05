@@ -216,7 +216,7 @@ export function linearYScale(domain: [number, number]) {
 	return scaleLinear().domain(domain)
 }
 
-type TimeScale = ScaleTime<number, number, never>
+type TimeScale = ScaleTime<number, number>
 /** d3's interval overload of `ticks`, named without a direct `d3-time` dependency. */
 type TickInterval = Parameters<TimeScale["ticks"]>[0]
 
@@ -262,7 +262,7 @@ function zoned(scale: TimeScale, timeZone: string): TimeScale {
 		if (!start || !end) return []
 		const startMs = start.getTime()
 		const endMs = end.getTime()
-		const wallClock = scaleUtc<number, number, never>().domain([
+		const wallClock = scaleUtc<number, number>().domain([
 			toWallClock(timeZone, start),
 			toWallClock(timeZone, end),
 		])
@@ -294,8 +294,8 @@ function zoned(scale: TimeScale, timeZone: string): TimeScale {
  * in `timeZone`, or plain `scaleTime` for the browser's zone. See rule 3.
  */
 export function zonedTimeScale(timeZone: string | undefined): () => TimeScale {
-	if (timeZone === undefined) return () => scaleTime<number, number, never>()
-	return () => zoned(scaleUtc<number, number, never>(), timeZone)
+	if (timeZone === undefined) return () => scaleTime<number, number>()
+	return () => zoned(scaleUtc<number, number>(), timeZone)
 }
 
 /** The PINNED time scale for bucketed series, ticking in `timeZone`. See rule 3 above. */

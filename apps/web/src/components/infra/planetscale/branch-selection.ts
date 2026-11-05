@@ -109,12 +109,12 @@ export function defaultBranch(
 		// this picks a default, it does not hide the anomaly.
 		const branch = [...production].sort(
 			(a, b) => connectionsOf(b) - connectionsOf(a) || Str.localeCompare(b.name)(a.name),
-		)[0]!
+		)[0]
 		return { branch, role: "production" }
 	}
 	const branch = [...candidates].sort(
 		(a, b) => connectionsOf(b) - connectionsOf(a) || Str.localeCompare(b.name)(a.name),
-	)[0]!
+	)[0]
 	return { branch, role: "busiest" }
 }
 

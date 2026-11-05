@@ -32,6 +32,7 @@ const docs = defineCollection({
 		sdk: z.enum(LANGUAGE_IDS).optional(),
 		// Brand mark on the sidebar row, for guides that aren't a language (`sdk`),
 		// like the frontend framework guides.
+		// oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- astro:content types are generated at build time, so lint sees `z` as an error type.
 		icon: z.enum(Rec.keys(BRAND_MARKS) as [BrandMarkId, ...BrandMarkId[]]).optional(),
 		// Key of CONTRIBUTORS in lib/changelog-meta.ts, shown as a byline under the description.
 		author: z.enum(CONTRIBUTOR_IDS).optional(),

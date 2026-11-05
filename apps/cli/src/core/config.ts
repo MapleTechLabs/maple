@@ -157,7 +157,7 @@ export interface MapleConfigValues {
 	/** Remote API base URL (env `MAPLE_API_URL` overrides the stored value). */
 	readonly apiUrl: Option.Option<string>
 	/** Remote bearer token (env `MAPLE_API_TOKEN` overrides the stored value). */
-	readonly token: Option.Option<Redacted.Redacted<string>>
+	readonly token: Option.Option<Redacted.Redacted>
 	readonly orgId: Option.Option<string>
 	readonly userId: Option.Option<string>
 	readonly credentialStore: Option.Option<"keychain" | "file">

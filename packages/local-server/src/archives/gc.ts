@@ -540,7 +540,7 @@ const collectTargets = async (
 ): Promise<GcTarget[]> => {
 	const completed: GcTarget[] = []
 	for (let i = 0; i < targets.length; i++) {
-		const target = targets[i]!
+		const target = targets[i]
 		await collectOneTarget(archiveDir, operationId, target, faults)
 		completed.push(target)
 		// Persist the NONTERMINAL gc-collecting phase with the advanced cursor.
@@ -643,7 +643,7 @@ export const resumeFrozenTargetsAndCompleteGc = async (
 ): Promise<void> => {
 	if (intent.kind !== "gc") throw new Error(`resumeFrozenTargetsAndCompleteGc called on non-gc intent`)
 	for (let i = intent.completedTargets; i < intent.targets.length; i++) {
-		const target = intent.targets[i]!
+		const target = intent.targets[i]
 		await collectOneTarget(archiveDir, intent.operationId, target)
 		await persistGcProgress(archiveDir, intent.operationId, i + 1, "gc-collecting")
 	}
@@ -717,7 +717,7 @@ const revalidateTombstone = (
  */
 export const preflightGcTargets = async (archiveDir: string, intent: GcOperationIntent): Promise<void> => {
 	for (let i = 0; i < intent.targets.length; i++) {
-		const target = intent.targets[i]!
+		const target = intent.targets[i]
 		const sourcePath = generationRoot(archiveDir, target.signal, target.rangeStart, target.generationId)
 		const tomb = tombstonePath(archiveDir, intent.operationId, target)
 		const sourceTopology = classifyArchivePathSync(archiveDir, sourcePath, "archive gc source")

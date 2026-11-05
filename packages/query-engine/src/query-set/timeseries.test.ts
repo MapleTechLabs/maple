@@ -47,14 +47,13 @@ const makeExecutor = (respond: (request: QuerySetExecuteRequest) => FakeResponse
 	return { executor, requests }
 }
 
-const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}): QueryBuilderQueryDraftPayload =>
-	({
-		id: "q-1",
-		name: "A",
-		dataSource: "traces",
-		aggregation: "count",
-		...overrides,
-	}) as QueryBuilderQueryDraftPayload
+const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}): QueryBuilderQueryDraftPayload => ({
+	id: "q-1",
+	name: "A",
+	dataSource: "traces",
+	aggregation: "count",
+	...overrides,
+})
 
 const set = (overrides: Partial<QuerySet> = {}): QuerySet => ({
 	queries: [draft()],

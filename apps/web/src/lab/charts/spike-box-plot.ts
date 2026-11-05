@@ -16,7 +16,7 @@ interface BoxPlotRow {
 	readonly durationMs: number
 }
 
-type Datum = BoxDatum<BoxPlotRow, ChartValue>
+type Datum = BoxDatum<BoxPlotRow>
 
 const OPERATIONS: ReadonlyArray<{ name: string; medianMs: number; sigma: number }> = [
 	{ name: "GET /api/traces", medianMs: 8, sigma: 0.45 },

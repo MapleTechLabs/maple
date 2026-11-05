@@ -109,7 +109,7 @@ const splitCsv = (value: string | undefined): Array<string> | undefined =>
  * one-expression `eraseType(compile(...))`.
  */
 function eraseType<T>(compiled: Effect.Effect<CompiledQuery<T>, QueryBuilderError>): PipeCompiled {
-	return compiled as PipeCompiled
+	return compiled
 }
 
 type PipeCompiled = Effect.Effect<PipeCompiledQuery, QueryBuilderError>
@@ -924,11 +924,12 @@ function buildAttributeFiltersFromParams(
 		const key = paramText(params[`${prefix}_key${suffix}`])
 		if (key === undefined) return Result.failVoid
 		const exists = params[`${prefix}_exists${suffix}`] === "1"
-		return Result.succeed({
+		const filter: AttrFilter = {
 			key,
 			value: exists ? undefined : paramText(params[`${prefix}_value${suffix}`]),
-			mode: (exists ? "exists" : "equals") as "equals" | "exists",
-		})
+			mode: exists ? "exists" : "equals",
+		}
+		return Result.succeed(filter)
 	})
 	return filters.length > 0 ? filters : undefined
 }
@@ -961,7 +962,7 @@ function pipeParamsToTracesTimeseriesOpts(params: PipeParams): TracesTimeseriesO
 	if (str("group_by_attributes")) groupBy.push("attribute")
 
 	return {
-		metric: "count" as TracesMetric,
+		metric: "count",
 		allMetrics: true,
 		needsSampling: true,
 		groupBy,
@@ -999,7 +1000,7 @@ function pipeParamsToTracesBreakdownOpts(params: PipeParams): TracesBreakdownOpt
 	}
 
 	return {
-		metric: "count" as TracesMetric,
+		metric: "count",
 		allMetrics: true,
 		groupBy,
 		groupByAttributeKey,

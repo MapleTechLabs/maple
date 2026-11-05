@@ -272,7 +272,7 @@ describe("AlertsService with a Linear destination", () => {
 				),
 			)
 			assert.strictEqual(thread?.linear_identifier, "ENG-1")
-			assert.strictEqual(thread?.incident_id, incidents.incidents[0]!.id)
+			assert.strictEqual(thread?.incident_id, incidents.incidents[0].id)
 
 			state.tracesAggregateRows = [healthy]
 			yield* TestClock.adjust(Duration.minutes(1))
@@ -282,7 +282,7 @@ describe("AlertsService with a Linear destination", () => {
 
 			const comments = Arr.filter(linear.operations, (operation) => operation.name === "MapleComment")
 			assert.lengthOf(comments, 1)
-			assert.include(String(comments[0]!.variables.input?.body), "Resolved")
+			assert.include(String(comments[0].variables.input?.body), "Resolved")
 			assert.lengthOf(
 				Arr.filter(linear.operations, (operation) => operation.name === "MapleIssueCreate"),
 				1,

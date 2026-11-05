@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import {
 	StatusPageComponentPublicId,
@@ -47,6 +48,9 @@ import { moved } from "./update-components"
 import { canvasDocument } from "./view-canvas"
 import { removeComponentCopy, view as pageView } from "./view"
 
+const ADMIN = Policy.grantsOf(["org:admin"])
+const MEMBER = Policy.grantsOf(["org:member"])
+
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -58,7 +62,7 @@ const PUBLIC_ID = Schema.encodeSync(StatusPagePublicId)(statusPage().id)
 type Fixture = Readonly<{
 	tab?: string
 	page?: V2StatusPage
-	isAdmin?: boolean
+	grants?: ReadonlyArray<Policy.Permission>
 	components?: ReturnType<typeof component>[]
 	incidents?: ReturnType<typeof incident>[]
 	monitorsFail?: boolean
@@ -80,7 +84,7 @@ const loaded = (fixture: Fixture = {}): Model => {
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin: fixture.isAdmin ?? true }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: fixture.grants ?? ADMIN }),
 			Message.CompletedFetchPage({
 				key: entered.page.key ?? "",
 				result: Result.succeed(fixture.page ?? statusPage()),
@@ -467,16 +471,16 @@ describe("the page as the editor", () => {
 	test("members see the page and its components without any control to change them", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(selected(1, { isAdmin: false })),
+			given(selected(1, { grants: MEMBER })),
 			expectView(text("Component 1")).toExist(),
 			expectView(role("button", { name: "Add monitor" })).not.toExist(),
 			expectView(role("button", { name: "Move Component 1 down" })).not.toExist(),
 			expectView(role("button", { name: "Remove from page" })).not.toExist(),
 			expectView(role("textbox", { name: "Shown as" })).toBeDisabled(),
-			expectView(text("Only org admins can change components.")).toExist(),
+			expectView(text("Only org admins and engineers can change components.")).toExist(),
 		)
 		expect(
-			pageUpdate(selected(1, { isAdmin: false }), Message.ClickedAddComponent()).model.panel?._tag,
+			pageUpdate(selected(1, { grants: MEMBER }), Message.ClickedAddComponent()).model.panel?._tag,
 		).toBe("Component")
 	})
 })
@@ -768,6 +772,19 @@ describe("live screen", () => {
 		)
 	})
 
+	test("an engineer edits the page but cannot issue a break-glass token", () => {
+		const engineer = {
+			...live("https://status-pr-7.maple.dev"),
+			grants: Policy.grantsOf(["org:engineer"]),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(engineer),
+			expectView(role("button", { name: "Get break-glass token" })).not.toExist(),
+		)
+		expect(names(pageUpdate(engineer, Message.ClickedRotateToken()).commands)).toEqual([])
+	})
+
 	test("Get break-glass token issues one at once and shows it once", () => {
 		const issuing = pageUpdate(loaded({ tab: "live" }), Message.ClickedRotateToken())
 		expect(names(issuing.commands)).toEqual(["RotateStatusPageBreakGlassToken"])
@@ -1001,12 +1018,12 @@ describe("json view", () => {
 	test("members read the document but cannot edit it", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "json", isAdmin: false })),
+			given(loaded({ tab: "json", grants: MEMBER })),
 			expectView(selector("pre")).toContainText('"name": "Acme Status"'),
 			expectView(role("button", { name: "Edit JSON" })).not.toExist(),
 			expectView(role("textbox", { name: "Config JSON" })).not.toExist(),
 		)
-		const tried = pageUpdate(loaded({ tab: "json", isAdmin: false }), Message.ClickedEditJson())
+		const tried = pageUpdate(loaded({ tab: "json", grants: MEMBER }), Message.ClickedEditJson())
 		expect(tried.model.jsonDraft).toBeNull()
 	})
 

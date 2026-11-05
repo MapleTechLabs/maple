@@ -12,7 +12,7 @@ const blockBody = (resource: Resource, section: string): string => {
 		resource.content,
 	)
 	expect(match, `${resource.name} should include ${section} block`).not.toBeNull()
-	return Str.trim(Str.replace(/^    /gm, "")(match![1]!))
+	return Str.trim(Str.replace(/^    /gm, "")(match![1]))
 }
 
 const splitTopLevelCommas = (input: string): string[] => {
@@ -48,7 +48,7 @@ const datasourceColumns = (resource: Resource): string[] =>
 	Arr.map(splitTopLevelCommas(blockBody(resource, "SCHEMA")), (column) => {
 		const match = /^([A-Za-z_][A-Za-z0-9_]*)\s+/.exec(column)
 		expect(match, `could not parse datasource column from ${column}`).not.toBeNull()
-		return match![1]!
+		return match![1]
 	})
 
 const findTopLevelFrom = (sql: string): number => {
@@ -71,7 +71,7 @@ const findTopLevelFrom = (sql: string): number => {
 		if (
 			depth === 0 &&
 			/^FROM\b/i.test(Str.slice(index)(sql)) &&
-			(index === 0 || /\s/.test(sql[index - 1]!))
+			(index === 0 || /\s/.test(sql[index - 1]))
 		) {
 			return index
 		}
@@ -97,17 +97,17 @@ const pipeSelectColumns = (resource: Resource): string[] => {
 	const selectMatch = /\bSELECT\b/i.exec(sql)
 	expect(selectMatch, `${resource.name} should include SELECT`).not.toBeNull()
 
-	const selectStart = selectMatch!.index + selectMatch![0]!.length
+	const selectStart = selectMatch!.index + selectMatch![0].length
 	const selectList = Str.slice(selectStart, findTopLevelFrom(sql))(sql)
 
 	return Arr.map(splitTopLevelCommas(selectList), (expression) => {
 		const normalized = Str.trim(Str.replace(/\s+/g, " ")(expression))
 		const alias = /\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)$/i.exec(normalized)
-		if (alias) return alias[1]!
+		if (alias) return alias[1]
 
 		const bareColumn = /^([A-Za-z_][A-Za-z0-9_]*)$/.exec(normalized)
 		expect(bareColumn, `SELECT expression needs an explicit alias: ${normalized}`).not.toBeNull()
-		return bareColumn![1]!
+		return bareColumn![1]
 	})
 }
 

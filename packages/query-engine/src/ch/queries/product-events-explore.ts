@@ -230,7 +230,7 @@ const TS_COLUMNS: ColumnDefs = {
 
 export function productEventsTimeseriesQuery(
 	opts: ProductEventsTimeseriesOpts,
-): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput> {
 	const inner = from(ProductEvents)
 		.select(($) => ({
 			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
@@ -241,16 +241,12 @@ export function productEventsTimeseriesQuery(
 		.where(($) => [...eventConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
-	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts) as CHQuery<
-		ColumnDefs,
-		ProductEventsTimeseriesOutput,
-		{}
-	>
+	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts)
 }
 
 export function productEventsBreakdownQuery(
 	opts: ProductEventsBreakdownOpts,
-): CHQuery<ColumnDefs, ProductEventsBreakdownOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventsBreakdownOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			name: dimensionColumn($, opts.groupBy, opts.groupByAttributeKey),
@@ -265,7 +261,7 @@ export function productEventsBreakdownQuery(
 
 export function productEventsListQuery(
 	opts: ProductEventsListOpts,
-): CHQuery<ColumnDefs, ProductEventsListOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventsListOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
@@ -303,7 +299,7 @@ export interface ProductEventAttributeKeysOutput {
 /** The `track()` prop keys in use, most common first. No rollup exists; this scans the window. */
 export function productEventAttributeKeysQuery(
 	opts: ProductEventAttributeKeysOpts = {},
-): CHQuery<ColumnDefs, ProductEventAttributeKeysOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventAttributeKeysOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			attributeKey: CH.arrayJoin(CH.mapKeys($.Attributes)),
@@ -328,7 +324,7 @@ export interface ProductEventAttributeValuesOutput {
 
 export function productEventAttributeValuesQuery(
 	opts: ProductEventAttributeValuesOpts,
-): CHQuery<ColumnDefs, ProductEventAttributeValuesOutput, {}> {
+): CHQuery<ColumnDefs, ProductEventAttributeValuesOutput> {
 	return from(ProductEvents)
 		.select(($) => ({
 			attributeValue: $.Attributes.get(opts.attributeKey),

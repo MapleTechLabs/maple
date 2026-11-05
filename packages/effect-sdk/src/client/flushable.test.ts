@@ -27,7 +27,7 @@ const setupFetch = (
 ) => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const headers: Record<string, string> = {}
 		const initHeaders = init?.headers
@@ -47,7 +47,7 @@ const setupFetch = (
 			bytes: new TextEncoder().encode(text).byteLength,
 		})
 		return responder(url, init)
-	}) as typeof fetch
+	}
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 

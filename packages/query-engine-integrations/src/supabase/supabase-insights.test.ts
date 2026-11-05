@@ -81,7 +81,7 @@ describe("supabase insights queries", () => {
 			]),
 		)
 		expect(rows[0]?.count).toBe(14)
-		expect(DateTime.formatIso(rows[0]!.lastSeen)).toBe("2026-10-21T05:59:58.123Z")
+		expect(DateTime.formatIso(rows[0].lastSeen)).toBe("2026-10-21T05:59:58.123Z")
 	})
 
 	it("decodes the callers' product mix and rates", () => {

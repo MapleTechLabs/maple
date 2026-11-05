@@ -106,7 +106,7 @@ export interface OAuthTokenEndpointConfig {
 	readonly tokenUrl: string
 	readonly clientId: string
 	/** null for a public (PKCE-only) client. Stays Redacted until the token POST body. */
-	readonly clientSecret: Redacted.Redacted<string> | null
+	readonly clientSecret: Redacted.Redacted | null
 	/** How a confidential client authenticates (RFC 6749 s2.3.1); defaults to the POST body. */
 	readonly clientAuthentication?: "client_secret_post" | "client_secret_basic"
 	/** A non-RFC status the provider answers for an unknown or rotated-away refresh token (Supabase: 404). */

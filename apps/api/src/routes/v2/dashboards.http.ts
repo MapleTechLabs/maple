@@ -299,7 +299,7 @@ const encodeVersionCursor = (versionNumber: number): string => `ver_${versionNum
 const decodeVersionCursor = (cursor: string): number | null => {
 	const match = /^ver_([0-9a-z]+)$/.exec(cursor)
 	if (match === null) return null
-	const version = Number.parseInt(match[1]!, 36)
+	const version = Number.parseInt(match[1], 36)
 	return Number.isSafeInteger(version) && version > 0 ? version : null
 }
 
@@ -657,7 +657,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							has_more: response.hasMore,
 							next_cursor:
 								response.hasMore && data.length > 0
-									? encodeVersionCursor(data[data.length - 1]!.versionNumber)
+									? encodeVersionCursor(data[data.length - 1].versionNumber)
 									: null,
 						}
 					}),

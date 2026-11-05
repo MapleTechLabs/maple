@@ -844,6 +844,7 @@ const isChatSessionNamespace = (
 
 /** The part of alchemy's `SqlMigrations` the activation uses; a test applies the files itself. */
 export interface ChatSessionSchema<E, R> {
+	// @effect-diagnostics-next-line lazyEffect:off -- mirrors alchemy's SqlMigrations method
 	readonly apply: () => Effect.Effect<void, E, R>
 }
 

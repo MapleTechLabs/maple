@@ -2,9 +2,10 @@
 	"$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
 	"extends": [
 		"./.oxlintrc.json",
-		"./node_modules/@effect/tsgo/oxlint-presets/recommended.json",
+		// `strict` is `recommended` at error. CI lints with `--quiet`, so a warn-level rule enforces nothing.
+		"./node_modules/@effect/tsgo/oxlint-presets/strict.json",
 		// @effect/tsgo 0.4x moved the host-global rules (console, Date, fetch, process.env, ...) out of
-		// `recommended` into this opt-in preset; the test overrides below depend on them staying on.
+		// `recommended` into this opt-in preset; its rules are raised to error below.
 		"./node_modules/@effect/tsgo/oxlint-presets/effect-native.json"
 	],
 	"plugins": ["eslint", "unicorn", "typescript", "oxc", "react", "jsx-a11y", "effecttsgo"],
@@ -13,10 +14,23 @@
 		"typeAware": true
 	},
 	"rules": {
+		"effecttsgo/abort-controller-in-effect": "error",
 		"effecttsgo/catch-to-ignore": "error",
+		"effecttsgo/crypto-random-uuid": "error",
+		"effecttsgo/crypto-random-uuid-in-effect": "error",
+		"effecttsgo/global-console": "error",
+		"effecttsgo/global-date-in-effect": "error",
+		"effecttsgo/global-fetch": "error",
+		"effecttsgo/global-random": "error",
+		"effecttsgo/global-timers": "error",
+		"effecttsgo/global-timers-in-effect": "error",
+		"effecttsgo/instance-of-schema": "error",
+		"effecttsgo/new-promise": "error",
+		"effecttsgo/process-env": "error",
+		"effecttsgo/process-env-in-effect": "error",
 		"effecttsgo/catch-to-or-else-succeed": "error",
 		"effecttsgo/duplicate-package": "error",
-		"effecttsgo/effect-do-notation": "warn",
+		"effecttsgo/effect-do-notation": "error",
 		"effecttsgo/effect-in-failure": "error",
 		"effecttsgo/effect-in-void-success": "error",
 		"effecttsgo/effect-try-without-catch": "error",
@@ -42,7 +56,7 @@
 		"effecttsgo/redundant-map-error": "error",
 		"effecttsgo/return-effect-in-gen": "error",
 		"effecttsgo/run-effect-inside-effect": "error",
-		"effecttsgo/service-not-as-class": "warn",
+		"effecttsgo/service-not-as-class": "error",
 		// The repo builds on `effect/unstable/*` (HttpApi, HttpClient, RPC) and `@effect/vitest`; ~10k
 		// hits with nothing to change. Version bumps are where breakage shows up.
 		"effecttsgo/unstable-api-usage": "off",
@@ -78,21 +92,36 @@
 		"typescript/await-thenable": "error",
 		"typescript/no-floating-promises": "error",
 		"typescript/restrict-template-expressions": "error",
-		"typescript/require-array-sort-compare": "error"
+		"typescript/require-array-sort-compare": "error",
+		"typescript/switch-exhaustiveness-check": ["error", { "considerDefaultExhaustiveForUnions": true }],
+		"typescript/no-unnecessary-type-assertion": "error",
+		"typescript/no-unnecessary-type-arguments": "error",
+		"typescript/no-deprecated": "error",
+		"typescript/use-unknown-in-catch-callback-variable": "error",
+		"typescript/return-await": "error",
+		"typescript/no-unnecessary-template-expression": "error",
+		"typescript/no-misused-promises": "error",
+		"typescript/no-unsafe-enum-comparison": "error",
+		"typescript/only-throw-error": "error",
+		"typescript/no-base-to-string": "error",
+		"typescript/no-redundant-type-constituents": "error",
+		"typescript/no-useless-default-assignment": "error",
+		"typescript/no-implied-eval": "error",
+		"typescript/no-for-in-array": "error",
+		"typescript/no-array-delete": "error",
+		"typescript/no-mixed-enums": "error",
+		"typescript/no-meaningless-void-operator": "error",
+		"typescript/no-duplicate-type-constituents": "error",
+		"typescript/no-unsafe-unary-minus": "error",
+		"typescript/prefer-reduce-type-parameter": "error"
 	},
 	"overrides": [
-		// Framework composition roots, standalone libraries, generated-client CLI dispatch, and operational probes expose generic Effect channels.
+		// Published: `fromEnv()`, `providers()` and the other zero-argument Layer factories are its
+		// public API. Drop the call parens at the next major.
 		{
-			"files": [
-				"apps/api/src/worker.ts",
-				"apps/api/src/worker/**",
-				"apps/cli/**",
-				"examples/**/main.ts",
-				"lib/**",
-				"scripts/**"
-			],
+			"files": ["packages/alchemy-maple/**"],
 			"rules": {
-				"effecttsgo/any-unknown-in-error-context": "off"
+				"effecttsgo/lazy-effect": "off"
 			}
 		},
 		// CI runs these before `bun install`, so they cannot import effect.
@@ -115,6 +144,7 @@
 				"scripts/**",
 				"**/scripts/**",
 				"**/bench/**",
+				"**/bench-harness.ts",
 				"**/tools/**",
 				"**/*.config.ts",
 				"apps/ingest/**",
@@ -171,12 +201,15 @@
 				"**/test/**",
 				"**/tests/**",
 				"**/__tests__/**",
-				"**/__evals__/**"
+				"**/__evals__/**",
+				"**/testing/**",
+				"**/*-e2e-support.ts"
 			],
 			"rules": {
 				"effecttsgo/any-unknown-in-error-context": "off",
 				"effecttsgo/crypto-random-uuid": "off",
 				"effecttsgo/global-console": "off",
+				"effecttsgo/global-date-in-effect": "off",
 				"effecttsgo/global-fetch": "off",
 				// Tests build JSON fixtures and assert on `yield*` results inline.
 				"effecttsgo/global-json": "off",

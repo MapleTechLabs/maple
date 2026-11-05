@@ -239,9 +239,7 @@ const childEvent = (
 				readonly reason: "stop" | "error" | "aborted" | "max-steps"
 				readonly error?: string
 		  },
-): ReadonlyArray<ChatTurnEvent> => [
-	{ ...body, messageId: event.toolCallId, task: childTask(event, context) } as ChatTurnEvent,
-]
+): ReadonlyArray<ChatTurnEvent> => [{ ...body, messageId: event.toolCallId, task: childTask(event, context) }]
 
 /**
  * The turn's last text, ahead of the event that ends it.

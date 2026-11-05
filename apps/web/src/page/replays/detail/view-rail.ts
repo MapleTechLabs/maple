@@ -77,7 +77,8 @@ const isFailedRequest = (ev: EventRow): boolean =>
 const eventVisual = (ev: EventRow): { icon: IconName; tone: string; lead: string; trail: string } => {
 	switch (ev.type) {
 		case "navigation":
-			return { ...EVENT_KIND_VISUALS.navigation, ...splitUrl(ev.url) }
+			// Mobile SDKs leave `url` empty and put the screen name in `message`.
+			return { ...EVENT_KIND_VISUALS.navigation, ...splitUrl(ev.url || ev.message) }
 		case "click":
 			return {
 				...EVENT_KIND_VISUALS.click,

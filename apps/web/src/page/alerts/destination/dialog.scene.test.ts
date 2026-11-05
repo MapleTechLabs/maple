@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AlertDestinationId } from "@maple/domain/http"
 import {
 	encodePublicId,
@@ -40,6 +41,8 @@ import {
 	update,
 } from "./dialog"
 import { view as dialogView } from "./view"
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
 
 const view = withViewInputs(dialogView, { id: "test-destination" })()
 const workspaceWire = (n: number, name: string) => ({
@@ -312,8 +315,8 @@ describe("destination dialog", () => {
 			click(role("button", { name: /^Linear/ })),
 			expectView(text("Checking your Linear connection…")).toExist(),
 			Command.resolve(
-				LinearFields.FetchIsAdmin,
-				LinearFields.Message.CompletedFetchIsAdmin({ isAdmin: true }),
+				LinearFields.FetchGrants,
+				LinearFields.Message.CompletedFetchGrants({ grants: ENGINEER }),
 			),
 			Command.resolve(
 				LinearFields.FetchStatus,

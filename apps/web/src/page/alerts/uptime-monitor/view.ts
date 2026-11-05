@@ -23,7 +23,7 @@ import {
 } from "../shared/uptime-derive"
 import { uptimeStatusChip } from "../shared/uptime-view"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { monitorOf } from "./update"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -73,7 +73,7 @@ const eyebrowLine = (monitor: UptimeMonitor): string =>
 
 const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 	detailActions(h, [
-		...(model.isAdmin
+		...(canManage(model)
 			? [
 					button(
 						h,
@@ -94,7 +94,7 @@ const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 					]),
 				]
 			: []),
-		...(monitor.config.type === "http" && model.isAdmin
+		...(monitor.config.type === "http" && canManage(model)
 			? [
 					button(
 						h,

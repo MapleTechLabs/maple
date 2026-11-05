@@ -10,10 +10,7 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
  * event's telemetry when it ends. The ports sit in `layer`, so the connection
  * scope finds `MapleDbConnection` there.
  */
-export const runEvent = <A, E, R, ROut, E2>(
-	program: Effect.Effect<A, E, R>,
-	layer: Layer.Layer<ROut, E2, never>,
-) =>
+export const runEvent = <A, E, R, ROut, E2>(program: Effect.Effect<A, E, R>, layer: Layer.Layer<ROut, E2>) =>
 	// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the event IS the boundary the layer belongs to.
 	withPgConnectionScope(program).pipe(Effect.provide(layer))
 

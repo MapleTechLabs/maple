@@ -543,7 +543,7 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 		// ISO-8601 with a literal Z, fixed width — so the strings sort as the
 		// instants do, which is what lets the client plot them without parsing.
-		assert.isTrue(rows[0]!.bucket < rows[2]!.bucket, `${rows[0]!.bucket} < ${rows[2]!.bucket}`)
+		assert.isTrue(rows[0].bucket < rows[2].bucket, `${rows[0].bucket} < ${rows[2].bucket}`)
 
 		// A tool selected and no model: the same calls, now split by the model
 		// each was attributed to.
@@ -760,14 +760,14 @@ describe.skipIf(!clickhouseE2eEnabled)("agent tools reads", () => {
 		)
 		const second = await page({
 			limit: 1,
-			before: { timestamp: first[0]!.timestamp, spanId: first[0]!.spanId },
+			before: { timestamp: first[0].timestamp, spanId: first[0].spanId },
 		})
 		assert.deepStrictEqual(
 			Arr.map(second, (row) => row.spanId),
 			["tools-groups-1"],
 		)
 		assert.deepStrictEqual(
-			await page({ limit: 1, before: { timestamp: second[0]!.timestamp, spanId: second[0]!.spanId } }),
+			await page({ limit: 1, before: { timestamp: second[0].timestamp, spanId: second[0].spanId } }),
 			[],
 		)
 		// A variant narrows the samples to the calls that said exactly that.

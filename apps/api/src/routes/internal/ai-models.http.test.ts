@@ -54,7 +54,7 @@ const makeHarness = () => {
 				headers: { authorization: "Bearer test-token", "content-type": "application/json" },
 				body: JSON.stringify(body),
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		return { status: response.status, body: JSON.parse(await response.text()) as Record<string, unknown> }
 	}

@@ -55,9 +55,9 @@ describe("effect-orm through Database.execute", () => {
 				.pipe(Effect.withTracer(tracer))
 
 			assert.strictEqual(rows.length, 1)
-			assert.strictEqual(rows[0]!.createdAt, 1_700_000_000_001)
-			assert.strictEqual(rows[0]!.kind, "standard")
-			assert.strictEqual(rows[0]!.revoked, false)
+			assert.strictEqual(rows[0].createdAt, 1_700_000_000_001)
+			assert.strictEqual(rows[0].kind, "standard")
+			assert.strictEqual(rows[0].revoked, false)
 			const span = Option.getOrUndefined(
 				Arr.findFirst(spans, (s) => s.attributes.get("db.system.name") === "postgresql"),
 			)

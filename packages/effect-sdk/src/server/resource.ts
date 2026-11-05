@@ -76,7 +76,7 @@ export interface ResolvedResource {
 	 * ingest key, never on a missing endpoint.
 	 */
 	readonly endpoint: string
-	readonly ingestKey: Redacted.Redacted<string> | undefined
+	readonly ingestKey: Redacted.Redacted | undefined
 	readonly resource: {
 		readonly serviceName: string
 		readonly serviceVersion: string | undefined

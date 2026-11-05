@@ -25,7 +25,7 @@ const allSections = () =>
 /** Every ```json fence in the generated doc. */
 const jsonExamples = (markdown: string): ReadonlyArray<unknown> => {
 	const blocks = Arr.fromIterable(Str.matchAll(/```json\n([\s\S]*?)\n```/g)(markdown))
-	return Arr.map(blocks, ([, body]) => JSON.parse(body!))
+	return Arr.map(blocks, ([, body]) => JSON.parse(body))
 }
 
 describe("generated JSON examples decode", () => {

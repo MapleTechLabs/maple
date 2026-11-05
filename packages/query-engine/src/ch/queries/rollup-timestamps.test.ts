@@ -98,20 +98,20 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 			const overview = yield* decodeTimes(yield* compile(serviceOverviewQuery({}), params), [
 				"firstSeen",
 			])
-			expect(iso(overview!.firstSeen)).toBe(ISO)
-			expect(iso(overview!.commits[0]![3])).toBe(ISO)
+			expect(iso(overview.firstSeen)).toBe(ISO)
+			expect(iso(overview.commits[0][3])).toBe(ISO)
 			for (const bucketSeconds of [30, 300, 3600]) {
 				const p = { ...params, bucketSeconds }
 				const apdex = yield* decodeTimes(
 					yield* compile(serviceApdexTimeseriesQuery({ serviceName: "api", bucketSeconds }), p),
 					["bucket"],
 				)
-				expect(iso(apdex!.bucket)).toBe(ISO)
+				expect(iso(apdex.bucket)).toBe(ISO)
 				const releases = yield* decodeTimes(
 					yield* compile(serviceReleasesTimelineQuery({ serviceName: "api", bucketSeconds }), p),
 					["bucket"],
 				)
-				expect(iso(releases!.bucket)).toBe(ISO)
+				expect(iso(releases.bucket)).toBe(ISO)
 			}
 		}),
 	)
@@ -119,17 +119,17 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 	it.effect("releases", () =>
 		Effect.gen(function* () {
 			const list = yield* decodeTimes(yield* compile(releasesListQuery(), params), ["firstSeen"])
-			expect(iso(list!.firstSeen)).toBe(ISO)
+			expect(iso(list.firstSeen)).toBe(ISO)
 			const timeline = yield* decodeTimes(
 				yield* compile(releasesTimelineQuery({ bucketSeconds: 3600 }), params),
 				["bucket"],
 			)
-			expect(iso(timeline!.bucket)).toBe(ISO)
+			expect(iso(timeline.bucket)).toBe(ISO)
 			const deployments = yield* decodeTimes(
 				yield* compile(serviceDeploymentsQuery({ minutePrecision: true }), params),
 				["firstSeen", "lastSeen"],
 			)
-			expect(iso(deployments!.lastSeen)).toBe(ISO)
+			expect(iso(deployments.lastSeen)).toBe(ISO)
 		}),
 	)
 
@@ -140,17 +140,17 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 				yield* compile(serviceOperationsTimeseriesQuery(opts), params),
 				["bucket"],
 			)
-			expect(iso(spliced!.bucket)).toBe(ISO)
+			expect(iso(spliced.bucket)).toBe(ISO)
 			const raw = yield* decodeTimes(
 				yield* compile(serviceOperationsTimeseriesRawQuery(opts), params),
 				["bucket"],
 			)
-			expect(iso(raw!.bucket)).toBe(ISO)
+			expect(iso(raw.bucket)).toBe(ISO)
 			const routes = yield* decodeTimes(yield* compile(routeUsageQuery({}), params), [
 				"firstSeen",
 				"lastSeen",
 			])
-			expect(iso(routes!.firstSeen)).toBe(ISO)
+			expect(iso(routes.firstSeen)).toBe(ISO)
 		}),
 	)
 
@@ -161,15 +161,15 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 					yield* serviceDbQueryTimeseriesSQL({ ...params, dbSystem: "postgresql", bucketSeconds }),
 					["bucket"],
 				)
-				expect(iso(ts!.bucket)).toBe(ISO)
+				expect(iso(ts.bucket)).toBe(ISO)
 			}
 			const top = yield* decodeTimes(
 				yield* serviceDbTopQueriesSQL({ ...params, dbSystem: "postgresql" }),
 				["lastSeen"],
 			)
-			expect(iso(top!.lastSeen)).toBe(ISO)
+			expect(iso(top.lastSeen)).toBe(ISO)
 			const volume = yield* decodeTimes(yield* compile(dbQueryVolumeQuery({}), params), ["lastSeen"])
-			expect(iso(volume!.lastSeen)).toBe(ISO)
+			expect(iso(volume.lastSeen)).toBe(ISO)
 		}),
 	)
 
@@ -179,18 +179,18 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 				"firstSeen",
 				"lastSeen",
 			])
-			expect(iso(metrics!.lastSeen)).toBe(ISO)
+			expect(iso(metrics.lastSeen)).toBe(ISO)
 			const liveness = yield* decodeTimes(yield* compile(serviceLivenessQuery(), params), ["lastSeen"])
-			expect(iso(liveness!.lastSeen)).toBe(ISO)
+			expect(iso(liveness.lastSeen)).toBe(ISO)
 			const trace = yield* decodeTimes(yield* compile(anomalyTraceSignalTimeseriesQuery(), params), [
 				"hour",
 			])
-			expect(iso(trace!.hour)).toBe(ISO)
+			expect(iso(trace.hour)).toBe(ISO)
 			const logs = yield* decodeTimes(
 				yield* compile(anomalyLogVolumeQuery({ hoursOfDay: [11] }), params),
 				["hour"],
 			)
-			expect(iso(logs!.hour)).toBe(ISO)
+			expect(iso(logs.hour)).toBe(ISO)
 		}),
 	)
 
@@ -219,7 +219,7 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 					SampleRateSum: 1,
 				},
 			])
-			expect(edge!.Hour).toBe(WIRE)
+			expect(edge.Hour).toBe(WIRE)
 
 			const annual = yield* compile(
 				tracesTimeseriesQuery({

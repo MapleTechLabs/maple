@@ -163,7 +163,10 @@ const resourcesList = (
 	const type = model.search.type || undefined
 	const project = model.search.project || undefined
 	const filtered = type !== undefined || project !== undefined
-	const summary = `${total > resources.length ? `First ${resources.length} of ${countLabel(total, "resource")}` : countLabel(total, "resource")}`
+	const summary =
+		total > resources.length
+			? `First ${resources.length} of ${countLabel(total, "resource")}`
+			: countLabel(total, "resource")
 	const toolbar = filterSelect(
 		h,
 		{

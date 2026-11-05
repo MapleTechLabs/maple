@@ -38,7 +38,7 @@ export const emailTransport: EffectTransport<Config> = {
 				// members who all got nothing. Keep the first failure message
 				// verbatim so timeout classification survives the aggregation.
 				return yield* makeDeliveryError(
-					`Email delivery failed for all ${count} member${count === 1 ? "" : "s"}: ${failures[0]!.error}`,
+					`Email delivery failed for all ${count} member${count === 1 ? "" : "s"}: ${failures[0].error}`,
 					"email",
 				)
 			}
@@ -52,7 +52,7 @@ export const emailTransport: EffectTransport<Config> = {
 					Effect.annotateLogs({
 						failedCount: failures.length,
 						memberCount: count,
-						firstError: failures[0]!.error,
+						firstError: failures[0].error,
 					}),
 				)
 				return {

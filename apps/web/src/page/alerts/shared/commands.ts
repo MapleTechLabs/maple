@@ -3,7 +3,6 @@ import type { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
 import { v2DeliveryToDocument } from "@maple/web-data/alerts/form-utils"
 import { Effect, Array as Arr } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
-import { SessionTenant } from "../../../data/session-tenant"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
 // The alert reads and writes the hub, rule and incident pages share, as Effects their Commands wrap.
@@ -20,12 +19,6 @@ export const listDeliveriesRaw = (incidentId?: AlertIncidentId) =>
 
 export const listDeliveries = (incidentId?: AlertIncidentId) =>
 	listDeliveriesRaw(incidentId).pipe(Effect.mapError(toLoadFailure))
-
-/** The session's roles allow org administration (`root` or `org:admin`). */
-export const readIsAdmin = Effect.gen(function* () {
-	const session = yield* (yield* SessionTenant).get
-	return Arr.some(session.roles, (role) => role === "root" || role === "org:admin")
-}).pipe(Effect.orElseSucceed(() => false))
 
 /** `toggleRuleHandler`: PATCH the rule's `enabled`. */
 export const setRuleEnabled = (ruleId: AlertRuleId, isEnabled: boolean) =>

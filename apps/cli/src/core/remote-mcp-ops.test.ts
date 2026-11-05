@@ -89,13 +89,13 @@ describe("remote MCP transport", () => {
 
 		expect(requests).toHaveLength(1)
 		const [request] = requests
-		expect(request!.url).toBe("https://api.maple.test/mcp")
-		expect(request!.method).toBe("POST")
-		expect(request!.authorization).toBe("Bearer maple_ak_testtoken")
+		expect(request.url).toBe("https://api.maple.test/mcp")
+		expect(request.method).toBe("POST")
+		expect(request.authorization).toBe("Bearer maple_ak_testtoken")
 		// The server answers 406 unless both are acceptable.
-		expect(request!.accept).toContain("application/json")
-		expect(request!.accept).toContain("text/event-stream")
-		expect(request!.body).toEqual({
+		expect(request.accept).toContain("application/json")
+		expect(request.accept).toContain("text/event-stream")
+		expect(request.body).toEqual({
 			jsonrpc: "2.0",
 			id: 1,
 			method: "tools/call",
@@ -157,7 +157,7 @@ describe("remote MCP operations map onto local output shapes", () => {
 			}),
 		}
 		const out = await run((mcp) => RemoteMcp.findSlowTraces(mcp, { range: RANGE, limit: 5 }))
-		expect(requests[0]!.body.params).toMatchObject({ name: "find_slow_traces", arguments: { limit: 5 } })
+		expect(requests[0].body.params).toMatchObject({ name: "find_slow_traces", arguments: { limit: 5 } })
 		expect(out.timeRange).toEqual(RANGE)
 		expect(out.stats).toEqual({ p50Ms: 10, p95Ms: 90, minMs: 1, maxMs: 120 })
 		expect(out.traces[0]).toMatchObject({
@@ -183,7 +183,7 @@ describe("remote MCP operations map onto local output shapes", () => {
 		const out = await run((mcp) =>
 			RemoteMcp.searchTraces(mcp, { range: RANGE, spanName: "checkout", limit: 20, offset: 20 }),
 		)
-		expect(requests[0]!.body.params).toMatchObject({
+		expect(requests[0].body.params).toMatchObject({
 			name: "search_traces",
 			arguments: { span_name: "checkout", offset: 20, limit: 20 },
 		})
@@ -196,7 +196,7 @@ describe("remote MCP operations map onto local output shapes", () => {
 			body: toolResult({ timeRange: TIME_RANGE, totalSampled: 0, sampleSize: 10000, patterns: [] }),
 		}
 		await run((mcp) => RemoteMcp.mineLogPatterns(mcp, { range: RANGE, severity: "WARNING" }))
-		expect(requests[0]!.body.params).toMatchObject({
+		expect(requests[0].body.params).toMatchObject({
 			name: "mine_log_patterns",
 			arguments: { severity: "WARN" },
 		})

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { SecurityAuditEvent } from "@maple/domain/http"
 import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -19,7 +20,7 @@ import {
 	FetchRunTargets,
 	FetchUnits,
 	ReadRunClock,
-	ReadRunIsAdmin,
+	ReadRunGrants,
 	ParseSecurityReports,
 	StartAnotherRun,
 } from "./command"
@@ -91,7 +92,7 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 	const model: Model = {
 		runId: route.runId,
 		nowMs: 0,
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		run: Keyed.idle(),
 		events: Keyed.idle(),
 		eventLog: [],
@@ -128,7 +129,7 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		...loaded,
 		commands: [
 			ReadRunClock(),
-			...(isClerkAuthEnabled ? [ReadRunIsAdmin()] : []),
+			...(isClerkAuthEnabled ? [ReadRunGrants()] : []),
 			...(loaded.commands ?? []),
 		],
 	}
@@ -174,7 +175,7 @@ const startQueuedGap = (model: Model): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchRun: ({ key, result }) => {
 			const wasLive = Option.match(Option.fromNullishOr(runOf(model)), {
 				onNone: () => true,

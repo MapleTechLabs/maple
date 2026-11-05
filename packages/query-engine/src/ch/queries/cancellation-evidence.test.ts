@@ -48,8 +48,8 @@ describe("cancellationServiceUsageQuery", () => {
 					activeDaysPrior: "0",
 				},
 			])
-			expect(row!.recentTraceBytes).toBe(18_446_744_073)
-			expect(DateTime.formatIso(row!.lastHour)).toBe("2026-10-20T15:00:00.000Z")
+			expect(row.recentTraceBytes).toBe(18_446_744_073)
+			expect(DateTime.formatIso(row.lastHour)).toBe("2026-10-20T15:00:00.000Z")
 		}),
 	)
 })

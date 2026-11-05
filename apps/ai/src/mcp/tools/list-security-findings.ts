@@ -256,7 +256,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			const codeState = output.areas.find((area) => area.area === "code")?.state
 			const auditUnknown =
 				codeState === "forbidden"
-					? "admins only"
+					? "admins and engineers only"
 					: codeState === "not_enabled"
 						? "not enabled"
 						: "unknown"

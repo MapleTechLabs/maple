@@ -239,7 +239,7 @@ const parseRelativeDuration = (input: string): Effect.Effect<number, InvalidDura
 			}),
 		)
 	}
-	const unit = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[match[2]!.toLowerCase()]!
+	const unit = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[match[2].toLowerCase()]!
 	return Effect.succeed(Number(match[1]) * unit)
 }
 
@@ -284,7 +284,7 @@ const renderTable = (
 	lines.push(`┌─${titleLine}${titleBorderRight}┐`)
 	lines.push(`│ ${columns.map((c) => pad(c.header, c)).join(" │ ")} │`)
 	lines.push(`├${border}┤`)
-	for (const row of rows) lines.push(`│ ${row.map((v, i) => pad(v, columns[i]!)).join(" │ ")} │`)
+	for (const row of rows) lines.push(`│ ${row.map((v, i) => pad(v, columns[i])).join(" │ ")} │`)
 	lines.push(`└${border}┘`)
 	return lines.join("\n")
 }
@@ -406,6 +406,7 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 					),
 				catch: (cause) => new BenchFileError({ path, op: "import suite", message: String(cause) }),
 			}).pipe(
+				// @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off -- the branch also maps the suite's own error
 				Effect.flatMap((value) =>
 					Effect.isEffect(value)
 						? // oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion -- a suite module's default export, checked by isEffect

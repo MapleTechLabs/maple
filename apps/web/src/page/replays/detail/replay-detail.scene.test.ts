@@ -114,6 +114,8 @@ const loaded = (): Model => {
 				key: start.transcript.key ?? "",
 				result: Result.succeed([
 					event("custom", "add_to_cart"),
+					// Mobile SDKs send no URL on a screen view, only the screen name.
+					event("navigation", "Saved Chats"),
 					event("error", "PaymentError: declined"),
 				]),
 			}),
@@ -249,6 +251,7 @@ describe("replay detail", () => {
 			given(seeded()),
 			...mounted,
 			expectView(text("add_to_cart")).toExist(),
+			expectView(text("Saved Chats")).toExist(),
 			expectView(role("button", { name: "Errors (1)" })).toExist(),
 		)
 		const filtered = pageUpdate(seeded(), Message.PickedEventFilter({ filter: "error" })).model

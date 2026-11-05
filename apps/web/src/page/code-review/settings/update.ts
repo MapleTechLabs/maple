@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	type GithubIntegrationStatus,
 	type GithubRepoSummary,
@@ -26,12 +27,12 @@ import {
 	FetchRepoConfig,
 	FetchSettings,
 	FetchStatus,
-	ReadIsAdmin,
+	ReadGrants,
 	SaveRepoConfig,
 	SaveSettings,
 	SetPrReview,
 } from "./command"
-import { Message, type Model, type SavePurpose } from "./model"
+import { canManage, Message, type Model, type SavePurpose } from "./model"
 import { initRepoList, pinOnce } from "./repositories"
 
 type Return = PageReturn<Model, Message>
@@ -230,7 +231,7 @@ export const init = (_route: unknown, context: PageContext, carried: Carried = n
 			onNone: () => Keyed.idle(),
 			onSome: (status) => ({ key, data: AsyncData.Success({ data: status }) }),
 		}),
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		modelSelect: Select.init("code-review-model", { value: DEFAULT_MODEL, selectedIndex: null }),
 		isSavingModel: false,
 		localSettings: null,
@@ -253,7 +254,7 @@ export const init = (_route: unknown, context: PageContext, carried: Carried = n
 		: model
 	return combine(readSettings(pinned, context, "Load"), (next) => ({
 		model: next,
-		commands: isClerkAuthEnabled ? [ReadIsAdmin()] : [],
+		commands: isClerkAuthEnabled ? [ReadGrants()] : [],
 	}))
 }
 
@@ -352,7 +353,7 @@ const pickModel = (model: Model, value: string): Return =>
 				...model,
 				modelSelect: { ...model.modelSelect, value: currentModel(settings) },
 			}
-			if (value === currentModel(baseSettings(model)) || model.isSavingModel || !model.isAdmin)
+			if (value === currentModel(baseSettings(model)) || model.isSavingModel || !canManage(model))
 				return { model: reverted }
 			const picked = isModel(value) ? value : undefined
 			return enqueueSave(
@@ -407,7 +408,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}
 				: { model },
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedRetrySettings: () => readSettings(model, context, "Refresh"),
 		ClickedRetryStatus: () => readStatus(model, context, "Refresh"),
 		GotModelSelectMessage: ({ message: inner }) => {
@@ -466,7 +467,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, repoList: { ...model.repoList, search: "", filter: "all" } },
 		}),
 		ToggledRepo: ({ repositoryId, fullName, isEnabled }) =>
-			model.busy.includes(repositoryId) || !model.isAdmin
+			model.busy.includes(repositoryId) || !canManage(model)
 				? { model }
 				: {
 						model: {

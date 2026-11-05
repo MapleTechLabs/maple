@@ -4,7 +4,7 @@ import { MapleApiV2, isoTimestamp, paginateArray } from "@maple/domain/http/v2"
 import type { V2McpConnection } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { isAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { McpConnectionsService, type McpConnection } from "@maple/backend/services/auth/McpConnectionsService"
 
 const toV2McpConnection = (connection: McpConnection): V2McpConnection => ({
@@ -22,7 +22,10 @@ const toV2McpConnection = (connection: McpConnection): V2McpConnection => ({
 /** Admins manage every member's connections; anyone else only the ones they approved. */
 const currentViewer = Effect.gen(function* () {
 	const tenant = yield* CurrentTenant.Context
-	return { orgId: tenant.orgId, viewer: { userId: tenant.userId, seesAll: isAdmin(tenant.roles) } }
+	return {
+		orgId: tenant.orgId,
+		viewer: { userId: tenant.userId, seesAll: Policy.can(tenant.roles, "mcp_connections:view_all") },
+	}
 })
 
 export const HttpV2McpConnectionsLive = HttpApiBuilder.group(MapleApiV2, "mcpConnections", (handlers) =>

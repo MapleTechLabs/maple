@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { DependencyFindingStatus, DependencyFindingTriageStatus } from "@maple/domain/dependency-scan"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -15,7 +16,7 @@ import {
 	FetchFindings,
 	FetchRepositories,
 	ReadDependenciesClock,
-	ReadDependenciesIsAdmin,
+	ReadDependenciesGrants,
 	ScanRepository,
 	UpdateFinding,
 } from "./command"
@@ -32,7 +33,7 @@ import {
 	STATUS_FILTER_LABEL,
 	unexpiredScans,
 } from "./derive"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -92,7 +93,7 @@ const withRoute = (model: Model, route: SecurityDependenciesRoute): Model =>
 
 export const initialModel = (): Model => ({
 	nowMs: 0,
-	isAdmin: !isClerkAuthEnabled,
+	grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 	repositories: Keyed.idle(),
 	findings: Keyed.idle(),
 	statusSelect: Select.init("security-dependency-status", { value: "open", selectedIndex: 0 }),
@@ -119,7 +120,7 @@ export const init = (route: SecurityDependenciesRoute, context: PageContext): Re
 		...loaded,
 		commands: [
 			ReadDependenciesClock(),
-			...(isClerkAuthEnabled ? [ReadDependenciesIsAdmin()] : []),
+			...(isClerkAuthEnabled ? [ReadDependenciesGrants()] : []),
 			...(loaded.commands ?? []),
 		],
 	}
@@ -221,7 +222,7 @@ const triageStatusOf = (status: DependencyFindingStatus): DependencyFindingTriag
 
 const triage = (model: Model, status: DependencyFindingTriageStatus): Return => {
 	const finding = selectedFindingOf(model)
-	if (finding === null || !model.isAdmin || model.savingStatus !== null) return { model }
+	if (finding === null || !canManage(model) || model.savingStatus !== null) return { model }
 	const reason = Str.trim(model.reason.value)
 	// Reopening needs no reason; setting a finding aside does.
 	if (status !== "open" && reasonErrorOf(reason) !== null)
@@ -235,7 +236,7 @@ const triage = (model: Model, status: DependencyFindingTriageStatus): Return => 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchRepositories: ({ key, result }) =>
 			dropUnknownRepository(
 				afterRepositories(
