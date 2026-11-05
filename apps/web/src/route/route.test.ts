@@ -26,9 +26,11 @@ describe("routes", () => {
 	})
 
 	test("a user page takes any id the API accepts, decoded, and nothing longer", () => {
-		const route = parse("/users/user%2F42%20ada")
+		// Cloudflare delivers an encoded `%2F` as a real slash, so the id is the rest of the path.
+		const route = parse("/users/user/42%20ada")
 		expect(route).toMatchObject({ _tag: "UserDetail", userId: "user/42 ada" })
-		expect(hrefOf(route)).toBe("/users/user%2F42%20ada")
+		expect(hrefOf(route)).toBe("/users/user/42%20ada")
+		expect(parse("/users/user%2F42%20ada")).toMatchObject({ _tag: "UserDetail", userId: "user/42 ada" })
 		expect(parse(`/users/${Str.repeat(END_USER_ID_MAX_LENGTH)("u")}`)._tag).toBe("UserDetail")
 		expect(parse(`/users/${Str.repeat(END_USER_ID_MAX_LENGTH + 1)("u")}`)._tag).not.toBe("UserDetail")
 	})
