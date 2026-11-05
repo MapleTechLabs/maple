@@ -1,4 +1,4 @@
-import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { columnClass } from "@maple/views/ui/column"
 import {
@@ -436,8 +436,8 @@ export const usersListBody = <M>(
 					toolTableFooter(
 						h,
 						typeof summary === "string"
-							? `${formatNumber(shown.length)} users`
-							: `${shown.length} of ${formatNumber(summary.identified)} users`,
+							? countLabel(shown.length, "user")
+							: `${shown.length} of ${countLabel(summary.identified, "user")}`,
 						"· sorted by last seen",
 					),
 				],
