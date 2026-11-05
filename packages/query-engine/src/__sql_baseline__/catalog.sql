@@ -10272,7 +10272,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:users:usersFacetsQuery:default  [3fb921fa]
+-- builder:users:usersFacetsQuery:default  [889fda3a]
 SELECT
           signals.namespace AS name,
           uniqExact(signals.userId) AS count,
@@ -10280,9 +10280,9 @@ SELECT
         FROM (
 SELECT
           sessions.userId AS userId,
-          anyIf(sessions.userName, sessions.userName != '') AS name,
-          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
-          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
+          argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
           transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(sessions.startTime) AS firstSeen,
           max(sessions.lastActivity) AS lastSeen,
@@ -10316,7 +10316,7 @@ SELECT
           product_events.UserId AS userId,
           '' AS name,
           '' AS email,
-          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          argMax(product_events.GroupId, if(product_events.GroupId != '', toFloat64(product_events.Timestamp), 0)) AS groupId,
           transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(product_events.Timestamp) AS firstSeen,
           max(product_events.Timestamp) AS lastSeen,
@@ -10337,8 +10337,8 @@ SELECT
 UNION ALL
 SELECT
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
-          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
-          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          argMax(traces.SpanAttributes['user.name'], if(traces.SpanAttributes['user.name'] != '', toFloat64(traces.Timestamp), 0)) AS name,
+          argMax(traces.SpanAttributes['user.email'], if(traces.SpanAttributes['user.email'] != '', toFloat64(traces.Timestamp), 0)) AS email,
           '' AS groupId,
           traces.ResourceAttributes['service.namespace'] AS namespace,
           min(traces.Timestamp) AS firstSeen,
@@ -10373,9 +10373,9 @@ SELECT
         FROM (
 SELECT
           sessions.userId AS userId,
-          anyIf(sessions.userName, sessions.userName != '') AS name,
-          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
-          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
+          argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
           transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(sessions.startTime) AS firstSeen,
           max(sessions.lastActivity) AS lastSeen,
@@ -10410,7 +10410,7 @@ SELECT
           product_events.UserId AS userId,
           '' AS name,
           '' AS email,
-          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          argMax(product_events.GroupId, if(product_events.GroupId != '', toFloat64(product_events.Timestamp), 0)) AS groupId,
           transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(product_events.Timestamp) AS firstSeen,
           max(product_events.Timestamp) AS lastSeen,
@@ -10440,8 +10440,8 @@ SELECT
 UNION ALL
 SELECT
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
-          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
-          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          argMax(traces.SpanAttributes['user.name'], if(traces.SpanAttributes['user.name'] != '', toFloat64(traces.Timestamp), 0)) AS name,
+          argMax(traces.SpanAttributes['user.email'], if(traces.SpanAttributes['user.email'] != '', toFloat64(traces.Timestamp), 0)) AS email,
           '' AS groupId,
           traces.ResourceAttributes['service.namespace'] AS namespace,
           min(traces.Timestamp) AS firstSeen,
@@ -10471,7 +10471,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersFacetsQuery:pinned  [67e061ac]
+-- builder:users:usersFacetsQuery:pinned  [43adadf3]
 SELECT
           signals.groupId AS name,
           uniqExact(signals.userId) AS count,
@@ -10479,9 +10479,9 @@ SELECT
         FROM (
 SELECT
           sessions.userId AS userId,
-          anyIf(sessions.userName, sessions.userName != '') AS name,
-          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
-          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
+          argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
           transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(sessions.startTime) AS firstSeen,
           max(sessions.lastActivity) AS lastSeen,
@@ -10516,7 +10516,7 @@ SELECT
           product_events.UserId AS userId,
           '' AS name,
           '' AS email,
-          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          argMax(product_events.GroupId, if(product_events.GroupId != '', toFloat64(product_events.Timestamp), 0)) AS groupId,
           transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(product_events.Timestamp) AS firstSeen,
           max(product_events.Timestamp) AS lastSeen,
@@ -10546,8 +10546,8 @@ SELECT
 UNION ALL
 SELECT
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
-          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
-          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          argMax(traces.SpanAttributes['user.name'], if(traces.SpanAttributes['user.name'] != '', toFloat64(traces.Timestamp), 0)) AS name,
+          argMax(traces.SpanAttributes['user.email'], if(traces.SpanAttributes['user.email'] != '', toFloat64(traces.Timestamp), 0)) AS email,
           '' AS groupId,
           traces.ResourceAttributes['service.namespace'] AS namespace,
           min(traces.Timestamp) AS firstSeen,
@@ -10591,12 +10591,12 @@ SELECT
         LIMIT 2
         FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [52ffde9d]
+-- builder:users:usersListQuery:activityRollup  [a52e546a]
 SELECT
           signals.userId AS userId,
-          anyIf(signals.name, signals.name != '') AS name,
-          anyIf(signals.email, signals.email != '') AS email,
-          anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          argMax(signals.name, if(signals.name != '', toFloat64(signals.lastSeen), 0)) AS name,
+          argMax(signals.email, if(signals.email != '', toFloat64(signals.lastSeen), 0)) AS email,
+          argMax(signals.groupId, if(signals.groupId != '', toFloat64(signals.lastSeen), 0)) AS groupId,
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
@@ -10611,9 +10611,9 @@ SELECT
         FROM (
 SELECT
           sessions.userId AS userId,
-          anyIf(sessions.userName, sessions.userName != '') AS name,
-          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
-          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
+          argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
           transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(sessions.startTime) AS firstSeen,
           max(sessions.lastActivity) AS lastSeen,
@@ -10648,7 +10648,7 @@ SELECT
           product_events.UserId AS userId,
           '' AS name,
           '' AS email,
-          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          argMax(product_events.GroupId, if(product_events.GroupId != '', toFloat64(product_events.Timestamp), 0)) AS groupId,
           transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(product_events.Timestamp) AS firstSeen,
           max(product_events.Timestamp) AS lastSeen,
@@ -10705,12 +10705,12 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [cbba6299]
+-- builder:users:usersListQuery:namespaceFiltered  [0709b758]
 SELECT
           signals.userId AS userId,
-          anyIf(signals.name, signals.name != '') AS name,
-          anyIf(signals.email, signals.email != '') AS email,
-          anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          argMax(signals.name, if(signals.name != '', toFloat64(signals.lastSeen), 0)) AS name,
+          argMax(signals.email, if(signals.email != '', toFloat64(signals.lastSeen), 0)) AS email,
+          argMax(signals.groupId, if(signals.groupId != '', toFloat64(signals.lastSeen), 0)) AS groupId,
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
@@ -10725,9 +10725,9 @@ SELECT
         FROM (
 SELECT
           sessions.userId AS userId,
-          anyIf(sessions.userName, sessions.userName != '') AS name,
-          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
-          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
+          argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
           transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(sessions.startTime) AS firstSeen,
           max(sessions.lastActivity) AS lastSeen,
@@ -10762,7 +10762,7 @@ SELECT
           product_events.UserId AS userId,
           '' AS name,
           '' AS email,
-          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          argMax(product_events.GroupId, if(product_events.GroupId != '', toFloat64(product_events.Timestamp), 0)) AS groupId,
           transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(product_events.Timestamp) AS firstSeen,
           max(product_events.Timestamp) AS lastSeen,
@@ -10792,8 +10792,8 @@ SELECT
 UNION ALL
 SELECT
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
-          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
-          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          argMax(traces.SpanAttributes['user.name'], if(traces.SpanAttributes['user.name'] != '', toFloat64(traces.Timestamp), 0)) AS name,
+          argMax(traces.SpanAttributes['user.email'], if(traces.SpanAttributes['user.email'] != '', toFloat64(traces.Timestamp), 0)) AS email,
           '' AS groupId,
           traces.ResourceAttributes['service.namespace'] AS namespace,
           min(traces.Timestamp) AS firstSeen,
@@ -10826,12 +10826,12 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [e895ff7c]
+-- builder:users:usersListQuery:unscoped  [2c44cf0d]
 SELECT
           signals.userId AS userId,
-          anyIf(signals.name, signals.name != '') AS name,
-          anyIf(signals.email, signals.email != '') AS email,
-          anyIf(signals.groupId, signals.groupId != '') AS groupId,
+          argMax(signals.name, if(signals.name != '', toFloat64(signals.lastSeen), 0)) AS name,
+          argMax(signals.email, if(signals.email != '', toFloat64(signals.lastSeen), 0)) AS email,
+          argMax(signals.groupId, if(signals.groupId != '', toFloat64(signals.lastSeen), 0)) AS groupId,
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
@@ -10846,9 +10846,9 @@ SELECT
         FROM (
 SELECT
           sessions.userId AS userId,
-          anyIf(sessions.userName, sessions.userName != '') AS name,
-          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
-          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
+          argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
           transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(sessions.startTime) AS firstSeen,
           max(sessions.lastActivity) AS lastSeen,
@@ -10882,7 +10882,7 @@ SELECT
           product_events.UserId AS userId,
           '' AS name,
           '' AS email,
-          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          argMax(product_events.GroupId, if(product_events.GroupId != '', toFloat64(product_events.Timestamp), 0)) AS groupId,
           transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(product_events.Timestamp) AS firstSeen,
           max(product_events.Timestamp) AS lastSeen,
@@ -10903,8 +10903,8 @@ SELECT
 UNION ALL
 SELECT
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
-          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
-          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          argMax(traces.SpanAttributes['user.name'], if(traces.SpanAttributes['user.name'] != '', toFloat64(traces.Timestamp), 0)) AS name,
+          argMax(traces.SpanAttributes['user.email'], if(traces.SpanAttributes['user.email'] != '', toFloat64(traces.Timestamp), 0)) AS email,
           '' AS groupId,
           traces.ResourceAttributes['service.namespace'] AS namespace,
           min(traces.Timestamp) AS firstSeen,
@@ -11024,7 +11024,7 @@ SELECT
         LIMIT 2000
         FORMAT JSON
 
--- builder:users:usersSummaryQuery:default  [fa8f125e]
+-- builder:users:usersSummaryQuery:default  [801ea947]
 SELECT
           count() AS identified,
           countIf(users.lastSeen >= '2026-01-01 10:30:00') AS activeToday,
@@ -11038,9 +11038,9 @@ SELECT
         FROM (
 SELECT
           sessions.userId AS userId,
-          anyIf(sessions.userName, sessions.userName != '') AS name,
-          anyIf(sessions.userEmail, sessions.userEmail != '') AS email,
-          anyIf(sessions.groupId, sessions.groupId != '') AS groupId,
+          argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
+          argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
           transform(sessions.serviceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(sessions.startTime) AS firstSeen,
           max(sessions.lastActivity) AS lastSeen,
@@ -11074,7 +11074,7 @@ SELECT
           product_events.UserId AS userId,
           '' AS name,
           '' AS email,
-          anyIf(product_events.GroupId, product_events.GroupId != '') AS groupId,
+          argMax(product_events.GroupId, if(product_events.GroupId != '', toFloat64(product_events.Timestamp), 0)) AS groupId,
           transform(product_events.ServiceName, ['storefront-web', 'maple-ai'], ['storefront', 'platform'], '') AS namespace,
           min(product_events.Timestamp) AS firstSeen,
           max(product_events.Timestamp) AS lastSeen,
@@ -11095,8 +11095,8 @@ SELECT
 UNION ALL
 SELECT
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId,
-          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
-          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          argMax(traces.SpanAttributes['user.name'], if(traces.SpanAttributes['user.name'] != '', toFloat64(traces.Timestamp), 0)) AS name,
+          argMax(traces.SpanAttributes['user.email'], if(traces.SpanAttributes['user.email'] != '', toFloat64(traces.Timestamp), 0)) AS email,
           '' AS groupId,
           traces.ResourceAttributes['service.namespace'] AS namespace,
           min(traces.Timestamp) AS firstSeen,
