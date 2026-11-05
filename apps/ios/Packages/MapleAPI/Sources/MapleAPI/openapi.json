@@ -14090,6 +14090,10 @@
       "name": "Session Replays"
     },
     {
+      "description": "The end users of your own apps, identified with `identify()` or a `user.id` attribute: who they are, what they did, and the errors they hit.",
+      "name": "Users"
+    },
+    {
       "description": "Search and inspect distributed traces.",
       "name": "Traces"
     },
