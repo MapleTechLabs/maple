@@ -32,6 +32,8 @@ export const Message = defineMessageUnion({
 	ToggledNamespace: { name: Schema.String },
 	ToggledGroup: { name: Schema.String },
 	ClickedClearFilters: {},
+	/** The filtered empty state's clear: the search and the typed draft go too. */
+	ClickedClearSearchAndFilters: {},
 	ClickedClearNamespacePin: {},
 	ClickedSetup: {},
 	GotFilterSectionsMessage: { message: FilterSections.Message },

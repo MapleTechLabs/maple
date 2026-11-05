@@ -83,15 +83,19 @@ export const userHref =
 			}),
 		)
 
-export const navigate = (model: Model, search: Search): Return => ({
-	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(search), isReplace: false }),
-})
-
 const textValue = (text: string): string | undefined => {
 	const trimmed = text.trim()
 	return trimmed === "" ? undefined : trimmed
 }
+
+/** Navigates to `search` with the typed query committed, so a pending debounce never loses it. */
+export const navigate = (model: Model, search: Search): Return => ({
+	model,
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: searchHref({ ...search, q: textValue(model.query) }),
+		isReplace: false,
+	}),
+})
 
 /** A list param with `name` added or removed; an empty list leaves the URL. */
 const toggled = (
@@ -269,6 +273,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledGroup: ({ name }) =>
 			navigate(model, { ...model.search, groups: toggled(model.search.groups, name) }),
 		ClickedClearFilters: () => navigate(model, clearedFilters(model.search)),
+		ClickedClearSearchAndFilters: () => {
+			const cleared = { ...model, query: "", queryGeneration: model.queryGeneration + 1 }
+			return navigate(cleared, clearedFilters(model.search))
+		},
 		ClickedClearNamespacePin: () => ({
 			model,
 			outMessage: PageOutMessage.RequestedNamespacePin({ maybeNamespace: Option.none() }),

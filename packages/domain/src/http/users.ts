@@ -47,11 +47,12 @@ export const UserListItem = Schema.Struct({
 })
 export type UserListItem = typeof UserListItem.Type
 
+/** `hasErrors` / `hasReplay` only narrow: `true` keeps the users with one, absent keeps everyone. */
 export class UsersListRequest extends Schema.Class<UsersListRequest>("UsersListRequest")({
 	...windowFields,
 	search: Schema.optionalKey(searchText),
-	hasErrors: Schema.optionalKey(Schema.Boolean),
-	hasReplay: Schema.optionalKey(Schema.Boolean),
+	hasErrors: Schema.optionalKey(Schema.Literal(true)),
+	hasReplay: Schema.optionalKey(Schema.Literal(true)),
 	groups: Schema.optionalKey(Schema.Array(groupId).check(Schema.isMaxLength(50))),
 	limit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
 }) {}
