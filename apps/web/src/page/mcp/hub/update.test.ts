@@ -109,7 +109,7 @@ describe("the sessions views", () => {
 
 	it("links a session's user to their page over the same window", () => {
 		const { search } = sessionsPage({ client: "Cursor", timePreset: "24h" })
-		expect(userHref("user/42 a", search)).toBe("/users/user%2F42%20a?timePreset=24h")
+		expect(userHref("user/42 a", search)).toBe("/users/user/42%20a?timePreset=24h")
 	})
 
 	it("debounces the session-id search into the URL", () => {
