@@ -19,7 +19,7 @@ import { hstack } from "@maple/views/ui/stack"
 import type { SelectOption } from "@maple/views/ui/select-view"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
-import { type MetricOption, metricsBody } from "./metrics-body"
+import { type MetricKeys, type MetricOption, metricsBody } from "./metrics-body"
 import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, String as Str } from "effect"
 
@@ -41,8 +41,8 @@ export type QueryPanelInputs = Readonly<{
 	metricOptions?: ReadonlyArray<MetricOption>
 	/** What the metric picker last searched for (`MetricOptionsEmpty`). */
 	metricSearch?: string
-	/** The picked metric's attribute keys, offered as `attr.<key>` breakdowns. */
-	metricBreakdownKeys?: ReadonlyArray<string>
+	/** The picked metric's keys, offered as `attr.<key>` and `resource.<key>` group-bys. */
+	metricBreakdownKeys?: MetricKeys | undefined
 	/** `autocompleteValues[query.dataSource]`: what the where editor completes from. */
 	autocompleteValues?: WhereClauseAutocompleteValues
 }>
@@ -143,7 +143,7 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 		return metricsBody(h, model, query, {
 			options: inputs.metricOptions ?? [],
 			searchTerm: inputs.metricSearch ?? "",
-			breakdownKeys: inputs.metricBreakdownKeys ?? [],
+			breakdownKeys: inputs.metricBreakdownKeys ?? { attributes: [], resources: [] },
 			intervalPlaceholder,
 			autocompleteValues: inputs.autocompleteValues ?? {},
 		})

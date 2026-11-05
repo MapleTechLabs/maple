@@ -119,6 +119,8 @@ export function logAttributeValuesQuery(opts: AttributeValuesOpts) {
 
 export interface MetricScopedAttributeKeysOpts {
 	metricType: MetricType
+	/** `resource` lists `ResourceAttributes` keys; absent or `metric` lists data-point `Attributes` keys. */
+	scope?: "metric" | "resource"
 	serviceName?: string
 	limit?: number
 }
@@ -127,7 +129,7 @@ export function metricScopedAttributeKeysQuery(opts: MetricScopedAttributeKeysOp
 	const { tbl } = resolveMetricTable(opts.metricType)
 	return from(tbl as typeof MetricsSum)
 		.select(($) => ({
-			attributeKey: CH.arrayJoin(CH.mapKeys($.Attributes)),
+			attributeKey: CH.arrayJoin(CH.mapKeys(opts.scope === "resource" ? $.ResourceAttributes : $.Attributes)),
 			usageCount: CH.count(),
 		}))
 		.where(($) => [

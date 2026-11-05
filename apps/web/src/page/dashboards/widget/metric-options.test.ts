@@ -23,11 +23,20 @@ describe("metric picker", () => {
 		expect(pickedMetric("orders::counter", OPTIONS)).toBeNull()
 	})
 
-	test("the breakdown combobox sets one field, and __none__ turns the breakdown off", () => {
+	test("picking group-by fields turns the breakdown on, clearing them turns it off", () => {
 		const query = resetQueryForDataSource(createQueryDraft(0), "metrics")
-		const byService = applyQueryChange(query, { _tag: "SetMetricBreakdown", value: "service.name" })
-		expect([byService.groupBy, byService.addOns.groupBy]).toEqual([["service.name"], true])
-		const off = applyQueryChange(byService, { _tag: "SetMetricBreakdown", value: "__none__" })
+		const grouped = applyQueryChange(query, {
+			_tag: "SetGroupBy",
+			groupBy: ["attr.namespace", "resource.host.name"],
+		})
+		expect([grouped.groupBy, grouped.addOns.groupBy]).toEqual([["attr.namespace", "resource.host.name"], true])
+		const off = applyQueryChange(grouped, { _tag: "SetGroupBy", groupBy: [] })
 		expect([off.groupBy, off.addOns.groupBy]).toEqual([[], false])
+	})
+
+	test("the across select stores the space aggregation", () => {
+		const query = resetQueryForDataSource(createQueryDraft(0), "metrics")
+		const maxed = applyQueryChange(query, { _tag: "SetSpaceAggregation", aggregation: "max" })
+		expect(maxed.dataSource === "metrics" ? maxed.spaceAggregation : null).toBe("max")
 	})
 })

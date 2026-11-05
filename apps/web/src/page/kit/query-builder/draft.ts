@@ -1,6 +1,7 @@
 import {
 	QUERY_BUILDER_METRIC_TYPES,
 	QUERY_BUILDER_SIGNAL_SOURCES,
+	QUERY_BUILDER_SPACE_AGGREGATIONS,
 	QueryBuilderAddOnsSchema,
 } from "@maple/query-model"
 import { Schema } from "effect"
@@ -36,6 +37,8 @@ export const QueryDraft = Schema.Union([
 		metricName: Schema.String,
 		metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
 		isMonotonic: Schema.Boolean,
+		/** "Aggregate across time series": absent is the aggregation's own default. */
+		spaceAggregation: Schema.optional(Schema.Literals(QUERY_BUILDER_SPACE_AGGREGATIONS)),
 	}),
 	Schema.Struct({ ...draftFields, dataSource: Schema.Literal("product_events") }),
 ])

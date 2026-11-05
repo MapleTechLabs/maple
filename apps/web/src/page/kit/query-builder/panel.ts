@@ -1,4 +1,8 @@
-import { toQueryBuilderDataSource } from "@maple/query-model"
+import {
+	QUERY_BUILDER_SPACE_AGGREGATIONS,
+	type QueryBuilderSpaceAggregation,
+	toQueryBuilderDataSource,
+} from "@maple/query-model"
 import { Command, type Update } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -6,7 +10,7 @@ import * as Select from "@maple/views/ui/select"
 import { QueryChange } from "./change"
 import { Message, type Model, OutMessage } from "./panel-message"
 import { type PanelInputs, whereStep } from "./where"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export * from "./panel-message"
 export type { PanelInputs } from "./where"
@@ -28,6 +32,9 @@ const changed = (
 })
 
 /** A select's value as a query change, by which select it is (`<field>:<query id>`). */
+const toSpaceAggregation = (value: string): QueryBuilderSpaceAggregation | null =>
+	Option.getOrNull(Arr.findFirst(QUERY_BUILDER_SPACE_AGGREGATIONS, (candidate) => candidate === value))
+
 const selectChange = (field: string, value: string): QueryChange | null => {
 	switch (field) {
 		case "source": {
@@ -36,7 +43,10 @@ const selectChange = (field: string, value: string): QueryChange | null => {
 		}
 		case "spans":
 			return QueryChange.SetRootOnly({ isRootOnly: value === "root" })
-		case "aggregation-across":
+		case "aggregation-across": {
+			const aggregation = toSpaceAggregation(value)
+			return aggregation === null ? null : QueryChange.SetSpaceAggregation({ aggregation })
+		}
 		case "aggregation":
 			return QueryChange.SetAggregation({ aggregation: value })
 		case "orderDirection":
@@ -79,7 +89,6 @@ const groupByStep = (model: Model, queryId: string, message: Combobox.Message): 
 }
 
 export const metricPickerIdOf = (queryId: string): string => `metric-${queryId}`
-export const metricBreakdownIdOf = (queryId: string): string => `metric-by-${queryId}`
 
 /** The metric picker: a pick goes to the host, typing re-reads the list. */
 const metricStep = (model: Model, queryId: string, value: string, message: Combobox.Message): Return => {
@@ -105,26 +114,12 @@ const metricStep = (model: Model, queryId: string, value: string, message: Combo
 		: { model: lifted, commands }
 }
 
-const metricBreakdownStep = (model: Model, queryId: string, message: Combobox.Message): Return => {
-	const current = model.metricBreakdowns[queryId] ?? Combobox.init(metricBreakdownIdOf(queryId), "single")
-	const next = Combobox.update(current, message)
-	const lifted: Model = { ...model, metricBreakdowns: { ...model.metricBreakdowns, [queryId]: next.model } }
-	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
-		Message.GotMetricBreakdownMessage({ queryId, message: inner }),
-	)
-	return next.outMessage?._tag === "ChangedValue"
-		? changed(lifted, queryId, QueryChange.SetMetricBreakdown({ value: next.outMessage.value }), commands)
-		: { model: lifted, commands }
-}
-
 /** Where-editor Messages need `inputs` (the drafts and autocomplete values); without them they are ignored. */
 export const update = (model: Model, message: Message, inputs?: PanelInputs): Return =>
 	Message.match<Return>(message, {
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, id, inner),
 		GotGroupByMessage: ({ queryId, message: inner }) => groupByStep(model, queryId, inner),
 		GotMetricMessage: ({ queryId, value, message: inner }) => metricStep(model, queryId, value, inner),
-		GotMetricBreakdownMessage: ({ queryId, message: inner }) =>
-			metricBreakdownStep(model, queryId, inner),
 		ToggledCollapsed: ({ queryId }) => ({
 			model: { ...model, collapsed: toggled(model.collapsed, queryId) },
 		}),

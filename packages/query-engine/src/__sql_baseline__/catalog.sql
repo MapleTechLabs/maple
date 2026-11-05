@@ -18181,23 +18181,22 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [bc31907a]
+-- spec:metrics-breakdown:baseline  [08ab9800]
 SELECT
-          metrics_histogram.ServiceName AS name,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS count
+          toDateTime('2026-01-01 10:30:00') AS bucket,
+          metrics_histogram.ServiceName AS groupName,
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_histogram.TimeUnix < '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY name
-        ORDER BY avgValue DESC
-        LIMIT 10
+        GROUP BY bucket, groupName
+        ORDER BY bucket ASC
         FORMAT JSON
 
 -- spec:metrics-sparklines:baseline  [f220d493]
@@ -18216,55 +18215,52 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-attribute:baseline  [60a5bdfa]
+-- spec:metrics-timeseries-grouped-by-attribute:baseline  [09da1919]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          metrics_histogram.Attributes['http.route'] AS attributeValue,
           metrics_histogram.Attributes['http.route'] AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          sum(metrics_histogram.Sum) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName, attributeValue
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-resource:baseline  [d6a11b76]
+-- spec:metrics-timeseries-grouped-by-resource:baseline  [71f914a2]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          metrics_histogram.ResourceAttributes['host.name'] AS attributeValue,
           metrics_histogram.ResourceAttributes['host.name'] AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName, attributeValue
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-rate:baseline  [6edd2ce8]
-WITH with_deltas AS (
+-- spec:metrics-timeseries-rate:baseline  [0f1f979f]
+SELECT
+          per_series.bucket AS bucket,
+          per_series.groupName AS groupName,
+          ifNull(ifNotFinite(sum(per_series.increase) / min(least(toUnixTimestamp(per_series.bucket) + 3600, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(per_series.bucket), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS value,
+          sum(per_series.points) AS dataPointCount,
+          count() AS seriesCount
+        FROM (WITH with_deltas AS (
 SELECT
           metrics_sum.TimeUnix AS TimeUnix,
-          metrics_sum.ServiceName AS ServiceName,
-          metrics_sum.Attributes AS Attributes,
-          '' AS resourceAttributeValue,
+          '' AS groupName,
+          cityHash64(metrics_sum.ServiceName, mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes), mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) AS series,
           multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.ServiceName, metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
         FROM metrics_sum
         WHERE metrics_sum.MetricName = 'http.server.requests'
@@ -18274,36 +18270,31 @@ SELECT
 )
 SELECT
           toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
-          with_deltas.ServiceName AS serviceName,
-          '' AS attributeValue,
-          with_deltas.ServiceName AS groupName,
-          ifNull(ifNotFinite(sum(with_deltas.delta) / min(least(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)) + 3600, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(with_deltas.TimeUnix, INTERVAL 3600 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS rateValue,
-          sum(with_deltas.delta) AS increaseValue,
-          count() AS dataPointCount
+          with_deltas.groupName AS groupName,
+          with_deltas.series AS series,
+          sum(with_deltas.delta) AS increase,
+          count() AS points
         FROM with_deltas
         WHERE with_deltas.TimeUnix >= '2026-01-01 10:30:00'
-        GROUP BY bucket, serviceName
+        GROUP BY bucket, groupName, series) AS per_series
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries:baseline  [013da770]
+-- spec:metrics-timeseries:baseline  [797e943f]
 SELECT
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
-          metrics_histogram.ServiceName AS serviceName,
-          '' AS attributeValue,
-          metrics_histogram.ServiceName AS groupName,
-          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS avgValue,
-          ifNull(min(metrics_histogram.Min), 0) AS minValue,
-          ifNull(max(metrics_histogram.Max), 0) AS maxValue,
-          sum(metrics_histogram.Sum) AS sumValue,
-          sum(metrics_histogram.Count) AS dataPointCount
+          '' AS groupName,
+          ifNull(ifNotFinite(sum(metrics_histogram.Sum) / sum(metrics_histogram.Count), 0), 0) AS value,
+          sum(metrics_histogram.Count) AS dataPointCount,
+          uniqExact(cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes))) AS seriesCount
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
-        GROUP BY bucket, serviceName
+        GROUP BY bucket, groupName
         ORDER BY bucket ASC
         FORMAT JSON
 

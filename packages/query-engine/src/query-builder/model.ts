@@ -1,5 +1,5 @@
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
-import type { QuerySpec } from "@maple/domain/query-engine"
+import { MAX_METRICS_GROUP_BY_KEYS, type MetricsMetric, type QuerySpec } from "@maple/domain/query-engine"
 import {
 	normalizeKey,
 	parseBoolean,
@@ -107,6 +107,7 @@ export const AGGREGATIONS_BY_SOURCE: Record<
 		{ label: "min", value: "min" },
 		{ label: "max", value: "max" },
 		{ label: "count", value: "count" },
+		{ label: "latest", value: "latest" },
 		{ label: "rate", value: "rate" },
 		{ label: "increase", value: "increase" },
 	],
@@ -169,6 +170,7 @@ const METRICS_AGGREGATIONS_MONOTONIC_SUM = [
 
 const METRICS_AGGREGATIONS_GAUGE_LIKE = [
 	{ label: "avg", value: "avg" },
+	{ label: "latest", value: "latest" },
 	{ label: "sum", value: "sum" },
 	{ label: "min", value: "min" },
 	{ label: "max", value: "max" },
@@ -976,6 +978,8 @@ interface MetricsFilterAccumulator {
 	environments?: string[]
 	groupByAttributeKey?: string
 	groupByResourceAttributeKey?: string
+	groupByAttributeKeys?: string[]
+	groupByResourceAttributeKeys?: string[]
 	attributeFilters: AccumulatedAttributeFilter[]
 	resourceAttributeFilters: AccumulatedAttributeFilter[]
 }
@@ -1298,58 +1302,6 @@ function resolveLogsGroupByToken(raw: string, warnings: string[]): LogsGroupByKe
 		case "Prefixed":
 			// Unreachable: the logs spec declares no prefixes.
 			return null
-	}
-}
-
-function resolveMetricsGroupByToken(
-	raw: string,
-	metricsFilters: {
-		metricName: string
-		metricType: string
-		serviceName?: string
-		groupByAttributeKey?: string
-		groupByResourceAttributeKey?: string
-	},
-	warnings: string[],
-): MetricsGroupByKey | null {
-	const resolution = resolveGroupByToken("metrics", GROUP_BY_ALIASES.metrics, raw)
-	switch (resolution._tag) {
-		case "Empty":
-			return null
-		case "Rejected":
-			warnings.push(resolution.warning)
-			return null
-		case "Literal":
-			return resolution.token
-		case "Prefixed": {
-			// Consumer policy: the metrics QuerySpec carries a single attribute
-			// group column and a single resource one, so a second distinct key
-			// warns and is dropped rather than silently overwriting the first.
-			if (resolution.bucket === "attributeKeys") {
-				if (
-					metricsFilters.groupByAttributeKey !== undefined &&
-					metricsFilters.groupByAttributeKey !== resolution.key
-				) {
-					warnings.push(
-						`Metrics queries support a single attr.* group by; ignoring attr.${resolution.key}`,
-					)
-					return null
-				}
-				metricsFilters.groupByAttributeKey = resolution.key
-				return resolution.token
-			}
-			if (
-				metricsFilters.groupByResourceAttributeKey !== undefined &&
-				metricsFilters.groupByResourceAttributeKey !== resolution.key
-			) {
-				warnings.push(
-					`Metrics queries support a single resource.* group by; ignoring resource.${resolution.key}`,
-				)
-				return null
-			}
-			metricsFilters.groupByResourceAttributeKey = resolution.key
-			return resolution.token
-		}
 	}
 }
 
@@ -1696,38 +1648,35 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		(acc, group) => applyOrGroup(acc, group, applyMetricsClause, emptyMetrics, "Metrics", warnings),
 	)
 
-	const metricsGroupByKeys: MetricsGroupByKey[] = []
-	if (query.addOns?.groupBy && query.groupBy !== undefined && query.groupBy.length > 0) {
-		for (const raw of query.groupBy ?? []) {
-			const resolved = resolveMetricsGroupByToken(raw, metricsFilters, warnings)
-			if (resolved) metricsGroupByKeys.push(resolved)
-		}
+	const resolvedGroupBy = query.addOns?.groupBy
+		? resolveGroupBy("metrics", query.groupBy ?? [])
+		: { tokens: [], attributeKeys: [], resourceAttributeKeys: [], warnings: [] }
+	warnings.push(...resolvedGroupBy.warnings)
+	const keyBudget = MAX_METRICS_GROUP_BY_KEYS
+	const attributeKeys = Arr.take(resolvedGroupBy.attributeKeys, keyBudget)
+	const resourceKeys = Arr.take(resolvedGroupBy.resourceAttributeKeys, keyBudget - attributeKeys.length)
+	const droppedKeys =
+		resolvedGroupBy.attributeKeys.length + resolvedGroupBy.resourceAttributeKeys.length -
+		attributeKeys.length -
+		resourceKeys.length
+	if (droppedKeys > 0) {
+		warnings.push(`Metrics queries group by at most ${keyBudget} attribute keys; ignoring ${droppedKeys}`)
 	}
-
-	// The metrics queries carry a single attribute group column; when both an
-	// attr.* and a resource.* token are given, keep whichever came first and
-	// warn about the other (silently dropping either is the footgun this file
-	// exists to prevent).
-	const attrIdx = metricsGroupByKeys.indexOf("attribute")
-	const resourceIdx = metricsGroupByKeys.indexOf("resource_attribute")
-	if (attrIdx !== -1 && resourceIdx !== -1) {
-		const dropResource = attrIdx < resourceIdx
-		warnings.push(
-			`Metrics queries support a single attribute group by; ignoring ${
-				dropResource
-					? `resource.${metricsFilters.groupByResourceAttributeKey}`
-					: `attr.${metricsFilters.groupByAttributeKey}`
-			}`,
-		)
-		const dropped: MetricsGroupByKey = dropResource ? "resource_attribute" : "attribute"
-		for (let i = metricsGroupByKeys.length - 1; i >= 0; i--) {
-			if (metricsGroupByKeys[i] === dropped) metricsGroupByKeys.splice(i, 1)
-		}
-		if (dropResource) delete metricsFilters.groupByResourceAttributeKey
-		else delete metricsFilters.groupByAttributeKey
+	const groupByTokens = Arr.filter(
+		resolvedGroupBy.tokens,
+		(token) =>
+			(token !== "attribute" || attributeKeys.length > 0) &&
+			(token !== "resource_attribute" || resourceKeys.length > 0),
+	)
+	const groupBy = groupByTokens.length > 0 ? groupByTokens : undefined
+	if (attributeKeys.length > 0) {
+		metricsFilters.groupByAttributeKey = attributeKeys[0]
+		metricsFilters.groupByAttributeKeys = [...attributeKeys]
 	}
-
-	const groupBy = metricsGroupByKeys.length > 0 ? dedupeGroupByKeys(metricsGroupByKeys) : undefined
+	if (resourceKeys.length > 0) {
+		metricsFilters.groupByResourceAttributeKey = resourceKeys[0]
+		metricsFilters.groupByResourceAttributeKeys = [...resourceKeys]
+	}
 
 	const {
 		attributeFilters: metricsAttributeFilters,
@@ -1739,7 +1688,8 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		query: {
 			kind: "timeseries",
 			source: "metrics",
-			metric: query.aggregation as "avg" | "sum" | "min" | "max" | "count" | "rate" | "increase",
+			metric: query.aggregation as MetricsMetric,
+			...(query.spaceAggregation === undefined ? undefined : { spaceAggregation: query.spaceAggregation }),
 			groupBy,
 			filters: {
 				...metricsSpecFilters,

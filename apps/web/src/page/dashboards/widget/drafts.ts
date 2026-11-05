@@ -58,6 +58,7 @@ const normalizeLoadedQuery = (raw: QueryBuilderQueryDraftPayload, index: number)
 			metricName: metrics?.metricName ?? "",
 			metricType,
 			isMonotonic: metrics?.isMonotonic ?? metrics?.metricType === "sum",
+			...(metrics?.spaceAggregation === undefined ? undefined : { spaceAggregation: metrics.spaceAggregation }),
 		}
 	}
 	if (source === "logs") return { ...shared, dataSource: "logs" }
@@ -107,7 +108,7 @@ export const inferDisplayUnitForQuery = (
 	if (/\b(duration|latency|response[._]time)\b/.test(lower)) return "duration_ms"
 	if (/\b(bytes|memory|size)\b/.test(lower)) return "bytes"
 	if (query.aggregation === "rate") return "requests_per_sec"
-	return ["count", "sum", "avg", "min", "max", "increase"].includes(query.aggregation)
+	return ["count", "sum", "avg", "min", "max", "latest", "increase"].includes(query.aggregation)
 		? "number"
 		: undefined
 }

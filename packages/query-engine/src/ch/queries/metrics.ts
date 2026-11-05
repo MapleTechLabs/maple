@@ -5,15 +5,22 @@
 
 import type { DateTime } from "effect"
 import { finiteOrZero } from "./format"
-import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
+import {
+	defaultSpaceAggregation,
+	type AttributeFilter,
+	type MetricsMetric,
+	type MetricsSpaceAggregation,
+	type MetricType,
+} from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
-import { from, type CHQuery, type ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
+import { from, fromQuery, type CHQuery, type ColumnAccessor, type ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import { table } from "@maple-dev/effect-orm/clickhouse"
 import {
 	MetricsSum,
 	MetricsGauge,
+	MetricsHistogram,
 	MetricCatalog,
 	SpanMetricsCallsHourly,
 	orgIdParam,
@@ -46,6 +53,9 @@ function datapointFilterConditions(
 
 // Shared options & output types
 
+/** Time aggregations the value tables take; `rate`/`increase` go through `metricsTimeseriesRateQuery`. */
+export type MetricsValueAggregation = Exclude<MetricsMetric, "rate" | "increase">
+
 interface MetricsQueryOpts {
 	metricType: MetricType
 	serviceName?: string
@@ -54,92 +64,222 @@ interface MetricsQueryOpts {
 	groupByAttributeKey?: string
 	/** Group by a ResourceAttributes key instead of a datapoint Attributes key. */
 	groupByResourceAttributeKey?: string
+	/** Several datapoint keys; supersedes `groupByAttributeKey`. */
+	groupByAttributeKeys?: readonly string[]
+	/** Several resource keys; supersedes `groupByResourceAttributeKey`. */
+	groupByResourceAttributeKeys?: readonly string[]
 	/** Predicates on the datapoint Attributes map (metric labels). */
 	attributeFilters?: readonly AttributeFilter[]
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	groupBy?: readonly string[]
 	seriesLimit?: number
+	/** How the series of one group combine. Default: `defaultSpaceAggregation(metric)`. */
+	spaceAggregation?: MetricsSpaceAggregation
 }
 
 export interface MetricsTimeseriesOpts extends MetricsQueryOpts {
+	/** How each series reduces within a bucket. Default: avg. */
+	metric?: MetricsValueAggregation
 	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
 	wholeRange?: boolean
 }
 
+/** One group's value in one bucket. `groupName` is "" when the query has no group-by. */
 export interface MetricsTimeseriesOutput {
 	readonly bucket: DateTime.Utc
-	readonly serviceName: string
-	readonly attributeValue: string
 	readonly groupName: string
-	readonly avgValue: number
-	readonly minValue: number
-	readonly maxValue: number
-	readonly sumValue: number
+	readonly value: number
+	/** Datapoints behind the value (observations for histograms). */
 	readonly dataPointCount: number
+	/** Distinct series (service + attributes + resource) combined into the value. */
+	readonly seriesCount: number
 }
 
 const metricsTimeseriesColumns = {
 	bucket: T.dateTime,
-	serviceName: T.string,
-	attributeValue: T.string,
 	groupName: T.string,
-	avgValue: T.float64,
-	minValue: T.float64,
-	maxValue: T.float64,
-	sumValue: T.float64,
+	value: T.float64,
 	dataPointCount: T.uint64,
+	seriesCount: T.uint64,
 }
 
-// Timeseries query — handles all 4 metric types
+type MetricsRow = ColumnAccessor<typeof MetricsSum.columns>
 
+const keysOf = (many: readonly string[] | undefined, one: string | undefined): readonly string[] =>
+	many !== undefined && many.length > 0 ? many : one ? [one] : []
+
+/**
+ * The group label: the requested dimensions in `groupBy` order, empty values
+ * dropped, joined with " · ". The same composition alert group keys always used,
+ * so a stored incident keeps its key.
+ */
+export function metricsGroupNameExpr(
+	$: Pick<MetricsRow, "ServiceName" | "Attributes" | "ResourceAttributes">,
+	opts: Pick<
+		MetricsQueryOpts,
+		| "groupBy"
+		| "groupByAttributeKey"
+		| "groupByAttributeKeys"
+		| "groupByResourceAttributeKey"
+		| "groupByResourceAttributeKeys"
+	>,
+): CH.Expr<string> {
+	const parts: CH.Expr<string>[] = []
+	for (const dim of opts.groupBy ?? []) {
+		if (dim === "service") parts.push($.ServiceName)
+		else if (dim === "attribute")
+			for (const key of keysOf(opts.groupByAttributeKeys, opts.groupByAttributeKey))
+				parts.push($.Attributes.get(key))
+		else if (dim === "resource_attribute")
+			for (const key of keysOf(opts.groupByResourceAttributeKeys, opts.groupByResourceAttributeKey))
+				parts.push($.ResourceAttributes.get(key))
+	}
+	if (parts.length === 0) return CH.lit("")
+	if (parts.length === 1 && parts[0] !== undefined) return parts[0]
+	return CH.arrayStringConcat(CH.arrayFilter("x -> x != ''", CH.arrayOf(...parts)), " · ")
+}
+
+/** Identity of one emitting series: its service, datapoint labels and resource. */
+export function metricsSeriesKeyExpr($: Pick<MetricsRow, "ServiceName" | "Attributes" | "ResourceAttributes">) {
+	return CH.cityHash64(
+		$.ServiceName,
+		CH.mapKeys($.Attributes),
+		CH.mapValues($.Attributes),
+		CH.mapKeys($.ResourceAttributes),
+		CH.mapValues($.ResourceAttributes),
+	)
+}
+
+function timeAggregationExpr($: MetricsRow, metric: MetricsValueAggregation): CH.Expr<number> {
+	switch (metric) {
+		case "avg":
+			return finiteOrZero(CH.avg($.Value))
+		case "sum":
+			return CH.sum($.Value)
+		case "min":
+			return CH.min_($.Value)
+		case "max":
+			return CH.max_($.Value)
+		case "count":
+			return CH.toFloat64(CH.count())
+		case "latest":
+			return CH.argMax($.Value, $.TimeUnix)
+	}
+}
+
+export function spaceAggregationExpr<Q>(value: CH.Expr<number, Q>, aggregation: MetricsSpaceAggregation) {
+	switch (aggregation) {
+		case "sum":
+			return CH.sum(value)
+		case "avg":
+			return finiteOrZero(CH.avg(value))
+		case "min":
+			return CH.min_(value)
+		case "max":
+			return CH.max_(value)
+		case "count":
+			return CH.toFloat64(CH.count())
+	}
+}
+
+function metricsWhere($: MetricsRow, opts: MetricsTimeseriesOpts) {
+	return [
+		$.MetricName.eq(param.string("metricName")),
+		$.OrgId.eq(orgIdParam),
+		$.TimeUnix.gte(param.dateTime("startTime")),
+		$.TimeUnix.lte(param.dateTime("endTime")),
+		wholeRangeEnd($.TimeUnix, opts.wholeRange),
+		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+		opts.environments !== undefined && opts.environments.length > 0
+			? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
+			: undefined,
+		...datapointFilterConditions(opts.attributeFilters),
+		...resourceFilterConditions(opts.resourceAttributeFilters),
+	]
+}
+
+// Timeseries query — two stages for sum/gauge, bucket merge for histograms
+
+/**
+ * Sum and gauge rows reduce in two stages, the model every metrics backend
+ * uses: each series is reduced within the bucket (`metric`), then the series of
+ * a group are combined (`spaceAggregation`). One stage would weight a series by
+ * how often it reports: `sum` of a gauge scraped 4x per bucket read 4x high.
+ *
+ * Histograms merge their observations across series instead (sum of Sum over
+ * sum of Count), which is the exact distribution average; `spaceAggregation`
+ * does not apply to them.
+ */
 export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
+	const metric = opts.metric ?? "avg"
 	const { tbl, isHistogram } = resolveMetricTable(opts.metricType)
 
-	const q = from(tbl as typeof MetricsSum)
+	if (isHistogram) {
+		const inner = from(tbl as typeof MetricsHistogram)
+			.select(($) => ({
+				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
+				groupName: metricsGroupNameExpr($, opts),
+				value: histogramValueExpr($, metric),
+				dataPointCount: CH.sum($.Count),
+				seriesCount: CH.uniqExact(metricsSeriesKeyExpr($)),
+			}))
+			.where(($) => metricsWhere($ as unknown as MetricsRow, opts))
+			.groupBy("bucket", "groupName")
+			.orderBy(["bucket", "asc"])
+		return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
+	}
+
+	const perSeries = from(tbl as typeof MetricsSum)
 		.select(($) => ({
 			bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
-			serviceName: $.ServiceName,
-			// A query groups by at most one attribute dimension (enforced by
-			// runtime validation); resource takes the shared attributeValue slot
-			// when requested.
-			attributeValue: opts.groupByResourceAttributeKey
-				? $.ResourceAttributes.get(opts.groupByResourceAttributeKey)
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: CH.lit(""),
-			groupName: opts.groupByResourceAttributeKey
-				? $.ResourceAttributes.get(opts.groupByResourceAttributeKey)
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: $.ServiceName,
-			...metricsSelectExprs($, isHistogram),
+			groupName: metricsGroupNameExpr($, opts),
+			series: metricsSeriesKeyExpr($),
+			seriesValue: timeAggregationExpr($, metric),
+			points: CH.count(),
 		}))
-		.where(($) => [
-			$.MetricName.eq(param.string("metricName")),
-			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
-			wholeRangeEnd($.TimeUnix, opts.wholeRange),
-			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			opts.environments !== undefined && opts.environments.length > 0
-				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
-				: undefined,
-			...datapointFilterConditions(opts.attributeFilters),
-			...resourceFilterConditions(opts.resourceAttributeFilters),
-		])
+		.where(($) => metricsWhere($, opts))
+		.groupBy("bucket", "groupName", "series")
 
-	const inner = (
-		opts.groupByAttributeKey || opts.groupByResourceAttributeKey
-			? q.groupBy("bucket", "serviceName", "attributeValue")
-			: q.groupBy("bucket", "serviceName")
-	).orderBy(["bucket", "asc"])
+	const inner = fromQuery(perSeries, "per_series")
+		.select(($) => ({
+			bucket: $.bucket,
+			groupName: $.groupName,
+			value: spaceAggregationExpr($.seriesValue, opts.spaceAggregation ?? defaultSpaceAggregation(metric)),
+			dataPointCount: CH.sum($.points),
+			seriesCount: CH.count(),
+		}))
+		.groupBy("bucket", "groupName")
+		.orderBy(["bucket", "asc"])
 
-	return finalizeTimeseries(inner, metricsTimeseriesColumns, "dataPointCount", opts)
+	return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
+}
+
+function histogramValueExpr(
+	$: ColumnAccessor<typeof MetricsHistogram.columns>,
+	metric: MetricsValueAggregation,
+): CH.Expr<number> {
+	switch (metric) {
+		case "sum":
+			return CH.sum($.Sum)
+		case "min":
+			return CH.ifNull(CH.min_($.Min), CH.lit(0))
+		case "max":
+			return CH.ifNull(CH.max_($.Max), CH.lit(0))
+		case "count":
+			return CH.toFloat64(CH.sum($.Count))
+		case "avg":
+		case "latest":
+			return finiteOrZero(CH.sum($.Sum).div(CH.sum($.Count)))
+	}
 }
 
 // Rate/increase timeseries — raw SQL (requires CTE)
 
 export interface MetricsRateTimeseriesOpts {
+	/** Per-second rate or the bucket's increase. Default: rate. */
+	metric?: "rate" | "increase"
+	/** How the series of one group combine. Default: sum. */
+	spaceAggregation?: MetricsSpaceAggregation
 	metricName?: string
 	// Candidate names matched with `MetricName IN (...)`. When provided (and
 	// non-empty) it replaces the scalar `metricName` equality in the WHERE clause,
@@ -158,31 +298,13 @@ export interface MetricsRateTimeseriesOpts {
 	groupByAttributeKey?: string
 	/** Group by a ResourceAttributes key instead of a datapoint Attributes key. */
 	groupByResourceAttributeKey?: string
+	groupByAttributeKeys?: readonly string[]
+	groupByResourceAttributeKeys?: readonly string[]
 	/** Predicates on the datapoint Attributes map (metric labels). */
 	attributeFilters?: readonly AttributeFilter[]
 	resourceAttributeFilters?: readonly AttributeFilter[]
 	groupBy?: readonly string[]
 	seriesLimit?: number
-}
-
-export interface MetricsRateTimeseriesOutput {
-	readonly bucket: DateTime.Utc
-	readonly serviceName: string
-	readonly attributeValue: string
-	readonly groupName: string
-	readonly rateValue: number
-	readonly increaseValue: number
-	readonly dataPointCount: number
-}
-
-const metricsRateTimeseriesColumns = {
-	bucket: T.dateTime,
-	serviceName: T.string,
-	attributeValue: T.string,
-	groupName: T.string,
-	rateValue: T.float64,
-	increaseValue: T.float64,
-	dataPointCount: T.uint64,
 }
 
 // Must stay in sync with the WHERE clause of `span_metrics_calls_hourly_mv`.
@@ -216,7 +338,12 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 		opts.bucketSeconds !== undefined &&
 		opts.bucketSeconds >= 3600 &&
 		opts.bucketSeconds % 3600 === 0 &&
+		(opts.spaceAggregation === undefined || opts.spaceAggregation === "sum") &&
 		(opts.groupByAttributeKey === undefined || opts.groupByAttributeKey === "span.kind") &&
+		(opts.groupByAttributeKeys === undefined ||
+			(opts.groupByAttributeKeys.length <= 1 &&
+				(opts.groupByAttributeKeys[0] ?? "span.kind") === "span.kind")) &&
+		(opts.groupByResourceAttributeKeys === undefined || opts.groupByResourceAttributeKeys.length === 0) &&
 		// The hourly MV keeps only SpanKind of the datapoint labels.
 		(opts.attributeFilters === undefined ||
 			opts.attributeFilters.length === 0 ||
@@ -232,7 +359,7 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 
 function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput> {
+): CHQuery<ColumnDefs, MetricsTimeseriesOutput> {
 	const bucket = CH.toStartOfInterval(
 		CH.toDateTime(utcSecondsParam("startTime")),
 		param.int("bucketSeconds"),
@@ -314,6 +441,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 				Hour: $.Hour,
 				ServiceName: $.ServiceName,
 				SpanKind: $.SpanKind,
+				series: CH.cityHash64($.ServiceName, $.SpanKind, $.AttrFingerprint, $.ResourceFingerprint),
 				delta: $.Value.sub(CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame)),
 			}
 		})
@@ -325,6 +453,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			Hour: T.dateTime,
 			ServiceName: T.string,
 			SpanKind: T.string,
+			series: T.uint64,
 			delta: T.float64,
 		},
 	})
@@ -335,24 +464,35 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 		// confines the outer query) instead of taking a caller's word for it.
 		.withCTE("hourly_values", hourlyQuery)
 		.withCTE("with_deltas", deltasQuery)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
-			serviceName: $.ServiceName,
-			attributeValue: opts.groupByAttributeKey === "span.kind" ? $.SpanKind : CH.lit(""),
-			groupName: opts.groupByAttributeKey === "span.kind" ? $.SpanKind : $.ServiceName,
-			rateValue: finiteOrZero(CH.sumIf($.delta.div(param.int("bucketSeconds")), $.delta.gte(0))),
-			increaseValue: CH.sumIf($.delta, $.delta.gte(0)),
-			dataPointCount: CH.count(),
-		}))
+		.select(($) => {
+			const parts: CH.Expr<string>[] = []
+			for (const dim of opts.groupBy ?? []) {
+				if (dim === "service") parts.push($.ServiceName)
+				else if (dim === "attribute") parts.push($.SpanKind)
+			}
+			const groupName =
+				parts.length === 0
+					? CH.lit("")
+					: parts.length === 1 && parts[0] !== undefined
+						? parts[0]
+						: CH.arrayStringConcat(CH.arrayFilter("x -> x != ''", CH.arrayOf(...parts)), " \u00b7 ")
+			const increase = CH.sumIf($.delta, $.delta.gte(0))
+			return {
+				bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+				groupName,
+				value:
+					(opts.metric ?? "rate") === "rate"
+						? finiteOrZero(increase.div(param.int("bucketSeconds")))
+						: increase,
+				dataPointCount: CH.count(),
+				seriesCount: CH.uniqExact($.series),
+			}
+		})
 		.where(($) => [$.Hour.gte(bucketUtc), $.Hour.lte(endBucketUtc)])
 
-	const inner = (
-		opts.groupByAttributeKey === "span.kind"
-			? q.groupBy("bucket", "serviceName", "attributeValue")
-			: q.groupBy("bucket", "serviceName")
-	).orderBy(["bucket", "asc"])
+	const inner = q.groupBy("bucket", "groupName").orderBy(["bucket", "asc"])
 
-	return finalizeTimeseries(inner, metricsRateTimeseriesColumns, "dataPointCount", opts)
+	return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
 }
 
 /**
@@ -383,7 +523,7 @@ export function metricDeltaExpr(args: {
 
 export function metricsTimeseriesRateQuery(
 	opts: MetricsRateTimeseriesOpts,
-): CHQuery<ColumnDefs, MetricsRateTimeseriesOutput> {
+): CHQuery<ColumnDefs, MetricsTimeseriesOutput> {
 	if (canUseSpanMetricsCallsHourly(opts)) return metricsTimeseriesRateFromSpanMetricsCallsHourly(opts)
 
 	// Prometheus-style counters often land as gauges (or as sums flagged
@@ -411,12 +551,8 @@ export function metricsTimeseriesRateQuery(
 			})
 			return {
 				TimeUnix: $.TimeUnix,
-				ServiceName: $.ServiceName,
-				Attributes: $.Attributes,
-				// Project just the requested resource group value through the CTE.
-				resourceAttributeValue: opts.groupByResourceAttributeKey
-					? $.ResourceAttributes.get(opts.groupByResourceAttributeKey)
-					: CH.lit(""),
+				groupName: metricsGroupNameExpr($, opts),
+				series: metricsSeriesKeyExpr($),
 				delta: metricDeltaExpr({
 					value: $.Value,
 					previousValue: CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame),
@@ -450,25 +586,35 @@ export function metricsTimeseriesRateQuery(
 			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 
-	// Outer query: aggregate deltas into rate/increase per bucket
 	const cteTable = table("with_deltas", {
 		external: true,
 		columns: {
 			TimeUnix: T.dateTime64,
-			ServiceName: T.string,
-			Attributes: T.map(T.string, T.string),
-			resourceAttributeValue: T.string,
+			groupName: T.string,
+			series: T.uint64,
 			delta: T.float64,
 		},
 	})
 
-	const q = from(cteTable)
+	// Each series' increase per bucket, then the series of a group combined.
+	const perSeries = from(cteTable)
 		.withCTE("with_deltas", cteQuery)
+		.select(($) => ({
+			bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
+			groupName: $.groupName,
+			series: $.series,
+			increase: CH.sum($.delta),
+			points: CH.count(),
+		}))
+		.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+		.groupBy("bucket", "groupName", "series")
+
+	const inner = fromQuery(perSeries, "per_series")
 		.select(($) => {
 			// Seconds of the bucket inside [startTime, endTime]: the edge buckets are
 			// partial, and dividing them by the full width understates their rate.
 			// A `wholeRange` bucket is the whole range, whatever width the spec stored.
-			const bucketStart = CH.toUnixTimestamp(timeseriesBucket($.TimeUnix, opts.wholeRange))
+			const bucketStart = CH.toUnixTimestamp($.bucket)
 			const rangeStart = CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("startTime")))
 			const rangeEnd = CH.toUnixTimestamp(CH.toDateTime(utcSecondsParam("endTime")))
 			const coveredSeconds = opts.wholeRange
@@ -476,35 +622,24 @@ export function metricsTimeseriesRateQuery(
 				: CH.least_(bucketStart.add(param.int("bucketSeconds")), rangeEnd).sub(
 						CH.greatest_(bucketStart, rangeStart),
 					)
+			const combined = spaceAggregationExpr($.increase, opts.spaceAggregation ?? "sum")
 			return {
-				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
-				serviceName: $.ServiceName,
-				attributeValue: opts.groupByResourceAttributeKey
-					? $.resourceAttributeValue
-					: opts.groupByAttributeKey
-						? $.Attributes.get(opts.groupByAttributeKey)
-						: CH.lit(""),
-				groupName: opts.groupByResourceAttributeKey
-					? $.resourceAttributeValue
-					: opts.groupByAttributeKey
-						? $.Attributes.get(opts.groupByAttributeKey)
-						: $.ServiceName,
-				// Rate is the bucket's increase over its covered width. Summing per-sample
-				// rates instead multiplies throughput by the samples per bucket.
-				rateValue: finiteOrZero(CH.sum($.delta).div(CH.min_(coveredSeconds))),
-				increaseValue: CH.sum($.delta),
-				dataPointCount: CH.count(),
+				bucket: $.bucket,
+				groupName: $.groupName,
+				// A series' rate is its increase over the covered width; the width is
+				// one per bucket, so combining increases first is the same number.
+				value:
+					(opts.metric ?? "rate") === "rate" && opts.spaceAggregation !== "count"
+						? finiteOrZero(combined.div(CH.min_(coveredSeconds)))
+						: combined,
+				dataPointCount: CH.sum($.points),
+				seriesCount: CH.count(),
 			}
 		})
-		.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+		.groupBy("bucket", "groupName")
+		.orderBy(["bucket", "asc"])
 
-	const inner = (
-		opts.groupByAttributeKey || opts.groupByResourceAttributeKey
-			? q.groupBy("bucket", "serviceName", "attributeValue")
-			: q.groupBy("bucket", "serviceName")
-	).orderBy(["bucket", "asc"])
-
-	return finalizeTimeseries(inner, metricsRateTimeseriesColumns, "dataPointCount", opts)
+	return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
 }
 
 // Sparklines query — batched preview series for the metrics browse grid
