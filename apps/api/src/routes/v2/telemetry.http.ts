@@ -1272,7 +1272,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							serviceName: params.name,
 							limit: 1,
 						})
-						if (!rows[0]) return yield* V2ServiceNotFound.make()
+						if (rows[0] === undefined) return yield* V2ServiceNotFound.make()
 						return rows[0]
 					}),
 				)
@@ -1394,7 +1394,7 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							[summary, points, operations],
 							{ concurrency: 3 },
 						)
-						if (!service) return yield* V2ServiceNotFound.make()
+						if (service === undefined) return yield* V2ServiceNotFound.make()
 						return {
 							object: "service_overview" as const,
 							service,

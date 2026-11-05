@@ -386,7 +386,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 				for (const row of spliced) {
 					const expected = truthByKey.get(key(row))
 					assert.isDefined(expected, `spliced produced a bucket the flat scan did not: ${key(row)}`)
-					if (!expected) continue
+					if (expected == null) continue
 
 					// Counts must be EXACT. These are the ones a boundary inequality
 					// corrupts, and they corrupt by a whole bucket, not by rounding.
@@ -473,7 +473,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service overview raw-vs-rollup parity", 
 			Arr.findFirst(rows, (row) => String(row.serviceName) === "skewed"),
 		)
 		assert.isDefined(skewed, "the skewed-namespace seed did not reach serviceOverviewQuery")
-		if (!skewed) return
+		if (skewed == null) return
 
 		// What the client used to compute: a span-count-weighted mean of each
 		// namespace's own p95.

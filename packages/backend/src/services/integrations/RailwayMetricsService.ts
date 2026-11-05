@@ -334,11 +334,12 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					lastError: connection.lastError,
 					environments: environments
 						.filter((row) => row.enabled)
-						.sort(
-							(a, b) =>
-								a.projectName.localeCompare(b.projectName) ||
-								a.environmentName.localeCompare(b.environmentName),
-						)
+						.sort((a, b) => {
+							const byProject = a.projectName.localeCompare(b.projectName)
+							return byProject !== 0
+								? byProject
+								: a.environmentName.localeCompare(b.environmentName)
+						})
 						.map(
 							(row) =>
 								new RailwayEnvironmentStatus({

@@ -56,11 +56,10 @@ const runLogsQuery = (rows: ReadonlyArray<FakeLogRow>, sql: string) => {
 				(from === undefined || comparableTime(row.timestamp) >= comparableTime(from)) &&
 				(to === undefined || comparableTime(row.timestamp) < comparableTime(to)),
 		),
-		Order.make<FakeLogRow>(
-			(a, b) =>
-				Str.localeCompare(comparableTime(b.timestamp))(comparableTime(a.timestamp)) ||
-				Str.localeCompare(b.id)(a.id),
-		),
+		Order.make<FakeLogRow>((a, b) => {
+			const byTime = Str.localeCompare(comparableTime(b.timestamp))(comparableTime(a.timestamp))
+			return byTime !== 0 ? byTime : Str.localeCompare(b.id)(a.id)
+		}),
 	).slice(0, limit)
 }
 

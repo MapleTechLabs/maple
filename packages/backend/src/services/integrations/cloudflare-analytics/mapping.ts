@@ -152,7 +152,9 @@ export const OTHER_BUCKET = "other"
 export const topNKeys = (weights: ReadonlyMap<string, number>, n: number): ReadonlySet<string> =>
 	new Set(
 		Arr.map(
-			[...weights.entries()].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])).slice(0, n),
+			[...weights.entries()]
+				.sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0])))
+				.slice(0, n),
 			([key]) => key,
 		),
 	)

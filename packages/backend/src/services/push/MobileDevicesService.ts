@@ -170,7 +170,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 						: undefined),
 				}
 
-				if (existing) {
+				if (existing != null) {
 					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.update(MobileDevices)

@@ -57,7 +57,7 @@ const measureOnce = (fn: () => unknown): Sample => {
 const median = (xs: ReadonlyArray<number>): number => {
 	const s = [...xs].sort((a, b) => a - b)
 	const m = s.length >> 1
-	return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2
+	return s.length % 2 === 1 ? s[m]! : (s[m - 1]! + s[m]!) / 2
 }
 
 type BenchResult = { label: string; wallMs: number; cpuMs: number; reps: number }

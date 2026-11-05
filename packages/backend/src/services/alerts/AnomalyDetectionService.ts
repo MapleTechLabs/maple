@@ -423,7 +423,7 @@ const make: Effect.Effect<
 				const active = new Set<string>(byo)
 				for (const row of [...tracesRows, ...logsRows]) {
 					const orgId = row.orgId
-					if (orgId) active.add(orgId)
+					if (orgId !== "") active.add(orgId)
 				}
 				return active as ReadonlySet<string>
 			}),
@@ -503,7 +503,7 @@ const make: Effect.Effect<
 		nowMs: number,
 	) {
 		const existing = yield* loadSettingsRow(orgId)
-		if (existing) return existing
+		if (existing != null) return existing
 		yield* dbExecute((db) =>
 			db.run(
 				PG.insertInto(AnomalyDetectorSettings)
@@ -519,7 +519,7 @@ const make: Effect.Effect<
 			),
 		)
 		const refreshed = yield* loadSettingsRow(orgId)
-		if (!refreshed) {
+		if (refreshed == null) {
 			return yield* new AnomalyPersistenceError({ message: "Failed to create anomaly settings row" })
 		}
 		return refreshed
@@ -687,7 +687,7 @@ const make: Effect.Effect<
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new AnomalyIncidentNotFoundError({
 				message: `No such anomaly incident: '${incidentId}'`,
 				incidentId,

@@ -18,7 +18,7 @@ const staticImports = (f) => [...(src[f]?.matchAll(/from"\.\/([^"]+\.js)"/g) ?? 
 const closure = (roots, edges) => {
 	const seen = new Set()
 	const q = [...roots]
-	while (q.length) {
+	while (q.length > 0) {
 		const f = q.pop()
 		if (seen.has(f)) continue
 		seen.add(f)

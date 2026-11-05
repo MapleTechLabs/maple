@@ -1401,7 +1401,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				),
 			)
 			const row = rows[0]
-			if (!row) {
+			if (row === undefined) {
 				return new OrgClickHouseApplySchemaStatus({
 					status: "idle",
 					phase: null,

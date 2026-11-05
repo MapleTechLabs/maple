@@ -5203,7 +5203,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										.limit(1),
 								),
 							))[0]
-							if (!ruleRow) return
+							if (ruleRow == null) return
 							const normalized = yield* normalizeRuleRow(ruleRow)
 							// Budgeted: a sweep that resolves every incident of every
 							// disabled rule is exactly the shape that storms phones.

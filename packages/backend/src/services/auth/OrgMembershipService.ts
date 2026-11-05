@@ -233,7 +233,7 @@ const make = Effect.gen(function* () {
 		).pipe(Effect.mapError(unavailable))
 
 		const membership = response.data[0]
-		if (!membership) return Option.none<VerifiedOrgMembership>()
+		if (membership === undefined) return Option.none<VerifiedOrgMembership>()
 		const role = decodeRoleNameOption(membership.role)
 		return Option.map(role, (value): VerifiedOrgMembership => ({ orgId, role: value }))
 	})

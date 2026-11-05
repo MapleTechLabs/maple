@@ -830,7 +830,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// Installation rows are never auto-deleted, so one is here whenever the org
 				// has connected before. Its repos/commits are kept too — shown read-only.
 				const deactivated = [...installations].sort((a, b) => b.updatedAt - a.updatedAt)[0]
-				if (!deactivated) {
+				if (deactivated === undefined) {
 					yield* Effect.annotateCurrentSpan({
 						orgId,
 						"vcs.status.outcome": "ok",

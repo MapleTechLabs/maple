@@ -688,7 +688,7 @@ export const upsertPlanetScaleIssue: (
 									.limit(1),
 							)
 						const existing = yield* selectActor()
-						if (existing[0]) return existing[0].id
+						if (existing[0] !== undefined) return existing[0].id
 						yield* db.run(
 							PG.insertInto(Actors)
 								.values({
@@ -708,7 +708,7 @@ export const upsertPlanetScaleIssue: (
 						const row = (yield* selectActor())[0]
 						// The queue consumer retries on `DatabaseError`, so this unreachable
 						// state keeps the failure class it always surfaced as.
-						if (!row) {
+						if (row === undefined) {
 							return yield* new DatabaseError({
 								message: "Failed to ensure system-integrations actor row",
 								cause: undefined,

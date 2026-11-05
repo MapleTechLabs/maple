@@ -252,7 +252,9 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						// a literal bar and an unbalanced group.
 						"--extended-regexp",
 						...(options.caseSensitive === false ? ["--ignore-case"] : []),
-						...(options.contextLines ? ["--context", String(options.contextLines)] : []),
+						...(options.contextLines !== undefined && options.contextLines > 0
+							? ["--context", String(options.contextLines)]
+							: []),
 						"-e",
 						options.pattern,
 						// Everything past `--` is a pathspec, so a pattern that starts with a

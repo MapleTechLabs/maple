@@ -75,7 +75,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				opts?: { createdAt?: number },
 			) {
 				const existing = yield* findRow(orgId)
-				if (existing) return existing
+				if (existing != null) return existing
 
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>
@@ -94,7 +94,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				)
 
 				const row = yield* findRow(orgId)
-				if (!row) {
+				if (row == null) {
 					return yield* new OnboardingPersistenceError({
 						message: "Failed to create onboarding state row",
 					})
@@ -151,7 +151,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				)
 
 				const row = yield* findRow(orgId)
-				if (!row) {
+				if (row == null) {
 					return yield* new OnboardingPersistenceError({
 						message: "Onboarding state row missing after update",
 					})
