@@ -153,7 +153,10 @@ const loadScope = Effect.fn("UsersReads.scope")(function* (tenant: TenantContext
 	return scope
 })
 
-/** Each listed group's name, keyed by id; a group no replay named is absent. */
+/**
+ * Each listed group's name, keyed by id; a group no replay named is absent. Names only decorate
+ * the ids, so a failed lookup leaves them out instead of failing the read.
+ */
 const readGroupNames = Effect.fn("UsersReads.groupNames")(function* (
 	tenant: TenantContext,
 	window: Readonly<{ startTime: string; endTime: string }>,
@@ -163,15 +166,21 @@ const readGroupNames = Effect.fn("UsersReads.groupNames")(function* (
 	yield* Effect.annotateCurrentSpan({ "maple.users.groups": ids.length })
 	if (ids.length === 0) return new Map<string, string>()
 	const warehouse = yield* WarehouseQueryService
-	const rows = yield* warehouse.compiledQuery(
-		tenant,
-		CH.compile(CH.usersGroupNamesQuery(ids), {
-			orgId: tenant.orgId,
-			startTime: window.startTime,
-			endTime: window.endTime,
-		}),
-		{ profile: "list", context: "usersGroupNames" },
-	)
+	const rows = yield* warehouse
+		.compiledQuery(
+			tenant,
+			CH.compile(CH.usersGroupNamesQuery(ids), {
+				orgId: tenant.orgId,
+				startTime: window.startTime,
+				endTime: window.endTime,
+			}),
+			{ profile: "list", context: "usersGroupNames" },
+		)
+		.pipe(
+			Effect.catch((error) =>
+				Effect.as(Effect.annotateCurrentSpan({ "maple.users.group_names_failed": error._tag }), []),
+			),
+		)
 	return new Map(Arr.map(rows, (row) => [row.groupId, row.groupName] as const))
 })
 
@@ -755,6 +764,13 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		...Arr.map(seen, (row) => toMs(row.lastSeen)),
 		...Arr.map(issueItems, (item) => item.lastSeenMs),
 	]
+	const groupId = nullIfEmpty(replay[0]?.groupId ?? "")
+	// The latest session may carry the id without a name: then the group's latest name, as the list reads it.
+	const sessionGroupName = groupId === null ? null : nullIfEmpty(replay[0]?.groupName ?? "")
+	const profileGroupName =
+		groupId === null || sessionGroupName !== null
+			? sessionGroupName
+			: ((yield* readGroupNames(tenant, payload, [groupId])).get(groupId) ?? null)
 	const traitKeys = replay[0]?.traitKeys ?? []
 	const traitValues = replay[0]?.traitValues ?? []
 	const requestFigure = <A>(read: (row: CH.UserActivitySummaryOutput) => A): A | null =>
@@ -768,8 +784,8 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		userId: payload.userId,
 		name: nullIfEmpty(replay[0]?.name ?? "") ?? nullIfEmpty(mcp[0]?.name ?? ""),
 		email: nullIfEmpty(replay[0]?.email ?? "") ?? nullIfEmpty(mcp[0]?.email ?? ""),
-		groupId: nullIfEmpty(replay[0]?.groupId ?? ""),
-		groupName: nullIfEmpty(replay[0]?.groupName ?? ""),
+		groupId,
+		groupName: profileGroupName,
 		traits: Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),
 		visitorIds: Arr.map(visitors, (row) => row.visitorId),
 		firstSeenMs: Math.min(...firstSeens),

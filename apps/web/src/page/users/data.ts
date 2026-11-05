@@ -179,9 +179,9 @@ export const namespacesOf = (
 	)
 }
 
-/** A group's display name: its name, else its id. */
+/** A group's display name: its name, else its id; `null` without a group. */
 export const groupLabel = (group: Pick<UserRow, "groupId" | "groupName">): string | null =>
-	group.groupName ?? group.groupId
+	group.groupId === null ? null : (group.groupName ?? group.groupId)
 
 /** The user's display name: their name, else their email, else the raw id. */
 export const userLabel = (user: Pick<UserRow, "name" | "email" | "userId">): string =>
