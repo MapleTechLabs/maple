@@ -378,7 +378,7 @@ const groupStatsSection = <M>(
 				? []
 				: [
 						textLink(h, { href: groupHref, tone: "muted", className: "pt-1 text-xs" }, [
-							`See the ${formatNumber(stats.users)} users in ${label}`,
+							`See ${stats.users === 1 ? "the 1 user" : `all ${countLabel(stats.users, "user")}`} in ${label}`,
 							icon(h, "ArrowRightIcon", { size: 12 }),
 						]),
 					]),
