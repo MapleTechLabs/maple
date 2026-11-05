@@ -69,6 +69,7 @@
 		// node:crypto HMAC/hashes in Workers and node:fs/path in the local server are the intended APIs.
 		"effecttsgo/node-builtin-import": "off",
 		// Fires on `new X({ ...x })`, which rebuilds the instance and is how Schema classes are copied.
+		// Re-measured 2026-11-05: all 109 hits are Schema class instances; the rule has no option to skip them.
 		"typescript/no-misused-spread": "off",
 		// New in the effect-native preset: flags every sync decode, ~1k hits mostly in tests and non-Effect
 		// boundaries. `schema-sync-in-effect` already covers the case that matters.
