@@ -4,7 +4,8 @@ import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import { resolveWindow, type TimeWindow } from "../../../data/time-range"
+import { type TimeWindow } from "../../../data/time-range"
+import { resolveUsersWindow } from "../window"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
@@ -151,7 +152,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 /** The route loader warms the list and the facets. */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
-	const window = resolveWindow(
+	const window = resolveUsersWindow(
 		{
 			startTime: model.search.startTime,
 			endTime: model.search.endTime,

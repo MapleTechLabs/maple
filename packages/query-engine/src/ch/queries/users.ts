@@ -88,39 +88,27 @@ const readsActivityRollup = (scope: UsersScope): boolean => scope.activityRollup
 export const hasUserSources = (scope: UsersScope): boolean =>
 	readsServiceSources(scope) || scope.mcpServices.length > 0 || readsActivityRollup(scope)
 
-const replayWindow = ($: ColumnAccessor<typeof SessionReplays.columns>) => [
-	$.OrgId.eq(orgIdParam),
-	$.StartTime.gte(param.dateTime("startTime")),
-	$.StartTime.lte(param.dateTime("endTime")),
-]
-
 /** How far before the window a session may have started and still carry in-window events. */
 const SESSION_LOOKBACK_DAYS = 1
 
-/**
- * Sessions recorded by an in-scope service that were active in the window, including ones that
- * began up to a day before it, so their in-window browser events keep a service.
- */
+/** Sessions active in the window, including ones that began up to a day before it. */
+const activeSessionWindow = ($: ColumnAccessor<typeof SessionReplays.columns>) => {
+	const start = param.dateTime("startTime")
+	return [
+		$.OrgId.eq(orgIdParam),
+		$.StartTime.gte(
+			CH.compileTypedFnCall("subtractDays", CH.schemaOf(start), start, CH.lit(SESSION_LOOKBACK_DAYS)),
+		),
+		$.StartTime.lte(param.dateTime("endTime")),
+		CH.ifNull($.LastActivityAt, $.StartTime).gte(start),
+	]
+}
+
+/** Sessions recorded by an in-scope service and active in the window, so their in-window browser events keep a service. */
 const scopedSessionIds = (scope: UsersScope) =>
 	from(SessionReplays)
 		.select(($) => ({ sessionId: $.SessionId }))
-		.where(($) => {
-			const start = param.dateTime("startTime")
-			return [
-				$.OrgId.eq(orgIdParam),
-				$.StartTime.gte(
-					CH.compileTypedFnCall(
-						"subtractDays",
-						CH.schemaOf(start),
-						start,
-						CH.lit(SESSION_LOOKBACK_DAYS),
-					),
-				),
-				$.StartTime.lte(param.dateTime("endTime")),
-				CH.ifNull($.LastActivityAt, $.StartTime).gte(start),
-				CH.inList($.ServiceName, scope.services),
-			]
-		})
+		.where(($) => [...activeSessionWindow($), CH.inList($.ServiceName, scope.services)])
 		.groupBy("sessionId")
 
 /**
@@ -522,7 +510,7 @@ const userSessionServices = () =>
 	from(SessionReplays)
 		.select(($) => ({ sessionId: $.SessionId, service: CH.any_($.ServiceName) }))
 		.where(($) => [
-			...replayWindow($),
+			...activeSessionWindow($),
 			$.ServiceName.neq(""),
 			inSubquery(
 				$.SessionId,

@@ -216,9 +216,11 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			subline:
 				profile.requests === null
 					? "no per-user request data"
-					: profile.requests === 0 || profile.failedRate === null
+					: profile.requests === 0
 						? "no requests in the window"
-						: `${formatPercent(profile.failedRate)} failed`,
+						: profile.failedRate === null
+							? "failure rate not available"
+							: `${formatPercent(profile.failedRate)} failed`,
 			tone: profile.failedRate !== null && profile.failedRate > 0 ? "warn" : "neutral",
 			spark: Arr.some(profile.activity, (count) => count > 0) ? profile.activity : undefined,
 			compact: true,

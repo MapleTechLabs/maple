@@ -1,3 +1,4 @@
+import { USERS_PRESETS } from "../window"
 import { Submodel, AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr, Option } from "effect"
@@ -185,7 +186,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							selectedPreset:
 								search.timePreset ??
 								(search.startTime === undefined ? DEFAULT_PRESET : undefined),
-							presets: TimeRangePicker.PRESET_VALUES,
+							presets: USERS_PRESETS,
 						},
 					}),
 			}),
