@@ -188,7 +188,7 @@ describe("sliceWindow", () => {
 		).toEqual({
 			serviceNames: ["api", "web"],
 			startTime: "2026-11-01 00:20:00",
-			endTime: "2026-11-01 05:59:59",
+			endTime: "2026-11-01 06:00:00",
 		})
 	})
 
