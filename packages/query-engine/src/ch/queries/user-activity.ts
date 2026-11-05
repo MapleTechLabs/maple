@@ -512,15 +512,16 @@ export function userIssuesQuery(opts: UserScopeOpts & { readonly limit?: number 
 
 export interface UserIssueTotalsOutput {
 	readonly hits: number
-	readonly fingerprints: number
+	/** Distinct error fingerprints; not named for them, as identity-looking 64-bit columns must be strings. */
+	readonly errorGroups: number
 }
 
-export const userIssueTotalsRowSchema = Schema.Struct({ hits: CHNumber, fingerprints: CHNumber })
+export const userIssueTotalsRowSchema = Schema.Struct({ hits: CHNumber, errorGroups: CHNumber })
 
 /** All of the user's error occurrences and distinct fingerprints, uncapped, for the profile totals. */
 export function userIssueTotalsQuery(opts: UserScopeOpts) {
 	return from(ErrorEventsByTime)
-		.select(($) => ({ hits: CH.count(), fingerprints: CH.uniqExact($.FingerprintHash) }))
+		.select(($) => ({ hits: CH.count(), errorGroups: CH.uniqExact($.FingerprintHash) }))
 		.where(($) => userErrorRows($, opts))
 		.format("JSON")
 }
