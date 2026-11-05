@@ -1,7 +1,7 @@
 import type { FilterOption } from "@maple/views/ui/filters/filter-section"
 import { Array as Arr, Record } from "effect"
 import type { UserDetail, UserRow } from "../page/users/data"
-import type { UsersFacets, UsersFilters } from "../page/users/view-list"
+import type { UsersFacets, UsersFilters, UsersSummary } from "../page/users/view-list"
 
 // `/lab/users`' stand-in for the warehouse: the facet counts, the directory filter and a user's
 // namespace scope, applied to the fixture the way the queries will apply them.
@@ -28,6 +28,29 @@ export const usersFacets = (all: ReadonlyArray<UserRow>, pinned: string | null):
 		),
 		withErrors: Arr.filter(rows, (row) => row.errors > 0).length,
 		withReplay: Arr.filter(rows, (row) => row.signals.includes("replay")).length,
+	}
+}
+
+const DAY_MS = 86_400_000
+
+/**
+ * The summary strip over the pin, as the API reads it: the fixture's org-wide totals unpinned,
+ * else the pinned namespace's sample users (anonymous visitors scaled to their share).
+ */
+export const usersSummary = (
+	all: ReadonlyArray<UserRow>,
+	pinned: string | null,
+	orgWide: UsersSummary,
+	nowMs: number,
+): UsersSummary => {
+	if (pinned === null) return orgWide
+	const rows = Arr.filter(all, (row) => row.namespaces.includes(pinned))
+	return {
+		identified: rows.length,
+		activeToday: Arr.filter(rows, (row) => row.lastSeenMs >= nowMs - DAY_MS).length,
+		withErrors: Arr.filter(rows, (row) => row.errors > 0).length,
+		anonymousVisitors:
+			all.length === 0 ? 0 : Math.round((orgWide.anonymousVisitors * rows.length) / all.length),
 	}
 }
 
