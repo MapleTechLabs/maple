@@ -12,7 +12,8 @@ import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
 /** The API's own bounds, so an over-long value is a load error here instead of a throw in its request class. */
-const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
+export const USERS_SEARCH_MAX_LENGTH = 200
+const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(USERS_SEARCH_MAX_LENGTH))
 
 const UsersWindowInput = Schema.Struct({
 	startTime: WarehouseDateTimeString,
@@ -28,7 +29,9 @@ const UsersListInput = Schema.Struct({
 	hasErrors: Schema.optional(Schema.Boolean),
 	hasReplay: Schema.optional(Schema.Boolean),
 	groups: Schema.optional(
-		Schema.Array(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500))),
+		Schema.Array(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500))).check(
+			Schema.isMaxLength(50),
+		),
 	),
 	limit: Schema.optional(Schema.Number),
 })

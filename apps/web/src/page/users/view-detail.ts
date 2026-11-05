@@ -67,11 +67,22 @@ const clockOf = (atMs: number, timeZone: string): string =>
 const dayKey = (atMs: number, timeZone: string): string =>
 	timeFormat(timeZone, { year: "numeric", month: "2-digit", day: "2-digit" }).format(atMs)
 
+/** The local calendar day as a day count, so "yesterday" is one less even across a DST change. */
+const dayNumber = (atMs: number, timeZone: string): number => {
+	const parts = timeFormat(timeZone, { year: "numeric", month: "numeric", day: "numeric" }).formatToParts(
+		atMs,
+	)
+	const part = (type: Intl.DateTimeFormatPartTypes): number =>
+		Number(parts.find((entry) => entry.type === type)?.value ?? 0)
+	return Date.UTC(part("year"), part("month") - 1, part("day")) / 86_400_000
+}
+
 /** "Today", "Yesterday", else "Mon 2 Nov". */
-const dayLabel = (atMs: number, clock: Clock): string => {
-	const key = dayKey(atMs, clock.timeZone)
-	if (key === dayKey(clock.nowMs, clock.timeZone)) return "Today"
-	if (key === dayKey(clock.nowMs - 86_400_000, clock.timeZone)) return "Yesterday"
+export const dayLabel = (atMs: number, clock: Clock): string => {
+	const day = dayNumber(atMs, clock.timeZone)
+	const today = dayNumber(clock.nowMs, clock.timeZone)
+	if (day === today) return "Today"
+	if (day === today - 1) return "Yesterday"
 	return timeFormat(clock.timeZone, { weekday: "short", day: "numeric", month: "short" }).format(atMs)
 }
 

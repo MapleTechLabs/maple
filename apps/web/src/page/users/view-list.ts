@@ -28,7 +28,7 @@ import {
 } from "../agent-sessions/tools-kit/table"
 import { pinnedNamespaceNotice } from "../kit/pinned-namespace-notice"
 import { listRelativeTime } from "../kit/relative-time"
-import { statRail, statRailItem } from "../kit/stat-rail"
+import { statRail, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
 import type { UserRow } from "./data"
 import { signalLane, signalTags, userAvatar, userNameBlock } from "./view-kit"
 
@@ -57,6 +57,9 @@ export type UsersSummary = Readonly<{
 	withErrors: number
 	anonymousVisitors: number
 }>
+
+/** The strip's counts, or why it has none: still loading, or the facets read failed. */
+export type UsersSummaryState = UsersSummary | "loading" | "failed"
 
 export type UsersListOptions<M> = Readonly<{
 	nowMs: number
@@ -138,34 +141,59 @@ const scopeText = (scope: ReadonlyArray<string>): string =>
 			? `namespace ${scope[0]}`
 			: `${scope.length} namespaces`
 
-const summaryRail = <M>(h: HtmlBuilder<M>, summary: UsersSummary, scope: ReadonlyArray<string>): Html =>
-	statRail(h, { columns: 4, isFlush: true }, [
-		statRailItem(h, {
-			eyebrow: "Identified users",
-			value: formatNumber(summary.identified),
-			subline: `seen in ${scopeText(scope)}`,
-			compact: true,
-		}),
-		statRailItem(h, {
-			eyebrow: "Active today",
-			value: formatNumber(summary.activeToday),
-			subline: "any signal in the last 24h",
-			compact: true,
-		}),
-		statRailItem(h, {
-			eyebrow: "Hit an error",
-			value: formatNumber(summary.withErrors),
-			tone: summary.withErrors > 0 ? "crit" : "neutral",
-			subline: "users with one or more errors",
-			compact: true,
-		}),
-		statRailItem(h, {
-			eyebrow: "Anonymous visitors",
-			value: formatNumber(summary.anonymousVisitors),
-			subline: "visitor id only, not listed",
-			compact: true,
-		}),
-	])
+type SummaryItem = Readonly<{ eyebrow: string; value: number; subline: string; tone?: "crit" | "neutral" }>
+
+const summaryItems = (summary: UsersSummary, scope: ReadonlyArray<string>): ReadonlyArray<SummaryItem> => [
+	{ eyebrow: "Identified users", value: summary.identified, subline: `seen in ${scopeText(scope)}` },
+	{ eyebrow: "Active today", value: summary.activeToday, subline: "any signal in the last 24h" },
+	{
+		eyebrow: "Hit an error",
+		value: summary.withErrors,
+		subline: "users with one or more errors",
+		tone: summary.withErrors > 0 ? "crit" : "neutral",
+	},
+	{
+		eyebrow: "Anonymous visitors",
+		value: summary.anonymousVisitors,
+		subline: "visitor id only, not listed",
+	},
+]
+
+const SUMMARY_EYEBROWS = ["Identified users", "Active today", "Hit an error", "Anonymous visitors"]
+
+const summaryRail = <M>(h: HtmlBuilder<M>, summary: UsersSummaryState, scope: ReadonlyArray<string>): Html =>
+	summary === "loading"
+		? statRail(
+				h,
+				{ columns: 4, isFlush: true, isBusy: true },
+				Arr.map(SUMMARY_EYEBROWS, () => statRailItemSkeleton(h)),
+			)
+		: summary === "failed"
+			? statRail(
+					h,
+					{ columns: 4, isFlush: true },
+					Arr.map(SUMMARY_EYEBROWS, (eyebrow) =>
+						statRailItem(h, {
+							eyebrow,
+							value: EMPTY_VALUE,
+							subline: "couldn't load the counts",
+							compact: true,
+						}),
+					),
+				)
+			: statRail(
+					h,
+					{ columns: 4, isFlush: true },
+					Arr.map(summaryItems(summary, scope), (item) =>
+						statRailItem(h, {
+							eyebrow: item.eyebrow,
+							value: formatNumber(item.value),
+							subline: item.subline,
+							tone: item.tone ?? "neutral",
+							compact: true,
+						}),
+					),
+				)
 
 /** The directory's search box; it stays above the empty state a search with no matches shows. */
 export const usersToolbar = <M>(
@@ -317,7 +345,7 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 					as: "span",
 					className: "hidden w-40 shrink-0 pl-4 @min-[960px]/panel:block",
 				},
-				[row.topRoute ?? (row.requests === 0 ? "no requests" : EMPTY_VALUE)],
+				[row.topRoute ?? EMPTY_VALUE],
 			),
 			hstack(
 				h,
@@ -353,7 +381,7 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 export const usersListBody = <M>(
 	h: HtmlBuilder<M>,
 	shown: ReadonlyArray<UserRow>,
-	summary: UsersSummary,
+	summary: UsersSummaryState,
 	options: UsersListOptions<M>,
 ): Html => {
 	return h.div(
@@ -406,7 +434,9 @@ export const usersListBody = <M>(
 					]),
 					toolTableFooter(
 						h,
-						`${shown.length} of ${formatNumber(summary.identified)} users`,
+						typeof summary === "string"
+							? `${formatNumber(shown.length)} users`
+							: `${shown.length} of ${formatNumber(summary.identified)} users`,
 						"· sorted by last seen",
 					),
 				],
