@@ -75,7 +75,10 @@ describe("error issue", () => {
 			}),
 		).model
 		expect(AsyncData.isFailure(failed.detail.data)).toBe(true)
-		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toEqual(["FetchErrorIssueDetail"])
+		// Retry re-asks the affected users too, so a failed rail does not stay failed.
+		const retried = names(pageUpdate(failed, Message.ClickedRetry()).commands)
+		expect(retried).toContain("FetchErrorIssueDetail")
+		expect(retried).toContain("FetchErrorIssueAffectedUsers")
 	})
 
 	test("after a Reload a tab change keeps the window; a new preset re-resolves unsnapped", () => {
