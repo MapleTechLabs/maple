@@ -262,12 +262,15 @@ const overviewRows = new Map<string, ReadonlyArray<unknown>>([
 		"userActivitySlices",
 		[
 			{
-				hour: "2026-11-05 14:00:00",
 				serviceName: "checkout",
 				serviceNamespace: "storefront",
 				spanCount: "12",
 				requestCount: "4",
 				logCount: "0",
+				firstRequestHour: "2026-11-05 14:00:00",
+				lastRequestHour: "2026-11-05 14:00:00",
+				firstLogHour: "1970-01-01 00:00:00",
+				lastLogHour: "1970-01-01 00:00:00",
 			},
 		],
 	],
