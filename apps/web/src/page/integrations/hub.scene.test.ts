@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { LinearIntegrationStatus } from "@maple/domain/http"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
@@ -12,6 +13,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+
+const MEMBER = Policy.grantsOf(["org:member"])
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -267,7 +270,7 @@ describe("linear card", () => {
 	})
 
 	test("a member cannot start a Linear connect from the header or the card", () => {
-		const member = steps(withLinear("absent"), [Message.CompletedLoadSession({ isAdmin: false })])
+		const member = steps(withLinear("absent"), [Message.CompletedLoadSession({ grants: MEMBER })])
 		scene(
 			{ update: pageUpdate, view },
 			given(member),

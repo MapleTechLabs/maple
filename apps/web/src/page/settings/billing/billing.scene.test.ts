@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AttachResult, BillingAccount, BillingCustomer, BillingProfile } from "@maple/domain/http"
 import { V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
@@ -9,6 +10,8 @@ import { Message as DetailsMessage } from "./details/model"
 import { customerChanged, init, requestRuleStats, revisit, spendModelOf, update } from "./update"
 import { usageTable } from "./view-usage"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+
+const ADMIN = Policy.grantsOf(["org:admin"])
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
@@ -47,7 +50,10 @@ const view = withViewInputs(usageView, {})()
 const step = (model: Model, message: Message) => update(model, message, customer, NOW).step
 /** The tab once the account says this org pays for itself. */
 const entered = () =>
-	step(init(true, false, true).model, Message.CompletedFetchAccount({ result: Result.succeed(standalone) }))
+	step(
+		init(ADMIN, false, true).model,
+		Message.CompletedFetchAccount({ result: Result.succeed(standalone) }),
+	)
 
 describe("billing tab", () => {
 	test("once the cycle is known, the rule stats are read from its start, once", () => {
@@ -57,7 +63,7 @@ describe("billing tab", () => {
 			args: { startMs: 0 },
 		})
 		expect(requestRuleStats(entered().model, null, NOW)).toBeNull()
-		expect(requestRuleStats(init(true, false, true).model, customer, NOW)).toBeNull()
+		expect(requestRuleStats(init(ADMIN, false, true).model, customer, NOW)).toBeNull()
 		expect(requested === null ? null : requestRuleStats(requested.model, customer, NOW)).toBeNull()
 	})
 
@@ -97,7 +103,7 @@ describe("billing tab", () => {
 			{ update: step, view },
 			given(
 				step(
-					init(true, false, true).model,
+					init(ADMIN, false, true).model,
 					Message.CompletedFetchRuleStats({ result: Result.succeed(stats) }),
 				).model,
 			),
@@ -107,7 +113,7 @@ describe("billing tab", () => {
 	})
 
 	test("reads the catalog, usage, spend and account, then invoices and details once the org pays for itself", () => {
-		expect(names(init(true, false, true).commands)).toEqual(
+		expect(names(init(ADMIN, false, true).commands)).toEqual(
 			expect.arrayContaining([
 				"FetchBillingPlans",
 				"FetchBillingUsage",
@@ -122,7 +128,7 @@ describe("billing tab", () => {
 
 	test("a cap is saved for the open row, and the save reads the customer and daily spend again", () => {
 		const editing = update(
-			init(true, false, true).model,
+			init(ADMIN, false, true).model,
 			Message.ClickedEditCap({ featureId: "logs" }),
 			customer,
 			0,
@@ -145,7 +151,7 @@ describe("billing tab", () => {
 
 	test("text that is not a number keeps the cap editor from saving", () => {
 		const editing = update(
-			init(true, false, true).model,
+			init(ADMIN, false, true).model,
 			Message.ClickedEditCap({ featureId: "traces" }),
 			customer,
 			0,
@@ -156,7 +162,7 @@ describe("billing tab", () => {
 
 	test("billing details open on the profile on file and save every address line", () => {
 		const loaded = update(
-			init(true, false, true).model,
+			init(ADMIN, false, true).model,
 			Message.CompletedFetchProfile({ result: Result.succeed(profile) }),
 			customer,
 			0,
@@ -195,7 +201,7 @@ describe("billing tab", () => {
 	})
 
 	test("a return from Stripe polls the customer until it carries the plan, then clears the marker", () => {
-		const returning = init(true, true, true)
+		const returning = init(ADMIN, true, true)
 		expect(returning.model.checkoutReturn).toBe("Confirming")
 		expect(names(returning.commands)).toEqual(
 			expect.arrayContaining(["WaitBillingCheckoutPoll", "WaitBillingCheckoutTimeout"]),
@@ -214,18 +220,18 @@ describe("billing tab", () => {
 	})
 
 	test("the wait gives up after the timeout with the notice, and an idle tab never polls", () => {
-		const timedOut = update(init(true, true, true).model, Message.ElapsedCheckoutTimeout(), null, 0)
+		const timedOut = update(init(ADMIN, true, true).model, Message.ElapsedCheckoutTimeout(), null, 0)
 		expect(timedOut.step.model.checkoutReturn).toBe("TimedOut")
 		expect(timedOut.checkout).toBe("TimedOut")
 		expect(update(timedOut.step.model, Message.ElapsedCheckoutPoll(), null, 0).isCustomerStale).toBe(
 			false,
 		)
-		expect(names(init(true, false, true).commands)).not.toContain("WaitBillingCheckoutPoll")
+		expect(names(init(ADMIN, false, true).commands)).not.toContain("WaitBillingCheckoutPoll")
 	})
 
 	test("a checkout link records plan_checkout_started before the redirect", () => {
 		const attaching = update(
-			init(true, false, true).model,
+			init(ADMIN, false, true).model,
 			Message.ClickedSubscribe({ planId: "startup" }),
 			null,
 			0,

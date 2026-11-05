@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AlertRuleId, DashboardDocument } from "@maple/domain/http"
 import { V2ChatConnector } from "@maple/domain/http/v2"
 import {
@@ -32,7 +33,10 @@ import { RuleForm } from "./form"
 
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
-export const Notice = Schema.Struct({ severity: Schema.Literals(["warning", "error"]), message: Schema.String })
+export const Notice = Schema.Struct({
+	severity: Schema.Literals(["warning", "error"]),
+	message: Schema.String,
+})
 export type Notice = typeof Notice.Type
 
 /** `RuleInitialization`: the draft exists only once ready; `Failed` is the rules sync that never answered. */
@@ -80,7 +84,7 @@ export const Model = Schema.Struct({
 	/** The widget's dashboard when no `chart` snapshot came along (`useDashboardsRead`). */
 	sourceDashboards: Schema.NullOr(Schema.Array(DashboardDocument)),
 	isDashboardsLoadFailed: Schema.Boolean,
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	isDefaultDestinationApplied: Schema.Boolean,
 	/** `useChatConnectors`: `null` until the list answers. */
 	connectors: Schema.NullOr(Schema.Array(V2ChatConnector)),
@@ -125,3 +129,6 @@ export const Model = Schema.Struct({
 	themeColors: Schema.NullOr(ThemeColors),
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change what this page edits (`alerts:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

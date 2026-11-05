@@ -125,7 +125,7 @@ const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
 	)
 
 const DESCRIPTION = {
-	code: "Deep code audits of your connected repositories. Findings are visible to org admins only.",
+	code: "Deep code audits of your connected repositories. Findings are visible to org admins and engineers.",
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
 	runtimes:
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",

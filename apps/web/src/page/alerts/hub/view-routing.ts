@@ -29,7 +29,7 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { destinationProvider, providerLogo } from "../shared/providers"
 import { createHref } from "../shared/links"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { destinationMenuId } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
@@ -114,11 +114,11 @@ const destinationsSection = (
 					emptyTitle(h, ["No destinations configured"]),
 					emptyDescription(h, [
 						"Add Slack, PagerDuty, or webhook destinations before creating alert rules.",
-						...(model.isAdmin ? [] : [" Ask an org admin to add one."]),
+						...(canManage(model) ? [] : [" Ask an org admin to add one."]),
 					]),
 				]),
 				emptyActions(h, [
-					...(model.isAdmin
+					...(canManage(model)
 						? [
 								button(
 									h,
@@ -279,7 +279,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							id: `destination-switch-${destination.id}`,
 							inputId: `destination-switch-input-${destination.id}`,
 							isChecked: destination.enabled,
-							isDisabled: !model.isAdmin,
+							isDisabled: !canManage(model),
 							ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
 							onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
 						}),
@@ -288,7 +288,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							{
 								size: "sm",
 								variant: "outline",
-								isDisabled: !model.isAdmin,
+								isDisabled: !canManage(model),
 								isLoading: model.testingDestinationIds.includes(destination.id),
 								attributes: [
 									h.OnClick(
@@ -298,7 +298,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							},
 							[icon(h, "CheckIcon"), "Test"],
 						),
-						...(model.isAdmin
+						...(canManage(model)
 							? [
 									rowActionsMenu(h, {
 										slotId: menuId,
@@ -396,7 +396,7 @@ const logTable = (
 					]),
 				]),
 				emptyActions(h, [
-					...(model.isAdmin
+					...(canManage(model)
 						? [
 								linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, [
 									"Create an alert rule",

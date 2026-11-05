@@ -15,7 +15,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AutocompleteLookup, autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { trackProduct } from "../../../data/analytics"
-import { readIsAdmin } from "../shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
 
@@ -31,9 +31,9 @@ export const ReadEditorClock = Command.define("ReadAlertEditorClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
 })
 
-export const ReadEditorIsAdmin = Command.define("ReadAlertEditorIsAdmin", {
-	messages: [Message.CompletedReadIsAdmin],
-	execute: Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ isAdmin })),
+export const ReadEditorGrants = Command.define("ReadAlertEditorGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 /** `useChatConnectors`: Slack first, empty on failure. */

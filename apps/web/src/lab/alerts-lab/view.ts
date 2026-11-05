@@ -133,7 +133,7 @@ export const hubSections = Submodel.defineView<HubModel, HubMessage, HubInputs>(
 						destinations: fixture.destinations,
 						status: inputs.status ?? undefined,
 						emptyState: alertsEmptyState(h, {
-							isAdmin: true,
+							canEdit: true,
 							hasDestinations: true,
 							serviceName: undefined,
 							onAddDestination: undefined,

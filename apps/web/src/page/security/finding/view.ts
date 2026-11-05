@@ -35,7 +35,7 @@ import {
 import { codeCrumbs, stack } from "../kit/layout"
 import { gateState, metaItem, placeholder, securitySeverityBadge } from "../kit/parts"
 import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } from "./derive"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
 import { findingBadge } from "../kit/findings-view"
 import { typography } from "@maple/views/ui/typography"
@@ -140,10 +140,10 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 		description: "security-triage-reason-description",
 	}
 	const state = Field.stateOf(model.reason, reasonError !== null)
-	if (!model.isAdmin)
+	if (!canManage(model))
 		return detailRailGroup(h, "Triage", [
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				"Only org admins can change a finding's status.",
+				"Only org admins and engineers can change a finding's status.",
 			]),
 		])
 	return detailRailGroup(h, "Triage", [

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { BillingCustomer } from "@maple/domain/http"
 import { BillingAccount, BillingAccountOrg } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
@@ -75,7 +76,11 @@ const mcpLoaded = (catalog: typeof tools = tools): Model =>
 	Arr.reduce(
 		[
 			Message.CompletedFetchSession({
-				result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+				result: Result.succeed({
+					grants: Policy.allPermissions,
+					userId: null,
+					hasAiAutoTriage: true,
+				}),
 			}),
 			Message.CompletedFetchCustomer({
 				result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })),
@@ -257,7 +262,7 @@ describe("settings page", () => {
 		})
 		const returning: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, true, true).model },
+			tab: { _tag: "Billing", model: Billing.init(Policy.allPermissions, true, true).model },
 		}
 		const polled = pageUpdate(
 			returning,
@@ -296,7 +301,7 @@ describe("settings page", () => {
 		})
 		const away: Model = {
 			...mcpLoaded(),
-			kept: [{ _tag: "Billing", model: Billing.init(true, true, true).model }],
+			kept: [{ _tag: "Billing", model: Billing.init(Policy.allPermissions, true, true).model }],
 		}
 		const settled = pageUpdate(
 			away,
@@ -317,7 +322,11 @@ describe("settings page", () => {
 		const keys = Arr.reduce(
 			[
 				Message.CompletedFetchSession({
-					result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+					result: Result.succeed({
+						grants: Policy.allPermissions,
+						userId: null,
+						hasAiAutoTriage: true,
+					}),
 				}),
 				Message.CompletedFetchCustomer({
 					result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })),
@@ -349,7 +358,11 @@ describe("settings page", () => {
 		const failed = Arr.reduce(
 			[
 				Message.CompletedFetchSession({
-					result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+					result: Result.succeed({
+						grants: Policy.allPermissions,
+						userId: null,
+						hasAiAutoTriage: true,
+					}),
 				}),
 				Message.FailedLoadApiKeys({ orgId: context.orgId }),
 			],
@@ -367,7 +380,7 @@ describe("settings page", () => {
 	test("usage that fails while the customer answers shows the account error with Try again, not skeletons", () => {
 		const billing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, false, true).model },
+			tab: { _tag: "Billing", model: Billing.init(Policy.allPermissions, false, true).model },
 		}
 		// The account settles first: an org that pays for itself.
 		const standalone = pageUpdate(
@@ -417,7 +430,11 @@ describe("settings page", () => {
 		const keys = Arr.reduce(
 			[
 				Message.CompletedFetchSession({
-					result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+					result: Result.succeed({
+						grants: Policy.allPermissions,
+						userId: null,
+						hasAiAutoTriage: true,
+					}),
 				}),
 				Message.FailedLoadApiKeys({ orgId: context.orgId }),
 			],
@@ -444,7 +461,10 @@ describe("settings page", () => {
 		const customer = new BillingCustomer({ id: "org_acme", subscriptions: [] })
 		const editing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: { ...Billing.init(true, false, true).model, isSavingCap: true } },
+			tab: {
+				_tag: "Billing",
+				model: { ...Billing.init(Policy.allPermissions, false, true).model, isSavingCap: true },
+			},
 		}
 		const saved = pageUpdate(
 			editing,
@@ -467,7 +487,7 @@ describe("settings page", () => {
 	test("a customer re-read without a toast still re-reads the app's customer", () => {
 		const billing: Model = {
 			...mcpLoaded(),
-			tab: { _tag: "Billing", model: Billing.init(true, false, true).model },
+			tab: { _tag: "Billing", model: Billing.init(Policy.allPermissions, false, true).model },
 		}
 		const retried = pageUpdate(
 			billing,

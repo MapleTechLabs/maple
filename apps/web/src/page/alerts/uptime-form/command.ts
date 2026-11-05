@@ -4,7 +4,7 @@ import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { currentWindow } from "../../../data/time-range"
 import { readSupportedTimeZones } from "../../../platform/time-zone"
-import { readIsAdmin } from "../shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../shared/uptime-commands"
 import { Message } from "./message"
 
@@ -38,7 +38,7 @@ export const FetchFormSession = Command.define("FetchUptimeFormSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
 	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
 })
 
 /** The test endpoint with the draft's config; validation failures come back as the failure. */

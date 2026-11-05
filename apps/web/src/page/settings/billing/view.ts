@@ -10,7 +10,7 @@ import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
 import { adminOnlyNotice } from "../kit/members"
 import { settingsSection, settingsSections } from "../kit/section"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { accountOf, spendModelOf, USAGE_HEADING_ID } from "./update"
 import { accountDialogs, billedOrgsSection, linkSection, memberSection } from "./view-account"
 import { cyclePanel, cyclePanelSkeleton } from "./view-cycle"
@@ -32,7 +32,7 @@ export type ViewInputs = Readonly<{
 /** Billing, spend-first: this cycle, its usage and caps, the plan, invoices and details. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const notice = adminOnlyNotice(h, {
-		isKnownMember: inputs.isKnownMember && !model.isAdmin,
+		isKnownMember: inputs.isKnownMember && !canManage(model),
 		subject: "billing",
 		adminName: inputs.adminName,
 	})
@@ -85,7 +85,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				title: "This cycle",
 				description: ["Estimated spend for the current billing period."],
 				framed: false,
-				...(model.isAdmin && {
+				...(canManage(model) && {
 					actions: button(
 						h,
 						{
@@ -135,7 +135,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			spend: isLoading ? null : spend,
 			customer,
 			isLegacy,
-			canManage: model.isAdmin,
+			canManage: canManage(model),
 		}),
 		...(account !== null && account.role === "billing_org" && account.members.length > 0
 			? [billedOrgsSection(h, model, account, inputs.timeZone)]
