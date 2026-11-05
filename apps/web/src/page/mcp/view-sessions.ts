@@ -110,7 +110,7 @@ const sessionRow = <M>(h: HtmlBuilder<M>, row: McpSessionItem, options: Sessions
 					[
 						h.span(
 							[h.Class("truncate text-foreground @min-[950px]/panel:hidden")],
-							[row.userName ?? row.user ?? "anonymous"],
+							[sessionUserLabel(row.user, row.userName)],
 						),
 						h.span([h.Class("shrink-0 text-2xs text-foreground-subtle")], ["user session"]),
 					],
