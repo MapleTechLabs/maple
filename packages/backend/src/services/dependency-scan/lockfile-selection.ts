@@ -1,7 +1,7 @@
 import type { DependencyScanLockfile } from "@maple/domain/dependency-scan"
 import { isIgnoredLockfilePath, type LockfileKind, lockfileKindOf } from "@maple/lockfiles"
 import type { VcsTreeFile } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // Which files of a repository tree a scan reads. Pure, so the rules are testable without GitHub.
 
@@ -20,8 +20,10 @@ export interface SelectedLockfile {
 }
 
 export const directoryOf = (path: string): string => {
-	const slash = path.lastIndexOf("/")
-	return slash === -1 ? "" : Str.slice(0, slash + 1)(path)
+	return Option.match(Str.lastIndexOf("/")(path), {
+		onNone: () => "",
+		onSome: (slash) => Str.slice(0, slash + 1)(path),
+	})
 }
 
 const depth = (path: string): number => Str.split("/")(path).length

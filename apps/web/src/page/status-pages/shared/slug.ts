@@ -22,7 +22,7 @@ export const slugFromName = (name: string): string =>
 				Str.replace(
 					/[^a-z0-9]+/gu,
 					"-",
-				)(Str.replace(/\p{M}+/gu, "")(Str.toLowerCase(name).normalize("NFKD"))),
+				)(Str.replace(/\p{M}+/gu, "")(Str.normalize("NFKD")(Str.toLowerCase(name)))),
 			),
 		),
 	)

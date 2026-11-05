@@ -1,4 +1,4 @@
-import { Effect, Redacted, Schema } from "effect"
+import { Effect, Record as Rec, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	ChatInstallFailed,
@@ -162,7 +162,7 @@ const decodeSettings = (
 ): Effect.Effect<ChatWorkspaceSettings, ChatSettingsRejected> =>
 	// Checked explicitly rather than through an empty schema: a struct with no keys has nothing to
 	// call excess, so that decode accepts everything.
-	Object.keys(input).length === 0
+	Rec.keys<string, string>(input).length === 0
 		? Effect.succeed({})
 		: Effect.fail(
 				new ChatSettingsRejected({

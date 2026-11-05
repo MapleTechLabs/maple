@@ -286,12 +286,15 @@ export function buildCaptureOffFixture(): readonly AiSessionSpan[] {
 	// Keys are REMOVED, not set to `undefined`: an emitter that never captured
 	// content has no such attribute, and a present-but-undefined key is a shape
 	// the wire cannot produce — the fixture has to be the real absence.
-	return Arr.map(buildAgentSessionFixture(), (span) => ({
-		...span,
-		genAi: Rec.fromEntries(
-			Arr.filter(Object.entries(span.genAi), ([key]) => !CAPTURED_CONTENT_KEYS.has(key)),
-		),
-	}))
+	return Arr.map(buildAgentSessionFixture(), (span) => {
+		const genAi: Readonly<Record<string, unknown>> = span.genAi
+		return {
+			...span,
+			genAi: Rec.fromEntries(
+				Arr.filter(Rec.toEntries(genAi), ([key]) => !CAPTURED_CONTENT_KEYS.has(key)),
+			),
+		}
+	})
 }
 
 /**

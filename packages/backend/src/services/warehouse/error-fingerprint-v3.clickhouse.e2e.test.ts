@@ -194,7 +194,10 @@ const decodeHashRow = Schema.decodeUnknownSync(Schema.fromJsonString(HashRow))
 
 const readRows = async (sql: string): Promise<Map<string, HashRow>> => {
 	const body = await clickhouseExec(`${sql} FORMAT JSONEachRow`, database)
-	const rows = Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0).map(decodeHashRow)
+	const rows = Arr.map(
+		Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0),
+		(line) => decodeHashRow(line),
+	)
 	return new Map(Arr.map(rows, (row) => [row.SpanId, row]))
 }
 

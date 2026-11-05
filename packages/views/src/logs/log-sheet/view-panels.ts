@@ -5,7 +5,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { formatCompactTimeInTimezone } from "@maple/web-data/lib/timezone-format"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ROW_LINE_CHARS } from "@maple/views/lib/display-text"
@@ -120,12 +120,13 @@ const rowSkeleton = (h: H, rows: number, widths: readonly [string, string]) =>
 /** `LogTime`: `HH:MM:SS` at full strength, the milliseconds a step back. */
 const logTime = (h: H, timestamp: string, timeZone: string): ReadonlyArray<Html | string> => {
 	const formatted = formatCompactTimeInTimezone(timestamp, { timeZone })
-	const dot = formatted.lastIndexOf(".")
-	if (dot === -1) return [formatted]
-	return [
-		Str.slice(0, dot)(formatted),
-		h.span([h.Class("text-foreground-faint")], [Str.slice(dot)(formatted)]),
-	]
+	return Option.match(Str.lastIndexOf(".")(formatted), {
+		onNone: () => [formatted],
+		onSome: (dot) => [
+			Str.slice(0, dot)(formatted),
+			h.span([h.Class("text-foreground-faint")], [Str.slice(dot)(formatted)]),
+		],
+	})
 }
 
 const contextList = (
@@ -172,7 +173,7 @@ const contextList = (
 							),
 						),
 					],
-					[Str.slice(0, ROW_LINE_CHARS)(row.body.split("\n", 1)[0] ?? "")],
+					[Str.slice(0, ROW_LINE_CHARS)(firstLine(row.body))],
 				),
 			]
 			return h.li(
@@ -264,8 +265,14 @@ const timelineOffset = (ms: number): string => (ms < 0 ? `−${formatDuration(-m
 const isCurrentLog = (log: LogRecord, current: LogRecord): boolean =>
 	log.timestamp === current.timestamp && log.spanId === current.spanId && log.body === current.body
 
+/** The text before the first newline, without splitting the rest of a long body. */
+const firstLine = (text: string): string =>
+	Option.match(Str.indexOf("\n")(text), { onNone: () => text, onSome: (end) => Str.slice(0, end)(text) })
+
 const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArray<LogRecord>): Html => {
-	const logs = data.toSorted((a, b) => Str.localeCompare(b.exactTimestamp)(a.exactTimestamp))
+	const logs = Arr.sort(data, (a: LogRecord, b: LogRecord) =>
+		Str.localeCompare(b.exactTimestamp)(a.exactTimestamp),
+	)
 	if (logs.length <= 1) return emptyMessage(h, {}, ["No other logs in this trace"])
 	const spans = AsyncData.getData(model.traceSpans.data)
 	const spanStart =

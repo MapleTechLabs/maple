@@ -39,8 +39,12 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 	const points = spec.points
 	const at = (point: Point) => new Date(point.dayMs)
 	const keys = Arr.map(spec.bands, (band) => band.key)
-	const colorOf = (key: string) => spec.bands.find((band) => band.key === key)?.color ?? spec.chrome.border
-	const todayPoint = points.findLast((point) => !point.future)
+	// Reversed so the first band with a key wins, as a scan would; built once, read per cell.
+	const bandColors = new Map(
+		Arr.map(Arr.reverse(spec.bands), (band): [string, string] => [band.key, band.color]),
+	)
+	const colorOf = (key: string) => bandColors.get(key) ?? spec.chrome.border
+	const todayPoint = Option.getOrUndefined(Arr.findLast(points, (point) => !point.future))
 	const lastPoint = points[points.length - 1]
 	const hasFuture = lastPoint !== undefined && lastPoint.future
 	const axis = makeBucketAxis(

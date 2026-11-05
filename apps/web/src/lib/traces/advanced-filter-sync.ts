@@ -338,6 +338,7 @@ export function parseWhereClause(whereClause: string | undefined): {
 				memberWarnings,
 			)
 			const setsOtherField = Arr.some(
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 				Object.entries(alone),
 				([field, value]) =>
 					field !== "attributeFilters" &&
@@ -558,6 +559,7 @@ export function applyWhereClause(search: TracesSearchLike, whereClause: string):
 
 	const carried: TracesSearchLike = { ...search }
 	if (search.whereClause) {
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 		for (const key of Object.keys(clauseFields(parseWhereClause(search.whereClause).filters))) {
 			delete carried[key as keyof ClauseFields]
 		}

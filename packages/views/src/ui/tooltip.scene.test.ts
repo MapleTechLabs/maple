@@ -3,6 +3,7 @@ import { inertHtml as ih } from "foldkit/html"
 import { Command, expect, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { expect as assert, describe, test } from "vitest"
 import { init, Message, MountTooltip, update, view, WaitOpenDelay } from "./tooltip"
+import { Array as Arr } from "effect"
 
 /** Tooltip: opens after the open delay, closes at once when the pointer leaves. */
 const ID = "refreshed"
@@ -46,7 +47,10 @@ describe("tooltip scene", () => {
 		const closed = update(init(ID, { isOpen: true }), Message.LeftTrigger())
 		assert({
 			isOpen: closed.model.isOpen,
-			delays: closed.commands?.filter((c) => c.name === WaitOpenDelay.name),
+			delays:
+				closed.commands === undefined
+					? undefined
+					: Arr.filter(closed.commands, (c) => c.name === WaitOpenDelay.name),
 		}).toEqual({
 			isOpen: false,
 			delays: [],

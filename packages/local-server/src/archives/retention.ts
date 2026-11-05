@@ -21,7 +21,7 @@ import {
 	validateRangeDate,
 	validateSealedRangeDate,
 } from "./paths"
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { decodeJsonSync, encodeJson } from "../json"
 
 const decodeJsonRecord = Schema.decodeUnknownSync(
@@ -190,7 +190,9 @@ export class RetiredDayAuthority {
 	}
 
 	record(rangeDate: string): RetiredDayRecord | undefined {
-		return this.#ledger.retiredDays.find((day) => day.rangeDate === rangeDate)
+		return Option.getOrUndefined(
+			Arr.findFirst(this.#ledger.retiredDays, (day) => day.rangeDate === rangeDate),
+		)
 	}
 
 	assertBatchAllowed(datasource: string, ndjson: string): void {
@@ -248,8 +250,11 @@ export class RetiredDayAuthority {
 }
 
 const parseCount = (text: string, label: string): number => {
-	const line = Str.split("\n")(text).find((candidate) => Str.trim(candidate).length > 0)
-	const row: { readonly [key: string]: unknown } = line ? decodeJsonRecord(line) : {}
+	const line = Arr.findFirst(Str.split("\n")(text), (candidate) => Str.trim(candidate).length > 0)
+	const row: { readonly [key: string]: unknown } = Option.match(line, {
+		onNone: () => ({}),
+		onSome: (found) => decodeJsonRecord(found),
+	})
 	const count = Number(row.count ?? row["count()"] ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid ${label} count`)
 	return count
@@ -423,9 +428,12 @@ export const retireLiveDayInServer = async (options: {
 	// commit. No destructive step can resume from stale verification evidence.
 	for (const item of evidence) {
 		await verifyActiveGeneration(options.archiveDir, item.signal, rangeDate)
-		const current = completeArchiveDay(options.archiveDir, rangeDate).find(
-			(candidate) => candidate.signal.name === item.signal,
-		)!
+		const current = Option.getOrThrow(
+			Arr.findFirst(
+				completeArchiveDay(options.archiveDir, rangeDate),
+				(candidate) => candidate.signal.name === item.signal,
+			),
+		)
 		if (current.summary.generationId !== item.generationId)
 			throw new Error(
 				`archive generation changed before retirement commit: ${item.signal}/${rangeDate}`,
@@ -540,8 +548,11 @@ export const expireArchiveDay = async (options: {
 	await withMaintenanceLock(options.dataDir, randomUUID(), async () => {
 		const { reconcileArchiveGeneration } = await import("./generation")
 		await reconcileArchiveGeneration(options.dataDir, options.archiveDir, options.scratchRoot)
-		const retired = readRetiredDayLedger(options.dataDir).retiredDays.find(
-			(day) => day.rangeDate === rangeDate,
+		const retired = Option.getOrUndefined(
+			Arr.findFirst(
+				readRetiredDayLedger(options.dataDir).retiredDays,
+				(day) => day.rangeDate === rangeDate,
+			),
 		)
 		if (!retired) throw new Error(`refusing archive expiration: UTC day ${rangeDate} is not retired`)
 		const path = expirationRecord(options.archiveDir)

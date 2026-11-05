@@ -5,7 +5,7 @@ import {
 	isDatasourceDefinition,
 } from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
-import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Order, Record as Rec, String as Str } from "effect"
 
 // Live introspection of the `defineDatasource` exports in
 // packages/domain/src/tinybird/datasources.ts. This neutral catalog powers
@@ -166,7 +166,7 @@ export interface TableSummary {
 const TIME_COLUMN_PREFERENCE = ["Timestamp", "Hour", "Minute", "TimeUnix", "StartTime"] as const
 
 const timeColumnOf = (columnNames: ReadonlyArray<string>): string | undefined =>
-	TIME_COLUMN_PREFERENCE.find((name) => columnNames.includes(name))
+	Option.getOrUndefined(Arr.findFirst(TIME_COLUMN_PREFERENCE, (name) => columnNames.includes(name)))
 
 /** How to read each rollup engine; a plain read of one double counts or under-counts. */
 const ENGINE_NOTES: ReadonlyMap<string, string> = new Map([
@@ -204,11 +204,12 @@ const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
 /** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */
 export function suggestWarehouseTables(name: string): ReadonlyArray<string> {
 	const known = new Set(Arr.map(listWarehouseTables(), (t) => t.name))
-	const bare = Str.split(".")(Str.replace(/[`"]/g, "")(name)).at(-1)?.toLowerCase() ?? ""
+	const bare = Str.toLowerCase(Arr.lastNonEmpty(Str.split(".")(Str.replace(/[`"]/g, "")(name))))
 	for (const candidate of [bare, Str.replace(/^otel_/, "")(bare)]) {
 		if (known.has(candidate)) return [candidate]
-		const aliased = TABLE_NAME_ALIASES.get(candidate)?.filter((t) => known.has(t))
-		if (aliased !== undefined && aliased.length > 0) return aliased
+		const aliases = TABLE_NAME_ALIASES.get(candidate)
+		const aliased = aliases === undefined ? [] : Arr.filter(aliases, (t) => known.has(t))
+		if (aliased.length > 0) return aliased
 	}
 	return []
 }
@@ -271,8 +272,9 @@ export function listOrgScopedDatasourceNames(): ReadonlyArray<string> {
 }
 
 export function describeWarehouseTable(name: string): TableInfo | null {
-	const ds = collectDatasources().find((d) => d._name === name)
-	if (!ds) return null
+	const found = Arr.findFirst(collectDatasources(), (d) => d._name === name)
+	if (Option.isNone(found)) return null
+	const ds = found.value
 
 	const columns: ColumnInfo[] = Arr.map(Rec.toEntries(ds._schema), ([colName, colDef]) => {
 		const validator = getColumnType(colDef)

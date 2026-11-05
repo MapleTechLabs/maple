@@ -436,7 +436,7 @@ describe("confidencePrReview", () => {
 		// Under a danger cap there is no floor to name, however far the points fall.
 		const sunk = confidencePrReview(reportWith([finding("critical"), ...many], { tests: "missing" }))
 		assert.equal(sunk?.confidence, 1)
-		assert.notInclude(sunk?.factors.join(" ") ?? "", "floor")
+		assert.notInclude(sunk === undefined ? "" : Arr.join(sunk.factors, " "), "floor")
 	})
 
 	it("caps on a critical, a security warning or an early end, and says why", () => {

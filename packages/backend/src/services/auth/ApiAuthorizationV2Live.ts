@@ -47,7 +47,7 @@ const getBearerToken = (headers: Record<string, string | undefined>): string | u
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
 const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
 	const [scheme, token] = Str.split(" ")(headers["authorization"] ?? "")
-	return scheme?.toLowerCase() === "dpop" && token !== undefined && token.length > 0 ? token : undefined
+	return Str.toLowerCase(scheme) === "dpop" && token !== undefined && token.length > 0 ? token : undefined
 }
 
 /** RFC 9449 section 7.1: a DPoP-scheme 401 names the scheme and what went wrong. */

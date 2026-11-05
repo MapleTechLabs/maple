@@ -104,7 +104,9 @@ const escalationRow = (h: H, escalation: IssueEscalationAttemptDocument, clock: 
 	)
 	const body =
 		destinations ||
-		escalation.skipReason?.replaceAll("_", " ") ||
+		(escalation.skipReason === null || escalation.skipReason === undefined
+			? ""
+			: Str.replaceAll("_", " ")(escalation.skipReason)) ||
 		countLabel(escalation.attempts, "delivery attempt")
 	return ledgerRow(
 		h,

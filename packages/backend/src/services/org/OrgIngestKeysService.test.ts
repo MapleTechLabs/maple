@@ -354,7 +354,7 @@ describe("OrgIngestKeysService", () => {
 	it.effect("getOrCreateMany resolves every org with one SELECT and creates only missing rows", () => {
 		const testDb = createTestDb(trackedDbs)
 		const user = asUserId("user_a")
-		const seededOrgs = ["org_a", "org_b", "org_c"].map(asOrgId)
+		const seededOrgs = Arr.map(["org_a", "org_b", "org_c"], asOrgId)
 		const newOrg = asOrgId("org_d")
 		const orgs = [...seededOrgs, newOrg]
 		const coldBatch = makeStatementRecorder()
@@ -384,7 +384,7 @@ describe("OrgIngestKeysService", () => {
 				Arr.map(seededOrgs, (orgId) => keys.get(orgId)?.publicKey),
 				Arr.map(seeded, (response) => response.publicKey),
 			)
-			assert.isTrue(keys.get(newOrg)?.publicKey.startsWith("maple_pk_"))
+			assert.isTrue(Str.startsWith("maple_pk_")(keys.get(newOrg)?.publicKey ?? ""))
 		})
 	})
 })

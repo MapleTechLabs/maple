@@ -57,17 +57,18 @@ const opened = (
 	variables: ReadonlyArray<unknown>,
 	search: Readonly<Record<`var-${string}`, string>> = {},
 ): Step =>
-	[
-		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
-		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(board(variables)) }),
-	].reduce<Step>(
-		(step, message) => {
-			const next = update(step.model, message, context)
-			return { model: next.model, commands: [...step.commands, ...(next.commands ?? [])] }
-		},
+	Arr.reduce<Message, Step>(
+		[
+			Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(board(variables)) }),
+		],
 		{
 			model: init({ dashboardId: "dash_vars", widgetId: "throughput", search }, context).model,
 			commands: [],
+		},
+		(step, message) => {
+			const next = update(step.model, message, context)
+			return { model: next.model, commands: [...step.commands, ...(next.commands ?? [])] }
 		},
 	)
 

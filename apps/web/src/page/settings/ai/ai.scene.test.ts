@@ -1,5 +1,5 @@
 import { AiTriageSettingsDocument, AttachResult, OpenRouterKeyDocument } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message } from "./model"
@@ -24,8 +24,10 @@ const loaded = () =>
 
 describe("ai tab", () => {
 	test("entry reads the key and, when available, the triage settings", () => {
-		expect(init(true).commands?.map((command) => command.name)).toContain("FetchAiTriageSettings")
-		expect(init(false).commands?.map((command) => command.name)).toEqual(["FetchOpenRouterKey"])
+		expect(Arr.map(init(true).commands ?? [], (command) => command.name)).toContain(
+			"FetchAiTriageSettings",
+		)
+		expect(Arr.map(init(false).commands ?? [], (command) => command.name)).toEqual(["FetchOpenRouterKey"])
 	})
 
 	test("a changed ceiling is dirty, saves only that ceiling and stays shown until the refetch moves", () => {
@@ -68,7 +70,9 @@ describe("ai tab", () => {
 			expectView(role("button", { name: "Add to plan" })).toExist(),
 		)
 		const attaching = update(update(picked, Message.ClickedAddOn()).model, Message.ClickedConfirmAddOn())
-		expect(attaching.commands?.map((command) => command.name)).toEqual(["AttachOpenRouterAddOn"])
+		expect(Arr.map(attaching.commands ?? [], (command) => command.name)).toEqual([
+			"AttachOpenRouterAddOn",
+		])
 		expect(update(attaching.model, Message.ClickedConfirmAddOn()).commands ?? []).toEqual([])
 		const checkout = update(
 			attaching.model,
@@ -76,12 +80,14 @@ describe("ai tab", () => {
 				result: Result.succeed(new AttachResult({ paymentUrl: "https://checkout.stripe.com/x" })),
 			}),
 		)
-		expect(checkout.commands?.map((command) => command.name)).toContain("OpenOpenRouterAddOnCheckout")
+		expect(Arr.map(checkout.commands ?? [], (command) => command.name)).toContain(
+			"OpenOpenRouterAddOnCheckout",
+		)
 		const attached = update(
 			attaching.model,
 			Message.CompletedAttachAddOn({ result: Result.succeed(new AttachResult({})) }),
 		)
-		expect(attached.commands?.map((command) => command.name)).toContain("FetchOpenRouterKey")
+		expect(Arr.map(attached.commands ?? [], (command) => command.name)).toContain("FetchOpenRouterKey")
 		expect(attached.outMessage).toMatchObject({
 			_tag: "RequestedCustomerRefresh",
 			toast: { type: "success", title: "Add-on added" },

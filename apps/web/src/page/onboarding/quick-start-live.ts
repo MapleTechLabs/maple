@@ -27,13 +27,13 @@ type ServiceRow = Readonly<{ serviceName: string; p95LatencyMs: number; errorRat
 
 /** The slowest service by p95 and the one failing most often; a service with no errors is not "most errors". */
 export const findingsOf = (rows: ReadonlyArray<ServiceRow>): LiveFindings => {
-	const slowest = rows.reduce<ServiceRow | null>(
-		(best, row) => (best === null || row.p95LatencyMs > best.p95LatencyMs ? row : best),
-		null,
+	const slowest = Arr.reduce<ServiceRow, ServiceRow | null>(rows, null, (best, row) =>
+		best === null || row.p95LatencyMs > best.p95LatencyMs ? row : best,
 	)
-	const failing = Arr.filter(rows, (row) => row.errorRate > 0).reduce<ServiceRow | null>(
-		(worst, row) => (worst === null || row.errorRate > worst.errorRate ? row : worst),
+	const failing = Arr.reduce<ServiceRow, ServiceRow | null>(
+		Arr.filter(rows, (row) => row.errorRate > 0),
 		null,
+		(worst, row) => (worst === null || row.errorRate > worst.errorRate ? row : worst),
 	)
 	return {
 		serviceCount: new Set(Arr.map(rows, (row) => row.serviceName)).size,

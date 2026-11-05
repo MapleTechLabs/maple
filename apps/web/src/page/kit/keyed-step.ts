@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -37,4 +37,7 @@ export const chain = <M, Msg>(
 export const chainAll = <M, Msg>(
 	model: M,
 	steps: ReadonlyArray<(model: M) => PageReturn<M, Msg>>,
-): PageReturn<M, Msg> => steps.reduce<PageReturn<M, Msg>>((acc, step) => chain(acc, step), { model })
+): PageReturn<M, Msg> =>
+	Arr.reduce<(model: M) => PageReturn<M, Msg>, PageReturn<M, Msg>>(steps, { model }, (acc, step) =>
+		chain(acc, step),
+	)

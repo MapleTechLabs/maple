@@ -288,7 +288,7 @@ describe("AlertsService uptime rules", () => {
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 			assert.deepStrictEqual(
-				(yield* pageIncidents()).map((row) => [row.slug, row.status, row.updates]),
+				Arr.map(yield* pageIncidents(), (row) => [row.slug, row.status, row.updates]),
 				[
 					["draft-page", "resolved", 2],
 					["published-page", "resolved", 2],

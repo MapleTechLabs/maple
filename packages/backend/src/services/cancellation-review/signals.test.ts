@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
 import { deriveSignals, ruleReason } from "./signals"
 import { CancellationSnapshot } from "@maple/domain/http"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const fixture = (id: string) => {
-	const found = CANCELLATION_FIXTURES.find((candidate) => candidate.id === id)
+	const found = Option.getOrUndefined(
+		Arr.findFirst(CANCELLATION_FIXTURES, (candidate) => candidate.id === id),
+	)
 	if (found === undefined) throw new Error(`no cancellation fixture named ${id}`)
 	return found
 }

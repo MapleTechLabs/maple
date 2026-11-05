@@ -1,4 +1,4 @@
-import { Effect, Result, Array as Arr, String as Str } from "effect"
+import { Effect, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import { deepStrictEqual, ok, strictEqual, throws } from "node:assert"
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -311,7 +311,12 @@ describe("LocalEventingRuntime", () => {
 		const [signalB] = run(normalizeOtlpLogs(derivedB, "2026-08-07T20:00:00Z"))
 		strictEqual(signalA?.identityQuality, "derived")
 		strictEqual(signalB?.identityQuality, "derived")
-		strictEqual(signalA?.occurrenceId?.startsWith("derived:sha256:"), true)
+		strictEqual(
+			signalA?.occurrenceId !== undefined &&
+				signalA.occurrenceId !== null &&
+				Str.startsWith("derived:sha256:")(signalA.occurrenceId),
+			true,
+		)
 		strictEqual(signalA?.occurrenceId === signalB?.occurrenceId, false)
 	})
 
@@ -372,16 +377,17 @@ describe("LocalEventingRuntime", () => {
 		)
 		const [signal] = run(normalizeOtlpLogs(request, "2026-08-07T20:00:00Z"))
 		const record = (signal!.data as { record: { attributes: Record<string, JsonValue> } }).record
-		ok(Object.prototype.hasOwnProperty.call(record.attributes, "__proto__"))
+		ok(Rec.has(record.attributes, "__proto__"))
 		// Attribute maps are null-prototype on purpose, so a `__proto__` key stays data.
 		deepStrictEqual(
 			record.attributes["__proto__"],
 			Object.assign(Object.create(null), { nested: "top-level" }),
 		)
 		const safe = record.attributes.safe as Record<string, JsonValue>
-		ok(Object.prototype.hasOwnProperty.call(safe, "__proto__"))
+		ok(Rec.has(safe, "__proto__"))
 		strictEqual(safe["__proto__"], "nested")
-		strictEqual(Object.prototype.hasOwnProperty.call({}, "nested"), false)
+		const empty: Record<string, JsonValue> = {}
+		strictEqual(Rec.has(empty, "nested"), false)
 	})
 
 	it("catalogs only the scalar body field that the OTLP adapter can populate", async () =>

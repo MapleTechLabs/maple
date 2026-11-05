@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Record as Rec, Schema } from "effect"
 import {
 	ChatInstallFailed,
 	ChatSettingsRejected,
@@ -119,7 +119,7 @@ const decodeSettings = (
 	// Checked explicitly rather than through an empty schema with `onExcessProperty: "error"` — a
 	// struct with no declared keys has nothing to call excess, so that decode accepts everything
 	// and a key this connector does not define would land in the settings column unread.
-	Object.keys(input).length === 0
+	Rec.keys<string, string>(input).length === 0
 		? Effect.succeed({})
 		: Effect.fail(
 				new ChatSettingsRejected({

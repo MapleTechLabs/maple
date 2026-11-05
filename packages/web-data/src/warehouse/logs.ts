@@ -364,7 +364,7 @@ const getLogsFacetValuesEffect = Effect.fn("QueryEngine.getLogsFacetValues")(fun
 
 	return {
 		data: Arr.map(
-			extractFacets(response).filter((row) => row.facetType === input.facet && row.name),
+			Arr.filter(extractFacets(response), (row) => row.facetType === input.facet && row.name !== ""),
 			(row): FacetItem => ({ name: row.name, count: Number(row.count) }),
 		),
 	}

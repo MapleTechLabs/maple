@@ -1,5 +1,5 @@
 import { CatalogPlan, CatalogPlansResponse } from "@maple/domain/http"
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr, Record as Rec, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as PricingCards from "./pricing-cards"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
@@ -18,7 +18,7 @@ const update = (model: Model, message: Message) => updateWith(model, message, tr
 const loaded = (): Model => ({ ...init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE })
 
 const names = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
-	(result.commands ?? []).map((command) => command.name)
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 const stateOf = (model: Model) => {
 	if (model.state === null) throw new Error("not loaded")
@@ -59,7 +59,7 @@ describe("quick start", () => {
 		const teamed = update(connected, Message.ClickedContinue({ step: "team" })).model
 		expect(resolveQuickStartStep(stateOf(teamed), true)).toBe("live")
 		const done = update(teamed, Message.ClickedContinue({ step: "live" }))
-		expect(done.commands?.map((command) => [command.name, command.args]).at(-1)).toEqual([
+		expect(Arr.map(done.commands ?? [], (command) => [command.name, command.args]).at(-1)).toEqual([
 			"FinishQuickStart",
 			{ url: "/traces" },
 		])
@@ -101,7 +101,7 @@ describe("quick start", () => {
 	test("a save that loads before the plan is known waits for it, then is sent on or opens its step", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,
-			completedSteps: Object.fromEntries(STEP_IDS.map((id) => [id, true])),
+			completedSteps: Rec.fromEntries(Arr.map(STEP_IDS, (id) => [id, true] as const)),
 		}
 		const loading = init("maple-onboarding-v6-org_1").model
 		const early = updateWith(loading, Message.LoadedQuickStartState({ state: finished }), null)
@@ -160,8 +160,8 @@ describe("quick start live step", () => {
 		Message.GotConnectMessage({
 			message: ConnectMessage.LoadedPresence({
 				result: Result.succeed(
-					Object.fromEntries(
-						present.map((signal) => [signal, { status: "present", lastSeenMs: 1 }]),
+					Rec.fromEntries(
+						Arr.map(present, (signal) => [signal, { status: "present", lastSeenMs: 1 }] as const),
 					),
 				),
 			}),
@@ -214,11 +214,15 @@ describe("quick start connect step", () => {
 				"LoadOnboardingConnectedProviders",
 			]),
 		)
-		const providers = (opened.commands ?? []).find(
+		const providers = Arr.findFirst(
+			opened.commands ?? [],
 			(command) => command.name === "LoadOnboardingConnectedProviders",
 		)
 		// Docker has no integration status; its sources say whether it is connected.
-		expect(providers?.args).toEqual({ orgId: "org_1", platforms: ["cloudflare", "docker"] })
+		expect(Option.getOrUndefined(providers)?.args).toEqual({
+			orgId: "org_1",
+			platforms: ["cloudflare", "docker"],
+		})
 		expect(opened.model.connect.isActive).toBe(true)
 	})
 
@@ -259,7 +263,7 @@ describe("quick start team step", () => {
 			TeamMessage.ChangedTeammateEmail({ value: " grace@orbit.test " }),
 		).team
 		const sent = updateTeam(typed, TeamMessage.SubmittedInvite())
-		expect(sent.commands.map((command) => [command.name, command.args])).toEqual([
+		expect(Arr.map(sent.commands, (command) => [command.name, command.args])).toEqual([
 			["RunOnboardingTeamOperation", { operation: "invite", value: "grace@orbit.test" }],
 		])
 		expect(updateTeam(sent.team, TeamMessage.SubmittedRename()).commands).toEqual([])
@@ -326,7 +330,7 @@ describe("pricing cards", () => {
 	test("back from Stripe, the cards wait on the sync: polling the customer, then giving up", () => {
 		const returning = PricingCards.initReturning(true)
 		expect(returning.model.checkoutReturn).toBe("Confirming")
-		expect(returning.commands.map((command) => command.name)).toEqual(
+		expect(Arr.map(returning.commands, (command) => command.name)).toEqual(
 			expect.arrayContaining(["WaitCheckoutPoll", "WaitCheckoutTimeout"]),
 		)
 		const polled = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutPoll())

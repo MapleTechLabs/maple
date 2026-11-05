@@ -1,6 +1,6 @@
 import { stripChatContext } from "@maple/domain/chat-preamble"
 import { parseDiagnosisMarker } from "./diagnosis-marker"
-import { Array, String as Str } from "effect"
+import { String as Str, Array as Arr, Option } from "effect"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 
 // Messages to rows, merging runs of tool-only turns.
@@ -26,7 +26,7 @@ export const rendersOwnCard = (part: ToolPart): boolean =>
 export const isToolOnlyMessage = (message: UIMessage): boolean =>
 	message.role === "assistant" &&
 	message.parts.length > 0 &&
-	Array.every(message.parts, (part) => isToolPart(part) && !rendersOwnCard(part))
+	Arr.every(message.parts, (part) => isToolPart(part) && !rendersOwnCard(part))
 
 export type TranscriptRow =
 	| { readonly kind: "message"; readonly id: string; readonly message: UIMessage }
@@ -36,7 +36,7 @@ export type TranscriptRow =
 /** Each maximal run of two or more adjacent tool-only assistant turns becomes one row. */
 export const buildTranscriptRows = (messages: ReadonlyArray<UIMessage>): ReadonlyArray<TranscriptRow> => {
 	const seed: ReadonlyArray<ReadonlyArray<UIMessage>> = []
-	const runs = Array.reduce(messages, seed, (acc, message) => {
+	const runs = Arr.reduce(messages, seed, (acc, message) => {
 		const last = acc[acc.length - 1]
 		const lastMessage = last?.[last.length - 1]
 		return last !== undefined &&
@@ -46,7 +46,7 @@ export const buildTranscriptRows = (messages: ReadonlyArray<UIMessage>): Readonl
 			? [...acc.slice(0, -1), [...last, message]]
 			: [...acc, [message]]
 	})
-	return Array.flatMap(runs, (run): ReadonlyArray<TranscriptRow> => {
+	return Arr.flatMap(runs, (run): ReadonlyArray<TranscriptRow> => {
 		const first = run[0]
 		if (first === undefined) return []
 		return run.length === 1
@@ -57,34 +57,39 @@ export const buildTranscriptRows = (messages: ReadonlyArray<UIMessage>): Readonl
 
 /** Every tool part in a merged run, in order. */
 export const toolPartsOf = (messages: ReadonlyArray<UIMessage>): ReadonlyArray<ToolPart> =>
-	Array.flatMap(messages, (message) => Array.filter(message.parts, isToolPart))
+	Arr.flatMap(messages, (message) => Arr.filter(message.parts, isToolPart))
 
 /** A user turn that is nothing but a context preamble: the server seeded the conversation. */
 export const isMachineTurn = (message: UIMessage): boolean =>
 	message.role === "user" &&
 	message.parts.length > 0 &&
-	Array.every(message.parts, (part) => part._tag === "text" && stripChatContext(part.text).length === 0)
+	Arr.every(message.parts, (part) => part._tag === "text" && stripChatContext(part.text).length === 0)
 
 /** The visible text of a message, tool calls left out (`messageText`). */
 export const messageText = (message: UIMessage): string =>
 	Str.trim(
-		Array.join(
-			Array.flatMap(message.parts, (part) => (part._tag === "text" ? [part.text] : [])),
+		Arr.join(
+			Arr.flatMap(message.parts, (part) => (part._tag === "text" ? [part.text] : [])),
 			"\n\n",
 		),
 	)
 
 /** The id of the message carrying a diagnosis report, if the thread produced one. */
 export const findDiagnosisMessageId = (messages: ReadonlyArray<UIMessage>): string | undefined =>
-	messages.find((message) =>
-		Array.some(
-			message.parts,
-			(part) =>
-				isToolPart(part) &&
-				part.state === "output-available" &&
-				parseDiagnosisMarker(part.output) !== null,
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(messages, (message) =>
+				Arr.some(
+					message.parts,
+					(part) =>
+						isToolPart(part) &&
+						part.state === "output-available" &&
+						parseDiagnosisMarker(part.output) !== null,
+				),
+			),
+			(message) => message.id,
 		),
-	)?.id
+	)
 
 /**
  * Whether the turn needs its own "Thinking" row: only when nothing else in it is live (before the
@@ -95,7 +100,7 @@ export const showsThinkingRow = (message: UIMessage, isLoading: boolean, isLastM
 	const last = message.parts[message.parts.length - 1]
 	if (last === undefined) return true
 	if (last._tag === "text" && last.state === "streaming") return false
-	return !Array.some(
+	return !Arr.some(
 		message.parts,
 		(part) =>
 			(part._tag === "task" && part.status === "running") ||

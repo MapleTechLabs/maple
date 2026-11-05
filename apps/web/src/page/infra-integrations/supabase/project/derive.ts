@@ -1,7 +1,7 @@
 import type { SupabaseApiTrafficBucket, SupabaseCallerMix, SupabaseTopQuery } from "@maple/domain/http"
 import { formatPercent } from "@maple/ui/lib/format"
 import type { SupabaseProjectTimeseriesRow } from "../model"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Order } from "effect"
 
 // The pure halves of the project page's panels.
 
@@ -23,9 +23,10 @@ export const callerMixText = (mix: SupabaseCallerMix): string => {
 	if (total <= 0) return ""
 	return Arr.join(
 		Arr.map(
-			Arr.filter(MIX_LABELS, ([key]) => mix[key] > 0)
-				.toSorted((a, b) => mix[b[0]] - mix[a[0]])
-				.slice(0, 3),
+			Arr.sort(
+				Arr.filter(MIX_LABELS, ([key]) => mix[key] > 0),
+				Order.flip(Order.mapInput(Order.Number, ([key]: (typeof MIX_LABELS)[number]) => mix[key])),
+			).slice(0, 3),
 			([key, label]) => `${label} ${formatPercent(mix[key] / total)}`,
 		),
 		" · ",
@@ -78,9 +79,10 @@ export const healthStrip = (rows: ReadonlyArray<Row>) => {
 	const cpuSamples = Arr.flatMap(rows, (row) =>
 		row.cpu === null ? [] : [{ bucket: row.bucket, cpu: row.cpu }],
 	)
-	const peakCpu = cpuSamples.reduce<(typeof cpuSamples)[number] | null>(
-		(best, sample) => (best === null || sample.cpu > best.cpu ? sample : best),
+	const peakCpu = Arr.reduce<(typeof cpuSamples)[number], (typeof cpuSamples)[number] | null>(
+		cpuSamples,
 		null,
+		(best, sample) => (best === null || sample.cpu > best.cpu ? sample : best),
 	)
 	const cacheHits = Arr.flatMap(rows, (row) => (row.cacheHitRatio === null ? [] : [row.cacheHitRatio]))
 	const sizes = Arr.flatMap(rows, (row) => (row.dbSize > 0 ? [row.dbSize] : []))

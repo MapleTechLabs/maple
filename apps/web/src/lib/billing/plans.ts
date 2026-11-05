@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 export const TRIAL_DURATION_DAYS = 14
 
 const DEFAULT_PLAN = "starter"
@@ -64,8 +64,14 @@ export function planDisplayName(
 	planId: string,
 	catalog: ReadonlyArray<{ readonly id: string; readonly name: string }>,
 ): string {
-	const name = catalog.find((plan) => plan.id === planId)?.name
-	if (name !== undefined) return sentenceCasePlanName(name)
-	const spaced = Str.trim(Str.replace(/[_-]+/g, " ")(planId))
-	return Str.toUpperCase(spaced.charAt(0)) + Str.slice(1)(spaced)
+	return Option.match(
+		Arr.findFirst(catalog, (plan) => plan.id === planId),
+		{
+			onSome: (plan) => sentenceCasePlanName(plan.name),
+			onNone: () => {
+				const spaced = Str.trim(Str.replace(/[_-]+/g, " ")(planId))
+				return Str.toUpperCase(Str.slice(0, 1)(spaced)) + Str.slice(1)(spaced)
+			},
+		},
+	)
 }

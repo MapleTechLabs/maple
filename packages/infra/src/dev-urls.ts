@@ -32,7 +32,8 @@ export const DEV_APPS_ENV_KEY = "MAPLE_DEV_APPS"
 
 /** The apps this dev run serves: all of them unless `bun dev` named a subset. */
 export const selectedDevApps = (): ReadonlySet<DevApp> => {
-	const raw = process.env[DEV_APPS_ENV_KEY]?.trim()
+	const value = process.env[DEV_APPS_ENV_KEY]
+	const raw = value === undefined ? undefined : Str.trim(value)
 	if (!raw) return new Set(DEV_APPS)
 	const selected = Arr.filter(
 		Arr.map(Str.split(",")(raw), (name) => Str.trim(name)),

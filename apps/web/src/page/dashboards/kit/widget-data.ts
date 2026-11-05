@@ -30,6 +30,8 @@ import {
 	Array as Arr,
 	Record as Rec,
 	String as Str,
+	Option,
+	Ordering,
 } from "effect"
 import { requestKey } from "@maple/views/data/request-key"
 
@@ -303,10 +305,14 @@ const reduce = (rows: ReadonlyArray<Row>, reduceToValue: NonNullable<Transform["
 	const { field, aggregate = "first" } = reduceToValue
 	if (rows.length === 0) return 0
 	const hasField = Arr.some(rows, (row) => typeof row[field] === "number" || typeof row[field] === "string")
-	const firstNumeric = Rec.toEntries(rows[0] ?? {}).find(
-		([key, value]) => key !== "bucket" && typeof value === "number",
-	)?.[0]
-	const resolved = hasField ? field : (firstNumeric ?? null)
+	const firstNumeric = Option.map(
+		Arr.findFirst(
+			Rec.toEntries(rows[0] ?? {}),
+			([key, value]) => key !== "bucket" && typeof value === "number",
+		),
+		([key]) => key,
+	)
+	const resolved = hasField ? field : Option.getOrNull(firstNumeric)
 	if (resolved === null && aggregate !== "count") return 0
 	const values = Arr.map(rows, (row) => Number(row[resolved ?? ""] ?? 0))
 	switch (aggregate) {
@@ -362,11 +368,11 @@ export const toReadyData = (response: unknown, transform: Transform | undefined)
 		}))
 	const sortBy = transform.sortBy
 	if (sortBy !== undefined)
-		rows = rows.toSorted((a, b) => {
+		rows = Arr.sort(rows, (a: Row, b: Row) => {
 			const aValue = a[sortBy.field] ?? 0
 			const bValue = b[sortBy.field] ?? 0
 			const cmp = cellText(aValue) === cellText(bValue) ? 0 : aValue < bValue ? -1 : 1
-			return sortBy.direction === "desc" ? -cmp : cmp
+			return sortBy.direction === "desc" ? Ordering.reverse(cmp) : cmp
 		})
 	if (transform.limit !== undefined && transform.limit > 0) rows = rows.slice(0, transform.limit)
 	const flatten = transform.flattenSeries

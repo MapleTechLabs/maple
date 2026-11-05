@@ -39,7 +39,12 @@ export const popoverSpan = (model: Model): AiSessionSpan | undefined => {
 	const spanId = model.search.span
 	if (spanId === undefined || !OVERLAY_VIEWS.has(viewOf(model.search.view))) return undefined
 	if (!AsyncData.hasData(model.firstPage.data)) return undefined
-	return Arr.flatMap(sessionData(model).turns, (turn) => turn.spans).find((span) => span.spanId === spanId)
+	return Option.getOrUndefined(
+		Arr.findFirst(
+			Arr.flatMap(sessionData(model).turns, (turn) => turn.spans),
+			(span) => span.spanId === spanId,
+		),
+	)
 }
 
 export const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({

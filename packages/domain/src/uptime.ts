@@ -156,7 +156,9 @@ const asJsonObject = Schema.decodeUnknownOption(Schema.Record(Schema.String, Sch
  * missing, `Some(null)` for a JSON null.
  */
 export const readJsonPath = (root: unknown, path: string): Option.Option<unknown> =>
-	Array.from(Str.replace(/^\$\.?/u, "")(path).matchAll(PATH_TOKEN)).reduce<Option.Option<unknown>>(
+	Arr.reduce<RegExpMatchArray, Option.Option<unknown>>(
+		Arr.fromIterable(Str.matchAll(PATH_TOKEN)(Str.replace(/^\$\.?/u, "")(path))),
+		Option.some(root),
 		(current, match) =>
 			Option.flatMap(current, (value) => {
 				const key = match[1] ?? match[0]
@@ -173,7 +175,6 @@ export const readJsonPath = (root: unknown, path: string): Option.Option<unknown
 						),
 				)
 			}),
-		Option.some(root),
 	)
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -288,9 +289,15 @@ export const uptimeHttpRequest = (
 	config: Schema.Schema.Type<typeof UptimeHttpConfig>,
 	extraHeaders: Readonly<Record<string, string>> = {},
 ): UptimeCheckRequest => {
-	const contentType = Rec.toEntries(config.headers).find(
-		([name]) => Str.toLowerCase(name) === "content-type",
-	)?.[1]
+	const contentType = Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(
+				Rec.toEntries(config.headers),
+				([name]) => Str.toLowerCase(name) === "content-type",
+			),
+			([, value]) => value,
+		),
+	)
 	return {
 		method: config.method,
 		url: config.url,

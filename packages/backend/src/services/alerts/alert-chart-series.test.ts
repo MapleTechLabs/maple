@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Effect, Fiber } from "effect"
+import { DateTime, Effect, Fiber, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import type { OrgId } from "@maple/domain/http"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -97,7 +97,7 @@ describe("loadChartSeries", () => {
 				baseOptions,
 			)
 			assert.deepStrictEqual(
-				series?.points.map((p) => p[1]),
+				Arr.map(series?.points ?? [], (p) => p[1]),
 				[1, 2, 3],
 			)
 		}),
@@ -113,7 +113,7 @@ describe("loadChartSeries", () => {
 				baseOptions,
 			)
 			assert.deepStrictEqual(
-				series?.points.map((p) => p[1]),
+				Arr.map(series?.points ?? [], (p) => p[1]),
 				[1, 2, 3],
 			)
 		}),

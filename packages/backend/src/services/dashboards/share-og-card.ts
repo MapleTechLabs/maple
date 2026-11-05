@@ -14,7 +14,7 @@
  */
 import type { ShareOgCardTile } from "@maple/domain/http"
 import type { RedactedDashboard, RedactedWidget } from "@maple/widgets/dashboard"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * Tiles the card draws, at most.
@@ -52,7 +52,9 @@ const displayTitle = (widget: RedactedWidget): string | undefined =>
 	clean((widget.display as { readonly title?: unknown } | undefined)?.title)
 
 const findWidget = (dashboard: RedactedDashboard, widgetId: string | undefined) =>
-	widgetId === undefined ? undefined : dashboard.widgets.find((widget) => widget.id === widgetId)
+	widgetId === undefined
+		? Option.none()
+		: Arr.findFirst(dashboard.widgets, (widget) => widget.id === widgetId)
 
 const pluralize = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`
 
@@ -71,8 +73,10 @@ const sections = (dashboard: RedactedDashboard): ReadonlyArray<{ id: string; tit
  * link opens — the board name is context, and appears in the subtitle instead.
  */
 export const ogTitle = (dashboard: RedactedDashboard, widgetId: string | undefined): string => {
-	const widget = findWidget(dashboard, widgetId)
-	const title = widget === undefined ? dashboard.name : (displayTitle(widget) ?? dashboard.name)
+	const title = Option.match(findWidget(dashboard, widgetId), {
+		onNone: () => dashboard.name,
+		onSome: (widget) => displayTitle(widget) ?? dashboard.name,
+	})
 	return truncate(clean(title) ?? "Untitled dashboard", MAX_TITLE_LENGTH)
 }
 
@@ -85,7 +89,7 @@ export const ogTitle = (dashboard: RedactedDashboard, widgetId: string | undefin
  * made.
  */
 export const ogSubtitle = (dashboard: RedactedDashboard, widgetId: string | undefined): string => {
-	if (findWidget(dashboard, widgetId) !== undefined) {
+	if (Option.isSome(findWidget(dashboard, widgetId))) {
 		return truncate(`A shared chart from ${dashboard.name}`, MAX_TITLE_LENGTH)
 	}
 
@@ -103,7 +107,7 @@ export const ogDescription = (
 	dashboard: RedactedDashboard,
 	widgetId: string | undefined,
 ): string | undefined => {
-	if (findWidget(dashboard, widgetId) !== undefined) return `From ${dashboard.name}`
+	if (Option.isSome(findWidget(dashboard, widgetId))) return `From ${dashboard.name}`
 	const description = clean(dashboard.description)
 	return description === undefined ? undefined : truncate(description, MAX_DESCRIPTION_LENGTH)
 }

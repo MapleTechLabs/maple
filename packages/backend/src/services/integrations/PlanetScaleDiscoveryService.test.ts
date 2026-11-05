@@ -1,6 +1,6 @@
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { CreateScrapeTargetRequest, OrgId, UserId } from "@maple/domain/http"
@@ -124,9 +124,9 @@ const createPlanetScaleTargetRow = (
 			}),
 		)
 		const rows = yield* service.listAllEnabled()
-		const row = rows.find((candidate) => candidate.id === created.id)
-		if (!row) return yield* Effect.die("created row not found")
-		return row
+		const row = Arr.findFirst(rows, (candidate) => candidate.id === created.id)
+		if (Option.isNone(row)) return yield* Effect.die("created row not found")
+		return row.value
 	})
 
 const BRANCHES_SD_PAYLOAD = Arr.map(["main", "stg", "pr-12", "pr-13"], (branch) => ({
@@ -381,8 +381,9 @@ describe("PlanetScaleDiscoveryService", () => {
 				}),
 			)
 			const rows = yield* targets.listAllEnabled()
-			const row = rows.find((candidate) => candidate.id === created.id)
-			if (!row) return yield* Effect.die("created row not found")
+			const found = Arr.findFirst(rows, (candidate) => candidate.id === created.id)
+			if (Option.isNone(found)) return yield* Effect.die("created row not found")
+			const row = found.value
 
 			const error = yield* discovery.discover(row).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotConnectedError")
@@ -432,7 +433,7 @@ describe("PlanetScaleDiscoveryService", () => {
 
 			assert.strictEqual(recorded.length, 1)
 			assert.deepStrictEqual(
-				first?.map((entry) => entry.subTargetKey),
+				Arr.map(first ?? [], (entry) => entry.subTargetKey),
 				["branch-1", "branch-2"],
 			)
 			assert.deepStrictEqual(second, first)
@@ -532,13 +533,16 @@ describe("PlanetScaleDiscoveryService", () => {
 				}),
 			)
 			const rows = yield* targets.listAllEnabled()
-			const row = rows.find((candidate) => candidate.id === created.id)
-			if (!row) return yield* Effect.die("created row not found")
+			const found = Arr.findFirst(rows, (candidate) => candidate.id === created.id)
+			if (Option.isNone(found)) return yield* Effect.die("created row not found")
+			const row = found.value
 
 			const entries = yield* discovery.discover(row)
 
-			const sdCall = recorded.find((call) => Str.includes("/my-org/metrics")(call.url))
-			assert.strictEqual(sdCall?.authorization, "Bearer ps-access-token")
+			const sdCall = Option.getOrThrow(
+				Arr.findFirst(recorded, (call) => Str.includes("/my-org/metrics")(call.url)),
+			)
+			assert.strictEqual(sdCall.authorization, "Bearer ps-access-token")
 			assert.deepStrictEqual(
 				Arr.map(entries, (entry) => entry.subTargetKey),
 				["branch-1", "branch-2"],
@@ -590,8 +594,12 @@ describe("PlanetScaleDiscoveryService", () => {
 					authType: "planetscale_oauth",
 				}),
 			)
-			const row = (yield* targets.listAllEnabled()).find((candidate) => candidate.id === created.id)
-			if (!row) return yield* Effect.die("created row not found")
+			const found = Arr.findFirst(
+				yield* targets.listAllEnabled(),
+				(candidate) => candidate.id === created.id,
+			)
+			if (Option.isNone(found)) return yield* Effect.die("created row not found")
+			const row = found.value
 
 			// Discovered before the revoke, so a fresh cache entry holds the signed URLs.
 			assert.strictEqual((yield* discovery.discover(row)).length, 2)

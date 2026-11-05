@@ -181,7 +181,13 @@ const urlOptions = (h: H, model: Model, context: PageContext): Html => {
 			key: "refresh",
 			icon: "ArrowRotateClockwiseIcon",
 			param: "refresh",
-			description: `Seconds: ${REFRESH_INTERVAL_OPTIONS.filter((value) => value > 0).join(", ")}. 0 turns it off`,
+			description: `Seconds: ${Arr.join(
+				Arr.map(
+					Arr.filter(REFRESH_INTERVAL_OPTIONS, (value) => value > 0),
+					String,
+				),
+				", ",
+			)}. 0 turns it off`,
 			example: "&refresh=60",
 		},
 		...(definitions.length === 0

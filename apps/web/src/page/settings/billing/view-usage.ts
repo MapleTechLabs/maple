@@ -158,7 +158,9 @@ const capSummary = (h: H, feature: FeatureSpend, cap: number | undefined): Html 
 /** Bytes ingest rules dropped for a signal this cycle; never metered, so never billed. */
 const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html> => {
 	const stats = AsyncData.getOrElse(model.ruleStats, () => null)
-	const signal = stats?.signals.find((entry) => entry.signal === featureId)
+	const signal = Option.getOrUndefined(
+		Arr.findFirst(stats?.signals ?? [], (entry) => entry.signal === featureId),
+	)
 	return signal === undefined || signal.dropped_bytes <= 0
 		? []
 		: [

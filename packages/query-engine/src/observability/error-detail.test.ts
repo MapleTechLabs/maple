@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr } from "effect"
+import { Effect, Layer, Array as Arr, Option } from "effect"
 import { errorDetail } from "./error-detail"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
@@ -172,9 +172,11 @@ describe("errorDetail", () => {
 					makeLayer(makeMockExecutor(captured, [], { errorFingerprintSummary: [summaryRow()] })),
 				),
 			)
-			const traces = captured.pipeCalls.find((c) => c.pipe === "error_detail_traces")
-			assert.strictEqual(traces!.params.start_time, "2026-04-02 04:00:00")
-			assert.strictEqual(traces!.params.end_time, "2026-04-02 10:01:00")
+			const traces = Option.getOrThrow(
+				Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "error_detail_traces"),
+			)
+			assert.strictEqual(traces.params.start_time, "2026-04-02 04:00:00")
+			assert.strictEqual(traces.params.end_time, "2026-04-02 10:01:00")
 			assert.isTrue(result.anchored)
 			assert.strictEqual(result.summary?.occurrences, 42)
 			assert.deepStrictEqual(result.summary?.services, ["landing"])
@@ -195,8 +197,10 @@ describe("errorDetail", () => {
 					),
 				),
 			)
-			const traces = captured.pipeCalls.find((c) => c.pipe === "error_detail_traces")
-			assert.strictEqual(traces!.params.start_time, timeRange.startTime)
+			const traces = Option.getOrThrow(
+				Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "error_detail_traces"),
+			)
+			assert.strictEqual(traces.params.start_time, timeRange.startTime)
 			assert.isFalse(result.anchored)
 			// "{}" is no message at all; the identity says so by leaving it empty.
 			assert.deepStrictEqual(result.error, {
@@ -262,8 +266,10 @@ describe("errorDetail", () => {
 			assert.deepStrictEqual(result.related, [
 				{ fingerprintHash: "999", label: "OtlpIngestError", serviceName: "api", traces: 1 },
 			])
-			const related = captured.pipeCalls.find((c) => c.pipe === "errorCooccurringFingerprints")
-			assert.include(String(related!.params.sql), "'t1'")
+			const related = Option.getOrThrow(
+				Arr.findFirst(captured.pipeCalls, (c) => c.pipe === "errorCooccurringFingerprints"),
+			)
+			assert.include(String(related.params.sql), "'t1'")
 		}),
 	)
 })

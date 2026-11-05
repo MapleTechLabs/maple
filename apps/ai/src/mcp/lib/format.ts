@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 export function formatDurationFromMs(ms: number): string {
 	if (ms < 1) return `${(ms * 1000).toFixed(0)}us`
 	if (ms < 1000) return `${ms.toFixed(1)}ms`
@@ -77,7 +77,10 @@ export function tableCell(text: string, max?: number): string {
  * the tool rendered after it reads as prose.
  */
 export function fencedBlock(text: string): string {
-	const runs = text.match(/`+/g)?.map((run) => run.length) ?? []
+	const runs = Option.match(Str.match(/`+/g)(text), {
+		onNone: () => [],
+		onSome: (matched) => Arr.map(matched, (run) => run.length),
+	})
 	const fence = Str.repeat(Math.max(3, ...Arr.map(runs, (length) => length + 1)))("`")
 	return `${fence}\n${text}\n${fence}`
 }

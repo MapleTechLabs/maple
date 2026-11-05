@@ -1,7 +1,7 @@
 import { getIdentityColorBySlot, getIdentitySlot, IDENTITY_SLOT_COUNT } from "./colors"
 import { HTTP_METHOD_HEX } from "./http"
 import { SEVERITY_COLORS } from "./severity"
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 
 const SPAN_STATUS_COLORS: Record<string, string> = {
 	ok: "var(--severity-info)",
@@ -82,9 +82,9 @@ function detectColor(key: string): string | null {
 	if (lower in AGGREGATE_COLORS) return AGGREGATE_COLORS[lower]
 
 	// HTTP status code classes (e.g., "2xx", "5xx")
-	const classMatch = key.match(STATUS_CLASS_PATTERN)
-	if (classMatch) {
-		const classDigit = Number(classMatch[1])
+	const classMatch = Str.match(STATUS_CLASS_PATTERN)(key)
+	if (Option.isSome(classMatch)) {
+		const classDigit = Number(classMatch.value[1])
 		const base = STATUS_CLASS_BASES[classDigit]
 		if (base) return statusOklch(base, 0)
 	}
@@ -109,12 +109,13 @@ export function getSemanticSeriesColor(seriesKey: string): string | null {
 	const direct = detectColor(trimmed)
 	if (direct) return direct
 
-	const colonIndex = trimmed.indexOf(": ")
-	if (colonIndex > 0) {
-		return detectColor(Str.trim(Str.slice(colonIndex + 2)(trimmed)))
-	}
-
-	return null
+	return Option.match(
+		Option.filter(Str.indexOf(": ")(trimmed), (colonIndex) => colonIndex > 0),
+		{
+			onNone: () => null,
+			onSome: (colonIndex) => detectColor(Str.trim(Str.slice(colonIndex + 2)(trimmed))),
+		},
+	)
 }
 
 /** The default color for a chart that plots a single, unnamed value. */

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -260,7 +260,9 @@ describe("AlertsService with a Linear destination", () => {
 
 			const incidents = yield* alerts.listIncidents(orgId)
 			assert.lengthOf(incidents.incidents, 1)
-			const create = linear.operations.find((operation) => operation.name === "MapleIssueCreate")
+			const create = Option.getOrUndefined(
+				Arr.findFirst(linear.operations, (operation) => operation.name === "MapleIssueCreate"),
+			)
 			assert.strictEqual(create?.variables.input?.teamId, "team_1")
 			const thread = yield* Effect.promise(() =>
 				queryFirstRow<{ linear_identifier: string; incident_id: string }>(

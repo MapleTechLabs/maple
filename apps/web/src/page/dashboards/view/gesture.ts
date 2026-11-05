@@ -6,6 +6,7 @@ import type { Message } from "./message"
 import type { GridGesture, Model } from "./model"
 import { endKeyboardMove, keyboardStep } from "./keyboard-move"
 import { isEditing } from "./mode"
+import { Option, Array as Arr } from "effect"
 
 // Grid interaction: pointer drag and resize
 // over the canvas, one commit on release. The pointer is tracked by a window subscription.
@@ -43,8 +44,9 @@ const press = (
 	if (grid === null || isDragging || model.keyboardMove !== null) return { model }
 	if (!isEditing(model) || !grid.tier.canonical) return { model }
 	const origin = shownLayoutOf(model, grid)
-	const item = origin.find((candidate) => candidate.i === widgetId)
-	if (item === undefined) return { model }
+	const found = Arr.findFirst(origin, (candidate) => candidate.i === widgetId)
+	if (Option.isNone(found)) return { model }
+	const item = found.value
 	return {
 		model: {
 			...model,
@@ -82,8 +84,9 @@ const move = (model: Model, gesture: GridGesture, frame: Frame): Return => {
 	const travelled = Math.hypot(frame.clientX - gesture.startX, frame.clientY - gesture.startY)
 	const isStarted = gesture.isStarted || travelled >= DRAG_THRESHOLD_PX
 	if (!isStarted) return { model: { ...model, gesture: { ...gesture, gridOrigin } } }
-	const item = gesture.preview.find((candidate) => candidate.i === gesture.widgetId)
-	if (item === undefined) return { model }
+	const found = Arr.findFirst(gesture.preview, (candidate) => candidate.i === gesture.widgetId)
+	if (Option.isNone(found)) return { model }
+	const item = found.value
 	const next = (() => {
 		if (gesture.kind === "drag") {
 			const cell = cellAt(grid.geometry, item, gesture.rect.left + dx, gesture.rect.top + dy)

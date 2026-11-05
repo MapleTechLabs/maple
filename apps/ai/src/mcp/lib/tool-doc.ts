@@ -186,7 +186,7 @@ export const nextCallsOf = (tool: ToolDoc): ReadonlyArray<NextCall> => [
 
 /** The doc with the calls `keep` rejects removed. */
 export const filterNextCalls = (tool: ToolDoc, keep: (call: NextCall) => boolean): ToolDoc => {
-	const next = tool.next?.filter(keep)
+	const next = tool.next === undefined ? undefined : Arr.filter(tool.next, keep)
 	const truncationNext = tool.truncation?.next
 	return {
 		...tool,

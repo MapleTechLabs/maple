@@ -2,6 +2,7 @@ import * as THREE from "three"
 import { bunting } from "./decor"
 import { type Child, group, inkBox, inkLines, inkPlate, inkSolid, type Scope, type Vec3 } from "./kit"
 import { grain, inkParts, type MapleFinish, mapleSmoke, type Part, range, variant } from "./props-kit"
+import { Array as Arr } from "effect"
 
 export { inkParts, type MachineFinish, type MapleFinish, type Part, seedOf, variant } from "./props-kit"
 export { boardedWindow, doorSteps, flowerBox, mapleState, yard } from "./props-life"
@@ -12,7 +13,7 @@ function octagon(radius: number, y: number) {
 		const a = Math.PI / 8 + (k * Math.PI) / 4
 		return [radius * Math.sin(a), y, radius * Math.cos(a)]
 	}
-	return range(8).flatMap((k) => [...at(k), ...at(k + 1)])
+	return Arr.flatMap(range(8), (k) => [...at(k), ...at(k + 1)])
 }
 
 /** A low fieldstone footing round a cabin, joints staggered in two courses. */
@@ -22,14 +23,17 @@ export function stoneCourse(
 ): Child {
 	const edge = half + 0.03
 	const face = edge + 0.001
-	const joints = [0, 1].flatMap((row) =>
-		range(6)
-			.map((i) => -edge + 0.15 + row * 0.15 + i * 0.3)
-			.filter((s) => s < edge - 0.06)
-			.flatMap((s) => {
+	const joints = Arr.flatMap([0, 1], (row) =>
+		Arr.flatMap(
+			Arr.filter(
+				Arr.map(range(6), (i) => -edge + 0.15 + row * 0.15 + i * 0.3),
+				(s) => s < edge - 0.06,
+			),
+			(s: number) => {
 				const [y0, y1] = [(row * height) / 2, ((row + 1) * height) / 2]
 				return [s, y0, face, s, y1, face, face, y0, s, face, y1, s]
-			}),
+			},
+		),
 	)
 	const bed = [
 		-edge,
@@ -109,18 +113,18 @@ export function porch(scope: Scope, { door, finish }: { door: Vec3; finish: Mapl
 	const timber: Part[] = [
 		{ box: [0.24, floor - 0.004, 0.62], at: [x + 0.12, (floor - 0.004) / 2, z] },
 		{ box: [0.08, floor / 2, 0.42], at: [x + 0.28, floor / 4, z] },
-		...[-1, 1].map((side): Part => ({
+		...Arr.map([-1, 1], (side): Part => ({
 			box: [0.05, top - floor, 0.05],
 			at: [x + 0.22, (top + floor) / 2, z + side * 0.27],
 		})),
 	]
 	// Shingle courses run across the canopy, drawn on its upper face.
-	const courses = [-0.07, 0.04].flatMap((s) => {
+	const courses = Arr.flatMap([-0.07, 0.04], (s) => {
 		const px = cx + s * Math.cos(lean) - 0.019 * Math.sin(lean)
 		const py = cy + s * Math.sin(lean) + 0.019 * Math.cos(lean)
 		return [px, py, z - 0.36, px, py, z + 0.36]
 	})
-	const planks = [-0.15, 0, 0.15].flatMap((dz) => [
+	const planks = Arr.flatMap([-0.15, 0, 0.15], (dz) => [
 		x,
 		floor - 0.003,
 		z + dz,
@@ -146,21 +150,21 @@ export function windowDressing(
 	scope: Scope,
 	{ windows, finish }: { windows: readonly Pane[]; finish: MapleFinish },
 ): Child {
-	const shutters = windows.flatMap(({ center: [x, y, z], normal }) =>
-		[-1, 1].map((side): Part =>
+	const shutters = Arr.flatMap(windows, ({ center: [x, y, z], normal }) =>
+		Arr.map([-1, 1], (side): Part =>
 			normal === "z"
 				? { box: [0.1, 0.28, 0.02], at: [x + side * 0.23, y, z + 0.01] }
 				: { box: [0.02, 0.28, 0.1], at: [x + 0.01, y, z + side * 0.23] },
 		),
 	)
-	const sills = windows.map(({ center: [x, y, z], normal }): Part =>
+	const sills = Arr.map(windows, ({ center: [x, y, z], normal }): Part =>
 		normal === "z"
 			? { box: [0.44, 0.035, 0.07], at: [x, y - 0.15, z + 0.03] }
 			: { box: [0.07, 0.035, 0.44], at: [x + 0.03, y - 0.15, z] },
 	)
 	// A diagonal brace on each shutter, like a board-and-batten door.
-	const braces = windows.flatMap(({ center: [x, y, z], normal }) =>
-		[-1, 1].flatMap((side) =>
+	const braces = Arr.flatMap(windows, ({ center: [x, y, z], normal }) =>
+		Arr.flatMap([-1, 1], (side) =>
 			normal === "z"
 				? [x + side * 0.18, y - 0.1, z + 0.021, x + side * 0.28, y + 0.1, z + 0.021]
 				: [x + 0.021, y - 0.1, z + side * 0.18, x + 0.021, y + 0.1, z + side * 0.28],
@@ -191,7 +195,7 @@ export function eaves(
 	// One row of shingle butts on the two walls the camera sees.
 	const face = edge + 0.001
 	const low = y - tall / 2
-	const ticks = range(Math.floor((edge * 2) / 0.12)).flatMap((i) => {
+	const ticks = Arr.flatMap(range(Math.floor((edge * 2) / 0.12)), (i) => {
 		const s = -edge + 0.06 + i * 0.12
 		return [s, low, face, s, y, face, face, low, s, face, y, s]
 	})
@@ -207,7 +211,7 @@ export function vatHoops(
 	scope: Scope,
 	{ heights, finish }: { heights: readonly number[]; finish: MapleFinish },
 ): Child {
-	const parts = heights.map((y): Part => ({
+	const parts = Arr.map(heights, (y): Part => ({
 		prism: [0.85, 0.85, 0.07, 8],
 		at: [0, y, 0],
 		turn: [0, Math.PI / 8, 0],
@@ -225,7 +229,7 @@ export function vatHoops(
 /** A shingled hip roof over the vat, flat on top for the service mark, with a steam cupola. */
 export function sugarRoof(scope: Scope, { height, finish }: { height: number; finish: MapleFinish }): Child {
 	const vent: Vec3 = [-0.46, height, -0.46]
-	const courses = [1, 2].flatMap((i) => octagon(0.98 - (0.54 * i) / 3, height + (0.3 * i) / 3))
+	const courses = Arr.flatMap([1, 2], (i) => octagon(0.98 - (0.54 * i) / 3, height + (0.3 * i) / 3))
 	return [
 		inkParts(scope, {
 			parts: [{ prism: [0.44, 0.98, 0.3, 8], at: [0, height + 0.15, 0], turn: [0, Math.PI / 8, 0] }],
@@ -300,32 +304,33 @@ function grainTop([x, y, z]: Vec3, radius: number) {
 		y,
 		z + radius * Math.cos((k * Math.PI) / 4),
 	]
-	return range(8).flatMap((k) => [...at(k), ...at(k + 1)])
+	return Arr.flatMap(range(8), (k) => [...at(k), ...at(k + 1)])
 }
 
 /** A wood sled on bent runners, loaded with three split logs. */
 export function woodSled(scope: Scope, { position, finish }: { position: Vec3; finish: MapleFinish }): Child {
 	const [x, y, z] = position
-	const runners = [-0.12, 0.12].flatMap((dz): Part[] => [
+	const runners = Arr.flatMap([-0.12, 0.12], (dz): Part[] => [
 		{ box: [0.6, 0.035, 0.03], at: [x, y + 0.018, z + dz] },
 		{ box: [0.14, 0.03, 0.03], at: [x + 0.34, y + 0.06, z + dz], turn: [0, 0, 0.75] },
 		{ box: [0.03, 0.05, 0.03], at: [x - 0.2, y + 0.06, z + dz] },
 		{ box: [0.03, 0.05, 0.03], at: [x + 0.16, y + 0.06, z + dz] },
 	])
 	const deck = y + 0.095
-	const logs: Part[] = (
+	const logs: Part[] = Arr.map(
 		[
 			[-0.075, 0],
 			[0.075, 0],
 			[0, 1],
-		] as const
-	).map(([dz, row]): Part => ({
-		prism: [0.07, 0.07, 0.44, 8],
-		at: [x - 0.02, deck + 0.085 + row * 0.12, z + dz],
-		turn: [0, 0, Math.PI / 2],
-	}))
-	const ends = logs.flatMap((log) => grain([x + 0.201, log.at[1], log.at[2]], "x", 0.035))
-	const slats = [-0.15, 0, 0.15].flatMap((dx) => [
+		] as const,
+		([dz, row]): Part => ({
+			prism: [0.07, 0.07, 0.44, 8],
+			at: [x - 0.02, deck + 0.085 + row * 0.12, z + dz],
+			turn: [0, 0, Math.PI / 2],
+		}),
+	)
+	const ends = Arr.flatMap(logs, (log) => grain([x + 0.201, log.at[1], log.at[2]], "x", 0.035))
+	const slats = Arr.flatMap([-0.15, 0, 0.15], (dx) => [
 		x + dx,
 		deck + 0.016,
 		z - 0.15,
@@ -372,15 +377,16 @@ export function gableRoof(
 	gable.closePath()
 	const geometry = new THREE.ExtrudeGeometry(gable, { depth: length, bevelEnabled: false })
 	geometry.translate(0, 0, -length / 2)
-	const courses = [1, 2].flatMap((i) => {
+	const courses = Arr.flatMap([1, 2], (i) => {
 		const t = i / 3
 		const [y, z] = [base + rise * t + 0.002, half * (1 - t) + 0.002]
 		return [-length / 2, y, z, length / 2, y, z]
 	})
 	const end = length / 2 + 0.002
-	const boards = [-0.5, -0.25, 0, 0.25, 0.5]
-		.filter((z) => Math.abs(z) < half - 0.1)
-		.flatMap((z) => [end, base, z, end, base + rise * (1 - Math.abs(z) / half), z])
+	const boards = Arr.flatMap(
+		Arr.filter([-0.5, -0.25, 0, 0.25, 0.5], (z) => Math.abs(z) < half - 0.1),
+		(z: number) => [end, base, z, end, base + rise * (1 - Math.abs(z) / half), z],
+	)
 	return [
 		inkSolid({
 			geometry,
@@ -415,7 +421,7 @@ export function hangingSign(
 			: { box: cut % 3 === 1 ? [0.2, 0.26, 0.03] : [0.3, 0.18, 0.03], at: [x + 0.01, hang, z] }
 	// Each chain zigzags a little so it reads as links rather than a rod.
 	const chain = (cx: number) =>
-		range(4).flatMap((i) => {
+		Arr.flatMap(range(4), (i) => {
 			const [a, b] = [y - 0.02 - i * 0.035, y - 0.02 - (i + 1) * 0.035]
 			const [za, zb] = [z + (i % 2 === 0 ? -0.012 : 0.012), z + (i % 2 === 0 ? 0.012 : -0.012)]
 			return [cx, a, za, cx, b, zb]
@@ -442,12 +448,12 @@ export function hangingSign(
 /** Hewn log walls on the two visible faces, crossing at notched corners with end grain showing. */
 export function logWalls(scope: Scope, { walls, finish }: { walls: number; finish: MapleFinish }): Child {
 	const courses = (start: number) =>
-		range(Math.floor((walls - 0.06 - start) / 0.14) + 1).map((i) => start + i * 0.14)
-	const front = courses(0.06).map((y): Part => ({ box: [1.78, 0.12, 0.12], at: [0, y, 0.8] }))
-	const side = courses(0.13).map((y): Part => ({ box: [0.12, 0.12, 1.78], at: [0.8, y, 0] }))
+		Arr.map(range(Math.floor((walls - 0.06 - start) / 0.14) + 1), (i) => start + i * 0.14)
+	const front = Arr.map(courses(0.06), (y): Part => ({ box: [1.78, 0.12, 0.12], at: [0, y, 0.8] }))
+	const side = Arr.map(courses(0.13), (y): Part => ({ box: [0.12, 0.12, 1.78], at: [0.8, y, 0] }))
 	const ends = [
-		...front.flatMap((log) => grain([0.891, log.at[1], 0.8], "x", 0.04)),
-		...side.flatMap((log) => grain([0.8, log.at[1], 0.891], "z", 0.04)),
+		...Arr.flatMap(front, (log) => grain([0.891, log.at[1], 0.8], "x", 0.04)),
+		...Arr.flatMap(side, (log) => grain([0.8, log.at[1], 0.891], "z", 0.04)),
 	]
 	return [
 		inkParts(scope, { parts: [...front, ...side], color: finish.face, ink: finish.ink }),
@@ -465,20 +471,23 @@ export function mapleGate(scope: Scope, { posts, finish }: { posts: number; fini
 	// Each gate strings its leaves in its own order and picks a sign shape.
 	const turn = variant(finish.seed, 7, Math.max(1, finish.gifts.length))
 	const garland = { ...finish, gifts: [...finish.gifts.slice(turn), ...finish.gifts.slice(0, turn)] }
-	const corners = [-0.6, 0.6].flatMap((x) => [-0.45, 0.45].map((z) => [x, z] as const))
+	const corners = Arr.flatMap([-0.6, 0.6], (x) => Arr.map([-0.45, 0.45], (z) => [x, z] as const))
 	const timber: Part[] = [
-		...corners.map(([x, z]): Part => ({ box: [0.18, top - 0.14, 0.18], at: [x, (top + 0.14) / 2, z] })),
+		...Arr.map(corners, ([x, z]): Part => ({
+			box: [0.18, top - 0.14, 0.18],
+			at: [x, (top + 0.14) / 2, z],
+		})),
 		{ box: [1.5, 0.08, 0.14], at: [0, posts, 0.45] },
 		{ box: [1.5, 0.12, 0.14], at: [0, top - 0.06, -0.45] },
-		...[-0.6, 0.6].map((x): Part => ({ box: [0.14, 0.12, 1.1], at: [x, top - 0.06, 0] })),
+		...Arr.map([-0.6, 0.6], (x): Part => ({ box: [0.14, 0.12, 1.1], at: [x, top - 0.06, 0] })),
 		// Knee braces from each post up into the lintels, front and back.
-		...corners.map(([x, z]): Part => ({
+		...Arr.map(corners, ([x, z]): Part => ({
 			box: [0.22, 0.05, 0.05],
 			at: [x > 0 ? 0.43 : -0.43, posts - 0.08, z],
 			turn: [0, 0, x > 0 ? -Math.PI / 4 : Math.PI / 4],
 		})),
 	]
-	const footings = corners.map(([x, z]): Part => ({ box: [0.28, 0.14, 0.28], at: [x, 0.07, z] }))
+	const footings = Arr.map(corners, ([x, z]): Part => ({ box: [0.28, 0.14, 0.28], at: [x, 0.07, z] }))
 	return [
 		inkParts(scope, { parts: footings, color: finish.stone, ink: finish.ink }),
 		inkParts(scope, { parts: timber, color: finish.timber, ink: finish.ink }),
@@ -488,7 +497,7 @@ export function mapleGate(scope: Scope, { posts, finish }: { posts: number; fini
 			color: finish.face,
 			ink: finish.ink,
 		}),
-		[-0.365, 0.365].map((x) =>
+		Arr.map([-0.365, 0.365], (x) =>
 			inkPlate({
 				size: [0.2, 0.3],
 				position: [x, posts + GATE_MARK.y, 0.481],

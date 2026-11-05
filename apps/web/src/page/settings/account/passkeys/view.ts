@@ -25,7 +25,7 @@ import type { AccountPasskey, AccountUser } from "../user"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ timeZone: string }>
@@ -151,7 +151,7 @@ const loaded = (h: H, model: Model, user: AccountUser, inputs: Inputs): Html =>
 			onSubmit: Message.SubmittedRename(),
 			submitLabel: "Save changes",
 			isPending: model.isBusy,
-			isSubmitDisabled: (model.renaming?.name.trim().length ?? 0) === 0,
+			isSubmitDisabled: model.renaming === null || Str.trim(model.renaming.name).length === 0,
 			fields: [
 				textField(h, {
 					id: "passkey-name",

@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Schema, Record as Rec, String as Str, Array as Arr } from "effect"
 import {
 	MAX_RAW_SQL_CELL_LENGTH,
 	MAX_RAW_SQL_RESULT_BYTES,
@@ -83,6 +83,16 @@ const rangeAlignedGroup = (column: string, startLiteral: string, endLiteral: str
 const fail = (code: RawSqlValidationError["code"], message: string) =>
 	Effect.fail(new RawSqlValidationError({ code, message }))
 
+// Literal splices, never `String.replace` patterns: see the `$` note in `prepareRawSql`.
+const replaceAllLiteral = (text: string, search: string, replacement: string): string =>
+	Arr.join(Str.split(search)(text), replacement)
+
+const replaceFirstLiteral = (text: string, search: string, replacement: string): string =>
+	Option.match(Str.indexOf(search)(text), {
+		onNone: () => text,
+		onSome: (at) => Str.slice(0, at)(text) + replacement + Str.slice(at + search.length)(text),
+	})
+
 /**
  * Validate and expand a raw query without accessing the warehouse.
  *
@@ -110,23 +120,25 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// literal — quotes and all.
 	// Parenthesised so the predicate is one operand wherever it lands; `rawSqlIssue`
 	// already rejected an org filter that sits beside a top-level OR.
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	sql = sql.replace(ORG_FILTER_MACRO_RE, (_match, alias: string | undefined) =>
 		alias === undefined ? `(OrgId = ${orgLiteral})` : `(${Str.trim(alias)}.OrgId = ${orgLiteral})`,
 	)
-	sql = sql.replaceAll("$__startTime", () => startLiteral)
-	sql = sql.replaceAll("$__endTime", () => endLiteral)
-	sql = sql.replaceAll("$__interval_s", () => String(granularity))
+	sql = replaceAllLiteral(sql, "$__startTime", startLiteral)
+	sql = replaceAllLiteral(sql, "$__endTime", endLiteral)
+	sql = replaceAllLiteral(sql, "$__interval_s", String(granularity))
 
 	// An alert window is half-open; interactive ranges keep their inclusive end.
 	const endOperator = input.wholeRange ? "<" : "<="
 	// Materialized before the loop mutates `sql`: the matches are positions in the
 	// text as it was when `matchAll` was called.
-	const timeFilterMatches = [...sql.matchAll(/\$__timeFilter\(([^)]*)\)/g)]
+	const timeFilterMatches = Arr.fromIterable(Str.matchAll(/\$__timeFilter\(([^)]*)\)/g)(sql))
 	for (const match of timeFilterMatches) {
 		const column = Str.trim(match[1])
-		sql = sql.replace(
+		sql = replaceFirstLiteral(
+			sql,
 			match[0],
-			() => `${column} >= ${startLiteral} AND ${column} ${endOperator} ${endLiteral}`,
+			`${column} >= ${startLiteral} AND ${column} ${endOperator} ${endLiteral}`,
 		)
 	}
 
@@ -134,10 +146,12 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// returns one row per evaluation window, so the preview chart renders a real
 	// series instead of a single point; without it the whole range collapses into
 	// one synthetic bucket, which reduces to exactly the same scalar.
-	const timeGroupMatches = [...sql.matchAll(/\$__timeGroup\(([^)]*)\)/g)]
+	const timeGroupMatches = Arr.fromIterable(Str.matchAll(/\$__timeGroup\(([^)]*)\)/g)(sql))
 	for (const match of timeGroupMatches) {
 		const column = Str.trim(match[1])
-		sql = sql.replace(match[0], () =>
+		sql = replaceFirstLiteral(
+			sql,
+			match[0],
 			input.wholeRange
 				? rangeAlignedGroup(column, startLiteral, endLiteral)
 				: `toStartOfInterval(${column}, INTERVAL ${granularity} SECOND)`,

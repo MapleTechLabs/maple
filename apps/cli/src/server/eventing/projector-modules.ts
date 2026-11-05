@@ -1,5 +1,5 @@
 // BOUNDARY: explicitly selected local modules execute trusted code; their exports are decoded here.
-import { Effect, MutableRef, Result, Schema, String as Str } from "effect"
+import { Effect, MutableRef, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { realpath, stat } from "node:fs/promises"
 import { extname, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -101,8 +101,8 @@ export const loadProjectorModules = (
 ): Effect.Effect<ProjectorRegistry, ProjectorModuleError> =>
 	Effect.gen(function* () {
 		const resolved = yield* resolveProjectorModulePaths(paths)
-		const duplicate = resolved.find((path, index) => resolved.indexOf(path) !== index)
-		if (duplicate !== undefined) return yield* error(duplicate, "file selected more than once")
+		const duplicate = Arr.findFirst(resolved, (path, index) => resolved.indexOf(path) !== index)
+		if (Option.isSome(duplicate)) return yield* error(duplicate.value, "file selected more than once")
 		const registry = new ProjectorRegistry()
 		yield* Effect.forEach(resolved, (path) => registerModule(registry, path), { discard: true })
 		return registry

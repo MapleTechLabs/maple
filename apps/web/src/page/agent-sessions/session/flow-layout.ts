@@ -12,7 +12,7 @@ import {
 } from "@maple/agent-sessions"
 import { filterSpans, isDelegation, shortTarget } from "../../../lib/agent-sessions/span-filters"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The session flow's grid layout (`layoutLanes`, `flowSpans`, `assignColumns`, `nodeSubtitle`).
 
@@ -90,7 +90,12 @@ const flowSpans = (turn: SessionTurn, query: string, agentSpansOnly: boolean): R
 	const surviving = new Set(Arr.map(survivors, (span) => span.spanId))
 	return Arr.map(survivors, (span) => ({
 		spans: [span],
-		parentSpanId: ancestors(span, byId).find((ancestor) => surviving.has(ancestor.spanId))?.spanId,
+		parentSpanId: Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(ancestors(span, byId), (ancestor) => surviving.has(ancestor.spanId)),
+				(ancestor) => ancestor.spanId,
+			),
+		),
 	}))
 }
 
@@ -99,7 +104,7 @@ const mergeKey = (span: AiSessionSpan): string => `${classifyAiSpan(span)}:${nod
 
 /** Runs of identical calls under the same parent become one node. */
 const mergeConsecutive = (groups: ReadonlyArray<FlowGroup>): ReadonlyArray<FlowGroup> =>
-	groups.reduce<ReadonlyArray<FlowGroup>>((merged, group) => {
+	Arr.reduce<FlowGroup, ReadonlyArray<FlowGroup>>(groups, [], (merged, group) => {
 		const current = merged.at(-1)
 		const lead = current?.spans[0]
 		const first = group.spans[0]
@@ -110,7 +115,7 @@ const mergeConsecutive = (groups: ReadonlyArray<FlowGroup>): ReadonlyArray<FlowG
 			mergeKey(lead) === mergeKey(first)
 			? [...merged.slice(0, -1), { ...current, spans: [...current.spans, ...group.spans] }]
 			: [...merged, group]
-	}, [])
+	})
 
 const groupStartMs = (group: FlowGroup): number => {
 	const first = group.spans[0]
@@ -181,13 +186,17 @@ const layoutLane = (turn: SessionTurn, laneTop: number, options: LaneOptions): F
 	if (spans.length === 0) return undefined
 	const groups = options.mergeRepeats ? mergeConsecutive(spans) : spans
 	const columns = assignColumns(groups)
-	const rowHeights = columns.reduce<ReadonlyArray<number>>((heights, column, index) => {
-		const row = Math.floor(index / MAX_COLUMNS)
-		const height = column.length * (NODE_HEIGHT + STACK_GAP) - STACK_GAP
-		const next = [...heights]
-		next[row] = Math.max(heights[row] ?? 0, height)
-		return next
-	}, [])
+	const rowHeights = Arr.reduce<(typeof columns)[number], ReadonlyArray<number>>(
+		columns,
+		[],
+		(heights, column, index) => {
+			const row = Math.floor(index / MAX_COLUMNS)
+			const height = column.length * (NODE_HEIGHT + STACK_GAP) - STACK_GAP
+			const next = [...heights]
+			next[row] = Math.max(heights[row] ?? 0, height)
+			return next
+		},
+	)
 	const rowTops = Arr.map(
 		rowHeights,
 		(_, row) =>
@@ -196,7 +205,10 @@ const layoutLane = (turn: SessionTurn, laneTop: number, options: LaneOptions): F
 	const placed = new Map<string, { node: FlowNode; column: number }>()
 	const nodes = Arr.flatMap(columns, (column, columnIndex) =>
 		Arr.flatMap(column, (group, stackIndex) => {
-			const lead = group.spans.find((member) => spanFailed(member)) ?? group.spans[0]
+			const lead = Option.getOrElse(
+				Arr.findFirst(group.spans, (member) => spanFailed(member)),
+				() => group.spans[0],
+			)
 			if (lead === undefined) return []
 			const node: FlowNode = {
 				key: lead.spanId,
@@ -238,14 +250,15 @@ export const layoutLanes = (
 	turns: ReadonlyArray<SessionTurn>,
 	options: LaneOptions,
 ): ReadonlyArray<FlowLane> =>
-	turns.reduce<Readonly<{ lanes: ReadonlyArray<FlowLane>; top: number }>>(
+	Arr.reduce<SessionTurn, Readonly<{ lanes: ReadonlyArray<FlowLane>; top: number }>>(
+		turns,
+		{ lanes: [], top: CANVAS_PADDING },
 		(state, turn) => {
 			const lane = layoutLane(turn, state.top, options)
 			return lane === undefined
 				? state
 				: { lanes: [...state.lanes, lane], top: state.top + lane.height + LANE_GAP }
 		},
-		{ lanes: [], top: CANVAS_PADDING },
 	).lanes
 
 /** Panning stays within a margin of the graph. */

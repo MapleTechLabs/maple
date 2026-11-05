@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "@effect/vitest"
 import { PublicHttpErrorBodySchema } from "../error-policy"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 /**
  * Guards the pruned OpenAPI document that the native iOS app's Swift client is
@@ -206,8 +206,8 @@ describe("iOS OpenAPI spec", () => {
 	it("merges widened enum query params into a single enum", () => {
 		const parameters = (spec.paths["/v2/error_issues"] as JsonObject).get
 			.parameters as ReadonlyArray<JsonObject>
-		const severity = parameters.find((parameter) => parameter.name === "severity")
-		expect(severity?.schema).toEqual({
+		const severity = Arr.findFirst(parameters, (parameter) => parameter.name === "severity")
+		expect(Option.getOrUndefined(severity)?.schema).toEqual({
 			type: "string",
 			enum: ["critical", "high", "medium", "low", "unset"],
 		})

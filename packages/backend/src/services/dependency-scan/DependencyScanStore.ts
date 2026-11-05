@@ -25,7 +25,18 @@ import {
 import type { MapleDb } from "@maple/db/client"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Predicate,
+	Schema,
+	String as Str,
+} from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -240,12 +251,15 @@ const keepKnownAdvisoryId = (
 			finding.packageName === match.packageName,
 	)
 	// An exact id wins; an alias overlap only renames a match no finding tracks by its own id.
-	const same =
-		samePackage.find((finding) => finding.advisoryId === match.advisoryId) ??
-		samePackage.find((finding) =>
-			Arr.some([finding.advisoryId, ...finding.aliases], (name) => names.has(name)),
-		)
-	if (same === undefined || same.advisoryId === match.advisoryId) return match
+	const found = Option.orElse(
+		Arr.findFirst(samePackage, (finding) => finding.advisoryId === match.advisoryId),
+		() =>
+			Arr.findFirst(samePackage, (finding) =>
+				Arr.some([finding.advisoryId, ...finding.aliases], (name) => names.has(name)),
+			),
+	)
+	if (Option.isNone(found) || found.value.advisoryId === match.advisoryId) return match
+	const same = found.value
 	return {
 		...match,
 		advisoryId: same.advisoryId,
@@ -256,7 +270,8 @@ const keepKnownAdvisoryId = (
 const matchKey = (match: DependencyScanMatchInput) =>
 	encodeJsonKey([match.lockfilePath, match.ecosystem, match.packageName, match.version, match.advisoryId])
 
-const firstNonNull = (values: ReadonlyArray<string | null>) => values.find((value) => value !== null) ?? null
+const firstNonNull = (values: ReadonlyArray<string | null>) =>
+	Option.getOrNull(Arr.findFirst(values, Predicate.isNotNull))
 
 /** One finding's fields from the matches that share its key: every version, the worst severity. */
 const aggregate = (matches: Arr.NonEmptyReadonlyArray<DependencyScanMatchInput>) => ({

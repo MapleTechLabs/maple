@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Result, String as Str } from "effect"
+import { Result, String as Str, Array as Arr } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	productEventsFunnelQuery,
@@ -52,7 +52,9 @@ describe("productEventsFunnelQuery", () => {
 		expect(compiled.sql).toContain("FROM product_events")
 		expect(compiled.sql).toContain("FROM session_replays")
 		expect(compiled.sql).toContain("FROM identity_links")
-		expect(compiled.sql.match(/OrgId = 'org_1'/g)?.length).toBeGreaterThanOrEqual(4)
+		expect(
+			Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(compiled.sql)).length,
+		).toBeGreaterThanOrEqual(4)
 	})
 
 	it("emits one windowFunnel condition per step and one output row per step", () => {

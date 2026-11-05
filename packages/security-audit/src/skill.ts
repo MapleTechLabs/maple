@@ -5,7 +5,7 @@
  * in bold, or the heading text before any parenthetical qualifier.
  */
 import { SKILL_FILES, type SkillFileName } from "./skill-files.generated"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 export type { SkillFileName }
 
@@ -101,13 +101,17 @@ export const findBlock = (ref: string): SkillBlock | undefined => ALL_BLOCKS.get
 /** The sections every prompt using a companion must carry alongside its chosen classes. */
 export const COMPANION_REQUIRED_SECTIONS = ["Core discipline", "Universal moves", "Validation rules"] as const
 
+/** The first `search` in `text` at or after `from`, as an index into the whole of `text`. */
+const indexFrom = (text: string, search: string, from: number): Option.Option<number> =>
+	Option.map(Str.indexOf(search)(Str.slice(from)(text)), (at) => at + from)
+
 /** A companion's `When to use this file` guidance, which reconnaissance selects against. */
 export const companionWhenToUse = (file: SkillFileName): string => {
 	const text = SKILL_FILES[file]
-	const start = text.indexOf("#### When to use this file")
-	if (start < 0) return ""
-	const end = text.indexOf("\n## ", start)
-	return Str.trimEnd(Str.slice(start, end < 0 ? undefined : end)(text))
+	const start = Str.indexOf("#### When to use this file")(text)
+	if (Option.isNone(start)) return ""
+	const end = indexFrom(text, "\n## ", start.value)
+	return Str.trimEnd(Str.slice(start.value, Option.getOrUndefined(end))(text))
 }
 
 /**
@@ -116,19 +120,24 @@ export const companionWhenToUse = (file: SkillFileName): string => {
  */
 export const fencedBlockAfter = (file: SkillFileName, marker: string): string | undefined => {
 	const text = SKILL_FILES[file]
-	const at = text.indexOf(marker)
-	const open = at < 0 ? -1 : text.indexOf("```", at)
-	if (open < 0) return undefined
-	const bodyStart = text.indexOf("\n", open) + 1
-	const close = text.indexOf("\n```", bodyStart)
-	return close < 0 ? undefined : Str.slice(bodyStart, close)(text)
+	const open = Option.flatMap(Str.indexOf(marker)(text), (at) => indexFrom(text, "```", at))
+	if (Option.isNone(open)) return undefined
+	const bodyStart = Option.match(indexFrom(text, "\n", open.value), {
+		onNone: () => 0,
+		onSome: (newline) => newline + 1,
+	})
+	return Option.match(indexFrom(text, "\n```", bodyStart), {
+		onNone: () => undefined,
+		onSome: (close) => Str.slice(bodyStart, close)(text),
+	})
 }
 
 /** The prose of a markdown section from its heading to the next heading of the same or higher level. */
 export const sectionText = (file: SkillFileName, heading: string): string | undefined => {
 	const text = SKILL_FILES[file]
-	const at = text.indexOf(heading)
-	if (at < 0) return undefined
+	const found = Str.indexOf(heading)(text)
+	if (Option.isNone(found)) return undefined
+	const at = found.value
 	const level = /^#+/.exec(heading)?.[0].length ?? 2
 	const next = new RegExp(`\\n#{1,${level}} `, "g")
 	next.lastIndex = at + heading.length
@@ -139,8 +148,8 @@ export const sectionText = (file: SkillFileName, heading: string): string | unde
 /** The prose of `file` from `marker` to the next heading of any level. */
 export const textFrom = (file: SkillFileName, marker: string): string | undefined => {
 	const text = SKILL_FILES[file]
-	const at = text.indexOf(marker)
-	if (at < 0) return undefined
-	const next = text.indexOf("\n#", at)
-	return Str.trimEnd(Str.slice(at, next < 0 ? undefined : next)(text))
+	const at = Str.indexOf(marker)(text)
+	if (Option.isNone(at)) return undefined
+	const next = indexFrom(text, "\n#", at.value)
+	return Str.trimEnd(Str.slice(at.value, Option.getOrUndefined(next))(text))
 }

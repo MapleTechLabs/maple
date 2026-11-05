@@ -1,4 +1,4 @@
-import { Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 // The six raw telemetry tables that Maple archives to Parquet. Aggregation and
 // materialized-view tables are intentionally excluded: they are rebuildable from
 // raw telemetry and would balloon archive volume without preserving any fact the
@@ -39,7 +39,7 @@ export const isArchiveSignalName = (value: string): value is ArchiveSignalName =
 	Arr.some(ARCHIVE_SIGNALS, (s) => s.name === value)
 
 export const archiveSignal = (name: string): ArchiveSignal => {
-	const signal = ARCHIVE_SIGNALS.find((s) => s.name === name)
-	if (!signal) throw new Error(`unknown archive signal: ${name}`)
-	return signal
+	const signal = Arr.findFirst(ARCHIVE_SIGNALS, (s) => s.name === name)
+	if (Option.isNone(signal)) throw new Error(`unknown archive signal: ${name}`)
+	return signal.value
 }

@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { mapRailwayMetrics, METRIC_CPU_USAGE, METRIC_MEMORY_USAGE, METRIC_NETWORK_IO } from "./mapping"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const context = {
 	projectId: "prj_1",
@@ -64,10 +64,12 @@ describe("mapRailwayMetrics", () => {
 			],
 			{ startMs: t0, endMs: t0 + 60_000 },
 		)
-		const memory = rows.find((row) => row.metric_name === METRIC_MEMORY_USAGE)!
+		const memory = Option.getOrThrow(
+			Arr.findFirst(rows, (row) => row.metric_name === METRIC_MEMORY_USAGE),
+		)
 		assert.strictEqual(memory.value, 512 * 1024 ** 2)
 		assert.strictEqual(memory.metric_unit, "By")
-		const network = rows.find((row) => row.metric_name === METRIC_NETWORK_IO)!
+		const network = Option.getOrThrow(Arr.findFirst(rows, (row) => row.metric_name === METRIC_NETWORK_IO))
 		assert.deepStrictEqual(network.metric_attributes, { "network.io.direction": "transmit" })
 	})
 

@@ -28,7 +28,7 @@ import {
 	spanStartMs,
 	type SessionTurn,
 } from "./session-turns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * A hole this long INSIDE a turn is the framework stalled mid-flight. Gaps
@@ -124,11 +124,12 @@ export function buildSessionFindings(
 	// The LAST failure event in the final turn is the one the turn died on — an
 	// earlier rate-limited retry in the same turn is a finding, not the cause.
 	const cause = summary.failed
-		? events.findLast((event) => turnIndexBySpan.get(event.span.spanId) === lastTurnIndex)
-		: undefined
+		? Arr.findLast(events, (event) => turnIndexBySpan.get(event.span.spanId) === lastTurnIndex)
+		: Option.none()
+	const causeSpanId = Option.getOrUndefined(Option.map(cause, (event) => event.span.spanId))
 
 	const findings = [
-		...failureFindings(events, turns, turnIndexBySpan, cause?.span.spanId, spans),
+		...failureFindings(events, turns, turnIndexBySpan, causeSpanId, spans),
 		...retryFindings(spans, turns, turnIndexBySpan),
 		...truncationFindings(spans, turns, turnIndexBySpan),
 		...stallFindings(turns),
@@ -141,7 +142,7 @@ export function buildSessionFindings(
 	)
 
 	const verdict: SessionVerdict = summary.failed
-		? { status: "failed", spanId: cause?.span.spanId }
+		? { status: "failed", spanId: causeSpanId }
 		: { status: findings.length > 0 ? "attention" : "clean", spanId: undefined }
 
 	return { verdict, findings }
@@ -184,10 +185,10 @@ function failureFindings(
 		// links its first event, where the trouble began.
 		const cause =
 			causeSpanId === undefined
-				? undefined
-				: group.members.find((member) => member.span.spanId === causeSpanId)
-		const terminal = cause !== undefined
-		const linked = cause ?? group.members[0]
+				? Option.none()
+				: Arr.findFirst(group.members, (member) => member.span.spanId === causeSpanId)
+		const terminal = Option.isSome(cause)
+		const linked = Option.getOrElse(cause, () => group.members[0])
 		return {
 			id: `failure:${label}`,
 			kind: group.kind,
@@ -394,7 +395,10 @@ function turnListText(indices: readonly number[], turns: readonly SessionTurn[],
 		return terminal ? `${one} (final)` : one
 	}
 	if (indices.length > 4) return `${indices.length} of ${turns.length} ${Str.toLowerCase(word)}s`
-	const numbers = indices.map((index) => turns[index]?.index ?? index + 1).join(", ")
+	const numbers = Arr.join(
+		Arr.map(indices, (index) => `${turns[index]?.index ?? index + 1}`),
+		", ",
+	)
 	return `${word}s ${numbers}${terminal ? " (final)" : ""}`
 }
 

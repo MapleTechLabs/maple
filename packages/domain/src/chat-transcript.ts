@@ -18,7 +18,7 @@
  */
 import { ChatToolCall } from "./chat-session"
 import type { ChatEvent, ChatMessage, ChatTaskRef, ChatTaskState } from "./chat-session"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * A transcript being folded, event by event.
@@ -165,7 +165,10 @@ const foldInto = (
 		}
 		case "tool-result": {
 			const message = open(event.messageId)
-			const index = message.toolCalls.findIndex((call) => call.id === event.callId)
+			const index = Option.getOrElse(
+				Arr.findFirstIndex(message.toolCalls, (call) => call.id === event.callId),
+				() => -1,
+			)
 			const call = message.toolCalls[index]
 			// Logs written before the adapter dropped it hold the approval gate's own refusal as a
 			// proposal's result; it is not a decision. Can go once those sessions have aged out.
@@ -210,7 +213,7 @@ const settleUnfinished = (drafts: Drafts, messageId: string, nested?: Map<string
 	message.toolCalls = Arr.map(message.toolCalls, (call) => {
 		if (call.output !== undefined || call.proposed === true || call.stopped === true) return call
 		const child = nested?.get(call.id)
-		child?.messages.forEach((draft) => settleUnfinished(child, draft.id))
+		if (child !== undefined) Arr.forEach(child.messages, (draft) => settleUnfinished(child, draft.id))
 		const task =
 			call.task?.status === "running" ? { ...call.task, status: "aborted" as const } : call.task
 		return new ChatToolCall({ ...call, stopped: true, ...(task === undefined ? undefined : { task }) })
@@ -250,7 +253,10 @@ const foldTaskEvent = (
 ): void => {
 	const parent = top.byId.get(ref.parentMessageId)
 	if (!parent) return
-	const index = parent.toolCalls.findIndex((call) => call.id === ref.id)
+	const index = Option.getOrElse(
+		Arr.findFirstIndex(parent.toolCalls, (call) => call.id === ref.id),
+		() => -1,
+	)
 	if (index < 0) return
 
 	const child = nested.get(ref.id) ?? makeDrafts()

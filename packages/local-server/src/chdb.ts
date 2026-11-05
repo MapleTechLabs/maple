@@ -11,7 +11,7 @@
 // struct, so there is no struct-offset fragility across libchdb versions.
 
 import { CString, dlopen, FFIType, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi"
-import { Effect, Result, Schema, type Scope, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Result, Schema, type Scope, Array as Arr, String as Str } from "effect"
 import { existsSync } from "node:fs"
 import { lstatSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -66,14 +66,14 @@ function resolveLibchdb(): string {
 	const binDir = join(homedir(), ".maple", "bin")
 	candidates.push(join(binDir, "libchdb.so"), join(binDir, "libchdb.dylib"))
 
-	const found = candidates.find((p) => existsSync(p))
-	if (!found) {
+	const found = Arr.findFirst(candidates, (p) => existsSync(p))
+	if (Option.isNone(found)) {
 		throw new Error(
 			`libchdb not found. Looked in:\n  ${Arr.join(candidates, "\n  ")}\n` +
 				`Set MAPLE_LIBCHDB to its path, or keep libchdb next to the maple binary.`,
 		)
 	}
-	return found
+	return found.value
 }
 
 // Never dlclose'd: unloading libchdb runs its static destructors, and the real
@@ -598,7 +598,7 @@ export const describeChdbOpenFailure = (raw: string, version: string = MAPLE_VER
 			: `Reinstall the verified bundle with \`maple update\` (or \`maple update --tag v${version}\` ` +
 				"to keep this version; Homebrew: `brew reinstall maple`)."
 	return (
-		`could not load libchdb at ${path}: the dynamic loader rejected it (${reason?.split("\n")[0]?.trim()}). ` +
+		`could not load libchdb at ${path}: the dynamic loader rejected it (${reason === undefined ? undefined : Str.trim(Str.split("\n")(reason)[0])}). ` +
 		`The file is damaged or not loadable on this system, so every start fails the same way. ${remedy}`
 	)
 }

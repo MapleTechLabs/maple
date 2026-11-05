@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Array as Arr } from "effect"
+import { Effect, Array as Arr, Option } from "effect"
 import type { QueryEngineResult } from "@maple/domain/query-engine"
 import type { QueryBuilderQueryDraftPayload, QuerySet } from "@maple/query-model"
 import { LAB_EMPTY_RANGE_STRATEGY } from "./bucketing"
@@ -92,7 +92,15 @@ describe("runQuerySetWindow", () => {
 			assert.strictEqual(result.queryResults[1].status, "error")
 			// A build failure records a diagnostic with no spec, which is how a debug
 			// panel tells "never ran" apart from "ran and failed".
-			assert.isNull(result.diagnostics.find((d) => d.queryId === "bad")?.spec ?? null)
+			assert.isNull(
+				Option.match(
+					Arr.findFirst(result.diagnostics, (d) => d.queryId === "bad"),
+					{
+						onNone: () => null,
+						onSome: (d) => d.spec ?? null,
+					},
+				),
+			)
 		}),
 	)
 

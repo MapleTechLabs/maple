@@ -61,9 +61,10 @@ export const resolveConnectorConfig = (connector: IngressConnector): Effect.Effe
 			const config = new Map<string, string>()
 			const missing: string[] = []
 			const optional = new Set(
-				connector.ingress.requiredConfig
-					.filter((key) => key.optional === true)
-					.map((key) => key.name),
+				Arr.map(
+					Arr.filter(connector.ingress.requiredConfig, (key) => key.optional === true),
+					(key) => key.name,
+				),
 			)
 			for (const [name, value] of entries) {
 				if (Option.isSome(value)) config.set(name, value.value)

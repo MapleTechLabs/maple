@@ -4,7 +4,7 @@ import { buildSessionFindings } from "./session-findings"
 import { buildSessionSummary } from "./session-summary"
 import { buildSessionTurns } from "./session-turns"
 import { agentSpan, llmSpan, makeSpan, toolSpan } from "./span-test-support"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -151,7 +151,9 @@ describe("buildSessionFindings", () => {
 		// failures on record as something worth a look, not a fix: the agent
 		// carried on past them.
 		expect(result.verdict.status).toBe("attention")
-		const finding = result.findings.find((entry) => entry.label === "error · run_tests")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "error · run_tests"),
+		)
 		expect(finding.severity).toBe("anomaly")
 		expect(finding.count).toBe(2)
 		expect(finding.detail).toBe("exit 1")
@@ -187,7 +189,9 @@ describe("buildSessionFindings", () => {
 
 		// "unknown table" is the model naming a table that does not exist: the
 		// tool refused its arguments, and the label says so.
-		const finding = result.findings.find((entry) => entry.label === "tool_arguments · query_data")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "tool_arguments · query_data"),
+		)
 		expect(finding.detail).toBe("Query failed: unknown table trace_spans")
 		expect(finding.severity).toBe("anomaly")
 	})
@@ -215,7 +219,9 @@ describe("buildSessionFindings", () => {
 
 		// A parameter schema error is the model's arguments failing the tool's
 		// schema: the row names the parameter rather than quoting the JSON path.
-		const finding = result.findings.find((entry) => entry.label === "tool_arguments · query_data")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "tool_arguments · query_data"),
+		)
 		expect(finding.detail).toBe(
 			"invalid arguments: `apdex_threshold_ms`: expected a number, or omit the parameter (an empty string is not a number)",
 		)
@@ -241,7 +247,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const finding = result.findings.find((entry) => entry.label === "tool_error · query_data")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "tool_error · query_data"),
+		)
 		expect(finding.detail).toBe("shard 3 is locked")
 	})
 
@@ -267,7 +275,9 @@ describe("buildSessionFindings", () => {
 		)
 
 		expect(result.verdict.status).toBe("attention")
-		const finding = result.findings.find((entry) => entry.label === "rate_limit")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "rate_limit"),
+		)
 		expect(finding.severity).toBe("anomaly")
 	})
 
@@ -292,7 +302,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const finding = result.findings.find((entry) => entry.label === "stop length")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "stop length"),
+		)
 		expect(finding.count).toBe(1)
 		expect(finding.spanId).toBe("l-cut")
 		expect(finding.severity).toBe("anomaly")
@@ -318,7 +330,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const stall = result.findings.find((entry) => Str.startsWith("idle")(entry.label))!
+		const stall = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => Str.startsWith("idle")(entry.label)),
+		)
 		expect(stall.label).toBe("idle 58s")
 		expect(stall.turnText).toBe("Turn 2")
 		// The five-minute pause between the turns is the user thinking: no finding.
@@ -430,7 +444,9 @@ describe("buildSessionFindings", () => {
 			]),
 		)
 
-		const finding = result.findings.find((entry) => entry.label === "invalid_output")!
+		const finding = Option.getOrThrow(
+			Arr.findFirst(result.findings, (entry) => entry.label === "invalid_output"),
+		)
 		expect(finding.detail).toBe("output rejected by schema: missing key `suggestedActions`")
 		expect(finding.severity).toBe("failure")
 	})

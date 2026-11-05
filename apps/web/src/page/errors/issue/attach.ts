@@ -248,8 +248,10 @@ const pickerField = (h: H, model: Model): Html => {
 				isUnfiltered: true,
 				className: "w-full text-xs",
 				renderItem: (url) => {
-					const pr = visible.find((candidate) => candidate.url === url)
-					return pr === undefined ? [url] : pullRequestItem(h, pr)
+					return Option.match(
+						Arr.findFirst(visible, (candidate) => candidate.url === url),
+						{ onNone: () => [url], onSome: (pr) => pullRequestItem(h, pr) },
+					)
 				},
 				toView: ({ field: group, rest }) => h.div([h.Class("contents")], [group, ...rest]),
 			},

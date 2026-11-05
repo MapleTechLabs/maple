@@ -90,25 +90,39 @@ const stubFetch = (recorded: Array<RecordedRequest>): typeof globalThis.fetch =>
 		return new Response("{}", { status: 200 })
 	}) as typeof globalThis.fetch
 
-const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> =>
-	Arr.flatMap(
-		Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url)).flatMap(
-			(request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [],
-		),
-		(resource) => resource.scopeSpans.flatMap((scope) => scope.spans),
-	).filter((span) => span.kind === SERVER_KIND)
+const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSpan> => {
+	const traceRequests = Arr.filter(recorded, (request) => Str.endsWith("/v1/traces")(request.url))
+	const resources = Arr.flatMap(
+		traceRequests,
+		(request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [],
+	)
+	const spans = Arr.flatMap(resources, (resource) =>
+		Arr.flatMap(resource.scopeSpans, (scope) => scope.spans),
+	)
+	return Arr.filter(spans, (span) => span.kind === SERVER_KIND)
+}
 
-const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
-	Arr.flatMap(
-		Arr.filter(recorded, (request) => Str.endsWith("/v1/logs")(request.url)).flatMap(
-			(request) => decodeExportedLogs(JSON.parse(request.body ?? "{}")).resourceLogs ?? [],
-		),
-		(resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords),
-	).flatMap((record) => (record.body?.stringValue === undefined ? [] : [record.body.stringValue]))
+const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> => {
+	const logRequests = Arr.filter(recorded, (request) => Str.endsWith("/v1/logs")(request.url))
+	const resources = Arr.flatMap(
+		logRequests,
+		(request) => decodeExportedLogs(JSON.parse(request.body ?? "{}")).resourceLogs ?? [],
+	)
+	const records = Arr.flatMap(resources, (resource) =>
+		Arr.flatMap(resource.scopeLogs, (scope) => scope.logRecords),
+	)
+	return Arr.flatMap(records, (record) =>
+		record.body?.stringValue === undefined ? [] : [record.body.stringValue],
+	)
+}
 
 /** One attribute as its rendered value — OTLP JSON carries ints as strings anyway. */
 const attributeOf = (span: ExportedSpan | undefined, key: string): string | undefined => {
-	const value = span?.attributes.find((attribute) => attribute.key === key)?.value
+	const value =
+		span === undefined
+			? undefined
+			: Option.getOrUndefined(Arr.findFirst(span.attributes, (attribute) => attribute.key === key))
+					?.value
 	const rendered = value === undefined ? undefined : Rec.values(value)[0]
 	if (rendered === undefined) return undefined
 	return typeof rendered === "string" || typeof rendered === "number" || typeof rendered === "boolean"
@@ -123,8 +137,15 @@ const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 
 /** What error tracking will group this span's failure under. */
 const exceptionTypeOf = (span: ExportedSpan | undefined): string | undefined => {
-	const event = span?.events?.find((candidate) => candidate.name === "exception")
-	const value = event?.attributes.find((attribute) => attribute.key === "exception.type")?.value
+	const event =
+		span?.events === undefined
+			? Option.none()
+			: Arr.findFirst(span.events, (candidate) => candidate.name === "exception")
+	const value = Option.isNone(event)
+		? undefined
+		: Option.getOrUndefined(
+				Arr.findFirst(event.value.attributes, (attribute) => attribute.key === "exception.type"),
+			)?.value
 	const rendered = value === undefined ? undefined : Rec.values(value)[0]
 	if (rendered === undefined) return undefined
 	return typeof rendered === "string" || typeof rendered === "number" || typeof rendered === "boolean"

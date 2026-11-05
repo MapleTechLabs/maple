@@ -57,16 +57,15 @@ const tagOptions = (facets: ReplaysFacets, selected: ReadonlyArray<string>): Rea
 	const counted = Arr.filter(
 		Arr.map(SESSION_TAG_ORDER, (tag) => ({
 			name: tag,
-			count: facets.tags.find((item) => item.name === tag)?.count ?? 0,
+			count: Option.match(
+				Arr.findFirst(facets.tags, (item) => item.name === tag),
+				{ onNone: () => 0, onSome: (item) => item.count },
+			),
 		})),
 		(option) => option.count > 0,
 	)
-	return selected.reduce<ReadonlyArray<FilterOption>>(
-		(options, tag) =>
-			Arr.some(options, (option) => option.name === tag)
-				? options
-				: [{ name: tag, count: 0 }, ...options],
-		counted,
+	return Arr.reduce<string, ReadonlyArray<FilterOption>>(selected, counted, (options, tag) =>
+		Arr.some(options, (option) => option.name === tag) ? options : [{ name: tag, count: 0 }, ...options],
 	)
 }
 

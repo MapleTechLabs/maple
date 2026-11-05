@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ShareOgCardTile } from "@maple/domain/http"
 import { ogCardNode } from "./card"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** Walks the node tree, since takumi nodes are plain nested objects. */
 const flatten = (node: unknown): Array<Record<string, unknown>> => {
@@ -18,7 +18,9 @@ const texts = (node: unknown): Array<string> =>
 	)
 
 const fontSizeOf = (node: unknown, label: string): number | undefined => {
-	const match = flatten(node).find((child) => child.type === "text" && child.text === label)
+	const match = Option.getOrUndefined(
+		Arr.findFirst(flatten(node), (child) => child.type === "text" && child.text === label),
+	)
 	return (match?.style as Record<string, number> | undefined)?.fontSize
 }
 

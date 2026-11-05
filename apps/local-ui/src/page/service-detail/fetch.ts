@@ -20,10 +20,10 @@ export const fetchOverview = (serviceName: string, bounds: TimeBounds, apiBase: 
 		)
 		const row = catalogRows[0]
 		if (!row) return null
-		const firstSeenMs = overviewRows.reduce<number | null>((earliest, overview) => {
+		const firstSeenMs = Arr.reduce(overviewRows, null, (earliest: number | null, overview) => {
 			const ms = parseClickHouseDateTime(DateTime.formatIso(overview.firstSeen))
 			return ms !== null && (earliest === null || ms < earliest) ? ms : earliest
-		}, null)
+		})
 		const overview: Overview = { stats: toCatalogEntry(row, 0), firstSeenMs }
 		return overview
 	})

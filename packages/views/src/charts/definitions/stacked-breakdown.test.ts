@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { transformRows } from "../infra-metric-series"
 import { buildStackedBreakdown } from "./stacked-breakdown"
@@ -45,7 +45,9 @@ const hover = (built: ReturnType<typeof buildStackedBreakdown>) => {
 describe("stacked breakdown tooltip", () => {
 	test("in milliseconds it lists each series as a duration and closes with their sum", () => {
 		const tooltip = hover(buildStackedBreakdown(spec({ unit: "duration_ms", showTotal: true })))
-		expect(tooltip?.rows.map((row) => [row.label, row.value])).toEqual([
+		expect(
+			tooltip === undefined ? undefined : Arr.map(tooltip.rows, (row) => [row.label, row.value]),
+		).toEqual([
 			["DNS", "4.0ms"],
 			["TTFB", "60.5ms"],
 		])
@@ -54,7 +56,10 @@ describe("stacked breakdown tooltip", () => {
 
 	test("without a unit it keeps plain counts and no total", () => {
 		const tooltip = hover(buildStackedBreakdown(spec()))
-		expect(tooltip?.rows.map((row) => row.value)).toEqual(["4", "60.5"])
+		expect(tooltip === undefined ? undefined : Arr.map(tooltip.rows, (row) => row.value)).toEqual([
+			"4",
+			"60.5",
+		])
 		expect(tooltip?.total).toBeUndefined()
 	})
 })

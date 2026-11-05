@@ -11,7 +11,7 @@
  */
 import { appendFileSync, writeFileSync } from "node:fs"
 import { afterAll, beforeAll, it } from "vitest"
-import { Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { RoleName } from "@maple/domain/primitives"
 import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
 import {
@@ -77,10 +77,15 @@ it("playground", async () => {
 				),
 			)
 		case "schema": {
-			const entry = publicTools.find((candidate) => candidate.name === tool)
 			return writeFileSync(
 				out,
-				entry === undefined ? `Unknown tool "${tool}".` : encodePrettyJson(inputSchemaOf(entry)),
+				Option.match(
+					Arr.findFirst(publicTools, (candidate) => candidate.name === tool),
+					{
+						onNone: () => `Unknown tool "${tool}".`,
+						onSome: (entry) => encodePrettyJson(inputSchemaOf(entry)),
+					},
+				),
 			)
 		}
 		case "call": {

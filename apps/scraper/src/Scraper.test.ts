@@ -7,6 +7,7 @@ import {
 	Exit,
 	Fiber,
 	Layer,
+	Option,
 	Result,
 	Schema,
 	Semaphore,
@@ -240,9 +241,12 @@ describe("Scraper", () => {
 			const instances = Arr.map(
 				harness.sent[0]!.request.resourceMetrics,
 				(resource) =>
-					resource.scopeMetrics[0]!.metrics[0]!.gauge!.dataPoints[0]!.attributes.find(
-						(a) => a.key === "instance",
-					)?.value.stringValue,
+					Option.getOrThrow(
+						Arr.findFirst(
+							resource.scopeMetrics[0]!.metrics[0]!.gauge!.dataPoints[0]!.attributes,
+							(a) => a.key === "instance",
+						),
+					).value.stringValue,
 			)
 			assert.deepStrictEqual(
 				instances,
@@ -298,7 +302,9 @@ describe("Scraper", () => {
 			const shared = yield* Effect.forkChild(cycle(harness, [branch("main"), branch("dev")]))
 			yield* TestClock.adjust(Duration.seconds(8))
 			const outcome = yield* Fiber.join(shared)
-			const dev = outcome.scrapes.find((scrape) => scrape.target.subTargetKey === "dev")!
+			const dev = Option.getOrThrow(
+				Arr.findFirst(outcome.scrapes, (scrape) => scrape.target.subTargetKey === "dev"),
+			)
 			assert.isTrue(Result.isFailure(dev.result))
 			if (Result.isFailure(dev.result)) assert.include(dev.result.failure.message, "request timed out")
 			assert.strictEqual(dev.durationMs, 7_500)

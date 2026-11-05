@@ -43,7 +43,7 @@ import {
 	type StatusPageSnapshotIncident,
 	utcDay,
 } from "@maple/domain/status-page"
-import { Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { ensureMonitorsInOrg } from "./monitors"
@@ -136,18 +136,28 @@ export const isIndexedIncident = (incident: SnapshotIncidentInput, nowMs: number
 	(incident.resolvedAt ?? nowMs) >= nowMs - STATUS_PAGE_HISTORY_DAYS * DAY_MS
 
 /** The snapshot for already-read rows; no I/O, so the rules are testable without a database. */
+const byStartedAtDesc = Order.flip(
+	Order.mapInput(Order.Number, (incident: SnapshotIncidentInput) => incident.startedAt),
+)
+const updatesNewestFirst = Order.combine(
+	Order.flip(Order.mapInput(Order.Number, (update: SnapshotUpdateInput) => update.createdAt)),
+	(a: SnapshotUpdateInput, b: SnapshotUpdateInput) => Str.localeCompare(a.id)(b.id),
+)
+
 export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 	const days = lastDays(input.nowMs, STATUS_PAGE_HISTORY_DAYS)
 	const firstDay = days[0] ?? ""
 	const daily = Arr.filter(input.daily, (row) => row.day >= firstDay)
 
 	const incidents: ReadonlyArray<StatusPageSnapshotIncident> = Arr.map(
-		Arr.filter(input.incidents, (incident) => isListedIncident(incident, input.nowMs)).toSorted(
-			(a, b) => b.startedAt - a.startedAt,
+		Arr.sort(
+			Arr.filter(input.incidents, (incident) => isListedIncident(incident, input.nowMs)),
+			byStartedAtDesc,
 		),
 		(incident) => {
-			const updates = Arr.filter(input.updates, (update) => update.incidentId === incident.id).toSorted(
-				(a, b) => b.createdAt - a.createdAt || Str.localeCompare(a.id)(b.id),
+			const updates = Arr.sort(
+				Arr.filter(input.updates, (update) => update.incidentId === incident.id),
+				updatesNewestFirst,
 			)
 			const first = updates.at(-1)
 			return {
@@ -180,8 +190,9 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 	)
 	const active = Arr.filter(incidents, isActiveIncident)
 	const incidentHistory: ReadonlyArray<StatusPageIncidentHistoryEntry> = Arr.map(
-		Arr.filter(input.incidents, (incident) => isIndexedIncident(incident, input.nowMs)).toSorted(
-			(a, b) => b.startedAt - a.startedAt,
+		Arr.sort(
+			Arr.filter(input.incidents, (incident) => isIndexedIncident(incident, input.nowMs)),
+			byStartedAtDesc,
 		),
 		(incident) => ({
 			id: incident.id,

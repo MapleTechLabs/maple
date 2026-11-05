@@ -265,7 +265,14 @@ export const interpretCheck = (
 ): CheckResult => {
 	const roleName = awsConnectionResourceNames(row.id).roleName
 	if (result._tag === "Ok") {
-		const version = Number(result.tags.find((tag) => tag.key === AWS_ROLE_TAGS.templateVersion)?.value)
+		const version = Number(
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(result.tags, (tag) => tag.key === AWS_ROLE_TAGS.templateVersion),
+					(tag) => tag.value,
+				),
+			),
+		)
 		const granted = normalizeModules(
 			Arr.flatMap(result.attachedPolicyNames, (name) => {
 				const module = awsModuleOfPolicyName(roleName, name)

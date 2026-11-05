@@ -71,7 +71,7 @@ const keyed = <A, E>(
 			})
 
 const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+	model: Arr.reduce(steps, model, (next, step) => ({ ...next, ...step.patch })),
 	commands: Arr.flatMap(steps, (step) => step.commands),
 })
 
@@ -224,12 +224,12 @@ const investigationPayload = (
 
 const openInvestigation = (model: Model, incidentId: string): Return => {
 	const rule = ruleOf(model)
-	const incident = ruleIncidentsOf(model).find((candidate) => candidate.id === incidentId)
-	return rule === null || incident === undefined || model.isOpeningInvestigation
+	const incident = Arr.findFirst(ruleIncidentsOf(model), (candidate) => candidate.id === incidentId)
+	return rule === null || Option.isNone(incident) || model.isOpeningInvestigation
 		? { model }
 		: {
 				model: { ...model, isOpeningInvestigation: true },
-				commands: [OpenRuleInvestigation({ payload: investigationPayload(rule, incident) })],
+				commands: [OpenRuleInvestigation({ payload: investigationPayload(rule, incident.value) })],
 			}
 }
 

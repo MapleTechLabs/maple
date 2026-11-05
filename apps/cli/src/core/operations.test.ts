@@ -51,8 +51,9 @@ describe("rawQuery instrumentation", () => {
 			)
 
 			assert.deepStrictEqual(rows, [{ value: 1 }])
-			const span = spans.find((candidate) => candidate.name === "WarehouseExecutor.rawQuery")
-			assert.ok(span)
+			const found = Arr.findFirst(spans, (candidate) => candidate.name === "WarehouseExecutor.rawQuery")
+			assert.ok(Option.isSome(found))
+			const span = found.value
 			assert.strictEqual(span.kind, "client")
 			assert.strictEqual(span.attributes.get("db.system.name"), "clickhouse")
 			assert.strictEqual(span.attributes.get("peer.service"), "chdb")
@@ -296,7 +297,12 @@ describe("serviceMap in local mode", () => {
 			const { result, sqls } = yield* run()
 			assert.strictEqual(result.edges.length, 2)
 			assert.deepStrictEqual(
-				result.databases?.map((d) => `${d.sourceService} -> ${d.dbSystem}/${d.dbNamespace}`),
+				result.databases === undefined
+					? undefined
+					: Arr.map(
+							result.databases,
+							(d) => `${d.sourceService} -> ${d.dbSystem}/${d.dbNamespace}`,
+						),
 				["api -> postgresql/shop"],
 			)
 			assert.strictEqual(result.external, undefined)
@@ -308,8 +314,9 @@ describe("serviceMap in local mode", () => {
 		Effect.gen(function* () {
 			const { result, sqls } = yield* run("api")
 			// Filtering a capped org-wide list would drop a quiet service's inbound edges.
-			const edgesSql = sqls.find((sql) => Str.includes("service_map_edges_hourly")(sql))
-			assert.ok(edgesSql)
+			const foundSql = Arr.findFirst(sqls, (sql) => Str.includes("service_map_edges_hourly")(sql))
+			assert.ok(Option.isSome(foundSql))
+			const edgesSql = foundSql.value
 			assert.match(edgesSql, /SourceService = 'api' OR [\w.]*TargetService = 'api'/)
 			assert.match(edgesSql, /p\.ServiceName = 'api' OR c\.ServiceName = 'api'/)
 			assert.deepStrictEqual(
@@ -318,7 +325,9 @@ describe("serviceMap in local mode", () => {
 			)
 			assert.strictEqual(result.databases?.length, 1)
 			assert.deepStrictEqual(
-				result.external?.map((e) => `${e.targetType} ${e.targetName}`),
+				result.external === undefined
+					? undefined
+					: Arr.map(result.external, (e) => `${e.targetType} ${e.targetName}`),
 				["http api.stripe.com"],
 			)
 		}),

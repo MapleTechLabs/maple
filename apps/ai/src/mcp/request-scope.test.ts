@@ -178,7 +178,11 @@ describe("MCP tool calls on one isolate", () => {
 
 		const outcome = (result: typeof first) => ({
 			isError: result.isError ?? false,
-			names: result.structuredContent?.dashboards.map((dashboard) => dashboard.name),
+			names: Option.getOrUndefined(
+				Option.map(Option.fromNullishOr(result.structuredContent), (content) =>
+					Arr.map(content.dashboards, (dashboard) => dashboard.name),
+				),
+			),
 		})
 		expect([outcome(first), outcome(second)]).toEqual([
 			{ isError: false, names: ["Checkout latency"] },

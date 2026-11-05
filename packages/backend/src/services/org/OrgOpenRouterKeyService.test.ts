@@ -140,7 +140,7 @@ describe("OrgOpenRouterKeyService", () => {
 						"SELECT key_ciphertext FROM org_openrouter_keys WHERE org_id = 'org_byok'",
 					),
 				)
-				assert.isFalse(row?.key_ciphertext.includes(KEY) ?? true)
+				assert.isFalse(row === undefined || Str.includes(KEY)(row.key_ciphertext))
 
 				const resolved = yield* keys.resolveForRun(ORG)
 				assert.strictEqual(Option.map(resolved, Redacted.value).pipe(Option.getOrNull), KEY)

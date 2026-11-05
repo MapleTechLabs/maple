@@ -24,7 +24,7 @@ import {
 	SPAN_NAME_FRAME_PATTERN,
 } from "./fingerprint"
 import { ERROR_EVENTS_MV_SQL } from "./materializations"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 describe("maple.fingerprint override", () => {
 	const nodeError = (fn: string, message: string, customFingerprint?: string) =>
@@ -249,19 +249,25 @@ describe("error fingerprint normalization", () => {
 
 		it("skips stdlib and dependency frames in every runtime it knows", () => {
 			const python = inputs(
-				[
-					"Traceback (most recent call last):",
-					'  File "/app/main.py", line 10, in run',
-					'  File "/usr/local/lib/python3.12/json/decoder.py", line 3, in decode',
-					'  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 5, in get',
-				].join("\n"),
+				Arr.join(
+					[
+						"Traceback (most recent call last):",
+						'  File "/app/main.py", line 10, in run',
+						'  File "/usr/local/lib/python3.12/json/decoder.py", line 3, in decode',
+						'  File "/usr/local/lib/python3.12/site-packages/requests/api.py", line 5, in get',
+					],
+					"\n",
+				),
 			)
 			expect(python.fpFrames).toBe('  File "/app/main.py", , in run')
 			const jvm = inputs(
-				[
-					"\tat java.util.HashMap.get(HashMap.java:10)",
-					"\tat com.acme.Orders.load(Orders.java:42)",
-				].join("\n"),
+				Arr.join(
+					[
+						"\tat java.util.HashMap.get(HashMap.java:10)",
+						"\tat com.acme.Orders.load(Orders.java:42)",
+					],
+					"\n",
+				),
 			)
 			expect(jvm.fpFrames).toBe("\tat com.acme.Orders.load(Orders.java)")
 		})
@@ -761,7 +767,8 @@ describe("SQL parity", () => {
 		expect(sql).toContain(`NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)})`)
 		// The frame limit reads _msgSig, so the signature must be defined first.
-		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _topFrames"))
+		const indexIn = (needle: string) => Option.getOrElse(Str.indexOf(needle)(sql), () => -1)
+		expect(indexIn("AS _msgSig")).toBeLessThan(indexIn("AS _topFrames"))
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
 			...JSON_TYPE_VALUE_REDACTIONS,
@@ -823,7 +830,9 @@ describe("SQL parity", () => {
 			...JSON_VALUE_REDACTIONS,
 			...ERROR_MSG_REDACTIONS,
 		]) {
-			const groups = Arr.map([...replacement.matchAll(/\$([1-9])/g)], (m) => Number(m[1]))
+			const groups = Arr.map(Arr.fromIterable(Str.matchAll(/\$([1-9])/g)(replacement)), (m) =>
+				Number(m[1]),
+			)
 			expect(Str.replace(/\$[1-9]/g, "")(replacement)).not.toMatch(/[$\\]/)
 			const capturing = new RegExp(`${pattern}|`).exec("")?.length ?? 1
 			for (const group of groups) expect(group).toBeLessThan(capturing)

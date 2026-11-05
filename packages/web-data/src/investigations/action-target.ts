@@ -13,7 +13,7 @@
  * rather than a dead one.
  */
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /**
  * The shape of work an action asks for. `task` is the honest fallback: it says
@@ -147,7 +147,10 @@ const KINDS: ReadonlyArray<{ kind: ActionKind; match: RegExp }> = [
 
 export function classifyAction(action: string, context: ActionRoutingContext): ActionClassification {
 	const text = Str.toLowerCase(action)
-	const kind = KINDS.find((entry) => entry.match.test(text))?.kind ?? "task"
+	const kind = Option.match(
+		Arr.findFirst(KINDS, (entry) => entry.match.test(text)),
+		{ onNone: (): ActionKind => "task", onSome: (entry) => entry.kind },
+	)
 	return { kind, target: actionTarget(text, context) }
 }
 

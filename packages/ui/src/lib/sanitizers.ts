@@ -28,6 +28,7 @@ export const sanitizeCssIdentifier = (key: string): string => {
 	}
 	// Fallback for environments without CSS.escape: hex-encode anything
 	// that isn't [a-zA-Z0-9_-].
+	// oxlint-disable-next-line effecttsgo/prefer-effect-string -- function replacer; Str.replace only takes a string
 	return key.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch.charCodeAt(0).toString(16)} `)
 }
 

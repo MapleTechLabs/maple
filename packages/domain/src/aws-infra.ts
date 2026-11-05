@@ -4,6 +4,8 @@
  * a statistic's mean is a gauge named after the metric, its sum the `.sum` delta counter.
  */
 
+import { Array as Arr, Option } from "effect"
+
 export const AWS_INFRA_KIND_IDS = ["ecs", "ec2", "loadBalancers", "rds", "lambda", "sqs"] as const
 export type AwsInfraKindId = (typeof AWS_INFRA_KIND_IDS)[number]
 
@@ -126,7 +128,7 @@ export const awsDimensionAttribute = (dimension: string) => `aws.dimension.${dim
 export const AWS_INFRA_RESOURCE_KEYS = ["cloud.region", "cloud.account.id"] as const
 
 export const awsInfraMetric = (kind: AwsInfraKindId, key: string) =>
-	AWS_INFRA_KINDS[kind].metrics.find((metric) => metric.key === key)
+	Option.getOrUndefined(Arr.findFirst(AWS_INFRA_KINDS[kind].metrics, (metric) => metric.key === key))
 
 /** The most resources of one kind a table reads. Its queries size their row limits from it. */
 export const AWS_INFRA_RESOURCE_LIMIT = 2_500

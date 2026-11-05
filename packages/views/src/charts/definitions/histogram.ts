@@ -11,7 +11,7 @@ import { binX } from "@tanstack/charts/transform/bin"
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scaleLog } from "d3-scale"
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { ChartTooltip, type CategoricalBin, type ChartSpec, type NumericBin } from "../chart-spec"
 import { binLowerBoundLabel, formatBound } from "../histogram-format"
 import type { BuiltChart } from "./built-chart"
@@ -64,7 +64,7 @@ const binTooltip = <TDatum extends NumericBin, X extends number | string>(
 /** `NumericHistogram`'s `definition` memo. */
 export const buildNumericHistogram = (spec: NumericSpec): BuiltChart<NumericBin, number, number> => {
 	const { bins, color, unit } = spec
-	const maxCount = bins.reduce((max, bin) => Math.max(max, bin.value), 0)
+	const maxCount = Arr.reduce(bins, 0, (max, bin) => Math.max(max, bin.value))
 	const { baseline, liftCount, y } = countAxis(maxCount, spec.useLogY)
 	return {
 		definition: defineChart({
@@ -112,7 +112,7 @@ export const buildCategoricalHistogram = (
 	spec: CategoricalSpec,
 ): BuiltChart<CategoricalBin, string, number> => {
 	const { bins, color } = spec
-	const maxCount = bins.reduce((max, bin) => Math.max(max, bin.value), 0)
+	const maxCount = Arr.reduce(bins, 0, (max, bin) => Math.max(max, bin.value))
 	const { baseline, liftCount, y } = countAxis(maxCount, spec.useLogY)
 	return {
 		definition: defineChart({
@@ -130,7 +130,7 @@ export const buildCategoricalHistogram = (
 			scales: {
 				x: {
 					scale: scaleBand<string>(
-						bins.map((bin) => bin.name),
+						Arr.map(bins, (bin) => bin.name),
 						[0, 1],
 					).paddingInner(0.05),
 					grid: false,
@@ -158,12 +158,13 @@ export const buildCategoricalHistogram = (
 /** `HistogramSpike`'s `bins` and `definition` memos: binX over raw observations. */
 export const buildBinnedHistogram = (spec: BinnedSpec) => {
 	const { logScaleY, color } = spec
-	const bins = binX(
-		spec.values.map((value) => ({ value })),
-		{ value: (row: { value: number }) => row.value, thresholds: SPIKE_BIN_COUNT },
-	)
+	const observations = Arr.map(spec.values, (value) => ({ value }))
+	const bins = binX(observations, {
+		value: (row: { value: number }) => row.value,
+		thresholds: SPIKE_BIN_COUNT,
+	})
 	const baseline = logScaleY ? 1 : 0
-	const maxCount = bins.reduce((max, bin) => Math.max(max, bin.value), 0)
+	const maxCount = Arr.reduce(bins, 0, (max, bin) => Math.max(max, bin.value))
 
 	const definition = defineChart({
 		marks: [

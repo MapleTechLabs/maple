@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Array as Arr, Effect, Predicate } from "effect"
 import { describe, expect, it } from "vitest"
 import { parseStoredDashboard, stampCurrentVersion } from "../parse"
 import { CURRENT_DASHBOARD_SCHEMA_VERSION } from "../version"
@@ -51,9 +51,9 @@ const parse = (payload: unknown) => Effect.runSync(parseStoredDashboard(payload)
 
 const firstWidget = (document: Record<string, unknown>): Record<string, unknown> => {
 	const widgets = document.widgets
-	if (!Array.isArray(widgets)) throw new Error("expected widgets to be an array")
+	if (!Arr.isArray(widgets)) throw new Error("expected widgets to be an array")
 	const [widget] = widgets
-	if (typeof widget !== "object" || widget === null) throw new Error("expected a widget object")
+	if (!Predicate.isObject(widget)) throw new Error("expected a widget object")
 	return widget
 }
 

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib"
 import { assert, describe, it } from "@effect/vitest"
 import { Deferred, Duration, Effect, Ref, Result, String as Str } from "effect"
-import { HttpClientRequest } from "effect/http"
+import { Headers, HttpClientRequest } from "effect/http"
 import { readTextPrefix } from "@maple/safe-fetch"
 import { timedHttpClient } from "./TimedHttpClient"
 import { describeTransportFailure, errorCodeOf } from "./UptimeProbe"
@@ -123,7 +123,7 @@ describe("timedHttpClient", () => {
 				["br", brotliCompressSync],
 			])
 			const server = yield* serve((request, _, response) => {
-				const encoding = request.url?.slice(1) ?? ""
+				const encoding = request.url === undefined ? "" : Str.slice(1)(request.url)
 				const encode = encoders.get(encoding)
 				const body = Buffer.from(
 					`{"status":"healthy","asked":"${request.headers["accept-encoding"]}"}`,
@@ -137,7 +137,7 @@ describe("timedHttpClient", () => {
 					Effect.flatMap((response) =>
 						Effect.map(response.text, (text) => ({
 							text,
-							stillEncoded: Object.hasOwn(response.headers, "content-encoding"),
+							stillEncoded: Headers.has(response.headers, "content-encoding"),
 						})),
 					),
 					Effect.scoped,

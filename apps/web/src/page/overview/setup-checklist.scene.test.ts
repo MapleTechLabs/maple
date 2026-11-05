@@ -143,7 +143,7 @@ describe("overview setup checklist", () => {
 		expect(names(polled.commands)).toEqual(["ResolveSetupChecklistPollWindow"])
 		const later = { startTime: "2026-10-01 11:05:00", endTime: "2026-10-01 12:05:00" }
 		const resolved = pageUpdate(polled.model, setup(SetupMessage.ResolvedPollWindow({ window: later })))
-		expect(resolved.commands?.map((command) => command.args)).toEqual([
+		expect(Arr.map(resolved.commands ?? [], (command) => command.args)).toEqual([
 			{ window: later, pinnedNamespace: null },
 		])
 		expect(realServices(withServices(resolved.model, ["checkout"]))).toEqual([

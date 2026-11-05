@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 /**
  * Chart rendering with no DOM, no React and no chart library — for images that
  * are rasterised server-side and pasted into Slack, Discord or an email.
@@ -240,7 +240,13 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
 	const hi = max <= lo ? lo + 1 : max
 	const rawStep = (hi - lo) / count
 	const mag = 10 ** Math.floor(Math.log10(rawStep))
-	const step = Arr.map([1, 2, 2.5, 5, 10], (m) => m * mag).find((s) => s >= rawStep) ?? 10 * mag
+	const step = Option.getOrElse(
+		Arr.findFirst(
+			Arr.map([1, 2, 2.5, 5, 10], (m) => m * mag),
+			(s) => s >= rawStep,
+		),
+		() => 10 * mag,
+	)
 	const ticks: number[] = []
 	const start = Math.floor(lo / step) * step
 	const end = Math.ceil(hi / step) * step
@@ -353,7 +359,7 @@ export function downsample(
 	for (let i = 0; i < inner.length; i += size) {
 		const slice = inner.slice(i, i + size)
 		if (slice.length === 0) continue
-		const pick = slice.reduce((best, p) =>
+		const pick = Arr.reduce(slice, slice[0], (best, p) =>
 			breachSide === "below" ? (p[1] < best[1] ? p : best) : p[1] > best[1] ? p : best,
 		)
 		kept.push(pick)

@@ -22,7 +22,7 @@ import { adminOnlyNote, settingsSection, settingsSections } from "../kit/section
 import { Message, type Model, type PolicyDraft } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
@@ -267,13 +267,17 @@ const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 		typography(h, { size: "sm", tone: "muted" }, [
 			evaluated.outcome === "route"
 				? Arr.join(
-						Arr.map(
-							evaluated.destinationIds,
-							(id) => destinations.find((destination) => destination.id === id)?.name ?? id,
+						Arr.map(evaluated.destinationIds, (id) =>
+							Option.match(
+								Arr.findFirst(destinations, (destination) => destination.id === id),
+								{ onNone: () => id, onSome: (destination) => destination.name },
+							),
 						),
 						", ",
 					)
-				: (evaluated.skipReason?.replaceAll("_", " ") ?? ""),
+				: evaluated.skipReason === null
+					? ""
+					: Str.replaceAll("_", " ")(evaluated.skipReason),
 		]),
 	]
 }
@@ -299,7 +303,9 @@ const simulator = (h: H, model: Model): Html => {
 						className: "h-8 w-full",
 						isDisabled: isWaiting,
 						renderValue: (value) => {
-							const severity = SEVERITY_ORDER.find((entry) => entry === value) ?? null
+							const severity = Option.getOrNull(
+								Arr.findFirst(SEVERITY_ORDER, (entry) => entry === value),
+							)
 							return [
 								hstack(h, { gap: "2", as: "span" }, [
 									severityDot(h, severity),
@@ -308,7 +314,9 @@ const simulator = (h: H, model: Model): Html => {
 							]
 						},
 						renderItem: (option) => {
-							const severity = SEVERITY_ORDER.find((entry) => entry === option.value) ?? null
+							const severity = Option.getOrNull(
+								Arr.findFirst(SEVERITY_ORDER, (entry) => entry === option.value),
+							)
 							return [
 								hstack(h, { gap: "2", as: "span" }, [severityDot(h, severity), option.label]),
 							]
@@ -425,8 +433,9 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 														),
 														", ",
 													)
-												: (attempt.skipReason?.replaceAll("_", " ") ??
-													"Awaiting delivery"),
+												: attempt.skipReason === null
+													? "Awaiting delivery"
+													: Str.replaceAll("_", " ")(attempt.skipReason),
 										]),
 										trailing: relativeTime(h, {
 											value: attempt.createdAt,

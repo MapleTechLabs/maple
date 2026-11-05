@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { decodeRows } from "./protocol"
 import { ClickHouseLimitError, ClickHouseProtocolError, ClickHouseServerError } from "./errors"
 
@@ -133,7 +133,7 @@ describe("errors after HTTP 200", () => {
 		["wrong tag", Str.replaceAll(info.exceptionTag, "wrong")(frame)],
 		["wrong length", Str.replace(`${encode(message).length} `, "1 ")(frame)],
 		["truncated footer", Str.slice(0, -1)(frame)],
-		["missing footer", Str.slice(0, frame.lastIndexOf("__exception__"))(frame)],
+		["missing footer", Str.slice(0, Option.getOrThrow(Str.lastIndexOf("__exception__")(frame)))(frame)],
 		["trailing data", frame + '{"ok":1}\n'],
 		["oversized exception", "__exception__\r\n" + Str.repeat(17000)("x") + "\n"],
 	])

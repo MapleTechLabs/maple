@@ -324,7 +324,7 @@ const severityConfirmDialog = (h: H, model: Model): Html =>
 			model.pendingSeverity?.severity ?? "",
 			" will notify",
 			" ",
-			model.pendingSeverity?.destinationNames.join(", ") ?? "",
+			model.pendingSeverity === null ? "" : Arr.join(model.pendingSeverity.destinationNames, ", "),
 			". Manual severity changes represent explicit human intent and bypass AI confidence gates.",
 		],
 		confirmLabel: "Change severity and notify",

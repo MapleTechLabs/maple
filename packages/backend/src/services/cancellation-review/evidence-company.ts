@@ -5,7 +5,20 @@
  * never an address, a person's name or a user id.
  */
 import type { BillingProfile, CancellationCompanyEvidence as Section } from "@maple/domain/http"
-import { Cause, Context, Duration, Effect, Layer, Schema, Stream } from "effect"
+import {
+	Cause,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, type HttpClientError, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -52,7 +65,7 @@ export class CancellationHomepageError extends Schema.TaggedError<CancellationHo
 
 /** One line through `redactText`, at most 200 characters; null when empty. */
 const text = (value: string | null | undefined): string | null => {
-	const cleaned = redactText((value ?? "").slice(0, 4 * TEXT_MAX).replaceAll(/\s+/g, " "), TEXT_MAX)
+	const cleaned = redactText(Str.replaceAll(/\s+/g, " ")(Str.slice(0, 4 * TEXT_MAX)(value ?? "")), TEXT_MAX)
 	return cleaned === "" ? null : cleaned
 }
 
@@ -61,44 +74,45 @@ export const billingOf = (profile: BillingProfile | null): Billing => ({
 	linked: profile !== null,
 	name: text(profile?.name),
 	nameIsPersonal: false,
-	country: profile?.address?.country?.toUpperCase() ?? null,
+	country: Option.getOrNull(Option.map(Option.fromNullishOr(profile?.address?.country), Str.toUpperCase)),
 	city: text(profile?.address?.city),
-	taxIds: (profile?.taxIds ?? [])
-		.slice(0, TAX_IDS_SHOWN)
-		.map((taxId) => ({ type: taxId.type, country: taxId.country ?? null })),
+	taxIds: Arr.map((profile?.taxIds ?? []).slice(0, TAX_IDS_SHOWN), (taxId) => ({
+		type: taxId.type,
+		country: taxId.country ?? null,
+	})),
 })
 
 /** Whether `domain` is one of `domains` or a subdomain of one. */
 const inDomains = (domains: ReadonlySet<string>, domain: string): boolean => {
-	const labels = domain.split(".")
-	return labels.some((_, index) => domains.has(labels.slice(index).join(".")))
+	const labels = Str.split(".")(domain)
+	return Arr.some(labels, (_, index) => domains.has(Arr.join(labels.slice(index), ".")))
 }
 
 const isReserved = (domain: string): boolean =>
 	inDomains(DISPOSABLE_DOMAINS, domain) ||
 	inDomains(MAPLE_DOMAINS, domain) ||
 	inDomains(WILDCARD_DNS_DOMAINS, domain) ||
-	RESERVED_SUFFIXES.some((suffix) => domain.endsWith(suffix)) ||
-	domain.split(".").includes("clerk")
+	Arr.some(RESERVED_SUFFIXES, (suffix) => Str.endsWith(suffix)(domain)) ||
+	Str.split(".")(domain).includes("clerk")
+
+/** Where an address's domain starts: after its last `@`, or the whole string without one. */
+const afterAt = (email: string): number =>
+	Option.match(Str.lastIndexOf("@")(email), { onNone: () => 0, onSome: (at) => at + 1 })
 
 /** Maple's own staff, whose other orgs are the customers they help. */
 export const isMapleStaff = (email: string): boolean =>
-	inDomains(
-		MAPLE_DOMAINS,
-		email
-			.slice(email.lastIndexOf("@") + 1)
-			.trim()
-			.toLowerCase(),
-	)
+	inDomains(MAPLE_DOMAINS, Str.toLowerCase(Str.trim(Str.slice(afterAt(email))(email))))
 
 /** A listed free-mail domain or its subdomain, or a provider under any country ending (`yahoo.com.br`). */
 export const isFreeMail = (domain: string): boolean => {
-	const [provider = "", ...rest] = domain.split(".")
+	const [provider, ...rest] = Str.split(".")(domain)
 	return (
 		inDomains(FREE_MAIL_DOMAINS, domain) ||
-		(FREE_MAIL_PROVIDERS.has(provider) && /^[a-z]{2,3}(?:\.[a-z]{2})?$/.test(rest.join(".")))
+		(FREE_MAIL_PROVIDERS.has(provider) && /^[a-z]{2,3}(?:\.[a-z]{2})?$/.test(Arr.join(rest, ".")))
 	)
 }
+
+const byLocale: Order.Order<string> = (self, that) => Str.localeCompare(that)(self)
 
 /**
  * Members counted by the domain of their address. Free-mail, test and Maple's
@@ -110,16 +124,13 @@ export const emailDomainsOf = (members: ReadonlyArray<{ readonly email: string }
 	let freeMailMembers = 0
 	let testMembers = 0
 	for (const { email } of members) {
-		const at = email.lastIndexOf("@")
-		const domain = email
-			.slice(at + 1)
-			.trim()
-			.toLowerCase()
+		const at = Str.lastIndexOf("@")(email)
+		const domain = Str.toLowerCase(Str.trim(Str.slice(afterAt(email))(email)))
 		if (
-			at < 0 ||
-			!domain.includes(".") ||
+			Option.isNone(at) ||
+			!Str.includes(".")(domain) ||
 			isReserved(domain) ||
-			email.slice(0, at).includes("+clerk_test")
+			Str.includes("+clerk_test")(Str.slice(0, at.value)(email))
 		) {
 			testMembers++
 		} else if (isFreeMail(domain)) {
@@ -129,10 +140,16 @@ export const emailDomainsOf = (members: ReadonlyArray<{ readonly email: string }
 		}
 	}
 	return {
-		company: [...company]
-			.sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b))
-			.slice(0, COMPANY_DOMAINS_SHOWN)
-			.map(([domain, count]) => ({ domain, members: count })),
+		company: Arr.map(
+			Arr.sort(
+				[...company],
+				Order.combine(
+					Order.mapInput(Order.flip(Order.Number), ([, count]: readonly [string, number]) => count),
+					Order.mapInput(byLocale, ([domain]: readonly [string, number]) => domain),
+				),
+			).slice(0, COMPANY_DOMAINS_SHOWN),
+			([domain, count]) => ({ domain, members: count }),
+		),
 		freeMailMembers,
 		testMembers,
 	}
@@ -147,8 +164,8 @@ export const isFetchableHost = (host: string): boolean =>
 	/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/.test(host) &&
 	!isReserved(host)
 
-const NAMED_ENTITIES = new Map(
-	Object.entries({
+const NAMED_ENTITIES = new Map<string, string>(
+	Rec.toEntries({
 		amp: "&",
 		lt: "<",
 		gt: ">",
@@ -171,38 +188,40 @@ const NAMED_ENTITIES = new Map(
 )
 
 const decodeEntities = (value: string): string =>
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replaceAll only takes a string
 	value.replaceAll(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{1,32});/gi, (entity, name: string) => {
 		const code =
-			name.startsWith("#x") || name.startsWith("#X")
-				? Number.parseInt(name.slice(2), 16)
-				: name.startsWith("#")
-					? Number.parseInt(name.slice(1), 10)
+			Str.startsWith("#x")(name) || Str.startsWith("#X")(name)
+				? Number.parseInt(Str.slice(2)(name), 16)
+				: Str.startsWith("#")(name)
+					? Number.parseInt(Str.slice(1)(name), 10)
 					: null
-		if (code === null) return NAMED_ENTITIES.get(name.toLowerCase()) ?? entity
+		if (code === null) return NAMED_ENTITIES.get(Str.toLowerCase(name)) ?? entity
 		return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity
 	})
 
 const attributesOf = (tag: string): ReadonlyMap<string, string> =>
 	new Map(
-		[...tag.matchAll(/([^\s"'=<>/]{1,64})\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)].map((match) => [
-			(match[1] ?? "").toLowerCase(),
-			match[2] ?? match[3] ?? match[4] ?? "",
-		]),
+		Arr.map(
+			[...Str.matchAll(/([^\s"'=<>/]{1,64})\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)(tag)],
+			(match) => [Str.toLowerCase(match[1] ?? ""), match[2] ?? match[3] ?? match[4] ?? ""],
+		),
 	)
 
 /** `<meta name|property=… content=…>` by lowercased key, the first of each. */
 const metaOf = (html: string): ReadonlyMap<string, string> => {
 	const meta = new Map<string, string>()
-	for (const [tag] of html.matchAll(/<meta\b[^>]{0,2000}>/gi)) {
+	for (const [tag] of Str.matchAll(/<meta\b[^>]{0,2000}>/gi)(html)) {
 		const attributes = attributesOf(tag)
-		const key = (attributes.get("name") ?? attributes.get("property"))?.toLowerCase()
+		const named = attributes.get("name") ?? attributes.get("property")
+		const key = named === undefined ? undefined : Str.toLowerCase(named)
 		const content = attributes.get("content")
 		if (key !== undefined && content !== undefined && !meta.has(key)) meta.set(key, content)
 	}
 	return meta
 }
 
-const withoutWww = (host: string): string => host.replace(/^www\./, "")
+const withoutWww = (host: string): string => Str.replace(/^www\./, "")(host)
 
 /**
  * What a homepage says about its company. `finalHost` is where the redirects
@@ -210,11 +229,16 @@ const withoutWww = (host: string): string => host.replace(/^www\./, "")
  * hostile page costs no more than a normal one.
  */
 export const homepageOf = (domain: string, page: string, finalHost: string): Homepage => {
-	const headEnd = page.search(/<\/head>/i)
-	const html = page.slice(0, headEnd < 0 ? HEADLESS_MAX_CHARS : Math.min(headEnd, HEAD_MAX_CHARS))
+	const html = Str.slice(
+		0,
+		Option.match(Str.search(/<\/head>/i)(page), {
+			onNone: () => HEADLESS_MAX_CHARS,
+			onSome: (headEnd) => Math.min(headEnd, HEAD_MAX_CHARS),
+		}),
+	)(page)
 	const meta = metaOf(html)
 	const field = (value: string | undefined) =>
-		text(value === undefined ? null : decodeEntities(value.slice(0, 4 * TEXT_MAX)))
+		text(value === undefined ? null : decodeEntities(Str.slice(0, 4 * TEXT_MAX)(value)))
 	return {
 		domain,
 		title: field(/<title\b[^>]{0,500}>([^<]{0,2000})<\/title>/i.exec(html)?.[1]),
@@ -231,29 +255,26 @@ export const homepageOf = (domain: string, page: string, finalHost: string): Hom
 export const peopleOf = (atMs: number, members: ReadonlyArray<MemberActivity>): People => {
 	const known = (ms: number | null): ReadonlyArray<number> =>
 		ms !== null && knownAtCancel(atMs, ms) ? [Math.max(0, daysBeforeCancel(atMs, ms))] : []
-	const joined = members.flatMap((member) => known(member.joinedAtMs))
-	const lastSeen = members.flatMap((member) => {
+	const joined = Arr.flatMap(members, (member) => known(member.joinedAtMs))
+	const lastSeen = Arr.flatMap(members, (member) => {
 		const seen = [...known(member.lastSignInAtMs), ...known(member.lastActiveAtMs)]
 		return seen.length === 0 ? [] : [Math.min(...seen)]
 	})
 	return {
 		members: members.length,
-		admins: members.filter((member) => member.role === "org:admin").length,
-		joinedLast30Days: joined.filter((days) => days < 30).length,
+		admins: Arr.filter(members, (member) => member.role === "org:admin").length,
+		joinedLast30Days: Arr.filter(joined, (days) => days < 30).length,
 		firstJoinedDaysBeforeCancel: joined.length === 0 ? null : Math.max(...joined),
 		latestJoinedDaysBeforeCancel: joined.length === 0 ? null : Math.min(...joined),
-		activeLast14Days: lastSeen.filter((days) => days < 14).length,
-		activeLast30Days: lastSeen.filter((days) => days < 30).length,
+		activeLast14Days: Arr.filter(lastSeen, (days) => days < 14).length,
+		activeLast30Days: Arr.filter(lastSeen, (days) => days < 30).length,
 		lastActiveDaysBeforeCancel: lastSeen.length === 0 ? null : Math.min(...lastSeen),
 	}
 }
 
 /** Words of three letters or more, lowercase. */
 const wordsOf = (value: string): ReadonlyArray<string> =>
-	value
-		.toLowerCase()
-		.split(/[^\p{L}\p{N}]+/u)
-		.filter((word) => word.length >= 3)
+	Arr.filter(Str.split(/[^\p{L}\p{N}]+/u)(Str.toLowerCase(value)), (word) => word.length >= 3)
 
 /** Local parts that name a role, not a person. */
 const ROLE_ADDRESSES: ReadonlySet<string> = new Set([
@@ -284,11 +305,11 @@ export const memberNameWords = (
 	emails: ReadonlyArray<string>,
 	names: ReadonlyArray<string | null>,
 ): ReadonlySet<string> => {
-	const words = new Set(names.flatMap((name) => (name === null ? [] : wordsOf(name))))
+	const words = new Set(Arr.flatMap(names, (name) => (name === null ? [] : wordsOf(name))))
 	for (const email of emails) {
-		const at = email.lastIndexOf("@")
-		const domainWords = new Set(wordsOf(email.slice(at + 1)))
-		for (const word of wordsOf(email.slice(0, Math.max(at, 0)))) {
+		const domainStart = afterAt(email)
+		const domainWords = new Set(wordsOf(Str.slice(domainStart)(email)))
+		for (const word of wordsOf(Str.slice(0, Math.max(domainStart - 1, 0))(email))) {
 			if (!ROLE_ADDRESSES.has(word) && !domainWords.has(word)) words.add(word)
 		}
 	}
@@ -296,7 +317,7 @@ export const memberNameWords = (
 }
 
 export const holdsName = (value: string, nameWords: ReadonlySet<string>): boolean =>
-	wordsOf(value).some((word) => nameWords.has(word))
+	Arr.some(wordsOf(value), (word) => nameWords.has(word))
 
 /** What is known of the members' names. */
 export interface MemberNames {
@@ -322,7 +343,14 @@ export const withoutPersonalNames = (
 	const orgName = orgNameIsPersonal ? null : found.orgName
 	const companyWords = new Set([
 		...wordsOf(orgName ?? ""),
-		...companyDomains.flatMap((domain) => wordsOf(domain.slice(0, domain.lastIndexOf(".")))),
+		...Arr.flatMap(companyDomains, (domain) =>
+			wordsOf(
+				Str.slice(
+					0,
+					Option.getOrElse(Str.lastIndexOf(".")(domain), () => -1),
+				)(domain),
+			),
+		),
 	])
 	const billingIsPersonal =
 		billing?.name != null &&
@@ -382,7 +410,7 @@ export const fetchHomepage = (client: HttpClient.HttpClient, domain: string) => 
 				if (response.status < 200 || response.status >= 300) {
 					return yield* new CancellationHomepageError({ message: `HTTP ${response.status}` })
 				}
-				if (!(response.headers["content-type"] ?? "").includes("text/html")) {
+				if (!Str.includes("text/html")(response.headers["content-type"] ?? "")) {
 					return yield* new CancellationHomepageError({ message: "not an HTML page" })
 				}
 				let size = 0
@@ -392,10 +420,15 @@ export const fetchHomepage = (client: HttpClient.HttpClient, domain: string) => 
 					Stream.runCollect,
 				)
 				// The last chunk can run past the limit.
-				const html = chunks
-					.map((chunk) => decoder.decode(chunk, { stream: true }))
-					.join("")
-					.slice(0, HOMEPAGE_MAX_BYTES)
+				const html = Str.slice(
+					0,
+					HOMEPAGE_MAX_BYTES,
+				)(
+					Arr.join(
+						Arr.map(chunks, (chunk) => decoder.decode(chunk, { stream: true })),
+						"",
+					),
+				)
 				return { _tag: "Page", html } satisfies Hop
 			}),
 		)

@@ -19,7 +19,7 @@ import { panel } from "@maple/views/ui/panel"
 import type * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../settings/kit/code-block"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
 
@@ -252,10 +252,11 @@ const packageManagerBlock = <M>(
 		viewInputs: {
 			labels: Arr.map(PACKAGE_MANAGERS, (pm) => pm.id),
 			panel: (value) => {
-				const pm = PACKAGE_MANAGERS.find((entry) => entry.id === value)
-				return pm === undefined
-					? undefined
-					: [
+				return Option.match(
+					Arr.findFirst(PACKAGE_MANAGERS, (entry) => entry.id === value),
+					{
+						onNone: () => undefined,
+						onSome: (pm) => [
 							block(
 								h,
 								parts,
@@ -263,15 +264,18 @@ const packageManagerBlock = <M>(
 								`${pm.command} ${Arr.join(packages, " ")}`,
 								"shell",
 							),
-						]
+						],
+					},
+				)
 			},
 		},
 	})
 
 /** `ConnectInstructions` without credentials: Install / Instrument / Claude Code tabs. */
 export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsParts<M>): Html => {
-	const snippet = sdkSnippets.find((entry) => entry.language === parts.framework)
-	if (snippet === undefined) return h.empty
+	const found = Arr.findFirst(sdkSnippets, (entry) => entry.language === parts.framework)
+	if (Option.isNone(found)) return h.empty
+	const snippet = found.value
 	const isBoxed = parts.variant === "boxed"
 	const padding = isBoxed ? "p-3" : "px-4 pt-3 pb-4"
 	const apiKey = parts.apiKey

@@ -148,8 +148,10 @@ const afterResponseOfEvent = Effect.gen(function* () {
 })
 
 const pathOf = (url: string): string => {
-	const query = url.indexOf("?")
-	return query === -1 ? url : Str.slice(0, query)(url)
+	return Option.match(Str.indexOf("?")(url), {
+		onNone: () => url,
+		onSome: (query) => Str.slice(0, query)(url),
+	})
 }
 
 const isV2Path = (path: string): boolean => path === "/v2" || Str.startsWith("/v2/")(path)

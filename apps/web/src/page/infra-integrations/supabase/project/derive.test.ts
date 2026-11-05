@@ -115,7 +115,7 @@ describe("healthStrip", () => {
 			bucket("2026-10-01T10:05:00Z", { cpu: null }),
 		])
 		expect(strip?.cpu.avg).toBeCloseTo(0.3)
-		expect(strip?.cpu.spark.map((point) => point.value)).toEqual([0.3, null])
+		expect(Arr.map(strip?.cpu.spark ?? [], (point) => point.value)).toEqual([0.3, null])
 		expect(healthStrip([bucket("2026-10-01T10:00:00Z", { cpu: null })])?.cpu).toMatchObject({
 			avg: null,
 			peak: null,

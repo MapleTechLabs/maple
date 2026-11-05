@@ -12,7 +12,7 @@ import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { startHubWrite } from "./selection"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The issue context menu: a row's right-click menu.
 
@@ -100,7 +100,10 @@ export const rowMenuEntries = <M>(
 }
 
 const issueOf = (model: Model, id: string) =>
-	signalsOf(model).find((signal) => signal.id === id)?.issue ?? null
+	Arr.findFirst(signalsOf(model), (signal) => signal.id === id).pipe(
+		Option.flatMapNullishOr((found) => found.issue),
+		Option.getOrNull,
+	)
 
 /** A right-press on a row: the menu moves to that row, opened at the pointer. */
 export const pressedRowPointer = (model: Model, id: string, point: ContextMenu.Point): Return => ({
