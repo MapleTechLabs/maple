@@ -6,15 +6,15 @@ and the product events they fired. Plus a `/users` directory to find them.
 
 ## What exists today
 
-| Signal | Where the user is | Query cost per user |
-| --- | --- | --- |
-| Replays | `session_replays.UserId/UserEmail/UserName/UserTraits`, `VisitorId` | Cheap. `listSessionReplays` already filters on `userId` and `userSearch` |
-| Session events | `session_events.UserId/VisitorId` | Sorted by `SessionId`, so go through sessions |
-| Product events | `product_events.UserId/VisitorId`, `idx_user_id` bloom | OK. Person key `if(UserId != '', UserId, VisitorId)` |
-| Identity | `identity_links (VisitorId, UserId, FirstSeen)` | Cheap |
-| Traces | `SpanAttributes['user.id']` (browser + effect-sdk stamp it), else `enduser.id` | Expensive: only the map-value bloom index, sort key starts at `ServiceName` |
-| Logs | `LogAttributes['user.id']` (browser logs stamp it) | Expensive, same reason |
-| Errors | `error_events` has **no** user column | Not possible without a join back to traces |
+| Signal         | Where the user is                                                              | Query cost per user                                                         |
+| -------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Replays        | `session_replays.UserId/UserEmail/UserName/UserTraits`, `VisitorId`            | Cheap. `listSessionReplays` already filters on `userId` and `userSearch`    |
+| Session events | `session_events.UserId/VisitorId`                                              | Sorted by `SessionId`, so go through sessions                               |
+| Product events | `product_events.UserId/VisitorId`, `idx_user_id` bloom                         | OK. Person key `if(UserId != '', UserId, VisitorId)`                        |
+| Identity       | `identity_links (VisitorId, UserId, FirstSeen)`                                | Cheap                                                                       |
+| Traces         | `SpanAttributes['user.id']` (browser + effect-sdk stamp it), else `enduser.id` | Expensive: only the map-value bloom index, sort key starts at `ServiceName` |
+| Logs           | `LogAttributes['user.id']` (browser logs stamp it)                             | Expensive, same reason                                                      |
+| Errors         | `error_events` has **no** user column                                          | Not possible without a join back to traces                                  |
 
 The SDKs already do the hard part: `identify()` / `user` puts the same id on replays, events, spans
 and logs. `mcp.ts` already has the `user.id` else `enduser.id` resolution to reuse.
@@ -25,12 +25,12 @@ and logs. `mcp.ts` already has the `user.id` else `enduser.id` resolution to reu
   Search by id, name, email. Filters: has errors, has replays, group, time range.
 - **`/users/:userId`** detail, header (identity, traits, group, first/last seen, linked visitor ids)
   then tabs:
-  - **Activity**: one merged timeline (sessions, errors, slow/failed requests, key product events),
-    the default tab and the main reason the page exists.
-  - **Sessions**: replay rows (reuse `replays/kit/session-row.ts`).
-  - **Errors**: issues this user hit, with counts and last occurrence.
-  - **Traces** and **Logs**: the existing list views pre-filtered to the user.
-  - **Events**: product events stream.
+    - **Activity**: one merged timeline (sessions, errors, slow/failed requests, key product events),
+      the default tab and the main reason the page exists.
+    - **Sessions**: replay rows (reuse `replays/kit/session-row.ts`).
+    - **Errors**: issues this user hit, with counts and last occurrence.
+    - **Traces** and **Logs**: the existing list views pre-filtered to the user.
+    - **Events**: product events stream.
 - Cross-links in: replay detail, trace detail (`user.id` attribute chip), error issue
   ("affected users" list), command palette (search by id/email).
 - Empty state is the integration on-ramp (`identify()` snippet + server `user.id` attribute), never
@@ -84,13 +84,13 @@ queries compile for local chDB too (`bun run local-schema:bump` for phases 3 and
 
 ## Phases
 
-| # | Ships | Schema change | Verify |
-| --- | --- | --- | --- |
-| 1 | `/users` list from replays + product events + identity links | none | query tests, `bench:queries` on real data, `preview:web` screenshots |
-| 2 | Detail page: header, Sessions, Events, Activity (sessions + events only), cross-link from replays | none | same |
-| 3 | `user_activity_hourly`, Traces/Logs tabs, backend-only users in the list, trace detail link | MV + backfill | full `preview` (Tinybird branch), bench pruning vs raw scan |
-| 4 | `error_events.UserId`, Errors tab, affected users on issues | MV column | full `preview`, issue lifecycle tests |
-| 5 | v2 API, MCP tools, command palette search | none | registry contract test, tool playground |
+| #   | Ships                                                                                             | Schema change | Verify                                                               |
+| --- | ------------------------------------------------------------------------------------------------- | ------------- | -------------------------------------------------------------------- |
+| 1   | `/users` list from replays + product events + identity links                                      | none          | query tests, `bench:queries` on real data, `preview:web` screenshots |
+| 2   | Detail page: header, Sessions, Events, Activity (sessions + events only), cross-link from replays | none          | same                                                                 |
+| 3   | `user_activity_hourly`, Traces/Logs tabs, backend-only users in the list, trace detail link       | MV + backfill | full `preview` (Tinybird branch), bench pruning vs raw scan          |
+| 4   | `error_events.UserId`, Errors tab, affected users on issues                                       | MV column     | full `preview`, issue lifecycle tests                                |
+| 5   | v2 API, MCP tools, command palette search                                                         | none          | registry contract test, tool playground                              |
 
 Each phase is one PR (or one gh stack layer) with before/after screenshots for UI changes.
 
