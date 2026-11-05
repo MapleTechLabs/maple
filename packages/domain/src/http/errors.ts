@@ -27,6 +27,8 @@ import {
 } from "./fix-verification"
 import { VcsProviderId } from "./vcs"
 import { HttpTaggedError } from "./error-policy"
+import { TinybirdDateTime } from "../query-engine"
+import { warehouseReadHttpErrors } from "./warehouse"
 
 // Workflow state machine literals
 
@@ -685,6 +687,34 @@ export const IssueSeverityListCursor = Schema.String.pipe(
 	Schema.decodeTo(Schema.fromJsonString(IssueSeverityListCursorFields)),
 ).annotate({ identifier: "@maple/IssueSeverityListCursor", title: "Issue Severity List Cursor" })
 
+const IssueAffectedUsersQuery = Schema.Struct({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+})
+
+export const IssueAffectedUser = Schema.Struct({
+	userId: Schema.String,
+	hits: Schema.Number,
+	lastSeenMs: Schema.Number,
+})
+export type IssueAffectedUser = typeof IssueAffectedUser.Type
+
+/**
+ * The end users an issue hit in a window, over its own fingerprint and its aliases. `hitsWithUser`
+ * over `hits` is the coverage: occurrences from spans without a user id count only in `hits`.
+ */
+export class ErrorIssueAffectedUsersResponse extends Schema.Class<ErrorIssueAffectedUsersResponse>(
+	"ErrorIssueAffectedUsersResponse",
+)({
+	affectedUsers: Schema.Number,
+	hitsWithUser: Schema.Number,
+	hits: Schema.Number,
+	/** Most hits first, capped. */
+	users: Schema.Array(IssueAffectedUser),
+	/** `false` on a cluster whose `error_events` predates `UserId`, and for non-error issues. */
+	attributed: Schema.Boolean,
+}) {}
+
 const IssueEventsQuery = Schema.Struct({
 	limit: Schema.optional(
 		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 500 })),
@@ -963,6 +993,14 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			query: IssueEventsQuery,
 			success: ErrorIssueEventsResponse,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
+		}).annotate(AuditedRead, "telemetry.read"),
+	)
+	.add(
+		HttpApiEndpoint.get("listIssueAffectedUsers", "/issues/:issueId/affected-users", {
+			params: { issueId: ErrorIssueId },
+			query: IssueAffectedUsersQuery,
+			success: ErrorIssueAffectedUsersResponse,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ...warehouseReadHttpErrors],
 		}).annotate(AuditedRead, "telemetry.read"),
 	)
 	.add(

@@ -3,8 +3,9 @@
 	"plugins": ["eslint", "unicorn", "typescript", "oxc", "react", "jsx-a11y"],
 	"jsPlugins": [
 		"./scripts/oxlint-plugins/maple.mjs",
-		"./scripts/oxlint-plugins/anti-slop/index.ts",
-		"./scripts/oxlint-plugins/test-slop.mjs"
+		// The source, not the bundled anti-slop.mjs, so a rule edit applies without a rebuild.
+		"./lib/oxlint-config/plugins/anti-slop/index.ts",
+		"./lib/oxlint-config/plugins/test-slop.mjs"
 	],
 	"options": {
 		"reportUnusedDisableDirectives": "deny",
@@ -323,7 +324,7 @@
 		},
 		// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins,
 		// Tailwind class pins, source greps, exact command lists and SQL projection pins.
-		// Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
+		// Rationale per rule in lib/oxlint-config/plugins/test-slop.mjs.
 		{
 			"files": ["**/*.test.ts", "**/*.test.tsx"],
 			"plugins": ["vitest"],
@@ -855,6 +856,7 @@
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
-		"scripts/oxlint-plugins/anti-slop/**"
+		"lib/oxlint-config/plugins/anti-slop/**",
+		"lib/oxlint-config/plugins/anti-slop.mjs"
 	]
 }

@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { randomUUID } from "node:crypto"
 import {
 	IsoDateTimeString,

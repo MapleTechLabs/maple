@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 // Query Engine — lowering core
 //
 // Validation, QuerySpec → CH lowering, row shaping, and the alert evaluate /

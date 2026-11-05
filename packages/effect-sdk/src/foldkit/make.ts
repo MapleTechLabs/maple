@@ -71,6 +71,7 @@ interface FoldkitAppConfig {
 // SDK cannot name. Only the shape Foldkit guarantees is checked here; the
 // wrappers pass every value through untouched.
 const isFn = <Fn>(value: unknown): value is Fn => typeof value === "function"
+// BOUNDARY: a config field is whatever the app put there.
 const field = (owner: unknown, key: string): unknown =>
 	Predicate.hasProperty(owner, key) ? owner[key] : undefined
 const fnField = <Fn>(owner: unknown, key: string): Fn | undefined => {

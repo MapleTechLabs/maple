@@ -260,6 +260,7 @@ const generateId = (len: number): string => {
 
 // A span whose failure is caused *entirely* by anticipated errors (no
 // defects/Die) records OTLP status `Ok` and emits no `exception` event.
+// BOUNDARY: `isAnticipated` classifies a cause's raw failure values.
 const isFullyAnticipated = (
 	cause: Cause.Cause<unknown>,
 	isAnticipated: ((error: unknown) => boolean) | undefined,
@@ -305,6 +306,7 @@ const isResponseFailure = (exit: Exit.Exit<unknown, unknown>): boolean => {
 
 // The single failure of a raw HTTP client span, when it is an Effect `HttpClientError`
 // with this reason. Anything carrying a defect or a second failure is a real error.
+// BOUNDARY: the reason is an arbitrary error value until the caller narrows it.
 const httpClientFailureReason = (exit: Exit.Exit<unknown, unknown>, reasonTag: string): unknown => {
 	if (exit._tag === "Success") return undefined
 	const [reason, ...rest] = exit.cause.reasons

@@ -1,4 +1,4 @@
-// BOUNDARY: activation candidates and decoded OTLP bodies arrive unparsed; this runtime decodes them.
+// BOUNDARY-FILE: activation candidates and decoded OTLP bodies arrive unparsed; this runtime decodes them.
 import {
 	Context,
 	DateTime,

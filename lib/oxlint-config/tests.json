@@ -1,0 +1,59 @@
+{
+	// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins, class-name
+	// pins, source greps, exact command-name lists and SQL projection pins. Rationale per rule in
+	// plugins/test-slop.mjs. Recognises Vitest, `@effect/vitest` (`it.effect`) and node:assert.
+	"jsPlugins": ["./plugins/test-slop.mjs"],
+	"overrides": [
+		{
+			"files": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+			"plugins": ["vitest"],
+			"rules": {
+				"test-slop/no-classname-assertions": "error",
+				"test-slop/no-constant-pin": "error",
+				"test-slop/no-exact-name-list": "error",
+				"test-slop/no-source-text-assertions": "error",
+				"test-slop/no-sql-text-pin": "error",
+				"test-slop/no-weak-only-assertions": "error",
+				"vitest/valid-describe-callback": "error",
+				"vitest/no-identical-title": "error",
+				"vitest/expect-expect": [
+					"error",
+					{
+						"assertFunctionNames": [
+							"expect",
+							"expect*",
+							"expect.*",
+							"expectTypeOf",
+							"assert",
+							"assert*",
+							"assert.*",
+							"*.assert*",
+							"strictEqual",
+							"deepStrictEqual",
+							"notStrictEqual",
+							"notDeepStrictEqual",
+							"equal",
+							"deepEqual",
+							"ok",
+							"match",
+							"doesNotMatch",
+							"fail",
+							"rejects",
+							"doesNotReject",
+							"throws",
+							"doesNotThrow"
+						]
+					}
+				],
+				// Plugin defaults that misread `it.effect` / `expect(value, message)`, or are style-only.
+				"vitest/no-conditional-expect": "off",
+				"vitest/no-conditional-tests": "off",
+				"vitest/no-standalone-expect": "off",
+				"vitest/require-mock-type-parameters": "off",
+				"vitest/require-to-throw-message": "off",
+				"vitest/valid-expect": "off",
+				"vitest/valid-title": "off"
+			}
+		}
+	]
+}

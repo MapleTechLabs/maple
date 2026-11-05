@@ -27,6 +27,7 @@ import type { SetupAuditService } from "@maple/backend/services/org/SetupAuditSe
 import type { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import type { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import type { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import type { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import type { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import type { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
 import type { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
@@ -68,6 +69,7 @@ export type McpToolRuntimeRequirements =
 	| StatusPagesService
 	| OrganizationFeatureFlagsService
 	| UptimeMonitorsService
+	| UsersReadService
 	| IngestRuleService
 	| VcsCommitService
 	| VcsSourceService

@@ -187,5 +187,6 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/v2/TimeRangeInvalidError",
 	"@maple/http/v2/TraceNotFoundError",
 	"@maple/http/v2/TraceQueryInvalidError",
+	"@maple/http/v2/UserNotFoundError",
 	"HttpApiSchemaError",
 ]

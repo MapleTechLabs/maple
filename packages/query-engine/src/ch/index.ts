@@ -227,6 +227,9 @@ export {
 	type RuntimeVersionsOutput,
 } from "./queries/security-telemetry"
 
+// Queries: Users (`user_activity_hourly`, per-user traces, logs and issues)
+export * from "./queries/user-activity"
+
 // Queries — Product events (funnels over `product_events`)
 export {
 	productEventsFunnelQuery,
@@ -694,6 +697,8 @@ export {
 	mcpServerClientsQuery,
 	mcpServerSparkQuery,
 	mcpServerStatsQuery,
+	mcpServersSessionListQuery,
+	mcpServersUserActivityQuery,
 	mcpServicesQuery,
 	mcpSessionActivityQuery,
 	mcpSessionListQuery,
@@ -708,6 +713,28 @@ export {
 	type McpCallOrder,
 	type McpSessionFilter,
 } from "./queries/mcp"
+
+// Queries - end users (`/users`: replays, product events and MCP spans per user id)
+export {
+	hasUserSources,
+	usersAnonymousVisitorsQuery,
+	usersFacetsQuery,
+	usersListQuery,
+	usersMcpNamesQuery,
+	usersMcpNameSearchQuery,
+	usersServiceNamespacesQuery,
+	usersSummaryQuery,
+	readsServiceSources,
+	userDevicesQuery,
+	userEventsQuery,
+	userEventsSummaryQuery,
+	userMcpSummaryQuery,
+	userReplayProfileQuery,
+	userServicesQuery,
+	userVisitorIdsQuery,
+	type UsersListFilter,
+	type UsersScope,
+} from "./queries/users"
 
 // Queries — Infrastructure (host-centric aggregations over hostmetrics)
 export {

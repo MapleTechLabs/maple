@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, describe, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Option, Schema, String as Str, Array as Arr } from "effect"
 import {

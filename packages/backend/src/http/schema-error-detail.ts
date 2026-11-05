@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 /**
  * Turns an `HttpApiSchemaError` (the framework's request-decode failure) into
  * human-readable, path-anchored lines.

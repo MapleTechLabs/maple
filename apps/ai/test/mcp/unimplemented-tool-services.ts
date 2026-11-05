@@ -23,6 +23,7 @@ import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCo
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
@@ -58,6 +59,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(VcsSourceService)({}),
 	Layer.mock(SetupAuditService)({}),
 	Layer.mock(UptimeMonitorsService)({}),
+	Layer.mock(UsersReadService)({}),
 	Layer.mock(IngestRuleService)({}),
 	Layer.mock(StatusPagesService)({}),
 	Layer.mock(StatusPageSnapshotBuilder)({}),

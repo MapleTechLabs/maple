@@ -716,6 +716,100 @@ export const stitchUserSessions = (
 		({ toolSet: _toolSet, ...session }) => session,
 	)
 
+type IssuedRow = Readonly<{
+	sessionId: string
+	client: string
+	kind: string
+	user: string
+	userName: string
+	requests: number
+	calls: number
+	errors: number
+	tools: number
+	firstSeen: DateTime.Utc
+	lastSeen: DateTime.Utc
+}>
+
+/** A session the server issued (`mcp.session.id`), as the lists show it. */
+export const issuedSession = (row: IssuedRow): McpSessionItem => ({
+	sessionId: row.sessionId,
+	source: "issued",
+	user: row.user === "" ? null : row.user,
+	userName: row.userName === "" ? null : row.userName,
+	client: row.client === "" ? UNKNOWN_MCP_CLIENT : row.client,
+	kind: kindOf(row.kind),
+	requests: row.requests,
+	calls: row.calls,
+	errors: row.errors,
+	tools: row.tools,
+	firstSeenMs: toMs(row.firstSeen),
+	lastSeenMs: toMs(row.lastSeen),
+})
+
+/** Session rows each listed MCP server contributes to one user's stitched read (a per-server cap). */
+const ONE_USER_ACTIVITY_LIMIT = 5_000
+
+/** A user's session on one MCP server. */
+export type ServerUserSession = McpSessionItem & Readonly<{ service: string }>
+
+/**
+ * One user's sessions on the listed MCP servers in one query pair: issued, and stitched per
+ * (service, user, client) from stateless requests, so each id opens on its server's session page.
+ */
+export const readUserMcpSessions = Effect.fn("McpReads.userSessions")(function* (
+	tenant: TenantContext,
+	window: Readonly<{ startTime: string; endTime: string }>,
+	selection: Readonly<{
+		services: ReadonlyArray<string>
+		user: string
+		namespaces: ReadonlyArray<string>
+		limit: number
+	}>,
+) {
+	if (selection.services.length === 0) return []
+	const warehouse = yield* WarehouseQueryService
+	const params = { orgId: tenant.orgId, ...window }
+	const filter: CH.McpSessionFilter = { user: selection.user, namespaces: selection.namespaces }
+	const [issued, activityRows] = yield* Effect.all(
+		[
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.mcpServersSessionListQuery(selection.services, filter, selection.limit),
+					params,
+				),
+				{ profile: "list", context: "userMcpSessionList" },
+			),
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.mcpServersUserActivityQuery(selection.services, filter, ONE_USER_ACTIVITY_LIMIT),
+					params,
+				),
+				{ profile: "list", context: "userMcpActivity" },
+			),
+		],
+		{ concurrency: 2 },
+	)
+	const byService = Arr.groupBy(activityRows, (row) => row.service)
+	const stitched = Arr.flatMap(Rec.toEntries(byService), ([service, rows]) =>
+		Arr.map(stitchUserSessions(rows), (session): ServerUserSession => ({ ...session, service })),
+	)
+	return Arr.take(
+		Arr.sort(
+			[
+				...Arr.map(issued, (row): ServerUserSession => ({
+					...issuedSession(row),
+					service: row.service,
+				})),
+				...stitched,
+			],
+			Order.flip(Order.mapInput(Order.Number, (session: ServerUserSession) => session.lastSeenMs)),
+		),
+		selection.limit,
+	)
+})
+
 export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 	tenant: TenantContext,
 	payload: McpSessionsRequest,
@@ -774,20 +868,7 @@ export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (
 	const calls = Arr.filter(summary, (row) => row.method === TOOLS_CALL)
 	const total = totals[0]
 	const sessions = [
-		...Arr.map(issued, (row): McpSessionItem => ({
-			sessionId: row.sessionId,
-			source: "issued",
-			user: row.user === "" ? null : row.user,
-			userName: row.userName === "" ? null : row.userName,
-			client: row.client === "" ? UNKNOWN_MCP_CLIENT : row.client,
-			kind: kindOf(row.kind),
-			requests: row.requests,
-			calls: row.calls,
-			errors: row.errors,
-			tools: row.tools,
-			firstSeenMs: toMs(row.firstSeen),
-			lastSeenMs: toMs(row.lastSeen),
-		})),
+		...Arr.map(issued, issuedSession),
 		...(payload.failingOnly === true ? failingUserSessions : userSessions),
 	]
 		.sort((a, b) => b.lastSeenMs - a.lastSeenMs)

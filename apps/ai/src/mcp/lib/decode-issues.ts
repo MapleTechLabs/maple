@@ -1,4 +1,4 @@
-// BOUNDARY: This module reads unparsed tool arguments and published JSON Schemas before decoding.
+// BOUNDARY-FILE: This module reads unparsed tool arguments and published JSON Schemas before decoding.
 /**
  * What a model is told when its arguments do not fit a tool's schema, and how arguments are
  * normalized before decoding.

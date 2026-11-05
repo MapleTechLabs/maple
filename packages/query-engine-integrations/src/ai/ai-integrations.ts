@@ -1,4 +1,4 @@
-// BOUNDARY: this module decodes raw warehouse attribute strings; a parsed
+// BOUNDARY-FILE: this module decodes raw warehouse attribute strings; a parsed
 // value stays unknown until the catalog's field type names it.
 
 // AI span mapping: the default GenAI integration, the vendor lookup, and the

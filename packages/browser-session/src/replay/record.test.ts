@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-// BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
+// BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Arr from "effect/Array"
 

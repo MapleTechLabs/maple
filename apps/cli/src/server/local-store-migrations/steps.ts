@@ -97,6 +97,13 @@ const SERVICE_ENDPOINT_DETAILS_BACKFILL = [
 	"INSERT INTO service_endpoint_details_hourly (OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType, SpanCount, EstimatedSpanCount, DurationQuantiles, BodySizeQuantiles, BodySizeMax, BodyCount, UserAgents, SlowestDuration, SlowestTraceId, SlowestTimestamp, SlowestBodySize) SELECT OrgId, ServiceName, toStartOfHour(toDateTime(Timestamp)) AS Hour, coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS DeploymentEnv, if(((SpanName LIKE 'http.server %' OR SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (SpanAttributes['http.route'] != '' OR SpanAttributes['url.path'] != '')), concat(if(SpanName LIKE 'http.server %', replaceOne(SpanName, 'http.server ', ''), SpanName), ' ', if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], SpanAttributes['url.path'])), SpanName) AS SpanName, if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS HttpStatusCode, SpanAttributes['error.type'] AS ErrorType, count() AS SpanCount, sum(SampleRate) AS EstimatedSpanCount, quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles, quantilesTDigestIfState(0.5, 0.95, 0.99)(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodySizeQuantiles, maxIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodySizeMax, countIf(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodyCount, approx_top_kState(10)(coalesce(nullIf(SpanAttributes['user_agent.original'], ''), nullIf(SpanAttributes['http.user_agent'], ''), '')) AS UserAgents, max(Duration) AS SlowestDuration, argMaxState(TraceId, Duration) AS SlowestTraceId, argMaxState(Timestamp, Duration) AS SlowestTimestamp, argMaxState(ifNull(toInt64(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length']))), -1), Duration) AS SlowestBodySize FROM traces WHERE SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '' GROUP BY OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType",
 ] as const
 
+/** Rebuilds the users rollup from every retained span and log; the truncate makes a resumed step converge. */
+const USER_ACTIVITY_HOURLY_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS user_activity_hourly",
+	"INSERT INTO user_activity_hourly (OrgId, ServiceNamespace, UserId, Hour, ServiceName, SpanCount, ErrorSpanCount, RequestCount, FailedRequestCount, TraceIds, SessionIds, RequestDurationQuantiles, TopRoutes, LogCount, WarnLogCount, ErrorLogCount, FirstSeen, LastSeen) SELECT OrgId, ResourceAttributes['service.namespace'] AS ServiceNamespace, if(SpanAttributes['user.id'] != '', SpanAttributes['user.id'], SpanAttributes['enduser.id']) AS UserId, toStartOfHour(toDateTime(Timestamp)) AS Hour, ServiceName, count() AS SpanCount, countIf(StatusCode = 'Error') AS ErrorSpanCount, countIf(IsEntryPoint = 1) AS RequestCount, countIf(IsEntryPoint = 1 AND StatusCode = 'Error') AS FailedRequestCount, uniqIfState(TraceId, TraceId != '') AS TraceIds, uniqIfState(SpanAttributes['session.id'], SpanAttributes['session.id'] != '') AS SessionIds, quantilesTDigestIfState(0.5, 0.95)(Duration, IsEntryPoint = 1) AS RequestDurationQuantiles, approx_top_kState(10)(if(IsEntryPoint = 1, if(((SpanName LIKE 'http.server %' OR SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (SpanAttributes['http.route'] != '' OR SpanAttributes['url.path'] != '')), concat(if(SpanName LIKE 'http.server %', replaceOne(SpanName, 'http.server ', ''), SpanName), ' ', if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], SpanAttributes['url.path'])), SpanName), '')) AS TopRoutes, toUInt64(0) AS LogCount, toUInt64(0) AS WarnLogCount, toUInt64(0) AS ErrorLogCount, min(toDateTime(Timestamp)) AS FirstSeen, max(toDateTime(Timestamp)) AS LastSeen FROM traces WHERE if(SpanAttributes['user.id'] != '', SpanAttributes['user.id'], SpanAttributes['enduser.id']) != '' GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName",
+	"INSERT INTO user_activity_hourly (OrgId, ServiceNamespace, UserId, Hour, ServiceName, SpanCount, ErrorSpanCount, RequestCount, FailedRequestCount, TraceIds, SessionIds, RequestDurationQuantiles, TopRoutes, LogCount, WarnLogCount, ErrorLogCount, FirstSeen, LastSeen) SELECT OrgId, ResourceAttributes['service.namespace'] AS ServiceNamespace, if(LogAttributes['user.id'] != '', LogAttributes['user.id'], LogAttributes['enduser.id']) AS UserId, toStartOfHour(TimestampTime) AS Hour, ServiceName, toUInt64(0) AS SpanCount, toUInt64(0) AS ErrorSpanCount, toUInt64(0) AS RequestCount, toUInt64(0) AS FailedRequestCount, uniqIfState(TraceId, toUInt8(0)) AS TraceIds, uniqIfState(LogAttributes['session.id'], LogAttributes['session.id'] != '') AS SessionIds, quantilesTDigestIfState(0.5, 0.95)(toUInt64(0), toUInt8(0)) AS RequestDurationQuantiles, approx_top_kState(10)('') AS TopRoutes, count() AS LogCount, countIf(SeverityNumber >= 13 AND SeverityNumber < 17) AS WarnLogCount, countIf(SeverityNumber >= 17) AS ErrorLogCount, min(TimestampTime) AS FirstSeen, max(TimestampTime) AS LastSeen FROM logs WHERE if(LogAttributes['user.id'] != '', LogAttributes['user.id'], LogAttributes['enduser.id']) != '' GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName",
+] as const
+
 /** The six HTTP measures v39 adds to both service-operations rollups. */
 const SERVICE_OPERATIONS_HTTP_COLUMNS = [
 	["HttpClassifiedSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
@@ -1804,6 +1811,69 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				disposition: "preserve-exact",
 				guarantee:
 					"Existing rows keep their FingerprintHash untouched; new occurrences hash with v4, and the lineage table links each to its v3 hashes.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		// All new (IF NOT EXISTS); the rollup is backfilled from retained traces and logs like v39.
+		id: "local-0047-to-0048-user-activity-hourly",
+		from: 47,
+		to: 48,
+		description: "Create user_activity_hourly and its traces and logs views for the users pages",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [],
+		afterBootstrap: [backfill(...USER_ACTIVITY_HOURLY_BACKFILL)],
+		plan: [
+			[
+				"create-user-activity-hourly",
+				"Create user_activity_hourly and its two views via the v48 bootstrap and backfill it from retained traces and logs",
+			],
+		],
+		verifies: "Verify the v48 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "user_activity_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Rebuilt from every span and log with a user.id or enduser.id that traces and logs retain, then filled forward by its views.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
+	{
+		// A metadata-only column on both error tables; the views are recreated to fill it.
+		// Existing rows read UserId '' and are not backfilled: the targets keep no span attributes.
+		id: "local-0048-to-0049-error-events-user-id",
+		from: 48,
+		to: 49,
+		description: "Add UserId to error_events and error_events_by_time and recreate their views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("error_events", [["UserId", "String DEFAULT ''"]]),
+			addColumns("error_events_by_time", [["UserId", "String DEFAULT ''"]]),
+			addIndex("error_events_by_time", "idx_user_id UserId TYPE bloom_filter GRANULARITY 4"),
+			dropTables("error_events_mv", "error_events_by_time_mv"),
+		],
+		plan: [
+			[
+				"add-error-events-user-id",
+				"Add UserId to error_events and error_events_by_time and recreate their views so new occurrences carry the end user",
+			],
+		],
+		verifies: "Verify the v49 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"UserId is added as a metadata-only default; existing rows keep every value and FingerprintHash, and read UserId as empty.",
 				...ERROR_RETENTION,
 			},
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },

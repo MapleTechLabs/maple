@@ -1,5 +1,5 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"

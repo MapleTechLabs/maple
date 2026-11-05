@@ -144,6 +144,8 @@ function tagFilter(
 
 export interface SessionReplaysListOpts {
 	serviceName?: string
+	/** Any of these services: a namespace scope resolved to the services that emitted under it. */
+	serviceNames?: ReadonlyArray<string>
 	browser?: string
 	country?: string
 	deviceType?: string
@@ -320,6 +322,7 @@ function sessionReplaysListBase(opts: SessionReplaysListOpts) {
 			$.StartTime.gte(param.dateTime("startTime")),
 			$.StartTime.lte(param.dateTime("endTime")),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+			opts.serviceNames === undefined ? undefined : CH.inList($.ServiceName, opts.serviceNames),
 			CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 			CH.when(opts.country, (v: string) => $.Country.eq(v)),
 			CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),

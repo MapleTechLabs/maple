@@ -8,6 +8,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpMcpInternalLive } from "@/routes/internal/mcp.http"
+import { HttpUsersInternalLive } from "@/routes/internal/users.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
 import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
@@ -74,6 +75,7 @@ import { HttpV2OnboardingChecklistLive } from "@/routes/v2/onboarding-checklist.
 import { HttpV2SupportChannelLive } from "@/routes/v2/support-channel.http"
 import { HttpV2TelemetrySignalsLive } from "@/routes/v2/telemetry-signals.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
+import { HttpV2UsersLive } from "@/routes/v2/users.http"
 import {
 	HttpV2EnvironmentsLive,
 	HttpV2LogsLive,
@@ -144,6 +146,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAiSessionsInternalLive,
 			HttpAiModelsInternalLive,
 			HttpMcpInternalLive,
+			HttpUsersInternalLive,
 		),
 	),
 	Layer.provide(
@@ -206,6 +209,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2McpConnectionsLive,
 			HttpV2AgentFeedbackLive,
 			HttpV2SessionReplaysLive,
+			HttpV2UsersLive,
 			HttpV2TracesLive,
 			HttpV2LogsLive,
 			HttpV2MetricsLive,

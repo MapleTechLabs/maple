@@ -59,6 +59,16 @@ export const isMissingServiceMapDbEdgesMinutely = (error: unknown): boolean =>
 /** `service_endpoint_details_hourly` ships in migration 0048; the endpoint detail reads degrade to empty. */
 export const isMissingServiceEndpointDetails = isMissingTable(/service_endpoint_details_hourly/i)
 
+/** `user_activity_hourly` (migration 0056) is missing; the message must name it, as the users
+ * pages' retry reads every other table. */
+export const isMissingUserActivityHourly = (error: unknown): boolean =>
+	isMissingTable(/user_activity_hourly/i)(error) &&
+	typeof error === "object" &&
+	error !== null &&
+	"message" in error &&
+	typeof error.message === "string" &&
+	/user_activity_hourly/i.test(error.message)
+
 const MIGRATION_0048_COLUMNS =
 	/\b(?:HttpClassifiedSpanCount|HttpStatusCount|Http4xxCount|Http5xxCount|RequestBodyBytes|RequestBodyCount)\b/
 
@@ -75,3 +85,14 @@ export const isMissingServiceApiColumns = (error: unknown): boolean =>
 	"message" in error &&
 	typeof error.message === "string" &&
 	MIGRATION_0048_COLUMNS.test(error.message)
+
+/** `error_events.UserId` (migration 0057) is missing: schema drift naming `UserId` only, so every
+ * other drift still surfaces. User issues and affected users then answer unattributed. */
+export const isMissingErrorEventsUserId = (error: unknown): boolean =>
+	typeof error === "object" &&
+	error !== null &&
+	"_tag" in error &&
+	error._tag === "@maple/http/errors/WarehouseSchemaDriftError" &&
+	"message" in error &&
+	typeof error.message === "string" &&
+	/\bUserId\b/.test(error.message)
