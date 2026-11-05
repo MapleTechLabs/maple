@@ -37,7 +37,7 @@ describe("users namespace scope", () => {
 	it("drops a user's rows from services outside the namespace and recounts the tabs", () => {
 		const scoped = scopeDetail(USER_DETAIL, "payments")
 		expect(Arr.map(scoped.issues, (issue) => issue.service)).toEqual(["billing"])
-		expect(Arr.every(scoped.logs, (log) => log.service === "billing")).toBe(true)
+		expect(Arr.map(scoped.logs, (log) => log.service)).toEqual(["billing", "billing"])
 		expect(scoped.sessions).toEqual([])
 		expect(scoped.profile.issues).toBe(1)
 	})
@@ -52,9 +52,13 @@ describe("users summary under a pin", () => {
 
 	it("keeps the org-wide totals unpinned and counts the pinned namespace's users when pinned", () => {
 		expect(usersSummary(USER_ROWS, null, orgWide, USERS_NOW)).toBe(orgWide)
-		const pinned = usersSummary(USER_ROWS, "storefront", orgWide, USERS_NOW)
-		const inNamespace = Arr.filter(USER_ROWS, (row) => row.namespaces.includes("storefront"))
-		expect(pinned.identified).toBe(inNamespace.length)
-		expect(pinned.withErrors).toBe(Arr.filter(inNamespace, (row) => row.errors > 0).length)
+		// The fixture's six storefront users: five seen in the last day, three with errors, and the
+		// org's anonymous visitors scaled to their six of eight.
+		expect(usersSummary(USER_ROWS, "storefront", orgWide, USERS_NOW)).toEqual({
+			identified: 6,
+			activeToday: 5,
+			withErrors: 3,
+			anonymousVisitors: 7_403,
+		})
 	})
 })
