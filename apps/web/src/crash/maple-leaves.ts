@@ -1,4 +1,5 @@
 import { Array as Arr, String as Str } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 // Pixel-grid maple leaves for the crash page, ported from the landing 404
 // (`apps/landing/src/lib/maple-leaves.ts`). They sway down, settle into a pile
 // and dissolve; the pointer blows wind and pressing an action sweeps them off.
@@ -130,7 +131,7 @@ export function mountMapleLeaves(
 
 	function resize() {
 		const r = host.getBoundingClientRect()
-		const dpr = Math.min(2, window.devicePixelRatio || 1)
+		const dpr = Math.min(2, nonZeroOr(window.devicePixelRatio, 1))
 		grid.w = r.width
 		grid.h = r.height
 		grid.floor = grid.h - 18
@@ -414,7 +415,7 @@ export function mountMapleLeaves(
 		const i = Math.floor(b.x / cell)
 		const j = Math.floor(b.y / cell)
 		if (i < 0 || j < 0 || i >= cols || j >= rows) return
-		const sp = Math.hypot(b.vx, b.vy) || 1
+		const sp = nonZeroOr(Math.hypot(b.vx, b.vy), 1)
 		const c = b.vx / sp
 		const s = b.vy / sp
 		const k = b.dot ? 4 : Math.abs(c) > 0.92 ? 0 : Math.abs(s) > 0.92 ? 1 : c * s > 0 ? 3 : 2
@@ -451,7 +452,7 @@ export function mountMapleLeaves(
 		ctx.fillStyle = state.ink
 		for (let idx = 0; idx < glyph.length; idx++) {
 			const k = glyph[idx] ?? 0
-			if (!k || (color[idx] ?? -1) >= 0) continue
+			if (k === 0 || (color[idx] ?? -1) >= 0) continue
 			ctx.globalAlpha = (glyphA[idx] ?? 0) * 0.45
 			ctx.fillText(
 				k === 5 ? "." : (CHARS[k - 1] ?? "-"),

@@ -208,7 +208,7 @@ class VideoEngine implements ReplayEngine {
 	private select(index: number, offsetSec: number): void {
 		if (this.destroyed) return
 		const segment = this.segments[index]
-		if (!segment) return
+		if (segment === undefined) return
 		if (index === this.index) {
 			// Same media — seek directly; no metadata round-trip needed.
 			if (this.video.readyState >= 1) this.video.currentTime = offsetSec
@@ -254,7 +254,7 @@ class VideoEngine implements ReplayEngine {
 
 	getCurrentTimeMs(): number {
 		const segment = this.segments[this.index]
-		if (!segment) return 0
+		if (segment === undefined) return 0
 		const ms = segment.startMs + this.video.currentTime * 1000
 		return Number.isFinite(ms) && ms > 0 ? ms : 0
 	}

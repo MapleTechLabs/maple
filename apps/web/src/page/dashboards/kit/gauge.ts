@@ -43,7 +43,7 @@ const rampColor = (fraction: number): string => {
 	)
 	const lo = RAMP[Option.getOrElse(index, () => 0)] ?? [0, 0, 0, 0]
 	const hi = RAMP[Option.match(index, { onNone: () => RAMP.length - 1, onSome: (at) => at + 1 })] ?? lo
-	const t = (x - lo[0]) / (hi[0] - lo[0] || 1)
+	const t = (x - lo[0]) / (hi[0] !== lo[0] ? hi[0] - lo[0] : 1)
 	const channel = (i: 1 | 2 | 3) => Math.round(lo[i] + (hi[i] - lo[i]) * t)
 	return `rgb(${channel(1)}, ${channel(2)}, ${channel(3)})`
 }

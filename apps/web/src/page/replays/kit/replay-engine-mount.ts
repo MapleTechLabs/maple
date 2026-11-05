@@ -2,6 +2,7 @@ import type { ReplayEngine, ReplayEngineFactory } from "../../../components/repl
 import { Effect, Option, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { deriveMeta, InactiveInterval } from "./replay-meta"
 import type { ReplayFormat } from "./replay-window"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // `ReplayPlayerProvider`'s engine half as a Mount stream: the engine mounts into the element, the
 // Model drives it through data attributes (a nonce'd transport action, speed, skip-idle, hold),
@@ -122,7 +123,10 @@ const startEngine = <A>(
 	const engine = factory.create({
 		mount,
 		events: args.events,
-		fallbackViewport: { width: meta.recordedWidth || 1280, height: meta.recordedHeight || 720 },
+		fallbackViewport: {
+			width: nonZeroOr(meta.recordedWidth, 1280),
+			height: nonZeroOr(meta.recordedHeight, 720),
+		},
 		onFinish: () => {
 			// rrweb finishes at its last loaded event. Mid-recording that is a buffer underrun: stay
 			// "playing" and pick up again when the next range is fed. The tick loop keeps running, since

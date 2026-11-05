@@ -161,7 +161,10 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 	// `attr` skips blanks: projected attribute maps carry every key, absent ones as "".
 	const statusCode = pipe(
 		attr(attrs, "http.status_code", "http.response.status_code"),
-		Option.map((raw) => parseInt(raw, 10) || null),
+		Option.map((raw) => {
+			const code = parseInt(raw, 10)
+			return Number.isNaN(code) || code === 0 ? null : code
+		}),
 		Option.getOrNull,
 	)
 

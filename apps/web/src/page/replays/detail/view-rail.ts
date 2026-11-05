@@ -367,7 +367,7 @@ const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetwo
 							? [
 									h.span(
 										[h.Class(cn("font-semibold", statusTone(ev.netStatus)))],
-										[ev.netStatus ? String(ev.netStatus) : "ERR"],
+										[ev.netStatus !== 0 ? String(ev.netStatus) : "ERR"],
 									),
 									h.span(
 										[

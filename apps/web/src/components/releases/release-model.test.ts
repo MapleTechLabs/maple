@@ -284,7 +284,7 @@ describe("releaseHeadline", () => {
 			release({ commitSha: SHA_A, serviceName: WEB }),
 		]
 		const [newest] = groupReleases(deriveReleaseImpacts(rows, []))
-		expect(newest && releaseHeadline(newest).serviceName).toBe("web")
+		expect(newest !== undefined && releaseHeadline(newest).serviceName).toBe("web")
 	})
 })
 
@@ -385,7 +385,7 @@ describe("previousSha", () => {
 			release({ commitSha: SHA_A, serviceName: svc("db"), firstSeen: "2026-09-05T09:00:00.000Z" }),
 		]
 		const [newest, , oldest] = groupReleases(deriveReleaseImpacts(rows, []))
-		expect(newest && previousSha(newest)).toBe(SHA_B)
-		expect(oldest && previousSha(oldest)).toBeUndefined()
+		expect(newest !== undefined && previousSha(newest)).toBe(SHA_B)
+		expect(oldest !== undefined && previousSha(oldest)).toBeUndefined()
 	})
 })

@@ -67,8 +67,8 @@ export function machineBadge(node: Pick<Node3D, "kind" | "system" | "runtime">):
 		const mark = DB_MARKS.get(database.icon)
 		return mark === undefined ? null : { label: database.label, mark }
 	}
-	const runtime = node.runtime && resolveRuntimeGlyph(node.runtime)
-	if (!runtime) return null
+	const runtime = node.runtime ? resolveRuntimeGlyph(node.runtime) : null
+	if (runtime === null) return null
 	const mark = runtime.icon === null ? undefined : RUNTIME_MARKS.get(runtime.icon)
 	return mark !== undefined
 		? { label: runtime.full, mark }

@@ -110,8 +110,10 @@ export const zoneRows = (
 		Arr.map(
 			Arr.filter(zones, (zone) => zone !== "UTC"),
 			(zone) => rowOf(zone, zone, atMs, false, false),
-		).sort(
-			(a, b) => offsetMinutes(a.offset) - offsetMinutes(b.offset) || Str.localeCompare(b.zone)(a.zone),
+		).sort((a, b) =>
+			offsetMinutes(a.offset) !== offsetMinutes(b.offset)
+				? offsetMinutes(a.offset) - offsetMinutes(b.offset)
+				: Str.localeCompare(b.zone)(a.zone),
 		),
 		(row, index) => (index === 0 ? { ...row, startsGroup: true } : row),
 	)

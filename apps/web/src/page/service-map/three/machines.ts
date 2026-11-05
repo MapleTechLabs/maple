@@ -191,9 +191,11 @@ function processor(scope: Scope, { height, finish }: { height: number; finish: F
 		Arr.map(panes, (pane) => windowPane(scope, { center: pane.center, normal: pane.normal, finish })),
 		stoneCourse(scope, { half: HALF, height: FOOTING, finish }),
 		windowDressing(scope, { windows: panes, finish }),
-		finish.trouble === "degraded" && front && boardedWindow(scope, { center: front.center, finish }),
+		finish.trouble === "degraded" &&
+			front !== undefined &&
+			boardedWindow(scope, { center: front.center, finish }),
 		variant(finish.seed, 6, 2) === 1 &&
-			front &&
+			front !== undefined &&
 			flowerBox(scope, { position: [front.center[0], front.center[1] - 0.2, HALF], finish }),
 		eaves(scope, { half: HALF, top: height, finish }),
 		inkPlate({

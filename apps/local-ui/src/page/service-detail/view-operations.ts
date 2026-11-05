@@ -23,6 +23,7 @@ import type { Model, OperationRow } from "./model"
 import { tracesHref } from "./view-parts"
 import { hstack } from "@maple/views/ui/stack"
 import { typographyClass } from "@maple/views/ui/typography"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 // The "Top operations" section of `ServiceDetailView`.
 
@@ -44,10 +45,10 @@ const operationRow = (h: HtmlBuilder<Message>, serviceName: string, range: strin
 			],
 			"max-w-96 truncate font-mono text-xs",
 		),
-		numericTableCell(h, [formatNumber(op.estimatedSpanCount || op.spanCount)]),
+		numericTableCell(h, [formatNumber(nonZeroOr(op.estimatedSpanCount, op.spanCount))]),
 		numericTableCell(
 			h,
-			[formatNumber(op.estimatedErrorCount || op.errorCount)],
+			[formatNumber(nonZeroOr(op.estimatedErrorCount, op.errorCount))],
 			cn(op.errorCount > 0 && "text-severity-error"),
 		),
 		numericTableCell(h, [errorRateValue(h, { rate: op.errorRate })]),

@@ -35,7 +35,8 @@ export const operationTraceSearch = (args: {
 }) => ({
 	services: [args.serviceName],
 	spanNames: [args.spanName],
-	deploymentEnvs: args.environments?.length ? [...args.environments] : undefined,
+	deploymentEnvs:
+		args.environments !== undefined && args.environments.length > 0 ? [...args.environments] : undefined,
 	rootOnly: false,
 	startTime: args.startTime,
 	endTime: args.endTime,

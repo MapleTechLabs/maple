@@ -36,7 +36,7 @@ const STATUS_CLASS_BASES: Record<number, { l: number; c: number; h: number }> = 
 function getHttpStatusColor(code: number): string | null {
 	const classDigit = Math.floor(code / 100)
 	const base = STATUS_CLASS_BASES[classDigit]
-	if (!base) return null
+	if (base === undefined) return null
 
 	// For class labels (2xx, 3xx) use the base color directly
 	if (code % 100 === 0 && code === classDigit * 100) return statusOklch(base, 0)
@@ -86,7 +86,7 @@ function detectColor(key: string): string | null {
 	if (Option.isSome(classMatch)) {
 		const classDigit = Number(classMatch.value[1])
 		const base = STATUS_CLASS_BASES[classDigit]
-		if (base) return statusOklch(base, 0)
+		if (base !== undefined) return statusOklch(base, 0)
 	}
 
 	// Individual HTTP status codes (e.g., "200", "404", "500")

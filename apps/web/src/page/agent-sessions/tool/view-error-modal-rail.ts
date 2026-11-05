@@ -368,7 +368,7 @@ const fold = (rows: ReadonlyArray<BreakdownRow>, keyOf: (row: BreakdownRow) => s
 			totals.set(keyOf(row), (totals.get(keyOf(row)) ?? 0) + row.calls),
 		).entries(),
 	]
-		.sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0]))
+		.sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0])))
 		.slice(0, 3)
 
 const breakdown = (

@@ -44,8 +44,8 @@ const countBy = (
 	Arr.forEach(entries, (entry) =>
 		Arr.forEach(pick(entry), (name) => counts.set(name, (counts.get(name) ?? 0) + 1)),
 	)
-	return Arr.map([...counts.entries()], ([name, count]) => ({ name, count })).sort(
-		(a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name),
+	return Arr.map([...counts.entries()], ([name, count]) => ({ name, count })).sort((a, b) =>
+		b.count !== a.count ? b.count - a.count : Str.localeCompare(b.name)(a.name),
 	)
 }
 

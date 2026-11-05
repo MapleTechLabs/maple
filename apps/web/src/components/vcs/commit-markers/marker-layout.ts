@@ -274,7 +274,7 @@ export function layoutMarkerLabels(
 	const groups: LabelGroup[] = []
 	for (const p of positioned) {
 		const last = groups[groups.length - 1]
-		const prevRight = last ? last.boxLeft + last.boxWidth + gap : plotLeft
+		const prevRight = last !== undefined ? last.boxLeft + last.boxWidth + gap : plotLeft
 		// Merge when either:
 		//  - the dash hits the previous label: there's no room to the right of it to seat a
 		//    fresh label that both clears it (by `gap`) AND keeps this dash inset from its
@@ -285,7 +285,7 @@ export function layoutMarkerLabels(
 		//    previous label (+N).
 		const hitsPrevious = p.x < prevRight + EDGE_INSET
 		const noRoomBeforeEdge = plotRight - prevRight < MIN_LABEL_WIDTH
-		if (last && (hitsPrevious || noRoomBeforeEdge)) {
+		if (last !== undefined && (hitsPrevious || noRoomBeforeEdge)) {
 			last.dashXs.push(p.x)
 			last.commits.push(...p.marker.commits)
 		} else {
@@ -304,7 +304,7 @@ export function layoutMarkerLabels(
 		// above — same input the standalone-placement path used.
 		const group = groups[groups.length - 1]
 		const before = groups[groups.length - 2]
-		const beforeRight = before ? before.boxLeft + before.boxWidth + gap : plotLeft
+		const beforeRight = before !== undefined ? before.boxLeft + before.boxWidth + gap : plotLeft
 		const box = placeLabel(
 			group.dashXs,
 			estimateLabelWidth(group.label, group.commits.length),

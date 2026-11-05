@@ -120,7 +120,7 @@ const tooltipBody = (
 									h.Style({ "background-color": slice.color }),
 								]),
 								h.span([], [slice.name]),
-								...(slice.collapsedCount
+								...((slice.collapsedCount ?? 0) > 0
 									? [
 											typography(h, { tone: "muted", weight: "normal" }, [
 												`(${slice.collapsedCount} categories)`,
@@ -233,7 +233,7 @@ export const view = Submodel.defineView<Model, Message, PieChartInputs>((model, 
 
 	const series: ReadonlyArray<PlotLegendSeries> = Arr.map(pieRows, (row) => ({
 		key: row.name,
-		label: row.collapsedCount ? `${row.name} +${row.collapsedCount}` : row.name,
+		label: (row.collapsedCount ?? 0) > 0 ? `${row.name} +${row.collapsedCount}` : row.name,
 		color: row.color,
 		// Figures only in the side table: the bottom chips are a colour key.
 		value: tableLegend ? fmtValue(row.value, unit) : undefined,

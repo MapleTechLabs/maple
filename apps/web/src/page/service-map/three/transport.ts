@@ -348,7 +348,7 @@ function lanternPost(
 ): Child {
 	const elbows = Arr.filter(link.curve.curves, (curve) => curve instanceof THREE.QuadraticBezierCurve3)
 	const elbow = elbows[seed % Math.max(1, elbows.length)]
-	if (!elbow) return null
+	if (elbow === undefined) return null
 	const inside = elbow.v0.clone().add(elbow.v2).multiplyScalar(0.5)
 	const out = elbow.v1.clone().sub(inside).setY(0).normalize()
 	const foot = elbow.v1.clone().addScaledVector(out, width / 2 + 0.14)

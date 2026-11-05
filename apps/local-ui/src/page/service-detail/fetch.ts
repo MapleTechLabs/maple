@@ -19,7 +19,7 @@ export const fetchOverview = (serviceName: string, bounds: TimeBounds, apiBase: 
 			{ concurrency: "unbounded" },
 		)
 		const row = catalogRows[0]
-		if (!row) return null
+		if (row === undefined) return null
 		const firstSeenMs = Arr.reduce(overviewRows, null, (earliest: number | null, overview) => {
 			const ms = parseClickHouseDateTime(DateTime.formatIso(overview.firstSeen))
 			return ms !== null && (earliest === null || ms < earliest) ? ms : earliest

@@ -2,6 +2,7 @@ import type { FactoryLink } from "./factory-routing"
 import { hash } from "./maple-scenery-sketch"
 import type { District } from "./spatial-layout"
 import { Array as Arr, Option } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
 /** Zone rectangles on the ground plane: centre and half extents. */
 export interface Zone {
@@ -221,7 +222,7 @@ function resample(line: ReadonlyArray<readonly [number, number]>, meadow: Meadow
 		const [ax, az] = along(Math.max(0, s - 0.2)),
 			[bx, bz] = along(Math.min(length, s + 0.2))
 		const [tx, tz] = [bx - ax, bz - az]
-		const norm = Math.hypot(tx, tz) || 1
+		const norm = nonZeroOr(Math.hypot(tx, tz), 1)
 		// Of the two normals, the outward one points away from the meadow's centre.
 		const outward = (x - meadow.cx) * tz - (z - meadow.cz) * tx >= 0 ? 1 : -1
 		const w = 0.28 + Math.sin(s * 0.9) * 0.06
@@ -234,7 +235,7 @@ function resample(line: ReadonlyArray<readonly [number, number]>, meadow: Meadow
 			b = samples[i + 1] ?? a
 		const t = f - i
 		const mix = (p: number, q: number) => p + (q - p) * t
-		return a && b
+		return a !== undefined && b != null
 			? {
 					x: mix(a.x, b.x),
 					z: mix(a.z, b.z),

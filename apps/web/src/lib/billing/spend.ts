@@ -501,7 +501,7 @@ export function buildCumulativeSeries({
 
 	const todayMs = Math.floor(model.cycle.nowMs / DAY_MS) * DAY_MS
 	const lastDay = daily.days[daily.days.length - 1]
-	const lastDayMs = lastDay ? Date.parse(`${lastDay.date}T00:00:00Z`) : todayMs
+	const lastDayMs = lastDay !== undefined ? Date.parse(`${lastDay.date}T00:00:00Z`) : todayMs
 	const projectedTotal = model.projectedCents / 100
 
 	return Arr.map(daily.days, (day) => {

@@ -44,7 +44,7 @@ export function tokenizeWhereClause(expression: string): WhereClauseToken[] {
 
 	const push = (text: string, type: WhereClauseTokenType) => {
 		const last = tokens[tokens.length - 1]
-		if (last && last.type === type) {
+		if (last !== undefined && last.type === type) {
 			last.text += text
 		} else {
 			tokens.push({ text, type })
@@ -78,7 +78,7 @@ export function tokenizeWhereClause(expression: string): WhereClauseToken[] {
 			push(text, "number")
 		} else if (whitespace !== undefined) {
 			const last = tokens[tokens.length - 1]
-			if (last && last.type === "plain") {
+			if (last !== undefined && last.type === "plain") {
 				last.text += text
 			} else {
 				tokens.push({ text, type: "plain" })

@@ -53,7 +53,7 @@ export function writeClipboardFallback(text: string): boolean {
 export async function writeClipboardText(text: string): Promise<boolean> {
 	if (!text) return false
 
-	if (navigator.clipboard?.writeText) {
+	if (navigator.clipboard?.writeText !== undefined) {
 		const written = await tryPromise(() => navigator.clipboard.writeText(text))
 		if (Option.isSome(written)) return true
 	}

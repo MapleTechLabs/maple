@@ -31,9 +31,10 @@ export const topologyKeyOf = (topology: Topology3D): string =>
 		nodes: Arr.map(topology.nodes, ({ id, namespace, kind }) => ({ id, namespace, kind })).sort((a, b) =>
 			Str.localeCompare(b.id)(a.id),
 		),
-		edges: Arr.map(topology.edges, ({ source, target }) => ({ source, target })).sort(
-			(a, b) => Str.localeCompare(b.source)(a.source) || Str.localeCompare(b.target)(a.target),
-		),
+		edges: Arr.map(topology.edges, ({ source, target }) => ({ source, target })).sort((a, b) => {
+			const bySource = Str.localeCompare(b.source)(a.source)
+			return bySource !== 0 ? bySource : Str.localeCompare(b.target)(a.target)
+		}),
 	})
 
 /** `JSON.parse(topologyKey)`: the sorted topology the layout and routes are computed from. */

@@ -75,7 +75,7 @@ export const scaleRates = (
 	unit: string | undefined,
 	bucketSeconds: number | undefined,
 ): Array<TimeseriesRow> => {
-	if (unit !== "requests_per_sec" || !bucketSeconds) return rows
+	if (unit !== "requests_per_sec" || bucketSeconds === undefined || bucketSeconds <= 0) return rows
 	return Arr.map(rows, (row) => {
 		const next: TimeseriesRow = { bucket: row.bucket, date: row.date }
 		if (row.partial) next.partial = true

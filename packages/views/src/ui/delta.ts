@@ -60,7 +60,9 @@ export const delta = <M>(h: HtmlBuilder<M>, options: DeltaOptions): Html => {
 		[
 			h.span([h.AriaHidden(true)], [flat ? "→" : rose ? "↑" : "↓"]),
 			magnitude,
-			...(options.suffix ? [h.span([h.Class(deltaSuffixStyles)], [options.suffix])] : []),
+			...(options.suffix !== undefined && options.suffix !== ""
+				? [h.span([h.Class(deltaSuffixStyles)], [options.suffix])]
+				: []),
 		],
 	)
 }
