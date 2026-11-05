@@ -69,17 +69,21 @@ const nonEmpty = (value: CH.Expr<string>) => CH.anyIf(value, value.neq(""))
 
 const zero = () => CH.toUInt64(CH.lit(0))
 
-/** A service's namespace from the caller's map, `''` for a service it does not know. */
-const namespaceOf = (service: CH.Expr<string>, scope: UsersScope): CH.Expr<string> =>
+/** A service's namespace from the caller's map, `fallback` (default `''`) for a service it does not know. */
+const namespaceOf = (
+	service: CH.Expr<string>,
+	scope: UsersScope,
+	fallback: CH.Expr<string> = CH.lit(""),
+): CH.Expr<string> =>
 	scope.serviceNamespaces.length === 0
-		? CH.lit("")
+		? fallback
 		: CH.compileTypedFnCall(
 				"transform",
 				T.string.schema,
 				service,
 				CH.arrayOf(...Arr.map(scope.serviceNamespaces, ([service]) => CH.lit(service))),
 				CH.arrayOf(...Arr.map(scope.serviceNamespaces, ([, namespace]) => CH.lit(namespace))),
-				CH.lit(""),
+				fallback,
 			)
 
 /** Replays and events are in scope when unscoped or some service resolved; else they are skipped. */
@@ -717,10 +721,11 @@ export function userServicesQuery(scope: UsersScope) {
 		}))
 		.where(($) => [$.service.neq("")])
 		.groupBy("service", "namespace")
+	// The same map as the replay and event arms, so one service reaches the rail once.
 	const mcp = from(Traces)
 		.select(($) => ({
 			service: $.ServiceName,
-			namespace: $.ResourceAttributes.get("service.namespace"),
+			namespace: namespaceOf($.ServiceName, scope, $.ResourceAttributes.get("service.namespace")),
 			signals: CH.count(),
 		}))
 		.where(($) => userMcpSpans($, scope))
