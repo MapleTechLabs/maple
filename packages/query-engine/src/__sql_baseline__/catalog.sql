@@ -10532,7 +10532,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [e1f09d51]
+-- builder:users:usersListQuery:namespaceFiltered  [cc9ca26f]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10642,8 +10642,8 @@ SELECT
         GROUP BY userId
         HAVING sum(signals.errors) > 0
           AND sum(signals.sessions) > 0
-          AND anyIf(signals.groupId, signals.groupId != '') IN ('acme')
-          AND ((signals.userId ILIKE '%ada%' OR anyIf(signals.name, signals.name != '') ILIKE '%ada%') OR anyIf(signals.email, signals.email != '') ILIKE '%ada%')
+          AND countIf(signals.groupId IN ('acme')) > 0
+          AND (positionCaseInsensitiveUTF8(signals.userId, 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.name, signals.name != ''), 'ada') > 0 OR positionCaseInsensitiveUTF8(anyIf(signals.email, signals.email != ''), 'ada') > 0)
         ORDER BY lastSeen DESC
         LIMIT 200
         FORMAT JSON
