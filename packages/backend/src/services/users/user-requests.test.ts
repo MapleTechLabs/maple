@@ -46,14 +46,22 @@ const request = new UserDetailRequest({
 	namespaces: ["storefront"],
 })
 
-const slice = (hour: string, serviceName: string, requestCount: number, logCount: number) => ({
-	hour,
-	serviceName,
-	serviceNamespace: "storefront",
-	spanCount: String(requestCount * 3),
-	requestCount: String(requestCount),
-	logCount: String(logCount),
-})
+/** One service's rollup row, active in a single hour; a bound with no count reads the epoch, as minIf does. */
+const slice = (hour: string, serviceName: string, requestCount: number, logCount: number) => {
+	const requestHour = requestCount > 0 ? hour : "1970-01-01 00:00:00"
+	const logHour = logCount > 0 ? hour : "1970-01-01 00:00:00"
+	return {
+		serviceName,
+		serviceNamespace: "storefront",
+		spanCount: String(requestCount * 3),
+		requestCount: String(requestCount),
+		logCount: String(logCount),
+		firstRequestHour: requestHour,
+		lastRequestHour: requestHour,
+		firstLogHour: logHour,
+		lastLogHour: logHour,
+	}
+}
 
 const fixture: Fixture = new Map<string, ReadonlyArray<unknown>>([
 	[

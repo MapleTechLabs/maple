@@ -9751,23 +9751,25 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:user-activity:userActivitySlicesQuery:default  [54b5a280]
+-- builder:user-activity:userActivitySlicesQuery:default  [5b6ff050]
 SELECT
-          user_activity_hourly.Hour AS hour,
           user_activity_hourly.ServiceName AS serviceName,
           user_activity_hourly.ServiceNamespace AS serviceNamespace,
           sum(user_activity_hourly.SpanCount) AS spanCount,
           sum(user_activity_hourly.RequestCount) AS requestCount,
-          sum(user_activity_hourly.LogCount) AS logCount
+          sum(user_activity_hourly.LogCount) AS logCount,
+          minIf(user_activity_hourly.Hour, user_activity_hourly.RequestCount > 0) AS firstRequestHour,
+          maxIf(user_activity_hourly.Hour, user_activity_hourly.RequestCount > 0) AS lastRequestHour,
+          minIf(user_activity_hourly.Hour, user_activity_hourly.LogCount > 0) AS firstLogHour,
+          maxIf(user_activity_hourly.Hour, user_activity_hourly.LogCount > 0) AS lastLogHour
         FROM user_activity_hourly
         WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
           AND user_activity_hourly.ServiceNamespace IN ('storefront')
           AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND user_activity_hourly.UserId = 'user_catalog'
-        GROUP BY hour, serviceName, serviceNamespace
-        ORDER BY hour DESC, serviceName ASC
-        LIMIT 5000
+        GROUP BY serviceName, serviceNamespace
+        ORDER BY serviceName ASC
         FORMAT JSON
 
 -- builder:user-activity:userActivitySummaryQuery:default  [344f6010]

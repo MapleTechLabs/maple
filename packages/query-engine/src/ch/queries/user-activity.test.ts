@@ -31,7 +31,8 @@ describe("user activity rollup reads", () => {
 		expect(sql).toMatch(/ServiceNamespace IN \('storefront', 'billing'\)/)
 		expect(sql).toContain("Hour >= toStartOfHour(toDateTime('2024-01-01 00:10:00'))")
 		expect(sql).toContain("Hour <= toStartOfHour(toDateTime('2024-01-02 00:20:00'))")
-		expect(sql).toContain("GROUP BY hour, serviceName, serviceNamespace")
+		expect(sql).toContain("GROUP BY serviceName, serviceNamespace")
+		expect(sql).not.toMatch(/\bLIMIT\b/)
 	})
 
 	it("leaves every namespace in when the scope is empty", () => {

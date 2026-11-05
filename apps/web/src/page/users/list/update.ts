@@ -5,7 +5,7 @@ import { requestKey } from "@maple/views/data/request-key"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type TimeWindow } from "../../../data/time-range"
-import { resolveUsersWindow } from "../window"
+import { resolveUsersWindow, usersSearch } from "../window"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
@@ -122,7 +122,7 @@ export const clearedFilters = (search: Search): Search => ({
 // ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
-	const { search } = route
+	const search = usersSearch(route.search)
 	const model: Model = {
 		search,
 		window: null,
@@ -170,7 +170,7 @@ export const routeChanged = (
 	route: { readonly search: Search },
 	context: PageContext,
 ): Return => {
-	const { search } = route
+	const search = usersSearch(route.search)
 	if (searchHref(model.search) === searchHref(search)) return { model }
 	const previous = model.search
 	const next: Model = {
