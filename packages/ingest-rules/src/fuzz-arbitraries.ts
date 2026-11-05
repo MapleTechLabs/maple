@@ -27,10 +27,10 @@ const int = (minimum: number, maximum: number) =>
 	Arbitrary.schema(Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum })))
 
 const oneOf = <A>(...choices: ReadonlyArray<Arbitrary.Arbitrary<A>>): Arbitrary.Arbitrary<A> =>
-	Arbitrary.flatMap(int(0, choices.length - 1), (index) => choices[index])
+	Arbitrary.flatMap(int(0, choices.length - 1), (index) => Arr.getUnsafe(choices, index))
 
 const element = <A>(items: ReadonlyArray<A>): Arbitrary.Arbitrary<A> =>
-	Arbitrary.map(int(0, items.length - 1), (index) => items[index])
+	Arbitrary.map(int(0, items.length - 1), (index) => Arr.getUnsafe(items, index))
 
 /** A subset of `items`, in their order, with at least `min` of them. */
 const subset = <A>(items: ReadonlyArray<A>, min = 0): Arbitrary.Arbitrary<Array<A>> =>

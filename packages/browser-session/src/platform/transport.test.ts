@@ -12,6 +12,7 @@ import {
 	SDK_HINT_HEADER,
 	sdkHint,
 } from "./transport"
+import * as Arr from "effect/Array"
 
 const CONFIG = {
 	endpoint: "https://ingest.test",
@@ -264,7 +265,7 @@ describe("transport", () => {
 			}),
 		)
 		expect(sent.map((part) => part.keepalive)).toEqual([true, false])
-		expect(sent[0].bytes).toBeLessThanOrEqual(8 * 1024)
+		expect(Arr.getUnsafe(sent, 0).bytes).toBeLessThanOrEqual(8 * 1024)
 		// SAFETY: each line is one of the rows above, serialized by the transport.
 		const seqs = sent.flatMap((part) =>
 			part.body

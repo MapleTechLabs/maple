@@ -2,6 +2,7 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 // BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import * as Arr from "effect/Array"
 
 // rrweb touches the DOM at import time in a real browser; here we only need the
 // emit callback and the takeFullSnapshot recovery hook.
@@ -114,7 +115,7 @@ describe("startRecording", () => {
 		await recorder.flush()
 
 		expect(posted).toHaveLength(1)
-		const chunk = posted[0]
+		const chunk = Arr.getUnsafe(posted, 0)
 		expect(chunk.meta.isCheckpoint).toBe(true)
 		expect(chunk.meta.eventCount).toBe(2)
 		expect(chunk.meta.durationMs).toBe(1_500)
@@ -160,7 +161,7 @@ describe("startRecording", () => {
 		await recorder.flush()
 
 		expect(posted).toHaveLength(1)
-		expect(posted[0].meta.eventCount).toBe(1)
+		expect(Arr.getUnsafe(posted, 0).meta.eventCount).toBe(1)
 		recorder.stop()
 	})
 
@@ -229,7 +230,7 @@ describe("startRecording", () => {
 			expect(cancelIdleCallback).toHaveBeenCalledWith(1)
 
 			// Belt and braces: even a callback the browser ran anyway must not post.
-			idleCallbacks[0]()
+			Arr.getUnsafe(idleCallbacks, 0)()
 			await vi.advanceTimersByTimeAsync(0)
 			expect(posted).toEqual([])
 		} finally {
@@ -333,17 +334,16 @@ describe("startRecording", () => {
 
 			await nextStart()
 			expect(posted).toHaveLength(1)
-			expect(posted[0].meta).toMatchObject({
+			expect(Arr.getUnsafe(posted, 0).meta).toMatchObject({
 				sessionId: "session-1",
 				chunkSeq: 7,
 				isCheckpoint: true,
 				eventCount: 2,
 				durationMs: 1_500,
 			})
-			expect((JSON.parse(posted[0].body) as Array<{ type: number }>).map((e) => e.type)).toEqual([
-				FULL_SNAPSHOT,
-				INCREMENTAL,
-			])
+			expect(
+				(JSON.parse(Arr.getUnsafe(posted, 0).body) as Array<{ type: number }>).map((e) => e.type),
+			).toEqual([FULL_SNAPSHOT, INCREMENTAL])
 			expect(stored()).toBeUndefined()
 
 			await nextStart()
@@ -563,7 +563,10 @@ describe("startBufferedRecording", () => {
 			{ sessionId: "session-1", chunkSeq: 1, isCheckpoint: true, eventCount: 3, durationMs: 500 },
 			{ sessionId: "session-1", chunkSeq: 1, isCheckpoint: true, eventCount: 4, durationMs: 1_000 },
 		])
-		const first = JSON.parse(posted[0].body) as Array<{ timestamp: number; data: { href?: string } }>
+		const first = JSON.parse(Arr.getUnsafe(posted, 0).body) as Array<{
+			timestamp: number
+			data: { href?: string }
+		}>
 		expect(first[0]?.timestamp).toBe(31_000)
 		expect(first[0]?.data.href).toBe("https://app.example/?token=REDACTED")
 

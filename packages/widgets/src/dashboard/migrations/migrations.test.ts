@@ -1,5 +1,5 @@
 import { Array as Arr, Effect, Predicate } from "effect"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { parseStoredDashboard, stampCurrentVersion } from "../parse"
 import { CURRENT_DASHBOARD_SCHEMA_VERSION } from "../version"
 import { DASHBOARD_MIGRATIONS, detectSchemaVersion, migrateToLatest } from "./index"
@@ -150,7 +150,9 @@ describe("the v1 -> v2 step", () => {
 		const dataSource = widget.dataSource
 		if (typeof dataSource !== "object" || dataSource === null) throw new Error("expected a dataSource")
 
-		expect(dataSource).toHaveProperty("params", looseDocument.widgets[0].dataSource.params)
+		const [looseWidget] = looseDocument.widgets
+		assert.isDefined(looseWidget)
+		expect(dataSource).toHaveProperty("params", looseWidget.dataSource.params)
 	})
 
 	// The case that makes this migration more than a rename: `line`/`bar`/`area`

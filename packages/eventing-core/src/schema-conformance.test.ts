@@ -129,7 +129,7 @@ describe("published scalar schema conformance", () => {
 				expect(
 					timestampMismatches(
 						`2026-${Str.padStart(2, "0")(String(month))}-${Str.padStart(2, "0")(String(day))}T00:00:00Z`,
-						day >= 1 && day <= monthLengths[month - 1],
+						day >= 1 && day <= (monthLengths[month - 1] ?? 0),
 					),
 				).toEqual([])
 			}

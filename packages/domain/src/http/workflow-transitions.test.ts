@@ -109,7 +109,7 @@ describe("describeWorkflowTransitions", () => {
 		// Only as TARGETS. They stay as sources — an agent handed an issue already
 		// sitting in `regressed` or `verifying` still needs to know its moves.
 		const description = describeWorkflowTransitions()
-		for (const [, targets] of Str.matchAll(/→\(([^)]+)\)/g)(description)) {
+		for (const [, targets = ""] of Str.matchAll(/→\(([^)]+)\)/g)(description)) {
 			for (const target of Str.split("|")(targets)) {
 				expect([...MACHINE_OWNED_WORKFLOW_STATES], target).not.toContain(target)
 			}

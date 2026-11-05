@@ -167,7 +167,7 @@ describe("parseWhereClause", () => {
 		const result = parseWhereClause("not a valid clause")
 		expect(result.clauses).toEqual([])
 		expect(result.warnings).toHaveLength(1)
-		expect(result.warnings[0].message).toContain("Unsupported clause syntax ignored")
+		expect(Arr.getUnsafe(result.warnings, 0).message).toContain("Unsupported clause syntax ignored")
 	})
 
 	it("handles mix of valid and invalid clauses", () => {
@@ -180,13 +180,13 @@ describe("parseWhereClause", () => {
 		const result = parseWhereClause('service.name = "unclosed')
 		expect(result.clauses).toEqual([])
 		expect(result.warnings).toHaveLength(1)
-		expect(result.warnings[0].message).toContain("Unclosed quote")
+		expect(Arr.getUnsafe(result.warnings, 0).message).toContain("Unclosed quote")
 	})
 
 	it("lowercases keys and keeps the raw spelling beside them", () => {
 		const result = parseWhereClause('Service.Name = "api"')
-		expect(result.clauses[0].key).toBe("service.name")
-		expect(result.clauses[0].rawKey).toBe("Service.Name")
+		expect(Arr.getUnsafe(result.clauses, 0).key).toBe("service.name")
+		expect(Arr.getUnsafe(result.clauses, 0).rawKey).toBe("Service.Name")
 	})
 
 	it("parses mixed positive and negative clauses", () => {

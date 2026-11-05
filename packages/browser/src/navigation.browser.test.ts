@@ -10,7 +10,7 @@ import {
 	type TracerProvider,
 } from "@opentelemetry/api"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from "vitest"
 import { resetUrlSanitizersForTests } from "../../browser-session/src/platform/url-privacy"
 
 // What the batch processor hands to the exporter, so assertions are on the
@@ -418,9 +418,11 @@ describe("traced", () => {
 		const loader = named("loader /a")
 		for (const url of ["https://api.test/one", "https://api.test/two"]) {
 			const [span] = fetchSpans(url)
+			assert.isDefined(span)
 			expect(parentOf(span)).toBe(loader.spanContext().spanId)
 		}
 		const [after] = fetchSpans("https://api.test/after-await")
+		assert.isDefined(after)
 		expect(parentOf(after)).toBeUndefined()
 		expect(after.spanContext().traceId).not.toBe(loader.spanContext().traceId)
 	})

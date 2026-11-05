@@ -8,6 +8,7 @@ import {
 	resolveIngestEndpoint,
 	warnIfKeylessMapleIngest,
 } from "./region"
+import * as Arr from "effect/Array"
 
 afterEach(() => {
 	resetRegionWarningsForTests()
@@ -58,6 +59,6 @@ describe("region", () => {
 		warnIfKeylessMapleIngest({ ...keyless, endpoint: "https://ingest.maple.dev" })
 		warnIfKeylessMapleIngest({ ...keyless, endpoint: "https://ingest.maple.dev" })
 		expect(warn).toHaveBeenCalledTimes(1)
-		expect(String(warn.mock.calls[0][0])).toContain("401")
+		expect(String(Arr.getUnsafe(Arr.getUnsafe(warn.mock.calls, 0), 0))).toContain("401")
 	})
 })

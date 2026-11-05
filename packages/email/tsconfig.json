@@ -2,6 +2,7 @@
 	"include": ["**/*.ts"],
 	"exclude": ["node_modules"],
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		"target": "ES2022",
 		"module": "ESNext",
 		"lib": ["ES2022"],

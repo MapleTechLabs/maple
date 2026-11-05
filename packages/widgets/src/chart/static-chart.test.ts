@@ -226,12 +226,11 @@ describe("renderChartSvg, as an alert draws it: one series and a threshold", () 
 	})
 
 	it("sorts unordered points rather than drawing a zigzag", () => {
-		const shuffled: ReadonlyArray<ChartPoint> = [
-			[at(0), 3],
-			[at(30), 1],
-			[at(15), 2],
-		]
-		const sorted: ReadonlyArray<ChartPoint> = [shuffled[0], shuffled[2], shuffled[1]]
+		const early: ChartPoint = [at(0), 3]
+		const middle: ChartPoint = [at(15), 2]
+		const late: ChartPoint = [at(30), 1]
+		const shuffled: ReadonlyArray<ChartPoint> = [early, late, middle]
+		const sorted: ReadonlyArray<ChartPoint> = [early, middle, late]
 		const draw = (points: ReadonlyArray<ChartPoint>) =>
 			renderChartSvg({ ...spec, kind: "line", series: [{ name: "n", points }] }).svg
 		expect(draw(shuffled)).toBe(draw(sorted))

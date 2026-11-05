@@ -2,7 +2,7 @@ import * as Config from "effect/Config"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import {
 	appUrlsEnv,
 	derived,
@@ -81,7 +81,9 @@ describe("primitives", () => {
 		const record = run(optionalSecret("CLERK_JWT_KEY"), { CLERK_JWT_KEY: "jwt-secret" })
 		// oxlint-disable-next-line typescript/no-base-to-string -- asserts Redacted's runtime toString hides the value.
 		expect(String(record.CLERK_JWT_KEY)).not.toContain("jwt-secret")
-		expect(Redacted.value(record.CLERK_JWT_KEY)).toBe("jwt-secret")
+		const secret = record.CLERK_JWT_KEY
+		assert.isDefined(secret)
+		expect(Redacted.value(secret)).toBe("jwt-secret")
 	})
 
 	it("applies an optionalPlain fallback only when the key is absent", () => {

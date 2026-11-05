@@ -258,7 +258,9 @@ const sourceText = (name: string, text: string): string => {
 			)
 		case "Cargo.toml":
 			return Arr.join(
-				Arr.map([...Str.matchAll(/\bgit\s*=\s*"([^"]+)"/gu)(text)], (m) => m[1]),
+				Arr.flatMap([...Str.matchAll(/\bgit\s*=\s*"([^"]+)"/gu)(text)], (m) =>
+					m[1] === undefined ? [] : [m[1]],
+				),
 				"\n",
 			)
 		default:
