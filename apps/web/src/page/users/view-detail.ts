@@ -638,7 +638,8 @@ const issueStatus = <M>(h: HtmlBuilder<M>, status: UserDetail["issues"][number][
 	status === null
 		? typography(h, { size: "xs", tone: "muted", as: "span" }, ["Not an issue yet"])
 		: hstack(h, { gap: "1.5", as: "span" }, [
-				workflowRingIcon(h, status, 12),
+				// The label beside it says the state; the ring's own aria-label would say it twice.
+				h.span([h.AriaHidden(true), h.Class("inline-flex")], [workflowRingIcon(h, status, 12)]),
 				typography(h, { size: "xs", tone: "soft", truncate: true, as: "span" }, [
 					WORKFLOW_LABEL[status],
 				]),
