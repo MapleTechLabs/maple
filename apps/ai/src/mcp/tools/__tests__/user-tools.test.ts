@@ -375,6 +375,9 @@ describe("inspect_user failed requests", () => {
 		expect(noFailedRequestsText({ requests: 400, failedRate: 0 })).toBe(
 			"No failed requests in the window.",
 		)
+		expect(noFailedRequestsText({ requests: 200, failedRate: 0.005 })).toBe(
+			"1 failed request in the window, none among the timeline's most recent rows.",
+		)
 		expect(noFailedRequestsText(null)).toBe("No failed requests among the timeline's most recent rows.")
 	})
 })
