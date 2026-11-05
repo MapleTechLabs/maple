@@ -214,9 +214,11 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 			eyebrow: "Requests",
 			value: profile.requests === null ? NOT_YET : formatNumber(profile.requests),
 			subline:
-				profile.failedRate === null
-					? "not available yet"
-					: `${formatPercent(profile.failedRate)} failed`,
+				profile.requests === 0
+					? "no requests in the window"
+					: profile.failedRate === null
+						? "not available yet"
+						: `${formatPercent(profile.failedRate)} failed`,
 			spark: profile.requests === null ? undefined : profile.activity,
 			compact: true,
 		}),
