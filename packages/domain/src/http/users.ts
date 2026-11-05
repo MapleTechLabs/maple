@@ -85,7 +85,13 @@ export class UsersFacetsResponse extends Schema.Class<UsersFacetsResponse>("User
 // ---------------------------------------------------------------------------
 
 /** An end user's id as the SDK sent it: opaque, matched exactly. */
-export const EndUserId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
+/** The longest end-user id the API and the `/users/<id>` route accept. */
+export const END_USER_ID_MAX_LENGTH = 512
+
+export const EndUserId = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(END_USER_ID_MAX_LENGTH),
+)
 
 export class UserDetailRequest extends Schema.Class<UserDetailRequest>("UserDetailRequest")({
 	...windowFields,
