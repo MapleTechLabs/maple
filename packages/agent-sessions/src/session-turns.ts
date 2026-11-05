@@ -284,8 +284,11 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	// names no turn of its own.
 	let cursor = 0
 	for (const { span, startMs } of ordered) {
-		while (cursor + 1 < anchors.length && anchorStarts[cursor + 1] <= startMs) cursor++
-		buckets[turnOf(span) ?? cursor].push(span)
+		for (let following = anchorStarts[cursor + 1]; following !== undefined && following <= startMs;) {
+			cursor++
+			following = anchorStarts[cursor + 1]
+		}
+		buckets[turnOf(span) ?? cursor]?.push(span)
 	}
 
 	// On rules 2 and 3 the boundary is a guess, and an anchor that opened no
@@ -308,7 +311,7 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 		for (let i = 0; i < buckets.length - 1; i++) {
 			const bucket = buckets[i]
 			const next = buckets[i + 1]
-			if (opened(bucket)) continue
+			if (bucket === undefined || next === undefined || opened(bucket)) continue
 			const endMs = Arr.reduce(bucket, Number.NEGATIVE_INFINITY, (max, span) =>
 				Math.max(max, spanEndMs(span)),
 			)
@@ -325,7 +328,7 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 	// leave the earlier bucket empty.
 	return Arr.map(
 		Arr.filter(
-			Arr.map(anchors, (anchor, index) => ({ anchor, turnSpans: buckets[index] })),
+			Arr.map(anchors, (anchor, index) => ({ anchor, turnSpans: buckets[index] ?? [] })),
 			(entry) => entry.turnSpans.length > 0,
 		),
 		({ anchor, turnSpans }, index) => {

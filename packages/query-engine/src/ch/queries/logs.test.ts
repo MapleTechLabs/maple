@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Array as Arr, String as Str, Option } from "effect"
 import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -502,6 +502,7 @@ describe("logsListQuery", () => {
 					resourceAttributes: "{}",
 				},
 			])
+			assert.isDefined(row)
 			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T12:00:00.123Z")
 			const next = yield* compile(
 				logsListQuery({

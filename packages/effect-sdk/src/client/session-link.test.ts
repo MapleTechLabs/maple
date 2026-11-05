@@ -1,4 +1,4 @@
-import { describe, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { Effect, Option, Array as Arr, String as Str } from "effect"
 import { afterEach, expect } from "vitest"
 import { make } from "./flushable.js"
@@ -39,15 +39,27 @@ const baseConfig = {
 
 const firstSpanAttrs = (calls: Array<FetchCall>) => {
 	const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
-	const span = (
-		traceCall.body as {
-			resourceSpans: Array<{
-				scopeSpans: Array<{
-					spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
-				}>
-			}>
-		}
-	).resourceSpans[0].scopeSpans[0].spans[0]
+	const span = Arr.getUnsafe(
+		Arr.getUnsafe(
+			Arr.getUnsafe(
+				(
+					traceCall.body as {
+						resourceSpans: Array<{
+							scopeSpans: Array<{
+								spans: Array<{
+									attributes: Array<{ key: string; value: { stringValue?: string } }>
+								}>
+							}>
+						}>
+					}
+				).resourceSpans,
+				0,
+			).scopeSpans,
+			0,
+		).spans,
+		0,
+	)
+	assert.isDefined(span)
 	return span.attributes
 }
 

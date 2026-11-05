@@ -384,11 +384,12 @@ export function tracesBaseWhereConditions(
 	}
 
 	if (opts.environments !== undefined && opts.environments.length > 0) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
 			conditions.push(
 				CH.positionCaseInsensitive(
 					deploymentEnvExpr($.ResourceAttributes),
-					CH.lit(opts.environments[0]),
+					CH.lit(soleEnvironment),
 				).gt(0),
 			)
 		} else {
@@ -396,11 +397,12 @@ export function tracesBaseWhereConditions(
 		}
 	}
 	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
-		if (mm?.serviceNamespace === "contains" && opts.namespaces.length === 1) {
+		const soleNamespace = soleValue(opts.namespaces)
+		if (mm?.serviceNamespace === "contains" && soleNamespace !== undefined) {
 			conditions.push(
 				CH.positionCaseInsensitive(
 					$.ResourceAttributes.get("service.namespace"),
-					CH.lit(opts.namespaces[0]),
+					CH.lit(soleNamespace),
 				).gt(0),
 			)
 		} else {
@@ -517,15 +519,17 @@ export function serviceOverviewWhereConditions(
 	}
 
 	if (opts.environments !== undefined && opts.environments.length > 0) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(opts.environments[0])).gt(0))
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(soleEnvironment)).gt(0))
 		} else {
 			conditions.push(CH.inList($.DeploymentEnv, opts.environments))
 		}
 	}
 	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
-		if (mm?.serviceNamespace === "contains" && opts.namespaces.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.ServiceNamespace, CH.lit(opts.namespaces[0])).gt(0))
+		const soleNamespace = soleValue(opts.namespaces)
+		if (mm?.serviceNamespace === "contains" && soleNamespace !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.ServiceNamespace, CH.lit(soleNamespace)).gt(0))
 		} else {
 			conditions.push(CH.inList($.ServiceNamespace, opts.namespaces))
 		}
@@ -624,8 +628,9 @@ export function tracesAggregatesWhereConditions(
 	]
 
 	if (opts.environments !== undefined && opts.environments.length > 0) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(opts.environments[0])).gt(0))
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(soleEnvironment)).gt(0))
 		} else {
 			conditions.push(CH.inList($.DeploymentEnv, opts.environments))
 		}

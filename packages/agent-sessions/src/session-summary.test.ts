@@ -30,7 +30,7 @@ describe("findIdleGaps", () => {
 		])
 
 		expect(gaps).toHaveLength(1)
-		expect(gaps[0].durationMs).toBe(60 * SECOND)
+		expect(Arr.getUnsafe(gaps, 0).durationMs).toBe(60 * SECOND)
 	})
 
 	it("ignores a hole too short to be a human", () => {
@@ -978,7 +978,7 @@ describe("countTurnTokens", () => {
 	it("counts a duplicated span row once, as the session total does", () => {
 		// A page-overlapping read repeats a row (`session-transcript.ts` dedupes by
 		// id for the same reason); both totals are keyed by span id.
-		const duplicated = [...perCall, { ...perCall[1] }]
+		const duplicated = [...perCall, { ...Arr.getUnsafe(perCall, 1) }]
 		const turns = buildSessionTurns(duplicated)
 		const total = Arr.reduce(turns, 0, (sum, turn) => sum + countTurnTokens(turn, turns).total)
 
@@ -1675,7 +1675,10 @@ describe("per-model cost, tools and failure groups", () => {
 
 		expect(summary.work.toolCalls).toBe(2)
 		expect(Arr.map(summary.tools, (tool) => [tool.name, tool.calls])).toEqual([["delete_file", 2]])
-		expect(Arr.map(summary.tools[0].events, (event) => event.spanId)).toEqual(["no-result", "approved"])
+		expect(Arr.map(Arr.getUnsafe(summary.tools, 0).events, (event) => event.spanId)).toEqual([
+			"no-result",
+			"approved",
+		])
 		expect(summary.failures.errors).toBe(0)
 	})
 
@@ -1733,7 +1736,7 @@ describe("per-model cost, tools and failure groups", () => {
 		])
 
 		expect(
-			Arr.map(summary.tools[0]?.events, (event) => ({
+			Arr.map(Arr.getUnsafe(summary.tools, 0)?.events, (event) => ({
 				...event,
 				startMs: event.startMs - summary.startMs,
 			})),

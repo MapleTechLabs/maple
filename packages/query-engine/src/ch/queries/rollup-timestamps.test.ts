@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Array as Arr, Record as Rec } from "effect"
 import { compile, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
@@ -98,19 +98,22 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 			const overview = yield* decodeTimes(yield* compile(serviceOverviewQuery({}), params), [
 				"firstSeen",
 			])
+			assert.isDefined(overview)
 			expect(iso(overview.firstSeen)).toBe(ISO)
-			expect(iso(overview.commits[0][3])).toBe(ISO)
+			expect(iso(Arr.getUnsafe(overview.commits, 0)[3])).toBe(ISO)
 			for (const bucketSeconds of [30, 300, 3600]) {
 				const p = { ...params, bucketSeconds }
 				const apdex = yield* decodeTimes(
 					yield* compile(serviceApdexTimeseriesQuery({ serviceName: "api", bucketSeconds }), p),
 					["bucket"],
 				)
+				assert.isDefined(apdex)
 				expect(iso(apdex.bucket)).toBe(ISO)
 				const releases = yield* decodeTimes(
 					yield* compile(serviceReleasesTimelineQuery({ serviceName: "api", bucketSeconds }), p),
 					["bucket"],
 				)
+				assert.isDefined(releases)
 				expect(iso(releases.bucket)).toBe(ISO)
 			}
 		}),
@@ -119,16 +122,19 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 	it.effect("releases", () =>
 		Effect.gen(function* () {
 			const list = yield* decodeTimes(yield* compile(releasesListQuery(), params), ["firstSeen"])
+			assert.isDefined(list)
 			expect(iso(list.firstSeen)).toBe(ISO)
 			const timeline = yield* decodeTimes(
 				yield* compile(releasesTimelineQuery({ bucketSeconds: 3600 }), params),
 				["bucket"],
 			)
+			assert.isDefined(timeline)
 			expect(iso(timeline.bucket)).toBe(ISO)
 			const deployments = yield* decodeTimes(
 				yield* compile(serviceDeploymentsQuery({ minutePrecision: true }), params),
 				["firstSeen", "lastSeen"],
 			)
+			assert.isDefined(deployments)
 			expect(iso(deployments.lastSeen)).toBe(ISO)
 		}),
 	)
@@ -140,16 +146,19 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 				yield* compile(serviceOperationsTimeseriesQuery(opts), params),
 				["bucket"],
 			)
+			assert.isDefined(spliced)
 			expect(iso(spliced.bucket)).toBe(ISO)
 			const raw = yield* decodeTimes(
 				yield* compile(serviceOperationsTimeseriesRawQuery(opts), params),
 				["bucket"],
 			)
+			assert.isDefined(raw)
 			expect(iso(raw.bucket)).toBe(ISO)
 			const routes = yield* decodeTimes(yield* compile(routeUsageQuery({}), params), [
 				"firstSeen",
 				"lastSeen",
 			])
+			assert.isDefined(routes)
 			expect(iso(routes.firstSeen)).toBe(ISO)
 		}),
 	)
@@ -161,14 +170,17 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 					yield* serviceDbQueryTimeseriesSQL({ ...params, dbSystem: "postgresql", bucketSeconds }),
 					["bucket"],
 				)
+				assert.isDefined(ts)
 				expect(iso(ts.bucket)).toBe(ISO)
 			}
 			const top = yield* decodeTimes(
 				yield* serviceDbTopQueriesSQL({ ...params, dbSystem: "postgresql" }),
 				["lastSeen"],
 			)
+			assert.isDefined(top)
 			expect(iso(top.lastSeen)).toBe(ISO)
 			const volume = yield* decodeTimes(yield* compile(dbQueryVolumeQuery({}), params), ["lastSeen"])
+			assert.isDefined(volume)
 			expect(iso(volume.lastSeen)).toBe(ISO)
 		}),
 	)
@@ -179,17 +191,21 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 				"firstSeen",
 				"lastSeen",
 			])
+			assert.isDefined(metrics)
 			expect(iso(metrics.lastSeen)).toBe(ISO)
 			const liveness = yield* decodeTimes(yield* compile(serviceLivenessQuery(), params), ["lastSeen"])
+			assert.isDefined(liveness)
 			expect(iso(liveness.lastSeen)).toBe(ISO)
 			const trace = yield* decodeTimes(yield* compile(anomalyTraceSignalTimeseriesQuery(), params), [
 				"hour",
 			])
+			assert.isDefined(trace)
 			expect(iso(trace.hour)).toBe(ISO)
 			const logs = yield* decodeTimes(
 				yield* compile(anomalyLogVolumeQuery({ hoursOfDay: [11] }), params),
 				["hour"],
 			)
+			assert.isDefined(logs)
 			expect(iso(logs.hour)).toBe(ISO)
 		}),
 	)
@@ -219,6 +235,7 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 					SampleRateSum: 1,
 				},
 			])
+			assert.isDefined(edge)
 			expect(edge.Hour).toBe(WIRE)
 
 			const annual = yield* compile(

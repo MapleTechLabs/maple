@@ -451,9 +451,10 @@ function providerCheck(
 					: `All ${plural(llmCalls, "model call")} were answered first time`,
 		)
 	}
+	const [firstFailure] = failures
 	const parts = [
-		...(failures.length > 0
-			? [`${plural(total(failures), "model call")} failed at the provider on ${where(failures[0])}`]
+		...(firstFailure !== undefined
+			? [`${plural(total(failures), "model call")} failed at the provider on ${where(firstFailure)}`]
 			: []),
 		...Arr.map(
 			retries,

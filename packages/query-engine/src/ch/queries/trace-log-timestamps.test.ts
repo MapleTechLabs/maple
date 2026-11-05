@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Option, Schema, SchemaAST, Array as Arr } from "effect"
 import { compile, from, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
@@ -84,6 +84,7 @@ describe("trace and log rows decode timestamps to DateTime.Utc", () => {
 					timestamp: "2024-01-01 10:00:00",
 				},
 			])
+			assert.isDefined(row)
 			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T10:00:00.000Z")
 			yield* decodesUtc(compile(traceSummariesQuery({}), params), ["startTime"])
 		}),
@@ -147,6 +148,7 @@ describe("trace and log rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ events: ["2024-01-01 10:00:00.5", "2024-01-01 10:00:01.123456789"] },
 			])
+			assert.isDefined(row)
 			expect(Arr.map(row.events, DateTime.formatIso)).toEqual([
 				"2024-01-01T10:00:00.500Z",
 				"2024-01-01T10:00:01.123Z",

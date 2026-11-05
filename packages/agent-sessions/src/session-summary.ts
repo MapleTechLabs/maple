@@ -343,9 +343,9 @@ function union(intervals: readonly Interval[]): Interval[] {
 export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[] {
 	const busy = union(Arr.map(spans, (span) => ({ startMs: spanStartMs(span), endMs: spanEndMs(span) })))
 	const gaps: IdleGap[] = []
-	for (let i = 1; i < busy.length; i++) {
-		const startMs = busy[i - 1].endMs
-		const endMs = busy[i].startMs
+	for (const [previous, current] of Arr.zip(busy, busy.slice(1))) {
+		const startMs = previous.endMs
+		const endMs = current.startMs
 		const durationMs = endMs - startMs
 		if (durationMs > IDLE_GAP_MIN_MS) gaps.push({ id: `gap:${startMs}`, startMs, endMs, durationMs })
 	}

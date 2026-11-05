@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
@@ -44,6 +44,7 @@ describe("auditLogEntriesQuery", () => {
 					originCountry: "",
 				},
 			])
+			assert.isDefined(row)
 			expect(DateTime.formatIso(row.occurredAt)).toBe("2026-10-01T10:00:00.041Z")
 			expect(DateTime.formatIso(row.recordedAt)).toBe("2026-10-01T10:00:01.500Z")
 		}),

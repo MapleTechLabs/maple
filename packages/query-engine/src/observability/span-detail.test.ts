@@ -87,7 +87,7 @@ describe("spanDetail", () => {
 			assert.isTrue(result.found)
 			assert.isFalse(result.widened)
 			assert.lengthOf(sqls, 2)
-			assert.isTrue(isProbe(sqls[0]))
+			assert.isTrue(isProbe(Arr.getUnsafe(sqls, 0)))
 			assert.include(sqls[1], "Timestamp >=")
 		}),
 	)

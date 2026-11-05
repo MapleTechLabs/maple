@@ -123,7 +123,9 @@ const pushProse = (blocks: Array<ChatBlock>, markdown: string): void => {
 /** What the plot would have shown, for a platform that has no image of it. */
 const chartSummary = (spec: ChartSpec): string => {
 	if (spec.type === "ranked") {
-		const highest = Arr.reduce(spec.data, spec.data[0], (top, point) =>
+		// parseChartSpec drops a ranked chart with no points, so this is unreachable.
+		if (!Arr.isReadonlyArrayNonEmpty(spec.data)) return plural(0, "item")
+		const highest = Arr.reduce(spec.data, Arr.headNonEmpty(spec.data), (top, point) =>
 			point.value > top.value ? point : top,
 		)
 		return `${plural(spec.data.length, "item")}, highest ${highest.name} (${formatNumber(highest.value)})`
@@ -259,8 +261,8 @@ const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running:
 	// Finished: the last segment that says anything. Normally that is the one after the final call,
 	// but a turn that stopped without answering has nothing there, and the closest it came to an
 	// answer is the segment before.
-	for (let index = offsets.length - 1; index >= 0; index--) {
-		if (Str.trim(Str.slice(offsets[index])(text)).length > 0) return offsets[index]
+	for (const offset of Arr.reverse(offsets)) {
+		if (Str.trim(Str.slice(offset)(text)).length > 0) return offset
 	}
 	return 0
 }

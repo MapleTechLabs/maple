@@ -1,5 +1,5 @@
 // SAFETY-FILE: JSON in this test is the OTLP body the SDK under test posted, parsed before its fields are asserted.
-import { describe, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, pipe, Array as Arr, Record as Rec, String as Str } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./make.js"
@@ -274,6 +274,7 @@ describe("MapleFoldkit.make", () => {
 			)
 		const { commands } = app.init(undefined, { pathname: "/services" })
 		const [loaded] = await Promise.all(Arr.map(commands, run))
+		assert.isDefined(loaded)
 		const followUps = app.update({ filter: "" }, loaded).commands
 		await Promise.all(Arr.map(followUps, run))
 		await maple.dispose()

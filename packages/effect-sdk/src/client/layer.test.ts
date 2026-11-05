@@ -48,7 +48,7 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 		// The session sink saw this span's trace id — proves the decorator is
 		// still wired into Maple.layer post-extraction.
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
-		expect(recordTraceId.mock.calls[0][0]).toMatch(/^[0-9a-f]{32}$/i)
+		expect(Arr.getUnsafe(Arr.getUnsafe(recordTraceId.mock.calls, 0), 0)).toMatch(/^[0-9a-f]{32}$/i)
 	})
 
 	it("applies span options and still stamps session.id on the exported span", async () => {

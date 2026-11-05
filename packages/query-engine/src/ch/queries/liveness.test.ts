@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import { DateTime, Effect, Array as Arr, String as Str } from "effect"
 import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { orgTelemetryPulseQuery, serviceLivenessQuery } from "./liveness"
@@ -74,6 +74,7 @@ describe("serviceLivenessQuery", () => {
 				lastSeen: "2024-01-01 00:29:00",
 			},
 		])
+		assert.isDefined(byo)
 		expect(byo?.spanCount).toBe(14203)
 		expect(byo?.errorCount).toBe(0)
 		expect(DateTime.formatIso(byo.lastSeen)).toBe("2024-01-01T00:29:00.000Z")

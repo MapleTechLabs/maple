@@ -393,7 +393,7 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 			)
 			assert.deepStrictEqual(statuses, ["ok", "error"])
 			assert.strictEqual(
-				inserts[0].attributes.get("error.type"),
+				Arr.getUnsafe(inserts, 0).attributes.get("error.type"),
 				"@maple/http/errors/WarehouseUpstreamError",
 			)
 		}),
@@ -631,7 +631,7 @@ describe("makeWarehouseExecutor wire format", () => {
 			)
 			yield* executor.compiledQuery(tenant, compiled, { context: "test", profile: "list" })
 			assert.lengthOf(sqls, 1)
-			return sqls[0]
+			return Arr.getUnsafe(sqls, 0)
 		})
 
 	it.effect("declares FORMAT in the statement for the Tinybird SDK backend", () =>

@@ -437,7 +437,9 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 		if (dim === undefined) return undefined
 		if (Str.startsWith("attribute:")(dim)) return $.Attributes.get(Str.slice("attribute:".length)(dim))
 		if (dim === "host") return $.Host
-		return compileFnCall<string>("coalesce", $.sd.Value, CH.lit(""))
+		// The session-dimension join is attached only for a session breakdown.
+		const sd = $.sd
+		return sd === undefined ? undefined : compileFnCall<string>("coalesce", sd.Value, CH.lit(""))
 	}
 
 	return base

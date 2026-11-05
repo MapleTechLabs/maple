@@ -136,7 +136,7 @@ const hasRealCalendarFields = (value: string): boolean => {
 	const month = Number(mo)
 	if (month < 1 || month > 12) return false
 
-	const maxDay = month === 2 && isLeapYear(Number(y)) ? 29 : DAYS_IN_MONTH[month - 1]
+	const maxDay = month === 2 && isLeapYear(Number(y)) ? 29 : (DAYS_IN_MONTH[month - 1] ?? 0)
 	const day = Number(d)
 	if (day < 1 || day > maxDay) return false
 
@@ -524,13 +524,12 @@ export function relativeRangeSeconds(shorthand: string): number | null {
 	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	if (trimmed === "today") return 86_400
 
-	const match = RELATIVE_RANGE_PATTERN.exec(trimmed)
-	if (!match) return null
+	const [, amountText, unit] = RELATIVE_RANGE_PATTERN.exec(trimmed) ?? []
+	if (amountText === undefined || unit === undefined) return null
 
-	const amount = Number.parseInt(match[1], 10)
+	const amount = Number.parseInt(amountText, 10)
 	if (!Number.isFinite(amount) || amount <= 0) return null
 
-	const unit = match[2]
 	const unitMs = unit === "mo" ? 30 * 86_400_000 : MS[unit]
 	if (unitMs === undefined) return null
 
@@ -553,13 +552,12 @@ export function resolveRelativeRange(
 		return { startMs: startOfDay(nowMs, timeZone), endMs: nowMs }
 	}
 
-	const match = RELATIVE_RANGE_PATTERN.exec(trimmed)
-	if (!match) return null
+	const [, amountText, unit] = RELATIVE_RANGE_PATTERN.exec(trimmed) ?? []
+	if (amountText === undefined || unit === undefined) return null
 
-	const amount = Number.parseInt(match[1], 10)
+	const amount = Number.parseInt(amountText, 10)
 	if (!Number.isFinite(amount) || amount <= 0) return null
 
-	const unit = match[2]
 	if (unit === "mo") {
 		return { startMs: addCalendarMonths(nowMs, -amount, timeZone), endMs: nowMs }
 	}
@@ -622,7 +620,7 @@ export function resolveRelativeRangeToWarehouse(
 // preset into an absolute range the user will see (the time-range picker
 // writing to the URL) should record the true instant and skip this.
 
-const CACHE_SNAP_LADDER: ReadonlyArray<readonly [maxRangeMs: number, snapSeconds: number]> = [
+const CACHE_SNAP_LADDER: Arr.NonEmptyReadonlyArray<readonly [maxRangeMs: number, snapSeconds: number]> = [
 	[60 * 60 * 1000, 15], // <= 1h  → 15s
 	[6 * 60 * 60 * 1000, 60], // <= 6h  → 1m
 	[24 * 60 * 60 * 1000, 300], // <= 24h → 5m
@@ -637,7 +635,7 @@ const CACHE_SNAP_FALLBACK_SECONDS = 1800 // > 7d → 30m
  * the range. Non-finite or non-positive widths fall back to the finest rung.
  */
 export function cacheSnapSecondsForRange(rangeMs: number): number {
-	if (!Number.isFinite(rangeMs) || rangeMs <= 0) return CACHE_SNAP_LADDER[0][1]
+	if (!Number.isFinite(rangeMs) || rangeMs <= 0) return Arr.headNonEmpty(CACHE_SNAP_LADDER)[1]
 	for (const [maxRangeMs, snapSeconds] of CACHE_SNAP_LADDER) {
 		if (rangeMs <= maxRangeMs) return snapSeconds
 	}
@@ -829,9 +827,11 @@ export function computeBucketSeconds(
 	const raw = Math.max(Math.ceil(rangeSeconds / targetPoints), 1)
 
 	const ladder = Arr.filter(AUTO_BUCKET_LADDER, (candidate) => candidate >= minBucketSeconds)
-	const rungs = ladder.length > 0 ? ladder : [AUTO_BUCKET_LADDER[AUTO_BUCKET_LADDER.length - 1]]
+	const rungs: Arr.NonEmptyReadonlyArray<number> = Arr.isReadonlyArrayNonEmpty(ladder)
+		? ladder
+		: [Arr.lastNonEmpty(AUTO_BUCKET_LADDER)]
 
-	let bucket: number = Arr.reduce(rungs, rungs[0], (best, candidate) =>
+	let bucket: number = Arr.reduce(rungs, Arr.headNonEmpty(rungs), (best, candidate) =>
 		Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best,
 	)
 
@@ -841,7 +841,7 @@ export function computeBucketSeconds(
 		const finer = Arr.filter(rungs, (candidate) => candidate <= maxBucketForMin)
 		// `rungs[0]` rather than the raw ladder's floor: `minBuckets` must not be
 		// allowed to step below the caller's `minBucketSeconds`.
-		bucket = finer.length > 0 ? finer[finer.length - 1] : rungs[0]
+		bucket = Arr.isReadonlyArrayNonEmpty(finer) ? Arr.lastNonEmpty(finer) : Arr.headNonEmpty(rungs)
 	}
 
 	return bucket
@@ -913,7 +913,9 @@ export function computeBucketSecondsForRange(
  * warehouse rollup tiers are minute- and hour-grain, and a 30s bucket would
  * push every widget onto raw-span scans.
  */
-const WIDTH_INTERVAL_LADDER: ReadonlyArray<readonly [upperBoundSeconds: number, bucketSeconds: number]> = [
+const WIDTH_INTERVAL_LADDER: Arr.NonEmptyReadonlyArray<
+	readonly [upperBoundSeconds: number, bucketSeconds: number]
+> = [
 	[90, 60],
 	[210, 120],
 	[450, 300],
@@ -998,7 +1000,9 @@ export function computeBucketSecondsForWidth(
 	const maxBucketForMin = Math.floor(rangeSeconds / minBuckets)
 	if (bucket > maxBucketForMin) {
 		const finer = Arr.filter(WIDTH_INTERVAL_LADDER, ([, seconds]) => seconds <= maxBucketForMin)
-		bucket = finer.length > 0 ? finer[finer.length - 1][1] : WIDTH_INTERVAL_LADDER[0][1]
+		bucket = Arr.isReadonlyArrayNonEmpty(finer)
+			? Arr.lastNonEmpty(finer)[1]
+			: Arr.headNonEmpty(WIDTH_INTERVAL_LADDER)[1]
 	}
 
 	return bucket

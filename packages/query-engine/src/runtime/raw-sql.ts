@@ -134,7 +134,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// text as it was when `matchAll` was called.
 	const timeFilterMatches = Arr.fromIterable(Str.matchAll(/\$__timeFilter\(([^)]*)\)/g)(sql))
 	for (const match of timeFilterMatches) {
-		const column = Str.trim(match[1])
+		const column = Str.trim(match[1] ?? "")
 		sql = replaceFirstLiteral(
 			sql,
 			match[0],
@@ -148,7 +148,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// one synthetic bucket, which reduces to exactly the same scalar.
 	const timeGroupMatches = Arr.fromIterable(Str.matchAll(/\$__timeGroup\(([^)]*)\)/g)(sql))
 	for (const match of timeGroupMatches) {
-		const column = Str.trim(match[1])
+		const column = Str.trim(match[1] ?? "")
 		sql = replaceFirstLiteral(
 			sql,
 			match[0],
@@ -239,7 +239,7 @@ export const makeExecuteRawSql = <TTenant, E>(warehouse: RawSqlWarehouse<TTenant
 
 		return {
 			rows,
-			columns: rows.length > 0 ? Rec.keys(rows[0]) : [],
+			columns: rows[0] === undefined ? [] : Rec.keys(rows[0]),
 			rowCount: rows.length,
 			expandedSql: prepared.sql,
 			granularitySeconds: prepared.granularitySeconds,

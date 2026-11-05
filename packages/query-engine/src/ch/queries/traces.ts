@@ -202,8 +202,9 @@ function buildGroupNameExpr(
 						CH.toString_($.SpanAttributes.get(k)),
 					)
 					// When multiple attribute keys, join them into a single part
-					if (keys.length === 1) {
-						parts.push(keys[0])
+					const soleKey = soleValue(keys)
+					if (soleKey !== undefined) {
+						parts.push(soleKey)
 					} else {
 						parts.push(CH.arrayStringConcat(keys, " \u00b7 "))
 					}
@@ -218,8 +219,9 @@ function buildGroupNameExpr(
 		return CH.lit("all")
 	}
 
-	if (parts.length === 1) {
-		return CH.coalesce(CH.nullIf(parts[0], ""), CH.lit("all"))
+	const solePart = soleValue(parts)
+	if (solePart !== undefined) {
+		return CH.coalesce(CH.nullIf(solePart, ""), CH.lit("all"))
 	}
 
 	// Multi-part: filter empty strings before joining with separator

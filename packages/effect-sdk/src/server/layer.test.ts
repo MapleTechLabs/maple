@@ -1,4 +1,4 @@
-import { describe, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { Data, Effect, Layer, Option, pipe, Tracer, Array as Arr, String as Str } from "effect"
 import { OtlpExporter } from "effect/observability"
 import { afterEach, beforeEach, expect, vi } from "vitest"
@@ -185,16 +185,18 @@ describe("Maple.layer span options", () => {
 		)
 
 		const [span] = exportedSpans()
-		expect(span?.status.code).toBe(1)
-		expect(Arr.some(span?.events, (event) => event.name === "exception")).toBe(false)
+		assert.isDefined(span)
+		expect(span.status.code).toBe(1)
+		expect(Arr.some(span.events, (event) => event.name === "exception")).toBe(false)
 	})
 
 	it("still records unexpected failures as Error", async () => {
 		await run(config, Effect.fail(new DuplicateDocument()).pipe(Effect.withSpan("documents.insert")))
 
 		const [span] = exportedSpans()
-		expect(span?.status.code).toBe(2)
-		expect(Arr.some(span?.events, (event) => event.name === "exception")).toBe(true)
+		assert.isDefined(span)
+		expect(span.status.code).toBe(2)
+		expect(Arr.some(span.events, (event) => event.name === "exception")).toBe(true)
 	})
 
 	// The no-option recipe the docs point to: a Debug span under an Info

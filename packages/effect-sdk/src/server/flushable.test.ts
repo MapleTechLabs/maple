@@ -79,9 +79,9 @@ describe("MapleFlush.make (server)", () => {
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
 			}>
 		}
-		const spans = body.resourceSpans[0].scopeSpans[0].spans
+		const spans = Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans
 		expect(Arr.map(spans, (s) => s.name).sort()).toEqual(["op-1", "op-2"])
-		const attrs = body.resourceSpans[0].resource.attributes
+		const attrs = Arr.getUnsafe(body.resourceSpans, 0).resource.attributes
 		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["service.namespace"]).toBe("unit-test-ns")
@@ -117,11 +117,11 @@ describe("MapleFlush.make (server)", () => {
 				}>
 			}>
 		}
-		const records = body.resourceLogs[0].scopeLogs[0].logRecords
+		const records = Arr.getUnsafe(Arr.getUnsafe(body.resourceLogs, 0).scopeLogs, 0).logRecords
 		expect(records).toHaveLength(2)
-		expect(records[0].severityText).toBe("Info")
-		expect(records[0].body.stringValue).toBe("hello world")
-		expect(records[1].severityText).toBe("Error")
+		expect(Arr.getUnsafe(records, 0).severityText).toBe("Info")
+		expect(Arr.getUnsafe(records, 0).body.stringValue).toBe("hello world")
+		expect(Arr.getUnsafe(records, 1).severityText).toBe("Error")
 	})
 
 	it.effect("ends in-flight spans when an outer Effect.timeoutOrElse interrupts the work", () =>
@@ -159,7 +159,7 @@ describe("MapleFlush.make (server)", () => {
 				}>
 			}
 			const found = Arr.findFirst(
-				body.resourceSpans[0].scopeSpans[0].spans,
+				Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans,
 				(s) => s.name === "slow-op",
 			)
 			expect(Option.isSome(found), "slow-op span should be present in the export").toBe(true)
@@ -202,7 +202,9 @@ describe("MapleFlush.make (server)", () => {
 
 		expect(calls.length).toBe(0)
 		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
-		expect(consoleInfoSpy.mock.calls[0][0]).toContain("no ingest key configured")
+		expect(Arr.getUnsafe(Arr.getUnsafe(consoleInfoSpy.mock.calls, 0), 0)).toContain(
+			"no ingest key configured",
+		)
 
 		// One-shot: a second flush stays silent.
 		await Effect.runPromise(
@@ -291,11 +293,17 @@ describe("MapleFlush.make (server)", () => {
 
 		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
 		const names = Arr.map(
-			(
-				traceCall.body as {
-					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
-				}
-			).resourceSpans[0].scopeSpans[0].spans,
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						traceCall.body as {
+							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
+						}
+					).resourceSpans,
+					0,
+				).scopeSpans,
+				0,
+			).spans,
 			(s) => s.name,
 		)
 		expect(names).toEqual(["public.request"])
@@ -351,23 +359,49 @@ describe("MapleFlush.make (server)", () => {
 		)
 		await telemetry.flush()
 
-		const span = (
-			Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url))).body as {
-				resourceSpans: Array<{
-					scopeSpans: Array<{ spans: Array<{ traceId: string; spanId: string }> }>
-				}>
-			}
-		).resourceSpans[0].scopeSpans[0].spans[0]
+		const span = Arr.getUnsafe(
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+							.body as {
+							resourceSpans: Array<{
+								scopeSpans: Array<{ spans: Array<{ traceId: string; spanId: string }> }>
+							}>
+						}
+					).resourceSpans,
+					0,
+				).scopeSpans,
+				0,
+			).spans,
+			0,
+		)
+		assert.isDefined(span)
 
-		const record = (
-			Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/logs")(c.url))).body as {
-				resourceLogs: Array<{
-					scopeLogs: Array<{
-						logRecords: Array<{ traceId?: string; spanId?: string; severityNumber?: number }>
-					}>
-				}>
-			}
-		).resourceLogs[0].scopeLogs[0].logRecords[0]
+		const record = Arr.getUnsafe(
+			Arr.getUnsafe(
+				Arr.getUnsafe(
+					(
+						Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/logs")(c.url)))
+							.body as {
+							resourceLogs: Array<{
+								scopeLogs: Array<{
+									logRecords: Array<{
+										traceId?: string
+										spanId?: string
+										severityNumber?: number
+									}>
+								}>
+							}>
+						}
+					).resourceLogs,
+					0,
+				).scopeLogs,
+				0,
+			).logRecords,
+			0,
+		)
+		assert.isDefined(record)
 
 		// The log carries the enclosing span's trace + span ids…
 		expect(record.traceId).toBe(span.traceId)
