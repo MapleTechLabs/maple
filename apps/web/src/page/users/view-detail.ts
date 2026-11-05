@@ -158,7 +158,7 @@ const TAB_ICON = {
 	mcp: "PlugIcon",
 } satisfies { readonly [K in UserTab]: IconName }
 
-const tabCount = (tab: UserTab, detail: UserDetail): number | undefined => {
+export const tabCount = (tab: UserTab, detail: UserDetail): number | undefined => {
 	const { profile } = detail
 	switch (tab) {
 		case "activity":
@@ -174,7 +174,7 @@ const tabCount = (tab: UserTab, detail: UserDetail): number | undefined => {
 		case "events":
 			return profile.events
 		case "mcp":
-			return detail.mcpSessions.length
+			return detail.activityPending === true ? undefined : detail.mcpSessions.length
 	}
 }
 

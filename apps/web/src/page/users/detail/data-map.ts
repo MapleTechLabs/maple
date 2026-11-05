@@ -73,6 +73,7 @@ export const toUserDetail = (
 ): UserDetail => {
 	const data = activity ?? EMPTY_ACTIVITY
 	return {
+		...(activity === undefined && { activityPending: true }),
 		profile: toProfile(profile),
 		activity: Arr.map(data.activity, (item): ActivityItem => ({
 			kind: item.kind,

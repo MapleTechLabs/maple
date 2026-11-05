@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { OrgId } from "@maple/domain/http"
 import { AppRoute, urlToAppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
-import { detailInputs } from "./command"
+import { activeNamespace, detailInputs } from "./command"
 import { activityHref } from "./data-map"
 import { Message } from "./message"
 import { init, routeChanged, tabOf, update, userDetailHref } from "./update"
@@ -126,5 +126,13 @@ describe("activity links", () => {
 	it("opens a replay session, and nothing for an event", () => {
 		expect(activityHref({ ...item, kind: "session", sessionId: "s1" }, {})).toBe("/replays/s1")
 		expect(activityHref({ ...item, kind: "event", sessionId: null }, {})).toBeNull()
+	})
+})
+
+describe("the namespace in effect", () => {
+	it("reads an empty ?namespace= as none, and lets the org pin win", () => {
+		expect(activeNamespace({ namespace: "" }, null)).toBeNull()
+		expect(activeNamespace({ namespace: "storefront" }, null)).toBe("storefront")
+		expect(activeNamespace({ namespace: "storefront" }, "payments")).toBe("payments")
 	})
 })

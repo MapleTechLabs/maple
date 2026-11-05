@@ -142,6 +142,8 @@ export type UserDetail = Readonly<{
 	logs: ReadonlyArray<UserLog>
 	events: ReadonlyArray<UserEvent>
 	mcpSessions: ReadonlyArray<UserMcpSession>
+	/** The activity read (sessions, events, MCP sessions) is still out or failed: its lists are empty, not zero. */
+	activityPending?: boolean
 }>
 
 export const USER_TABS = USER_DETAIL_TABS
