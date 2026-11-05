@@ -429,12 +429,17 @@ export interface McpSessionFilter {
 	readonly failingOnly?: boolean
 	/** One user's requests, by exact `user.id`. */
 	readonly user?: string
+	/** Only spans whose resource `service.namespace` is one of these; empty or absent is every one. */
+	readonly namespaces?: ReadonlyArray<string>
 }
 
 const selected = ($: TracesRow, filter: McpSessionFilter) => [
 	CH.when(filter.client, (client) => mcpClientName($).eq(client)),
 	CH.when(filter.kind, (kind) => mcpClientKind($).eq(kind)),
 	CH.when(filter.user, (user) => userId($).eq(user)),
+	filter.namespaces?.length
+		? CH.inList($.ResourceAttributes.get("service.namespace"), filter.namespaces)
+		: undefined,
 	// Ids every request of a session carries, so a match keeps whole sessions.
 	CH.when(filter.search, (search) => {
 		const pattern = `%${likeLiteral(search)}%`
@@ -457,22 +462,24 @@ const userRequests = ($: TracesRow, filter: McpSessionFilter) => [
 	...selected($, filter),
 ]
 
+const issuedSessionColumns = ($: TracesRow) => ({
+	sessionId: sessionId($),
+	client: CH.anyIf(mcpClientName($), userAgent($).neq("")),
+	kind: CH.anyIf(mcpClientKind($), userAgent($).neq("")),
+	user: nonEmpty(userId($)),
+	userName: nonEmpty(userLabel($)),
+	requests: CH.count(),
+	calls: CH.countIf(method($).eq("tools/call")),
+	errors: CH.countIf(failedCall($)),
+	tools: CH.uniqExact(CH.nullIf(toolName($), "")),
+	firstSeen: CH.min_($.Timestamp),
+	lastSeen: CH.max_($.Timestamp),
+})
+
 /** One row per issued session under the selection, the latest first. */
 export function mcpSessionListQuery(filter: McpSessionFilter = {}, limit = 200) {
 	return from(Traces)
-		.select(($) => ({
-			sessionId: sessionId($),
-			client: CH.anyIf(mcpClientName($), userAgent($).neq("")),
-			kind: CH.anyIf(mcpClientKind($), userAgent($).neq("")),
-			user: nonEmpty(userId($)),
-			userName: nonEmpty(userLabel($)),
-			requests: CH.count(),
-			calls: CH.countIf(method($).eq("tools/call")),
-			errors: CH.countIf(failedCall($)),
-			tools: CH.uniqExact(CH.nullIf(toolName($), "")),
-			firstSeen: CH.min_($.Timestamp),
-			lastSeen: CH.max_($.Timestamp),
-		}))
+		.select(issuedSessionColumns)
 		.where(($) => sessionRequests($, filter))
 		.groupBy("sessionId")
 		.having(($) => [
@@ -500,27 +507,71 @@ export function mcpSessionTotalsQuery(filter: McpSessionFilter = {}) {
 		.format("JSON")
 }
 
+const userMinuteColumns = ($: TracesRow) => ({
+	user: userId($),
+	client: mcpClientName($),
+	minute: CH.toStartOfMinute($.Timestamp),
+	kind: CH.any_(mcpClientKind($)),
+	userName: nonEmpty(userLabel($)),
+	requests: CH.count(),
+	calls: CH.countIf(method($).eq("tools/call")),
+	errors: CH.countIf(failedCall($)),
+	tools: CH.groupUniqArray(CH.nullIf(toolName($), "")),
+	firstSeen: CH.min_($.Timestamp),
+	lastSeen: CH.max_($.Timestamp),
+})
+
 /**
  * A stateless server's known users, per (user, client, minute), the latest first so a limit drops the
  * oldest: the backend sorts them and splits each user and client's minutes into sessions at an idle gap.
  */
 export function mcpUserActivityQuery(filter: McpSessionFilter = {}, limit = 50_000) {
 	return from(Traces)
-		.select(($) => ({
-			user: userId($),
-			client: mcpClientName($),
-			minute: CH.toStartOfMinute($.Timestamp),
-			kind: CH.any_(mcpClientKind($)),
-			userName: nonEmpty(userLabel($)),
-			requests: CH.count(),
-			calls: CH.countIf(method($).eq("tools/call")),
-			errors: CH.countIf(failedCall($)),
-			tools: CH.groupUniqArray(CH.nullIf(toolName($), "")),
-			firstSeen: CH.min_($.Timestamp),
-			lastSeen: CH.max_($.Timestamp),
-		}))
+		.select(userMinuteColumns)
 		.where(($) => userRequests($, filter))
 		.groupBy("user", "client", "minute")
+		.orderBy(["minute", "desc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+/** The listed services' MCP server spans in the window. */
+const serversSpans = ($: TracesRow, services: ReadonlyArray<string>) => [
+	...inWindow($),
+	services.length ? CH.inList($.ServiceName, services) : CH.rawCond("1 = 0"),
+	method($).neq(""),
+]
+
+/** {@link mcpSessionListQuery} over several servers at once, keyed by (service, session). */
+export function mcpServersSessionListQuery(
+	services: ReadonlyArray<string>,
+	filter: McpSessionFilter = {},
+	limit = 200,
+) {
+	return from(Traces)
+		.select(($) => ({ service: $.ServiceName, ...issuedSessionColumns($) }))
+		.where(($) => [...serversSpans($, services), sessionId($).neq(""), ...selected($, filter)])
+		.groupBy("service", "sessionId")
+		.orderBy(["lastSeen", "desc"])
+		.limit(limit)
+		.format("JSON")
+}
+
+/** {@link mcpUserActivityQuery} over several servers at once, per (service, user, client, minute). */
+export function mcpServersUserActivityQuery(
+	services: ReadonlyArray<string>,
+	filter: McpSessionFilter = {},
+	limit = 50_000,
+) {
+	return from(Traces)
+		.select(($) => ({ service: $.ServiceName, ...userMinuteColumns($) }))
+		.where(($) => [
+			...serversSpans($, services),
+			sessionId($).eq(""),
+			userId($).neq(""),
+			...selected($, filter),
+		])
+		.groupBy("service", "user", "client", "minute")
 		.orderBy(["minute", "desc"])
 		.limit(limit)
 		.format("JSON")

@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Result } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -13,10 +13,8 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	CompleteReloadSpin,
 	detailInputs,
-	FetchActivity,
-	FetchIssues,
 	FetchLogs,
-	FetchProfile,
+	FetchOverview,
 	FetchTraces,
 	ResolveWindow,
 } from "./command"
@@ -58,20 +56,18 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 	})
 
 /**
- * The profile and activity always; the Errors, Traces and Logs tabs' reads only while their tab is
- * open, so a page view never scans rows it does not show.
+ * The overview (profile, activity and issues) always; the Traces and Logs tabs' reads only while
+ * their tab is open, so a page view never scans rows it does not show.
  */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const inputs = detailInputs(model.userId, model.search, window, context.pinnedNamespace)
 	const tab = tabOf(model.search)
-	const profileKey = requestKey(context.orgId, "getUserProfile", { data: inputs })
-	const activityKey = requestKey(context.orgId, "getUserActivity", { data: inputs })
-	const issuesKey = requestKey(context.orgId, "getUserIssues", { data: inputs })
+	const overviewKey = requestKey(context.orgId, "getUserOverview", { data: inputs })
 	const tracesKey = requestKey(context.orgId, "getUserTraces", { data: inputs })
 	const logsKey = requestKey(context.orgId, "getUserLogs", { data: inputs })
-	const profile = Keyed.request(model.profile, profileKey, mode)
-	const activity = Keyed.request(model.activity, activityKey, mode)
-	const issues = tab === "errors" ? Keyed.request(model.issues, issuesKey, mode) : Option.none()
+	const profile = Keyed.request(model.profile, overviewKey, mode)
+	const activity = Keyed.request(model.activity, overviewKey, mode)
+	const issues = Keyed.request(model.issues, overviewKey, mode)
 	const traces = tab === "traces" ? Keyed.request(model.traces, tracesKey, mode) : Option.none()
 	const logs = tab === "logs" ? Keyed.request(model.logs, logsKey, mode) : Option.none()
 	const refresh = mode === "Refresh"
@@ -86,9 +82,9 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			logs: Option.getOrElse(logs, () => model.logs),
 		},
 		commands: [
-			...(Option.isSome(profile) ? [FetchProfile({ key: profileKey, refresh, ...inputs })] : []),
-			...(Option.isSome(activity) ? [FetchActivity({ key: activityKey, refresh, ...inputs })] : []),
-			...(Option.isSome(issues) ? [FetchIssues({ key: issuesKey, refresh, ...inputs })] : []),
+			...(Option.isSome(profile) || Option.isSome(activity) || Option.isSome(issues)
+				? [FetchOverview({ key: overviewKey, refresh, ...inputs })]
+				: []),
 			...(Option.isSome(traces) ? [FetchTraces({ key: tracesKey, refresh, ...inputs })] : []),
 			...(Option.isSome(logs) ? [FetchLogs({ key: logsKey, refresh, ...inputs })] : []),
 		],
@@ -137,15 +133,13 @@ export const preload = (route: Route, context: PageContext, nowMs: number) => {
 		nowMs,
 	)
 	return pickCommands(requestAll(model, context, window, "Load"), [
-		FetchProfile.name,
-		FetchActivity.name,
-		FetchIssues.name,
+		FetchOverview.name,
 		FetchTraces.name,
 		FetchLogs.name,
 	])
 }
 
-/** A tab or namespace pick keeps the reads it can; opening Errors, Traces or Logs starts that tab's read. */
+/** A tab or namespace pick keeps the reads it can; opening Traces or Logs starts that tab's read. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	const { search } = route
 	if (userDetailHref(model.userId, model.search) === userDetailHref(route.userId, search)) return { model }
@@ -188,14 +182,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			requestAll({ ...model, nowMs }, context, window, mode),
-		CompletedFetchProfile: ({ key, result }) => ({
-			model: { ...model, profile: Keyed.accept(model.profile, key, result) },
-		}),
-		CompletedFetchActivity: ({ key, result }) => ({
-			model: { ...model, activity: Keyed.accept(model.activity, key, result) },
-		}),
-		CompletedFetchIssues: ({ key, result }) => ({
-			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
+		CompletedFetchOverview: ({ key, result }) => ({
+			model: {
+				...model,
+				profile: Keyed.accept(
+					model.profile,
+					key,
+					Result.map(result, (data) => data.profile),
+				),
+				activity: Keyed.accept(
+					model.activity,
+					key,
+					Result.map(result, (data) => data.activity),
+				),
+			},
 		}),
 		CompletedFetchTraces: ({ key, result }) => ({
 			model: { ...model, traces: Keyed.accept(model.traces, key, result) },

@@ -1,7 +1,6 @@
-// End users (`/users`): one row per user id the SDKs identified, from session replays, product
-// events, MCP server spans and `user_activity_hourly`. Replays and events carry only a service name,
-// so the caller resolves the namespace scope to service names and passes each service's namespace.
-// Browser events carry no service at all: their session's replay names it.
+// End users (`/users`): one row per user id, from replays, product events, MCP server spans and
+// `user_activity_hourly`. Replays and events carry only a service name (browser events not even
+// that), so the caller resolves the namespace scope to services.
 
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -50,7 +49,12 @@ export interface UsersListFilter {
 	readonly groups?: ReadonlyArray<string>
 }
 
-const likeLiteral = (value: string): string => value.replace(/[\\%_]/g, (c) => `\\${c}`)
+/**
+ * Case-insensitive substring match. Not `ILIKE`: an `OR` of LIKEs over aggregates in HAVING trips
+ * `optimize_or_like_chain` (on by default since ClickHouse 26.x) into a LOGICAL_ERROR.
+ */
+const containsText = (value: CH.Expr<string>, search: string) =>
+	CH.compileTypedFnCall("positionCaseInsensitiveUTF8", T.uint64.schema, value, CH.lit(search)).gt(0)
 
 /** Any non-empty value in the group, `''` when none. */
 const nonEmpty = (value: CH.Expr<string>) => CH.anyIf(value, value.neq(""))
@@ -214,6 +218,31 @@ const mcpUsers = (scope: UsersScope) =>
 		.groupBy("userId", "namespace")
 
 /**
+ * The name and email MCP server spans carry for the listed users: the rollup keeps neither, so the
+ * directory reads them for the page's unnamed users only.
+ */
+export function usersMcpNamesQuery(mcpServices: ReadonlyArray<string>, userIds: ReadonlyArray<string>) {
+	return from(Traces)
+		.select(($) => ({
+			userId: mcpUserId($),
+			name: nonEmpty($.SpanAttributes.get("user.name")),
+			email: nonEmpty($.SpanAttributes.get("user.email")),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.SpanKind.eq("Server"),
+			mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
+			mcpMethod($).neq(""),
+			userIds.length > 0 ? CH.inList(mcpUserId($), userIds) : CH.rawCond("1 = 0"),
+		])
+		.groupBy("userId")
+		.limit(Math.max(1, userIds.length))
+		.format("JSON")
+}
+
+/**
  * Spans and logs with `user.id` from the rollup: entry-point requests, failed ones as errors, and
  * spans on an MCP server as MCP activity (MCP spans carry the same user id).
  */
@@ -302,13 +331,13 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 			filter.groups !== undefined && filter.groups.length > 0
 				? CH.inList(nonEmpty($.groupId), filter.groups)
 				: undefined,
-			CH.when(filter.search, (search) => {
-				const pattern = `%${likeLiteral(search)}%`
-				return $.userId
-					.ilike(pattern)
-					.or(nonEmpty($.name).ilike(pattern))
-					.or(nonEmpty($.email).ilike(pattern))
-			}),
+			CH.when(filter.search, (search) =>
+				CH.or(
+					containsText($.userId, search),
+					containsText(nonEmpty($.name), search),
+					containsText(nonEmpty($.email), search),
+				),
+			),
 		])
 		.orderBy(["lastSeen", "desc"], ["userId", "asc"])
 		.limit(limit)

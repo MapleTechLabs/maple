@@ -698,43 +698,61 @@ export const issuedSession = (row: IssuedRow): McpSessionItem => ({
 	lastSeenMs: toMs(row.lastSeen),
 })
 
-/** User session rows one server's read stitches at most for one user. */
+/** User session rows one user's read stitches at most, over every server. */
 const ONE_USER_ACTIVITY_LIMIT = 5_000
 
+/** A user's session on one MCP server. */
+export type ServerUserSession = McpSessionItem & Readonly<{ service: string }>
+
 /**
- * One user's sessions on one MCP server, issued and stitched from stateless requests the way the
- * sessions list builds them, so each id opens on that server's session page. The latest first.
+ * One user's sessions on the listed MCP servers in one query pair: issued, and stitched per
+ * (service, user, client) from stateless requests, so each id opens on its server's session page.
  */
-export const readUserSessionsOnServer = Effect.fn("McpReads.userSessionsOnServer")(function* (
+export const readUserMcpSessions = Effect.fn("McpReads.userSessions")(function* (
 	tenant: TenantContext,
 	window: Readonly<{ startTime: string; endTime: string }>,
-	service: string,
-	user: string,
-	limit: number,
+	selection: Readonly<{
+		services: ReadonlyArray<string>
+		user: string
+		namespaces: ReadonlyArray<string>
+		limit: number
+	}>,
 ) {
+	if (selection.services.length === 0) return []
 	const warehouse = yield* WarehouseQueryService
-	const params = { orgId: tenant.orgId, serviceName: service, ...window }
-	const selection: CH.McpSessionFilter = { user }
+	const params = { orgId: tenant.orgId, ...window }
+	const filter: CH.McpSessionFilter = { user: selection.user, namespaces: selection.namespaces }
 	const [issued, activityRows] = yield* Effect.all(
 		[
-			warehouse.compiledQuery(tenant, CH.compile(CH.mcpSessionListQuery(selection, limit), params), {
-				profile: "list",
-				context: "userMcpSessionList",
-			}),
 			warehouse.compiledQuery(
 				tenant,
-				CH.compile(CH.mcpUserActivityQuery(selection, ONE_USER_ACTIVITY_LIMIT + 1), params),
+				CH.compile(
+					CH.mcpServersSessionListQuery(selection.services, filter, selection.limit),
+					params,
+				),
+				{ profile: "list", context: "userMcpSessionList" },
+			),
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.mcpServersUserActivityQuery(selection.services, filter, ONE_USER_ACTIVITY_LIMIT + 1),
+					params,
+				),
 				{ profile: "list", context: "userMcpActivity" },
 			),
 		],
 		{ concurrency: 2 },
 	)
+	const byService = Arr.groupBy(activityRows.slice(0, ONE_USER_ACTIVITY_LIMIT), (row) => row.service)
+	const stitched = Arr.flatMap(Object.entries(byService), ([service, rows]) =>
+		Arr.map(stitchUserSessions(rows), (session): ServerUserSession => ({ ...session, service })),
+	)
 	return [
-		...issued.map(issuedSession),
-		...stitchUserSessions(activityRows.slice(0, ONE_USER_ACTIVITY_LIMIT)),
+		...Arr.map(issued, (row): ServerUserSession => ({ ...issuedSession(row), service: row.service })),
+		...stitched,
 	]
-		.sort((a, b) => b.lastSeenMs - a.lastSeenMs)
-		.slice(0, limit)
+		.toSorted((a, b) => b.lastSeenMs - a.lastSeenMs)
+		.slice(0, selection.limit)
 })
 
 export const readMcpSessions = Effect.fn("McpReads.sessions")(function* (

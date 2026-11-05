@@ -106,12 +106,6 @@ export type UserService = typeof UserService.Type
 const UserDevice = Schema.Struct({ browser: Schema.String, os: Schema.String, sessions: Schema.Number })
 
 /**
- * Errors carry the user that hit them from this instant on (migration 0057, no backfill), so a
- * user's issues and an issue's affected users start here. Update it to the deploy date on release.
- */
-export const USER_ERRORS_ATTRIBUTED_FROM_MS = Date.UTC(2026, 10, 5)
-
-/**
  * A user's identity and totals. The request numbers read `user_activity_hourly`, the issue numbers
  * `error_events.UserId`; each is `null` where a cluster lacks it (never a fake zero).
  */
@@ -286,11 +280,23 @@ export const UserIssueItem = Schema.Struct({
 })
 export type UserIssueItem = typeof UserIssueItem.Type
 
+/**
+ * A namespace scope matches issues by service name: the services the user's rollup rows put in it.
+ * A cluster without `user_activity_hourly` reads them unscoped.
+ */
 export class UserIssuesResponse extends Schema.Class<UserIssuesResponse>("UserIssuesResponse")({
 	/** Most hits first, capped. */
 	issues: Schema.Array(UserIssueItem),
 	/** `false` on a cluster whose `error_events` predates `UserId`: no errors can name a user. */
 	attributed: Schema.Boolean,
+}) {}
+
+/** The user page's first paint: profile, activity and issues, over one scope and one issues read. */
+export class UserOverviewResponse extends Schema.Class<UserOverviewResponse>("UserOverviewResponse")({
+	/** `null` when no signal in the window and scope carries the user. */
+	profile: Schema.NullOr(UserProfileItem),
+	activity: UserActivityResponse,
+	issues: UserIssuesResponse,
 }) {}
 
 export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
@@ -320,6 +326,14 @@ export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 		HttpApiEndpoint.post("activity", "/activity", {
 			payload: UserDetailRequest,
 			success: UserActivityResponse,
+			// The issue reads resolve fingerprints to issues in Postgres.
+			error: [...warehouseReadHttpErrors, ErrorPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("overview", "/overview", {
+			payload: UserDetailRequest,
+			success: UserOverviewResponse,
 			// The issue reads resolve fingerprints to issues in Postgres.
 			error: [...warehouseReadHttpErrors, ErrorPersistenceError],
 		}),

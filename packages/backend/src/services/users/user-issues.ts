@@ -102,33 +102,32 @@ const owningIssues = Effect.fn("UsersReads.owningIssues")(function* (
 
 /**
  * The issues one user hit in the window and scope, `None` on a cluster whose `error_events` lacks
- * `UserId` (migration 0057), or whose scope subquery lacks `user_activity_hourly`.
+ * `UserId` (migration 0057). Without `user_activity_hourly` the namespace scope is not applied.
  */
 export const readUserIssueItems = Effect.fn("UsersReads.issueItems")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,
 ) {
 	const warehouse = yield* WarehouseQueryService
-	const rows = yield* warehouse
-		.compiledQuery(
+	const read = (namespaces: ReadonlyArray<string>) =>
+		warehouse.compiledQuery(
 			tenant,
-			CH.compile(
-				CH.userIssuesQuery({
-					userId: payload.userId,
-					namespaces: payload.namespaces ?? [],
-					limit: USER_ISSUES_LIMIT,
-				}),
-				{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
-			),
+			CH.compile(CH.userIssuesQuery({ userId: payload.userId, namespaces, limit: USER_ISSUES_LIMIT }), {
+				orgId: tenant.orgId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+			}),
 			{ profile: "list", context: "userIssues" },
 		)
-		.pipe(
-			Effect.map(Option.some),
-			Effect.catchIf(
-				(error) => isMissingErrorEventsUserId(error) || isMissingUserActivityHourly(error),
-				() => Effect.succeed(Option.none<ReadonlyArray<CH.UserIssueOutput>>()),
-			),
-		)
+	const rows = yield* read(payload.namespaces ?? []).pipe(
+		Effect.catchIf(isMissingUserActivityHourly, () =>
+			Effect.andThen(Effect.annotateCurrentSpan({ "maple.users.issues_unscoped": true }), read([])),
+		),
+		Effect.map(Option.some),
+		Effect.catchIf(isMissingErrorEventsUserId, () =>
+			Effect.succeed(Option.none<ReadonlyArray<CH.UserIssueOutput>>()),
+		),
+	)
 	if (Option.isNone(rows)) {
 		yield* Effect.annotateCurrentSpan({ "maple.users.error_user_id": false })
 		return Option.none<ReadonlyArray<UserIssueItem>>()

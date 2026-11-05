@@ -1,10 +1,4 @@
-import {
-	getUserActivity,
-	getUserIssues,
-	getUserLogs,
-	getUserProfile,
-	getUserTraces,
-} from "@maple/web-data/warehouse/users"
+import { getUserLogs, getUserOverview, getUserTraces } from "@maple/web-data/warehouse/users"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -12,7 +6,7 @@ import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { Message, RequestMode } from "./message"
-import { ActivityData, IssuesData, LogsData, ProfileData, TracesData, type Search } from "./model"
+import { LogsData, OverviewData, TracesData, type Search } from "./model"
 
 /** The namespace in effect: the org-global pin wins over one picked on this page. */
 export const activeNamespace = (search: Search, pinnedNamespace: string | null): string | null =>
@@ -62,53 +56,27 @@ const FetchArgs = {
 	refresh: Schema.Boolean,
 }
 
-export const FetchProfile = Command.define("FetchUserProfile", {
+/** The profile, the activity and the issues in one request: one scope and one issues read. */
+export const FetchOverview = Command.define("FetchUserOverview", {
 	args: FetchArgs,
-	messages: [Message.CompletedFetchProfile],
+	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, refresh, ...data }) =>
 		readThrough(
-			{ key, refresh, idleTtlMs: IdleTtl.userProfile, schema: ProfileData },
-			Effect.map(getUserProfile({ data }), (response): ProfileData => ({ profile: response.profile })),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchProfile({ key, result })),
-		),
-})
-
-export const FetchActivity = Command.define("FetchUserActivity", {
-	args: FetchArgs,
-	messages: [Message.CompletedFetchActivity],
-	execute: ({ key, refresh, ...data }) =>
-		readThrough(
-			{ key, refresh, idleTtlMs: IdleTtl.userActivity, schema: ActivityData },
-			Effect.map(getUserActivity({ data }), (response): ActivityData => ({
-				sessions: response.sessions,
-				events: response.events,
-				mcpSessions: response.mcpSessions,
-				activity: response.activity,
+			{ key, refresh, idleTtlMs: IdleTtl.userOverview, schema: OverviewData },
+			Effect.map(getUserOverview({ data }), ({ profile, activity, issues }): OverviewData => ({
+				profile: { profile },
+				issues: { issues: issues.issues, attributed: issues.attributed },
+				activity: {
+					sessions: activity.sessions,
+					events: activity.events,
+					mcpSessions: activity.mcpSessions,
+					activity: activity.activity,
+				},
 			})),
 		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchActivity({ key, result })),
-		),
-})
-
-export const FetchIssues = Command.define("FetchUserIssues", {
-	args: FetchArgs,
-	messages: [Message.CompletedFetchIssues],
-	execute: ({ key, refresh, ...data }) =>
-		readThrough(
-			{ key, refresh, idleTtlMs: IdleTtl.userIssues, schema: IssuesData },
-			Effect.map(getUserIssues({ data }), (response): IssuesData => ({
-				issues: response.issues,
-				attributed: response.attributed,
-			})),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchIssues({ key, result })),
+			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
 		),
 })
 

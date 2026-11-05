@@ -112,21 +112,27 @@ describe("tabs and namespaces", () => {
 		expect(names(back)).toEqual([])
 	})
 
-	it("reads the user's issues only once the Errors tab opens", () => {
+	it("reads the user's issues with the overview, and nothing more when the Errors tab opens", () => {
 		const loaded = update(
 			page({}),
 			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 			context,
 		)
-		const names = (step: ReturnType<typeof update>) =>
-			(step.commands ?? []).map((command) => command.name)
-		expect(names(loaded)).not.toContain("FetchUserIssues")
 		const errors = routeChanged(
 			loaded.model,
 			{ userId: "user/42 ada", search: { tab: "errors" } },
 			context,
 		)
-		expect(names(errors)).toEqual(["FetchUserIssues"])
+		expect(errors.commands ?? []).toEqual([])
+	})
+
+	it("loads the profile, the activity and the issues in one request", () => {
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		expect((loaded.commands ?? []).map((command) => command.name)).toEqual(["FetchUserOverview"])
 	})
 
 	it("refetches when the namespace changes", () => {
@@ -141,8 +147,7 @@ describe("tabs and namespaces", () => {
 			context,
 		)
 		const names = (step.commands ?? []).map((command) => command.name)
-		expect(names).toContain("FetchUserProfile")
-		expect(names).toContain("FetchUserActivity")
+		expect(names).toEqual(["FetchUserOverview"])
 	})
 })
 

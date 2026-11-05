@@ -2,7 +2,14 @@ import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Exit, Layer, Option, Schema } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
-import { ErrorIssueId, OrgId, UserDetailRequest, UserId, WarehouseSchemaDriftError } from "@maple/domain/http"
+import {
+	ErrorIssueId,
+	OrgId,
+	UserDetailRequest,
+	UserId,
+	WarehouseConfigError,
+	WarehouseSchemaDriftError,
+} from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -156,6 +163,38 @@ describe("readUserIssues", () => {
 			const activity = yield* readUserActivity(tenant, request)
 			assert.isFalse(activity.activity.some((item) => item.kind === "error"))
 		}).pipe(Effect.provide([warehouse([], ran, missingUserId), createTestDb(createdDbs).layer]))
+	})
+
+	it.effect("reads unscoped, still attributed, on a cluster without user_activity_hourly", () => {
+		const sqls: Array<string> = []
+		const missingRollup = new WarehouseConfigError({
+			message: "Code: 60. Table default.user_activity_hourly does not exist",
+			pipeName: "userIssues",
+			clickhouseType: "UNKNOWN_TABLE",
+		})
+		const noRollup = Layer.succeed(
+			WarehouseQueryService,
+			makeWarehouseServiceStub({
+				compiledQuery: (_tenant, input) => {
+					const compiled = compiledQueryOf(input)
+					sqls.push(compiled.sql)
+					if (compiled.sql.includes("user_activity_hourly")) return Effect.fail(missingRollup)
+					return compiled.decodeRows([row("333", 2, "2026-11-05 11:00:00")]).pipe(Effect.orDie)
+				},
+			}),
+		)
+		return Effect.gen(function* () {
+			const response = yield* readUserIssues(
+				tenant,
+				new UserDetailRequest({ ...request, namespaces: ["storefront"] }),
+			)
+			assert.isTrue(response.attributed)
+			assert.deepStrictEqual(
+				response.issues.map((issue) => issue.fingerprintHash),
+				["333"],
+			)
+			assert.strictEqual(sqls.length, 2)
+		}).pipe(Effect.provide([noRollup, createTestDb(createdDbs).layer]))
 	})
 
 	it.effect("surfaces any other schema drift", () => {

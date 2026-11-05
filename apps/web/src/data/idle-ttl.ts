@@ -26,12 +26,8 @@ export const IdleTtl = {
 	listUsers: 30_000,
 	/** `/users`: the rail facets and summary. */
 	usersFacets: 30_000,
-	/** `/users/$userId`: the profile, stats and rail. */
-	userProfile: 30_000,
-	/** `/users/$userId`: sessions, events, MCP sessions and the timeline. */
-	userActivity: 30_000,
-	/** `/users/$userId`: the Errors tab's issues. */
-	userIssues: 30_000,
+	/** `/users/$userId`: the profile, stats, rail, sessions, events, MCP sessions and timeline. */
+	userOverview: 30_000,
 	/** `/users/$userId`: the Traces tab's requests. */
 	userTraces: 30_000,
 	/** `/users/$userId`: the Logs tab's lines. */

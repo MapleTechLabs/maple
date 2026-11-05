@@ -7,6 +7,7 @@ import {
 	UserActivityResponse,
 	UserId,
 	UserIssuesResponse,
+	UserOverviewResponse,
 	UserProfileResponse,
 	UsersListResponse,
 	type UserDetailRequest,
@@ -72,98 +73,108 @@ const profile: UserProfileItem = {
 	activity: [1, 2, 3, 4, 5, 6, 7],
 }
 
-type Seen = { list?: UsersListRequest; detail?: UserDetailRequest }
+type Seen = { list?: UsersListRequest; detail?: UserDetailRequest; calls?: Array<string> }
 
 const reads = (
 	seen: Seen,
 	opts: { readonly users?: ReadonlyArray<UserListItem>; readonly known?: boolean } = {},
-) =>
-	Layer.mock(UsersReadService)({
+) => {
+	const profileRead = (request: UserDetailRequest) => {
+		seen.detail = request
+		return new UserProfileResponse({ profile: opts.known === false ? null : profile })
+	}
+	const activityRead = () =>
+		new UserActivityResponse({
+			sessions: [
+				{
+					sessionId: "sess_1",
+					service: "storefront-web",
+					startedMs: AT - 600_000,
+					durationMs: 120_000,
+					pages: 4,
+					errors: 1,
+					entryPath: "/checkout",
+					device: "Chrome · macOS",
+				},
+			],
+			events: [],
+			mcpSessions: [
+				{
+					service: "maple-mcp",
+					sessionId: "mcp_sess_9",
+					source: "issued",
+					client: "claude-code",
+					kind: "agent",
+					requests: 3,
+					calls: 2,
+					errors: 0,
+					tools: 2,
+					firstSeenMs: AT - 300_000,
+					lastSeenMs: AT - 200_000,
+				},
+			],
+			activity: [
+				{
+					kind: "request",
+					atMs: AT,
+					service: "storefront-api",
+					title: "POST /orders",
+					detail: "Failed · 912 ms · storefront-api",
+					tone: "crit",
+					sessionId: null,
+					traceId: TRACE_ID,
+					issueId: null,
+				},
+				{
+					kind: "request",
+					atMs: AT - 1000,
+					service: "storefront-api",
+					title: "GET /slow",
+					detail: "Slow · 2400 ms · storefront-api",
+					tone: "warn",
+					sessionId: null,
+					traceId: "slowtrace",
+					issueId: null,
+				},
+			],
+		})
+	const issuesRead = () =>
+		new UserIssuesResponse({
+			issues: [
+				{
+					issueId: ISSUE_ID,
+					fingerprintHash: "11640295108927840024",
+					type: "TypeError",
+					message: "cart is undefined",
+					service: "storefront-web",
+					hits: 3,
+					firstSeenMs: AT - 3_000_000,
+					lastSeenMs: AT,
+					status: "triage",
+				},
+			],
+			attributed: true,
+		})
+	const called = (name: string) => (seen.calls ??= []).push(name)
+	return Layer.mock(UsersReadService)({
 		list: (_tenant, request) => {
 			seen.list = request
 			return Effect.succeed(new UsersListResponse({ users: opts.users ?? [] }))
 		},
-		profile: (_tenant, request) => {
-			seen.detail = request
-			return Effect.succeed(new UserProfileResponse({ profile: opts.known === false ? null : profile }))
-		},
-		activity: () =>
-			Effect.succeed(
-				new UserActivityResponse({
-					sessions: [
-						{
-							sessionId: "sess_1",
-							service: "storefront-web",
-							startedMs: AT - 600_000,
-							durationMs: 120_000,
-							pages: 4,
-							errors: 1,
-							entryPath: "/checkout",
-							device: "Chrome · macOS",
-						},
-					],
-					events: [],
-					mcpSessions: [
-						{
-							service: "maple-mcp",
-							sessionId: "mcp_sess_9",
-							source: "issued",
-							client: "claude-code",
-							kind: "agent",
-							requests: 3,
-							calls: 2,
-							errors: 0,
-							tools: 2,
-							firstSeenMs: AT - 300_000,
-							lastSeenMs: AT - 200_000,
-						},
-					],
-					activity: [
-						{
-							kind: "request",
-							atMs: AT,
-							service: "storefront-api",
-							title: "POST /orders",
-							detail: "Failed · 912 ms · storefront-api",
-							tone: "crit",
-							sessionId: null,
-							traceId: TRACE_ID,
-							issueId: null,
-						},
-						{
-							kind: "request",
-							atMs: AT - 1000,
-							service: "storefront-api",
-							title: "GET /slow",
-							detail: "Slow · 2400 ms · storefront-api",
-							tone: "warn",
-							sessionId: null,
-							traceId: "slowtrace",
-							issueId: null,
-						},
-					],
-				}),
-			),
-		issues: () =>
-			Effect.succeed(
-				new UserIssuesResponse({
-					issues: [
-						{
-							issueId: ISSUE_ID,
-							fingerprintHash: "11640295108927840024",
-							type: "TypeError",
-							message: "cart is undefined",
-							service: "storefront-web",
-							hits: 3,
-							firstSeenMs: AT - 3_000_000,
-							lastSeenMs: AT,
-							status: "triage",
-						},
-					],
-					attributed: true,
-				}),
-			),
+		profile: (_tenant, request) => Effect.sync(() => (called("profile"), profileRead(request))),
+		activity: () => Effect.sync(() => (called("activity"), activityRead())),
+		issues: () => Effect.sync(() => (called("issues"), issuesRead())),
+		overview: (_tenant, request) =>
+			Effect.sync(() => {
+				called("overview")
+				return new UserOverviewResponse({
+					profile: profileRead(request).profile,
+					activity: activityRead(),
+					issues: issuesRead(),
+				})
+			}),
 	})
+}
 
 const tenant = Layer.succeed(CurrentMcpTenant, {
 	orgId: Schema.decodeSync(OrgId)("org_user_tools"),
@@ -242,6 +253,8 @@ describe("inspect_user", () => {
 		const seen: Seen = {}
 		const result = await ok("inspect_user", { ...WINDOW, user_id: "u_ada" }, reads(seen))
 		expect(seen.detail?.userId).toBe("u_ada")
+		// One overview read: the scope and the issues are not read again per section.
+		expect(seen.calls).toEqual(["overview"])
 
 		const output = Schema.decodeUnknownSync(InspectUserOutput)(result.structuredContent)
 		expect(output.profile?.email).toBe("ada@acme.com")

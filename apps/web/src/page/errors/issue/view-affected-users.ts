@@ -7,7 +7,6 @@ import { detailRailField, detailRailGroup, detailRailRow } from "@maple/views/ui
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
-import { ERRORS_ATTRIBUTED_FROM } from "../../users/data"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
@@ -24,7 +23,16 @@ export const coverageOf = (response: Pick<ErrorIssueAffectedUsersResponse, "hits
 
 const muted = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted" }, [text])
 
-const userList = (h: H, users: ErrorIssueAffectedUsersResponse["users"]): Html =>
+/** A user's page over the issue page's window. */
+export const affectedUserHref = (userId: string, search: Model["search"]): string =>
+	hrefOf(
+		AppRoute.UserDetail({
+			userId,
+			search: { startTime: search.startTime, endTime: search.endTime, timePreset: search.timePreset },
+		}),
+	)
+
+const userList = (h: H, users: ErrorIssueAffectedUsersResponse["users"], search: Model["search"]): Html =>
 	h.ul(
 		[h.Class("flex w-full min-w-0 flex-col items-stretch gap-0.5")],
 		Arr.map(users.slice(0, USERS_SHOWN), (user) =>
@@ -34,7 +42,7 @@ const userList = (h: H, users: ErrorIssueAffectedUsersResponse["users"]): Html =
 					textLink(
 						h,
 						{
-							href: hrefOf(AppRoute.UserDetail({ userId: user.userId, search: {} })),
+							href: affectedUserHref(user.userId, search),
 							isMono: true,
 							className: "min-w-0 truncate text-xs",
 							attributes: [h.Title(user.userId)],
@@ -51,7 +59,11 @@ const userList = (h: H, users: ErrorIssueAffectedUsersResponse["users"]): Html =
 		),
 	)
 
-const attributedRows = (h: H, response: ErrorIssueAffectedUsersResponse): ReadonlyArray<Html> => {
+const attributedRows = (
+	h: H,
+	response: ErrorIssueAffectedUsersResponse,
+	search: Model["search"],
+): ReadonlyArray<Html> => {
 	const coverage = coverageOf(response)
 	return [
 		detailRailRow(h, { label: "Users", hint: "in this window" }, [
@@ -72,10 +84,10 @@ const attributedRows = (h: H, response: ErrorIssueAffectedUsersResponse): Readon
 			],
 		),
 		...(response.users.length > 0
-			? [detailRailField(h, { label: "Most hit" }, [userList(h, response.users)])]
+			? [detailRailField(h, { label: "Most hit" }, [userList(h, response.users, search)])]
 			: []),
 		typography(h, { size: "2xs", tone: "muted" }, [
-			`Users are tracked from ${ERRORS_ATTRIBUTED_FROM} on.`,
+			"Errors recorded before user tracking carry no user.",
 		]),
 	]
 }
@@ -90,7 +102,7 @@ export const affectedUsersGroup = (h: H, model: Model): Html =>
 			onFailure: () => [muted(h, "Couldn't load the users this issue hit.")],
 			onData: (response) =>
 				response.attributed
-					? attributedRows(h, response)
+					? attributedRows(h, response, model.search)
 					: [muted(h, "This warehouse's errors carry no user id yet.")],
 		}),
 	)

@@ -276,3 +276,90 @@ describe("readUserActivity", () => {
 		}),
 	)
 })
+
+const listRow = (userId: string, name: string) => ({
+	userId,
+	name,
+	email: "",
+	groupId: "",
+	namespaces: [],
+	firstSeen: "2026-11-01 08:00:00.000000000",
+	lastSeen: "2026-11-01 09:00:00.000000000",
+	sessions: "0",
+	errors: "0",
+	requests: "3",
+	mcpSpans: "3",
+	events: "0",
+	spans: "3",
+	logLines: "0",
+})
+
+describe("the directory's MCP-only users", () => {
+	it.effect("take the name their MCP spans carry, read for the unnamed rows only", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				["usersServiceNamespaces", []],
+				["mcpServices", [{ service: "docs-mcp", serverSpans: "4" }]],
+				["usersList", [listRow("user_42", ""), listRow("user_7", "Grace")]],
+				["usersMcpNames", [{ userId: "user_42", name: "Ada", email: "ada@example.com" }]],
+			])
+			const response = yield* readUsersList(
+				tenant,
+				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
+			).pipe(Effect.provide(warehouse(rows, ran)))
+			assert.deepStrictEqual(
+				response.users.map((user) => [user.userId, user.name, user.email]),
+				[
+					["user_42", "Ada", "ada@example.com"],
+					["user_7", "Grace", null],
+				],
+			)
+			const names = ran.find((query) => query.context === "usersMcpNames")?.sql ?? ""
+			assert.include(names, "traces.ServiceName IN ('docs-mcp')")
+			assert.include(names, "IN ('user_42')")
+			assert.notInclude(names, "user_7")
+		}),
+	)
+})
+
+describe("readUserProfile", () => {
+	it.effect("takes the top route and the request spark from the one summary read", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				...scopeRows,
+				[
+					"userActivitySummary",
+					[
+						{
+							spanCount: "9",
+							errorSpanCount: "0",
+							requestCount: "4",
+							failedRequestCount: "1",
+							traceCount: "4",
+							sessionCount: "0",
+							p50DurationMs: "20",
+							p95DurationMs: "80",
+							logCount: "0",
+							warnLogCount: "0",
+							errorLogCount: "0",
+							topRoutes: ["POST /checkout"],
+							topRouteCounts: ["4"],
+							requestHours: [String(Date.UTC(2026, 10, 1, 14) / 1000)],
+							requestHourCounts: ["4"],
+							firstSeen: "2026-11-01 14:00:00",
+							lastSeen: "2026-11-01 14:30:00",
+						},
+					],
+				],
+			])
+			const response = yield* readUserProfile(tenant, request).pipe(
+				Effect.provide(warehouse(rows, ran)),
+			)
+			assert.strictEqual(response.profile?.topRoute, "POST /checkout")
+			assert.deepStrictEqual(response.profile?.activity, [0, 0, 0, 0, 4, 0, 0])
+			assert.isFalse(ran.some((query) => query.context === "userActivityTotals"))
+		}),
+	)
+})

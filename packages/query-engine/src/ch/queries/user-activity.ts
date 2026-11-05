@@ -110,6 +110,9 @@ export interface UserActivitySummaryOutput {
 	readonly errorLogCount: number
 	readonly topRoutes: ReadonlyArray<string>
 	readonly topRouteCounts: ReadonlyArray<number>
+	/** Requests per hour, as {@link UserActivityTotalsOutput} has them. */
+	readonly requestHours: ReadonlyArray<number>
+	readonly requestHourCounts: ReadonlyArray<number>
 	readonly firstSeen: DateTime.Utc
 	readonly lastSeen: DateTime.Utc
 }
@@ -128,9 +131,14 @@ export const userActivitySummaryRowSchema = Schema.Struct({
 	errorLogCount: CHNumber,
 	topRoutes: Schema.Array(Schema.String),
 	topRouteCounts: Schema.Array(CHNumber),
+	requestHours: Schema.Array(CHNumber),
+	requestHourCounts: Schema.Array(CHNumber),
 	firstSeen: DateTimeUtcFromWarehouse,
 	lastSeen: DateTimeUtcFromWarehouse,
 })
+
+// sumMap keeps only non-zero sums, so an hour with logs and no requests drops out.
+const REQUESTS_BY_HOUR_SQL = "sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)])"
 
 // Non-entry spans and logs write '' into the top-k; it is not a route.
 const TOP_ROUTES_SQL = "arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRoutes))"
@@ -156,6 +164,14 @@ export function userActivitySummaryQuery(opts: UserScopeOpts) {
 			),
 			topRouteCounts: CH.rawExpr<ReadonlyArray<number>>(
 				`arrayMap(x -> x.2, ${TOP_ROUTES_SQL})`,
+				T.array(T.uint64),
+			),
+			requestHours: CH.rawExpr<ReadonlyArray<number>>(
+				`tupleElement(${REQUESTS_BY_HOUR_SQL}, 1)`,
+				T.array(T.uint32),
+			),
+			requestHourCounts: CH.rawExpr<ReadonlyArray<number>>(
+				`tupleElement(${REQUESTS_BY_HOUR_SQL}, 2)`,
 				T.array(T.uint64),
 			),
 			firstSeen: CH.min_($.FirstSeen),
@@ -239,9 +255,6 @@ export const userActivityTotalsRowSchema = Schema.Struct({
 	requestHours: Schema.Array(CHNumber),
 	requestHourCounts: Schema.Array(CHNumber),
 })
-
-// sumMap keeps only non-zero sums, so an hour with logs and no requests drops out.
-const REQUESTS_BY_HOUR_SQL = "sumMap([toUInt32(toUnixTimestamp(Hour))], [toUInt64(RequestCount)])"
 
 export function userActivityTotalsQuery(opts: UserActivityTotalsOpts) {
 	return from(UserActivityHourly)

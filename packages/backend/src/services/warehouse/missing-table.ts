@@ -59,11 +59,8 @@ export const isMissingServiceMapDbEdgesMinutely = (error: unknown): boolean =>
 /** `service_endpoint_details_hourly` ships in migration 0048; the endpoint detail reads degrade to empty. */
 export const isMissingServiceEndpointDetails = isMissingTable(/service_endpoint_details_hourly/i)
 
-/**
- * `user_activity_hourly` ships in migration 0056. The users pages then read without it: the
- * directory retries on its other sources, and the per-user request reads answer empty. The
- * message must name it, since the retry reads every other table.
- */
+/** `user_activity_hourly` (migration 0056) is missing; the message must name it, as the users
+ * pages' retry reads every other table. */
 export const isMissingUserActivityHourly = (error: unknown): boolean =>
 	isMissingTable(/user_activity_hourly/i)(error) &&
 	typeof error === "object" &&
@@ -89,11 +86,8 @@ export const isMissingServiceApiColumns = (error: unknown): boolean =>
 	typeof error.message === "string" &&
 	MIGRATION_0048_COLUMNS.test(error.message)
 
-/**
- * `error_events.UserId` ships in migration 0057: a cluster without it classifies a query naming the
- * column as schema drift. The users pages' issue reads and an issue's affected users then answer
- * empty. Only `UserId` qualifies, so every other drift still surfaces.
- */
+/** `error_events.UserId` (migration 0057) is missing: schema drift naming `UserId` only, so every
+ * other drift still surfaces. User issues and affected users then answer unattributed. */
 export const isMissingErrorEventsUserId = (error: unknown): boolean =>
 	typeof error === "object" &&
 	error !== null &&
