@@ -126,7 +126,7 @@ export function buildAttrFilterCondition(
 	// An `(a OR b)` group. Each member keeps its own exact predicate; the index
 	// prefilters are skipped, since an OR of per-member candidates is no narrower
 	// than the exact OR and only adds granule reads.
-	if (af.or?.length) {
+	if (af.or !== undefined && af.or.length > 0) {
 		const { or, ...first } = af
 		// One flat OR: a chained `.or()` per member nests past ClickHouse's max_parser_depth.
 		return CH.or(

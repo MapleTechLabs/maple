@@ -143,7 +143,7 @@ function environmentCondition(
 	$: ColumnAccessor<typeof Logs.columns>,
 	opts: LogsQueryOpts,
 ): CH.Condition | undefined {
-	if (!opts.environments?.length) return undefined
+	if (opts.environments === undefined || opts.environments.length === 0) return undefined
 	const envAttr = deploymentEnvExpr($.ResourceAttributes)
 	const needle = opts.matchModes?.deploymentEnv === "contains" ? soleValue(opts.environments) : undefined
 	if (needle !== undefined) return CH.positionCaseInsensitive(envAttr, CH.lit(needle)).gt(0)
@@ -154,7 +154,7 @@ function namespaceCondition(
 	$: ColumnAccessor<typeof Logs.columns>,
 	opts: LogsQueryOpts,
 ): CH.Condition | undefined {
-	if (!opts.namespaces?.length) return undefined
+	if (opts.namespaces === undefined || opts.namespaces.length === 0) return undefined
 	const nsAttr = $.ResourceAttributes.get("service.namespace")
 	const needle = opts.matchModes?.serviceNamespace === "contains" ? soleValue(opts.namespaces) : undefined
 	if (needle !== undefined) return CH.positionCaseInsensitive(nsAttr, CH.lit(needle)).gt(0)
@@ -172,18 +172,21 @@ function serviceSeverityConditions(
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	// The scalar is a level ("ERROR") and matches every spelling; the array holds exact facet
 	// values the caller read back from the data, so it stays exact.
-	const severities = opts.severities?.length
-		? opts.severities
-		: opts.severity
-			? severitySpellings(opts.severity)
-			: undefined
+	const severities =
+		opts.severities !== undefined && opts.severities.length > 0
+			? opts.severities
+			: opts.severity
+				? severitySpellings(opts.severity)
+				: undefined
 	return [
 		services ? inclusionCondition($.ServiceName, services) : undefined,
 		severities ? inclusionCondition($.SeverityText, severities) : undefined,
-		opts.excludedServiceNames?.length
+		opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0
 			? CH.notInList($.ServiceName, opts.excludedServiceNames)
 			: undefined,
-		opts.excludedSeverities?.length ? CH.notInList($.SeverityText, opts.excludedSeverities) : undefined,
+		opts.excludedSeverities !== undefined && opts.excludedSeverities.length > 0
+			? CH.notInList($.SeverityText, opts.excludedSeverities)
+			: undefined,
 	]
 }
 
@@ -201,10 +204,10 @@ function rawEnvNamespaceConditions(
 	return [
 		environmentCondition($, opts),
 		namespaceCondition($, opts),
-		opts.excludedEnvironments?.length
+		opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0
 			? CH.notInList(deploymentEnvExpr($.ResourceAttributes), opts.excludedEnvironments)
 			: undefined,
-		opts.excludedNamespaces?.length
+		opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0
 			? CH.notInList($.ResourceAttributes.get("service.namespace"), opts.excludedNamespaces)
 			: undefined,
 	]
@@ -223,10 +226,10 @@ function mvFacetConditions(
 		...serviceSeverityConditions($, opts),
 		mvEnvironmentCondition($, opts),
 		mvNamespaceCondition($, opts),
-		opts.excludedEnvironments?.length
+		opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0
 			? CH.notInList($.DeploymentEnv, opts.excludedEnvironments)
 			: undefined,
-		opts.excludedNamespaces?.length
+		opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0
 			? CH.notInList($.ServiceNamespace, opts.excludedNamespaces)
 			: undefined,
 	]
@@ -252,8 +255,8 @@ function canUseLogsAggregateInterior(opts: LogsQueryOpts): boolean {
 	if (opts.spanId) return false
 	if (opts.search) return false
 	if (opts.minSeverity !== undefined) return false
-	if (opts.attributeFilters?.length) return false
-	if (opts.resourceAttributeFilters?.length) return false
+	if (opts.attributeFilters !== undefined && opts.attributeFilters.length > 0) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
 	if (opts.matchModes?.deploymentEnv === "contains") return false
 	if (opts.matchModes?.serviceNamespace === "contains") return false
 	return true
@@ -314,8 +317,8 @@ export function canUseLogsAggregatesHourly(
 	if (opts.spanId) return false
 	if (opts.search) return false
 	if (opts.minSeverity !== undefined) return false
-	if (opts.attributeFilters?.length) return false
-	if (opts.resourceAttributeFilters?.length) return false
+	if (opts.attributeFilters !== undefined && opts.attributeFilters.length > 0) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
 	// MV stores DeploymentEnv / ServiceNamespace as top-level columns; the
 	// `contains` substring match is only supported via positionCaseInsensitive on
 	// the raw map column.
@@ -328,7 +331,7 @@ function mvEnvironmentCondition(
 	$: ColumnAccessor<typeof LogsAggregatesHourly.columns>,
 	opts: LogsQueryOpts,
 ): CH.Condition | undefined {
-	if (!opts.environments?.length) return undefined
+	if (opts.environments === undefined || opts.environments.length === 0) return undefined
 	return CH.inList($.DeploymentEnv, opts.environments)
 }
 
@@ -336,7 +339,7 @@ function mvNamespaceCondition(
 	$: ColumnAccessor<typeof LogsAggregatesHourly.columns>,
 	opts: LogsQueryOpts,
 ): CH.Condition | undefined {
-	if (!opts.namespaces?.length) return undefined
+	if (opts.namespaces === undefined || opts.namespaces.length === 0) return undefined
 	return CH.inList($.ServiceNamespace, opts.namespaces)
 }
 
@@ -824,8 +827,8 @@ export function logsFacetsQuery(
 	if (
 		opts.matchModes?.deploymentEnv === "contains" ||
 		opts.matchModes?.serviceNamespace === "contains" ||
-		opts.attributeFilters?.length ||
-		opts.resourceAttributeFilters?.length
+		(opts.attributeFilters !== undefined && opts.attributeFilters.length > 0) ||
+		(opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0)
 	) {
 		return logsFacetsQueryFromRaw(opts, facet)
 	}
@@ -844,7 +847,9 @@ function logsFacetsQueryFromMv(
 		$.Hour.lte(utcSecondsParam("endTime")),
 		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 		CH.when(opts.severity, (v: string) => inclusionCondition($.SeverityText, severitySpellings(v))),
-		opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
+		opts.environments !== undefined && opts.environments.length > 0
+			? CH.inList($.DeploymentEnv, opts.environments)
+			: undefined,
 		mvNamespaceCondition($, opts),
 	]
 

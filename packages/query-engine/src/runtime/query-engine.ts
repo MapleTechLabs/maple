@@ -543,7 +543,7 @@ const validateTraceAttributeFilters = Effect.fn("QueryEngineService.validateTrac
 		const details: string[] = []
 		if (
 			query.groupBy?.includes("attribute") &&
-			!query.filters?.groupByAttributeKeys?.length &&
+			(query.filters?.groupByAttributeKeys?.length ?? 0) === 0 &&
 			!query.filters?.groupByResourceAttributeKey
 		) {
 			details.push(
@@ -1337,10 +1337,13 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 function extractTracesFacetsOpts(filters: Record<string, unknown> | undefined): CH.TracesFacetsOpts {
 	// Facet opts take single filters; an `(a OR b)` group has no such shape, so
 	// facet counts ignore it rather than read one member as the whole filter.
-	const attrFilters = Arr.filter((filters?.attributeFilters ?? []) as AttrFilterArray, (f) => !f.or?.length)
+	const attrFilters = Arr.filter(
+		(filters?.attributeFilters ?? []) as AttrFilterArray,
+		(f) => f.or === undefined || f.or.length === 0,
+	)
 	const resFilters = Arr.filter(
 		(filters?.resourceAttributeFilters ?? []) as AttrFilterArray,
-		(f) => !f.or?.length,
+		(f) => f.or === undefined || f.or.length === 0,
 	)
 
 	// Positive http filters arrive either as a single `equals` or, when the user
@@ -1416,7 +1419,7 @@ function signatureMetricsGroupRows<
 	groupByAttributeKey: string | undefined,
 	fillOptions: BucketFillOptions | undefined,
 ): Array<TimeseriesPoint> {
-	if (groupBy?.includes("none") || !groupBy?.length) {
+	if (groupBy?.includes("none") || groupBy === undefined || groupBy.length === 0) {
 		return groupTimeSeriesRows(
 			Arr.map(rows, (row) => ({
 				bucket: row.bucket,
@@ -1749,7 +1752,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const valueField = metricValueField[request.query.metric as keyof typeof metricValueField]
 
 			const data =
-				request.query.groupBy?.includes("none") || !request.query.groupBy?.length
+				request.query.groupBy?.includes("none") ||
+				request.query.groupBy === undefined ||
+				request.query.groupBy.length === 0
 					? groupTimeSeriesRows(
 							collapseMetricTimeseriesRows(
 								execution.rows as ReadonlyArray<MetricTimeseriesRow>,
@@ -2002,8 +2007,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const hasIndexedFilter = !!(
 				opts.serviceName ||
 				opts.spanName ||
-				opts.serviceNames?.length ||
-				opts.spanNames?.length ||
+				(opts.serviceNames !== undefined && opts.serviceNames.length > 0) ||
+				(opts.spanNames !== undefined && opts.spanNames.length > 0) ||
 				opts.errorsOnly ||
 				opts.rootOnly
 			)
@@ -2389,14 +2394,15 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "stats",
 					source: "traces",
-					data: row
-						? {
-								minDurationMs: row.minDurationMs,
-								maxDurationMs: row.maxDurationMs,
-								p50DurationMs: row.p50DurationMs,
-								p95DurationMs: row.p95DurationMs,
-							}
-						: { minDurationMs: 0, maxDurationMs: 0, p50DurationMs: 0, p95DurationMs: 0 },
+					data:
+						row !== undefined
+							? {
+									minDurationMs: row.minDurationMs,
+									maxDurationMs: row.maxDurationMs,
+									p50DurationMs: row.p50DurationMs,
+									p95DurationMs: row.p95DurationMs,
+								}
+							: { minDurationMs: 0, maxDurationMs: 0, p50DurationMs: 0, p95DurationMs: 0 },
 				},
 			})
 		}
@@ -2460,7 +2466,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				result: {
 					kind: "count",
 					source: "logs",
-					data: { total: rows[0] ? Number(rows[0].total) : 0 },
+					data: { total: rows[0] !== undefined ? Number(rows[0].total) : 0 },
 				},
 			})
 		}
@@ -2879,7 +2885,7 @@ const prepareAlertEvaluation = Effect.fnUntraced(function* (request: AlertEvalua
 		if ("metric" in query && query.metric) {
 			yield* Effect.annotateCurrentSpan("query.metric", query.metric)
 		}
-		if ("groupBy" in query && query.groupBy) {
+		if ("groupBy" in query && query.groupBy !== undefined) {
 			yield* Effect.annotateCurrentSpan(
 				"query.groupBy",
 				Arr.join(query.groupBy as ReadonlyArray<string>, ","),
