@@ -50,7 +50,12 @@ export interface UsersListFilter {
 	readonly groups?: ReadonlyArray<string>
 }
 
-const likeLiteral = (value: string): string => value.replace(/[\\%_]/g, (c) => `\\${c}`)
+/**
+ * Case-insensitive substring match. Not `ILIKE`: an `OR` of LIKEs over aggregates in HAVING trips
+ * `optimize_or_like_chain` (on by default since ClickHouse 26.x) into a LOGICAL_ERROR.
+ */
+const containsText = (value: CH.Expr<string>, search: string) =>
+	CH.compileTypedFnCall("positionCaseInsensitiveUTF8", T.uint64.schema, value, CH.lit(search)).gt(0)
 
 /** Any non-empty value in the group, `''` when none. */
 const nonEmpty = (value: CH.Expr<string>) => CH.anyIf(value, value.neq(""))
@@ -299,16 +304,17 @@ export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, 
 		.having(($) => [
 			CH.when(filter.hasErrors === true ? true : undefined, () => CH.sum($.errors).gt(0)),
 			CH.when(filter.hasReplay === true ? true : undefined, () => CH.sum($.sessions).gt(0)),
+			// Any of the user's groups, not one arbitrary pick: a user can carry several.
 			filter.groups !== undefined && filter.groups.length > 0
-				? CH.inList(nonEmpty($.groupId), filter.groups)
+				? CH.countIf(CH.inList($.groupId, filter.groups)).gt(0)
 				: undefined,
-			CH.when(filter.search, (search) => {
-				const pattern = `%${likeLiteral(search)}%`
-				return $.userId
-					.ilike(pattern)
-					.or(nonEmpty($.name).ilike(pattern))
-					.or(nonEmpty($.email).ilike(pattern))
-			}),
+			CH.when(filter.search, (search) =>
+				CH.or(
+					containsText($.userId, search),
+					containsText(nonEmpty($.name), search),
+					containsText(nonEmpty($.email), search),
+				),
+			),
 		])
 		.orderBy(["lastSeen", "desc"])
 		.limit(limit)
