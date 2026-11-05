@@ -35,7 +35,7 @@ export function gcpLogVolume(
 		const hour = Math.floor((Date.parse(toIsoBucket(point.bucket)) - first) / HOUR_MS)
 		if (hour < 0 || hour >= hourly.length) continue
 		for (const [severity, entries] of Rec.toEntries(point.series)) {
-			hourly[hour] += entries
+			hourly[hour] = (hourly[hour] ?? 0) + entries
 			if (ERROR_SEVERITY.test(severity)) errors += entries
 			else if (WARNING_SEVERITY.test(severity)) warnings += entries
 		}

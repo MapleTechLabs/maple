@@ -564,12 +564,11 @@ const getSpanHierarchyEffect = Effect.fn("QueryEngine.getSpanHierarchy")(functio
 	const spans = dedupeBySpanId(Arr.map(result.data, (raw) => transformSpan(raw as SpanHierarchyRow)))
 	const rootSpans = buildSpanTree(spans)
 	const totalDurationMs = traceWallClockMs(spans)
-	const traceStartTime =
-		spans.length === 0
-			? undefined
-			: Arr.reduce(spans, spans[0], (earliest, candidate) =>
-					new Date(candidate.startTime) < new Date(earliest.startTime) ? candidate : earliest,
-				).startTime
+	const traceStartTime = !Arr.isReadonlyArrayNonEmpty(spans)
+		? undefined
+		: Arr.reduce(spans, Arr.headNonEmpty(spans), (earliest, candidate) =>
+				new Date(candidate.startTime) < new Date(earliest.startTime) ? candidate : earliest,
+			).startTime
 
 	return {
 		traceId: input.traceId,

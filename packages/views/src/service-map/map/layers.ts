@@ -75,7 +75,13 @@ const drawableEdges = (graph: EffectiveGraph, positions: Positions, measured: Me
 		const targetMeasured = measured[edge.target]
 		const sourceHandle = handleOf(sourceMeasured, "source")
 		const targetHandle = handleOf(targetMeasured, "target")
-		if (sourceHandle === undefined || targetHandle === undefined) return []
+		if (
+			sourceMeasured === undefined ||
+			targetMeasured === undefined ||
+			sourceHandle === undefined ||
+			targetHandle === undefined
+		)
+			return []
 		const at = (id: string, m: MeasuredNode) => ({
 			id,
 			position: positions[id] ?? { x: 0, y: 0 },

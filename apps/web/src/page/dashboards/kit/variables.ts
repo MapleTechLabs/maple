@@ -161,7 +161,7 @@ export const planOptionRequests = (
 	return Arr.reduce(variables, initial, (state, variable) => {
 		const source = optionsSourceOf(orgId, variable, window)
 		if (source._tag !== "Query" || window === null) return state
-		return Option.match(Keyed.request(state.slots[variable.name] ?? Keyed.idle(), source.key, mode), {
+		return Option.match(Keyed.request(Keyed.at(state.slots, variable.name), source.key, mode), {
 			onNone: () => state,
 			onSome: (next) => ({
 				slots: { ...state.slots, [variable.name]: next },

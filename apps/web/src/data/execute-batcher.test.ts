@@ -5,7 +5,7 @@ import {
 } from "@maple/query-engine"
 import { Effect, Exit, Fiber, Ref, type Scope, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { describe, expect, test } from "vitest"
+import { assert, describe, expect, test } from "vitest"
 import { MissingBatchResultError } from "@maple/web-data/warehouse/warehouse-services"
 import { makeExecuteBatcher, type SendExecuteBatch } from "./execute-batcher"
 
@@ -130,6 +130,9 @@ describe("makeExecuteBatcher", () => {
 				)
 				yield* TestClock.adjust(`${WINDOW_MS} millis`)
 				const [ok, timedOut, missing] = yield* Fiber.joinAll(fibers)
+				assert.isDefined(ok)
+				assert.isDefined(timedOut)
+				assert.isDefined(missing)
 				expect(Exit.isSuccess(ok)).toBe(true)
 				// Rejected with its own public body, as the promise batcher rejects it.
 				expect(timedOut).toEqual(Exit.fail(timeout))

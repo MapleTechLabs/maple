@@ -47,7 +47,7 @@ describe("dedupeBySpanId", () => {
 		]
 		const deduped = dedupeBySpanId(spans)
 		expect(Arr.map(deduped, (s) => s.spanId)).toEqual(["a", "b"])
-		expect(deduped[0].spanName).toBe("first")
+		expect(Arr.getUnsafe(deduped, 0).spanName).toBe("first")
 	})
 })
 
@@ -61,12 +61,17 @@ describe("buildSpanTree", () => {
 		])
 
 		expect(tree).toHaveLength(1)
-		expect(tree[0].spanId).toBe("root")
-		expect(tree[0].depth).toBe(0)
-		expect(Arr.map(tree[0].children, (c) => c.spanId)).toEqual(["early-child", "late-child"])
-		expect(tree[0].children[0].depth).toBe(1)
-		expect(tree[0].children[0].children[0].spanId).toBe("grandchild")
-		expect(tree[0].children[0].children[0].depth).toBe(2)
+		expect(Arr.getUnsafe(tree, 0).spanId).toBe("root")
+		expect(Arr.getUnsafe(tree, 0).depth).toBe(0)
+		expect(Arr.map(Arr.getUnsafe(tree, 0).children, (c) => c.spanId)).toEqual([
+			"early-child",
+			"late-child",
+		])
+		expect(Arr.getUnsafe(Arr.getUnsafe(tree, 0).children, 0).depth).toBe(1)
+		expect(Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(tree, 0).children, 0).children, 0).spanId).toBe(
+			"grandchild",
+		)
+		expect(Arr.getUnsafe(Arr.getUnsafe(Arr.getUnsafe(tree, 0).children, 0).children, 0).depth).toBe(2)
 	})
 
 	it("links each span exactly once when the warehouse returns duplicate rows", () => {
@@ -84,8 +89,8 @@ describe("buildSpanTree", () => {
 		])
 
 		expect(tree).toHaveLength(1)
-		expect(tree[0].children).toHaveLength(1)
-		expect(tree[0].children[0].children).toHaveLength(1)
+		expect(Arr.getUnsafe(tree, 0).children).toHaveLength(1)
+		expect(Arr.getUnsafe(Arr.getUnsafe(tree, 0).children, 0).children).toHaveLength(1)
 
 		const ids = Arr.map(flatten(tree), (n) => n.spanId)
 		expect(ids).toEqual(["root", "child", "grandchild"])
@@ -100,8 +105,8 @@ describe("buildSpanTree", () => {
 	it("treats a self-parenting span as a root instead of recursing forever", () => {
 		const tree = buildSpanTree([span({ spanId: "weird", parentSpanId: "weird" })])
 		expect(tree).toHaveLength(1)
-		expect(tree[0].spanId).toBe("weird")
-		expect(tree[0].children).toHaveLength(0)
+		expect(Arr.getUnsafe(tree, 0).spanId).toBe("weird")
+		expect(Arr.getUnsafe(tree, 0).children).toHaveLength(0)
 	})
 
 	it("groups orphans under a missing-span placeholder", () => {
@@ -111,10 +116,10 @@ describe("buildSpanTree", () => {
 		])
 
 		expect(tree).toHaveLength(1)
-		expect(tree[0].isMissing).toBe(true)
-		expect(tree[0].spanId).toBe("gone")
-		expect(Arr.map(tree[0].children, (c) => c.spanId)).toEqual(["orphan-1", "orphan-2"])
-		expect(tree[0].children[0].depth).toBe(1)
+		expect(Arr.getUnsafe(tree, 0).isMissing).toBe(true)
+		expect(Arr.getUnsafe(tree, 0).spanId).toBe("gone")
+		expect(Arr.map(Arr.getUnsafe(tree, 0).children, (c) => c.spanId)).toEqual(["orphan-1", "orphan-2"])
+		expect(Arr.getUnsafe(Arr.getUnsafe(tree, 0).children, 0).depth).toBe(1)
 	})
 })
 
@@ -128,7 +133,7 @@ describe("buildTraceDetail", () => {
 
 		expect(Arr.map(detail.spans, (s) => s.spanId)).toEqual(["root", "child"])
 		expect(detail.rootSpans).toHaveLength(1)
-		expect(detail.rootSpans[0].children).toHaveLength(1)
+		expect(Arr.getUnsafe(detail.rootSpans, 0).children).toHaveLength(1)
 		expect(detail.totalDurationMs).toBe(50)
 		expect(detail.services).toEqual(["svc", "other"])
 	})

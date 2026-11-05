@@ -24,7 +24,7 @@ export type LabTrace = Readonly<{ trace: TraceData; deepestSpanId: string }>
 export const traceOf = (mode: WorstCaseMode): Option.Option<LabTrace> => {
 	const { detail, deepestSpanId } = worstCaseTrace(mode)
 	return Option.map(
-		Schema.decodeOption(TraceData)({ ...detail, traceId: detail.spans[0]?.traceId }),
+		Schema.decodeOption(TraceData)({ ...detail, traceId: detail.spans[0]?.traceId ?? "" }),
 		(trace) => ({ trace, deepestSpanId }),
 	)
 }

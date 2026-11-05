@@ -275,7 +275,10 @@ export function aggregateServiceOverviews<T extends ServiceMapOverviewRow & { p9
 	}
 	const out = new Map<string, T>()
 	for (const [name, group] of groups) {
-		const top = Arr.reduce(group, group[0], (a, b) => (b.throughput > a.throughput ? b : a))
+		if (!Arr.isReadonlyArrayNonEmpty(group)) continue
+		const top = Arr.reduce(group, Arr.headNonEmpty(group), (a, b) =>
+			b.throughput > a.throughput ? b : a,
+		)
 		if (group.length === 1) {
 			out.set(name, top)
 			continue
@@ -649,6 +652,7 @@ function findConnectedComponents(nodes: Node<ServiceNodeData>[], edges: Edge<Ser
 		let head = 0
 		while (head < queue.length) {
 			const current = queue[head++]
+			if (current === undefined) break
 			component.push(current)
 			for (const neighbor of undirected.get(current) ?? []) {
 				if (!visited.has(neighbor)) {
@@ -700,7 +704,7 @@ function computeLayers(
 			const db = inDegree.get(b.id) ?? 0
 			return da !== db ? da - db : Str.localeCompare(b.id)(a.id)
 		})
-		roots = [sorted[0].id]
+		roots = sorted[0] === undefined ? [] : [sorted[0].id]
 	}
 
 	const layerMap = new Map<string, number>()
@@ -712,7 +716,9 @@ function computeLayers(
 
 	let head = 0
 	while (head < queue.length) {
-		const { id, layer } = queue[head++]
+		const next = queue[head++]
+		if (next === undefined) break
+		const { id, layer } = next
 		for (const child of adjacency.get(id) ?? []) {
 			if (!layerMap.has(child)) {
 				layerMap.set(child, layer + 1)
@@ -749,29 +755,30 @@ function computeLayers(
 
 	function updatePositions() {
 		for (const [, group] of layerGroups) {
-			for (let i = 0; i < group.length; i++) {
-				positionOf.set(group[i], i)
+			for (const [i, id] of group.entries()) {
+				positionOf.set(id, i)
 			}
 		}
 	}
 
 	function barySort(layer: string[], getNeighbors: (id: string) => string[]) {
 		const barycenters = new Map<string, number>()
-		for (let i = 0; i < layer.length; i++) {
-			const neighbors = getNeighbors(layer[i])
+		for (const [i, id] of layer.entries()) {
+			const neighbors = getNeighbors(id)
 			const positions = Arr.filter(
 				Arr.map(neighbors, (n) => positionOf.get(n)),
 				(p): p is number => p !== undefined,
 			)
 
 			if (positions.length === 0) {
-				barycenters.set(layer[i], i)
+				barycenters.set(id, i)
 			} else {
 				positions.sort((a, b) => a - b)
 				const mid = Math.floor(positions.length / 2)
+				const upper = positions[mid] ?? 0
 				const median =
-					positions.length % 2 === 1 ? positions[mid] : (positions[mid - 1] + positions[mid]) / 2
-				barycenters.set(layer[i], median)
+					positions.length % 2 === 1 ? upper : ((positions[mid - 1] ?? upper) + upper) / 2
+				barycenters.set(id, median)
 			}
 		}
 		layer.sort((a, b) => {
@@ -785,14 +792,16 @@ function computeLayers(
 	for (let sweep = 0; sweep < 2; sweep++) {
 		// Left-to-right: order by neighbors in previous layer
 		for (let li = 1; li < layerIndices.length; li++) {
-			const group = layerGroups.get(layerIndices[li])
+			const layerIndex = layerIndices[li]
+			const group = layerIndex === undefined ? undefined : layerGroups.get(layerIndex)
 			if (!group) continue
 			barySort(group, (id) => reverseAdj.get(id) ?? [])
 			updatePositions()
 		}
 		// Right-to-left: order by neighbors in next layer
 		for (let li = layerIndices.length - 2; li >= 0; li--) {
-			const group = layerGroups.get(layerIndices[li])
+			const layerIndex = layerIndices[li]
+			const group = layerIndex === undefined ? undefined : layerGroups.get(layerIndex)
 			if (!group) continue
 			barySort(group, (id) => adjacency.get(id) ?? [])
 			updatePositions()
@@ -836,8 +845,8 @@ function computeLayers(
 
 	const result = new Map<string, { layer: number; indexInLayer: number; layerSize: number }>()
 	for (const [layer, group] of layerGroups) {
-		for (let i = 0; i < group.length; i++) {
-			result.set(group[i], { layer, indexInLayer: i, layerSize: group.length })
+		for (const [i, id] of group.entries()) {
+			result.set(id, { layer, indexInLayer: i, layerSize: group.length })
 		}
 	}
 
@@ -906,8 +915,9 @@ export function computeFlatPositions(
 	const connectedComponents: string[][] = []
 	const isolates: string[] = []
 	for (const comp of components) {
-		if (comp.length === 1 && !edgeNodeIds.has(comp[0])) {
-			isolates.push(comp[0])
+		const [only] = comp
+		if (comp.length === 1 && only !== undefined && !edgeNodeIds.has(only)) {
+			isolates.push(only)
 		} else {
 			connectedComponents.push(comp)
 		}
@@ -977,8 +987,8 @@ export function computeFlatPositions(
 		const graphCenterX = positions.size > 0 ? (minX + maxX) / 2 : 0
 		const startX = graphCenterX - totalWidth / 2
 
-		for (let i = 0; i < isolates.length; i++) {
-			positions.set(isolates[i], {
+		for (const [i, isolate] of isolates.entries()) {
+			positions.set(isolate, {
 				x: startX + i * (nodeWidth + disconnectedGapX),
 				y: rowY,
 			})

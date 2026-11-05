@@ -20,9 +20,7 @@ interface Camera {
 }
 
 const percentile = (sorted: ReadonlyArray<number>, p: number): number =>
-	sorted.length === 0
-		? 0
-		: sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))))]
+	sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))))] ?? 0
 
 const readCamera = (root: Element): Camera => readViewport(root) ?? { x: 0, y: 0, zoom: 1 }
 

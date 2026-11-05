@@ -84,7 +84,9 @@ describe("list, funnel and paths panels", () => {
 		])
 		const applied = run(step, Message.ClickedApply())
 		expect(names(applied)).toContain(SaveWidget.name)
-		expect(state === null ? null : buildDisplay(document.widgets[0], state).listDataSource).toBe("logs")
+		expect(
+			state === null ? null : buildDisplay(Arr.getUnsafe(document.widgets, 0), state).listDataSource,
+		).toBe("logs")
 	})
 
 	test("a column dragged past two centres lands two slots down", () => {
@@ -174,11 +176,13 @@ describe("list, funnel and paths panels", () => {
 			edit(ProductEdit.SetFunnelVariant({ variant: "dropoff" })),
 		)
 		const state = step.model.state
-		expect(state === null ? null : buildDisplay(document.widgets[0], state).funnel).toEqual({
+		expect(
+			state === null ? null : buildDisplay(Arr.getUnsafe(document.widgets, 0), state).funnel,
+		).toEqual({
 			variant: "dropoff",
 		})
-		expect(state === null ? null : dataSourceEndpoint(document.widgets[0].dataSource)).not.toBe(
-			"product_events_funnel",
-		)
+		expect(
+			state === null ? null : dataSourceEndpoint(Arr.getUnsafe(document.widgets, 0).dataSource),
+		).not.toBe("product_events_funnel")
 	})
 })

@@ -28,7 +28,7 @@ const WORDS = Str.split(" ")(
 function prose(random: () => number, words: number): string {
 	const out: string[] = []
 	for (let i = 0; i < words; i++) {
-		const word = WORDS[Math.floor(random() * WORDS.length)]
+		const word = Arr.getUnsafe(WORDS, Math.floor(random() * WORDS.length))
 		out.push(i > 0 && i % 17 === 0 ? `${word}.` : word)
 	}
 	return Arr.join(out, " ")

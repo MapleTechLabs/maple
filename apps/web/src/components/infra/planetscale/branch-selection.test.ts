@@ -85,7 +85,7 @@ describe("mergeBranchCandidates", () => {
 	it("keeps inventory branches that reported no metrics", () => {
 		const merged = mergeBranchCandidates([branch("main", true), branch("pr-1")], [stat("main", 18)])
 		expect(Arr.map(merged, (c) => c.name)).toEqual(["main", "pr-1"])
-		expect(merged[1].stat).toBeNull()
+		expect(Arr.getUnsafe(merged, 1).stat).toBeNull()
 	})
 
 	it("adds branches the rollups saw but the inventory hasn't listed", () => {

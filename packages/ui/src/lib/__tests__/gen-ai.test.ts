@@ -164,3 +164,18 @@ describe("splitGenAiAttributes", () => {
 		}
 	})
 })
+
+describe("splitGenAiAttributes with Object.prototype key names", () => {
+	it("keeps a `constructor` attribute in a rendered group", () => {
+		const { groups } = splitGenAiAttributes({ "gen_ai.constructor.value": "x" })
+		const values = Arr.flatMap(groups, (group) => Arr.map(group.fields, (field) => field.value))
+
+		expect(values).toContain("x")
+		expect(
+			Arr.every(
+				Arr.flatMap(groups, (group) => group.fields),
+				(field) => typeof field.label === "string",
+			),
+		).toBe(true)
+	})
+})

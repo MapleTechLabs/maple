@@ -114,7 +114,10 @@ describe("chat conversation", () => {
 			]),
 		).model
 		expect(streamed.status).toBe("streaming")
-		expect(Arr.map(streamed.messages[1]?.parts, (part) => part._tag)).toEqual(["dynamic-tool", "text"])
+		expect(Arr.map(Arr.getUnsafe(streamed.messages, 1)?.parts, (part) => part._tag)).toEqual([
+			"dynamic-tool",
+			"text",
+		])
 		const ended = step(
 			streamed,
 			events(sending.generation, [

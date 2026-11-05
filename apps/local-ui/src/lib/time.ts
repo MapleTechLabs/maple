@@ -26,7 +26,7 @@ export interface TimeRange {
 	readonly minutes: number
 }
 
-export const TIME_RANGES: ReadonlyArray<TimeRange> = [
+export const TIME_RANGES: Arr.NonEmptyReadonlyArray<TimeRange> = [
 	{ key: "5m", label: "5M", minutes: 5 },
 	{ key: "15m", label: "15M", minutes: 15 },
 	{ key: "30m", label: "30M", minutes: 30 },
@@ -55,7 +55,7 @@ export function isRangeKey(value: string | null | undefined): value is string {
 export function resolveRange(key: string | undefined): TimeRange {
 	return Arr.findFirst(TIME_RANGES, (r) => r.key === key).pipe(
 		Option.orElse(() => Arr.findFirst(TIME_RANGES, (r) => r.key === DEFAULT_RANGE)),
-		Option.getOrElse(() => TIME_RANGES[0]),
+		Option.getOrElse(() => Arr.headNonEmpty(TIME_RANGES)),
 	)
 }
 

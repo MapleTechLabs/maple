@@ -1,5 +1,5 @@
 import { bucketTimeline, computeBucketSecondsForRange } from "@maple/query-engine"
-import { Option, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const TINYBIRD_DATETIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?$/
 
@@ -53,9 +53,9 @@ export function trimSparseLeadingBuckets<T>(
 ): T[] {
 	if (rows.length < 2) return Array.from(rows)
 	let cutoff = 0
-	while (cutoff < rows.length - 1) {
-		const v = getValue(rows[cutoff])
-		const next = getValue(rows[cutoff + 1])
+	for (const [current, following] of Arr.zip(rows, rows.slice(1))) {
+		const v = getValue(current)
+		const next = getValue(following)
 		if (next <= 0) break
 		if (v >= next * nextRatio) break
 		cutoff++

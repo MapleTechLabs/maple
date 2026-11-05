@@ -1,7 +1,7 @@
 import { cloudflareDisplay } from "@maple/ui/lib/cloud-platforms/cloudflare-display"
 import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
 import type { FlowIconName } from "../../ui/flow-icons"
-import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Predicate, Record as Rec, String as Str } from "effect"
 
 // copied: packages/ui/src/lib/cloud-platforms/{database,index}.ts, the fields the flow card
 // reads, with `Icon` as an icon name (the adapters import React icon components). Workers
@@ -65,12 +65,12 @@ export function humanizeDbSystem(system: string): string {
 	)
 }
 
-/** First present, non-blank value among `keys`. */
+/** First present, non-blank value among `keys`; decoded attribute JSON can still carry `null`. */
 export const pickAttr = (attrs: Record<string, string>, ...keys: ReadonlyArray<string>): string | null =>
 	Option.getOrNull(
 		Arr.findFirst(
-			Arr.map(keys, (key) => attrs[key]),
-			(value) => value != null && Str.trim(value) !== "",
+			Arr.getSomes(Arr.map(keys, (key) => Option.filter(Rec.get(attrs, key), Predicate.isString))),
+			(value) => Str.trim(value) !== "",
 		),
 	)
 

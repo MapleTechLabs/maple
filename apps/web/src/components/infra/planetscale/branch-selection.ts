@@ -112,14 +112,14 @@ export function defaultBranch(
 				? connectionsOf(b) - connectionsOf(a)
 				: Str.localeCompare(b.name)(a.name),
 		)[0]
-		return { branch, role: "production" }
+		if (branch !== undefined) return { branch, role: "production" }
 	}
 	const branch = [...candidates].sort((a, b) =>
 		connectionsOf(b) !== connectionsOf(a)
 			? connectionsOf(b) - connectionsOf(a)
 			: Str.localeCompare(b.name)(a.name),
 	)[0]
-	return { branch, role: "busiest" }
+	return branch === undefined ? null : { branch, role: "busiest" }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 
 import {
 	buildCommitMarkers,
@@ -51,11 +51,11 @@ describe("buildCommitMarkers", () => {
 		const markers = buildCommitMarkers(releases, CHART)
 		// A was already running in the earliest bucket → excluded; B is a real deploy.
 		expect(markers).toHaveLength(1)
-		expect(markers[0].bucket).toBe(iso(1))
-		expect(markers[0].commits).toEqual([{ sha: SHA_B, count: 30 }])
+		expect(Arr.getUnsafe(markers, 0).bucket).toBe(iso(1))
+		expect(Arr.getUnsafe(markers, 0).commits).toEqual([{ sha: SHA_B, count: 30 }])
 		// Default label is the SHORT sha for a 40-hex commit — the host overrides it
 		// with the resolved message; the full sha stays available in the hover card.
-		expect(markers[0].label).toBe(Str.slice(0, 7)(SHA_B))
+		expect(Arr.getUnsafe(markers, 0).label).toBe(Str.slice(0, 7)(SHA_B))
 	})
 
 	it("excludes EVERY commit first seen in the baseline bucket, not just one", () => {
@@ -68,7 +68,7 @@ describe("buildCommitMarkers", () => {
 		]
 		const markers = buildCommitMarkers(releases, CHART)
 		expect(markers).toHaveLength(1)
-		expect(markers[0].commits).toEqual([{ sha: SHA_C, count: 60 }])
+		expect(Arr.getUnsafe(markers, 0).commits).toEqual([{ sha: SHA_C, count: 60 }])
 	})
 
 	it("groups multiple new commits in one bucket, representative (highest count) first", () => {
@@ -99,7 +99,7 @@ describe("buildCommitMarkers", () => {
 			Arr.findFirst(markers, (m) => Arr.some(m.commits, (c) => c.sha === SHA_B)),
 		)
 		expect(b.bucket).toBe(iso(1))
-		expect(b.commits[0].count).toBe(40)
+		expect(Arr.getUnsafe(b.commits, 0).count).toBe(40)
 	})
 
 	it("snaps Tinybird-formatted release buckets onto the ISO chart grid", () => {
@@ -123,8 +123,8 @@ describe("buildCommitMarkers", () => {
 		expect(markers).toHaveLength(2)
 		// The full reference string is the default label (not pre-sliced); the
 		// renderer truncates with CSS so even a long sha stays readable.
-		expect(markers[0].label).toBe("v1.2.3")
-		expect(markers[1].label).toBe("deadbeef")
+		expect(Arr.getUnsafe(markers, 0).label).toBe("v1.2.3")
+		expect(Arr.getUnsafe(markers, 1).label).toBe("deadbeef")
 	})
 })
 
@@ -157,7 +157,7 @@ describe("layoutMarkerLabels", () => {
 		const long = layout("fix: a much longer commit subject")
 		expect(short).toHaveLength(2) // narrow labels don't collide
 		expect(long).toHaveLength(1) // wide label reaches its neighbour
-		expect(long[0].boxWidth).toBeGreaterThan(short[0].boxWidth)
+		expect(Arr.getUnsafe(long, 0).boxWidth).toBeGreaterThan(Arr.getUnsafe(short, 0).boxWidth)
 	})
 
 	it("keeps well-separated markers as distinct labels", () => {
@@ -170,12 +170,14 @@ describe("layoutMarkerLabels", () => {
 		const groups = layoutMarkerLabels([at("a", 20), at("b", 40), at("c", 360)], 0, 600)
 		expect(groups).toHaveLength(2)
 		// a and b collide (close x) → one label; c stands alone.
-		expect(groups[0].dashXs).toEqual([20, 40])
-		expect(groups[0].commits).toHaveLength(2)
+		expect(Arr.getUnsafe(groups, 0).dashXs).toEqual([20, 40])
+		expect(Arr.getUnsafe(groups, 0).commits).toHaveLength(2)
 		// The merged box spans both dashes so each connects straight up into it.
-		expect(groups[0].boxLeft).toBeLessThanOrEqual(20)
-		expect(groups[0].boxLeft + groups[0].boxWidth).toBeGreaterThanOrEqual(40)
-		expect(groups[1].dashXs).toEqual([360])
+		expect(Arr.getUnsafe(groups, 0).boxLeft).toBeLessThanOrEqual(20)
+		expect(Arr.getUnsafe(groups, 0).boxLeft + Arr.getUnsafe(groups, 0).boxWidth).toBeGreaterThanOrEqual(
+			40,
+		)
+		expect(Arr.getUnsafe(groups, 1).dashXs).toEqual([360])
 	})
 
 	it("keeps EVERY dash even when many markers pack tightly (dashes never dropped)", () => {
@@ -195,9 +197,11 @@ describe("layoutMarkerLabels", () => {
 		// label, both dashes kept and the box covers both so each connects straight up.
 		const groups = layoutMarkerLabels([at("a", 20), at("b", 44)], 0, 600)
 		expect(groups).toHaveLength(1)
-		expect(groups[0].dashXs).toEqual([20, 44])
-		expect(groups[0].boxLeft).toBeLessThanOrEqual(20)
-		expect(groups[0].boxLeft + groups[0].boxWidth).toBeGreaterThanOrEqual(44)
+		expect(Arr.getUnsafe(groups, 0).dashXs).toEqual([20, 44])
+		expect(Arr.getUnsafe(groups, 0).boxLeft).toBeLessThanOrEqual(20)
+		expect(Arr.getUnsafe(groups, 0).boxLeft + Arr.getUnsafe(groups, 0).boxWidth).toBeGreaterThanOrEqual(
+			44,
+		)
 	})
 
 	it("offsets a new label to the right when centering would collide with the previous one", () => {
@@ -207,6 +211,8 @@ describe("layoutMarkerLabels", () => {
 		const groups = layoutMarkerLabels([at("a", 60), at("b", 110)], 0, 600)
 		expect(groups).toHaveLength(2)
 		const [a, b] = groups
+		assert.isDefined(b)
+		assert.isDefined(a)
 		expect(b.boxLeft).toBeGreaterThanOrEqual(a.boxLeft + a.boxWidth) // cleared `a`
 		expect(b.boxLeft).toBeLessThanOrEqual(110) // dash still under the label ...
 		expect(b.boxLeft + b.boxWidth).toBeGreaterThanOrEqual(110)
@@ -216,6 +222,7 @@ describe("layoutMarkerLabels", () => {
 	it("centers a lone chip on its dash", () => {
 		const groups = layoutMarkerLabels([at("a", 300)], 0, 600)
 		const g = groups[0]
+		assert.isDefined(g)
 		// the chip's horizontal centre sits on the dash x
 		expect(Math.round(g.boxLeft + g.boxWidth / 2)).toBe(300)
 	})
@@ -225,7 +232,9 @@ describe("layoutMarkerLabels", () => {
 		// be estimated with the badge included — the same `commits.length`-aware width
 		// the merge path uses, not the badge-less single-commit width.
 		const [lone] = layoutMarkerLabels([at("a", 300)], 0, 600)
+		assert.isDefined(lone)
 		const [multi] = layoutMarkerLabels([at("b", 300, 3)], 0, 600)
+		assert.isDefined(multi)
 		expect(multi.boxWidth).toBe(estimateLabelWidth("abc1234", 3))
 		expect(multi.boxWidth).toBeGreaterThan(lone.boxWidth)
 	})
@@ -236,6 +245,7 @@ describe("layoutMarkerLabels", () => {
 		const groups = layoutMarkerLabels([at("a", 280), at("b", 300), at("c", 320)], 0, 600)
 		expect(groups).toHaveLength(1)
 		const g = groups[0]
+		assert.isDefined(g)
 		expect(g.dashXs).toEqual([280, 300, 320])
 		expect(Math.round(g.boxLeft + g.boxWidth / 2)).toBe(300)
 		expect(g.boxLeft).toBeLessThanOrEqual(280)
@@ -250,11 +260,16 @@ describe("layoutMarkerLabels", () => {
 			const positioned = Array.from({ length: 14 }, (_, i) => at(`m${i}`, 12 + i * step))
 			const groups = layoutMarkerLabels(positioned, 0, PLOT_RIGHT)
 			for (let i = 0; i < groups.length; i++) {
-				expect(groups[i].boxLeft).toBeGreaterThanOrEqual(0)
-				expect(groups[i].boxLeft + groups[i].boxWidth).toBeLessThanOrEqual(PLOT_RIGHT)
+				expect(Arr.getUnsafe(groups, i).boxLeft).toBeGreaterThanOrEqual(0)
+				expect(
+					Arr.getUnsafe(groups, i).boxLeft + Arr.getUnsafe(groups, i).boxWidth,
+				).toBeLessThanOrEqual(PLOT_RIGHT)
 				if (i > 0) {
 					const prev = groups[i - 1]
-					expect(groups[i].boxLeft).toBeGreaterThanOrEqual(prev.boxLeft + prev.boxWidth)
+					assert.isDefined(prev)
+					expect(Arr.getUnsafe(groups, i).boxLeft).toBeGreaterThanOrEqual(
+						prev.boxLeft + prev.boxWidth,
+					)
 				}
 			}
 			// And every dash is still accounted for.
@@ -277,10 +292,14 @@ describe("layoutMarkerLabels", () => {
 			expect(g.boxLeft + g.boxWidth).toBeLessThanOrEqual(600) // in-bounds, not cut off
 		}
 		// No overlap with the previous label ...
-		expect(groups[1].boxLeft).toBeGreaterThanOrEqual(groups[0].boxLeft + groups[0].boxWidth)
+		expect(Arr.getUnsafe(groups, 1).boxLeft).toBeGreaterThanOrEqual(
+			Arr.getUnsafe(groups, 0).boxLeft + Arr.getUnsafe(groups, 0).boxWidth,
+		)
 		// ... and the (shrunk) wide label still covers its own dash.
-		expect(groups[1].boxLeft).toBeLessThanOrEqual(595)
-		expect(groups[1].boxLeft + groups[1].boxWidth).toBeGreaterThanOrEqual(595)
+		expect(Arr.getUnsafe(groups, 1).boxLeft).toBeLessThanOrEqual(595)
+		expect(Arr.getUnsafe(groups, 1).boxLeft + Arr.getUnsafe(groups, 1).boxWidth).toBeGreaterThanOrEqual(
+			595,
+		)
 	})
 
 	it("folds a marker with no room before the right edge into the previous label", () => {
@@ -293,8 +312,8 @@ describe("layoutMarkerLabels", () => {
 		]
 		const groups = layoutMarkerLabels(positioned, 0, 600)
 		expect(groups).toHaveLength(1)
-		expect(groups[0].dashXs).toEqual([518, 570])
-		expect(groups[0].boxLeft + groups[0].boxWidth).toBeLessThanOrEqual(600)
+		expect(Arr.getUnsafe(groups, 0).dashXs).toEqual([518, 570])
+		expect(Arr.getUnsafe(groups, 0).boxLeft + Arr.getUnsafe(groups, 0).boxWidth).toBeLessThanOrEqual(600)
 	})
 
 	it("keeps every dash inset from the label edges (no corner connections)", () => {
@@ -303,6 +322,7 @@ describe("layoutMarkerLabels", () => {
 		const groups = layoutMarkerLabels([at("a", 280), at("b", 300), at("c", 320)], 0, 600)
 		expect(groups).toHaveLength(1)
 		const g = groups[0]
+		assert.isDefined(g)
 		for (const x of g.dashXs) {
 			expect(x).toBeGreaterThanOrEqual(g.boxLeft + EDGE_INSET)
 			expect(x).toBeLessThanOrEqual(g.boxLeft + g.boxWidth - EDGE_INSET)
@@ -311,7 +331,7 @@ describe("layoutMarkerLabels", () => {
 
 	it("keeps the box within the plot's right edge", () => {
 		const groups = layoutMarkerLabels([at("a", 595)], 0, 600)
-		expect(groups[0].boxLeft + groups[0].boxWidth).toBeLessThanOrEqual(600)
+		expect(Arr.getUnsafe(groups, 0).boxLeft + Arr.getUnsafe(groups, 0).boxWidth).toBeLessThanOrEqual(600)
 	})
 
 	it("covers every dash AND stays in-plot when a cluster hugs the right edge", () => {
@@ -320,6 +340,7 @@ describe("layoutMarkerLabels", () => {
 		const groups = layoutMarkerLabels([at("a", 560), at("b", 584)], 0, 600)
 		expect(groups).toHaveLength(1)
 		const g = groups[0]
+		assert.isDefined(g)
 		expect(g.boxLeft).toBeLessThanOrEqual(560) // leftmost dash covered
 		expect(g.boxLeft + g.boxWidth).toBeGreaterThanOrEqual(584) // rightmost dash covered
 		expect(g.boxLeft + g.boxWidth).toBeLessThanOrEqual(600) // still in-plot
@@ -330,6 +351,7 @@ describe("layoutMarkerLabels", () => {
 		const groups = layoutMarkerLabels([at("a", 6), at("b", 30)], 0, 600)
 		expect(groups).toHaveLength(1)
 		const g = groups[0]
+		assert.isDefined(g)
 		expect(g.boxLeft).toBeLessThanOrEqual(6)
 		expect(g.boxLeft + g.boxWidth).toBeGreaterThanOrEqual(30)
 		expect(g.boxLeft).toBeGreaterThanOrEqual(0)
@@ -346,8 +368,10 @@ describe("layoutMarkerLabels", () => {
 		const totalDashes = Arr.reduce(groups, 0, (n, g) => n + g.dashXs.length)
 		expect(totalDashes).toBe(8) // no dash dropped
 		for (const g of groups) {
-			expect(g.boxLeft).toBeLessThanOrEqual(g.dashXs[0]) // leftmost owned dash covered
-			expect(g.boxLeft + g.boxWidth).toBeGreaterThanOrEqual(g.dashXs[g.dashXs.length - 1])
+			expect(g.boxLeft).toBeLessThanOrEqual(Arr.getUnsafe(g.dashXs, 0)) // leftmost owned dash covered
+			expect(g.boxLeft + g.boxWidth).toBeGreaterThanOrEqual(
+				Arr.getUnsafe(g.dashXs, g.dashXs.length - 1),
+			)
 		}
 	})
 })

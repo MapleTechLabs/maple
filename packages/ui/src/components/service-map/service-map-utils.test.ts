@@ -117,7 +117,7 @@ describe("buildFlowElements", () => {
 		expect(hyperdriveNode).toBeDefined()
 		const data = hyperdriveNode!.data
 		expect(data.hyperdrive).toHaveLength(1)
-		expect(data.hyperdrive![0].matched).toEqual({ name: "maple", kind: "mysql" })
+		expect(Arr.getUnsafe(data.hyperdrive!, 0).matched).toEqual({ name: "maple", kind: "mysql" })
 
 		// Other db nodes stay clean.
 		const psNode = Option.getOrUndefined(
@@ -197,7 +197,7 @@ describe("buildFlowElements", () => {
 
 		const dbNodes = Arr.filter(result.nodes, (n) => Str.startsWith("db:")(n.id))
 		expect(dbNodes).toHaveLength(1)
-		const data = dbNodes[0].data
+		const data = Arr.getUnsafe(dbNodes, 0).data
 		expect(data.errorRate).toBeCloseTo(3 / 80)
 
 		const dbEdges = Arr.filter(result.edges, (e) => e.target === dbNodeId("clickhouse", ""))

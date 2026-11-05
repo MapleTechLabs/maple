@@ -30,7 +30,7 @@ describe("dither field", () => {
 		const shares = Arr.map([0.55, 0.75, 0.95, 1.2], (reach) => litShare(reach))
 		expect(shares).toEqual([...shares].sort((a, b) => a - b))
 		expect(shares[0]).toBeLessThan(0.35)
-		expect(shares[3]).toBeGreaterThan(shares[0] + 0.2)
+		expect(shares[3]).toBeGreaterThan(Arr.getUnsafe(shares, 0) + 0.2)
 	})
 
 	test("the edge moves over time without the field filling up or emptying", () => {

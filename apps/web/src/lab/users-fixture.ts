@@ -13,22 +13,24 @@ const HOUR = 60 * MIN
 const DAY = 24 * HOUR
 const ago = (ms: number): number => USERS_NOW - ms
 
+const MAYA: UserRow = {
+	userId: "usr_4b1x9q",
+	name: "Maya Lindqvist",
+	email: "maya@northwind.io",
+	groupId: "grp_northwind",
+	namespaces: ["storefront", "payments", "data"],
+	firstSeenMs: ago(33 * DAY),
+	lastSeenMs: ago(2 * MIN),
+	sessions: 14,
+	errors: 3,
+	requests: 2_140,
+	topRoute: "POST /api/checkout",
+	signals: ["replay", "traces", "logs", "events"],
+	activity: [180, 240, 310, 120, 90, 420, 780],
+}
+
 export const USER_ROWS: ReadonlyArray<UserRow> = [
-	{
-		userId: "usr_4b1x9q",
-		name: "Maya Lindqvist",
-		email: "maya@northwind.io",
-		groupId: "grp_northwind",
-		namespaces: ["storefront", "payments", "data"],
-		firstSeenMs: ago(33 * DAY),
-		lastSeenMs: ago(2 * MIN),
-		sessions: 14,
-		errors: 3,
-		requests: 2_140,
-		topRoute: "POST /api/checkout",
-		signals: ["replay", "traces", "logs", "events"],
-		activity: [180, 240, 310, 120, 90, 420, 780],
-	},
+	MAYA,
 	{
 		userId: "usr_8f2kq1",
 		name: "Jonas Weber",
@@ -143,11 +145,9 @@ export const USERS_SUMMARY: UsersSummary = {
 	anonymousVisitors: 9_870,
 }
 
-const maya = USER_ROWS[0]
-
 export const USER_DETAIL: UserDetail = {
 	profile: {
-		...maya,
+		...MAYA,
 		traits: [
 			["plan", "pro"],
 			["role", "admin"],

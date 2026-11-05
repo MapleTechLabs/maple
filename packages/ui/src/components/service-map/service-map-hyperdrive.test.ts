@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import {
 	isPlanetScaleHost,
 	matchHyperdriveConfigs,
@@ -42,6 +42,7 @@ describe("matchHyperdriveConfigs", () => {
 			[config({ originDatabase: "MAPLE" })],
 			inventory([{ name: "Maple", kind: "mysql" }]),
 		)
+		assert.isDefined(result)
 		expect(result.matched).toEqual({ name: "Maple", kind: "mysql" })
 		expect(result.isPlanetScaleHost).toBe(true)
 	})
@@ -52,6 +53,7 @@ describe("matchHyperdriveConfigs", () => {
 				[config({ originScheme: scheme, originDatabase: "pgdb" })],
 				inventory([{ name: "pgdb", kind: "postgresql" }]),
 			)
+			assert.isDefined(result)
 			expect(result.matched?.kind).toBe("postgresql")
 		}
 	})
@@ -61,11 +63,13 @@ describe("matchHyperdriveConfigs", () => {
 			[config({ originScheme: "postgres", originDatabase: "maple" })],
 			inventory([{ name: "maple", kind: "mysql" }]),
 		)
+		assert.isDefined(result)
 		expect(result.matched).toBeUndefined()
 	})
 
 	it("flags an unmatched psdb.cloud origin as PlanetScale-fronted", () => {
 		const [result] = matchHyperdriveConfigs([config({ originDatabase: "unknown-db" })], inventory([]))
+		assert.isDefined(result)
 		expect(result.matched).toBeUndefined()
 		expect(result.isPlanetScaleHost).toBe(true)
 	})

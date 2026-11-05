@@ -56,8 +56,8 @@ const bucketBandDomain = (
 	if (rows.length < 2 || times.length === 0) return null
 	const min = Math.min(...times)
 	const max = Math.max(...times)
-	const gaps = Arr.flatMap(times.slice(1), (time, index) =>
-		time > times[index] ? [time - times[index]] : [],
+	const gaps = Arr.flatMap(Arr.zip(times, times.slice(1)), ([previous, time]) =>
+		time > previous ? [time - previous] : [],
 	)
 	const smallestGap = gaps.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...gaps)
 	if (min === max) return null

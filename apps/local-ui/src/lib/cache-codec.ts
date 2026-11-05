@@ -62,7 +62,12 @@ const encodeAt = (value: unknown, depth: number): Option.Option<Encoded> => {
 		depth,
 	)
 	return Option.map(fields, (encoded) => {
-		const object = Rec.fromEntries(Arr.map(entries, ([key], index) => [key, encoded[index]]))
+		const object = Rec.fromEntries(
+			Arr.zip(
+				Arr.map(entries, ([key]) => key),
+				encoded,
+			),
+		)
 		// A real field named like the tag is wrapped so decode never mistakes it for one.
 		return TAG in value ? { [TAG]: "object", v: object } : object
 	})

@@ -1,5 +1,6 @@
 {
 	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
 		// apps/api's exact lib list: this program reaches its graph through
 		// alerting's ticks. workers-types alone lacks DOM-only members that code
 		// uses (`ResponseType` values, TextDecoder options), and `esnext` in place

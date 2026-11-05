@@ -287,18 +287,22 @@ export function buildSpendModel({
 	const spend = cycleSpend({ baseDollars, features: pricing })
 	const unpricedAddOn = Arr.some(charges, (charge) => charge.kind === "addOn" && charge.dollars === null)
 
-	const features: FeatureSpend[] = Arr.map(SPEND_FEATURES, (featureId) => {
+	// Every SPEND_FEATURES id was priced above, so no feature is dropped here.
+	const features: FeatureSpend[] = Arr.flatMap(SPEND_FEATURES, (featureId) => {
 		const entry = pricing[featureId]
+		if (entry === undefined) return []
 		const overUnits =
 			entry.unlimited || entry.included == null ? 0 : Math.max(0, entry.used - entry.included)
-		return {
-			...entry,
-			featureId,
-			label: FEATURE_LABELS[featureId],
-			billingUnits: billingUnitsByFeature[featureId] ?? 1,
-			overageUnits: overUnits,
-			overageCents: spend.overageByFeature[featureId] ?? 0,
-		}
+		return [
+			{
+				...entry,
+				featureId,
+				label: FEATURE_LABELS[featureId],
+				billingUnits: billingUnitsByFeature[featureId] ?? 1,
+				overageUnits: overUnits,
+				overageCents: spend.overageByFeature[featureId] ?? 0,
+			},
+		]
 	})
 
 	const topDriver = Arr.reduce<FeatureSpend, FeatureSpend | null>(features, null, (best, feature) =>

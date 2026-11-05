@@ -274,7 +274,7 @@ export function gcpChartMetric(
 		chart.kind === "classes" ? [chart.metric] : Arr.map(chart.series, (series) => series.metric)
 	const name = Option.getOrElse(
 		Arr.findFirst(candidates, (metric) => Arr.some(points, (point) => point.metric === metric)),
-		() => candidates[0],
+		() => candidates[0] ?? "",
 	)
 	const stored = Arr.findFirst(
 		Arr.flatMap(GCP_METRIC_GROUPS, (group) => group.metrics),

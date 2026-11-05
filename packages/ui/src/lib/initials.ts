@@ -17,8 +17,10 @@ export function initialsFrom(name: string | null | undefined, fallback = "?"): s
 			? Str.split("@")(trimmed)[0] || trimmed
 			: trimmed
 	const words = Arr.filter(Str.split(/[\s._-]+/)(base), (word) => word !== "")
-	if (words.length === 0) return fallback
-	const first = firstGrapheme(words[0])
-	const last = words.length > 1 ? firstGrapheme(words[words.length - 1]) : ""
+	const [firstWord, ...rest] = words
+	if (firstWord === undefined) return fallback
+	const first = firstGrapheme(firstWord)
+	const lastWord = rest.at(-1)
+	const last = lastWord === undefined ? "" : firstGrapheme(lastWord)
 	return Str.toLocaleUpperCase()(`${first}${last}`)
 }

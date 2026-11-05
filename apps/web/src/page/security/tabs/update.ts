@@ -115,7 +115,7 @@ const readFindings = (
 ): Return =>
 	slotStep(
 		model,
-		model.findings[targetId] ?? Keyed.idle(),
+		Keyed.at(model.findings, targetId),
 		(slot) => ({ findings: { ...model.findings, [targetId]: slot } }),
 		keyOf(context, "listFindings", { targetId }),
 		mode,
@@ -130,7 +130,7 @@ const readTargetRuns = (
 ): Return =>
 	slotStep(
 		model,
-		model.targetRuns[targetId] ?? Keyed.idle(),
+		Keyed.at(model.targetRuns, targetId),
 		(slot) => ({ targetRuns: { ...model.targetRuns, [targetId]: slot } }),
 		keyOf(context, "listRuns", { targetId }),
 		mode,
@@ -145,7 +145,7 @@ const readLatestRun = (
 ): Return =>
 	slotStep(
 		model,
-		model.latestRuns[run.id] ?? Keyed.idle(),
+		Keyed.at(model.latestRuns, run.id),
 		(slot) => ({ latestRuns: { ...model.latestRuns, [run.id]: slot } }),
 		keyOf(context, "getRun", { runId: run.id }),
 		mode,

@@ -89,7 +89,7 @@ describe("GCP_INFRA_CHARTS", () => {
 
 	it("opens a counter as a sum and a gauge or percentile as a gauge", () => {
 		// The explorer keeps apart what the chart draws apart: the classes, the percentiles.
-		expect(gcpChartMetric(GCP_INFRA_CHARTS.cloudRun[0], [])).toEqual({
+		expect(gcpChartMetric(Arr.getUnsafe(GCP_INFRA_CHARTS.cloudRun, 0), [])).toEqual({
 			name: "gcp.cloud_run.requests",
 			type: "sum",
 			groupBy: "attr.gcp.metric.labels.response_code_class",

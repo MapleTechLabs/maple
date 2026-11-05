@@ -216,9 +216,9 @@ describe("payloadLines", () => {
 		const lines = payloadLines(args, EXPECTED_ARRAY)
 		const highlighted = Arr.filter(lines, (line) => line.highlight)
 		expect(highlighted).toHaveLength(1)
-		expect(Str.startsWith('"evidence": "[{\\"note\\"')(highlighted[0].text)).toBe(true)
-		expect(highlighted[0].note?.text).toBe("string, expected array")
-		expect(highlighted[0].note?.hiddenBytes).toBeGreaterThan(0)
+		expect(Str.startsWith('"evidence": "[{\\"note\\"')(Arr.getUnsafe(highlighted, 0).text)).toBe(true)
+		expect(Arr.getUnsafe(highlighted, 0).note?.text).toBe("string, expected array")
+		expect(Arr.getUnsafe(highlighted, 0).note?.hiddenBytes).toBeGreaterThan(0)
 	})
 
 	it("writes a missing key into the object that lacks it, and folds that object's siblings", () => {
@@ -241,7 +241,7 @@ describe("payloadLines", () => {
 	it("cuts long strings off the path, and highlights nothing without one", () => {
 		const lines = payloadLines({ output: Str.repeat(500)("y") }, TOO_EXPENSIVE)
 		expect(Arr.some(lines, (line) => line.highlight)).toBe(false)
-		expect(Str.endsWith(' …"')(lines[1].text)).toBe(true)
+		expect(Str.endsWith(' …"')(Arr.getUnsafe(lines, 1).text)).toBe(true)
 		expect(parsePayload('{"a": 1')).toBeUndefined()
 		expect(parsePayload("{}")).toEqual({})
 	})

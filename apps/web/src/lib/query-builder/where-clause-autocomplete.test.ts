@@ -107,7 +107,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe("service.name = ")
@@ -129,7 +129,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe('service.name = "checkout" ')
@@ -148,7 +148,7 @@ describe("where clause autocomplete", () => {
 			context: autocomplete.context,
 			replaceStart: autocomplete.replaceStart,
 			replaceEnd: autocomplete.replaceEnd,
-			suggestion: autocomplete.suggestions[0],
+			suggestion: Arr.getUnsafe(autocomplete.suggestions, 0),
 		})
 
 		expect(applied.expression).toBe('service.name = "checkout" AND ')

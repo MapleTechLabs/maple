@@ -239,7 +239,7 @@ function drawStair(
 	steepness: (nx: number, nz: number) => number,
 ) {
 	const angles = Array.from({ length: 24 }, (_, k) => (k / 24) * Math.PI * 2)
-	const gentle = Arr.reduce(angles.slice(1), angles[0], (best, angle) =>
+	const gentle = Arr.reduce(angles.slice(1), 0, (best, angle) =>
 		steepness(Math.cos(angle), Math.sin(angle)) < steepness(Math.cos(best), Math.sin(best))
 			? angle
 			: best,

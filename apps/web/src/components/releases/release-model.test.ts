@@ -217,7 +217,7 @@ describe("groupReleases", () => {
 		]
 		const groups = groupReleases(deriveReleaseImpacts(rows, []))
 		expect(Arr.map(groups, (g) => g.commitSha)).toEqual([SHA_A, SHA_B])
-		expect(Arr.map(groups[0]?.services, (s) => s.serviceName)).toEqual(["web", "api"])
+		expect(Arr.map(Arr.getUnsafe(groups, 0)?.services, (s) => s.serviceName)).toEqual(["web", "api"])
 		expect(groups[0]?.firstSeen).toBe("2026-09-05T09:00:00.000Z")
 		expect(groups[0]?.health).toBe("regressed")
 		expect(groups[0]?.spanCount).toBe(2000)

@@ -375,9 +375,12 @@ export const gcpWorkloadKeys = (
 export const gcpWorkloadName = (service: GcpInfraServiceId, keys: ReadonlyArray<string>): string =>
 	service === "cloudSql"
 		? Str.slice(
-				Option.match(Str.indexOf(":")(keys[0]), { onNone: () => 0, onSome: (colon) => colon + 1 }),
-			)(keys[0])
-		: keys[0]
+				Option.match(Str.indexOf(":")(keys[0] ?? ""), {
+					onNone: () => 0,
+					onSome: (colon) => colon + 1,
+				}),
+			)(keys[0] ?? "")
+		: (keys[0] ?? "")
 
 /** Whether a service's workloads run in a region or zone; a subscription and a URL map are global. */
 export const gcpHasRegion = (service: GcpInfraServiceId): boolean =>

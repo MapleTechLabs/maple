@@ -61,8 +61,15 @@ const cameraReader = (canvas: HTMLCanvasElement) => {
 		if (raw !== state.raw) {
 			state.raw = raw
 			const parts = Arr.map(Str.split(",")(raw ?? ""), Number)
-			if (parts.length === 3 && Arr.every(parts, Number.isFinite))
-				state.camera = { x: parts[0], y: parts[1], zoom: parts[2] }
+			const [x, y, zoom] = parts
+			if (
+				parts.length === 3 &&
+				x !== undefined &&
+				y !== undefined &&
+				zoom !== undefined &&
+				Arr.every(parts, Number.isFinite)
+			)
+				state.camera = { x, y, zoom }
 		}
 		return state.camera
 	}
@@ -104,8 +111,10 @@ const drawFrame = (
 			const at = Math.min(track.segments - 1, Math.floor(scaled))
 			const mix = scaled - at
 			const o = at * 2
-			const x = track.points[o] + (track.points[o + 2] - track.points[o]) * mix
-			const y = track.points[o + 1] + (track.points[o + 3] - track.points[o + 1]) * mix
+			const x0 = track.points[o] ?? 0
+			const y0 = track.points[o + 1] ?? 0
+			const x = x0 + ((track.points[o + 2] ?? x0) - x0) * mix
+			const y = y0 + ((track.points[o + 3] ?? y0) - y0) * mix
 			if (x < left || x > right || y < top || y > bottom) continue
 			ctx.moveTo(x + track.radius * 2.6, y)
 			ctx.arc(x, y, track.radius * 2.6, 0, Math.PI * 2)
@@ -122,9 +131,11 @@ const drawFrame = (
 		ctx.fillStyle = "#ffffff"
 		ctx.beginPath()
 		for (let index = 0; index < count; index++) {
-			const radius = scratch.r[index] * 0.75
-			ctx.moveTo(scratch.x[index] + radius, scratch.y[index])
-			ctx.arc(scratch.x[index], scratch.y[index], radius, 0, Math.PI * 2)
+			const radius = (scratch.r[index] ?? 0) * 0.75
+			const x = scratch.x[index] ?? 0
+			const y = scratch.y[index] ?? 0
+			ctx.moveTo(x + radius, y)
+			ctx.arc(x, y, radius, 0, Math.PI * 2)
 		}
 		ctx.fill()
 	}

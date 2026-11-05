@@ -43,7 +43,7 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 		facets,
 		(step, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, window)
-			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
+			return Option.match(Keyed.request(Keyed.at(step.model.autocomplete, lookup), key, "Load"), {
 				onNone: () => step,
 				onSome: (slot) => ({
 					model: { ...step.model, autocomplete: { ...step.model.autocomplete, [lookup]: slot } },
