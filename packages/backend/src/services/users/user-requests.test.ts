@@ -312,14 +312,27 @@ const listRow = (userId: string, name: string) => ({
 })
 
 describe("the directory's MCP-only users", () => {
-	it.effect("take the name their MCP spans carry, read for the unnamed rows only", () =>
+	it.effect("take a missing name or email from their MCP spans, read only for rows missing one", () =>
 		Effect.gen(function* () {
 			const ran: Ran = []
 			const rows = new Map<string, ReadonlyArray<unknown>>([
 				["usersServiceNamespaces", []],
 				["mcpServices", [{ service: "docs-mcp", serverSpans: "4" }]],
-				["usersList", [listRow("user_42", ""), listRow("user_7", "Grace")]],
-				["usersMcpNames", [{ userId: "user_42", name: "Ada", email: "ada@example.com" }]],
+				[
+					"usersList",
+					[
+						listRow("user_42", ""),
+						listRow("user_7", "Grace"),
+						{ ...listRow("user_9", "Linus"), email: "linus@example.com" },
+					],
+				],
+				[
+					"usersMcpNames",
+					[
+						{ userId: "user_42", name: "Ada", email: "ada@example.com" },
+						{ userId: "user_7", name: "Grace Hopper", email: "grace@example.com" },
+					],
+				],
 			])
 			const response = yield* readUsersList(
 				tenant,
@@ -329,7 +342,9 @@ describe("the directory's MCP-only users", () => {
 				Arr.map(response.users, (user) => [user.userId, user.name, user.email]),
 				[
 					["user_42", "Ada", "ada@example.com"],
-					["user_7", "Grace", null],
+					// The replay's name stays; only the missing email comes from MCP.
+					["user_7", "Grace", "grace@example.com"],
+					["user_9", "Linus", "linus@example.com"],
 				],
 			)
 			const names = Option.match(
@@ -340,8 +355,8 @@ describe("the directory's MCP-only users", () => {
 				},
 			)
 			assert.include(names, "traces.ServiceName IN ('docs-mcp')")
-			assert.include(names, "IN ('user_42')")
-			assert.notInclude(names, "user_7")
+			assert.include(names, "IN ('user_42', 'user_7')")
+			assert.notInclude(names, "user_9")
 		}),
 	)
 })

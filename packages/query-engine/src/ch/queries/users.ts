@@ -290,27 +290,31 @@ export function usersMcpNameSearchQuery(
 	search: string,
 	namespaces: ReadonlyArray<string> = [],
 ) {
-	return from(Traces)
-		.select(($) => ({ userId: mcpUserId($) }))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
-			$.SpanKind.eq("Server"),
-			mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
-			mcpMethod($).neq(""),
-			mcpUserId($).neq(""),
-			CH.or(
-				containsText($.SpanAttributes.get("user.name"), search),
-				containsText($.SpanAttributes.get("user.email"), search),
-			),
-			namespaces.length > 0
-				? CH.inList($.ResourceAttributes.get("service.namespace"), namespaces)
-				: undefined,
-		])
-		.groupBy("userId")
-		.limit(MCP_NAME_SEARCH_LIMIT)
-		.format("JSON")
+	return (
+		from(Traces)
+			.select(($) => ({ userId: mcpUserId($) }))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				$.SpanKind.eq("Server"),
+				mcpServices.length > 0 ? CH.inList($.ServiceName, mcpServices) : CH.rawCond("1 = 0"),
+				mcpMethod($).neq(""),
+				mcpUserId($).neq(""),
+				CH.or(
+					containsText($.SpanAttributes.get("user.name"), search),
+					containsText($.SpanAttributes.get("user.email"), search),
+				),
+				namespaces.length > 0
+					? CH.inList($.ResourceAttributes.get("service.namespace"), namespaces)
+					: undefined,
+			])
+			.groupBy("userId")
+			// A stable order, so the cap keeps the same ids on every call.
+			.orderBy(["userId", "asc"])
+			.limit(MCP_NAME_SEARCH_LIMIT)
+			.format("JSON")
+	)
 }
 
 /**

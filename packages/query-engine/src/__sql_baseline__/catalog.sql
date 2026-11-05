@@ -10930,7 +10930,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:users:usersMcpNameSearchQuery:default  [f72bc044]
+-- builder:users:usersMcpNameSearchQuery:default  [47202f1a]
 SELECT
           if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) AS userId
         FROM traces
@@ -10943,6 +10943,7 @@ SELECT
           AND if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) != ''
           AND (positionCaseInsensitiveUTF8(traces.SpanAttributes['user.name'], 'ada') > 0 OR positionCaseInsensitiveUTF8(traces.SpanAttributes['user.email'], 'ada') > 0)
         GROUP BY userId
+        ORDER BY userId ASC
         LIMIT 500
         FORMAT JSON
 

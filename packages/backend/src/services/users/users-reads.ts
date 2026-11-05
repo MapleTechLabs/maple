@@ -204,8 +204,9 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 			? { lastSeen: last.lastSeenKey, userId: last.userId }
 			: undefined
 	// The rollup keeps no name: a page's unnamed users take the one their MCP spans carry.
+	// A row missing either the name or the email takes the missing one from its MCP spans.
 	const unnamed = Arr.map(
-		Arr.filter(rows, (row) => row.name === "" && row.email === ""),
+		Arr.filter(rows, (row) => row.name === "" || row.email === ""),
 		(row) => row.userId,
 	)
 	const [totals, mcpNames] = yield* Effect.all(
