@@ -165,6 +165,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		...(payload.hasErrors !== undefined && { hasErrors: payload.hasErrors }),
 		...(payload.hasReplay !== undefined && { hasReplay: payload.hasReplay }),
 		...(payload.groups !== undefined && { groups: payload.groups }),
+		...(payload.after !== undefined && { after: payload.after }),
 	}
 	const params = { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
 	// The rollup keeps no name, so a search there first finds the MCP users whose span name matches.
@@ -185,7 +186,9 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 						{ profile: "list", context: "usersMcpNameSearch" },
 					)
 					.pipe(Effect.map(Arr.map((row) => row.userId)))
-	const rows = yield* withRollupFallback(scope, [], (scope) =>
+	const limit = payload.limit ?? DEFAULT_LIMIT
+	// One row of lookahead says whether a next page exists.
+	const fetched = yield* withRollupFallback(scope, [], (scope) =>
 		Effect.flatMap(searchUserIds(scope), (ids) =>
 			warehouse.compiledQuery(
 				tenant,
@@ -193,7 +196,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 					CH.usersListQuery(
 						scope,
 						{ ...filter, searchUserIds: ids },
-						payload.limit ?? DEFAULT_LIMIT,
+						limit + 1,
 						payload.offset ?? 0,
 					),
 					params,
@@ -202,6 +205,12 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 			),
 		),
 	)
+	const rows = fetched.slice(0, limit)
+	const last = rows.at(-1)
+	const next =
+		fetched.length > limit && last !== undefined
+			? { lastSeen: last.lastSeenKey, userId: last.userId }
+			: undefined
 	// The rollup keeps no name: a page's unnamed users take the one their MCP spans carry.
 	const unnamed = Arr.map(
 		Arr.filter(rows, (row) => row.name === "" && row.email === ""),
@@ -267,7 +276,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		"maple.users.with_requests": totals.length,
 		"maple.users.mcp_named": mcpNames.length,
 	})
-	return new UsersListResponse({ users })
+	return new UsersListResponse({ users, ...(next !== undefined && { next }) })
 })
 
 export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (

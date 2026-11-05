@@ -47,6 +47,16 @@ export const UserListItem = Schema.Struct({
 })
 export type UserListItem = typeof UserListItem.Type
 
+/**
+ * A keyset position in the directory: the `(lastSeen, userId)` of a page's last row. `lastSeen` is
+ * the warehouse's exact `toString` (up to 9 fraction digits), so ties at the boundary are not lost.
+ */
+export const UsersListKeyset = Schema.Struct({
+	lastSeen: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/u)),
+	userId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500)),
+})
+export type UsersListKeyset = typeof UsersListKeyset.Type
+
 /** `hasErrors` / `hasReplay` only narrow: `true` keeps the users with one, absent keeps everyone. */
 export class UsersListRequest extends Schema.Class<UsersListRequest>("UsersListRequest")({
 	...windowFields,
@@ -55,12 +65,16 @@ export class UsersListRequest extends Schema.Class<UsersListRequest>("UsersListR
 	hasReplay: Schema.optionalKey(Schema.Literal(true)),
 	groups: Schema.optionalKey(Schema.Array(groupId).check(Schema.isMaxLength(50))),
 	limit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
-	/** Rows to skip, for the public API's offset cursor. */
+	/** Rows to skip, for the MCP tool's offset paging. */
 	offset: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100_000 }))),
+	/** Only the users ordered after this position, for the public API's keyset cursor. */
+	after: Schema.optionalKey(UsersListKeyset),
 }) {}
 
 export class UsersListResponse extends Schema.Class<UsersListResponse>("UsersListResponse")({
 	users: Schema.Array(UserListItem),
+	/** The position after the last user, present only when another page exists. */
+	next: Schema.optionalKey(UsersListKeyset),
 }) {}
 
 const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })

@@ -6,7 +6,7 @@ import { McpClientKind, McpSessionSource } from "../mcp"
 import { UserSignalKind } from "../users"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
-import { defineV2Error, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
+import { defineV2Error, V2CursorInvalid, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { ErrorIssuePublicId } from "./resource-ids"
@@ -348,7 +348,7 @@ export class V2UsersApiGroup extends HttpApiGroup.make("users")
 		HttpApiEndpoint.get("list", "/", {
 			query: V2UserListQuery,
 			success: UserList,
-			error: windowErrors,
+			error: [...windowErrors, V2CursorInvalid.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listUsers",

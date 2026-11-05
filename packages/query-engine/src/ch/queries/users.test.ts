@@ -133,6 +133,22 @@ describe("usersListQuery", () => {
 		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 50/)
 	})
 
+	it("pages the directory by keyset on the exact (lastSeen, userId) of the previous page's last row", () => {
+		const { sql } = compileUnsafe(
+			usersListQuery(
+				unscoped,
+				{ after: { lastSeen: "2026-11-01 10:00:00.123456789", userId: "u_b" } },
+				21,
+			),
+			params,
+		)
+		expect(sql).toContain(
+			"(max(signals.lastSeen) < '2026-11-01 10:00:00.123456789' OR (max(signals.lastSeen) = '2026-11-01 10:00:00.123456789' AND signals.userId > 'u_b'))",
+		)
+		expect(sql).toContain("toString(max(signals.lastSeen)) AS lastSeenKey")
+		expect(sql).toMatch(/ORDER BY lastSeen DESC, userId ASC\s+LIMIT 21\s+OFFSET 0/)
+	})
+
 	it("pages the directory by offset", () => {
 		const { sql } = compileUnsafe(usersListQuery(unscoped, {}, 21, 40), params)
 		expect(sql).toMatch(/LIMIT 21\s+OFFSET 40/)

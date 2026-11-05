@@ -10552,7 +10552,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:users:usersListQuery:activityRollup  [a0d4cee3]
+-- builder:users:usersListQuery:activityRollup  [d364e199]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10561,6 +10561,7 @@ SELECT
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
           sum(signals.sessions) AS sessions,
           sum(signals.errors) AS errors,
           sum(signals.requests) AS requests,
@@ -10666,7 +10667,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:users:usersListQuery:namespaceFiltered  [cf1d1e4b]
+-- builder:users:usersListQuery:namespaceFiltered  [cad1d8dd]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10675,6 +10676,7 @@ SELECT
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
           sum(signals.sessions) AS sessions,
           sum(signals.errors) AS errors,
           sum(signals.requests) AS requests,
@@ -10787,7 +10789,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:users:usersListQuery:unscoped  [ab0b0068]
+-- builder:users:usersListQuery:unscoped  [4083d202]
 SELECT
           signals.userId AS userId,
           anyIf(signals.name, signals.name != '') AS name,
@@ -10796,6 +10798,7 @@ SELECT
           arraySort(groupUniqArrayIf(20)(signals.namespace, signals.namespace != '')) AS namespaces,
           min(signals.firstSeen) AS firstSeen,
           max(signals.lastSeen) AS lastSeen,
+          toString(max(signals.lastSeen)) AS lastSeenKey,
           sum(signals.sessions) AS sessions,
           sum(signals.errors) AS errors,
           sum(signals.requests) AS requests,
