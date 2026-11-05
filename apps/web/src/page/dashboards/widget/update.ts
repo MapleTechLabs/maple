@@ -118,7 +118,7 @@ export const routeChanged = (model: Model, route: Route): Return => ({
 })
 
 export const widgetOf = (model: Model): Widget | null =>
-	model.document?.widgets.find((widget) => widget.id === model.widgetId) ?? null
+	Option.getOrNull(Arr.findFirst(model.document?.widgets ?? [], (widget) => widget.id === model.widgetId))
 
 /** `navigateBack`: the dashboard in edit mode, with the controls the editor carried. */
 export const backHref = (model: Model): string =>
@@ -307,8 +307,9 @@ export const receiveDocument = (
 	Option.match(message.maybeDocument, {
 		onNone: () => ({ model: { ...model, status: "Missing", document: null } }),
 		onSome: (document) => {
-			const widget = document.widgets.find((candidate) => candidate.id === model.widgetId)
-			if (widget === undefined) return { model: { ...model, status: "Missing", document } }
+			const found = Arr.findFirst(document.widgets, (candidate) => candidate.id === model.widgetId)
+			if (Option.isNone(found)) return { model: { ...model, status: "Missing", document } }
+			const widget = found.value
 			const seeded = model.state ?? toInitialState(widget)
 			// The first read picks the source the widget was saved with.
 			const opened =
@@ -442,7 +443,9 @@ export const autocompleteWindowOf = (model: Model, context: PageContext) => {
 export const requestAutocomplete = (model: Model, context: PageContext): Return => {
 	const range = autocompleteWindowOf(model, context)
 	if (range === null) return { model }
-	return AUTOCOMPLETE_LOOKUPS.reduce<Return>(
+	return Arr.reduce<(typeof AUTOCOMPLETE_LOOKUPS)[number], Return>(
+		AUTOCOMPLETE_LOOKUPS,
+		{ model, commands: [] },
 		(step, lookup) => {
 			// The suggestions already asked for these names over this window: read them once.
 			if (
@@ -459,6 +462,5 @@ export const requestAutocomplete = (model: Model, context: PageContext): Return 
 				}),
 			})
 		},
-		{ model, commands: [] },
 	)
 }

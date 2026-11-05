@@ -235,12 +235,18 @@ const hubBody = (
 	})
 
 const deleteDialog = (h: H, model: Model): Html => {
-	const target = (model.destinations ?? []).find((row) => row.id === model.confirmDeleteId)
+	const targetName = Option.getOrElse(
+		Option.flatMapNullishOr(
+			Arr.findFirst(model.destinations ?? [], (row) => row.id === model.confirmDeleteId),
+			(row) => row.name,
+		),
+		() => "destination",
+	)
 	return confirmDialog(h, {
 		slotId: "alerts-delete-destination",
 		model: model.deleteDialog,
 		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
-		title: `Delete ${target?.name ?? "destination"}?`,
+		title: `Delete ${targetName}?`,
 		description: "Alert rules will stop notifying this destination. This cannot be undone.",
 		confirmLabel: "Delete destination",
 		isPending:

@@ -1,5 +1,5 @@
 import { metricsNeverCollected } from "../../../../components/integrations/planetscale-setup-steps"
-import { Option } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -46,13 +46,10 @@ export const sortOf = (model: Model): Sort<SortKey> =>
 type Step = Readonly<{ model: Model; commands: Return["commands"] }>
 
 const merge = (steps: ReadonlyArray<(model: Model) => Step>, model: Model): Return =>
-	steps.reduce<Return>(
-		(acc, step) => {
-			const next = step(acc.model)
-			return { model: next.model, commands: [...(acc.commands ?? []), ...(next.commands ?? [])] }
-		},
-		{ model, commands: [] },
-	)
+	Arr.reduce<(typeof steps)[number], Return>(steps, { model, commands: [] }, (acc, step) => {
+		const next = step(acc.model)
+		return { model: next.model, commands: [...(acc.commands ?? []), ...(next.commands ?? [])] }
+	})
 
 const databasesStep =
 	(context: PageContext, mode: Keyed.RequestMode) =>
@@ -104,7 +101,10 @@ export const routeChanged = (
 ): Return => {
 	if (hrefOfSearch(model.search) === hrefOfSearch(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) => (next.window === null ? resolve() : requestData(next, context, mode)),

@@ -32,7 +32,7 @@ const compactPreview = (text: string): string | null => {
 export const deriveTurnMinimap = (
 	rows: ReadonlyArray<TranscriptRow>,
 ): Readonly<{ items: ReadonlyArray<TurnItem>; turnByRowId: ReadonlyMap<string, number> }> => {
-	const items = rows.reduce<ReadonlyArray<TurnItem>>((acc, row) => {
+	const items = Arr.reduce<(typeof rows)[number], ReadonlyArray<TurnItem>>(rows, [], (acc, row) => {
 		if (row.kind !== "message") return acc
 		if (row.message.role === "user" && !isMachineTurn(row.message))
 			return [
@@ -48,7 +48,7 @@ export const deriveTurnMinimap = (
 		return current !== undefined && text !== null
 			? [...acc.slice(0, -1), { ...current, assistantText: text }]
 			: acc
-	}, [])
+	})
 	const turnByRowId = new Map(
 		Arr.flatMap(rows, (row, index) => {
 			const turns = deriveTurnCount(rows.slice(0, index + 1))
@@ -68,10 +68,10 @@ const resolveCurrentTurnIndex = (
 	visibleIds: ReadonlyArray<string>,
 	turnByRowId: ReadonlyMap<string, number>,
 ): number | null =>
-	visibleIds.reduce<number | null>((current, id) => {
+	Arr.reduce<(typeof visibleIds)[number], number | null>(visibleIds, null, (current, id) => {
 		const index = turnByRowId.get(id)
 		return index === undefined ? current : current === null || index < current ? index : current
-	}, null)
+	})
 
 const minimapHeightStyle = (count: number): string =>
 	`min(${Math.max(1, (count - 1) * ITEM_SPACING_PX)}px, ${MAX_HEIGHT_CSS})`

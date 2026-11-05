@@ -214,12 +214,12 @@ export const toolStandalone = <M>(h: HtmlBuilder<M>, part: ToolPart, host: Panel
 type Tally = { readonly label: string; readonly icon: ReturnType<typeof toolIcon>; readonly count: number }
 
 const tally = (names: ReadonlyArray<string>): ReadonlyArray<Tally> =>
-	names.reduce<ReadonlyArray<Tally>>((acc, name) => {
+	Arr.reduce<(typeof names)[number], ReadonlyArray<Tally>>(names, [], (acc, name) => {
 		const label = toolLabel(name)
 		return Arr.some(acc, (entry) => entry.label === label)
 			? Arr.map(acc, (entry) => (entry.label === label ? { ...entry, count: entry.count + 1 } : entry))
 			: [...acc, { label, icon: toolIcon(name), count: 1 }]
-	}, [])
+	})
 
 const NAMED_TOOLS = 3
 

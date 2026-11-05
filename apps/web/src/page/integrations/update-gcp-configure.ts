@@ -69,9 +69,9 @@ export const metricsAvailable = (model: Model): boolean =>
 export const savedConnector = (model: Model, configure: ConfigureModel): V2GcpConnector | undefined => {
 	const target = configure.target
 	if (target._tag === "New") return undefined
-	return (
-		gcpConnectors(model).find((entry) => entry.id === target.id) ??
-		(configure.created?.id === target.id ? configure.created : undefined)
+	return Option.getOrElse(
+		Arr.findFirst(gcpConnectors(model), (entry) => entry.id === target.id),
+		() => (configure.created?.id === target.id ? configure.created : undefined),
 	)
 }
 
@@ -194,16 +194,18 @@ export const gotScopeType = (model: Model, message: ToggleGroup.Message): Return
 	const configure = model.gcpCard.configure
 	if (configure === null) return { model }
 	const step = ToggleGroup.update(configure.scopeGroup, message)
-	const next = SCOPE_TYPES.find(
+	const found = Arr.findFirst(
+		SCOPE_TYPES,
 		(scopeType) => scopeType !== configure.scopeType && step.model.values.includes(scopeType),
 	)
 	const commands = FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
 		Message.GotGcpScopeTypeMessage({ message: inner }),
 	)
 	const grouped = withConfigure(model, () => ({
-		scopeGroup: { ...step.model, values: [next ?? configure.scopeType] },
+		scopeGroup: { ...step.model, values: [Option.getOrElse(found, () => configure.scopeType)] },
 	}))
-	if (next === undefined) return { model: grouped, commands }
+	if (Option.isNone(found)) return { model: grouped, commands }
+	const next = found.value
 	return {
 		model: withConfigure(grouped, () => ({ scopeType: next, scopeId: Field.init(), createError: null })),
 		commands,
@@ -473,11 +475,11 @@ export const gotFlavour = (model: Model, message: ToggleGroup.Message): Return =
 	if (configure === null) return { model }
 	const step = ToggleGroup.update(configure.flavourGroup, message)
 	const flavour = configure.method === "alchemy" ? "alchemy" : "terraform"
-	const next = FLAVOURS.find((value) => value !== flavour && step.model.values.includes(value))
+	const next = Arr.findFirst(FLAVOURS, (value) => value !== flavour && step.model.values.includes(value))
 	return {
 		model: withConfigure(model, () => ({
-			flavourGroup: { ...step.model, values: [next ?? flavour] },
-			method: next ?? configure.method,
+			flavourGroup: { ...step.model, values: [Option.getOrElse(next, () => flavour)] },
+			method: Option.getOrElse(next, () => configure.method),
 		})),
 		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
 			Message.GotGcpFlavourMessage({ message: inner }),

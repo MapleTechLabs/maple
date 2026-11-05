@@ -33,7 +33,7 @@ import type { Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order, Ordering } from "effect"
 
 // `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
 
@@ -158,15 +158,15 @@ interface Decorated {
 }
 
 const sortZones = (zones: ReadonlyArray<Decorated>, key: ZoneSortKey, dir: "asc" | "desc") =>
-	zones.toSorted((a, b) => {
+	Arr.sort(zones, (a: Decorated, b: Decorated) => {
 		const raw =
 			key === "name"
 				? Str.localeCompare(b.entry.name)(a.entry.name)
 				: key === "requests"
-					? a.requests - b.requests
-					: STATUS_META[a.status.kind].order - STATUS_META[b.status.kind].order
-		const primary = dir === "asc" ? raw : -raw
-		return primary !== 0 ? primary : b.requests - a.requests
+					? Order.Number(a.requests, b.requests)
+					: Order.Number(STATUS_META[a.status.kind].order, STATUS_META[b.status.kind].order)
+		const primary = dir === "asc" ? raw : Ordering.reverse(raw)
+		return primary !== 0 ? primary : Order.Number(b.requests, a.requests)
 	})
 
 export const zoneBoard = (
@@ -305,7 +305,10 @@ export const workersCard = (
 	usageLoaded: boolean,
 ): Html => {
 	const aggregate = zoneStatus(workerEntry, usageLoaded, model.nowMs)
-	const scripts = workerServices.toSorted((a, b) => b.totalRequests - a.totalRequests)
+	const scripts = Arr.sort(
+		workerServices,
+		Order.flip(Order.mapInput(Order.Number, (service: CloudflareServiceUsage) => service.totalRequests)),
+	)
 	const expanded = model.cloudflareCard.workersExpanded
 	const visible = expanded ? scripts : scripts.slice(0, WORKERS_COLLAPSED_COUNT)
 	return panel(h, { className: "h-fit border-border-subtle lg:w-72 lg:shrink-0 xl:w-80" }, [

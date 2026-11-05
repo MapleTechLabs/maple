@@ -1,7 +1,7 @@
 import { DashboardShareMode, type TimeRange } from "@maple/domain/http"
 import { isZoneDependentShorthand } from "@maple/query-engine"
 import { AsyncData } from "foldkit"
-import { Schema } from "effect"
+import { Schema, Option, Array as Arr } from "effect"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -93,10 +93,12 @@ export const ShareMessage = defineMessageUnion({
 export type ShareMessage = typeof ShareMessage.Type
 
 export const boardShareOf = (shares: ReadonlyArray<ShareRow>): ShareRow | undefined =>
-	shares.find((share) => share.widgetId === null)
+	Option.getOrUndefined(Arr.findFirst(shares, (share) => share.widgetId === null))
 
 export const chartShareOf = (shares: ReadonlyArray<ShareRow>, widgetId: string): ShareRow | undefined =>
-	shares.find((share) => share.widgetId === widgetId && share.mode === "public")
+	Option.getOrUndefined(
+		Arr.findFirst(shares, (share) => share.widgetId === widgetId && share.mode === "public"),
+	)
 
 /** What a share link pins: the viewer's picked range (null for the board's saved one) and zone. */
 export interface ShareLinkRange {

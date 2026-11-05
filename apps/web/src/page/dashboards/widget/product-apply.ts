@@ -6,7 +6,7 @@ import {
 import type { EditorState, FunnelDraft, ListColumn, PathsDraft, StepDraft } from "./editor-state"
 import { DEFAULT_LIST_COLUMNS } from "./lowering-list"
 import { ProductEdit, type StepKind, type StepScope, type StepTextField } from "./product-edit"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // What each `ProductEdit` does to the editor state: `ListConfigPanel`'s `onChange`, the
 // `FunnelStepBuilder`'s `onChange`, and `updateFunnel` / `updatePaths`.
@@ -124,8 +124,10 @@ const withBreakdown = (current: FunnelDraft, value: string | null): FunnelDraft 
 	if (value === null) return rest
 	if (Str.startsWith("attribute:")(value) && value.length > "attribute:".length)
 		return { ...rest, breakdownBy: `attribute:${Str.slice("attribute:".length)(value)}` }
-	const dimension = FUNNEL_SESSION_DIMENSIONS.find((candidate) => candidate === value)
-	return dimension === undefined ? rest : { ...rest, breakdownBy: dimension }
+	return Option.match(
+		Arr.findFirst(FUNNEL_SESSION_DIMENSIONS, (candidate) => candidate === value),
+		{ onNone: () => rest, onSome: (dimension) => ({ ...rest, breakdownBy: dimension }) },
+	)
 }
 
 /** A funnel step moved; a session step past step 1 is demoted to an event step (`reorder`). */

@@ -37,7 +37,7 @@ import { Message } from "./message"
 import type { Escalation, LogBucket, Model, OverviewRow, TracesRow } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Record as Rec, String as Str, Option } from "effect"
 
 // The Overview's lower sections and the Evidence tab: `ImpactStrip`, `SignalsCard`, `InvestigationMeta`,
 // `FollowUpComposer`, `CauseRecap`, `EvidenceTab` and `EvidenceChips`.
@@ -90,7 +90,15 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 			factLane(h, "Affected scope", [
 				h.span(
 					[h.Class("text-foreground")],
-					[report?.affectedScope?.trim() || (isSettled ? "Not determined" : "Not yet determined")],
+					[
+						Option.getOrElse(
+							Option.filter(
+								Option.map(Option.fromNullishOr(report?.affectedScope), Str.trim),
+								(scope) => scope !== "",
+							),
+							() => (isSettled ? "Not determined" : "Not yet determined"),
+						),
+					],
 				),
 			]),
 			factLane(h, "Services touched", [
@@ -422,7 +430,12 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 				],
 			),
 			typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-				[investigation.model, tokens, opened].filter(Boolean).join(" · "),
+				Arr.join(
+					Arr.filter([investigation.model, tokens, opened], (part): part is string =>
+						Boolean(part),
+					),
+					" · ",
+				),
 			]),
 		],
 	)
@@ -494,26 +507,26 @@ export const evidenceChips = (h: H, item: EvidenceItem, place: ChipPlace, trigge
 
 /** `CauseRecap`: the suspected cause, one line above the evidence. */
 const causeRecap = (h: H, investigation: V2Investigation): ReadonlyArray<Html> => {
-	const cause = investigation.report?.suspectedCause?.trim()
-	return cause
-		? [
-				h.div(
-					[
-						h.Class(
-							"flex shrink-0 items-baseline gap-3 overflow-hidden rounded-r-xl border bg-card py-3 pl-0 pr-5",
-						),
-					],
-					[
-						h.span([
-							h.AriaHidden(true),
-							h.Class("h-full w-[3px] shrink-0 self-stretch bg-primary"),
-						]),
-						eyebrow(h, { className: "shrink-0 pl-4 text-primary" }, ["Cause"]),
-						h.p([h.Class("min-w-0 flex-1 text-sm text-foreground")], [cause]),
-					],
+	const found = Option.filter(
+		Option.map(Option.fromNullishOr(investigation.report?.suspectedCause), Str.trim),
+		(text) => text !== "",
+	)
+	if (Option.isNone(found)) return []
+	const cause = found.value
+	return [
+		h.div(
+			[
+				h.Class(
+					"flex shrink-0 items-baseline gap-3 overflow-hidden rounded-r-xl border bg-card py-3 pl-0 pr-5",
 				),
-			]
-		: []
+			],
+			[
+				h.span([h.AriaHidden(true), h.Class("h-full w-[3px] shrink-0 self-stretch bg-primary")]),
+				eyebrow(h, { className: "shrink-0 pl-4 text-primary" }, ["Cause"]),
+				h.p([h.Class("min-w-0 flex-1 text-sm text-foreground")], [cause]),
+			],
+		),
+	]
 }
 
 const hasContent = (item: EvidenceItem) =>

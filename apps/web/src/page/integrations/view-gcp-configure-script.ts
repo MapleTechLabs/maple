@@ -80,7 +80,8 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 	const expanded = configure.isScriptExpanded
 	// Copy takes whatever is on screen.
 	const copyable = promptShown ? (prompt ?? null) : text
-	const shown = promptShown ? (prompt?.trimEnd() ?? null) : (text?.trimEnd() ?? null)
+	const visible = promptShown ? (prompt ?? null) : text
+	const shown = visible === null ? null : Str.trimEnd(visible)
 	return h.div(
 		[h.Class("overflow-clip rounded-md border")],
 		[

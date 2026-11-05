@@ -28,7 +28,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
 // `GcpResources`: the inventory filtered by type and project.
 // TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
@@ -156,7 +156,10 @@ const resourcesList = (
 	isWaiting: boolean,
 ): ReadonlyArray<Html> => {
 	const { resources, total, types, projects } = inventory
-	const projectCount = types.find((entry) => entry.assetType === GCP_PROJECT_ASSET_TYPE)?.count ?? 0
+	const projectCount = Arr.findFirst(types, (entry) => entry.assetType === GCP_PROJECT_ASSET_TYPE).pipe(
+		Option.flatMapNullishOr((found) => found.count),
+		Option.getOrElse(() => 0),
+	)
 	const type = model.search.type || undefined
 	const project = model.search.project || undefined
 	const filtered = type !== undefined || project !== undefined

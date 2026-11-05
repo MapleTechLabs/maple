@@ -506,8 +506,11 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 		case "clone":
 			return isEditing(model) ? { model, commands: [CloneWidget(target)] } : { model }
 		case "delete": {
-			const removed = model.document?.widgets.find((candidate) => candidate.id === widgetId)
-			return removed === undefined || !isEditing(model)
+			const removed = Arr.findFirst(
+				model.document?.widgets ?? [],
+				(candidate) => candidate.id === widgetId,
+			)
+			return Option.isNone(removed) || !isEditing(model)
 				? { model }
 				: {
 						model,
@@ -524,22 +527,31 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 									_tag: "RestoreDashboardWidgets",
 									orgId: context.orgId,
 									dashboardId: model.dashboardId,
-									widgets: [removed],
+									widgets: [removed.value],
 								},
 							},
 						}),
 					}
 		}
 		case "alert": {
-			const widget = shownDocumentOf(model)?.widgets.find((candidate) => candidate.id === widgetId)
-			return widget === undefined
-				? { model }
-				: navigate(
-						model,
-						hrefOf(
-							AppRoute.AlertsCreate({ search: createAlertSearch(model.dashboardId, widget) }),
+			return Option.match(
+				Arr.findFirst(
+					shownDocumentOf(model)?.widgets ?? [],
+					(candidate) => candidate.id === widgetId,
+				),
+				{
+					onNone: (): Return => ({ model }),
+					onSome: (widget) =>
+						navigate(
+							model,
+							hrefOf(
+								AppRoute.AlertsCreate({
+									search: createAlertSearch(model.dashboardId, widget),
+								}),
+							),
 						),
-					)
+				},
+			)
 		}
 		case "embed":
 			return model.history.previewed === null ? openEmbed(model, widgetId) : { model }

@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { TimeSearch } from "../../kit/time-controls"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // `HostsViewTabs` and `KubernetesViewTabs`, on the kit's `linkTabStrip`.
 
@@ -93,12 +93,17 @@ export const kubernetesBreadcrumbs = (
 	search: TimeSearch,
 	trail: ReadonlyArray<Readonly<{ label: string; href?: string }>> = [],
 ): ReadonlyArray<Readonly<{ label: string; href?: string }>> => {
-	const current = kubernetesViews(search).find((candidate) => candidate.id === view)
-	const title = current?.title ?? ""
+	const current = Arr.findFirst(kubernetesViews(search), (candidate) => candidate.id === view)
+	const title = Option.getOrElse(
+		Option.flatMapNullishOr(current, (found) => found.title),
+		() => "",
+	)
 	return [
 		{ label: "Infrastructure", href: "/infra" },
 		{ label: "Kubernetes", href: hrefOf(AppRoute.InfraKubernetes({ search: pickTimeSearch(search) })) },
-		trail.length > 0 && current !== undefined ? { label: title, href: current.href } : { label: title },
+		trail.length > 0 && Option.isSome(current)
+			? { label: title, href: current.value.href }
+			: { label: title },
 		...trail,
 	]
 }

@@ -359,12 +359,21 @@ const trash = (h: H) => icon(h, "TrashIcon", { className: "text-destructive" })
 export const sectionDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 	const sections = model.document?.sections ?? []
 	const widgets = model.document?.widgets ?? []
-	const section = sections.find((candidate) => candidate.id === model.pendingSectionDelete)
-	const sectionCount = Arr.filter(widgets, (widget) => widget.sectionId === section?.id).length
+	const section = Arr.findFirst(sections, (candidate) => candidate.id === model.pendingSectionDelete)
+	const sectionId = Option.getOrUndefined(Option.map(section, (found) => found.id))
+	const sectionCount = Arr.filter(widgets, (widget) => widget.sectionId === sectionId).length
 	const pendingTab = model.pendingTabDelete
-	const tabSection = sections.find((candidate) => candidate.id === pendingTab?.sectionId)
-	const tab = tabSection?.tabs.find((candidate) => candidate.id === pendingTab?.tabId)
-	const destination = tabSection?.tabs.find((candidate) => candidate.id !== pendingTab?.tabId)
+	const tabs = Option.match(
+		Arr.findFirst(sections, (candidate) => candidate.id === pendingTab?.sectionId),
+		{ onNone: () => [], onSome: (found) => found.tabs },
+	)
+	const tab = Arr.findFirst(tabs, (candidate) => candidate.id === pendingTab?.tabId)
+	const destination = Arr.findFirst(tabs, (candidate) => candidate.id !== pendingTab?.tabId)
+	const titleOf = (found: Option.Option<{ readonly title?: string | null | undefined }>) =>
+		Option.getOrElse(
+			Option.flatMapNullishOr(found, (entry) => entry.title),
+			() => "",
+		)
 	const tabCount = Arr.filter(
 		widgets,
 		(widget) => widget.sectionId === pendingTab?.sectionId && widget.tabId === pendingTab?.tabId,
@@ -375,7 +384,7 @@ export const sectionDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			model: model.sectionDialog,
 			toParentMessage: (message) => Message.GotSectionDialogMessage({ message }),
 			icon: trash(h),
-			title: `Delete “${section?.title ?? ""}”?`,
+			title: `Delete “${titleOf(section)}”?`,
 			description:
 				sectionCount === 0
 					? "This group is empty, so nothing else will be removed."
@@ -396,7 +405,7 @@ export const sectionDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			model: model.tabDialog,
 			toParentMessage: (message) => Message.GotTabDialogMessage({ message }),
 			icon: trash(h),
-			title: `Delete tab “${tab?.title ?? ""}”?`,
+			title: `Delete tab “${titleOf(tab)}”?`,
 			description:
 				tabCount === 0
 					? "This tab is empty, so nothing else will be removed."
@@ -404,7 +413,7 @@ export const sectionDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 			...(tabCount > 0
 				? {
 						secondaryAction: {
-							label: `Move to “${destination?.title ?? ""}”`,
+							label: `Move to “${titleOf(destination)}”`,
 							onClick: Message.ConfirmedDeleteTab({ action: "move" }),
 						},
 					}

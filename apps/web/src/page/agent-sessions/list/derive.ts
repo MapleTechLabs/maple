@@ -1,4 +1,4 @@
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, String as Str } from "effect"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 import type { ListAiSessionsInput } from "@maple/web-data/warehouse/ai-sessions"
 import type { Types } from "effect"
@@ -90,7 +90,7 @@ export type FilterInputs = Omit<ListAiSessionsInput, "limit" | "offset">
 /** The warehouse filter inputs for a search and the resolved window. */
 export const filterInputs = (search: Search, window: TimeWindow): FilterInputs => {
 	const sort = sortOf(search)
-	const query = search.q?.trim()
+	const query = search.q === undefined ? undefined : Str.trim(search.q)
 	return {
 		startTime: window.startTime,
 		endTime: window.endTime,

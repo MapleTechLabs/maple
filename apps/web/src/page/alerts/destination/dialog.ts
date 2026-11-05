@@ -358,13 +358,16 @@ const pickChatWorkspace = (model: Model, connector: string, workspaceId: ChatWor
 	mountFields({ model: { ...model, form: chatDestinationForm(connector, workspaceId) } })
 
 const connectChat = (model: Model, connectorId: string): Return =>
-	Option.match(Option.fromNullishOr((model.connectors ?? []).find((entry) => entry.id === connectorId)), {
-		onNone: () => ({ model }),
-		onSome: (connector) =>
-			ChatConnect.waitingFor(model.chatConnect) !== null
-				? { model }
-				: { model: { ...model, chatConnect: ChatConnect.start(model.chatConnect, connector) } },
-	})
+	Option.match(
+		Arr.findFirst(model.connectors ?? [], (entry) => entry.id === connectorId),
+		{
+			onNone: () => ({ model }),
+			onSome: (connector) =>
+				ChatConnect.waitingFor(model.chatConnect) !== null
+					? { model }
+					: { model: { ...model, chatConnect: ChatConnect.start(model.chatConnect, connector) } },
+		},
+	)
 
 const chatConnectStep = (model: Model, message: ChatConnect.Message): Return => {
 	const step = ChatConnect.update(model.chatConnect, message)
@@ -489,10 +492,9 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedChatWorkspace: ({ connector, workspaceId }) =>
 			Option.match(
 				Option.flatMap(Option.fromNullishOr(model.connectors), (connectors) =>
-					Option.fromNullishOr(
-						Arr.flatMap(connectors, (entry) => entry.workspaces).find(
-							(workspace) => workspace.id === workspaceId,
-						),
+					Arr.findFirst(
+						Arr.flatMap(connectors, (entry) => entry.workspaces),
+						(workspace) => workspace.id === workspaceId,
 					),
 				),
 				{

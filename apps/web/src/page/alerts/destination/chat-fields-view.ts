@@ -159,10 +159,12 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const connectorName = destinationProvider("chat", form.chatConnector).label
 	const isLoading = AsyncData.isLoading(model.channels.data) || AsyncData.isRefreshing(model.channels.data)
 	const channels = channelsOf(model)
-	const selected = channels.find((channel) => channel.id === form.chatChannelId)
+	const selected = Arr.findFirst(channels, (channel) => channel.id === form.chatChannelId)
 	const query = resolveSearchQuery(
 		model.combobox.inputValue,
-		selected === undefined ? undefined : { name: selected.name, is_private: selected.private },
+		Option.getOrUndefined(
+			Option.map(selected, (channel) => ({ name: channel.name, is_private: channel.private })),
+		),
 	)
 	const picker = channelPickerView(
 		Arr.map(channels, (channel) => ({ ...channel, is_private: channel.private, is_member: true })),
