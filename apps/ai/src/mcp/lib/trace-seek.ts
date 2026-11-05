@@ -39,6 +39,7 @@ export const withTraceIndexSeek = (sql: string): string | undefined => {
 	)
 		return undefined
 	// The literal is blanked in `masked`, so match the original and keep conjuncts outside literals.
+	// @effect-diagnostics-next-line preferEffectString:off -- match.index feeds arithmetic; Str.matchAll types it as optional
 	const hits = Arr.filter([...sql.matchAll(TRACE_ID_PREDICATE)], (m) => {
 		const name = `${m[1] === undefined ? "" : `${m[1]}.`}TraceId`
 		return (

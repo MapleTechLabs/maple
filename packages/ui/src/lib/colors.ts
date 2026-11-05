@@ -25,6 +25,7 @@ export function getDepthColorClass(depth: number): string {
 function hashString(str: string): number {
 	let hash = 0
 	for (let i = 0; i < str.length; i++) {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		hash = str.charCodeAt(i) + ((hash << 5) - hash)
 	}
 	return Math.abs(hash)

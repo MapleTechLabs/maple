@@ -174,6 +174,7 @@ const severityOf = (record: RuleRecord): number | null => {
 
 /** Own keys only: an attribute named `constructor` is not inherited from `Object.prototype`. */
 const ownValue = (map: AttrMap, key: string): AttrValue | undefined =>
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.has would need a cast
 	Object.hasOwn(map, key) ? map[key] : undefined
 
 /** `undefined` = missing, `null` = present but not comparable. */
@@ -252,11 +253,13 @@ export const scanCut = (text: string): number => {
 	let bytes = 0
 	let index = 0
 	while (index < text.length) {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		const unit = text.charCodeAt(index)
 		const pair =
 			unit >= 0xd800 &&
 			unit <= 0xdbff &&
 			index + 1 < text.length &&
+			// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 			(text.charCodeAt(index + 1) & 0xfc00) === 0xdc00
 		const size = pair ? 4 : unit < 0x80 ? 1 : unit < 0x800 ? 2 : 3
 		if (bytes + size > cap) return index

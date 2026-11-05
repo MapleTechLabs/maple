@@ -543,6 +543,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		const transformObj = dataSourceTransform(widget.dataSource)
 		const reduceToValue = transformObj?.reduceToValue
 		const hasUnsupportedTransform =
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 			transformObj !== undefined && Arr.some(Object.keys(transformObj), (k) => k !== "reduceToValue")
 
 		const queryEngine = yield* QueryEngineService

@@ -491,6 +491,7 @@ const readString = (s: string, at: number): Read<{ readonly text: string; readon
 	const raw = Str.replace(
 		/\u2029/g,
 		"\\u2029",
+		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	)(Str.replace(/\u2028/g, "\\u2028")(encodeJson(text))).replace(/\\\\|\\u[0-9a-f]{4}/g, (escape) =>
 		Str.replace("\\U", "\\u")(Str.toUpperCase(escape)),
 	)

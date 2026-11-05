@@ -61,6 +61,11 @@
 		// New in the effect-native preset: flags every sync decode, ~1k hits mostly in tests and non-Effect
 		// boundaries. `schema-sync-in-effect` already covers the case that matters.
 		"effecttsgo/schema-sync": "off",
+		// Collections go through effect/Array, String and Record. The few native sites left carry a
+		// directive with the reason (function replacers, per-character loops, non-record types).
+		"effecttsgo/prefer-effect-array": "error",
+		"effecttsgo/prefer-effect-record": "error",
+		"effecttsgo/prefer-effect-string": "error",
 		"effecttsgo/strict-effect-provide": "error",
 		"effecttsgo/sync-to-succeed": "error",
 		"effecttsgo/type-union-to-schema-union": "error",

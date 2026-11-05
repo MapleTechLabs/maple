@@ -128,6 +128,7 @@ export const splitList = (text: string): ReadonlyArray<string> =>
 
 export const joinList = (values: ReadonlyArray<string>): string =>
 	Arr.join(
+		// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 		Arr.map(values, (value) => value.replace(/[\\,]/gu, (char) => `\\${char}`)),
 		", ",
 	)

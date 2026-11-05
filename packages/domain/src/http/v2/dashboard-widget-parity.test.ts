@@ -16,6 +16,7 @@ import { V2DashboardWidget, V2WidgetDataSource, V2WidgetDisplay } from "./dashbo
 // `tsc` when either side gains a field, and the encode tests fail when a field is
 // present in the type but dropped on the wire or spelled differently there.
 
+// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
 
 /** Fails to compile unless `A` is assignable to `B`. */

@@ -24,8 +24,10 @@ const withRules = (fixture: FuzzCase, rules: ReadonlyArray<IngestRuleSpec>): Fuz
 /** Every string in a JSON value, with the attribute key it sits under at the top level. */
 const strings = (value: Schema.Json | undefined, key = ""): Array<readonly [string, string]> => {
 	if (typeof value === "string") return [[key, value]]
+	// @effect-diagnostics-next-line preferEffectArray:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch
 	if (Array.isArray(value)) return Arr.flatMap(value, (item) => strings(item, key))
 	if (typeof value === "object" && value !== null)
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 		return Arr.flatMap(Object.entries(value), ([inner, item]) => strings(item, key === "" ? inner : key))
 	return []
 }
@@ -59,6 +61,7 @@ describe("ingest rule invariants", () => {
 			const before = member(fixture.input, part)
 			const after = member(outcome, part)
 			for (const key of Arr.filter(
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 				Object.keys(typeof before === "object" && before !== null ? before : {}),
 				isProtectedKey,
 			))
@@ -70,6 +73,7 @@ describe("ingest rule invariants", () => {
 		const outcome = outcomeOf(withRules(fixture, [maskEmails(fixture)]))
 		const { regex, accept } = DETECTORS.email
 		const eventList = member(outcome, "events")
+		// @effect-diagnostics-next-line preferEffectArray:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch
 		const events = Array.isArray(eventList)
 			? Arr.map(eventList, (event) => member(event, "attributes"))
 			: []

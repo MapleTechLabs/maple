@@ -66,6 +66,7 @@ export function stoneTerrace(
 /** A small stable number per zone id, so wobble and tufts never reshuffle. */
 function zoneSeed(id: string) {
 	let seed = 7
+	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 	for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) % 997
 	return seed
 }

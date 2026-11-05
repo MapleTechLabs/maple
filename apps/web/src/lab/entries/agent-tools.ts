@@ -295,6 +295,7 @@ const searchJson = (model: Model): string =>
 	encodeJson(
 		Rec.fromEntries(
 			Arr.filter(
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 				Object.entries(model.view === "detail" ? model.detail.search : model.page.search),
 				([key, value]) => value !== undefined && key !== "timePreset",
 			),

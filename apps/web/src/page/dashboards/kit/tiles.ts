@@ -280,6 +280,7 @@ const resolveFieldPath = (row: Row, path: string): unknown => {
 
 const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row): Html => {
 	const value = resolveFieldPath(row, column.field)
+	// @effect-diagnostics-next-line preferEffectArray:off -- unknown elements; Arr.join takes strings
 	const display = Arr.isArray(value) ? value.join(", ") : formatCell(value, column.unit)
 	const className = cn("text-xs", columnVisibilityClass(index))
 	const content: Html | string =

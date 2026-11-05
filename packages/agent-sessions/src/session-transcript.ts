@@ -1451,6 +1451,7 @@ function measure(text: string): { byteLength: number; lineCount: number } {
 	let bytes = 0
 	let lines = text === "" ? 0 : 1
 	for (let i = 0; i < text.length; i++) {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		const code = text.charCodeAt(i)
 		if (code === 10) lines++
 		if (code < 0x80) bytes += 1

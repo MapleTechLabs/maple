@@ -54,6 +54,7 @@ function sqlLiteral(variable: ResolvedVariable): string {
 }
 
 function replaceRefs(input: string, resolve: (name: string) => string | null): string {
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	return input.replace(VAR_REF, (match, braced: string | undefined, bare: string | undefined) => {
 		const replacement = resolve(braced ?? bare ?? "")
 		// Unknown (or deleted) variable: keep the reference literal so the query

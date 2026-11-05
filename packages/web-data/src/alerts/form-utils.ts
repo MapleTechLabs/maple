@@ -567,6 +567,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
 		apdex_threshold_ms: signalType === "apdex" ? parsePositiveNumber(form.apdexThresholdMs, 500) : null,
 		query_builder_draft:
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 			signalType === "builder_query" ? Rec.fromEntries(Object.entries(form.queryBuilderDraft)) : null,
 		raw_query_sql: signalType === "raw_query" ? Str.trim(form.rawQuerySql) || null : null,
 		raw_query_reducer: signalType === "raw_query" ? form.rawQueryReducer : null,

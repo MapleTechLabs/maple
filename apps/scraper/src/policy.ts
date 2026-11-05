@@ -79,6 +79,7 @@ export const startJitterMs = (key: string, baseMs: number): number => {
 	if (baseMs <= 0) return 0
 	let hash = 0x811c9dc5
 	for (let i = 0; i < key.length; i++) {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		hash ^= key.charCodeAt(i)
 		hash = Math.imul(hash, 0x01000193)
 	}

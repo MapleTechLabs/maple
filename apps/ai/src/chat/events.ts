@@ -170,6 +170,7 @@ export const makeTextSanitizer = (): TextSanitizer => {
 				}
 				const opened = Arr.filter(
 					Arr.map(HIDDEN_BLOCKS, (block) => ({
+						// @effect-diagnostics-next-line preferEffectString:off -- searches from a position; Str.indexOf takes none
 						at: buffer.indexOf(block.open, from),
 						block,
 					})),

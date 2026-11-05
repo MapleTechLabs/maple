@@ -13,6 +13,7 @@ const parseError = (path: string, what: string) => (cause: unknown) =>
 const STRING_OR_TRAILING_COMMA = /"(?:[^"\\]|\\.)*"|,(\s*[\]}])/g
 
 export const stripTrailingCommas = (text: string): string =>
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	text.replace(STRING_OR_TRAILING_COMMA, (match: string, closer: string | undefined) => closer ?? match)
 
 export const decodeJson = <T>(

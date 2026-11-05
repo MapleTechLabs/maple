@@ -120,6 +120,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// literal — quotes and all.
 	// Parenthesised so the predicate is one operand wherever it lands; `rawSqlIssue`
 	// already rejected an org filter that sits beside a top-level OR.
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	sql = sql.replace(ORG_FILTER_MACRO_RE, (_match, alias: string | undefined) =>
 		alias === undefined ? `(OrgId = ${orgLiteral})` : `(${Str.trim(alias)}.OrgId = ${orgLiteral})`,
 	)

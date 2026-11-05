@@ -56,6 +56,7 @@ const MAX_BROWSER_CACHE_SECONDS = 60
 const CAPPED_AGE_DIRECTIVES = /\b(s-maxage|max-age|stale-while-revalidate|stale-if-error)=(\d+)/gi
 
 const capMaxAge = (cacheControl: string): string =>
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	cacheControl.replace(CAPPED_AGE_DIRECTIVES, (directive, name: string, seconds: string) =>
 		Number(seconds) > MAX_BROWSER_CACHE_SECONDS ? `${name}=${MAX_BROWSER_CACHE_SECONDS}` : directive,
 	)

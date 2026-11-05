@@ -82,6 +82,7 @@ const parseYarnV1 = (blocks: ReadonlyArray<Block>, manifest: ManifestDeps) => {
 
 /** decodeURIComponent throws on stray `%`; this cannot. */
 const percentDecode = (s: string): string =>
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	s.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
 
 /** Berry `resolution`: `name@npm:1.0.0`, an alias, or a patch wrapping one (`name@patch:name@npm%3A1.0.0#...`). */

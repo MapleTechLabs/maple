@@ -517,6 +517,7 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 						return Option.some({
 							displayName: author?.displayName ?? "Someone",
 							isBot: author?.isBot ?? false,
+							// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 							text: message.content.replace(
 								MENTION,
 								(_, id: string) => `@${names.get(id)?.displayName ?? "someone"}`,

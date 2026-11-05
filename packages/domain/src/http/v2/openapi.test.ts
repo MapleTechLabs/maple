@@ -337,6 +337,7 @@ describe("MapleApiV2 OpenAPI", () => {
 	it("gives every operation complete metadata, security, and common error envelopes", () => {
 		const operations = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
 			Arr.map(
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 				Arr.filter(Object.entries(item ?? {}), ([method]) =>
 					["get", "post", "put", "patch", "delete"].includes(method),
 				),
@@ -510,6 +511,7 @@ describe("MapleApiV2 OpenAPI", () => {
 
 	it("gives every error response an exhaustive literal-tag union", () => {
 		for (const [path, item] of Rec.toEntries(spec.paths ?? {})) {
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 			for (const [method, candidate] of Object.entries(item ?? {})) {
 				if (!["get", "post", "put", "patch", "delete"].includes(method)) continue
 				const op = candidate as GeneratedOpenApiObject

@@ -300,6 +300,7 @@ const encodeJsonOption = Schema.encodeUnknownOption(Schema.fromJsonString(Schema
 export const summarizeToolInput = (input: unknown): string => {
 	if (input === null || typeof input !== "object") return truncate(String(input), MAX_SUMMARY_VALUE)
 	const parts: Array<string> = []
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 	for (const [key, value] of Object.entries(input)) {
 		if (value === undefined || value === null) continue
 		if (parts.length === MAX_SUMMARY_ARGS) {

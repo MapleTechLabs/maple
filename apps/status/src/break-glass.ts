@@ -56,6 +56,7 @@ export const constantTimeEqual = (a: string, b: string): boolean =>
 	Arr.reduce(
 		Array.from(
 			{ length: Math.max(a.length, b.length) },
+			// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 			(_, index) => a.charCodeAt(index) ^ b.charCodeAt(index),
 		),
 		a.length ^ b.length,

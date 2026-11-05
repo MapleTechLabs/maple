@@ -11,6 +11,7 @@ export const PortRange = { route: 40000, worker: 50000 } as const
 const fnv1a = (input: string): number => {
 	let hash = 0x811c9dc5
 	for (let i = 0; i < input.length; i++) {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		hash ^= input.charCodeAt(i)
 		hash = Math.imul(hash, 0x01000193) >>> 0
 	}

@@ -184,6 +184,7 @@ const revisionOf = (text: string): string =>
 	Arr.reduce(
 		Array.from(text),
 		2166136261,
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		(hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0,
 	).toString(36)
 

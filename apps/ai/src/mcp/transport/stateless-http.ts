@@ -222,6 +222,7 @@ export const layerStatelessMcpHttp = (options: {
 					// No session id is ever issued, so a client's leftover one is dropped: the server
 					// would look the session up by that id instead of by this request's client.
 					const requestHeaders = Arr.filter(
+						// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 						Object.entries(request.headers),
 						([name]) => name !== "mcp-session-id",
 					)

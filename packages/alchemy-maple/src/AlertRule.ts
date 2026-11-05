@@ -191,6 +191,7 @@ const scopeDefaults = {
 /** The create/update body: the props the user declared, plus scope defaults. */
 const desiredBody = (props: AlertRuleProps): Record<string, unknown> => ({
 	...scopeDefaults,
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 	...Rec.fromEntries(Arr.filter(Object.entries(props), ([, value]) => value !== undefined)),
 })
 

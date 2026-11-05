@@ -216,6 +216,7 @@ const withoutCredentialHeaders = (request: HttpClientRequest.HttpClientRequest) 
 
 const withoutHeaders = (request: HttpClientRequest.HttpClientRequest, keep: ReadonlySet<string>) =>
 	Arr.reduce(
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 		Arr.filter(Object.keys(request.headers), (name) => !keep.has(Str.toLowerCase(name))),
 		request,
 		(next, name) => HttpClientRequest.removeHeader(next, name),

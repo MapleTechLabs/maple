@@ -172,6 +172,7 @@ function escapeRegex(s: string): string {
 function simpleHash(s: string): number {
 	let hash = 5381
 	for (let i = 0; i < s.length; i++) {
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		hash = ((hash * 33) ^ s.charCodeAt(i)) >>> 0
 	}
 	return hash

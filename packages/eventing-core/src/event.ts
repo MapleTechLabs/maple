@@ -54,6 +54,7 @@ export const isJsonValue = (value: unknown, seen: Set<object> = new Set()): valu
 	const valid = Arr.isArray(value)
 		? Arr.every(value, (item) => isJsonValue(item, seen))
 		: (prototype === Object.prototype || prototype === null) &&
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 			Arr.every(Object.values(value), (item) => isJsonValue(item, seen))
 	seen.delete(value)
 	return valid
@@ -61,9 +62,11 @@ export const isJsonValue = (value: unknown, seen: Set<object> = new Set()): valu
 
 const canonicalizeJson = (value: JsonValue): JsonValue => {
 	if (value === null || typeof value !== "object") return value
+	// @effect-diagnostics-next-line preferEffectArray:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch
 	if (Array.isArray(value)) return Arr.map(value, canonicalizeJson)
 	return Rec.fromEntries(
 		Arr.map(
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 			Object.entries(value).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
 			([key, child]) => [key, canonicalizeJson(child)],
 		),

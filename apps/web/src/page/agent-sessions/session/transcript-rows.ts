@@ -50,6 +50,7 @@ export const textHash = (text: string): string => {
 	const hash = Arr.reduce(
 		Array.from(text),
 		2_166_136_261,
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.codePointAt allocates an Option per character
 		(acc, char) => Math.imul(acc ^ (char.codePointAt(0) ?? 0), 16_777_619) >>> 0,
 	)
 	return `${hash.toString(36)}:${text.length}`

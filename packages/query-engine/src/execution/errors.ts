@@ -53,12 +53,14 @@ const redactInvalidTokens = (message: string): string => {
 	let out = ""
 	let cursor = 0
 	for (;;) {
+		// @effect-diagnostics-next-line preferEffectString:off -- searches from a position; Str.indexOf takes none
 		const at = lower.indexOf(INVALID_TOKEN_MARKER, cursor)
 		if (at === -1) break
 		let i = at + INVALID_TOKEN_MARKER.length
 		while (i < message.length && Option.exists(Str.charAt(message, i), (ch) => /\s/.test(ch))) i++
 		if (message[i] === "b") i++
 		const quote = message[i]
+		// @effect-diagnostics-next-line preferEffectString:off -- searches from a position; Str.indexOf takes none
 		const close = quote === "'" || quote === '"' ? message.indexOf(quote, i + 1) : -1
 		if (close === -1) {
 			out += Str.slice(cursor, i)(message)

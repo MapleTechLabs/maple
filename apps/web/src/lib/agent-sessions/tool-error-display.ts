@@ -152,12 +152,14 @@ interface Claim {
  * to the redactions and one timestamp to a reader.
  */
 function redactedRanges(text: string): ReadonlyArray<Claim> {
+	// @effect-diagnostics-next-line preferEffectString:off -- match.index feeds arithmetic; Str.matchAll types it as optional
 	const claims: Claim[] = Arr.map([...text.matchAll(TIMESTAMPS)], (match) => ({
 		start: match.index,
 		end: match.index + match[0].length,
 		label: "<ts>",
 	}))
 	for (const [pattern, replacement] of MSG_TEXT_REDACTIONS) {
+		// @effect-diagnostics-next-line preferEffectString:off -- match.index feeds arithmetic; Str.matchAll types it as optional
 		for (const match of text.matchAll(new RegExp(pattern, "g"))) {
 			const start = match.index
 			const end = start + match[0].length
@@ -184,6 +186,7 @@ const EMPHASIS = /`[^`\n]+`|(?<= )"[^"\n]*"|\n/g
 function plainTokens(text: string, emphasizeQuoted: { value: boolean }): ErrorTextToken[] {
 	const tokens: ErrorTextToken[] = []
 	let cursor = 0
+	// @effect-diagnostics-next-line preferEffectString:off -- match.index feeds arithmetic; Str.matchAll types it as optional
 	for (const match of text.matchAll(EMPHASIS)) {
 		if (match.index > cursor) tokens.push({ kind: "text", text: Str.slice(cursor, match.index)(text) })
 		const value = match[0]
@@ -226,6 +229,7 @@ export function errorTextTokens(text: string): ReadonlyArray<ErrorTextToken> {
 	// which is then what it is about.
 	const emphasizeQuoted = { value: !new RegExp(AT_PATH.source).test(text) }
 	let cursor = 0
+	// @effect-diagnostics-next-line preferEffectString:off -- match.index feeds arithmetic; Str.matchAll types it as optional
 	for (const match of text.matchAll(AT_PATH)) {
 		tokens.push(...outsideTokens(Str.slice(cursor, match.index)(text), emphasizeQuoted))
 		tokens.push({ kind: "at" })

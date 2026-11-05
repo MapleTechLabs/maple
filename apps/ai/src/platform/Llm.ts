@@ -732,6 +732,7 @@ const splicePerCallFields = (
 					}
 				: undefined),
 			usage: { include: true },
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 			...(Object.keys(trace).length === 0 ? undefined : { trace }),
 		})
 	})

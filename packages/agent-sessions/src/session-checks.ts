@@ -769,6 +769,7 @@ function clauses(
 
 /** `turn 14 (final)`, `turns 9, 11` — the finding's own attribution, read in a sentence. */
 function where(finding: SessionFinding): string {
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	return finding.turnText.replace(/^(Turn|Segment)/, (word) => Str.toLowerCase(word))
 }
 
