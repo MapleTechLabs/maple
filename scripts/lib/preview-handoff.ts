@@ -30,7 +30,7 @@ export const sealHandoff = async (
 	const sealed = await crypto.subtle.encrypt(
 		{ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(branchName) },
 		await keyOf(secret),
-		new TextEncoder().encode(JSON.stringify(handoff)),
+		new TextEncoder().encode([handoff.host, handoff.id, handoff.token].join("\n")),
 	)
 	return Buffer.concat([iv, new Uint8Array(sealed)]).toString("base64")
 }
@@ -58,8 +58,8 @@ export const openHandoff = async (
 			() => undefined,
 		)
 	if (plain === undefined) return undefined
-	// Authenticated, so this is JSON that sealHandoff wrote.
-	const parsed = JSON.parse(plain) as Partial<BranchHandoff>
-	if (!parsed.host || !parsed.id || !parsed.token) return undefined
-	return { host: parsed.host, id: parsed.id, token: parsed.token }
+	// Host, id and token, one per line: none of them can hold a newline.
+	const [host, id, token, ...rest] = plain.split("\n")
+	if (!host || !id || !token || rest.length > 0) return undefined
+	return { host, id, token }
 }
