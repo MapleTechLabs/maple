@@ -16,14 +16,7 @@ import { V2DashboardWidget, V2WidgetDataSource, V2WidgetDisplay } from "./dashbo
 // `tsc` when either side gains a field, and the encode tests fail when a field is
 // present in the type but dropped on the wire or spelled differently there.
 
-// Splitting on a capture group puts each captured character at an odd index.
-const snakeCase = (key: string): string =>
-	Arr.join(
-		Arr.map(Str.split(/([A-Z])/)(key), (part, index) =>
-			index % 2 === 1 ? `_${Str.toLowerCase(part)}` : part,
-		),
-		"",
-	)
+const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
 
 /** Fails to compile unless `A` is assignable to `B`. */
 type AssertAssignable<A extends B, B> = [A, B]

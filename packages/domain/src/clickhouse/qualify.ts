@@ -1,5 +1,3 @@
-import { Array as Arr, Option, String as Str } from "effect"
-
 /**
  * Source datasources that materialized views read from. Used by
  * `qualifyStatementForDatabase` to rewrite bare `FROM <name>` / `JOIN <name>`
@@ -37,32 +35,21 @@ export const qualifyStatementForDatabase = (stmt: string, database: string): str
 	if (database.length === 0) return stmt
 	const ident = (name: string) => `\`${database}\`.\`${name}\``
 
-	// Both header patterns are anchored, so the match is the statement's prefix.
-	const rewriteHeader = (text: string, header: RegExp, render: (groups: RegExpMatchArray) => string) =>
-		Option.match(Str.match(header)(text), {
-			onNone: () => text,
-			onSome: (groups) => `${render(groups)}${Str.slice(groups[0].length)(text)}`,
-		})
-
-	let result = rewriteHeader(
-		stmt,
+	let result = stmt.replace(
 		/^(CREATE TABLE\s+(?:IF NOT EXISTS\s+)?)([A-Za-z_][A-Za-z0-9_]*)/,
-		(groups) => `${groups[1] ?? ""}${ident(groups[2] ?? "")}`,
+		(_match, prefix: string, name: string) => `${prefix}${ident(name)}`,
 	)
 
-	result = rewriteHeader(
-		result,
+	result = result.replace(
 		/^(CREATE MATERIALIZED VIEW\s+(?:IF NOT EXISTS\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s+TO\s+)([A-Za-z_][A-Za-z0-9_]*)/,
-		(groups) => `${groups[1] ?? ""}${ident(groups[2] ?? "")}${groups[3] ?? ""}${ident(groups[4] ?? "")}`,
+		(_match, p1: string, view: string, mid: string, target: string) =>
+			`${p1}${ident(view)}${mid}${ident(target)}`,
 	)
 
-	// Splitting on the captured keyword puts each `FROM`/`JOIN` at an odd index.
 	for (const table of CLICKHOUSE_MV_SOURCE_TABLES) {
-		result = Arr.join(
-			Arr.map(Str.split(new RegExp(`(\\bFROM|\\bJOIN)\\s+${table}\\b`))(result), (part, index) =>
-				index % 2 === 1 ? `${part} ${ident(table)}` : part,
-			),
-			"",
+		result = result.replace(
+			new RegExp(`(\\bFROM|\\bJOIN)\\s+${table}\\b`, "g"),
+			(_match, kw: string) => `${kw} ${ident(table)}`,
 		)
 	}
 

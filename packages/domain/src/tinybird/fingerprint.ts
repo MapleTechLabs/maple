@@ -488,15 +488,11 @@ const readString = (s: string, at: number): Read<{ readonly text: string; readon
 	if (token === undefined || text === undefined || LONE_SURROGATE.test(text)) return undefined
 	// ClickHouse escapes the two line separators JSON.stringify leaves raw, and writes
 	// `\u000F` where JSON.stringify writes `\u000f`. An escaped backslash pairs first.
-	// Splitting on the captured escape puts each escape at an odd index.
-	const raw = Arr.join(
-		Arr.map(
-			Str.split(/(\\\\|\\u[0-9a-f]{4})/)(
-				Str.replace(/\u2029/g, "\\u2029")(Str.replace(/\u2028/g, "\\u2028")(encodeJson(text))),
-			),
-			(part, index) => (index % 2 === 1 ? Str.replace("\\U", "\\u")(Str.toUpperCase(part)) : part),
-		),
-		"",
+	const raw = Str.replace(
+		/\u2029/g,
+		"\\u2029",
+	)(Str.replace(/\u2028/g, "\\u2028")(encodeJson(text))).replace(/\\\\|\\u[0-9a-f]{4}/g, (escape) =>
+		Str.replace("\\U", "\\u")(Str.toUpperCase(escape)),
 	)
 	return { value: { text, raw }, end: at + token.length }
 }

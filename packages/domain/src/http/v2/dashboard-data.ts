@@ -60,21 +60,10 @@ const mapDecodedJsonKeys = (value: Schema.Json, mapKey: (key: string) => string)
 const mapJsonKeys = (value: unknown, mapKey: (key: string) => string): Schema.Json =>
 	mapDecodedJsonKeys(decodeJsonValueSync(value), mapKey)
 
-// Splitting on a capture group puts each captured character at an odd index.
 const toSnakeKey = (key: string): string =>
-	Arr.join(
-		Arr.map(Str.split(/([A-Z])/)(key), (part, index) =>
-			index % 2 === 1 ? `_${Str.toLowerCase(part)}` : part,
-		),
-		"",
-	)
+	key.replace(/[A-Z]/g, (character) => `_${Str.toLowerCase(character)}`)
 const toCamelKey = (key: string): string =>
-	Arr.join(
-		Arr.map(Str.split(/_([a-z])/)(key), (part, index) =>
-			index % 2 === 1 ? Str.toUpperCase(part) : part,
-		),
-		"",
-	)
+	key.replace(/_([a-z])/g, (_, character: string) => Str.toUpperCase(character))
 
 /** Opaque widget params still obey the v2 recursive snake_case wire convention. */
 const UnknownRecord = UnknownRecordWire.pipe(
