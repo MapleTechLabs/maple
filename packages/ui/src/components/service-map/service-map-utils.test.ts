@@ -16,7 +16,7 @@ import type {
 	ServiceMapOverviewRow,
 	ServicePlatform,
 } from "./service-map-types"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 const baseEdge = (overrides: Partial<ServiceMapEdgeRow> = {}): ServiceMapEdgeRow => ({
 	sourceService: "api",
@@ -69,7 +69,9 @@ describe("buildFlowElements", () => {
 			durationSeconds: 60,
 		})
 
-		const dbNode = result.nodes.find((n) => n.id === dbNodeId("clickhouse", ""))
+		const dbNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("clickhouse", "")),
+		)
 		expect(dbNode).toBeDefined()
 		const data = dbNode!.data as ServiceNodeData
 		expect(data.kind).toBe("database")
@@ -78,7 +80,9 @@ describe("buildFlowElements", () => {
 		expect(data.throughput).toBeCloseTo(50 / 60)
 		expect(data.avgLatencyMs).toBe(8)
 
-		const dbEdge = result.edges.find((e) => e.target === dbNodeId("clickhouse", ""))
+		const dbEdge = Option.getOrUndefined(
+			Arr.findFirst(result.edges, (e) => e.target === dbNodeId("clickhouse", "")),
+		)
 		expect(dbEdge).toBeDefined()
 		expect(dbEdge!.source).toBe("api")
 	})
@@ -108,17 +112,23 @@ describe("buildFlowElements", () => {
 			],
 		})
 
-		const hyperdriveNode = result.nodes.find((n) => n.id === dbNodeId("postgresql", "hyperdrive"))
+		const hyperdriveNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "hyperdrive")),
+		)
 		expect(hyperdriveNode).toBeDefined()
 		const data = hyperdriveNode!.data as ServiceNodeData
 		expect(data.hyperdrive).toHaveLength(1)
 		expect(data.hyperdrive![0]!.matched).toEqual({ name: "maple", kind: "mysql" })
 
 		// Other db nodes stay clean.
-		const psNode = result.nodes.find((n) => n.id === dbNodeId("mysql", "maple"))
+		const psNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("mysql", "maple")),
+		)
 		expect((psNode!.data as ServiceNodeData).hyperdrive).toBeUndefined()
 
-		const originEdge = result.edges.find((e) => e.data?.relation === "hyperdrive-origin")
+		const originEdge = Option.getOrUndefined(
+			Arr.findFirst(result.edges, (e) => e.data?.relation === "hyperdrive-origin"),
+		)
 		expect(originEdge).toBeDefined()
 		expect(originEdge!.source).toBe(dbNodeId("postgresql", "hyperdrive"))
 		expect(originEdge!.target).toBe(dbNodeId("mysql", "maple"))
@@ -148,7 +158,9 @@ describe("buildFlowElements", () => {
 		})
 
 		// The panel data is still attached…
-		const hyperdriveNode = result.nodes.find((n) => n.id === dbNodeId("postgresql", "hyperdrive"))
+		const hyperdriveNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "hyperdrive")),
+		)
 		expect((hyperdriveNode!.data as ServiceNodeData).hyperdrive).toHaveLength(1)
 		// …but no synthetic edge points at a node that doesn't exist.
 		expect(Arr.some(result.edges, (e) => e.data?.relation === "hyperdrive-origin")).toBe(false)
@@ -167,8 +179,8 @@ describe("buildFlowElements", () => {
 			platforms,
 		})
 
-		const apiNode = result.nodes.find((n) => n.id === "api")
-		const authNode = result.nodes.find((n) => n.id === "auth")
+		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
+		const authNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "auth"))
 		expect((apiNode!.data as ServiceNodeData).platform).toBe("cloudflare")
 		expect((authNode!.data as ServiceNodeData).platform).toBe("kubernetes")
 	})
@@ -210,7 +222,9 @@ describe("buildFlowElements", () => {
 			dbNodeId("postgresql", "billing"),
 			dbNodeId("postgresql", "orders"),
 		])
-		const orders = result.nodes.find((n) => n.id === dbNodeId("postgresql", "orders"))
+		const orders = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "orders")),
+		)
 		const data = orders!.data as ServiceNodeData
 		// Named databases show the namespace as the node label…
 		expect(data.label).toBe("orders")
@@ -254,7 +268,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.throughput).toBe(30_000)
 		expect(db?.data.tracedThroughput).toBe(3_000)
 		expect(db?.data.hasSampling).toBe(true)
@@ -282,7 +296,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.p95LatencyMs).toBe(7)
 		expect(db?.data.maxLatencyMs).toBe(3_000)
 	})
@@ -305,7 +319,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.p95LatencyMs).toBeUndefined()
 		expect(db?.data.maxLatencyMs).toBe(3_000)
 	})
@@ -318,7 +332,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.maxLatencyMs).toBe(3_000)
 	})
 
@@ -351,7 +365,7 @@ describe("buildFlowElements database node metrics", () => {
 			durationSeconds: 1,
 		})
 
-		const db = nodes.find((n) => n.id === dbNodeId("scylladb", "events"))
+		const db = Option.getOrUndefined(Arr.findFirst(nodes, (n) => n.id === dbNodeId("scylladb", "events")))
 		expect(db?.data.throughput).toBe(1_200)
 		expect(db?.data.tracedThroughput).toBe(300)
 		expect(db?.data.hasSampling).toBe(true)
@@ -370,8 +384,10 @@ describe("buildFlowElements namespace", () => {
 			serviceOverviews: [baseOverview({ serviceName: "api", serviceNamespace: "backend" })],
 			durationSeconds: 60,
 		})
-		const apiNode = result.nodes.find((n) => n.id === "api")
-		const dbNode = result.nodes.find((n) => n.id === dbNodeId("postgresql", ""))
+		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
+		const dbNode = Option.getOrUndefined(
+			Arr.findFirst(result.nodes, (n) => n.id === dbNodeId("postgresql", "")),
+		)
 		expect((apiNode!.data as ServiceNodeData).namespace).toBe("backend")
 		expect((dbNode!.data as ServiceNodeData).namespace).toBeUndefined()
 	})
@@ -382,7 +398,7 @@ describe("buildFlowElements namespace", () => {
 			serviceOverviews: [baseOverview({ serviceName: "api", serviceNamespace: "" })],
 			durationSeconds: 60,
 		})
-		const apiNode = result.nodes.find((n) => n.id === "api")
+		const apiNode = Option.getOrUndefined(Arr.findFirst(result.nodes, (n) => n.id === "api"))
 		expect((apiNode!.data as ServiceNodeData).namespace).toBeUndefined()
 	})
 })

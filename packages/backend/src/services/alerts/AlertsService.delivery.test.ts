@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/http"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Clock, Duration, Effect, Layer, Schema, String as Str, DateTime } from "effect"
+import { Array as Arr, Clock, Duration, Effect, Layer, Schema, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	type AlertDestinationId,
@@ -296,7 +296,9 @@ describe("AlertsService tick isolation", () => {
 
 			const incidents = yield* alerts.listIncidents(healthyOrg)
 			assert.strictEqual(incidents.incidents[0]?.status, "open")
-			const crashed = (yield* alerts.listRules(crashingOrg)).rules.find((r) => r.id === crashing.id)
+			const crashed = Option.getOrUndefined(
+				Arr.findFirst((yield* alerts.listRules(crashingOrg)).rules, (r) => r.id === crashing.id),
+			)
 			assert.include(crashed?.lastEvaluationError ?? "", "Internal error")
 		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
 	})
@@ -812,7 +814,9 @@ describe("AlertsService held incidents", () => {
 
 	const paymentsIncident = (alerts: AlertsServiceApi, orgId: ReturnType<typeof asOrgId>) =>
 		Effect.map(alerts.listIncidents(orgId), (list) => {
-			const incident = list.incidents.find((i) => i.groupKey === "payments")
+			const incident = Option.getOrUndefined(
+				Arr.findFirst(list.incidents, (i) => i.groupKey === "payments"),
+			)
 			assert.ok(incident, "payments incident missing")
 			return incident
 		})
@@ -882,8 +886,11 @@ describe("AlertsService held incidents", () => {
 			)
 
 			// The still-breaching group was never touched.
-			const checkout = (yield* alerts.listIncidents(orgId)).incidents.find(
-				(i) => i.groupKey === "checkout",
+			const checkout = Option.getOrUndefined(
+				Arr.findFirst(
+					(yield* alerts.listIncidents(orgId)).incidents,
+					(i) => i.groupKey === "checkout",
+				),
 			)
 			assert.strictEqual(checkout?.status, "open")
 			assert.strictEqual(checkout?.holdReason, null)

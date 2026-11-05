@@ -1,6 +1,6 @@
 import type { WorkflowState } from "@maple/domain/http"
 import type { McpClientKind } from "@maple/domain/mcp-clients"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 import { USER_DETAIL_TABS, type UserDetailTab } from "../../route/search"
 
 // What the users pages draw: one row per end user the SDKs identified, and one user's profile.
@@ -169,8 +169,9 @@ export const namespacesOf = (
 	const totals = Arr.reduce(named, new Map<string, number>(), (sum, service) =>
 		sum.set(service.namespace, (sum.get(service.namespace) ?? 0) + service.signals),
 	)
-	return Arr.map([...totals], ([name, signals]) => ({ name, signals })).toSorted(
-		(a, b) => b.signals - a.signals,
+	return Arr.sort(
+		Arr.map([...totals], ([name, signals]) => ({ name, signals })),
+		Order.flip(Order.mapInput(Order.Number, (namespace: { signals: number }) => namespace.signals)),
 	)
 }
 

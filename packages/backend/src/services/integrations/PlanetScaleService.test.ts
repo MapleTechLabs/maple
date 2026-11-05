@@ -10,6 +10,7 @@ import {
 	Array as Arr,
 	String as Str,
 	DateTime,
+	Option,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -115,17 +116,21 @@ const stubApi = (fixtures: {
 		if (/\/v1\/organizations\?/.test(url)) {
 			return json({ data: [{ id: "psorg_1", name: "acme" }] })
 		}
-		const branchesMatch = url.match(/\/databases\/([^/?]+)\/branches/)
-		if (branchesMatch) {
-			return json({ data: fixtures.branchesByDatabase[decodeURIComponent(branchesMatch[1])] ?? [] })
+		const branchesMatch = Str.match(/\/databases\/([^/?]+)\/branches/)(url)
+		if (Option.isSome(branchesMatch)) {
+			return json({
+				data: fixtures.branchesByDatabase[decodeURIComponent(branchesMatch.value[1])] ?? [],
+			})
 		}
 		// Must precede the /databases catch-all, which would otherwise serve the
 		// databases fixture to the deploy-request poller — the poller would then
 		// decode it as deploy requests and silently record nothing.
-		const deployRequestsMatch = url.match(/\/databases\/([^/?]+)\/deploy-requests/)
-		if (deployRequestsMatch) {
+		const deployRequestsMatch = Str.match(/\/databases\/([^/?]+)\/deploy-requests/)(url)
+		if (Option.isSome(deployRequestsMatch)) {
 			return json({
-				data: fixtures.deployRequestsByDatabase?.[decodeURIComponent(deployRequestsMatch[1])] ?? [],
+				data:
+					fixtures.deployRequestsByDatabase?.[decodeURIComponent(deployRequestsMatch.value[1])] ??
+					[],
 			})
 		}
 		if (Str.includes("/databases")(url)) {
@@ -199,12 +204,14 @@ describe("PlanetScaleService", () => {
 
 			const rows = yield* service.listDatabases(asOrgId("org_1"))
 			assert.strictEqual(rows.length, 2)
-			const main = rows.find((row) => row.name === "main-db")
-			assert.strictEqual(main?.kind, "mysql")
-			assert.strictEqual(main?.branchesJson?.length, 2)
-			assert.isTrue(main?.branchesJson?.some((branch) => branch.name === "main" && branch.production))
-			const analytics = rows.find((row) => row.name === "analytics")
-			assert.strictEqual(analytics?.kind, "postgresql")
+			const main = Option.getOrThrow(Arr.findFirst(rows, (row) => row.name === "main-db"))
+			assert.strictEqual(main.kind, "mysql")
+			assert.strictEqual(main.branchesJson?.length, 2)
+			assert.isTrue(
+				Arr.some(main.branchesJson ?? [], (branch) => branch.name === "main" && branch.production),
+			)
+			const analytics = Option.getOrThrow(Arr.findFirst(rows, (row) => row.name === "analytics"))
+			assert.strictEqual(analytics.kind, "postgresql")
 
 			// The connection carries the freshness marker for the status endpoint.
 			const connection = yield* Effect.promise(() =>
@@ -383,7 +390,7 @@ describe("PlanetScaleService", () => {
 
 			// Branch defaulted to the inventory's production branch.
 			assert.strictEqual(result.branch, "main")
-			assert.isTrue(insightCalls[0]?.includes("/databases/main-db/branches/main/insights"))
+			assert.isTrue(Str.includes("/databases/main-db/branches/main/insights")(insightCalls[0] ?? ""))
 			const insightUrl = new URL(insightCalls[0]!)
 			assert.strictEqual(insightUrl.searchParams.get("sort"), "totalTime")
 			assert.strictEqual(insightUrl.searchParams.get("dir"), "desc")
@@ -531,7 +538,7 @@ describe("PlanetScaleService", () => {
 			})
 
 			assert.strictEqual(result.branch, "dev")
-			assert.isTrue(insightCalls[0]?.includes("/branches/dev/insights"))
+			assert.isTrue(Str.includes("/branches/dev/insights")(insightCalls[0] ?? ""))
 			assert.isNull(result.unavailableReason)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
@@ -1163,8 +1170,10 @@ describe("PlanetScaleService pagination truncation", () => {
 	}) => {
 		const base = stubApi({ databases: [], branchesByDatabase: {} })
 		const pageOf = (url: string) => {
-			const match = url.match(/[?&]page=(\d+)/)
-			return match ? Number(match[1]) : 1
+			return Option.match(Str.match(/[?&]page=(\d+)/)(url), {
+				onNone: () => 1,
+				onSome: (match) => Number(match[1]),
+			})
 		}
 		const stub = (async (input: string | URL | Request, init?: RequestInit) => {
 			const url =

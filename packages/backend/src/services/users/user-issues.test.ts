@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Exit, Layer, Option, Schema, String as Str } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import {
@@ -73,7 +73,7 @@ const warehouse = (rows: ReadonlyArray<unknown>, ran: Ran, failWith?: WarehouseS
 				const compiled = compiledQueryOf(input)
 				const context = options?.context ?? ""
 				ran.push(context)
-				if (failWith !== undefined && compiled.sql.includes("error_events"))
+				if (failWith !== undefined && Str.includes("error_events")(compiled.sql))
 					return Effect.fail(failWith)
 				return compiled.decodeRows(context === "userIssues" ? rows : []).pipe(Effect.orDie)
 			},
@@ -162,7 +162,7 @@ describe("readUserIssues", () => {
 			assert.isFalse(response.attributed)
 			assert.deepStrictEqual(response.issues, [])
 			const activity = yield* readUserActivity(tenant, request)
-			assert.isFalse(activity.activity.some((item) => item.kind === "error"))
+			assert.isFalse(Arr.some(activity.activity, (item) => item.kind === "error"))
 		}).pipe(Effect.provide([warehouse([], ran, missingUserId), createTestDb(createdDbs).layer]))
 	})
 
@@ -179,7 +179,7 @@ describe("readUserIssues", () => {
 				compiledQuery: (_tenant, input) => {
 					const compiled = compiledQueryOf(input)
 					sqls.push(compiled.sql)
-					if (compiled.sql.includes("user_activity_hourly")) return Effect.fail(missingRollup)
+					if (Str.includes("user_activity_hourly")(compiled.sql)) return Effect.fail(missingRollup)
 					return compiled.decodeRows([row("333", 2, "2026-11-05 11:00:00")]).pipe(Effect.orDie)
 				},
 			}),
@@ -191,7 +191,7 @@ describe("readUserIssues", () => {
 			)
 			assert.isTrue(response.attributed)
 			assert.deepStrictEqual(
-				response.issues.map((issue) => issue.fingerprintHash),
+				Arr.map(response.issues, (issue) => issue.fingerprintHash),
 				["333"],
 			)
 			// The scoped read hit the missing rollup; the retry read without the namespace subquery.
@@ -219,7 +219,7 @@ describe("readUserIssues", () => {
 		return Effect.gen(function* () {
 			yield* seed
 			const activity = yield* readUserActivity(tenant, request)
-			const errors = activity.activity.filter((item) => item.kind === "error")
+			const errors = Arr.filter(activity.activity, (item) => item.kind === "error")
 			expect(errors).toMatchObject([
 				{ issueId: null, title: "TypeError", tone: "crit" },
 				{ issueId: KEPT, title: "CheckoutError", detail: "4 hits · checkout · issue 111" },
@@ -306,7 +306,7 @@ describe("readUserOverview", () => {
 				},
 			}),
 		)
-		const count = (context: string) => ran.filter((ranContext) => ranContext === context).length
+		const count = (context: string) => Arr.filter(ran, (ranContext) => ranContext === context).length
 		return Effect.gen(function* () {
 			yield* seed
 			const overview = yield* readUserOverview(tenant, request)
@@ -314,7 +314,7 @@ describe("readUserOverview", () => {
 			assert.strictEqual(count("mcpServices"), 1)
 			assert.strictEqual(count("userIssues"), 1)
 			assert.strictEqual(overview.profile?.topRoute, "POST /profile-route")
-			const requests = overview.activity.activity.filter((item) => item.kind === "request")
+			const requests = Arr.filter(overview.activity.activity, (item) => item.kind === "request")
 			expect(requests).toMatchObject([{ traceId: "trace-activity", tone: "crit" }])
 			assert.isTrue(overview.issues.attributed)
 			expect(overview.issues.issues).toMatchObject([{ issueId: KEPT, fingerprintHash: "111", hits: 4 }])

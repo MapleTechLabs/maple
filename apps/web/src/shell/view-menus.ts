@@ -228,8 +228,11 @@ const navSectionMenu = (
 	currentPath: string,
 	clerk: ShellClerk | null,
 ): ReadonlyArray<Html> => {
-	const item = Arr.flatMap(shellNavGroups(clerk), (group) => group.items).find(
-		(candidate) => candidate.title === title,
+	const item = Option.getOrUndefined(
+		Arr.findFirst(
+			Arr.flatMap(shellNavGroups(clerk), (group) => group.items),
+			(candidate) => candidate.title === title,
+		),
 	)
 	if (item?.subItems === undefined) return []
 	const { shown, hidden } = partitionSubItems(item.subItems, surfacesOf(model), currentPath)

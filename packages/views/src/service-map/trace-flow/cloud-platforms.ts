@@ -1,6 +1,7 @@
 import { cloudflareDisplay } from "@maple/ui/lib/cloud-platforms/cloudflare-display"
 import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
 import type { FlowIconName } from "../../ui/flow-icons"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
 // copied: packages/ui/src/lib/cloud-platforms/{database,index}.ts, the fields the flow card
 // reads, with `Icon` as an icon name (the adapters import React icon components). Workers
@@ -16,8 +17,8 @@ export interface CloudPlatformInfo {
 	readonly outcome: { readonly value: string; readonly bad: boolean } | null
 }
 
-const DB_SYSTEM_LABELS = new Map(
-	Object.entries({
+const DB_SYSTEM_LABELS = new Map<string, string>(
+	Rec.toEntries({
 		postgresql: "PostgreSQL",
 		mysql: "MySQL",
 		mariadb: "MariaDB",
@@ -53,19 +54,25 @@ const DB_SYSTEM_LABELS = new Map(
 )
 
 export function humanizeDbSystem(system: string): string {
-	const known = DB_SYSTEM_LABELS.get(system.toLowerCase())
+	const known = DB_SYSTEM_LABELS.get(Str.toLowerCase(system))
 	if (known) return known
-	const tail = system.split(".").pop() ?? system
-	return tail
-		.split(/[_\s-]+/)
-		.filter(Boolean)
-		.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-		.join(" ")
+	return Arr.join(
+		Arr.map(
+			Arr.filter(Str.split(/[_\s-]+/)(Arr.lastNonEmpty(Str.split(".")(system))), (word) => word !== ""),
+			(word) => Str.toUpperCase(Str.slice(0, 1)(word)) + Str.slice(1)(word),
+		),
+		" ",
+	)
 }
 
 /** First present, non-blank value among `keys`. */
 export const pickAttr = (attrs: Record<string, string>, ...keys: ReadonlyArray<string>): string | null =>
-	keys.map((key) => attrs[key]).find((value) => value != null && value.trim() !== "") ?? null
+	Option.getOrNull(
+		Arr.findFirst(
+			Arr.map(keys, (key) => attrs[key]),
+			(value) => value != null && Str.trim(value) !== "",
+		),
+	)
 
 const cloudflare = (attrs: Record<string, string>): CloudPlatformInfo | null => {
 	const worker = detectCloudflareWorker(attrs)

@@ -1,7 +1,7 @@
 import type { ErrorIssueEventDocument } from "@maple/domain/http"
 import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
-import { DateTime, Option, Schema } from "effect"
+import { DateTime, Option, Schema, Array as Arr } from "effect"
 
 const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
 
@@ -169,10 +169,12 @@ const mergeText = (p: Payload): string | null => {
 		const into = payloadString(p.label)
 		return into ? `Merged into ${into}. New occurrences land there.` : "Merged into another issue."
 	}
-	const labels = Array.isArray(p.labels) ? p.labels.flatMap((label) => payloadString(label) ?? []) : []
+	const labels: ReadonlyArray<string> = Arr.isArray(p.labels)
+		? Arr.flatMap(p.labels, (label: unknown) => Arr.fromNullishOr(payloadString(label)))
+		: []
 	return labels.length === 0
 		? null
-		: `Merged in ${countLabel(labels.length, "issue")}: ${labels.join(", ")}`
+		: `Merged in ${countLabel(labels.length, "issue")}: ${Arr.join(labels, ", ")}`
 }
 
 const unmergeText = (p: Payload): string | null => {

@@ -46,7 +46,7 @@ import type { Model } from "./model"
 import type { Peek } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option, Order } from "effect"
 
 // The endpoint drawer: the endpoint's numbers, its requests and latency over the window, the status
 // codes, the latency distribution, the clients, the body sizes and the slowest requests.
@@ -100,7 +100,7 @@ const stat = (h: H, label: string, value: string, sub: string, tone?: Tone): Htm
 const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, seconds: number): Html => {
 	const { endpoint } = peek
 	const mix = knownStatusMix(endpoint)
-	const topClient = codes.find((code) => Str.startsWith("4")(code.name))
+	const topClient = Option.getOrUndefined(Arr.findFirst(codes, (code) => Str.startsWith("4")(code.name)))
 	return statRail(h, { columns: 4, className: "overflow-hidden sm:grid-cols-4" }, [
 		stat(
 			h,
@@ -212,10 +212,13 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 
 const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Html => {
 	const codes = endpointStatusCodes(rows, spanName)
-	const errorType = Arr.filter(
-		rows,
-		(row) => row.spanName === spanName && row.errorType !== "" && Number(row.httpStatusCode) >= 400,
-	).toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)[0]
+	const errorType = Arr.sort(
+		Arr.filter(
+			rows,
+			(row) => row.spanName === spanName && row.errorType !== "" && Number(row.httpStatusCode) >= 400,
+		),
+		Order.flip(Order.mapInput(Order.Number, (row: (typeof rows)[number]) => row.estimatedSpanCount)),
+	)[0]
 	return card(h, "Status codes", null, [
 		...(codes.length === 0
 			? [
@@ -548,8 +551,11 @@ const header = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Html =>
 	})
 
 const footer = (h: H, peek: Peek, inputs: ViewInputs): Html => {
-	const topError = endpointStatusCodes(inputs.statusRows, peek.endpoint.spanName).find(
-		(code) => Number(code.name) >= 400,
+	const topError = Option.getOrUndefined(
+		Arr.findFirst(
+			endpointStatusCodes(inputs.statusRows, peek.endpoint.spanName),
+			(code) => Number(code.name) >= 400,
+		),
 	)
 	return DialogView.dialogFooter(
 		h,

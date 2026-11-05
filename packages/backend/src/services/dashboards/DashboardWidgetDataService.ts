@@ -58,7 +58,7 @@ import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
 import type { RawSqlValidationError } from "@maple/domain/http"
-import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
+import { Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -160,7 +160,7 @@ export interface WidgetDataOutcome {
 
 /** Every widget on a document, including those nested in sections and tabs. */
 const findWidget = (document: DashboardDocument, widgetId: string) =>
-	document.widgets.find((widget) => widget.id === widgetId)
+	Arr.findFirst(document.widgets, (widget) => widget.id === widgetId)
 
 /** The families a request reads that the caller may not, empty when it may read them all. */
 const unreadableFamilies = (
@@ -168,9 +168,11 @@ const unreadableFamilies = (
 	request: WidgetDataRequest,
 	canRead: (family: TelemetryReadFamily) => boolean,
 ): ReadonlyArray<TelemetryReadFamily> => {
-	const widget = findWidget(document, request.widgetId)
-	const dataSource =
-		request.source === "sparkline" ? widget?.display?.sparkline?.dataSource : widget?.dataSource
+	const dataSource = Option.match(findWidget(document, request.widgetId), {
+		onNone: () => undefined,
+		onSome: (widget) =>
+			request.source === "sparkline" ? widget.display?.sparkline?.dataSource : widget.dataSource,
+	})
 	return Arr.filter(widgetReadFamilies(dataSource), (family) => !canRead(family))
 }
 
@@ -308,13 +310,14 @@ export class DashboardWidgetDataService extends Context.Service<
 				"maple.widget.source": request.source,
 			})
 
-			const widget = findWidget(document, request.widgetId)
-			if (widget === undefined) {
+			const found = findWidget(document, request.widgetId)
+			if (Option.isNone(found)) {
 				return yield* new ShareWidgetNotFoundError({
 					message: "That widget is not on this dashboard.",
 					widgetId: request.widgetId,
 				})
 			}
+			const widget = found.value
 
 			const dataSource =
 				request.source === "sparkline" ? widget.display?.sparkline?.dataSource : widget.dataSource

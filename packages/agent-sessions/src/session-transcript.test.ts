@@ -14,7 +14,7 @@ import {
 } from "./session-transcript"
 import { sessionToolResults } from "./span-detail"
 import { agentSpan, langGraphThreadSpans, llmSpan, makeSpan, toolSpan, T0 } from "./span-test-support"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const SECOND = 1000
 
@@ -43,9 +43,13 @@ function findRow<K extends TranscriptRow["kind"]>(
 	rows: readonly TranscriptRow[],
 	kind: K,
 ): Extract<TranscriptRow, { kind: K }> {
-	const row = rows.find((candidate) => candidate.kind === kind)
-	if (row === undefined) throw new Error(`no ${kind} row in [${Arr.join(kinds(rows), ", ")}]`)
-	return row as Extract<TranscriptRow, { kind: K }>
+	return Option.getOrThrowWith(
+		Arr.findFirst(
+			rows,
+			(candidate): candidate is Extract<TranscriptRow, { kind: K }> => candidate.kind === kind,
+		),
+		() => new Error(`no ${kind} row in [${Arr.join(kinds(rows), ", ")}]`),
+	)
 }
 
 function findRows<K extends TranscriptRow["kind"]>(
@@ -938,7 +942,7 @@ describe("buildTranscript — structural fallback and notes", () => {
 		const rows = transcript([...captured(0), ...captured(1), ...captured(2), ...silent])
 		// No leading banner: capture is the norm in this session.
 		expect(rows[0]!.kind).toBe("turn")
-		const noteIndex = rows.findIndex((row) => row.kind === "note")
+		const noteIndex = Option.getOrThrow(Arr.findFirstIndex(rows, (row) => row.kind === "note"))
 		expect(rows[noteIndex - 1]!.kind).toBe("turn")
 	})
 })

@@ -1,3 +1,4 @@
+import { Array as Arr, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import type { BreakdownItem, TimeseriesPoint } from "@maple/domain"
 import {
@@ -28,12 +29,12 @@ describe("computeTimeseriesStats", () => {
 		expect(stats.seriesCount).toBe(2)
 		expect(stats.firstBucket).toBe("2026-04-12 00:00:00")
 		expect(stats.lastBucket).toBe("2026-04-12 02:00:00")
-		const auth = stats.seriesStats.find((s) => s.name === "auth")!
+		const auth = Option.getOrThrow(Arr.findFirst(stats.seriesStats, (s) => s.name === "auth"))
 		expect(auth.min).toBe(10)
 		expect(auth.max).toBe(30)
 		expect(auth.avg).toBe(20)
 		expect(auth.validCount).toBe(3)
-		const billing = stats.seriesStats.find((s) => s.name === "billing")!
+		const billing = Option.getOrThrow(Arr.findFirst(stats.seriesStats, (s) => s.name === "billing"))
 		expect(billing.min).toBe(5)
 		expect(billing.max).toBe(5)
 	})

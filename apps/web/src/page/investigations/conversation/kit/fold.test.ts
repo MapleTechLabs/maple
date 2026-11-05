@@ -8,7 +8,7 @@ import {
 import { assert, describe, it } from "vitest"
 import { applyChatEvent, historyMessageToUIMessage } from "./fold"
 import type { UIMessage } from "./ui-message"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // A turn that ends with calls in flight: Stop, a failure or the step limit. They never settle.
 
@@ -20,14 +20,17 @@ const events: ReadonlyArray<ChatEventInput> = [
 ]
 
 const toolStates = (message: UIMessage | undefined) =>
-	message?.parts.flatMap((part) => (part._tag === "dynamic-tool" ? [part.state] : []))
+	message === undefined
+		? undefined
+		: Arr.flatMap(message.parts, (part) => (part._tag === "dynamic-tool" ? [part.state] : []))
 
 describe("a turn that ends with calls unsettled", () => {
 	it("stops them in the live view, but keeps a proposal open", () => {
-		const messages = events.reduce<ReadonlyArray<UIMessage>>(
+		const messages = Arr.reduce<(typeof events)[number], ReadonlyArray<UIMessage>>(
+			events,
+			[],
 			(folded, input, index) =>
 				applyChatEvent(folded, decodeChatEventPayload(encodeChatEventPayload(input), index + 1), 10),
-			[],
 		)
 		assert.deepStrictEqual(toolStates(messages[0]), ["output-stopped", "proposed"])
 	})
@@ -41,12 +44,15 @@ describe("a turn that ends with calls unsettled", () => {
 			{ type: "tool-call", messageId: "t1", callId: "s1", name: "pr_file_diff", input: {}, task },
 			{ type: "turn-end", messageId: "t1", reason: "error", task },
 		]
-		const [message] = sequence.reduce<ReadonlyArray<UIMessage>>(
+		const [message] = Arr.reduce<(typeof sequence)[number], ReadonlyArray<UIMessage>>(
+			sequence,
+			[],
 			(folded, input, index) =>
 				applyChatEvent(folded, decodeChatEventPayload(encodeChatEventPayload(input), index + 1), 10),
-			[],
 		)
-		const card = message?.parts.find((part) => part._tag === "task")
+		const card = Option.getOrUndefined(
+			Arr.findFirst(message?.parts ?? [], (part) => part._tag === "task"),
+		)
 		assert.strictEqual(card?._tag === "task" ? card.status : undefined, "error")
 		const nested =
 			card?._tag === "task" ? Arr.flatMap(card.messages, (child) => toolStates(child) ?? []) : []

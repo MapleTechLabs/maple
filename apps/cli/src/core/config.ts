@@ -1,4 +1,15 @@
-import { Config, Context, DateTime, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import {
+	Config,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Result,
+	Schema,
+	Record as Rec,
+} from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
@@ -59,7 +70,7 @@ const StoredConfigFields = Schema.Struct({
 	latestKnownVersion: Schema.optionalKey(Schema.String),
 	lastSeenVersion: Schema.optionalKey(Schema.String),
 })
-const KNOWN_KEYS = new Set(Object.keys(StoredConfigFields.fields))
+const KNOWN_KEYS = new Set<string>(Rec.keys(StoredConfigFields.fields))
 const decodeConfigObject = Schema.decodeUnknownResult(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 )
@@ -91,9 +102,7 @@ const readConfig = (fs: FileSystem, configPath: string): Effect.Effect<ConfigFil
 			if (Result.isFailure(object)) return Effect.fail(invalid)
 			const config = decodeStoredConfig(object.success)
 			if (Result.isFailure(config)) return Effect.fail(invalid)
-			const unknownFields = Object.fromEntries(
-				Object.entries(object.success).filter(([key]) => !KNOWN_KEYS.has(key)),
-			)
+			const unknownFields = Rec.filter(object.success, (_, key) => !KNOWN_KEYS.has(key))
 			return Effect.succeed<ConfigFile>({ config: config.success, unknownFields })
 		}),
 	)

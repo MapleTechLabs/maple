@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Scope, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Exit, Layer, Option, Scope, Array as Arr, Record as Rec, String as Str } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make, WorkerEnvironment } from "./index.js"
 
@@ -57,11 +57,10 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(traceCall).toBeDefined()
-		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
-		expect(traceCall!.headers.authorization).toBe("Bearer secret")
-		const body = traceCall!.body as {
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(traceCall.url).toBe("https://collector.test/v1/traces")
+		expect(traceCall.headers.authorization).toBe("Bearer secret")
+		const body = traceCall.body as {
 			resourceSpans: Array<{
 				resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
@@ -99,9 +98,8 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const logCall = calls.find((c) => Str.endsWith("/v1/logs")(c.url))
-		expect(logCall).toBeDefined()
-		const body = logCall!.body as {
+		const logCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/logs")(c.url)))
+		const body = logCall.body as {
 			resourceLogs: Array<{
 				scopeLogs: Array<{
 					logRecords: Array<{ severityText: string; body: { stringValue?: string } }>
@@ -126,8 +124,8 @@ describe("MapleCloudflareSDK.make", () => {
 		// defaulting here, not the no-op behavior.
 		await telemetry.flush({ MAPLE_INGEST_KEY: "secret" })
 
-		const tracesCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(tracesCall?.url).toBe("https://ingest.maple.dev/v1/traces")
+		const tracesCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(tracesCall.url).toBe("https://ingest.maple.dev/v1/traces")
 	})
 
 	it("runs in no-op mode when no ingest key is configured", async () => {
@@ -169,9 +167,11 @@ describe("MapleCloudflareSDK.make", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush({ MAPLE_ENDPOINT: "http://localhost:4318" })
 
-		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
-		expect(tracesCall?.body).toBeDefined()
-		expect(tracesCall?.headers).not.toHaveProperty("authorization")
+		const tracesCall = Option.getOrThrow(
+			Arr.findFirst(calls, (c) => c.url === "http://localhost:4318/v1/traces"),
+		)
+		expect(tracesCall.body).toBeDefined()
+		expect(tracesCall.headers).not.toHaveProperty("authorization")
 		expect(consoleInfoSpy).not.toHaveBeenCalled()
 	})
 
@@ -216,9 +216,9 @@ describe("MapleCloudflareSDK.make", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush(env)
 
-		const call = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(call?.url).toBe("https://override.test/v1/traces")
-		expect(call?.headers.authorization).toBe("Bearer override-key")
+		const call = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(call.url).toBe("https://override.test/v1/traces")
+		expect(call.headers.authorization).toBe("Bearer override-key")
 	})
 
 	it("survives a failing collector — flush rejects internally and disables for cooldown", async () => {
@@ -261,9 +261,11 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(traceCall, "expected the deferred span to be POSTed by the awaited flush").toBeDefined()
-		const body = traceCall!.body as {
+		const traceCall = Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url))
+		expect(Option.isSome(traceCall), "expected the deferred span to be POSTed by the awaited flush").toBe(
+			true,
+		)
+		const body = Option.getOrThrow(traceCall).body as {
 			resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 		}
 		expect(Arr.map(body.resourceSpans[0].scopeSpans[0].spans, (s) => s.name)).toEqual(["deferred-op"])

@@ -26,7 +26,7 @@ import type { OrgId, ShareChartResponse } from "@maple/domain/http"
 import { ChartRanked, ChartTimeseries } from "@maple/domain/http"
 import { downsample, type ChartPoint } from "@maple/widgets/chart/static-chart"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Option, Record as Rec } from "effect"
 
 /**
  * Points kept per series. The alert card draws 60 across the same 720px and a
@@ -119,10 +119,12 @@ export const chatChartFrom = (
 	messages: ReadonlyArray<ChatMessage>,
 	claims: VerifiedChatChartClaims,
 ): ShareChartResponse | null => {
-	const message = messages.find(
+	const found = Arr.findFirst(
+		messages,
 		(candidate) => candidate.id === claims.rawMessageId && candidate.role === "assistant",
 	)
-	if (message === undefined) return null
+	if (Option.isNone(found)) return null
+	const message = found.value
 
 	// Position in the reply is the chart's identity — see `chartFences`.
 	const fence = chartFences(message.text)[claims.chartIndex]

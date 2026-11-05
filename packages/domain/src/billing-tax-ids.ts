@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 /**
  * Customer tax-ID types Stripe accepts on `POST /v1/customers/{id}/tax_ids`.
  *
@@ -393,15 +393,18 @@ export const defaultTaxIdTypeFor = (country: string | null | undefined): TaxIdTy
 	if (!country) return undefined
 	const code = Str.toUpperCase(country)
 	if (EU_VAT_COUNTRY_CODES.includes(code)) return "eu_vat"
-	const match = TAX_ID_TYPES.find((info) => info.country === code)
-	return match === undefined || !isTaxIdType(match.type) ? undefined : match.type
+	return Arr.findFirst(TAX_ID_TYPES, (info) => info.country === code).pipe(
+		Option.map((match) => match.type),
+		Option.filter(isTaxIdType),
+		Option.getOrUndefined,
+	)
 }
 
 /** Stripe's formatting example for a type, country-specific for `eu_vat`. */
 export const taxIdExampleFor = (type: string, country?: string | null): string => {
 	if (type === "eu_vat" && country) {
-		const eu = EU_VAT_COUNTRIES.find(([code]) => code === Str.toUpperCase(country))
-		if (eu) return eu[1]
+		const eu = Arr.findFirst(EU_VAT_COUNTRIES, ([code]) => code === Str.toUpperCase(country))
+		if (Option.isSome(eu)) return eu.value[1]
 	}
 	return TAX_ID_TYPE_BY_VALUE.get(type)?.example ?? ""
 }

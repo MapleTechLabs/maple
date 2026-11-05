@@ -41,7 +41,19 @@ import {
 	OrgIngestKeys,
 } from "@maple/db/tables"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Option, Ref, Schema } from "effect"
+import {
+	Array as Arr,
+	Cause,
+	Clock,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Ref,
+	Schema,
+} from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
@@ -1651,13 +1663,14 @@ const make: Effect.Effect<
 		// place it would pin the cursor for as long as the org stays idle.
 		const unclaimed = ($: PG.ColumnAccessor<typeof ErrorTickStates.columns>) =>
 			PG.or($.claimExpiresAt.isNull(), $.claimExpiresAt.lte(nowMs))
-		const trailing = (yield* dbExecute((db) =>
+		const tickStates = yield* dbExecute((db) =>
 			db.run(
 				PG.from(ErrorTickStates)
 					.select("orgId", "processedThrough")
 					.where(($) => [$.processedThrough.lte(parkedAtMs - TICK_MAX_WINDOW_MS), unclaimed($)]),
 			),
-		)).filter((row) => idle.has(row.orgId))
+		)
+		const trailing = Arr.filter(tickStates, (row) => idle.has(row.orgId))
 
 		// `skip locked` for the reason `claimTickWindow` has it: a lapsed lease can
 		// still have its apply transaction open, holding the row. Waiting on that
@@ -1703,9 +1716,16 @@ const make: Effect.Effect<
 		// read through one by one.
 		const probed = yield* Effect.reduce(
 			Arr.chunksOf(
-				Arr.filter(trailing, (row) => !isObserved(row))
-					// Most recent first: a short outage gap before rows that are weeks old.
-					.toSorted((a, b) => b.processedThrough - a.processedThrough),
+				// Most recent first: a short outage gap before rows that are weeks old.
+				Arr.sort(
+					Arr.filter(trailing, (row) => !isObserved(row)),
+					Order.flip(
+						Order.mapInput(
+							Order.Number,
+							(row: (typeof trailing)[number]) => row.processedThrough,
+						),
+					),
+				),
 				TICK_IDLE_RECOVERY_LOOKUPS,
 			),
 			(): ReadonlyArray<(typeof trailing)[number]> => [],

@@ -78,8 +78,7 @@ const nothingLoaded = (key: string): Model["more"] => ({
 /** The search string the route renders, for the back-to-list crumb. */
 export const searchStrOf = (sessionId: string, search: Search): string => {
 	const href = hrefOf(AppRoute.AgentSession({ sessionId, search }))
-	const at = href.indexOf("?")
-	return at === -1 ? "" : Str.slice(at)(href)
+	return Option.match(Str.indexOf("?")(href), { onNone: () => "", onSome: (at) => Str.slice(at)(href) })
 }
 
 /** The first page for the link's window (or the id across retention without one). */

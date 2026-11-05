@@ -388,7 +388,13 @@ describe("dashboard view", () => {
 		).model
 		const released = pageUpdate(dragged, Message.ReleasedPointer())
 		expect(names(released.commands)).toEqual([UpdateWidgetLayouts.name])
-		const xOf = (id: string) => released.model.droppedLayout?.find((item) => item.i === id)?.x
+		const xOf = (id: string) =>
+			Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(released.model.droppedLayout ?? [], (item) => item.i === id),
+					(item) => item.x,
+				),
+			)
 		expect(xOf("total-errors")).toBe(0)
 		expect(xOf("error-rate")).toBeGreaterThan(0)
 	})

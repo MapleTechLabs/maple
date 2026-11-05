@@ -22,7 +22,7 @@ import {
 	type UsersFacetsRequest,
 	type UsersListRequest,
 } from "@maple/domain/http"
-import { Array as Arr, Clock, DateTime, Effect, Option } from "effect"
+import { Array as Arr, Clock, DateTime, Effect, Option, Order, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -411,7 +411,7 @@ const logItem = (log: UserLogItem): UserActivityItem => ({
 	kind: "log",
 	atMs: log.atMs,
 	service: log.service,
-	title: log.body.slice(0, LOG_TITLE_LENGTH),
+	title: Str.slice(0, LOG_TITLE_LENGTH)(log.body),
 	detail: Arr.join([log.severity, log.service], " · "),
 	tone: isErrorSeverity(log.severity) ? "crit" : "warn",
 	sessionId: null,
@@ -446,59 +446,66 @@ export const mergeActivity = (
 	sources: ActivitySources,
 	limit: number = ACTIVITY_LIMIT,
 ): ReadonlyArray<UserActivityItem> =>
-	[
-		...Arr.map(sources.sessions, (session): UserActivityItem => ({
-			kind: "session",
-			atMs: session.startedMs,
-			service: session.service,
-			title: session.entryPath === "" ? "Session" : `Session on ${session.entryPath}`,
-			detail: Arr.join(
-				[
-					plural(session.pages, "page"),
-					plural(session.errors, "error"),
-					...(session.device === "" ? [] : [session.device]),
-				],
-				" · ",
-			),
-			tone: session.errors > 0 ? "crit" : "neutral",
-			sessionId: session.sessionId,
-			traceId: null,
-			issueId: null,
-		})),
-		...Arr.map(sources.events, (event): UserActivityItem => ({
-			kind: "event",
-			atMs: event.atMs,
-			service: event.service,
-			title: event.name,
-			detail: Arr.join(
-				Arr.filter([event.source, event.detail], (part) => part !== ""),
-				" · ",
-			),
-			tone: "neutral",
-			sessionId: null,
-			traceId: null,
-			issueId: null,
-		})),
-		...Arr.map(sources.mcpSessions, (session): UserActivityItem => ({
-			kind: "mcp",
-			atMs: session.firstSeenMs,
-			service: session.service,
-			title: `${plural(session.calls, "tool call")} from ${session.client}`,
-			detail: Arr.join(
-				[session.service, plural(session.tools, "tool"), `${session.errors} failed`],
-				" · ",
-			),
-			tone: session.errors > 0 ? "crit" : "neutral",
-			sessionId: session.sessionId,
-			traceId: null,
-			issueId: null,
-		})),
-		...Arr.map(sources.issues ?? [], issueItem),
-		...Arr.map(sources.traces ?? [], requestItem),
-		...Arr.map(sources.logs ?? [], logItem),
-	]
-		.toSorted((a, b) => b.atMs - a.atMs)
-		.slice(0, limit)
+	Arr.take(
+		Arr.sort(
+			[
+				...Arr.map(sources.sessions, (session): UserActivityItem => ({
+					kind: "session",
+					atMs: session.startedMs,
+					service: session.service,
+					title: session.entryPath === "" ? "Session" : `Session on ${session.entryPath}`,
+					detail: Arr.join(
+						[
+							plural(session.pages, "page"),
+							plural(session.errors, "error"),
+							...(session.device === "" ? [] : [session.device]),
+						],
+						" · ",
+					),
+					tone: session.errors > 0 ? "crit" : "neutral",
+					sessionId: session.sessionId,
+					traceId: null,
+					issueId: null,
+				})),
+				...Arr.map(sources.events, (event): UserActivityItem => ({
+					kind: "event",
+					atMs: event.atMs,
+					service: event.service,
+					title: event.name,
+					detail: Arr.join(
+						Arr.filter([event.source, event.detail], (part) => part !== ""),
+						" · ",
+					),
+					tone: "neutral",
+					sessionId: null,
+					traceId: null,
+					issueId: null,
+				})),
+				...Arr.map(sources.mcpSessions, (session): UserActivityItem => ({
+					kind: "mcp",
+					atMs: session.firstSeenMs,
+					service: session.service,
+					title: `${plural(session.calls, "tool call")} from ${session.client}`,
+					detail: Arr.join(
+						[session.service, plural(session.tools, "tool"), `${session.errors} failed`],
+						" · ",
+					),
+					tone: session.errors > 0 ? "crit" : "neutral",
+					sessionId: session.sessionId,
+					traceId: null,
+					issueId: null,
+				})),
+				...Arr.map(sources.issues ?? [], issueItem),
+				...Arr.map(sources.traces ?? [], requestItem),
+				...Arr.map(sources.logs ?? [], logItem),
+			],
+			NEWEST_FIRST,
+		),
+		limit,
+	)
+
+/** Newest first, by the moment a timeline row happened. */
+const NEWEST_FIRST = Order.flip(Order.mapInput(Order.Number, (item: { atMs: number }) => item.atMs))
 
 /** The issues the user hit; `None` where errors carry no user id. */
 type IssueItems = Option.Option<ReadonlyArray<UserIssueItem>>
@@ -571,7 +578,10 @@ export const mergeServices = (
 			})
 		},
 	)
-	return [...merged.values()].toSorted((a, b) => b.signals - a.signals)
+	return Arr.sort(
+		[...merged.values()],
+		Order.flip(Order.mapInput(Order.Number, (service: { signals: number }) => service.signals)),
+	)
 }
 
 const profileIn = Effect.fn("UsersReads.profile")(function* (
@@ -850,7 +860,7 @@ export const severityOf = (text: string, number: number): string =>
 			: (SEVERITY_LEVELS[Math.min(5, Math.floor((number - 1) / 4))] ?? "FATAL")
 
 const isErrorSeverity = (severity: string): boolean =>
-	["ERROR", "FATAL", "CRITICAL", "EMERGENCY", "ALERT"].includes(severity.toUpperCase())
+	Arr.contains(["ERROR", "FATAL", "CRITICAL", "EMERGENCY", "ALERT"], Str.toUpperCase(severity))
 
 const toTraceItem = (row: CH.UserTraceOutput): UserTraceItem => ({
 	traceId: row.traceId,

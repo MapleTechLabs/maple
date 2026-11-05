@@ -39,7 +39,7 @@ import { ANYONE } from "./update"
 import { auditDetail, resourceHref } from "./view-detail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 type SettingsSearch = typeof SettingsSearchSchema.Type
@@ -92,9 +92,13 @@ const COL = {
 const initialsOf = (label: string) => (Str.startsWith("user_")(label) ? "?" : initialsFrom(label))
 
 const abbreviateId = (id: string): string => {
-	const prefixEnd = id.indexOf("_")
-	if (prefixEnd === -1 || id.length <= prefixEnd + 10) return id
-	return `${Str.slice(0, prefixEnd + 1)(id)}…${Str.slice(-5)(id)}`
+	return Option.match(
+		Option.filter(Str.indexOf("_")(id), (prefixEnd) => id.length > prefixEnd + 10),
+		{
+			onNone: () => id,
+			onSome: (prefixEnd) => `${Str.slice(0, prefixEnd + 1)(id)}…${Str.slice(-5)(id)}`,
+		},
+	)
 }
 
 const actorDisplayName = (entry: V2AuditLogEntry): string | null =>
@@ -103,7 +107,10 @@ const actorDisplayName = (entry: V2AuditLogEntry): string | null =>
 const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 	if (range.kind === "all") return "All time"
 	if (range.kind === "preset")
-		return AUDIT_RANGE_PRESETS.find((preset) => preset.value === range.preset)?.label ?? "All time"
+		return Option.match(
+			Arr.findFirst(AUDIT_RANGE_PRESETS, (preset) => preset.value === range.preset),
+			{ onNone: () => "All time", onSome: (preset) => preset.label },
+		)
 	const format = (value: string) => formatTimestampInTimezone(value, { timeZone })
 	if (range.since !== undefined && range.until !== undefined)
 		return `${format(range.since)} to ${format(range.until)}`
@@ -198,8 +205,13 @@ const personFilter = (
 		value: encodePublicId(PublicIdPrefixes.apiKey, key.id),
 		label: key.name,
 	}))
-	const selected = [...model.members, ...keyOptions].find((option) => option.value === actorId)
-	const label = actorId === undefined ? "Anyone" : (selected?.label ?? actorId)
+	const label =
+		actorId === undefined
+			? "Anyone"
+			: Option.match(
+					Arr.findFirst([...model.members, ...keyOptions], (option) => option.value === actorId),
+					{ onNone: () => actorId, onSome: (option) => option.label },
+				)
 	const group = (
 		groupLabel: string,
 		items: ReadonlyArray<SelectView.SelectOption>,

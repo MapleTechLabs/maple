@@ -50,7 +50,19 @@ import {
 	type SourceHealthStatus,
 	worstSourceStatus,
 } from "@maple/domain/source-health"
-import { Cause, Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
+import {
+	Cause,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Predicate,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
@@ -89,9 +101,8 @@ const days = (atMs: number, ms: number | null): number | null =>
 	ms === null ? null : Math.max(0, daysBeforeCancel(atMs, ms))
 
 const newest = (values: ReadonlyArray<number | null>): number | null =>
-	values.reduce<number | null>(
-		(max, value) => (value !== null && (max === null || value > max) ? value : max),
-		null,
+	Arr.reduce<number | null, number | null>(values, null, (max, value) =>
+		value !== null && (max === null || value > max) ? value : max,
 	)
 
 const isBroken = (status: SourceHealthStatus) => status === "failing" || status === "disconnected"
@@ -147,7 +158,7 @@ const resourceCountsOf = (entry: IntegrationEntry): CancellationIntegrationHealt
 		const kind = entry.provider === "chat" ? (resource.note ?? resource.kind) : resource.kind
 		counts.set(kind, (counts.get(kind) ?? 0) + 1)
 	}
-	return [...counts].map(([kind, count]) => ({ kind, count }))
+	return Arr.map([...counts], ([kind, count]) => ({ kind, count }))
 }
 
 /**
@@ -179,12 +190,14 @@ export const integrationHealthOf = (
 		const healths = Arr.map(rows, (row) => sourceRowHealth(row, now))
 		const status = worstSourceStatus(Arr.map(healths, (health) => health.status))
 		const connectors = platform === "gcp" ? gcpConnectors : []
-		const connectorError = Arr.flatMap(connectors, (c) => [
-			c.lastError,
-			c.lastMetricsError,
-			c.lastResourcesError,
-		]).find((error) => error !== null)
-		const problem = healths.find((health) => health.status === status)?.problem ?? null
+		const connectorError = Arr.findFirst(
+			Arr.flatMap(connectors, (c) => [c.lastError, c.lastMetricsError, c.lastResourcesError]),
+			Predicate.isNotNull,
+		)
+		const problem = Arr.findFirst(healths, (health) => health.status === status).pipe(
+			Option.flatMapNullishOr((health) => health.problem),
+			Option.getOrNull,
+		)
 		return {
 			kind: platform,
 			status,
@@ -207,9 +220,7 @@ export const integrationHealthOf = (
 			),
 			errorClass: isBroken(status)
 				? errorClassOf(problem ?? "")
-				: connectorError === undefined
-					? null
-					: errorClassOf(connectorError),
+				: Option.getOrNull(Option.map(connectorError, errorClassOf)),
 			resources: [],
 		}
 	})
@@ -221,11 +232,11 @@ export const integrationHealthOf = (
 			entry.lastErrorDaysBeforeCancel !== null,
 	)
 	// Worst first.
-	return [...integrations, ...shown]
-		.toSorted(
-			(a, b) => SOURCE_HEALTH_STATUSES.indexOf(a.status) - SOURCE_HEALTH_STATUSES.indexOf(b.status),
-		)
-		.slice(0, INTEGRATIONS_SHOWN)
+	return Arr.sortWith(
+		[...integrations, ...shown],
+		(entry) => SOURCE_HEALTH_STATUSES.indexOf(entry.status),
+		Order.Number,
+	).slice(0, INTEGRATIONS_SHOWN)
 }
 
 export interface OnboardingRow {
@@ -270,9 +281,13 @@ export const onboardingOf = (row: OnboardingRow | null, atMs: number): Cancellat
 		signupToFirstDataDays:
 			firstData === null ? null : Math.max(0, Math.floor((firstData - row.createdAt) / DAY_MS)),
 		lifecycleEmailsSent: Arr.map(
-			Arr.filter(emails, (email): email is readonly [CancellationLifecycleEmail, number] =>
-				known(email[1]),
-			).toSorted((a, b) => a[1] - b[1]),
+			Arr.sortWith(
+				Arr.filter(emails, (email): email is readonly [CancellationLifecycleEmail, number] =>
+					known(email[1]),
+				),
+				(email: readonly [CancellationLifecycleEmail, number]) => email[1],
+				Order.Number,
+			),
 			([name]) => name,
 		),
 	}
@@ -309,7 +324,7 @@ export const disabledDestinationsOf = (
 			reason:
 				row.disabledAt === null
 					? "manual"
-					: row.disabledReason?.startsWith("Last recipient left")
+					: row.disabledReason != null && Str.startsWith("Last recipient left")(row.disabledReason)
 						? "recipient_left"
 						: errorClassOf(row.disabledReason ?? ""),
 		}),
@@ -384,7 +399,11 @@ export const apiKeysOf = (
 	}>,
 	atMs: number,
 ): CancellationApiKeysEvidence => {
-	const active = (kind: string) => rows.find((row) => row.kind === kind)?.active ?? 0
+	const active = (kind: string) =>
+		Arr.findFirst(rows, (row) => row.kind === kind).pipe(
+			Option.map((row) => row.active),
+			Option.getOrElse(() => 0),
+		)
 	return {
 		active: { standard: active("standard"), mcp: active("mcp"), device: active("device") },
 		lastUsedDaysBeforeCancel: days(atMs, newest(Arr.map(rows, (row) => row.lastUsedAt))),

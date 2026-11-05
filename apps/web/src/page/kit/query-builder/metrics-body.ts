@@ -7,7 +7,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import type { QueryDraft } from "./draft"
 import { Message, metricBreakdownIdOf, metricPickerIdOf, type Model } from "./panel"
 import { panelSelect, textInput, whereClauseEditor } from "./parts"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `MetricsBody`: the metric picker, the where clause, and the two aggregation rows
 // with the one-field breakdown.
@@ -67,7 +67,15 @@ const picker = (
 			highlightsSelected: true,
 			// Measured: the positioner resolves the input (30 px), not the input group.
 			anchorsInput: true,
-			renderItem: (item) => [listed.find((option) => option.value === item)?.label ?? item],
+			renderItem: (item) => [
+				Option.getOrElse(
+					Option.map(
+						Arr.findFirst(listed, (option) => option.value === item),
+						(option) => option.label,
+					),
+					() => item,
+				),
+			],
 			isUnfiltered: true,
 			className: "h-8 flex-1 text-xs",
 			toView: ({ field, rest }) =>

@@ -16,7 +16,7 @@ import {
 } from "./list-model"
 import { gcpMetricReader } from "./tabs"
 import { gcpRailFacts, type GcpRailFact } from "./workload-signals"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 const DATABASE = "gcp.cloud_sql"
 
@@ -30,11 +30,21 @@ const ENGINES: ReadonlyArray<readonly [prefix: string, name: string]> = [
 export function gcpSqlEngine(databaseVersion: string | null): string | undefined {
 	if (databaseVersion === null) return undefined
 	const [prefix, ...version] = Str.split("_")(databaseVersion)
-	const name = ENGINES.find(([engine]) => engine === prefix)?.[1]
-	if (name === undefined) return databaseVersion
-	if (prefix !== "SQLSERVER") return Arr.join(Arr.filter([name, Arr.join(version, ".")], Boolean), " ")
-	const [year, ...edition] = version
-	return Arr.join(Arr.filter([name, year, Str.toLowerCase(Arr.join(edition, " "))], Boolean), " ")
+	return Option.match(
+		Arr.findFirst(ENGINES, ([engine]) => engine === prefix),
+		{
+			onNone: () => databaseVersion,
+			onSome: ([, name]) => {
+				if (prefix !== "SQLSERVER")
+					return Arr.join(Arr.filter([name, Arr.join(version, ".")], Boolean), " ")
+				const [year, ...edition] = version
+				return Arr.join(
+					Arr.filter([name, year, Str.toLowerCase(Arr.join(edition, " "))], Boolean),
+					" ",
+				)
+			},
+		},
+	)
 }
 
 const gigabytes = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 })
@@ -54,7 +64,7 @@ export const gcpSqlEdition = (edition: string | null): string | undefined =>
 		: Arr.join(
 				Arr.map(
 					Str.split("_")(edition),
-					(word) => word.charAt(0) + Str.toLowerCase(Str.slice(1)(word)),
+					(word) => Str.slice(0, 1)(word) + Str.toLowerCase(Str.slice(1)(word)),
 				),
 				" ",
 			)
@@ -195,10 +205,14 @@ export function gcpMatchStatements(
 	}
 	const matched = new Map<string, GcpTracedStatement>()
 	for (const row of rows) {
-		const found = byStatement
-			.get(gcpNormalizeStatement(row.querystring))
-			?.toSorted((a, b) => b.estimatedQueryCount - a.estimatedQueryCount)
-		if (found === undefined) continue
+		const queries = byStatement.get(gcpNormalizeStatement(row.querystring))
+		if (queries === undefined) continue
+		const found = Arr.sort(
+			queries,
+			Order.flip(
+				Order.mapInput(Order.Number, (query: (typeof queries)[number]) => query.estimatedQueryCount),
+			),
+		)
 		const services = [...new Set(Arr.map(found, (query) => query.sampleService))]
 		matched.set(row.queryHash, {
 			services,
@@ -219,8 +233,7 @@ const MAX_PREFIX = 200
  * that is too short to tell statements apart.
  */
 export const gcpStatementTextPrefix = (statement: string): string | null => {
-	const prefix =
-		Str.slice(0, MAX_PREFIX)(Str.split("\n")(Str.split(/\$\d/)(statement)[0] ?? "")[0]?.trim()) ?? ""
+	const prefix = Str.slice(0, MAX_PREFIX)(Str.trim(Str.split("\n")(Str.split(/\$\d/)(statement)[0])[0]))
 	return prefix.length >= MIN_PREFIX ? prefix : null
 }
 
@@ -250,7 +263,14 @@ export function gcpAppWait(
 			? [{ service: app.services[0], statement: row.querystring, appP95Ms, dbP95Ms: db }]
 			: []
 	})
-	return waits.toSorted((a, b) => b.appP95Ms / b.dbP95Ms - a.appP95Ms / a.dbP95Ms)[0] ?? null
+	return Option.getOrNull(
+		Arr.head(
+			Arr.sort(
+				waits,
+				Order.flip(Order.mapInput(Order.Number, (wait: GcpAppWait) => wait.appP95Ms / wait.dbP95Ms)),
+			),
+		),
+	)
 }
 
 // Connections ------------------------------------------------------------------------------------

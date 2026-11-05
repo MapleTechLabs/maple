@@ -1,3 +1,5 @@
+import { String as Str } from "effect"
+
 /**
  * Geographic instance, orthogonal to `MapleStage`. EU data must never transit `us`. `us` is the
  * unsuffixed default: renaming it would destroy and recreate every resource.
@@ -13,7 +15,7 @@ export function isMapleRegion(value: string): value is MapleRegion {
 }
 
 export function parseMapleRegion(value: string | undefined): MapleRegion {
-	const normalized = value?.trim().toLowerCase()
+	const normalized = value === undefined ? undefined : Str.toLowerCase(Str.trim(value))
 	if (!normalized) {
 		return DEFAULT_MAPLE_REGION
 	}

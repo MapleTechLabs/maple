@@ -14,7 +14,7 @@ import {
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { severityBadge } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
-import { String as Str } from "effect"
+import { String as Str, Option } from "effect"
 
 // Marks and states the Security Center's pages share.
 
@@ -107,12 +107,12 @@ export const gateState = <M>(h: HtmlBuilder<M>, gate: Gate, className?: string):
 
 /** `owner/` recedes so the repository name carries the row. */
 export const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string, className?: string): Html => {
-	const slash = fullName.indexOf("/")
+	const name = Option.match(Str.indexOf("/")(fullName), { onNone: () => 0, onSome: (slash) => slash + 1 })
 	return h.span(
 		[h.Class(cn("truncate", className)), h.Title(fullName)],
 		[
-			h.span([h.Class("text-muted-foreground")], [Str.slice(0, slash + 1)(fullName)]),
-			Str.slice(slash + 1)(fullName),
+			h.span([h.Class("text-muted-foreground")], [Str.slice(0, name)(fullName)]),
+			Str.slice(name)(fullName),
 		],
 	)
 }

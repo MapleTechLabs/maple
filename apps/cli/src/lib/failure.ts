@@ -2,7 +2,7 @@
 // line>` plus an optional `hint:` line; causes, stacks, and SQL stay behind
 // `--debug`. Pure so the rules are testable (bin.ts runs at import time).
 
-import { Predicate, Array as Arr, String as Str } from "effect"
+import { Option, Predicate, Array as Arr, String as Str } from "effect"
 import { SIGN_IN_REQUIRED } from "@maple/local-server/remote-auth"
 import { isRemoteHttps } from "@maple/local-server/local-address"
 
@@ -53,7 +53,9 @@ export const causeChain = (error: unknown): ReadonlyArray<unknown> => {
 }
 
 export const findInChain = (error: unknown, tag: string): TaggedLink | undefined =>
-	Arr.filter(causeChain(error), isTaggedLink).find((link) => link._tag === tag)
+	Option.getOrUndefined(
+		Arr.findFirst(Arr.filter(causeChain(error), isTaggedLink), (link) => link._tag === tag),
+	)
 
 /** The reason `/local/query` gave for refusing a write, if that is what failed. */
 export const readOnlyRejection = (error: unknown): string | undefined => {
@@ -100,7 +102,10 @@ export const localAccessDenial = (error: unknown, baseUrl: string): LocalAccessD
 
 /** First line only: warehouse messages can carry a multi-line ClickHouse trace. */
 const firstLine = (message: string): string => {
-	const line = Str.split("\n")(message).find((l) => Str.trim(l) !== "") ?? message
+	const line = Option.getOrElse(
+		Arr.findFirst(Str.split("\n")(message), (l) => Str.trim(l) !== ""),
+		() => message,
+	)
 	return Str.trim(line)
 }
 

@@ -45,7 +45,7 @@ const GIT_COMMON = ["--no-optional-locks", "-c", "core.quotePath=false"]
  * filters, so they are combined into a single pattern instead.
  */
 export const gitPathspec = (path: string | undefined, glob: string | undefined): ReadonlyArray<string> => {
-	const dir = path?.replace(/\/+$/, "")
+	const dir = path === undefined ? undefined : Str.replace(/\/+$/, "")(path)
 	if (glob === undefined) return dir === undefined ? [] : [dir]
 	return [`:(glob)${dir === undefined ? glob : `${dir}/${glob}`}`]
 }

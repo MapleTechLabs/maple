@@ -1,4 +1,4 @@
-import { Result, Array as Arr, DateTime } from "effect"
+import { Result, Array as Arr, DateTime, String as Str } from "effect"
 import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
@@ -58,7 +58,7 @@ describe("verifyPlanetScaleSignature", () => {
 	})
 
 	it("rejects a signature of the expected length in other characters", () => {
-		assert.isFalse(verifyPlanetScaleSignature(OOM_PAYLOAD, "shh", "\u00e9".repeat(64)))
+		assert.isFalse(verifyPlanetScaleSignature(OOM_PAYLOAD, "shh", Str.repeat(64)("\u00e9")))
 	})
 })
 

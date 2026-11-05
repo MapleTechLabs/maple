@@ -4,7 +4,7 @@ import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { dataSourceTransform, type SharedWidgetDisplayV3 } from "@maple/widgets/dashboard"
-import { Formatter, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Formatter, Schema, Array as Arr, Record as Rec, String as Str, Option, Ordering } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
 import type { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -144,7 +144,7 @@ const columnsOf = (
 }
 
 /** `compareValues` (use-table-sort.ts). */
-const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
+const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): Ordering.Ordering => {
 	if (
 		(typeof a === "number" && typeof b === "number") ||
 		(isNumericCell(a) && isNumericCell(b) && typeof a === "string" && typeof b === "string")
@@ -152,7 +152,7 @@ const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
 		const an = Number(a)
 		const bn = Number(b)
 		const cmp = an < bn ? -1 : an > bn ? 1 : 0
-		return dir === "asc" ? cmp : -cmp
+		return dir === "asc" ? cmp : Ordering.reverse(cmp)
 	}
 	return dir === "asc" ? Str.localeCompare(String(b))(String(a)) : Str.localeCompare(String(a))(String(b))
 }
@@ -194,7 +194,9 @@ const tableTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 		const textFields = Arr.filter(Rec.keys(rows[0] ?? {}), (field) => !isNumericCell(rows[0]?.[field]))
 		const sortKey = sort.key
 		const sorted =
-			sortKey === null ? rows : rows.toSorted((a, b) => compareValues(a[sortKey], b[sortKey], sort.dir))
+			sortKey === null
+				? rows
+				: Arr.sort(rows, (a: Row, b: Row) => compareValues(a[sortKey], b[sortKey], sort.dir))
 		return [
 			table(h, {}, [
 				tableHeader(h, [
@@ -254,21 +256,31 @@ const KNOWN_MAP_FIELDS = ["rootSpan.attributes", "logAttributes", "resourceAttri
 /** One property of an untyped row value, by name. */
 const property = (value: unknown, key: string): unknown =>
 	value !== null && typeof value === "object"
-		? Rec.toEntries(value).find(([name]) => name === key)?.[1]
+		? Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(Rec.toEntries(value), ([name]) => name === key),
+					([, entry]) => entry,
+				),
+			)
 		: undefined
 
 const nested = (value: unknown, parts: ReadonlyArray<string>): unknown =>
-	parts.reduce<unknown>((current, part) => property(current, part), value)
+	Arr.reduce(parts, value, (current, part) => property(current, part))
 
 const resolveFieldPath = (row: Row, path: string): unknown => {
-	const mapField = KNOWN_MAP_FIELDS.find((field) => Str.startsWith(`${field}.`)(path))
-	if (mapField === undefined) return nested(row, Str.split(".")(path))
-	const map = nested(row, Str.split(".")(mapField))
-	return property(map, Str.slice(mapField.length + 1)(path))
+	return Option.match(
+		Arr.findFirst(KNOWN_MAP_FIELDS, (field) => Str.startsWith(`${field}.`)(path)),
+		{
+			onNone: () => nested(row, Str.split(".")(path)),
+			onSome: (mapField) =>
+				property(nested(row, Str.split(".")(mapField)), Str.slice(mapField.length + 1)(path)),
+		},
+	)
 }
 
 const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row): Html => {
 	const value = resolveFieldPath(row, column.field)
+	// @effect-diagnostics-next-line preferEffectArray:off -- unknown elements; Arr.join takes strings
 	const display = Arr.isArray(value) ? value.join(", ") : formatCell(value, column.unit)
 	const className = cn("text-xs", columnVisibilityClass(index))
 	const content: Html | string =

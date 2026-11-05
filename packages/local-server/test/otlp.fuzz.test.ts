@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import fc from "fast-check"
 import insertMappings from "../src/schema/local-inserts.json"
-import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { encodeLogs, encodeMetrics, encodeTraces, OtlpFieldError } from "../src/otlp/encode"
 import { checkOtlpJson } from "../src/otlp/json"
 import {
@@ -29,7 +29,7 @@ const columns = (datasource: string): Map<string, string> => {
 	let token = ""
 	const flush = () => {
 		const trimmed = Str.trim(token)
-		const space = trimmed.indexOf(" ")
+		const space = Option.getOrElse(Str.indexOf(" ")(trimmed), () => -1)
 		if (space > 0) result.set(Str.slice(0, space)(trimmed), Str.trim(Str.slice(space + 1)(trimmed)))
 		token = ""
 	}

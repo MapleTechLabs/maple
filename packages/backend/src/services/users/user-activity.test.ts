@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
 import { OrgId, UserDetailRequest, UserId } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -84,13 +84,14 @@ const run = (payload: UserDetailRequest, seen: Array<string>, sqls: Array<string
 						seen.push(context)
 						sqls.push(compiled.sql)
 						const servers = /ServiceName IN \(([^)]*)\)/.exec(compiled.sql)?.[1]
-						const rows = (fixture.get(context) ?? []).filter(
+						const rows = Arr.filter(
+							fixture.get(context) ?? [],
 							(row) =>
 								servers === undefined ||
 								typeof row !== "object" ||
 								row === null ||
 								!("service" in row) ||
-								servers.includes(`'${String(row.service)}'`),
+								Str.includes(`'${String(row.service)}'`)(servers),
 						)
 						return compiled.decodeRows(rows).pipe(Effect.orDie)
 					},
@@ -112,7 +113,7 @@ describe("readUserActivity", () => {
 		Effect.gen(function* () {
 			const response = yield* run(request(), [])
 			assert.deepStrictEqual(
-				response.mcpSessions.map((session) => [session.service, session.source, session.calls]),
+				Arr.map(response.mcpSessions, (session) => [session.service, session.source, session.calls]),
 				[
 					["maple-ai", "issued", 3],
 					["docs-mcp", "user", 1],
@@ -120,7 +121,7 @@ describe("readUserActivity", () => {
 				],
 			)
 			const [, later, earlier] = response.mcpSessions
-			assert.isTrue(later?.sessionId.startsWith("user:"))
+			assert.isTrue(Str.startsWith("user:")(later?.sessionId ?? ""))
 			assert.strictEqual(earlier?.tools, 2)
 			assert.strictEqual(earlier?.errors, 1)
 		}),
@@ -130,7 +131,7 @@ describe("readUserActivity", () => {
 		Effect.gen(function* () {
 			const response = yield* run(request(), [])
 			assert.deepStrictEqual(
-				response.activity.map((item) => [item.kind, item.service, item.tone]),
+				Arr.map(response.activity, (item) => [item.kind, item.service, item.tone]),
 				[
 					["mcp", "maple-ai", "crit"],
 					["mcp", "docs-mcp", "neutral"],
@@ -147,15 +148,17 @@ describe("readUserActivity", () => {
 			const sqls: Array<string> = []
 			const response = yield* run(request(["platform"]), seen, sqls)
 			assert.deepStrictEqual(
-				[...new Set(response.mcpSessions.map((session) => session.service))],
+				[...new Set(Arr.map(response.mcpSessions, (session) => session.service))],
 				["docs-mcp"],
 			)
-			assert.strictEqual(seen.filter((context) => context === "userMcpSessionList").length, 1)
-			assert.strictEqual(seen.filter((context) => context === "userMcpActivity").length, 1)
-			const mcpSql = sqls.filter((sql) => sql.includes("mcp.session.id"))
+			assert.strictEqual(Arr.filter(seen, (context) => context === "userMcpSessionList").length, 1)
+			assert.strictEqual(Arr.filter(seen, (context) => context === "userMcpActivity").length, 1)
+			const mcpSql = Arr.filter(sqls, (sql) => Str.includes("mcp.session.id")(sql))
 			// Both MCP reads ran, and each one carries the namespace filter.
 			assert.strictEqual(mcpSql.length, 2)
-			assert.isTrue(mcpSql.every((sql) => sql.includes("['service.namespace'] IN ('platform')")))
+			assert.isTrue(
+				Arr.every(mcpSql, (sql) => Str.includes("['service.namespace'] IN ('platform')")(sql)),
+			)
 		}),
 	)
 })

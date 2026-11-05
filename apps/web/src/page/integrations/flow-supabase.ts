@@ -63,7 +63,7 @@ export const supabaseFlow = (model: Model): FlowSpec => {
 	const status = supabaseStatusOf(model)
 	const reachable = reachableSupabase(status)
 	const connected = reachable === null ? null : supabaseOrgName(reachable)
-	const collecting = reachable?.projects.filter(isCollecting).length ?? 0
+	const collecting = reachable === null ? 0 : Arr.filter(reachable.projects, isCollecting).length
 	const chosen = collecting > 0 ? countLabel(collecting, "project") : null
 	const live = supabaseLive(model, status)
 	return {

@@ -23,7 +23,7 @@ import {
 	rateCaption,
 	usageMeter,
 } from "./spend"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Option, Record as Rec } from "effect"
 
 // Mock builders construct only the consumed subset of each domain schema.
 const CYCLE_START = Date.UTC(2026, 6, 1)
@@ -300,7 +300,7 @@ describe("buildSpendModel", () => {
 		})
 
 		expect(result?.baseCents).toBe(13_800)
-		expect(result?.addOns.map((plan) => plan.id)).toEqual(["bringyourowncloud"])
+		expect(Arr.map(result?.addOns ?? [], (plan) => plan.id)).toEqual(["bringyourowncloud"])
 	})
 
 	it("marks a legacy plan absent from the catalog as partial", () => {
@@ -324,7 +324,9 @@ describe("buildSpendModel", () => {
 		})
 		if (result === null) throw new Error("expected a model")
 
-		const events = result.features.find((feature) => feature.featureId === "product_events")
+		const events = Option.getOrUndefined(
+			Arr.findFirst(result.features, (feature) => feature.featureId === "product_events"),
+		)
 		if (events === undefined) throw new Error("expected product_events")
 		// 400,000 events over × $0.005 / 1,000 = $2, NOT 400,000 × $0.005.
 		expect(events.overageUnits).toBe(400_000)

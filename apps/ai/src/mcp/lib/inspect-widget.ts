@@ -389,7 +389,8 @@ const checkFunnelWidget = (
 	}).pipe(
 		provideWarehouseExecutorFromTenant(tenant),
 		Effect.map((rows): FunnelCheck => {
-			const count = (step: number) => Number(rows.find((r) => r.step === step)?.count) || 0
+			const count = (step: number) =>
+				Number(Option.getOrUndefined(Arr.findFirst(rows, (r) => r.step === step))?.count) || 0
 			return { ok: true, steps, first: count(1), last: count(steps) }
 		}),
 		Effect.catch((error) => Effect.succeed<FunnelCheck>({ ok: false, error: error.message })),
@@ -542,6 +543,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		const transformObj = dataSourceTransform(widget.dataSource)
 		const reduceToValue = transformObj?.reduceToValue
 		const hasUnsupportedTransform =
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 			transformObj !== undefined && Arr.some(Object.keys(transformObj), (k) => k !== "reduceToValue")
 
 		const queryEngine = yield* QueryEngineService
@@ -858,7 +860,9 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 		// The percent-scale note is the one note that tells the caller what to
 		// change, so it rides along on the mutation-tool summary rather than only
 		// appearing in a full `inspect_chart_data` response.
-		const actionableNote = outcome.data.notes.find((note) => Str.startsWith('unit "percent')(note))
+		const actionableNote = Arr.findFirst(outcome.data.notes, (note) =>
+			Str.startsWith('unit "percent')(note),
+		)
 		// A breakdown's groups are its rows. The largest query, not the sum, so hidden
 		// operands and the formula built from them are not counted twice.
 		const isBreakdown = dataSourceQuerySet(widget.dataSource)?.resultShape === "breakdown"
@@ -873,7 +877,7 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 			visualization: widget.visualization,
 			verdict: outcome.data.verdict satisfies WidgetInspectionVerdict,
 			flags: [...outcome.data.flags],
-			...(actionableNote !== undefined ? { note: actionableNote } : undefined),
+			...Option.match(actionableNote, { onNone: () => undefined, onSome: (note) => ({ note }) }),
 			seriesCount,
 		}
 	}

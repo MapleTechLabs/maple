@@ -154,7 +154,7 @@ const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more.
  * which is where a session is.
  */
 const linkNotice = (connector: ChatConnectorId, appBaseUrl: string, refused: "ask" | "approve") => {
-	const platform = Str.toUpperCase(connector.charAt(0)) + Str.slice(1)(connector)
+	const platform = Str.toUpperCase(Str.slice(0, 1)(connector)) + Str.slice(1)(connector)
 	const link = `[Link your account](${appBaseUrl}/integrations)`
 	return [
 		{
@@ -597,10 +597,11 @@ const showDecision = Effect.fn("ChatBotRelay.showDecision")(function* <R>(
 		),
 	)
 	// The session just settled this call, so its message is there.
-	const message = history.find((candidate) =>
+	const found = Arr.findFirst(history, (candidate) =>
 		Arr.some(candidate.toolCalls, (call) => call.id === request.toolCallId),
 	)
-	if (message === undefined) return
+	if (Option.isNone(found)) return
+	const message = found.value
 	const transport = yield* ports.outbound.transport
 	const blocks = settledMessageBlocks(
 		message,

@@ -22,7 +22,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { serviceDot } from "@maple/views/ui/values"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 import { th, toolTable, toolTableBody, toolTableHead, toolTableRow } from "../agent-sessions/tools-kit/table"
 import { AppRoute, hrefOf } from "../../route"
 import { listRelativeTime } from "../kit/relative-time"
@@ -74,7 +74,15 @@ const dayNumber = (atMs: number, timeZone: string): number => {
 		atMs,
 	)
 	const part = (type: Intl.DateTimeFormatPartTypes): number =>
-		Number(parts.find((entry) => entry.type === type)?.value ?? 0)
+		Number(
+			Option.getOrElse(
+				Option.map(
+					Arr.findFirst(parts, (entry) => entry.type === type),
+					(entry) => entry.value,
+				),
+				() => "0",
+			),
+		)
 	return Date.UTC(part("year"), part("month") - 1, part("day")) / 86_400_000
 }
 
@@ -392,7 +400,7 @@ const namespaceScopeBar = <M>(
 		return hstack(h, { gap: "2", wrap: true, className: "border-b border-border-subtle px-6 py-2.5" }, [
 			icon(h, "LayersIcon", { size: 14, className: "text-foreground-subtle" }),
 			typography(h, { size: "xs", tone: "muted", as: "span" }, [
-				`Across ${all.length} namespaces: ${all.join(", ")}`,
+				`Across ${all.length} namespaces: ${Arr.join(all, ", ")}`,
 			]),
 		])
 	}
@@ -420,7 +428,7 @@ const namespaceScopeBar = <M>(
 				? []
 				: [
 						typography(h, { size: "xs", tone: "muted", as: "span" }, [
-							`· ${hidden.length} more ${hidden.length === 1 ? "namespace" : "namespaces"} hidden (${hidden.join(", ")})`,
+							`· ${hidden.length} more ${hidden.length === 1 ? "namespace" : "namespaces"} hidden (${Arr.join(hidden, ", ")})`,
 						]),
 					]),
 			button(
@@ -503,7 +511,10 @@ const activityRow = <M>(h: HtmlBuilder<M>, item: ActivityItem, timeZone: string)
 /** One timeline across every signal, newest first, grouped by day. */
 const activityBody = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<ActivityItem>, clock: Clock): Html => {
 	if (Arr.isReadonlyArrayEmpty(items)) return noRows(h, "No activity from this user in the window.")
-	const sorted = items.toSorted((a, b) => b.atMs - a.atMs)
+	const sorted = Arr.sort(
+		items,
+		Order.flip(Order.mapInput(Order.Number, (item: ActivityItem) => item.atMs)),
+	)
 	const days = Arr.groupBy(sorted, (item) => dayKey(item.atMs, clock.timeZone))
 	const order = Arr.dedupe(Arr.map(sorted, (item) => dayKey(item.atMs, clock.timeZone)))
 	return vstack(

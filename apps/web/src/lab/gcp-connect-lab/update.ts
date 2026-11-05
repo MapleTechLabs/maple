@@ -9,7 +9,7 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type GcpLabFlags, hubOf, hubStep } from "../gcp-host"
 import { fixturesAt, LAB_STATES, type LabState, type MethodApplyState } from "./fixture"
 import { Message, type Model } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 export type Return = Update.Return<Model, Message, Resources>
 
@@ -158,12 +158,13 @@ export const update = (model: Model, message: Message): Return =>
 			const commands = Command.mapMessages(step.commands ?? [], (child) =>
 				Message.GotStateGroupMessage({ message: child }),
 			)
-			const next = LAB_STATES.find(
+			const found = Arr.findFirst(
+				LAB_STATES,
 				(state) => state !== model.state && step.model.values.includes(state),
 			)
-			if (next === undefined)
+			if (Option.isNone(found))
 				return { model: { ...model, stateGroup: { ...step.model, values: [model.state] } }, commands }
-			const shown = show({ ...model, stateGroup: step.model }, next)
+			const shown = show({ ...model, stateGroup: step.model }, found.value)
 			return { ...shown, commands: [...commands, ...(shown.commands ?? [])] }
 		},
 		ClickedReopen: () => show(model, model.state),

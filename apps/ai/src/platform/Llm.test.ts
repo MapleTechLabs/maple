@@ -545,9 +545,9 @@ const streamParts = (usage: Record<string, unknown>, options: StreamFixture = {}
 const streamFinishPart = (usage: Record<string, unknown>, options?: StreamFixture) =>
 	Effect.gen(function* () {
 		const parts = yield* streamParts(usage, options)
-		const finish = parts.find((part) => part.type === "finish")
-		if (finish === undefined) return yield* Effect.die("the stream carried no finish part")
-		return finish
+		const finish = Arr.findFirst(parts, (part) => part.type === "finish")
+		if (Option.isNone(finish)) return yield* Effect.die("the stream carried no finish part")
+		return finish.value
 	})
 
 /**
@@ -689,11 +689,15 @@ describe("streamed completion — a stream that ends without a usage block", () 
 				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
 			})
 
-			expect(parts.find((part) => part.type === "tool-call")).toMatchObject({
+			expect(
+				Option.getOrUndefined(Arr.findFirst(parts, (part) => part.type === "tool-call")),
+			).toMatchObject({
 				name: "list_services",
 				params: {},
 			})
-			expect(parts.find((part) => part.type === "finish")?.reason).toBe("tool-calls")
+			expect(
+				Option.getOrUndefined(Arr.findFirst(parts, (part) => part.type === "finish"))?.reason,
+			).toBe("tool-calls")
 		}),
 	)
 

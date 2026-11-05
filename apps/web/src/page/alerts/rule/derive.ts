@@ -43,10 +43,10 @@ const ruleFor = lastBy(
 		Model["states"],
 		Model["ruleId"],
 	]): AlertRuleDocument | null => {
-		const row = (rules ?? []).find((candidate) => candidate.id === id)
-		if (row === undefined) return null
+		const row = Arr.findFirst(rules ?? [], (candidate) => candidate.id === id)
+		if (Option.isNone(row)) return null
 		const own = Arr.filter(states ?? [], (state) => state.rule_id === id)
-		return rowToAlertRuleDocument(row, buildRuleStatesByRuleId(own))
+		return rowToAlertRuleDocument(row.value, buildRuleStatesByRuleId(own))
 	},
 )
 

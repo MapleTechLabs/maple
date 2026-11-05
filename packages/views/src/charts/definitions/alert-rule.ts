@@ -180,7 +180,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 					])
 				: [
 						silences(SINGLE_KEY, palette.signal),
-						...runsOf(SINGLE_KEY).runs.flatMap((run, index) => [
+						...Arr.flatMap(runsOf(SINGLE_KEY).runs, (run, index) => [
 							areaY(run, {
 								id: `${SINGLE_KEY}-band:${index}`,
 								x: at,

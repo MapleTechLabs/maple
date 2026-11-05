@@ -2249,7 +2249,7 @@ export const formatCheckpointRefreshBackoff = (
 		: `checkpoint refresh failed ${backoff.consecutiveFailures} time(s) in a row` +
 			(backoff.lastError === null
 				? ""
-				: ` (last: ${Str.split("\n")(backoff.lastError)[0]?.slice(0, 200)})`) +
+				: ` (last: ${Str.slice(0, 200)(Str.split("\n")(backoff.lastError)[0])})`) +
 			`; next attempt in ${Duration.format(backoff.delay)}. Run \`${retryCommand}\` to retry now.`
 
 const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {

@@ -243,7 +243,9 @@ export const removeComponentCopy = (
 	)
 
 const deleteComponentDialog = (h: H, model: Model, page: V2StatusPage): Html => {
-	const component = componentsOf(model).find((row) => row.id === model.confirmDeleteComponentId)
+	const component = Option.getOrUndefined(
+		Arr.findFirst(componentsOf(model), (row) => row.id === model.confirmDeleteComponentId),
+	)
 	return confirmDialog(h, {
 		slotId: "status-page-delete-component",
 		model: model.deleteComponentDialog,

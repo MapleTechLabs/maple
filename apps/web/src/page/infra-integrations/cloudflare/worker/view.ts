@@ -47,7 +47,7 @@ import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 // `WorkerDetailPage` and its parts.
 
@@ -292,14 +292,17 @@ const signals = (
 ): Html =>
 	correlationStrips(h, {
 		strips: buildStrips(h, detail, data),
-		xDomain: [
-			...new Set(
-				Arr.map(
-					[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets],
-					(b) => b.bucket,
+		xDomain: Arr.sort(
+			[
+				...new Set(
+					Arr.map(
+						[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets],
+						(b) => b.bucket,
+					),
 				),
-			),
-		].toSorted(),
+			],
+			Order.String,
+		),
 		markers: data.markers,
 		isWaiting,
 		theme: ctx.theme,

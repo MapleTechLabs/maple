@@ -21,7 +21,7 @@ import type {
 	V2TelegramChatList,
 } from "@maple/domain/http/v2"
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
-import { Effect, Array as Arr } from "effect"
+import { Effect, Option, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 
@@ -220,13 +220,13 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const response = yield* destinations.listDestinations(tenant.orgId)
 
-					const destination = response.destinations.find((doc) => doc.id === params.id)
-					if (destination === undefined)
+					const destination = Arr.findFirst(response.destinations, (doc) => doc.id === params.id)
+					if (Option.isNone(destination))
 						return yield* new AlertDestinationNotFoundError({
 							message: "No such alert destination.",
 							destinationId: params.id,
 						})
-					return toV2Destination(destination)
+					return toV2Destination(destination.value)
 				}),
 			)
 			.handle("telegramChats", ({ payload }) =>
@@ -262,7 +262,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const tenant = yield* CurrentTenant.Context
 					const request = toUpdateRequest(payload)
 					const existing = yield* destinations.listDestinations(tenant.orgId)
-					const current = existing.destinations.find((doc) => doc.id === params.id)
+					const current = Arr.findFirst(existing.destinations, (doc) => doc.id === params.id)
 					const updated = yield* destinations.updateDestination(
 						tenant.orgId,
 						tenant.userId,
@@ -273,7 +273,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 
 					const changes = destinationAuditDiff(
 						payload,
-						destinationAuditView(current),
+						destinationAuditView(Option.getOrUndefined(current)),
 						destinationAuditView(updated),
 					)
 					yield* recordHttpAudit("alert_destination.updated", {

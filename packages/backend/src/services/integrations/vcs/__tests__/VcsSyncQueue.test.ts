@@ -165,8 +165,10 @@ describe("VcsSyncQueue routing", () => {
 			yield* queue.sendBatch([installSyncJob(1), pushJob(1, 10), scan, connectSync])
 			yield* queue.send(scan)
 			yield* queue.send(pushJob(2, 10))
-			const kindsOn = (name: VcsQueueName) =>
-				Arr.filter(sentTo, (s) => s.queue === name).flatMap((s) => s.kinds)
+			const kindsOn = (name: VcsQueueName) => {
+				const sent = Arr.filter(sentTo, (s) => s.queue === name)
+				return Arr.flatMap(sent, (s) => s.kinds)
+			}
 			assert.deepStrictEqual(kindsOn(VCS_SYNC_QUEUE), ["push", "installation-sync", "push"])
 			assert.deepStrictEqual(kindsOn(VCS_BACKFILL_QUEUE), [
 				"installation-sync",
@@ -222,10 +224,10 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 			const queue = yield* VcsSyncQueue
 			yield* queue.sendBatch(jobs)
 			assertChunksValid(chunks)
-			const oversizedChunk = chunks.find(
-				(c) => c.length === 1 && bodyBytes(c[0]!) > QUEUE_BATCH_MAX_BYTES,
+			assert.ok(
+				Arr.some(chunks, (c) => c.length === 1 && bodyBytes(c[0]!) > QUEUE_BATCH_MAX_BYTES),
+				"oversized message is sent in a chunk of its own",
 			)
-			assert.ok(oversizedChunk, "oversized message is sent in a chunk of its own")
 			// All three jobs survive across the chunks (nothing silently dropped).
 			assert.strictEqual(
 				Arr.reduce(chunks, 0, (n, c) => n + c.length),

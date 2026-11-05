@@ -191,7 +191,7 @@ export const normalizedRuleToDocument = (
 }
 
 export const normalizeOptionalString = (value: string | null | undefined) => {
-	const trimmed = value?.trim()
+	const trimmed = value == null ? undefined : Str.trim(value)
 	return trimmed && trimmed.length > 0 ? trimmed : null
 }
 
@@ -522,7 +522,7 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			Match.exhaustive,
 		)
 	} else if (rule.signalType === "raw_query") {
-		const sql = rule.rawQuerySql?.trim() ?? ""
+		const sql = Str.trim(rule.rawQuerySql ?? "")
 		if (sql.length === 0) {
 			return yield* makeAlertValidationError("raw_query alerts require rawQuerySql")
 		}
@@ -951,7 +951,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			details.push("queryBuilderDraft is required for builder_query alerts")
 		}
 		if (request.signalType === "raw_query") {
-			const sql = request.rawQuerySql?.trim() ?? ""
+			const sql = Str.trim(request.rawQuerySql ?? "")
 			if (sql.length === 0) details.push("rawQuerySql is required for raw_query alerts")
 			if (serviceNames.length > 0) details.push("serviceNames is not supported for raw_query alerts")
 			if (groupBy != null) {

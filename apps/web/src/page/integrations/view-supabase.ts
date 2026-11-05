@@ -43,7 +43,7 @@ type Metrics = Model["supabaseCard"]["metrics"]
 export const metricsRowOf = (metrics: Metrics, ref: string): SupabaseProjectRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(metrics.data), (rows) =>
-			Option.fromNullishOr(rows.find((row) => row.projectRef === ref)),
+			Arr.findFirst(rows, (row) => row.projectRef === ref),
 		),
 	)
 
@@ -109,7 +109,7 @@ const drainLabel = (project: Project, drain: Drain): string =>
 
 /** A drain to Maple set up in Supabase: it already delivers, and a managed one would double it. */
 const manualMapleDrain = (project: Project): Drain | undefined =>
-	project.logDrains.find((drain) => drain.toMaple && !drain.managedByMaple)
+	Option.getOrUndefined(Arr.findFirst(project.logDrains, (drain) => drain.toMaple && !drain.managedByMaple))
 
 const noteLine = (h: H, text: string, tone: "muted" | "error"): Html =>
 	h.span(
@@ -127,13 +127,22 @@ const noteLine = (h: H, text: string, tone: "muted" | "error"): Html =>
 
 /** A project's lock and the values its switches show: a flip in flight shows its intended value. */
 const switchState = (model: Model, project: Project) => {
-	const pending = model.supabaseCard.pending.find((entry) => entry.ref === project.ref)
-	const isLocked = lifecycleOf(project.status)._tag === "Paused" || pending !== undefined
-	const metricsEnabled = pending?.kind === "metrics" ? pending.enabled : project.metricsEnabled
-	const drainEnabled = pending?.kind === "drain" ? pending.enabled : project.logDrainEnabled
+	const pending = Arr.findFirst(model.supabaseCard.pending, (entry) => entry.ref === project.ref)
+	const pendingOf = (kind: string) => Option.filter(pending, (entry) => entry.kind === kind)
+	const isLocked = lifecycleOf(project.status)._tag === "Paused" || Option.isSome(pending)
+	const metricsEnabled = Option.match(pendingOf("metrics"), {
+		onNone: () => project.metricsEnabled,
+		onSome: (entry) => entry.enabled,
+	})
+	const drainEnabled = Option.match(pendingOf("drain"), {
+		onNone: () => project.logDrainEnabled,
+		onSome: (entry) => entry.enabled,
+	})
 	// Turning a drain on stops polling server-side; show that while the write is in flight.
-	const logsEnabled =
-		pending?.kind === "logs" ? pending.enabled : drainEnabled ? false : project.logsEnabled
+	const logsEnabled = Option.match(pendingOf("logs"), {
+		onNone: () => (drainEnabled ? false : project.logsEnabled),
+		onSome: (entry) => entry.enabled,
+	})
 	return { isLocked, metricsEnabled, drainEnabled, logsEnabled }
 }
 

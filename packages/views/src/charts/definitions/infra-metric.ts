@@ -22,11 +22,11 @@ import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
+import { type SeriesRuns, seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import { axisTickFormatter, axisTickValues, formatBytes } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
-import { Option } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { SERIES_STROKE_WIDTH, verticalGradient } from "./fixed-metric-axes"
@@ -62,19 +62,26 @@ const UNITS: ReadonlyArray<ChartUnit> = [
 	"rate",
 	"count",
 ]
-export const asChartUnit = (unit: string): ChartUnit => UNITS.find((known) => known === unit) ?? "count"
+export const asChartUnit = (unit: string): ChartUnit =>
+	Option.getOrElse(
+		Arr.findFirst(UNITS, (known) => known === unit),
+		(): ChartUnit => "count",
+	)
+
+const byBucket: Order.Order<InfraPoint> = (a, b) => Str.localeCompare(b.bucket)(a.bucket)
 
 /** The pivoted rows, with silent buckets of a shared domain added when the chart shows gaps. */
 export const infraPoints = (spec: Pick<InfraMetricSpec, "rows" | "gaps" | "xDomain">) => {
 	const transformed = transformRows(spec.rows, () => "")
 	if (!spec.gaps || spec.xDomain === null) return transformed
-	const reported = new Set(transformed.data.map((point) => point.bucket))
-	const silent = spec.xDomain
-		.filter((bucket) => !reported.has(bucket))
-		.map((bucket): InfraPoint => ({ bucket, time: "", date: bucketDate(bucket) }))
+	const reported = new Set(Arr.map(transformed.data, (point) => point.bucket))
+	const silent = Arr.map(
+		Arr.filter(spec.xDomain, (bucket) => !reported.has(bucket)),
+		(bucket): InfraPoint => ({ bucket, time: "", date: bucketDate(bucket) }),
+	)
 	return {
 		series: transformed.series,
-		data: [...transformed.data, ...silent].toSorted((a, b) => a.bucket.localeCompare(b.bucket)),
+		data: Arr.sort([...transformed.data, ...silent], byBucket),
 	}
 }
 
@@ -117,7 +124,7 @@ const valueTickFormatter =
 
 export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, ChartValue, number> => {
 	const { data, series } = infraPoints(spec)
-	const axis = makeBucketAxis(spec.xDomain ?? data.map((point) => point.bucket), spec.timeZone)
+	const axis = makeBucketAxis(spec.xDomain ?? Arr.map(data, (point) => point.bucket), spec.timeZone)
 	const thresholds = spec.showThreshold && spec.unit === "percent" ? [{ value: THRESHOLD_FRACTION }] : []
 	const niceDomain = niceLinearDomain(
 		linearYDomain({ rows: data, keys: series, stacked: spec.stacked, thresholds }),
@@ -138,10 +145,10 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		const value = point[name]
 		return typeof value === "number" ? value : null
 	}
-	const gradientFor = (name: string) => `${spec.gradientPrefix}-${name.replace(/\W+/g, "_")}`
+	const gradientFor = (name: string) => `${spec.gradientPrefix}-${Str.replace(/\W+/g, "_")(name)}`
 	const curve = d3Curve(curveMonotoneX)
 	const shareScale = (point: InfraPoint) => {
-		const sum = series.reduce((total, name) => total + (valueOf(name)(point) ?? 0), 0)
+		const sum = Arr.reduce(series, 0, (total, name) => total + (valueOf(name)(point) ?? 0))
 		return isShare && sum > 1 ? 1 / sum : 1
 	}
 	// Dots read the same scaled values the stacked bands draw.
@@ -150,9 +157,9 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		return value === null || !spec.stacked ? value : value * shareScale(point)
 	}
 	const cells: ReadonlyArray<InfraCell> = spec.stacked
-		? data.flatMap((point) => {
+		? Arr.flatMap(data, (point) => {
 				const scale = shareScale(point)
-				return series.map((name) => {
+				return Arr.map(series, (name) => {
 					const value = valueOf(name)(point)
 					return { point, name, value: value === null ? null : value * scale }
 				})
@@ -161,7 +168,14 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 	// Lines bridge a short silence and dash a long one. A gaps chart exists to show every silence,
 	// so its lines break at each silent bucket instead.
 	const bridged = !spec.stacked && !spec.gaps
-	const runsOf = new Map(bridged ? series.map((name) => [name, seriesRuns(data, valueOf(name), at)]) : [])
+	const runsOf = new Map(
+		bridged
+			? Arr.map(series, (name): readonly [string, SeriesRuns<InfraPoint>] => [
+					name,
+					seriesRuns(data, valueOf(name), at),
+				])
+			: [],
+	)
 	const bands = spec.stacked
 		? [
 				areaY(cells, {
@@ -176,7 +190,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 				}),
 			]
 		: spec.gaps
-			? series.map((name) =>
+			? Arr.map(series, (name) =>
 					lineY(data, {
 						id: name,
 						x: at,
@@ -186,8 +200,8 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 						curve,
 					}),
 				)
-			: series.flatMap((name) =>
-					(runsOf.get(name)?.runs ?? []).map((run, index) =>
+			: Arr.flatMap(series, (name) =>
+					Arr.map(runsOf.get(name)?.runs ?? [], (run, index) =>
 						lineY(run, {
 							id: `${name}:${index}`,
 							x: at,
@@ -201,7 +215,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 	const silent = (value: (point: InfraPoint) => number | null) => (point: InfraPoint | undefined) =>
 		point === undefined || value(point) === null
 	const lone = bridged
-		? series.map((name) =>
+		? Arr.map(series, (name) =>
 				dot(runsOf.get(name)?.lone ?? [], {
 					x: at,
 					y: valueOf(name),
@@ -210,17 +224,16 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 				}),
 			)
 		: spec.gaps
-			? series.map((name) => {
+			? Arr.map(series, (name) => {
 					const value = plottedOf(name)
-					return dot(
-						data.filter(
-							(point, index) =>
-								value(point) !== null &&
-								silent(value)(data[index - 1]) &&
-								silent(value)(data[index + 1]),
-						),
-						{ x: at, y: value, r: STROKE_WIDTH + 1, fill: colorOf(name) },
+					const isolated = Arr.filter(
+						data,
+						(point, index) =>
+							value(point) !== null &&
+							silent(value)(data[index - 1]) &&
+							silent(value)(data[index + 1]),
 					)
+					return dot(isolated, { x: at, y: value, r: STROKE_WIDTH + 1, fill: colorOf(name) })
 				})
 			: []
 	const thresholdColor = spec.thresholdColor
@@ -253,17 +266,18 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 								),
 							]),
 				]
-	const placed = placeMarkersInWindow(spec.markers, spec.xDomain ?? data.map((point) => point.bucket))
+	const placed = placeMarkersInWindow(spec.markers, spec.xDomain ?? Arr.map(data, (point) => point.bucket))
 	const focus = tooltipFocusCapture()
+	const focusDots = Arr.map(series, (name) => focusDot(data, at, plottedOf(name), colorOf(name), chrome))
 	const definition = defineChart({
 		gradients: spec.stacked
-			? series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
+			? Arr.map(series, (name) => verticalGradient(gradientFor(name), colorOf(name), 0.45, 0.04))
 			: [],
 		marks: [
 			...chartEventMarkerMarks(placed, yDomain, spec.markerColors),
 			...thresholdMarks,
 			...(bridged
-				? series.map((name) =>
+				? Arr.map(series, (name) =>
 						silenceBridges(
 							`${name}-silence`,
 							runsOf.get(name)?.silences ?? [],
@@ -275,7 +289,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 				: []),
 			...bands,
 			...lone,
-			...series.map((name) => focusDot(data, at, plottedOf(name), colorOf(name), chrome)),
+			...focusDots,
 			focusCrosshair(chrome),
 		],
 		scales: {
@@ -305,11 +319,14 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 			const row = rowOf(datum)
 			// The raw value, stacked or not: the cursor series carry no stacked position.
 			const highlighted = focus.highlight(
-				series.map((name): readonly [string, number | null] => [label(name), valueOf(name)(row)]),
+				Arr.map(series, (name): readonly [string, number | null] => [
+					label(name),
+					valueOf(name)(row),
+				]),
 			)
 			const base = {
 				heading: axis.heading(row.bucket),
-				rows: series.flatMap((name) => {
+				rows: Arr.flatMap(series, (name) => {
 					const value = row[name]
 					return typeof value === "number"
 						? [

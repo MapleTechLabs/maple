@@ -27,6 +27,7 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isoMs } from "../../alerts/shared/time"
+import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
 import {
 	daysOf,
@@ -235,8 +236,7 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 			name: component.name,
 			description: component.description,
 			group: component.group,
-			monitorStatus:
-				monitors.find((monitor) => monitor.id === component.monitor_id)?.state.status ?? null,
+			monitorStatus: monitorStatusOf(monitors, component.monitor_id),
 			manualStatus: component.manual_status,
 			showUptime: component.show_uptime,
 			monitored: component.monitor_id !== null,

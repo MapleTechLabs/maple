@@ -1,5 +1,5 @@
 import { OrgId, UserId } from "@maple/domain"
-import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
 import { UrlRequest } from "foldkit/navigation"
 import { fromString as urlFromString } from "foldkit/url"
 import { describe, expect, test, vi } from "vitest"
@@ -109,7 +109,7 @@ describe("root navigation", () => {
 				},
 			}),
 		)
-		expect(Object.values(landed.model.toastRootActions)).toEqual([{ _tag: "ReconnectOrgCollections" }])
+		expect(Rec.values(landed.model.toastRootActions)).toEqual([{ _tag: "ReconnectOrgCollections" }])
 		expect(landed.model.toasts.toasts).toMatchObject([
 			{ title: "Saved, but this tab is behind", actionLabel: "Reconnect", timeoutMs: 10000 },
 		])

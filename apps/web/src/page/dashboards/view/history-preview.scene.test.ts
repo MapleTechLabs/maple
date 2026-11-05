@@ -87,7 +87,7 @@ const previewed = () => {
 
 describe("previewing a version", () => {
 	test("a previewed version's own variables resolve, though the live board dropped them", () => {
-		const withEnv = Schema.decodeUnknownSync(DashboardDocument)({
+		const withEnv = Schema.decodeSync(DashboardDocument)({
 			...Schema.encodeSync(DashboardDocument)(snapshot),
 			variables: [
 				{ name: "env", type: "custom", options: [{ value: "production" }, { value: "staging" }] },
@@ -106,7 +106,7 @@ describe("previewing a version", () => {
 		const liveKey = keyOf(ready(), "w")
 		const loaded = previewed()
 		expect(keyOf(loaded.model, "w")).not.toBe(liveKey)
-		expect(loaded.commands?.map(({ name }) => name)).toContain(FetchWidget.name)
+		expect(Arr.map(loaded.commands ?? [], ({ name }) => name)).toContain(FetchWidget.name)
 		const revealed = pageUpdate(loaded.model, Message.RevealedWidget({ widgetId: "gone" })).model
 		expect(keyOf(revealed, "gone")).not.toBeNull()
 		expect(keyOf(pageUpdate(revealed, Message.ClickedCancelPreview()).model, "w")).toBe(liveKey)
@@ -133,7 +133,9 @@ describe("previewing a version", () => {
 				message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value: "export" } },
 			}),
 		)
-		const command = exported.commands?.find(({ name }) => name === ExportDashboard.name)
+		const command = Option.getOrUndefined(
+			Arr.findFirst(exported.commands ?? [], ({ name }) => name === ExportDashboard.name),
+		)
 		const sent = command?.args?.snapshot
 		expect(Schema.is(DashboardDocument)(sent) ? Arr.map(sent.widgets, ({ id }) => id) : null).toEqual([
 			"w",

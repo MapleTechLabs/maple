@@ -11,6 +11,7 @@ const WARM_TONES: readonly [string, ...string[]] = [
 
 /** The tile classes for a seed (an org or user name): stable across renders and pages. */
 export const warmAvatarTone = (seed: string): string => {
+	// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.codePointAt allocates an Option per character
 	const hash = Arr.reduce(Array.from(seed), 0, (acc, char) => (acc * 31 + (char.codePointAt(0) ?? 0)) >>> 0)
 	return WARM_TONES[hash % WARM_TONES.length] ?? WARM_TONES[0]
 }

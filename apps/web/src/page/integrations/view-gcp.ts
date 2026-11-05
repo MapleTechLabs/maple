@@ -27,7 +27,7 @@ import { gcpDialogs } from "./view-gcp-dialogs"
 import { copyScriptButton, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 // `GcpIntegrationCard` and `GcpHeaderStatus`.
 
@@ -108,10 +108,11 @@ const byStatus = (
 			),
 			...dialogs,
 		])
-	const ordered = connectors.toSorted(
-		(a, b) =>
-			GCP_STATE_ORDER.indexOf(gcpConnectionState(a, model.nowMs)) -
-			GCP_STATE_ORDER.indexOf(gcpConnectionState(b, model.nowMs)),
+	const ordered = Arr.sort(
+		connectors,
+		Order.mapInput(Order.Number, (connector: (typeof connectors)[number]) =>
+			GCP_STATE_ORDER.indexOf(gcpConnectionState(connector, model.nowMs)),
+		),
 	)
 	const band = usageBand(h, model, connectors)
 	return vstack(h, { gap: "4" }, [

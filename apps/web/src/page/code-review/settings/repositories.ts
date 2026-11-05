@@ -6,7 +6,7 @@ import {
 } from "../../../components/code-review/repository-filter"
 import { pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import { revealIcon } from "@maple/views/ui/reveal-icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -84,12 +84,12 @@ export const manageAccessLink = <M>(h: HtmlBuilder<M>): Html =>
 
 /** The owner recedes so the part that differs between rows, the repository name, carries it. */
 const repositoryName = <M>(h: HtmlBuilder<M>, fullName: string): Html => {
-	const slash = fullName.indexOf("/")
+	const cut = Option.match(Str.indexOf("/")(fullName), { onNone: () => 0, onSome: (slash) => slash + 1 })
 	return h.span(
 		[h.Class("truncate")],
 		[
-			typography(h, { tone: "muted", weight: "normal" }, [Str.slice(0, slash + 1)(fullName)]),
-			Str.slice(slash + 1)(fullName),
+			typography(h, { tone: "muted", weight: "normal" }, [Str.slice(0, cut)(fullName)]),
+			Str.slice(cut)(fullName),
 		],
 	)
 }

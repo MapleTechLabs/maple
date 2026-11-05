@@ -1,4 +1,4 @@
-import { Match, pipe, Array as Arr, String as Str } from "effect"
+import { Match, Option, pipe, Array as Arr, String as Str } from "effect"
 
 import { toEpochMs } from "./time-format"
 
@@ -421,7 +421,10 @@ const axisStep = (domain: readonly [number, number], count: number, max: number 
 	const base = tickStep(hi - lo, count)
 	if (max === undefined) return base
 	const steps = [base, nextNiceStep(base), nextNiceStep(nextNiceStep(base))]
-	return steps.find((step) => ticksBetween(lo, hi, step) <= max) ?? nextNiceStep(steps[2])
+	return Option.getOrElse(
+		Arr.findFirst(steps, (step) => ticksBetween(lo, hi, step) <= max),
+		() => nextNiceStep(steps[2]),
+	)
 }
 
 export interface AxisTickOptions {
@@ -467,7 +470,10 @@ export function axisTickFormatter(
 		// under 1s reads in ms ("0, 250ms, 500ms").
 		const ticks = axisTickValues(domain, count, options)
 		const largest = Math.max(...Arr.map(ticks, (t) => Math.abs(t))) * toMs
-		const axisUnit = DURATION_AXIS_UNITS.find((u) => largest < u.below) ?? DURATION_AXIS_UNITS[4]
+		const axisUnit = Option.getOrElse(
+			Arr.findFirst(DURATION_AXIS_UNITS, (u) => largest < u.below),
+			() => DURATION_AXIS_UNITS[4],
+		)
 		const decimals = stepDecimals((step * toMs) / axisUnit.ms, 3)
 		return (value) =>
 			!Number.isFinite(value)

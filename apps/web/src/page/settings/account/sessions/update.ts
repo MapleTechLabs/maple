@@ -1,4 +1,4 @@
-import { Array, Effect, Option, Result, Schema } from "effect"
+import { Array, Effect, Option, Predicate, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import type { ClerkSessionActivityResource } from "../../../../platform/clerk"
 import { ClerkActionError, currentClerkSessionId } from "../../../../platform/clerk"
@@ -9,15 +9,19 @@ import { Message, type Model, type SessionRow } from "./model"
 
 type Return = PageReturn<Model, Message>
 
+/** Clerk leaves an unknown part out as null, undefined or "". */
+const isPresent = (part: string | null | undefined): part is string =>
+	Predicate.isNotNullish(part) && part !== ""
+
 const describeDevice = (session: ClerkSessionActivityResource): string => {
 	const { browserName, browserVersion, deviceType } = session.latestActivity
-	const browser = [browserName, browserVersion].filter(Boolean).join(" ")
-	return [deviceType, browser].filter(Boolean).join(" · ") || "Unknown device"
+	const browser = Array.join(Array.filter([browserName, browserVersion], isPresent), " ")
+	return Array.join(Array.filter([deviceType, browser], isPresent), " · ") || "Unknown device"
 }
 
 const describeLocation = (session: ClerkSessionActivityResource): string => {
 	const { city, country, ipAddress } = session.latestActivity
-	return [city, country].filter(Boolean).join(", ") || ipAddress || "Unknown location"
+	return Array.join(Array.filter([city, country], isPresent), ", ") || ipAddress || "Unknown location"
 }
 
 const toRow = (session: ClerkSessionActivityResource): SessionRow => ({

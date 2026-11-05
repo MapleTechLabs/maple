@@ -265,7 +265,10 @@ export const update = (model: Model, message: Message): Return =>
 				() => "ai" as const,
 			)
 			const request = new EscalationPolicyEvaluationRequest({
-				severity: SEVERITY_ORDER.find((value) => value === model.severitySelect.value) ?? "high",
+				severity: Option.getOrElse(
+					Array.findFirst(SEVERITY_ORDER, (value) => value === model.severitySelect.value),
+					() => "high" as const,
+				),
 				source: severity,
 				...(severity === "ai" && { confidence: model.confidence }),
 			})

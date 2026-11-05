@@ -61,6 +61,7 @@ const TOKEN_NAMES = [
 ] as const satisfies ReadonlyArray<keyof ResolvedStatusPageThemeTokens>
 
 /** `okTint` as `ok-tint`. */
+// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 const cssName = (name: string): string => name.replace(/[A-Z]/gu, (letter) => `-${Str.toLowerCase(letter)}`)
 
 /** One scheme's CSS variables; `safeColor` drops any token that is not a hex colour. */

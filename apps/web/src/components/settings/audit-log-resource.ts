@@ -1,6 +1,6 @@
 import { auditResourceLabel } from "@maple/domain/audit-actions"
 import { decodePublicId, PublicIdPrefixes, type V2AuditLogEntry } from "@maple/domain/http/v2"
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 
 type AuditEntryResource = Pick<
 	V2AuditLogEntry,
@@ -31,9 +31,10 @@ const stringField = (metadata: Record<string, unknown> | null, key: string): str
 
 /** `alrt_YofPTrK9782DWwcnXhpcCw` -> `alrt_YofP`: enough to tell rows apart; the detail has the rest. */
 export function shortPublicId(id: string): string {
-	const separator = id.indexOf("_")
-	if (separator === -1) return id.length > 8 ? Str.slice(0, 8)(id) : id
-	return Str.slice(0, separator + 5)(id)
+	return Option.match(Str.indexOf("_")(id), {
+		onNone: () => (id.length > 8 ? Str.slice(0, 8)(id) : id),
+		onSome: (separator) => Str.slice(0, separator + 5)(id),
+	})
 }
 
 function resourceName(entry: AuditEntryResource, id: string | null): string | null {

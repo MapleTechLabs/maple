@@ -79,6 +79,7 @@ describe("HTTP error tag contract", () => {
 		({ spec }) => {
 			const operations = Arr.flatMap(Rec.toEntries(spec.paths ?? {}), ([path, item]) =>
 				Arr.map(
+					// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 					Arr.filter(Object.entries(item ?? {}), ([method]) =>
 						["get", "post", "put", "patch", "delete"].includes(method),
 					),

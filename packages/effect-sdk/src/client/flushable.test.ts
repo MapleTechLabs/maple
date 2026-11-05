@@ -7,7 +7,7 @@ import {
 	resetConsentForTests,
 	setConsent,
 } from "@maple/browser-session"
-import { Deferred, Effect, Fiber, Metric, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Deferred, Effect, Fiber, Metric, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
 import { afterEach, expect, vi } from "vitest"
@@ -169,13 +169,12 @@ describe("MapleFlush.make (client)", () => {
 		)
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(traceCall).toBeDefined()
-		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
-		expect(traceCall!.headers.authorization).toBe("Bearer secret")
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(traceCall.url).toBe("https://collector.test/v1/traces")
+		expect(traceCall.headers.authorization).toBe("Bearer secret")
 		// Must use fetch(keepalive), not sendBeacon — see flushable.ts header.
-		expect(traceCall!.keepalive).toBe(true)
-		const body = traceCall!.body as {
+		expect(traceCall.keepalive).toBe(true)
+		const body = traceCall.body as {
 			resourceSpans: Array<{
 				resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
@@ -219,13 +218,16 @@ describe("MapleFlush.make (client)", () => {
 			]).pipe(Effect.provide(telemetry.layer)),
 		)
 		await telemetry.flush()
-		const traceCall = calls.find((call) => Str.endsWith("/v1/traces")(call.url))
-		expect(traceCall).toBeDefined()
-		const spans = (traceCall!.body as any).resourceSpans[0].scopeSpans[0].spans
+		const traceCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/traces")(call.url)),
+		)
+		const spans = (traceCall.body as any).resourceSpans[0].scopeSpans[0].spans
 		expect(spans.map((span: { name: string }) => span.name)).toEqual(["after-consent"])
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
-		const metricCall = calls.find((call) => Str.endsWith("/v1/metrics")(call.url))
-		const metrics = (metricCall!.body as any).resourceMetrics[0].scopeMetrics[0].metrics
+		const metricCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/metrics")(call.url)),
+		)
+		const metrics = (metricCall.body as any).resourceMetrics[0].scopeMetrics[0].metrics
 		expect(
 			metrics.find((metric: { name: string }) => metric.name === "consent_counter").sum.dataPoints[0]
 				.asDouble,
@@ -269,8 +271,10 @@ describe("MapleFlush.make (client)", () => {
 		await Effect.runPromise(Metric.update(counter, 3).pipe(Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const metricCall = calls.find((call) => Str.endsWith("/v1/metrics")(call.url))
-		expect(metricCall?.body).toMatchObject({
+		const metricCall = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => Str.endsWith("/v1/metrics")(call.url)),
+		)
+		expect(metricCall.body).toMatchObject({
 			resourceMetrics: [
 				{
 					scopeMetrics: [
@@ -295,7 +299,7 @@ describe("MapleFlush.make (client)", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
 		const attrs = (
 			traceCall.body as {
 				resourceSpans: Array<{
@@ -328,7 +332,7 @@ describe("MapleFlush.make (client)", () => {
 		expect(recordTraceId).toHaveBeenCalledTimes(1)
 		expect(recordTraceId.mock.calls[0][0]).toMatch(/^[0-9a-f]{32}$/i)
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
 		const span = (
 			traceCall.body as {
 				resourceSpans: Array<{
@@ -338,8 +342,8 @@ describe("MapleFlush.make (client)", () => {
 				}>
 			}
 		).resourceSpans[0].scopeSpans[0].spans[0]
-		const sessionAttr = span.attributes.find((a) => a.key === "session.id")
-		expect(sessionAttr?.value.stringValue).toBe("sess-123")
+		const sessionAttr = Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === "session.id"))
+		expect(sessionAttr.value.stringValue).toBe("sess-123")
 	})
 
 	it("stamps session.id from the self-managed session when no sink is published", async () => {
@@ -376,7 +380,7 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 
 		const stored = JSON.parse(store.get("maple.session")!) as { id: string }
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))!
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
 		const spans = Arr.flatMap(
 			(
 				traceCall.body as {
@@ -393,8 +397,10 @@ describe("MapleFlush.make (client)", () => {
 		)
 		expect(spans.length).toBeGreaterThanOrEqual(2)
 		for (const span of spans) {
-			const sessionAttr = span.attributes.find((a) => a.key === "session.id")
-			expect(sessionAttr?.value.stringValue).toBe(stored.id)
+			const sessionAttr = Option.getOrThrow(
+				Arr.findFirst(span.attributes, (a) => a.key === "session.id"),
+			)
+			expect(sessionAttr.value.stringValue).toBe(stored.id)
 		}
 		await telemetry.dispose()
 	})
@@ -510,9 +516,8 @@ describe("MapleFlush.make (client)", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush()
 
-		const traces = calls.find((call) => Str.endsWith("/v1/traces")(call.url))
-		expect(traces).toBeDefined()
-		expect(traces!.headers).not.toHaveProperty("authorization")
+		const traces = Option.getOrThrow(Arr.findFirst(calls, (call) => Str.endsWith("/v1/traces")(call.url)))
+		expect(traces.headers).not.toHaveProperty("authorization")
 		// A custom endpoint is a proxy or collector: keyless is legitimate there.
 		expect(warnSpy).not.toHaveBeenCalled()
 	})
@@ -759,7 +764,7 @@ describe("MapleFlush.make (client)", () => {
 		])
 		// Both newest-first bodies are full, the older parts are too large for what
 		// is left, and OTLP's share still holds the metrics snapshot.
-		const keepalive = calls.filter((call) => call.keepalive)
+		const keepalive = Arr.filter(calls, (call) => call.keepalive === true)
 		expect(keepalive[0].bytes + keepalive[1].bytes).toBeGreaterThan(24 * 1024)
 		expect(Arr.reduce(keepalive, 0, (sum, call) => sum + call.bytes)).toBeLessThanOrEqual(
 			OTLP_KEEPALIVE_BYTES,
@@ -997,15 +1002,22 @@ describe("MapleFlush.make (client)", () => {
 			readonly attributes: ReadonlyArray<{ key: string; value: { stringValue?: string } }>
 		}
 		const exportedClientSpan = (calls: ReadonlyArray<FetchCall>) =>
-			Arr.flatMap(
-				traceCalls(calls),
-				(c) =>
-					(
-						c.body as {
-							resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<ExportedSpan> }> }>
-						}
-					).resourceSpans[0].scopeSpans[0].spans,
-			).find((span) => span.kind === 3 /* client */)
+			Option.getOrThrow(
+				Arr.findFirst(
+					Arr.flatMap(
+						traceCalls(calls),
+						(c) =>
+							(
+								c.body as {
+									resourceSpans: Array<{
+										scopeSpans: Array<{ spans: Array<ExportedSpan> }>
+									}>
+								}
+							).resourceSpans[0].scopeSpans[0].spans,
+					),
+					(span) => span.kind === 3 /* client */,
+				),
+			)
 
 		// Runs one HttpClient request whose fetch rejects only after `during` has run.
 		const failRequest = (telemetry: ReturnType<typeof make>, during: () => void) =>
@@ -1042,10 +1054,11 @@ describe("MapleFlush.make (client)", () => {
 			await telemetry.flush()
 
 			const span = exportedClientSpan(calls)
-			expect(span?.status.code).toBe(0)
-			expect(span?.attributes.find((a) => a.key === "maple.connection_lost")?.value.stringValue).toBe(
-				"page_unload",
-			)
+			expect(span.status.code).toBe(0)
+			expect(
+				Option.getOrThrow(Arr.findFirst(span.attributes, (a) => a.key === "maple.connection_lost"))
+					.value.stringValue,
+			).toBe("page_unload")
 			await telemetry.dispose()
 		})
 
@@ -1062,7 +1075,7 @@ describe("MapleFlush.make (client)", () => {
 			dom.fire("pageshow")
 			await telemetry.flush()
 
-			expect(exportedClientSpan(calls)?.status.code).toBe(0)
+			expect(exportedClientSpan(calls).status.code).toBe(0)
 			await telemetry.dispose()
 		})
 
@@ -1081,7 +1094,7 @@ describe("MapleFlush.make (client)", () => {
 			await Effect.runPromise(failRequest(telemetry, () => {}))
 			await telemetry.flush()
 
-			expect(exportedClientSpan(calls)?.status.code).toBe(2)
+			expect(exportedClientSpan(calls).status.code).toBe(2)
 			await telemetry.dispose()
 		})
 	})

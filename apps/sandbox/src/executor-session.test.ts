@@ -6,7 +6,7 @@ import {
 	ExecutorReleaseRequest,
 	ExecutorRunRequest,
 } from "@maple/domain/executor"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
 import type { GatewayProps } from "./executor-gateway"
 import { PREPARE_STATE_DIR, PROMOTE_HELPER, RUN_TRAILER } from "./executor-scripts"
 import { type ExecResult, type ExecutorHost, destroy, prepare, release, run } from "./executor-session"
@@ -58,8 +58,9 @@ const fakeHost = (
 		},
 		exec: (script) => {
 			execs.push(script)
-			const answer = answers.find(([matches]) => matches(script))?.[1]
-			if (answer === undefined) return Effect.fail(`no answer for ${Str.slice(0, 60)(script)}`)
+			const found = Arr.findFirst(answers, ([matches]) => matches(script))
+			if (Option.isNone(found)) return Effect.fail(`no answer for ${Str.slice(0, 60)(script)}`)
+			const answer = found.value[1]
 			return typeof answer === "string" ? Effect.fail(answer) : Effect.succeed(answer)
 		},
 		spawn: (script) => {

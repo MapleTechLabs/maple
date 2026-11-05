@@ -1,5 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { Option, Result, String as Str } from "effect"
+import { Option, Result, String as Str, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -56,7 +56,7 @@ export const PAUSE_CHOICES = [
 /** `useSource`: the route's source from the shared list, once it has loaded. */
 export const sourceOf = (model: Model): Option.Option<V2Source> =>
 	Option.flatMap(AsyncData.getData(model.list.data), (rows) =>
-		Option.fromUndefinedOr(rows.find((row) => row.id === model.sourceId)),
+		Arr.findFirst(rows, (row) => row.id === model.sourceId),
 	)
 
 const loadList = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
@@ -231,12 +231,15 @@ const liftMenu = (model: Model, step: ReturnType<typeof Menu.update>): Return =>
 		),
 	}
 	const picked = step.outMessage?._tag === "SelectedItem" ? step.outMessage.value : null
-	const choice = PAUSE_CHOICES.find((entry) => entry.value === picked)
-	if (choice === undefined || model.sourceId === null || model.busy !== null) return lifted
+	const choice = Arr.findFirst(PAUSE_CHOICES, (entry) => entry.value === picked)
+	if (Option.isNone(choice) || model.sourceId === null || model.busy !== null) return lifted
 	return {
 		...lifted,
 		model: { ...lifted.model, busy: "pause" },
-		commands: [...(lifted.commands ?? []), PauseSource({ id: model.sourceId, hours: choice.hours })],
+		commands: [
+			...(lifted.commands ?? []),
+			PauseSource({ id: model.sourceId, hours: choice.value.hours }),
+		],
 	}
 }
 
@@ -340,8 +343,9 @@ const afterConnectionWrite = (
 		child._tag === "CompletedAwsCheck" &&
 		(child.connection?.verified_at != null ||
 			!(
-				model.connection?.awsCard.checking.find((entry) => entry.id === child.id)?.quiet ??
-				child.quiet
+				Option.getOrUndefined(
+					Arr.findFirst(model.connection?.awsCard.checking ?? [], (entry) => entry.id === child.id),
+				)?.quiet ?? child.quiet
 			))
 	const isAwsDisconnect = child._tag === "CompletedAwsDisconnect" && child.removed !== null
 	const isWrite =
@@ -386,7 +390,9 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 		const connection =
 			model.connection === null
 				? undefined
-				: awsConnectionsOf(model.connection).find((entry) => entry.id === focus)
+				: Option.getOrUndefined(
+						Arr.findFirst(awsConnectionsOf(model.connection), (entry) => entry.id === focus),
+					)
 		if (model.connection === null || connection === undefined)
 			return {
 				model,
@@ -401,11 +407,10 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 			),
 		)
 	}
-	const connector =
-		model.connection === null
-			? undefined
-			: gcpConnectors(model.connection).find((entry) => entry.id === focus)
-	if (model.connection === null || connector === undefined)
+	if (
+		model.connection === null ||
+		!Arr.some(gcpConnectors(model.connection), (entry) => entry.id === focus)
+	)
 		return {
 			model,
 			outMessage: toast("error", "Couldn't load the Google Cloud connection", "Try again in a moment."),

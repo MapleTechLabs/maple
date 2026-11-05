@@ -264,13 +264,13 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 							),
 						),
 					)
-				const channel = channels.find((candidate) => candidate.id === channelId)
-				if (channel === undefined) {
+				const found = Arr.findFirst(channels, (candidate) => candidate.id === channelId)
+				if (Option.isNone(found)) {
 					return yield* validation(
 						"That channel is not one the Maple bot can post to in this workspace",
 					)
 				}
-				return { connector: connector.id, workspaceName: name, channelName: channel.name }
+				return { connector: connector.id, workspaceName: name, channelName: found.value.name }
 			},
 		)
 

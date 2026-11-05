@@ -58,18 +58,22 @@ const incidentViewFor = lastBy(
 
 const deriveIncidentView = (model: ViewKey): Option.Option<IncidentView> => {
 	if (model.incidents === null || model.nowMs === null) return Option.none()
-	const incidentRow = model.incidents.find((row) => row.id === model.incidentId)
-	if (incidentRow === undefined) return Option.none()
+	const foundIncident = Arr.findFirst(model.incidents, (row) => row.id === model.incidentId)
+	if (Option.isNone(foundIncident)) return Option.none()
+	const incidentRow = foundIncident.value
 	// Only this incident's rule is decoded: the org's other rules and incidents are never shown here.
 	const incident = rowToAlertIncidentDocument(incidentRow)
-	const ruleRow = (model.rules ?? []).find((row) => row.id === incidentRow.rule_id)
-	const rule =
-		ruleRow === undefined
-			? null
-			: rowToAlertRuleDocument(
+	const rule = Option.match(
+		Arr.findFirst(model.rules ?? [], (row) => row.id === incidentRow.rule_id),
+		{
+			onNone: () => null,
+			onSome: (ruleRow) =>
+				rowToAlertRuleDocument(
 					ruleRow,
 					buildRuleStatesByRuleId(ruleStatesOf(model, incidentRow.rule_id)),
-				)
+				),
+		},
+	)
 	const now = model.nowMs
 	const start = isoMs(incident.firstTriggeredAt)
 	const pad = Math.max(30, (rule?.windowMinutes ?? 5) * 4) * MINUTE_MS

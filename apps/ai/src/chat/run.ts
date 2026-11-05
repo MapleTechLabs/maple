@@ -102,7 +102,7 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 }
 
 /** The `n` of a program call's `<program call id>#<n>`: the order the program made its calls in. */
-const programCallIndex = (callId: string): number => Number(Str.slice(callId.lastIndexOf("#") + 1)(callId))
+const programCallIndex = (callId: string): number => Number(Arr.lastNonEmpty(Str.split("#")(callId)))
 
 /** One replayed turn, in the shape `Prompt.make` accepts. */
 export interface PromptMessage {

@@ -57,7 +57,7 @@ import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // `InvestigationsHub` and `InvestigationTable`: the investigations list page.
 
@@ -83,9 +83,17 @@ const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(SORT_OPTIONS
 }))
 
 const kindLabel = (value: string): string =>
-	KIND_FILTER_LABEL[KIND_FILTER_VALUES.find((kind) => kind === value) ?? "all"]
+	KIND_FILTER_LABEL[
+		Option.getOrElse(
+			Arr.findFirst(KIND_FILTER_VALUES, (kind) => kind === value),
+			(): "all" => "all",
+		)
+	]
 const sortLabel = (value: string): string =>
-	SORT_OPTIONS.find((option) => option.value === value)?.label ?? SORT_OPTIONS[0].label
+	Arr.findFirst(SORT_OPTIONS, (option) => option.value === value).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => SORT_OPTIONS[0].label),
+	)
 
 const toolbar = (
 	h: H,

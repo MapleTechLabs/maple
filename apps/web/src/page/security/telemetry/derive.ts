@@ -14,7 +14,7 @@ import {
 } from "@maple/domain/runtime-posture"
 import { PROBE_CATEGORIES, type ProbeCategoryInfo, probeCategoryOf } from "@maple/domain/security-telemetry"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Exposure, Runtimes } from "./model"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -106,10 +106,13 @@ export const catchAllServices = (exposure: Exposure): ReadonlyArray<CatchAllServ
 						service,
 						answered,
 						probed,
-						sampleTraceId:
-							exposure.exposed.find(
+						sampleTraceId: Option.match(
+							Arr.findFirst(
+								exposure.exposed,
 								(row) => row.service === service && row.sampleTraceId !== "",
-							)?.sampleTraceId ?? "",
+							),
+							{ onNone: () => "", onSome: (row) => row.sampleTraceId },
+						),
 					},
 				]
 			: []
@@ -140,9 +143,8 @@ export interface CategoryRow {
 
 /** A signature's requests across services, most first. */
 const topSignaturesOf = (rows: ReadonlyArray<SignatureRow>, limit: number): ReadonlyArray<SignatureCount> => {
-	const totals = rows.reduce<ReadonlyMap<string, number>>(
-		(acc, row) => new Map(acc).set(row.signature, (acc.get(row.signature) ?? 0) + row.requests),
-		new Map(),
+	const totals = Arr.reduce<SignatureRow, ReadonlyMap<string, number>>(rows, new Map(), (acc, row) =>
+		new Map(acc).set(row.signature, (acc.get(row.signature) ?? 0) + row.requests),
 	)
 	return Arr.map([...totals], ([signature, requests]) => ({ signature, requests }))
 		.sort((a, b) => b.requests - a.requests || Str.localeCompare(b.signature)(a.signature))
@@ -186,7 +188,10 @@ export const categoryRows = (exposure: Exposure): ReadonlyArray<CategoryRow> => 
 
 export const categoryLabelOf = (signature: string): string => {
 	const id = probeCategoryOf(signature)
-	return PROBE_CATEGORIES.find((category) => category.id === id)?.label ?? "Unclassified"
+	return Option.match(
+		Arr.findFirst(PROBE_CATEGORIES, (category) => category.id === id),
+		{ onNone: () => "Unclassified", onSome: (category) => category.label },
+	)
 }
 
 /**

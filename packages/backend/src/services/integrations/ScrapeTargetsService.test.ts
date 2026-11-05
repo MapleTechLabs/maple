@@ -1,7 +1,7 @@
 import { FetchHttpClient } from "effect/http"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	CreateScrapeTargetRequest,
@@ -97,9 +97,9 @@ describe("ScrapeTargetsService", () => {
 					authCredentials: JSON.stringify({ token: "stored-token" }),
 				}),
 			)
-			const row = (yield* service.listAllEnabled()).find((candidate) => candidate.id === target.id)
-			assert.isDefined(row)
-			if (!row) return
+			const row = Option.getOrThrow(
+				Arr.findFirst(yield* service.listAllEnabled(), (candidate) => candidate.id === target.id),
+			)
 
 			const headers = yield* service.authHeaders(row)
 			assert.deepStrictEqual(headers, { Authorization: "Bearer stored-token" })
@@ -231,7 +231,7 @@ describe("ScrapeTargetsService", () => {
 				),
 			)
 			assert.deepStrictEqual(
-				(yield* service.listAllEnabled()).map((row) => row.id),
+				Arr.map(yield* service.listAllEnabled(), (row) => row.id),
 				[live.id],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Array as Arr, String as Str } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -52,7 +52,7 @@ describe("listContainersQuery", () => {
 	it("does not repeat the sort key in the tiebreak", () => {
 		const { sql } = compileUnsafe(listContainersQuery({ sortBy: "containerName" }), baseParams)
 		expect(sql).toContain("ORDER BY containerName ASC, cpuPctPeak DESC")
-		expect(sql.match(/containerName (ASC|DESC)/g)).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/containerName (ASC|DESC)/g)(sql))).toHaveLength(1)
 	})
 
 	it("applies search and multi-value array filters", () => {
@@ -273,7 +273,7 @@ describe("conditional aggregates are NaN-guarded", () => {
 
 	for (const [name, sql] of queries) {
 		it(`${name} wraps every avgIf/maxIf in ifNotFinite`, () => {
-			const unguarded = [...sql.matchAll(/(?:^|[^(])\b(avgIf|maxIf)\(/g)]
+			const unguarded = Arr.fromIterable(Str.matchAll(/(?:^|[^(])\b(avgIf|maxIf)\(/g)(sql))
 			expect(unguarded, `unguarded conditional aggregate in ${name}`).toEqual([])
 			expect(sql).toMatch(/ifNotFinite\((?:avgIf|maxIf)\(/)
 		})

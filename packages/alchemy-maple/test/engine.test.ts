@@ -1,6 +1,6 @@
 // BOUNDARY: The fake HTTP service models JSON documents owned by the Maple API.
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Exit, Layer, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { adopt } from "alchemy/AdoptPolicy"
 import { renamedFrom } from "alchemy/Rename"
 import * as Core from "@alchemy.run/test/Core"
@@ -23,7 +23,11 @@ const makeHarness = () => {
 	const documents = new Map<string, Document>()
 	const calls: Array<{ method: string; path: string; body?: unknown }> = []
 	let sequence = 0
-	const collectionPath = (path: string) => Str.slice(0, path.lastIndexOf("/"))(path)
+	const collectionPath = (path: string) =>
+		Str.slice(
+			0,
+			Option.getOrElse(Str.lastIndexOf("/")(path), () => -1),
+		)(path)
 	const missing = (path: string) =>
 		makeMapleApiResponseError(404, {
 			_tag: Str.startsWith("/v2/api_keys/")(path)
@@ -573,7 +577,9 @@ describe("Alchemy engine lifecycle", () => {
 			return h.run(
 				Effect.gen(function* () {
 					yield* stack.deploy(AlertRule("errors", { ...ruleProps, tags }))
-					const createdBody = h.calls.find((call) => call.method === "POST")!.body
+					const createdBody = Option.getOrThrow(
+						Arr.findFirst(h.calls, (call) => call.method === "POST"),
+					).body
 					yield* Schema.decodeUnknownEffect(V2AlertRuleCreateParams)(createdBody)
 					expect(decodeBody(createdBody).tags).toEqual([
 						...tags,

@@ -310,7 +310,11 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 	const railCoverage = `60 buckets · covers all of ${Str.toLowerCase(rangeLabel)}${
 		page != null ? ` · ${formatBucketSpan(page.summary.bucketSeconds)} each` : ""
 	}`
-	const overviewIncident = ruleIncidents.find((i) => i.status === "open") ?? ruleIncidents[0] ?? null
+	const overviewIncident =
+		Option.getOrElse(
+			Arr.findFirst(ruleIncidents, (i) => i.status === "open"),
+			() => ruleIncidents[0],
+		) ?? null
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
 	const isChecksLoading = AsyncData.isIdle(model.checks.data) || AsyncData.isLoading(model.checks.data)
 

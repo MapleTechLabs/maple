@@ -27,7 +27,7 @@ import type { Model } from "./model"
 import { sidebarBusy } from "./writes"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The issue sidebar with its state and severity selects.
 // TODO(lease): a held lease should render the lease HUD with Extend and Release; Claim is inert here.
@@ -50,7 +50,8 @@ const OFFERED_STATES = Arr.filter(WORKFLOW_STATE_ORDER, (state) => !MACHINE_OWNE
 
 const isWorkflowState = (value: string): value is WorkflowState =>
 	Arr.some(WORKFLOW_STATE_ORDER, (state) => state === value)
-const isSeverity = (value: string) => SEVERITY_ORDER.find((severity) => severity === value) ?? null
+const isSeverity = (value: string) =>
+	Option.getOrNull(Arr.findFirst(SEVERITY_ORDER, (severity) => severity === value))
 
 /** Unreachable states stay listed but disabled, so the list reads the same from every state. */
 const stateEntries = (current: WorkflowState): ReadonlyArray<SelectView.SelectEntry> => {

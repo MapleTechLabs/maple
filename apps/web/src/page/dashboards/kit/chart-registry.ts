@@ -11,6 +11,7 @@ import {
 	pieSampleData,
 	throughputTimeSeriesData,
 } from "@maple/ui/components/charts/_shared/sample-data"
+import { Array as Arr, Option } from "effect"
 
 // The id-to-category half of `chartRegistry` (packages/ui/src/components/charts/registry.ts), which
 // also lazily imports every React chart. Also `toPanelType`.
@@ -78,7 +79,10 @@ export const CHART_GALLERY: ReadonlyArray<
 
 /** `getChartById(id)?.sampleData`. */
 export const sampleDataOf = (chartId: string): ReadonlyArray<Record<string, unknown>> =>
-	CHART_GALLERY.find((entry) => entry.id === chartId)?.sampleData ?? []
+	Arr.findFirst(CHART_GALLERY, (entry) => entry.id === chartId).pipe(
+		Option.flatMapNullishOr((found) => found.sampleData),
+		Option.getOrElse(() => []),
+	)
 
 /** `REMOVED_CHART_IDS`: retired styles redirect to the chart that replaced them. */
 const REMOVED_CHART_IDS = new Map([

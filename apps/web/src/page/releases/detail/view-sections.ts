@@ -31,7 +31,7 @@ import { commitAvatar, firstLine, releaseHealthFigure, releaseHref } from "../ki
 import { type Overlays, releaseHealthPill } from "../overlays-view"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option, Order } from "effect"
 
 // `ReleaseDeployOverview`'s sections, `ReleaseChangeset` and `IssueList` + `IssueLine`.
 
@@ -222,9 +222,14 @@ export const deployServices = <M>(
 	timeSearch: TimeSearch,
 	overlays: Overlays<M>,
 ): Html => {
-	const rows = group.services.toSorted(
-		(a, b) =>
-			Number(a.health === "healthy") - Number(b.health === "healthy") || b.spanCount - a.spanCount,
+	const rows = Arr.sort(
+		group.services,
+		Order.combine(
+			Order.mapInput(Order.Number, (impact: ReleaseServiceImpact) =>
+				Number(impact.health === "healthy"),
+			),
+			Order.flip(Order.mapInput(Order.Number, (impact: ReleaseServiceImpact) => impact.spanCount)),
+		),
 	)
 	return sectionCard(
 		h,
@@ -255,10 +260,10 @@ export const deployServices = <M>(
 
 /** `(#1083)` at the end of a squash-merge subject, linked to the pull request. */
 const pullRequestUrl = (subject: string, commitUrl: string): { number: string; url: string } | undefined => {
-	const match = subject.match(/\(#(\d+)\)\s*$/)
-	const repoUrl = commitUrl.match(/^(.*)\/commit\/[0-9a-f]+$/i)?.[1]
-	if (match?.[1] === undefined || repoUrl === undefined) return undefined
-	return { number: match[1], url: `${repoUrl}/pull/${match[1]}` }
+	const number = Option.getOrUndefined(Str.match(/\(#(\d+)\)\s*$/)(subject))?.[1]
+	const repoUrl = Option.getOrUndefined(Str.match(/^(.*)\/commit\/[0-9a-f]+$/i)(commitUrl))?.[1]
+	if (number === undefined || repoUrl === undefined) return undefined
+	return { number, url: `${repoUrl}/pull/${number}` }
 }
 
 export type ChangesetState =

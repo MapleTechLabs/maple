@@ -354,7 +354,7 @@ const isBucketCacheSegmentData = (
 	) {
 		return false
 	}
-	return data.buckets.every((cachedBucket) => {
+	return Arr.every<CachedBucket>(data.buckets, (cachedBucket) => {
 		if (cachedBucket === null || typeof cachedBucket !== "object") return false
 		return (
 			Number.isFinite(cachedBucket.startMs) &&
@@ -363,8 +363,8 @@ const isBucketCacheSegmentData = (
 			cachedBucket.endMs <= expected.segmentEndMs &&
 			cachedBucket.endMs - cachedBucket.startMs === expected.bucketMs &&
 			cachedBucket.startMs % expected.bucketMs === 0 &&
-			Array.isArray(cachedBucket.points) &&
-			cachedBucket.points.every((point: unknown) => {
+			Arr.isArray(cachedBucket.points) &&
+			Arr.every(cachedBucket.points, (point: unknown) => {
 				if (point === null || typeof point !== "object") return false
 				const candidate = point as Partial<TimeseriesPoint>
 				return (

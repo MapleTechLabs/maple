@@ -10,7 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, nameSection, section, selectField, textField } from "./view-fields"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The TCP, DNS and heartbeat sections, and the Service and Notify sections every kind shares.
 
@@ -197,7 +197,10 @@ export const notifySection = (h: H, model: Model): Html => {
 	const fallback = model.destinations === null ? "Destination" : "Unavailable destination"
 	const selected = Arr.map(model.form.destinationIds, (id) => ({
 		id,
-		name: rows.find((row) => row.id === id)?.name ?? fallback,
+		name: Arr.findFirst(rows, (row) => row.id === id).pipe(
+			Option.flatMapNullishOr((found) => found.name),
+			Option.getOrElse(() => fallback),
+		),
 	}))
 	const available = Arr.filter(rows, (row) => !Arr.some(model.form.destinationIds, (id) => id === row.id))
 	return section(h, "Notify", undefined, [

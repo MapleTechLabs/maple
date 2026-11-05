@@ -39,6 +39,7 @@ export function fill(
 	values: Readonly<Record<string, string>> = {},
 	slots: Readonly<Record<string, string>> = {},
 ): string {
+	// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 	return template.replace(TOKEN, (_match, raw: string, name: string) => {
 		if (raw === "#") {
 			const slot = slots[name]

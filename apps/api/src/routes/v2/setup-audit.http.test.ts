@@ -5,7 +5,9 @@ import {
 	Effect,
 	Layer,
 	ManagedRuntime,
+	Option,
 	Schema,
+	Array as Arr,
 	Record as Rec,
 	String as Str,
 } from "effect"
@@ -92,11 +94,11 @@ const warehouseStub = (
 		query: () => Effect.die(new Error("unexpected warehouse pipe query")),
 		rawSqlQuery: () => Effect.succeed([]),
 		compiledQuery: (_tenant, compiled) => {
-			const table = Rec.keys(rowsByTable).find((name) =>
+			const table = Arr.findFirst(Rec.keys(rowsByTable), (name) =>
 				Str.includes(`FROM ${name}`)(compiledQueryOf(compiled).sql),
 			)
 			return compiledQueryOf(compiled)
-				.decodeRows(table === undefined ? [] : rowsByTable[table]!)
+				.decodeRows(Option.isNone(table) ? [] : rowsByTable[table.value]!)
 				.pipe(Effect.orDie)
 		},
 		compiledQueryFirst: () => Effect.die(new Error("unexpected compiled query")),

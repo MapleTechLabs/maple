@@ -4,7 +4,7 @@ import { ALERT_TEMPLATES } from "../shared/templates"
 import { suggestCriticalThreshold } from "./derive"
 import { asFormState, fromFormState, type RuleForm } from "./form"
 import type { SignalKind, TextField, Tier } from "./message"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // The form edits each control makes (the `onChange((c) => ...)` callbacks), as pure steps.
 
@@ -89,9 +89,9 @@ export const removeId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDes
 
 /** `onPick`: templates fill the query builder; Apdex has no builder aggregation, so it stays Built-in. */
 export const pickTemplate = (form: RuleForm, templateId: string): RuleForm => {
-	const template = ALERT_TEMPLATES.find((candidate) => candidate.id === templateId)
-	if (template === undefined) return form
-	const applied = fromFormState(template.apply(form))
+	const template = Arr.findFirst(ALERT_TEMPLATES, (candidate) => candidate.id === templateId)
+	if (Option.isNone(template)) return form
+	const applied = fromFormState(template.value.apply(form))
 	return applied.signalType === "apdex" ? applied : switchKind(applied, "builder_query").form
 }
 

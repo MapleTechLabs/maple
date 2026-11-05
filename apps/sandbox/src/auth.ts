@@ -11,6 +11,7 @@ export const tokenMatches = (presented: string, expected: string): boolean => {
 	if (presented.length !== expected.length) return false
 	let diff = 0
 	for (let index = 0; index < presented.length; index++)
+		// @effect-diagnostics-next-line preferEffectString:off -- per-character loop; Str.charCodeAt allocates an Option per character
 		diff |= presented.charCodeAt(index) ^ expected.charCodeAt(index)
 	return diff === 0
 }

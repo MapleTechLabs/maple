@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str, Struct } from "effect"
 import { OrgId } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewPostMerge, PrReviewPostMergeStatus, PrReviewTelemetry } from "./pr-review-telemetry"
@@ -112,7 +112,7 @@ const isFailureReason = Schema.is(PrReviewFailureReason)
 export const prReviewFailureReason = (
 	error: string | null | undefined,
 ): PrReviewFailureReason | undefined => {
-	const code = error?.split(":", 1)[0]?.trim()
+	const code = error == null ? undefined : Str.trim(Str.split(":")(error)[0])
 	return isFailureReason(code) ? code : undefined
 }
 
@@ -293,7 +293,7 @@ export const mergePrReviewConfig = (
 ): PrReviewRepositoryConfig => {
 	if (defaults === undefined) return repository
 	const instructions = Arr.filter(
-		Arr.map([defaults.instructions, repository.instructions], (text) => text?.trim()),
+		Arr.map([defaults.instructions, repository.instructions], (text) => trimmed(text)),
 		(text): text is string => text !== undefined && text !== "",
 	)
 	const ignorePaths = [...new Set([...(defaults.ignorePaths ?? []), ...(repository.ignorePaths ?? [])])]
@@ -379,7 +379,8 @@ const fnv1a = (text: string): string =>
 		Arr.reduce(
 			Array.from(text),
 			0x811c9dc5,
-			(hash, char) => Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193) >>> 0,
+			(hash, char) =>
+				Math.imul(hash ^ Option.getOrElse(Str.codePointAt(char, 0), () => 0), 0x01000193) >>> 0,
 		).toString(16),
 	)
 
@@ -584,6 +585,10 @@ const listOf = <A>(
 	decode: (text: string) => Option.Option<ReadonlyArray<A>>,
 ): ReadonlyArray<A> => (typeof value === "string" ? Option.getOrElse(decode(value), () => []) : (value ?? []))
 
+const trimmed = (value: string | null | undefined): string | undefined =>
+	value == null ? undefined : Str.trim(value)
+const trimmedPath = (value: string | null | undefined): string | undefined =>
+	value == null ? undefined : Str.replace(/^\/+/, "")(Str.trim(value))
 const clip = (value: string, max = MAX_TEXT) => (value.length > max ? `${Str.slice(0, max)(value)}…` : value)
 
 /** A bullet list as trimmed, non-empty lines; a leading `-` or `*` the model added is dropped. */
@@ -604,12 +609,12 @@ const bulletsOf = (
  * or is an observability finding without a check id from the audit.
  */
 export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrReviewFinding | undefined => {
-	const path = raw.path?.trim()
+	const path = trimmed(raw.path)
 	const line = toNumber(raw.line)
 	const rawEndLine = toNumber(raw.endLine)
 	if (!path || line === undefined || line < 1) return undefined
 	// An id the audit does not have would be posted onto the pull request as if it did.
-	const rawCheckId = raw.checkId?.trim().toUpperCase()
+	const rawCheckId = raw.checkId == null ? undefined : Str.toUpperCase(Str.trim(raw.checkId))
 	const checkId = rawCheckId !== undefined && AUDIT_CHECK_ID.test(rawCheckId) ? rawCheckId : undefined
 	const category = isCategory(raw.category)
 		? raw.category
@@ -621,10 +626,12 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 	if (category === "observability" && checkId === undefined) return undefined
 	// Observability findings carry their audit id; a security finding keeps only a privacy one.
 	const keptCheckId =
-		category === "observability" || (category === "security" && checkId?.startsWith("PII-") === true)
+		category === "observability" ||
+		(category === "security" && checkId !== undefined && Str.startsWith("PII-")(checkId))
 			? checkId
 			: undefined
 	const startLine = Math.floor(line)
+	const suggestion = trimmed(raw.suggestion)
 	const endLine =
 		rawEndLine !== undefined && Math.floor(rawEndLine) > startLine ? Math.floor(rawEndLine) : undefined
 	return new PrReviewFinding({
@@ -634,9 +641,9 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		category,
 		...(keptCheckId === undefined ? undefined : { checkId: keptCheckId }),
 		severity: isSeverity(raw.severity) ? raw.severity : "warn",
-		title: clip(raw.title?.trim() || "Review finding", 200),
-		body: clip(raw.body?.trim() || ""),
-		...(raw.suggestion?.trim() ? { suggestion: clip(Str.trim(raw.suggestion)) } : undefined),
+		title: clip(trimmed(raw.title) || "Review finding", 200),
+		body: clip(trimmed(raw.body) || ""),
+		...(suggestion ? { suggestion: clip(suggestion) } : undefined),
 		// Indentation is part of the code a suggestion commits, so only trailing newlines go.
 		...(typeof raw.replacement === "string" && raw.replacement.length <= MAX_TEXT
 			? { replacement: Str.replace(/\n+$/, "")(raw.replacement) }
@@ -710,10 +717,7 @@ export interface PrReviewTelemetryDismissal {
  * otherwise the model's `not_applicable` survives and anything else reads as `clean`.
  */
 export const normalizePrReviewSubmission = (submission: PrReviewSubmission): NormalizedPrReviewSubmission => {
-	const filled = Arr.map(
-		Arr.filter(Object.entries(submission), ([, value]) => value !== undefined),
-		([key]) => key,
-	)
+	const filled = Arr.filter(Struct.keys(submission), (key) => submission[key] !== undefined)
 	const rawFindings = listOf(submission.findings, decodeFindings)
 	const findings: Array<PrReviewFinding> = []
 	for (const raw of rawFindings) {
@@ -724,14 +728,14 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 	}
 	const coverage: Array<PrReviewCoverageUnit> = []
 	for (const raw of listOf(submission.coverage, decodeCoverage)) {
-		const unit = raw.unit?.trim()
+		const unit = trimmed(raw.unit)
 		if (!unit) continue
 		coverage.push(
 			new PrReviewCoverageUnit({
 				unit: clip(unit, 200),
-				kind: clip(raw.kind?.trim() || "other", 60),
+				kind: clip(trimmed(raw.kind) || "other", 60),
 				instrumented: toBoolean(raw.instrumented),
-				evidence: clip(raw.evidence?.trim() || ""),
+				evidence: clip(trimmed(raw.evidence) || ""),
 			}),
 		)
 		if (coverage.length >= MAX_COVERAGE) break
@@ -759,11 +763,22 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		rawConfidence === undefined
 			? undefined
 			: Math.min(PR_REVIEW_CONFIDENCE_MAX, Math.max(1, Math.round(rawConfidence)))
-	const confidenceReason = submission.confidenceReason?.trim()
+	const confidenceReason = trimmed(submission.confidenceReason)
+	const telemetryDismissals = Arr.flatMap(
+		listOf(submission.telemetryDismissals, decodeDismissals),
+		(raw) => {
+			const name = trimmed(raw.name)
+			const path = trimmedPath(raw.path)
+			const line = toNumber(raw.line)
+			return name && path && line !== undefined && line >= 1
+				? [{ name, path, line: Math.round(line) }]
+				: []
+		},
+	)
 	return {
 		report: new PrReviewReport({
 			verdict,
-			summary: clip(submission.summary?.trim() || "", MAX_SUMMARY),
+			summary: clip(trimmed(submission.summary) || "", MAX_SUMMARY),
 			...(keyChanges.length > 0 ? { keyChanges } : undefined),
 			...(checked.length > 0 ? { checked } : undefined),
 			...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
@@ -787,26 +802,14 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			),
 		].slice(0, MAX_FINDINGS),
 		// Bounded and deduplicated: each one costs a file read at the head before it is accepted.
-		telemetryDismissals: Arr.flatMap(listOf(submission.telemetryDismissals, decodeDismissals), (raw) => {
-			const name = raw.name?.trim()
-			const path = raw.path?.trim().replace(/^\/+/, "")
-			const line = toNumber(raw.line)
-			return name && path && line !== undefined && line >= 1
-				? [{ name, path, line: Math.round(line) }]
-				: []
-		})
-			.filter(
-				(item, i, all) =>
-					all.findIndex(
-						(other) =>
-							other.name === item.name && other.path === item.path && other.line === item.line,
-					) === i,
-			)
-			.slice(0, MAX_DISMISSALS),
+		telemetryDismissals: Arr.dedupeWith(
+			telemetryDismissals,
+			(item, other) => other.name === item.name && other.path === item.path && other.line === item.line,
+		).slice(0, MAX_DISMISSALS),
 		childDismissals: Arr.flatMap(listOf(submission.childDismissals, decodeChildDismissals), (raw) => {
-			const path = raw.path?.trim().replace(/^\/+/, "")
+			const path = trimmedPath(raw.path)
 			const line = toNumber(raw.line)
-			const reason = raw.reason?.trim()
+			const reason = trimmed(raw.reason)
 			return path && reason && line !== undefined && line >= 1
 				? [{ path, line: Math.round(line), reason: clip(reason, MAX_BULLET) }]
 				: []
@@ -968,7 +971,8 @@ export const confidencePrReview = (
 		all,
 		(finding) => finding.severity === "warn" && finding.category === "security",
 	)
-	const defectWarn = all.find(
+	const defectWarn = Arr.findFirst(
+		all,
 		(finding) =>
 			finding.severity === "warn" && finding.category !== "security" && isPrReviewDefect(finding),
 	)
@@ -1036,8 +1040,8 @@ export const confidencePrReview = (
 		...(securityWarn
 			? [{ at: 4, by: "warn" as const, why: "a security warning is open", danger: true as const }]
 			: []),
-		...(defectWarn !== undefined
-			? [{ at: 6, by: "warn" as const, why: `a ${defectWarn.category} warning is open` }]
+		...(Option.isSome(defectWarn)
+			? [{ at: 6, by: "warn" as const, why: `a ${defectWarn.value.category} warning is open` }]
 			: []),
 		...(partial
 			? [{ at: 6, by: "partial" as const, why: "the review ended early", danger: true as const }]
@@ -1063,9 +1067,10 @@ export const confidencePrReview = (
 				]
 			: []),
 	]
-	const binding = caps.reduce<(typeof caps)[number] | undefined>(
-		(tightest, cap) => (tightest === undefined || cap.at < tightest.at ? cap : tightest),
+	const binding = Arr.reduce<(typeof caps)[number], (typeof caps)[number] | undefined>(
+		caps,
 		undefined,
+		(tightest, cap) => (tightest === undefined || cap.at < tightest.at ? cap : tightest),
 	)
 	const cap = binding?.at ?? PR_REVIEW_CONFIDENCE_MAX
 	// Ordinary warnings and soft signals say "needs attention" at worst; red is for the capped dangers.
@@ -1183,7 +1188,7 @@ const escapeRegExp = (value: string) => Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&
  */
 const mentionPattern = (mention: string | undefined): RegExp => {
 	const handles = ["maple", "maplelabsapp"]
-	const own = mention?.replace(/^@/, "")
+	const own = mention === undefined ? undefined : Str.replace(/^@/, "")(mention)
 	if (own !== undefined && own !== "" && !handles.includes(Str.toLowerCase(own)))
 		handles.push(escapeRegExp(own))
 	return new RegExp(`(^|[^\\w@./-])@(?:${Arr.join(handles, "|")})(?![\\w-])`, "i")
@@ -1214,8 +1219,9 @@ export const parseReplyCommand = (
 		match === null
 			? undefined
 			: /^\s*([a-z]+)\b/i.exec(Str.slice(match.index + match[0].length)(cleaned))?.[1]
+	const lowerWord = word === undefined ? undefined : Str.toLowerCase(word)
 	const command: PrReviewReplyCommand =
-		word?.toLowerCase() === "review" ? "review" : word?.toLowerCase() === "fix" ? "fix" : "ask"
+		lowerWord === "review" ? "review" : lowerWord === "fix" ? "fix" : "ask"
 	return { command, text: Str.trim(body) }
 }
 

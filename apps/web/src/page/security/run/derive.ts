@@ -18,9 +18,11 @@ export const runOf = (model: Model): SecurityAuditRunDetail | null =>
 	Option.getOrNull(AsyncData.getData(model.run.data))
 
 export const targetOf = (model: Model, run: SecurityAuditRunDetail): SecurityAuditTarget | null =>
-	Option.getOrNull(AsyncData.getData(model.targets.data))?.targets.find(
-		(target) => target.id === run.targetId,
-	) ?? null
+	Option.getOrNull(
+		Option.flatMap(AsyncData.getData(model.targets.data), (data) =>
+			Arr.findFirst(data.targets, (target) => target.id === run.targetId),
+		),
+	)
 
 export const eventsOf = (model: Model): ReadonlyArray<SecurityAuditEvent> => model.eventLog
 
@@ -136,7 +138,10 @@ const reachedOf = (events: ReadonlyArray<SecurityAuditEvent>): Readonly<{ reache
 	)
 
 const phaseDetail = (events: ReadonlyArray<SecurityAuditEvent>, phase: string): string | null =>
-	events.find((event) => event.kind === "Phase" && event.phase === phase)?.detail ?? null
+	Option.match(
+		Arr.findFirst(events, (event) => event.kind === "Phase" && event.phase === phase),
+		{ onNone: () => null, onSome: (event) => event.detail ?? null },
+	)
 
 export const phasesOf = (
 	run: SecurityAuditRunDetail,
@@ -204,7 +209,9 @@ export const resultsOf = (model: Model): ReadonlyArray<SecurityAuditFinding> =>
 	})
 
 export const openFindingOf = (model: Model): SecurityAuditFinding | null =>
-	resultsOf(model).find((finding) => finding.fingerprint === model.openFingerprint) ?? null
+	Option.getOrNull(
+		Arr.findFirst(resultsOf(model), (finding) => finding.fingerprint === model.openFingerprint),
+	)
 
 /** How the run ran stays open while it is live; a finished run leads with what it found. */
 export const isDetailsOpenByDefault = (model: Model): boolean => {

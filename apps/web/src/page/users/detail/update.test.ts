@@ -1,4 +1,4 @@
-import { Option, Result, Schema } from "effect"
+import { Array as Arr, Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { fromString } from "foldkit/url"
@@ -100,7 +100,7 @@ describe("tabs and namespaces", () => {
 			context,
 		)
 		const names = (step: ReturnType<typeof update>) =>
-			(step.commands ?? []).map((command) => command.name)
+			Arr.map(step.commands ?? [], (command) => command.name)
 		expect(names(loaded)).not.toContain("FetchUserTraces")
 		const traces = routeChanged(
 			loaded.model,
@@ -134,7 +134,7 @@ describe("tabs and namespaces", () => {
 			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 			context,
 		)
-		expect((loaded.commands ?? []).map((command) => command.name)).toEqual(["FetchUserOverview"])
+		expect(Arr.map(loaded.commands ?? [], (command) => command.name)).toEqual(["FetchUserOverview"])
 	})
 
 	it("settles the issues with the overview, so the Errors tab never stays loading", () => {
@@ -166,7 +166,7 @@ describe("tabs and namespaces", () => {
 			{ userId: "user/42 ada", search: { namespace: "checkout" } },
 			context,
 		)
-		const names = (step.commands ?? []).map((command) => command.name)
+		const names = Arr.map(step.commands ?? [], (command) => command.name)
 		expect(names).toEqual(["FetchUserOverview"])
 	})
 })

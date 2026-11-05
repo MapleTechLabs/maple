@@ -22,7 +22,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "../message"
 import type { Model } from "../model"
 import type { Rejection } from "../server/state"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The screens shown when the server is unreachable or refuses this page.
 
@@ -134,10 +134,12 @@ const installCommands = (h: HtmlBuilder<Message>, model: Model): Html =>
 			listClassName: "justify-start",
 			panelClassName: "mt-0",
 			panel: (value) => {
-				const method = INSTALL_METHODS.find((entry) => entry.id === value)
-				return method === undefined
-					? undefined
-					: [field(h, model, `install-${method.id}`, "", method.command, "Command")]
+				return Option.getOrUndefined(
+					Option.map(
+						Arr.findFirst(INSTALL_METHODS, (entry) => entry.id === value),
+						(method) => [field(h, model, `install-${method.id}`, "", method.command, "Command")],
+					),
+				)
 			},
 		},
 	})

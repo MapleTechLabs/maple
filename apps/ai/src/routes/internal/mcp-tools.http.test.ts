@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { mapleToolCatalog, mapleToolCatalogFor } from "../../mcp/tools/registry"
 import { publicMcpToolCatalog } from "./mcp-tools.http"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 describe("publicMcpToolCatalog", () => {
 	const { tools } = publicMcpToolCatalog()
@@ -21,7 +21,7 @@ describe("publicMcpToolCatalog", () => {
 
 	it("carries each tool's read-only and destructive hints", () => {
 		for (const tool of mapleToolCatalogFor("mcp")) {
-			const listed = tools.find((entry) => entry.name === tool.name)
+			const listed = Option.getOrUndefined(Arr.findFirst(tools, (entry) => entry.name === tool.name))
 			expect(listed?.readOnly).toBe(tool.hints.readOnly)
 			expect(listed?.destructive).toBe(tool.hints.destructive === true)
 		}

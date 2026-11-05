@@ -37,6 +37,7 @@ const markdownToCardHtml = (markdown: string): string =>
 		Str.replace(
 			/\*\*([^*]+)\*\*/g,
 			"<b>$1</b>",
+			// @effect-diagnostics-next-line preferEffectString:off -- function replacer; Str.replace only takes a string
 		)(escapeHtml(markdown)).replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text: string, url: string) =>
 			/^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : match,
 		),

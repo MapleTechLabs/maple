@@ -20,10 +20,14 @@ const legacyLastSeen = (apiBase: string) =>
 			}),
 		)
 		const rows = yield* queryRows(compiled, apiBase)
-		return Arr.filter(rows, (row) => row.count > 0).reduce<number | null>((latest, row) => {
-			const ms = parseClickHouseDateTime(row.lastSeen)
-			return ms !== null && (latest === null || ms > latest) ? ms : latest
-		}, null)
+		return Arr.reduce(
+			Arr.filter(rows, (row) => row.count > 0),
+			null,
+			(latest: number | null, row) => {
+				const ms = parseClickHouseDateTime(row.lastSeen)
+				return ms !== null && (latest === null || ms > latest) ? ms : latest
+			},
+		)
 	}).pipe(
 		Effect.timeoutOption(PROBE_TIMEOUT_MS),
 		Effect.orElseSucceed(() => Option.none<number | null>()),

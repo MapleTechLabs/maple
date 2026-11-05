@@ -142,10 +142,12 @@ export const writeQuickStartState = (key: string, state: QuickStartState): Effec
  */
 export const resolveQuickStartStep = (state: QuickStartState, hasPlan: boolean): StepId => {
 	const steps = Arr.filter(STEP_IDS, (step) => !(hasPlan && step === "plan"))
-	return (
-		steps.find((step) => step === state.activeStep) ??
-		steps.find((step) => state.completedSteps[step] !== true) ??
-		"team"
+	return Option.getOrElse(
+		Option.orElse(
+			Arr.findFirst(steps, (step) => step === state.activeStep),
+			() => Arr.findFirst(steps, (step) => state.completedSteps[step] !== true),
+		),
+		(): StepId => "team",
 	)
 }
 

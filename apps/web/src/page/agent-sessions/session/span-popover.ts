@@ -1,4 +1,4 @@
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, Option } from "effect"
 import type { AiSessionSpan } from "@maple/domain/http"
 import {
 	classifyAiSpan,
@@ -149,22 +149,24 @@ export const viewPopover = (
 	const spanId = model.search.span
 	const found =
 		spanId === undefined
-			? undefined
-			: Arr.flatMap(data.turns, (turn) => Arr.map(turn.spans, (span) => ({ span, turn }))).find(
+			? Option.none()
+			: Arr.findFirst(
+					Arr.flatMap(data.turns, (turn) => Arr.map(turn.spans, (span) => ({ span, turn }))),
 					({ span }) => span.spanId === spanId,
 				)
 	return spanPopover(
 		h,
 		model,
-		found === undefined
-			? undefined
-			: {
-					span: found.span,
-					toolResults: data.toolResults,
-					turnOrdinal: view === "flow" ? turnOrdinal(found.turn) : undefined,
-					isTraceDoor: view !== "trace",
-					timeZone,
-				},
+		Option.match(found, {
+			onNone: () => undefined,
+			onSome: ({ span, turn }) => ({
+				span,
+				toolResults: data.toolResults,
+				turnOrdinal: view === "flow" ? turnOrdinal(turn) : undefined,
+				isTraceDoor: view !== "trace",
+				timeZone,
+			}),
+		}),
 	)
 }
 

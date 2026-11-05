@@ -1,5 +1,5 @@
 import { writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Effect, Option, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { load } from "foldkit/navigation"
 import { clearSessionToken } from "../platform/auth-api"
@@ -43,13 +43,13 @@ export const FocusSiblingMenuItem = Command.define("FocusSiblingMenuItem", {
 		Effect.sync(() => {
 			const popup = document.getElementById(popupId)
 			const items = popup === null ? [] : [...popup.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-			const current = items.findIndex((item) => item === document.activeElement)
-			const next =
-				current === -1
-					? step > 0
-						? 0
-						: items.length - 1
-					: (current + step + items.length) % items.length
+			const next = Option.match(
+				Arr.findFirstIndex(items, (item) => item === document.activeElement),
+				{
+					onNone: () => (step > 0 ? 0 : items.length - 1),
+					onSome: (current) => (current + step + items.length) % items.length,
+				},
+			)
 			items[next]?.focus({ preventScroll: true })
 			return Message.CompletedFocusElement()
 		}),
